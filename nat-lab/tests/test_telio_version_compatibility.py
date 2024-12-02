@@ -20,7 +20,6 @@ from utils.bindings import (
 )
 from utils.connection_util import (
     ConnectionTag,
-    ConnectionLimits,
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
 )
@@ -136,7 +135,7 @@ async def test_connect_different_telio_version_through_relay(
                 client1_type,
                 generate_connection_tracker_config(
                     client1_type,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             )
         )
@@ -149,7 +148,7 @@ async def test_connect_different_telio_version_through_relay(
                 client2_type,
                 generate_connection_tracker_config(
                     client2_type,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             )
         )
@@ -201,5 +200,5 @@ async def test_connect_different_telio_version_through_relay(
             testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
         )
 
-        assert await alpha_conn_tracker.get_out_of_limits() is None
-        assert await beta_conn_tracker.get_out_of_limits() is None
+        assert await alpha_conn_tracker.find_conntracker_violations() is None
+        assert await beta_conn_tracker.find_conntracker_violations() is None

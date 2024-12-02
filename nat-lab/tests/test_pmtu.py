@@ -9,11 +9,7 @@ from utils.bindings import (
     FeaturePmtuDiscovery,
     TelioAdapterType,
 )
-from utils.connection_util import (
-    ConnectionTag,
-    generate_connection_tracker_config,
-    ConnectionLimits,
-)
+from utils.connection_util import ConnectionTag, generate_connection_tracker_config
 from utils.ping import ping
 from utils.router import IPStack
 
@@ -166,9 +162,9 @@ async def test_pmtu_without_nexthop(setup_params: SetupParameters) -> None:
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 1),
-                    ping_limits=ConnectionLimits(1, 1),
+                    vpn_1_limits=(1, 1),
+                    stun_limits=(1, 1),
+                    ping_limits=(1, 1),
                 ),
                 features=features(),
                 is_meshnet=False,
@@ -179,9 +175,9 @@ async def test_pmtu_without_nexthop(setup_params: SetupParameters) -> None:
                 adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 1),
-                    ping_limits=ConnectionLimits(1, 1),
+                    vpn_1_limits=(1, 1),
+                    stun_limits=(1, 1),
+                    ping_limits=(1, 1),
                 ),
                 features=features(),
                 is_meshnet=False,

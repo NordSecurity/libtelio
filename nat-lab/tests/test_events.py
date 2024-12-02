@@ -17,7 +17,6 @@ from utils.bindings import (
     telio_node,
     TelioAdapterType,
 )
-from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
     ConnectionTag,
@@ -72,7 +71,7 @@ def node_cmp(left: TelioNode, right: TelioNode):
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             )
         ),
@@ -82,7 +81,7 @@ def node_cmp(left: TelioNode, right: TelioNode):
                 adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             ),
             marks=pytest.mark.linux_native,
@@ -93,7 +92,7 @@ def node_cmp(left: TelioNode, right: TelioNode):
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             ),
             marks=pytest.mark.windows,
@@ -104,7 +103,7 @@ def node_cmp(left: TelioNode, right: TelioNode):
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             ),
             marks=pytest.mark.windows,
@@ -115,7 +114,7 @@ def node_cmp(left: TelioNode, right: TelioNode):
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             ),
             marks=pytest.mark.mac,
@@ -130,7 +129,7 @@ def node_cmp(left: TelioNode, right: TelioNode):
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             )
         )
@@ -227,8 +226,8 @@ async def test_event_content_meshnet(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 2),
+                    vpn_1_limits=(1, 1),
+                    stun_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -240,8 +239,8 @@ async def test_event_content_meshnet(
                 adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 2),
+                    vpn_1_limits=(1, 1),
+                    stun_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -254,8 +253,8 @@ async def test_event_content_meshnet(
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 2),
+                    vpn_1_limits=(1, 1),
+                    stun_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -270,8 +269,8 @@ async def test_event_content_meshnet(
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 2),
+                    vpn_1_limits=(1, 1),
+                    stun_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -286,8 +285,8 @@ async def test_event_content_meshnet(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
-                    vpn_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 2),
+                    vpn_1_limits=(1, 1),
+                    stun_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -375,7 +374,7 @@ async def test_event_content_vpn_connection(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             )
         ),
@@ -385,7 +384,7 @@ async def test_event_content_vpn_connection(
                 adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             ),
             marks=pytest.mark.linux_native,
@@ -396,7 +395,7 @@ async def test_event_content_vpn_connection(
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             ),
             marks=pytest.mark.windows,
@@ -407,7 +406,7 @@ async def test_event_content_vpn_connection(
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             ),
             marks=pytest.mark.windows,
@@ -418,7 +417,7 @@ async def test_event_content_vpn_connection(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             ),
             marks=pytest.mark.mac,
@@ -433,8 +432,8 @@ async def test_event_content_vpn_connection(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                    stun_limits=ConnectionLimits(1, 2),
+                    derp_1_limits=(1, 1),
+                    stun_limits=(1, 2),
                 ),
             )
         )
@@ -512,7 +511,7 @@ async def test_event_content_exit_through_peer(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
@@ -524,7 +523,7 @@ async def test_event_content_exit_through_peer(
                 adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
@@ -537,7 +536,7 @@ async def test_event_content_exit_through_peer(
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
@@ -550,7 +549,7 @@ async def test_event_content_exit_through_peer(
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
@@ -563,7 +562,7 @@ async def test_event_content_exit_through_peer(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
@@ -580,7 +579,7 @@ async def test_event_content_exit_through_peer(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 2),
+                    derp_1_limits=(1, 2),
                 ),
             ),
             "10.0.254.2",
@@ -755,5 +754,5 @@ async def test_event_content_meshnet_node_upgrade_direct(
             alpha_node_state.endpoint and alpha_public_ip in alpha_node_state.endpoint
         )
 
-        assert await alpha_conn_tracker.get_out_of_limits() is None
-        assert await beta_conn_tracker.get_out_of_limits() is None
+        assert await alpha_conn_tracker.find_conntracker_violations() is None
+        assert await beta_conn_tracker.find_conntracker_violations() is None

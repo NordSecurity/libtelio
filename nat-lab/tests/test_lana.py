@@ -62,7 +62,6 @@ from utils.bindings import (
     RelayState,
 )
 from utils.connection import Connection
-from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
     ConnectionTag,
@@ -348,8 +347,8 @@ async def run_default_scenario(
             ConnectionTag.DOCKER_CONE_CLIENT_1,
             generate_connection_tracker_config(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
-                derp_1_limits=ConnectionLimits(1, 1),
-                vpn_1_limits=ConnectionLimits(1 if alpha_has_vpn_connection else 0, 1),
+                derp_1_limits=(1, 1),
+                vpn_1_limits=(1 if alpha_has_vpn_connection else 0, 1),
             ),
         )
     )
@@ -358,8 +357,8 @@ async def run_default_scenario(
             ConnectionTag.DOCKER_CONE_CLIENT_2,
             generate_connection_tracker_config(
                 ConnectionTag.DOCKER_CONE_CLIENT_2,
-                derp_1_limits=ConnectionLimits(1, 1),
-                vpn_1_limits=ConnectionLimits(1 if beta_has_vpn_connection else 0, 1),
+                derp_1_limits=(1, 1),
+                vpn_1_limits=(1 if beta_has_vpn_connection else 0, 1),
             ),
         )
     )
@@ -368,8 +367,8 @@ async def run_default_scenario(
             ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
             generate_connection_tracker_config(
                 ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
-                derp_1_limits=ConnectionLimits(1, 1),
-                vpn_1_limits=ConnectionLimits(1 if gamma_has_vpn_connection else 0, 1),
+                derp_1_limits=(1, 1),
+                vpn_1_limits=(1 if gamma_has_vpn_connection else 0, 1),
             ),
         )
     )
@@ -477,9 +476,9 @@ async def run_default_scenario(
     )
     assert gamma_events
 
-    assert await alpha_conn_tracker.get_out_of_limits() is None
-    assert await beta_conn_tracker.get_out_of_limits() is None
-    assert await gamma_conn_tracker.get_out_of_limits() is None
+    assert await alpha_conn_tracker.find_conntracker_violations() is None
+    assert await beta_conn_tracker.find_conntracker_violations() is None
+    assert await gamma_conn_tracker.find_conntracker_violations() is None
 
     (alpha_expected_states, beta_expected_states, gamma_expected_states) = (
         [
@@ -1288,7 +1287,7 @@ async def test_lana_with_meshnet_exit_node(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             )
         )
@@ -1297,19 +1296,11 @@ async def test_lana_with_meshnet_exit_node(
                 ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                    stun6_limits=(
-                        ConnectionLimits(1, 1)
-                        if is_stun6_needed
-                        else ConnectionLimits(0, 0)
-                    ),
-                    stun_limits=(
-                        ConnectionLimits(1, 1)
-                        if not is_stun6_needed
-                        else ConnectionLimits(0, 0)
-                    ),
-                    ping_limits=ConnectionLimits(None, None),
-                    ping6_limits=ConnectionLimits(None, None),
+                    derp_1_limits=(1, 1),
+                    stun6_limits=((1, 1) if is_stun6_needed else (0, 0)),
+                    stun_limits=((1, 1) if not is_stun6_needed else (0, 0)),
+                    ping_limits=(None, None),
+                    ping6_limits=(None, None),
                 ),
             )
         )
@@ -1491,8 +1482,8 @@ async def test_lana_with_meshnet_exit_node(
         # Validate all nodes have the same meshnet id
         assert alpha_events[0].fp == beta_events[0].fp
 
-        assert await alpha_conn_tracker.get_out_of_limits() is None
-        assert await beta_conn_tracker.get_out_of_limits() is None
+        assert await alpha_conn_tracker.find_conntracker_violations() is None
+        assert await beta_conn_tracker.find_conntracker_violations() is None
 
         # LLT-5532: To be cleaned up...
         client_alpha.allow_errors(
@@ -1519,9 +1510,9 @@ async def test_lana_with_disconnected_node(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                    ping_limits=ConnectionLimits(None, None),
-                    ping6_limits=ConnectionLimits(None, None),
+                    derp_1_limits=(1, 1),
+                    ping_limits=(None, None),
+                    ping6_limits=(None, None),
                 ),
             )
         )
@@ -1530,9 +1521,9 @@ async def test_lana_with_disconnected_node(
                 ConnectionTag.DOCKER_CONE_CLIENT_2,
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, 1),
-                    ping_limits=ConnectionLimits(None, None),
-                    ping6_limits=ConnectionLimits(None, None),
+                    derp_1_limits=(1, 1),
+                    ping_limits=(None, None),
+                    ping6_limits=(None, None),
                 ),
             )
         )
@@ -1900,8 +1891,8 @@ async def test_lana_with_disconnected_node(
             == beta_events[0].fp
             == beta_events[1].fp
         )
-        assert await alpha_conn_tracker.get_out_of_limits() is None
-        assert await beta_conn_tracker.get_out_of_limits() is None
+        assert await alpha_conn_tracker.find_conntracker_violations() is None
+        assert await beta_conn_tracker.find_conntracker_violations() is None
 
 
 @pytest.mark.moose
@@ -1918,7 +1909,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
                 ConnectionTag.DOCKER_CONE_CLIENT_2,
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
-                    derp_1_limits=ConnectionLimits(1, None),
+                    derp_1_limits=(1, None),
                 ),
             )
         )
@@ -1945,7 +1936,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
                 ConnectionTag.DOCKER_CONE_CLIENT_1,
                 generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=ConnectionLimits(1, 1),
+                    derp_1_limits=(1, 1),
                 ),
             )
         )
@@ -1995,8 +1986,8 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         else:
             assert False, "[PANIC] Public keys match!"
 
-        assert await alpha_conn_tracker.get_out_of_limits() is None
-        assert await beta_conn_tracker.get_out_of_limits() is None
+        assert await alpha_conn_tracker.find_conntracker_violations() is None
+        assert await beta_conn_tracker.find_conntracker_violations() is None
 
         # LLT-5532: To be cleaned up...
         client_alpha.allow_errors(
