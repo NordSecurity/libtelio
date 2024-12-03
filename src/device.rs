@@ -1664,7 +1664,6 @@ impl Runtime {
         #[cfg(target_os = "android")]
         PATH_CHANGE_BROADCAST.send(());
 
-        self.log_nat().await;
         Ok(())
     }
 
@@ -1966,8 +1965,6 @@ impl Runtime {
             }
         }
 
-        self.log_nat().await;
-
         if let Some(tx) = &self.event_publishers.nurse_config_update_publisher {
             let event = MeshConfigUpdateEvent::from(config);
             if tx.send(Box::new(event)).is_err() {
@@ -1976,24 +1973,6 @@ impl Runtime {
         }
 
         Ok(())
-    }
-
-    /// Logs NAT type of derp server in info log
-    async fn log_nat(&self) {
-        if let Some(server) = self.requested_state.meshnet_config.as_ref().and_then(|c| {
-            c.derp_servers
-                .as_ref()
-                .and_then(|servers| servers.iter().min_by_key(|server| server.weight))
-        }) {
-            // Copy the lowest weight server to log nat in a separate future
-            let stun_server_skt =
-                SocketAddr::new(IpAddr::V4(server.ipv4), server.stun_plaintext_port);
-            tokio::spawn(async move {
-                if let Ok(data) = retrieve_single_nat(stun_server_skt).await {
-                    telio_log_debug!("Nat Type - {:?}", data.nat_type)
-                }
-            });
-        }
     }
 
     /// Connect ot exit node with post-quantum tunnel
