@@ -2,11 +2,10 @@ use crate::monitor::PATH_CHANGE_BROADCAST;
 use neli::{
     consts::socket::NlFamily::Route,
     socket::{tokio::NlSocket as TokioSocket, NlSocket},
-    FromBytesWithInput,
 };
 use std::io;
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
-use tokio::task::JoinHandle;
+use tokio::{io::AsyncReadExt, task::JoinHandle};
 
 const RTMGRP_LINK: u32 = 0x0001;
 const RTMGRP_IPV4_IFADDR: u32 = 0x0010;
@@ -31,19 +30,11 @@ async fn open_netlink_socket() -> Result<TokioSocket, io::Error> {
 
 async fn read_event(mut sock: TokioSocket) -> Option<JoinHandle<io::Result<()>>> {
     Some(tokio::spawn({
-        let mut buffer: Vec<u8> = Vec::new();
-
-        // Uninitialized object to satisfy recv constraints.
-        // Since data isn't required from recv, hence initialzing
-        // it properly isn't necessary as well.
-        #[derive(Debug, FromBytesWithInput)]
-        struct Payload;
+        let mut buffer: Vec<u8> = vec![0; 4096]; // Might not matter, read_buf returns 0 when network interfaces change
 
         async move {
             loop {
-                let _ = sock
-                    .recv::<neli::consts::rtnl::Rtm, Payload>(&mut buffer)
-                    .await;
+                let _ = sock.read_buf(&mut buffer).await?;
                 {
                     telio_log_debug!("Network path updated");
                     if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
