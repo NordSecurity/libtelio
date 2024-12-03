@@ -9,6 +9,8 @@ export QNAP_QPKG=$QPKG_NAME
 
 NORDSECMESHNET_DIR=/tmp/nordsecuritymeshnet/
 TELIOD_PID_FILE=${NORDSECMESHNET_DIR}/teliod.pid
+TELIOD_CFG_FILE=${QPKG_ROOT}/teliod.cfg
+TELIOD_LOG_FILE="/var/log/teliod.log"
 
 case "$1" in
   start)
@@ -19,6 +21,7 @@ case "$1" in
     fi
 
     ln -s ${QPKG_ROOT}/web /home/Qhttpd/Web/NordSecurityMeshnet
+    ln -s ${QPKG_ROOT}/teliod.cgi /home/httpd/cgi-bin/qpkg/teliod.cgi
     mkdir -p -m 0755 $NORDSECMESHNET_DIR
 
     if [ -e ${TELIOD_PID_FILE} ]; then
@@ -29,7 +32,7 @@ case "$1" in
         fi
     fi
 
-    ${QPKG_ROOT}/teliod daemon ${QPKG_ROOT}/config.json &
+    ${QPKG_ROOT}/teliod daemon $TELIOD_CFG_FILE > $TELIOD_LOG_FILE 2>&1 &
     echo $! > ${TELIOD_PID_FILE}
     ;;
 
@@ -39,8 +42,7 @@ case "$1" in
       kill -9 ${PID} || true
       rm -f ${TELIOD_PID_FILE}
     fi
-
-    rm /home/Qhttpd/Web/NordSecurityMeshnet
+    rm -f /run/teliod.sock
     ;;
 
   restart)
