@@ -208,7 +208,6 @@ debug = "full"
 [profile.dev]
 debug = 0
 strip = "debuginfo"
-overflow-checks = false
 
 #TODO: remove this when anyone starts using telio-starcast
 [workspace.metadata.cargo-udeps.ignore]

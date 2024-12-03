@@ -59,3 +59,6 @@ pub mod const_ipnet;
 
 /// Log censoring via postprocessing utilities
 pub mod log_censor;
+
+/// Utilities for working with backtraces/stacktraces/callstacks
+pub mod backtrace;
