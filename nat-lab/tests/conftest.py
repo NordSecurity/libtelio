@@ -14,7 +14,6 @@ from utils.connection import DockerConnection
 from utils.connection_util import (
     ConnectionTag,
     container_id,
-    DOCKER_GW_MAP,
     LAN_ADDR_MAP,
     new_connection_raw,
 )
@@ -421,7 +420,9 @@ def pytest_sessionstart(session):
         return
 
     if not session.config.option.collectonly:
-        start_tcpdump({container_id(gw_tag) for gw_tag in DOCKER_GW_MAP.values()})
+        start_tcpdump(
+            {container_id(gw_tag) for gw_tag in ConnectionTag if "_GW" in gw_tag.name}
+        )
 
 
 # pylint: disable=unused-argument
@@ -431,7 +432,8 @@ def pytest_sessionfinish(session, exitstatus):
 
     if not session.config.option.collectonly:
         stop_tcpdump(
-            {container_id(gw_tag) for gw_tag in DOCKER_GW_MAP.values()}, "./logs"
+            {container_id(gw_tag) for gw_tag in ConnectionTag if "_GW" in gw_tag.name},
+            "./logs",
         )
 
         collect_nordderper_logs()
