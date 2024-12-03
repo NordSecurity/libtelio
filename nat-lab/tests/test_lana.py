@@ -1333,6 +1333,8 @@ async def test_lana_with_meshnet_exit_node(
             beta,
             connection_alpha,
             connection_beta,
+            build_telio_features(),
+            build_telio_features(),
         )
 
         await asyncio.gather(

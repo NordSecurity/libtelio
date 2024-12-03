@@ -8,7 +8,7 @@ from helpers import SetupParameters, setup_mesh_nodes, setup_api
 from mesh_api import Node
 from typing import Tuple, Optional
 from utils import testing, stun
-from utils.bindings import default_features, Features, TelioAdapterType
+from utils.bindings import TelioAdapterType
 from utils.connection_tracker import (
     ConnectionLimits,
     ConnectionTrackerConfig,
@@ -41,9 +41,6 @@ def _setup_params(
     connection_tag: ConnectionTag,
     adapter_type_override: Optional[TelioAdapterType] = None,
     stun_limits: ConnectionLimits = ConnectionLimits(0, 0),
-    features: Features = default_features(
-        enable_firewall=("10.0.0.0/8", False),
-    ),
 ) -> SetupParameters:
     return SetupParameters(
         connection_tag=connection_tag,
@@ -53,7 +50,6 @@ def _setup_params(
             derp_1_limits=ConnectionLimits(1, 1),
             stun_limits=stun_limits,
         ),
-        features=features,
     )
 
 
