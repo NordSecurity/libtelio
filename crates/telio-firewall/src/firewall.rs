@@ -22,12 +22,10 @@ use std::{
     fmt::{Debug, Formatter},
     io,
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr},
-    str::FromStr,
     sync::{Mutex, RwLock, RwLockReadGuard},
     time::Duration,
 };
 
-use telio_model::features::FeatureFirewall;
 use telio_network_monitors::monitor::LOCAL_ADDRS_CACHE;
 use telio_utils::{
     lru_cache::{Entry, LruCache},
