@@ -388,8 +388,8 @@ async def test_dns_with_pq(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=ConnectionLimits(1, None),
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    vpn_1_limits=(1, None),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -438,7 +438,7 @@ async def test_pq_vpn_silent_pq_upgrader(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
