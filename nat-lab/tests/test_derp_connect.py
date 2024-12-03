@@ -6,7 +6,7 @@ from contextlib import AsyncExitStack
 from copy import deepcopy
 from helpers import SetupParameters, setup_mesh_nodes
 from typing import List
-from utils.bindings import RelayState
+from utils.bindings import RelayState, FeatureBatching, default_features
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
@@ -15,13 +15,46 @@ DERP2_IP = str(DERP_SECONDARY.ipv4)
 DERP3_IP = str(DERP_TERTIARY.ipv4)
 
 
+def generate_features(batching: bool):
+    features = default_features()
+    features.wireguard.persistent_keepalive.proxying = 10
+    features.batching = (
+        FeatureBatching(
+            # It is used for direct, stun, proxy, vpn peers so the name can be confusing.
+            # TODO: rename to a better name
+            direct_connection_threshold=5,
+            trigger_cooldown_duration=60,
+            trigger_effective_duration=10,
+        )
+        if batching
+        else None
+    )
+    return features
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "setup_params",
     [
         [
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1),
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                features=generate_features(batching=False),
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                features=generate_features(batching=False),
+            ),
+        ],
+        [
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                features=generate_features(batching=True),
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                features=generate_features(batching=True),
+            ),
         ],
     ],
 )
@@ -83,9 +116,32 @@ async def test_derp_reconnect_2clients(setup_params: List[SetupParameters]) -> N
     "setup_params",
     [
         [
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1),
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2),
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                features=generate_features(batching=False),
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                features=generate_features(batching=False),
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+                features=generate_features(batching=False),
+            ),
+        ],
+        [
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                features=generate_features(batching=True),
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                features=generate_features(batching=True),
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+                features=generate_features(batching=True),
+            ),
         ],
     ],
 )
@@ -224,9 +280,32 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
     "setup_params",
     [
         [
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1),
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2),
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                features=generate_features(batching=False),
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                features=generate_features(batching=False),
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+                features=generate_features(batching=False),
+            ),
+        ],
+        [
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                features=generate_features(batching=True),
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                features=generate_features(batching=True),
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+                features=generate_features(batching=True),
+            ),
         ],
     ],
 )
@@ -409,8 +488,24 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
     "setup_params",
     [
         [
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1),
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                features=generate_features(batching=False),
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                features=generate_features(batching=False),
+            ),
+        ],
+        [
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                features=generate_features(batching=True),
+            ),
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                features=generate_features(batching=True),
+            ),
         ],
     ],
 )
