@@ -265,7 +265,16 @@ impl State {
                         break (server, conn);
                     }
                     Err(err) => {
-                        telio_log_warn!("({}) Failed to connect: {}", Self::NAME, err);
+                        if config.servers.current_server_num == config.servers.servers.len() {
+                            telio_log_warn!(
+                                "({}) Failed to connect to any of {} servers: {}",
+                                Self::NAME,
+                                config.servers.servers.len(),
+                                err
+                            );
+                        } else if config.servers.current_server_num == 1 {
+                            telio_log_warn!("({}) Failed to connect: {}", Self::NAME, err);
+                        }
                         last_disconnection_reason = err.into();
                         continue;
                     }
