@@ -1935,7 +1935,7 @@ mod tests {
                             endpoint_changed_at: Some(i.4),
                             persistent_keepalive_interval: Some(i.2),
                             allowed_ips: i.3.clone().into_iter().map(|ip| ip.into()).collect(),
-                            ip_addresses: i.3.clone().into_iter().map(|ip| ip).collect(),
+                            ip_addresses: i.3.clone().into_iter().collect(),
                             ..Default::default()
                         },
                     )

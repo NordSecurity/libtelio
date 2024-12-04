@@ -256,7 +256,7 @@ pub struct MeshnetEntities {
     starcast: Option<StarcastEntities>,
 
     // Keepalive sender
-    session_keeper: Arc<SessionKeeper>,
+    session_keeper: Option<Arc<SessionKeeper>>,
 }
 
 #[derive(Default, Debug)]
@@ -328,7 +328,7 @@ impl Entities {
     }
 
     pub fn session_keeper(&self) -> Option<&Arc<SessionKeeper>> {
-        self.meshnet.left().map(|m| &m.session_keeper)
+        self.meshnet.left().and_then(|m| m.session_keeper.as_ref())
     }
 
     fn endpoint_providers(&self) -> Vec<&Arc<dyn EndpointProvider>> {
@@ -1019,7 +1019,10 @@ impl MeshnetEntities {
             }
         }
 
-        stop_arc_entity!(self.session_keeper, "SessionKeeper");
+        if let Some(sk) = self.session_keeper {
+            stop_arc_entity!(sk, "SessionKeeper");
+        }
+
         stop_arc_entity!(self.multiplexer, "Multiplexer");
         stop_arc_entity!(self.derp, "Derp");
 
@@ -1319,8 +1322,36 @@ impl Runtime {
                 .await;
         }
 
+        let session_keeper = {
+            match SessionKeeper::start(
+                self.entities.socket_pool.clone(),
+                self.features.batching.unwrap_or_default(),
+                self.entities
+                    .wireguard_interface
+                    .subscribe_to_network_activity()
+                    .await?,
+            ) {
+                Ok(sk) => Some(Arc::new(sk)),
+                Err(e) => {
+                    telio_log_warn!("Session keeper startup failed: {e:?} - direct connections will not be formed. Keepalive optimisations will be disabled");
+                    None
+                }
+            }
+        };
+
+        // Batching optimisations work by employing SessionKeeper. If SessionKeeper is not present
+        // functionality will break when offloading actions to it, thus we disable the feature
+        if session_keeper.is_none() && self.features.batching.is_some() {
+            telio_log_warn!(
+                "Batching feature is enabled but SessionKeeper failed to start. Disabling batching."
+            );
+            self.features.batching = None;
+        }
+
         // Start Direct entities if "direct" feature is on
-        let direct = if let Some(direct) = &self.features.direct {
+        let direct = if session_keeper.is_none() {
+            None
+        } else if let Some(direct) = &self.features.direct {
             // Create endpoint providers
             let has_provider = |provider| {
                 // Default is all providers
@@ -1479,15 +1510,6 @@ impl Runtime {
             telio_log_error!("Couldn't start starcast: {e:?}");
             None
         });
-
-        let session_keeper = Arc::new(SessionKeeper::start(
-            self.entities.socket_pool.clone(),
-            self.features.batching.unwrap_or_default(),
-            self.entities
-                .wireguard_interface
-                .subscribe_to_network_activity()
-                .await?,
-        )?);
 
         Ok(MeshnetEntities {
             multiplexer,
