@@ -24,6 +24,8 @@ pub trait PostQuantum {
 
 #[derive(Copy, Clone)]
 pub enum Event {
+    Connecting(telio_crypto::PublicKey),
+    Disconnected(telio_crypto::PublicKey),
     Handshake(SocketAddr, Keys),
     Rekey(Keys),
 }
