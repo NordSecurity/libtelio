@@ -119,7 +119,7 @@ impl Drop for DaemonSocket {
         // The ipc path here should be valid, as the daemon socket is created
         // based on whether the path is valid or not.
         if let Ok(socket_path) = DaemonSocket::get_ipc_socket_path() {
-            let _ = fs::remove_file(&socket_path);
+            let _ = fs::remove_file(socket_path);
         }
     }
 }

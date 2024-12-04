@@ -28,21 +28,21 @@ use crate::config::MqttConfig;
 
 use self::outgoing::{Acknowledgement, DeliveryConfirmation};
 
-const TOKENS_URL: &'static str = "https://api.nordvpn.com/v1/notifications/tokens";
-const USERNAME: &'static str = "token";
+const TOKENS_URL: &str = "https://api.nordvpn.com/v1/notifications/tokens";
+const USERNAME: &str = "token";
 const ROUTER_PLATFORM_ID: u64 = 900;
 const MQTT_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
-const TOPIC_SUBSCRIBE: &'static str = "meshnet";
-const TOPIC_DELIVERED: &'static str = "delivered";
-const TOPIC_ACKNOWLEDGED: &'static str = "ack";
+const TOPIC_SUBSCRIBE: &str = "meshnet";
+const TOPIC_DELIVERED: &str = "delivered";
+const TOPIC_ACKNOWLEDGED: &str = "ack";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Failed to send http request for token: {0}")]
-    TokenHttpError(#[from] reqwest::Error),
+    HttpReqwest(#[from] reqwest::Error),
     #[error("Failed to get token: {0}")]
-    TokenError(String),
+    FailedToken(String),
     #[error("Malformed notification center json response: {0}")]
     MalformedNotificationCenterJsonResponse(#[from] serde_json::Error),
     #[error("Mqtt broker rejected connection: {0:?}")]
@@ -52,11 +52,11 @@ pub enum Error {
     #[error("Mqtt connection timeout")]
     MqttConnectionTimeout,
     #[error("Mqtt connection error: {0}")]
-    MqttConnectionError(rumqttc::ConnectionError),
+    MqttConnection(rumqttc::ConnectionError),
     #[error(transparent)]
-    BackoffBoundsError(#[from] BackoffError),
+    InvalidBackoff(#[from] BackoffError),
     #[error(transparent)]
-    MqttClientError(#[from] ClientError),
+    MqttClient(#[from] ClientError),
     #[error("Notification Center credentials are missing hostname")]
     CredentialsMissingHostname,
     #[error("Notification Center credentials are missing port number")]
@@ -172,7 +172,7 @@ async fn connect_to_nc_with_backoff(
 }
 
 async fn connect_to_nc(nc_config: &NCConfig) -> Result<(AsyncClient, EventLoop, Instant), Error> {
-    let credentials = request_nc_credentials(&nc_config).await?;
+    let credentials = request_nc_credentials(nc_config).await?;
 
     let mut mqttoptions = MqttOptions::new(
         nc_config.app_user_uid.to_string(),
@@ -221,7 +221,7 @@ async fn connect_to_nc(nc_config: &NCConfig) -> Result<(AsyncClient, EventLoop, 
 
     info!("Notification Center connection established");
 
-    return Ok((client, eventloop, expires_at));
+    Ok((client, eventloop, expires_at))
 }
 
 async fn handle_incoming_publish(
@@ -229,8 +229,8 @@ async fn handle_incoming_publish(
     p: Publish,
     callbacks: &Arc<Mutex<Vec<Callback>>>,
 ) -> Result<(), anyhow::Error> {
-    let text = std::str::from_utf8(&*p.payload)?;
-    let notification: incoming::Notification = serde_json::from_str(&text)?;
+    let text = std::str::from_utf8(&p.payload)?;
+    let notification: incoming::Notification = serde_json::from_str(text)?;
     debug!("mqtt incoming publish: {p:?}: {text:?}");
 
     ensure!(
@@ -312,7 +312,7 @@ async fn request_nc_credentials(
     let status = resp.status();
     let text = resp.text().await?;
     if status != StatusCode::CREATED {
-        return Err(Error::TokenError(text));
+        return Err(Error::FailedToken(text));
     }
 
     let resp: NotificationCenterCredentials = serde_json::from_str(&text)?;
@@ -332,7 +332,7 @@ async fn wait_for_connection(mut event_loop: EventLoop, t: Duration) -> Result<E
             Err(Error::MqttUnexpectedEventBeforeConnection(unexpected_event))
         }
         Err(Elapsed { .. }) => Err(Error::MqttConnectionTimeout),
-        Ok(Err(err)) => Err(Error::MqttConnectionError(err)),
+        Ok(Err(err)) => Err(Error::MqttConnection(err)),
     }
 }
 

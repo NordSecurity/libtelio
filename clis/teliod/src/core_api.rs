@@ -28,19 +28,19 @@ const MAX_RETRIES: usize = 10;
 #[derive(Debug, Error)]
 pub enum Error {
     #[error(transparent)]
-    ReqwestError(#[from] reqwest::Error),
+    Reqwest(#[from] reqwest::Error),
     #[error(transparent)]
-    DeserializeError(#[from] serde_json::Error),
+    Deserialize(#[from] serde_json::Error),
     #[error("Unable to fetch Machine Identifier: {0}")]
-    FetchingIdentifierError(StatusCode),
+    FetchingIdentifier(StatusCode),
     #[error("Unable to register due to Error: {0}")]
-    PeerRegisteringError(StatusCode),
+    PeerRegistering(StatusCode),
     #[error(transparent)]
-    DecodeError(#[from] DecodeError),
+    Decode(#[from] DecodeError),
     #[error("Invalid response recieved from server")]
     InvalidResponse,
     #[error("Unable to update machine due to Error: {0}")]
-    UpdateMachineError(StatusCode),
+    UpdateMachine(StatusCode),
     #[error("Max retries exceeded for connection: {0}")]
     ExpBackoffTimeout(String),
     #[error("No local data directory found")]
@@ -50,7 +50,7 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    BackoffBoundsError(#[from] BackoffError),
+    BackoffBounds(#[from] BackoffError),
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -114,7 +114,7 @@ pub async fn init_with_api(
     };
 
     if let Err(e) = update_machine_with_exp_backoff(auth_token, &device_identity).await {
-        if let Error::UpdateMachineError(status) = e {
+        if let Error::UpdateMachine(status) = e {
             if status == StatusCode::NOT_FOUND {
                 debug!("Unable to update. Registering machine ...");
                 device_identity.machine_identifier = register_machine_with_exp_backoff(
@@ -125,7 +125,7 @@ pub async fn init_with_api(
                 .await?;
             } else {
                 // exit daemon
-                return Err(Error::UpdateMachineError(status));
+                return Err(Error::UpdateMachine(status));
             }
         } else {
             return Err(e);
@@ -148,14 +148,13 @@ async fn update_machine_with_exp_backoff(
     let mut retries = 0;
 
     loop {
-        match update_machine(&device_identity, auth_token).await {
+        match update_machine(device_identity, auth_token).await {
             Ok(_) => return Ok(()),
             Err(e) => {
-                if let Error::UpdateMachineError(_) = e {
+                if let Error::UpdateMachine(_) = e {
                     return Err(e);
                 }
-                let _ = wait_with_backoff_delay(&mut backoff, &mut retries, "update machine", e)
-                    .await?;
+                wait_with_backoff_delay(&mut backoff, &mut retries, "update machine", e).await?;
             }
         }
     }
@@ -172,11 +171,10 @@ async fn fetch_identifier_with_exp_backoff(
         match fetch_identifier_from_api(auth_token, public_key).await {
             Ok(id) => return Ok(id),
             Err(e) => match e {
-                Error::FetchingIdentifierError(_) | Error::DeviceNotFound => return Err(e),
+                Error::FetchingIdentifier(_) | Error::DeviceNotFound => return Err(e),
                 _ => {
-                    let _ =
-                        wait_with_backoff_delay(&mut backoff, &mut retries, "fetch identifier", e)
-                            .await?;
+                    wait_with_backoff_delay(&mut backoff, &mut retries, "fetch identifier", e)
+                        .await?;
                 }
             },
         }
@@ -195,11 +193,10 @@ async fn register_machine_with_exp_backoff(
         match register_machine(hw_identifier, public_key, auth_token).await {
             Ok(id) => return Ok(id),
             Err(e) => match e {
-                Error::PeerRegisteringError(_) => return Err(e),
+                Error::PeerRegistering(_) => return Err(e),
                 _ => {
-                    let _ =
-                        wait_with_backoff_delay(&mut backoff, &mut retries, "register machine", e)
-                            .await?;
+                    wait_with_backoff_delay(&mut backoff, &mut retries, "register machine", e)
+                        .await?;
                 }
             },
         }
@@ -269,7 +266,7 @@ async fn fetch_identifier_from_api(
         "Unable to fetch identifier due to {:?}",
         response.text().await
     );
-    Err(Error::FetchingIdentifierError(status))
+    Err(Error::FetchingIdentifier(status))
 }
 
 async fn update_machine(device_identity: &DeviceIdentity, auth_token: &str) -> Result<(), Error> {
@@ -301,7 +298,7 @@ async fn update_machine(device_identity: &DeviceIdentity, auth_token: &str) -> R
     if status == StatusCode::OK {
         return Ok(());
     }
-    Err(Error::UpdateMachineError(status))
+    Err(Error::UpdateMachine(status))
 }
 
 pub async fn get_meshmap(
@@ -367,5 +364,5 @@ async fn register_machine(
     }
 
     error!("Unable to register due to {:?}", response.text().await);
-    Err(Error::PeerRegisteringError(status))
+    Err(Error::PeerRegistering(status))
 }

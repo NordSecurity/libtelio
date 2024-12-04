@@ -90,7 +90,6 @@ pub struct TelioStatusReport {
 }
 
 #[tokio::main]
-#[allow(large_futures)]
 async fn main() -> Result<(), TeliodError> {
     match Cmd::parse() {
         Cmd::Daemon { config_path } => {
@@ -104,7 +103,7 @@ async fn main() -> Result<(), TeliodError> {
                     debug!("Overriding token from env");
                     config.authentication_token = t;
                 }
-                daemon::daemon_event_loop(config).await
+                Box::pin(daemon::daemon_event_loop(config)).await
             }
         }
         Cmd::Client(cmd) => {
