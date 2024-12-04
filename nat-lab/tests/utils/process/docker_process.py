@@ -14,6 +14,7 @@ from utils.moose import MOOSE_LOGS_DIR
 
 class DockerProcess(Process):
     _container: DockerContainer
+    _container_name: str
     _command: List[str]
     _stdout: str
     _stderr: str
@@ -27,9 +28,14 @@ class DockerProcess(Process):
     )
 
     def __init__(
-        self, container: DockerContainer, command: List[str], kill_id=None
+        self,
+        container: DockerContainer,
+        container_name: str,
+        command: List[str],
+        kill_id=None,
     ) -> None:
         self._container = container
+        self._container_name = container_name
         self._command = command
         self._stdout = ""
         self._stderr = ""
@@ -43,7 +49,7 @@ class DockerProcess(Process):
         self,
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
-        privileged=False,
+        privileged: bool = False,
     ) -> "DockerProcess":
         self._execute = await self._container.exec(
             self._command,
@@ -88,7 +94,13 @@ class DockerProcess(Process):
         # 0 success
         # suppress 137 linux sigkill, since we kill those processes
         if exit_code and exit_code not in [0, 137]:
-            raise ProcessExecError(exit_code, self._command, self._stdout, self._stderr)
+            raise ProcessExecError(
+                exit_code,
+                self._container_name,
+                self._command,
+                self._stdout,
+                self._stderr,
+            )
 
         return self
 
@@ -97,10 +109,11 @@ class DockerProcess(Process):
         self,
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
+        privileged: bool = False,
     ) -> AsyncIterator["DockerProcess"]:
         async def mark_as_done():
             try:
-                await self.execute(stdout_callback, stderr_callback)
+                await self.execute(stdout_callback, stderr_callback, privileged)
             finally:
                 self._is_done.set()
 
