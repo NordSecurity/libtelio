@@ -163,7 +163,7 @@ async fn connect_client(
         &client.derp_server,
         *addrs.first().ok_or_else(|| anyhow!("Empty socket Addr"))?,
         Config {
-            secret_key: client.private_key,
+            secret_key: client.private_key.clone(),
             timeout: Duration::from_secs(10),
             ..Default::default()
         },
@@ -343,7 +343,7 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
             .first()
             .ok_or_else(|| anyhow!("ERR!! Empty server addr"))?,
         Config {
-            secret_key: config.my_key,
+            secret_key: config.my_key.clone(),
             timeout: Duration::from_secs(5),
             use_built_in_root_certificates: config.use_built_in_root_certificates,
             ..Default::default()
@@ -623,9 +623,9 @@ async fn run_with_clients_config(
                 .ok_or_else(|| anyhow!("Err! No derp found"))?
                 .clone();
             let client1 = conf::ClientConfig {
-                private_key: key1,
+                private_key: key1.clone(),
                 derp_server: derps1,
-                peers: vec![key2],
+                peers: vec![key2.clone()],
             };
             let client2 = conf::ClientConfig {
                 private_key: key2,

@@ -178,7 +178,7 @@ async fn handshake(
     sock.connect(endpoint).await?;
 
     let mut tunn = noise::Tunn::new(
-        secret.into_bytes().into(),
+        secret.clone().into_bytes().into(),
         peers_pubkey.0.into(),
         None,
         None,

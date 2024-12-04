@@ -96,10 +96,10 @@ impl StressConfig {
 
 impl Config {
     pub fn get_key1(&self) -> crypto_box::SecretKey {
-        self.my_key.into()
+        self.my_key.clone().into()
     }
     pub fn get_key2(&self) -> crypto_box::SecretKey {
-        self.target_key.into()
+        self.target_key.clone().into()
     }
     pub fn get_pub_key1(&self) -> crypto_box::PublicKey {
         BoxPublicKey::from(&self.get_key1())

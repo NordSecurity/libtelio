@@ -71,7 +71,7 @@ impl DerpClient {
                 allowed_pk,
             } => {
                 let mut config = telio_relay::Config {
-                    secret_key,
+                    secret_key: secret_key.clone(),
                     ..Default::default()
                 };
 

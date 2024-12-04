@@ -555,7 +555,7 @@ mod tests {
                 .collect();
             keys.sort_by_key(|(_sk, pk)| *pk);
             let mut i = Interface::default();
-            i.private_key = Some(keys[1].0);
+            i.private_key = Some(keys[1].0.clone());
             match rx_tx_bytes {
                 Some((rx, tx)) => {
                     i.peers = [(
@@ -577,7 +577,7 @@ mod tests {
             }
         };
 
-        let local_key = interface.private_key.unwrap().public();
+        let local_key = interface.private_key.clone().unwrap().public();
 
         let mut wg_interface = MockWireGuard::new();
         wg_interface

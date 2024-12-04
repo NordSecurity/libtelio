@@ -61,7 +61,9 @@ impl ConnKeyRotation {
             // It can only be closed on library shutdown, in that case we
             // may not care since the task itself will be killed soon
             #[allow(mpsc_blocking_send)]
-            let _ = chan.send(super::Event::Handshake(addr, wg_keys)).await;
+            let _ = chan
+                .send(super::Event::Handshake(addr, wg_keys.clone()))
+                .await;
 
             telio_log_debug!("Rekey interval: {}s", rekey_interval.as_secs());
             let mut interval = telio_utils::interval(rekey_interval);
@@ -77,13 +79,13 @@ impl ConnKeyRotation {
                 match tokio::time::timeout(request_retry, rekey).await {
                     Ok(Ok(key)) => {
                         telio_log_debug!("Successful PQ REKEY");
-                        wg_keys.pq_shared = key;
+                        wg_keys.pq_shared = key.clone();
 
                         // The channel is allways open during the library operation.
                         // It can only be closed on library shutdown, in that case we
                         // may not care since the task itself will be killed soon
                         #[allow(mpsc_blocking_send)]
-                        let _ = chan.send(super::Event::Rekey(wg_keys)).await;
+                        let _ = chan.send(super::Event::Rekey(wg_keys.clone())).await;
                     }
                     Ok(Err(err)) => {
                         telio_log_warn!("Failed to perform PQ rekey: {err}");

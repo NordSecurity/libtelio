@@ -8,7 +8,7 @@ use std::net::SocketAddr;
 pub use entity::Entity;
 
 /// Post quantum keys retrived from hanshake
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Keys {
     /// Kyber shared secret
     pub pq_shared: telio_crypto::PresharedKey,
@@ -22,7 +22,7 @@ pub trait PostQuantum {
     fn is_rotating_keys(&self) -> bool;
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub enum Event {
     Handshake(SocketAddr, Keys),
     Rekey(Keys),

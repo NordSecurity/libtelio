@@ -103,7 +103,7 @@ impl LocalDnsResolver {
 
         Ok(LocalDnsResolver {
             socket: Arc::new(socket),
-            secret_key: dns_secret_key,
+            secret_key: dns_secret_key.clone(),
             peer: Arc::new(Mutex::new(Tunn::new(
                 StaticSecret::from(dns_secret_key.into_bytes()),
                 telio_public_key,
@@ -149,7 +149,7 @@ impl DnsResolver for LocalDnsResolver {
     }
 
     fn public_key(&self) -> PublicKey {
-        let static_secret = &StaticSecret::from(self.secret_key.into_bytes());
+        let static_secret = &StaticSecret::from(self.secret_key.clone().into_bytes());
         telio_log_debug!(
             "Dns - public_key: {:?}",
             PublicKeyDalek::from(static_secret)
@@ -191,7 +191,7 @@ impl DnsResolver for LocalDnsResolver {
 
     async fn set_peer_public_key(&self, pubkey: PublicKey) {
         let peer = match Tunn::new(
-            StaticSecret::from(self.secret_key.into_bytes()),
+            StaticSecret::from(self.secret_key.clone().into_bytes()),
             PublicKeyDalek::from(pubkey.0),
             None,
             None,

@@ -203,10 +203,10 @@ async fn test_pair(
     let addr_2 = resolve_domain_name(&host_2).await?;
 
     info!("Starting clients");
-    let mut client_1 = Box::pin(connect_client(addr_1, host_1.clone(), key_1))
+    let mut client_1 = Box::pin(connect_client(addr_1, host_1.clone(), key_1.clone()))
         .await
         .context("Failed to connect to first server")?;
-    let mut client_2 = Box::pin(connect_client(addr_2, host_2.clone(), key_2))
+    let mut client_2 = Box::pin(connect_client(addr_2, host_2.clone(), key_2.clone()))
         .await
         .context("Failed to connect to second server")?;
 
@@ -228,9 +228,9 @@ async fn config_file_scenario(config_file: PathBuf, verbose: bool) -> Result<()>
             (Some(first), Some(second)) => {
                 match Box::pin(test_pair(
                     first.to_string(),
-                    config.private_key_1,
+                    config.private_key_1.clone(),
                     second.to_string(),
-                    config.private_key_2,
+                    config.private_key_2.clone(),
                 ))
                 .await
                 {

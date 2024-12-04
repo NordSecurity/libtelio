@@ -1255,7 +1255,7 @@ mod tests {
         let peer_sk_1 = SecretKey::gen();
         let peer_sk_2 = SecretKey::gen();
 
-        setup_local_nodes(&mut analytics, true, [peer_sk_1, peer_sk_2]).await;
+        setup_local_nodes(&mut analytics, true, [peer_sk_1.clone(), peer_sk_2.clone()]).await;
 
         analytics.handle_collection().await;
         assert_eq!(RuntimeState::Collecting, analytics.state);
@@ -1280,7 +1280,7 @@ mod tests {
         let peer_sk_1 = SecretKey::gen();
         let peer_sk_2 = SecretKey::gen();
 
-        setup_local_nodes(&mut analytics, true, [peer_sk_1, peer_sk_2]).await;
+        setup_local_nodes(&mut analytics, true, [peer_sk_1.clone(), peer_sk_2.clone()]).await;
 
         analytics.handle_collection().await;
         assert_eq!(RuntimeState::Collecting, analytics.state);
@@ -1310,13 +1310,13 @@ mod tests {
 
         let peer_sk = SecretKey::gen();
 
-        setup_local_nodes(&mut analytics, true, [peer_sk]).await;
+        setup_local_nodes(&mut analytics, true, [peer_sk.clone()]).await;
 
         analytics.handle_collection().await;
         assert_eq!(RuntimeState::Collecting, analytics.state);
 
         let other_meshnet_id = Uuid::new_v4();
-        send_heartbeat_response(&mut analytics, peer_sk, other_meshnet_id).await;
+        send_heartbeat_response(&mut analytics, peer_sk.clone(), other_meshnet_id).await;
 
         analytics.handle_aggregation().await;
 
@@ -1565,7 +1565,7 @@ mod tests {
 
         let mut state: State = setup(Some(Duration::from_secs(3600)), Some(Arc::new(aggregator)));
 
-        setup_local_nodes(&mut state.analytics, true, [peer_sk]).await;
+        setup_local_nodes(&mut state.analytics, true, [peer_sk.clone()]).await;
 
         state.analytics.handle_collection().await;
         assert_eq!(RuntimeState::Collecting, state.analytics.state);
