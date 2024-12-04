@@ -44,8 +44,6 @@ GREEK_ALPHABET = [
     "omega",
 ]
 
-PCAP_FILE_PATH = "/dump.pcap"
-
 
 class NodeError(Exception):
     node_id: str
