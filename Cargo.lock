@@ -4529,7 +4529,6 @@ dependencies = [
  "rustc-hash 1.1.0",
  "sn_fake_clock",
  "telio-crypto",
- "telio-model",
  "telio-network-monitors",
  "telio-utils",
  "tracing",

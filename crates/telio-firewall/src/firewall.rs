@@ -5,6 +5,9 @@ use core::fmt;
 use enum_map::{Enum, EnumMap};
 #[cfg(feature = "use_custom_ip")]
 use ipnet::Ipv4Net;
+#[cfg(feature = "use_custom_ip")]
+use std::str::FromStr;
+
 use pnet_packet::{
     icmp::{
         destination_unreachable::IcmpCodes, IcmpPacket, IcmpType, IcmpTypes, MutableIcmpPacket,
@@ -1336,7 +1339,7 @@ impl StatefullFirewall {
                 #[cfg(feature = "use_custom_ip")]
                 {
                     ipv4.is_private()
-                        && matches!(Ipv4Net::from_str("10.0.0.0/8"), Ok(range) if range.contains(ipv4))
+                        && matches!(Ipv4Net::from_str("10.0.0.0/8"), Ok(range) if !range.contains(ipv4))
                 }
             }
             StdIpAddr::V6(ipv6) => {

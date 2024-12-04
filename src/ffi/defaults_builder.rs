@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use ipnet::Ipv4Net;
 use parking_lot::Mutex;
 use telio_model::features::{
     FeatureDerp, FeatureLana, FeaturePersistentKeepalive, FeatureValidateKeys, FeatureWireguard,
