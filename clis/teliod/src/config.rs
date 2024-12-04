@@ -191,7 +191,7 @@ mod tests {
             "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             }"#;
 
-            assert_eq!(expected, serde_json::from_str(&json).unwrap());
+            assert_eq!(expected, serde_json::from_str(json).unwrap());
         }
 
         {
@@ -207,7 +207,7 @@ mod tests {
                 "mqtt": {}
             }"#;
 
-            assert_eq!(expected, serde_json::from_str(&json).unwrap());
+            assert_eq!(expected, serde_json::from_str(json).unwrap());
         }
     }
 }

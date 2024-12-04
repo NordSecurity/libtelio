@@ -34,6 +34,8 @@ anyhow.workspace = true
 smart-default = "0.7.1"
 base64 = "0.22.1"
 dirs = "4.0.0"
+const_format = "0.2.33"
+rust-cgi = "0.7.1"
 
 [dev-dependencies]
 rand = "0.8.5"
