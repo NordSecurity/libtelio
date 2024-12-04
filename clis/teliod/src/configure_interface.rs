@@ -1,5 +1,5 @@
 use crate::TeliodError;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::process::Command;
 use tracing::{error, info};
@@ -24,9 +24,10 @@ fn execute(command: &mut Command) -> Result<(), TeliodError> {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum InterfaceConfigurationProvider {
+    #[default]
     Manual,
     Ifconfig,
     Iproute,

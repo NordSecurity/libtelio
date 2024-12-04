@@ -742,6 +742,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "const_format"
+version = "0.2.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "126f97965c8ad46d6d9163268ff28432e8f6a1196a55578867832e3049df63dd"
+dependencies = [
+ "const_format_proc_macros",
+]
+
+[[package]]
+name = "const_format_proc_macros"
+version = "0.2.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d57c2eccfb16dbac1f4e61e206105db5820c9d26c3c472bc17c774259ef7744"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-xid",
+]
+
+[[package]]
 name = "constant_time_eq"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3601,6 +3621,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust-cgi"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f429f64b3929e733331d856e47ac00afb9dd8cda39f0a740c5622c886754acfa"
+dependencies = [
+ "http 1.1.0",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4018,16 +4047,16 @@ dependencies = [
 
 [[package]]
 name = "serial_test"
-version = "3.1.1"
+version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b4b487fe2acf240a021cf57c6b2b4903b1e78ca0ecd862a71b71d2a51fed77d"
+checksum = "1b258109f244e1d6891bf1053a55d63a5cd4f8f4c30cf9a1280989f80e7a1fa9"
 dependencies = [
  "futures",
  "log",
  "once_cell",
  "parking_lot",
  "scc",
- "serial_test_derive 3.1.1",
+ "serial_test_derive 3.2.0",
 ]
 
 [[package]]
@@ -4045,9 +4074,9 @@ dependencies = [
 
 [[package]]
 name = "serial_test_derive"
-version = "3.1.1"
+version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82fe9db325bcef1fbcde82e078a5cc4efdf787e96b3b9cf45b50b529f2083d67"
+checksum = "5d69265a08751de7844521fd15003ae0a888e035773ba05695c5c759a6f89eef"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4733,7 +4762,7 @@ dependencies = [
  "network-framework-sys",
  "once_cell",
  "parking_lot",
- "serial_test 3.1.1",
+ "serial_test 3.2.0",
  "telio-utils",
  "tokio",
  "tracing",
@@ -5090,6 +5119,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "clap 3.2.25",
+ "const_format",
  "dirs",
  "futures",
  "interprocess 2.2.1",
@@ -5098,9 +5128,11 @@ dependencies = [
  "regex",
  "reqwest 0.12.9",
  "rumqttc",
+ "rust-cgi",
  "rustls-native-certs 0.8.0",
  "serde",
  "serde_json",
+ "serial_test 3.2.0",
  "signal-hook",
  "signal-hook-tokio",
  "smart-default",
@@ -5552,6 +5584,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
 
 [[package]]
+name = "unicode-xid"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
 name = "uniffi"
 version = "0.3.1+v0.25.0"
 source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.3.1+v0.25.0#1a5dc527165589456c3d7233107917e065192b03"
@@ -5927,7 +5965,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
