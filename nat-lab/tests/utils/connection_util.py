@@ -55,6 +55,11 @@ class ConnectionTag(Enum):
     DOCKER_VPN_2 = auto()
     DOCKER_NLX_1 = auto()
     DOCKER_INTERNAL_SYMMETRIC_GW = auto()
+    DOCKER_DERP_1 = auto()
+    DOCKER_DERP_2 = auto()
+    DOCKER_DERP_3 = auto()
+    DOCKER_DNS_SERVER_1 = auto()
+    DOCKER_DNS_SERVER_2 = auto()
 
 
 DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
@@ -91,6 +96,11 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_VPN_1: "vpn-01",
     ConnectionTag.DOCKER_VPN_2: "vpn-02",
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "internal-symmetric-gw-01",
+    ConnectionTag.DOCKER_DERP_1: "derp-01",
+    ConnectionTag.DOCKER_DERP_2: "derp-02",
+    ConnectionTag.DOCKER_DERP_3: "derp-03",
+    ConnectionTag.DOCKER_DNS_SERVER_1: "dns-server-01",
+    ConnectionTag.DOCKER_DNS_SERVER_2: "dns-server-02",
 }
 
 

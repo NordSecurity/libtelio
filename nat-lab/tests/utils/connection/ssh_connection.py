@@ -9,10 +9,17 @@ from utils.process import Process, SshProcess
 
 class SshConnection(Connection):
     _connection: asyncssh.SSHClientConnection
+    _vm_name: str
     _target_os: TargetOS
 
-    def __init__(self, connection: asyncssh.SSHClientConnection, target_os: TargetOS):
+    def __init__(
+        self,
+        connection: asyncssh.SSHClientConnection,
+        vm_name: str,
+        target_os: TargetOS,
+    ):
         super().__init__(target_os)
+        self._vm_name = vm_name
         self._connection = connection
         self._target_os = target_os
 
@@ -25,7 +32,7 @@ class SshConnection(Connection):
         else:
             assert False, f"not supported target_os '{self._target_os}'"
 
-        return SshProcess(self._connection, command, escape_argument)
+        return SshProcess(self._connection, self._vm_name, command, escape_argument)
 
     async def get_ip_address(self) -> tuple[str, str]:
         ip = self._connection._host  # pylint: disable=protected-access

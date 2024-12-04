@@ -5,17 +5,15 @@ import random
 import shutil
 import subprocess
 from config import DERP_PRIMARY
+from contextlib import AsyncExitStack
 from datetime import datetime
 from helpers import SetupParameters
 from interderp_cli import InterDerpClient
 from itertools import combinations
-from mesh_api import start_tcpdump, stop_tcpdump
 from typing import Dict, List, Tuple
 from utils.bindings import TelioAdapterType
-from utils.connection import DockerConnection
 from utils.connection_util import (
     ConnectionTag,
-    container_id,
     LAN_ADDR_MAP,
     new_connection_raw,
     new_connection_with_conn_tracker,
@@ -23,6 +21,7 @@ from utils.connection_util import (
 from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPStack
+from utils.tcpdump import make_tcpdump
 from utils.vm import windows_vm_util, mac_vm_util
 
 DERP_SERVER_1_ADDR = "http://10.0.10.1:8765"
@@ -35,6 +34,11 @@ SETUP_CHECK_TIMEOUT_S = 30
 SETUP_CHECK_RETRIES = 5
 SETUP_CHECK_CONNECTIVITY_TIMEOUT = 60
 SETUP_CHECK_CONNECTIVITY_RETRIES = 1
+
+# pylint: disable=unnecessary-dunder-call
+TEST_SCOPE_ASYNC_EXIT_STACK = asyncio.run(AsyncExitStack().__aenter__())
+# pylint: disable=unnecessary-dunder-call
+SESSION_ASYNC_EXIT_STACK = asyncio.run(AsyncExitStack().__aenter__())
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -52,11 +56,13 @@ def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
         if task.cancelled():
             continue
         if task.exception() is not None:
-            loop.call_exception_handler({
-                "message": "unhandled exception during asyncio.run() shutdown",
-                "exception": task.exception(),
-                "task": task,
-            })
+            loop.call_exception_handler(
+                {
+                    "message": "unhandled exception during asyncio.run() shutdown",
+                    "exception": task.exception(),
+                    "task": task,
+                }
+            )
 
 
 @pytest.fixture(scope="function")
@@ -129,21 +135,25 @@ def setup_ephemeral_ports(request):
     connection_tags = set()
 
     # Setup for all Docker clients
-    connection_tags.update([
-        tag
-        for tag in ConnectionTag.__members__.values()
-        if tag.name.startswith("DOCKER_") and "CLIENT" in tag.name
-    ])
+    connection_tags.update(
+        [
+            tag
+            for tag in ConnectionTag.__members__.values()
+            if tag.name.startswith("DOCKER_") and "CLIENT" in tag.name
+        ]
+    )
 
     # Handle test name (params) to search for VM tags
     test_name = request.node.name
     if "_VM_" in test_name:
         # Extract all connection tags from test name
-        connection_tags.update([
-            ConnectionTag[param]
-            for param in test_name.split("[")[1].split("]")[0].split("-")
-            if param in ConnectionTag.__members__
-        ])
+        connection_tags.update(
+            [
+                ConnectionTag[param]
+                for param in test_name.split("[")[1].split("]")[0].split("-")
+                if param in ConnectionTag.__members__
+            ]
+        )
 
     # Handle test markers to search for VMs tags
     for mark in request.node.own_markers:
@@ -169,7 +179,9 @@ def pytest_make_parametrize_id(config, val):
         param_id = f"{param_id[1:]}"
     elif isinstance(val, (SetupParameters,)):
         short_conn_tag_name = val.connection_tag.name.removeprefix("DOCKER_")
-        param_id = f"{short_conn_tag_name}-{val.adapter_type_override.name.replace('_', '') if val.adapter_type_override is not None else ''}"
+        param_id = (
+            f"{short_conn_tag_name}-{val.adapter_type_override.name.replace('_', '') if val.adapter_type_override is not None else ''}"
+        )
         if (
             val.features.direct is not None
             and val.features.direct.providers is not None
@@ -256,24 +268,25 @@ async def setup_check_connectivity():
 
 
 async def setup_check_interderp():
-    async with new_connection_raw(ConnectionTag.DOCKER_CONE_CLIENT_1) as connection:
-        if not isinstance(connection, DockerConnection):
-            raise Exception("Not docker connection")
-        containers = [
-            connection.container_name(),
-            "nat-lab-derp-01-1",
-            "nat-lab-derp-02-1",
-            "nat-lab-derp-03-1",
+    async with AsyncExitStack() as exit_stack:
+        connections = [
+            await exit_stack.enter_async_context(new_connection_raw(conn_tag))
+            for conn_tag in [
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                ConnectionTag.DOCKER_DERP_1,
+                ConnectionTag.DOCKER_DERP_2,
+                ConnectionTag.DOCKER_DERP_3,
+            ]
         ]
-        start_tcpdump(containers)
-        try:
+
+        async with make_tcpdump(connections):
             for idx, (server1, server2) in enumerate(
                 combinations(
                     [DERP_SERVER_1_ADDR, DERP_SERVER_2_ADDR, DERP_SERVER_3_ADDR], 2
                 )
             ):
                 derp_test = InterDerpClient(
-                    connection,
+                    connections[0],
                     server1,
                     server2,
                     DERP_SERVER_1_SECRET_KEY,
@@ -282,8 +295,6 @@ async def setup_check_interderp():
                 )
                 await derp_test.execute()
                 await derp_test.save_logs()
-        finally:
-            stop_tcpdump(containers)
 
 
 SETUP_CHECKS = [
@@ -469,13 +480,37 @@ def pytest_runtest_setup():
 
 # pylint: disable=unused-argument
 def pytest_runtest_call(item):
-    start_tcpdump([f"nat-lab-dns-server-{i}-1" for i in range(1, 3)])
+    if os.environ.get("NATLAB_SAVE_LOGS") is None:
+        return
+
+    async def async_code():
+        connections = [
+            await TEST_SCOPE_ASYNC_EXIT_STACK.enter_async_context(
+                new_connection_raw(conn_tag)
+            )
+            for conn_tag in [
+                ConnectionTag.DOCKER_DNS_SERVER_1,
+                ConnectionTag.DOCKER_DNS_SERVER_2,
+            ]
+        ]
+        await TEST_SCOPE_ASYNC_EXIT_STACK.enter_async_context(make_tcpdump(connections))
+
+    asyncio.run(async_code())
 
 
 # pylint: disable=unused-argument
 def pytest_runtest_makereport(item, call):
+    if os.environ.get("NATLAB_SAVE_LOGS") is None:
+        return
+
+    async def async_code():
+        global TEST_SCOPE_ASYNC_EXIT_STACK
+        await TEST_SCOPE_ASYNC_EXIT_STACK.aclose()
+        # pylint: disable=unnecessary-dunder-call
+        TEST_SCOPE_ASYNC_EXIT_STACK = await AsyncExitStack().__aenter__()
+
     if call.when == "call":
-        stop_tcpdump([f"nat-lab-dns-server-{i}-1" for i in range(1, 3)])
+        asyncio.run(async_code())
 
 
 # pylint: disable=unused-argument
@@ -483,10 +518,18 @@ def pytest_sessionstart(session):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
 
+    async def async_code():
+        connections = [
+            await SESSION_ASYNC_EXIT_STACK.enter_async_context(
+                new_connection_raw(gw_tag)
+            )
+            for gw_tag in ConnectionTag
+            if "_GW" in gw_tag.name
+        ]
+        await SESSION_ASYNC_EXIT_STACK.enter_async_context(make_tcpdump(connections))
+
     if not session.config.option.collectonly:
-        start_tcpdump(
-            {container_id(gw_tag) for gw_tag in ConnectionTag if "_GW" in gw_tag.name}
-        )
+        asyncio.run(async_code())
 
 
 # pylint: disable=unused-argument
@@ -495,11 +538,7 @@ def pytest_sessionfinish(session, exitstatus):
         return
 
     if not session.config.option.collectonly:
-        stop_tcpdump(
-            {container_id(gw_tag) for gw_tag in ConnectionTag if "_GW" in gw_tag.name},
-            "./logs",
-        )
-
+        asyncio.run(SESSION_ASYNC_EXIT_STACK.aclose())
         collect_nordderper_logs()
         collect_dns_server_logs()
         asyncio.run(collect_kernel_logs(session.items, "after_tests"))
@@ -533,7 +572,8 @@ def copy_file_from_container(container_name, src_path, dst_path):
     try:
         subprocess.run(docker_cp_command, shell=True, check=True)
         print(
-            f"Log file {src_path} copied successfully from {container_name} to {dst_path}"
+            f"Log file {src_path} copied successfully from {container_name} to"
+            f" {dst_path}"
         )
     except subprocess.CalledProcessError:
         print(f"Error copying log file {src_path} from {container_name} to {dst_path}")

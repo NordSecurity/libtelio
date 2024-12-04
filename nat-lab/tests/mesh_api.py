@@ -5,15 +5,12 @@ import pprint
 import random
 import time
 import uuid
-from collections.abc import Iterable
-from concurrent.futures import ThreadPoolExecutor
 from config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
 from datetime import datetime
 from ipaddress import ip_address
 from typing import Dict, Any, List, Tuple, Optional
 from utils.bindings import Config, Server, Peer, PeerBase
 from utils.router import IPStack, IPProto, get_ip_address_type
-from utils.testing import get_current_test_log_path
 
 if platform.machine() != "x86_64":
     import pure_wg as Key
@@ -387,7 +384,6 @@ class API:
         )
 
         for node in node_list:
-            start_tcpdump([server_config["container"]])
             if "type" in server_config and server_config["type"] == "nordlynx":
                 priv_key = server_config["private_key"]
                 commands = [
@@ -459,51 +455,3 @@ class API:
     def prepare_all_vpn_servers(self):
         for wg_server in WG_SERVERS:
             self.setup_vpn_servers(list(self.nodes.values()), wg_server)
-
-
-def start_tcpdump(container_names: Iterable[str]):
-    if os.environ.get("NATLAB_SAVE_LOGS") is None:
-        return
-
-    def aux(container_name):
-        # First make sure that no leftover processes/files will interfere
-        cmd = f"docker exec --privileged {container_name} killall -w tcpdump"
-        os.system(cmd)
-        cmd = f"docker exec --privileged {container_name} rm {PCAP_FILE_PATH}"
-        os.system(cmd)
-        cmd = f"docker exec -d --privileged {container_name} tcpdump -i any -U -w {PCAP_FILE_PATH}"
-        os.system(cmd)
-
-    with ThreadPoolExecutor() as executor:
-        executor.map(aux, container_names)
-
-
-def stop_tcpdump(container_names, store_in=None):
-    if os.environ.get("NATLAB_SAVE_LOGS") is None:
-        return
-    log_dir = get_current_test_log_path()
-    os.makedirs(log_dir, exist_ok=True)
-
-    def aux(container_name):
-        cmd = f"docker exec --privileged {container_name} killall -w tcpdump"
-        os.system(cmd)
-        path = find_unique_path_for_tcpdump(
-            store_in if store_in else log_dir, container_name
-        )
-        cmd = f"docker container cp {container_name}:{PCAP_FILE_PATH} {path}"
-        os.system(cmd)
-
-    with ThreadPoolExecutor() as executor:
-        executor.map(aux, container_names)
-
-
-def find_unique_path_for_tcpdump(log_dir, container_name):
-    candidate_path = f"{log_dir}/{container_name}.pcap"
-    counter = 1
-    # NOTE: counter starting from '1' means that the file will either have no suffix or
-    # will have a suffix starting from '2'. This is to make it clear that it's not the
-    # first log for that container/client.
-    while os.path.isfile(candidate_path):
-        counter += 1
-        candidate_path = f"./{log_dir}/{container_name}-{counter}.pcap"
-    return candidate_path

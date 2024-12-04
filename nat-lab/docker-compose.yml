@@ -424,6 +424,8 @@ services:
       - net.netfilter.nf_conntrack_tcp_timeout_fin_wait=15
     cap_drop:
       - ALL
+    cap_add:
+      - NET_ADMIN
     security_opt:
       - no-new-privileges:true
     networks:
@@ -550,6 +552,10 @@ services:
     hostname: dns-server-1
     image: nat-lab:base
     entrypoint: /opt/bin/dns-server.sh
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
     environment:
       PYTHONUNBUFFERED: 1
     networks:
@@ -562,6 +568,10 @@ services:
     hostname: dns-server-2
     image: nat-lab:base
     entrypoint: /opt/bin/dns-server.sh
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
     environment:
       PYTHONUNBUFFERED: 1
     networks:
