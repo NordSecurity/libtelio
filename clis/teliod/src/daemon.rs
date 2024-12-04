@@ -6,7 +6,8 @@ use std::{fs, net::IpAddr, sync::Arc};
 use telio::{
     crypto::SecretKey,
     device::{Device, DeviceConfig, Error as DeviceError},
-    telio_model::{config::Config as MeshMap, features::Features},
+    ffi::defaults_builder::FeaturesDefaultsBuilder,
+    telio_model::config::Config as MeshMap,
     telio_utils::select,
     telio_wg::AdapterType,
 };
@@ -51,8 +52,14 @@ fn telio_task(
     interface_config: &InterfaceConfig,
 ) -> Result<(), TeliodError> {
     debug!("Initializing telio device");
+
+    // Create default features with direct connections enabled
+    let features = Arc::new(FeaturesDefaultsBuilder::new())
+        .enable_direct()
+        .build();
+
     let mut telio = Device::new(
-        Features::default(),
+        features,
         // TODO: replace this with some real event handling
         move |event| info!("Incoming event: {:?}", event),
         None,
