@@ -19,6 +19,8 @@ mod configure_interface;
 mod core_api;
 mod daemon;
 mod nc;
+#[cfg(feature = "qnap")]
+mod qnap;
 
 use crate::{
     command_listener::CommandResponse,
@@ -44,6 +46,9 @@ enum Cmd {
     Daemon { config_path: String },
     #[clap(flatten)]
     Client(ClientCmd),
+    #[cfg(feature = "qnap")]
+    #[clap(about = "Receive and parse http requests")]
+    Cgi,
 }
 
 #[derive(Debug, ThisError)]
@@ -133,6 +138,11 @@ async fn main() -> Result<(), TeliodError> {
             } else {
                 Err(TeliodError::DaemonIsNotRunning)
             }
+        }
+        #[cfg(feature = "qnap")]
+        Cmd::Cgi => {
+            qnap::parse_cgi();
+            Ok(())
         }
     }
 }
