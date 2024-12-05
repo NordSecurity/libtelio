@@ -437,7 +437,13 @@ async def ping_between_all_nodes(env: Environment) -> None:
 
 
 async def send_https_request(
-    connection, endpoint, method, ca_cert_path, data=None, expect_response=True
+    connection,
+    endpoint,
+    method,
+    ca_cert_path,
+    data=None,
+    authorization_header=None,
+    expect_response=True,
 ):
     curl_command = [
         "curl",
@@ -452,6 +458,11 @@ async def send_https_request(
 
     if data:
         curl_command.extend(["-d", data])
+
+    if authorization_header:
+        curl_command.extend(["-H", f"Authorization: {authorization_header}"])
+
+    print(f"Curl command: {curl_command}")
 
     process = await connection.create_process(curl_command).execute()
     response = process.get_stdout()
