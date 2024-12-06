@@ -41,8 +41,12 @@ class DockerConnection(Connection):
 
         await to_thread(aux)
 
-    def create_process(self, command: List[str], kill_id=None) -> "Process":
-        process = DockerProcess(self._container, command, kill_id)
+    def create_process(
+        self, command: List[str], kill_id=None, term_type=None
+    ) -> "Process":
+        process = DockerProcess(
+            self._container, self.container_name(), command, kill_id
+        )
         print(
             datetime.now(),
             "Executing",

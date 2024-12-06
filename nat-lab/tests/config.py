@@ -46,6 +46,8 @@ STUN_BINARY_PATH_MAC = "/var/root/stunserver/stunclient"
 IPERF_BINARY_MAC = "/var/root/iperf3/iperf3"
 IPERF_BINARY_WINDOWS = "C:/workspace/iperf3/iperf3.exe".replace("/", "\\")
 
+WINDUMP_BINARY_WINDOWS = "C:/workspace/WinDump.exe".replace("/", "\\")
+
 # JIRA issue: LLT-1664
 # The directories between host and Docker container are shared via
 # Docker volumes. Mounting `libtelio/dist` is a nogo, since when host

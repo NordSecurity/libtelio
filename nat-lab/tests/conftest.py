@@ -4,21 +4,18 @@ import pytest
 import random
 import shutil
 import subprocess
+from contextlib import AsyncExitStack
 from datetime import datetime
 from helpers import SetupParameters
 from interderp_cli import InterDerpClient
 from itertools import combinations
-from mesh_api import start_tcpdump, stop_tcpdump
+from typing import Optional
 from utils.bindings import TelioAdapterType
 from utils.connection import DockerConnection
-from utils.connection_util import (
-    ConnectionTag,
-    container_id,
-    LAN_ADDR_MAP,
-    new_connection_raw,
-)
+from utils.connection_util import ConnectionTag, LAN_ADDR_MAP, new_connection_raw
 from utils.process import ProcessExecError
 from utils.router import IPStack
+from utils.tcpdump import make_tcpdump
 from utils.vm import windows_vm_util, mac_vm_util
 
 DERP_SERVER_1_ADDR = "http://10.0.10.1:8765"
@@ -29,6 +26,10 @@ DERP_SERVER_2_SECRET_KEY = "2NgALOCSKJcDxwr8MtA+6lYbf7b98KSdAROGoUwZ1V0="
 
 SETUP_CHECK_TIMEOUT_S = 30
 SETUP_CHECK_RETRIES = 5
+
+RUNNER = asyncio.runners.Runner()
+TEST_SCOPE_EXIT_STACK: Optional[AsyncExitStack] = None
+SESSION_SCOPE_EXIT_STACK: Optional[AsyncExitStack] = None
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -197,24 +198,28 @@ def pytest_make_parametrize_id(config, val):
 
 
 async def setup_check_interderp():
-    async with new_connection_raw(ConnectionTag.DOCKER_CONE_CLIENT_1) as connection:
-        if not isinstance(connection, DockerConnection):
-            raise Exception("Not docker connection")
-        containers = [
-            connection.container_name(),
-            "nat-lab-derp-01-1",
-            "nat-lab-derp-02-1",
-            "nat-lab-derp-03-1",
+    async with AsyncExitStack() as exit_stack:
+        connections = [
+            await exit_stack.enter_async_context(new_connection_raw(conn_tag))
+            for conn_tag in [
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                ConnectionTag.DOCKER_DERP_1,
+                ConnectionTag.DOCKER_DERP_2,
+                ConnectionTag.DOCKER_DERP_3,
+            ]
         ]
-        start_tcpdump(containers)
-        try:
+
+        if not isinstance(connections[0], DockerConnection):
+            raise Exception("Not docker connection")
+
+        async with make_tcpdump(connections):
             for idx, (server1, server2) in enumerate(
                 combinations(
                     [DERP_SERVER_1_ADDR, DERP_SERVER_2_ADDR, DERP_SERVER_3_ADDR], 2
                 )
             ):
                 derp_test = InterDerpClient(
-                    connection,
+                    connections[0],
                     server1,
                     server2,
                     DERP_SERVER_1_SECRET_KEY,
@@ -223,8 +228,6 @@ async def setup_check_interderp():
                 )
                 await derp_test.execute()
                 await derp_test.save_logs()
-        finally:
-            stop_tcpdump(containers)
 
 
 SETUP_CHECKS = [
@@ -405,13 +408,42 @@ def pytest_runtest_setup():
 
 # pylint: disable=unused-argument
 def pytest_runtest_call(item):
-    start_tcpdump([f"nat-lab-dns-server-{i}-1" for i in range(1, 3)])
+    if os.environ.get("NATLAB_SAVE_LOGS") is None:
+        return
+
+    async def async_context():
+        global TEST_SCOPE_EXIT_STACK
+        if not TEST_SCOPE_EXIT_STACK:
+            TEST_SCOPE_EXIT_STACK = AsyncExitStack()
+
+        connections = [
+            await TEST_SCOPE_EXIT_STACK.enter_async_context(
+                new_connection_raw(conn_tag)
+            )
+            for conn_tag in [
+                ConnectionTag.DOCKER_DNS_SERVER_1,
+                ConnectionTag.DOCKER_DNS_SERVER_2,
+            ]
+        ]
+
+        await TEST_SCOPE_EXIT_STACK.enter_async_context(make_tcpdump(connections))
+
+    RUNNER.run(async_context())
 
 
 # pylint: disable=unused-argument
 def pytest_runtest_makereport(item, call):
+    if os.environ.get("NATLAB_SAVE_LOGS") is None:
+        return
+
+    async def async_context():
+        global TEST_SCOPE_EXIT_STACK
+        if TEST_SCOPE_EXIT_STACK:
+            await TEST_SCOPE_EXIT_STACK.aclose()
+            TEST_SCOPE_EXIT_STACK = None
+
     if call.when == "call":
-        stop_tcpdump([f"nat-lab-dns-server-{i}-1" for i in range(1, 3)])
+        RUNNER.run(async_context())
 
 
 # pylint: disable=unused-argument
@@ -419,10 +451,22 @@ def pytest_sessionstart(session):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
 
-    if not session.config.option.collectonly:
-        start_tcpdump(
-            {container_id(gw_tag) for gw_tag in ConnectionTag if "_GW" in gw_tag.name}
-        )
+    async def async_context():
+        global SESSION_SCOPE_EXIT_STACK
+        if not SESSION_SCOPE_EXIT_STACK:
+            SESSION_SCOPE_EXIT_STACK = AsyncExitStack()
+
+        connections = [
+            await SESSION_SCOPE_EXIT_STACK.enter_async_context(
+                new_connection_raw(gw_tag)
+            )
+            for gw_tag in ConnectionTag
+            if "_GW" in gw_tag.name
+        ]
+
+        await SESSION_SCOPE_EXIT_STACK.enter_async_context(make_tcpdump(connections))
+
+    RUNNER.run(async_context())
 
 
 # pylint: disable=unused-argument
@@ -430,12 +474,14 @@ def pytest_sessionfinish(session, exitstatus):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
 
-    if not session.config.option.collectonly:
-        stop_tcpdump(
-            {container_id(gw_tag) for gw_tag in ConnectionTag if "_GW" in gw_tag.name},
-            "./logs",
-        )
+    async def async_context():
+        global SESSION_SCOPE_EXIT_STACK
+        if SESSION_SCOPE_EXIT_STACK:
+            await SESSION_SCOPE_EXIT_STACK.aclose()
+            SESSION_SCOPE_EXIT_STACK = None
 
+    if not session.config.option.collectonly:
+        RUNNER.run(async_context())
         collect_nordderper_logs()
         collect_dns_server_logs()
         asyncio.run(collect_kernel_logs(session.items, "after_tests"))

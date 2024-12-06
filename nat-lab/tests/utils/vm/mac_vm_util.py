@@ -44,7 +44,7 @@ async def new_connection(
         known_hosts=None,
         options=ssh_options,
     ) as ssh_connection:
-        connection = SshConnection(ssh_connection, TargetOS.Mac)
+        connection = SshConnection(ssh_connection, "Mac", TargetOS.Mac)
 
         if copy_binaries:
             await _copy_binaries(ssh_connection, connection)
