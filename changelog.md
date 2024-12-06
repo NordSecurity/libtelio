@@ -1,5 +1,13 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.1.4
+### **Pork Kibin**
+---
+* LLT-5457: clear memory for sensitive key material on destructor
+* VCP-2431: Make sure that the crypto material from Secret and Preshared keys is not printed in logs
+
+<br>
+
 ### v5.1.2
 ### **Pork Kibin**
 ---
