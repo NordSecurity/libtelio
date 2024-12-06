@@ -17,6 +17,7 @@ class SshProcess(Process):
     _stdin: Optional[asyncssh.SSHWriter]
     _process: Optional[asyncssh.SSHClientProcess]
     _running: bool
+    _term_type: Optional[str]
 
     def __init__(
         self,
@@ -24,6 +25,7 @@ class SshProcess(Process):
         vm_name: str,
         command: List[str],
         escape_argument: Callable[[str], str],
+        term_type: Optional[str] = None,
     ) -> None:
         self._ssh_connection = ssh_connection
         self._vm_name = vm_name
@@ -36,6 +38,7 @@ class SshProcess(Process):
         self._escape_argument = escape_argument
         self._process = None
         self._running = False
+        self._term_type = term_type
 
     async def execute(
         self,
@@ -48,7 +51,9 @@ class SshProcess(Process):
         escaped = [self._escape_argument(arg) for arg in self._command]
         command_str = " ".join(escaped)
 
-        self._process = await self._ssh_connection.create_process(command_str)
+        self._process = await self._ssh_connection.create_process(
+            command_str, term_type=self._term_type
+        )
         self._running = True
         self._stdin = self._process.stdin
         self._stdin_ready.set()

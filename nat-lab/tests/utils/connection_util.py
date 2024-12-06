@@ -99,8 +99,8 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_DERP_1: "derp-01",
     ConnectionTag.DOCKER_DERP_2: "derp-02",
     ConnectionTag.DOCKER_DERP_3: "derp-03",
-    ConnectionTag.DOCKER_DNS_SERVER_1: "dns-server-01",
-    ConnectionTag.DOCKER_DNS_SERVER_2: "dns-server-02",
+    ConnectionTag.DOCKER_DNS_SERVER_1: "dns-server-1",
+    ConnectionTag.DOCKER_DNS_SERVER_2: "dns-server-2",
 }
 
 
