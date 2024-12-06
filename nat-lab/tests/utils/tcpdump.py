@@ -1,8 +1,8 @@
 import os
-from asyncio import Event
+from asyncio import Event, wait_for
 from config import WINDUMP_BINARY_WINDOWS
 from contextlib import asynccontextmanager, AsyncExitStack
-from typing import AsyncIterator, Optional, List
+from typing import AsyncIterator, Optional
 from utils.connection import TargetOS, Connection
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
@@ -10,13 +10,13 @@ from utils.testing import get_current_test_log_path
 
 PCAP_FILE_PATH = {
     TargetOS.Linux: "/dump.pcap",
-    TargetOS.Mac: "/tmp/dump.pcap",
+    TargetOS.Mac: "/var/root/dump.pcap",
     TargetOS.Windows: "C:\\workspace\\dump.pcap",
 }
 
 
 class TcpDump:
-    interfaces: Optional[List[str]]
+    interfaces: Optional[list[str]]
     connection: Connection
     process: Process
     stdout: str
@@ -28,8 +28,9 @@ class TcpDump:
     def __init__(
         self,
         connection: Connection,
-        filters: List[str],
-        interfaces: Optional[List[str]] = None,
+        flags: Optional[list[str]] = None,
+        expressions: Optional[list[str]] = None,
+        interfaces: Optional[list[str]] = None,
         output_file: Optional[str] = None,
         count: Optional[int] = None,
     ) -> None:
@@ -44,10 +45,7 @@ class TcpDump:
 
         self.output_notifier.notify_output("listening on", self.start_event)
 
-        command = [
-            self.get_tcpdump_binary(connection.target_os),
-            "-l",
-        ]
+        command = [self.get_tcpdump_binary(connection.target_os), "-n"]
 
         if self.output_file:
             command += ["-w", self.output_file]
@@ -55,23 +53,32 @@ class TcpDump:
             command += ["-w", PCAP_FILE_PATH[self.connection.target_os]]
 
         if self.interfaces:
-            for interface in self.interfaces:
-                command += ["-i", interface]
+            command += ["-i", ",".join(self.interfaces)]
         else:
             if self.connection.target_os != TargetOS.Windows:
                 command += ["-i", "any"]
             else:
                 command += ["-i", "1", "-i", "2"]
 
+        if self.count:
+            command += ["-c", str(self.count)]
+
+        if flags:
+            command += flags
+
         if self.connection.target_os != TargetOS.Windows:
             command += ["--immediate-mode"]
+            command += ["port not 22"]
+        else:
+            command += ["not port 22"]
 
-        if self.count:
-            command += ["-c", self.count]
+        if expressions:
+            command += expressions
 
-        command += filters
-
-        self.process = self.connection.create_process(command)
+        self.process = self.connection.create_process(
+            command,
+            term_type="xterm" if self.connection.target_os == TargetOS.Mac else None,
+        )
 
     @staticmethod
     def get_tcpdump_binary(target_os: TargetOS) -> str:
@@ -90,10 +97,12 @@ class TcpDump:
         return self.stderr
 
     async def on_stdout(self, output: str) -> None:
+        print(f"tcpdump: {output}")
         self.stdout += output
         await self.output_notifier.handle_output(output)
 
     async def on_stderr(self, output: str) -> None:
+        print(f"tcpdump err: {output}")
         self.stderr += output
         await self.output_notifier.handle_output(output)
 
@@ -107,7 +116,7 @@ class TcpDump:
     @asynccontextmanager
     async def run(self) -> AsyncIterator["TcpDump"]:
         async with self.process.run(self.on_stdout, self.on_stderr, True):
-            await self.start_event.wait()
+            await wait_for(self.start_event.wait(), 10)
             yield self
 
 
@@ -132,7 +141,7 @@ async def make_tcpdump(
     try:
         async with AsyncExitStack() as exit_stack:
             for conn in connection_list:
-                await exit_stack.enter_async_context(TcpDump(conn, ["-U"]).run())
+                await exit_stack.enter_async_context(TcpDump(conn).run())
             yield
     finally:
         if download:
@@ -143,3 +152,10 @@ async def make_tcpdump(
                     store_in if store_in else log_dir, conn.target_name()
                 )
                 await conn.download(PCAP_FILE_PATH[conn.target_os], path)
+
+        if conn.target_os != TargetOS.Windows:
+            await conn.create_process(
+                ["rm", "-f", PCAP_FILE_PATH[conn.target_os]]
+            ).execute()
+        else:
+            await conn.create_process(["del", PCAP_FILE_PATH[conn.target_os]]).execute()
