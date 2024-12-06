@@ -14,7 +14,7 @@ use std::{
 };
 use telio_sockets::{SocketBufSizes, SocketPool, TcpParams};
 use telio_task::io::Chan;
-use telio_utils::interval_at;
+use telio_utils::{interval_at, telio_log_debug};
 use webpki_roots::TLS_SERVER_ROOTS;
 
 use crate::{Config, DerpKeepaliveConfig};
@@ -89,21 +89,67 @@ pub async fn connect_http_and_start(
     };
     let hostport = format!("{}:{}", hostname, port);
 
-    let socket = socket_pool.new_external_tcp_v4(Some(TcpParams {
-        keepalive_enable: Some(true),
-        keepalive_cnt: Some(TCP_KEEPALIVE_COUNT),
-        keepalive_idle: Some(TCP_KEEPALIVE_IDLE),
-        keepalive_intvl: Some(TCP_KEEPALIVE_INTERVAL),
-        nodelay_enable: Some(true),
-        user_timeout: Some(TCP_USER_TIMEOUT),
-        buf_size: SocketBufSizes {
-            tx_buf_size: Some(SOCK_BUF_SZ),
-            rx_buf_size: Some(SOCK_BUF_SZ),
-        },
-    }))?;
+    // First try to use derp v2, with poll keepalives it the feature is enabled
+    if derp_config.server_keepalives.poll_keepalive.is_some() {
+        telio_log_debug!("Trying to connect to derp V2");
+        let socket = socket_pool.new_external_tcp_v4(Some(build_tcp_parameters(false)))?;
+        let stream = timeout(derp_config.timeout, socket.connect(ip)).await??;
+        let addr = PairAddr {
+            local: stream.local_addr()?,
+            remote: stream.peer_addr()?,
+        };
 
+        let connection = match u.scheme() {
+            "http" => {
+                Box::pin(connect_and_start(
+                    stream,
+                    addr,
+                    derp_config.secret_key,
+                    derp_config.server_keepalives.clone(),
+                    &hostport,
+                    true,
+                ))
+                .await
+            }
+            _ => {
+                let config = if derp_config.use_built_in_root_certificates {
+                    let root_store: RootCertStore = TLS_SERVER_ROOTS.iter().cloned().collect();
+
+                    let config = ClientConfig::builder()
+                        .with_root_certificates(root_store)
+                        .with_no_client_auth();
+
+                    TlsConnector::from(Arc::new(config))
+                } else {
+                    TlsConnector::from(Arc::new(rustls_platform_verifier::tls_config()))
+                };
+
+                let server_name =
+                    ServerName::try_from(hostname.clone()).map_err(|_| Error::InvalidServerName)?;
+
+                connect_and_start(
+                    config.connect(server_name, stream).await?,
+                    addr,
+                    derp_config.secret_key,
+                    derp_config.server_keepalives.clone(),
+                    &hostport,
+                    true,
+                )
+                .await
+            }
+        };
+
+        if connection.is_ok() {
+            // We managed to successfully connect to derp v2
+            telio_log_debug!("Successfully connected to derp v2");
+            return connection;
+        }
+    }
+
+    // If we didn't want or didn't manage to connect to depr v2, we will try derp v1
+    telio_log_debug!("Trying to connect to derp v1");
+    let socket = socket_pool.new_external_tcp_v4(Some(build_tcp_parameters(true)))?;
     let stream = timeout(derp_config.timeout, socket.connect(ip)).await??;
-
     let addr = PairAddr {
         local: stream.local_addr()?,
         remote: stream.peer_addr()?,
@@ -117,6 +163,7 @@ pub async fn connect_http_and_start(
                 derp_config.secret_key,
                 derp_config.server_keepalives,
                 &hostport,
+                false,
             ))
             .await
         }
@@ -142,6 +189,7 @@ pub async fn connect_http_and_start(
                 derp_config.secret_key,
                 derp_config.server_keepalives,
                 &hostport,
+                false,
             )
             .await
         }
@@ -154,6 +202,7 @@ async fn connect_and_start<RW: AsyncRead + AsyncWrite + Send + 'static>(
     secret_key: SecretKey,
     server_keepalives: DerpKeepaliveConfig,
     host: &str,
+    derp_v2: bool,
 ) -> Result<DerpConnection, Error> {
     let (mut reader, mut writer) = split(stream);
 
@@ -162,6 +211,7 @@ async fn connect_and_start<RW: AsyncRead + AsyncWrite + Send + 'static>(
         &mut writer,
         &server_keepalives,
         host,
+        derp_v2,
     ))
     .await?;
 
@@ -181,6 +231,18 @@ async fn connect_and_start<RW: AsyncRead + AsyncWrite + Send + 'static>(
     let sender_direct = conn_side_direct.tx;
     let receiver_direct = conn_side_direct.rx;
 
+    // TODO: When we switch to batched Poll Keepalives, we have to move this into the session keeper
+    // The logic is here for now for testing purposes
+    let poll_interval = match (derp_v2, server_keepalives.poll_keepalive) {
+        // We connected to derp V2, so we will use poll keepalives
+        (true, Some(poll_keepalive)) => Duration::from_secs(poll_keepalive as u64),
+        // We connected to derp V1, so we will use the old derp_keepalive config
+        (false, _) => Duration::from_secs(server_keepalives.derp_keepalive as u64),
+        // Any other situation is an error
+        _ => return Err(Error::InternalError),
+    };
+    telio_log_debug!("Derp poll interval {:?}", poll_interval);
+
     Ok(DerpConnection {
         comms_relayed: comm_side_relayed,
         comms_direct: comm_side_direct,
@@ -190,10 +252,7 @@ async fn connect_and_start<RW: AsyncRead + AsyncWrite + Send + 'static>(
         join_receiver: tokio::spawn(async move {
             start_write(writer, receiver_relayed, receiver_direct, addr).await
         }),
-        poll_timer: {
-            let poll_interval = Duration::from_secs(server_keepalives.derp_keepalive as u64);
-            interval_at(tokio::time::Instant::now() + poll_interval, poll_interval)
-        },
+        poll_timer: { interval_at(tokio::time::Instant::now() + poll_interval, poll_interval) },
     })
 }
 
@@ -204,24 +263,39 @@ async fn connect_http<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     writer: &mut W,
     server_keepalives: &DerpKeepaliveConfig,
     host: &str,
+    derp_v2: bool,
 ) -> Result<Vec<u8>, Error> {
-    writer
-        .write_all(
-            format!(
-                "GET /derp HTTP/1.1\r\n\
+    let request = match (derp_v2, server_keepalives.poll_keepalive) {
+        // We try to connect to derp V2
+        (true, Some(poll_keepalive)) => format!(
+            "GET /derpv2 HTTP/1.1\r\n\
                 Host: {host}\r\n\
                 Connection: Upgrade\r\n\
                 Upgrade: WebSocket\r\n\
                 User-Agent: telio/{} {}\r\n\
-                Keep-Alive: tcp={}, derp={}\r\n\r\n",
-                telio_utils::version_tag(),
-                std::env::consts::OS,
-                server_keepalives.tcp_keepalive,
-                server_keepalives.derp_keepalive,
-            )
-            .as_bytes(),
-        )
-        .await?;
+                Poll-Keepalive: {}\r\n\r\n",
+            telio_utils::version_tag(),
+            std::env::consts::OS,
+            poll_keepalive,
+        ),
+        // We try to connect to derp V1
+        (false, _) => format!(
+            "GET /derp HTTP/1.1\r\n\
+            Host: {host}\r\n\
+            Connection: Upgrade\r\n\
+            Upgrade: WebSocket\r\n\
+            User-Agent: telio/{} {}\r\n\
+            Keep-Alive: tcp={}, derp={}\r\n\r\n",
+            telio_utils::version_tag(),
+            std::env::consts::OS,
+            server_keepalives.tcp_keepalive,
+            server_keepalives.derp_keepalive,
+        ),
+        _ => return Err(Error::InternalError),
+    };
+    telio_log_debug!("DERP connect request: {}", &request);
+
+    writer.write_all(request.as_bytes()).await?;
 
     let mut data = [0_u8; MAX_TCP_PACKET_SIZE];
     let data_len = reader.read(&mut data).await?;
@@ -240,51 +314,116 @@ async fn connect_http<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
         .to_vec())
 }
 
+fn build_tcp_parameters(use_tcp_keepalives: bool) -> TcpParams {
+    if use_tcp_keepalives {
+        TcpParams {
+            keepalive_enable: Some(true),
+            keepalive_cnt: Some(TCP_KEEPALIVE_COUNT),
+            keepalive_idle: Some(TCP_KEEPALIVE_IDLE),
+            keepalive_intvl: Some(TCP_KEEPALIVE_INTERVAL),
+            nodelay_enable: Some(true),
+            user_timeout: Some(TCP_USER_TIMEOUT),
+            buf_size: SocketBufSizes {
+                tx_buf_size: Some(SOCK_BUF_SZ),
+                rx_buf_size: Some(SOCK_BUF_SZ),
+            },
+        }
+    } else {
+        TcpParams {
+            nodelay_enable: Some(true),
+            user_timeout: Some(TCP_USER_TIMEOUT),
+            buf_size: SocketBufSizes {
+                tx_buf_size: Some(SOCK_BUF_SZ),
+                rx_buf_size: Some(SOCK_BUF_SZ),
+            },
+            ..Default::default()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use hyper::http::HeaderValue;
     use hyper::server::conn::http1;
     use hyper::service::service_fn;
-    use hyper::{Request, Response};
+    use hyper::{Body, Request, Response};
     use tokio::net::{TcpListener, TcpStream};
 
-    #[tokio::test]
-    async fn http_derp_connection_initiation() {
-        const RESPONSE_BODY: &str = "test body";
-        const HOST: &str = "hostname";
+    const RESPONSE_BODY: &str = "test body";
+    const HOST: &str = "hostname";
 
-        async fn hello(request: Request<hyper::Body>) -> hyper::Result<Response<hyper::Body>> {
-            assert_eq!(
-                request.headers().get(hyper::header::HOST),
-                Some(&HeaderValue::from_static(HOST))
-            );
-            assert_eq!(
-                request.headers().get(hyper::header::CONNECTION),
-                Some(&HeaderValue::from_static("Upgrade"))
-            );
-            assert_eq!(
-                request.headers().get(hyper::header::UPGRADE),
-                Some(&HeaderValue::from_static("WebSocket"))
-            );
-            assert_eq!(
-                request.headers().get("keep-alive"),
-                Some(&HeaderValue::from_static("tcp=1, derp=2"))
-            );
-            Ok(Response::builder()
-                .body(hyper::Body::from(RESPONSE_BODY))
-                .unwrap())
+    fn default_asserts(request: &Request<Body>) -> () {
+        assert_eq!(
+            request.headers().get(hyper::header::HOST),
+            Some(&HeaderValue::from_static(HOST))
+        );
+        assert_eq!(
+            request.headers().get(hyper::header::CONNECTION),
+            Some(&HeaderValue::from_static("Upgrade"))
+        );
+        assert_eq!(
+            request.headers().get(hyper::header::UPGRADE),
+            Some(&HeaderValue::from_static("WebSocket"))
+        );
+    }
+
+    async fn derpv1_handler(request: Request<Body>) -> hyper::Result<Response<Body>> {
+        default_asserts(&request);
+        match request.uri().path() {
+            "/derp" => {
+                assert_eq!(
+                    request.headers().get("Keep-alive"),
+                    Some(&HeaderValue::from_static("tcp=1, derp=2"))
+                );
+                assert_eq!(request.headers().get("Poll-keepalive"), None);
+                Ok(Response::builder().body(Body::from(RESPONSE_BODY)).unwrap())
+            }
+            _ => Ok(Response::builder()
+                .status(404)
+                .body(Body::from("Not found"))
+                .unwrap()),
         }
+    }
+
+    async fn derpv2_handler(request: Request<Body>) -> hyper::Result<Response<Body>> {
+        default_asserts(&request);
+        match request.uri().path() {
+            "/derp" => {
+                assert_eq!(
+                    request.headers().get("Keep-alive"),
+                    Some(&HeaderValue::from_static("tcp=1, derp=2"))
+                );
+                assert_eq!(request.headers().get("Poll-keepalive"), None);
+                Ok(Response::builder().body(Body::from(RESPONSE_BODY)).unwrap())
+            }
+            "/derpv2" => {
+                assert_eq!(request.headers().get("Keep-alive"), None);
+                assert_eq!(
+                    request.headers().get("Poll-keepalive"),
+                    Some(&HeaderValue::from_static("3"))
+                );
+                Ok(Response::builder().body(Body::from(RESPONSE_BODY)).unwrap())
+            }
+            _ => Ok(Response::builder()
+                .status(404)
+                .body(Body::from("Not found"))
+                .unwrap()),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_v1_derp_connection() {
         let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
         let listener = TcpListener::bind(addr).await.unwrap();
-
         let connect_addr = listener.local_addr().unwrap();
+
         tokio::spawn(async move {
             loop {
                 let (stream, _) = listener.accept().await.unwrap();
                 tokio::task::spawn(async move {
                     http1::Builder::new()
-                        .serve_connection(stream, service_fn(hello))
+                        .serve_connection(stream, service_fn(derpv1_handler))
                         .await
                         .unwrap();
                 });
@@ -297,10 +436,60 @@ mod tests {
         let derp_config = DerpKeepaliveConfig {
             tcp_keepalive: 1,
             derp_keepalive: 2,
+            poll_keepalive: Some(3),
+        };
+        assert_eq!(
+            "Not found".as_bytes(),
+            connect_http(&mut r, &mut w, &derp_config, HOST, true)
+                .await
+                .unwrap()
+                .as_slice()
+        );
+        assert_eq!(
+            RESPONSE_BODY.as_bytes(),
+            connect_http(&mut r, &mut w, &derp_config, HOST, false)
+                .await
+                .unwrap()
+                .as_slice()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_v2_derp_connection() {
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
+        let listener = TcpListener::bind(addr).await.unwrap();
+        let connect_addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                tokio::task::spawn(async move {
+                    http1::Builder::new()
+                        .serve_connection(stream, service_fn(derpv2_handler))
+                        .await
+                        .unwrap();
+                });
+            }
+        });
+
+        let mut stream = TcpStream::connect(connect_addr).await.unwrap();
+        let (mut r, mut w) = stream.split();
+
+        let derp_config = DerpKeepaliveConfig {
+            tcp_keepalive: 1,
+            derp_keepalive: 2,
+            poll_keepalive: Some(3),
         };
         assert_eq!(
             RESPONSE_BODY.as_bytes(),
-            connect_http(&mut r, &mut w, &derp_config, HOST)
+            connect_http(&mut r, &mut w, &derp_config, HOST, true)
+                .await
+                .unwrap()
+                .as_slice()
+        );
+        assert_eq!(
+            RESPONSE_BODY.as_bytes(),
+            connect_http(&mut r, &mut w, &derp_config, HOST, false)
                 .await
                 .unwrap()
                 .as_slice()
