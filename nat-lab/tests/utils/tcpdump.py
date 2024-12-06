@@ -53,12 +53,23 @@ class TcpDump:
             command += ["-w", PCAP_FILE_PATH[self.connection.target_os]]
 
         if self.interfaces:
-            command += ["-i", ",".join(self.interfaces)]
+            if self.connection.target_os != TargetOS.Windows:
+                command += ["-i", ",".join(self.interfaces)]
+            else:
+                # TODO(gytsto). Windump itself only supports one interface at the time,
+                # but it supports multiple instances of Windump without any issues,
+                # so there is a workaround we can do for multiple interfaces:
+                # - create multiple process of windump for each interface
+                # - when finished with dump, just combine the pcap's with `mergecap` or smth
+                print(
+                    "[Warning] Currently tcpdump for windows support only 1 interface"
+                )
+                command += ["-i", self.interfaces[0]]
         else:
             if self.connection.target_os != TargetOS.Windows:
                 command += ["-i", "any"]
             else:
-                command += ["-i", "1", "-i", "2"]
+                command += ["-i", "1"]
 
         if self.count:
             command += ["-c", str(self.count)]
@@ -77,6 +88,9 @@ class TcpDump:
 
         self.process = self.connection.create_process(
             command,
+            # xterm type is needed here, because Mac on default term type doesn't
+            # handle signals properly while `tcpdump -w file` is running, without writing
+            # to file, everything works fine
             term_type="xterm" if self.connection.target_os == TargetOS.Mac else None,
         )
 
