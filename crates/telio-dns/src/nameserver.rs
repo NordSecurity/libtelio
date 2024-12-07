@@ -173,9 +173,12 @@ impl LocalNameServer {
                             }
                         };
 
+                        sending_buffer[16..16 + receiving_buffer.len()]
+                            .copy_from_slice(&receiving_buffer);
+
                         let tunn_res = peer.lock().await.encapsulate(
-                            receiving_buffer.get(..length).unwrap_or(&[]),
                             &mut sending_buffer,
+                            receiving_buffer.len(), // This needs to be fixed properly!
                         );
                         match tunn_res {
                             TunnResult::WriteToNetwork(dns) => {

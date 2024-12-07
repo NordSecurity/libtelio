@@ -74,7 +74,8 @@ pub async fn fetch_keys(
     let pkgbuf = create_get_packet(peers_pubkey, &wg_secret, &wg_public, &pq_public, local_port); // 4 KiB
 
     let mut recvbuf = [0u8; 2048]; // 2 KiB buffer should suffice
-    match tunn.encapsulate(&pkgbuf, &mut recvbuf) {
+    recvbuf[16..16 + pkgbuf.len()].copy_from_slice(&pkgbuf);
+    match tunn.encapsulate(&mut recvbuf, pkgbuf.len()) {
         noise::TunnResult::Err(err) => {
             return Err(format!("Failed to encapsulate PQ keys message: {err:?}").into())
         }
@@ -187,7 +188,7 @@ async fn handshake(
     )?;
 
     let mut pkgbuf = [0u8; 2048];
-    match tunn.encapsulate(&[], &mut pkgbuf) {
+    match tunn.encapsulate(&mut pkgbuf, 0) {
         noise::TunnResult::Err(err) => {
             return Err(format!("Failed to encapsulate handshake message: {err:?}").into())
         }

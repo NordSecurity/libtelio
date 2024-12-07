@@ -235,7 +235,9 @@ impl Runtime for State {
                     },
                     // Outbound packets
                     Some(ip_packet) = rx.recv() => {
-                        match peer.encapsulate(&ip_packet, &mut *self.sending_buffer) {
+                        self.sending_buffer[16..16 + ip_packet.len()]
+                        .copy_from_slice(&ip_packet);
+                        match peer.encapsulate(&mut *self.sending_buffer, ip_packet.len()) {
                             TunnResult::Done => (),
                             TunnResult::Err(e) => {
                                 telio_log_error!("[Starcast] Failed to send encapsulate packet: {:?}", e);
