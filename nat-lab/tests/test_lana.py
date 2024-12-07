@@ -126,7 +126,8 @@ IP_STACK_TEST_CONFIGS = [
 
 
 def build_telio_features(
-    initial_heartbeat_interval: int = 300, rtt_interval: int = RTT_INTERVAL
+    initial_heartbeat_interval: int = 300,
+    rtt_interval: int = RTT_INTERVAL,
 ) -> Features:
     features = default_features(
         enable_lana=(CONTAINER_EVENT_PATH, False),
@@ -1280,7 +1281,11 @@ async def test_lana_with_meshnet_exit_node(
 
         api = API()
         (alpha, beta) = api.default_config_two_nodes(
-            True, True, alpha_ip_stack=alpha_ip_stack, beta_ip_stack=beta_ip_stack
+            True,
+            True,
+            alpha_ip_stack=alpha_ip_stack,
+            beta_ip_stack=beta_ip_stack,
+            allow_peer_traffic_routing=True,
         )
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(

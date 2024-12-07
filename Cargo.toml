@@ -11,6 +11,7 @@ crate-type = ["cdylib", "lib"]
 
 [features]
 pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
+use_custom_ip = ["telio-firewall/use_custom_ip"]
 
 [dependencies]
 cfg-if = "1.0.0"
@@ -90,6 +91,7 @@ telio-proxy = { workspace = true, features = ["mockall"] }
 telio-pq = { workspace = true, features = ["mockall"] }
 telio-test.workspace = true
 telio-traversal = { workspace = true, features = ["mockall"] }
+telio-utils.workspace = true
 telio-wg = { workspace = true, features = ["mockall", "test-adapter"] }
 
 [build-dependencies]

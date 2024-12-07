@@ -540,7 +540,7 @@ mod tests {
             "nicknames": true,
             "firewall": {
                 "neptun_reset_conns": true,
-                "boringtun_reset_conns": true
+                "boringtun_reset_conns": true,
             },
             "flush_events_on_stop_timeout_seconds": 15,
             "post_quantum_vpn": {

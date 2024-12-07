@@ -766,6 +766,10 @@ dictionary Peer {
     boolean is_local;
     /// Flag to control whether the peer allows incoming connections
     boolean allow_incoming_connections;
+    /// Flag to control whether the Node allows routing through
+    boolean allow_peer_traffic_routing;
+    /// Flag to control whether the Node allows incoming local area access
+    boolean allow_peer_local_network_access;
     /// Flag to control whether the peer allows incoming files
     boolean allow_peer_send_files;
     /// Flag to control whether we allow multicast messages from the peer
@@ -836,6 +840,10 @@ dictionary TelioNode {
     string? hostname;
     /// Flag to control whether the Node allows incoming connections
     boolean allow_incoming_connections;
+    /// Flag to control whether the Node allows routing through
+    boolean allow_peer_traffic_routing;
+    /// Flag to control whether the Node allows incoming local area access
+    boolean allow_peer_local_network_access;
     /// Flag to control whether the Node allows incoming files
     boolean allow_peer_send_files;
     /// Connection type in the network mesh (through Relay or hole punched directly)

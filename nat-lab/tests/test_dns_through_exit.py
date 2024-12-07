@@ -2,7 +2,7 @@ import asyncio
 import config
 import pytest
 from contextlib import AsyncExitStack
-from helpers import setup_mesh_nodes, SetupParameters
+from helpers import setup_api, setup_mesh_nodes, SetupParameters
 from typing import List, Tuple
 from utils.bindings import TelioAdapterType
 from utils.connection_util import generate_connection_tracker_config, ConnectionTag
@@ -124,8 +124,17 @@ async def test_dns_through_exit(
             else config.LIBTELIO_DNS_IPV6
         )
 
+        api, (alpha, beta) = setup_api(
+            [(False, alpha_setup_params.ip_stack), (False, beta_setup_params.ip_stack)]
+        )
+        beta.set_peer_firewall_settings(
+            alpha.id, allow_incoming_connections=True, allow_peer_traffic_routing=True
+        )
+
         env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
+            exit_stack,
+            [alpha_setup_params, beta_setup_params],
+            provided_api=api,
         )
 
         _, exit_node = env.nodes

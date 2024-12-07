@@ -541,6 +541,11 @@ def call_build(config, args):
     rutils.config_local_env_vars(config, LIBTELIO_CONFIG)
 
     packages = LIBTELIO_CONFIG[config.target_os].get("packages")
+    telio_package = {}
+    if NAME in packages:
+        telio_package[NAME] = packages[NAME]
+        packages = {k: v for k, v in packages.items() if k != NAME}
+
     if os.environ.get("NATLAB_REDUCE_PARALLEL_LINKERS", None) == "1":
         teliod_package = {}
 
@@ -568,6 +573,17 @@ def call_build(config, args):
             packages,
             LIBTELIO_CONFIG[config.target_os].get("build_args", None),
         )
+
+    build_args = LIBTELIO_CONFIG.get(config.target_os, {}).get("build_args", None) + [
+        "--features",
+        "use_custom_ip",
+    ]
+    rutils.cargo_build(
+        PROJECT_CONFIG,
+        config,
+        telio_package,
+        build_args,
+    )
 
     if "post_build" in LIBTELIO_CONFIG[config.target_os]:
         for post in LIBTELIO_CONFIG[config.target_os]["post_build"]:

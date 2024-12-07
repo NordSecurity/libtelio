@@ -4517,7 +4517,10 @@ name = "telio-firewall"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "enum-map",
  "hashlink",
+ "if-addrs",
+ "ipnet",
  "mockall",
  "pnet_packet",
  "proptest",
@@ -4526,6 +4529,7 @@ dependencies = [
  "rustc-hash 1.1.0",
  "sn_fake_clock",
  "telio-crypto",
+ "telio-network-monitors",
  "telio-utils",
  "tracing",
 ]

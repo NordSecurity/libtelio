@@ -305,7 +305,9 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
         alpha.set_peer_firewall_settings(exit_node.id, allow_incoming_connections=True)
         await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
 
-        exit_node.set_peer_firewall_settings(alpha.id, allow_incoming_connections=True)
+        exit_node.set_peer_firewall_settings(
+            alpha.id, allow_incoming_connections=True, allow_peer_traffic_routing=True
+        )
         await client_exit_node.set_meshnet_config(api.get_meshnet_config(exit_node.id))
 
         # Ping should again work both ways
