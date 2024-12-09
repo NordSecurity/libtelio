@@ -196,6 +196,31 @@ def pytest_make_parametrize_id(config, val):
     return param_id
 
 
+async def setup_check_connectivity():
+    from config import DERP_PRIMARY
+    test_nodes = {
+        ConnectionTag.WINDOWS_VM_1: [
+            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2],
+            LAN_ADDR_MAP[ConnectionTag.MAC_VM],
+            DERP_PRIMARY.ipv4,
+        ],
+        ConnectionTag.WINDOWS_VM_2: [
+            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1],
+            LAN_ADDR_MAP[ConnectionTag.MAC_VM],
+            DERP_PRIMARY.ipv4,
+        ],
+        ConnectionTag.MAC_VM: [
+            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1],
+            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2],
+            DERP_PRIMARY.ipv4,
+        ],
+    }
+    for source, destinations in test_nodes.items():
+        for dest_ip in destinations:
+            async with new_connection_raw(source) as connection:
+                await connection.create_process(["ping", "-c", "1", dest_ip]).execute()
+
+
 async def setup_check_interderp():
     async with new_connection_raw(ConnectionTag.DOCKER_CONE_CLIENT_1) as connection:
         if not isinstance(connection, DockerConnection):
@@ -229,6 +254,7 @@ async def setup_check_interderp():
 
 SETUP_CHECKS = [
     (setup_check_interderp, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
+    (setup_check_connectivity, SETUP_CHECK_TIMEOUT_S, 1),
 ]
 
 
