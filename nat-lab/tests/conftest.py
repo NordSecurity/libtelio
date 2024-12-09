@@ -74,6 +74,10 @@ async def os_ephemeral_ports(vm_tag):
 
     start_port = random.randint(5000, 55000)
     num_ports = random.randint(2000, 5000)
+
+    if start_port % 2 == num_ports % 2 or start_port == num_ports:
+        num_ports += 1
+
     print(
         datetime.now(),
         f"Setting up ports for {vm_tag}: start={start_port}, num={num_ports}",
