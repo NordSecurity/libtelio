@@ -43,7 +43,10 @@ case "${1:-}" in
         ;;
     disable)
         echo "VM NAT disabled"
+        ip rule delete from $VM_PRIMARY_NETWORK table $PRIMARY_TABLE || true
         ip route delete $DOCKER_NETWORK table $PRIMARY_TABLE || true
+
+        ip rule delete from $VM_SECONDARY_NETWORK table $SECONDARY_TABLE || true
         ip route delete $DOCKER_NETWORK table $SECONDARY_TABLE || true
 
         print_routing_info
