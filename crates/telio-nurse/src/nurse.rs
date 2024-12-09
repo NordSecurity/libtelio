@@ -34,9 +34,9 @@ use crate::qos::Io as QoSIo;
 use crate::qos::OutputData as QoSData;
 
 /// Input/output channels for Nurse
-pub struct NurseIo<'a> {
+pub struct NurseIo {
     /// Event channel to gather wg events
-    pub wg_event_channel: &'a mc_chan::Tx<Box<Event>>,
+    pub wg_event_channel: mc_chan::Rx<Box<Event>>,
     /// Event channel to gather wg data
     pub wg_analytics_channel: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
     /// Event channel to gather meshnet config update
@@ -57,7 +57,7 @@ impl Nurse {
     pub async fn start_with(
         public_key: PublicKey,
         config: Config,
-        io: NurseIo<'_>,
+        io: NurseIo,
         aggregator: Arc<ConnectivityDataAggregator>,
         ipv6_enabled: bool,
     ) -> Self {
@@ -127,7 +127,7 @@ impl State {
     pub async fn new(
         public_key: PublicKey,
         config: Config,
-        io: NurseIo<'_>,
+        io: NurseIo,
         aggregator: Arc<ConnectivityDataAggregator>,
         ipv6_enabled: bool,
     ) -> Self {
@@ -152,7 +152,7 @@ impl State {
         let heartbeat_io = HeartbeatIo {
             chan: None,
             derp_event_channel: None,
-            wg_event_channel: io.wg_event_channel.subscribe(),
+            wg_event_channel: io.wg_event_channel,
             config_update_channel: config_update_channel.subscribe(),
             analytics_channel: analytics_channel.tx.clone(),
             collection_trigger_channel: collection_trigger_channel.subscribe(),

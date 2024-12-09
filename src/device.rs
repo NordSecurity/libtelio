@@ -1166,7 +1166,7 @@ impl Runtime {
         let nurse = if telio_lana::is_lana_initialized() {
             if let Some(nurse_features) = &features.nurse {
                 let nurse_io = NurseIo {
-                    wg_event_channel: &libtelio_wide_event_publisher,
+                    wg_event_channel: libtelio_wide_event_publisher.subscribe(),
                     wg_analytics_channel: analytics_ch.clone(),
                     config_update_channel: config_update_ch.clone(),
                     collection_trigger_channel: collection_trigger_ch.clone(),
