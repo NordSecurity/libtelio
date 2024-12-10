@@ -4,12 +4,16 @@ echo "Executing natlab process cleanup script"
 
 for pid in $(ps -e -o pid=); do
     # Skip non-testing processes
-    if ! grep --null-data --text KILL_ID /proc/${pid}/environ; then
+    if ! grep --null-data --text "KILL_ID" /proc/${pid}/environ; then
+        continue
+    fi
+
+    if grep --null-data --text "DO_NOT_KILL" /proc/${pid}/environ; then
         continue
     fi
 
     # KILL
-    cmd=$(tr -d '\000' < /proc/${pid}/cmdline || echo "N/A")
+    cmd=$(tr -d '\000' </proc/${pid}/cmdline || echo "N/A")
     echo "$(date) Cleaning up process: ${pid} ${cmd}"
     kill "${pid}" || echo "Kill command failed with $?, perhaps processs already exited?"
 done
