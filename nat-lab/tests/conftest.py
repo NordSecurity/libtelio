@@ -360,9 +360,6 @@ async def perform_pretest_cleanups():
 
 
 async def _copy_vm_binaries(tag: ConnectionTag):
-    is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
-        "CUSTOM_ENV_GITLAB_CI"
-    )
     if tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
         try:
             print(f"copying for {tag}")
@@ -371,7 +368,7 @@ async def _copy_vm_binaries(tag: ConnectionTag):
             ):
                 pass
         except OSError as e:
-            if is_ci:
+            if os.environ.get("GITLAB_CI"):
                 raise e
             print(e)
     elif tag is ConnectionTag.MAC_VM:
@@ -381,7 +378,7 @@ async def _copy_vm_binaries(tag: ConnectionTag):
             ):
                 pass
         except OSError as e:
-            if is_ci:
+            if os.environ.get("GITLAB_CI"):
                 raise e
             print(e)
 
@@ -446,10 +443,6 @@ async def _save_macos_logs(conn, suffix):
 
 
 async def collect_kernel_logs(items, suffix):
-    is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
-        "CUSTOM_ENV_GITLAB_CI"
-    )
-
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
 
@@ -462,7 +455,7 @@ async def collect_kernel_logs(items, suffix):
                 async with mac_vm_util.new_connection() as conn:
                     await _save_macos_logs(conn, suffix)
             except OSError as e:
-                if is_ci:
+                if os.environ.get("GITLAB_CI"):
                     raise e
 
 
