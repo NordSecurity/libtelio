@@ -232,9 +232,6 @@ pub struct RequestedState {
 
     // Wireguard stun server that should be currently used
     pub wg_stun_server: Option<StunServer>,
-
-    // Requested keepalive periods
-    pub(crate) keepalive_periods: FeaturePersistentKeepalive,
 }
 
 pub struct MeshnetEntities {
@@ -1207,7 +1204,6 @@ impl Runtime {
 
         let requested_state = RequestedState {
             device_config: config.clone(),
-            keepalive_periods: features.wireguard.persistent_keepalive.clone(),
             ..Default::default()
         };
 
