@@ -1,4 +1,5 @@
 import os
+import secrets
 from asyncio import Event, wait_for, sleep
 from config import WINDUMP_BINARY_WINDOWS
 from contextlib import asynccontextmanager, AsyncExitStack
@@ -33,6 +34,7 @@ class TcpDump:
         interfaces: Optional[list[str]] = None,
         output_file: Optional[str] = None,
         count: Optional[int] = None,
+        session: bool = False,
     ) -> None:
         self.connection = connection
         self.interfaces = interfaces
@@ -92,6 +94,7 @@ class TcpDump:
             # handle signals properly while `tcpdump -w file` is running, without writing
             # to file, everything works fine
             term_type="xterm" if self.connection.target_os == TargetOS.Mac else None,
+            kill_id="DO_NOT_KILL" + secrets.token_hex(8).upper() if session else None,
         )
 
     @staticmethod
@@ -154,11 +157,14 @@ async def make_tcpdump(
     connection_list: list[Connection],
     download: bool = True,
     store_in: Optional[str] = None,
+    session: bool = False,
 ):
     try:
         async with AsyncExitStack() as exit_stack:
             for conn in connection_list:
-                await exit_stack.enter_async_context(TcpDump(conn).run())
+                await exit_stack.enter_async_context(
+                    TcpDump(conn, session=session).run()
+                )
             yield
     finally:
         if download:
