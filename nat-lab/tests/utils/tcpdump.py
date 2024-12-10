@@ -1,5 +1,5 @@
 import os
-from asyncio import Event, wait_for
+from asyncio import Event, wait_for, sleep
 from config import WINDUMP_BINARY_WINDOWS
 from contextlib import asynccontextmanager, AsyncExitStack
 from typing import AsyncIterator, Optional
@@ -69,7 +69,7 @@ class TcpDump:
             if self.connection.target_os != TargetOS.Windows:
                 command += ["-i", "any"]
             else:
-                command += ["-i", "1"]
+                command += ["-i", "2"]
 
         if self.count:
             command += ["-c", str(self.count)]
@@ -132,6 +132,9 @@ class TcpDump:
         async with self.process.run(self.on_stdout, self.on_stderr, True):
             await wait_for(self.start_event.wait(), 10)
             yield self
+            # Windump takes so long to flush packets to stdout/file
+            if self.connection.target_os == TargetOS.Windows:
+                await sleep(5)
 
 
 def find_unique_path_for_tcpdump(log_dir, guest_name):
