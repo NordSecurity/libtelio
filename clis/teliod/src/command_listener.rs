@@ -88,7 +88,6 @@ impl CommandListener {
             connection.respond(response.serialize()).await?;
             Ok(command)
         } else {
-            error!("Received invalid command from client: {}", command_str);
             connection
                 .respond(
                     CommandResponse::Err(format!("Invalid command: {}", command_str)).serialize(),
