@@ -47,3 +47,4 @@ gamma-events.db
 nat-lab/**/report.html
 events-moose.log
 qnap/**/teliod
+report.json
