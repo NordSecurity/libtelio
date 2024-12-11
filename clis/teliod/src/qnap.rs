@@ -1,5 +1,8 @@
 use std::{
-    fs, io, path::PathBuf, process::{Command, Stdio}, time::Duration
+    fs, io,
+    path::PathBuf,
+    process::{Command, Stdio},
+    time::Duration,
 };
 
 use const_format::concatcp;
@@ -8,7 +11,9 @@ use tracing::level_filters::LevelFilter;
 use uuid::Uuid;
 
 use crate::{
-    command_listener::CommandResponse, config::{InterfaceConfig, MqttConfig, TeliodDaemonConfig}, DaemonSocket, TIMEOUT_SEC
+    command_listener::CommandResponse,
+    config::{InterfaceConfig, MqttConfig, TeliodDaemonConfig},
+    ClientCmd, DaemonSocket, TIMEOUT_SEC,
 };
 
 const TELIOD_TMP_DIR: &str = "/tmp/nordsecuritymeshnet";
@@ -25,18 +30,14 @@ use tests::TELIOD_CFG;
 
 pub(crate) fn handle_request(request: Request) -> Response {
     match (request.method(), request.uri().query()) {
-        (&Method::POST, Some("action=start")) => start_daemon(),
-        (&Method::POST, Some("action=stop")) => stop_daemon(),
-        (&Method::PATCH, Some(action)) => {
-            if !action.starts_with("action=update-config") {
-                text_response(400, "Invalid request.")
-            } else {
-                let body = match String::from_utf8(request.into_body()) {
-                    Ok(body) => body,
-                    Err(_) => return text_response(400, "Invalid UTF-8 in request body."),
-                };
-                update_config(&body)
-            }
+        (&Method::POST, _) => start_daemon(),
+        (&Method::DELETE, _) => stop_daemon(),
+        (&Method::PATCH, _) => {
+            let body = match String::from_utf8(request.into_body()) {
+                Ok(body) => body,
+                Err(_) => return text_response(400, "Invalid UTF-8 in request body."),
+            };
+            update_config(&body)
         }
         (&Method::GET, Some("info=get-status")) => get_status(),
         (&Method::GET, Some("info=get-teliod-logs")) => get_teliod_logs(),
@@ -60,9 +61,8 @@ fn teliod_socket_exists() -> bool {
 fn kill_teliod_process() -> Result<(), io::Error> {
     match fs::read_to_string(PID_FILE) {
         Ok(pid) => {
-            let _ = Command::new("kill").arg(pid.trim()).status();
+            let _ = Command::new("kill").arg("-9").arg(pid.trim()).status();
             if teliod_socket_exists() {
-                let _ = Command::new("kill").arg("-9").arg(pid.trim()).status();
                 let _ = DaemonSocket::get_ipc_socket_path().and_then(fs::remove_file);
             }
             fs::remove_file(PID_FILE)
@@ -207,48 +207,41 @@ fn update_config(body: &str) -> Response {
 fn get_status() -> Response {
     if is_teliod_running() && teliod_socket_exists() {
         if let Ok(socket_path) = DaemonSocket::get_ipc_socket_path() {
-            let response = futures::executor::block_on(tokio::time::timeout(
+            let socket_query = futures::executor::block_on(tokio::time::timeout(
                 Duration::from_secs(TIMEOUT_SEC),
                 DaemonSocket::send_command(
                     &socket_path,
-                    &serde_json::to_string("get-status").unwrap_or_default(),
+                    &serde_json::to_string(&ClientCmd::GetStatus).unwrap_or_default(),
                 ),
             ));
 
-            match response {
-                Ok(Ok(response)) => {
-                    if let Ok(CommandResponse::StatusReport(status)) =
-                        CommandResponse::deserialize(&response)
-                    {
-                        text_response(
-                            200,
-                            serde_json::to_string_pretty(&status).unwrap_or_default(),
-                        )
-                    } else {
-                        text_response(500, "Failed to retrieve status.")
-                    }
+            if let Ok(Ok(daemon_reply)) = socket_query {
+                if let Ok(CommandResponse::StatusReport(status)) =
+                    CommandResponse::deserialize(&daemon_reply)
+                {
+                    return text_response(
+                        200,
+                        serde_json::to_string_pretty(&status).unwrap_or_default(),
+                    );
                 }
-                _ => text_response(500, "Failed to retrieve status."),
             }
-        } else {
-            text_response(500, "Failed to retrieve status.")
         }
-    } else {
-        text_response(400, "Application is not running.")
     }
+
+    text_response(500, "Failed to retrieve status.")
 }
 
 fn get_teliod_logs() -> Response {
     match fs::read_to_string(TELIOD_LOG) {
         Ok(logs) => text_response(200, logs),
-        Err(_) => text_response(404, "Log file not found."),
+        Err(_) => text_response(500, "Log file not found."),
     }
 }
 
 fn get_meshnet_logs() -> Response {
     match fs::read_to_string(MESHNET_LOG) {
         Ok(logs) => text_response(200, logs),
-        Err(_) => text_response(404, "Log file not found."),
+        Err(_) => text_response(500, "Log file not found."),
     }
 }
 
