@@ -7,21 +7,28 @@ StreamCallback = Callable[[str], Awaitable[Any]]
 
 class ProcessExecError(Exception):
     returncode: int
+    remote_name: str
     cmd: List[str]
     stdout: str
     stderr: str
 
     def __init__(
-        self, returncode: int, cmd: List[str], stdout: str, stderr: str
+        self,
+        returncode: int,
+        remote_name: str,
+        cmd: List[str],
+        stdout: str,
+        stderr: str,
     ) -> None:
         self.returncode = returncode
+        self.remote_name = remote_name
         self.cmd = cmd
         self.stdout = stdout
         self.stderr = stderr
 
     def print(self) -> None:
         print(
-            f"Executed command {self.cmd} exited with ret code '{self.returncode}'. STDOUT: '{self.stdout}'. STDERR: '{self.stderr}'"
+            f"Executed command {self.cmd} on {self.remote_name} exited with ret code '{self.returncode}'. STDOUT: '{self.stdout}'. STDERR: '{self.stderr}'"
         )
 
 
@@ -31,7 +38,7 @@ class Process(ABC):
         self,
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
-        privileged=False,
+        privileged: bool = False,
     ) -> "Process":
         pass
 
@@ -41,6 +48,7 @@ class Process(ABC):
         self,
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
+        privileged: bool = False,
     ) -> AsyncIterator["Process"]:
         yield self
 

@@ -2,12 +2,11 @@ import asyncio
 import itertools
 import json
 import pytest
-from config import WG_SERVERS
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import product, zip_longest
-from mesh_api import Node, API, stop_tcpdump
+from mesh_api import Node, API
 from telio import Client
 from typing import AsyncIterator, List, Tuple, Optional, Union
 from utils.bindings import (
@@ -26,9 +25,11 @@ from utils.connection_util import (
     ConnectionManager,
     ConnectionTag,
     new_connection_manager_by_tag,
+    new_connection_raw,
 )
 from utils.ping import ping
 from utils.router import IPStack
+from utils.tcpdump import make_tcpdump
 from uuid import UUID
 
 
@@ -294,6 +295,15 @@ async def setup_environment(
     )
 
     if prepare_vpn:
+        connections = [
+            await exit_stack.enter_async_context(new_connection_raw(conn_tag))
+            for conn_tag in [
+                ConnectionTag.DOCKER_NLX_1,
+                ConnectionTag.DOCKER_VPN_1,
+                ConnectionTag.DOCKER_VPN_2,
+            ]
+        ]
+        await exit_stack.enter_async_context(make_tcpdump(connections))
         api.prepare_all_vpn_servers()
 
     clients = await setup_clients(
@@ -317,18 +327,15 @@ async def setup_environment(
         ),
     )
 
-    try:
-        yield Environment(api, nodes, connection_managers, clients)
+    yield Environment(api, nodes, connection_managers, clients)
 
-        print(datetime.now(), "Checking connection limits")
-        for conn_manager in connection_managers:
-            if conn_manager.tracker:
-                violations = await conn_manager.tracker.find_conntracker_violations()
-                assert (
-                    violations is None
-                ), f"conntracker reported out of limits {violations}"
-    finally:
-        stop_tcpdump([server["container"] for server in WG_SERVERS])
+    print(datetime.now(), "Checking connection limits")
+    for conn_manager in connection_managers:
+        if conn_manager.tracker:
+            violations = await conn_manager.tracker.find_conntracker_violations()
+            assert (
+                violations is None
+            ), f"conntracker reported out of limits {violations}"
 
 
 async def setup_mesh_nodes(
