@@ -2602,7 +2602,6 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "0.6.0"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v1.0.0#db16cadc28efa3c915435d85e5b834834a867a69"
 dependencies = [
  "aead",
  "base64 0.13.1",
@@ -4776,6 +4775,10 @@ dependencies = [
  "tracing",
  "uuid",
 ]
+
+[[package]]
+name = "telio-perf"
+version = "0.1.0"
 
 [[package]]
 name = "telio-pmtu"
