@@ -119,7 +119,8 @@ impl LocalNameServer {
             tokio::spawn(async move {
                 let res = peer.lock().await.decapsulate(
                     None,
-                    receiving_buffer.get(..bytes_read).unwrap_or(&[]),
+                    &mut receiving_buffer,
+                    bytes_read,
                     &mut sending_buffer,
                 );
                 match res {
@@ -134,7 +135,7 @@ impl LocalNameServer {
                         while let TunnResult::WriteToNetwork(empty) =
                             peer.lock()
                                 .await
-                                .decapsulate(None, &[], &mut temporary_buffer)
+                                .decapsulate(None, &mut [], 0, &mut temporary_buffer)
                         {
                             if let Err(e) = socket.send_to(empty, dst_address).await {
                                 telio_log_warn!("[DNS] Failed to send handshake packet  : {:?}", e);
@@ -155,6 +156,8 @@ impl LocalNameServer {
                         };
 
                         let nameserver = nameserver.clone();
+                        let mut receiving_buffer = vec![0u8; MAX_PACKET];
+                        receiving_buffer[..packet.len()].copy_from_slice(packet);
                         let length = match LocalNameServer::process_packet(
                             nameserver,
                             packet,
@@ -173,12 +176,12 @@ impl LocalNameServer {
                             }
                         };
 
-                        sending_buffer[16..16 + receiving_buffer.len()]
-                            .copy_from_slice(&receiving_buffer);
+                        sending_buffer[16..16 + length]
+                            .copy_from_slice(&receiving_buffer[..length]);
 
                         let tunn_res = peer.lock().await.encapsulate(
                             &mut sending_buffer,
-                            receiving_buffer.len(), // This needs to be fixed properly!
+                            length, // This needs to be fixed properly!
                         );
                         match tunn_res {
                             TunnResult::WriteToNetwork(dns) => {

@@ -91,12 +91,10 @@ pub async fn fetch_keys(
     // Receive response
     let ciphertext = loop {
         let len = sock.recv(&mut recvbuf).await?;
-        #[allow(index_access_check)]
-        let pkg = &recvbuf[..len];
 
-        telio_log_debug!("Received packet of size {}", pkg.len());
+        telio_log_debug!("Received packet of size {}", len);
 
-        match tunn.decapsulate(None, pkg, &mut msgbuf) {
+        match tunn.decapsulate(None, &mut recvbuf, len, &mut msgbuf) {
             noise::TunnResult::Err(err) => {
                 return Err(format!("Failed to decapsulate PQ keys message: {err:?}").into())
             }
@@ -201,15 +199,13 @@ async fn handshake(
 
     // The response should be 92, so the buffer is sufficient
     let len = sock.recv(&mut pkgbuf).await?;
-    #[allow(index_access_check)]
-    let pkg = &pkgbuf[..len];
 
     telio_log_debug!("Handshake response received");
 
     let mut msgbuf = [0u8; 2048];
 
     #[allow(index_access_check)]
-    match tunn.decapsulate(None, pkg, &mut msgbuf) {
+    match tunn.decapsulate(None, &mut pkgbuf, len, &mut msgbuf) {
         noise::TunnResult::Err(err) => {
             return Err(format!("Failed to decapsulate handshake message: {err:?}").into())
         }

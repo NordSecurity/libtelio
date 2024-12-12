@@ -254,7 +254,7 @@ impl Runtime for State {
                     },
                     // Here we're handling the deferred decapsulation of handshake packets to avoid deadlocking.
                     _ = socket.writable(), if self.packets_present_in_tunnel => {
-                        match peer.decapsulate(None, &[], &mut *self.sending_buffer) {
+                        match peer.decapsulate(None, &mut [], 0, &mut *self.sending_buffer) {
                             // Note that the handshake packet here is a slice pointing to the sending buffer.
                             TunnResult::WriteToNetwork(handshake_packet) => {
                                 if let Err(e) = socket.send_to(handshake_packet, wg_sock_addr).await {
@@ -281,7 +281,8 @@ impl Runtime for State {
                             Ok(bytes_read) => {
                                 match peer.decapsulate(
                                     None,
-                                    self.receiving_buffer.get(..bytes_read).unwrap_or(&[]),
+                                    &mut *self.receiving_buffer,
+                                    bytes_read,
                                     &mut *self.sending_buffer,
                                 ) {
                                     // Handshake packets. See the comment above Tunn::decapsulate() for this case.
