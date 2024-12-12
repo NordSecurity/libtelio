@@ -6,6 +6,7 @@ use telio_task::io::chan;
 use telio_utils::telio_log_debug;
 
 struct Peer {
+    pubkey: telio_crypto::PublicKey,
     addr: SocketAddr,
     /// This is a key rotation task guard, its `Drop` implementation aborts the task
     _rotation_task: super::conn::ConnKeyRotation,
@@ -71,20 +72,30 @@ impl Entity {
                     }
                 }
             }
+            _ => (),
         }
     }
 
-    pub fn stop(&mut self) {
-        self.peer = None;
+    pub async fn stop(&mut self) {
+        if let Some(peer) = self.peer.take() {
+            #[allow(mpsc_blocking_send)]
+            let _ = self
+                .chan
+                .send(super::Event::Disconnected(peer.pubkey))
+                .await;
+        }
     }
 
-    pub fn start(
+    pub async fn start(
         &mut self,
         addr: SocketAddr,
         wg_secret: telio_crypto::SecretKey,
         peer: telio_crypto::PublicKey,
     ) {
+        self.stop().await;
+
         self.peer = Some(Peer {
+            pubkey: peer,
             addr,
             _rotation_task: super::conn::ConnKeyRotation::run(
                 self.chan.clone(),
@@ -96,5 +107,8 @@ impl Entity {
             ),
             keys: None,
         });
+
+        #[allow(mpsc_blocking_send)]
+        let _ = self.chan.send(super::Event::Connecting(peer)).await;
     }
 }
