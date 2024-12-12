@@ -1,3 +1,4 @@
+mod event_reporter;
 mod wg_controller;
 
 use async_trait::async_trait;
@@ -50,7 +51,7 @@ use telio_wg as wg;
 use thiserror::Error as TError;
 use tokio::{
     runtime::{Builder, Runtime as AsyncRuntime},
-    sync::{broadcast::error::RecvError, Mutex},
+    sync::{broadcast::error::RecvError, broadcast::error::SendError, Mutex},
     time::Interval,
 };
 
@@ -82,7 +83,7 @@ use telio_utils::{
 use telio_model::{
     config::{Config, Peer, PeerBase, Server as DerpServer},
     event::{Event, Set},
-    features::{FeaturePersistentKeepalive, Features, PathType},
+    features::{Features, PathType},
     mesh::{ExitNode, LinkState, Node},
     validation::validate_nickname,
     EndpointMap,
@@ -183,6 +184,12 @@ pub enum Error {
     TransportError(#[from] telio_starcast::transport::Error),
     #[error("Events processing thread failed to start: {0}")]
     EventsProcessingThreadStartError(std::io::Error),
+    #[error("Failed to build event structure")]
+    EventBuildingError,
+    #[error("Failed to publish libtelio event: {0}")]
+    EventPublishingError(#[from] SendError<Box<Event>>),
+    #[error("Failed to publish libtelio event: {0}")]
+    EventReportingError(String),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -232,9 +239,6 @@ pub struct RequestedState {
 
     // Wireguard stun server that should be currently used
     pub wg_stun_server: Option<StunServer>,
-
-    // Requested keepalive periods
-    pub(crate) keepalive_periods: FeaturePersistentKeepalive,
 }
 
 pub struct MeshnetEntities {
@@ -451,6 +455,11 @@ struct Runtime {
     ///
     /// Some of the events are time based, so just poll the whole state from time to time
     polling_interval: Interval,
+
+    /// Event reporter.
+    ///
+    /// This instance is responsible for all libtelio events reported to the integrators
+    event_reporter: event_reporter::EventReporter,
 
     #[cfg(test)]
     /// MockedAdapter (tests)
@@ -1037,6 +1046,9 @@ impl Runtime {
         features: Features,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
+        let event_reporter =
+            event_reporter::EventReporter::new(libtelio_wide_event_publisher.clone());
+
         let neptun_reset_conns =
             features.firewall.neptun_reset_conns || features.firewall.boringtun_reset_conns;
 
@@ -1166,7 +1178,7 @@ impl Runtime {
         let nurse = if telio_lana::is_lana_initialized() {
             if let Some(nurse_features) = &features.nurse {
                 let nurse_io = NurseIo {
-                    wg_event_channel: &libtelio_wide_event_publisher,
+                    wg_event_channel: libtelio_wide_event_publisher.subscribe(),
                     wg_analytics_channel: analytics_ch.clone(),
                     config_update_channel: config_update_ch.clone(),
                     collection_trigger_channel: collection_trigger_ch.clone(),
@@ -1207,7 +1219,6 @@ impl Runtime {
 
         let requested_state = RequestedState {
             device_config: config.clone(),
-            keepalive_periods: features.wireguard.persistent_keepalive.clone(),
             ..Default::default()
         };
 
@@ -1274,6 +1285,7 @@ impl Runtime {
                 derp_events_publisher: derp_events.tx,
             },
             polling_interval,
+            event_reporter,
             #[cfg(test)]
             test_env: wg::tests::Env {
                 analytics: analytics_ch,
@@ -2370,6 +2382,7 @@ impl TaskRuntime for Runtime {
                     }
                 }
 
+                // TODO: Events: state change event occured. Need to notify libtelio event handler
                 let node = self.peer_to_node(&mesh_event.peer, Some(mesh_event.state), mesh_event.link_state).await;
 
                 if let Some(node) = node {
@@ -2385,13 +2398,11 @@ impl TaskRuntime for Runtime {
                 Ok(())
             },
 
-            Ok(derp_event) = self.event_listeners.derp_event_subscriber.recv() => {
-                let event = Event::builder::<DerpServer>().set(*derp_event).build();
-                if let Some(event) = event {
-                let _ = self.event_publishers.libtelio_event_publisher.send(
-                    Box::new(event)
-                );
-            }
+            Ok(_) = self.event_listeners.derp_event_subscriber.recv() => {
+                let res = self.event_reporter.report_events(&self.requested_state, &self.entities).await;
+                if res.is_err() {
+                    telio_log_error!("Failed to report events to library integrators {:?}", res);
+                }
                 Ok(())
             },
 
@@ -2425,6 +2436,7 @@ impl TaskRuntime for Runtime {
 
             Some(pq_event) = self.event_listeners.post_quantum_subscriber.recv() => {
                 telio_log_debug!("WG consolidation triggered by PQ event");
+                //TODO: Events: Potentially PQ state has changed
 
                 self.entities.postquantum_wg.on_event(pq_event);
 
@@ -2439,6 +2451,7 @@ impl TaskRuntime for Runtime {
 
             _ = self.polling_interval.tick() => {
                 telio_log_debug!("WG consolidation triggered by tick event, total logs dropped: {}", logs_dropped_until_now());
+                //TODO: Events: just in case - trigger telio event handling code
                 let dropped = logs_dropped_since_last_checked();
                 if dropped > 0 {
                     telio_log_warn!("New logs dropped: {dropped}");

@@ -528,7 +528,7 @@ async fn consolidate_wg_peers<
                                 requested_peer
                                     .peer
                                     .persistent_keepalive_interval
-                                    .unwrap_or(requested_state.keepalive_periods.direct)
+                                    .unwrap_or(features.wireguard.persistent_keepalive.direct)
                                     .into(),
                             ),
                             None,
@@ -704,9 +704,9 @@ async fn build_requested_peers_list<
             ip_addresses.push(VPN_EXTERNAL_IPV4.into());
             let (persistent_keepalive_interval, batching_keepalive_interval) =
                 if features.batching.is_some() {
-                    (None, requested_state.keepalive_periods.vpn)
+                    (None, features.wireguard.persistent_keepalive.vpn)
                 } else {
-                    (requested_state.keepalive_periods.vpn, None)
+                    (features.wireguard.persistent_keepalive.vpn, None)
                 };
 
             // If the PQ VPN is set up we need to configure the preshared key
@@ -784,9 +784,9 @@ async fn build_requested_peers_list<
             telio_log_debug!("Configuring wg-stun peer: {}, at {}", public_key, endpoint);
             let (persistent_keepalive_interval, batching_keepalive_interval) =
                 if features.batching.is_some() {
-                    (None, requested_state.keepalive_periods.stun)
+                    (None, features.wireguard.persistent_keepalive.stun)
                 } else {
-                    (requested_state.keepalive_periods.stun, None)
+                    (features.wireguard.persistent_keepalive.stun, None)
                 };
 
             let allowed_ips = if features.ipv6 {
@@ -860,9 +860,9 @@ async fn build_requested_meshnet_peers_list<
             let public_key = p.base.public_key;
             let (persistent_keepalive_interval, batching_keepalive_interval) =
                 if features.batching.is_some() {
-                    (None, requested_state.keepalive_periods.proxying)
+                    (None, features.wireguard.persistent_keepalive.proxying)
                 } else {
-                    (requested_state.keepalive_periods.proxying, None)
+                    (features.wireguard.persistent_keepalive.proxying, None)
                 };
 
             let endpoint = proxy_endpoints
@@ -963,6 +963,7 @@ async fn build_requested_meshnet_peers_list<
                 None => &[],
             },
             requested_state,
+            features,
         );
 
         // If we are in direct state, tell cross ping check about it
@@ -1002,10 +1003,10 @@ async fn build_requested_meshnet_peers_list<
                 // If peer is offline according to derp, we turn off keepalives.
                 None
             } else {
-                requested_state.keepalive_periods.proxying
+                features.wireguard.persistent_keepalive.proxying
             }
         } else {
-            Some(requested_state.keepalive_periods.direct)
+            Some(features.wireguard.persistent_keepalive.direct)
         };
 
         if features.batching.is_some() {
@@ -1201,11 +1202,12 @@ fn peer_state(
     link_state: Option<LinkState>,
     proxy_endpoints: &[SocketAddr],
     requested_state: &RequestedState,
+    features: &Features,
 ) -> PeerState {
     // Define some useful constants
     let keepalive_period = peer
         .and_then(|p| p.persistent_keepalive_interval)
-        .unwrap_or(requested_state.keepalive_periods.direct);
+        .unwrap_or(features.wireguard.persistent_keepalive.direct);
     let peer_connectivity_timeout = Duration::from_secs((keepalive_period * 3) as u64);
     let peer_upgrade_window = Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW);
 
