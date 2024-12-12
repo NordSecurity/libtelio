@@ -256,7 +256,7 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
                         info!("Client command {:?} executed successfully", command);
                     }
                     Err(err) => {
-                        break Err(err);
+                        error!("Received invalid command from client: {}", err);
                     }
                 }
             },

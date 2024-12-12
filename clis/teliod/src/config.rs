@@ -1,6 +1,6 @@
 use std::{num::NonZeroU64, path::PathBuf, str::FromStr};
 
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use smart_default::SmartDefault;
 use std::fs;
 use tracing::{debug, info, level_filters::LevelFilter};
@@ -22,7 +22,7 @@ impl std::ops::Mul<std::time::Duration> for Percentage {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Deserialize, SmartDefault)]
+#[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize, SmartDefault)]
 #[serde(default)]
 pub struct MqttConfig {
     /// Starting backoff time for mqtt retry, has to be at least one. (in seconds)
@@ -34,7 +34,10 @@ pub struct MqttConfig {
 
     /// Percentage of the expiry period after which new mqtt token will be requested
     #[default(reconnect_after_expiry_default())]
-    #[serde(deserialize_with = "deserialize_percent")]
+    #[serde(
+        deserialize_with = "deserialize_percent",
+        serialize_with = "serialize_percent"
+    )]
     pub reconnect_after_expiry: Percentage,
 
     /// Path to a mqtt pem certificate to be used when connecting to Notification Center
@@ -83,16 +86,22 @@ impl DeviceIdentity {
     }
 }
 
-#[derive(PartialEq, Eq, Deserialize, Debug)]
+#[derive(PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct TeliodDaemonConfig {
-    #[serde(deserialize_with = "deserialize_log_level")]
+    #[serde(
+        deserialize_with = "deserialize_log_level",
+        serialize_with = "serialize_log_level"
+    )]
     pub log_level: LevelFilter,
     pub log_file_path: String,
     pub interface: InterfaceConfig,
 
     pub app_user_uid: Uuid,
 
-    #[serde(deserialize_with = "deserialize_authentication_token")]
+    #[serde(
+        deserialize_with = "deserialize_authentication_token",
+        serialize_with = "serialize_authentication_token"
+    )]
     pub authentication_token: String,
 
     /// Path to a http pem certificate to be used when connecting to CoreApi
@@ -115,6 +124,13 @@ where
     Ok(Percentage(value))
 }
 
+fn serialize_percent<S>(percentage: &Percentage, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u8(percentage.0)
+}
+
 fn deserialize_log_level<'de, D>(deserializer: D) -> Result<LevelFilter, D::Error>
 where
     D: Deserializer<'de>,
@@ -124,6 +140,13 @@ where
             de::Error::unknown_variant(&s, &["error", "warn", "info", "debug", "trace", "off"])
         })
     })
+}
+
+fn serialize_log_level<S>(log_level: &LevelFilter, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&log_level.to_string())
 }
 
 fn deserialize_authentication_token<'de, D: Deserializer<'de>>(
@@ -138,7 +161,20 @@ fn deserialize_authentication_token<'de, D: Deserializer<'de>>(
     }
 }
 
-#[derive(PartialEq, Eq, Deserialize, Debug)]
+fn serialize_authentication_token<S>(auth_token: &str, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    if auth_token.len() == 64 && auth_token.chars().all(|c| c.is_ascii_hexdigit()) {
+        serializer.serialize_str(auth_token)
+    } else {
+        Err(serde::ser::Error::custom(
+            "Invalid authentication token format",
+        ))
+    }
+}
+
+#[derive(Default, PartialEq, Eq, Deserialize, Serialize, Debug)]
 pub struct InterfaceConfig {
     pub name: String,
     pub config_provider: InterfaceConfigurationProvider,
@@ -191,7 +227,7 @@ mod tests {
             "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             }"#;
 
-            assert_eq!(expected, serde_json::from_str(&json).unwrap());
+            assert_eq!(expected, serde_json::from_str(json).unwrap());
         }
 
         {
@@ -207,7 +243,7 @@ mod tests {
                 "mqtt": {}
             }"#;
 
-            assert_eq!(expected, serde_json::from_str(&json).unwrap());
+            assert_eq!(expected, serde_json::from_str(json).unwrap());
         }
     }
 }
