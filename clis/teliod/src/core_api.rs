@@ -71,22 +71,19 @@ fn build_backoff() -> Result<ExponentialBackoff, Error> {
     Ok(ExponentialBackoff::new(backoff_bounds)?)
 }
 
-pub async fn init_with_api(
-    auth_token: &str,
-    interface_name: &str,
-) -> Result<DeviceIdentity, Error> {
+pub async fn init_with_api(auth_token: &str) -> Result<DeviceIdentity, Error> {
     let mut identity_path = dirs::data_local_dir().ok_or(Error::NoDataLocalDir)?;
     identity_path.push("teliod");
     if !identity_path.exists() {
         let _ = create_dir_all(&identity_path);
     }
-    identity_path.push(&format!("{interface_name}.json"));
+    identity_path.push("data.json");
 
     let mut device_identity = match DeviceIdentity::from_file(&identity_path) {
         Some(identity) => identity,
         None => {
             let private_key = SecretKey::gen();
-            let hw_identifier = generate_hw_identifier(private_key.clone());
+            let hw_identifier = generate_hw_identifier();
 
             let machine_identifier =
                 match fetch_identifier_with_exp_backoff(auth_token, private_key.public()).await {
@@ -95,7 +92,7 @@ pub async fn init_with_api(
                         Error::DeviceNotFound => {
                             info!("Unable to load identifier due to {e}. Registering ...");
                             register_machine_with_exp_backoff(
-                                &hw_identifier,
+                                &hw_identifier.to_string(),
                                 private_key.public(),
                                 auth_token,
                             )
@@ -118,7 +115,7 @@ pub async fn init_with_api(
             if status == StatusCode::NOT_FOUND {
                 debug!("Unable to update. Registering machine ...");
                 device_identity.machine_identifier = register_machine_with_exp_backoff(
-                    &device_identity.hw_identifier,
+                    &device_identity.hw_identifier.to_string(),
                     device_identity.private_key.public(),
                     auth_token,
                 )
@@ -285,7 +282,7 @@ async fn update_machine(device_identity: &DeviceIdentity, auth_token: &str) -> R
         .header(header::ACCEPT, "application/json")
         .json(&MeshConfig {
             public_key: device_identity.private_key.public(),
-            hardware_identifier: device_identity.hw_identifier.clone(),
+            hardware_identifier: device_identity.hw_identifier.to_string(),
             os: OS_NAME.to_owned(),
             os_version: "teliod".to_owned(),
             device_type: "other".to_owned(),
