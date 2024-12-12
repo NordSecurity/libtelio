@@ -4758,6 +4758,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "telio-perf"
+version = "0.1.0"
+
+[[package]]
 name = "telio-pinger"
 version = "0.1.0"
 dependencies = [
