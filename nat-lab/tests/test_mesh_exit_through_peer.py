@@ -2,11 +2,17 @@ import asyncio
 import config
 import pytest
 from contextlib import AsyncExitStack
-from helpers import setup_mesh_nodes, SetupParameters
+from helpers import setup_api, setup_mesh_nodes, SetupParameters
 from mesh_api import API
 from telio import Client
 from utils import testing, stun
-from utils.bindings import PathType, NodeState, RelayState, TelioAdapterType
+from utils.bindings import (
+    default_features,
+    PathType,
+    NodeState,
+    RelayState,
+    TelioAdapterType,
+)
 from utils.connection_util import (
     generate_connection_tracker_config,
     ConnectionTag,
@@ -106,6 +112,7 @@ from utils.router import IPProto, IPStack
                     derp_1_limits=(1, 1),
                     stun_limits=(1, 2),
                 ),
+                features=default_features(enable_firewall=("10.0.0.0/8", False)),
             )
         )
     ],
@@ -117,8 +124,18 @@ async def test_mesh_exit_through_peer(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         beta_setup_params.ip_stack = exit_ip_stack
+
+        api, (alpha, beta) = setup_api(
+            [(False, alpha_setup_params.ip_stack), (False, beta_setup_params.ip_stack)]
+        )
+        beta.set_peer_firewall_settings(
+            alpha.id, allow_incoming_connections=True, allow_peer_traffic_routing=True
+        )
+
         env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
+            exit_stack,
+            [alpha_setup_params, beta_setup_params],
+            provided_api=api,
         )
 
         _, beta = env.nodes
@@ -234,7 +251,9 @@ async def test_ipv6_exit_node(
         api = API()
 
         (alpha, beta) = api.default_config_two_nodes(
-            alpha_ip_stack=IPStack.IPv4v6, beta_ip_stack=exit_ip_stack
+            alpha_ip_stack=IPStack.IPv4v6,
+            beta_ip_stack=exit_ip_stack,
+            allow_peer_traffic_routing=True,
         )
         (connection_alpha, alpha_conn_tracker) = await exit_stack.enter_async_context(
             new_connection_with_conn_tracker(

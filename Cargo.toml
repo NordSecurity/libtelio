@@ -89,6 +89,7 @@ telio-proxy = { workspace = true, features = ["mockall"] }
 telio-pq = { workspace = true, features = ["mockall"] }
 telio-test.workspace = true
 telio-traversal = { workspace = true, features = ["mockall"] }
+telio-utils.workspace = true
 telio-wg = { workspace = true, features = ["mockall", "test-adapter"] }
 
 [build-dependencies]
