@@ -35,6 +35,7 @@ impl FeaturesDefaultsBuilder {
             ipv6: false,
             nicknames: false,
             batching: None,
+            speedtest: false,
         };
 
         Self {
@@ -142,6 +143,12 @@ impl FeaturesDefaultsBuilder {
 
     pub fn enable_batching(self: Arc<Self>) -> Arc<Self> {
         self.config.lock().batching = Some(default());
+        self
+    }
+
+    /// Enable speedtest tests
+    pub fn enable_link_speed_test(self: Arc<Self>) -> Arc<Self> {
+        self.config.lock().speedtest = true;
         self
     }
 }

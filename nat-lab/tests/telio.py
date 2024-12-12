@@ -636,7 +636,7 @@ class Client:
             self.get_events().wait_for_state_derp(
                 str(derp.ipv4),
                 [RelayState.DISCONNECTED, RelayState.CONNECTING],
-                timeout,
+                 timeout,
             )
             for derp in DERP_SERVERS
         ]) as futures:
@@ -938,6 +938,9 @@ class Client:
 
     async def trigger_qos_collection(self) -> None:
         await self.get_proxy().trigger_qos_collection()
+
+    async def trigger_peer_link_speed_test(self, peer_ip: str) -> None:
+        await self.get_proxy().trigger_peer_link_speed_test(peer_ip)
 
     def get_endpoint_address(self, public_key: str) -> str:
         node = self.get_node_state(public_key)
