@@ -219,6 +219,7 @@ async def setup_environment(
     instances: List[SetupParameters],
     provided_api: Optional[API] = None,
     prepare_vpn: bool = False,
+    download_pcaps: bool = True,
 ) -> AsyncIterator[Environment]:
     """Sets up the basic environment based on the given parameters.
 
@@ -302,7 +303,7 @@ async def setup_environment(
                 ConnectionTag.DOCKER_VPN_2,
             ]
         ]
-        await exit_stack.enter_async_context(make_tcpdump(connections))
+        await exit_stack.enter_async_context(make_tcpdump(connections, download_pcaps))
         api.prepare_all_vpn_servers()
 
     clients = await setup_clients(
@@ -342,6 +343,7 @@ async def setup_mesh_nodes(
     is_timeout_expected: bool = False,
     provided_api: Optional[API] = None,
     prepare_vpn: bool = False,
+    download_pcaps: bool = True,
 ) -> Environment:
     """The default way of setting up the test environment.
 
@@ -366,7 +368,9 @@ async def setup_mesh_nodes(
     """
 
     env = await exit_stack.enter_async_context(
-        setup_environment(exit_stack, instances, provided_api, prepare_vpn)
+        setup_environment(
+            exit_stack, instances, provided_api, prepare_vpn, download_pcaps
+        )
     )
 
     await asyncio.gather(*[

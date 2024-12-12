@@ -90,6 +90,8 @@ use telio_model::{
     EndpointMap,
 };
 
+use telio_perf::link_speed_test::{Speedtest as SpeedtestEntity, SPEEDTEST_PORT};
+
 #[cfg(target_os = "android")]
 use telio_network_monitors::monitor::PATH_CHANGE_BROADCAST;
 
@@ -114,6 +116,8 @@ pub enum Error {
     NotStarted,
     #[error("Meshnet not configured.")]
     MeshnetNotConfigured,
+    #[error("Speedtest test not configured.")]
+    SpeedtestNotConfigured,
     #[error("Adapter is misconfigured: {0}.")]
     AdapterConfig(String),
     #[error("Private key does not match meshnet config's public key.")]
@@ -187,6 +191,10 @@ pub enum Error {
     EventsProcessingThreadStartError(std::io::Error),
     #[error("Polling period cannot be zero")]
     PollingPeriodZero,
+    #[error(transparent)]
+    SpeedtestError(#[from] telio_perf::link_speed_test::Error),
+    #[error(transparent)]
+    ParseError(#[from] std::net::AddrParseError),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -259,6 +267,9 @@ pub struct MeshnetEntities {
 
     // Keepalive sender
     session_keeper: Option<Arc<SessionKeeper>>,
+
+    // Component to test network link speeds between peers
+    speedtest: Option<Arc<SpeedtestEntity>>,
 }
 
 #[derive(Default, Debug)]
@@ -867,6 +878,25 @@ impl Device {
         })
     }
 
+    pub fn trigger_peer_link_speed_test(&self, ip_addr: String) -> Result<Duration> {
+        let addr = ip_addr.parse::<IpAddr>()?;
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| Ok(rt
+                .trigger_peer_link_speed_test(addr)
+                .await))
+            .await?
+        })
+    }
+
+    pub fn try_fetch_peer_link_speed(&self) -> Result<i32> {
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| Ok(rt
+                .try_fetch_peer_link_speed()
+                .await))
+            .await?
+        })
+    }
+
     /// Used by tcli only
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub fn probe_pmtu(&self, host: IpAddr) -> Result<u32> {
@@ -1025,6 +1055,9 @@ impl MeshnetEntities {
 
         stop_arc_entity!(self.multiplexer, "Multiplexer");
         stop_arc_entity!(self.derp, "Derp");
+        if let Some(speedtest) = self.speedtest {
+            stop_arc_entity!(speedtest, "Speedtest");
+        }
 
         let endpoint_map = self.proxy.get_endpoint_map().await.unwrap_or_default();
         stop_arc_entity!(self.proxy, "UdpProxy");
@@ -1516,6 +1549,11 @@ impl Runtime {
             None
         });
 
+        let speedtest = self.start_speedtest().await.unwrap_or_else(|e| {
+            telio_log_error!("Couldn't start speedtest test entity: {e:?}");
+            None
+        });
+
         Ok(MeshnetEntities {
             multiplexer,
             derp,
@@ -1523,6 +1561,7 @@ impl Runtime {
             direct,
             starcast,
             session_keeper,
+            speedtest,
         })
     }
 
@@ -1535,6 +1574,29 @@ impl Runtime {
             }
         }
         Ok(nodes)
+    }
+
+    async fn start_speedtest(&self) -> Result<Option<Arc<SpeedtestEntity>>> {
+        if !self.features.speedtest {
+            return Ok(None);
+        }
+
+        let meshnet_ip = self
+            .requested_state
+            .meshnet_config
+            .as_ref()
+            .ok_or(Error::MeshnetNotConfigured)?
+            .this
+            .ip_addresses
+            .as_ref()
+            .ok_or(Error::NoMeshnetIP)?
+            .first()
+            .ok_or(Error::NoMeshnetIP)?;
+
+        Ok(Some(Arc::new(
+            SpeedtestEntity::start(meshnet_ip.to_owned(), self.entities.socket_pool.clone())
+                .await?,
+        )))
     }
 
     async fn build_starcast(&self) -> Result<Option<StarcastEntities>> {
@@ -1701,6 +1763,36 @@ impl Runtime {
     async fn notify_wakeup(&mut self) -> Result {
         self.entities.aggregator.clear_ongoinging_segments().await;
         Ok(())
+    }
+
+    async fn trigger_peer_link_speed_test(&mut self, ip_addr: IpAddr) -> Result<Duration> {
+        let duration = self
+            .entities
+            .meshnet
+            .left()
+            .as_ref()
+            .ok_or(Error::MeshnetNotConfigured)?
+            .speedtest
+            .as_ref()
+            .ok_or(Error::SpeedtestNotConfigured)?
+            .start_test(ip_addr, SPEEDTEST_PORT)
+            .await?;
+        Ok(duration)
+    }
+
+    async fn try_fetch_peer_link_speed(&mut self) -> Result<i32> {
+        let speed = self
+            .entities
+            .meshnet
+            .left()
+            .as_ref()
+            .ok_or(Error::MeshnetNotConfigured)?
+            .speedtest
+            .as_ref()
+            .ok_or(Error::SpeedtestNotConfigured)?
+            .try_fetch_results()
+            .await?;
+        Ok(speed)
     }
 
     async fn start_dns(&mut self, upstream_dns_servers: &[IpAddr]) -> Result {

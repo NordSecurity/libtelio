@@ -1868,6 +1868,7 @@ mod tests {
                     pmtu_discovery: Default::default(),
                     multicast: false,
                     batching: None,
+                    speedtest: false,
                 },
                 post_quantum: MockPostQuantum::new(),
                 stun_ep_provider,

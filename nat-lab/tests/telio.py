@@ -7,7 +7,7 @@ import re
 import uuid
 import warnings
 from collections import Counter
-from config import DERP_SERVERS
+from config import DERP_SERVERS, LINUX_INTERFACE_NAME
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from itertools import groupby
@@ -958,6 +958,12 @@ class Client:
     async def trigger_qos_collection(self) -> None:
         await self.get_proxy().trigger_qos_collection()
 
+    async def trigger_peer_link_speed_test(self, peer_ip: str) -> int:
+        return await self.get_proxy().trigger_peer_link_speed_test(peer_ip)
+
+    async def try_fetch_peer_link_speed(self) -> int:
+        return await self.get_proxy().try_fetch_peer_link_speed()
+
     def get_endpoint_address(self, public_key: str) -> str:
         node = self.get_node_state(public_key)
         if node is None:
@@ -1068,6 +1074,28 @@ class Client:
                 + "\n"
             )
         return ""
+
+    async def limit_network_speed(self, speed: str) -> None:
+        cmd = [
+            "tc",
+            "qdisc",
+            "add",
+            "dev",
+            LINUX_INTERFACE_NAME,
+            "root",
+            "tbf",
+            "rate",
+            str(speed) + "mbit",
+            "latency",
+            "500ms",
+            "burst",
+            "32kbit",
+        ]
+        await self._connection.create_process(cmd).execute()
+
+    async def delete_limiter_rule(self) -> None:
+        cmd = ["tc", "qdisc", "del", "dev", LINUX_INTERFACE_NAME, "root"]
+        await self._connection.create_process(cmd).execute()
 
     async def _check_logs_for_errors(self) -> None:
         """
