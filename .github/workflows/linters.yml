@@ -28,30 +28,26 @@ jobs:
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-        - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
-            components: clippy
-        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
-          with:
-            command: clippy
-            args: --target "x86_64-unknown-linux-gnu" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
+            just-version: 1.37.0
+        - run: just clippy
   clippy-win:
       runs-on: windows-2022
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-        - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
-            target: x86_64-pc-windows-gnu
-            components: clippy
-        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
-          with:
-            command: clippy
-            args: --target "x86_64-pc-windows-gnu" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
+            just-version: 1.37.0
+        - run: just clippy
   clippy-mac:
       runs-on: macos-13
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-        - run: cargo clippy --verbose --target "x86_64-apple-darwin" --lib --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
+        - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
+          with:
+            just-version: 1.37.0
+        - run: just clippy
   clippy-teliod:
       runs-on: ubuntu-22.04
       steps:
@@ -62,21 +58,18 @@ jobs:
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-        - uses: EmbarkStudios/cargo-deny-action@3f4a782664881cf5725d0ffd23969fcce89fd868 # v1.6.3
+        - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
-            rust-version: 1.77.2 # NOTE: Runs in its own docker container and doesn't support toolchain files
+            just-version: 1.37.0
+        - run: just deny
   udeps:
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-        - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+        - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
-            toolchain: nightly-2024-05-10
-            override: true
-        - uses: aig787/cargo-udeps-action@1cd634a329e14ccfbccfe7c96497d14dac24a743 # v1
-          with:
-            version: 'v0.1.47'
-            args: '--workspace --locked --output human --backend depinfo'
+            just-version: 1.37.0
+        - run: just udeps
   rustfmt:
       runs-on: ubuntu-22.04
       steps:
@@ -152,25 +145,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-      - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+      - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
         with:
-          toolchain: 1.80.0
-          override: true
-          default: true
-      - name: Install cargo-unusued-features
-        run: cargo install --version 0.2.0 cargo-unused-features --locked
-      - name: Run cargo-unused-features
-        run: |
-          for dir in ./crates/* ./clis/*; do
-            pushd "$dir"
-            unused-features analyze -l debug
-            unused-features prune -l debug
-            popd
-          done
-      - name: Check results
-        run: |
-          git restore Cargo.lock
-          if ! git diff --quiet; then
-            git diff
-            exit 1
-          fi
+          just-version: 1.37.0
+      - run: just deny
