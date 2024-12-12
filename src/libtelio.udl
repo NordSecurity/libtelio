@@ -429,6 +429,8 @@ interface Telio {
     [Throws=TelioError]
     void trigger_qos_collection();
     [Throws=TelioError]
+    void trigger_throughput_test(string peer_ip);
+    [Throws=TelioError]
     string receive_ping();
     [Throws=TelioError]
     u32 probe_pmtu(string host);
@@ -522,6 +524,10 @@ interface FeaturesDefaultsBuilder {
     /// Enable keepalive batching feature
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_batching();
+
+    /// Eanable throughput tests with defaults
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_throughput_tests();
 };
 
 
@@ -565,6 +571,8 @@ dictionary Features {
     boolean multicast;
     /// Batching
     FeatureBatching? batching;
+    /// Throughput test support
+    boolean throughput;
 };
 
 dictionary FeatureBatching {

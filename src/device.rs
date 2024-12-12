@@ -90,6 +90,8 @@ use telio_model::{
     EndpointMap,
 };
 
+use telio_perf::throughput_test::{Throughput as ThroughputEntity, PERFORMANCE_TRANSPORT_PORT};
+
 #[cfg(target_os = "android")]
 use telio_network_monitors::monitor::PATH_CHANGE_BROADCAST;
 
@@ -114,6 +116,8 @@ pub enum Error {
     NotStarted,
     #[error("Meshnet not configured.")]
     MeshnetNotConfigured,
+    #[error("Throughput test not configured.")]
+    ThroughputNotConfigured,
     #[error("Adapter is misconfigured: {0}.")]
     AdapterConfig(String),
     #[error("Private key does not match meshnet config's public key.")]
@@ -187,6 +191,10 @@ pub enum Error {
     EventsProcessingThreadStartError(std::io::Error),
     #[error("Polling period cannot be zero")]
     PollingPeriodZero,
+    #[error(transparent)]
+    ThroughputTestError(#[from] telio_perf::throughput_test::Error),
+    #[error(transparent)]
+    ParseError(#[from] std::net::AddrParseError),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -259,6 +267,9 @@ pub struct MeshnetEntities {
 
     // Keepalive sender
     session_keeper: Option<Arc<SessionKeeper>>,
+
+    // Component to test throughput speeds between peers and server
+    throughput: Option<Arc<ThroughputEntity>>,
 }
 
 #[derive(Default, Debug)]
@@ -869,6 +880,16 @@ impl Device {
         })
     }
 
+    pub fn trigger_throughput_test(&self, ip_addr: String) -> Result {
+        let addr = ip_addr.parse::<IpAddr>()?;
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| Ok(rt
+                .trigger_throughput_test(addr)
+                .await))
+            .await?
+        })
+    }
+
     /// Used by tcli only
     #[cfg(any(target_os = "linux", target_os = "android"))]
     pub fn probe_pmtu(&self, host: IpAddr) -> Result<u32> {
@@ -1027,6 +1048,9 @@ impl MeshnetEntities {
 
         stop_arc_entity!(self.multiplexer, "Multiplexer");
         stop_arc_entity!(self.derp, "Derp");
+        if let Some(throughput_test) = self.throughput {
+            stop_arc_entity!(throughput_test, "Throughput");
+        }
 
         let endpoint_map = self.proxy.get_endpoint_map().await.unwrap_or_default();
         stop_arc_entity!(self.proxy, "UdpProxy");
@@ -1516,6 +1540,11 @@ impl Runtime {
             None
         });
 
+        let throughput = self.start_throughput().await.unwrap_or_else(|e| {
+            telio_log_error!("Couldn't start throughput test entity: {e:?}");
+            None
+        });
+
         Ok(MeshnetEntities {
             multiplexer,
             derp,
@@ -1523,6 +1552,7 @@ impl Runtime {
             direct,
             starcast,
             session_keeper,
+            throughput,
         })
     }
 
@@ -1535,6 +1565,34 @@ impl Runtime {
             }
         }
         Ok(nodes)
+    }
+
+    async fn start_throughput(&self) -> Result<Option<Arc<ThroughputEntity>>> {
+        if !self.features.throughput {
+            return Ok(None);
+        }
+
+        let meshnet_ip = self
+            .requested_state
+            .meshnet_config
+            .as_ref()
+            .ok_or(Error::MeshnetNotConfigured)?
+            .this
+            .ip_addresses
+            .as_ref()
+            .ok_or(Error::NoMeshnetIP)?
+            .first()
+            .ok_or(Error::NoMeshnetIP)?;
+
+        let cmd_chan = Chan::new(5);
+        Ok(Some(Arc::new(
+            ThroughputEntity::start(
+                meshnet_ip.to_owned(),
+                self.entities.socket_pool.clone(),
+                cmd_chan,
+            )
+            .await?,
+        )))
     }
 
     async fn build_starcast(&self) -> Result<Option<StarcastEntities>> {
@@ -1700,6 +1758,20 @@ impl Runtime {
 
     async fn notify_wakeup(&mut self) -> Result {
         self.entities.aggregator.clear_ongoinging_segments().await;
+        Ok(())
+    }
+
+    async fn trigger_throughput_test(&mut self, ip_addr: IpAddr) -> Result {
+        self.entities
+            .meshnet
+            .left()
+            .as_ref()
+            .ok_or(Error::MeshnetNotConfigured)?
+            .throughput
+            .as_ref()
+            .ok_or(Error::ThroughputNotConfigured)?
+            .start_test(ip_addr, PERFORMANCE_TRANSPORT_PORT)
+            .await?;
         Ok(())
     }
 

@@ -82,6 +82,7 @@ def test_telio_features_builder_all_defaults():
         .enable_pmtu_discovery()
         .enable_flush_events_on_stop_timeout_seconds()
         .enable_multicast()
+        .enable_throughput_tests()
         .enable_ipv6()
         .enable_nicknames()
         .enable_batching()
@@ -109,6 +110,7 @@ def test_telio_features_builder_all_defaults():
         "pmtu_discovery": {},
         "flush_events_on_stop_timeout_seconds": 0,
         "multicast": true,
+        "throughput": true,
         "ipv6": true,
         "nicknames": true,
         "batching": {
