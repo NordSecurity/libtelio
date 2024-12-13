@@ -1,5 +1,13 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.1.5
+### **Pork Kibin**
+---
+* LLT-5814: Emit 'CONNECTING' node event when starting the PQ handshake
+* LLT-5815: PQ: validate handshake response packet origin
+
+<br>
+
 ### v5.1.4
 ### **Pork Kibin**
 ---
