@@ -15,7 +15,7 @@ def features_with_endpoint_providers(
 def default_features(
     enable_lana: Optional[Tuple[str, bool]] = None,
     enable_nurse: bool = False,
-    enable_firewall_connection_reset: bool = False,
+    enable_firewall: Optional[Tuple[str, bool]] = None,
     enable_direct: bool = False,
     enable_ipv6: bool = False,
     enable_nicknames: bool = False,
@@ -30,8 +30,9 @@ def default_features(
 
     if enable_nurse:
         features_builder = features_builder.enable_nurse()
-    if enable_firewall_connection_reset:
-        features_builder = features_builder.enable_firewall_connection_reset()
+    if enable_firewall is not None:
+        ips, reset_conns = enable_firewall
+        features_builder = features_builder.enable_firewall(ips, reset_conns)
     if enable_direct:
         features_builder = features_builder.enable_direct()
     if enable_ipv6:
@@ -66,6 +67,8 @@ def telio_node(  # pylint: disable=dangerous-default-value
     path: PathType = PathType.RELAY,
     allow_incoming_connections: bool = False,
     allow_peer_send_files: bool = False,
+    allow_peer_traffic_routing: bool = False,
+    allow_peer_local_network_access: bool = False,
     link_state: Optional[LinkState] = None,
     allow_multicast: bool = False,
     peer_allows_multicast: bool = False,
@@ -84,6 +87,8 @@ def telio_node(  # pylint: disable=dangerous-default-value
         path=path,
         allow_incoming_connections=allow_incoming_connections,
         allow_peer_send_files=allow_peer_send_files,
+        allow_peer_traffic_routing=allow_peer_traffic_routing,
+        allow_peer_local_network_access=allow_peer_local_network_access,
         link_state=link_state,
         allow_multicast=allow_multicast,
         peer_allows_multicast=peer_allows_multicast,
