@@ -2346,6 +2346,7 @@ impl TaskRuntime for Runtime {
             },
 
             Some(mesh_event) = self.event_listeners.wg_event_subscriber.recv() => {
+                telio_log_debug!("Recieved wg_event {mesh_event:?}");
                 let public_key = mesh_event.peer.public_key;
 
                 if let Some(mesh_entities) = self.entities.meshnet.left() {
@@ -2379,14 +2380,18 @@ impl TaskRuntime for Runtime {
                 }
 
                 let node = self.peer_to_node(&mesh_event.peer, Some(mesh_event.state), mesh_event.link_state).await;
+                telio_log_debug!("Converted peer to node {node:?}");
 
                 if let Some(node) = node {
                     // Publish WG event to app
                     if !self.is_dublicated_event(&node) {
+                        telio_log_debug!("Event is being published to libtelio integrators {node:?}");
                         let _ = self.event_publishers.libtelio_event_publisher.send(
                             Box::new(Event::Node {body: node.clone()})
                         );
                         self.remember_last_transmitted_node_event(node);
+                    } else {
+                        telio_log_debug!("Event is dublicated, skip publishing {node:?}");
                     }
                 }
 
@@ -2394,6 +2399,7 @@ impl TaskRuntime for Runtime {
             },
 
             Ok(derp_event) = self.event_listeners.derp_event_subscriber.recv() => {
+                telio_log_debug!("Recieved wg_event {derp_event:?}");
                 let event = Event::builder::<DerpServer>().set(*derp_event).build();
                 if let Some(event) = event {
                 let _ = self.event_publishers.libtelio_event_publisher.send(
@@ -2443,10 +2449,13 @@ impl TaskRuntime for Runtime {
                         };
 
                         if !self.is_dublicated_event(&node) {
+                            telio_log_debug!("Event is being published to libtelio integrators {node:?}");
                             let _ = self.event_publishers.libtelio_event_publisher.send(
                                 Box::new(Event::Node {body: node.clone()})
                             );
                             self.remember_last_transmitted_node_event(node);
+                        } else {
+                            telio_log_debug!("Event is dublicated, skip publishing {node:?}");
                         }
                     },
                     (telio_pq::Event::Disconnected(pubkey), _, Some(last_exit)) if last_exit.public_key == *pubkey  => {
@@ -2457,10 +2466,13 @@ impl TaskRuntime for Runtime {
                         };
 
                         if !self.is_dublicated_event(&node) {
+                            telio_log_debug!("Event is being published to libtelio integrators {node:?}");
                             let _ = self.event_publishers.libtelio_event_publisher.send(
                                 Box::new(Event::Node {body: node.clone()})
                             );
                             self.remember_last_transmitted_node_event(node);
+                        } else {
+                            telio_log_debug!("Event is dublicated, skip publishing {node:?}");
                         }
                     },
                     _ => (),
