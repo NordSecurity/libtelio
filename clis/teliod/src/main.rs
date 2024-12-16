@@ -37,6 +37,8 @@ const TIMEOUT_SEC: u64 = 1;
 enum ClientCmd {
     #[clap(about = "Retrieve the status report")]
     GetStatus,
+    #[clap(about = "Stop daemon execution")]
+    QuitDaemon,
 }
 
 #[derive(Parser, Debug)]
@@ -101,8 +103,6 @@ async fn main() -> Result<(), TeliodError> {
             if DaemonSocket::get_ipc_socket_path()?.exists() {
                 Err(TeliodError::DaemonIsRunning)
             } else {
-                #[cfg(feature = "qnap")]
-                let _pid_guard = qnap::PidFile::new().await?;
                 let file = File::open(&config_path)?;
 
                 let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
