@@ -61,7 +61,7 @@ pub(crate) fn handle_request(request: Request) -> Response {
 }
 
 fn is_teliod_running() -> bool {
-    matches!(teliod_blocking_query!(ClientCmd::GetStatus), Ok(Ok(_)))
+    matches!(teliod_blocking_query!(ClientCmd::IsAlive), Ok(Ok(_)))
 }
 
 fn shutdown_teliod() -> Result<(), TeliodError> {

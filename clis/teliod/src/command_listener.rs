@@ -88,6 +88,7 @@ impl CommandListener {
                         TeliodError::CommandFailed(ClientCmd::QuitDaemon)
                     })
             }
+            ClientCmd::IsAlive => Ok(CommandResponse::Ok),
         }
     }
 
