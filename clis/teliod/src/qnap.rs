@@ -93,6 +93,17 @@ fn is_teliod_running() -> bool {
     matches!(teliod_blocking_query!(ClientCmd::GetStatus), Ok(Ok(_)))
 }
 
+fn shutdown_teliod() -> Result<(), TeliodError> {
+    if let Ok(Ok(daemon_reply)) = teliod_blocking_query!(ClientCmd::QuitDaemon) {
+        if CommandResponse::deserialize(&daemon_reply)
+            .is_ok_and(|response| response == CommandResponse::Ok)
+        {
+            return Ok(());
+        }
+    }
+    Err(TeliodError::ClientTimeoutError)
+}
+
 fn kill_teliod_process() -> Result<(), io::Error> {
     match fs::read_to_string(PID_FILE) {
         Ok(pid) => {
@@ -166,15 +177,8 @@ fn start_daemon() -> Response {
 }
 
 fn stop_daemon() -> Response {
-    if is_teliod_running() {
-        if kill_teliod_process().is_ok() {
-            text_response(StatusCode::OK, "Application stopped successfully.")
-        } else {
-            text_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to stop the application.",
-            )
-        }
+    if shutdown_teliod().is_ok() {
+        text_response(StatusCode::OK, "Application stopped successfully.")
     } else {
         match kill_teliod_process() {
             Ok(_) => text_response(StatusCode::OK, "Application stopped successfully."),
