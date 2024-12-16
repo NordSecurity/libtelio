@@ -1,6 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-pub mod batcher;
 pub mod connectivity_check;
 pub mod endpoint_providers;
 pub mod endpoint_state;

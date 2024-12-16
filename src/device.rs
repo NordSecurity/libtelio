@@ -1120,7 +1120,6 @@ impl Runtime {
                         firewall_reset_connections,
                     },
                     features.link_detection,
-                    features.batching,
                     features.ipv6,
                 )?);
                 let wg_events = wg_events.rx;
@@ -1325,11 +1324,7 @@ impl Runtime {
         let session_keeper = {
             match SessionKeeper::start(
                 self.entities.socket_pool.clone(),
-                self.features.batching.unwrap_or_default(),
-                self.entities
-                    .wireguard_interface
-                    .subscribe_to_network_activity()
-                    .await?,
+                self.features.batching.is_some(),
             ) {
                 Ok(sk) => Some(Arc::new(sk)),
                 Err(e) => {
@@ -1341,10 +1336,13 @@ impl Runtime {
 
         // Batching optimisations work by employing SessionKeeper. If SessionKeeper is not present
         // functionality will break when offloading actions to it, thus we disable the feature
-        if session_keeper.is_none() && self.features.batching.is_some() {
-            telio_log_warn!(
-                "Batching feature is enabled but SessionKeeper failed to start. Disabling batching."
-            );
+        if session_keeper.is_none() {
+            if self.features.batching.is_some() {
+                // Batching feature enables batching for various kinds of keepalives provided by
+                // SessionKeeper. As a fallback, disable batcher in case SessionKeeper fails to
+                // start to preerve maximum operatibility of libtelio
+                telio_log_warn!("Batching feature is enabled but SessionKeeper failed to start. Disabling batching.");
+            }
             self.features.batching = None;
         }
 

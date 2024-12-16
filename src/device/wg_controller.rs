@@ -390,11 +390,6 @@ async fn consolidate_wg_peers<
         }
     }
 
-    let batcher_threshold = features
-        .batching
-        .as_ref()
-        .map(|b| Duration::from_secs(b.direct_connection_threshold as u64));
-
     for key in insert_keys {
         telio_log_info!("Inserting peer: {:?}", requested_peers.get(key));
         let peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
@@ -405,21 +400,17 @@ async fn consolidate_wg_peers<
         // Add peer to session keeper if needed
         match (session_keeper, peer.batching_keepalive_interval) {
             (Some(sk), Some(keepalive_interval)) => {
+                telio_log_debug!("Adding to SessionKeeper");
                 let target = build_ping_endpoint(&ip_addresses, features.ipv6);
                 if target.0.is_some() || target.1.is_some() {
-                    sk.add_node(
-                        *key,
-                        target,
-                        Duration::from_secs(keepalive_interval as u64),
-                        batcher_threshold,
-                    )
-                    .await?;
+                    sk.add_node(*key, target, Duration::from_secs(keepalive_interval as u64))
+                        .await?;
                 } else {
                     telio_log_warn!("Peer {:?} has no ip address", key);
                 }
             }
             (None, _) => telio_log_debug!("The session keeper is missing!"),
-            _ => (),
+            _ => {}
         }
 
         if let Some(stun) = stun_ep_provider {
@@ -465,13 +456,8 @@ async fn consolidate_wg_peers<
                         let target =
                             build_ping_endpoint(&requested_peer.peer.ip_addresses, features.ipv6);
                         if target.0.is_some() || target.1.is_some() {
-                            sk.add_node(
-                                *key,
-                                target,
-                                Duration::from_secs(interval as u64),
-                                batcher_threshold,
-                            )
-                            .await?;
+                            sk.add_node(*key, target, Duration::from_secs(interval as u64))
+                                .await?;
                         } else {
                             telio_log_warn!("Peer {:?} has no ip address", key);
                         }
@@ -548,7 +534,6 @@ async fn consolidate_wg_peers<
                                     .unwrap_or(requested_state.keepalive_periods.direct)
                                     .into(),
                             ),
-                            None,
                         )
                         .await?;
                     } else {
@@ -766,7 +751,6 @@ async fn build_requested_peers_list<
                 }
                 (_, pq_keys) => {
                     let preshared_key = pq_keys.map(|pq| pq.pq_shared);
-
                     requested_peers.insert(
                         exit_node.public_key,
                         RequestedPeer {
@@ -2112,10 +2096,7 @@ mod tests {
             }
         }
 
-        fn then_keeper_add_node(
-            &mut self,
-            input: Vec<(PublicKey, IpAddr, Option<IpAddr>, u32, Option<Duration>)>,
-        ) {
+        fn then_keeper_add_node(&mut self, input: Vec<(PublicKey, IpAddr, Option<IpAddr>, u32)>) {
             for i in input {
                 let ip4 = {
                     match i.1 {
@@ -2141,9 +2122,8 @@ mod tests {
                         eq(i.0),
                         eq((Some(ip4), ip6)),
                         eq(Duration::from_secs(i.3.into())),
-                        eq(i.4),
                     )
-                    .return_once(|_, _, _, _| Ok(()));
+                    .return_once(|_, _, _| Ok(()));
             }
         }
 
@@ -2268,13 +2248,7 @@ mod tests {
         )]);
 
         if batching {
-            f.then_keeper_add_node(vec![(
-                pub_key,
-                ip1,
-                Some(ip1v6),
-                proxying_keepalive_time,
-                Some(Duration::default()),
-            )]);
+            f.then_keeper_add_node(vec![(pub_key, ip1, Some(ip1v6), proxying_keepalive_time)]);
         }
 
         f.consolidate_peers().await;
@@ -2333,17 +2307,7 @@ mod tests {
             allowed_ips,
         )]);
 
-        f.then_keeper_add_node(vec![(
-            pub_key,
-            ip1,
-            Some(ip1v6),
-            direct_keepalive_period,
-            if batching {
-                Some(Duration::default())
-            } else {
-                None
-            },
-        )]);
+        f.then_keeper_add_node(vec![(pub_key, ip1, Some(ip1v6), direct_keepalive_period)]);
 
         f.session_keeper
             .expect_get_interval()
@@ -2690,17 +2654,7 @@ mod tests {
             Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
         )]);
 
-        f.then_keeper_add_node(vec![(
-            pub_key,
-            ip1,
-            Some(ip1v6),
-            direct_keepalive_period,
-            if batching {
-                Some(Duration::default())
-            } else {
-                None
-            },
-        )]);
+        f.then_keeper_add_node(vec![(pub_key, ip1, Some(ip1v6), direct_keepalive_period)]);
 
         f.consolidate_peers().await;
     }
@@ -2911,7 +2865,6 @@ mod tests {
                 allowed_ips[0],
                 None,
                 proxying_keepalive_period,
-                Some(Duration::from_secs(0)),
             )]);
         } else {
             f.then_keeper_del_node(vec![(pub_key)]);
@@ -2985,7 +2938,6 @@ mod tests {
                 IpAddr::from(VPN_INTERNAL_IPV4),
                 Some(IpAddr::from(VPN_INTERNAL_IPV6)),
                 vpn_persistent_keepalive,
-                Some(Duration::from_secs(0)),
             )]);
         }
 
@@ -3136,7 +3088,6 @@ mod tests {
                 IpAddr::from([100, 64, 0, 4]),
                 Some(IpAddr::from([0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 4])),
                 stun_persistent_keepalive,
-                Some(Duration::from_secs(0)),
             )]);
         }
 
@@ -3202,7 +3153,6 @@ mod tests {
             ip1,
             Some(ip1v6),
             TEST_DIRECT_PERSISTENT_KEEPALIVE_PERIOD,
-            None,
         )]);
 
         f.consolidate_peers().await;
