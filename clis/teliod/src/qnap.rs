@@ -1,13 +1,12 @@
 use core::str;
 use std::{
-    fs::{self, OpenOptions},
-    io::{self, Write},
-    process::{self, Command, Stdio},
+    fs,
+    io::Write,
+    process::{Command, Stdio},
 };
 
 use const_format::concatcp;
 use rust_cgi::{http::Method, http::StatusCode, text_response, Request, Response};
-use tracing::warn;
 
 use crate::{
     command_listener::CommandResponse,
@@ -15,8 +14,6 @@ use crate::{
     ClientCmd, DaemonSocket, TeliodError, TIMEOUT_SEC,
 };
 
-const TELIOD_TMP_DIR: &str = "/tmp/nordsecuritymeshnet";
-const PID_FILE: &str = concatcp!(TELIOD_TMP_DIR, "/teliod.pid");
 const QPKG_DIR: &str = "/share/CACHEDEV1_DATA/.qpkg/NordSecurityMeshnet";
 const TELIOD_BIN: &str = concatcp!(QPKG_DIR, "/teliod");
 const MESHNET_LOG: &str = concatcp!(QPKG_DIR, "/meshnet.log");
@@ -26,28 +23,6 @@ const TELIOD_LOG: &str = "/var/log/teliod.log";
 const TELIOD_CFG: &str = concatcp!(QPKG_DIR, "/teliod.cfg");
 #[cfg(test)]
 use tests::TELIOD_CFG;
-
-pub struct PidFile;
-
-impl PidFile {
-    pub async fn new() -> Result<Self, TeliodError> {
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(PID_FILE)?;
-        writeln!(file, "{}", process::id())?;
-        Ok(Self)
-    }
-}
-
-impl Drop for PidFile {
-    fn drop(&mut self) {
-        if let Err(e) = std::fs::remove_file(PID_FILE) {
-            warn!("Failed to remove PID file: {}", e);
-        }
-    }
-}
 
 macro_rules! teliod_blocking_query {
     ($command:expr) => {{
@@ -89,20 +64,15 @@ fn is_teliod_running() -> bool {
     matches!(teliod_blocking_query!(ClientCmd::GetStatus), Ok(Ok(_)))
 }
 
-fn kill_teliod_process() -> Result<(), io::Error> {
-    match fs::read_to_string(PID_FILE) {
-        Ok(pid) => {
-            // result is ignored: trivial/nowhere to log
-            let _ = Command::new("kill")
-                .arg("-9")
-                .arg(pid.trim())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status();
-            fs::remove_file(PID_FILE)
+fn shutdown_teliod() -> Result<(), TeliodError> {
+    if let Ok(Ok(daemon_reply)) = teliod_blocking_query!(ClientCmd::QuitDaemon) {
+        if CommandResponse::deserialize(&daemon_reply)
+            .is_ok_and(|response| response == CommandResponse::Ok)
+        {
+            return Ok(());
         }
-        Err(e) => Err(e),
     }
+    Err(TeliodError::ClientTimeoutError)
 }
 
 fn start_daemon() -> Response {
@@ -162,20 +132,12 @@ fn start_daemon() -> Response {
 }
 
 fn stop_daemon() -> Response {
-    if is_teliod_running() {
-        if kill_teliod_process().is_ok() {
-            text_response(StatusCode::OK, "Application stopped successfully.")
-        } else {
-            text_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to stop the application.",
-            )
-        }
-    } else {
-        match kill_teliod_process() {
-            Ok(_) => text_response(StatusCode::OK, "Application stopped successfully."),
-            _ => text_response(StatusCode::GONE, "Application not found."),
-        }
+    match shutdown_teliod() {
+        Ok(_) => text_response(StatusCode::OK, "Application stopped successfully."),
+        Err(error) => text_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Unable to stop application: {error}"),
+        ),
     }
 }
 
