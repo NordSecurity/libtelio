@@ -326,6 +326,85 @@ async def _copy_vm_binaries_if_needed(items):
                 return
 
 
+async def _disable_software_update(items):
+    windows_disabled = False
+    mac_disabled = False
+    print(datetime.now(), "Disabling software update")
+    for item in items:
+        for mark in item.own_markers:
+            if mark.name == "windows" and not windows_disabled:
+                # TODO: in future we might decide to disable software updates on windows
+                windows_disabled = True
+            elif mark.name == "mac" and not mac_disabled:
+                mac_disabled = True
+                print(datetime.now(), "Disabling software update on MAC_VM")
+                commands = [
+                    [
+                        "osascript",
+                        "-e",
+                        'tell application "System Preferences" to quit',
+                    ],
+                    ["sudo", "softwareupdate", "--schedule", "off"],
+                    [
+                        "sudo",
+                        "defaults",
+                        "write",
+                        "/Library/Preferences/com.apple.SoftwareUpdate.plist",
+                        "AutomaticCheckEnabled",
+                        "-bool",
+                        "NO",
+                    ],
+                    [
+                        "sudo",
+                        "defaults",
+                        "write",
+                        "/Library/Preferences/com.apple.SoftwareUpdate.plist",
+                        "AutomaticDownload",
+                        "-bool",
+                        "NO",
+                    ],
+                    [
+                        "sudo",
+                        "defaults",
+                        "write",
+                        "/Library/Preferences/com.apple.SoftwareUpdate.plist",
+                        "ConfigDataInstall",
+                        "-bool",
+                        "NO",
+                    ],
+                    [
+                        "sudo",
+                        "defaults",
+                        "write",
+                        "/Library/Preferences/com.apple.SoftwareUpdate.plist",
+                        "CriticalUpdateInstall",
+                        "-bool",
+                        "NO",
+                    ],
+                    [
+                        "sudo",
+                        "defaults",
+                        "write",
+                        "/Library/Preferences/com.apple.commerce.plist",
+                        "AutoUpdateRestartRequired",
+                        "-bool",
+                        "NO",
+                    ],
+                    [
+                        "sudo",
+                        "defaults",
+                        "write",
+                        "/Library/Preferences/com.apple.commerce.plist",
+                        "AutoUpdate",
+                        "-bool",
+                        "NO",
+                    ],
+                ]
+                async with new_connection_raw(ConnectionTag.MAC_VM) as connection:
+                    for cmd in commands:
+                        await connection.create_process(cmd).execute()
+
+
 def save_dmesg_from_host(suffix):
     try:
         result = subprocess.run(
@@ -391,6 +470,7 @@ async def collect_kernel_logs(items, suffix):
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
         asyncio.run(_copy_vm_binaries_if_needed(session.items))
+        asyncio.run(_disable_software_update(session.items))
 
         if os.environ.get("NATLAB_SAVE_LOGS") is not None:
             asyncio.run(collect_kernel_logs(session.items, "before_tests"))
