@@ -300,7 +300,7 @@ pub struct StatefullFirewall {
     /// Local node ip addresses
     ip_addresses: RwLock<Vec<StdIpAddr>>,
     /// Custom IPv4 range to check against
-    custom_ip_range: Option<Ipv4Net>,
+    exclude_ip_range: Option<Ipv4Net>,
 }
 
 #[derive(Debug)]
@@ -460,9 +460,9 @@ impl StatefullFirewall {
             icmp: Mutex::new(LruCache::new(ttl, capacity)),
             whitelist: RwLock::new(Whitelist::default()),
             allow_ipv6: use_ipv6,
-            record_whitelisted: feature.boringtun_reset_conns,
+            record_whitelisted: feature.boringtun_reset_conns || feature.neptun_reset_conns,
             ip_addresses: RwLock::new(Vec::<StdIpAddr>::new()),
-            custom_ip_range: feature.custom_private_ip_range,
+            exclude_ip_range: feature.exclude_private_ip_range,
         }
     }
 
@@ -1333,7 +1333,7 @@ impl StatefullFirewall {
                 // Check if IPv4 address falls into the local range
                 ipv4.is_private()
                     && !self
-                        .custom_ip_range
+                        .exclude_ip_range
                         .map_or(false, |range| range.contains(ipv4))
             }
             StdIpAddr::V6(ipv6) => {
@@ -1521,7 +1521,7 @@ impl Default for StatefullFirewall {
             FeatureFirewall {
                 boringtun_reset_conns: false,
                 neptun_reset_conns: false,
-                custom_private_ip_range: None,
+                exclude_private_ip_range: None,
             },
         )
     }
@@ -3224,7 +3224,7 @@ pub mod tests {
             LRU_TIMEOUT,
             true,
             FeatureFirewall {
-                custom_private_ip_range: Some(
+                exclude_private_ip_range: Some(
                     Ipv4Net::new(StdIpv4Addr::new(10, 0, 0, 0), 8).unwrap(),
                 ),
                 boringtun_reset_conns: false,

@@ -96,7 +96,7 @@ from utils.router import IPStack
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     derp_1_limits=(1, 1),
                 ),
-                features=default_features(enable_firewall=("10.0.0.0/8", False)),
+                features=default_features(enable_firewall_exclusion_range="10.0.0.0/8"),
             )
         )
     ],

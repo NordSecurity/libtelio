@@ -23,13 +23,14 @@ def test_telio_features_builder_empty():
 
 
 def test_telio_features_builder_firewall():
-    built = FeaturesDefaultsBuilder().enable_firewall("1.2.3.4/10", False).build()
+    built = FeaturesDefaultsBuilder().build()
+    built.firewall.exclude_private_ip_range = "1.2.3.4/10"
     json = """
     {
         "lana": null,
         "nurse": null,
         "firewall": {
-            "custom_private_ip_range": "1.2.3.4/10",
+            "exclude_private_ip_range": "1.2.3.4/10",
             "neptun_reset_conns": false
         },
         "direct": null,

@@ -128,13 +128,13 @@ IP_STACK_TEST_CONFIGS = [
 def build_telio_features(
     initial_heartbeat_interval: int = 300,
     rtt_interval: int = RTT_INTERVAL,
-    custom_ip_range: str = "",
+    exclude_ip_range_check: Optional[str] = None,
 ) -> Features:
     features = default_features(
         enable_lana=(CONTAINER_EVENT_PATH, False),
         enable_direct=True,
         enable_nurse=True,
-        enable_firewall=(custom_ip_range, False),
+        enable_firewall_exclusion_range=exclude_ip_range_check,
     )
     assert features.direct
     features.direct.providers = [EndpointProvider.STUN]
@@ -1327,8 +1327,8 @@ async def test_lana_with_meshnet_exit_node(
             beta,
             connection_alpha,
             connection_beta,
-            build_telio_features(custom_ip_range="10.0.0.0/8"),
-            build_telio_features(custom_ip_range="10.0.0.0/8"),
+            build_telio_features(exclude_ip_range_check="10.0.0.0/8"),
+            build_telio_features(exclude_ip_range_check="10.0.0.0/8"),
         )
 
         await asyncio.gather(

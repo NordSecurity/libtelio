@@ -436,7 +436,7 @@ async def test_event_content_vpn_connection(
                     derp_1_limits=(1, 1),
                     stun_limits=(1, 2),
                 ),
-                features=default_features(enable_firewall=("10.0.0.0/8", False)),
+                features=default_features(enable_firewall_exclusion_range="10.0.0.0/8"),
             )
         )
     ],
