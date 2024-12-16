@@ -3,6 +3,3 @@
 
 /// Client module to run performance tests
 pub mod client;
-
-/// Server module to run performance test
-pub mod server;

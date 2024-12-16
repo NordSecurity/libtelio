@@ -2602,6 +2602,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "0.6.0"
+source = "git+https://github.com/NordSecurity/neptun.git?tag=v1.0.0#db16cadc28efa3c915435d85e5b834834a867a69"
 dependencies = [
  "aead",
  "base64 0.13.1",
@@ -4779,6 +4780,27 @@ dependencies = [
 [[package]]
 name = "telio-perf"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.13.1",
+ "futures",
+ "ipnet",
+ "neptun",
+ "pnet_packet",
+ "telio-crypto",
+ "telio-model",
+ "telio-proto",
+ "telio-sockets",
+ "telio-starcast",
+ "telio-task",
+ "telio-test",
+ "telio-utils",
+ "telio-wg",
+ "thiserror 1.0.64",
+ "tokio",
+ "tracing",
+ "x25519-dalek",
+]
 
 [[package]]
 name = "telio-pmtu"
