@@ -85,14 +85,10 @@ jobs:
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-        - run: pip3 install --no-deps -r requirements.txt
-        - run: pipenv install --system
-        - run: pipenv install --system
-          working-directory: nat-lab
-        - run: black --check --diff --color .
-          working-directory: nat-lab
-        - run: black --check --diff --color .
-          working-directory: ci
+        - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
+          with:
+            just-version: 1.37.0
+        - run: just black
   python-format-isort:
       runs-on: ubuntu-22.04
       steps:
@@ -119,12 +115,10 @@ jobs:
             name: telio_bindings.py
             path: dist/bindings
         - run: cp dist/bindings/telio_bindings.py nat-lab/tests/uniffi/telio_bindings.py
-        - run: pip3 install --no-deps -r requirements.txt
-        - run: pipenv install --system
-        - run: pipenv install --system
-          working-directory: nat-lab
-        - run: pylint -f colorized . --ignore telio_bindings.py
-          working-directory: nat-lab
+        - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
+          with:
+            just-version: 1.37.0
+        - run: just pylint
   natlab-typecheck:
       needs: uniffi-bindings
       runs-on: ubuntu-22.04
