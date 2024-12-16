@@ -4760,6 +4760,27 @@ dependencies = [
 [[package]]
 name = "telio-perf"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.13.1",
+ "futures",
+ "ipnet",
+ "neptun",
+ "pnet_packet",
+ "telio-crypto",
+ "telio-model",
+ "telio-proto",
+ "telio-sockets",
+ "telio-starcast",
+ "telio-task",
+ "telio-test",
+ "telio-utils",
+ "telio-wg",
+ "thiserror 1.0.64",
+ "tokio",
+ "tracing",
+ "x25519-dalek",
+]
 
 [[package]]
 name = "telio-pinger"
