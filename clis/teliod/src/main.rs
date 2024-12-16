@@ -37,6 +37,8 @@ const TIMEOUT_SEC: u64 = 1;
 enum ClientCmd {
     #[clap(about = "Retrieve the status report")]
     GetStatus,
+    #[clap(about = "Stop daemon execution")]
+    QuitDaemon,
 }
 
 #[derive(Parser, Debug)]
