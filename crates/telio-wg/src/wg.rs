@@ -240,8 +240,6 @@ struct State {
     stats: HashMap<PublicKey, Arc<Mutex<BytesAndTimestamps>>>,
 
     ip_stack: Option<IpStack>,
-
-    network_activity: Option<watch::Sender<Instant>>,
 }
 
 const POLL_MILLIS: u64 = 1000;
@@ -328,7 +326,6 @@ impl DynamicWg {
     ///             firewall_reset_connections: None,
     ///         },
     ///         None,
-    ///         None,
     ///         true,
     ///     );
     /// }
@@ -337,7 +334,6 @@ impl DynamicWg {
         io: Io,
         cfg: Config,
         link_detection: Option<FeatureLinkDetection>,
-        batching: Option<FeatureBatching>,
         ipv6_enabled: bool,
     ) -> Result<Self, Error>
     where
@@ -349,25 +345,17 @@ impl DynamicWg {
             io,
             adapter,
             link_detection,
-            batching,
             cfg,
             ipv6_enabled,
         ));
         #[cfg(windows)]
-        return Ok(Self::start_with(
-            io,
-            adapter,
-            link_detection,
-            batching,
-            ipv6_enabled,
-        ));
+        return Ok(Self::start_with(io, adapter, link_detection, ipv6_enabled));
     }
 
     fn start_with(
         io: Io,
         adapter: Box<dyn Adapter>,
         link_detection: Option<FeatureLinkDetection>,
-        batching: Option<FeatureBatching>,
         #[cfg(unix)] cfg: Config,
         ipv6_enabled: bool,
     ) -> Self {
@@ -386,7 +374,6 @@ impl DynamicWg {
                 libtelio_event: io.libtelio_wide_event_publisher,
                 stats: HashMap::new(),
                 ip_stack: None,
-                network_activity: batching.map(|_| watch::channel(Instant::now()).0),
             }),
         }
     }
@@ -413,19 +400,6 @@ impl DynamicWg {
         } else {
             Err(Error::RestartFailed)
         }
-    }
-
-    /// Returns a channel that can be used to observe WireGuard network activity
-    pub async fn subscribe_to_network_activity(
-        &self,
-    ) -> Result<Option<watch::Receiver<Instant>>, Error> {
-        Ok(task_exec!(&self.task, async move |s| {
-            match s.network_activity {
-                Some(ref mut na) => Ok(Some(na.subscribe())),
-                None => Ok(None),
-            }
-        })
-        .await?)
     }
 }
 
@@ -941,21 +915,13 @@ impl State {
         mut to: uapi::Interface,
         reason: UpdateReason,
     ) -> Result<bool, Error> {
-        let mut new_network_activity = false;
-
         for (pk, peer) in &mut to.peers {
             match self.stats.get_mut(pk) {
                 Some(stats) => match stats.lock().as_mut() {
                     Ok(s) => {
-                        let before_rx = s.rx_bytes;
-                        let before_tx = s.tx_bytes;
-
                         let new_rx = peer.rx_bytes.unwrap_or_default();
                         let new_tx = peer.tx_bytes.unwrap_or_default();
 
-                        if new_rx > before_rx || new_tx > before_tx {
-                            new_network_activity = true;
-                        }
                         s.update(new_rx, new_tx);
                     }
                     Err(e) => {
@@ -975,12 +941,6 @@ impl State {
             peer.time_since_last_rx = self.time_since_last_rx(*pk);
         }
         self.stats.retain(|pk, _| to.peers.contains_key(pk));
-
-        if new_network_activity {
-            if let Some(ref mut na) = self.network_activity {
-                let _ = na.send(Instant::now());
-            }
-        }
 
         // Diff and report events
 
@@ -1304,7 +1264,6 @@ pub mod tests {
                 libtelio_wide_event_publisher: None,
             },
             Box::new(adapter.clone()),
-            None,
             None,
             #[cfg(all(unix, test))]
             Config::new().unwrap(),
