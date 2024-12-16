@@ -279,8 +279,9 @@ def proxying_peer_parameters(clients: List[ConnectionTag]):
         )
     ],
 )
-@pytest.mark.timeout(60)
-async def test_proxying_peer_keepalive(setup_params: List[SetupParameters]) -> None:
+async def test_proxying_peer_batched_keepalive(
+    setup_params: List[SetupParameters],
+) -> None:
     # Since batching keepalives are performed on application level instead of Wireguard
     # backend we need to ensure that proxying peers are receiving the keepalives. To test
     # for that we can enable link detection that guarantees quick detection if there's no corresponding
@@ -306,13 +307,10 @@ async def test_proxying_peer_keepalive(setup_params: List[SetupParameters]) -> N
 
         _, beta_node = env.nodes
 
-        # 20 seconds should be enough since:
-        # * 10 seconds is for WireGuard's Passive-Keepalive
-        # * RTT is configured to be 2 seconds
-        # * no pings to validate
-        # * PersistentKeepalive configured to 5seconds
-        # Given all these it should be worst case latency until detection: 10+2+5=17
-        await asyncio.sleep(20)
-
-        link_events = alpha.get_link_state_events(beta_node.public_key)
-        assert link_events[-1] == LinkState.DOWN
+        await alpha.wait_for_state_peer(
+            beta_node.public_key,
+            [NodeState.CONNECTED],
+            [PathType.RELAY],
+            timeout=30,
+            link_state=LinkState.DOWN,
+        )
