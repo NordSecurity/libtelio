@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::net::Ipv4Addr;
 use std::time::Instant;
 
@@ -34,7 +35,7 @@ use tokio::sync::{Mutex, RwLock};
 /// PERF % 65535
 const PERFORMANCE_TRANSPORT_PORT: u16 = 46750;
 const MAX_PACKET_SIZE: usize = u16::MAX as usize;
-const TEST_DURATION: Duration = Duration::new(2, 0);
+const TEST_DURATION: Duration = Duration::new(0, 20000000);
 
 /// Starcast transport-specific errors
 #[derive(Debug, thiserror::Error)]
@@ -74,12 +75,12 @@ enum PacketType {
 impl From<u8> for PacketType {
     fn from(value: u8) -> Self {
         match value {
-            _ => PacketType::Invalid,
             1 => PacketType::Start,
             2 => PacketType::Test,
             3 => PacketType::End,
             4 => PacketType::Result,
             5 => PacketType::Ack,
+            _ => PacketType::Invalid,
         }
     }
 }
@@ -88,7 +89,6 @@ impl From<u8> for PacketType {
 enum HandlerState {
     Start,
     Test,
-    End,
 }
 
 /// The starcast transport component
@@ -149,6 +149,8 @@ impl Throughput {
                 meshnet_ip,
                 exponential_backoff,
                 handler_state: Arc::new(RwLock::new(HandlerState::Start)),
+                total_bytes_recvd: 0,
+                pkts_recvd: 0,
                 #[cfg(test)]
                 port,
             }),
@@ -186,6 +188,8 @@ struct State {
     meshnet_ip: IpAddr,
     exponential_backoff: ExponentialBackoff,
     handler_state: Arc<RwLock<HandlerState>>,
+    total_bytes_recvd: u64,
+    pkts_recvd: u64,
     #[cfg(test)]
     port: u16,
 }
@@ -193,27 +197,42 @@ struct State {
 impl State {
     /// Separate method for handling starcast packets received on the transport socket from other
     /// meshnet nodes and dropping those packets if multicast isn't allowed for those nodes.
-    async fn handle_incoming_packet(&mut self, len: usize) -> Result<(), Error> {
-        // println!("Got packet of len {len}");
+    async fn handle_incoming_packet(
+        &mut self,
+        len: usize,
+        transport_socket: Arc<UdpSocket>,
+    ) -> Result<(), Error> {
         match (*self.recv_buffer.first().unwrap_or(&0)).into() {
-            PacketType::Start => self.send_ack().await,
+            PacketType::Start => {
+                self.total_bytes_recvd = 0;
+                self.send_ack(transport_socket).await
+            }
             PacketType::Ack => {
                 let mut state = self.handler_state.write().await;
                 if *state == HandlerState::Start {
                     *state = HandlerState::Test;
                 }
             }
-            PacketType::End => todo!(),
-            PacketType::Result => todo!(),
-            PacketType::Test => todo!(),
-            PacketType::Invalid => todo!(),
+            PacketType::End => self.send_results(transport_socket).await,
+            PacketType::Result => {
+                let bytes: [u8; 8] = self.recv_buffer[1..9].try_into().unwrap();
+                let bytes_recvd_by_peer = u64::from_be_bytes(bytes);
+                println!("Total {:?} bytes recieved", bytes_recvd_by_peer)
+            }
+            PacketType::Test => {
+                self.pkts_recvd += 1;
+                self.total_bytes_recvd += len as u64;
+            }
+            PacketType::Invalid => {
+                telio_log_warn!("Something gone wrong")
+            }
         }
 
         Ok(())
     }
 
-    async fn send_ack(&mut self) {
-        let mut send_buffer = vec![0u8; 1350];
+    async fn send_ack(&mut self, transport_socket: Arc<UdpSocket>) {
+        let mut send_buffer = vec![0u8; 10];
         send_buffer.insert(0, PacketType::Ack as u8);
         let ip_addr = IpAddr::V4(Ipv4Addr::new(
             self.recv_buffer[1],
@@ -226,17 +245,41 @@ impl State {
             #[cfg(not(test))]
             PERFORMANCE_TRANSPORT_PORT,
             #[cfg(test)]
-            self.port,
+            12345,
         );
-        if self
-            .transport_socket
-            .unwrap()
-            .send_to(&send_buffer, endpoint)
+        if transport_socket
+            .send_to(&send_buffer[..2], endpoint)
             .await
-            .is_ok()
+            .is_err()
         {
-            return;
-        };
+            telio_log_warn!("Unable to send ack")
+        }
+    }
+
+    async fn send_results(&mut self, transport_socket: Arc<UdpSocket>) {
+        let mut send_buffer = vec![0u8; 10];
+        send_buffer.insert(0, PacketType::Result as u8);
+        send_buffer[1..9].copy_from_slice(&self.total_bytes_recvd.to_be_bytes());
+        let ip_addr = IpAddr::V4(Ipv4Addr::new(
+            self.recv_buffer[1],
+            self.recv_buffer[2],
+            self.recv_buffer[3],
+            self.recv_buffer[4],
+        ));
+        let endpoint = SocketAddr::new(
+            ip_addr,
+            #[cfg(not(test))]
+            PERFORMANCE_TRANSPORT_PORT,
+            #[cfg(test)]
+            12345,
+        );
+        if transport_socket
+            .send_to(&send_buffer[..9], endpoint)
+            .await
+            .is_err()
+        {
+            telio_log_warn!("Unable to send ack")
+        }
     }
 }
 
@@ -274,7 +317,7 @@ impl Runtime for State {
 
         let res = tokio::select! {
             Ok(len) = transport_socket.recv(&mut self.recv_buffer) => {
-                self.handle_incoming_packet(len).await
+                self.handle_incoming_packet(len, transport_socket.clone()).await
             },
             Some(endpoint) = self.cmd_chan.recv() => {
                 tokio::spawn(throughput_test_handler(endpoint, transport_socket.clone(), self.handler_state.clone()));
@@ -295,7 +338,7 @@ impl Runtime for State {
 fn ip_to_bytes(ip: &IpAddr) -> [u8; 4] {
     match ip {
         IpAddr::V4(addr) => addr.octets(),
-        IpAddr::V6(addr) => [0, 0, 0, 0],
+        IpAddr::V6(_) => [0, 0, 0, 0],
     }
 }
 
@@ -310,13 +353,14 @@ async fn throughput_test_handler(
             HandlerState::Start => {
                 // Inform the peer that test is starting
                 send_buffer.insert(0, PacketType::Start as u8);
-                send_buffer
-                    .copy_from_slice(&ip_to_bytes(&transport_socket.peer_addr().unwrap().ip()));
+                send_buffer[1..5]
+                    .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr().unwrap().ip()));
                 if transport_socket
-                    .send_to(&send_buffer, endpoint)
+                    .send_to(&send_buffer[..5], endpoint)
                     .await
                     .is_ok()
                 {
+                    tokio::time::sleep(TEST_DURATION / 10).await;
                     continue;
                 };
             }
@@ -336,10 +380,12 @@ async fn throughput_test_handler(
 
                 // Tell the other peer test has ended
                 send_buffer.insert(0, PacketType::End as u8);
-                transport_socket.send_to(&send_buffer, endpoint).await;
-                telio_log_debug!("Total {total_bytes} bytes sent");
+                send_buffer[1..5]
+                    .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr().unwrap().ip()));
+                transport_socket.send_to(&send_buffer[..5], endpoint).await;
+                println!("Total {total_bytes} bytes sent");
+                break;
             }
-            HandlerState::End => todo!(),
         }
     }
 }
@@ -359,19 +405,19 @@ mod tests {
             )
             .unwrap(),
         ));
-        let client_cmd_chan = Chan::new(10);
+        let client_cmd_chan = Chan::new(5);
 
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         let client =
             Throughput::start(ip_addr, socket_pool.clone(), client_cmd_chan.rx, 12345).await;
 
-        let server_cmd_chan = Chan::new(10);
+        let server_cmd_chan = Chan::new(5);
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         let endpoint = SocketAddr::new(ip_addr, 54321);
         let server =
             Throughput::start(ip_addr, socket_pool.clone(), server_cmd_chan.rx, 54321).await;
 
         assert!(client_cmd_chan.tx.send(endpoint).await.is_ok());
-        tokio::time::sleep(TEST_DURATION).await;
+        tokio::time::sleep(TEST_DURATION * 2).await;
     }
 }
