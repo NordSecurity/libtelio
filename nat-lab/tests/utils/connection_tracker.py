@@ -41,6 +41,9 @@ class FiveTuple:
             (self.protocol, self.src_ip, self.dst_ip, self.src_port, self.dst_port)
         )
 
+    def __str__(self) -> str:
+        return f"{self.protocol} {self.src_ip}:{self.src_port} -> {self.dst_ip}:{self.dst_port}"
+
 
 class EventType(Enum):
     """Event type reported by conntrack"""
@@ -147,7 +150,7 @@ class ConnectionCountLimit(ConnTrackerEventsValidator):
     ):
         if max_limit is not None and min_limit is not None and max_limit < min_limit:
             raise ValueError(
-                f"Max limit {max_limit} is smaller then min limit {min_limit}"
+                f"Max limit {max_limit} is smaller than min limit {min_limit}"
             )
 
         self.key = key
@@ -172,12 +175,12 @@ class ConnectionCountLimit(ConnTrackerEventsValidator):
         if self.max_limit is not None and count > self.max_limit:
             return ConnTrackerViolation(
                 recoverable=False,
-                reason=f"In {self.key} there has been {count} connections to {FiveTuple} which is more then max limit of {self.max_limit}",
+                reason=f"In {self.key} there has been {count} connections to {FiveTuple} which is more than max limit of {self.max_limit}",
             )
         if self.min_limit is not None and count < self.min_limit:
             return ConnTrackerViolation(
                 recoverable=True,
-                reason=f"In {self.key} there has been {count} connections to {FiveTuple} which is less then min limit of {self.min_limit}",
+                reason=f"In {self.key} there has been {count} connections to {FiveTuple} which is less than min limit of {self.min_limit}",
             )
 
         return None
