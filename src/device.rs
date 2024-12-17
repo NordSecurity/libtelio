@@ -22,6 +22,8 @@ use telio_task::{
     io::{chan, mc_chan, mc_chan::Tx, Chan, McChan},
     task_exec, BoxAction, Runtime as TaskRuntime, Task,
 };
+
+use telio_traversal::UpgradeSyncTrait;
 use telio_traversal::{
     connectivity_check,
     cross_ping_check::{CrossPingCheck, CrossPingCheckTrait, Io as CpcIo, UpgradeController},
@@ -36,7 +38,6 @@ use telio_traversal::{
     ping_pong_handler::PingPongHandler,
     SessionKeeper, UpgradeRequestChangeEvent, UpgradeSync, WireGuardEndpointCandidateChangeEvent,
 };
-use telio_traversal::{SessionKeeperTrait, UpgradeSyncTrait};
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 use telio_sockets::native;
@@ -253,6 +254,9 @@ pub struct MeshnetEntities {
 
     // Starcast components for multicast support.
     starcast: Option<StarcastEntities>,
+
+    // Keepalive sender
+    session_keeper: Option<Arc<SessionKeeper>>,
 }
 
 #[derive(Default, Debug)]
@@ -324,9 +328,7 @@ impl Entities {
     }
 
     pub fn session_keeper(&self) -> Option<&Arc<SessionKeeper>> {
-        self.meshnet
-            .left()
-            .and_then(|m| m.direct.as_ref().map(|d| &d.session_keeper))
+        self.meshnet.left().and_then(|m| m.session_keeper.as_ref())
     }
 
     fn endpoint_providers(&self) -> Vec<&Arc<dyn EndpointProvider>> {
@@ -372,9 +374,6 @@ pub struct DirectEntities {
 
     // Meshnet WG Connection upgrade synchronization
     upgrade_sync: Arc<UpgradeSync>,
-
-    // Keepalive sender
-    session_keeper: Arc<SessionKeeper>,
 }
 
 pub struct EventListeners {
@@ -1018,8 +1017,10 @@ impl MeshnetEntities {
             if let Some(upnp) = direct.upnp_endpoint_provider {
                 stop_arc_entity!(upnp, "UpnpEndpointProvider");
             }
+        }
 
-            stop_arc_entity!(direct.session_keeper, "SessionKeeper");
+        if let Some(sk) = self.session_keeper {
+            stop_arc_entity!(sk, "SessionKeeper");
         }
 
         stop_arc_entity!(self.multiplexer, "Multiplexer");
@@ -1321,8 +1322,36 @@ impl Runtime {
                 .await;
         }
 
+        let session_keeper = {
+            match SessionKeeper::start(
+                self.entities.socket_pool.clone(),
+                self.features.batching.unwrap_or_default(),
+                self.entities
+                    .wireguard_interface
+                    .subscribe_to_network_activity()
+                    .await?,
+            ) {
+                Ok(sk) => Some(Arc::new(sk)),
+                Err(e) => {
+                    telio_log_warn!("Session keeper startup failed: {e:?} - direct connections will not be formed. Keepalive optimisations will be disabled");
+                    None
+                }
+            }
+        };
+
+        // Batching optimisations work by employing SessionKeeper. If SessionKeeper is not present
+        // functionality will break when offloading actions to it, thus we disable the feature
+        if session_keeper.is_none() && self.features.batching.is_some() {
+            telio_log_warn!(
+                "Batching feature is enabled but SessionKeeper failed to start. Disabling batching."
+            );
+            self.features.batching = None;
+        }
+
         // Start Direct entities if "direct" feature is on
-        let direct = if let Some(direct) = &self.features.direct {
+        let direct = if session_keeper.is_none() {
+            None
+        } else if let Some(direct) = &self.features.direct {
             // Create endpoint providers
             let has_provider = |provider| {
                 // Default is all providers
@@ -1465,30 +1494,14 @@ impl Runtime {
                 self.requested_state.device_config.private_key.public(),
             )?);
 
-            match SessionKeeper::start(
-                self.entities.socket_pool.clone(),
-                self.features.batching.unwrap_or_default(),
-                self.entities
-                    .wireguard_interface
-                    .subscribe_to_network_activity()
-                    .await?,
-            )
-            .map(Arc::new)
-            {
-                Ok(session_keeper) => Some(DirectEntities {
-                    local_interfaces_endpoint_provider,
-                    stun_endpoint_provider,
-                    upnp_endpoint_provider,
-                    endpoint_providers,
-                    cross_ping_check,
-                    upgrade_sync,
-                    session_keeper,
-                }),
-                Err(e) => {
-                    telio_log_warn!("Session keeper startup failed: {e:?} - direct connections will not be formed");
-                    None
-                }
-            }
+            Some(DirectEntities {
+                local_interfaces_endpoint_provider,
+                stun_endpoint_provider,
+                upnp_endpoint_provider,
+                endpoint_providers,
+                cross_ping_check,
+                upgrade_sync,
+            })
         } else {
             None
         };
@@ -1504,6 +1517,7 @@ impl Runtime {
             proxy,
             direct,
             starcast,
+            session_keeper,
         })
     }
 
@@ -2360,13 +2374,6 @@ impl TaskRuntime for Runtime {
                                 direct_entities.cross_ping_check.notify_failed_wg_connection(public_key)
                                     .await?;
                                 direct_entities.upgrade_sync.clear_accepted_session(public_key).await;
-
-                                if self.features.batching.is_none() {
-                                    // When the batcher is enabled we use session keeper for all the connections
-                                    // direct, proxy, vpn and stun. This call is guarded by the batcher feature flag
-                                    // because it can disable keepalives when we don't want to.
-                                    direct_entities.session_keeper.remove_node(&public_key).await?;
-                                }
                             } else {
                                 telio_log_warn!("Connection downgraded while direct entities are disabled");
                             }

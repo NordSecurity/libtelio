@@ -2,7 +2,7 @@ import asyncio
 import itertools
 import pytest
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_environment
+from helpers import SetupParameters, setup_environment, setup_mesh_nodes
 from itertools import zip_longest
 from scapy.layers.inet import TCP, UDP, ICMP  # type: ignore
 from scapy.layers.l2 import ARP  # type: ignore
@@ -10,18 +10,20 @@ from timeouts import TEST_BATCHING_TIMEOUT
 from typing import List
 from utils.asyncio_util import run_async_context
 from utils.bindings import (
+    default_features,
     features_with_endpoint_providers,
     FeatureLinkDetection,
     FeaturePersistentKeepalive,
     FeatureBatching,
     EndpointProvider,
     RelayState,
+    LinkState,
     NodeState,
     PathType,
     TelioAdapterType,
 )
 from utils.connection import DockerConnection
-from utils.connection_util import DOCKER_GW_MAP, ConnectionTag, container_id
+from utils.connection_util import ConnectionTag, DOCKER_GW_MAP, container_id
 from utils.traffic import (
     capture_traffic,
     render_chart,
@@ -240,3 +242,75 @@ async def test_batching(
 
             print("Delay chart below")
             print(delay_chart)
+
+
+def proxying_peer_parameters(clients: List[ConnectionTag]):
+    def features():
+        features = default_features(enable_direct=False, enable_nurse=False)
+        features.wireguard.persistent_keepalive.proxying = 5
+        features.link_detection = FeatureLinkDetection(
+            rtt_seconds=2, no_of_pings=0, use_for_downgrade=False
+        )
+
+        features.batching = FeatureBatching(
+            direct_connection_threshold=5,
+            trigger_cooldown_duration=60,
+            trigger_effective_duration=10,
+        )
+        return features
+
+    return [
+        SetupParameters(
+            connection_tag=conn_tag,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
+            features=features(),
+            fingerprint=f"{conn_tag}",
+        )
+        for conn_tag in clients
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "setup_params",
+    [
+        proxying_peer_parameters(
+            [ConnectionTag.DOCKER_CONE_CLIENT_1, ConnectionTag.DOCKER_CONE_CLIENT_2]
+        )
+    ],
+)
+async def test_proxying_peer_batched_keepalive(
+    setup_params: List[SetupParameters],
+) -> None:
+    # Since batching keepalives are performed on application level instead of Wireguard
+    # backend we need to ensure that proxying peers are receiving the keepalives. To test
+    # for that we can enable link detection that guarantees quick detection if there's no corresponding
+    # received traffic(WireGuard PassiveKeepalive). If batcher correctly emits pings, it
+    # should trigger link detection quite quickly.
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+
+        await asyncio.gather(*[
+            await exit_stack.enter_async_context(
+                run_async_context(
+                    client.wait_for_state_peer(
+                        node.public_key, [NodeState.CONNECTED], [PathType.RELAY]
+                    )
+                )
+            )
+            for client, node in itertools.product(env.clients, env.nodes)
+            if not client.is_node(node)
+        ])
+
+        alpha, beta = env.clients
+        await beta.stop_device()
+
+        _, beta_node = env.nodes
+
+        await alpha.wait_for_state_peer(
+            beta_node.public_key,
+            [NodeState.CONNECTED],
+            [PathType.RELAY],
+            timeout=30,
+            link_state=LinkState.DOWN,
+        )
