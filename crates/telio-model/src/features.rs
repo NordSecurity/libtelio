@@ -356,7 +356,7 @@ pub struct FeatureFirewall {
     pub boringtun_reset_conns: bool,
     /// Customizable private IP range to treat certain private IP ranges
     /// as public IPs for testing purposes.
-    pub custom_private_ip_range: Option<Ipv4Net>,
+    pub exclude_private_ip_range: Option<Ipv4Net>,
 }
 
 /// Turns on post quantum VPN tunnel
@@ -545,7 +545,7 @@ mod tests {
             "firewall": {
                 "neptun_reset_conns": true,
                 "boringtun_reset_conns": true,
-                "custom_private_ip_range": null
+                "exclude_private_ip_range": null
             },
             "flush_events_on_stop_timeout_seconds": 15,
             "post_quantum_vpn": {
@@ -635,7 +635,7 @@ mod tests {
                     firewall: FeatureFirewall {
                         neptun_reset_conns: true,
                         boringtun_reset_conns: true,
-                        custom_private_ip_range: None,
+                        exclude_private_ip_range: None,
                     },
                     flush_events_on_stop_timeout_seconds: Some(15),
                     post_quantum_vpn: FeaturePostQuantumVPN {

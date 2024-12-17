@@ -41,7 +41,7 @@ def _setup_params(
     adapter_type_override: Optional[TelioAdapterType] = None,
     stun_limits=(0, 0),
     features: Features = default_features(
-        enable_firewall=("10.0.0.0/8", False),
+        enable_firewall_exclusion_range="10.0.0.0/8",
     ),
 ) -> SetupParameters:
     return SetupParameters(
@@ -263,12 +263,16 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     TelioAdapterType.NEP_TUN,
                     stun_limits=(1, 1),
-                    features=default_features(enable_firewall=("10.0.0.0/8", False)),
+                    features=default_features(
+                        enable_firewall_exclusion_range="10.0.0.0/8"
+                    ),
                 ),
                 _setup_params(
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     stun_limits=(1, 5),
-                    features=default_features(enable_firewall=("10.0.0.0/8", False)),
+                    features=default_features(
+                        enable_firewall_exclusion_range="10.0.0.0/8"
+                    ),
                 ),
             ],
         )

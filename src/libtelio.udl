@@ -478,7 +478,7 @@ interface FeaturesDefaultsBuilder {
 
     /// Enable firewall connection resets when NepTUN is used
     [Self=ByArc]
-    FeaturesDefaultsBuilder enable_firewall(string custom_ips, boolean neptun_reset_conns);
+    FeaturesDefaultsBuilder enable_firewall_connection_reset();
 
     /// Enable direct connections with defaults;
     [Self=ByArc]
@@ -693,8 +693,8 @@ dictionary FeatureFirewall {
     boolean neptun_reset_conns;
     /// Turns on connection resets upon VPN server change (Deprecated alias for neptun_reset_conns)
     boolean boringtun_reset_conns;
-    /// Custom private IP range
-    Ipv4Net? custom_private_ip_range;
+    /// Ip range from RFC1918 to exclude from firewall blocking
+    Ipv4Net? exclude_private_ip_range;
 };
 
 /// Link detection mechanism
