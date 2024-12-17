@@ -62,6 +62,7 @@ telio-wg.workspace = true
 once_cell.workspace = true
 nat-detect.workspace = true
 smart-default.workspace = true
+time.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.19"

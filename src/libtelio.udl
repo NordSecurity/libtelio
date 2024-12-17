@@ -191,6 +191,9 @@ namespace telio {
     /// Utility function to create a `Config` object from a json-string
     [Throws=TelioError]
     Config deserialize_meshnet_config(string cfg_str);
+
+    /// For testing only - embeds timestamps into generated logs
+    void add_timestamps_to_logs();
 };
 
 interface Telio {
