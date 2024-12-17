@@ -71,6 +71,8 @@ async def run_mqtt_listener(
     )
     while not mqtt_process.is_executing():
         await sleep(0.1)
+        print("Waiting for MQTT listener to start executing ...")
+    print("MQTT listener is executing ...")
     return mqtt_process
 
 
@@ -148,9 +150,15 @@ async def test_nc_register():
         while "message_id" not in mqtt_payload:
             await sleep(0.1)
             mqtt_payload = mqtt_process.get_stdout()
+            print("Waiting for MQTT stdout ...")
 
+        print(f"MQTT stdout: {mqtt_payload}")
         assert mqtt_payload
         verify_mqtt_payload(mqtt_payload)
+
+        mqtt_process = await run_mqtt_listener(
+            exit_stack, mqtt_connection, mqtt_host, mqtt_port, user, password
+        )
 
         await send_https_request(
             connection,
@@ -176,5 +184,8 @@ async def test_nc_register():
         while "message_id" not in mqtt_payload:
             await sleep(0.1)
             mqtt_payload = mqtt_process.get_stdout()
+            print("Waiting for MQTT stdout ...")
+
+        print(f"MQTT stdout: {mqtt_payload}")
         assert mqtt_payload
         verify_mqtt_payload(mqtt_payload)
