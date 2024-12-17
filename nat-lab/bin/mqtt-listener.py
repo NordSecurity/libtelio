@@ -8,7 +8,7 @@ CERTIFICATE_PATH = "/etc/ssl/server_certificate/server.pem"
 
 
 def on_message(client, _userdata, message):
-    print(f"{message.payload.decode()}")
+    print(f"{message.payload.decode()}", flush=True)
     client.loop_stop()
     sys.exit(0)
 
@@ -16,8 +16,9 @@ def on_message(client, _userdata, message):
 def on_connect(client, _userdata, _flags, rc):
     if rc == 0:
         client.subscribe("meshnet", qos=0)
+        print("MQTT listener is connected and subscribed.", flush=True)
     else:
-        print(f"Failed to connect with result code: {rc}")
+        print(f"Failed to connect with result code: {rc}", flush=True)
         sys.exit(1)
 
 def main(mqtt_broker_host, mqtt_broker_port, mqtt_broker_user, mqtt_broker_password):

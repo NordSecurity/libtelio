@@ -69,9 +69,11 @@ async def run_mqtt_listener(
             mqtt_broker_password,
         ]).run()
     )
-    while not mqtt_process.is_executing():
+    mqtt_stdout = mqtt_process.get_stdout()
+    while "MQTT listener is connected and subscribed." not in mqtt_stdout:
         await sleep(0.1)
-        print("Waiting for MQTT listener to start executing ...")
+        mqtt_stdout = mqtt_process.get_stdout()
+        print(f"MQTT stdout: {mqtt_stdout}")
     print("MQTT listener is executing ...")
     return mqtt_process
 
@@ -150,6 +152,7 @@ async def test_nc_register():
         while not mqtt_payload:
             await sleep(0.1)
             mqtt_payload = mqtt_process.get_stdout()
+            print(f"MQTT stdout: {mqtt_payload}")
             print("Waiting for MQTT stdout ...")
 
         print(f"MQTT stdout: {mqtt_payload}")
