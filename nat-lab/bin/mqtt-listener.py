@@ -7,10 +7,18 @@ import sys
 CERTIFICATE_PATH = "/etc/ssl/server_certificate/server.pem"
 
 
-def on_message(_client, _userdata, message):
+def on_message(client, _userdata, message):
     print(f"{message.payload.decode()}")
+    client.loop_stop()
     sys.exit(0)
 
+
+def on_connect(client, _userdata, _flags, rc):
+    if rc == 0:
+        client.subscribe("meshnet", qos=0)
+    else:
+        print(f"Failed to connect with result code: {rc}")
+        sys.exit(1)
 
 def main(mqtt_broker_host, mqtt_broker_port, mqtt_broker_user, mqtt_broker_password):
 
@@ -18,6 +26,7 @@ def main(mqtt_broker_host, mqtt_broker_port, mqtt_broker_user, mqtt_broker_passw
         mqtt.CallbackAPIVersion.VERSION2, client_id="receiver", protocol=mqtt.MQTTv311
     )
 
+    mqttc.on_connect = on_connect
     mqttc.on_message = on_message
 
     mqttc.username_pw_set(
@@ -32,8 +41,7 @@ def main(mqtt_broker_host, mqtt_broker_port, mqtt_broker_user, mqtt_broker_passw
         cert_reqs=ssl.CERT_REQUIRED,
     )
     mqttc.connect(mqtt_broker_host, port=mqtt_broker_port, keepalive=1)
-    mqttc.subscribe("meshnet", qos=0)
-    mqttc.loop_forever()
+    mqttc.loop_start()
 
 
 if __name__ == "__main__":

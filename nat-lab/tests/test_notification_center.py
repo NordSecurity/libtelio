@@ -147,7 +147,7 @@ async def test_nc_register():
         assert response.traffic_routing_supported is False
 
         mqtt_payload = mqtt_process.get_stdout()
-        while "message_id" not in mqtt_payload:
+        while not mqtt_payload:
             await sleep(0.1)
             mqtt_payload = mqtt_process.get_stdout()
             print("Waiting for MQTT stdout ...")
@@ -181,7 +181,7 @@ async def test_nc_register():
         assert len(machines) == 0
 
         mqtt_payload = mqtt_process.get_stdout()
-        while "message_id" not in mqtt_payload:
+        while not mqtt_payload:
             await sleep(0.1)
             mqtt_payload = mqtt_process.get_stdout()
             print("Waiting for MQTT stdout ...")
