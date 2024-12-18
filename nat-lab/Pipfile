@@ -51,6 +51,7 @@ asyncssh = "==2.14.2"
 aiodocker = "*"
 scapy="2.5"
 paho-mqtt = "*"
+deepdiff = "*"
 
 [dev-packages]
 
