@@ -76,6 +76,19 @@ impl CommandListener {
                 })
                 .await
             }
+            ClientCmd::QuitDaemon =>
+            {
+                #[allow(mpsc_blocking_send)]
+                self.telio_task_tx
+                    .send(TelioTaskCmd::Quit)
+                    .await
+                    .map(|_| CommandResponse::Ok)
+                    .map_err(|e| {
+                        error!("Error sending command: {}", e);
+                        TeliodError::CommandFailed(ClientCmd::QuitDaemon)
+                    })
+            }
+            ClientCmd::IsAlive => Ok(CommandResponse::Ok),
         }
     }
 
@@ -88,7 +101,6 @@ impl CommandListener {
             connection.respond(response.serialize()).await?;
             Ok(command)
         } else {
-            error!("Received invalid command from client: {}", command_str);
             connection
                 .respond(
                     CommandResponse::Err(format!("Invalid command: {}", command_str)).serialize(),

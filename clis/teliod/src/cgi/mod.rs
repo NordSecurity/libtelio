@@ -1,8 +1,16 @@
+pub mod constants;
+
+mod api;
+mod pid;
+
 use std::{env::var, ops::Deref};
 
 use rust_cgi::{http::StatusCode, text_response, Request, Response};
 
+pub use self::pid::PidFile;
+
 const CHAIN: &[fn(&CgiRequest) -> Option<Response>] = &[
+    api::handle_api,
     #[cfg(debug_assertions)]
     trace_request,
 ];
