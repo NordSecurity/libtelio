@@ -3601,6 +3601,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust-cgi"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f429f64b3929e733331d856e47ac00afb9dd8cda39f0a740c5622c886754acfa"
+dependencies = [
+ "http 1.1.0",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5097,6 +5106,7 @@ dependencies = [
  "regex",
  "reqwest 0.12.9",
  "rumqttc",
+ "rust-cgi",
  "rustls-native-certs 0.8.0",
  "serde",
  "serde_json",
@@ -5926,7 +5936,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -12,6 +12,8 @@ use tokio::{
 };
 use tracing::{debug, error};
 
+#[cfg(feature = "cgi")]
+mod cgi;
 mod command_listener;
 mod comms;
 mod config;
@@ -44,6 +46,9 @@ enum Cmd {
     Daemon { config_path: String },
     #[clap(flatten)]
     Client(ClientCmd),
+    #[cfg(feature = "cgi")]
+    #[clap(about = "Receive and parse http requests")]
+    Cgi,
 }
 
 #[derive(Debug, ThisError)]
@@ -133,6 +138,11 @@ async fn main() -> Result<(), TeliodError> {
             } else {
                 Err(TeliodError::DaemonIsNotRunning)
             }
+        }
+        #[cfg(feature = "cgi")]
+        Cmd::Cgi => {
+            rust_cgi::handle(cgi::handle_request);
+            Ok(())
         }
     }
 }
