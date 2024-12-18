@@ -4595,6 +4595,7 @@ dependencies = [
  "telio-utils",
  "telio-wg",
  "thiserror 1.0.64",
+ "time",
  "tokio",
  "tracing",
  "tracing-subscriber",
