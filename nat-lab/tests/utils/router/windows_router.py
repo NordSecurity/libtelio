@@ -324,3 +324,8 @@ class WindowsRouter(Router):
     @asynccontextmanager
     async def reset_upnpd(self) -> AsyncIterator:
         yield
+
+    def set_interface_name(
+        self, new_interface_name: str  # pylint: disable=unused-argument
+    ) -> None:
+        pass
