@@ -12,12 +12,22 @@ def on_message(_client, _userdata, message):
     sys.exit(0)
 
 
+def on_connect(client, _userdata, _flags, rc, _properties):
+    if rc == 0:
+        print("Connected to MQTT Broker")
+        client.subscribe("meshnet", qos=0)
+    else:
+        print(f"Failed to connect with result code: {rc}")
+        sys.exit(1)
+
+
 def main(mqtt_broker_host, mqtt_broker_port, mqtt_broker_user, mqtt_broker_password):
 
     mqttc = mqtt.Client(
         mqtt.CallbackAPIVersion.VERSION2, client_id="receiver", protocol=mqtt.MQTTv311
     )
 
+    mqttc.on_connect = on_connect
     mqttc.on_message = on_message
 
     mqttc.username_pw_set(
@@ -32,7 +42,6 @@ def main(mqtt_broker_host, mqtt_broker_port, mqtt_broker_user, mqtt_broker_passw
         cert_reqs=ssl.CERT_REQUIRED,
     )
     mqttc.connect(mqtt_broker_host, port=mqtt_broker_port, keepalive=1)
-    mqttc.subscribe("meshnet", qos=0)
     mqttc.loop_forever()
 
 
