@@ -15,6 +15,7 @@ use tokio::{sync::mpsc, sync::oneshot, time::Duration};
 use tracing::{debug, error, info, trace};
 
 use crate::core_api::{get_meshmap as get_meshmap_from_server, init_with_api};
+use crate::ClientCmd;
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
@@ -254,9 +255,12 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
                 match result {
                     Ok(command) => {
                         info!("Client command {:?} executed successfully", command);
+                        if command == ClientCmd::QuitDaemon {
+                            break Ok(())
+                        }
                     }
                     Err(err) => {
-                        break Err(err);
+                        error!("Received invalid command from client: {}", err);
                     }
                 }
             },
