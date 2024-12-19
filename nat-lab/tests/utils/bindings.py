@@ -72,8 +72,8 @@ def telio_node(  # pylint: disable=dangerous-default-value
     allow_peer_traffic_routing: bool = False,
     allow_peer_local_network_access: bool = False,
     link_state: Optional[LinkState] = None,
-    allow_multicast: bool = False,
-    peer_allows_multicast: bool = False,
+    allow_multicast: bool = True,
+    peer_allows_multicast: bool = True,
 ) -> TelioNode:
     return TelioNode(
         identifier=identifier,
