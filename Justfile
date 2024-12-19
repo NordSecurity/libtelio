@@ -67,6 +67,12 @@ black fix="false":
 pylint:
     docker run --rm -t -v$(pwd):/code 'ubuntu:22.04' sh -c "apt-get update && apt-get -y install python3-pip && cd code && pip3 install --no-deps -r requirements.txt && pipenv install --system && cd nat-lab && pipenv install --system && pylint -f colorized . --ignore telio_bindings.py"
 
+# Start a dev web cgi server, for local teliod cgi development
+web:
+    @echo "Go to http://127.0.0.1:8080/cgi-bin/teliod.cgi"
+    python3 -m http.server --cgi -d $(pwd)/contrib/http_root/ -b 127.0.0.1 8080
+    
+
 _udeps-install: _nightly-install
     cargo +{{ nightly }} install cargo-udeps@0.1.47 --locked
 
