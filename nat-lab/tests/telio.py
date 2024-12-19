@@ -1,5 +1,6 @@
 # pylint: disable=too-many-lines
 import asyncio
+import config
 import glob
 import os
 import platform
@@ -531,6 +532,9 @@ class Client:
         if isinstance(self.get_router(), LinuxRouter):
             self.get_router().set_interface_name(tun_name)
             await self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
+
+    def fix(self):
+        self.get_router().set_interface_name(config.LINUX_INTERFACE_NAME)
 
     async def wait_for_state_peer(
         self,

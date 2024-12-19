@@ -36,3 +36,4 @@ async def test_start_with_tun() -> None:
         await alpha_client.set_meshnet_config(env.api.get_meshnet_config(alpha.id))
         await ping_between_all_nodes(env)
         await alpha_client.stop_device()
+        alpha_client.fix()
