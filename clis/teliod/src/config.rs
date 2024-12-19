@@ -1,6 +1,6 @@
 use std::{num::NonZeroU64, path::PathBuf, str::FromStr};
 
-use serde::{de, Deserialize, Deserializer, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use smart_default::SmartDefault;
 use std::fs;
 use tracing::{debug, info, level_filters::LevelFilter};
@@ -12,7 +12,7 @@ use crate::configure_interface::InterfaceConfigurationProvider;
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
 #[repr(transparent)]
-pub struct Percentage(u8);
+pub struct Percentage(pub u8);
 
 impl std::ops::Mul<std::time::Duration> for Percentage {
     type Output = std::time::Duration;
@@ -22,7 +22,7 @@ impl std::ops::Mul<std::time::Duration> for Percentage {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Deserialize, SmartDefault)]
+#[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize, SmartDefault)]
 #[serde(default)]
 pub struct MqttConfig {
     /// Starting backoff time for mqtt retry, has to be at least one. (in seconds)
@@ -34,7 +34,10 @@ pub struct MqttConfig {
 
     /// Percentage of the expiry period after which new mqtt token will be requested
     #[default(reconnect_after_expiry_default())]
-    #[serde(deserialize_with = "deserialize_percent")]
+    #[serde(
+        deserialize_with = "deserialize_percent",
+        serialize_with = "serialize_percent"
+    )]
     pub reconnect_after_expiry: Percentage,
 
     /// Path to a mqtt pem certificate to be used when connecting to Notification Center
@@ -83,16 +86,22 @@ impl DeviceIdentity {
     }
 }
 
-#[derive(PartialEq, Eq, Deserialize, Debug)]
+#[derive(PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct TeliodDaemonConfig {
-    #[serde(deserialize_with = "deserialize_log_level")]
+    #[serde(
+        deserialize_with = "deserialize_log_level",
+        serialize_with = "serialize_log_level"
+    )]
     pub log_level: LevelFilter,
     pub log_file_path: String,
     pub interface: InterfaceConfig,
 
     pub app_user_uid: Uuid,
 
-    #[serde(deserialize_with = "deserialize_authentication_token")]
+    #[serde(
+        deserialize_with = "deserialize_authentication_token",
+        serialize_with = "serialize_authentication_token"
+    )]
     pub authentication_token: String,
 
     /// Path to a http pem certificate to be used when connecting to CoreApi
@@ -100,6 +109,33 @@ pub struct TeliodDaemonConfig {
 
     #[serde(default)]
     pub mqtt: MqttConfig,
+}
+
+impl TeliodDaemonConfig {
+    #[allow(dead_code)]
+    pub fn update(&mut self, update: TeliodDaemonConfigPartial) {
+        if let Some(log_level) = update.log_level {
+            self.log_level = log_level;
+        }
+        if let Some(log_file_path) = update.log_file_path {
+            self.log_file_path = log_file_path;
+        }
+        if let Some(authentication_token) = update.authentication_token {
+            self.authentication_token = authentication_token;
+        }
+        if let Some(app_user_uid) = update.app_user_uid {
+            self.app_user_uid = app_user_uid;
+        }
+        if let Some(interface) = update.interface {
+            self.interface = interface;
+        }
+        if let Some(http_certificate_file_path) = update.http_certificate_file_path {
+            self.http_certificate_file_path = http_certificate_file_path;
+        }
+        if let Some(mqtt) = update.mqtt {
+            self.mqtt = mqtt;
+        }
+    }
 }
 
 fn deserialize_percent<'de, D>(deserializer: D) -> Result<Percentage, D::Error>
@@ -115,6 +151,13 @@ where
     Ok(Percentage(value))
 }
 
+fn serialize_percent<S>(percentage: &Percentage, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_u8(percentage.0)
+}
+
 fn deserialize_log_level<'de, D>(deserializer: D) -> Result<LevelFilter, D::Error>
 where
     D: Deserializer<'de>,
@@ -124,6 +167,13 @@ where
             de::Error::unknown_variant(&s, &["error", "warn", "info", "debug", "trace", "off"])
         })
     })
+}
+
+fn serialize_log_level<S>(log_level: &LevelFilter, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&log_level.to_string())
 }
 
 fn deserialize_authentication_token<'de, D: Deserializer<'de>>(
@@ -138,10 +188,71 @@ fn deserialize_authentication_token<'de, D: Deserializer<'de>>(
     }
 }
 
-#[derive(PartialEq, Eq, Deserialize, Debug)]
+fn serialize_authentication_token<S>(auth_token: &str, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    if auth_token.len() == 64 && auth_token.chars().all(|c| c.is_ascii_hexdigit()) {
+        serializer.serialize_str(auth_token)
+    } else {
+        Err(serde::ser::Error::custom(
+            "Invalid authentication token format",
+        ))
+    }
+}
+
+#[derive(Default, PartialEq, Eq, Deserialize, Serialize, Debug)]
 pub struct InterfaceConfig {
     pub name: String,
     pub config_provider: InterfaceConfigurationProvider,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, Debug)]
+pub struct TeliodDaemonConfigPartial {
+    #[serde(default, deserialize_with = "deserialize_partial_log_level")]
+    log_level: Option<LevelFilter>,
+    log_file_path: Option<String>,
+    interface: Option<InterfaceConfig>,
+    app_user_uid: Option<Uuid>,
+    #[serde(default, deserialize_with = "deserialize_partial_authentication_token")]
+    authentication_token: Option<String>,
+    http_certificate_file_path: Option<Option<PathBuf>>,
+    mqtt: Option<MqttConfig>,
+}
+
+fn deserialize_partial_log_level<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<LevelFilter>, D::Error> {
+    let deserialized_level_filter: Option<String> = Option::deserialize(deserializer)?;
+
+    match deserialized_level_filter {
+        Some(ref level_string) => LevelFilter::from_str(level_string).map(Some).map_err(|_| {
+            de::Error::unknown_variant(
+                level_string,
+                &["error", "warn", "info", "debug", "trace", "off"],
+            )
+        }),
+        _ => Ok(None),
+    }
+}
+
+fn deserialize_partial_authentication_token<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    let deserialized_auth_token: Option<String> = Option::deserialize(deserializer)?;
+
+    match deserialized_auth_token {
+        Some(ref raw_auth_token) => {
+            let re = regex::Regex::new("[0-9a-f]{64}").map_err(de::Error::custom)?;
+            if re.is_match(raw_auth_token) {
+                Ok(Some(raw_auth_token.to_owned()))
+            } else {
+                Err(de::Error::custom("Incorrect authentication token"))
+            }
+        }
+        None => Ok(None),
+    }
 }
 
 #[cfg(test)]
@@ -191,7 +302,7 @@ mod tests {
             "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             }"#;
 
-            assert_eq!(expected, serde_json::from_str(&json).unwrap());
+            assert_eq!(expected, serde_json::from_str(json).unwrap());
         }
 
         {
@@ -207,7 +318,7 @@ mod tests {
                 "mqtt": {}
             }"#;
 
-            assert_eq!(expected, serde_json::from_str(&json).unwrap());
+            assert_eq!(expected, serde_json::from_str(json).unwrap());
         }
     }
 }
