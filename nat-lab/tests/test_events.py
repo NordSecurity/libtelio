@@ -331,6 +331,8 @@ async def test_event_content_vpn_connection(
                     allowed_ips=["0.0.0.0/0", "::/0"],
                     endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
                     path=PathType.DIRECT,
+                    allow_multicast=False,
+                    peer_allows_multicast=False,
                 ),
             )
             is None
@@ -361,6 +363,8 @@ async def test_event_content_vpn_connection(
                     allowed_ips=["0.0.0.0/0", "::/0"],
                     endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
                     path=PathType.DIRECT,
+                    allow_multicast=False,
+                    peer_allows_multicast=False,
                 ),
             )
             is None
