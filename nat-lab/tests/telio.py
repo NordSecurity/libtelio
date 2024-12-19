@@ -8,9 +8,9 @@ import uuid
 import warnings
 from collections import Counter
 from config import DERP_SERVERS
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
-from mesh_api import Node, start_tcpdump, stop_tcpdump
+from mesh_api import Node
 from typing import AsyncIterator, List, Optional, Set
 from uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
 from utils import asyncio_util
@@ -39,6 +39,7 @@ from utils.python import get_python_binary
 from utils.router import IPStack, Router, new_router
 from utils.router.linux_router import LinuxRouter, FWMARK_VALUE as LINUX_FWMARK_VALUE
 from utils.router.windows_router import WindowsRouter
+from utils.tcpdump import make_tcpdump
 from utils.testing import (
     get_current_test_log_path,
     get_current_test_case_and_parameters,
@@ -356,10 +357,6 @@ class Client:
     async def run(
         self, meshnet_config: Optional[Config] = None
     ) -> AsyncIterator["Client"]:
-        if isinstance(self._connection, DockerConnection):
-            start_tcpdump([self._connection.container_name()])
-            await self.clear_core_dumps()
-
         async def on_stdout(stdout: str) -> None:
             supress_print_list = [
                 "- no login.",
@@ -404,11 +401,16 @@ class Client:
             container_port,
         ])
 
-        await self.clear_system_log()
+        async with AsyncExitStack() as exit_stack:
+            await exit_stack.enter_async_context(make_tcpdump([self._connection]))
+            if isinstance(self._connection, DockerConnection):
+                await self.clear_core_dumps()
 
-        async with self._process.run(
-            stdout_callback=on_stdout, stderr_callback=on_stderr
-        ):
+            await self.clear_system_log()
+
+            await exit_stack.enter_async_context(
+                self._process.run(stdout_callback=on_stdout, stderr_callback=on_stderr)
+            )
             try:
                 await self._process.wait_stdin_ready()
 
@@ -455,7 +457,6 @@ class Client:
                     "Test cleanup: Stopping tcpdump and collecting core dumps",
                 )
                 if isinstance(self._connection, DockerConnection):
-                    stop_tcpdump([self._connection.container_name()])
                     await self.collect_core_dumps()
 
                 print(

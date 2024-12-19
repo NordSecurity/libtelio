@@ -8,6 +8,7 @@ from utils.asyncio_util import run_async_context
 
 class SshProcess(Process):
     _ssh_connection: asyncssh.SSHClientConnection
+    _vm_name: str
     _command: List[str]
     _stdout: str
     _stderr: str
@@ -16,14 +17,18 @@ class SshProcess(Process):
     _stdin: Optional[asyncssh.SSHWriter]
     _process: Optional[asyncssh.SSHClientProcess]
     _running: bool
+    _term_type: Optional[str]
 
     def __init__(
         self,
         ssh_connection: asyncssh.SSHClientConnection,
+        vm_name: str,
         command: List[str],
         escape_argument: Callable[[str], str],
+        term_type: Optional[str] = None,
     ) -> None:
         self._ssh_connection = ssh_connection
+        self._vm_name = vm_name
         self._command = command
         self._stdout = ""
         self._stderr = ""
@@ -33,19 +38,22 @@ class SshProcess(Process):
         self._escape_argument = escape_argument
         self._process = None
         self._running = False
+        self._term_type = term_type
 
     async def execute(
         self,
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
-        privileged=False,
+        privileged: bool = False,
     ) -> "SshProcess":
         if privileged:
             print("'privileged' does nothing for ssh processes")
         escaped = [self._escape_argument(arg) for arg in self._command]
         command_str = " ".join(escaped)
 
-        self._process = await self._ssh_connection.create_process(command_str)
+        self._process = await self._ssh_connection.create_process(
+            command_str, term_type=self._term_type
+        )
         self._running = True
         self._stdin = self._process.stdin
         self._stdin_ready.set()
@@ -69,7 +77,11 @@ class SshProcess(Process):
         # 0 success
         if completed_process.returncode and completed_process.returncode != 0:
             raise ProcessExecError(
-                completed_process.returncode, self._command, self._stdout, self._stderr
+                completed_process.returncode,
+                self._vm_name,
+                self._command,
+                self._stdout,
+                self._stderr,
             )
 
         return self
@@ -79,10 +91,11 @@ class SshProcess(Process):
         self,
         stdout_callback: Optional[StreamCallback] = None,
         stderr_callback: Optional[StreamCallback] = None,
+        privileged: bool = False,
     ) -> AsyncIterator["SshProcess"]:
         async def mark_as_done():
             try:
-                await self.execute(stdout_callback, stderr_callback)
+                await self.execute(stdout_callback, stderr_callback, privileged)
             finally:
                 self._is_done.set()
 

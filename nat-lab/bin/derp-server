@@ -2,6 +2,10 @@
 
 set -e
 
+# Backup IP tables
+iptables-save -f iptables_backup
+ip6tables-save -f ip6tables_backup
+
 /usr/bin/nordderper &
 
 sleep infinity
