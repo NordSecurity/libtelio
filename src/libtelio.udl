@@ -684,6 +684,9 @@ dictionary FeatureDerp {
     u32? tcp_keepalive;
     /// Derp will send empty messages after this many seconds of not sending/receiving any data [default 60s]
     u32? derp_keepalive;
+    /// Poll Keepalive: Application level keepalives meant to replace the TCP keepalives
+    /// They will reuse the derp_keepalive interval
+    boolean poll_keepalive;
     /// Enable polling of remote peer states to reduce derp traffic
     boolean? enable_polling;
     /// Use Mozilla's root certificates instead of OS ones [default false]

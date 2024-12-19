@@ -6,7 +6,7 @@ from contextlib import AsyncExitStack
 from copy import deepcopy
 from helpers import SetupParameters, setup_mesh_nodes
 from typing import List
-from utils.bindings import RelayState
+from utils.bindings import RelayState, FeatureDerp, default_features
 from utils.connection_util import ConnectionTag
 from utils.ping import ping
 
@@ -15,14 +15,40 @@ DERP2_IP = str(DERP_SECONDARY.ipv4)
 DERP3_IP = str(DERP_TERTIARY.ipv4)
 
 
+def _build_parameters(
+    connection_tag: List[ConnectionTag], enable_poll_keepalives: bool
+) -> List[SetupParameters]:
+    features = default_features()
+    if enable_poll_keepalives:
+        assert features
+        features.derp = FeatureDerp(
+            tcp_keepalive=120,
+            derp_keepalive=15,
+            poll_keepalive=True,
+            enable_polling=False,
+            use_built_in_root_certificates=False,
+        )
+    return [
+        SetupParameters(
+            connection_tag=connection_tag,
+            features=features,
+        )
+        for connection_tag in connection_tag
+    ]
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "setup_params",
     [
-        [
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1),
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2),
-        ],
+        _build_parameters(
+            [ConnectionTag.DOCKER_CONE_CLIENT_1, ConnectionTag.DOCKER_CONE_CLIENT_2],
+            False,
+        ),
+        _build_parameters(
+            [ConnectionTag.DOCKER_CONE_CLIENT_1, ConnectionTag.DOCKER_CONE_CLIENT_2],
+            True,
+        ),
     ],
 )
 async def test_derp_reconnect_2clients(setup_params: List[SetupParameters]) -> None:
@@ -82,11 +108,22 @@ async def test_derp_reconnect_2clients(setup_params: List[SetupParameters]) -> N
 @pytest.mark.parametrize(
     "setup_params",
     [
-        [
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1),
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2),
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1),
-        ],
+        _build_parameters(
+            [
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            ],
+            False,
+        ),
+        _build_parameters(
+            [
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            ],
+            True,
+        ),
     ],
 )
 async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> None:
@@ -223,11 +260,22 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
 @pytest.mark.parametrize(
     "setup_params",
     [
-        [
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1),
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2),
-            SetupParameters(connection_tag=ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1),
-        ],
+        _build_parameters(
+            [
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            ],
+            False,
+        ),
+        _build_parameters(
+            [
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1,
+            ],
+            True,
+        ),
     ],
 )
 async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
@@ -440,3 +488,31 @@ async def test_derp_server_list_exhaustion(setup_params: List[SetupParameters]) 
 
         # Ping peer to check if connection truly works
         await ping(alpha_connection, beta.ip_addresses[0])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "setup_params",
+    [
+        _build_parameters([ConnectionTag.DOCKER_CONE_CLIENT_1], False),
+        _build_parameters([ConnectionTag.DOCKER_CONE_CLIENT_1], True),
+    ],
+)
+async def test_derp_reconnect_1client(setup_params: List[SetupParameters]) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        alpha_client = env.clients[0]
+        assert alpha_client
+
+        # an iptables rule is placed in order to reject connections and
+        # send a TCP reset to the client BETA
+        await exit_stack.enter_async_context(
+            alpha_client.get_router().break_tcp_conn_to_host(DERP1_IP)
+        )
+
+        # Wait till connection is broken
+        await alpha_client.wait_for_state_derp(
+            DERP1_IP, [RelayState.DISCONNECTED, RelayState.CONNECTING]
+        )
+
+        await alpha_client.wait_for_state_derp(DERP2_IP, [RelayState.CONNECTED])
