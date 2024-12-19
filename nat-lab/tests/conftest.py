@@ -4,11 +4,13 @@ import pytest
 import random
 import shutil
 import subprocess
+from config import DERP_PRIMARY
 from datetime import datetime
 from helpers import SetupParameters
 from interderp_cli import InterDerpClient
 from itertools import combinations
 from mesh_api import start_tcpdump, stop_tcpdump
+from typing import Dict, List, Tuple
 from utils.bindings import TelioAdapterType
 from utils.connection import DockerConnection
 from utils.connection_util import (
@@ -16,7 +18,9 @@ from utils.connection_util import (
     container_id,
     LAN_ADDR_MAP,
     new_connection_raw,
+    new_connection_with_conn_tracker,
 )
+from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPStack
 from utils.vm import windows_vm_util, mac_vm_util
@@ -29,6 +33,8 @@ DERP_SERVER_2_SECRET_KEY = "2NgALOCSKJcDxwr8MtA+6lYbf7b98KSdAROGoUwZ1V0="
 
 SETUP_CHECK_TIMEOUT_S = 30
 SETUP_CHECK_RETRIES = 5
+SETUP_CHECK_CONNECTIVITY_TIMEOUT = 60
+SETUP_CHECK_CONNECTIVITY_RETRIES = 1
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -196,6 +202,59 @@ def pytest_make_parametrize_id(config, val):
     return param_id
 
 
+async def setup_check_connectivity():
+    if "GITLAB_CI" not in os.environ:
+        return
+
+    reverse: Dict[str, str] = {
+        LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1]: "WINDOWS_VM_1",
+        LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2]: "WINDOWS_VM_2",
+        LAN_ADDR_MAP[ConnectionTag.MAC_VM]: "MAC_VM",
+        DERP_PRIMARY.ipv4: "PRIMARY_DERP",
+    }
+
+    test_nodes = {
+        ConnectionTag.WINDOWS_VM_1: [
+            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2],
+            LAN_ADDR_MAP[ConnectionTag.MAC_VM],
+            DERP_PRIMARY.ipv4,
+        ],
+        ConnectionTag.WINDOWS_VM_2: [
+            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1],
+            LAN_ADDR_MAP[ConnectionTag.MAC_VM],
+            DERP_PRIMARY.ipv4,
+        ],
+        ConnectionTag.MAC_VM: [
+            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1],
+            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2],
+            DERP_PRIMARY.ipv4,
+        ],
+    }
+    results: Dict[ConnectionTag, List[Tuple[str, bool]]] = {
+        key: [] for key in test_nodes
+    }
+    for source, destinations in test_nodes.items():
+        for dest_ip in destinations:
+            try:
+                async with new_connection_with_conn_tracker(source, None) as (
+                    connection,
+                    _,
+                ):
+                    await ping(connection, dest_ip, 5)
+                    results[source].append((reverse[dest_ip], True))
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                print(f"Failed to connect from {source} to {reverse[dest_ip]}: {e}")
+                results[source].append((reverse[dest_ip], False))
+
+    print("Connectivity between VMs (and docker):")
+    for k, v in results.items():
+        print(f"{k}: {v}")
+
+    for k, v in results.items():
+        for dest_ip, status in v:
+            assert status, f"Failed to connect from {k} to {dest_ip}"
+
+
 async def setup_check_interderp():
     async with new_connection_raw(ConnectionTag.DOCKER_CONE_CLIENT_1) as connection:
         if not isinstance(connection, DockerConnection):
@@ -229,6 +288,11 @@ async def setup_check_interderp():
 
 SETUP_CHECKS = [
     (setup_check_interderp, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
+    (
+        setup_check_connectivity,
+        SETUP_CHECK_CONNECTIVITY_TIMEOUT,
+        SETUP_CHECK_CONNECTIVITY_RETRIES,
+    ),
 ]
 
 
