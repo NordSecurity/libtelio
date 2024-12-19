@@ -73,9 +73,6 @@ fn check_git_hooks() -> Result<()> {
 }
 
 fn verify_llt_secrets() {
-    println!("cargo:rerun-if-changed=./crates");
-    println!("cargo:rerun-if-changed=./src");
-
     if !env::var("GITLAB_CI")
         .or(env::var("GITHUB_ACTIONS"))
         .is_ok_and(|value| value == "true")
@@ -84,6 +81,9 @@ fn verify_llt_secrets() {
             println!("cargo:warning=BYPASS_LLT_SECRETS IS SET, COMMIT CAREFULLY!!");
             return;
         }
+
+        println!("cargo:rerun-if-changed=./crates");
+        println!("cargo:rerun-if-changed=./src");
 
         #[allow(clippy::panic)]
         match check_git_secrets().and_then(|_| check_git_hooks()) {
