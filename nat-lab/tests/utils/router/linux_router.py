@@ -61,6 +61,9 @@ class LinuxRouter(Router):
             ["ip", "link", "set", "up", "dev", self._interface_name]
         ).execute()
 
+    def set_interface_name(self, new_interface_name: str) -> None:
+        self._interface_name = new_interface_name
+
     async def deconfigure_interface(self, addresses: List[str]) -> None:
         for address in addresses:
             await self._connection.create_process(
