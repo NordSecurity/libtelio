@@ -29,7 +29,6 @@ pub enum RepeatedActionError {
 
 /// Single action type
 pub type RepeatedAction<V, R> = Arc<dyn for<'a> Fn(&'a mut V) -> BoxFuture<'a, R> + Sync + Send>;
-type Action<K, C, R> = (K, (Interval, RepeatedAction<C, R>));
 type Result<T> = std::result::Result<T, RepeatedActionError>;
 
 /// Main struct container, that hold all actions
@@ -55,6 +54,13 @@ where
         Self {
             actions: HashMap::new(),
         }
+    }
+
+    /// Set all actions to be executed when polled next time
+    pub fn set_all_immediate(&mut self) {
+        self.actions
+            .values_mut()
+            .for_each(|v| v.0.reset_immediately());
     }
 
     /// Add single action (first tick is immediate)
@@ -128,17 +134,6 @@ where
     }
 }
 
-impl<K, C, R, const N: usize> From<[Action<K, C, R>; N]> for RepeatedActions<K, C, R>
-where
-    K: Eq + Hash + Send + Sync,
-{
-    fn from(arr: [Action<K, C, R>; N]) -> Self {
-        RepeatedActions::<K, C, R> {
-            actions: HashMap::from(arr),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,6 +165,111 @@ mod tests {
         pub async fn change(&mut self, str: String) -> Result {
             self.test = str;
             Ok(())
+        }
+
+        pub fn get(&self) -> &str {
+            &self.test
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_set_all_immediate() {
+        let mut ctx = Context::new("test".to_owned());
+
+        let start = Instant::now();
+
+        ctx.actions
+            .add_action(
+                "action_0".to_owned(),
+                Duration::from_secs(10),
+                Arc::new({
+                    let start = start.clone();
+                    move |s: _| {
+                        Box::pin({
+                            let start = start.clone();
+                            async move {
+                                s.change(format!("ts_{}", start.elapsed().as_secs()).to_owned())
+                                    .await
+                            }
+                        })
+                    }
+                }),
+            )
+            .unwrap();
+
+        // immediate action
+        ctx.actions.select_action().await.unwrap().1(&mut ctx)
+            .await
+            .unwrap();
+
+        tokio::time::advance(Duration::from_secs(3)).await;
+
+        ctx.actions
+            .add_action(
+                "action_1".to_owned(),
+                Duration::from_secs(10),
+                Arc::new({
+                    let start = start.clone();
+                    move |s: _| {
+                        Box::pin({
+                            let start = start.clone();
+                            async move {
+                                s.change(format!("ts_{}", start.elapsed().as_secs()).to_owned())
+                                    .await
+                            }
+                        })
+                    }
+                }),
+            )
+            .unwrap();
+
+        // immediate action
+        ctx.actions.select_action().await.unwrap().1(&mut ctx)
+            .await
+            .unwrap();
+
+        // at this point in time there's 7seconds until action_0 and 10seconds until action_1
+
+        ctx.actions.select_action().await.unwrap().1(&mut ctx)
+            .await
+            .unwrap();
+        ctx.actions.select_action().await.unwrap().1(&mut ctx)
+            .await
+            .unwrap();
+
+        {
+            let mut values_to_expect = vec!["ts_20", "ts_23", "ts_30", "ts_33"];
+            values_to_expect.reverse();
+
+            loop {
+                if values_to_expect.len() == 0 {
+                    break;
+                }
+                ctx.actions.select_action().await.unwrap().1(&mut ctx)
+                    .await
+                    .unwrap();
+
+                assert_eq!(ctx.get(), values_to_expect.pop().unwrap());
+            }
+        }
+
+        // we have proven that two actions are misaligned
+        ctx.actions.set_all_immediate();
+
+        {
+            let mut values_to_expect = vec!["ts_33", "ts_33", "ts_43", "ts_43"];
+            values_to_expect.reverse();
+
+            loop {
+                if values_to_expect.len() == 0 {
+                    break;
+                }
+                ctx.actions.select_action().await.unwrap().1(&mut ctx)
+                    .await
+                    .unwrap();
+
+                assert_eq!(ctx.get(), values_to_expect.pop().unwrap());
+            }
         }
     }
 
