@@ -1,4 +1,3 @@
-use crate::batcher::{Batcher, BatcherTrait, BatchingOptions};
 use async_trait::async_trait;
 use socket2::Type;
 use std::future::Future;
@@ -10,18 +9,11 @@ use surge_ping::{
     SurgeError, ICMP,
 };
 use telio_crypto::PublicKey;
-use telio_model::features::FeatureBatching;
 use telio_sockets::SocketPool;
 use telio_task::{task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     dual_target, repeated_actions, telio_log_debug, telio_log_warn, DualTarget, RepeatedActions,
 };
-use tokio::sync::watch;
-use tokio::time::Instant;
-
-use futures::future::{pending, BoxFuture};
-use futures::FutureExt;
-
 const PING_PAYLOAD_SIZE: usize = 56;
 
 /// Possible [SessionKeeper] errors.
@@ -57,28 +49,19 @@ pub trait SessionKeeperTrait {
         public_key: PublicKey,
         target: dual_target::Target,
         interval: Duration,
-        threshold: Option<Duration>,
     ) -> Result<()>;
     async fn remove_node(&self, key: &PublicKey) -> Result<()>;
     async fn get_interval(&self, key: &PublicKey) -> Option<u32>;
 }
 
 pub struct SessionKeeper {
+    batch_all: bool,
     task: Task<State>,
 }
 
 impl SessionKeeper {
-    pub fn start(
-        sock_pool: Arc<SocketPool>,
-        batching_feature: FeatureBatching,
-        network_activity: Option<watch::Receiver<Instant>>,
-
-        #[cfg(test)] batcher: Box<dyn BatcherTrait<PublicKey, State>>,
-    ) -> Result<Self> {
-        telio_log_debug!(
-            "Starting SessionKeeper with network subscriber: {}",
-            network_activity.is_some()
-        );
+    pub fn start(sock_pool: Arc<SocketPool>, batch_all: bool) -> Result<Self> {
+        telio_log_debug!("Starting with batch_all({})", batch_all);
         let (client_v4, client_v6) = (
             PingerClient::new(&Self::make_builder(ICMP::V4).build())
                 .map_err(|e| Error::PingerCreationError(ICMP::V4, e))?,
@@ -90,21 +73,14 @@ impl SessionKeeper {
         sock_pool.make_internal(client_v6.get_socket().get_native_sock())?;
 
         Ok(Self {
+            batch_all,
             task: Task::start(State {
                 pingers: Pingers {
                     pinger_client_v4: client_v4,
                     pinger_client_v6: client_v6,
                 },
 
-                #[cfg(test)]
-                batched_actions: batcher,
-
-                #[cfg(not(test))]
-                batched_actions: Box::new(Batcher::new(batching_feature.into())),
-
-                nonbatched_actions: RepeatedActions::default(),
-
-                network_activity,
+                actions: RepeatedActions::default(),
             }),
         })
     }
@@ -194,71 +170,55 @@ impl SessionKeeperTrait for SessionKeeper {
         public_key: PublicKey,
         target: dual_target::Target,
         interval: Duration,
-        threshold: Option<Duration>,
     ) -> Result<()> {
         let dual_target = DualTarget::new(target).map_err(Error::DualTargetError)?;
-        match threshold {
-            Some(t) => task_exec!(&self.task, async move |s| {
-                s.batched_actions.add(
-                    public_key,
-                    interval,
-                    t,
-                    Arc::new(move |c: &mut State| {
-                        Box::pin(async move {
-                            telio_log_debug!("Batch-Pinging: {:?}", public_key);
-                            if let Err(e) = ping(&c.pingers, (&public_key, &dual_target)).await {
-                                telio_log_warn!(
-                                    "Failed to batch-ping, peer with key: {:?}, error: {:?}",
-                                    public_key,
-                                    e
-                                );
-                            }
-                            Ok(())
-                        })
-                    }),
-                );
 
-                Ok(())
-            })
-            .await
-            .map_err(Error::Task)?,
+        let batch_all = self.batch_all;
+        telio_log_debug!(
+            "Add action for {} and interval {:?}. batch_all({})",
+            public_key,
+            interval,
+            batch_all
+        );
 
-            None => task_exec!(&self.task, async move |s| {
-                if s.nonbatched_actions.contains_action(&public_key) {
-                    let _ = s.nonbatched_actions.remove_action(&public_key);
-                }
+        task_exec!(&self.task, async move |s| {
+            if s.actions.contains_action(&public_key) {
+                let _ = s.actions.remove_action(&public_key);
+            }
 
-                Ok(s.nonbatched_actions.add_action(
-                    public_key,
-                    interval,
-                    Arc::new(move |c| {
-                        Box::pin(async move {
-                            if let Err(e) = ping(&c.pingers, (&public_key, &dual_target)).await {
-                                telio_log_warn!(
-                                    "Failed to ping, peer with key: {:?}, error: {:?}",
-                                    public_key,
-                                    e
-                                );
-                            }
-                            Ok(())
-                        })
-                    }),
-                ))
-            })
-            .await
-            .map_err(Error::Task)?
-            .map_err(Error::RepeatedActionError)
-            .map(|_| ())?,
-        }
+            if batch_all {
+                s.actions.set_all_immediate();
+            }
 
+            Ok(s.actions.add_action(
+                public_key,
+                interval,
+                Arc::new(move |c| {
+                    Box::pin(async move {
+                        if let Err(e) = ping(&c.pingers, (&public_key, &dual_target)).await {
+                            telio_log_warn!(
+                                "Failed to ping, peer with key: {:?}, error: {:?}",
+                                public_key,
+                                e
+                            );
+                        }
+                        Ok(())
+                    })
+                }),
+            ))
+        })
+        .await
+        .map_err(Error::Task)?
+        .map_err(Error::RepeatedActionError)?;
+
+        telio_log_debug!("Added {}", public_key);
         Ok(())
     }
 
     async fn remove_node(&self, key: &PublicKey) -> Result<()> {
         let pk = *key;
         task_exec!(&self.task, async move |s| {
-            let _ = s.nonbatched_actions.remove_action(&pk);
-            let _ = s.batched_actions.remove(&pk);
+            let _ = s.actions.remove_action(&pk);
             Ok(())
         })
         .await?;
@@ -266,28 +226,13 @@ impl SessionKeeperTrait for SessionKeeper {
         Ok(())
     }
 
-    // TODO: SK calls batched and nonbatched actions interchangibly, however call sites in general
-    // should be aware which one to call
     async fn get_interval(&self, key: &PublicKey) -> Option<u32> {
         let pk = *key;
         task_exec!(&self.task, async move |s| {
-            if let Some(interval) = s.batched_actions.get_interval(&pk) {
-                Ok(Some(interval.as_secs() as u32))
-            } else {
-                Ok(s.nonbatched_actions.get_interval(&pk))
-            }
+            Ok(s.actions.get_interval(&pk))
         })
         .await
         .unwrap_or(None)
-    }
-}
-
-impl From<FeatureBatching> for BatchingOptions {
-    fn from(f: FeatureBatching) -> Self {
-        Self {
-            trigger_effective_duration: Duration::from_secs(f.trigger_effective_duration.into()),
-            trigger_cooldown_duration: Duration::from_secs(f.trigger_cooldown_duration.into()),
-        }
     }
 }
 
@@ -298,9 +243,7 @@ struct Pingers {
 
 struct State {
     pingers: Pingers,
-    batched_actions: Box<dyn BatcherTrait<PublicKey, Self>>,
-    nonbatched_actions: RepeatedActions<PublicKey, Self, Result<()>>,
-    network_activity: Option<watch::Receiver<Instant>>,
+    actions: RepeatedActions<PublicKey, Self, Result<()>>,
 }
 
 #[async_trait]
@@ -312,26 +255,8 @@ impl Runtime for State {
     where
         F: Future<Output = BoxAction<Self, std::result::Result<(), Self::Err>>> + Send,
     {
-        let last_network_activity = self
-            .network_activity
-            .as_mut()
-            .map(|receiver| *receiver.borrow_and_update());
-
-        let network_change_fut: BoxFuture<
-            '_,
-            std::result::Result<(), telio_utils::sync::watch::error::RecvError>,
-        > = {
-            match self.network_activity {
-                Some(ref mut na) => na.changed().boxed(),
-                None => pending::<()>().map(|_| Ok(())).boxed(),
-            }
-        };
-
         tokio::select! {
-            _ = network_change_fut => {
-                return Ok(());
-            }
-            Ok((pk, action)) = self.nonbatched_actions.select_action() => {
+            Ok((pk, action)) = self.actions.select_action() => {
                 let pk = *pk;
                 action(self)
                     .await
@@ -340,15 +265,6 @@ impl Runtime for State {
                         Ok(())
                     }, |_| Ok(()))?;
             }
-            Ok(batched_actions) = self.batched_actions.get_actions(last_network_activity) => {
-                for (pk, action) in batched_actions {
-                    action(self).await.map_or_else(|e| {
-                        telio_log_warn!("({}) Error sending batch-keepalive to {}: {:?}", Self::NAME, pk, e);
-                        Ok(())
-                    }, |_| Ok(()))?;
-                }
-            }
-
             update = update => {
                 return update(self).await;
             }
@@ -364,7 +280,6 @@ impl Runtime for State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::batcher::{BatcherError, MockBatcherTrait};
     use std::net::{Ipv4Addr, Ipv6Addr};
     use telio_crypto::PublicKey;
     use telio_sockets::NativeProtector;
@@ -383,13 +298,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let sess_keep = SessionKeeper::start(
-            socket_pool,
-            FeatureBatching::default(),
-            None,
-            Box::new(Batcher::new(FeatureBatching::default().into())),
-        )
-        .unwrap();
+        let sess_keep = SessionKeeper::start(socket_pool, false).unwrap();
 
         let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
             .parse::<PublicKey>()
@@ -400,7 +309,6 @@ mod tests {
                 pk,
                 (Some(Ipv4Addr::LOCALHOST), Some(Ipv6Addr::LOCALHOST)),
                 PERIOD,
-                None,
             )
             .await
             .unwrap();
@@ -455,67 +363,5 @@ mod tests {
         })
         .await
         .unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_batcher_invocation() {
-        const PERIOD: Duration = Duration::from_secs(20);
-
-        const THRESHOLD: Duration = Duration::from_secs(10);
-        let socket_pool = Arc::new(SocketPool::new(
-            NativeProtector::new(
-                #[cfg(target_os = "macos")]
-                false,
-            )
-            .unwrap(),
-        ));
-
-        let mut batcher = Box::new(MockBatcherTrait::<telio_crypto::PublicKey, State>::new());
-
-        let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
-            .parse::<PublicKey>()
-            .unwrap();
-
-        use mockall::predicate::{always, eq};
-        batcher
-            .expect_add()
-            .once()
-            .with(eq(pk), eq(PERIOD), eq(THRESHOLD), always())
-            .return_once(|_, _, _, _| ());
-        batcher
-            .expect_remove()
-            .once()
-            .with(eq(pk))
-            .return_once(|_| ());
-
-        // it's hard to mock the exact return since it involves a complex type, however we
-        // can at least verify that the batcher's actions were queried
-        batcher
-            .expect_get_actions()
-            .times(..)
-            .returning(|_| Err(BatcherError::NoActions));
-
-        let sess_keep = SessionKeeper::start(
-            socket_pool,
-            FeatureBatching::default().into(),
-            None,
-            batcher,
-        )
-        .unwrap();
-
-        sess_keep
-            .add_node(
-                pk,
-                (Some(Ipv4Addr::LOCALHOST), Some(Ipv6Addr::LOCALHOST)),
-                PERIOD,
-                Some(THRESHOLD),
-            )
-            .await
-            .unwrap();
-
-        sess_keep.remove_node(&pk).await.unwrap();
-
-        // courtesy wait to be sure the runtime polls everything
-        sess_keep.stop().await;
     }
 }
