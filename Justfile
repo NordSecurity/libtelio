@@ -60,30 +60,30 @@ black fix="false":
     #!/usr/bin/env bash
     set -euxo pipefail
     if [[ {{fix}} == "true" ]]; then
-        uv run black --color . && uv run black --color ../ci
+        uv run --isolated black --color . && uv run --isolated black --color ../ci
     else
-        uv run black --check --diff --color . && uv run black --check --diff --color ../ci
+        uv run --isolated black --check --diff --color . && uv run --isolated black --check --diff --color ../ci
     fi
 
 # Run the pylint linter
 [working-directory: 'nat-lab']
 pylint:
-    uv run pylint -f colorized . --ignore telio_bindings.py
+    uv run --isolated pylint -f colorized . --ignore telio_bindings.py
 
 # Run the isort linter
 [working-directory: 'nat-lab']
 isort:
-    uv run isort --check-only --diff .
+    uv run --isolated isort --check-only --diff .
 
 # Run mypy type checker
 [working-directory: 'nat-lab']
 mypy:
-    uv run mypy .
+    uv run --isolated mypy .
 
 # Run the autoflake linter
 [working-directory: 'nat-lab']
 autoflake:
-    uv run autoflake --quiet --check .
+    uv run --isolated autoflake --quiet --check .
 
 _udeps-install: _nightly-install
     cargo +{{ nightly }} install cargo-udeps@0.1.47 --locked
