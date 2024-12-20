@@ -71,6 +71,10 @@ class Router(ABC):
         pass
 
     @abstractmethod
+    def set_interface_name(self, new_interface_name: str) -> None:
+        pass
+
+    @abstractmethod
     async def setup_interface(self, addresses: List[str]) -> None:
         pass
 
