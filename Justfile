@@ -55,18 +55,35 @@ deny: _deny-install
 prepush: test clippy udeps unused deny black pylint
 
 # Run the black python linter
+[working-directory: 'nat-lab']
 black fix="false":
     #!/usr/bin/env bash
     set -euxo pipefail
     if [[ {{fix}} == "true" ]]; then
-        cd nat-lab && uv run black --color . && uv run black --color ../ci
+        uv run black --color . && uv run black --color ../ci
     else
-        cd nat-lab && uv run black --check --diff --color . && uv run black --check --diff --color ../ci
+        uv run black --check --diff --color . && uv run black --check --diff --color ../ci
     fi
 
 # Run the pylint linter
+[working-directory: 'nat-lab']
 pylint:
-    cd nat-lab && uv run pylint -f colorized . --ignore telio_bindings.py
+    uv run pylint -f colorized . --ignore telio_bindings.py
+
+# Run the isort linter
+[working-directory: 'nat-lab']
+isort:
+    uv run isort --check-only --diff .
+
+# Run mypy type checker
+[working-directory: 'nat-lab']
+mypy:
+    uv run mypy .
+
+# Run the autoflake linter
+[working-directory: 'nat-lab']
+autoflake:
+    uv run autoflake --quiet --check .
 
 _udeps-install: _nightly-install
     cargo +{{ nightly }} install cargo-udeps@0.1.47 --locked

@@ -94,7 +94,7 @@ combine_star = true
 remove_redundant_aliases = true
 combine_as_imports = true
 no_sections = true
-skip = ["tests/protobuf", "tests/uniffi/telio_bindings.py"]
+skip = [".venv", "tests/protobuf", "tests/uniffi/telio_bindings.py"]
 
 [tool.autoflake]
 remove-unused-variables = true
@@ -103,6 +103,7 @@ remove-duplicate-keys = true
 ignore-init-module-imports = true
 recursive = true
 in-place = true
+exclude = ["telio_bindings.py"]
 
 [tool.mypy]
 check_untyped_defs = true
