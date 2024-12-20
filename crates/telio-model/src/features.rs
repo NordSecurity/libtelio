@@ -327,6 +327,10 @@ pub struct FeatureDerp {
     pub tcp_keepalive: Option<u32>,
     /// Derp will send empty messages after this many seconds of not sending/receiving any data [default 60s]
     pub derp_keepalive: Option<u32>,
+    /// Poll Keepalive: Application level keepalives meant to replace the TCP keepalives
+    /// They will use derp_keepalive as interval
+    #[serde(default)]
+    pub poll_keepalive: bool,
     /// Enable polling of remote peer states to reduce derp traffic
     pub enable_polling: Option<bool>,
     /// Use Mozilla's root certificates instead of OS ones [default false]
@@ -536,6 +540,7 @@ mod tests {
             "derp": {
                 "tcp_keepalive": 13,
                 "derp_keepalive": 14,
+                "poll_keepalive": true,
                 "enable_polling": true,
                 "use_built_in_root_certificates": true
             },
@@ -626,6 +631,7 @@ mod tests {
                     derp: Some(FeatureDerp {
                         tcp_keepalive: Some(13),
                         derp_keepalive: Some(14),
+                        poll_keepalive: true,
                         enable_polling: Some(true),
                         use_built_in_root_certificates: true,
                     }),
