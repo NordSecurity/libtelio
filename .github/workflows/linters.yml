@@ -30,7 +30,7 @@ jobs:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
-            just-version: 1.37.0
+            just-version: 1.38.0
         - run: just clippy
   clippy-win:
       runs-on: windows-2022
@@ -38,7 +38,7 @@ jobs:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
-            just-version: 1.37.0
+            just-version: 1.38.0
         - run: just clippy
   clippy-mac:
       runs-on: macos-13
@@ -46,7 +46,7 @@ jobs:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
-            just-version: 1.37.0
+            just-version: 1.38.0
         - run: just clippy
   clippy-teliod:
       runs-on: ubuntu-22.04
@@ -60,7 +60,7 @@ jobs:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
-            just-version: 1.37.0
+            just-version: 1.38.0
         - run: just deny
   udeps:
       runs-on: ubuntu-22.04
@@ -68,7 +68,7 @@ jobs:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
-            just-version: 1.37.0
+            just-version: 1.38.0
         - run: just udeps
   rustfmt:
       runs-on: ubuntu-22.04
@@ -87,24 +87,39 @@ jobs:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
-            just-version: 1.37.0
+            just-version: 1.38.0
+        - name: Install uv
+          uses: astral-sh/setup-uv@4db96194c378173c656ce18a155ffc14a9fc4355 # v5.2.2
+          with:
+            # Install a specific version of uv.
+            version: "0.5.11"
         - run: just black
   python-format-isort:
       runs-on: ubuntu-24.04
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-        - run: pip3 install --no-deps -r requirements.txt
-        - run: pipenv install --system
-        - run: isort --check-only --diff .
-          working-directory: nat-lab
+        - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
+          with:
+            just-version: 1.38.0
+        - name: Install uv
+          uses: astral-sh/setup-uv@4db96194c378173c656ce18a155ffc14a9fc4355 # v5.2.2
+          with:
+            # Install a specific version of uv.
+            version: "0.5.11"
+        - run: just isort
   python-format-autoflake:
       runs-on: ubuntu-24.04
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-        - run: pip3 install --no-deps -r requirements.txt
-        - run: pipenv install --system
-        - run: autoflake --quiet --check .
-          working-directory: nat-lab
+        - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
+          with:
+            just-version: 1.38.0
+        - name: Install uv
+          uses: astral-sh/setup-uv@4db96194c378173c656ce18a155ffc14a9fc4355 # 5.2.2
+          with:
+            # Install a specific version of uv.
+            version: "0.5.11"
+        - run: just autoflake
   python-lint:
       needs: uniffi-bindings
       runs-on: ubuntu-24.04
@@ -117,7 +132,12 @@ jobs:
         - run: cp dist/bindings/telio_bindings.py nat-lab/tests/uniffi/telio_bindings.py
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
-            just-version: 1.37.0
+            just-version: 1.38.0
+        - name: Install uv
+          uses: astral-sh/setup-uv@4db96194c378173c656ce18a155ffc14a9fc4355 # 5.2.2
+          with:
+            # Install a specific version of uv.
+            version: "0.5.11"
         - run: just pylint
   natlab-typecheck:
       needs: uniffi-bindings
@@ -129,17 +149,21 @@ jobs:
             name: telio_bindings.py
             path: dist/bindings
         - run: cp dist/bindings/telio_bindings.py nat-lab/tests/uniffi/telio_bindings.py
-        - run: pip3 install --no-deps -r requirements.txt
-        - run: pipenv install --system
-        - run: pipenv install --system
-          working-directory: nat-lab
-        - run: mypy .
-          working-directory: nat-lab
+        - run: cp dist/bindings/telio_bindings.py nat-lab/tests/uniffi/telio_bindings.py
+        - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
+          with:
+            just-version: 1.38.0
+        - name: Install uv
+          uses: astral-sh/setup-uv@4db96194c378173c656ce18a155ffc14a9fc4355 # 5.2.2
+          with:
+            # Install a specific version of uv.
+            version: "0.5.11"
+        - run: just mypy
   unused-features:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
       - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
         with:
-          just-version: 1.37.0
+          just-version: 1.38.0
       - run: just deny
