@@ -19,6 +19,8 @@ mod configure_interface;
 mod core_api;
 mod daemon;
 mod nc;
+#[cfg(feature = "qnap")]
+mod qnap;
 
 use crate::{
     command_listener::CommandResponse,
@@ -35,6 +37,10 @@ const TIMEOUT_SEC: u64 = 1;
 enum ClientCmd {
     #[clap(about = "Retrieve the status report")]
     GetStatus,
+    #[clap(about = "Query if daemon is running")]
+    IsAlive,
+    #[clap(about = "Stop daemon execution")]
+    QuitDaemon,
 }
 
 #[derive(Parser, Debug)]
@@ -44,6 +50,9 @@ enum Cmd {
     Daemon { config_path: String },
     #[clap(flatten)]
     Client(ClientCmd),
+    #[cfg(feature = "qnap")]
+    #[clap(about = "Receive and parse http requests")]
+    QnapCgi,
 }
 
 #[derive(Debug, ThisError)]
@@ -97,12 +106,18 @@ async fn main() -> Result<(), TeliodError> {
                 Err(TeliodError::DaemonIsRunning)
             } else {
                 let file = File::open(&config_path)?;
+
                 let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
-                let token = std::env::var("NORD_TOKEN").ok();
-                if let Some(t) = token {
+
+                if let Ok(token) = std::env::var("NORD_TOKEN") {
                     debug!("Overriding token from env");
-                    config.authentication_token = t;
+                    if token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) {
+                        config.authentication_token = token;
+                    } else {
+                        error!("Token from env not valid")
+                    }
                 }
+
                 Box::pin(daemon::daemon_event_loop(config)).await
             }
         }
@@ -133,6 +148,11 @@ async fn main() -> Result<(), TeliodError> {
             } else {
                 Err(TeliodError::DaemonIsNotRunning)
             }
+        }
+        #[cfg(feature = "qnap")]
+        Cmd::QnapCgi => {
+            rust_cgi::handle(qnap::handle_request);
+            Ok(())
         }
     }
 }
