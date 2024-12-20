@@ -118,6 +118,15 @@ def generate_packet_delay_histogram(
     return generate_histogram(timestamps, buckets)
 
 
+def get_ordered_histogram_score(data: typing.List[int]) -> int:
+    # Assumes the histogram order matters and each item going to the right adds more to the score
+    # Useful to quantity a score for things like periods between packets
+    score = 0
+    for i, value in enumerate(data, start=1):
+        score += i * value
+    return score
+
+
 def generate_packet_distribution_histogram(
     pcap_path: str,
     buckets: int,
