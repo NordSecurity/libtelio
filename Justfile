@@ -55,17 +55,35 @@ deny: _deny-install
 prepush: test clippy udeps unused deny black pylint
 
 # Run the black python linter
+[working-directory: 'nat-lab']
 black fix="false":
     #!/usr/bin/env bash
     set -euxo pipefail
     if [[ {{fix}} == "true" ]]; then
-        docker run --rm -t -v$(pwd):/code 'ubuntu:22.04' sh -c "apt-get update && apt-get -y install python3-pip && cd code && pip3 install --no-deps -r requirements.txt && pipenv install --system && cd nat-lab && pipenv install --system && black --color . && cd ../ci && black --color ."
+        uv run --isolated black --color . && uv run --isolated black --color ../ci
     else
-        docker run --rm -t -v$(pwd):/code 'ubuntu:22.04' sh -c "apt-get update && apt-get -y install python3-pip && cd code && pip3 install --no-deps -r requirements.txt && pipenv install --system && cd nat-lab && pipenv install --system && black --check --diff --color . && cd ../ci && black --check --diff --color ."
+        uv run --isolated black --check --diff --color . && uv run --isolated black --check --diff --color ../ci
     fi
 
+# Run the pylint linter
+[working-directory: 'nat-lab']
 pylint:
-    docker run --rm -t -v$(pwd):/code 'ubuntu:22.04' sh -c "apt-get update && apt-get -y install python3-pip && cd code && pip3 install --no-deps -r requirements.txt && pipenv install --system && cd nat-lab && pipenv install --system && pylint -f colorized . --ignore telio_bindings.py"
+    uv run --isolated pylint -f colorized . --ignore telio_bindings.py
+
+# Run the isort linter
+[working-directory: 'nat-lab']
+isort:
+    uv run --isolated isort --check-only --diff .
+
+# Run mypy type checker
+[working-directory: 'nat-lab']
+mypy:
+    uv run --isolated mypy .
+
+# Run the autoflake linter
+[working-directory: 'nat-lab']
+autoflake:
+    uv run --isolated autoflake --quiet --check .
 
 _udeps-install: _nightly-install
     cargo +{{ nightly }} install cargo-udeps@0.1.47 --locked
