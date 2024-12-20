@@ -1,10 +1,8 @@
 import datetime
-import fcntl
 import os
 import Pyro5.api  # type: ignore
 import Pyro5.server  # type: ignore
 import shutil
-import struct
 import sys
 import telio_bindings as libtelio  # type: ignore # pylint: disable=import-error
 import time
@@ -113,18 +111,24 @@ class LibtelioWrapper:
 
     @serialize_error
     def create_tun(self, tun_name: str) -> int:
-        # Constants for TUN/TAP interface creation (from Linux's if_tun.h)
-        TUNSETIFF = 0x400454CA
-        IFF_TUN = 0x0001
-        IFF_MULTI_QUEUE = 0x0100
-        IFF_NO_PI = 0x1000
-        tun_name_bytes = tun_name.encode("ascii")
-        tun_fd = os.open("/dev/net/tun", os.O_RDWR)
-        # '16sH' means we need to pass 16-byte string (interface name) and 2-byte short (flags)
-        ifr = struct.pack("16sH", tun_name_bytes, IFF_TUN | IFF_MULTI_QUEUE | IFF_NO_PI)
-        fcntl.ioctl(tun_fd, TUNSETIFF, ifr)
+        if os.name == 'posix':
+            import struct
+            import fcntl
 
-        return tun_fd
+            # Constants for TUN/TAP interface creation (from Linux's if_tun.h)
+            TUNSETIFF = 0x400454CA
+            IFF_TUN = 0x0001
+            IFF_MULTI_QUEUE = 0x0100
+            IFF_NO_PI = 0x1000
+            tun_name_bytes = tun_name.encode("ascii")
+            tun_fd = os.open("/dev/net/tun", os.O_RDWR)
+            # '16sH' means we need to pass 16-byte string (interface name) and 2-byte short (flags)
+            ifr = struct.pack("16sH", tun_name_bytes, IFF_TUN | IFF_MULTI_QUEUE | IFF_NO_PI)
+            fcntl.ioctl(tun_fd, TUNSETIFF, ifr)
+
+            return tun_fd
+        else:
+            pass
 
     @serialize_error
     def start_with_tun(self, private_key, adapter, tun: int):
