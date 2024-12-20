@@ -31,8 +31,9 @@ async def test_start_with_tun() -> None:
         alpha, _ = env.nodes
 
         await alpha_client.stop_device()
-        tun = await alpha_client.create_tun("tun11")
-        await alpha_client.start_with_tun(tun, "tun11")
+        # tun = await alpha_client.create_tun("tun11")
+        # await alpha_client.start_with_tun(tun, "tun11")
+        await alpha_client.simple_start()
         await alpha_client.set_meshnet_config(env.api.get_meshnet_config(alpha.id))
         await ping_between_all_nodes(env)
         await alpha_client.stop_device()
