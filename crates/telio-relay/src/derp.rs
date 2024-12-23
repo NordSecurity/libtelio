@@ -149,7 +149,7 @@ impl From<&Option<FeatureDerp>> for DerpKeepaliveConfig {
             if let Some(derp_ka) = derp.derp_keepalive {
                 derp_keepalive = derp_ka;
             }
-            poll_keepalive = derp.poll_keepalive;
+            poll_keepalive = derp.poll_keepalive.unwrap_or_default();
         }
 
         DerpKeepaliveConfig {
