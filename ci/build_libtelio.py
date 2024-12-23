@@ -296,6 +296,7 @@ LIBTELIO_CONFIG = {
         "packages": {
             "teliod": {"teliod": "teliod"},
         },
+        "build_args": ("--features", "qnap"),
     },
     "macos": {
         "packages": {
