@@ -42,4 +42,6 @@ rand = "0.8.5"
 serial_test = "3.2.0"
 
 [features]
-qnap = ["const_format", "rust-cgi"]
+cgi = ["const_format", "rust-cgi"]
+qnap = ["cgi"]
+
