@@ -12,6 +12,8 @@ use tokio::{
 };
 use tracing::{debug, error};
 
+#[cfg(feature = "cgi")]
+mod cgi;
 mod command_listener;
 mod comms;
 mod config;
@@ -19,8 +21,6 @@ mod configure_interface;
 mod core_api;
 mod daemon;
 mod nc;
-#[cfg(feature = "cgi")]
-mod cgi;
 
 use crate::{
     command_listener::CommandResponse,
@@ -63,7 +63,7 @@ enum TeliodError {
     InvalidCommand(String),
     #[error("Invalid response received: {0}")]
     InvalidResponse(String),
-    #[error("Client failed to receive response in {TIMEOUT_SEC}")]
+    #[error("Client failed to receive response in {TIMEOUT_SEC}s")]
     ClientTimeoutError,
     #[error("Broken signal stream")]
     BrokenSignalStream,
