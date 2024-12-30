@@ -330,7 +330,7 @@ pub struct FeatureDerp {
     /// Poll Keepalive: Application level keepalives meant to replace the TCP keepalives
     /// They will use derp_keepalive as interval
     #[serde(default)]
-    pub poll_keepalive: bool,
+    pub poll_keepalive: Option<bool>,
     /// Enable polling of remote peer states to reduce derp traffic
     pub enable_polling: Option<bool>,
     /// Use Mozilla's root certificates instead of OS ones [default false]
@@ -631,7 +631,7 @@ mod tests {
                     derp: Some(FeatureDerp {
                         tcp_keepalive: Some(13),
                         derp_keepalive: Some(14),
-                        poll_keepalive: true,
+                        poll_keepalive: Some(true),
                         enable_polling: Some(true),
                         use_built_in_root_certificates: true,
                     }),
