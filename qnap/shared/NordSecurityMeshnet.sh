@@ -8,42 +8,64 @@ QPKG_ROOT=`/sbin/getcfg $QPKG_NAME Install_Path -f ${CONF}`
 APACHE_ROOT=`/sbin/getcfg SHARE_DEF defWeb -d Qweb -f /etc/config/def_share.info`
 export QNAP_QPKG=$QPKG_NAME
 
-NORDSECMESHNET_DIR=/tmp/nordsecuritymeshnet/
-TELIOD_PID_FILE=${NORDSECMESHNET_DIR}/teliod.pid
 TELIOD_CFG_FILE=${QPKG_ROOT}/teliod.cfg
 TELIOD_LOG_FILE="/var/log/teliod.log"
+
+system_log() {
+    local log_level
+    case "$1" in
+        "INFO") log_level=0 ;;
+        "WARN") log_level=1 ;;
+        "ERROR") log_level=2 ;;
+        *) log_level=0 ;;
+    esac
+    /sbin/log_tool -u "NordSecurity" -t "$log_level" -a "$2"
+}
+
+get_ipc_socket_path() {
+    if [ -d "/run" ]; then
+        echo "/run/teliod.sock"
+    elif [ -d "/var/run" ]; then
+        echo "/var/run/teliod.sock"
+    else
+        system_log ERROR "Neither /run/ nor /var/run/ exists"
+        exit 1
+    fi
+}
 
 case "$1" in
   start)
     ENABLED=$(/sbin/getcfg $QPKG_NAME Enable -u -d FALSE -f $CONF)
     if [ "$ENABLED" != "TRUE" ]; then
-        echo "$QPKG_NAME is disabled."
+        system_log INFO "Package application is disabled."
         exit 1
     fi
 
-    ln -s ${QPKG_ROOT}/web /home/Qhttpd/Web/NordSecurityMeshnet
-    ln -s ${QPKG_ROOT}/teliod.cgi /home/httpd/cgi-bin/qpkg/teliod.cgi
-    mkdir -p -m 0755 $NORDSECMESHNET_DIR
+    ln -fs ${QPKG_ROOT}/web /home/Qhttpd/Web/NordSecurityMeshnet
+    ln -fs ${QPKG_ROOT}/teliod.cgi /home/httpd/cgi-bin/qpkg/teliod.cgi
 
-    if [ -e ${TELIOD_PID_FILE} ]; then
-        PID=$(cat ${TELIOD_PID_FILE})
-        if [ -d /proc/${PID}/ ]; then
-          echo "${QPKG_NAME} is already running."
-          exit 0
-        fi
+    SOCKET_PATH=$(get_ipc_socket_path)
+    if [ -e "$SOCKET_PATH" ]; then
+        system_log INFO "Package application is already running."
+        exit 0
     fi
 
     ${QPKG_ROOT}/teliod daemon $TELIOD_CFG_FILE > $TELIOD_LOG_FILE 2>&1 &
-    echo $! > ${TELIOD_PID_FILE}
+    system_log INFO "Teliod daemon started."
     ;;
 
   stop)
-    if [ -e ${TELIOD_PID_FILE} ]; then
-      PID=$(cat ${TELIOD_PID_FILE})
-      kill -9 ${PID} || true
-      rm -f ${TELIOD_PID_FILE}
+    SOCKET_PATH=$(get_ipc_socket_path)
+
+    ${QPKG_ROOT}/teliod quit-daemon || true
+    sleep 2
+
+    if [ -e "$SOCKET_PATH" ]; then
+        system_log WARN "Application socket still exist, forcing shutdown..."
+        killall -9 teliod || true
+        rm -f "$SOCKET_PATH"
     fi
-    rm -f /run/teliod.sock
+    system_log INFO "Teliod daemon stopped."
     ;;
 
   restart)
