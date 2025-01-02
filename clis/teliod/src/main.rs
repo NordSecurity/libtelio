@@ -12,6 +12,8 @@ use tokio::{
 };
 use tracing::{debug, error};
 
+#[cfg(feature = "cgi")]
+mod cgi;
 mod command_listener;
 mod comms;
 mod config;
@@ -19,8 +21,6 @@ mod configure_interface;
 mod core_api;
 mod daemon;
 mod nc;
-#[cfg(feature = "qnap")]
-mod qnap;
 
 use crate::{
     command_listener::CommandResponse,
@@ -50,9 +50,9 @@ enum Cmd {
     Daemon { config_path: String },
     #[clap(flatten)]
     Client(ClientCmd),
-    #[cfg(feature = "qnap")]
+    #[cfg(feature = "cgi")]
     #[clap(about = "Receive and parse http requests")]
-    QnapCgi,
+    Cgi,
 }
 
 #[derive(Debug, ThisError)]
@@ -63,7 +63,7 @@ enum TeliodError {
     InvalidCommand(String),
     #[error("Invalid response received: {0}")]
     InvalidResponse(String),
-    #[error("Client failed to receive response in {TIMEOUT_SEC}")]
+    #[error("Client failed to receive response in {TIMEOUT_SEC}s")]
     ClientTimeoutError,
     #[error("Broken signal stream")]
     BrokenSignalStream,
@@ -149,9 +149,9 @@ async fn main() -> Result<(), TeliodError> {
                 Err(TeliodError::DaemonIsNotRunning)
             }
         }
-        #[cfg(feature = "qnap")]
-        Cmd::QnapCgi => {
-            rust_cgi::handle(qnap::handle_request);
+        #[cfg(feature = "cgi")]
+        Cmd::Cgi => {
+            rust_cgi::handle(cgi::handle_request);
             Ok(())
         }
     }
