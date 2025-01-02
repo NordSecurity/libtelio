@@ -84,6 +84,7 @@ class LibtelioWrapper:
         self._libtelio = None
         self._event_cb = TelioEventCbImpl()
         self._logger_cb = TelioLoggerCbImpl(logfile)
+        libtelio.add_timestamps_to_logs()
         libtelio.set_global_logger(libtelio.TelioLogLevel.DEBUG, self._logger_cb)
 
     def shutdown(self):

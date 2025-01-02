@@ -34,6 +34,12 @@ anyhow.workspace = true
 smart-default = "0.7.1"
 base64 = "0.22.1"
 dirs = "4.0.0"
+const_format = { version = "0.2.33", optional = true }
+rust-cgi = { version = "0.7.1", optional = true }
 
 [dev-dependencies]
 rand = "0.8.5"
+serial_test = "3.2.0"
+
+[features]
+qnap = ["const_format", "rust-cgi"]

@@ -2,12 +2,12 @@ use std::{
     io::{self, ErrorKind},
     str::from_utf8,
     sync::{
-        atomic::AtomicUsize,
+        atomic::{AtomicBool, AtomicUsize},
         mpsc::{sync_channel, RecvError, SyncSender},
         Arc, Barrier, Mutex,
     },
     thread::Builder,
-    time::Instant,
+    time::{Instant, SystemTime},
 };
 
 use once_cell::sync::Lazy;
@@ -28,6 +28,7 @@ pub const ASYNC_CHANNEL_CLOSED_MSG: &str = "Async channel explicitly closed";
 static DROPPED_LOGS: AtomicUsize = AtomicUsize::new(0);
 static DROPPED_LOGS_LAST_CHECKED_VALUE: AtomicUsize = AtomicUsize::new(0);
 pub static LOGGER_STOPPER: LoggerStopper = LoggerStopper::new();
+pub static TIMESTAMPS_IN_LOGS: AtomicBool = AtomicBool::new(false);
 
 pub struct LoggerStopper {
     sender: parking_lot::Mutex<Option<SyncSender<LogMessage>>>,
@@ -189,7 +190,11 @@ impl io::Write for FfiCallbackWriter {
             // In both cases there is nothing to do when it happens.
             if self
                 .log_sender
-                .try_send(LogMessage::Message(self.level, filtered_msg))
+                .try_send(LogMessage::Message(
+                    self.level,
+                    filtered_msg,
+                    SystemTime::now(),
+                ))
                 .is_err()
             {
                 DROPPED_LOGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -246,7 +251,7 @@ fn filter_log_message(msg: String) -> Option<String> {
 }
 
 enum LogMessage {
-    Message(TelioLogLevel, String),
+    Message(TelioLogLevel, String, SystemTime),
     Quit(Arc<Barrier>),
 }
 
@@ -258,7 +263,17 @@ fn start_async_logger(cb: Box<dyn TelioLoggerCb>, buffer_size: usize) -> SyncSen
             let _ = cb.log(TelioLogLevel::Debug, START_ASYNC_LOGGER_MSG.to_owned());
             loop {
                 match receiver.recv() {
-                    Ok(LogMessage::Message(level, msg)) => {
+                    Ok(LogMessage::Message(level, msg, timestamp)) => {
+                        let msg = if TIMESTAMPS_IN_LOGS.load(std::sync::atomic::Ordering::Relaxed) {
+                            let timestamp: time::OffsetDateTime = timestamp.into();
+                            let timestamp: String = timestamp
+                                .format(&time::format_description::well_known::Rfc3339)
+                                .unwrap_or_else(|_| timestamp.to_string());
+                            format!("{timestamp} {msg}")
+                        } else {
+                            msg
+                        };
+
                         let _ = cb.log(level, msg);
                     }
                     Ok(LogMessage::Quit(barrier)) => {
