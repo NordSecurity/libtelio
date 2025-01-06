@@ -194,8 +194,6 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
 
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
 
-    let nc = NotificationCenter::new(&config).await?;
-
     // Tx is unused here, but this channel can be used to communicate with the
     // telio task
     let (tx, rx) = mpsc::channel(10);
@@ -207,8 +205,11 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
     // are dummy and program will not run as it expects real tokens.
     let mut identity = DeviceIdentity::default();
     if !config.authentication_token.eq(EMPTY_TOKEN) {
-        identity = init_with_api(&config.authentication_token, &config.interface.name).await?;
+        identity = init_with_api(&config.authentication_token).await?;
     }
+
+    let nc = NotificationCenter::new(&config, &identity.hw_identifier).await?;
+
     let tx_clone = tx.clone();
 
     let token_ptr = Arc::new(config.authentication_token);

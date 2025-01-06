@@ -3,7 +3,7 @@ use std::{num::NonZeroU64, path::PathBuf, str::FromStr};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use smart_default::SmartDefault;
 use std::fs;
-use tracing::{debug, info, level_filters::LevelFilter};
+use tracing::{debug, info, level_filters::LevelFilter, warn};
 use uuid::Uuid;
 
 use telio::crypto::SecretKey;
@@ -60,26 +60,30 @@ fn reconnect_after_expiry_default() -> Percentage {
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct DeviceIdentity {
-    pub hw_identifier: String,
+    pub hw_identifier: Uuid,
     pub private_key: SecretKey,
     pub machine_identifier: String,
 }
 
-pub fn generate_hw_identifier(private_key: SecretKey) -> String {
+pub fn generate_hw_identifier() -> Uuid {
     // Generate hw_identifier
-    let public_key = private_key.public();
-    debug!("Generating hw identifier");
-    format!("{}.{}", public_key, "teliod")
+    debug!("Generating a new hw identifier");
+    Uuid::new_v4()
 }
 
 impl DeviceIdentity {
     pub fn from_file(identity_path: &PathBuf) -> Option<DeviceIdentity> {
-        info!("Fetching config");
+        info!("Fetching identity config");
 
         if let Ok(file) = fs::File::open(identity_path) {
-            debug!("found existing config.");
+            debug!(
+                "Found existing identity config {}",
+                identity_path.to_string_lossy()
+            );
             if let Ok(c) = serde_json::from_reader(file) {
                 return Some(c);
+            } else {
+                warn!("Reading identity config failed");
             }
         }
         None
@@ -95,8 +99,6 @@ pub struct TeliodDaemonConfig {
     pub log_level: LevelFilter,
     pub log_file_path: String,
     pub interface: InterfaceConfig,
-
-    pub app_user_uid: Uuid,
 
     #[serde(
         deserialize_with = "deserialize_authentication_token",
@@ -122,9 +124,6 @@ impl TeliodDaemonConfig {
         }
         if let Some(authentication_token) = update.authentication_token {
             self.authentication_token = authentication_token;
-        }
-        if let Some(app_user_uid) = update.app_user_uid {
-            self.app_user_uid = app_user_uid;
         }
         if let Some(interface) = update.interface {
             self.interface = interface;
@@ -274,7 +273,6 @@ mod tests {
         let expected = TeliodDaemonConfig {
             log_level: LevelFilter::INFO,
             log_file_path: "test.log".to_owned(),
-            app_user_uid: Uuid::from_str("2ba97921-38d7-4736-9d47-261cf3e5c223").unwrap(),
             interface: InterfaceConfig {
                 name: "utun10".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
@@ -294,7 +292,6 @@ mod tests {
             let json = r#"{
             "log_level": "Info",
             "log_file_path": "test.log",
-            "app_user_uid": "2ba97921-38d7-4736-9d47-261cf3e5c223",
             "interface": {
                 "name": "utun10",
                 "config_provider": "manual"
@@ -309,7 +306,6 @@ mod tests {
             let json = r#"{
                 "log_level": "Info",
                 "log_file_path": "test.log",
-                "app_user_uid": "2ba97921-38d7-4736-9d47-261cf3e5c223",
                 "interface": {
                     "name": "utun10",
                     "config_provider": "manual"
