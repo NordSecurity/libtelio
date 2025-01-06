@@ -191,6 +191,8 @@ pub enum Error {
     EventsProcessingThreadStartError(std::io::Error),
     #[error(transparent)]
     ThroughputTestError(#[from] telio_perf::client::Error),
+    #[error(transparent)]
+    ParseError(#[from] std::net::AddrParseError),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -880,9 +882,10 @@ impl Device {
     }
 
     pub fn trigger_throughput_test(&self, ip_addr: String) -> Result {
+        let addr = ip_addr.parse::<IpAddr>()?;
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt
-                .trigger_throughput_test(ip_addr)
+                .trigger_throughput_test(addr)
                 .await))
             .await?
         })
@@ -1760,7 +1763,7 @@ impl Runtime {
         Ok(())
     }
 
-    async fn trigger_throughput_test(&mut self, ip_addr: String) -> Result {
+    async fn trigger_throughput_test(&mut self, ip_addr: IpAddr) -> Result {
         self.entities
             .meshnet
             .left()
