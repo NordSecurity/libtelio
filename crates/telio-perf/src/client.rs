@@ -160,8 +160,7 @@ impl Throughput {
     }
 
     /// Start the throughput test with given endpoint
-    pub async fn start_test(&self, ip_addr: String) -> Result<(), Error> {
-        let ip_addr = IpAddr::V4(Ipv4Addr::from_str(&ip_addr).unwrap());
+    pub async fn start_test(&self, ip_addr: IpAddr) -> Result<(), Error> {
         let endpoint = SocketAddr::new(
             ip_addr,
             #[cfg(not(test))]
@@ -234,9 +233,7 @@ impl State {
                     *state = HandlerState::Test;
                 }
             }
-            PacketType::End => {
-                self.send_results(transport_socket).await
-            }
+            PacketType::End => self.send_results(transport_socket).await,
             PacketType::Result => {
                 let bytes: [u8; std::mem::size_of::<f32>()] = self.recv_buffer[1..5].try_into()?;
                 let pkt_loss = f32::from_be_bytes(bytes);
@@ -438,7 +435,6 @@ async fn throughput_test_handler(
 
                 // Tell the other peer test has ended
                 send_buffer.insert(0, PacketType::End as u8);
-                // Send IP address as 
                 send_buffer[1..5]
                     .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr()?.ip()));
                 send_buffer[5..13].copy_from_slice(&total_pkts.to_be_bytes());
@@ -486,12 +482,7 @@ mod tests {
         let server =
             Throughput::start(ip_addr, socket_pool.clone(), server_cmd_chan, 54321, None).await;
 
-        assert!(client
-            .as_ref()
-            .unwrap()
-            .start_test("127.0.0.1".to_owned())
-            .await
-            .is_ok());
+        assert!(client.as_ref().unwrap().start_test(ip_addr).await.is_ok());
         assert!(timeout(TEST_DURATION * 4, test_ended.notified())
             .await
             .is_ok());
