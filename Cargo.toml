@@ -48,6 +48,7 @@ telio-lana.workspace = true
 telio-model.workspace = true
 telio-nat-detect.workspace = true
 telio-nurse.workspace = true
+telio-perf.workspace = true
 telio-pmtu.workspace = true
 telio-proto.workspace = true
 telio-proxy.workspace = true

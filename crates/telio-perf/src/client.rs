@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 use std::net::Ipv4Addr;
+use std::str::FromStr;
 use std::time::Instant;
 
 use std::{
@@ -9,10 +10,12 @@ use std::{
 };
 
 use async_trait::async_trait;
+use telio_task::io::Chan;
+use telio_task::task_exec;
 use tokio::net::UdpSocket;
 
 use telio_sockets::SocketPool;
-use telio_task::{io::chan::Rx, Runtime, RuntimeExt, Task, WaitResponse};
+use telio_task::{Runtime, RuntimeExt, Task, WaitResponse};
 use telio_utils::{
     exponential_backoff::{
         Backoff, Error as ExponentialBackoffError, ExponentialBackoff, ExponentialBackoffBounds,
@@ -20,7 +23,10 @@ use telio_utils::{
     PinnedSleep,
 };
 use telio_utils::{telio_log_debug, telio_log_warn};
-use tokio::sync::{Notify, RwLock};
+use tokio::sync::mpsc::error::SendError;
+#[cfg(test)]
+use tokio::sync::Notify;
+use tokio::sync::RwLock;
 
 /// Port is randomly chosen
 /// PERF % 65535
@@ -28,7 +34,7 @@ const PERFORMANCE_TRANSPORT_PORT: u16 = 46750;
 const MAX_PACKET_SIZE: usize = 1500_usize;
 const TEST_DURATION: Duration = Duration::new(1, 0);
 
-/// Starcast transport-specific errors
+/// Performance test specific errors
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// Could not bind to socket
@@ -49,6 +55,15 @@ pub enum Error {
     /// Exponential backoff error
     #[error(transparent)]
     ExponentialBackoffError(#[from] ExponentialBackoffError),
+    /// Command channel error
+    #[error(transparent)]
+    CmdChannelError(#[from] SendError<std::net::SocketAddr>),
+    /// Slice error
+    #[error(transparent)]
+    SliceError(#[from] std::array::TryFromSliceError),
+    /// IO Error
+    #[error(transparent)]
+    IoError(#[from] std::io::Error),
 }
 
 enum PacketType {
@@ -95,7 +110,7 @@ impl Throughput {
     pub async fn start(
         meshnet_ip: IpAddr,
         socket_pool: Arc<SocketPool>,
-        packet_chan: Rx<SocketAddr>,
+        packet_chan: Chan<SocketAddr>,
         #[cfg(test)] port: u16,
         #[cfg(test)] notify: Option<Arc<Notify>>,
     ) -> Result<Self, Error> {
@@ -105,9 +120,7 @@ impl Throughput {
         })?;
         // If transport socket cannot be opened right now (for example, if meshnet had been started before
         // the tunnel interface's IP had been configured), transport socket cannot be opened at start and
-        // will be opened later. In the mean time the channel between the starcast peer and transport
-        // component will buffer the multicast messages until the transport socket will be opened. If the
-        // buffers fill up, the messages will be ignored.
+        // will be opened later.
         let transport_socket = match open_transport_socket(
             socket_pool.clone(),
             meshnet_ip,
@@ -121,7 +134,7 @@ impl Throughput {
             Ok(transport_socket) => Some(transport_socket),
             Err(_) => {
                 telio_log_warn!(
-                    "Starcast will try to open transport socket again in {:?}",
+                    "Will try to open transport socket again in {:?}",
                     exponential_backoff.get_backoff()
                 );
                 None
@@ -146,7 +159,24 @@ impl Throughput {
         })
     }
 
-    /// Stop the transport component
+    /// Start the throughput test with given endpoint
+    pub async fn start_test(&self, ip_addr: String) -> Result<(), Error> {
+        let ip_addr = IpAddr::V4(Ipv4Addr::from_str(&ip_addr).unwrap());
+        let endpoint = SocketAddr::new(
+            ip_addr,
+            #[cfg(not(test))]
+            PERFORMANCE_TRANSPORT_PORT,
+            #[cfg(test)]
+            54321,
+        );
+        task_exec!(&self.task, async move |state| {
+            state.start_test(endpoint).await
+        })
+        .await?;
+        Ok(())
+    }
+
+    /// Stop the throughput component
     pub async fn stop(self) {
         let _ = self.task.stop().await.resume_unwind();
     }
@@ -170,7 +200,7 @@ async fn open_transport_socket(
 
 struct State {
     transport_socket: Option<Arc<UdpSocket>>,
-    cmd_chan: Rx<SocketAddr>,
+    cmd_chan: Chan<SocketAddr>,
     recv_buffer: Vec<u8>,
     socket_pool: Arc<SocketPool>,
     meshnet_ip: IpAddr,
@@ -205,21 +235,19 @@ impl State {
                 }
             }
             PacketType::End => {
-                let pkts_sent: [u8; std::mem::size_of::<u64>()] =
-                    self.recv_buffer[5..13].try_into().unwrap();
-                self.send_results(transport_socket, u64::from_be_bytes(pkts_sent))
-                    .await
+                self.send_results(transport_socket).await
             }
             PacketType::Result => {
-                let bytes: [u8; std::mem::size_of::<f32>()] =
-                    self.recv_buffer[1..5].try_into().unwrap();
+                let bytes: [u8; std::mem::size_of::<f32>()] = self.recv_buffer[1..5].try_into()?;
                 let pkt_loss = f32::from_be_bytes(bytes);
 
-                let bytes: [u8; std::mem::size_of::<u32>()] =
-                    self.recv_buffer[5..9].try_into().unwrap();
+                let bytes: [u8; std::mem::size_of::<u32>()] = self.recv_buffer[5..9].try_into()?;
                 let throughput = u32::from_be_bytes(bytes);
                 #[cfg(test)]
-                self.notify.as_ref().unwrap().notify_one();
+                if let Some(n) = self.notify.as_ref() {
+                    n.notify_one()
+                };
+                // This print is intentional for now. Can be removed later.
                 println!("Throughput {throughput} MiB/s Packet loss - {pkt_loss} %")
             }
             PacketType::Test => {
@@ -259,9 +287,13 @@ impl State {
         }
     }
 
-    async fn send_results(&mut self, transport_socket: Arc<UdpSocket>, pkts_sent: u64) {
+    async fn send_results(&mut self, transport_socket: Arc<UdpSocket>) {
         let mut send_buffer = vec![0u8; 10];
         send_buffer.insert(0, PacketType::Result as u8);
+
+        let pkts_sent: [u8; std::mem::size_of::<u64>()] =
+            self.recv_buffer[5..13].try_into().unwrap();
+        let pkts_sent = u64::from_be_bytes(pkts_sent);
         let pkt_loss = (1_f32 - (self.pkts_recvd as f32 / pkts_sent as f32)) * 100_f32;
         send_buffer[1..5].copy_from_slice(&pkt_loss.to_be_bytes());
 
@@ -289,6 +321,12 @@ impl State {
         {
             telio_log_warn!("Unable to send ack")
         }
+    }
+
+    /// Start the throughput test with given endpoint
+    async fn start_test(&self, endpoint: SocketAddr) -> Result<(), Error> {
+        self.cmd_chan.tx.send(endpoint).await?;
+        Ok(())
     }
 }
 
@@ -328,7 +366,7 @@ impl Runtime for State {
             Ok(len) = transport_socket.recv(&mut self.recv_buffer) => {
                 self.handle_incoming_packet(len, transport_socket.clone()).await
             },
-            Some(endpoint) = self.cmd_chan.recv() => {
+            Some(endpoint) = self.cmd_chan.rx.recv() => {
                 {
                     let mut state = self.handler_state.write().await;
                     if *state == HandlerState::Test {
@@ -344,7 +382,7 @@ impl Runtime for State {
             },
         };
         if let Err(e) = res {
-            telio_log_debug!("ThrougputTransportError: {e}");
+            telio_log_debug!("ThrougputTestError: {e}");
         }
         Self::next()
     }
@@ -361,7 +399,7 @@ async fn throughput_test_handler(
     endpoint: SocketAddr,
     transport_socket: Arc<UdpSocket>,
     handler_state: Arc<RwLock<HandlerState>>,
-) {
+) -> Result<(), Error> {
     let mut send_buffer = vec![0u8; 1350];
     loop {
         let state = { *{ handler_state.read().await } };
@@ -370,7 +408,7 @@ async fn throughput_test_handler(
                 // Inform the peer that test is starting
                 send_buffer.insert(0, PacketType::Start as u8);
                 send_buffer[1..5]
-                    .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr().unwrap().ip()));
+                    .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr()?.ip()));
                 if transport_socket
                     .send_to(&send_buffer[..5], endpoint)
                     .await
@@ -400,14 +438,16 @@ async fn throughput_test_handler(
 
                 // Tell the other peer test has ended
                 send_buffer.insert(0, PacketType::End as u8);
+                // Send IP address as 
                 send_buffer[1..5]
-                    .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr().unwrap().ip()));
+                    .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr()?.ip()));
                 send_buffer[5..13].copy_from_slice(&total_pkts.to_be_bytes());
                 let _ = transport_socket.send_to(&send_buffer[..14], endpoint).await;
                 break;
             }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -429,31 +469,31 @@ mod tests {
             .unwrap(),
         ));
         let client_cmd_chan = Chan::new(5);
-        let notify = Arc::new(Notify::new());
+        let test_ended = Arc::new(Notify::new());
 
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let _client = Throughput::start(
+        let client = Throughput::start(
             ip_addr,
             socket_pool.clone(),
-            client_cmd_chan.rx,
+            client_cmd_chan,
             12345,
-            Some(notify.clone()),
+            Some(test_ended.clone()),
         )
         .await;
 
         let server_cmd_chan = Chan::new(5);
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let endpoint = SocketAddr::new(ip_addr, 54321);
-        let _server = Throughput::start(
-            ip_addr,
-            socket_pool.clone(),
-            server_cmd_chan.rx,
-            54321,
-            None,
-        )
-        .await;
+        let server =
+            Throughput::start(ip_addr, socket_pool.clone(), server_cmd_chan, 54321, None).await;
 
-        assert!(client_cmd_chan.tx.send(endpoint).await.is_ok());
-        assert!(timeout(TEST_DURATION * 4, notify.notified()).await.is_ok());
+        assert!(client
+            .as_ref()
+            .unwrap()
+            .start_test("127.0.0.1".to_owned())
+            .await
+            .is_ok());
+        assert!(timeout(TEST_DURATION * 4, test_ended.notified())
+            .await
+            .is_ok());
     }
 }

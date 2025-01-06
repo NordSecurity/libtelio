@@ -35,6 +35,7 @@ impl FeaturesDefaultsBuilder {
             ipv6: false,
             nicknames: false,
             batching: None,
+            throughput: false,
         };
 
         Self {
@@ -142,6 +143,12 @@ impl FeaturesDefaultsBuilder {
 
     pub fn enable_batching(self: Arc<Self>) -> Arc<Self> {
         self.config.lock().batching = Some(default());
+        self
+    }
+
+    /// Enable throughput tests
+    pub fn enable_throughput_tests(self: Arc<Self>) -> Arc<Self> {
+        self.config.lock().throughput = true;
         self
     }
 }
