@@ -84,7 +84,7 @@ use telio_model::{
     constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4},
     event::{Event, Set},
     features::{FeaturePersistentKeepalive, Features, PathType},
-    mesh::{ExitNode, LinkState, Node},
+    mesh::{ExitNode, LinkState, Node, NodeState},
     validation::validate_nickname,
     EndpointMap,
 };
@@ -2325,6 +2325,16 @@ impl Runtime {
         }
     }
 
+    fn should_supress_disconnected(&self, node: &Node) -> bool {
+        self.entities
+            .postquantum_wg
+            .peer_pubkey()
+            .map(|pubkey| {
+                node.public_key == pubkey && matches!(node.state, NodeState::Disconnected)
+            })
+            .unwrap_or(false)
+    }
+
     fn remember_last_transmitted_node_event(&mut self, node: Node) {
         if node.state == PeerState::Disconnected {
             self.last_transmitted_event.remove(&node.public_key);
@@ -2394,7 +2404,8 @@ impl TaskRuntime for Runtime {
 
                 if let Some(node) = node {
                     // Publish WG event to app
-                    if !self.is_dublicated_event(&node) {
+                    if !self.is_dublicated_event(&node) && !self.should_supress_disconnected(&node) {
+                        telio_log_debug!("Event is being published to libtelio integrators {node:?}");
                         let _ = self.event_publishers.libtelio_event_publisher.send(
                             Box::new(Event::Node {body: node.clone()})
                         );

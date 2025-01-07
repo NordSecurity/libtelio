@@ -27,6 +27,7 @@ telio-utils.workspace = true
 boringtun.workspace = true
 pnet_packet.workspace = true
 mockall = { workspace = true, optional = true }
+parking_lot.workspace = true
 rand.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
