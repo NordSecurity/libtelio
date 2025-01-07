@@ -151,7 +151,10 @@ async fn main() -> Result<(), TeliodError> {
         }
         #[cfg(feature = "cgi")]
         Cmd::Cgi => {
-            rust_cgi::handle(cgi::handle_request);
+            tokio::task::spawn_blocking(|| {
+                rust_cgi::handle(cgi::handle_request);
+            })
+            .await?;
             Ok(())
         }
     }

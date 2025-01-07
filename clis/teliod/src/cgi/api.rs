@@ -53,7 +53,10 @@ pub(crate) fn handle_api(request: &CgiRequest) -> Option<Response> {
         (&Method::GET, "/get-status") => Some(get_status()),
         (&Method::GET, "/get-teliod-logs") => Some(get_teliod_logs()),
         (&Method::GET, "/get-meshnet-logs") => Some(get_meshnet_logs()),
-        (_, _) => Some(text_response(StatusCode::BAD_REQUEST, "Invalid request.")),
+        (_, _) => Some(text_response(
+            StatusCode::NOT_FOUND,
+            "Non-existing endpoint",
+        )),
     }
 }
 
@@ -230,7 +233,6 @@ mod tests {
     use reqwest::StatusCode;
     use serial_test::serial;
     use tracing::level_filters::LevelFilter;
-    use uuid::Uuid;
 
     use super::{update_config, TeliodDaemonConfig};
     use crate::{
@@ -249,7 +251,6 @@ mod tests {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
-            app_user_uid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
             authentication_token:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
@@ -290,8 +291,6 @@ mod tests {
         expected_config.log_file_path = "/new/path/to/log".to_owned();
         expected_config.authentication_token =
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned();
-        expected_config.app_user_uid =
-            Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
         expected_config.interface = InterfaceConfig {
             name: "eth1".to_owned(),
             config_provider: InterfaceConfigurationProvider::Ifconfig,
@@ -338,7 +337,6 @@ mod tests {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
-            app_user_uid: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
             authentication_token:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),

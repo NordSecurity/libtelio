@@ -4,9 +4,11 @@ use rust_cgi::{http::StatusCode, text_response, Request, Response};
 
 mod api;
 pub(crate) mod constants;
+#[cfg(feature = "qnap")]
+mod qnap;
 
 pub struct CgiRequest {
-    pub inner: Request,
+    inner: Request,
     route: String,
 }
 
@@ -32,6 +34,11 @@ impl Deref for CgiRequest {
 
 pub fn handle_request(request: Request) -> Response {
     let request = CgiRequest::new(request);
+
+    #[cfg(feature = "qnap")]
+    if let Err(error) = qnap::authorize(&request) {
+        return text_response(StatusCode::UNAUTHORIZED, format!("Unauthorized: {}", error));
+    }
 
     if let Some(response) = api::handle_api(&request) {
         #[cfg(debug_assertions)]
