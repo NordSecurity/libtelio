@@ -4,7 +4,7 @@ use std::io::{self, Result};
 use std::net::Ipv4Addr;
 use std::os::windows::io::RawSocket;
 use std::sync::Arc;
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
@@ -78,6 +78,7 @@ struct Sockets {
     tunnel_interface: Option<u64>,
     default_interface: Option<Interface>,
     notify: Arc<Notify>,
+    last_default_interface_error: Option<io::Error>,
 }
 
 impl Sockets {
@@ -87,6 +88,7 @@ impl Sockets {
             tunnel_interface: None,
             default_interface: None,
             notify: Arc::new(Notify::new()),
+            last_default_interface_error: None,
         }
     }
 
@@ -99,9 +101,22 @@ impl Sockets {
             return;
         }
         let new_default_interface = match get_default_interface(tunnel_interface) {
-            Ok(def) => Some(def),
+            Ok(def) => {
+                self.last_default_interface_error = None;
+                Some(def)
+            }
             Err(e) => {
-                telio_log_warn!("Failed to get default interface {}", e);
+                if self
+                    .last_default_interface_error
+                    .as_ref()
+                    .map(|old_err| old_err.kind() != e.kind())
+                    .unwrap_or(true)
+                {
+                    telio_log_warn!("Failed to get default interface: {}", e);
+                    self.last_default_interface_error = Some(e);
+                } else {
+                    telio_log_trace!("Failed to get default interface");
+                }
                 return;
             }
         };
