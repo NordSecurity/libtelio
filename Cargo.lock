@@ -4672,6 +4672,7 @@ dependencies = [
  "boringtun",
  "hmac",
  "mockall",
+ "parking_lot",
  "pnet_packet",
  "pqcrypto-kyber",
  "pqcrypto-traits",
