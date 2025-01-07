@@ -1,12 +1,15 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use parking_lot::Mutex;
+
 use telio_model::features::FeaturePostQuantumVPN;
 use telio_task::io::chan;
 use telio_utils::telio_log_debug;
 
 struct Peer {
     pubkey: telio_crypto::PublicKey,
+    wg_secret: telio_crypto::SecretKey,
     addr: SocketAddr,
     /// This is a key rotation task guard, its `Drop` implementation aborts the task
     _rotation_task: super::conn::ConnKeyRotation,
@@ -17,16 +20,16 @@ pub struct Entity {
     features: FeaturePostQuantumVPN,
     sockets: Arc<telio_sockets::SocketPool>,
     chan: chan::Tx<super::Event>,
-    peer: Option<Peer>,
+    peer: Mutex<Option<Peer>>,
 }
 
 impl crate::PostQuantum for Entity {
     fn keys(&self) -> Option<crate::Keys> {
-        self.peer.as_ref().and_then(|p| p.keys.clone())
+        self.peer.lock().as_ref().and_then(|p| p.keys.clone())
     }
 
     fn is_rotating_keys(&self) -> bool {
-        self.peer.is_some()
+        self.peer.lock().is_some()
     }
 }
 
@@ -40,44 +43,47 @@ impl Entity {
             features,
             sockets,
             chan,
-            peer: None,
+            peer: Mutex::new(None),
         }
     }
 
-    pub fn on_event(&mut self, event: super::Event) {
-        let Some(peer) = &mut self.peer else {
-            return;
-        };
-
-        match event {
-            super::Event::Handshake(addr, keys) => {
-                if peer.addr == addr {
-                    peer.keys = Some(keys);
-                }
-            }
-            super::Event::Rekey(super::Keys {
-                wg_secret,
-                pq_shared,
-            }) => {
-                if let Some(keys) = &mut peer.keys {
-                    // Check if we are still talking to the same exit node
-                    if keys.wg_secret == wg_secret {
-                        // and only then update the preshared key,
-                        // otherwise we're connecting to different node already
-                        keys.pq_shared = pq_shared;
-                    } else {
-                        telio_log_debug!(
-                            "PQ secret key does not match, ignoring shared secret rotation"
-                        );
+    pub fn on_event(&self, event: super::Event) {
+        if let Some(peer) = self.peer.lock().as_mut() {
+            match event {
+                super::Event::Handshake(addr, keys) => {
+                    if peer.addr == addr {
+                        peer.keys = Some(keys);
                     }
                 }
+                super::Event::Rekey(super::Keys {
+                    wg_secret,
+                    pq_shared,
+                }) => {
+                    if let Some(keys) = &mut peer.keys {
+                        // Check if we are still talking to the same exit node
+                        if keys.wg_secret == wg_secret {
+                            // and only then update the preshared key,
+                            // otherwise we're connecting to different node already
+                            keys.pq_shared = pq_shared;
+                        } else {
+                            telio_log_debug!(
+                                "PQ secret key does not match, ignoring shared secret rotation"
+                            );
+                        }
+                    }
+                }
+                _ => (),
             }
-            _ => (),
         }
     }
 
-    pub async fn stop(&mut self) {
-        if let Some(peer) = self.peer.take() {
+    pub fn peer_pubkey(&self) -> Option<telio_crypto::PublicKey> {
+        self.peer.lock().as_ref().map(|p| p.pubkey)
+    }
+
+    pub async fn stop(&self) {
+        let peer = self.peer.lock().take();
+        if let Some(peer) = peer {
             #[allow(mpsc_blocking_send)]
             let _ = self
                 .chan
@@ -87,15 +93,16 @@ impl Entity {
     }
 
     pub async fn start(
-        &mut self,
+        &self,
         addr: SocketAddr,
         wg_secret: telio_crypto::SecretKey,
         peer: telio_crypto::PublicKey,
     ) {
         self.stop().await;
 
-        self.peer = Some(Peer {
+        *self.peer.lock() = Some(Peer {
             pubkey: peer,
+            wg_secret: wg_secret.clone(),
             addr,
             _rotation_task: super::conn::ConnKeyRotation::run(
                 self.chan.clone(),
@@ -110,5 +117,17 @@ impl Entity {
 
         #[allow(mpsc_blocking_send)]
         let _ = self.chan.send(super::Event::Connecting(peer)).await;
+    }
+
+    pub async fn restart(&self) {
+        let params = self.peer.lock().as_ref().map(|peer| {
+            let addr = peer.addr;
+            let pubkey = peer.pubkey;
+            let wg_secret = peer.wg_secret.clone();
+            (addr, pubkey, wg_secret)
+        });
+        if let Some((addr, pubkey, wg_secret)) = params {
+            self.start(addr, wg_secret, pubkey).await;
+        }
     }
 }
