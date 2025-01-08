@@ -1,12 +1,14 @@
-use core::str;
 use std::{
     fs,
     io::Write,
     process::{Command, Stdio},
+    str,
 };
 
-use const_format::concatcp;
-use rust_cgi::{http::Method, http::StatusCode, text_response, Request, Response};
+use rust_cgi::{
+    http::{Method, StatusCode},
+    text_response, Response,
+};
 
 use crate::{
     command_listener::CommandResponse,
@@ -14,15 +16,10 @@ use crate::{
     ClientCmd, DaemonSocket, TeliodError, TIMEOUT_SEC,
 };
 
-const QPKG_DIR: &str = "/share/CACHEDEV1_DATA/.qpkg/NordSecurityMeshnet";
-const TELIOD_BIN: &str = concatcp!(QPKG_DIR, "/teliod");
-const MESHNET_LOG: &str = concatcp!(QPKG_DIR, "/meshnet.log");
-const TELIOD_LOG: &str = "/var/log/teliod.log";
-
-#[cfg(not(test))]
-const TELIOD_CFG: &str = concatcp!(QPKG_DIR, "/teliod.cfg");
-#[cfg(test)]
-use tests::TELIOD_CFG;
+use super::{
+    constants::{MESHNET_LOG, TELIOD_BIN, TELIOD_CFG, TELIOD_LOG},
+    CgiRequest,
+};
 
 macro_rules! teliod_blocking_query {
     ($command:expr) => {{
@@ -37,26 +34,26 @@ macro_rules! teliod_blocking_query {
     }};
 }
 
-pub(crate) fn handle_request(request: Request) -> Response {
-    match (request.method(), request.uri().query()) {
-        (&Method::POST, _) => start_daemon(),
-        (&Method::DELETE, _) => stop_daemon(),
-        (&Method::PATCH, _) => {
+pub(crate) fn handle_api(request: &CgiRequest) -> Option<Response> {
+    match (request.method(), request.route()) {
+        (&Method::POST, "" | "/") => Some(start_daemon()),
+        (&Method::DELETE, "" | "/") => Some(stop_daemon()),
+        (&Method::PATCH, "" | "/") => {
             let body = match str::from_utf8(request.body()) {
                 Ok(body) => body,
                 Err(error) => {
-                    return text_response(
+                    return Some(text_response(
                         StatusCode::BAD_REQUEST,
                         format!("Invalid UTF-8 in request body: {}", error),
-                    )
+                    ))
                 }
             };
-            update_config(body)
+            Some(update_config(body))
         }
-        (&Method::GET, Some("info=get-status")) => get_status(),
-        (&Method::GET, Some("info=get-teliod-logs")) => get_teliod_logs(),
-        (&Method::GET, Some("info=get-meshnet-logs")) => get_meshnet_logs(),
-        (_, _) => text_response(StatusCode::BAD_REQUEST, "Invalid request."),
+        (&Method::GET, "/get-status") => Some(get_status()),
+        (&Method::GET, "/get-teliod-logs") => Some(get_teliod_logs()),
+        (&Method::GET, "/get-meshnet-logs") => Some(get_meshnet_logs()),
+        (_, _) => Some(text_response(StatusCode::BAD_REQUEST, "Invalid request.")),
     }
 }
 
@@ -237,11 +234,10 @@ mod tests {
 
     use super::{update_config, TeliodDaemonConfig};
     use crate::{
+        cgi::constants::TELIOD_CFG,
         config::{InterfaceConfig, MqttConfig, Percentage},
         configure_interface::InterfaceConfigurationProvider,
     };
-
-    pub const TELIOD_CFG: &str = "/tmp/teliod_config.json";
 
     #[test]
     #[serial]
