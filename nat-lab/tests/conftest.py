@@ -247,7 +247,12 @@ async def setup_check_connectivity():
                     await ping(connection, dest_ip, 5)
                     results[source].append((reverse[dest_ip], True))
             except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"Failed to connect from {source} to {reverse[dest_ip]}: {e}")
+                print(
+                    f"Failed to connect from {source} to {reverse[dest_ip]}: {repr(e)}"
+                )
+                print(f"Exception type: {e.__class__.__name__}")
+                print(f"Exception args: {e.args}")
+                print(f"Exception attributes: {dir(e)}")
                 results[source].append((reverse[dest_ip], False))
 
     print("Connectivity between VMs (and docker):")
