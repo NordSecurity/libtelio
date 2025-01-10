@@ -56,13 +56,11 @@ def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
         if task.cancelled():
             continue
         if task.exception() is not None:
-            loop.call_exception_handler(
-                {
-                    "message": "unhandled exception during asyncio.run() shutdown",
-                    "exception": task.exception(),
-                    "task": task,
-                }
-            )
+            loop.call_exception_handler({
+                "message": "unhandled exception during asyncio.run() shutdown",
+                "exception": task.exception(),
+                "task": task,
+            })
 
 
 @pytest.fixture(scope="function")
@@ -135,25 +133,21 @@ def setup_ephemeral_ports(request):
     connection_tags = set()
 
     # Setup for all Docker clients
-    connection_tags.update(
-        [
-            tag
-            for tag in ConnectionTag.__members__.values()
-            if tag.name.startswith("DOCKER_") and "CLIENT" in tag.name
-        ]
-    )
+    connection_tags.update([
+        tag
+        for tag in ConnectionTag.__members__.values()
+        if tag.name.startswith("DOCKER_") and "CLIENT" in tag.name
+    ])
 
     # Handle test name (params) to search for VM tags
     test_name = request.node.name
     if "_VM_" in test_name:
         # Extract all connection tags from test name
-        connection_tags.update(
-            [
-                ConnectionTag[param]
-                for param in test_name.split("[")[1].split("]")[0].split("-")
-                if param in ConnectionTag.__members__
-            ]
-        )
+        connection_tags.update([
+            ConnectionTag[param]
+            for param in test_name.split("[")[1].split("]")[0].split("-")
+            if param in ConnectionTag.__members__
+        ])
 
     # Handle test markers to search for VMs tags
     for mark in request.node.own_markers:
@@ -179,9 +173,7 @@ def pytest_make_parametrize_id(config, val):
         param_id = f"{param_id[1:]}"
     elif isinstance(val, (SetupParameters,)):
         short_conn_tag_name = val.connection_tag.name.removeprefix("DOCKER_")
-        param_id = (
-            f"{short_conn_tag_name}-{val.adapter_type_override.name.replace('_', '') if val.adapter_type_override is not None else ''}"
-        )
+        param_id = f"{short_conn_tag_name}-{val.adapter_type_override.name.replace('_', '') if val.adapter_type_override is not None else ''}"
         if (
             val.features.direct is not None
             and val.features.direct.providers is not None
