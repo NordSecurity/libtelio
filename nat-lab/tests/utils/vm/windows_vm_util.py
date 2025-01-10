@@ -6,6 +6,7 @@ from config import (
     LIBTELIO_BINARY_PATH_WINDOWS_VM,
     UNIFFI_PATH_WINDOWS_VM,
     WINDOWS_1_VM_IP,
+    WINDOWS_2_VM_IP,
 )
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -16,6 +17,11 @@ from utils.process import ProcessExecError
 VM_TCLI_DIR = LIBTELIO_BINARY_PATH_WINDOWS_VM
 VM_UNIFFI_DIR = UNIFFI_PATH_WINDOWS_VM
 VM_SYSTEM32 = "C:\\Windows\\System32"
+
+NAME = {
+    WINDOWS_1_VM_IP: "Windows-1",
+    WINDOWS_2_VM_IP: "Windows-2",
+}
 
 
 @asynccontextmanager
@@ -46,7 +52,7 @@ async def new_connection(
         known_hosts=None,
         options=ssh_options,
     ) as ssh_connection:
-        connection = SshConnection(ssh_connection, TargetOS.Windows)
+        connection = SshConnection(ssh_connection, NAME[ip], TargetOS.Windows)
 
         keys = await _get_network_interface_tunnel_keys(connection)
         for key in keys:

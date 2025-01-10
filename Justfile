@@ -65,7 +65,7 @@ black fix="false":
     fi
 
 pylint:
-    docker run --rm -t -v$(pwd):/code 'ubuntu:22.04' sh -c "apt-get update && apt-get -y install python3-pip && cd code && pip3 install --no-deps -r requirements.txt && pipenv install --system && cd nat-lab && pipenv install --system && pylint -f colorized . --ignore telio_bindings.py"
+    docker run --rm -t -v$(pwd):/code 'ubuntu:24.04' sh -c "apt-get update && apt-get -y install python3-pip && cd code && pip3 install --no-deps -r requirements.txt && pipenv install --system && cd nat-lab && pipenv install --system && pylint -f colorized . --ignore telio_bindings.py"
 
 # Start a dev web cgi server, for local teliod cgi development
 web:

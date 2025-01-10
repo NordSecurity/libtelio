@@ -5,25 +5,25 @@ import random
 import shutil
 import subprocess
 from config import DERP_PRIMARY
+from contextlib import AsyncExitStack
 from datetime import datetime
 from helpers import SetupParameters
 from interderp_cli import InterDerpClient
 from itertools import combinations
-from mesh_api import start_tcpdump, stop_tcpdump
 from typing import Dict, List, Tuple
 from utils.bindings import TelioAdapterType
 from utils.connection import DockerConnection
 from utils.connection_util import (
-    ConnectionTag,
-    container_id,
     LAN_ADDR_MAP,
+    ConnectionTag,
     new_connection_raw,
     new_connection_with_conn_tracker,
 )
 from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPStack
-from utils.vm import windows_vm_util, mac_vm_util
+from utils.tcpdump import make_tcpdump
+from utils.vm import mac_vm_util, windows_vm_util
 
 DERP_SERVER_1_ADDR = "http://10.0.10.1:8765"
 DERP_SERVER_2_ADDR = "http://10.0.10.2:8765"
@@ -35,6 +35,10 @@ SETUP_CHECK_TIMEOUT_S = 30
 SETUP_CHECK_RETRIES = 5
 SETUP_CHECK_CONNECTIVITY_TIMEOUT = 60
 SETUP_CHECK_CONNECTIVITY_RETRIES = 1
+
+RUNNER = asyncio.Runner()
+# pylint: disable=unnecessary-dunder-call
+SESSION_SCOPE_EXIT_STACK = RUNNER.run(AsyncExitStack().__aenter__())
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -256,24 +260,28 @@ async def setup_check_connectivity():
 
 
 async def setup_check_interderp():
-    async with new_connection_raw(ConnectionTag.DOCKER_CONE_CLIENT_1) as connection:
-        if not isinstance(connection, DockerConnection):
-            raise Exception("Not docker connection")
-        containers = [
-            connection.container_name(),
-            "nat-lab-derp-01-1",
-            "nat-lab-derp-02-1",
-            "nat-lab-derp-03-1",
+    async with AsyncExitStack() as exit_stack:
+        connections = [
+            await exit_stack.enter_async_context(new_connection_raw(conn_tag))
+            for conn_tag in [
+                ConnectionTag.DOCKER_CONE_CLIENT_1,
+                ConnectionTag.DOCKER_DERP_1,
+                ConnectionTag.DOCKER_DERP_2,
+                ConnectionTag.DOCKER_DERP_3,
+            ]
         ]
-        start_tcpdump(containers)
-        try:
+
+        if not isinstance(connections[0], DockerConnection):
+            raise Exception("Not docker connection")
+
+        async with make_tcpdump(connections):
             for idx, (server1, server2) in enumerate(
                 combinations(
                     [DERP_SERVER_1_ADDR, DERP_SERVER_2_ADDR, DERP_SERVER_3_ADDR], 2
                 )
             ):
                 derp_test = InterDerpClient(
-                    connection,
+                    connections[0],
                     server1,
                     server2,
                     DERP_SERVER_1_SECRET_KEY,
@@ -282,8 +290,6 @@ async def setup_check_interderp():
                 )
                 await derp_test.execute()
                 await derp_test.save_logs()
-        finally:
-            stop_tcpdump(containers)
 
 
 SETUP_CHECKS = [
@@ -346,9 +352,6 @@ async def perform_pretest_cleanups():
 
 
 async def _copy_vm_binaries(tag: ConnectionTag):
-    is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
-        "CUSTOM_ENV_GITLAB_CI"
-    )
     if tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
         try:
             print(f"copying for {tag}")
@@ -357,7 +360,7 @@ async def _copy_vm_binaries(tag: ConnectionTag):
             ):
                 pass
         except OSError as e:
-            if is_ci:
+            if os.environ.get("GITLAB_CI"):
                 raise e
             print(e)
     elif tag is ConnectionTag.MAC_VM:
@@ -367,7 +370,7 @@ async def _copy_vm_binaries(tag: ConnectionTag):
             ):
                 pass
         except OSError as e:
-            if is_ci:
+            if os.environ.get("GITLAB_CI"):
                 raise e
             print(e)
 
@@ -432,10 +435,6 @@ async def _save_macos_logs(conn, suffix):
 
 
 async def collect_kernel_logs(items, suffix):
-    is_ci = os.environ.get("CUSTOM_ENV_GITLAB_CI") is not None and os.environ.get(
-        "CUSTOM_ENV_GITLAB_CI"
-    )
-
     log_dir = "logs"
     os.makedirs(log_dir, exist_ok=True)
 
@@ -448,7 +447,7 @@ async def collect_kernel_logs(items, suffix):
                 async with mac_vm_util.new_connection() as conn:
                     await _save_macos_logs(conn, suffix)
             except OSError as e:
-                if is_ci:
+                if os.environ.get("GITLAB_CI"):
                     raise e
 
 
@@ -468,25 +467,34 @@ def pytest_runtest_setup():
 
 
 # pylint: disable=unused-argument
-def pytest_runtest_call(item):
-    start_tcpdump([f"nat-lab-dns-server-{i}-1" for i in range(1, 3)])
-
-
-# pylint: disable=unused-argument
-def pytest_runtest_makereport(item, call):
-    if call.when == "call":
-        stop_tcpdump([f"nat-lab-dns-server-{i}-1" for i in range(1, 3)])
-
-
-# pylint: disable=unused-argument
 def pytest_sessionstart(session):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
 
-    if not session.config.option.collectonly:
-        start_tcpdump(
-            {container_id(gw_tag) for gw_tag in ConnectionTag if "_GW" in gw_tag.name}
+    async def async_context():
+        connections = [
+            await SESSION_SCOPE_EXIT_STACK.enter_async_context(
+                new_connection_raw(gw_tag)
+            )
+            for gw_tag in ConnectionTag
+            if "_GW" in gw_tag.name
+        ]
+
+        connections += [
+            await SESSION_SCOPE_EXIT_STACK.enter_async_context(
+                new_connection_raw(conn_tag)
+            )
+            for conn_tag in [
+                ConnectionTag.DOCKER_DNS_SERVER_1,
+                ConnectionTag.DOCKER_DNS_SERVER_2,
+            ]
+        ]
+
+        await SESSION_SCOPE_EXIT_STACK.enter_async_context(
+            make_tcpdump(connections, session=True)
         )
+
+    RUNNER.run(async_context())
 
 
 # pylint: disable=unused-argument
@@ -495,11 +503,7 @@ def pytest_sessionfinish(session, exitstatus):
         return
 
     if not session.config.option.collectonly:
-        stop_tcpdump(
-            {container_id(gw_tag) for gw_tag in ConnectionTag if "_GW" in gw_tag.name},
-            "./logs",
-        )
-
+        RUNNER.close()
         collect_nordderper_logs()
         collect_dns_server_logs()
         asyncio.run(collect_kernel_logs(session.items, "after_tests"))
@@ -533,7 +537,8 @@ def copy_file_from_container(container_name, src_path, dst_path):
     try:
         subprocess.run(docker_cp_command, shell=True, check=True)
         print(
-            f"Log file {src_path} copied successfully from {container_name} to {dst_path}"
+            f"Log file {src_path} copied successfully from {container_name} to"
+            f" {dst_path}"
         )
     except subprocess.CalledProcessError:
         print(f"Error copying log file {src_path} from {container_name} to {dst_path}")

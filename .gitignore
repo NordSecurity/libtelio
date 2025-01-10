@@ -19,6 +19,7 @@ tcli.log
 /nat-lab/3rd-party/netfilter-full-cone-nat
 /nat-lab/tests/uniffi/telio_bindings.py
 /nat-lab/tests/uniffi/libtelio.so
+/nat-lab/tests/uniffi/telio.dll
 /nat-lab/logs
 /nat-lab/coredumps
 /src/telio.py

@@ -82,7 +82,7 @@ jobs:
             command: fmt
             args: -- --check --color always
   python-format-black:
-      runs-on: ubuntu-22.04
+      runs-on: ubuntu-24.04
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
@@ -90,7 +90,7 @@ jobs:
             just-version: 1.37.0
         - run: just black
   python-format-isort:
-      runs-on: ubuntu-22.04
+      runs-on: ubuntu-24.04
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - run: pip3 install --no-deps -r requirements.txt
@@ -98,7 +98,7 @@ jobs:
         - run: isort --check-only --diff .
           working-directory: nat-lab
   python-format-autoflake:
-      runs-on: ubuntu-22.04
+      runs-on: ubuntu-24.04
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - run: pip3 install --no-deps -r requirements.txt
@@ -107,7 +107,7 @@ jobs:
           working-directory: nat-lab
   python-lint:
       needs: uniffi-bindings
-      runs-on: ubuntu-22.04
+      runs-on: ubuntu-24.04
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
@@ -121,7 +121,7 @@ jobs:
         - run: just pylint
   natlab-typecheck:
       needs: uniffi-bindings
-      runs-on: ubuntu-22.04
+      runs-on: ubuntu-24.04
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2

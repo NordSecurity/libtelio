@@ -17,7 +17,9 @@ class Connection(ABC):
         self._target_os = target_os
 
     @abstractmethod
-    def create_process(self, command: List[str], kill_id=None) -> "Process":
+    def create_process(
+        self, command: List[str], kill_id=None, term_type=None
+    ) -> "Process":
         pass
 
     @property
