@@ -451,8 +451,21 @@ async def collect_kernel_logs(items, suffix):
                     raise e
 
 
+def print_network_info():
+    """
+    Print ARP entries which might be useful to catch "no route to host" errors in natlab.
+    Having no ARP entry would mean there's an issue with ARP rather than routing.
+    Additionally, print out the routing table for further debugging.
+    """
+    print("=== ARP Table(ip neighbor) ===")
+    os.system("ip neighbor show")
+    print("\n=== Routing Table ===")
+    os.system("ip route show")
+
+
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
+        print_network_info()
         asyncio.run(_copy_vm_binaries_if_needed(session.items))
 
         if os.environ.get("NATLAB_SAVE_LOGS") is not None:
