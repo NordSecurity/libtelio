@@ -235,25 +235,16 @@ mod tests {
         sync::Mutex,
     };
 
-    use mockall::mock;
     use rstest::rstest;
 
-    use crate::{native::NativeSocket, protector::make_external_protector, Protect};
+    use crate::{
+        protector::{make_external_protector, MockProtector},
+        Protect,
+    };
 
     use super::*;
 
     const PACKET: [u8; 8] = *b"libtelio";
-
-    mock! {
-        Protector {}
-        impl Protector for Protector {
-            fn make_external(&self, socket: NativeSocket) -> io::Result<()>;
-            fn clean(&self, socket: NativeSocket);
-            fn set_fwmark(&self, fwmark: u32);
-            fn set_tunnel_interface(&self, interface: u64);
-            fn make_internal(&self, interface: NativeSocket) -> Result<(), std::io::Error>;
-        }
-    }
 
     #[tokio::test]
     async fn test_external_drops_protector() {

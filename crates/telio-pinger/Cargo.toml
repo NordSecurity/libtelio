@@ -1,0 +1,19 @@
+[package]
+name = "telio-pinger"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+publish = false
+
+[dependencies]
+socket2.workspace = true
+telio-utils.workspace = true
+telio-sockets.workspace = true
+surge-ping.workspace = true
+rand.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["net", "sync", "test-util"] }
+telio-sockets = { workspace = true, features = ["mockall"] }
