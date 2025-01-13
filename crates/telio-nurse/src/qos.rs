@@ -13,9 +13,9 @@ use telio_model::features::RttType;
 use telio_task::{io::mc_chan, Runtime, RuntimeExt, WaitResponse};
 use telio_wg::uapi::{AnalyticsEvent, PeerState};
 
-use telio_utils::{
-    interval, telio_log_debug, telio_log_trace, DualPingResults, DualTarget, IpStack, Pinger,
-};
+use telio_pinger::{DualPingResults, Pinger};
+use telio_sockets::SocketPool;
+use telio_utils::{interval, telio_log_debug, telio_log_trace, DualTarget, IpStack};
 
 use crate::{config::QoSConfig, data::MeshConfigUpdateEvent};
 
@@ -240,15 +240,22 @@ impl Analytics {
     ///
     /// * `config` - Config for QoS component.
     /// * `io` - Channel(s) for communicating with WireGuard.
+    /// * `ipv6_enabled` - IPv6 support.
+    /// * `socket_pool` - SocketPool used to protect the sockets.
     ///
     /// # Returns
     ///
     /// A new `Analytics` instance with the given configuration but with no nodes.
-    pub fn new(config: QoSConfig, io: Io, ipv6_enabled: bool) -> Self {
+    pub fn new(
+        config: QoSConfig,
+        io: Io,
+        ipv6_enabled: bool,
+        socket_pool: Arc<SocketPool>,
+    ) -> Self {
         let (ping_channel_tx, ping_channel_rx) = mpsc::channel(1);
 
         let ping_backend = if config.rtt_types.contains(&RttType::Ping) {
-            Arc::new(Pinger::new(config.rtt_tries, ipv6_enabled).ok())
+            Arc::new(Pinger::new(config.rtt_tries, ipv6_enabled, socket_pool).ok())
         } else {
             Arc::new(None)
         };
@@ -600,6 +607,7 @@ mod tests {
         collections::HashSet,
         net::{Ipv4Addr, Ipv6Addr},
     };
+    use telio_sockets::protector::MockProtector;
     use telio_task::{
         io::{mc_chan::Tx, McChan},
         task_exec, Task,
@@ -932,8 +940,12 @@ mod tests {
             buckets: 5,
         };
 
+        let mut protect = MockProtector::default();
+        protect.expect_make_internal().returning(|_| Ok(()));
+        let socket_pool = Arc::new(SocketPool::new(protect));
+
         (
-            Analytics::new(config, io, true),
+            Analytics::new(config, io, true, socket_pool),
             manual_trigger_channel.tx,
             wg_channel.tx,
         )
