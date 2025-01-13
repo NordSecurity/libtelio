@@ -138,8 +138,7 @@ async def test_pq_vpn_connection(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(exit_stack, [alpha_setup_params])
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -241,8 +240,7 @@ async def test_pq_vpn_rekey(
 
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(exit_stack, [alpha_setup_params])
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -527,11 +525,10 @@ async def test_pq_vpn_handshake_after_nonet() -> None:
                 [
                     SetupParameters(
                         connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        adapter_type_override=TelioAdapterType.NEP_TUN,
+                        adapter_type_override=TelioAdapterType.BORING_TUN,
                         is_meshnet=False,
                     ),
                 ],
-                prepare_vpn=True,
             )
         )
 
