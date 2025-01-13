@@ -15,6 +15,7 @@ parking_lot.workspace = true
 socket2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
+mockall = { workspace = true, optional = true }
 
 telio-utils.workspace = true
 once_cell.workspace = true

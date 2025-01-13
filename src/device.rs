@@ -1168,6 +1168,14 @@ impl Runtime {
             config.private_key.public(),
         ));
 
+        #[cfg(windows)]
+        {
+            let adapter_luid = wireguard_interface.get_adapter_luid().await?;
+            socket_pool.set_tunnel_interface(adapter_luid);
+        }
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+        set_tunnel_interface(&socket_pool, config);
+
         let nurse = if telio_lana::is_lana_initialized() {
             if let Some(nurse_features) = &features.nurse {
                 let nurse_io = NurseIo {
@@ -1190,6 +1198,7 @@ impl Runtime {
                         nurse_io,
                         aggregator.clone(),
                         features.ipv6,
+                        socket_pool.clone(),
                     )
                     .await,
                 ))
@@ -1201,14 +1210,6 @@ impl Runtime {
             telio_log_debug!("lana not initialized");
             None
         };
-
-        #[cfg(windows)]
-        {
-            let adapter_luid = wireguard_interface.get_adapter_luid().await?;
-            socket_pool.set_tunnel_interface(adapter_luid);
-        }
-        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-        set_tunnel_interface(&socket_pool, config);
 
         let requested_state = RequestedState {
             device_config: config.clone(),
