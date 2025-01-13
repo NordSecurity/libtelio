@@ -4863,6 +4863,7 @@ dependencies = [
  "hmac",
  "mockall",
  "neptun",
+ "parking_lot",
  "pnet_packet",
  "pqcrypto-kyber",
  "pqcrypto-traits",

@@ -1,3 +1,4 @@
+import asyncio
 import config
 import pytest
 from contextlib import AsyncExitStack
@@ -89,7 +90,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(1, 3),
                 ),
                 is_meshnet=False,
             ),
@@ -105,7 +106,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(1, 3),
                 ),
                 is_meshnet=False,
             ),
@@ -136,7 +137,7 @@ async def test_pq_vpn_connection(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params])
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -188,7 +189,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(1, 3),
                 ),
                 is_meshnet=False,
             ),
@@ -204,7 +205,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(1, 3),
                 ),
                 is_meshnet=False,
             ),
@@ -238,7 +239,7 @@ async def test_pq_vpn_rekey(
 
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params])
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -510,3 +511,41 @@ async def test_pq_vpn_upgrade_from_non_pq(
 
         preshared = await read_preshared_key_slot(nlx_conn)
         assert preshared != EMPTY_PRESHARED_KEY_SLOT
+
+
+# Regression test for LLT-5884
+@pytest.mark.timeout(240)
+async def test_pq_vpn_handshake_after_nonet() -> None:
+    public_ip = "10.0.254.1"
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(
+                exit_stack,
+                [
+                    SetupParameters(
+                        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        adapter_type_override=TelioAdapterType.NEP_TUN,
+                        is_meshnet=False,
+                    ),
+                ],
+                prepare_vpn=True,
+            )
+        )
+
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+
+        ip = await stun.get(client_conn, config.STUN_SERVER)
+        assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
+
+        await _connect_vpn_pq(
+            client_conn,
+            client_alpha,
+        )
+
+        async with client_alpha.get_router().break_udp_conn_to_host(
+            str(config.NLX_SERVER["ipv4"])
+        ):
+            await asyncio.sleep(195)
+
+        await ping(client_conn, config.PHOTO_ALBUM_IP, timeout=10)
