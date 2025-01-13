@@ -5,7 +5,8 @@ use std::time::Duration;
 use std::{convert::TryInto, net::IpAddr};
 use surge_ping::{Client, Config as PingerConfig, PingIdentifier, PingSequence, ICMP};
 
-use crate::{telio_log_debug, telio_log_error, DualTarget};
+use telio_sockets::SocketPool;
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, DualTarget};
 
 /// Information needed to check the reachability of endpoints.
 ///
@@ -42,20 +43,33 @@ pub struct DualPingResults {
 impl Pinger {
     const PING_TIMEOUT: Duration = Duration::from_secs(5);
 
-    /// Create new instance of `Ping`.
+    /// Create new instance of `Ping` with a socket pool.
     ///
     /// # Arguments
     ///
     /// * `no_of_tries` - How many pings should be sent.
-    pub fn new(no_of_tries: u32, ipv6: bool) -> std::io::Result<Self> {
+    /// * `ipv6` - Enable IPv6 support.
+    /// * `socket_pool` - Optional SocketPool used to protect the sockets.
+    pub fn new(
+        no_of_tries: u32,
+        ipv6: bool,
+        socket_pool: Arc<SocketPool>,
+    ) -> std::io::Result<Self> {
         let client_v6 = if ipv6 {
-            Some(Arc::new(Self::build_client(ICMP::V6)?))
+            let client_v6 = Arc::new(Self::build_client(ICMP::V6)?);
+            telio_log_trace!("Making pinger IPv6 socket internal");
+            socket_pool.make_internal(client_v6.get_socket().get_native_sock())?;
+            Some(client_v6)
         } else {
             None
         };
 
+        let client_v4 = Arc::new(Self::build_client(ICMP::V4)?);
+        telio_log_trace!("Making pinger IPv4 socket internal");
+        socket_pool.make_internal(client_v4.get_socket().get_native_sock())?;
+
         Ok(Self {
-            client_v4: Arc::new(Self::build_client(ICMP::V4)?),
+            client_v4,
             client_v6,
             no_of_tries,
         })
@@ -179,5 +193,44 @@ impl Pinger {
             }
         }
         Client::new(&config_builder.build())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use telio_sockets::protector::MockProtector;
+
+    // Basic constructor test
+    #[tokio::test]
+    async fn test_pinger_new_v6_sock_pool() {
+        let mut protect = MockProtector::default();
+        protect.expect_make_internal().returning(|_| Ok(()));
+
+        let pinger = Pinger::new(1, true, Arc::new(SocketPool::new(protect)))
+            .expect("Failed to create Pinger");
+        assert!(pinger.client_v4.get_socket().get_native_sock() > 0);
+        assert!(pinger.client_v6.is_some());
+        assert_eq!(pinger.no_of_tries, 1);
+    }
+
+    // Basic ping test
+    #[tokio::test]
+    async fn test_ping_localhost() {
+        let mut protect = MockProtector::default();
+        protect.expect_make_internal().returning(|_| Ok(()));
+
+        let pinger = Pinger::new(2, false, Arc::new(SocketPool::new(protect)))
+            .expect("Failed to create Pinger");
+
+        let target =
+            DualTarget::new(("127.0.0.1".parse().ok(), None)).expect("Failed to create target");
+
+        let result = pinger.perform(target).await;
+        assert!(
+            result.v4.unwrap().successful_pings > 0,
+            "Expected at least one successful ping to 127.0.0.1"
+        );
+        assert!(result.v6.is_none());
     }
 }
