@@ -7,8 +7,9 @@ use std::{
 };
 
 use anyhow::Result;
-use interprocess::local_socket::{LocalSocketListener, LocalSocketStream};
-
+use interprocess::local_socket::prelude::*;
+use interprocess::local_socket::ListenerOptions;
+use interprocess::os::unix::local_socket::FilesystemUdSocket;
 /// Struct for handling connections of the TCLID daemon's side of the IPC communication with the API.
 pub struct DaemonSocket {
     /// The inner socket over which the actual communication is happening.
@@ -29,8 +30,9 @@ impl DaemonSocket {
     pub fn new(ipc_socket_path: &Path) -> Result<Self> {
         // Delete the socket file if it already exists
         let _ = fs::remove_file(ipc_socket_path);
-        let socket = LocalSocketListener::bind(ipc_socket_path)?;
-
+        let socket = ListenerOptions::new()
+            .name(ipc_socket_path.to_fs_name::<FilesystemUdSocket>()?)
+            .create_sync()?;
         Ok(Self { socket })
     }
 
@@ -64,7 +66,7 @@ impl DaemonSocket {
     /// A Result containing a response string.
     pub fn send_command(addr: &Path, cmd: &str) -> Result<String> {
         let mut response_buffer = String::new();
-        let mut stream = LocalSocketStream::connect(addr)?;
+        let mut stream = LocalSocketStream::connect(addr.to_fs_name::<FilesystemUdSocket>()?)?;
         writeln!(stream, "{}", cmd)?;
         stream.read_to_string(&mut response_buffer)?;
 

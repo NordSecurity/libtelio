@@ -5,12 +5,9 @@ use std::time::{Duration, Instant};
 use telio_utils::{telio_log_debug, telio_log_warn};
 use windows::{
     core::{w, Error, Result as WindowsResult, HRESULT, PCWSTR},
-    Win32::{
-        Security::SC_HANDLE,
-        System::Services::{
-            OpenSCManagerW, OpenServiceW, QueryServiceStatus, SC_MANAGER_CONNECT,
-            SERVICE_QUERY_STATUS, SERVICE_STATUS,
-        },
+    Win32::System::Services::{
+        OpenSCManagerW, OpenServiceW, QueryServiceStatus, SC_HANDLE, SC_MANAGER_CONNECT,
+        SERVICE_QUERY_STATUS, SERVICE_STATUS,
     },
 };
 

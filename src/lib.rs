@@ -69,6 +69,7 @@ mod uniffi_libtelio {
     use super::crypto::{PublicKey, SecretKey};
     use super::*;
 
+    use base64::prelude::*;
     use nat_detect::NatType;
     use telio_model::config::*;
     use telio_model::event::{ErrorCode, ErrorLevel, Event};
@@ -91,7 +92,8 @@ mod uniffi_libtelio {
 
     fn decode_key(val: String) -> uniffi::Result<[u8; telio_crypto::KEY_SIZE]> {
         let mut key = [0_u8; telio_crypto::KEY_SIZE];
-        let decoded_bytes = base64::decode(val)
+        let decoded_bytes = BASE64_STANDARD
+            .decode(val)
             .map_err(|_| TelioError::InvalidKey)
             .and_then(|val| {
                 if val.len() != telio_crypto::KEY_SIZE {
@@ -113,7 +115,7 @@ mod uniffi_libtelio {
         }
 
         fn from_custom(obj: Self) -> Self::Builtin {
-            base64::encode(obj.0)
+            BASE64_STANDARD.encode(obj.0)
         }
     }
 
@@ -126,7 +128,7 @@ mod uniffi_libtelio {
         }
 
         fn from_custom(obj: Self) -> Self::Builtin {
-            base64::encode(obj.as_bytes())
+            BASE64_STANDARD.encode(obj.as_bytes())
         }
     }
 

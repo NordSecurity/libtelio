@@ -30,7 +30,7 @@ impl Daemon {
     /// Result containing a bool. True means that the daemon is running.
     pub fn is_running() -> Result<bool> {
         let system = System::new_with_specifics(
-            RefreshKind::new().with_processes(ProcessRefreshKind::everything()),
+            RefreshKind::nothing().with_processes(ProcessRefreshKind::everything()),
         );
 
         match std::fs::read_to_string(get_wd_path()?.join("tclid.pid")) {

@@ -3170,7 +3170,8 @@ pub mod tests {
             name: "eth0".to_string(),
             addr: IfAddr::V4(Ifv4Addr {
                 ip: Ipv4Addr::new(192, 168, 1, 10),
-                netmask: Ipv4Addr::new(192, 168, 1, 0),
+                netmask: Ipv4Addr::new(255, 0, 0, 0),
+                prefixlen: 8,
                 broadcast: None,
             }),
             index: Some(12),

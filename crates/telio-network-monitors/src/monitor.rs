@@ -118,6 +118,7 @@ mod tests {
                 addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
                     ip: Ipv4Addr::new(10, 0, 0, 1),
                     netmask: Ipv4Addr::new(255, 255, 255, 0),
+                    prefixlen: 24,
                     broadcast: None,
                 }),
                 index: None,
