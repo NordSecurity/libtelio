@@ -350,17 +350,17 @@ def main() -> None:
         abu.generate_aar(PROJECT_CONFIG, args)
     elif args.command == "xcframework":
         headers = {
-            Path("libtelio/module.modulemap"): Path(
-                os.path.join(
-                    PROJECT_CONFIG.get_bindings_dir(), "swift/telioFFI.modulemap"
-                )
-            ),
             Path("libtelio/telioFFI.h"): Path(
                 os.path.join(PROJECT_CONFIG.get_bindings_dir(), "swift/telioFFI.h")
             ),
         }
         dbu.create_xcframework(
-            PROJECT_CONFIG, args.debug, "libtelioFFI", headers, "libtelio.dylib"
+            PROJECT_CONFIG,
+            args.debug,
+            "libtelioFFI",
+            "telioFFI",
+            headers,
+            "libtelio.dylib",
         )
     elif args.command == "build-ios-simulator-stubs":
         dbu.build_stub_ios_simulator_libraries(
@@ -555,6 +555,10 @@ def exec_lipo(args):
         darwin_build_all(args)
 
     for target_os in rutils.LIPO_TARGET_OSES:
+        # Skip OS'es without configs
+        if target_os not in LIBTELIO_CONFIG:
+            continue
+
         dbu.lipo(
             PROJECT_CONFIG,
             args.debug,
