@@ -58,6 +58,7 @@ mod tests {
                     addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
                         ip: Ipv4Addr::new(127, 0, 0, 1),
                         netmask: Ipv4Addr::new(255, 0, 0, 0),
+                        prefixlen: 8,
                         broadcast: None,
                     }),
                     index: None,
@@ -69,6 +70,7 @@ mod tests {
                     addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
                         ip: Ipv4Addr::new(10, 0, 0, 1),
                         netmask: Ipv4Addr::new(255, 255, 255, 0),
+                        prefixlen: 24,
                         broadcast: None,
                     }),
                     index: None,
@@ -80,6 +82,7 @@ mod tests {
                     addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
                         ip: Ipv4Addr::new(100, 64, 0, 1),
                         netmask: Ipv4Addr::new(255, 192, 0, 0),
+                        prefixlen: 10,
                         broadcast: None,
                     }),
                     index: None,
@@ -91,6 +94,7 @@ mod tests {
                     addr: if_addrs::IfAddr::V6(if_addrs::Ifv6Addr {
                         ip: Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0x12, 0x34, 0x56, 0),
                         netmask: Ipv6Addr::new(255, 255, 255, 255, 0, 0, 0, 0),
+                        prefixlen: 32,
                         broadcast: None,
                     }),
                     index: None,

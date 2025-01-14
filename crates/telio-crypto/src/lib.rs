@@ -25,6 +25,7 @@ pub mod encryption;
 
 use std::{cmp::Ordering, convert::TryInto, fmt};
 
+use base64::prelude::*;
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
@@ -59,7 +60,7 @@ pub struct PublicKey(pub [u8; KEY_SIZE]);
 impl fmt::Display for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut buf = [0u8; 44];
-        base64::encode_config_slice(self.0, base64::STANDARD, &mut buf);
+        let _ = BASE64_STANDARD.encode_slice(self.0, &mut buf);
         match std::str::from_utf8(&buf) {
             Ok(buf) => f.write_str(buf),
             Err(_) => Err(fmt::Error),
@@ -69,7 +70,7 @@ impl fmt::Display for PublicKey {
 
 impl fmt::Debug for PublicKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let buf = base64::encode(self.0);
+        let buf = BASE64_STANDARD.encode(self.0);
         f.write_str(&format!(
             "\"{:.*}...{}\"",
             4,
@@ -119,7 +120,7 @@ pub enum KeyDecodeError {
     InvalidLength(usize),
     /// String was not valid for base64 decoding.
     #[error(transparent)]
-    Base64(#[from] base64::DecodeError),
+    Base64(#[from] base64::DecodeSliceError),
     /// String was not valid for hex decoding.
     #[error(transparent)]
     Hex(#[from] hex::FromHexError),
@@ -313,7 +314,7 @@ macro_rules! gen_common {
 
                 match s.len() {
                     64 => { hex::decode_to_slice(s, &mut key)? }
-                    44 => { base64::decode_config_slice(s, base64::STANDARD, &mut key)?; }
+                    44 => { BASE64_STANDARD.decode_slice(s, &mut key)?; }
                     l => return Err(KeyDecodeError::InvalidLength(l)),
                 }
 

@@ -459,6 +459,7 @@ fn random_port(rng: &mut impl rand::Rng) -> u16 {
 
 #[cfg(test)]
 mod tests {
+    use base64::prelude::*;
     use pqcrypto_kyber::kyber768;
     use pqcrypto_traits::kem::{Ciphertext, SecretKey as _, SharedSecret};
 
@@ -472,15 +473,15 @@ mod tests {
         let expected_shared = "T4KKTwQOEQ43G1UzPbBVzi219KXJ54qh6w24IMPEc0A=";
 
         let shared = {
-            let sk_bytes = base64::decode(secret_key).unwrap();
+            let sk_bytes = BASE64_STANDARD.decode(secret_key).unwrap();
             let secret_key = kyber768::SecretKey::from_bytes(&sk_bytes).unwrap();
 
-            let ct_bytes = base64::decode(ciphertext).unwrap();
+            let ct_bytes = BASE64_STANDARD.decode(ciphertext).unwrap();
             let ciphertext = kyber768::Ciphertext::from_bytes(&ct_bytes).unwrap();
 
             let shared = kyber768::decapsulate(&ciphertext, &secret_key);
 
-            base64::encode(shared.as_bytes())
+            BASE64_STANDARD.encode(shared.as_bytes())
         };
 
         assert_eq!(shared, expected_shared);
