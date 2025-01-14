@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.1.6
+### **Pork Kibin**
+---
+* LLT-5884: Restart postquantum if the last handshake has passed the wireguard reject timeout
+
+<br>
+
 ### v5.1.5
 ### **Pork Kibin**
 ---
