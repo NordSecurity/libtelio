@@ -582,6 +582,8 @@ dictionary FeatureBatching {
 dictionary FeatureWireguard {
     /// Configurable persistent keepalive periods for wireguard peers
     FeaturePersistentKeepalive persistent_keepalive;
+    /// Configurable WireGuard polling periods
+    FeaturePolling polling;
 };
 
 /// Configurable persistent keepalive periods for different types of peers
@@ -594,6 +596,14 @@ dictionary FeaturePersistentKeepalive {
     u32? proxying;
     /// Persistent keepalive period for stun peers (in seconds) [default 25s]
     u32? stun;
+};
+
+/// Configurable WireGuard polling periods
+dictionary FeaturePolling {
+    /// Wireguard state polling period (in milliseconds) [default 1000ms]
+    u32 wireguard_polling_period;
+    /// Wireguard state polling period after state change (in milliseconds) [default 50ms]
+    u32 wireguard_polling_period_after_state_change;
 };
 
 /// Configurable features for Nurse module

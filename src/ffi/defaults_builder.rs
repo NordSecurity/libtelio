@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use telio_model::features::{
-    FeatureDerp, FeatureLana, FeaturePersistentKeepalive, FeatureValidateKeys, FeatureWireguard,
-    Features,
+    FeatureDerp, FeatureLana, FeaturePersistentKeepalive, FeaturePolling, FeatureValidateKeys,
+    FeatureWireguard, Features,
 };
 
 pub struct FeaturesDefaultsBuilder {
@@ -81,6 +81,10 @@ impl FeaturesDefaultsBuilder {
                     direct: 10,
                     proxying: Some(125),
                     stun: Some(125),
+                },
+                polling: FeaturePolling {
+                    wireguard_polling_period: 1000,
+                    wireguard_polling_period_after_state_change: 50,
                 },
             };
             let prev = cfg.derp.as_ref().cloned().unwrap_or_default();
