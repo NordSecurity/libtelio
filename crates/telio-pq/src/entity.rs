@@ -108,6 +108,7 @@ impl Entity {
     pub async fn restart(&self) {
         let peer = self.peer.lock().take();
         if let Some(peer) = peer {
+            println!("Keys are set: {}", peer.keys.is_some());
             self.start_impl(peer.addr, peer.wg_secret, peer.pubkey)
                 .await;
         }

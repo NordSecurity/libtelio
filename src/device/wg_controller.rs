@@ -182,6 +182,7 @@ async fn maybe_restart_pq(entities: &Entities) {
         None => false,
     };
     if should_restart_pq {
+        println!("Restarting PQ");
         entities.postquantum_wg.restart().await;
     }
 }

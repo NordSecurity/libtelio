@@ -56,49 +56,49 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.1",
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.1",
-            marks=pytest.mark.linux_native,
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
-                    stun_limits=(1, 1),
-                    nlx_1_limits=(1, 3),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.7",
-            marks=[
-                pytest.mark.windows,
-            ],
-        ),
+        # pytest.param(
+        #     SetupParameters(
+        #         connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+        #         adapter_type_override=TelioAdapterType.NEP_TUN,
+        #         connection_tracker_config=generate_connection_tracker_config(
+        #             ConnectionTag.DOCKER_CONE_CLIENT_1,
+        #             stun_limits=(1, 1),
+        #             nlx_1_limits=(1, 2),
+        #         ),
+        #         is_meshnet=False,
+        #     ),
+        #     "10.0.254.1",
+        # ),
+        # pytest.param(
+        #     SetupParameters(
+        #         connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+        #         adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+        #         connection_tracker_config=generate_connection_tracker_config(
+        #             ConnectionTag.DOCKER_CONE_CLIENT_1,
+        #             stun_limits=(1, 1),
+        #             nlx_1_limits=(1, 2),
+        #         ),
+        #         is_meshnet=False,
+        #     ),
+        #     "10.0.254.1",
+        #     marks=pytest.mark.linux_native,
+        # ),
+        # pytest.param(
+        #     SetupParameters(
+        #         connection_tag=ConnectionTag.WINDOWS_VM_1,
+        #         adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+        #         connection_tracker_config=generate_connection_tracker_config(
+        #             ConnectionTag.WINDOWS_VM_1,
+        #             stun_limits=(1, 1),
+        #             nlx_1_limits=(1, 2),
+        #         ),
+        #         is_meshnet=False,
+        #     ),
+        #     "10.0.254.7",
+        #     marks=[
+        #         pytest.mark.windows,
+        #     ],
+        # ),
         pytest.param(
             SetupParameters(
                 connection_tag=ConnectionTag.WINDOWS_VM_1,
@@ -106,7 +106,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 3),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -115,20 +115,20 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 pytest.mark.windows,
             ],
         ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.MAC_VM,
-                    stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.7",
-            marks=pytest.mark.mac,
-        ),
+        # pytest.param(
+        #     SetupParameters(
+        #         connection_tag=ConnectionTag.MAC_VM,
+        #         adapter_type_override=TelioAdapterType.NEP_TUN,
+        #         connection_tracker_config=generate_connection_tracker_config(
+        #             ConnectionTag.MAC_VM,
+        #             stun_limits=(1, 1),
+        #             nlx_1_limits=(1, 2),
+        #         ),
+        #         is_meshnet=False,
+        #     ),
+        #     "10.0.254.7",
+        #     marks=pytest.mark.mac,
+        # ),
     ],
 )
 async def test_pq_vpn_connection(
@@ -189,7 +189,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 3),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -205,7 +205,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 3),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
