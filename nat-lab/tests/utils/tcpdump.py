@@ -162,6 +162,10 @@ async def make_tcpdump(
     try:
         async with AsyncExitStack() as exit_stack:
             for conn in connection_list:
+                # TODO(LLT-5942): temporary disable windows tcpdump
+                if conn.target_os == TargetOS.Windows:
+                    continue
+
                 await exit_stack.enter_async_context(
                     TcpDump(conn, session=session).run()
                 )
@@ -171,6 +175,10 @@ async def make_tcpdump(
             log_dir = get_current_test_log_path()
             os.makedirs(log_dir, exist_ok=True)
             for conn in connection_list:
+                # TODO(LLT-5942): temporary disable windows tcpdump
+                if conn.target_os == TargetOS.Windows:
+                    continue
+
                 path = find_unique_path_for_tcpdump(
                     store_in if store_in else log_dir, conn.target_name()
                 )
@@ -180,5 +188,6 @@ async def make_tcpdump(
             await conn.create_process(
                 ["rm", "-f", PCAP_FILE_PATH[conn.target_os]]
             ).execute()
-        else:
-            await conn.create_process(["del", PCAP_FILE_PATH[conn.target_os]]).execute()
+        # TODO(LLT-5942): temporary disable windows tcpdump
+        # else:
+        #     await conn.create_process(["del", PCAP_FILE_PATH[conn.target_os]]).execute()
