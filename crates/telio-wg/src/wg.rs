@@ -14,8 +14,8 @@ use telio_model::{
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{
     dual_target::{DualTarget, DualTargetError},
-    get_ip_stack, interval, telio_err_with_log, telio_log_debug, telio_log_error, telio_log_trace,
-    telio_log_warn, IpStack,
+    get_ip_stack, interval, interval_at, telio_err_with_log, telio_log_debug, telio_log_error,
+    telio_log_trace, telio_log_warn, IpStack,
 };
 use thiserror::Error as TError;
 use tokio::sync::watch;
@@ -240,9 +240,12 @@ struct State {
     stats: HashMap<PublicKey, Arc<Mutex<BytesAndTimestamps>>>,
 
     ip_stack: Option<IpStack>,
+
+    polling_period: Duration,
+    polling_period_after_update: Duration,
+    last_update: Instant,
 }
 
-const POLL_MILLIS: u64 = 1000;
 const MAX_UAPI_FAIL_COUNT: i32 = 10;
 
 #[cfg(all(not(any(test, feature = "test-adapter")), windows))]
@@ -274,7 +277,7 @@ impl DynamicWg {
     ///
     /// # Example
     /// ```
-    /// use std::{sync::Arc, io};
+    /// use std::{sync::Arc, io, time::Duration};
     /// use telio_firewall::firewall::{StatefullFirewall, Firewall};
     /// use telio_model::features::FeatureFirewall;
     /// use telio_sockets::{native::NativeSocket, Protector, SocketPool, Protect};
@@ -327,6 +330,8 @@ impl DynamicWg {
     ///         },
     ///         None,
     ///         true,
+    ///         Duration::from_millis(1000),
+    ///         Duration::from_millis(50)
     ///     );
     /// }
     /// ```
@@ -335,6 +340,8 @@ impl DynamicWg {
         cfg: Config,
         link_detection: Option<FeatureLinkDetection>,
         ipv6_enabled: bool,
+        polling_period: Duration,
+        polling_period_after_update: Duration,
     ) -> Result<Self, Error>
     where
         Self: Sized,
@@ -347,9 +354,18 @@ impl DynamicWg {
             link_detection,
             cfg,
             ipv6_enabled,
+            polling_period,
+            polling_period_after_update,
         ));
         #[cfg(windows)]
-        return Ok(Self::start_with(io, adapter, link_detection, ipv6_enabled));
+        return Ok(Self::start_with(
+            io,
+            adapter,
+            link_detection,
+            ipv6_enabled,
+            polling_period,
+            polling_period_after_update,
+        ));
     }
 
     fn start_with(
@@ -358,8 +374,10 @@ impl DynamicWg {
         link_detection: Option<FeatureLinkDetection>,
         #[cfg(unix)] cfg: Config,
         ipv6_enabled: bool,
+        polling_period: Duration,
+        polling_period_after_update: Duration,
     ) -> Self {
-        let interval = interval(Duration::from_millis(POLL_MILLIS));
+        let interval = interval(polling_period);
         Self {
             task: Task::start(State {
                 #[cfg(unix)]
@@ -374,6 +392,9 @@ impl DynamicWg {
                 libtelio_event: io.libtelio_wide_event_publisher,
                 stats: HashMap::new(),
                 ip_stack: None,
+                polling_period,
+                polling_period_after_update,
+                last_update: Instant::now(),
             }),
         }
     }
@@ -915,6 +936,13 @@ impl State {
         mut to: uapi::Interface,
         reason: UpdateReason,
     ) -> Result<bool, Error> {
+        if reason == UpdateReason::Push {
+            self.last_update = Instant::now();
+            self.interval = interval_at(
+                Instant::now() + self.polling_period_after_update,
+                self.polling_period_after_update,
+            );
+        }
         for (pk, peer) in &mut to.peers {
             match self.stats.get_mut(pk) {
                 Some(stats) => match stats.lock().as_mut() {
@@ -1071,6 +1099,11 @@ impl Runtime for State {
     type Err = Error;
 
     async fn wait(&mut self) -> WaitResponse<'_, Self::Err> {
+        if self.interval.period() == self.polling_period_after_update
+            && Instant::now() - self.last_update >= self.polling_period
+        {
+            self.interval = interval_at(Instant::now() + self.polling_period, self.polling_period);
+        }
         let _ = self.interval.tick().await;
         Self::guard(self.sync())
     }
@@ -1092,6 +1125,7 @@ impl Runtime for State {
 pub mod tests {
     use std::{
         collections::BTreeMap,
+        convert::TryInto,
         net::{Ipv4Addr, SocketAddrV4},
         sync::{Arc, Mutex as StdMutex},
         time::{SystemTime, UNIX_EPOCH},
@@ -1118,6 +1152,9 @@ pub mod tests {
         pub(super) static ref RUNTIME_ADAPTER: StdMutex<Option<Box<dyn Adapter>>> =
             StdMutex::new(None);
     }
+
+    const DEFAULT_POLLING_PERIOD_MS: u64 = 1000;
+    const DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS: u64 = 50;
 
     fn random_interface() -> Interface {
         let mut rng = rand::thread_rng();
@@ -1270,6 +1307,8 @@ pub mod tests {
             #[cfg(all(unix, not(test)))]
             cfg,
             true,
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_MS),
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS),
         );
         time::advance(Duration::from_millis(0)).await;
         adapter.lock().await.checkpoint();
@@ -1288,6 +1327,63 @@ pub mod tests {
     #[tokio::test(start_paused = true)]
     async fn wg_setup() {
         let Env { adapter, wg, .. } = setup().await;
+
+        adapter.lock().await.expect_stop().return_once(|| ());
+        wg.stop().await;
+    }
+
+    /// See RFC LLT-0083 for more details on how and why polling speed up was added.
+    #[tokio::test(start_paused = true)]
+    async fn faster_polling() {
+        const EXPECTED_POLL_COUNT: u64 =
+            DEFAULT_POLLING_PERIOD_MS / DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS;
+        /// Helper function to read WG polling period.
+        async fn get_polling_period(wg: &DynamicWg) -> Duration {
+            task_exec!(&wg.task, async move |s| Ok(s.interval.period()))
+                .await
+                .unwrap()
+        }
+        /// Helper function for causing an update on WG without causing any actual changes.
+        async fn cause_update(wg: &DynamicWg) {
+            task_exec!(&wg.task, async move |s| {
+                let to = s.interface.clone();
+                let _ = s.update(to, UpdateReason::Push).await;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        }
+
+        let Env { adapter, wg, .. } = setup().await;
+        assert_eq!(
+            get_polling_period(&wg).await,
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_MS)
+        );
+        adapter
+            .expect_send_uapi_cmd_generic_call(EXPECTED_POLL_COUNT as usize)
+            .await;
+        // Calling `.update()` on `State` without any changes.
+        cause_update(&wg).await;
+        // The update above should have caused the polling period to become faster.
+        assert_eq!(
+            get_polling_period(&wg).await,
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS)
+        );
+        for _ in 0..EXPECTED_POLL_COUNT {
+            // Iterating so that we can count exactly how many times `.send_uapi_cmd()` gets called.
+            tokio::time::advance(Duration::from_millis(
+                DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS,
+            ))
+            .await;
+            // Yielding so that the `.wait()` function has a chance to run and slow down the polling period.
+            // Without this yield, there will be a race condition here.
+            tokio::task::yield_now().await;
+        }
+        // But after the original period passess, polling period should become slower again.
+        assert_eq!(
+            get_polling_period(&wg).await,
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_MS)
+        );
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;
@@ -1857,6 +1953,17 @@ pub mod tests {
             event: _event,
             ..
         } = setup().await;
+        adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .times(1)
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
+            });
 
         let pkc = SecretKey::gen().public();
         let get = |i: Result<Interface, _>| {
@@ -1875,6 +1982,8 @@ pub mod tests {
             ..Default::default()
         };
 
+        wg.add_peer(peer.clone()).await.unwrap();
+        adapter.lock().await.checkpoint();
         adapter
             .lock()
             .await
@@ -1886,8 +1995,6 @@ pub mod tests {
                     interface: None,
                 })
             });
-        wg.add_peer(peer.clone()).await.unwrap();
-        adapter.lock().await.checkpoint();
 
         assert_eq!(
             wg.get_interface().map(get).await.0.elapsed(),
@@ -1918,6 +2025,18 @@ pub mod tests {
         adapter.expect_send_uapi_cmd_generic_call(1).await;
         wg.add_peer(peer).await.unwrap();
         adapter.lock().await.checkpoint();
+        adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .times(1)
+            .returning(|_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: None,
+                })
+            });
+
         assert_eq!(
             wg.get_interface().map(get).await.0.elapsed(),
             Duration::from_millis(100)

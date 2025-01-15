@@ -1124,6 +1124,8 @@ impl Runtime {
                     },
                     features.link_detection,
                     features.ipv6,
+                    Duration::from_millis(features.wireguard.polling.wireguard_polling_period.into()),
+                    Duration::from_millis(features.wireguard.polling.wireguard_polling_period_after_state_change.into()),
                 )?);
                 let wg_events = wg_events.rx;
             } else {

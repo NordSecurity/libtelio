@@ -8,6 +8,7 @@ from utils.bindings import (
     FeatureLinkDetection,
     FeatureWireguard,
     FeaturePersistentKeepalive,
+    FeaturePolling,
     LinkState,
     TelioAdapterType,
 )
@@ -20,7 +21,11 @@ def long_persistent_keepalive_periods() -> FeatureWireguard:
     return FeatureWireguard(
         persistent_keepalive=FeaturePersistentKeepalive(
             proxying=3600, direct=3600, vpn=3600, stun=3600
-        )
+        ),
+        polling=FeaturePolling(
+            wireguard_polling_period=1000,
+            wireguard_polling_period_after_state_change=50,
+        ),
     )
 
 

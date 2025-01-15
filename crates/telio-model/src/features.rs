@@ -87,6 +87,9 @@ pub struct FeatureWireguard {
     /// Configurable persistent keepalive periods for wireguard peers
     #[serde(default)]
     pub persistent_keepalive: FeaturePersistentKeepalive,
+    /// Configurable wireguard polling period
+    #[serde(default)]
+    pub polling: FeaturePolling,
 }
 
 impl FeatureWireguard {
@@ -118,6 +121,18 @@ pub struct FeaturePersistentKeepalive {
     /// Persistent keepalive period for stun peers (in seconds) [default 25s]
     #[default(Some(25))]
     pub stun: Option<u32>,
+}
+
+/// Configurable Wireguard polling period
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[serde(default)]
+pub struct FeaturePolling {
+    /// Wireguard state polling period (in milliseconds) [default 1000ms]
+    #[default(1000)]
+    pub wireguard_polling_period: u32,
+    /// Wireguard state polling period after state change (in milliseconds) [default 50ms]
+    #[default(50)]
+    pub wireguard_polling_period_after_state_change: u32,
 }
 
 /// Configurable features for Nurse module
@@ -496,6 +511,10 @@ mod tests {
                     "direct": 2,
                     "proxying": 3,
                     "stun": 4
+                },
+                "polling": {
+                    "wireguard_polling_period": 1000,
+                    "wireguard_polling_period_after_state_change": 50
                 }
             },
             "nurse": {
@@ -587,6 +606,10 @@ mod tests {
                             proxying: Some(3),
                             stun: Some(4),
                         },
+                        polling: FeaturePolling {
+                            wireguard_polling_period: 1000,
+                            wireguard_polling_period_after_state_change: 50
+                        }
                     },
                     nurse: Some(FeatureNurse {
                         heartbeat_interval: 5,
