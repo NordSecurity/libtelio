@@ -3,7 +3,7 @@ import itertools
 import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_api, setup_connections, SetupParameters, setup_mesh_nodes
-from scapy.layers.inet import TCP, UDP, ICMP  # type: ignore
+from scapy.layers.inet import TCP  # type: ignore
 from scapy.layers.l2 import ARP  # type: ignore
 from telio import Client
 from timeouts import TEST_BATCHING_TIMEOUT
@@ -146,7 +146,6 @@ async def test_batching(
             clients.append(client)
 
         alpha_client, beta_client, *_ = clients
-        alpha_node, beta_node, *_ = nodes
 
         # Start capture tasks
 
