@@ -59,7 +59,7 @@ android {
 }
 
 dependencies {
-    implementation "net.java.dev.jna:jna:5.7.0@aar"
+    implementation "net.java.dev.jna:jna:5.16.0@aar"
     implementation "com.nordsec.rustls:rustls-platform-verifier:0.1.1"
 }
 
