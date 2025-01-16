@@ -29,11 +29,17 @@ use tokio::sync::Notify;
 use tokio::sync::RwLock;
 
 /// Port is randomly chosen
-/// PERF % 65535
+/// perf % 65535 = 46750
 const PERFORMANCE_TRANSPORT_PORT: u16 = 46750;
-const MAX_PACKET_SIZE: usize = 1500_usize;
+const MAX_PACKET_SIZE: usize = 1500;
 const TEST_DURATION: Duration = Duration::new(1, 0);
-
+const PACKET_TYPE_OFFSET: usize = 0;
+const IP_ADDR_OFFSET: usize = 1;
+const PKT_LOSS_OFFSET: usize = 1;
+const PKT_LOSS_DATA_SIZE: usize = std::mem::size_of::<f32>();
+const THROUGHPUT_OFFSET: usize = PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE;
+const THROUGHPUT_DATA_SIZE: usize = std::mem::size_of::<u32>();
+const SIZE_OF_IP_ADDR: usize = 4;
 /// Performance test specific errors
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -150,7 +156,6 @@ impl Throughput {
                 meshnet_ip,
                 exponential_backoff,
                 handler_state: Arc::new(RwLock::new(HandlerState::Start)),
-                total_bytes_recvd: 0,
                 pkts_recvd: 0,
                 duration: Instant::now(),
                 #[cfg(test)]
@@ -205,7 +210,6 @@ struct State {
     meshnet_ip: IpAddr,
     exponential_backoff: ExponentialBackoff,
     handler_state: Arc<RwLock<HandlerState>>,
-    total_bytes_recvd: u64,
     pkts_recvd: u64,
     duration: Instant,
     #[cfg(test)]
@@ -222,51 +226,55 @@ impl State {
     ) -> Result<(), Error> {
         match (*self.recv_buffer.first().unwrap_or(&0)).into() {
             PacketType::Start => {
-                self.total_bytes_recvd = 0;
-                let res = self.send_ack(transport_socket).await;
+                // Reset bytes received and ack sent by reciever
+                self.pkts_recvd = 0;
+                self.send_ack(transport_socket).await;
                 self.duration = Instant::now();
-                res
             }
             PacketType::Ack => {
                 let mut state = self.handler_state.write().await;
                 if *state == HandlerState::Start {
+                    // Move the state to Test for the handler to start
+                    // sending the data packets
                     *state = HandlerState::Test;
                 }
             }
             PacketType::End => self.send_results(transport_socket).await,
             PacketType::Result => {
-                let bytes: [u8; std::mem::size_of::<f32>()] = self.recv_buffer[1..5].try_into()?;
+                let bytes: [u8; PKT_LOSS_DATA_SIZE] = self.recv_buffer
+                    [PKT_LOSS_OFFSET..PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE]
+                    .try_into()?;
                 let pkt_loss = f32::from_be_bytes(bytes);
 
-                let bytes: [u8; std::mem::size_of::<u32>()] = self.recv_buffer[5..9].try_into()?;
+                let bytes: [u8; THROUGHPUT_DATA_SIZE] = self.recv_buffer
+                    [THROUGHPUT_OFFSET..THROUGHPUT_OFFSET + THROUGHPUT_DATA_SIZE]
+                    .try_into()?;
                 let throughput = u32::from_be_bytes(bytes);
+                // This is to notify the test and throughput measurement
+                // has been completed successfully
                 #[cfg(test)]
                 if let Some(n) = self.notify.as_ref() {
                     n.notify_one()
                 };
                 // This print is intentional for now. Can be removed later.
-                println!("Throughput {throughput} MiB/s Packet loss - {pkt_loss} %")
+                println!("Throughput {throughput} MiB/s Packet loss - {pkt_loss} %");
             }
             PacketType::Test => {
                 self.pkts_recvd += 1;
-                self.total_bytes_recvd += len as u64;
             }
-            PacketType::Invalid => {
-                telio_log_warn!("Something gone wrong")
-            }
+            PacketType::Invalid => telio_log_warn!("Something gone wrong"),
         }
 
         Ok(())
     }
 
     async fn send_ack(&mut self, transport_socket: Arc<UdpSocket>) {
-        let mut send_buffer = vec![0u8; 10];
-        send_buffer.insert(0, PacketType::Ack as u8);
+        let mut send_buffer = vec![PacketType::Ack as u8; 1];
         let ip_addr = IpAddr::V4(Ipv4Addr::new(
-            self.recv_buffer[1],
-            self.recv_buffer[2],
-            self.recv_buffer[3],
-            self.recv_buffer[4],
+            self.recv_buffer[IP_ADDR_OFFSET],
+            self.recv_buffer[IP_ADDR_OFFSET + 1],
+            self.recv_buffer[IP_ADDR_OFFSET + 2],
+            self.recv_buffer[IP_ADDR_OFFSET + 3],
         ));
         let endpoint = SocketAddr::new(
             ip_addr,
@@ -276,7 +284,7 @@ impl State {
             12345,
         );
         if transport_socket
-            .send_to(&send_buffer[..2], endpoint)
+            .send_to(&send_buffer, endpoint)
             .await
             .is_err()
         {
@@ -285,24 +293,33 @@ impl State {
     }
 
     async fn send_results(&mut self, transport_socket: Arc<UdpSocket>) {
-        let mut send_buffer = vec![0u8; 10];
-        send_buffer.insert(0, PacketType::Result as u8);
+        let mut send_buffer = vec![0u8; 1 + PKT_LOSS_DATA_SIZE + THROUGHPUT_DATA_SIZE];
+        send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Result as u8);
 
+        // Parse # of sent packets
         let pkts_sent: [u8; std::mem::size_of::<u64>()] =
             self.recv_buffer[5..13].try_into().unwrap();
         let pkts_sent = u64::from_be_bytes(pkts_sent);
-        let pkt_loss = (1_f32 - (self.pkts_recvd as f32 / pkts_sent as f32)) * 100_f32;
-        send_buffer[1..5].copy_from_slice(&pkt_loss.to_be_bytes());
 
-        let throughput = ((self.total_bytes_recvd as f64) / self.duration.elapsed().as_secs_f64())
+        // Calculate packet loss
+        let pkt_loss = (1_f32 - (self.pkts_recvd as f32 / pkts_sent as f32)) * 100_f32;
+        send_buffer[PKT_LOSS_OFFSET..PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE]
+            .copy_from_slice(&pkt_loss.to_be_bytes());
+
+        // Calculate throughput
+        // Bytes should be data + wg_offset + ip header
+        let throughput = (((self.pkts_recvd * 1350) as f64) / self.duration.elapsed().as_secs_f64())
             as u32
             / 1_000_000;
-        send_buffer[5..9].copy_from_slice(&throughput.to_be_bytes());
+        send_buffer[THROUGHPUT_OFFSET..THROUGHPUT_OFFSET + THROUGHPUT_DATA_SIZE]
+            .copy_from_slice(&throughput.to_be_bytes());
+
+        // Get endpoint of the client to respond to
         let ip_addr = IpAddr::V4(Ipv4Addr::new(
-            self.recv_buffer[1],
-            self.recv_buffer[2],
-            self.recv_buffer[3],
-            self.recv_buffer[4],
+            self.recv_buffer[IP_ADDR_OFFSET],
+            self.recv_buffer[IP_ADDR_OFFSET + 1],
+            self.recv_buffer[IP_ADDR_OFFSET + 2],
+            self.recv_buffer[IP_ADDR_OFFSET + 3],
         ));
         let endpoint = SocketAddr::new(
             ip_addr,
@@ -329,7 +346,7 @@ impl State {
 
 #[async_trait]
 impl Runtime for State {
-    const NAME: &'static str = "Throughput";
+    const NAME: &'static str = "Throughput Test";
 
     type Err = Error;
 
@@ -341,7 +358,10 @@ impl Runtime for State {
                 let Ok(transport_socket) = open_transport_socket(
                     self.socket_pool.clone(),
                     self.meshnet_ip,
+                    #[cfg(not(test))]
                     PERFORMANCE_TRANSPORT_PORT,
+                    #[cfg(test)]
+                    12345,
                 )
                 .await
                 else {
@@ -403,11 +423,11 @@ async fn throughput_test_handler(
         match state {
             HandlerState::Start => {
                 // Inform the peer that test is starting
-                send_buffer.insert(0, PacketType::Start as u8);
-                send_buffer[1..5]
+                send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Start as u8);
+                send_buffer[IP_ADDR_OFFSET..IP_ADDR_OFFSET + SIZE_OF_IP_ADDR]
                     .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr()?.ip()));
                 if transport_socket
-                    .send_to(&send_buffer[..5], endpoint)
+                    .send_to(&send_buffer[..SIZE_OF_IP_ADDR + 1], endpoint)
                     .await
                     .is_ok()
                 {
@@ -421,10 +441,12 @@ async fn throughput_test_handler(
                 let mut total_pkts: u64 = 0;
                 let start = Instant::now();
                 // Start sending packets to the peer
-                send_buffer.insert(0, PacketType::Test as u8);
+                send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Test as u8);
                 while start.elapsed() < TEST_DURATION {
                     match transport_socket.send_to(&send_buffer, endpoint).await {
                         Ok(_) => {
+                            // Count the number of packets, each packet contains
+                            // the same amount of bytes
                             total_pkts += 1_u64;
                         }
                         Err(e) => {
@@ -434,11 +456,11 @@ async fn throughput_test_handler(
                 }
 
                 // Tell the other peer test has ended
-                send_buffer.insert(0, PacketType::End as u8);
-                send_buffer[1..5]
+                send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::End as u8);
+                send_buffer[IP_ADDR_OFFSET..IP_ADDR_OFFSET + SIZE_OF_IP_ADDR]
                     .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr()?.ip()));
                 send_buffer[5..13].copy_from_slice(&total_pkts.to_be_bytes());
-                let _ = transport_socket.send_to(&send_buffer[..14], endpoint).await;
+                let _ = transport_socket.send_to(&send_buffer[..13], endpoint).await;
                 break;
             }
         }
