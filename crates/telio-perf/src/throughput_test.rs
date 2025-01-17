@@ -1,6 +1,5 @@
 use std::convert::TryInto;
 use std::net::Ipv4Addr;
-use std::str::FromStr;
 use std::time::Instant;
 
 use std::{
@@ -30,9 +29,10 @@ use tokio::sync::RwLock;
 
 /// Port is randomly chosen
 /// perf % 65535 = 46750
+#[cfg(not(test))]
 const PERFORMANCE_TRANSPORT_PORT: u16 = 46750;
 const MAX_PACKET_SIZE: usize = 1500;
-const TEST_DURATION: Duration = Duration::new(1, 0);
+const TEST_DURATION: Duration = Duration::new(10, 0);
 const PACKET_TYPE_OFFSET: usize = 0;
 const IP_ADDR_OFFSET: usize = 1;
 const PKT_LOSS_OFFSET: usize = 1;
@@ -221,7 +221,6 @@ impl State {
     /// meshnet nodes and dropping those packets if multicast isn't allowed for those nodes.
     async fn handle_incoming_packet(
         &mut self,
-        len: usize,
         transport_socket: Arc<UdpSocket>,
     ) -> Result<(), Error> {
         match (*self.recv_buffer.first().unwrap_or(&0)).into() {
@@ -269,7 +268,7 @@ impl State {
     }
 
     async fn send_ack(&mut self, transport_socket: Arc<UdpSocket>) {
-        let mut send_buffer = vec![PacketType::Ack as u8; 1];
+        let send_buffer = vec![PacketType::Ack as u8; 1];
         let ip_addr = IpAddr::V4(Ipv4Addr::new(
             self.recv_buffer[IP_ADDR_OFFSET],
             self.recv_buffer[IP_ADDR_OFFSET + 1],
@@ -308,8 +307,8 @@ impl State {
 
         // Calculate throughput
         // Bytes should be data + wg_offset + ip header
-        let throughput = (((self.pkts_recvd * 1350) as f64) / self.duration.elapsed().as_secs_f64())
-            as u32
+        let throughput = (((self.pkts_recvd * (1350 + 32 + 8)) as f64)
+            / self.duration.elapsed().as_secs_f64()) as u32
             / 1_000_000;
         send_buffer[THROUGHPUT_OFFSET..THROUGHPUT_OFFSET + THROUGHPUT_DATA_SIZE]
             .copy_from_slice(&throughput.to_be_bytes());
@@ -380,8 +379,8 @@ impl Runtime for State {
         };
 
         let res = tokio::select! {
-            Ok(len) = transport_socket.recv(&mut self.recv_buffer) => {
-                self.handle_incoming_packet(len, transport_socket.clone()).await
+            Ok(_) = transport_socket.recv(&mut self.recv_buffer) => {
+                self.handle_incoming_packet(transport_socket.clone()).await
             },
             Some(endpoint) = self.cmd_chan.rx.recv() => {
                 {
@@ -418,11 +417,16 @@ async fn throughput_test_handler(
     handler_state: Arc<RwLock<HandlerState>>,
 ) -> Result<(), Error> {
     let mut send_buffer = vec![0u8; 1350];
+    let mut exponential_backoff = ExponentialBackoff::new(ExponentialBackoffBounds {
+        initial: Duration::from_secs(1),
+        maximal: Some(Duration::from_secs(30)),
+    })?;
     loop {
         let state = { *{ handler_state.read().await } };
         match state {
             HandlerState::Start => {
                 // Inform the peer that test is starting
+                telio_log_debug!("Starting throughput performance test");
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Start as u8);
                 send_buffer[IP_ADDR_OFFSET..IP_ADDR_OFFSET + SIZE_OF_IP_ADDR]
                     .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr()?.ip()));
@@ -433,7 +437,12 @@ async fn throughput_test_handler(
                 {
                     // Atm a very simple wait to either recieve response
                     // or send Start again. This has to come by exp backoff
-                    tokio::time::sleep(TEST_DURATION / 20).await;
+                    PinnedSleep::new(exponential_backoff.get_backoff(), ()).await;
+                    exponential_backoff.next_backoff();
+                    if exponential_backoff.get_backoff() == Duration::from_secs(30) {
+                        telio_log_warn!("Unable to connect to peer");
+                        break;
+                    }
                     continue;
                 };
             }
