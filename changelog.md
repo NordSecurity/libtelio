@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.1.7
+### **Pork Kibin**
+---
+* LLT-5913: Update XCFramework structure
+
+<br>
+
 ### v5.1.6
 ### **Pork Kibin**
 ---
