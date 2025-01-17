@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 
-if [[ "$#" -ne 1 ]]; then
-    echo "Wrong number of parameters"
+if [[ "$#" -lt 1 || "$#" -gt 2 ]]; then
+    echo "Usage: $0 <NATLAB_ID> [--SEGV]"
     exit 1
 fi
 
 NATLAB_ID=$1
+SIGNAL="-TERM" # default SIGTERM
+
+# If the second argument is '--SEGV', send SIGSEGV (-11) to create a coredump
+if [[ "$2" == "--SEGV" ]]; then
+    SIGNAL="-SEGV"
+fi
 
 for pid in $(ps -e -o pid=); do
     if grep --null-data --text KILL_ID=${NATLAB_ID} /proc/${pid}/environ; then
         cmd=$(tr -d '\000' < /proc/${pid}/cmdline || echo "N/A")
-        echo "$(date) Killing ${pid} ${cmd}"
-        kill "${pid}"
+        echo "$(date) Killing ${pid} ${cmd} with $SIGNAL"
+        kill "${SIGNAL}" "${pid}"
         wait "${pid}" 2>/dev/null
         exit 0
     fi
 done
 
-echo "The process to kill not found"
+echo "The process to kill was not found: $NATLAB_ID"
