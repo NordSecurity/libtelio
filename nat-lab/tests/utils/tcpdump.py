@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager, AsyncExitStack
 from typing import AsyncIterator, Optional
 from utils.connection import TargetOS, Connection
 from utils.output_notifier import OutputNotifier
-from utils.process import Process
+from utils.process import Process, DockerProcess
 from utils.testing import get_current_test_log_path
 
 PCAP_FILE_PATH = {
@@ -45,7 +45,9 @@ class TcpDump:
         self.stdout = ""
         self.stderr = ""
 
-        self.output_notifier.notify_output("listening on", self.start_event)
+        self.output_notifier.notify_output(
+            "TODO REMOVE ME listening on", self.start_event
+        )
 
         command = [self.get_tcpdump_binary(connection.target_os), "-n"]
 
@@ -133,7 +135,15 @@ class TcpDump:
     @asynccontextmanager
     async def run(self) -> AsyncIterator["TcpDump"]:
         async with self.process.run(self.on_stdout, self.on_stderr, True):
-            await wait_for(self.start_event.wait(), 10)
+            try:
+                await wait_for(self.start_event.wait(), 1)
+            except TimeoutError:
+                # TCPDump should have started already but for some reason got stuck.
+                # Lets enable coredumps for later inspection to peek into what might
+                # be happening inside of it
+                if isinstance(self.process, DockerProcess):
+                    self.process.enable_coredump()
+                    raise TimeoutError
             yield self
             # Windump takes so long to flush packets to stdout/file
             if self.connection.target_os == TargetOS.Windows:

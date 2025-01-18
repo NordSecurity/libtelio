@@ -44,6 +44,7 @@ class DockerProcess(Process):
         self._stream = None
         self._execute = None
         self._kill_id = kill_id if kill_id else secrets.token_hex(8).upper()
+        self._enable_coredump = False
 
     async def execute(
         self,
@@ -83,6 +84,7 @@ class DockerProcess(Process):
                             self._container.id,
                             "/opt/bin/kill_process_by_natlab_id",
                             self._kill_id,
+                            "-11" if self._enable_coredump else "",
                         ])
                 raise
             finally:
@@ -134,6 +136,7 @@ class DockerProcess(Process):
                             self._container.id,
                             "/opt/bin/kill_process_by_natlab_id",
                             self._kill_id,
+                            "-11" if self._enable_coredump else "",
                         ])
 
     async def _read_loop(
@@ -216,3 +219,6 @@ class DockerProcess(Process):
 
     async def is_done(self) -> None:
         await self._is_done.wait()
+
+    def enable_coredump(self) -> None:
+        self._enable_coredump = True

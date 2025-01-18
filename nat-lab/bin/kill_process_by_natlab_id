@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 
-if [[ "$#" -ne 1 ]]; then
-    echo "Wrong number of parameters"
+if [[ "$#" -lt 1 || "$#" -gt 2 ]]; then
+    echo "Wrong number of parameters."
     exit 1
 fi
 
 NATLAB_ID=$1
+SIGNAL=${2:-TERM}  # Default signal is TERM if not specified
+echo NATLAB_ID=${NATLAB_ID}
+echo SIGNAL=${SIGNAL}
 
 for pid in $(ps -e -o pid=); do
     if grep --null-data --text KILL_ID=${NATLAB_ID} /proc/${pid}/environ; then
         cmd=$(tr -d '\000' < /proc/${pid}/cmdline || echo "N/A")
-        echo "$(date) Killing ${pid} ${cmd}"
-        kill "${pid}"
+        echo "$(date) Killing ${SIGNAL} ${pid} -> ${cmd}"
+        kill ${SIGNAL} "${pid}"
         wait "${pid}" 2>/dev/null
         exit 0
     fi
