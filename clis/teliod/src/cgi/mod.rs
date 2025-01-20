@@ -1,12 +1,36 @@
 use std::{env::var, ops::Deref};
 
+use qnap::QnapUserAuthorization;
 use rust_cgi::{http::StatusCode, text_response, Request, Response};
+use serde::Deserialize;
+
+use crate::TIMEOUT_SEC;
 
 mod api;
 pub(crate) mod constants;
+#[cfg(feature = "qnap")]
+mod qnap;
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error(transparent)]
+    Rewquest(#[from] reqwest::header::ToStrError),
+    #[error("Missing authentication token")]
+    MissingAuthToken,
+    #[error("Headers missing HTTP cookie")]
+    MissingHTTPCookie,
+    #[error("User must be authenticated")]
+    UserNotAuthenticated,
+    #[error("User must have admin rights")]
+    UserNotAdminGroup,
+    #[error(transparent)]
+    FailedAuthValidation(#[from] reqwest::Error),
+    #[error("Timed out while validating auth token")]
+    AuthValidationTimeOut,
+}
 
 pub struct CgiRequest {
-    pub inner: Request,
+    inner: Request,
     route: String,
 }
 
@@ -30,8 +54,34 @@ impl Deref for CgiRequest {
     }
 }
 
+#[derive(Debug)]
+enum TokenCheckStatus {
+    Success,
+    Failed,
+}
+
+#[derive(Debug)]
+enum AdminGroupStatus {
+    Admin,
+    NonAdmin,
+}
+
+pub trait AuthorizationValidator {
+    // Retrieve sid token from the cookie of an http request.
+    fn retrieve_token(request: &Request) -> Result<String, Error>;
+    // Check user's sid against a provided validator.
+    async fn is_token_valid(sid: String) -> Result<impl AuthorizationValidator, Error>;
+    // Validate user authorization
+    fn validate(&self) -> Result<(), Error>;
+}
+
 pub fn handle_request(request: Request) -> Response {
     let request = CgiRequest::new(request);
+
+    #[cfg(feature = "qnap")]
+    if let Err(error) = authorize::<QnapUserAuthorization>(&request) {
+        return text_response(StatusCode::UNAUTHORIZED, format!("Unauthorized: {}", error));
+    }
 
     if let Some(response) = api::handle_api(&request) {
         #[cfg(debug_assertions)]
@@ -43,6 +93,21 @@ pub fn handle_request(request: Request) -> Response {
     }
 
     text_response(StatusCode::BAD_REQUEST, "Invalid request.")
+}
+
+pub fn authorize<T: AuthorizationValidator>(request: &Request) -> Result<(), Error> {
+    T::retrieve_token(request).and_then(|sid| {
+        let user_authorization =
+            match tokio::runtime::Handle::current().block_on(tokio::time::timeout(
+                std::time::Duration::from_secs(TIMEOUT_SEC),
+                T::is_token_valid(sid),
+            )) {
+                Ok(Ok(resp)) => resp,
+                Ok(Err(error)) => return Err(error),
+                _ => return Err(Error::AuthValidationTimeOut),
+            };
+        user_authorization.validate()
+    })
 }
 
 #[cfg(debug_assertions)]
