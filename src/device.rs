@@ -520,7 +520,10 @@ impl Device {
             .name("libtelio-events".to_owned())
             .spawn(move || loop {
                 match event_rx.blocking_recv() {
-                    Ok(event) => event_cb(event),
+                    Ok(event) => {
+                        telio_log_debug!("Handling event: {:?}", event);
+                        event_cb(event);
+                    }
                     Err(RecvError::Lagged(n)) => {
                         telio_log_warn!("Failed to receive new event, lagged: {n}")
                     }
