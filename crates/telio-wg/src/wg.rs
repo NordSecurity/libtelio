@@ -345,11 +345,18 @@ impl DynamicWg {
             io,
             adapter,
             link_detection,
-            cfg,
+            cfg.try_clone()?,
             ipv6_enabled,
+            cfg.socket_pool,
         ));
         #[cfg(windows)]
-        return Ok(Self::start_with(io, adapter, link_detection, ipv6_enabled));
+        return Ok(Self::start_with(
+            io,
+            adapter,
+            link_detection,
+            ipv6_enabled,
+            cfg.socket_pool,
+        ));
     }
 
     fn start_with(
@@ -358,6 +365,7 @@ impl DynamicWg {
         link_detection: Option<FeatureLinkDetection>,
         #[cfg(unix)] cfg: Config,
         ipv6_enabled: bool,
+        socket_pool: Arc<SocketPool>,
     ) -> Self {
         let interval = interval(Duration::from_millis(POLL_MILLIS));
         Self {
@@ -370,7 +378,8 @@ impl DynamicWg {
                 event: io.events,
                 analytics_tx: io.analytics_tx,
                 uapi_fail_counter: 0,
-                link_detection: link_detection.map(|ld| LinkDetection::new(ld, ipv6_enabled)),
+                link_detection: link_detection
+                    .map(|ld| LinkDetection::new(ld, ipv6_enabled, socket_pool)),
                 libtelio_event: io.libtelio_wide_event_publisher,
                 stats: HashMap::new(),
                 ip_stack: None,
@@ -1102,7 +1111,7 @@ pub mod tests {
     use mockall::predicate;
     use rand::{Rng, RngCore, SeedableRng};
     use telio_crypto::PresharedKey;
-    use telio_sockets::NativeProtector;
+    use telio_sockets::protector::MockProtector;
     use telio_utils::Hidden;
     use tokio::{runtime::Handle, sync::Mutex, task, time::sleep};
 
@@ -1257,6 +1266,8 @@ pub mod tests {
                 })
             });
 
+        let socket_pool = Arc::new(SocketPool::new(MockProtector::default()));
+
         let wg = DynamicWg::start_with(
             Io {
                 events: events_ch.tx.clone(),
@@ -1270,6 +1281,7 @@ pub mod tests {
             #[cfg(all(unix, not(test)))]
             cfg,
             true,
+            socket_pool,
         );
         time::advance(Duration::from_millis(0)).await;
         adapter.lock().await.checkpoint();
