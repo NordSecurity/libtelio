@@ -136,7 +136,7 @@ class TcpDump:
     async def run(self) -> AsyncIterator["TcpDump"]:
         async with self.process.run(self.on_stdout, self.on_stderr, True):
             try:
-                await wait_for(self.start_event.wait(), 10)
+                await wait_for(self.start_event.wait(), 0.2)
             except TimeoutError as e:
                 print(
                     datetime.now(),
