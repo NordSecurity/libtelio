@@ -285,7 +285,6 @@ mod tests {
             "log_level": "debug",
             "log_file_path": "/path/to/log",
             "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "app_user_uid": "00000000-0000-0000-0000-000000000000",
             "interface": {
                 "name": "eth0",
                 "config_provider": "manual"
@@ -325,7 +324,6 @@ mod tests {
             "log_level": "info",
             "log_file_path": "/new/path/to/log",
             "authentication_token": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "app_user_uid": "11111111-1111-1111-1111-111111111111",
             "interface": {
                 "name": "eth1",
                 "config_provider": "ifconfig"
@@ -366,7 +364,6 @@ mod tests {
             "log_level": "debug",
             "log_file_path": "/path/to/log",
             "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "app_user_uid": "00000000-0000-0000-0000-000000000000",
             "interface": {
                 "name": "eth0",
                 "config_provider": "manual"
