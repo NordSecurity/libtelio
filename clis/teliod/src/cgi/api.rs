@@ -15,7 +15,7 @@ use rust_cgi::{
 use crate::{
     command_listener::CommandResponse,
     config::{TeliodDaemonConfig, TeliodDaemonConfigPartial},
-    ClientCmd, DaemonSocket, TeliodError, TIMEOUT_SEC,
+    ClientCmd, DaemonSocket, TelioStatusReport, TeliodError, TIMEOUT_SEC,
 };
 
 use super::{
@@ -191,6 +191,17 @@ pub(crate) fn update_config(body: &str) -> Response {
             StatusCode::INTERNAL_SERVER_ERROR,
             "Failed to write updated config",
         ),
+    }
+}
+
+pub(crate) fn get_status_report() -> Result<TelioStatusReport, TeliodError> {
+    let msg = teliod_blocking_query!(ClientCmd::GetStatus)
+        .map_err(|_| TeliodError::ClientTimeoutError)??;
+
+    match CommandResponse::deserialize(&msg)? {
+        CommandResponse::Ok => Err(TeliodError::InvalidResponse("Expected status".to_string())),
+        CommandResponse::StatusReport(status) => Ok(status),
+        CommandResponse::Err(err) => Err(TeliodError::InvalidResponse(err)),
     }
 }
 
