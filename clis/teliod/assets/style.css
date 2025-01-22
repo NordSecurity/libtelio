@@ -1,0 +1,111 @@
+/* General Styles */
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Arial', sans-serif;
+    background-color: #f9f9f9;
+    color: #2a2b32;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+
+    align-items: center;
+
+}
+
+.container {
+    margin: 0;
+    padding: 0;
+    /* display: flex; */
+    flex-direction: column;
+    justify-content: flex-start;
+    /* align-items: center; */
+    min-height: 100vh;
+    max-width: 600px
+}
+
+/* Container */
+.pannel {
+    /* width: 90%; */
+    /* max-width: 600px; */
+    background: #ffffff;
+    /* height: auto; */
+    box-shadow:
+        0 0 0 1px rgba(56,60,67,.05),
+        0 1px 3px 0 rgba(56,60,67,.15);
+    padding: 24px;
+    margin: 40px 24px 0px;
+
+    /* box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); */
+    border-radius: 12px;
+    overflow: hidden;
+    text-align: left;
+
+    /* displa */
+}
+
+/* Header */
+/* .container header { */
+    /* padding: 20px; */
+    /* background: #0078d7; */
+    /* color: white; */
+/* } */
+
+/* Main Section */
+/* main { */
+    /* padding: 20px; */
+/* } */
+
+/* .pannel-body { */
+    /* font-size: 20px; */
+    /* margin-bottom: 10px; */
+/* } */
+
+/* form { */
+    /* display: flex; */
+    /* flex-direction: column; */
+    /* align-items: center; */
+/* } */
+
+/* form label { */
+    /* margin-bottom: 5px; */
+    /* font-weight: bold; */
+/* } */
+
+/* form input { */
+    /* padding: 8px; */
+    /* width: 80%; */
+    /* margin-bottom: 10px; */
+    /* border: 1px solid #ccc; */
+    /* border-radius: 4px; */
+    /* font-size: 16px; */
+/* } */
+
+/* form button { */
+    /* background-color: #0078d7; */
+    /* color: white; */
+    /* padding: 10px 20px; */
+    /* border: none; */
+    /* border-radius: 4px; */
+    /* cursor: pointer; */
+    /* font-size: 16px; */
+    /* transition: background-color 0.3s ease; */
+/* } */
+
+/* form button:hover { */
+    /* background-color: #005bb5; */
+/* } */
+
+/* Response Message */
+/* #response-message { */
+    /* margin-top: 20px; */
+    /* font-size: 16px; */
+    /* color: #0078d7; */
+/* } */
+
+/* Footer */
+/* footer { */
+    /* padding: 10px; */
+    /* background: #f1f1f1; */
+    /* font-size: 14px; */
+/* } */

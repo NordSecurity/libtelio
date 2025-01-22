@@ -2,6 +2,8 @@
 
 use std::collections::HashMap;
 
+use tracing::error;
+
 use crate::{config::TeliodDaemonConfig, TelioStatusReport};
 
 use super::api::{get_config, get_status_report, is_teliod_running};
@@ -33,7 +35,7 @@ pub fn get_local_or_default_config() -> TeliodDaemonConfig {
     match get_config() {
         Ok(config) => config,
         Err(err) => {
-            eprintln!("Failed to get previous config err: {err}");
+            error!("Failed to get previous config err: {err}");
             Default::default()
         }
     }

@@ -157,7 +157,7 @@ impl Default for TeliodDaemonConfig {
             },
             interface: InterfaceConfig {
                 name: "nlx".to_string(),
-                config_provider: InterfaceConfigurationProvider::Ifconfig,
+                config_provider: Default::default(),
             },
             authentication_token: "".to_string(),
             http_certificate_file_path: None,
@@ -209,7 +209,7 @@ fn deserialize_authentication_token<'de, D: Deserializer<'de>>(
 ) -> Result<String, D::Error> {
     let raw_string: String = de::Deserialize::deserialize(deserializer)?;
     let re = regex::Regex::new("[0-9a-f]{64}").map_err(de::Error::custom)?;
-    if re.is_match(&raw_string) {
+    if raw_string.is_empty() || re.is_match(&raw_string) {
         Ok(raw_string)
     } else {
         Err(de::Error::custom("Incorrect authentication token"))
