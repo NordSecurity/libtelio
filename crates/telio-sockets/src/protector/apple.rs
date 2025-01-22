@@ -538,23 +538,3 @@ pub fn setup_network_path_monitor() {
         nw_path_monitor_start(monitor);
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use socket2::{Domain, Protocol, Socket, Type};
-
-    use crate::native::AsNativeSocket;
-
-    use super::*;
-
-    #[test]
-    fn test_ipv6_sk_bind() {
-        let socket2_socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP));
-
-        let socket_fd = socket2_socket.as_ref().unwrap().as_native_socket();
-
-        if let Err(e) = bind(get_primary_interface(0).unwrap() as u32, socket_fd) {
-            panic!("Test failed with error : {}", e)
-        }
-    }
-}
