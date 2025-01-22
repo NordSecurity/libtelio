@@ -1,9 +1,11 @@
-use std::{env::var, ops::Deref};
+use std::{env::var, fs, ops::Deref};
 
 use rust_cgi::{http::StatusCode, text_response, Request, Response};
 use serde::Deserialize;
 
 use crate::TIMEOUT_SEC;
+use tracing::{info, Level};
+
 #[cfg(feature = "qnap")]
 use qnap::QnapUserAuthorization;
 
@@ -80,6 +82,21 @@ pub trait AuthorizationValidator {
 }
 
 pub fn handle_request(request: Request) -> Response {
+    #[cfg(debug_assertions)]
+    match fs::File::create("./cgi.log") {
+        Ok(file) => {
+            let (non_blocking_writer, _tracing_worker_guard) = tracing_appender::non_blocking(file);
+            tracing_subscriber::fmt()
+                .with_max_level(Level::TRACE)
+                .with_writer(non_blocking_writer)
+                .with_ansi(false)
+                .with_line_number(true)
+                .with_level(true)
+                .init();
+        }
+        Err(error) => eprintln!("Failed to create debug log file: {error}"),
+    };
+
     let request = CgiRequest::new(request);
 
     #[cfg(feature = "qnap")]
