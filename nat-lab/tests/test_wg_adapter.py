@@ -2,6 +2,7 @@ import pytest
 from contextlib import AsyncExitStack
 from datetime import datetime
 from helpers import SetupParameters, setup_environment
+from Pyro5.errors import CommunicationError  # type:ignore
 from utils.bindings import TelioAdapterType
 from utils.connection_util import ConnectionTag, new_connection_by_tag
 from utils.process import ProcessExecError
@@ -43,9 +44,7 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
             await conn.create_process(
                 ["taskkill", "/T", "/F", "/IM", "python.exe"]
             ).execute()
-    except ProcessExecError:
-        pass
-    except ConnectionRefusedError as e:
+    except (CommunicationError, ConnectionRefusedError, ProcessExecError) as e:
         print(datetime.now(), f"First libtelio failed with {e}")
 
     # Check if libtelio left hanging wintun adapter, might now always happen, so we just leave test
