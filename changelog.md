@@ -1,5 +1,13 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### 5.1.8
+### ****
+---
+* LLT-5886_protected_pinger: Use the SocketPool component in order to bind the Pinger raw socket to the tunnel interface on macOS.
+* LLT-5886_protected_pinger: LinkDetection component was also updated to use the new Pinger.
+
+<br>
+
 ### v5.1.7
 ### **Pork Kibin**
 ---
