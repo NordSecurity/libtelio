@@ -69,8 +69,15 @@ pylint:
 
 # Start a dev web cgi server, for local teliod cgi development
 web:
-    @echo "Go to http://127.0.0.1:8080/cgi-bin/teliod.cgi"
-    python3 -m http.server --cgi -d $(pwd)/contrib/http_root/ -b 127.0.0.1 8080
+    if ! [ -e 'busybox' ]; then \
+        echo "install mini_httpd:\n$ apt install busybox"; \
+    fi
+
+    @echo "Go to http://127.0.0.1:8080/cgi-bin/teliod.cgi/"
+
+    cd $(pwd)/contrib/http_root; \
+    echo -n $(whoami) > cgi-bin/builder; \
+    sudo busybox httpd -f -p 127.0.0.1:8080 -vv -u root -h $(pwd)
 
 _udeps-install: _nightly-install
     cargo +{{ nightly }} install cargo-udeps@0.1.47 --locked
