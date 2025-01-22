@@ -1,6 +1,5 @@
 use std::{
-    fs,
-    io,
+    fs, io,
     process::{Command, Stdio},
     str,
     thread::sleep,
@@ -209,6 +208,8 @@ fn get_status() -> Response {
     if !is_teliod_running() {
         return text_response(StatusCode::GONE, "Application is not running.");
     }
+
+    // TODO(pna): use get_status_report, add logic to convert TeliodError into Response
 
     match teliod_blocking_query!(ClientCmd::GetStatus) {
         Ok(Ok(daemon_reply)) => match CommandResponse::deserialize(&daemon_reply) {

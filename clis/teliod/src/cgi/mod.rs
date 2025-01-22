@@ -1,15 +1,17 @@
-use std::{env::var, fs, ops::Deref};
+use std::{env::var, ops::Deref};
 
 use rust_cgi::{http::StatusCode, text_response, Request, Response};
-use serde::Deserialize;
 
 use crate::TIMEOUT_SEC;
-use tracing::{info, Level};
+use tracing::trace;
 
 #[cfg(feature = "qnap")]
 use qnap::QnapUserAuthorization;
 
 mod api;
+mod app;
+mod web;
+
 pub(crate) mod constants;
 #[cfg(feature = "qnap")]
 mod qnap;
@@ -82,22 +84,15 @@ pub trait AuthorizationValidator {
 }
 
 pub fn handle_request(request: Request) -> Response {
-    #[cfg(debug_assertions)]
-    match fs::File::create("./cgi.log") {
-        Ok(file) => {
-            let (non_blocking_writer, _tracing_worker_guard) = tracing_appender::non_blocking(file);
-            tracing_subscriber::fmt()
-                .with_max_level(Level::TRACE)
-                .with_writer(non_blocking_writer)
-                .with_ansi(false)
-                .with_line_number(true)
-                .with_level(true)
-                .init();
-        }
-        Err(error) => eprintln!("Failed to create debug log file: {error}"),
-    };
-
     let request = CgiRequest::new(request);
+    if let Some(response) = web::handle_web_ui(&request) {
+        trace!(
+            "Returning response..: {:?}",
+            std::str::from_utf8(response.body()).ok()
+        );
+
+        return response;
+    }
 
     #[cfg(feature = "qnap")]
     if let Err(error) = authorize::<QnapUserAuthorization>(&request) {
@@ -133,7 +128,7 @@ pub fn authorize<T: AuthorizationValidator>(request: &Request) -> Result<(), Err
 }
 
 #[cfg(debug_assertions)]
-fn trace_request(request: &CgiRequest, response: &Response) -> Option<Response> {
+pub fn trace_request(request: &CgiRequest, response: &Response) -> Option<Response> {
     use std::{env::vars, fmt::Write};
     let mut msg = String::new();
     let _ = writeln!(

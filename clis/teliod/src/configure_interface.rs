@@ -24,7 +24,7 @@ fn execute(command: &mut Command) -> Result<(), TeliodError> {
     }
 }
 
-#[derive(Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Default, Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum InterfaceConfigurationProvider {
     #[default]
