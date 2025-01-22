@@ -1,8 +1,10 @@
 use std::{
     fs,
-    io::Write,
+    io,
     process::{Command, Stdio},
     str,
+    thread::sleep,
+    time::Duration,
 };
 
 use rust_cgi::{
@@ -60,7 +62,7 @@ pub(crate) fn handle_api(request: &CgiRequest) -> Option<Response> {
     }
 }
 
-fn is_teliod_running() -> bool {
+pub(crate) fn is_teliod_running() -> bool {
     matches!(teliod_blocking_query!(ClientCmd::IsAlive), Ok(Ok(_)))
 }
 
@@ -75,22 +77,23 @@ fn shutdown_teliod() -> Result<(), TeliodError> {
     Err(TeliodError::ClientTimeoutError)
 }
 
-fn start_daemon() -> Response {
+pub(crate) fn start_daemon() -> Response {
     if is_teliod_running() {
         return text_response(StatusCode::BAD_REQUEST, "Application is already running.");
     }
 
-    let mut teliod_log_file = match fs::OpenOptions::new()
+    let teliod_log_file = match fs::OpenOptions::new()
         .create(true)
         .write(true)
+        .read(true)
         .truncate(true)
         .open(TELIOD_LOG)
     {
         Ok(file) => file,
-        Err(_) => {
+        Err(err) => {
             return text_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to open teliod log file.",
+                format!("Failed to open teliod log file {TELIOD_LOG}, err: {err}"),
             );
         }
     };
@@ -120,9 +123,19 @@ fn start_daemon() -> Response {
         .stderr(stderr)
         .spawn()
     {
-        Ok(process) => {
-            let _ = teliod_log_file.write_all(format!("Process ID: {}\n", process.id()).as_bytes());
-            text_response(StatusCode::CREATED, "Application started successfully.")
+        Ok(_process) => {
+            // Wait for teliod to become available
+            for _ in 0..10 {
+                if is_teliod_running() {
+                    return text_response(StatusCode::CREATED, "Application started successfully.");
+                }
+                sleep(Duration::from_millis(500));
+            }
+
+            text_response(
+                StatusCode::REQUEST_TIMEOUT,
+                "Failed to start the application, check logs.",
+            )
         }
         Err(error) => text_response(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -131,7 +144,7 @@ fn start_daemon() -> Response {
     }
 }
 
-fn stop_daemon() -> Response {
+pub(crate) fn stop_daemon() -> Response {
     match shutdown_teliod() {
         Ok(_) => text_response(StatusCode::OK, "Application stopped successfully."),
         Err(error) => text_response(
@@ -141,10 +154,13 @@ fn stop_daemon() -> Response {
     }
 }
 
-fn update_config(body: &str) -> Response {
-    let mut config: TeliodDaemonConfig = match fs::read_to_string(TELIOD_CFG)
+pub(crate) fn get_config() -> io::Result<TeliodDaemonConfig> {
+    fs::read_to_string(TELIOD_CFG)
         .and_then(|content| serde_json::from_str(&content).map_err(|e| e.into()))
-    {
+}
+
+pub(crate) fn update_config(body: &str) -> Response {
+    let mut config: TeliodDaemonConfig = match get_config() {
         Ok(config) => config,
         Err(e) => {
             eprintln!("Error reading config file: {}", e);
@@ -166,7 +182,10 @@ fn update_config(body: &str) -> Response {
 
     config.update(updated_config);
 
-    match fs::write(TELIOD_CFG, serde_json::to_string_pretty(&config).unwrap()) {
+    match fs::write(
+        TELIOD_CFG,
+        serde_json::to_string_pretty(&config).unwrap_or_default(),
+    ) {
         Ok(_) => text_response(StatusCode::OK, "Configuration updated successfully"),
         Err(_) => text_response(
             StatusCode::INTERNAL_SERVER_ERROR,
