@@ -1,16 +1,18 @@
 use std::{env::var, ops::Deref};
 
-use qnap::QnapUserAuthorization;
 use rust_cgi::{http::StatusCode, text_response, Request, Response};
 use serde::Deserialize;
 
 use crate::TIMEOUT_SEC;
+#[cfg(feature = "qnap")]
+use qnap::QnapUserAuthorization;
 
 mod api;
 pub(crate) mod constants;
 #[cfg(feature = "qnap")]
 mod qnap;
 
+#[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
@@ -54,12 +56,14 @@ impl Deref for CgiRequest {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum TokenCheckStatus {
     Success,
     Failed,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum AdminGroupStatus {
     Admin,
@@ -95,6 +99,7 @@ pub fn handle_request(request: Request) -> Response {
     text_response(StatusCode::BAD_REQUEST, "Invalid request.")
 }
 
+#[allow(dead_code)]
 pub fn authorize<T: AuthorizationValidator>(request: &Request) -> Result<(), Error> {
     T::retrieve_token(request).and_then(|sid| {
         let user_authorization =
