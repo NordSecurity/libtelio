@@ -1,10 +1,8 @@
 use async_trait::async_trait;
-use std::{net::IpAddr, sync::Arc};
+use std::net::IpAddr;
 
-use telio_pinger::Pinger;
-use telio_sockets::SocketPool;
 use telio_task::{io::chan, task_exec, Runtime, RuntimeExt, Task, WaitResponse};
-use telio_utils::{ip_stack, DualTarget, IpStack};
+use telio_utils::{ip_stack, DualTarget, IpStack, Pinger};
 
 use telio_utils::telio_log_debug;
 /// Component used to check the link state when we think it's down.
@@ -19,15 +17,9 @@ impl EnhancedDetection {
         ping_channel: chan::Rx<(Vec<IpAddr>, Option<IpStack>)>,
         no_of_pings: u32,
         ipv6_enabled: bool,
-        socket_pool: Arc<SocketPool>,
     ) -> std::io::Result<Self> {
         Ok(Self {
-            task: Task::start(State::new(
-                ping_channel,
-                no_of_pings,
-                ipv6_enabled,
-                socket_pool,
-            )?),
+            task: Task::start(State::new(ping_channel, no_of_pings, ipv6_enabled)?),
         })
     }
 
@@ -46,11 +38,10 @@ impl State {
         ping_channel: chan::Rx<(Vec<IpAddr>, Option<IpStack>)>,
         no_of_pings: u32,
         ipv6_enabled: bool,
-        socket_pool: Arc<SocketPool>,
     ) -> std::io::Result<Self> {
         Ok(State {
             ping_channel,
-            pinger: Pinger::new(no_of_pings, ipv6_enabled, socket_pool)?,
+            pinger: Pinger::new(no_of_pings, ipv6_enabled)?,
         })
     }
 }

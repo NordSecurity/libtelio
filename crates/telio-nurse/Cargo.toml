@@ -36,12 +36,10 @@ telio-proto.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
 telio-wg.workspace = true
-telio-pinger.workspace = true
-telio-sockets.workspace = true
 once_cell.workspace = true
 
 [dev-dependencies]
-telio-sockets = { workspace = true, features = ["mockall"] }
+telio-sockets.workspace = true
 telio-wg = { workspace = true, features = ["mockall"] }
 tokio = { workspace = true, features = ["net", "sync", "test-util"] }
 telio-nurse = { workspace = true, features = ["mockall"] }
