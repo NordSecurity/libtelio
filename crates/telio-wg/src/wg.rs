@@ -346,17 +346,18 @@ impl DynamicWg {
     where
         Self: Sized,
     {
+        let socket_pool = cfg.socket_pool.clone();
         let adapter = Self::start_adapter(cfg.try_clone()?)?;
         #[cfg(unix)]
         return Ok(Self::start_with(
             io,
             adapter,
             link_detection,
-            cfg.try_clone()?,
+            cfg,
             ipv6_enabled,
             polling_period,
             polling_period_after_update,
-            cfg.socket_pool,
+            socket_pool,
         ));
         #[cfg(windows)]
         return Ok(Self::start_with(
@@ -366,7 +367,7 @@ impl DynamicWg {
             ipv6_enabled,
             polling_period,
             polling_period_after_update,
-            cfg.socket_pool,
+            socket_pool,
         ));
     }
 
