@@ -13,7 +13,6 @@ use telio_model::{
     features::FeatureLinkDetection,
     mesh::{LinkState, NodeState},
 };
-use telio_sockets::SocketPool;
 use telio_task::io::{chan, Chan};
 use telio_utils::{
     get_ip_stack, telio_err_with_log, telio_log_debug, telio_log_error, telio_log_trace,
@@ -36,20 +35,10 @@ pub struct LinkDetection {
 }
 
 impl LinkDetection {
-    pub fn new(
-        cfg: FeatureLinkDetection,
-        ipv6_enabled: bool,
-        socket_pool: Arc<SocketPool>,
-    ) -> Self {
+    pub fn new(cfg: FeatureLinkDetection, ipv6_enabled: bool) -> Self {
         let ping_channel = Chan::default();
         let enhanced_detection = if cfg.no_of_pings != 0 {
-            EnhancedDetection::start_with(
-                ping_channel.rx,
-                cfg.no_of_pings,
-                ipv6_enabled,
-                socket_pool,
-            )
-            .ok()
+            EnhancedDetection::start_with(ping_channel.rx, cfg.no_of_pings, ipv6_enabled).ok()
         } else {
             None
         };
