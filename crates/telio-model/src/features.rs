@@ -141,7 +141,7 @@ pub struct FeatureNurse {
 /// QoS configuration options
 pub struct FeatureQoS {
     /// How often to collect rtt data in seconds. Default value is 300.
-    #[default(5 * 60)]
+    #[default(10)]
     pub rtt_interval: u64,
     /// Number of tries for each node. Default value is 3.
     #[default(3)]
