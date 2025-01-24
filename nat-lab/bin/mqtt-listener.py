@@ -4,7 +4,7 @@ import paho.mqtt.client as mqtt
 import ssl
 import sys
 
-CERTIFICATE_PATH = "/etc/ssl/server_certificate/server.pem"
+CERTIFICATE_PATH = "/etc/ssl/server_certificate/test.pem"
 
 
 def on_message(_client, _userdata, message):

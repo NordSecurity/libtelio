@@ -96,7 +96,7 @@ services:
     volumes:
       - ../:/libtelio
       - ./data/teliod:/etc/teliod
-      - ./data/core_api/server.pem:/etc/ssl/server_certificate/server.pem
+      - ./data/core_api/test.pem:/etc/ssl/server_certificate/test.pem
     healthcheck:
       test: "ls /ready"
   cone-client-02:
@@ -619,7 +619,7 @@ services:
       start_period: 5s
     volumes:
       - ./data/core_api/rumqttd.toml:/etc/mqtt/rumqttd.toml
-      - ./data/core_api/server.pem:/etc/ssl/server_certificate/server.pem
+      - ./data/core_api/test.pem:/etc/ssl/server_certificate/test.pem
 
   core-api:
     hostname: core-api
@@ -628,7 +628,7 @@ services:
     environment:
       PYTHONUNBUFFERED: 1
     healthcheck:
-      test: "curl --cacert /etc/ssl/server_certificate/server.pem https://api.nordvpn.com/v1/health"
+      test: "curl --cacert /etc/ssl/server_certificate/test.pem https://api.nordvpn.com/v1/health"
     networks:
       internet:
         ipv4_address: 10.0.80.86
@@ -637,7 +637,7 @@ services:
       mqtt-broker:
         condition: service_healthy
     volumes:
-      - ./data/core_api/server.pem:/etc/ssl/server_certificate/server.pem
+      - ./data/core_api/test.pem:/etc/ssl/server_certificate/test.pem
     dns:
       - 10.0.80.82
       - 10.0.80.83
