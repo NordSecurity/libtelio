@@ -237,6 +237,7 @@ impl Protector for NativeProtector {
     }
 
     fn set_tunnel_interface(&self, interface: u64) {
+        telio_log_debug!("Setting tunnel interface to {}", interface);
         *self.tunnel_interface.write() = Some(interface);
 
         if let Some(ref sw) = self.socket_watcher {
@@ -303,6 +304,8 @@ impl Sockets {
             return false;
         }
         let new_default_interface = get_primary_interface(tunnel_interface);
+
+        telio_log_debug!("Setting new default interface to {:?}", new_default_interface);
 
         if !force && self.default_interface == new_default_interface {
             return false;
