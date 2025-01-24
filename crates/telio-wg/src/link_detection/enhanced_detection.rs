@@ -50,7 +50,7 @@ impl State {
     ) -> std::io::Result<Self> {
         Ok(State {
             ping_channel,
-            pinger: Pinger::new(no_of_pings, ipv6_enabled, socket_pool)?,
+            pinger: Pinger::new(no_of_pings, ipv6_enabled, socket_pool, Some("link_detection".to_string()))?,
         })
     }
 }

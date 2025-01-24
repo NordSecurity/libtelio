@@ -255,7 +255,7 @@ impl Analytics {
         let (ping_channel_tx, ping_channel_rx) = mpsc::channel(1);
 
         let ping_backend = if config.rtt_types.contains(&RttType::Ping) {
-            Arc::new(Pinger::new(config.rtt_tries, ipv6_enabled, socket_pool).ok())
+            Arc::new(Pinger::new(config.rtt_tries, ipv6_enabled, socket_pool, Some("qos_rtt".to_string())).ok())
         } else {
             Arc::new(None)
         };

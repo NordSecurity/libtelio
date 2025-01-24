@@ -16,6 +16,7 @@ pub struct Pinger {
     client_v6: Option<Arc<Client>>,
     /// Number of tries
     pub no_of_tries: u32,
+    payload: Option<String>,
 }
 
 /// Information gathered after a ping action
@@ -54,6 +55,7 @@ impl Pinger {
         no_of_tries: u32,
         ipv6: bool,
         socket_pool: Arc<SocketPool>,
+        payload: Option<String>,
     ) -> std::io::Result<Self> {
         let client_v6 = if ipv6 {
             let client_v6 = Arc::new(Self::build_client(ICMP::V6)?);
@@ -72,6 +74,7 @@ impl Pinger {
             client_v4,
             client_v6,
             no_of_tries,
+            payload,
         })
     }
 
@@ -152,10 +155,16 @@ impl Pinger {
         pinger.timeout(Duration::from_millis(10));
 
         let mut sum = Duration::default();
+        let mut payload = [0x00; 56];
+
+        if let Some(data) = &self.payload {
+            let data = data.as_bytes();
+            payload[..data.len()].copy_from_slice(data);
+        }
 
         for i in 0..self.no_of_tries {
             match pinger
-                .ping(PingSequence(i.try_into().unwrap_or(0)), &[0; 56])
+                .ping(PingSequence(i.try_into().unwrap_or(0)), &payload)
                 .await
             {
                 Ok((_, duration)) => {
@@ -207,7 +216,7 @@ mod tests {
         let mut protect = MockProtector::default();
         protect.expect_make_internal().returning(|_| Ok(()));
 
-        let pinger = Pinger::new(1, true, Arc::new(SocketPool::new(protect)))
+        let pinger = Pinger::new(1, true, Arc::new(SocketPool::new(protect)), None)
             .expect("Failed to create Pinger");
         assert!(pinger.client_v4.get_socket().get_native_sock() > 0);
         assert!(pinger.client_v6.is_some());
@@ -220,7 +229,7 @@ mod tests {
         let mut protect = MockProtector::default();
         protect.expect_make_internal().returning(|_| Ok(()));
 
-        let pinger = Pinger::new(2, false, Arc::new(SocketPool::new(protect)))
+        let pinger = Pinger::new(2, false, Arc::new(SocketPool::new(protect)), None)
             .expect("Failed to create Pinger");
 
         let target =
