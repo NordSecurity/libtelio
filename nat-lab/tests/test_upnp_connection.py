@@ -71,9 +71,13 @@ async def test_upnp_route_removed(
 
         # Shutoff Upnpd on both gateways to wipe out all upnp created external
         # routes, this also requires to wipe-out the contrack list
+
         async with AsyncExitStack() as temp_exit_stack:
-            await temp_exit_stack.enter_async_context(alpha_gw_router.reset_upnpd())
-            await temp_exit_stack.enter_async_context(beta_gw_router.reset_upnpd())
+            await asyncio.gather(*[
+                temp_exit_stack.enter_async_context(alpha_gw_router.reset_upnpd()),
+                temp_exit_stack.enter_async_context(beta_gw_router.reset_upnpd()),
+            ])
+
             task = await temp_exit_stack.enter_async_context(
                 run_async_context(
                     alpha_client.wait_for_event_peer(
@@ -81,6 +85,7 @@ async def test_upnp_route_removed(
                     )
                 )
             )
+
             try:
                 await ping(alpha_conn.connection, beta.ip_addresses[0], 15)
             except asyncio.TimeoutError:
@@ -89,6 +94,7 @@ async def test_upnp_route_removed(
                 # if no timeout exception happens, this means, that peers connected through relay
                 # faster than we expected, but if no relay event occurs, this means, that something
                 # else was wrong, so we assert
+
                 await asyncio.wait_for(task, 1)
 
         await asyncio.gather(
@@ -100,8 +106,10 @@ async def test_upnp_route_removed(
             ),
         )
 
-        await ping(beta_conn.connection, alpha.ip_addresses[0])
-        await ping(alpha_conn.connection, beta.ip_addresses[0])
+        await asyncio.gather(*[
+            ping(beta_conn.connection, alpha.ip_addresses[0]),
+            ping(alpha_conn.connection, beta.ip_addresses[0]),
+        ])
 
         # LLT-5532: To be cleaned up...
         alpha_client.allow_errors(
