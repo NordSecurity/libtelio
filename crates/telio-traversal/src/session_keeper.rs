@@ -135,11 +135,15 @@ async fn ping(pingers: &Pingers, targets: (&PublicKey, &DualTarget)) -> Result<(
         IpAddr::V6(_) => &pingers.pinger_client_v6,
     };
 
+    let mut payload = [0x00; PING_PAYLOAD_SIZE];
+    let data = b"session_keeper";
+    payload[..data.len()].copy_from_slice(data);
+
     let ping_id = PingIdentifier(rand::random());
     if let Err(e) = primary_client
         .pinger(primary, ping_id)
         .await
-        .send_ping(PingSequence(0), &[0; PING_PAYLOAD_SIZE])
+        .send_ping(PingSequence(0), &payload)
         .await
     {
         telio_log_warn!("Primary target failed: {}", e.to_string());
@@ -155,7 +159,7 @@ async fn ping(pingers: &Pingers, targets: (&PublicKey, &DualTarget)) -> Result<(
             secondary_client
                 .pinger(second, PingIdentifier(rand::random()))
                 .await
-                .send_ping(PingSequence(0), &[0; PING_PAYLOAD_SIZE])
+                .send_ping(PingSequence(0), &payload)
                 .await?;
         }
     }
