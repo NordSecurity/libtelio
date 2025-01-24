@@ -47,10 +47,6 @@ pub use interval::*;
 pub mod ip_stack;
 pub use ip_stack::*;
 
-/// Basic ICMP Pinger
-pub mod pinger;
-pub use pinger::*;
-
 /// Testing tools
 pub mod test;
 
