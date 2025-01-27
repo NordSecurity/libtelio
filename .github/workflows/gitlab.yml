@@ -3,6 +3,8 @@ on:
   pull_request_target:
     types: [labeled]
   push:
+  merge_group:
+    types: [checks_requested]
   schedule:
     # Avoid running on 0 since a lot of other workflows on github start at that
     # time and this can cause delays or even dropping of jobs:
