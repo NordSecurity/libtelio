@@ -16,7 +16,6 @@ use tracing::error;
 use crate::nord::{Error as NordError, Nord, OAuth};
 
 use std::fmt::Display;
-use std::net::Ipv4Addr;
 use std::str::FromStr;
 use std::time::SystemTime;
 use std::{
