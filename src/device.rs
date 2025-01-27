@@ -90,7 +90,7 @@ use telio_model::{
     EndpointMap,
 };
 
-use telio_perf::client::Throughput as ThroughputEntity;
+use telio_perf::throughput_test::Throughput as ThroughputEntity;
 
 #[cfg(target_os = "android")]
 use telio_network_monitors::monitor::PATH_CHANGE_BROADCAST;
@@ -192,7 +192,7 @@ pub enum Error {
     #[error("Polling period cannot be zero")]
     PollingPeriodZero,
     #[error(transparent)]
-    ThroughputTestError(#[from] telio_perf::client::Error),
+    ThroughputTestError(#[from] telio_perf::throughput_test::Error),
     #[error(transparent)]
     ParseError(#[from] std::net::AddrParseError),
 }
