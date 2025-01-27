@@ -168,6 +168,7 @@ async fn maybe_restart_pq(entities: &Entities) {
                 .await
                 .ok()
                 .and_then(|ifc| {
+                    telio_log_debug!("{:?}", ifc);
                     ifc.peers.iter().find_map(|(_, peer)| {
                         if peer.public_key == pubkey {
                             Some(peer.time_since_last_handshake)
