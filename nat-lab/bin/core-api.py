@@ -23,7 +23,7 @@ DERP_SERVER = {
     "weight": 1,
 }
 
-CERTIFICATE_PATH = "/etc/ssl/server_certificate/server.pem"
+CERTIFICATE_PATH = "/etc/ssl/server_certificate/test.pem"
 
 MQTT_BROKER_HOST = "mqtt.nordvpn.com"
 MQTT_BROKER_PORT = 8883

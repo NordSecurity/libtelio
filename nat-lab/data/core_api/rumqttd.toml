@@ -12,8 +12,8 @@ name = "v4-2"
 listen = "0.0.0.0:8883"
 next_connection_delay_ms = 10
     [v4.2.tls]
-    certpath = "/etc/ssl/server_certificate/server.pem"
-    keypath = "/etc/ssl/server_certificate/server.pem"
+    certpath = "/etc/ssl/server_certificate/test.pem"
+    keypath = "/etc/ssl/server_certificate/test.pem"
     [v4.2.connections]
     connection_timeout_ms = 60000
     throttle_delay_ms = 0
