@@ -296,6 +296,7 @@ impl State {
     }
 
     async fn send_results(&mut self) {
+        let duration = self.duration.elapsed();
         let mut send_buffer = vec![0u8; 1 + PKT_LOSS_DATA_SIZE + THROUGHPUT_DATA_SIZE];
         send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Result as u8);
 
@@ -304,15 +305,18 @@ impl State {
             self.recv_buffer[5..13].try_into().unwrap();
         let pkts_sent = u64::from_be_bytes(pkts_sent);
 
+        println!("pkts sent {pkts_sent}");
+        println!("pkts recvd {}", self.pkts_recvd);
+        println!("Time taken {:?}", duration);
         // Calculate packet loss
         let pkt_loss = (1_f32 - (self.pkts_recvd as f32 / pkts_sent as f32)) * 100_f32;
         send_buffer[PKT_LOSS_OFFSET..PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE]
             .copy_from_slice(&pkt_loss.to_be_bytes());
 
         // Calculate throughput
-        // Bytes should be data + wg_offset + ip header
-        let throughput = (((self.pkts_recvd * (1350 + 32 + 8)) as f64)
-            / self.duration.elapsed().as_secs_f64()) as u32
+        // Bytes should be data + wg_offset + ip header + udp header
+        let throughput = (((self.pkts_recvd * (1350 + 32 + 20 + 8) * 8) as f64)
+            / duration.as_secs_f64()) as u32
             / 1_000_000;
         send_buffer[THROUGHPUT_OFFSET..THROUGHPUT_OFFSET + THROUGHPUT_DATA_SIZE]
             .copy_from_slice(&throughput.to_be_bytes());
@@ -423,7 +427,7 @@ async fn throughput_test_handler(
     transport_socket: Arc<UdpSocket>,
     handler_state: Arc<RwLock<HandlerState>>,
 ) -> Result<(), Error> {
-    let mut send_buffer = vec![0u8; 1350];
+    let mut send_buffer = vec![0u8; 1400];
     let mut exponential_backoff = ExponentialBackoff::new(ExponentialBackoffBounds {
         initial: Duration::from_secs(1),
         maximal: Some(Duration::from_secs(30)),
@@ -461,7 +465,7 @@ async fn throughput_test_handler(
                 let start = Instant::now();
                 // Start sending packets to the peer
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Test as u8);
-                let delay = Duration::from_micros(50);
+                let delay = Duration::from_nanos(5);
                 while start.elapsed() < TEST_DURATION {
                     match transport_socket.send_to(&send_buffer, endpoint).await {
                         Ok(_) => {
