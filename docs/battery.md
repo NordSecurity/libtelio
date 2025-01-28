@@ -26,6 +26,14 @@ which will trigger handshake attempts every 5 seconds for **REKEY-ATTEMPT-TIME**
 }
 ```
 
+**Note**: Libtelio considers `3 x persistent_keepalive.direct` seconds timeout for receiving data from the peer before downgrading.
+Long interval will cause downgrades to be delayed, consider using `link_detection` feature together:
+```
+"link_detection": {
+    "use_for_downgrade": true,
+}
+```
+
 ## DERP optimisations
 ### Disable keepalives for offline peers reported by DERP server
 ```
