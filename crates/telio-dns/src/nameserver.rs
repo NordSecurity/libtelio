@@ -21,9 +21,13 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     str::FromStr,
     sync::Arc,
+    time::Duration,
 };
 use telio_model::features::TtlValue;
-use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
+use tokio::sync::{
+    mpsc::{Receiver, Sender},
+    RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore,
+};
 use tokio::task::JoinHandle;
 use tokio::{net::UdpSocket, sync::Mutex};
 
@@ -62,6 +66,7 @@ pub trait NameServer {
 pub struct LocalNameServer {
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
+    shutdown_request_sender: Option<Sender<()>>,
 }
 
 impl LocalNameServer {
@@ -71,6 +76,7 @@ impl LocalNameServer {
         let ns = Arc::new(RwLock::new(LocalNameServer {
             zones: Arc::new(ClonableZones::new()),
             task_handle: None,
+            shutdown_request_sender: None,
         }));
         ns.forward(forward_ips).await?;
         Ok(ns)
@@ -78,9 +84,9 @@ impl LocalNameServer {
 
     async fn dns_service(
         peer: Arc<Mutex<Tunn>>,
-        nameserver: Arc<RwLock<LocalNameServer>>,
         socket: Arc<UdpSocket>,
         dst_address: SocketAddr,
+        tx: tokio::sync::mpsc::Sender<Vec<u8>>,
     ) {
         let mut receiving_buffer = vec![0u8; MAX_PACKET];
         let mut sending_buffer = vec![0u8; MAX_PACKET];
@@ -112,10 +118,10 @@ impl LocalNameServer {
 
             let peer = peer.clone();
             let socket = socket.clone();
-            let nameserver = nameserver.clone();
             let mut receiving_buffer = receiving_buffer.clone();
             let mut sending_buffer = sending_buffer.clone();
             let semaphore = semaphore.clone();
+            let tx = tx.clone();
             tokio::spawn(async move {
                 let res = peer.lock().await.decapsulate(
                     None,
@@ -153,51 +159,74 @@ impl LocalNameServer {
                                 return;
                             }
                         };
-
-                        let nameserver = nameserver.clone();
-                        let length = match LocalNameServer::process_packet(
-                            nameserver,
-                            packet,
-                            &mut receiving_buffer,
-                        )
-                        .await
-                        {
-                            Ok(length) => length,
-                            Err(e) => {
-                                telio_log_error!(
-                                    "[DNS] {}. Offending request packet: {:?}",
-                                    e,
-                                    packet
-                                );
-                                return;
-                            }
-                        };
-
-                        let tunn_res = peer.lock().await.encapsulate(
-                            receiving_buffer.get(..length).unwrap_or(&[]),
-                            &mut sending_buffer,
-                        );
-                        match tunn_res {
-                            TunnResult::WriteToNetwork(dns) => {
-                                if let Err(e) = socket.send_to(dns, dst_address).await {
-                                    telio_log_warn!(
-                                        "[DNS] Failed to send DNS query response  {:?}",
-                                        e
-                                    )
-                                };
-                            }
-                            TunnResult::Err(e) => {
-                                telio_log_warn!(
-                                    "[DNS] Failed to encapsulate DNS query response  {:?}",
-                                    e
-                                )
-                            }
-                            _ => {}
+                        #[allow(index_access_check)]
+                        receiving_buffer[..packet.len()].copy_from_slice(packet);
+                        if let Err(e) = tx.send(receiving_buffer).await {
+                            telio_log_error!("Unable to forward packet to dns request handler {e}");
                         }
                     }
                     _ => {}
                 }
             });
+        }
+    }
+
+    /// Handle processing dns request and sending to
+    /// hickory-server to avoid getting stuck due to
+    /// unresponsivenes from hickory
+    fn handle_dns_request(
+        socket: Arc<UdpSocket>,
+        nameserver: Arc<RwLock<LocalNameServer>>,
+        peer: Arc<Mutex<Tunn>>,
+        dst_address: SocketAddr,
+        mut rx: Receiver<Vec<u8>>,
+        mut awaiting_shutdown: Receiver<()>,
+    ) {
+        tokio::task::spawn(async move {
+            while let Some(packet) = rx.recv().await {
+                telio_log_debug!("Handling dns request");
+                let mut receiving_buffer = vec![0u8; MAX_PACKET];
+                let mut sending_buffer = vec![0u8; MAX_PACKET];
+                let nameserver = nameserver.clone();
+                let length = match LocalNameServer::process_packet(
+                    nameserver,
+                    &packet,
+                    &mut receiving_buffer,
+                )
+                .await
+                {
+                    Ok(length) => length,
+                    Err(e) => {
+                        telio_log_error!("[DNS] {}. Offending request packet: {:?}", e, packet);
+                        MAX_PACKET + 1
+                    }
+                };
+
+                if length < MAX_PACKET {
+                    let tunn_res = peer.lock().await.encapsulate(
+                        receiving_buffer.get(..length).unwrap_or(&[]),
+                        &mut sending_buffer,
+                    );
+                    match tunn_res {
+                        TunnResult::WriteToNetwork(dns) => {
+                            if let Err(e) = socket.send_to(dns, dst_address).await {
+                                telio_log_warn!("[DNS] Failed to send DNS query response  {:?}", e)
+                            };
+                        }
+                        TunnResult::Err(e) => {
+                            telio_log_warn!(
+                                "[DNS] Failed to encapsulate DNS query response  {:?}",
+                                e
+                            )
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        });
+
+        if awaiting_shutdown.blocking_recv().is_some() {
+            telio_log_debug!("Closing dns request handler");
         }
     }
 
@@ -666,20 +695,39 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
 
     // TODO: maybe report or recover in case of thread panic
     async fn stop(&self) {
-        if let Some(handle) = &self.read().await.task_handle {
+        let ns = &self.read().await;
+        if let Some(handle) = &ns.task_handle {
             handle.abort();
+        }
+        if let Some(t) = &ns.shutdown_request_sender {
+            if let Err(e) = t.send_timeout((), Duration::from_secs(2)).await {
+                telio_log_error!("Unable to close dns request handler {e}");
+            }
         }
     }
 
-    #[allow(unwrap_check)]
     async fn start(&self, peer: Arc<Mutex<Tunn>>, socket: Arc<UdpSocket>, dst_address: SocketAddr) {
         let nameserver = self.clone();
-        self.write().await.task_handle = Some(tokio::spawn(LocalNameServer::dns_service(
-            peer,
-            nameserver,
-            socket,
+        let (tx, rx) = telio_utils::sync::mpsc::channel(5);
+        let (shutdown_tx, shutdown_rx) = telio_utils::sync::mpsc::channel(1);
+        let mut ns_ref = self.write().await;
+        ns_ref.task_handle = Some(tokio::spawn(LocalNameServer::dns_service(
+            peer.clone(),
+            socket.clone(),
             dst_address,
+            tx,
         )));
+        ns_ref.shutdown_request_sender = Some(shutdown_tx);
+        tokio::task::spawn_blocking(move || {
+            LocalNameServer::handle_dns_request(
+                socket,
+                nameserver,
+                peer,
+                dst_address,
+                rx,
+                shutdown_rx,
+            )
+        });
         telio_log_trace!("start_sucessfull");
     }
 }
