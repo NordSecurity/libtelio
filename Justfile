@@ -52,7 +52,9 @@ deny: _deny-install
     cargo deny check
 
 # Run rust pre-push checks
-prepush: test clippy udeps unused deny black pylint
+prepush: test clippy udeps unused deny python_checks
+
+python_checks: black pylint isort mypy autoflake
 
 # Run the black python linter
 [working-directory: 'nat-lab']
