@@ -11,11 +11,11 @@ jobs:
     permissions:
       pull-requests: write
     runs-on: ubuntu-20.04
-    # Excluding Dependabot PRs from this check.
-    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - name: Check DoD
+        # Excluding Dependabot PRs and checks_requested events from this check.
+        if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
         uses: platisd/definition-of-done@e69d712b88c93ef88a73da4435155a0054b7df5e # v2.2.0
         with:
           dod_yaml: 'dod.yml'
