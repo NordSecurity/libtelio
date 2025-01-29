@@ -41,6 +41,7 @@ jobs:
     uses: ./.github/workflows/nagger.yml
 
   check-all-green:
+    if: always()
     needs:
     - build
     - linters
