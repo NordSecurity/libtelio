@@ -35,7 +35,6 @@ def get_dns_server_address(ip_stack: IPStack) -> str:
     )
 
 
-@pytest.mark.dns
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_ip_stack",

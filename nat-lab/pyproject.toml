@@ -166,7 +166,6 @@ markers = [
     "ipv4v6: tests dual stack WG connectivity",
     "batching: tests packet batching",
     "utils: tests the natlab utilities",
-    "dns: tests only dns tests",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning"
