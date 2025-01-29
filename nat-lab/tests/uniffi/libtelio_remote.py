@@ -45,6 +45,7 @@ class TelioEventCbImpl(libtelio.TelioEventCb):
         self._events: list[libtelio.Event] = []
 
     def event(self, payload):
+        print(f"{datetime.datetime.now()} enqueue event: {payload}")
         self._events.append(payload)
 
     def next_event(self) -> libtelio.Event:
