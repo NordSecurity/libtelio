@@ -119,6 +119,13 @@ async def os_ephemeral_ports(vm_tag):
         await connection.create_process(cmd).execute(on_output, on_output)
 
 
+def pytest_collection_modifyitems(items):
+    skip_non_asyncio = pytest.mark.skip(reason="Skipping non-dns test")
+    for item in items:
+        if "dns" not in item.keywords:
+            item.add_marker(skip_non_asyncio)
+
+
 @pytest.fixture(autouse=True)
 def setup_ephemeral_ports(request):
     def execute_setup(vm_tag):
