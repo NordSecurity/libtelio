@@ -95,7 +95,7 @@ impl LocalNameServer {
             let bytes_read = match socket.recv(&mut receiving_buffer).await {
                 Ok(bytes) => bytes,
                 Err(e) => {
-                    telio_log_error!("[DNS] Failed to read bytes: {:?}", e);
+                    telio_log_error!("Failed to read bytes: {:?}", e);
                     continue;
                 }
             };
@@ -105,11 +105,11 @@ impl LocalNameServer {
                 match res {
                     TunnResult::WriteToNetwork(packet) => {
                         if let Err(e) = socket.send_to(packet, dst_address).await {
-                            telio_log_warn!("[DNS] Failed to send timer update packet : {:?}", e)
+                            telio_log_warn!("Failed to send timer update packet : {:?}", e)
                         };
                     }
                     TunnResult::Err(e) => {
-                        telio_log_error!("[DNS] Failed to update Tunn timers : {:?}", e);
+                        telio_log_error!("Failed to update Tunn timers : {:?}", e);
                         break;
                     }
                     _ => break,
@@ -132,7 +132,7 @@ impl LocalNameServer {
                     // Handshake packets
                     TunnResult::WriteToNetwork(packet) => {
                         if let Err(e) = socket.send_to(packet, dst_address).await {
-                            telio_log_warn!("[DNS] Failed to send handshake packet  : {:?}", e);
+                            telio_log_warn!("Failed to send handshake packet  : {:?}", e);
                             return;
                         };
                         let mut temporary_buffer = [0u8; MAX_PACKET];
@@ -143,7 +143,7 @@ impl LocalNameServer {
                                 .decapsulate(None, &[], &mut temporary_buffer)
                         {
                             if let Err(e) = socket.send_to(empty, dst_address).await {
-                                telio_log_warn!("[DNS] Failed to send handshake packet  : {:?}", e);
+                                telio_log_warn!("Failed to send handshake packet  : {:?}", e);
                                 return;
                             };
                         }
@@ -155,7 +155,7 @@ impl LocalNameServer {
                         let _lease = match semaphore.try_acquire() {
                             Ok(lease) => lease,
                             Err(_) => {
-                                telio_log_debug!("[DNS] Error semaphore.try_acquire()");
+                                telio_log_debug!("Error semaphore.try_acquire()");
                                 return;
                             }
                         };
@@ -188,40 +188,34 @@ impl LocalNameServer {
                 let mut receiving_buffer = vec![0u8; MAX_PACKET];
                 let mut sending_buffer = vec![0u8; MAX_PACKET];
                 let nameserver = nameserver.clone();
-                let length = match LocalNameServer::process_packet(
+                match LocalNameServer::process_dns_request(
                     nameserver,
                     &packet,
                     &mut receiving_buffer,
                 )
                 .await
                 {
-                    Ok(length) => length,
+                    Ok(length) => {
+                        let tunn_res = peer.lock().await.encapsulate(
+                            receiving_buffer.get(..length).unwrap_or(&[]),
+                            &mut sending_buffer,
+                        );
+                        match tunn_res {
+                            TunnResult::WriteToNetwork(dns) => {
+                                if let Err(e) = socket.send_to(dns, dst_address).await {
+                                    telio_log_warn!("Failed to send DNS query response  {:?}", e)
+                                };
+                            }
+                            TunnResult::Err(e) => {
+                                telio_log_warn!("Failed to encapsulate DNS query response  {:?}", e)
+                            }
+                            _ => {}
+                        }
+                    }
                     Err(e) => {
-                        telio_log_error!("[DNS] {}. Offending request packet: {:?}", e, packet);
-                        MAX_PACKET + 1
+                        telio_log_error!("{}. Offending request packet: {:?}", e, packet);
                     }
                 };
-
-                if length < MAX_PACKET {
-                    let tunn_res = peer.lock().await.encapsulate(
-                        receiving_buffer.get(..length).unwrap_or(&[]),
-                        &mut sending_buffer,
-                    );
-                    match tunn_res {
-                        TunnResult::WriteToNetwork(dns) => {
-                            if let Err(e) = socket.send_to(dns, dst_address).await {
-                                telio_log_warn!("[DNS] Failed to send DNS query response  {:?}", e)
-                            };
-                        }
-                        TunnResult::Err(e) => {
-                            telio_log_warn!(
-                                "[DNS] Failed to encapsulate DNS query response  {:?}",
-                                e
-                            )
-                        }
-                        _ => {}
-                    }
-                }
             }
         });
 
@@ -259,7 +253,7 @@ impl LocalNameServer {
         Ok(dns_response.to_vec())
     }
 
-    async fn process_packet(
+    async fn process_dns_request(
         nameserver: Arc<RwLock<LocalNameServer>>,
         request_packet: &[u8],
         response_packet: &mut [u8],
