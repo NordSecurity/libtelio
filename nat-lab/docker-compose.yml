@@ -629,6 +629,10 @@ services:
       PYTHONUNBUFFERED: 1
     healthcheck:
       test: "curl --cacert /etc/ssl/server_certificate/test.pem https://api.nordvpn.com/v1/health"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     networks:
       internet:
         ipv4_address: 10.0.80.86
