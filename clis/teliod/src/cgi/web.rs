@@ -36,11 +36,23 @@ lazy_static! {
                 "/static/spinner.svg",
                 ("image/svg+xml", asset!("spinner.svg")),
             ),
-            ("/static/tailwindcss.js", ("text/javascript", asset!("tailwindcss.js"))),
+            (
+                "/static/tailwindcss.js",
+                ("text/javascript", asset!("tailwindcss.js")),
+            ),
             ("/static/htmx.js", ("text/javascript", asset!("htmx.js"))),
-            ("/static/fonts/Inter_18pt-Regular.ttf", ("font/ttf", asset!("fonts/Inter_18pt-Regular.ttf"))),
-            ("/static/fonts/Inter_18pt-Medium.ttf", ("font/ttf", asset!("fonts/Inter_18pt-Medium.ttf"))),
-            ("/static/fonts/Inter_18pt-SemiBold.ttf", ("font/ttf", asset!("fonts/Inter_18pt-SemiBold.ttf"))),
+            (
+                "/static/fonts/Inter_18pt-Regular.ttf",
+                ("font/ttf", asset!("fonts/Inter_18pt-Regular.ttf")),
+            ),
+            (
+                "/static/fonts/Inter_18pt-Medium.ttf",
+                ("font/ttf", asset!("fonts/Inter_18pt-Medium.ttf")),
+            ),
+            (
+                "/static/fonts/Inter_18pt-SemiBold.ttf",
+                ("font/ttf", asset!("fonts/Inter_18pt-SemiBold.ttf")),
+            ),
         ]
         .into_iter()
         .collect()
@@ -59,7 +71,7 @@ pub fn handle_web_ui(request: &CgiRequest) -> Option<Response> {
         (&Method::GET, "" | "/") => {
             let base_ref = format!("{}/teliod.cgi", request.uri().path());
             render(index(base_ref))
-        },
+        }
         (&Method::GET, "/pannel") => render(pannel(&AppState::collect())),
         (&Method::GET, "/pannel/status") => render(status(&AppState::collect())),
         (&Method::POST, "/pannel") => {
@@ -97,7 +109,7 @@ fn index(base_ref: String) -> Markup {
                 meta name="viewport" content="width=device-width, initial-scale=1.0";
                 title { "Nord Security Meshnet" }
                 base href=(base_ref);
-                
+
                 script src="static/tailwindcss.js" {}
                 script {
                     "tailwind.config = {"
