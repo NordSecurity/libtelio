@@ -29,6 +29,9 @@ class CommandGrepper:
         self._timeout = timeout
         self._last_stdout = None
 
+    def get_stdout(self) -> Optional[str]:
+        return self._last_stdout
+
     async def check_exists(
         self, exp_primary: str, exp_secondary: Optional[List[str]] = None
     ) -> bool:

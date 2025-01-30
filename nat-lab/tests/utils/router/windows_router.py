@@ -23,8 +23,32 @@ class WindowsRouter(Router):
         return self._interface_name
 
     async def setup_interface(self, addresses: List[str]) -> None:
+        assert self._interface_name
+
         for address in addresses:
             addr_proto = self.check_ip_address(address)
+
+            cmd = CommandGrepper(
+                self._connection,
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4" if addr_proto == IPProto.IPv4 else "ipv6",
+                    "show",
+                    "interface",
+                    self._interface_name,
+                ],
+                timeout=self._status_check_timeout,
+            )
+            if not await cmd.check_exists("State", ["connected"]):
+                raise RuntimeError(
+                    f"Adapter '{self._interface_name}' didn't report connected state. "
+                    f"Last known interface info: {cmd.get_stdout()}"
+                )
+
+            print(
+                f"windows_router: connected state established. Interface info: {cmd.get_stdout()}"
+            )
 
             if addr_proto == IPProto.IPv4:
                 await self._connection.create_process([
