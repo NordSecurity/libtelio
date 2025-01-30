@@ -175,9 +175,6 @@ impl Telio {
     /// - `events`:     Events callback
     /// - `features`:   JSON string of enabled features
     pub fn new(features: Features, events: Box<dyn TelioEventCb>) -> FfiResult<Self> {
-        unsafe {
-            fortify_source();
-        }
         let serialized_event_fn = format!("{:?}", events);
         let ret = Self::new_common(&features, events, None);
         Self::log_entry(features, serialized_event_fn, &ret);
@@ -877,10 +874,6 @@ impl Telio {
 
 /// cbindgen:ignore
 static PANIC_HOOK: Once = Once::new();
-
-extern "C" {
-    fn fortify_source();
-}
 
 trait FFILog {
     fn log_result(self, caller: &str) -> FfiResult<()>;
