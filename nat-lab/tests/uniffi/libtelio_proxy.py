@@ -37,11 +37,13 @@ class LibtelioProxy:
 
     def _handle_remote_error(self, f):
         with Proxy(self._uri) as remote:
+            print(f"[{self._name}]:{datetime.now()}: _handle_remote_error: {self._uri}")
             fn_res = f(remote)
             if fn_res is None:
                 return None
             (res, err) = fn_res
             if err is not None:
+                print(f"[{self._name}]:{datetime.now()}: Pyro error: {err}")
                 raise Exception(err)
             return res
 
