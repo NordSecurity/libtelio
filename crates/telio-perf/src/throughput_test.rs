@@ -390,7 +390,7 @@ impl Runtime for State {
         };
 
         let res = tokio::select! {
-            Ok(_) = transport_socket.recv(&mut self.recv_buffer) => {
+            Ok(_) = transport_socket.recv_from(&mut self.recv_buffer) => {
                 self.handle_incoming_packet().await
             },
             Some(endpoint) = self.cmd_chan.rx.recv() => {
@@ -433,6 +433,7 @@ async fn throughput_test_handler(
         maximal: Some(Duration::from_secs(30)),
     })?;
     loop {
+        telio_log_debug!("Restart");
         let state = { *{ handler_state.read().await } };
         match state {
             HandlerState::Start => {
@@ -462,10 +463,11 @@ async fn throughput_test_handler(
             }
             HandlerState::Test => {
                 let mut total_pkts: u64 = 0;
+                telio_log_debug!("Starting test");
                 let start = Instant::now();
                 // Start sending packets to the peer
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Test as u8);
-                let delay = Duration::from_nanos(5);
+                // let delay = Duration::from_nanos(5);
                 while start.elapsed() < TEST_DURATION {
                     match transport_socket.send_to(&send_buffer, endpoint).await {
                         Ok(_) => {
@@ -478,15 +480,17 @@ async fn throughput_test_handler(
                         }
                     }
                     // Prefer to get max value from system
-                    tokio::time::sleep(delay).await;
+                    // tokio::time::sleep(delay).await;
                 }
-
+                telio_log_debug!("Test finished. Collecting results");
                 // Tell the other peer test has ended
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::End as u8);
                 send_buffer[IP_ADDR_OFFSET..IP_ADDR_OFFSET + SIZE_OF_IP_ADDR]
                     .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr()?.ip()));
                 send_buffer[5..13].copy_from_slice(&total_pkts.to_be_bytes());
-                let _ = transport_socket.send_to(&send_buffer[..13], endpoint).await;
+                if let Err(e) = transport_socket.send_to(&send_buffer[..13], endpoint).await {
+                    telio_log_warn!("Unable to send test end: {e}");
+                };
                 break;
             }
         }
