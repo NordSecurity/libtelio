@@ -381,9 +381,8 @@ impl Analytics {
         io: Io,
         aggregator: Arc<ConnectivityDataAggregator>,
     ) -> Self {
-        let start_time = Instant::now() + config.initial_collect_interval;
-
-        let interval: Interval = interval_at(start_time, config.collect_interval);
+        let far_future_from_now = Instant::now() + FAR_FUTURE;
+        let interval: Interval = interval_at(far_future_from_now, config.collect_interval);
 
         let mut config_nodes = HashMap::new();
         // Add self in config_nodes hashset
@@ -416,6 +415,9 @@ impl Analytics {
             derp_event_channel,
         }) = meshnet_entities
         {
+            let start_time = Instant::now() + self.config.initial_collect_interval;
+            self.task_interval.reset_at(start_time);
+
             self.io.chan = Some(multiplexer);
             self.io.derp_event_channel = Some(derp_event_channel.subscribe());
 
