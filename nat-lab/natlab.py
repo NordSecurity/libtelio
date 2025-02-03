@@ -52,12 +52,15 @@ def start():
             "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
         },
     )
-    run_command(
-        ["docker", "compose", "up", "-d", "--wait"],
-        env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"},
-    )
-
-    check_containers()
+    try:
+        run_command(
+            ["docker", "compose", "up", "-d", "--wait"],
+            env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"},
+        )
+    except subprocess.CalledProcessError:
+        check_containers()
+    else:
+        check_containers()
 
 
 def stop():
