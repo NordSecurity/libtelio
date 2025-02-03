@@ -1,11 +1,16 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
 use telio_model::features::FeaturePostQuantumVPN;
 use telio_task::io::chan;
 use telio_utils::telio_log_debug;
+
+// This constant is based on section 6.1 of the wireguard whitepaper
+// It is the amount of time that has to happen since the last handshake before a connection is abandoned
+const REJECT_AFTER_TIME: Duration = Duration::from_secs(180);
 
 struct Peer {
     pubkey: telio_crypto::PublicKey,
@@ -14,6 +19,7 @@ struct Peer {
     /// This is a key rotation task guard, its `Drop` implementation aborts the task
     _rotation_task: super::conn::ConnKeyRotation,
     keys: Option<super::Keys>,
+    last_handshake_ts: Option<Instant>,
 }
 
 pub struct Entity {
@@ -53,6 +59,7 @@ impl Entity {
                 super::Event::Handshake(addr, keys) => {
                     if peer.addr == addr {
                         peer.keys = Some(keys);
+                        peer.last_handshake_ts = Some(Instant::now());
                     }
                 }
                 super::Event::Rekey(super::Keys {
@@ -106,8 +113,20 @@ impl Entity {
     }
 
     pub async fn restart(&self) {
-        let peer = self.peer.lock().take();
+        let peer = {
+            let mut peer = self.peer.lock();
+            let should_restart = peer
+                .as_ref()
+                .and_then(|peer| peer.last_handshake_ts)
+                .is_some_and(|ts| ts.elapsed() > REJECT_AFTER_TIME);
+            if should_restart {
+                peer.take()
+            } else {
+                None
+            }
+        };
         if let Some(peer) = peer {
+            telio_log_debug!("Restarting postquantum entity");
             self.start_impl(peer.addr, peer.wg_secret, peer.pubkey)
                 .await;
         }
@@ -132,6 +151,7 @@ impl Entity {
                 &self.features,
             ),
             keys: None,
+            last_handshake_ts: None,
         });
 
         #[allow(mpsc_blocking_send)]
