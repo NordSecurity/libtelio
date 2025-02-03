@@ -5,12 +5,17 @@ We are working on making it locally runnable for everyone outside of
 Nord Security organization, but currently it is only possible to run
 them in the CI.
 
+## Prerequisites
+
+- [just](https://just.systems/)
+- [uv](https://docs.astral.sh/uv/)
+
 ## Formatting
 
 Python code is formatted using https://github.com/psf/black, https://github.com/PyCQA/isort and https://github.com/PyCQA/autoflake.
 Unformatted code will automatically be declined by the CI.
 ```
-black . && isort . && autoflake .
+just black && just isort && just autoflake
 ```
 
 ## Linter and typecheck
@@ -18,7 +23,7 @@ black . && isort . && autoflake .
 Python code is checked using https://github.com/python/mypy and https://github.com/pylint-dev/pylint.
 Any faulty code will automatically be declined by the CI.
 ```
-mypy . && pylint .
+just mypy && just pylint
 ```
 
 ## Dependency lock / upgrade
@@ -26,13 +31,12 @@ All dependencies and transitive dependencies should be locked to prevent breakin
 
 #### How to lock
 ```
-$ pipenv lock
+$ uv lock
 ```
 
 #### How to upgrade
-```
-$ pipenv upgrade <package>
-```
+
+Edit the `pyproject.toml` and after that run `uv sync`. See [here](https://docs.astral.sh/uv/concepts/projects/dependencies/) for detailed description of dependency management with uv.
 
 ## Network topology
 For the network topology of the containers please refer to [network.md](network.md)
