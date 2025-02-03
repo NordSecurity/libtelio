@@ -35,21 +35,82 @@ def get_dns_server_address(ip_stack: IPStack) -> str:
     )
 
 
+# TODO: Linux native has to be removed
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "alpha_ip_stack",
+    ["alpha_ip_stack", "alpha_setup_params"],
     [
         pytest.param(
             IPStack.IPv4,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+            ),
             marks=pytest.mark.ipv4,
         ),
         pytest.param(
+            IPStack.IPv4,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+            ),
+            marks=[pytest.mark.ipv4, pytest.mark.linux_native],
+        ),
+        pytest.param(
             IPStack.IPv6,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+            ),
             marks=pytest.mark.ipv6,
         ),
         pytest.param(
+            IPStack.IPv6,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+            ),
+            marks=[pytest.mark.ipv6, pytest.mark.linux_native],
+        ),
+        pytest.param(
             IPStack.IPv4v6,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+            ),
             marks=pytest.mark.ipv4v6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+            ),
+            marks=[pytest.mark.ipv4v6, pytest.mark.linux_native],
         ),
     ],
 )
@@ -61,17 +122,30 @@ def get_dns_server_address(ip_stack: IPStack) -> str:
             marks=pytest.mark.ipv4,
         ),
         pytest.param(
+            IPStack.IPv4,
+            marks=[pytest.mark.ipv4, pytest.mark.linux_native],
+        ),
+        pytest.param(
             IPStack.IPv6,
             marks=pytest.mark.ipv6,
+        ),
+        pytest.param(
+            IPStack.IPv6,
+            marks=[pytest.mark.ipv6, pytest.mark.linux_native],
         ),
         pytest.param(
             IPStack.IPv4v6,
             marks=pytest.mark.ipv4v6,
         ),
+        pytest.param(
+            IPStack.IPv4v6,
+            marks=[pytest.mark.ipv4v6, pytest.mark.linux_native],
+        ),
     ],
 )
 async def test_dns(
     alpha_ip_stack: IPStack,
+    alpha_setup_params: SetupParameters,
     beta_ip_stack: IPStack,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
@@ -82,13 +156,7 @@ async def test_dns(
         env = await setup_mesh_nodes(
             exit_stack,
             [
-                SetupParameters(
-                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=(1, 1),
-                    ),
-                ),
+                alpha_setup_params,
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                     connection_tracker_config=generate_connection_tracker_config(
@@ -154,38 +222,95 @@ async def test_dns(
             )
 
 
+# TODO: Linux native has to be removed
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "alpha_ip_stack",
+    ["alpha_ip_stack", "alpha_setup_params"],
     [
         pytest.param(
             IPStack.IPv4,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+            ),
             marks=pytest.mark.ipv4,
         ),
         pytest.param(
+            IPStack.IPv4,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+            ),
+            marks=[pytest.mark.ipv4, pytest.mark.linux_native],
+        ),
+        pytest.param(
             IPStack.IPv6,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+            ),
             marks=pytest.mark.ipv6,
         ),
         pytest.param(
+            IPStack.IPv6,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+            ),
+            marks=[pytest.mark.ipv6, pytest.mark.linux_native],
+        ),
+        pytest.param(
             IPStack.IPv4v6,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+            ),
             marks=pytest.mark.ipv4v6,
+        ),
+        pytest.param(
+            IPStack.IPv4v6,
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    derp_1_limits=(1, 1),
+                ),
+            ),
+            marks=[pytest.mark.ipv4v6, pytest.mark.linux_native],
         ),
     ],
 )
-async def test_dns_port(alpha_ip_stack: IPStack) -> None:
+async def test_dns_port(
+    alpha_ip_stack: IPStack,
+    alpha_setup_params: SetupParameters,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         dns_server_address_alpha = get_dns_server_address(alpha_ip_stack)
         env = await setup_mesh_nodes(
             exit_stack,
             [
-                SetupParameters(
-                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    ip_stack=alpha_ip_stack,
-                    connection_tracker_config=generate_connection_tracker_config(
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        derp_1_limits=(1, 1),
-                    ),
-                ),
+                alpha_setup_params,
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
                     ip_stack=IPStack.IPv4v6,
