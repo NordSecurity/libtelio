@@ -9,11 +9,9 @@ use std::{
 };
 
 use async_trait::async_trait;
+use telio_sockets::SocketPool;
 use telio_task::io::Chan;
 use telio_task::task_exec;
-use tokio::net::UdpSocket;
-
-use telio_sockets::SocketPool;
 use telio_task::{Runtime, RuntimeExt, Task, WaitResponse};
 use telio_utils::{
     exponential_backoff::{
@@ -22,10 +20,12 @@ use telio_utils::{
     PinnedSleep,
 };
 use telio_utils::{telio_log_debug, telio_log_warn};
+use tokio::net::UdpSocket;
 use tokio::sync::mpsc::error::SendError;
 #[cfg(test)]
 use tokio::sync::Notify;
 use tokio::sync::RwLock;
+use tokio::time::{Duration as TokioDuration, Instant as TokioInstant};
 
 /// Port is randomly chosen
 /// perf % 65535 = 46750
@@ -364,6 +364,7 @@ impl Runtime for State {
         let transport_socket = match &self.transport_socket {
             Some(transport_socket) => transport_socket.to_owned(),
             None => {
+                telio_log_debug!("no socket yet");
                 PinnedSleep::new(self.exponential_backoff.get_backoff(), ()).await;
                 let Ok(transport_socket) = open_transport_socket(
                     self.socket_pool.clone(),
@@ -383,7 +384,8 @@ impl Runtime for State {
                     return Self::next();
                 };
                 telio_log_debug!("Throughput transport socket opened");
-                self.transport_socket = Some(transport_socket.clone());
+                let t = transport_socket.clone();
+                self.transport_socket = Some(t);
                 self.exponential_backoff.reset();
                 transport_socket
             }
@@ -467,9 +469,9 @@ async fn throughput_test_handler(
                 let start = Instant::now();
                 // Start sending packets to the peer
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Test as u8);
-                // let delay = Duration::from_nanos(5);
+                let delay = TokioDuration::from_nanos(1);
                 while start.elapsed() < TEST_DURATION {
-                    match transport_socket.send_to(&send_buffer, endpoint).await {
+                    match transport_socket.try_send_to(&send_buffer, endpoint) {
                         Ok(_) => {
                             // Count the number of packets, each packet contains
                             // the same amount of bytes
@@ -480,7 +482,9 @@ async fn throughput_test_handler(
                         }
                     }
                     // Prefer to get max value from system
-                    // tokio::time::sleep(delay).await;
+                    let mut next_send_time = TokioInstant::now();
+                    next_send_time += delay;
+                    tokio::time::sleep_until(next_send_time).await;
                 }
                 telio_log_debug!("Test finished. Collecting results");
                 // Tell the other peer test has ended
@@ -488,9 +492,8 @@ async fn throughput_test_handler(
                 send_buffer[IP_ADDR_OFFSET..IP_ADDR_OFFSET + SIZE_OF_IP_ADDR]
                     .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr()?.ip()));
                 send_buffer[5..13].copy_from_slice(&total_pkts.to_be_bytes());
-                if let Err(e) = transport_socket.send_to(&send_buffer[..13], endpoint).await {
-                    telio_log_warn!("Unable to send test end: {e}");
-                };
+                let res = transport_socket.send_to(&send_buffer[..13], endpoint).await;
+                telio_log_debug!("Unable to send test end: {:?}", res);
                 break;
             }
         }
