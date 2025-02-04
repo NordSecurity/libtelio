@@ -21,7 +21,7 @@ use telio_utils::{
 };
 use telio_utils::{telio_log_debug, telio_log_warn};
 use tokio::net::UdpSocket;
-use tokio::sync::mpsc::error::SendError;
+use tokio::sync::mpsc::error::{SendError, TrySendError};
 #[cfg(test)]
 use tokio::sync::Notify;
 use tokio::sync::RwLock;
@@ -55,6 +55,9 @@ pub enum Error {
     /// Task execution failed
     #[error(transparent)]
     TaskError(#[from] telio_task::ExecError),
+    /// Unable to send on channel error
+    #[error(transparent)]
+    ChanError(#[from] TrySendError<SocketAddr>),
     /// Transport socket isn't open yet, probably because tunnel interface hadn't been configured yet.
     #[error("Transport socket isn't open yet")]
     TransportSocketNotOpen,
@@ -225,7 +228,7 @@ impl State {
                 // Reset bytes received and ack sent by reciever
                 telio_log_debug!("Recieved throughput-test request");
                 self.pkts_recvd = 0;
-                self.send_ack().await;
+                self.send_ack().await?;
                 self.duration = Instant::now();
             }
             PacketType::Ack => {
@@ -267,7 +270,7 @@ impl State {
         Ok(())
     }
 
-    async fn send_ack(&mut self) {
+    async fn send_ack(&mut self) -> Result<(), Error> {
         let send_buffer = vec![PacketType::Ack as u8; 1];
         let ip_addr = IpAddr::V4(Ipv4Addr::new(
             self.recv_buffer[IP_ADDR_OFFSET],
@@ -287,12 +290,13 @@ impl State {
         if let Err(e) = self
             .transport_socket
             .as_ref()
-            .unwrap()
+            .ok_or(Error::TransportSocketNotOpen)?
             .send_to(&send_buffer, endpoint)
             .await
         {
             telio_log_warn!("Unable to send ack {e}")
         }
+        Ok(())
     }
 
     async fn send_results(&mut self) {
@@ -349,7 +353,7 @@ impl State {
 
     /// Start the throughput test with given endpoint
     async fn start_test(&self, endpoint: SocketAddr) -> Result<(), Error> {
-        self.cmd_chan.tx.send(endpoint).await?;
+        self.cmd_chan.tx.try_send(endpoint)?;
         Ok(())
     }
 }
@@ -384,8 +388,7 @@ impl Runtime for State {
                     return Self::next();
                 };
                 telio_log_debug!("Throughput transport socket opened");
-                let t = transport_socket.clone();
-                self.transport_socket = Some(t);
+                self.transport_socket = Some(transport_socket.clone());
                 self.exponential_backoff.reset();
                 transport_socket
             }
@@ -492,8 +495,9 @@ async fn throughput_test_handler(
                 send_buffer[IP_ADDR_OFFSET..IP_ADDR_OFFSET + SIZE_OF_IP_ADDR]
                     .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr()?.ip()));
                 send_buffer[5..13].copy_from_slice(&total_pkts.to_be_bytes());
-                let res = transport_socket.send_to(&send_buffer[..13], endpoint).await;
-                telio_log_debug!("Unable to send test end: {:?}", res);
+                if let Err(e) = transport_socket.send_to(&send_buffer[..13], endpoint).await {
+                    telio_log_warn!("Unable to send test end: {:?}", e);
+                }
                 break;
             }
         }
