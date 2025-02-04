@@ -2,6 +2,8 @@ name: Definition of Done
 on:
   pull_request:
     types: [opened, synchronize]
+  merge_group:
+    types: checks_requested
 permissions: {}
 
 jobs:
@@ -14,6 +16,8 @@ jobs:
         with:
           fetch-depth: 0
       - name: Check for new file in .unreleased
+        # Excluding Dependabot PRs and merge_group events from this check.
+        if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
         run: |
           FILE_COUNT=$(git diff --name-only ${{github.event.pull_request.base.sha}}..HEAD -- .unreleased | wc -l)
           if [ "$FILE_COUNT" -eq "0" ]; then
