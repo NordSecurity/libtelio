@@ -565,6 +565,8 @@ dictionary Features {
     boolean multicast;
     /// Batching
     FeatureBatching? batching;
+    /// Throughput test support
+    boolean throughput;
 };
 
 dictionary FeatureBatching {
