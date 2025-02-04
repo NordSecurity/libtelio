@@ -1,4 +1,3 @@
-import asyncio
 import config
 import pytest
 from contextlib import AsyncExitStack
@@ -90,7 +89,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 3),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -106,7 +105,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 3),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -189,7 +188,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 3),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -205,7 +204,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 3),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -546,6 +545,6 @@ async def test_pq_vpn_handshake_after_nonet() -> None:
         async with client_alpha.get_router().break_udp_conn_to_host(
             str(config.NLX_SERVER["ipv4"])
         ):
-            await asyncio.sleep(195)
+            await client_alpha.wait_for_log("Restarting postquantum entity")
 
         await ping(client_conn, config.PHOTO_ALBUM_IP, timeout=10)
