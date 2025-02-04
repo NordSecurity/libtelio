@@ -87,7 +87,10 @@ impl LocalNameServer {
         let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_QUERIES));
         loop {
             let bytes_read = match socket.recv(&mut receiving_buffer).await {
-                Ok(bytes) => bytes,
+                Ok(bytes) => {
+                    telio_log_debug!("Pkt recvd");
+                    bytes
+                }
                 Err(e) => {
                     telio_log_error!("[DNS] Failed to read bytes: {:?}", e);
                     continue;
@@ -109,7 +112,7 @@ impl LocalNameServer {
                     _ => break,
                 };
             }
-
+            telio_log_debug!("Timers updated");
             let peer = peer.clone();
             let socket = socket.clone();
             let nameserver = nameserver.clone();
@@ -122,6 +125,7 @@ impl LocalNameServer {
                     receiving_buffer.get(..bytes_read).unwrap_or(&[]),
                     &mut sending_buffer,
                 );
+                telio_log_debug!("Pkt decapsulated");
                 match res {
                     // Handshake packets
                     TunnResult::WriteToNetwork(packet) => {
@@ -141,6 +145,7 @@ impl LocalNameServer {
                                 return;
                             };
                         }
+                        telio_log_debug!("Handshake pkt");
                     }
                     // DNS packets
                     TunnResult::WriteToTunnelV4(packet, _)
@@ -153,6 +158,7 @@ impl LocalNameServer {
                                 return;
                             }
                         };
+                        telio_log_debug!("Write2Tun");
 
                         let nameserver = nameserver.clone();
                         let length = match LocalNameServer::process_packet(
@@ -172,6 +178,7 @@ impl LocalNameServer {
                                 return;
                             }
                         };
+                        telio_log_debug!("Pkt processed");
 
                         let tunn_res = peer.lock().await.encapsulate(
                             receiving_buffer.get(..length).unwrap_or(&[]),
@@ -205,6 +212,7 @@ impl LocalNameServer {
         nameserver: Arc<RwLock<LocalNameServer>>,
         request_info: &mut RequestInfo,
     ) -> Result<Vec<u8>, String> {
+        telio_log_debug!("Resolving dns");
         let resolver = Resolver::new();
         let zones = nameserver.zones().await;
 
