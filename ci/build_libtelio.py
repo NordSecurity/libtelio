@@ -34,6 +34,11 @@ MOOSE_MAP = {
     "armv7hf": "armv7_eabihf",
 }
 
+QNAP_MAP = {
+    "x86_64": "x86_64",
+    "aarch64": "arm_64",
+}
+
 PROJECT_CONFIG = rutils.Project(
     rust_version="1.77.2",
     root_dir=PROJECT_ROOT,
@@ -114,8 +119,9 @@ def post_qnap_build_wrap_binary_on_qpkg(config, args):
                 )
                 dst_path = os.path.join(
                     PROJECT_CONFIG.get_root_dir(),
-                    f"qnap/{config.arch}",
+                    f"qnap/{QNAP_MAP[config.arch]}",
                 )
+                os.makedirs(dst_path, exist_ok=True)
                 if os.path.isfile(src_path):
                     shutil.copy2(src_path, dst_path)
         rutils.run_command_with_output(
