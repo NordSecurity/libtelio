@@ -92,7 +92,7 @@ DERP_SERVERS_STRS = [
 
 DEFAULT_WAITING_TIME = 5
 DEFAULT_CHECK_INTERVAL = 2
-DEFAULT_CHECK_TIMEOUT = 60
+DEFAULT_CHECK_TIMEOUT = 15
 COLLECT_NAT_TYPE = False
 RTT_INTERVAL = 3 * 60
 
@@ -182,11 +182,14 @@ async def get_moose_db_file(
 
 
 async def wait_for_event_dump(
-    connection: Connection, events_path: str, nr_events: int
+    connection: Connection,
+    events_path: str,
+    nr_events: int,
+    timeout: int = DEFAULT_CHECK_TIMEOUT,
 ) -> Optional[list[Event]]:
     start_time = asyncio.get_event_loop().time()
     events = []
-    while asyncio.get_event_loop().time() - start_time < DEFAULT_CHECK_TIMEOUT:
+    while asyncio.get_event_loop().time() - start_time < timeout:
         await get_moose_db_file(
             connection, CONTAINER_EVENT_PATH, CONTAINER_EVENT_BACKUP_PATH, events_path
         )
@@ -2122,6 +2125,86 @@ async def test_lana_initial_heartbeat_no_trigger(
             assert not await wait_for_event_dump(
                 connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
             )
+
+
+@pytest.mark.moose
+@pytest.mark.asyncio
+@pytest.mark.parametrize("initial_heartbeat_interval", [pytest.param(5)])
+async def test_lana_initial_heartbeat_count_since_meshnet_start(
+    initial_heartbeat_interval: int,
+):
+    async with AsyncExitStack() as exit_stack:
+        api = API()
+        alpha = api.default_config_one_node(True)
+
+        connection_alpha = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+        await clean_container(connection_alpha)
+
+        client_alpha = await exit_stack.enter_async_context(
+            Client(
+                connection_alpha,
+                alpha,
+                telio_features=build_telio_features(
+                    initial_heartbeat_interval=initial_heartbeat_interval,
+                ),
+                fingerprint=ALPHA_FINGERPRINT,
+            ).run()
+        )
+
+        await asyncio.sleep(initial_heartbeat_interval + 3)
+        assert not await wait_for_event_dump(
+            connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
+        )
+
+        await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
+
+        await asyncio.sleep(initial_heartbeat_interval + 3)
+        assert await wait_for_event_dump(
+            connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
+        )
+
+
+@pytest.mark.moose
+@pytest.mark.asyncio
+@pytest.mark.parametrize("initial_heartbeat_interval", [pytest.param(5)])
+async def test_lana_initial_heartbeat_count_since_meshnet_restart(
+    initial_heartbeat_interval: int,
+):
+    async with AsyncExitStack() as exit_stack:
+        api = API()
+        alpha = api.default_config_one_node(True)
+
+        connection_alpha = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+        await clean_container(connection_alpha)
+
+        client_alpha = await exit_stack.enter_async_context(
+            Client(
+                connection_alpha,
+                alpha,
+                telio_features=build_telio_features(
+                    initial_heartbeat_interval=initial_heartbeat_interval,
+                ),
+                fingerprint=ALPHA_FINGERPRINT,
+            ).run()
+        )
+        await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
+
+        await asyncio.sleep(initial_heartbeat_interval + 3)
+        assert await wait_for_event_dump(
+            connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
+        )
+
+        await client_alpha.set_mesh_off()
+        await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
+
+        await asyncio.sleep(initial_heartbeat_interval + 3)
+        assert await wait_for_event_dump(
+            connection_alpha, ALPHA_EVENTS_PATH, nr_events=2
+        )
 
 
 @pytest.mark.moose
