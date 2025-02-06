@@ -275,12 +275,15 @@ pub fn parse_get_response(pkgbuf: &[u8], local_port: u16) -> super::Result<kyber
 
 fn validate_get_response_ip(ip: &Ipv4Packet) -> Result<(), &'static str> {
     if ip.get_source() != REMOTE_IP {
+        telio_log_debug!("Invalid src IP: {}", ip.get_source());
         return Err("invalid src IP");
     }
     if ip.get_destination() != LOCAL_IP {
+        telio_log_debug!("Invalid dst IP: {}", ip.get_destination());
         return Err("invalid dst IP");
     }
     if ip.get_next_level_protocol() != ip::IpNextHeaderProtocols::Udp {
+        telio_log_debug!("Invalid protocol: {}", ip.get_next_level_protocol());
         return Err("invalid protocol");
     }
     if ip.get_checksum() != ipv4::checksum(ip) {
