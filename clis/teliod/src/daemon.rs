@@ -12,7 +12,7 @@ use telio::{
     telio_wg::AdapterType,
 };
 use tokio::{sync::mpsc, sync::oneshot, time::Duration};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::core_api::{get_meshmap as get_meshmap_from_server, init_with_api};
 use crate::ClientCmd;
@@ -192,6 +192,8 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
 
     debug!("started with config: {config:?}");
 
+    let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
+
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
 
     // Tx is unused here, but this channel can be used to communicate with the
@@ -205,12 +207,22 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
     // are dummy and program will not run as it expects real tokens.
     let mut identity = DeviceIdentity::default();
     if !config.authentication_token.eq(EMPTY_TOKEN) {
-        identity = init_with_api(&config.authentication_token).await?;
+        identity = select! {
+            identity = init_with_api(&config.authentication_token) => identity?,
+            _ = signals.next() => {
+                warn!("Interrupted while obtaining identity - stopping");
+                return Ok(());
+            }
+        };
     }
 
-    let nc = NotificationCenter::new(&config, &identity.hw_identifier).await?;
-
-    let tx_clone = tx.clone();
+    let nc = select! {
+        nc = NotificationCenter::new(&config, &identity.hw_identifier) => nc?,
+        _ = signals.next() => {
+            warn!("Interrupted while obtaining identity - stopping");
+            return Ok(());
+        }
+    };
 
     let token_ptr = Arc::new(config.authentication_token);
     let token_clone = token_ptr.clone();
@@ -218,17 +230,20 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
     let identity_ptr = Arc::new(identity);
     let identity_clone = identity_ptr.clone();
 
-    let mut telio_task_handle = tokio::task::spawn_blocking(move || {
-        telio_task(identity_clone, token_clone, rx, tx_clone, &config.interface)
-    });
-
     let tx_clone = tx.clone();
     nc.add_callback(Arc::new(move |_am| {
-        task_retrieve_meshmap(identity_ptr.clone(), token_ptr.clone(), tx_clone.clone());
+        task_retrieve_meshmap(
+            identity_clone.clone(),
+            token_clone.clone(),
+            tx_clone.clone(),
+        );
     }))
     .await;
 
-    let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
+    let tx_clone = tx.clone();
+    let mut telio_task_handle = tokio::task::spawn_blocking(move || {
+        telio_task(identity_ptr, token_ptr, rx, tx_clone, &config.interface)
+    });
 
     info!("Entering event loop");
     eprintln!("Daemon started");
