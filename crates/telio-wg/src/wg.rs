@@ -358,6 +358,7 @@ impl DynamicWg {
         ));
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn start_with(
         io: Io,
         adapter: Box<dyn Adapter>,

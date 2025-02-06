@@ -81,18 +81,23 @@ impl SessionKeeper {
                 },
                 batched_actions: Batcher::new(),
                 nonbatched_actions: RepeatedActions::default(),
+                sock_pool,
             }),
         })
     }
 
     fn make_builder(proto: ICMP) -> ConfigBuilder {
         let mut config_builder = PingerConfig::builder().kind(proto);
-        if cfg!(any(
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "tvos",
-        )) {
+        if cfg!(any(target_os = "macos", target_os = "tvos",)) {
             config_builder = config_builder.sock_type_hint(Type::RAW);
+        }
+        // Raw sockets are not allowed on iOS, instead use
+        // socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)
+        //
+        // TODO: LLT-5991: Refactor writing ICMP packets directly into the tunnel
+        // TODO: Check if raw sockets are supported on tvos
+        if cfg!(target_os = "ios") {
+            config_builder = config_builder.sock_type_hint(Type::DGRAM);
         }
         if cfg!(not(target_os = "android")) {
             match proto {
@@ -128,14 +133,19 @@ async fn ping(pingers: &Pingers, targets: (&PublicKey, &DualTarget)) -> Result<(
     let (primary, secondary) = targets.1.get_targets()?;
     let public_key = targets.0;
 
-    telio_log_debug!("Pinging primary target {:?} on {:?}", public_key, primary);
-
     let primary_client = match primary {
         IpAddr::V4(_) => &pingers.pinger_client_v4,
         IpAddr::V6(_) => &pingers.pinger_client_v6,
     };
 
-    let ping_id = PingIdentifier(rand::random());
+    let mut ping_id = PingIdentifier(rand::random());
+    telio_log_debug!(
+        "Pinging primary target {:?} on {:?}, {:#06x}",
+        public_key,
+        primary,
+        ping_id.0
+    );
+
     if let Err(e) = primary_client
         .pinger(primary, ping_id)
         .await
@@ -145,7 +155,13 @@ async fn ping(pingers: &Pingers, targets: (&PublicKey, &DualTarget)) -> Result<(
         telio_log_warn!("Primary target failed: {}", e.to_string());
 
         if let Some(second) = secondary {
-            telio_log_debug!("Pinging secondary target {:?} on {:?}", public_key, second);
+            ping_id = PingIdentifier(rand::random());
+            telio_log_debug!(
+                "Pinging secondary target {:?} on {:?}, {:#06x}",
+                public_key,
+                second,
+                ping_id.0
+            );
 
             let secondary_client = match second {
                 IpAddr::V4(_) => &pingers.pinger_client_v4,
@@ -153,7 +169,7 @@ async fn ping(pingers: &Pingers, targets: (&PublicKey, &DualTarget)) -> Result<(
             };
 
             secondary_client
-                .pinger(second, PingIdentifier(rand::random()))
+                .pinger(second, ping_id)
                 .await
                 .send_ping(PingSequence(0), &[0; PING_PAYLOAD_SIZE])
                 .await?;
@@ -181,6 +197,28 @@ impl SessionKeeperTrait for SessionKeeper {
                     t,
                     Arc::new(move |c: &mut State| {
                         Box::pin(async move {
+                            // This is a temporary solution for iOS due to NECP re-binding the socket to
+                            // the main interface after every write, refer to LLT-5886
+                            //
+                            // TODO: LLT-5991: Refactor writing ICMP packets directly into the tunnel
+                            if cfg!(target_os = "ios") {
+                                if let Err(e) = c.sock_pool.make_internal(
+                                    c.pingers.pinger_client_v4.get_socket().get_native_sock(),
+                                ) {
+                                    telio_log_warn!(
+                                        "Failed to make socket internal, error: {:?}",
+                                        e
+                                    );
+                                }
+                                if let Err(e) = c.sock_pool.make_internal(
+                                    c.pingers.pinger_client_v6.get_socket().get_native_sock(),
+                                ) {
+                                    telio_log_warn!(
+                                        "Failed to make socket internal, error: {:?}",
+                                        e
+                                    );
+                                }
+                            }
                             telio_log_debug!("Batch-Pinging: {:?}", public_key);
                             if let Err(e) = ping(&c.pingers, (&public_key, &dual_target)).await {
                                 telio_log_warn!(
@@ -209,6 +247,28 @@ impl SessionKeeperTrait for SessionKeeper {
                     interval,
                     Arc::new(move |c| {
                         Box::pin(async move {
+                            // This is a temporary solution for iOS due to NECP re-binding the socket to
+                            // the main interface after every write, refer to LLT-5886
+                            //
+                            // TODO: LLT-5991: Refactor writing ICMP packets directly into the tunnel
+                            if cfg!(target_os = "ios") {
+                                if let Err(e) = c.sock_pool.make_internal(
+                                    c.pingers.pinger_client_v4.get_socket().get_native_sock(),
+                                ) {
+                                    telio_log_warn!(
+                                        "Failed to make socket internal, error: {:?}",
+                                        e
+                                    );
+                                }
+                                if let Err(e) = c.sock_pool.make_internal(
+                                    c.pingers.pinger_client_v6.get_socket().get_native_sock(),
+                                ) {
+                                    telio_log_warn!(
+                                        "Failed to make socket internal, error: {:?}",
+                                        e
+                                    );
+                                }
+                            }
                             if let Err(e) = ping(&c.pingers, (&public_key, &dual_target)).await {
                                 telio_log_warn!(
                                     "Failed to ping, peer with key: {:?}, error: {:?}",
@@ -264,6 +324,7 @@ struct State {
     pingers: Pingers,
     batched_actions: Batcher<PublicKey, Self>,
     nonbatched_actions: RepeatedActions<PublicKey, Self, Result<()>>,
+    sock_pool: Arc<SocketPool>,
 }
 #[async_trait]
 impl Runtime for State {
