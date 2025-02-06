@@ -214,8 +214,10 @@ impl LocalNameServer {
     ) -> Result<Vec<u8>, String> {
         telio_log_debug!("Resolving dns");
         let resolver = Resolver::new();
+        telio_log_debug!("Getting DNS zones");
         let zones = nameserver.zones().await;
 
+        telio_log_debug!("Preparing DNS request");
         let dns_request = match &mut request_info.payload {
             PayloadRequestInfo::Udp {
                 ref mut dns_request,
@@ -640,7 +642,14 @@ trait WithZones {
 #[async_trait]
 impl WithZones for Arc<RwLock<LocalNameServer>> {
     async fn zones(&self) -> Arc<ClonableZones> {
-        self.read().await.zones.clone()
+        let start = std::time::Instant::now();
+        telio_log_debug!("Aquiring read lock for DNS zones");
+        let zones = { self.read().await.zones.clone() };
+        telio_log_debug!(
+            "Released read lock for DNS zones after: {:?}",
+            start.elapsed()
+        );
+        zones
     }
 
     async fn zones_mut(&self) -> RwLockMappedWriteGuard<ClonableZones> {
@@ -658,16 +667,28 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
     ) -> Result<(), String> {
         let azone = Arc::new(AuthoritativeZone::new(zone, records, ttl_value).await?);
 
+        let start = std::time::Instant::now();
+        telio_log_debug!("Aquiring write lock for DNS zones (upsert)");
         self.zones_mut()
             .await
             .upsert(LowerName::from_str(zone)?, Box::new(azone));
+        telio_log_debug!(
+            "Released write lock for DNS zones (upsert) after: {:?}",
+            start.elapsed()
+        );
         Ok(())
     }
 
     async fn forward(&self, to: &[IpAddr]) -> Result<(), String> {
+        let start = std::time::Instant::now();
+        telio_log_debug!("Aquiring write lock for DNS zones (forward)");
         self.zones_mut().await.upsert(
             LowerName::from_str(".")?,
             Box::new(Arc::new(ForwardZone::new(".", to).await?)),
+        );
+        telio_log_debug!(
+            "Released write lock for DNS zones (forward) after: {:?}",
+            start.elapsed()
         );
         Ok(())
     }
