@@ -6,6 +6,7 @@ use std::io;
 use std::net::SocketAddr;
 
 pub use entity::Entity;
+use proto::PqProtoV1Status;
 
 /// Post quantum keys retrived from hanshake
 #[derive(Clone)]
@@ -36,6 +37,9 @@ pub enum Error {
     /// IO error
     #[error("IO: {0:?}")]
     Io(#[from] io::Error),
+    /// Server errors
+    #[error("Server error: {0:?}")]
+    Server(PqProtoV1Status),
     /// Generic unrecoverable error
     #[error("Generic: {0}")]
     Generic(String),
