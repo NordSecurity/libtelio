@@ -113,7 +113,15 @@ impl Entity {
         self.start_impl(addr, wg_secret, peer).await;
     }
 
-    pub async fn restart(&self) {
+    // Postquantum has a quirk that can cause VPN connections to fail due to the client having a preshared key when the server doesn't.
+    // This can happen if there was a handshake established with a preshared key, then the connection is broken for more than 180s
+    // (the time after which wireguard will abandon an inactive connection), and then the client tries to do a new handshake with the same
+    // preshared key as before. Since the server abandoned the connection, it no longer knows about that preshared key and will therefore
+    // ignore the handshake, preventing a connection from being made.
+    //
+    // To solve this we can restart the postquantum entity if the time since the last handshake exceeds 180s, which is what this function does.
+    // The postquantum peer stores a timestamp of the last handshake, which is used in this function to check whether we should restart.
+    pub async fn maybe_restart(&self) {
         let peer = {
             let mut peer = self.peer.lock();
             let should_restart = peer
