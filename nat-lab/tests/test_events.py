@@ -186,12 +186,8 @@ async def test_event_content_meshnet(
 
         await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
 
-        # Telio and NatLab both have a sampling rate of 1 second.
-        # As a result, in the worst case, an event could be delayed by up
-        # to 2seconds. So 2 second is the minimum amount of time. Still
-        # the ping might not come within 2 seconds if there's latency.
         await client_alpha.wait_for_state_peer(
-            beta.public_key, [NodeState.DISCONNECTED], [PathType.DIRECT], timeout=5
+            beta.public_key, [NodeState.DISCONNECTED], [PathType.DIRECT]
         )
 
         with pytest.raises(asyncio.TimeoutError):
