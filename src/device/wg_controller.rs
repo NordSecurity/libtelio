@@ -69,7 +69,7 @@ pub async fn consolidate_wg_state(
     entities: &Entities,
     features: &Features,
 ) -> Result {
-    maybe_restart_pq(entities).await;
+    entities.postquantum_wg.restart().await;
 
     let remote_peer_states = if let Some(meshnet_entities) = entities.meshnet.left() {
         meshnet_entities.derp.get_remote_peer_states().await

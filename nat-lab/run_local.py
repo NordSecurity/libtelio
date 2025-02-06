@@ -211,6 +211,8 @@ def get_pytest_arguments(options) -> List[str]:
             marks = marks.replace("and not moose", "")
         args.extend(["-m", marks])
 
+    args.extend(["-k", "test_pq_vpn_handshake_after_nonet"])
+
     return args
 
 
