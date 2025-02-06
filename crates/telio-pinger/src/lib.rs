@@ -6,16 +6,20 @@ use std::{convert::TryInto, net::IpAddr};
 use surge_ping::{Client, Config as PingerConfig, PingIdentifier, PingSequence, ICMP};
 
 use telio_sockets::SocketPool;
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, DualTarget};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn, DualTarget};
+
+const PING_PAYLOAD_SIZE: usize = 56;
 
 /// Information needed to check the reachability of endpoints.
 ///
 /// Can be used with both IPv4 and IPv6 addresses.
+#[derive(Clone)]
 pub struct Pinger {
     client_v4: Arc<Client>,
     client_v6: Option<Arc<Client>>,
     /// Number of tries
     pub no_of_tries: u32,
+    socket_pool: Arc<SocketPool>,
 }
 
 /// Information gathered after a ping action
@@ -72,6 +76,7 @@ impl Pinger {
             client_v4,
             client_v6,
             no_of_tries,
+            socket_pool,
         })
     }
 
@@ -126,21 +131,19 @@ impl Pinger {
             ..Default::default()
         };
 
-        telio_log_debug!("Trying to ping {:?} host", host);
+        let ping_id = PingIdentifier(rand::random());
+        telio_log_debug!("Trying to ping {:?} host, {:#06x}", host, ping_id.0);
+        let socket;
 
         let mut pinger = match host {
             IpAddr::V4(_) => {
-                self.client_v4
-                    .clone()
-                    .pinger(host, PingIdentifier(rand::random()))
-                    .await
+                socket = self.client_v4.get_socket().get_native_sock();
+                self.client_v4.pinger(host, ping_id).await
             }
             IpAddr::V6(_) => {
                 if let Some(client) = &self.client_v6 {
-                    client
-                        .clone()
-                        .pinger(host, PingIdentifier(rand::random()))
-                        .await
+                    socket = client.get_socket().get_native_sock();
+                    client.pinger(host, ping_id).await
                 } else {
                     return None;
                 }
@@ -154,8 +157,21 @@ impl Pinger {
         let mut sum = Duration::default();
 
         for i in 0..self.no_of_tries {
+            // This is a temporary solution for iOS due to NECP re-binding the socket to
+            // the main interface after every write, refer to LLT-5886
+            //
+            // TODO: LLT-5991: Refactor writing ICMP packets directly into the tunnel
+            if cfg!(target_os = "ios") {
+                if let Err(e) = self.socket_pool.make_internal(socket) {
+                    telio_log_warn!("Failed to make socket internal, error: {:?}", e);
+                }
+            }
+
             match pinger
-                .ping(PingSequence(i.try_into().unwrap_or(0)), &[0; 56])
+                .ping(
+                    PingSequence(i.try_into().unwrap_or(0)),
+                    &[0; PING_PAYLOAD_SIZE],
+                )
                 .await
             {
                 Ok((_, duration)) => {
@@ -175,12 +191,16 @@ impl Pinger {
 
     fn build_client(proto: ICMP) -> std::io::Result<Client> {
         let mut config_builder = PingerConfig::builder().kind(proto);
-        if cfg!(any(
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "tvos",
-        )) {
+        if cfg!(any(target_os = "macos", target_os = "tvos",)) {
             config_builder = config_builder.sock_type_hint(Type::RAW);
+        }
+        // Raw sockets are not allowed on iOS, instead use
+        // socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)
+        //
+        // TODO: LLT-5991: Refactor writing ICMP packets directly into the tunnel
+        // TODO: Check if raw sockets are supported on tvos
+        if cfg!(target_os = "ios") {
+            config_builder = config_builder.sock_type_hint(Type::DGRAM);
         }
         if cfg!(not(target_os = "android")) {
             match proto {
