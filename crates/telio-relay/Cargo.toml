@@ -7,9 +7,8 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-generic-array = "0.14.5"
 rand_core = { version = "0.6.3", default-features = false }
-tokio-rustls = { version = "0.26.0", default-features = false }
+tokio-rustls = { version = "0.26.1", default-features = false }
 tokio-util = "0.7.3"
 tokio-stream = { default-features = false, version = "0.1.9" }
 
@@ -58,7 +57,9 @@ tokio = { workspace = true, features = [
 telio-nurse = { workspace = true, features = ["mockall"] }
 telio-task = { workspace = true, features = ["test-util"] }
 telio-test.workspace = true
-hyper = { version = "0.14.27", features = ["full", "http1", "backports"] }
+hyper = { version = "1.5.2", features = ["full", "http1"] }
+hyper-util = "0.1.10"
+http-body-util = "0.1.2"
 
 [target.'cfg(windows)'.dependencies]
 static_assertions = "1.1.0"

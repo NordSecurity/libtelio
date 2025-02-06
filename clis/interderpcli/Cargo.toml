@@ -7,7 +7,7 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 
 [dependencies]
-clap = { version = "4.3.3", features = ["std", "derive"], default-features = false }
+clap = { version = "4.5.26", features = ["std", "derive"], default-features = false }
 ring = { default-features = false, version = "0.17.5" }
 
 anyhow.workspace = true

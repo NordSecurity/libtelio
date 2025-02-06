@@ -68,6 +68,7 @@ mod metrics;
 
 use anyhow::{anyhow, bail, Result};
 use atomic_counter::{AtomicCounter, RelaxedCounter};
+use base64::prelude::*;
 use conf::StressConfig;
 use metrics::Metrics;
 use rand::{thread_rng, Rng};
@@ -379,7 +380,7 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
                 v if v > 1 => {
                     println!(
                         "RECEIVED: [{}] / [{}]",
-                        base64::encode(public_key),
+                        BASE64_STANDARD.encode(public_key),
                         String::from_utf8_lossy(&data)
                     )
                 }

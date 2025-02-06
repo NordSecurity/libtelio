@@ -1,6 +1,10 @@
 use anyhow::ensure;
 use reqwest::{Certificate, ClientBuilder, StatusCode, Url};
 use rumqttc::{
+    tokio_rustls::rustls::{
+        pki_types::{pem::PemObject, CertificateDer},
+        ClientConfig,
+    },
     AsyncClient, ClientError, ConnAck, ConnectReturnCode, Event, EventLoop, MqttOptions, Packet,
     Publish, QoS, TlsConfiguration, Transport,
 };
@@ -16,10 +20,6 @@ use tokio::{
     select,
     sync::Mutex,
     time::{error::Elapsed, timeout, Instant},
-};
-use tokio_rustls::rustls::{
-    pki_types::{pem::PemObject, CertificateDer},
-    ClientConfig,
 };
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -66,7 +66,7 @@ pub enum Error {
     #[error("Failed to read mqtt cert file: {0}")]
     FailedToReadMqttCertFile(std::io::Error),
     #[error("Failed to parse mqtt pem certificate: {0:?}")]
-    FailedToParseMqttCertificate(tokio_rustls::rustls::pki_types::pem::Error),
+    FailedToParseMqttCertificate(rumqttc::tokio_rustls::rustls::pki_types::pem::Error),
     #[error("Failed to load native certs: {0:?}")]
     FailedToLoadNativeCerts(Vec<rustls_native_certs::Error>),
 }
@@ -187,7 +187,7 @@ async fn connect_to_nc(nc_config: &NCConfig) -> Result<(AsyncClient, EventLoop, 
     mqttoptions.set_clean_session(true);
 
     // Use rustls-native-certs to load root certificates from the operating system.
-    let mut root_cert_store = tokio_rustls::rustls::RootCertStore::empty();
+    let mut root_cert_store = rumqttc::tokio_rustls::rustls::RootCertStore::empty();
 
     if let Some(cert_path) = &nc_config.mqtt.certificate_file_path {
         debug!("Using custom mqtt cert file from {cert_path:?}");

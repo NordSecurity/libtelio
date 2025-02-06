@@ -20,7 +20,7 @@ cargo-platform = { version = "=0.1.7", optional = true  } # moose v5.0.0 require
 telio-utils.workspace = true
 
 [dev-dependencies]
-serial_test = "0.8.0"
+serial_test = "3.2.0"
 
 [build-dependencies]
 anyhow.workspace = true
