@@ -69,7 +69,13 @@ pub async fn consolidate_wg_state(
     entities: &Entities,
     features: &Features,
 ) -> Result {
-    maybe_restart_pq(entities).await;
+    // This tells the PQ entity to restart itself if it deems it necessary.
+    // That decision is based on an internal timestamp since last time it
+    // performed a handshake (internal timestamp to account for different wg
+    // implementations reporting time since last handshake differently) to
+    // determine if the last handshake was done more than 180s ago (the time
+    // after which wireguard abandons an inactive connection)
+    entities.postquantum_wg.maybe_restart().await;
 
     let remote_peer_states = if let Some(meshnet_entities) = entities.meshnet.left() {
         meshnet_entities.derp.get_remote_peer_states().await
@@ -147,43 +153,6 @@ pub async fn consolidate_wg_state(
     )
     .await?;
     Ok(())
-}
-
-// Postquantum has a quirk that can cause VPN connections to fail due to the client having a preshared key when the server doesn't
-// This can happen if there is a handshake and a preshared key, then the client nonets for more than 180s (wg reject threshold),
-// and then tries to handshake again
-//
-// The purpose of this function is to prevent this by restarting postquantum if the above case is reached. There are two conditions
-// that need to be fulfilled for us to restart postquantum:
-//   1. postquantum is active (here represented by checking if there is a peer public key)
-//   2. the last handshake to the VPN server has passed the hardcoded wireguard reject threshold
-//      (here represented by comparing against `Some(None)`. The `time_since_last_handshake` will tick up to 180s and then be set to `None` so
-//       if `None` means that wireguard will reject the connection)
-async fn maybe_restart_pq(entities: &Entities) {
-    let should_restart_pq = match entities.postquantum_wg.peer_pubkey() {
-        Some(pubkey) => {
-            let time_since_last_handshake = entities
-                .wireguard_interface
-                .get_interface()
-                .await
-                .ok()
-                .and_then(|ifc| {
-                    telio_log_debug!("{:?}", ifc);
-                    ifc.peers.iter().find_map(|(_, peer)| {
-                        if peer.public_key == pubkey {
-                            Some(peer.time_since_last_handshake)
-                        } else {
-                            None
-                        }
-                    })
-                });
-            matches!(time_since_last_handshake, Some(None))
-        }
-        None => false,
-    };
-    if should_restart_pq {
-        entities.postquantum_wg.restart().await;
-    }
 }
 
 async fn consolidate_wg_private_key<W: WireGuard>(
