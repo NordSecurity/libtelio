@@ -4926,6 +4926,7 @@ dependencies = [
  "telio-crypto",
  "telio-model",
  "telio-network-monitors",
+ "telio-pinger",
  "telio-proto",
  "telio-sockets",
  "telio-task",
