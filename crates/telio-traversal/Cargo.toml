@@ -38,6 +38,7 @@ telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
 telio-wg.workspace = true
+telio-pinger.workspace = true
 
 [dev-dependencies]
 env_logger.workspace = true
