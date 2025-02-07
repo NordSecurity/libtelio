@@ -212,6 +212,13 @@ impl Pinger {
         }
         Client::new(&config_builder.build())
     }
+
+    pub fn get_client(self, proto: ICMP) -> Option<Arc<Client>> {
+        match proto {
+            ICMP::V4 => Some(self.client_v4),
+            ICMP::V6 => self.client_v6,
+        }
+    }
 }
 
 #[cfg(test)]
