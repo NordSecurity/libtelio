@@ -514,19 +514,75 @@ async def test_pq_vpn_upgrade_from_non_pq(
 
 # Regression test for LLT-5884
 @pytest.mark.timeout(240)
-async def test_pq_vpn_handshake_after_nonet() -> None:
-    public_ip = "10.0.254.1"
+@pytest.mark.parametrize(
+    "setup_params, public_ip",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 4),
+                ),
+                is_meshnet=False,
+            ),
+            "10.0.254.1",
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 4),
+                ),
+                is_meshnet=False,
+            ),
+            "10.0.254.1",
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM_1,
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 4),
+                ),
+                is_meshnet=False,
+            ),
+            "10.0.254.7",
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.WINDOWS_VM_1,
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 4),
+                ),
+                is_meshnet=False,
+            ),
+            "10.0.254.7",
+            marks=pytest.mark.windows,
+        ),
+    ],
+)
+async def test_pq_vpn_handshake_after_nonet(
+    setup_params: SetupParameters,
+    public_ip: str,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
             setup_environment(
                 exit_stack,
-                [
-                    SetupParameters(
-                        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        adapter_type_override=TelioAdapterType.NEP_TUN,
-                        is_meshnet=False,
-                    ),
-                ],
+                [setup_params],
                 prepare_vpn=True,
             )
         )
