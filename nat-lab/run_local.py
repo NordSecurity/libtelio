@@ -212,7 +212,7 @@ def get_pytest_arguments(options) -> List[str]:
         args.extend(["-m", marks])
 
     args.extend(["-k", "test_dns", "--count", "50", "-x"])
-    
+
     return args
 
 
