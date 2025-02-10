@@ -20,6 +20,8 @@ pub struct Pinger {
     /// Number of tries
     pub no_of_tries: u32,
     socket_pool: Arc<SocketPool>,
+    /// data of the ping, used for tracing pcaps
+    payload_data: Option<String>,
 }
 
 /// Information gathered after a ping action
@@ -54,10 +56,12 @@ impl Pinger {
     /// * `no_of_tries` - How many pings should be sent.
     /// * `ipv6` - Enable IPv6 support.
     /// * `socket_pool` - Optional SocketPool used to protect the sockets.
+    /// * `payload_data` - Optional payload used for tracing the ping packets, only in debug.
     pub fn new(
         no_of_tries: u32,
         ipv6: bool,
         socket_pool: Arc<SocketPool>,
+        payload_data: Option<&str>,
     ) -> std::io::Result<Self> {
         let client_v6 = if ipv6 {
             let client_v6 = Arc::new(Self::build_client(ICMP::V6)?);
@@ -77,6 +81,7 @@ impl Pinger {
             client_v6,
             no_of_tries,
             socket_pool,
+            payload_data: payload_data.map(|s| s.to_string()),
         })
     }
 
@@ -155,6 +160,16 @@ impl Pinger {
         pinger.timeout(Duration::from_millis(10));
 
         let mut sum = Duration::default();
+        let mut payload = [0; PING_PAYLOAD_SIZE];
+
+        // Trace the compomnent that sent the ping for debugging purposes
+        #[cfg(debug_assertions)]
+        if let Some(data) = &self.payload_data {
+            let data = data.as_bytes();
+            for (dest, &src) in payload.iter_mut().zip(data) {
+                *dest = src;
+            }
+        }
 
         for i in 0..self.no_of_tries {
             // This is a temporary solution for iOS due to NECP re-binding the socket to
@@ -168,10 +183,7 @@ impl Pinger {
             }
 
             match pinger
-                .ping(
-                    PingSequence(i.try_into().unwrap_or(0)),
-                    &[0; PING_PAYLOAD_SIZE],
-                )
+                .ping(PingSequence(i.try_into().unwrap_or(0)), &payload)
                 .await
             {
                 Ok((_, duration)) => {
@@ -234,7 +246,7 @@ mod tests {
         let mut protect = MockProtector::default();
         protect.expect_make_internal().returning(|_| Ok(()));
 
-        let pinger = Pinger::new(1, true, Arc::new(SocketPool::new(protect)))
+        let pinger = Pinger::new(1, true, Arc::new(SocketPool::new(protect)), None)
             .expect("Failed to create Pinger");
         assert!(pinger.client_v4.get_socket().get_native_sock() > 0);
         assert!(pinger.client_v6.is_some());
@@ -247,7 +259,7 @@ mod tests {
         let mut protect = MockProtector::default();
         protect.expect_make_internal().returning(|_| Ok(()));
 
-        let pinger = Pinger::new(2, false, Arc::new(SocketPool::new(protect)))
+        let pinger = Pinger::new(2, false, Arc::new(SocketPool::new(protect)), None)
             .expect("Failed to create Pinger");
 
         let target =

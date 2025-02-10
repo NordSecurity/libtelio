@@ -255,7 +255,7 @@ impl Analytics {
         let (ping_channel_tx, ping_channel_rx) = mpsc::channel(1);
 
         let ping_backend = if config.rtt_types.contains(&RttType::Ping) {
-            Arc::new(Pinger::new(config.rtt_tries, ipv6_enabled, socket_pool).ok())
+            Arc::new(Pinger::new(config.rtt_tries, ipv6_enabled, socket_pool, Some("qos_rtt")).ok())
         } else {
             Arc::new(None)
         };
@@ -467,6 +467,7 @@ impl Analytics {
                             _ => {}
                         }
 
+                        telio_log_trace!("Performing ping {:?}", dpt);
                         dpr = Box::pin(pinger.perform(dpt)).await;
 
                         if let Some(results_v4) = &dpr.v4 {
