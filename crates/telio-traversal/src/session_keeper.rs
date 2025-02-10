@@ -8,7 +8,8 @@ use telio_pinger::Pinger;
 use telio_sockets::SocketPool;
 use telio_task::{task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
-    dual_target, repeated_actions, telio_log_debug, telio_log_warn, DualTarget, RepeatedActions,
+    dual_target, repeated_actions, telio_log_debug, telio_log_trace, telio_log_warn, DualTarget,
+    RepeatedActions,
 };
 
 /// Possible [SessionKeeper] errors.
@@ -57,7 +58,7 @@ pub struct SessionKeeper {
 impl SessionKeeper {
     pub fn start(sock_pool: Arc<SocketPool>, batch_all: bool) -> Result<Self> {
         telio_log_debug!("Starting with batch_all({})", batch_all);
-        let pinger = Pinger::new(1, true, sock_pool)?;
+        let pinger = Pinger::new(1, true, sock_pool, Some("session_keeper"))?;
 
         Ok(Self {
             batch_all,
@@ -112,6 +113,7 @@ impl SessionKeeperTrait for SessionKeeper {
                 interval,
                 Arc::new(move |c| {
                     Box::pin(async move {
+                        telio_log_trace!("Performing ping {:?}", dual_target);
                         let result = c.pinger.perform(dual_target).await;
                         let failed = match (result.v4, result.v6) {
                             (None, None) => true,
