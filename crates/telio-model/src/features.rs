@@ -61,6 +61,8 @@ pub struct Features {
     pub multicast: bool,
     /// Batching feature configuration, disabled by default, used for batching keep-alives
     pub batching: Option<FeatureBatching>,
+    /// Throughput test support
+    pub throughput: bool,
 }
 
 /// Configure keepalive batching
@@ -595,7 +597,8 @@ mod tests {
                 "direct_connection_threshold": 60,
                 "trigger_effective_duration": 10,
                 "trigger_cooldown_duration": 60
-            }
+            },
+            "throughput": true
         }
         "#,
                 Features {
@@ -691,6 +694,7 @@ mod tests {
                         trigger_effective_duration: 10,
                         trigger_cooldown_duration: 60,
                     }),
+                    throughput: true,
                 }
             );
         }
