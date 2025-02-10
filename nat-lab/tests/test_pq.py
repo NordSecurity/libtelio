@@ -7,7 +7,6 @@ from telio import Client
 from utils import stun
 from utils.bindings import TelioAdapterType, NodeState, PathType
 from utils.connection import Connection
-from utils.connection_tracker import ConnectionLimits
 from utils.connection_util import (
     generate_connection_tracker_config,
     ConnectionTag,
@@ -63,8 +62,8 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -76,8 +75,8 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -90,8 +89,8 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(1, 3),
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -106,8 +105,8 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(1, 3),
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -122,8 +121,8 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
-                    stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -138,7 +137,7 @@ async def test_pq_vpn_connection(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params])
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -162,8 +161,8 @@ async def test_pq_vpn_connection(
                 adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -175,8 +174,8 @@ async def test_pq_vpn_connection(
                 adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -189,8 +188,8 @@ async def test_pq_vpn_connection(
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(1, 3),
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -205,8 +204,8 @@ async def test_pq_vpn_connection(
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(1, 3),
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -221,8 +220,8 @@ async def test_pq_vpn_connection(
                 adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
-                    stun_limits=ConnectionLimits(1, 1),
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -240,7 +239,7 @@ async def test_pq_vpn_rekey(
 
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params])
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -283,7 +282,7 @@ async def test_pq_vpn_rekey(
                 adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -294,7 +293,7 @@ async def test_pq_vpn_rekey(
                 adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -306,7 +305,7 @@ async def test_pq_vpn_rekey(
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -320,7 +319,7 @@ async def test_pq_vpn_rekey(
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.WINDOWS_VM_1,
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -334,7 +333,7 @@ async def test_pq_vpn_rekey(
                 adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.MAC_VM,
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -347,7 +346,7 @@ async def test_dns_with_pq(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params])
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -391,8 +390,8 @@ async def test_dns_with_pq(
                 adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=ConnectionLimits(1, None),
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    vpn_1_limits=(1, None),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -406,7 +405,7 @@ async def test_pq_vpn_silent_pq_upgrader(
         setup.features.post_quantum_vpn.handshake_retry_interval_s = 1
 
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [setup])
+            setup_environment(exit_stack, [setup], prepare_vpn=True)
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -467,7 +466,7 @@ async def test_pq_vpn_silent_pq_upgrader(
                 adapter_type_override=TelioAdapterType.BORING_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    nlx_1_limits=ConnectionLimits(1, 2),
+                    nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -481,7 +480,7 @@ async def test_pq_vpn_upgrade_from_non_pq(
         alpha_setup_params.features.post_quantum_vpn.handshake_retry_interval_s = 1
 
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params])
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -516,19 +515,77 @@ async def test_pq_vpn_upgrade_from_non_pq(
 
 # Regression test for LLT-5884
 @pytest.mark.timeout(240)
-async def test_pq_vpn_handshake_after_nonet() -> None:
-    public_ip = "10.0.254.1"
+@pytest.mark.parametrize(
+    "setup_params, public_ip",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 4),
+                ),
+                is_meshnet=False,
+            ),
+            "10.0.254.1",
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 4),
+                ),
+                is_meshnet=False,
+            ),
+            "10.0.254.1",
+            marks=pytest.mark.linux_native,
+        ),
+        # TODO(LLT-6000)
+        # pytest.param(
+        #     SetupParameters(
+        #         connection_tag=ConnectionTag.WINDOWS_VM_1,
+        #         adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+        #         connection_tracker_config=generate_connection_tracker_config(
+        #             ConnectionTag.WINDOWS_VM_1,
+        #             stun_limits=(1, 1),
+        #             nlx_1_limits=(1, 4),
+        #         ),
+        #         is_meshnet=False,
+        #     ),
+        #     "10.0.254.7",
+        #     marks=pytest.mark.windows,
+        # ),
+        # pytest.param(
+        #     SetupParameters(
+        #         connection_tag=ConnectionTag.WINDOWS_VM_1,
+        #         adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
+        #         connection_tracker_config=generate_connection_tracker_config(
+        #             ConnectionTag.WINDOWS_VM_1,
+        #             stun_limits=(1, 1),
+        #             nlx_1_limits=(1, 4),
+        #         ),
+        #         is_meshnet=False,
+        #     ),
+        #     "10.0.254.7",
+        #     marks=pytest.mark.windows,
+        # ),
+    ],
+)
+async def test_pq_vpn_handshake_after_nonet(
+    setup_params: SetupParameters,
+    public_ip: str,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
             setup_environment(
                 exit_stack,
-                [
-                    SetupParameters(
-                        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        adapter_type_override=TelioAdapterType.BORING_TUN,
-                        is_meshnet=False,
-                    ),
-                ],
+                [setup_params],
+                prepare_vpn=True,
             )
         )
 
@@ -546,6 +603,70 @@ async def test_pq_vpn_handshake_after_nonet() -> None:
         async with client_alpha.get_router().break_udp_conn_to_host(
             str(config.NLX_SERVER["ipv4"])
         ):
-            await asyncio.sleep(195)
+            await asyncio.sleep(179)
+
+            log = (await client_alpha.get_log()).lower()
+            log_line = "Restarting postquantum entity".lower()
+            occurrences = log.count(log_line)
+
+            assert (
+                occurrences == 0
+            ), "Found PQ restart log even though PQ should not have been restarted yet"
+
+            await client_alpha.wait_for_log("Restarting postquantum entity")
 
         await ping(client_conn, config.PHOTO_ALBUM_IP, timeout=10)
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize(
+    "setup_params, public_ip",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.BORING_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 4),
+                ),
+                is_meshnet=False,
+            ),
+            "10.0.254.1",
+        ),
+    ],
+)
+async def test_pq_no_false_restart(
+    setup_params: SetupParameters,
+    public_ip: str,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(
+                exit_stack,
+                [setup_params],
+                prepare_vpn=True,
+            )
+        )
+
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+
+        ip = await stun.get(client_conn, config.STUN_SERVER)
+        assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
+
+        await _connect_vpn_pq(
+            client_conn,
+            client_alpha,
+        )
+
+        await asyncio.sleep(200)
+
+        log = (await client_alpha.get_log()).lower()
+        log_line = "Restarting postquantum entity".lower()
+        occurrences = log.count(log_line)
+
+        assert (
+            occurrences == 0
+        ), "Found PQ restart log even though PQ should not have been restarted"
