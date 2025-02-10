@@ -43,11 +43,10 @@ class WindowsRouter(Router):
             if not await cmd.check_exists("State", ["connected"]):
                 raise RuntimeError(
                     f"Adapter '{self._interface_name}' didn't report connected state. "
-                    f"Last known interface info: {cmd.get_stdout()}"
                 )
 
             print(
-                f"windows_router: connected state established. Interface info: {cmd.get_stdout()}"
+                f"windows_router: connected state established. Interface info: {cmd.get_stdout()} stderr: {cmd.get_stderr()}"
             )
 
             if addr_proto == IPProto.IPv4:
