@@ -72,6 +72,7 @@ impl Entity {
                             // and only then update the preshared key,
                             // otherwise we're connecting to different node already
                             keys.pq_shared = pq_shared;
+                            peer.last_handshake_ts = Some(Instant::now());
                         } else {
                             telio_log_debug!(
                                 "PQ secret key does not match, ignoring shared secret rotation"
