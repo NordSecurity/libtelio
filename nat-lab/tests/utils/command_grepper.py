@@ -9,6 +9,7 @@ class CommandGrepper:
     _check_cmd: List[str]
     _timeout: Optional[float]
     _last_stdout: Optional[str]
+    _last_stderr: Optional[str]
 
     def __init__(
         self,
@@ -28,9 +29,13 @@ class CommandGrepper:
         self._check_cmd = check_cmd
         self._timeout = timeout
         self._last_stdout = None
+        self._last_stderr = None
 
     def get_stdout(self) -> Optional[str]:
         return self._last_stdout
+
+    def get_stderr(self) -> Optional[str]:
+        return self._last_stderr
 
     async def check_exists(
         self, exp_primary: str, exp_secondary: Optional[List[str]] = None
@@ -54,7 +59,9 @@ class CommandGrepper:
             print(f"Process exec error: {e}")
             raise
         except TimeoutError as e:
-            print(f"Timeout error: {e}, last stdout: {self._last_stdout}")
+            print(
+                f"Timeout error: {e}, last stdout: {self._last_stdout}, last stderr: {self._last_stderr}"
+            )
             return False
         except Exception as e:
             print(f"Some other exception happened: {e}")
@@ -96,6 +103,7 @@ class CommandGrepper:
         while True:
             process = await self._connection.create_process(self._check_cmd).execute()
             self._last_stdout = process.get_stdout()
+            self._last_stderr = process.get_stderr()
 
             if exists:
                 if self._check_if_exists(self._last_stdout, exp_primary, exp_secondary):
