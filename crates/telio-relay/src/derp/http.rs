@@ -20,6 +20,7 @@ use webpki_roots::TLS_SERVER_ROOTS;
 
 use crate::{Config, DerpKeepaliveConfig};
 
+use rustls_platform_verifier::ConfigVerifierExt;
 use telio_crypto::{PublicKey, SecretKey};
 use tokio::time::Interval;
 use tokio::{
@@ -154,7 +155,7 @@ async fn try_connect(
 
                 TlsConnector::from(Arc::new(config))
             } else {
-                TlsConnector::from(Arc::new(rustls_platform_verifier::tls_config()))
+                TlsConnector::from(Arc::new(ClientConfig::with_platform_verifier()))
             };
 
             let server_name =
@@ -305,16 +306,21 @@ fn build_tcp_parameters(use_tcp_keepalives: bool) -> TcpParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use http_body_util::Full;
     use hyper::http::HeaderValue;
     use hyper::server::conn::http1;
     use hyper::service::service_fn;
-    use hyper::{Body, Request, Response};
+    use hyper::{
+        body::{Body, Bytes, Incoming},
+        Request, Response,
+    };
+    use hyper_util::rt::TokioIo;
     use tokio::net::{TcpListener, TcpStream};
 
     const RESPONSE_BODY: &str = "test body";
     const HOST: &str = "hostname";
 
-    fn default_asserts(request: &Request<Body>) {
+    fn default_asserts(request: &Request<Incoming>) {
         assert_eq!(
             request.headers().get(hyper::header::HOST),
             Some(&HeaderValue::from_static(HOST))
@@ -329,7 +335,7 @@ mod tests {
         );
     }
 
-    async fn derpv1_handler(request: Request<Body>) -> hyper::Result<Response<Body>> {
+    async fn derpv1_handler(request: Request<Incoming>) -> hyper::Result<Response<Full<Bytes>>> {
         default_asserts(&request);
         match request.uri().path() {
             "/derp" => {
@@ -338,16 +344,18 @@ mod tests {
                     Some(&HeaderValue::from_static("tcp=1, derp=2"))
                 );
                 assert_eq!(request.headers().get("Poll-keepalive"), None);
-                Ok(Response::builder().body(Body::from(RESPONSE_BODY)).unwrap())
+                Ok(Response::builder()
+                    .body(Full::new(Bytes::from(RESPONSE_BODY)))
+                    .unwrap())
             }
             _ => Ok(Response::builder()
                 .status(404)
-                .body(Body::from("Not found"))
+                .body(Full::new(Bytes::from("Not found")))
                 .unwrap()),
         }
     }
 
-    async fn derpv2_handler(request: Request<Body>) -> hyper::Result<Response<Body>> {
+    async fn derpv2_handler(request: Request<Incoming>) -> hyper::Result<Response<Full<Bytes>>> {
         default_asserts(&request);
         match request.uri().path() {
             "/derp" => {
@@ -356,7 +364,9 @@ mod tests {
                     Some(&HeaderValue::from_static("tcp=1, derp=2"))
                 );
                 assert_eq!(request.headers().get("Poll-keepalive"), None);
-                Ok(Response::builder().body(Body::from(RESPONSE_BODY)).unwrap())
+                Ok(Response::builder()
+                    .body(Full::new(Bytes::from(RESPONSE_BODY)))
+                    .unwrap())
             }
             "/v2/derp" => {
                 assert_eq!(request.headers().get("Keep-alive"), None);
@@ -364,11 +374,13 @@ mod tests {
                     request.headers().get("Poll-keepalive"),
                     Some(&HeaderValue::from_static("2"))
                 );
-                Ok(Response::builder().body(Body::from(RESPONSE_BODY)).unwrap())
+                Ok(Response::builder()
+                    .body(Full::new(Bytes::from(RESPONSE_BODY)))
+                    .unwrap())
             }
             _ => Ok(Response::builder()
                 .status(404)
-                .body(Body::from("Not found"))
+                .body(Full::new(Bytes::from("Not found")))
                 .unwrap()),
         }
     }
@@ -382,6 +394,7 @@ mod tests {
         tokio::spawn(async move {
             loop {
                 let (stream, _) = listener.accept().await.unwrap();
+                let stream = TokioIo::new(stream);
                 tokio::task::spawn(async move {
                     http1::Builder::new()
                         .serve_connection(stream, service_fn(derpv1_handler))
@@ -424,6 +437,7 @@ mod tests {
         tokio::spawn(async move {
             loop {
                 let (stream, _) = listener.accept().await.unwrap();
+                let stream = TokioIo::new(stream);
                 tokio::task::spawn(async move {
                     http1::Builder::new()
                         .serve_connection(stream, service_fn(derpv2_handler))

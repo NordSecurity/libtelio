@@ -50,13 +50,14 @@ enum RuntimeState {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     struct MeshConnectionState: u32 {
         const DERP      = 0b00000001;
         const WG        = 0b00000010;
         const IPV4      = 0b00000100;
         const IPV6      = 0b00001000;
-        const IPV4V6    = Self::IPV4.bits
-                        | Self::IPV6.bits;
+        const IPV4V6    = Self::IPV4.bits()
+                        | Self::IPV6.bits();
     }
 }
 
@@ -783,7 +784,9 @@ impl Analytics {
                 write!(
                     connectivity_matrix,
                     "{}:{}:{},",
-                    i.1, j.1, min.connection_state.bits
+                    i.1,
+                    j.1,
+                    min.connection_state.bits()
                 )
                 .expect("no");
             }
@@ -808,7 +811,7 @@ impl Analytics {
                         telio_log_warn!("Node with pk: {:?} has no fingerprint", key);
                         String::from("null")
                     }),
-                    mesh_link.connection_state.bits,
+                    mesh_link.connection_state.bits(),
                 ),
 
                 NodeInfo::Node {
@@ -828,7 +831,7 @@ impl Analytics {
                             telio_log_warn!("Node with pk: {:?} has no fingerprint", key);
                             String::from("null")
                         }),
-                    mesh_link.connection_state.bits,
+                    mesh_link.connection_state.bits(),
                 ),
             };
 

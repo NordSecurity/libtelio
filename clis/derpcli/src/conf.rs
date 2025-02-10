@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use base64::prelude::*;
 use clap::{Arg, Command};
 use crypto_box::PublicKey as BoxPublicKey;
 use serde::Deserialize;
@@ -108,10 +109,10 @@ impl Config {
         BoxPublicKey::from(&self.get_key2())
     }
     pub fn get_pub_key1_b64(&self) -> String {
-        base64::encode(self.get_pub_key1().as_bytes())
+        BASE64_STANDARD.encode(self.get_pub_key1().as_bytes())
     }
     pub fn get_pub_key2_b64(&self) -> String {
-        base64::encode(self.get_pub_key2().as_bytes())
+        BASE64_STANDARD.encode(self.get_pub_key2().as_bytes())
     }
     pub fn get_server_address(&self) -> &str {
         &self.server
@@ -288,7 +289,7 @@ impl Config {
 
         // check if my private key is given as param
         if mykey_str.chars().count() > 0 {
-            let mykey_bytes = base64::decode(mykey_str).unwrap_or_default();
+            let mykey_bytes = BASE64_STANDARD.decode(mykey_str).unwrap_or_default();
             if mykey_bytes.len() != 32 {
                 return Err(anyhow!(
                     "My private key size must be 32 bytes encoded into base64!",
@@ -302,7 +303,7 @@ impl Config {
         }
 
         if targetkey_str.chars().count() > 0 {
-            let tkey_bytes = base64::decode(targetkey_str).unwrap_or_default();
+            let tkey_bytes = BASE64_STANDARD.decode(targetkey_str).unwrap_or_default();
             if tkey_bytes.len() != 32 {
                 return Err(anyhow!(
                     "Target private key size must be 32 bytes encoded into base64!",

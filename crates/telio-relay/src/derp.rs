@@ -12,7 +12,6 @@ pub mod proto;
 
 use async_trait::async_trait;
 use futures::{future::select_all, Future};
-use generic_array::typenum::Unsigned;
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -39,10 +38,12 @@ use telio_utils::{
 use tokio::sync::mpsc::OwnedPermit;
 use tokio::{task::JoinHandle, time::sleep};
 
-use crypto_box::aead::{AeadCore, Error, Nonce, Payload};
+use crypto_box::aead::{
+    generic_array::{typenum::Unsigned, GenericArray},
+    AeadCore, Error, Payload,
+};
 use telio_crypto::chachabox::ChaChaBox;
 
-use generic_array::GenericArray;
 use rand::{rngs::StdRng, SeedableRng};
 use smart_default::SmartDefault;
 
@@ -497,7 +498,7 @@ impl DerpRelay {
             }
             PacketTypeRelayed::Encrypted => {
                 // Extract nonce always with exactly 24 bytes from byte 1 to 24
-                let nonce: Nonce<ChaChaBox> = GenericArray::clone_from_slice(
+                let nonce = GenericArray::from_slice(
                     data.get(DerpRelay::NONCE_BEGIN_POS..DerpRelay::NONCE_END_POS)
                         .ok_or(crypto_box::aead::Error)?,
                 );
@@ -515,7 +516,7 @@ impl DerpRelay {
                 let secret_box = ChaChaBox::new(&public_key, &secret_key);
 
                 match secret_box.decrypt(
-                    &nonce,
+                    nonce,
                     Payload {
                         msg: cipher_text,
                         // for now AAD is empty

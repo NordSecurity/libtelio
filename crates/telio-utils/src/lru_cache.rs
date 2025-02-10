@@ -61,7 +61,9 @@ impl<'a, K: Hash + Eq, V> OccupiedEntry<'a, K, V> {
         self.occupied_entry().remove();
     }
 
-    fn occupied_entry(&'_ mut self) -> RawOccupiedEntryMut<'_, K, TimedValue<V>> {
+    fn occupied_entry(
+        &'_ mut self,
+    ) -> RawOccupiedEntryMut<'_, K, TimedValue<V>, BuildHasherDefault<FxHasher>> {
         if let RawEntryMut::Occupied(e) = self
             .map
             .raw_entry_mut()
@@ -299,7 +301,10 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
         (now, expired_keys)
     }
 
-    fn update_last_time(entry: &mut RawOccupiedEntryMut<'_, Key, TimedValue<Value>>, now: Instant) {
+    fn update_last_time(
+        entry: &mut RawOccupiedEntryMut<'_, Key, TimedValue<Value>, BuildHasherDefault<FxHasher>>,
+        now: Instant,
+    ) {
         entry.get_mut().update_last_access(now);
         entry.to_back();
     }
