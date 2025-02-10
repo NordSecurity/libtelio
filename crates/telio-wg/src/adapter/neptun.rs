@@ -63,6 +63,7 @@ impl NepTUN {
             protect: socket_pool,
             firewall_process_inbound_callback,
             firewall_process_outbound_callback,
+            uapi_fd: -1,
         };
 
         let device = match tun {
