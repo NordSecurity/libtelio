@@ -144,7 +144,7 @@ def get_dns_server_address(ip_stack: IPStack) -> str:
         ),
     ],
 )
-async def test_dns(
+async def test_dns123(
     alpha_ip_stack: IPStack,
     alpha_setup_params: SetupParameters,
     beta_ip_stack: IPStack,

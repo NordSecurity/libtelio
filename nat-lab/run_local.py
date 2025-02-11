@@ -211,8 +211,8 @@ def get_pytest_arguments(options) -> List[str]:
             marks = marks.replace("and not moose", "")
         args.extend(["-m", marks])
 
-    args.extend(["-k", "test_dns", "--count", "50", "-x"])
-
+    args.extend(["-k", "test_dns123", "--count", "50"])
+    
     return args
 
 
