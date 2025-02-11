@@ -13,6 +13,7 @@ from config import (
     DERP_TERTIARY,
 )
 from contextlib import AsyncExitStack
+from datetime import datetime
 from helpers import connectivity_stack
 from mesh_api import API, Node
 from pathlib import Path
@@ -92,7 +93,7 @@ DERP_SERVERS_STRS = [
 
 DEFAULT_WAITING_TIME = 5
 DEFAULT_CHECK_INTERVAL = 2
-DEFAULT_CHECK_TIMEOUT = 15
+DEFAULT_CHECK_TIMEOUT = 60
 COLLECT_NAT_TYPE = False
 RTT_INTERVAL = 3 * 60
 
@@ -170,7 +171,10 @@ async def get_moose_db_file(
     container_backup_path: str,
     local_path: str,
 ) -> None:
+    print(f"[{datetime.now()}]: `get_moose_db_file::start")
     Path(local_path).unlink(missing_ok=True)
+
+    print(f"[{datetime.now()}]: `get_moose_db_file::backup")
     await connection.create_process([
         "sqlite3",
         container_path,
@@ -178,7 +182,10 @@ async def get_moose_db_file(
         "PRAGMA busy_timeout = 30000;",
         f".backup {container_backup_path}",
     ]).execute(privileged=True)
+
+    print(f"[{datetime.now()}]: `get_moose_db_file::download")
     await connection.download(container_backup_path, local_path)
+    print(f"[{datetime.now()}]: `get_moose_db_file::done")
 
 
 async def wait_for_event_dump(
