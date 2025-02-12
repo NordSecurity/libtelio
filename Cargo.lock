@@ -4925,6 +4925,7 @@ dependencies = [
  "surge-ping",
  "telio-test",
  "thiserror 2.0.11",
+ "time",
  "tokio",
  "tracing",
 ]
