@@ -125,7 +125,12 @@ where
 
         ctx.format_fields(writer.by_ref(), event)?;
 
-        writeln!(writer)
+        let timestamp: time::OffsetDateTime = std::time::SystemTime::now().into();
+        let formatter_timestamp: String = timestamp
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|_| timestamp.to_string());
+
+        writeln!(writer, " formatter_timestamp={formatter_timestamp}")
     }
 }
 
