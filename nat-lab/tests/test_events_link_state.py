@@ -145,6 +145,13 @@ async def wait_for_any_with_timeout(tasks, timeout: float):
         raise asyncio.TimeoutError
 
 
+async def wait_for_up_events(client_alpha, client_beta, alpha_key, beta_key):
+    await asyncio.gather(
+        client_alpha.wait_for_new_link_state(beta_key, LinkState.UP),
+        client_beta.wait_for_new_link_state(alpha_key, LinkState.UP),
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS)
 async def test_event_link_state_peers_idle_all_time(
@@ -155,21 +162,22 @@ async def test_event_link_state_peers_idle_all_time(
         alpha, beta = env.nodes
         client_alpha, client_beta = env.clients
 
-        await client_alpha.wait_for_link_state(beta.public_key, [LinkState.UP])
-        await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP])
+        await wait_for_up_events(
+            client_alpha, client_beta, alpha.public_key, beta.public_key
+        )
 
         # Expect no link event while peers are idle
         with pytest.raises(asyncio.TimeoutError):
             await wait_for_any_with_timeout(
                 [
                     asyncio.create_task(
-                        client_alpha.wait_for_link_state(
-                            beta.public_key, [LinkState.DOWN]
+                        client_alpha.wait_for_new_link_state(
+                            beta.public_key, LinkState.DOWN
                         )
                     ),
                     asyncio.create_task(
-                        client_beta.wait_for_link_state(
-                            alpha.public_key, [LinkState.DOWN]
+                        client_beta.wait_for_new_link_state(
+                            alpha.public_key, LinkState.DOWN
                         )
                     ),
                 ],
@@ -190,15 +198,23 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
             conn.connection for conn in env.connections
         ]
 
-        await client_alpha.wait_for_link_state(beta.public_key, [LinkState.UP])
-        await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP])
+        await wait_for_up_events(
+            client_alpha, client_beta, alpha.public_key, beta.public_key
+        )
 
         for _ in range(0, 40):
             await asyncio.sleep(1)
             await ping(connection_alpha, beta.ip_addresses[0])
             await ping(connection_beta, alpha.ip_addresses[0])
-            await client_alpha.wait_for_link_state(beta.public_key, [LinkState.UP])
-            await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP])
+
+        assert client_alpha.get_link_state_events(beta.public_key) == [
+            LinkState.DOWN,
+            LinkState.UP,
+        ]
+        assert client_beta.get_link_state_events(alpha.public_key) == [
+            LinkState.DOWN,
+            LinkState.UP,
+        ]
 
 
 @pytest.mark.asyncio
@@ -214,8 +230,9 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
             conn.connection for conn in env.connections
         ]
 
-        await client_alpha.wait_for_link_state(beta.public_key, [LinkState.UP])
-        await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP])
+        await wait_for_up_events(
+            client_alpha, client_beta, alpha.public_key, beta.public_key
+        )
 
         await ping(connection_alpha, beta.ip_addresses[0])
         await ping(connection_beta, alpha.ip_addresses[0])
@@ -225,13 +242,13 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
             await wait_for_any_with_timeout(
                 [
                     asyncio.create_task(
-                        client_alpha.wait_for_link_state(
-                            beta.public_key, [LinkState.DOWN]
+                        client_alpha.wait_for_new_link_state(
+                            beta.public_key, LinkState.DOWN
                         )
                     ),
                     asyncio.create_task(
-                        client_beta.wait_for_link_state(
-                            alpha.public_key, [LinkState.DOWN]
+                        client_beta.wait_for_new_link_state(
+                            alpha.public_key, LinkState.DOWN
                         )
                     ),
                 ],
@@ -246,13 +263,13 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
             await wait_for_any_with_timeout(
                 [
                     asyncio.create_task(
-                        client_alpha.wait_for_link_state(
-                            beta.public_key, [LinkState.DOWN]
+                        client_alpha.wait_for_new_link_state(
+                            beta.public_key, LinkState.DOWN
                         )
                     ),
                     asyncio.create_task(
-                        client_beta.wait_for_link_state(
-                            alpha.public_key, [LinkState.DOWN]
+                        client_beta.wait_for_new_link_state(
+                            alpha.public_key, LinkState.DOWN
                         )
                     ),
                 ],
@@ -260,8 +277,14 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
             )
 
         # Expect the links are still UP
-        await client_alpha.wait_for_link_state(beta.public_key, [LinkState.UP])
-        await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP])
+        assert client_alpha.get_link_state_events(beta.public_key) == [
+            LinkState.DOWN,
+            LinkState.UP,
+        ]
+        assert client_beta.get_link_state_events(alpha.public_key) == [
+            LinkState.DOWN,
+            LinkState.UP,
+        ]
 
 
 @pytest.mark.asyncio
@@ -277,8 +300,9 @@ async def test_event_link_state_peer_goes_offline(
             conn.connection for conn in env.connections
         ]
 
-        await client_alpha.wait_for_link_state(beta.public_key, [LinkState.UP])
-        await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP])
+        await wait_for_up_events(
+            client_alpha, client_beta, alpha.public_key, beta.public_key
+        )
 
         await ping(connection_alpha, beta.ip_addresses[0])
         await ping(connection_beta, alpha.ip_addresses[0])
@@ -290,16 +314,24 @@ async def test_event_link_state_peer_goes_offline(
 
         # Expect the link to still be UP for the fist 10 seconds
         with pytest.raises(asyncio.TimeoutError):
-            await client_alpha.wait_for_link_state(
-                beta.public_key, [LinkState.DOWN], 10
+            await client_alpha.wait_for_new_link_state(
+                beta.public_key, LinkState.DOWN, 10
             )
 
         # Expect the link down event
         # It should arrive in 11-15 seconds after the link is cut and ping mod disabled
         # And 22-25 seconds if the ping mod is enabled
-        await client_alpha.wait_for_link_state(beta.public_key, [LinkState.DOWN])
+        await client_alpha.wait_for_new_link_state(beta.public_key, LinkState.DOWN)
+        assert client_alpha.get_link_state_events(beta.public_key) == [
+            LinkState.DOWN,
+            LinkState.UP,
+            LinkState.DOWN,
+        ]
         # Although the beta device has been stopped, it should still see alpha as up
-        await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP])
+        assert client_beta.get_link_state_events(alpha.public_key) == [
+            LinkState.DOWN,
+            LinkState.UP,
+        ]
 
 
 @pytest.mark.asyncio
@@ -377,8 +409,9 @@ async def test_event_link_state_peer_doesnt_respond(
             conn.connection for conn in env.connections
         ]
 
-        await client_alpha.wait_for_link_state(beta.public_key, [LinkState.UP])
-        await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP])
+        await wait_for_up_events(
+            client_alpha, client_beta, alpha.public_key, beta.public_key
+        )
 
         async with ICMP_control(connection_beta):
             with pytest.raises(asyncio.TimeoutError):
@@ -390,13 +423,13 @@ async def test_event_link_state_peer_doesnt_respond(
                 await wait_for_any_with_timeout(
                     [
                         asyncio.create_task(
-                            client_alpha.wait_for_link_state(
-                                beta.public_key, [LinkState.DOWN]
+                            client_alpha.wait_for_new_link_state(
+                                beta.public_key, LinkState.DOWN
                             )
                         ),
                         asyncio.create_task(
-                            client_beta.wait_for_link_state(
-                                alpha.public_key, [LinkState.DOWN]
+                            client_beta.wait_for_new_link_state(
+                                alpha.public_key, LinkState.DOWN
                             )
                         ),
                     ],

@@ -53,6 +53,7 @@ class Runtime:
     _error_events: List[ErrorEvent]
     _started_tasks: List[str]
     _stopped_tasks: List[str]
+    _peer_update_event: asyncio.Event
     allowed_pub_keys: Set[str]
 
     def __init__(self) -> None:
@@ -62,6 +63,7 @@ class Runtime:
         self._error_events = []
         self._started_tasks = []
         self._stopped_tasks = []
+        self._peer_update_event = asyncio.Event()
         self.allowed_pub_keys = set()
 
     async def handle_output_line(self, line) -> bool:
@@ -85,6 +87,8 @@ class Runtime:
     def handle_event(self, event: Event):
         if isinstance(event, Event.NODE):
             self._handle_node_event(event.body)
+            # signal that there is a new event
+            self._peer_update_event.set()
         elif isinstance(event, Event.RELAY):
             self._handle_derp_event(event.body)
         elif isinstance(event, Event.ERROR):
@@ -130,13 +134,14 @@ class Runtime:
                 return
             await asyncio.sleep(0.1)
 
-    async def notify_link_state(self, public_key: str, states: List[LinkState]) -> None:
-        """Busy wait until the last link_state event matches one of the `states` for `public_key`."""
+    async def notify_link_state(self, public_key: str, state: LinkState) -> None:
+        """Wait until a new link_state event matching the `state` for `public_key` is available."""
         while True:
             peer = self.get_peer_info(public_key)
-            if peer and peer.link_state in states:
+            if peer and peer.link_state == state:
                 return
-            await asyncio.sleep(0.1)
+            self._peer_update_event.clear()
+            await self._peer_update_event.wait()
 
     async def notify_peer_event(
         self,
@@ -271,13 +276,13 @@ class Events:
             timeout,
         )
 
-    async def wait_for_link_state(
+    async def wait_for_new_link_state(
         self,
         public_key: str,
-        state: List[LinkState],
+        state: LinkState,
         timeout: Optional[float] = None,
     ) -> None:
-        """Wait until the last link_state event matches one of the `states` for `public_key`."""
+        """Wait until a new link_state event matching the `state` for `public_key` is available."""
         await asyncio.wait_for(
             self._runtime.notify_link_state(public_key, state), timeout
         )
@@ -569,16 +574,16 @@ class Client:
             link_state,
         )
 
-    async def wait_for_link_state(
+    async def wait_for_new_link_state(
         self,
         public_key: str,
-        states: List[LinkState],
+        state: LinkState,
         timeout: Optional[float] = None,
     ) -> None:
-        """Wait until the last link_state event matches one of the `states` for `public_key`."""
-        await self.get_events().wait_for_link_state(
+        """Wait until a new link_state event matching the `state` for `public_key` is available."""
+        await self.get_events().wait_for_new_link_state(
             public_key,
-            states,
+            state,
             timeout,
         )
 
