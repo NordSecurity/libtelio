@@ -197,8 +197,8 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
             await asyncio.sleep(1)
             await ping(connection_alpha, beta.ip_addresses[0])
             await ping(connection_beta, alpha.ip_addresses[0])
-            await client_alpha.wait_for_link_state(beta.public_key, [LinkState.UP], 1)
-            await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP], 1)
+            await client_alpha.wait_for_link_state(beta.public_key, [LinkState.UP])
+            await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP])
 
 
 @pytest.mark.asyncio
@@ -260,8 +260,8 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
             )
 
         # Expect the links are still UP
-        await client_alpha.wait_for_link_state(beta.public_key, [LinkState.UP], 1)
-        await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP], 1)
+        await client_alpha.wait_for_link_state(beta.public_key, [LinkState.UP])
+        await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP])
 
 
 @pytest.mark.asyncio
@@ -288,6 +288,7 @@ async def test_event_link_state_peer_goes_offline(
         with pytest.raises(asyncio.TimeoutError):
             await ping(connection_alpha, beta.ip_addresses[0], 3)
 
+        # Expect the link to still be UP for the fist 10 seconds
         with pytest.raises(asyncio.TimeoutError):
             await client_alpha.wait_for_link_state(
                 beta.public_key, [LinkState.DOWN], 10
@@ -296,9 +297,9 @@ async def test_event_link_state_peer_goes_offline(
         # Expect the link down event
         # It should arrive in 11-15 seconds after the link is cut and ping mod disabled
         # And 22-25 seconds if the ping mod is enabled
-        await client_alpha.wait_for_link_state(beta.public_key, [LinkState.DOWN], 30)
+        await client_alpha.wait_for_link_state(beta.public_key, [LinkState.DOWN])
         # Although the beta device has been stopped, it should still see alpha as up
-        await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP], 5)
+        await client_beta.wait_for_link_state(alpha.public_key, [LinkState.UP])
 
 
 @pytest.mark.asyncio

@@ -131,6 +131,7 @@ class Runtime:
             await asyncio.sleep(0.1)
 
     async def notify_link_state(self, public_key: str, states: List[LinkState]) -> None:
+        """Busy wait until the last link_state event matches one of the `states` for `public_key`."""
         while True:
             peer = self.get_peer_info(public_key)
             if peer and peer.link_state in states:
@@ -276,6 +277,7 @@ class Events:
         state: List[LinkState],
         timeout: Optional[float] = None,
     ) -> None:
+        """Wait until the last link_state event matches one of the `states` for `public_key`."""
         await asyncio.wait_for(
             self._runtime.notify_link_state(public_key, state), timeout
         )
@@ -573,6 +575,7 @@ class Client:
         states: List[LinkState],
         timeout: Optional[float] = None,
     ) -> None:
+        """Wait until the last link_state event matches one of the `states` for `public_key`."""
         await self.get_events().wait_for_link_state(
             public_key,
             states,
