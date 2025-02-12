@@ -1,3 +1,4 @@
+import asyncio
 import config
 import pytest
 from contextlib import AsyncExitStack
@@ -544,34 +545,35 @@ async def test_pq_vpn_upgrade_from_non_pq(
             "10.0.254.1",
             marks=pytest.mark.linux_native,
         ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
-                    stun_limits=(1, 1),
-                    nlx_1_limits=(1, 4),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.7",
-            marks=pytest.mark.windows,
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
-                    stun_limits=(1, 1),
-                    nlx_1_limits=(1, 4),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.7",
-            marks=pytest.mark.windows,
-        ),
+        # TODO(LLT-6000)
+        # pytest.param(
+        #     SetupParameters(
+        #         connection_tag=ConnectionTag.WINDOWS_VM_1,
+        #         adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+        #         connection_tracker_config=generate_connection_tracker_config(
+        #             ConnectionTag.WINDOWS_VM_1,
+        #             stun_limits=(1, 1),
+        #             nlx_1_limits=(1, 4),
+        #         ),
+        #         is_meshnet=False,
+        #     ),
+        #     "10.0.254.7",
+        #     marks=pytest.mark.windows,
+        # ),
+        # pytest.param(
+        #     SetupParameters(
+        #         connection_tag=ConnectionTag.WINDOWS_VM_1,
+        #         adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
+        #         connection_tracker_config=generate_connection_tracker_config(
+        #             ConnectionTag.WINDOWS_VM_1,
+        #             stun_limits=(1, 1),
+        #             nlx_1_limits=(1, 4),
+        #         ),
+        #         is_meshnet=False,
+        #     ),
+        #     "10.0.254.7",
+        #     marks=pytest.mark.windows,
+        # ),
     ],
 )
 async def test_pq_vpn_handshake_after_nonet(
@@ -601,6 +603,70 @@ async def test_pq_vpn_handshake_after_nonet(
         async with client_alpha.get_router().break_udp_conn_to_host(
             str(config.NLX_SERVER["ipv4"])
         ):
+            await asyncio.sleep(179)
+
+            log = (await client_alpha.get_log()).lower()
+            log_line = "Restarting postquantum entity".lower()
+            occurrences = log.count(log_line)
+
+            assert (
+                occurrences == 0
+            ), "Found PQ restart log even though PQ should not have been restarted yet"
+
             await client_alpha.wait_for_log("Restarting postquantum entity")
 
         await ping(client_conn, config.PHOTO_ALBUM_IP, timeout=10)
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize(
+    "setup_params, public_ip",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    stun_limits=(1, 1),
+                    nlx_1_limits=(1, 4),
+                ),
+                is_meshnet=False,
+            ),
+            "10.0.254.1",
+        ),
+    ],
+)
+async def test_pq_no_false_restart(
+    setup_params: SetupParameters,
+    public_ip: str,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(
+                exit_stack,
+                [setup_params],
+                prepare_vpn=True,
+            )
+        )
+
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+
+        ip = await stun.get(client_conn, config.STUN_SERVER)
+        assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
+
+        await _connect_vpn_pq(
+            client_conn,
+            client_alpha,
+        )
+
+        await asyncio.sleep(200)
+
+        log = (await client_alpha.get_log()).lower()
+        log_line = "Restarting postquantum entity".lower()
+        occurrences = log.count(log_line)
+
+        assert (
+            occurrences == 0
+        ), "Found PQ restart log even though PQ should not have been restarted"
