@@ -927,7 +927,10 @@ class Client:
         if case_insensitive:
             what = what.lower()
         while True:
-            if (await self.get_log()).lower().count(what) >= count:
+            log = await self.get_log()
+            if case_insensitive:
+                log = log.lower()
+            if log.count(what) >= count:
                 break
             await asyncio.sleep(1)
 
