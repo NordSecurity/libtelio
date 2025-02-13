@@ -11,29 +11,77 @@ macro_rules! telio_log_trace {
 /// wrapping tracing::debug and adding more information
 #[macro_export]
 macro_rules! telio_log_debug {
-       ( $msg: expr) => {tracing::debug!($msg)};
-       ( $format: expr, $($arg:tt)+) => { tracing::debug!( $format,  $($arg)+) };
+       ( $msg: expr) => {{
+            let timestamp: $crate::time::OffsetDateTime = std::time::SystemTime::now().into();
+            let callsite_timestamp: String = timestamp
+                .format(&$crate::time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|_| timestamp.to_string());
+            tracing::debug!(%callsite_timestamp, $msg)
+        }};
+       ( $format: expr, $($arg:tt)+) => {{
+            let timestamp: $crate::time::OffsetDateTime = std::time::SystemTime::now().into();
+            let callsite_timestamp: String = timestamp
+                .format(&$crate::time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|_| timestamp.to_string());
+            tracing::debug!(%callsite_timestamp, $format, $($arg)+)
+        }};
 }
 
 /// wrapping tracing::info and adding more information
 #[macro_export]
 macro_rules! telio_log_info {
-       ( $msg: expr) => {tracing::info!($msg)};
-       ( $format: expr, $($arg:tt)+) => { tracing::info!( $format,  $($arg)+) };
+       ( $msg: expr) => {{
+            let timestamp: $crate::time::OffsetDateTime = std::time::SystemTime::now().into();
+            let callsite_timestamp: String = timestamp
+                .format(&$crate::time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|_| timestamp.to_string());
+            tracing::info!(%callsite_timestamp, $msg)
+        }};
+       ( $format: expr, $($arg:tt)+) => {{
+            let timestamp: $crate::time::OffsetDateTime = std::time::SystemTime::now().into();
+            let callsite_timestamp: String = timestamp
+                .format(&$crate::time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|_| timestamp.to_string());
+            tracing::info!(%callsite_timestamp, $format, $($arg)+)
+        }};
 }
 
 /// wrapping tracing::warn and adding more information
 #[macro_export]
 macro_rules! telio_log_warn {
-       ( $msg: expr) => {tracing::warn!($msg)};
-       ( $format: expr, $($arg:tt)+) => { tracing::warn!( $format,  $($arg)+) };
+    ( $msg: expr) => {{
+        let timestamp: $crate::time::OffsetDateTime = std::time::SystemTime::now().into();
+        let callsite_timestamp: String = timestamp
+            .format(&$crate::time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| timestamp.to_string());
+        tracing::warn!(%callsite_timestamp, $msg)
+    }};
+   ( $format: expr, $($arg:tt)+) => {{
+        let timestamp: $crate::time::OffsetDateTime = std::time::SystemTime::now().into();
+        let callsite_timestamp: String = timestamp
+            .format(&$crate::time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| timestamp.to_string());
+        tracing::warn!(%callsite_timestamp, $format, $($arg)+)
+    }};
 }
 
 /// wrapping tracing::error and adding more information
 #[macro_export]
 macro_rules! telio_log_error {
-       ( $msg: expr) => {tracing::error!($msg)};
-       ( $format: expr, $($arg:tt)+) => { tracing::error!( $format,  $($arg)+) };
+    ( $msg: expr) => {{
+        let timestamp: $crate::time::OffsetDateTime = std::time::SystemTime::now().into();
+        let callsite_timestamp: String = timestamp
+            .format(&$crate::time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| timestamp.to_string());
+        tracing::error!(%callsite_timestamp, $msg)
+    }};
+   ( $format: expr, $($arg:tt)+) => {{
+        let timestamp: $crate::time::OffsetDateTime = std::time::SystemTime::now().into();
+        let callsite_timestamp: String = timestamp
+            .format(&$crate::time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| timestamp.to_string());
+        tracing::error!(%callsite_timestamp, $format, $($arg)+)
+    }};
 }
 
 /// Error with log is used to log something
