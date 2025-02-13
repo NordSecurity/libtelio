@@ -644,7 +644,9 @@ impl State {
     }
 
     async fn uapi_request(&mut self, cmd: &Cmd) -> Result<Response, Error> {
+        let start = std::time::Instant::now();
         let ret = self.adapter.send_uapi_cmd(cmd).await?;
+        telio_log_debug!("uapi request took: {:?}", start.elapsed());
         telio_log_debug!("UAPI request: {}, response: {:?}", &cmd.to_string(), &ret);
 
         // Count continuous adapter failures.
