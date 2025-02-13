@@ -3,7 +3,7 @@ use std::{num::NonZeroU64, path::PathBuf, str::FromStr};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use smart_default::SmartDefault;
 use std::fs;
-use tracing::{debug, info, level_filters::LevelFilter, warn};
+use tracing::{debug, info, level_filters::LevelFilter, warn, Level};
 use uuid::Uuid;
 
 use telio::crypto::SecretKey;
@@ -90,7 +90,7 @@ impl DeviceIdentity {
     }
 }
 
-#[derive(PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone)]
 pub struct TeliodDaemonConfig {
     #[serde(
         deserialize_with = "deserialize_log_level",
@@ -133,6 +133,35 @@ impl TeliodDaemonConfig {
         }
         if let Some(mqtt) = update.mqtt {
             self.mqtt = mqtt;
+        }
+    }
+}
+
+impl Default for TeliodDaemonConfig {
+    fn default() -> Self {
+        TeliodDaemonConfig {
+            log_level: LevelFilter::from_level(if cfg!(debug_assertions) {
+                Level::TRACE
+            } else {
+                Level::INFO
+            }),
+            log_file_path: {
+                #[cfg(feature = "cgi")]
+                {
+                    crate::cgi::constants::TELIOD_LOG.to_string()
+                }
+                #[cfg(not(feature = "cgi"))]
+                {
+                    "./teliod.log".to_string()
+                }
+            },
+            interface: InterfaceConfig {
+                name: "nlx".to_string(),
+                config_provider: Default::default(),
+            },
+            authentication_token: "".to_string(),
+            http_certificate_file_path: None,
+            mqtt: MqttConfig::default(),
         }
     }
 }
@@ -180,7 +209,7 @@ fn deserialize_authentication_token<'de, D: Deserializer<'de>>(
 ) -> Result<String, D::Error> {
     let raw_string: String = de::Deserialize::deserialize(deserializer)?;
     let re = regex::Regex::new("[0-9a-f]{64}").map_err(de::Error::custom)?;
-    if re.is_match(&raw_string) {
+    if raw_string.is_empty() || re.is_match(&raw_string) {
         Ok(raw_string)
     } else {
         Err(de::Error::custom("Incorrect authentication token"))
@@ -200,24 +229,24 @@ where
     }
 }
 
-#[derive(Default, PartialEq, Eq, Deserialize, Serialize, Debug)]
+#[derive(Default, PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
 pub struct InterfaceConfig {
     pub name: String,
     pub config_provider: InterfaceConfigurationProvider,
 }
 
 #[allow(dead_code)]
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default)]
 pub struct TeliodDaemonConfigPartial {
     #[serde(default, deserialize_with = "deserialize_partial_log_level")]
-    log_level: Option<LevelFilter>,
-    log_file_path: Option<String>,
-    interface: Option<InterfaceConfig>,
-    app_user_uid: Option<Uuid>,
+    pub log_level: Option<LevelFilter>,
+    pub log_file_path: Option<String>,
+    pub interface: Option<InterfaceConfig>,
+    pub app_user_uid: Option<Uuid>,
     #[serde(default, deserialize_with = "deserialize_partial_authentication_token")]
-    authentication_token: Option<String>,
-    http_certificate_file_path: Option<Option<PathBuf>>,
-    mqtt: Option<MqttConfig>,
+    pub authentication_token: Option<String>,
+    pub http_certificate_file_path: Option<Option<PathBuf>>,
+    pub mqtt: Option<MqttConfig>,
 }
 
 fn deserialize_partial_log_level<'de, D: Deserializer<'de>>(

@@ -3,7 +3,7 @@
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
-use std::{fs::File, net::IpAddr};
+use std::{fs, net::IpAddr};
 use telio::{device::Error as DeviceError, telio_model::mesh::Node};
 use thiserror::Error as ThisError;
 use tokio::{
@@ -88,7 +88,7 @@ enum TeliodError {
 }
 
 /// Libtelio and meshnet status report
-#[derive(Debug, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Default, Clone)]
 pub struct TelioStatusReport {
     /// State of telio runner
     pub telio_is_running: bool,
@@ -105,7 +105,7 @@ async fn main() -> Result<(), TeliodError> {
             if DaemonSocket::get_ipc_socket_path()?.exists() {
                 Err(TeliodError::DaemonIsRunning)
             } else {
-                let file = File::open(&config_path)?;
+                let file = fs::File::open(&config_path)?;
 
                 let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
 
@@ -151,6 +151,22 @@ async fn main() -> Result<(), TeliodError> {
         }
         #[cfg(feature = "cgi")]
         Cmd::Cgi => {
+            #[cfg(debug_assertions)]
+            let (non_blocking_writer, _tracing_worker_guard) = tracing_appender::non_blocking(
+                fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(cgi::constants::CGI_LOG)?,
+            );
+            #[cfg(debug_assertions)]
+            tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::TRACE)
+                .with_writer(non_blocking_writer)
+                .with_ansi(false)
+                .with_line_number(true)
+                .with_level(true)
+                .init();
+
             tokio::task::spawn_blocking(|| {
                 rust_cgi::handle(cgi::handle_request);
             })

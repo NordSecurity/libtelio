@@ -1,16 +1,22 @@
 use std::{env::var, ops::Deref};
 
-use qnap::QnapUserAuthorization;
 use rust_cgi::{http::StatusCode, text_response, Request, Response};
-use serde::Deserialize;
 
 use crate::TIMEOUT_SEC;
+use tracing::trace;
+
+#[cfg(feature = "qnap")]
+use qnap::QnapUserAuthorization;
 
 mod api;
+mod app;
+mod web;
+
 pub(crate) mod constants;
 #[cfg(feature = "qnap")]
 mod qnap;
 
+#[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
@@ -54,12 +60,14 @@ impl Deref for CgiRequest {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum TokenCheckStatus {
     Success,
     Failed,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum AdminGroupStatus {
     Admin,
@@ -77,6 +85,14 @@ pub trait AuthorizationValidator {
 
 pub fn handle_request(request: Request) -> Response {
     let request = CgiRequest::new(request);
+    if let Some(response) = web::handle_web_ui(&request) {
+        trace!(
+            "Returning response..: {:?}",
+            std::str::from_utf8(response.body()).ok()
+        );
+
+        return response;
+    }
 
     #[cfg(feature = "qnap")]
     if let Err(error) = authorize::<QnapUserAuthorization>(&request) {
@@ -95,6 +111,7 @@ pub fn handle_request(request: Request) -> Response {
     text_response(StatusCode::BAD_REQUEST, "Invalid request.")
 }
 
+#[allow(dead_code)]
 pub fn authorize<T: AuthorizationValidator>(request: &Request) -> Result<(), Error> {
     T::retrieve_token(request).and_then(|sid| {
         let user_authorization =
@@ -111,7 +128,7 @@ pub fn authorize<T: AuthorizationValidator>(request: &Request) -> Result<(), Err
 }
 
 #[cfg(debug_assertions)]
-fn trace_request(request: &CgiRequest, response: &Response) -> Option<Response> {
+pub fn trace_request(request: &CgiRequest, response: &Response) -> Option<Response> {
     use std::{env::vars, fmt::Write};
     let mut msg = String::new();
     let _ = writeln!(
