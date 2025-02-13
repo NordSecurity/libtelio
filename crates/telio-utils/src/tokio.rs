@@ -53,6 +53,7 @@ impl ThreadTracker {
         for (tid, (status, last_status_change)) in &self.statuses {
             if *status == ThreadStatus::Unparked {
                 let delta = now - *last_status_change;
+                assert!(delta <= UNPARKED_THRESHOLD);
                 if delta > 2 * UNPARKED_THRESHOLD {
                     telio_log_debug!("{tid:?} is unparked for {delta:?}");
                 }
