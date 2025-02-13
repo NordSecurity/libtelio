@@ -1,20 +1,16 @@
 use async_trait::async_trait;
-use socket2::Type;
 use std::future::Future;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Duration;
-use surge_ping::{
-    Client as PingerClient, Config as PingerConfig, ConfigBuilder, PingIdentifier, PingSequence,
-    SurgeError, ICMP,
-};
+use surge_ping::SurgeError;
 use telio_crypto::PublicKey;
+use telio_pinger::Pinger;
 use telio_sockets::SocketPool;
 use telio_task::{task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
-    dual_target, repeated_actions, telio_log_debug, telio_log_warn, DualTarget, RepeatedActions,
+    dual_target, repeated_actions, telio_log_debug, telio_log_trace, telio_log_warn, DualTarget,
+    RepeatedActions,
 };
-const PING_PAYLOAD_SIZE: usize = 56;
 
 /// Possible [SessionKeeper] errors.
 #[derive(thiserror::Error, Debug)]
@@ -62,49 +58,15 @@ pub struct SessionKeeper {
 impl SessionKeeper {
     pub fn start(sock_pool: Arc<SocketPool>, batch_all: bool) -> Result<Self> {
         telio_log_debug!("Starting with batch_all({})", batch_all);
-        let (client_v4, client_v6) = (
-            PingerClient::new(&Self::make_builder(ICMP::V4).build())
-                .map_err(|e| Error::PingerCreationError(ICMP::V4, e))?,
-            PingerClient::new(&Self::make_builder(ICMP::V6).build())
-                .map_err(|e| Error::PingerCreationError(ICMP::V6, e))?,
-        );
-
-        sock_pool.make_internal(client_v4.get_socket().get_native_sock())?;
-        sock_pool.make_internal(client_v6.get_socket().get_native_sock())?;
+        let pinger = Pinger::new(1, true, sock_pool, Some("session_keeper"))?;
 
         Ok(Self {
             batch_all,
             task: Task::start(State {
-                pingers: Pingers {
-                    pinger_client_v4: client_v4,
-                    pinger_client_v6: client_v6,
-                },
-
+                pinger,
                 actions: RepeatedActions::default(),
             }),
         })
-    }
-
-    fn make_builder(proto: ICMP) -> ConfigBuilder {
-        let mut config_builder = PingerConfig::builder().kind(proto);
-        if cfg!(any(
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "tvos",
-        )) {
-            config_builder = config_builder.sock_type_hint(Type::RAW);
-        }
-        if cfg!(not(target_os = "android")) {
-            match proto {
-                ICMP::V4 => {
-                    config_builder = config_builder.bind((Ipv4Addr::UNSPECIFIED, 0).into());
-                }
-                ICMP::V6 => {
-                    config_builder = config_builder.bind((Ipv6Addr::UNSPECIFIED, 0).into());
-                }
-            }
-        }
-        config_builder
     }
 
     pub async fn stop(self) {
@@ -112,55 +74,11 @@ impl SessionKeeper {
     }
 
     #[cfg(test)]
-    async fn get_pinger_client(&self, proto: ICMP) -> Result<PingerClient> {
-        task_exec!(&self.task, async move |s| {
-            Ok(match proto {
-                ICMP::V4 => s.pingers.pinger_client_v4.clone(),
-                ICMP::V6 => s.pingers.pinger_client_v6.clone(),
-            })
-        })
-        .await
-        .map_err(Error::Task)
+    async fn get_pinger(&self) -> Result<Pinger> {
+        task_exec!(&self.task, async move |s| Ok(s.pinger.clone()))
+            .await
+            .map_err(Error::Task)
     }
-}
-
-async fn ping(pingers: &Pingers, targets: (&PublicKey, &DualTarget)) -> Result<()> {
-    let (primary, secondary) = targets.1.get_targets()?;
-    let public_key = targets.0;
-
-    telio_log_debug!("Pinging primary target {:?} on {:?}", public_key, primary);
-
-    let primary_client = match primary {
-        IpAddr::V4(_) => &pingers.pinger_client_v4,
-        IpAddr::V6(_) => &pingers.pinger_client_v6,
-    };
-
-    let ping_id = PingIdentifier(rand::random());
-    if let Err(e) = primary_client
-        .pinger(primary, ping_id)
-        .await
-        .send_ping(PingSequence(0), &[0; PING_PAYLOAD_SIZE])
-        .await
-    {
-        telio_log_warn!("Primary target failed: {}", e.to_string());
-
-        if let Some(second) = secondary {
-            telio_log_debug!("Pinging secondary target {:?} on {:?}", public_key, second);
-
-            let secondary_client = match second {
-                IpAddr::V4(_) => &pingers.pinger_client_v4,
-                IpAddr::V6(_) => &pingers.pinger_client_v6,
-            };
-
-            secondary_client
-                .pinger(second, PingIdentifier(rand::random()))
-                .await
-                .send_ping(PingSequence(0), &[0; PING_PAYLOAD_SIZE])
-                .await?;
-        }
-    }
-
-    Ok(())
 }
 
 #[async_trait]
@@ -195,12 +113,18 @@ impl SessionKeeperTrait for SessionKeeper {
                 interval,
                 Arc::new(move |c| {
                     Box::pin(async move {
-                        if let Err(e) = ping(&c.pingers, (&public_key, &dual_target)).await {
-                            telio_log_warn!(
-                                "Failed to ping, peer with key: {:?}, error: {:?}",
-                                public_key,
-                                e
-                            );
+                        telio_log_trace!("Performing ping {:?}", dual_target);
+                        let result = c.pinger.perform(dual_target).await;
+                        let failed = match (result.v4, result.v6) {
+                            (None, None) => true,
+                            (Some(v4res), None) => v4res.successful_pings == 0,
+                            (None, Some(v6res)) => v6res.successful_pings == 0,
+                            (Some(v4res), Some(v6res)) => {
+                                (v4res.successful_pings == 0) && (v6res.successful_pings == 0)
+                            }
+                        };
+                        if failed {
+                            telio_log_warn!("Failed to ping node: {:?}", public_key);
                         }
                         Ok(())
                     })
@@ -236,13 +160,8 @@ impl SessionKeeperTrait for SessionKeeper {
     }
 }
 
-struct Pingers {
-    pinger_client_v4: PingerClient,
-    pinger_client_v6: PingerClient,
-}
-
 struct State {
-    pingers: Pingers,
+    pinger: Pinger,
     actions: RepeatedActions<PublicKey, Self, Result<()>>,
 }
 
@@ -281,6 +200,7 @@ impl Runtime for State {
 mod tests {
     use super::*;
     use std::net::{Ipv4Addr, Ipv6Addr};
+    use surge_ping::ICMP;
     use telio_crypto::PublicKey;
     use telio_sockets::NativeProtector;
     use telio_test::assert_elapsed;
@@ -313,14 +233,17 @@ mod tests {
             .await
             .unwrap();
 
-        let sock = sess_keep
-            .get_pinger_client(ICMP::V4)
+        let pinger_client = sess_keep
+            .get_pinger()
             .await
             .unwrap()
-            .get_socket();
+            .get_client(ICMP::V4)
+            .unwrap();
+
+        let sock = pinger_client.get_socket();
 
         // Drop the pinger client explicitly, for it to stop listening on ICMP socket
-        drop(sess_keep.get_pinger_client(ICMP::V4).await.unwrap());
+        drop(pinger_client);
 
         // Runtime
         tokio::spawn(async move {
