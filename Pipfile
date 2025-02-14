@@ -13,7 +13,7 @@ pyyaml = "*"
 requests = "*"
 pipenv = "*"
 dill = "*"
-regex = "*"
+regex = "==2024.9.11"
 
 [dev-packages]
 
