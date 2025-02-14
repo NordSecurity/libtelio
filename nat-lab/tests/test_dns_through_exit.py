@@ -18,6 +18,7 @@ from utils.router import IPStack
         pytest.param(
             (IPStack.IPv4, ["10.0.80.82"]),
             marks=pytest.mark.ipv4,
+            id="a_v4",
         ),
         # We're not tesing IPv6 here, cause we do not have IPv6 connectivity on exit-node
         # pytest.param(
@@ -27,6 +28,7 @@ from utils.router import IPStack
         pytest.param(
             (IPStack.IPv4v6, ["10.0.80.82", "2001:db8:85a4::adda:edde:7"]),
             marks=pytest.mark.ipv4v6,
+            id="a_v4v6",
         ),
     ],
 )
@@ -36,6 +38,7 @@ from utils.router import IPStack
         pytest.param(
             (IPStack.IPv4, ["10.0.80.83"]),
             marks=pytest.mark.ipv4,
+            id="e_v4",
         ),
         # We're not tesing IPv6 here, cause we do not have IPv6 connectivity on exit-node
         # pytest.param(
@@ -45,6 +48,7 @@ from utils.router import IPStack
         pytest.param(
             (IPStack.IPv4v6, ["10.0.80.83", "2001:db8:85a4::adda:edde:8"]),
             marks=pytest.mark.ipv4v6,
+            id="e_v4v6",
         ),
     ],
 )
@@ -60,6 +64,7 @@ from utils.router import IPStack
                     derp_1_limits=(1, 1),
                 ),
             ),
+            id="a_neptun",
         ),
         pytest.param(
             SetupParameters(
@@ -71,6 +76,7 @@ from utils.router import IPStack
                 ),
             ),
             marks=pytest.mark.linux_native,
+            id="a_native",
         ),
         # This test is failing, but currently is non critical
         # pytest.param(
@@ -97,7 +103,8 @@ from utils.router import IPStack
                     derp_1_limits=(1, 1),
                 ),
                 features=default_features(enable_firewall_exclusion_range="10.0.0.0/8"),
-            )
+            ),
+            id="b",
         )
     ],
 )
