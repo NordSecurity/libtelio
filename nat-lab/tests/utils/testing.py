@@ -1,7 +1,10 @@
 import os
 import re
 from datetime import datetime
+from hashlib import md5
 from typing import Optional, Tuple, TypeVar
+
+MAX_PATH_LENGTH = 255
 
 T = TypeVar("T")
 
@@ -35,10 +38,29 @@ def _format_path_string(input_str: str) -> str:
     """
     Format the input string to be safely used as a system path or file name.
     """
-    # truncate if it's longer than 64 characters
     # replace any non-alphanumeric characters with "_"
     # remove any trailing "_"
-    return re.sub(r"\W+", "_", input_str[:64]).rstrip("_")
+    return re.sub(r"\W+", "_", input_str).rstrip("_")
+
+
+def _shorten_path_if_needed(path: str) -> str:
+    """
+    Truncate the last segment and append a short hash to keep it unique.
+    """
+    if len(path) <= MAX_PATH_LENGTH:
+        return path
+
+    # make a short hash
+    h = md5(path.encode("utf-8")).hexdigest()[:6]
+
+    # truncate the last segment of the path
+    head, tail = os.path.split(path)
+    excess = len(path) - MAX_PATH_LENGTH
+    keep_len = max(0, len(tail) - excess - len(h) - 2)
+    truncated = tail[:keep_len]
+
+    print(datetime.now(), "Test path:", tail, "truncated with hash:", h)
+    return os.path.join(head, f"{truncated}_{h}")
 
 
 def get_current_test_log_path(base_dir: str = "logs") -> str:
@@ -52,8 +74,12 @@ def get_current_test_log_path(base_dir: str = "logs") -> str:
         logs_dir = os.path.join(base_dir, test_name)
         # add the test parameters suffx
         if test_parameters:
-            return logs_dir + "_" + test_parameters
+            result = logs_dir + "_" + test_parameters
         # there were no parameters
-        return logs_dir
-    # we are not in a test
-    return base_dir
+        else:
+            result = logs_dir
+    else:
+        # we are not in a test
+        result = base_dir
+
+    return _shorten_path_if_needed(result)
