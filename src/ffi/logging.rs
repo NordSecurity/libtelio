@@ -260,6 +260,13 @@ enum LogMessage {
     Quit(Arc<Barrier>),
 }
 
+fn extract_timestamp(log: &str, key: &str) -> Option<time::OffsetDateTime> {
+    log.split_whitespace()
+        .find(|&s| s.starts_with(key))
+        .and_then(|entry| entry.split('=').nth(1)) // Get the value after '='
+        .and_then(|timestamp| time::OffsetDateTime::parse(timestamp, &time::format_description::well_known::Rfc3339).ok())
+}
+
 fn start_async_logger(cb: Box<dyn TelioLoggerCb>, buffer_size: usize) -> SyncSender<LogMessage> {
     let (sender, receiver) = sync_channel::<LogMessage>(buffer_size);
     let handle = Builder::new()
@@ -270,7 +277,16 @@ fn start_async_logger(cb: Box<dyn TelioLoggerCb>, buffer_size: usize) -> SyncSen
                 match receiver.recv() {
                     Ok(LogMessage::Message(level, msg, timestamp)) => {
                         let msg = if TIMESTAMPS_IN_LOGS.load(std::sync::atomic::Ordering::Relaxed) {
+                            let callsite_timestamp = extract_timestamp(&msg, "callsite_timestamp=");
                             let timestamp: time::OffsetDateTime = timestamp.into();
+
+                            if let Some(callsite_timestamp) = callsite_timestamp {
+                                let time_spent_logging = timestamp - callsite_timestamp;
+                                if time_spent_logging > time::Duration::milliseconds(100) {
+                                    _ = cb.log(TelioLogLevel::Error, format!("LOCK IN LOGGING Duration: {time_spent_logging}"));
+                                }
+                            }
+
                             let timestamp: String = timestamp
                                 .format(&time::format_description::well_known::Rfc3339)
                                 .unwrap_or_else(|_| timestamp.to_string());
