@@ -8,7 +8,7 @@ use std::io;
 use telio_utils::{telio_log_debug, telio_log_warn};
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 /// Sender to notify if there is a change in OS interface order
-pub static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(2));
+pub static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(10));
 /// Vector containing all local interfaces
 pub static LOCAL_ADDRS_CACHE: Mutex<Vec<if_addrs::Interface>> = Mutex::new(Vec::new());
 #[cfg(all(
