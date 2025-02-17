@@ -8,12 +8,12 @@ black = "==24.1.1"
 isort = "*"
 autoflake = "*"
 mypy = "*"
-pylint = "*"
+pylint = "==3.2.3"
 pyyaml = "*"
 requests = "*"
 pipenv = "*"
 dill = "*"
-regex = "*"
+regex = "==2024.9.11"
 
 [dev-packages]
 

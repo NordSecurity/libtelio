@@ -11,6 +11,7 @@ yanked = "warn"
 notice = "warn"
 ignore = [
     { id = "RUSTSEC-2024-0344", reason = "This is temporary ignore untill we get rid of this dependency" },
+{ id = "RUSTSEC-2024-0421", reason = "This is fixed in the mainline and upgrading idna requires bumping hickory which might be too substantial of a change" }
 ]
 
 
