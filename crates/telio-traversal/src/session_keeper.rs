@@ -114,7 +114,7 @@ impl SessionKeeperTrait for SessionKeeper {
                 Arc::new(move |c| {
                     Box::pin(async move {
                         telio_log_trace!("Performing ping {:?}", dual_target);
-                        let result = c.pinger.perform(dual_target).await;
+                        let result = c.pinger.perform_single(dual_target).await;
                         let failed = match (result.v4, result.v6) {
                             (None, None) => true,
                             (Some(v4res), None) => v4res.successful_pings == 0,

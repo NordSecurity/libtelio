@@ -92,13 +92,26 @@ impl Pinger {
     ///
     /// * `target` - `DualTarget` instance representing the target node.
     pub async fn perform(&self, target: DualTarget) -> DualPingResults {
-        let dpr = self.perform_average_rtt(&target).await;
+        let dpr = self.perform_average_rtt(&target, true).await;
         telio_log_debug!("{:?}, no_of_tries: {}", dpr, self.no_of_tries);
 
         dpr
     }
 
-    async fn perform_average_rtt(&self, target: &DualTarget) -> DualPingResults {
+    /// Perform the configured number of pings against the specified endpoint.
+    /// Pings secondary target only if primary has failed.
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - `DualTarget` instance representing the target node.
+    pub async fn perform_single(&self, target: DualTarget) -> DualPingResults {
+        let dpr = self.perform_average_rtt(&target, false).await;
+        telio_log_debug!("{:?}, no_of_tries: {}", dpr, self.no_of_tries);
+
+        dpr
+    }
+
+    async fn perform_average_rtt(&self, target: &DualTarget, ping_both: bool) -> DualPingResults {
         let mut dpresults = DualPingResults::default();
 
         match target.get_targets() {
@@ -112,13 +125,20 @@ impl Pinger {
                     }
                 }
 
-                if let Some(secondary) = t.1 {
-                    match secondary {
-                        IpAddr::V4(_) => {
-                            dpresults.v4 = self.ping_action(secondary).await;
-                        }
-                        IpAddr::V6(_) => {
-                            dpresults.v6 = self.ping_action(secondary).await;
+                let primary_failed = match (&dpresults.v4, &dpresults.v6) {
+                    (None, None) => true,
+                    _ => false,
+                };
+
+                if ping_both || primary_failed {
+                    if let Some(secondary) = t.1 {
+                        match secondary {
+                            IpAddr::V4(_) => {
+                                dpresults.v4 = self.ping_action(secondary).await;
+                            }
+                            IpAddr::V6(_) => {
+                                dpresults.v6 = self.ping_action(secondary).await;
+                            }
                         }
                     }
                 }
