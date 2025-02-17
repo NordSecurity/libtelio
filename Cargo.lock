@@ -453,7 +453,7 @@ dependencies = [
 [[package]]
 name = "boringtun"
 version = "0.6.0"
-source = "git+https://github.com/NordSecurity/boringtun.git?tag=v1.2.7#5f8a8c38e6e4b0d801535d3411c4286672eb2215"
+source = "git+https://github.com/NordSecurity/boringtun.git?tag=v1.2.8#e83518ee9ae344f286cb4369a93f247e66ae15ca"
 dependencies = [
  "aead",
  "base64 0.13.1",
