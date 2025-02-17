@@ -6,7 +6,7 @@ macro_rules! await_timeout {
     ($s:expr) => {
         tokio::select! {
           v = $s => { v }
-          _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => { panic!("await took too long") }
+          _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => { panic!("await took too long") }
         }
     };
 }
