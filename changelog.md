@@ -1,6 +1,16 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
-### 5.1.8
+### v5.1.9
+### **Pork Kibin**
+---
+* LLT-5987: Parse PQ server errors
+* LLT-5989: Fix PQ restart for Non-NepTUN adapters
+* LLT-5935: Only restart PQ if there was a previous handshake
+* LLT-5996: Restart PQ handshake timestamp on successful rekey
+
+<br>
+
+### v5.1.8
 ### ****
 ---
 * LLT-5886_protected_pinger: Use the SocketPool component in order to bind the Pinger raw socket to the tunnel interface on macOS.
