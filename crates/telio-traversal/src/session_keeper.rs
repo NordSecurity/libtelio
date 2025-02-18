@@ -114,7 +114,7 @@ impl SessionKeeperTrait for SessionKeeper {
                 Arc::new(move |c| {
                     Box::pin(async move {
                         telio_log_trace!("Performing ping {:?}", dual_target);
-                        let result = c.pinger.perform_single(dual_target).await;
+                        let result = c.pinger.perform_individual(dual_target).await;
                         let failed = match (result.v4, result.v6) {
                             (None, None) => true,
                             (Some(v4res), None) => v4res.successful_pings == 0,
@@ -200,7 +200,6 @@ impl Runtime for State {
 mod tests {
     use super::*;
     use std::net::{Ipv4Addr, Ipv6Addr};
-    use surge_ping::ICMP;
     use telio_crypto::PublicKey;
     use telio_sockets::NativeProtector;
     use telio_test::assert_elapsed;
@@ -233,17 +232,8 @@ mod tests {
             .await
             .unwrap();
 
-        let pinger_client = sess_keep
-            .get_pinger()
-            .await
-            .unwrap()
-            .get_client(ICMP::V4)
-            .unwrap();
-
-        let sock = pinger_client.get_socket();
-
-        // Drop the pinger client explicitly, for it to stop listening on ICMP socket
-        drop(pinger_client);
+        // Take the pinger socket
+        let (sock, _) = sess_keep.get_pinger().await.unwrap().take_sockets();
 
         // Runtime
         tokio::spawn(async move {

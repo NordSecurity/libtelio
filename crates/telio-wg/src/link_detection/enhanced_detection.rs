@@ -88,7 +88,7 @@ impl Runtime for State {
                         }
                         if let Ok(t) = DualTarget::new(t) {
                             telio_log_debug!("Perform actual ping");
-                            let _ = self.pinger.perform(t).await;
+                            let _ = self.pinger.perform_dual(t).await;
                         }
                     }
                 } else {
