@@ -491,7 +491,7 @@ impl Device {
         let thread_tracker = Arc::new(parking_lot::Mutex::new(ThreadTracker::default()));
 
         let art = Builder::new_multi_thread()
-            .worker_threads(num_cpus::get())
+            .worker_threads(1)
             .enable_io()
             .enable_time()
             .on_thread_start({
