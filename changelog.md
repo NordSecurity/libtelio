@@ -3,6 +3,7 @@
 ### v5.1.9
 ### **Pork Kibin**
 ---
+* LLT-5836: Initiate NepTUN handshakes after nonet
 * LLT-5987: Parse PQ server errors
 * LLT-5989: Fix PQ restart for Non-NepTUN adapters
 * LLT-5935: Only restart PQ if there was a previous handshake
