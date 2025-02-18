@@ -468,7 +468,7 @@ impl Analytics {
                         }
 
                         telio_log_trace!("Performing ping {:?}", dpt);
-                        dpr = Box::pin(pinger.perform(dpt)).await;
+                        dpr = Box::pin(pinger.perform_dual(dpt)).await;
 
                         if let Some(results_v4) = &dpr.v4 {
                             if results_v4.successful_pings != 0 {

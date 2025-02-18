@@ -3,12 +3,12 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{convert::TryInto, net::IpAddr};
-use surge_ping::{Client, Config as PingerConfig, PingIdentifier, PingSequence, ICMP};
+use surge_ping::{AsyncSocket, Client, Config as PingerConfig, PingIdentifier, PingSequence, ICMP};
 
 use telio_sockets::SocketPool;
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn, DualTarget};
 
-const PING_PAYLOAD_SIZE: usize = 56;
+const MAX_PING_PAYLOAD_SIZE: usize = 56;
 
 /// Information needed to check the reachability of endpoints.
 ///
@@ -87,11 +87,12 @@ impl Pinger {
     }
 
     /// Perform the configured number of pings against the endpoint specified in the argument node.
+    /// Pings primary and secondary targets together.
     ///
     /// # Arguments
     ///
     /// * `target` - `DualTarget` instance representing the target node.
-    pub async fn perform(&self, target: DualTarget) -> DualPingResults {
+    pub async fn perform_dual(&self, target: DualTarget) -> DualPingResults {
         let dpr = self.perform_average_rtt(&target, true).await;
         telio_log_debug!("{:?}, no_of_tries: {}", dpr, self.no_of_tries);
 
@@ -99,12 +100,12 @@ impl Pinger {
     }
 
     /// Perform the configured number of pings against the specified endpoint.
-    /// Pings secondary target only if primary has failed.
+    /// Pings secondary target only if primary target has failed.
     ///
     /// # Arguments
     ///
     /// * `target` - `DualTarget` instance representing the target node.
-    pub async fn perform_single(&self, target: DualTarget) -> DualPingResults {
+    pub async fn perform_individual(&self, target: DualTarget) -> DualPingResults {
         let dpr = self.perform_average_rtt(&target, false).await;
         telio_log_debug!("{:?}, no_of_tries: {}", dpr, self.no_of_tries);
 
@@ -124,11 +125,7 @@ impl Pinger {
                         dpresults.v6 = self.ping_action(t.0).await;
                     }
                 }
-
-                let primary_failed = match (&dpresults.v4, &dpresults.v6) {
-                    (None, None) => true,
-                    _ => false,
-                };
+                let primary_failed = matches!((&dpresults.v4, &dpresults.v6), (None, None));
 
                 if ping_both || primary_failed {
                     if let Some(secondary) = t.1 {
@@ -182,7 +179,7 @@ impl Pinger {
         pinger.timeout(Duration::from_millis(10));
 
         let mut sum = Duration::default();
-        let mut payload = [0; PING_PAYLOAD_SIZE];
+        let mut payload = [0; MAX_PING_PAYLOAD_SIZE];
 
         // Trace the compomnent that sent the ping for debugging purposes
         #[cfg(debug_assertions)]
@@ -245,11 +242,12 @@ impl Pinger {
         Client::new(&config_builder.build())
     }
 
-    pub fn get_client(self, proto: ICMP) -> Option<Arc<Client>> {
-        match proto {
-            ICMP::V4 => Some(self.client_v4),
-            ICMP::V6 => self.client_v6,
-        }
+    /// Consume the Pinger but return the sockets for each client
+    pub fn take_sockets(self) -> (AsyncSocket, Option<AsyncSocket>) {
+        (
+            self.client_v4.get_socket(),
+            self.client_v6.map(|c| c.get_socket()),
+        )
     }
 }
 
@@ -283,7 +281,7 @@ mod tests {
         let target =
             DualTarget::new(("127.0.0.1".parse().ok(), None)).expect("Failed to create target");
 
-        let result = pinger.perform(target).await;
+        let result = pinger.perform_individual(target).await;
         assert!(
             result.v4.unwrap().successful_pings > 0,
             "Expected at least one successful ping to 127.0.0.1"
