@@ -101,6 +101,8 @@ impl From<u8> for PacketType {
 enum HandlerState {
     Start,
     Test,
+    Results,
+    End,
 }
 
 /// The throughput transport component
@@ -243,6 +245,15 @@ impl State {
             PacketType::End => self.send_results().await,
             PacketType::Result => {
                 telio_log_debug!("Test results recieved");
+                {
+                    let mut state = self.handler_state.write().await;
+                    if *state == HandlerState::Results {
+                        telio_log_debug!("Changing throughput-test state to HandlerState::End");
+                        // Move the state to Test for the handler to start
+                        // sending the data packets
+                        *state = HandlerState::End;
+                    }
+                }
                 let bytes: [u8; PKT_LOSS_DATA_SIZE] = self.recv_buffer
                     [PKT_LOSS_OFFSET..PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE]
                     .try_into()?;
@@ -432,11 +443,12 @@ async fn throughput_test_handler(
     transport_socket: Arc<UdpSocket>,
     handler_state: Arc<RwLock<HandlerState>>,
 ) -> Result<(), Error> {
-    let mut send_buffer = vec![0u8; 1400];
+    let mut send_buffer = vec![0u8; 1350];
     let mut exponential_backoff = ExponentialBackoff::new(ExponentialBackoffBounds {
         initial: Duration::from_secs(1),
         maximal: Some(Duration::from_secs(30)),
     })?;
+    let mut total_pkts: u64 = 0;
     loop {
         telio_log_debug!("Restart");
         let state = { *{ handler_state.read().await } };
@@ -464,15 +476,14 @@ async fn throughput_test_handler(
                     telio_log_warn!("Unable to connect to peer");
                     break;
                 }
-                continue;
+                total_pkts = 0;
             }
             HandlerState::Test => {
-                let mut total_pkts: u64 = 0;
                 telio_log_debug!("Starting test");
                 let start = Instant::now();
                 // Start sending packets to the peer
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Test as u8);
-                let delay = TokioDuration::from_nanos(1);
+                let delay = TokioDuration::from_micros(1);
                 while start.elapsed() < TEST_DURATION {
                     for _ in 0..1_000 {
                         match transport_socket.try_send_to(&send_buffer, endpoint) {
@@ -492,6 +503,14 @@ async fn throughput_test_handler(
                     tokio::time::sleep_until(next_send_time).await;
                 }
                 telio_log_debug!("Test finished. Collecting results");
+
+                {
+                    let mut handler = handler_state.write().await;
+                    *handler = HandlerState::Results;
+                }
+                exponential_backoff.reset();
+            }
+            HandlerState::Results => {
                 // Tell the other peer test has ended
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::End as u8);
                 send_buffer[IP_ADDR_OFFSET..IP_ADDR_OFFSET + SIZE_OF_IP_ADDR]
@@ -500,6 +519,16 @@ async fn throughput_test_handler(
                 if let Err(e) = transport_socket.send_to(&send_buffer[..13], endpoint).await {
                     telio_log_warn!("Unable to send test end: {:?}", e);
                 }
+                // Exp backoff to either recieve response
+                // or send Start again.
+                PinnedSleep::new(exponential_backoff.get_backoff(), ()).await;
+                exponential_backoff.next_backoff();
+                if exponential_backoff.get_backoff() == Duration::from_secs(30) {
+                    telio_log_warn!("Unable to connect to peer");
+                    break;
+                }
+            }
+            HandlerState::End => {
                 break;
             }
         }
