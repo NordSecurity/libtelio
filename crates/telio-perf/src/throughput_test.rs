@@ -412,7 +412,7 @@ impl Runtime for State {
             Some(endpoint) = self.cmd_chan.rx.recv() => {
                 {
                     let mut state = self.handler_state.write().await;
-                    if *state == HandlerState::Test {
+                    if *state == HandlerState::End {
                         *state = HandlerState::Start;
                     }
                 }
