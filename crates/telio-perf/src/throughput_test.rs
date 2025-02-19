@@ -483,7 +483,7 @@ async fn throughput_test_handler(
                 let start = Instant::now();
                 // Start sending packets to the peer
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Test as u8);
-                let delay = TokioDuration::from_micros(1);
+                let delay = TokioDuration::from_micros(500);
                 while start.elapsed() < TEST_DURATION {
                     for _ in 0..1_000 {
                         match transport_socket.try_send_to(&send_buffer, endpoint) {
@@ -498,9 +498,7 @@ async fn throughput_test_handler(
                         }
                     }
                     // Prefer to get max value from system
-                    let mut next_send_time = TokioInstant::now();
-                    next_send_time += delay;
-                    tokio::time::sleep_until(next_send_time).await;
+                    tokio::time::sleep(delay).await;
                 }
                 telio_log_debug!("Test finished. Collecting results");
 
@@ -508,7 +506,6 @@ async fn throughput_test_handler(
                     let mut handler = handler_state.write().await;
                     *handler = HandlerState::Results;
                 }
-                exponential_backoff.reset();
             }
             HandlerState::Results => {
                 // Tell the other peer test has ended
@@ -521,14 +518,10 @@ async fn throughput_test_handler(
                 }
                 // Exp backoff to either recieve response
                 // or send Start again.
-                PinnedSleep::new(exponential_backoff.get_backoff(), ()).await;
-                exponential_backoff.next_backoff();
-                if exponential_backoff.get_backoff() == Duration::from_secs(30) {
-                    telio_log_warn!("Unable to connect to peer");
-                    break;
-                }
+                PinnedSleep::new(Duration::from_secs(1), ()).await;
             }
             HandlerState::End => {
+                telio_log_debug!("Breaking thread");
                 break;
             }
         }
