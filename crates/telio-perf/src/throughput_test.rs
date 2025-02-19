@@ -19,13 +19,13 @@ use telio_utils::{
     },
     PinnedSleep,
 };
-use telio_utils::{telio_log_debug, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 #[cfg(test)]
 use tokio::sync::Notify;
 use tokio::sync::RwLock;
-use tokio::time::{Duration as TokioDuration, Instant as TokioInstant};
+use tokio::time::Duration as TokioDuration;
 
 /// Port is randomly chosen
 /// perf % 65535 = 46750
@@ -228,7 +228,7 @@ impl State {
         match (*self.recv_buffer.first().unwrap_or(&0)).into() {
             PacketType::Start => {
                 // Reset bytes received and ack sent by reciever
-                telio_log_debug!("Recieved throughput-test request");
+                telio_log_trace!("Recieved throughput-test request");
                 self.pkts_recvd = 0;
                 self.send_ack().await?;
                 self.duration = Instant::now();
@@ -236,7 +236,6 @@ impl State {
             PacketType::Ack => {
                 let mut state = self.handler_state.write().await;
                 if *state == HandlerState::Start {
-                    telio_log_debug!("Changing throughput-test state to HandlerState::Test");
                     // Move the state to Test for the handler to start
                     // sending the data packets
                     *state = HandlerState::Test;
@@ -244,11 +243,9 @@ impl State {
             }
             PacketType::End => self.send_results().await,
             PacketType::Result => {
-                telio_log_debug!("Test results recieved");
                 {
                     let mut state = self.handler_state.write().await;
                     if *state == HandlerState::Results {
-                        telio_log_debug!("Changing throughput-test state to HandlerState::End");
                         // Move the state to Test for the handler to start
                         // sending the data packets
                         *state = HandlerState::End;
@@ -270,7 +267,7 @@ impl State {
                     n.notify_one()
                 };
                 // This print is intentional for now. Can be removed later.
-                println!("Throughput {throughput} MiB/s Packet loss - {pkt_loss} %");
+                telio_log_info!("Throughput {throughput} MiB/s Packet loss - {pkt_loss} %");
             }
             PacketType::Test => {
                 self.pkts_recvd += 1;
@@ -320,9 +317,6 @@ impl State {
             self.recv_buffer[5..13].try_into().unwrap();
         let pkts_sent = u64::from_be_bytes(pkts_sent);
 
-        println!("pkts sent {pkts_sent}");
-        println!("pkts recvd {}", self.pkts_recvd);
-        println!("Time taken {:?}", duration);
         // Calculate packet loss
         let pkt_loss = (1_f32 - (self.pkts_recvd as f32 / pkts_sent as f32)) * 100_f32;
         send_buffer[PKT_LOSS_OFFSET..PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE]
@@ -449,8 +443,9 @@ async fn throughput_test_handler(
         maximal: Some(Duration::from_secs(30)),
     })?;
     let mut total_pkts: u64 = 0;
+    let mut retries = 0;
+    const MAX_RETRIES: usize = 10;
     loop {
-        telio_log_debug!("Restart");
         let state = { *{ handler_state.read().await } };
         match state {
             HandlerState::Start => {
@@ -518,10 +513,14 @@ async fn throughput_test_handler(
                 }
                 // Exp backoff to either recieve response
                 // or send Start again.
+                retries += 1;
                 PinnedSleep::new(Duration::from_secs(1), ()).await;
+                if retries == MAX_RETRIES {
+                    telio_log_warn!("Unable to get test results");
+                    break;
+                }
             }
             HandlerState::End => {
-                telio_log_debug!("Breaking thread");
                 break;
             }
         }
