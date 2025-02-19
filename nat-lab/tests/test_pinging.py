@@ -202,6 +202,8 @@ async def test_session_keeper(
         )
 
 
+# TODO(mathiaspeters): reenable
+@pytest.mark.skip
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_setup_params",

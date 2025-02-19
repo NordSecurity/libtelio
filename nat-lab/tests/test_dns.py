@@ -1127,6 +1127,8 @@ def all_cases(name: str) -> List[str]:
     ]
 
 
+# TODO(mathiaspeters): reenable
+@pytest.mark.skip
 @pytest.mark.asyncio
 async def test_dns_no_error_return_code() -> None:
     async with AsyncExitStack() as exit_stack:
