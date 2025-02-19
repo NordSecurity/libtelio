@@ -474,14 +474,16 @@ async fn throughput_test_handler(
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Test as u8);
                 let delay = TokioDuration::from_nanos(1);
                 while start.elapsed() < TEST_DURATION {
-                    match transport_socket.try_send_to(&send_buffer, endpoint) {
-                        Ok(_) => {
-                            // Count the number of packets, each packet contains
-                            // the same amount of bytes
-                            total_pkts += 1_u64;
-                        }
-                        Err(e) => {
-                            telio_log_warn!("Unable to send data: {e}");
+                    for _ in 0..1_000 {
+                        match transport_socket.try_send_to(&send_buffer, endpoint) {
+                            Ok(_) => {
+                                // Count the number of packets, each packet contains
+                                // the same amount of bytes
+                                total_pkts += 1_u64;
+                            }
+                            Err(e) => {
+                                telio_log_warn!("Unable to send data: {e}");
+                            }
                         }
                     }
                     // Prefer to get max value from system
