@@ -48,6 +48,8 @@ impl ThreadTracker {
         }
     }
 
+    // TODO(mathiaspeters): remove after testing is done
+    #[allow(clippy::panic)]
     fn check_for_long_unparked_threads(&self) {
         let now = Instant::now();
         for (tid, (status, last_status_change)) in &self.statuses {
@@ -55,6 +57,8 @@ impl ThreadTracker {
                 let delta = now - *last_status_change;
                 if delta > 2 * UNPARKED_THRESHOLD {
                     telio_log_debug!("{tid:?} is unparked for {delta:?}");
+                    // TODO(mathiaspeters): remove after testing is done
+                    panic!("Manual panic due to thread being unparked for too long");
                 }
             }
         }
