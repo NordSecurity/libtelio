@@ -14,8 +14,6 @@ from utils.bindings import (
 from utils.connection_util import ConnectionTag
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.asyncio
 async def test_telio_tasks_with_all_features() -> None:
     async with AsyncExitStack() as exit_stack:

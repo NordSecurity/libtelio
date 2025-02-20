@@ -152,8 +152,6 @@ async def test_pq_vpn_connection(
         )
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -515,8 +513,6 @@ async def test_pq_vpn_upgrade_from_non_pq(
         assert preshared != EMPTY_PRESHARED_KEY_SLOT
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 # Regression test for LLT-5884
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize(

@@ -549,8 +549,6 @@ async def add_5ms_delay_to_connections(
         )
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
@@ -729,8 +727,6 @@ async def test_lana_with_same_meshnet(
         assert res[0], res[1]
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
@@ -914,8 +910,6 @@ async def test_lana_with_external_node(
         assert alpha_events[0].fp != gamma_events[0].fp
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
@@ -1096,8 +1090,6 @@ async def test_lana_all_external(
         assert beta_events[0].fp != gamma_events[0].fp
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
@@ -1287,8 +1279,6 @@ async def test_lana_with_vpn_connection(
         assert res[0], res[1]
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
@@ -1522,8 +1512,6 @@ async def test_lana_with_meshnet_exit_node(
         )
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
@@ -1925,8 +1913,6 @@ async def test_lana_with_disconnected_node(
         assert await beta_conn_tracker.find_conntracker_violations() is None
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
@@ -2030,8 +2016,6 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         )
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("alpha_ip_stack,beta_ip_stack", IP_STACK_TEST_CONFIGS)
@@ -2111,8 +2095,6 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
         assert initial_beta_meshnet_id == second_beta_meshnet_id
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -2152,8 +2134,6 @@ async def test_lana_initial_heartbeat_no_trigger(
             )
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("initial_heartbeat_interval", [pytest.param(5)])
@@ -2193,8 +2173,6 @@ async def test_lana_initial_heartbeat_count_since_meshnet_start(
         )
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.parametrize("initial_heartbeat_interval", [pytest.param(5)])
@@ -2236,8 +2214,6 @@ async def test_lana_initial_heartbeat_count_since_meshnet_restart(
         )
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.moose
 @pytest.mark.asyncio
 async def test_lana_rtt_interval_controls_periodic_qos_collection():

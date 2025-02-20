@@ -8,8 +8,6 @@ from utils.connection_util import ConnectionTag
 DEFAULT_WAITING_TIME = 2
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_setup_params",
