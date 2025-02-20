@@ -255,8 +255,6 @@ async def test_direct_working_paths(
         await ping_between_all_nodes(env)
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.moose
 @pytest.mark.asyncio
 @pytest.mark.timeout(
@@ -423,8 +421,6 @@ async def test_direct_working_paths_stun_ipv6() -> None:
         )
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.asyncio
 async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
     setup_params = _generate_setup_parameters([
@@ -537,8 +533,6 @@ async def test_direct_infinite_stun_loop() -> None:
         assert len(stun_requests) < 20
 
 
-# TODO(mathiaspeters): reenable
-@pytest.mark.skip
 @pytest.mark.asyncio
 async def test_direct_working_paths_with_pausing_upnp_and_stun() -> None:
     setup_params = _generate_setup_parameters([
