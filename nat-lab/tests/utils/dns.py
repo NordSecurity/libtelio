@@ -2,7 +2,7 @@ import re
 from config import LIBTELIO_DNS_IPV4
 from datetime import datetime
 from typing import List, Optional
-from utils.connection import Connection
+from utils.connection import Connection, TargetOS
 
 
 async def query_dns(
@@ -12,7 +12,14 @@ async def query_dns(
     dns_server: Optional[str] = None,
     options: Optional[List[str]] = None,
 ) -> None:
-    args = ["nslookup"]
+    # TODO(Lukas): nslookup sometimes is slow in test_dns natlab testcases.
+    # It results in packets being emitted after a 1-3sec delay. To see why
+    # that is happening strace is used but after investigation this should be removed.
+    if connection.target_os == TargetOS.Linux:
+        args = ["strace", "-tt", "nslookup"]
+    else:
+        args = ["nslookup"]
+
     if options:
         args += options
     else:
@@ -21,8 +28,12 @@ async def query_dns(
     args.append(dns_server if dns_server else LIBTELIO_DNS_IPV4)
     response = await connection.create_process(args).execute()
     dns_output = response.get_stdout()
+    dns_stderr = response.get_stderr()
+
     print(datetime.now(), "nslookup stdout:", dns_output)
+    print(datetime.now(), "nslookup stderr:", dns_stderr)
     print(datetime.now(), "nslookup expected_output:", expected_output)
+
     if expected_output:
         for expected_str in expected_output:
             assert re.search(expected_str, dns_output, re.DOTALL) is not None
