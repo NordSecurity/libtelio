@@ -12,6 +12,8 @@ COPY --chmod=0755 data/custom_debs /opt/custom_debs
 RUN find /opt/custom_debs -name "*.deb" -exec sh -c \
     'dpkg -i "$1" && echo "$(basename "$1") with sha256: [$(sha256sum "$1" | cut -d " " -f 1)] was installed or updated" | tee -a /opt/custom_deb_install.log' _ {} \;
 
+RUN apt-get update && apt-get -y install strace
+
 RUN \
     tar -xf /opt/tclis-3.6.tar && \
     mv tcli-3.6* /opt/bin/ && \
