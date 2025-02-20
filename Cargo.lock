@@ -1740,7 +1740,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 [[package]]
 name = "hickory-proto"
 version = "0.24.0"
-source = "git+https://github.com/NordSecurity/trust-dns.git?tag=v3.0.2#0eb4495a481665bf482de43662a8986935f7b2dc"
+source = "git+https://github.com/NordSecurity/trust-dns.git?rev=cc95506ae1a63785d472a9a0a654191fc73aff0b#cc95506ae1a63785d472a9a0a654191fc73aff0b"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -1764,7 +1764,7 @@ dependencies = [
 [[package]]
 name = "hickory-resolver"
 version = "0.24.0"
-source = "git+https://github.com/NordSecurity/trust-dns.git?tag=v3.0.2#0eb4495a481665bf482de43662a8986935f7b2dc"
+source = "git+https://github.com/NordSecurity/trust-dns.git?rev=cc95506ae1a63785d472a9a0a654191fc73aff0b#cc95506ae1a63785d472a9a0a654191fc73aff0b"
 dependencies = [
  "cfg-if",
  "futures-util",
@@ -1785,7 +1785,7 @@ dependencies = [
 [[package]]
 name = "hickory-server"
 version = "0.24.0"
-source = "git+https://github.com/NordSecurity/trust-dns.git?tag=v3.0.2#0eb4495a481665bf482de43662a8986935f7b2dc"
+source = "git+https://github.com/NordSecurity/trust-dns.git?rev=cc95506ae1a63785d472a9a0a654191fc73aff0b#cc95506ae1a63785d472a9a0a654191fc73aff0b"
 dependencies = [
  "async-trait",
  "bytes",
