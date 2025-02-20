@@ -1,3 +1,4 @@
+import platform
 from abc import ABC, abstractmethod
 from enum import Enum, auto
 from typing import List, Optional
@@ -8,6 +9,17 @@ class TargetOS(Enum):
     Linux = auto()
     Windows = auto()
     Mac = auto()
+
+    @staticmethod
+    def local():
+        system = platform.system()
+        if system == "Windows":
+            return TargetOS.Windows
+        if system == "Linux":
+            return TargetOS.Linux
+        if system == "Darwin":
+            return TargetOS.Mac
+        raise ValueError(f"{system} is not supported")
 
 
 class Connection(ABC):
