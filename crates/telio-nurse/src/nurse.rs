@@ -5,6 +5,7 @@ use std::sync::Arc;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_lana::*;
 use telio_model::event::Event;
+use telio_sockets::SocketPool;
 use telio_task::{
     io::{chan, mc_chan, Chan, McChan},
     task_exec, ExecError, Runtime, RuntimeExt, Task, WaitResponse,
@@ -60,9 +61,20 @@ impl Nurse {
         io: NurseIo<'_>,
         aggregator: Arc<ConnectivityDataAggregator>,
         ipv6_enabled: bool,
+        socket_pool: Arc<SocketPool>,
     ) -> Self {
         Self {
-            task: Task::start(State::new(public_key, config, io, aggregator, ipv6_enabled).await),
+            task: Task::start(
+                State::new(
+                    public_key,
+                    config,
+                    io,
+                    aggregator,
+                    ipv6_enabled,
+                    socket_pool,
+                )
+                .await,
+            ),
         }
     }
 
@@ -120,6 +132,9 @@ impl State {
     /// * `public_key` - Used for heartbeat requests.
     /// * `config` - Contains configuration for heartbeats and QoS.
     /// * `io` - Nurse io channels.
+    /// * `aggregator` - ConnectivityDataAggregator.
+    /// * `ipv6_enabled` - IPv6 support.
+    /// * `socket_pool` - SocketPool used to protect the sockets.
     ///
     /// # Returns
     ///
@@ -130,6 +145,7 @@ impl State {
         io: NurseIo<'_>,
         aggregator: Arc<ConnectivityDataAggregator>,
         ipv6_enabled: bool,
+        socket_pool: Arc<SocketPool>,
     ) -> Self {
         let meshnet_id = Self::meshnet_id();
         telio_log_debug!("Meshnet ID: {meshnet_id}");
@@ -181,6 +197,7 @@ impl State {
                     config_update_channel: config_update_channel.subscribe(),
                 },
                 ipv6_enabled,
+                socket_pool,
             )))
         } else {
             None
