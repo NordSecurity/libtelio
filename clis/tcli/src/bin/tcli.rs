@@ -8,6 +8,7 @@ use dirs::home_dir;
 use parking_lot::Mutex;
 use regex::Regex;
 use tracing::level_filters::LevelFilter;
+use tracing_subscriber::EnvFilter;
 
 use telio_model::{config::Server, event::Event as DevEvent, features::Features};
 
@@ -27,8 +28,11 @@ fn main() -> Result<()> {
 
     let (non_blocking_writer, _tracing_worker_guard) =
         tracing_appender::non_blocking(fs::File::create("tcli.log")?);
+    let filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::DEBUG.into())
+        .from_env_lossy();
     tracing_subscriber::fmt()
-        .with_max_level(LevelFilter::TRACE)
+        .with_env_filter(filter)
         .with_writer(non_blocking_writer)
         .with_ansi(false)
         .with_line_number(true)
