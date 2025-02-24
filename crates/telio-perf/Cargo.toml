@@ -23,14 +23,9 @@ tokio = { workspace = true, features = ["rt", "net", "sync", "macros"] }
 tracing.workspace = true
 x25519-dalek.workspace = true
 
-telio-crypto.workspace = true
-telio-model.workspace = true
-telio-proto.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
-telio-wg.workspace = true
-telio-test.workspace = true
 telio-starcast.workspace = true
 
 [dev-dependencies]
