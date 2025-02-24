@@ -162,7 +162,7 @@ surge-ping = { version = "0.8" }
 thiserror = "2"
 time = { version = "0.3", features = ["formatting"] }
 tokio = ">=1.22"
-tracing-subscriber = { version = "0.3", features = ["local-time"] }
+tracing-subscriber = { version = "0.3", features = ["local-time", "env-filter"] }
 tracing-appender = "0.2"
 uniffi = { git = "https://github.com/NordSecurity/uniffi-rs.git", tag = "v0.3.1+v0.25.0" }
 url = "2.5"
