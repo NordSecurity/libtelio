@@ -70,7 +70,7 @@ pub enum Error {
     Nord(#[from] NordError),
 
     #[error("bad command: {0:?}.")]
-    Parser(clap::ErrorKind),
+    Parser(clap::error::ErrorKind),
 
     #[error(transparent)]
     Serde(#[from] serde_json::Error),
@@ -198,7 +198,7 @@ enum LoginCmd {
 enum DevCmd {
     Start {
         /// Select adapter type to run
-        #[clap(possible_values = &["neptun", "wireguard-go", "wireguard-nt", "linux-native", ""], default_value ="")]
+        #[clap(value_parser = ["neptun", "wireguard-go", "wireguard-nt", "linux-native", ""], default_value ="")]
         adapter: String,
         /// Name of device
         #[clap(default_value = DEFAULT_TUNNEL_NAME)]
@@ -254,7 +254,7 @@ enum MeshCmd {
     /// Turn mesnet on
     On {
         name: String,
-        #[clap(possible_values = &["neptun", "wireguard-go", "wireguard-nt", "linux-native", ""], default_value ="")]
+        #[clap(value_parser = ["neptun", "wireguard-go", "wireguard-nt", "linux-native", ""], default_value ="")]
         adapter: String,
     },
     /// Set own meshnet ip address for the adapter

@@ -11,7 +11,7 @@ publish = false
 pretend_to_be_macos = []
 
 [dependencies]
-strum_macros = "0.26"
+strum_macros = "0.27"
 
 ipnet.workspace = true
 itertools.workspace = true
