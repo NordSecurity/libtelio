@@ -185,6 +185,8 @@ pub enum Error {
     TransportError(#[from] telio_starcast::transport::Error),
     #[error("Events processing thread failed to start: {0}")]
     EventsProcessingThreadStartError(std::io::Error),
+    #[error("Polling period cannot be zero")]
+    PollingPeriodZero,
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -1370,7 +1372,9 @@ impl Runtime {
                 self.requested_state.device_config.private_key.clone(),
             )));
             let mut endpoint_providers: Vec<Arc<dyn EndpointProvider>> = Vec::new();
-
+            if direct.endpoint_interval_secs == 0 {
+                return Err(Error::PollingPeriodZero);
+            }
             // Create Local Interface Endpoint Provider
             let local_interfaces_endpoint_provider = if has_provider(Local) {
                 let ep = Arc::new(LocalInterfacesEndpointProvider::new(
