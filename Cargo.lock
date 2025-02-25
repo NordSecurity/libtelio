@@ -4513,6 +4513,7 @@ dependencies = [
  "telio-nat-detect",
  "telio-network-monitors",
  "telio-nurse",
+ "telio-pinger",
  "telio-pmtu",
  "telio-pq",
  "telio-proto",
@@ -4698,6 +4699,7 @@ dependencies = [
  "telio-model",
  "telio-nat-detect",
  "telio-nurse",
+ "telio-pinger",
  "telio-proto",
  "telio-sockets",
  "telio-task",
@@ -4707,6 +4709,19 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "telio-pinger"
+version = "0.1.0"
+dependencies = [
+ "rand",
+ "socket2",
+ "surge-ping",
+ "telio-sockets",
+ "telio-utils",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4968,7 +4983,6 @@ dependencies = [
  "smart-default",
  "sn_fake_clock",
  "socket2",
- "surge-ping",
  "telio-test",
  "thiserror 2.0.11",
  "time",
@@ -5004,6 +5018,7 @@ dependencies = [
  "telio-crypto",
  "telio-firewall",
  "telio-model",
+ "telio-pinger",
  "telio-sockets",
  "telio-task",
  "telio-test",
