@@ -10,7 +10,7 @@ publish = false
 bytecodec = "0.4.15"
 enum-map = "2.5.0"
 igd = { git = "https://github.com/NordSecurity/rust-igd.git", tag = "v0.13.1", features = ["aio"], default-features = false }
-stun_codec = "0.1.13"
+stun_codec = "0.3"
 
 async-trait.workspace = true
 base64.workspace = true
