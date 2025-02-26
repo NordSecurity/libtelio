@@ -22,7 +22,7 @@ from utils.connection_util import (
 from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPStack
-from utils.tcpdump import make_tcpdump
+from utils.tcpdump import make_tcpdump, make_local_tcpdump
 from utils.vm import mac_vm_util, windows_vm_util
 
 DERP_SERVER_1_ADDR = "http://10.0.10.1:8765"
@@ -498,6 +498,7 @@ def pytest_sessionstart(session):
         await SESSION_SCOPE_EXIT_STACK.enter_async_context(
             make_tcpdump(connections, session=True)
         )
+        await SESSION_SCOPE_EXIT_STACK.enter_async_context(make_local_tcpdump())
 
     RUNNER.run(async_context())
 
