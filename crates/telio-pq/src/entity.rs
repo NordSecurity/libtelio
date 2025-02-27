@@ -55,11 +55,18 @@ impl Entity {
 
     pub fn on_event(&self, event: super::Event) {
         if let Some(peer) = self.peer.lock().as_mut() {
+            telio_log_debug!("pq event: {:?} for {:?}", event, peer.pubkey);
             match event {
                 super::Event::Handshake(addr, keys) => {
                     if peer.addr == addr {
                         peer.keys = Some(keys);
                         peer.last_handshake_ts = Some(Instant::now());
+
+                        telio_log_debug!(
+                            "pq handshake event, set ts to {:?} for {:?}",
+                            peer.last_handshake_ts,
+                            peer.pubkey
+                        );
                     }
                 }
                 super::Event::Rekey(super::Keys {
@@ -73,6 +80,11 @@ impl Entity {
                             // otherwise we're connecting to different node already
                             keys.pq_shared = pq_shared;
                             peer.last_handshake_ts = Some(Instant::now());
+                            telio_log_debug!(
+                                "pq rekey event, set ts to {:?} for {:?}",
+                                peer.last_handshake_ts,
+                                peer.pubkey
+                            );
                         } else {
                             telio_log_debug!(
                                 "PQ secret key does not match, ignoring shared secret rotation"
@@ -110,6 +122,7 @@ impl Entity {
         peer: telio_crypto::PublicKey,
     ) {
         self.stop().await;
+        telio_log_debug!("start {:?}", peer);
         self.start_impl(addr, wg_secret, peer).await;
     }
 

@@ -9,7 +9,7 @@ pub use entity::Entity;
 use proto::PqProtoV1Status;
 
 /// Post quantum keys retrived from hanshake
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Keys {
     /// Kyber shared secret
     pub pq_shared: telio_crypto::PresharedKey,
@@ -23,7 +23,7 @@ pub trait PostQuantum {
     fn is_rotating_keys(&self) -> bool;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Event {
     Connecting(telio_crypto::PublicKey),
     Disconnected(telio_crypto::PublicKey),
