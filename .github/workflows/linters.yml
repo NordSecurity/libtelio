@@ -166,4 +166,4 @@ jobs:
       - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
         with:
           just-version: 1.38.0
-      - run: just deny
+      - run: just unused
