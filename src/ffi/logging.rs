@@ -125,12 +125,7 @@ where
 
         ctx.format_fields(writer.by_ref(), event)?;
 
-        let timestamp: time::OffsetDateTime = std::time::SystemTime::now().into();
-        let formatter_timestamp: String = timestamp
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_else(|_| timestamp.to_string());
-
-        writeln!(writer, " formatter_timestamp={formatter_timestamp}")
+        writeln!(writer)
     }
 }
 
@@ -320,7 +315,6 @@ mod test {
 
     use crate::{TelioLogLevel, TelioLoggerCb};
 
-    #[ignore]
     #[test]
     fn test_trace_via_telio_cb() {
         const EXPECTED_SIZE: usize = 5;
@@ -375,7 +369,6 @@ mod test {
         assert_eq!(&expected[..], &actual[..]);
     }
 
-    #[ignore]
     #[test]
     fn test_trace_via_slow_telio_cb() {
         const EXPECTED_SIZE: usize = 5;

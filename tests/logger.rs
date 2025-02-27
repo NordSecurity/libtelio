@@ -17,7 +17,6 @@ mod test_module {
 
     use super::*;
 
-    #[ignore]
     #[test]
     fn test_logger() {
         // Line number of tracing::info! call in this fill, down below

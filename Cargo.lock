@@ -5031,7 +5031,6 @@ dependencies = [
  "socket2",
  "telio-test",
  "thiserror 2.0.11",
- "time",
  "tokio",
  "tracing",
 ]
