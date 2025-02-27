@@ -214,13 +214,9 @@ impl LocalNameServer {
         nameserver: Arc<RwLock<LocalNameServer>>,
         request_info: &mut RequestInfo,
     ) -> Result<Vec<u8>, String> {
-        let ts = std::time::Instant::now();
         let resolver = Resolver::new();
-        telio_log_debug!("Getting DNS zones. Time taken: {:?}", ts.elapsed());
-        let ts = std::time::Instant::now();
         let zones = nameserver.zones().await;
-
-        telio_log_debug!("Preparing DNS request. Time taken: {:?}", ts.elapsed());
+        
         let ts = std::time::Instant::now();
         let dns_request = match &mut request_info.payload {
             PayloadRequestInfo::Udp {
@@ -665,14 +661,7 @@ trait WithZones {
 #[async_trait]
 impl WithZones for Arc<RwLock<LocalNameServer>> {
     async fn zones(&self) -> Arc<ClonableZones> {
-        let start = std::time::Instant::now();
-        telio_log_debug!("Aquiring read lock for DNS zones");
-        let zones = { self.read().await.zones.clone() };
-        telio_log_debug!(
-            "Released read lock for DNS zones after: {:?}",
-            start.elapsed()
-        );
-        zones
+        self.read().await.zones.clone()
     }
 
     async fn zones_mut(&self) -> RwLockMappedWriteGuard<ClonableZones> {
@@ -690,28 +679,16 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
     ) -> Result<(), String> {
         let azone = Arc::new(AuthoritativeZone::new(zone, records, ttl_value).await?);
 
-        let start = std::time::Instant::now();
-        telio_log_debug!("Aquiring write lock for DNS zones (upsert)");
         self.zones_mut()
             .await
             .upsert(LowerName::from_str(zone)?, Box::new(azone));
-        telio_log_debug!(
-            "Released write lock for DNS zones (upsert) after: {:?}",
-            start.elapsed()
-        );
         Ok(())
     }
 
     async fn forward(&self, to: &[IpAddr]) -> Result<(), String> {
-        let start = std::time::Instant::now();
-        telio_log_debug!("Aquiring write lock for DNS zones (forward)");
         self.zones_mut().await.upsert(
             LowerName::from_str(".")?,
             Box::new(Arc::new(ForwardZone::new(".", to).await?)),
-        );
-        telio_log_debug!(
-            "Released write lock for DNS zones (forward) after: {:?}",
-            start.elapsed()
         );
         Ok(())
     }
