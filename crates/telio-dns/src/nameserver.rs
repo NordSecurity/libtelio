@@ -155,19 +155,14 @@ impl LocalNameServer {
                         };
 
                         let nameserver = nameserver.clone();
-                        let length = match Box::pin(LocalNameServer::process_packet(
+                        let length = match LocalNameServer::process_packet(
                             nameserver,
                             packet,
                             &mut receiving_buffer,
-                        ))
+                        )
                         .await
                         {
-                            Ok(length) => {
-                                telio_log_debug!(
-                                    "Finished processing dns request with length: {length}"
-                                );
-                                length
-                            }
+                            Ok(length) => length,
                             Err(e) => {
                                 telio_log_error!(
                                     "[DNS] {}. Offending request packet: {:?}",
@@ -197,14 +192,10 @@ impl LocalNameServer {
                                     e
                                 )
                             }
-                            res => {
-                                telio_log_debug!("Took ignored path for TunnResult: {:?}", res);
-                            }
+                            _ => {}
                         }
                     }
-                    res => {
-                        telio_log_debug!("Took ignored path for TunnResult: {:?}", res);
-                    }
+                    _ => {}
                 }
             });
         }
@@ -214,48 +205,31 @@ impl LocalNameServer {
         nameserver: Arc<RwLock<LocalNameServer>>,
         request_info: &mut RequestInfo,
     ) -> Result<Vec<u8>, String> {
+        telio_log_debug!("Resolving dns");
         let resolver = Resolver::new();
+        telio_log_debug!("Getting DNS zones");
         let zones = nameserver.zones().await;
-        
-        let ts = std::time::Instant::now();
+
+        telio_log_debug!("Preparing DNS request");
         let dns_request = match &mut request_info.payload {
             PayloadRequestInfo::Udp {
                 ref mut dns_request,
                 ..
             } => dns_request
                 .take()
-                .ok_or_else(|| String::from("Nonexistent DNS request"))?,
-            _ => {
-                telio_log_debug!("Found DNS request with wrong protocol");
-                return Ok(Vec::new());
-            }
+                .ok_or_else(|| String::from("Inexistent DNS request"))?,
+            _ => return Ok(Vec::new()),
         };
-        telio_log_debug!(
-            "Exctraced dns request: {dns_request:?}. Time taken: {:?}",
-            ts.elapsed()
-        );
-        let ts = std::time::Instant::now();
         let dns_request = Request::new(dns_request, request_info.dns_source(), Protocol::Udp);
-        telio_log_debug!(
-            "DNS request: {:?}. Time taken: {:?}",
-            &dns_request,
-            ts.elapsed()
-        );
-        let ts = std::time::Instant::now();
+        telio_log_debug!("DNS request: {:?}", &dns_request);
 
         zones
             .lookup(&dns_request, resolver.clone())
             .await
             .map_err(|e| format!("Lookup failed {}", e))?;
-        telio_log_debug!("Finished zone lookup. Time taken: {:?}", ts.elapsed());
-        let ts = std::time::Instant::now();
 
         let dns_response = resolver.0.lock().await;
-        telio_log_debug!(
-            "Nameserver response: {:?}. Time taken: {:?}",
-            &dns_response,
-            ts.elapsed()
-        );
+        telio_log_debug!("Nameserver response: {:?}", &dns_response);
         Ok(dns_response.to_vec())
     }
 
