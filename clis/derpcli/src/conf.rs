@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use base64::prelude::*;
-use clap::{Arg, Command};
+use clap::{Arg, ArgAction, Command};
 use crypto_box::PublicKey as BoxPublicKey;
 use serde::Deserialize;
 use std::{
@@ -149,7 +149,7 @@ impl Config {
                 Arg::new("server")
                     .help("Server address")
                     .required(false)
-                    .takes_value(true)
+                    .num_args(1)
                     .long("server")
                     .default_value("http://localhost:1234")
                     .short('s'),
@@ -165,7 +165,7 @@ impl Config {
                 Arg::new("mykey")
                     .help("My private key base64 encoded")
                     .required(false)
-                    .takes_value(true)
+                    .num_args(1)
                     .long("mykey")
                     .short('m'),
             )
@@ -173,7 +173,7 @@ impl Config {
                 Arg::new("targetkey")
                     .help("Target peer private key base64 encoded")
                     .required(false)
-                    .takes_value(true)
+                    .num_args(1)
                     .long("targetkey")
                     .short('k'),
             )
@@ -181,7 +181,7 @@ impl Config {
                 Arg::new("count")
                     .help("Count of iterations to run")
                     .required(false)
-                    .takes_value(true)
+                    .num_args(1)
                     .long("count")
                     .default_value("3")
                     .short('c'),
@@ -197,7 +197,7 @@ impl Config {
                 Arg::new("delay")
                     .help("Delay ms between iterations")
                     .required(false)
-                    .takes_value(true)
+                    .num_args(1)
                     .long("delay")
                     .default_value("100")
                     .short('d'),
@@ -206,7 +206,7 @@ impl Config {
                 Arg::new("data")
                     .help("Data text to send, <to be implemented>")
                     .required(false)
-                    .takes_value(true)
+                    .num_args(1)
                     .long("data")
                     .default_value("hello derp!")
                     .short('a'),
@@ -215,7 +215,7 @@ impl Config {
                 Arg::new("size")
                     .help("Data text size to generate and send")
                     .required(false)
-                    .takes_value(true)
+                    .num_args(1)
                     .long("size")
                     .short('z'),
             )
@@ -223,7 +223,7 @@ impl Config {
                 Arg::new("verbose")
                     .help("Verbose output (can use multiple)")
                     .required(false)
-                    .multiple_occurrences(true)
+                    .action(ArgAction::Count)
                     .long("verbose")
                     .short('v'),
             )
@@ -231,7 +231,7 @@ impl Config {
                 Arg::new("config")
                     .help("Path to config file")
                     .required(false)
-                    .takes_value(true)
+                    .num_args(1)
                     .long("config")
                     .short('f'),
             )
@@ -239,7 +239,7 @@ impl Config {
                 Arg::new("output")
                     .help("Path to logs output file")
                     .required(false)
-                    .takes_value(true)
+                    .num_args(1)
                     .default_value("")
                     .long("output")
                     .short('o'),
@@ -254,38 +254,42 @@ impl Config {
 
         // parse command line params
         let server_addr = matches
-            .value_of("server")
-            .unwrap_or("http://localhost:3340")
-            .to_string();
+            .get_one::<String>("server")
+            .cloned()
+            .unwrap_or("http://localhost:3340".into());
 
-        let is_target = matches.is_present("target");
+        let is_target = matches.contains_id("target");
 
         let count = matches
-            .value_of("count")
-            .unwrap_or("3")
-            .parse::<i32>()
+            .get_one::<String>("count")
+            .and_then(|v| v.parse::<i32>().ok())
             .unwrap_or(3);
+
         let delay = matches
-            .value_of("delay")
-            .unwrap_or("100")
-            .parse::<u64>()
+            .get_one::<String>("delay")
+            .and_then(|v| v.parse::<u64>().ok())
             .unwrap_or(100);
 
-        let data_str = matches.value_of("data").unwrap_or("hello derp!");
+        let data_str = matches
+            .get_one("data")
+            .map_or("hello derp!", String::as_str);
+
         let data_size = matches
-            .value_of("size")
-            .unwrap_or_default()
-            .parse::<u16>()
+            .get_one::<String>("size")
+            .and_then(|v| v.parse::<u16>().ok())
             .unwrap_or_default();
 
-        let stress_cfg_path = matches.value_of("config").unwrap_or_default().to_string();
+        let stress_cfg_path = matches
+            .get_one::<String>("config")
+            .cloned()
+            .unwrap_or_default();
 
         // keys for peer identification in manual mode
         let mut secret_key1 = [0_u8; KEY_SIZE];
         let mut secret_key2 = [1_u8; KEY_SIZE];
 
-        let mykey_str = matches.value_of("mykey").unwrap_or("");
-        let targetkey_str = matches.value_of("targetkey").unwrap_or("");
+        let mykey_str = matches.get_one("mykey").map_or("", String::as_str);
+        let targetkey_str = matches.get_one("targetkey").map_or("", String::as_str);
 
         // check if my private key is given as param
         if mykey_str.chars().count() > 0 {
@@ -328,13 +332,13 @@ impl Config {
             target_key: SecretKey::new(secret_key2),
             send_count: count,
             send_delay: Duration::from_millis(if delay > 5000 { 5000 } else { delay }),
-            send_loop: matches.is_present("loop"),
+            send_loop: matches.contains_id("loop"),
             send_data: data_str.to_owned(),
             send_size: if data_size > 8000 { 8000 } else { data_size },
-            send_size_enabled: matches.is_present("size"),
-            verbose: matches.occurrences_of("verbose"),
+            send_size_enabled: matches.contains_id("size"),
+            verbose: matches.get_count("verbose") as u64,
             stress_cfg_path: Path::new(&stress_cfg_path).to_path_buf(),
-            use_built_in_root_certificates: matches.is_present("use_built_in_root_certificates"),
+            use_built_in_root_certificates: matches.contains_id("use_built_in_root_certificates"),
         })
     }
 
