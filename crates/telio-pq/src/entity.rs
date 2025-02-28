@@ -22,6 +22,17 @@ struct Peer {
     last_handshake_ts: Option<Instant>,
 }
 
+use std::fmt;
+
+impl fmt::Debug for Peer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Peer")
+            .field("pubkey", &self.pubkey)
+            .field("last_handshake_ts", &self.last_handshake_ts)
+            .finish()
+    }
+}
+
 pub struct Entity {
     features: FeaturePostQuantumVPN,
     sockets: Arc<telio_sockets::SocketPool>,
@@ -137,6 +148,7 @@ impl Entity {
     pub async fn maybe_restart(&self) {
         let peer = {
             let mut peer = self.peer.lock();
+            telio_log_debug!("Maybe restart PQ. Peer: {:?}", peer);
             let should_restart = peer
                 .as_ref()
                 .and_then(|peer| peer.last_handshake_ts)
