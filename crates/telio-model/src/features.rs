@@ -252,7 +252,7 @@ pub struct FeatureDirect {
     /// Endpoint providers [default all]
     #[serde(deserialize_with = "deserialize_providers")]
     pub providers: Option<EndpointProviders>,
-    /// Polling interval for endpoints [default 10s]
+    /// Polling interval for endpoints [default 25s]
     #[default = 25]
     pub endpoint_interval_secs: u64,
     /// Configuration options for skipping unresponsive peers
