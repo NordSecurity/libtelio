@@ -130,6 +130,14 @@ class Runtime:
                 return
             await asyncio.sleep(0.1)
 
+    async def notify_link_state(self, public_key: str, state: LinkState) -> None:
+        """Wait until a link_state event matching the `state` for `public_key` is available."""
+        while True:
+            peer = self.get_peer_info(public_key)
+            if peer and peer.link_state == state:
+                return
+            await asyncio.sleep(0.1)
+
     async def notify_peer_event(
         self,
         public_key: str,
@@ -158,11 +166,11 @@ class Runtime:
                 return
             await asyncio.sleep(0.1)
 
-    def get_link_state_events(self, public_key: str) -> List[Optional[LinkState]]:
+    def get_link_state_events(self, public_key: str) -> List[LinkState]:
         return [
             peer.link_state
             for peer in self._peer_state_events
-            if peer and peer.public_key == public_key
+            if peer and peer.public_key == public_key and peer.link_state is not None
         ]
 
     def get_peer_info(self, public_key: str) -> Optional[TelioNode]:
@@ -263,6 +271,17 @@ class Events:
             timeout,
         )
 
+    async def wait_for_link_state(
+        self,
+        public_key: str,
+        state: LinkState,
+        timeout: Optional[float] = None,
+    ) -> None:
+        """Wait until a link_state event matching the `state` for `public_key` is available."""
+        await asyncio.wait_for(
+            self._runtime.notify_link_state(public_key, state), timeout
+        )
+
     async def wait_for_event_peer(
         self,
         public_key: str,
@@ -277,7 +296,7 @@ class Events:
             timeout,
         )
 
-    def get_link_state_events(self, public_key: str) -> List[Optional[LinkState]]:
+    def get_link_state_events(self, public_key: str) -> List[LinkState]:
         return self._runtime.get_link_state_events(public_key)
 
     async def wait_for_state_derp(
@@ -550,6 +569,19 @@ class Client:
             link_state,
         )
 
+    async def wait_for_link_state(
+        self,
+        public_key: str,
+        state: LinkState,
+        timeout: Optional[float] = None,
+    ) -> None:
+        """Wait until a link_state event matching the `state` for `public_key` is available."""
+        await self.get_events().wait_for_link_state(
+            public_key,
+            state,
+            timeout,
+        )
+
     async def wait_for_event_peer(
         self,
         public_key: str,
@@ -572,7 +604,7 @@ class Client:
         )
         print(datetime.now(), f"[{self._node.name}]: got event {event_info}")
 
-    def get_link_state_events(self, public_key: str) -> List[Optional[LinkState]]:
+    def get_link_state_events(self, public_key: str) -> List[LinkState]:
         return self.get_events().get_link_state_events(public_key)
 
     async def wait_for_state_derp(
