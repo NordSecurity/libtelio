@@ -74,9 +74,10 @@ impl Entity {
                         peer.last_handshake_ts = Some(Instant::now());
 
                         telio_log_debug!(
-                            "pq handshake event, set ts to {:?} for {:?}",
+                            "pq handshake event, set ts to {:?} for {:?} at {:?}",
                             peer.last_handshake_ts,
-                            peer.pubkey
+                            peer.pubkey,
+                            Instant::now(),
                         );
                     }
                 }
@@ -92,9 +93,10 @@ impl Entity {
                             keys.pq_shared = pq_shared;
                             peer.last_handshake_ts = Some(Instant::now());
                             telio_log_debug!(
-                                "pq rekey event, set ts to {:?} for {:?}",
+                                "pq rekey event, set ts to {:?} for {:?} at {:?}",
                                 peer.last_handshake_ts,
-                                peer.pubkey
+                                peer.pubkey,
+                                Instant::now()
                             );
                         } else {
                             telio_log_debug!(
@@ -148,11 +150,19 @@ impl Entity {
     pub async fn maybe_restart(&self) {
         let peer = {
             let mut peer = self.peer.lock();
-            telio_log_debug!("Maybe restart PQ. Peer: {:?}", peer);
+            telio_log_debug!("Maybe restart PQ. Peer: {:?} at {:?}", peer, Instant::now());
             let should_restart = peer
                 .as_ref()
                 .and_then(|peer| peer.last_handshake_ts)
-                .is_some_and(|ts| ts.elapsed() > REJECT_AFTER_TIME);
+                .is_some_and(|ts| {
+                    telio_log_debug!(
+                        "maybe restart, elapsed: {:?}, vs {:?}",
+                        ts.elapsed(),
+                        REJECT_AFTER_TIME
+                    );
+
+                    ts.elapsed() > REJECT_AFTER_TIME
+                });
             if should_restart {
                 peer.take()
             } else {
