@@ -102,7 +102,7 @@ autoflake:
 _udeps-install: _nightly-install
     cargo +{{ nightly }} install cargo-udeps@0.1.47 --locked
 
-_unused-install: _rust1_80-install
+_unused-install: _rust1_80-install _rust-from-toolchain-file-install
     cargo +{{ rust1_80 }} install --version 0.2.0 cargo-unused-features --locked
 
 _deny-install:
@@ -113,3 +113,6 @@ _nightly-install:
 
 _rust1_80-install:
     rustup toolchain add {{ rust1_80}}
+
+_rust-from-toolchain-file-install:
+    rustup toolchain install
