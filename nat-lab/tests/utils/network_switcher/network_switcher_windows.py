@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import AsyncIterator, List, Optional
 from utils.command_grepper import CommandGrepper
 from utils.connection import Connection
+from utils.logger import log
 from utils.process import ProcessExecError
 
 
@@ -23,7 +24,7 @@ class Interface:
         ).execute()
 
         stdout = process.get_stdout()
-        print(stdout)
+        log.info(stdout)
 
         matches = re.finditer(
             r'Configuration for interface "([^"]+)"\s+(.*?)InterfaceMetric',

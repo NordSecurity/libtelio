@@ -4,6 +4,7 @@ from .process import Process, ProcessExecError, StreamCallback
 from contextlib import asynccontextmanager
 from typing import List, Optional, Callable, AsyncIterator
 from utils.asyncio_util import run_async_context
+from utils.logger import log
 
 
 class SshProcess(Process):
@@ -47,7 +48,7 @@ class SshProcess(Process):
         privileged: bool = False,
     ) -> "SshProcess":
         if privileged:
-            print("'privileged' does nothing for ssh processes")
+            log.warning("'privileged' does nothing for ssh processes")
         escaped = [self._escape_argument(arg) for arg in self._command]
         command_str = " ".join(escaped)
 

@@ -4,10 +4,10 @@ import re
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, AsyncIterator
 from utils.connection import Connection
+from utils.logger import log
 from utils.ping import ping
 from utils.process import Process
 
@@ -262,7 +262,11 @@ class TCPStateSequence(ConnTrackerEventsValidator):
 
 def parse_input(input_string, container_name: Optional[str] = None) -> ConntrackerEvent:
     event = ConntrackerEvent()
-    print(datetime.now(), [{container_name}], "Conntracker reported event:", input_string)
+
+    if container_name:
+        log.debug("[%s] Conntracker reported event: %s", container_name, input_string)
+    else:
+        log.debug("Conntracker reported event: %s", input_string)
 
     match = re.search(r"\[([A-Z]+)\] (\w+)", input_string)
     if match:
@@ -384,7 +388,7 @@ class ConnectionTracker:
         if not self._validators:
             return None
 
-        print(datetime.now(), "ConnectionTracker waiting for _sync_event")
+        log.debug("ConnectionTracker waiting for _sync_event")
         # wait to synchronize over a known event
         while not self._sync_event.is_set():
             # use ping helper, that returns after the first reply is received

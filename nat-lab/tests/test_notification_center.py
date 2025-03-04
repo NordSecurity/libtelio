@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from helpers import send_https_request, verify_uuid
 from utils.connection import ConnectionTag
 from utils.connection_util import new_connection_by_tag
+from utils.logger import log
 from utils.output_notifier import OutputNotifier
 
 
@@ -65,7 +66,7 @@ async def run_mqtt_listener(
     stdout_buffer = []
 
     async def stdout_stderr_callback(output):
-        print(f"MQTT Listener output: {output}")
+        log.info("MQTT Listener output: %s", output)
         stdout_buffer.append(output)
         await output_notifier.handle_output(output)
 
@@ -86,7 +87,7 @@ async def run_mqtt_listener(
 
     try:
         await mqtt_process.wait_stdin_ready(timeout=10.0)
-        print("MQTT listener process stdin is ready")
+        log.info("MQTT listener process stdin is ready")
     except TimeoutError as e:
         raise TimeoutError(
             f"Timed out waiting for MQTT listener stdin readiness: {e}"

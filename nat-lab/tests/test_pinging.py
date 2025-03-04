@@ -1,7 +1,6 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from datetime import datetime
 from helpers import setup_mesh_nodes, SetupParameters, connectivity_stack
 from typing import Tuple
 from utils.bindings import (
@@ -20,6 +19,7 @@ from utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_node_tracker,
 )
+from utils.logger import log
 from utils.router import IPStack
 
 IP_STACKS = [
@@ -181,7 +181,7 @@ async def test_session_keeper(
             while True:
                 alpha_limits = await alpha_conntrack.find_conntracker_violations()
                 beta_limits = await beta_conntrack.find_conntracker_violations()
-                print(datetime.now(), "Conntracker state: ", alpha_limits, beta_limits)
+                log.info("Conntracker state: %s %s", alpha_limits, beta_limits)
                 if alpha_limits is None and beta_limits is None:
                     return
                 await asyncio.sleep(1)
@@ -278,7 +278,7 @@ async def test_qos(
         async def wait_for_conntracker() -> None:
             while True:
                 alpha_limits = await alpha_conntrack.find_conntracker_violations()
-                print("wait_for_conntracker(): ", alpha_limits)
+                log.info("wait_for_conntracker(): %s", alpha_limits)
                 if alpha_limits is None:
                     return
                 await asyncio.sleep(1.0)

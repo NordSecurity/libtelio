@@ -5,9 +5,9 @@ import utils.vm.mac_vm_util as utils_mac
 import utils.vm.windows_vm_util as utils_win
 from .connection import Connection, TargetOS, ConnectionTag, setup_ephemeral_ports
 from contextlib import asynccontextmanager
-from datetime import datetime
 from typing import List, AsyncIterator
 from utils import cmd_exe_escape
+from utils.logger import log
 from utils.process import Process, SshProcess
 
 
@@ -48,8 +48,16 @@ class SshConnection(Connection):
         reenable_nat=False,
     ) -> AsyncIterator["SshConnection"]:
         if reenable_nat:
-            subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
-            subprocess.check_call(["sudo", "bash", "vm_nat.sh", "enable"])
+            subprocess.check_call(
+                ["sudo", "bash", "vm_nat.sh", "disable"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.check_call(
+                ["sudo", "bash", "vm_nat.sh", "enable"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
 
         async with asyncssh.connect(
             ip,
@@ -73,7 +81,7 @@ class SshConnection(Connection):
     def create_process(
         self, command: List[str], kill_id=None, term_type=None
     ) -> "Process":
-        print(datetime.now(), "Executing", command, "on", self.target_os)
+        log.info("[%s] Executing %s", self.tag.name, " ".join(command))
         if self.target_os == TargetOS.Windows:
             escape_argument = cmd_exe_escape.escape_argument
         elif self.target_os in [TargetOS.Linux, TargetOS.Mac]:

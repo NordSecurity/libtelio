@@ -1,9 +1,9 @@
 import asyncio
 from config import LIBTELIO_BINARY_PATH_VM_MAC
 from contextlib import asynccontextmanager
-from datetime import datetime
 from typing import Optional, AsyncIterator
 from utils.connection import Connection, TargetOS
+from utils.logger import log
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
 from utils.python import get_python_binary
@@ -108,7 +108,7 @@ class NetCat:
 
     async def on_stderr(self, stderr: str) -> None:
         """Handle verbose status messages"""
-        print(datetime.now(), "netcat:", stderr.strip())
+        log.error("netcat: %s", stderr.strip())
         await self._output_notifier.handle_output(stderr.strip())
         return None
 

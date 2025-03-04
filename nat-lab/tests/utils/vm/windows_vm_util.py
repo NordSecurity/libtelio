@@ -5,9 +5,9 @@ from config import (
     LIBTELIO_BINARY_PATH_WINDOWS_VM,
     UNIFFI_PATH_WINDOWS_VM,
 )
-from datetime import datetime
 from typing import List
 from utils.connection import Connection
+from utils.logger import log
 from utils.process import ProcessExecError
 
 VM_TCLI_DIR = LIBTELIO_BINARY_PATH_WINDOWS_VM
@@ -35,7 +35,7 @@ async def _copy_file_with_progress_handler(
 ) -> None:
     file_copy_progress_buffer: List[str] = []
     try:
-        print(datetime.now(), f"Copying files into VM: {src} to {dst}")
+        log.info("Copying files into VM: %s to %s", src, dst)
         await asyncssh.scp(
             get_root_path(src),
             (ssh_connection, dst),
@@ -43,21 +43,18 @@ async def _copy_file_with_progress_handler(
                 srcpath, dsthpath, bytes_copied, total, file_copy_progress_buffer
             ),
         )
-        print(datetime.now(), "Copy succeeded")
+        log.info("Copy succeeded")
     except FileNotFoundError as exception:
         if not allow_missing or str(exception).find(src) < 0:
-            print(datetime.now(), "Copy failed", str(exception))
+            log.error("Copy failed %s", str(exception))
             raise exception
 
-        print(
-            datetime.now(),
-            "Copy failed",
-            str(exception),
-            "but it is allowed to fail",
+        log.warning(
+            "Copy failed but it is allowed to fail",
         )
     except Exception as e:
-        print("\n".join(file_copy_progress_buffer))
-        print(datetime.now(), "Copy failed", str(e))
+        log.error("\n".join(file_copy_progress_buffer))
+        log.error("Copy failed %s", str(e))
         raise e
 
 

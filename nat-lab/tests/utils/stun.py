@@ -45,14 +45,16 @@ async def get(
         assert False, "unsupported os"
 
     process = await asyncio.wait_for(
-        connection.create_process([
-            path,
-            stun_server,
-            "--family",
-            ("4" if ip_proto == IPProto.IPv4 else "6"),
-            "--verbosity",
-            "2",
-        ]).execute(),
+        connection.create_process(
+            [
+                path,
+                stun_server,
+                "--family",
+                ("4" if ip_proto == IPProto.IPv4 else "6"),
+                "--verbosity",
+                "2",
+            ],
+        ).execute(),
         timeout,
     )
 

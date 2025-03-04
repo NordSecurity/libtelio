@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from enum import Enum, auto
 from typing import AsyncIterator
 from utils.connection import Connection, TargetOS
+from utils.logger import log
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
 
@@ -68,7 +69,7 @@ class IperfServer:
         self._stdout += stdout
         for line in stdout.splitlines():
             if self._verbose:
-                print(f"[{self._log_prefix}] - Server: {line}")
+                log.info("[%s] - Server: %s", self._log_prefix, line)
 
     async def execute(self) -> None:
         await self._process.execute(stdout_callback=self.on_stdout)
@@ -161,7 +162,8 @@ class IperfClient:
         self._stdout += stdout
         for line in stdout.splitlines():
             if self._verbose:
-                print(f"[{self._log_prefix}] - Client: {line}")
+
+                log.info("[%s] - Client: %s", self._log_prefix, line)
 
     async def execute(self) -> None:
         await self._process.execute(stdout_callback=self.on_stdout)

@@ -1,9 +1,9 @@
 import platform
 import random
 from abc import ABC, abstractmethod
-from datetime import datetime
 from enum import Enum, auto
 from typing import List, Set
+from utils.logger import log
 from utils.process import Process
 
 
@@ -128,7 +128,7 @@ async def setup_ephemeral_ports(connection: Connection):
         return
 
     async def on_output(output: str) -> None:
-        print(datetime.now(), f"[{connection.tag.name}]: {output}")
+        log.debug("[%s]: %s", connection.tag.name, output)
 
     start_port = random.randint(5000, 55000)
     num_ports = random.randint(2000, 5000)

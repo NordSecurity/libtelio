@@ -604,9 +604,9 @@ async def test_pq_vpn_handshake_after_nonet(
         ):
             await asyncio.sleep(179)
 
-            log = (await client_alpha.get_log()).lower()
+            client_log = (await client_alpha.get_log()).lower()
             log_line = "Restarting postquantum entity".lower()
-            occurrences = log.count(log_line)
+            occurrences = client_log.count(log_line)
 
             assert (
                 occurrences == 0
