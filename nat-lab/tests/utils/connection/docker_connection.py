@@ -4,7 +4,7 @@ from aiodocker.containers import DockerContainer
 from asyncio import to_thread
 from config import LINUX_INTERFACE_NAME
 from datetime import datetime
-from subprocess import run
+from subprocess import run, DEVNULL
 from typing import List, Type
 from typing_extensions import Self
 from utils.process import Process, DockerProcess
@@ -37,7 +37,11 @@ class DockerConnection(Connection):
 
     async def download(self, remote_path: str, local_path: str) -> None:
         def aux():
-            run(["docker", "cp", self._name + ":" + remote_path, local_path])
+            run(
+                ["docker", "cp", self._name + ":" + remote_path, local_path],
+                stdout=DEVNULL,
+                stderr=DEVNULL,
+            )
 
         await to_thread(aux)
 
@@ -53,8 +57,6 @@ class DockerConnection(Connection):
             command,
             "on",
             self._name,
-            "with Kill ID:",
-            process.get_kill_id(),
         )
         return process
 

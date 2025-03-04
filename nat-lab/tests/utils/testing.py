@@ -31,7 +31,6 @@ def get_current_test_case_and_parameters() -> Tuple[Optional[str], Optional[str]
                 _format_path_string(test_parts[1]),
             )
         return (_format_path_string(test_parts[0]), None)
-    print(datetime.now(), "PYTEST_CURRENT_TEST is None")
     return (None, None)
 
 
