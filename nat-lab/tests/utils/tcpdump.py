@@ -7,6 +7,7 @@ from config import WINDUMP_BINARY_WINDOWS
 from contextlib import asynccontextmanager, AsyncExitStack
 from typing import AsyncIterator, Optional
 from utils.connection import TargetOS, Connection
+from utils.logger import log
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
 from utils.testing import get_current_test_log_path
@@ -86,7 +87,7 @@ class TcpDump:
         try:
             await self.process.execute(self.on_stdout, self.on_stderr, True)
         except Exception as e:
-            print(f"Error executing tcpdump: {e}")
+            log.error("Error executing tcpdump: %s", e)
             raise
 
     @asynccontextmanager
@@ -138,7 +139,7 @@ def build_tcpdump_command(
             # so there is a workaround we can do for multiple interfaces:
             # - create multiple process of windump for each interface
             # - when finished with dump, just combine the pcap's with `mergecap` or smth
-            print("[Warning] Currently tcpdump for windows support only 1 interface")
+            log.warning("Currently tcpdump for windows support only 1 interface")
             command += ["-i", interfaces[0]]
     else:
         if target_os != TargetOS.Windows:
@@ -204,10 +205,10 @@ async def make_local_tcpdump():
         yield
     except Exception:
         if process:
-            print("tcpdump stderr:")
-            print(process.stderr)
-            print("tcpdump stdout:")
-            print(process.stdout)
+            log.error("tcpdump stderr:")
+            log.error(process.stderr)
+            log.error("tcpdump stdout:")
+            log.error(process.stdout)
         raise
     finally:
         if process:

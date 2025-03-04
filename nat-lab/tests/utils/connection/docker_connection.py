@@ -4,10 +4,10 @@ from aiodocker.containers import DockerContainer
 from asyncio import to_thread
 from config import LINUX_INTERFACE_NAME
 from contextlib import asynccontextmanager
-from datetime import datetime
 from subprocess import run, DEVNULL
 from typing import List, Type, Dict, AsyncIterator
 from typing_extensions import Self
+from utils.logger import log
 from utils.process import Process, DockerProcess
 
 DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
@@ -112,7 +112,12 @@ class DockerConnection(Connection):
     async def download(self, remote_path: str, local_path: str) -> None:
         def aux():
             run(
-                ["docker", "cp", container_id(self.tag) + ":" + remote_path, local_path],
+                [
+                    "docker",
+                    "cp",
+                    container_id(self.tag) + ":" + remote_path,
+                    local_path,
+                ],
                 stdout=DEVNULL,
                 stderr=DEVNULL,
             )
@@ -125,13 +130,7 @@ class DockerConnection(Connection):
         process = DockerProcess(
             self._container, container_id(self.tag), command, kill_id
         )
-        print(
-            datetime.now(),
-            "Executing",
-            command,
-            "on",
-            self.tag.name,
-        )
+        log.info("[%s] Executing %s", self.tag.name, " ".join(command))
         return process
 
     async def get_ip_address(self) -> tuple[str, str]:
