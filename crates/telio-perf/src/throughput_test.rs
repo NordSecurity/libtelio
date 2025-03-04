@@ -40,6 +40,7 @@ const PKT_LOSS_DATA_SIZE: usize = std::mem::size_of::<f32>();
 const THROUGHPUT_OFFSET: usize = PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE;
 const THROUGHPUT_DATA_SIZE: usize = std::mem::size_of::<u32>();
 const SIZE_OF_IP_ADDR: usize = 4;
+const BUFFER_LEN: usize = 1350;
 /// Performance test specific errors
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -324,7 +325,7 @@ impl State {
 
         // Calculate throughput
         // Bytes should be data + wg_offset + ip header + udp header
-        let throughput = (((self.pkts_recvd * (1350 + 32 + 20 + 8) * 8) as f64)
+        let throughput = (((self.pkts_recvd * (BUFFER_LEN as u64 + 32 + 20 + 8) * 8) as f64)
             / duration.as_secs_f64()) as u32
             / 1_000_000;
         send_buffer[THROUGHPUT_OFFSET..THROUGHPUT_OFFSET + THROUGHPUT_DATA_SIZE]
@@ -437,7 +438,7 @@ async fn throughput_test_handler(
     transport_socket: Arc<UdpSocket>,
     handler_state: Arc<RwLock<HandlerState>>,
 ) -> Result<(), Error> {
-    let mut send_buffer = vec![0u8; 1350];
+    let mut send_buffer = vec![0u8; BUFFER_LEN];
     let mut exponential_backoff = ExponentialBackoff::new(ExponentialBackoffBounds {
         initial: Duration::from_secs(1),
         maximal: Some(Duration::from_secs(30)),
