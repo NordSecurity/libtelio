@@ -75,12 +75,10 @@ class TcpDump:
         return self.stderr
 
     async def on_stdout(self, output: str) -> None:
-        print(f"tcpdump: {output}")
         self.stdout += output
         await self.output_notifier.handle_output(output)
 
     async def on_stderr(self, output: str) -> None:
-        print(f"tcpdump err: {output}")
         self.stderr += output
         await self.output_notifier.handle_output(output)
 
