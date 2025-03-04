@@ -922,16 +922,19 @@ class Client:
         if self._fingerprint is not None:
             await self.wait_for_log("[Moose] Init callback success")
             database, fingerprint = self._fingerprint
-            await self._connection.create_process([
-                "sqlite3",
-                database,
-                "--cmd",
-                "PRAGMA busy_timeout = 30000;",
-                (
-                    "INSERT OR REPLACE INTO shared_context (key, val, is_essential) VALUES"
-                    f" ('device.fp._string', '\"{fingerprint}\"', 1)"
-                ),
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "sqlite3",
+                    database,
+                    "--cmd",
+                    "PRAGMA busy_timeout = 30000;",
+                    (
+                        "INSERT OR REPLACE INTO shared_context (key, val, is_essential) VALUES"
+                        f" ('device.fp._string', '\"{fingerprint}\"', 1)"
+                    ),
+                ],
+                quiet=True,
+            ).execute()
 
     async def trigger_event_collection(self) -> None:
         await self.get_proxy().trigger_analytics_event()
@@ -990,6 +993,7 @@ class Client:
                                 " format-table -wrap"
                             ),
                         ],
+                        quiet=True,
                     ).execute()
                     logs += log_output.get_stdout()
                 except ProcessExecError:
@@ -1011,20 +1015,25 @@ class Client:
                         "-Command",
                         f"Clear-EventLog -LogName {log_name}",
                     ],
+                    quiet=True,
                 ).execute()
 
     async def get_network_info(self) -> str:
         if self._connection.target_os == TargetOS.Mac:
-            interface_info = self._connection.create_process(["ifconfig", "-a"])
+            interface_info = self._connection.create_process(
+                ["ifconfig", "-a"], quiet=True
+            )
             await interface_info.execute()
-            routing_table_info = self._connection.create_process(["netstat", "-rn"])
+            routing_table_info = self._connection.create_process(
+                ["netstat", "-rn"], quiet=True
+            )
             await routing_table_info.execute()
             # syslog does not provide a way to filter events by timestamp, so only using the last 20 lines.
-            syslog_info = self._connection.create_process(["syslog"])
+            syslog_info = self._connection.create_process(["syslog"], quiet=True)
             await syslog_info.execute()
             start_time_str = self._start_time.strftime("%Y-%m-%d %H:%M:%S")
             log_info = self._connection.create_process(
-                ["log", "show", "--start", start_time_str]
+                ["log", "show", "--start", start_time_str], quiet=True
             )
             await log_info.execute()
             return (
@@ -1088,7 +1097,9 @@ class Client:
         system_log_content = await self.get_system_log()
 
         if self._connection.target_os == TargetOS.Linux:
-            process = self._connection.create_process(["cat", "/etc/hostname"])
+            process = self._connection.create_process(
+                ["cat", "/etc/hostname"], quiet=True
+            )
             await process.execute()
             container_id = process.get_stdout().strip()
         else:
@@ -1201,10 +1212,12 @@ class Client:
         coredump_folder, _ = self.get_coredump_folder()
 
         # clear the existing system core dumps
-        await self._connection.create_process(["rm", "-rf", coredump_folder]).execute()
+        await self._connection.create_process(
+            ["rm", "-rf", coredump_folder], quiet=True
+        ).execute()
         # make sure we have the path where the new cores will be dumped
         await self._connection.create_process(
-            ["mkdir", "-p", coredump_folder]
+            ["mkdir", "-p", coredump_folder], quiet=True
         ).execute()
 
     async def collect_core_dumps(self):
@@ -1243,7 +1256,7 @@ async def find_files(connection, where, name_pattern):
 
     try:
         process = await connection.create_process(
-            ["find", where, "-maxdepth", "1", "-name", name_pattern]
+            ["find", where, "-maxdepth", "1", "-name", name_pattern], quiet=True
         ).execute()
         return process.get_stdout().strip().split()
     except ProcessExecError:
@@ -1276,9 +1289,9 @@ async def get_log_without_flush(connection) -> str:
     nothing to flush and attempting to do so will cause errors.
     """
     process = (
-        connection.create_process(["type", "tcli.log"])
+        connection.create_process(["type", "tcli.log"], quiet=True)
         if connection.target_os == TargetOS.Windows
-        else connection.create_process(["cat", "./tcli.log"])
+        else connection.create_process(["cat", "./tcli.log"], quiet=True)
     )
     await process.execute()
     return process.get_stdout()

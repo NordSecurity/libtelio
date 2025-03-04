@@ -67,6 +67,7 @@ class TcpDump:
             # to file, everything works fine
             term_type="xterm" if self.connection.target_os == TargetOS.Mac else None,
             kill_id="DO_NOT_KILL" + secrets.token_hex(8).upper() if session else None,
+            quiet=True,
         )
 
     def get_stdout(self) -> str:
@@ -250,7 +251,7 @@ async def make_tcpdump(
 
         if conn.target_os != TargetOS.Windows:
             await conn.create_process(
-                ["rm", "-f", PCAP_FILE_PATH[conn.target_os]]
+                ["rm", "-f", PCAP_FILE_PATH[conn.target_os]], quiet=True
             ).execute()
         # TODO(LLT-5942): temporary disable windows tcpdump
         # else:

@@ -158,10 +158,14 @@ def build_telio_features(
 
 
 async def clean_container(connection: Connection):
-    await connection.create_process(["rm", "-f", CONTAINER_EVENT_PATH]).execute()
-    await connection.create_process(["rm", "-f", CONTAINER_EVENT_BACKUP_PATH]).execute()
     await connection.create_process(
-        ["rm", "-f", CONTAINER_EVENT_PATH + "-journal"]
+        ["rm", "-f", CONTAINER_EVENT_PATH], quiet=True
+    ).execute()
+    await connection.create_process(
+        ["rm", "-f", CONTAINER_EVENT_BACKUP_PATH], quiet=True
+    ).execute()
+    await connection.create_process(
+        ["rm", "-f", CONTAINER_EVENT_PATH + "-journal"], quiet=True
     ).execute()
 
 
@@ -183,6 +187,7 @@ async def get_moose_db_file(
             "PRAGMA busy_timeout = 30000;",
             f".backup {container_backup_path}",
         ],
+        quiet=True,
     ).execute(privileged=True)
 
     log.info("get_moose_db_file::download")

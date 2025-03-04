@@ -46,12 +46,13 @@ class DockerConnection(Connection):
         await to_thread(aux)
 
     def create_process(
-        self, command: List[str], kill_id=None, term_type=None
+        self, command: List[str], kill_id=None, term_type=None, quiet=False
     ) -> "Process":
         process = DockerProcess(
             self._container, self.container_name(), command, kill_id
         )
-        log.info("[%s] Executing %s", self._name, " ".join(command))
+        if not quiet:
+            log.info("[%s] Executing %s", self._name, " ".join(command))
         return process
 
     async def get_ip_address(self) -> tuple[str, str]:
@@ -76,14 +77,18 @@ class DockerConnection(Connection):
         return (str(host_port), str(container_port))
 
     async def restore_ip_tables(self) -> None:
-        await self.create_process(["conntrack", "-F"]).execute()
-        await self.create_process(["iptables-restore", "iptables_backup"]).execute()
-        await self.create_process(["ip6tables-restore", "ip6tables_backup"]).execute()
+        await self.create_process(["conntrack", "-F"], quiet=True).execute()
+        await self.create_process(
+            ["iptables-restore", "iptables_backup"], quiet=True
+        ).execute()
+        await self.create_process(
+            ["ip6tables-restore", "ip6tables_backup"], quiet=True
+        ).execute()
 
     async def clean_interface(self) -> None:
         try:
             await self.create_process(
-                ["ip", "link", "delete", LINUX_INTERFACE_NAME]
+                ["ip", "link", "delete", LINUX_INTERFACE_NAME], quiet=True
             ).execute()
         except:
             pass  # Most of the time there will be no interface to be deleted

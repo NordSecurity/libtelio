@@ -313,7 +313,7 @@ class ConnectionTracker:
         validators: Optional[List[ConnTrackerEventsValidator]] = None,
     ):
         args = ["conntrack", "-E"]
-        self._process: Process = connection.create_process(args)
+        self._process: Process = connection.create_process(args, quiet=True)
         self._connection: Connection = connection
         self._validators: Optional[List[ConnTrackerEventsValidator]] = validators
         self._events: List[ConntrackerEvent] = []

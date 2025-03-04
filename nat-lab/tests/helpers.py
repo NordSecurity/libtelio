@@ -471,7 +471,7 @@ async def send_https_request(
 
     log.info("Curl command: %s", curl_command)
 
-    process = await connection.create_process(curl_command).execute()
+    process = await connection.create_process(curl_command, quiet=True).execute()
     response = process.get_stdout()
     if expect_response:
         try:

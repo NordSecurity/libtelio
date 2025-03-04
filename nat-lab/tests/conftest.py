@@ -113,7 +113,7 @@ async def os_ephemeral_ports(vm_tag):
         ]
 
     async with new_connection_raw(vm_tag) as connection:
-        await connection.create_process(cmd).execute(on_output, on_output)
+        await connection.create_process(cmd, quiet=True).execute(on_output, on_output)
 
 
 @pytest.fixture(autouse=True)
@@ -427,7 +427,7 @@ def save_audit_log_from_host(suffix):
 
 async def _save_macos_logs(conn, suffix):
     try:
-        dmesg_proc = await conn.create_process(["dmesg"]).execute()
+        dmesg_proc = await conn.create_process(["dmesg"], quiet=True).execute()
         with open(
             os.path.join("logs", f"dmesg-macos-{suffix}.txt"), "w", encoding="utf-8"
         ) as f:

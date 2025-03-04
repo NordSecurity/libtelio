@@ -54,6 +54,7 @@ async def get(
                 "--verbosity",
                 "2",
             ],
+            quiet=True,
         ).execute(),
         timeout,
     )
