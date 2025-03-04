@@ -12,6 +12,12 @@ from serialization import (  # type: ignore # pylint: disable=import-error
 from threading import Lock
 from typing import List
 
+# isort: off
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from utils.logger import log  # type: ignore # pylint: disable=wrong-import-position
+
+# isort: on
+
 REMOTE_LOG = "remote.log"
 TCLI_LOG = "tcli.log"
 MOOSE_LOGS_DIR = "/moose_logs"
@@ -231,7 +237,7 @@ def main():
         with open(TCLI_LOG, "a", encoding="utf-8") as logfile:
             daemon = Pyro5.server.Daemon(host=container_ip, port=port)
             _, port = daemon.sock.getsockname()
-            print(f"libtelio-port:{port}")
+            log.info("libtelio-port:%s", port)
             sys.stdout.flush()
 
             wrapper = LibtelioWrapper(daemon, logfile)
@@ -243,7 +249,7 @@ def main():
                 libtelio.unset_global_logger()
             daemon.close()
     except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"libtelio_remote error: {e}")
+        log.error("libtelio_remote error: %s", e)
         raise e
 
 

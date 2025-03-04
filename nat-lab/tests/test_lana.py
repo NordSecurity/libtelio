@@ -13,7 +13,6 @@ from config import (
     DERP_TERTIARY,
 )
 from contextlib import AsyncExitStack
-from datetime import datetime
 from helpers import connectivity_stack
 from mesh_api import API, Node
 from pathlib import Path
@@ -70,6 +69,7 @@ from utils.connection_util import (
     new_connection_by_tag,
     add_outgoing_packets_delay,
 )
+from utils.logger import log
 from utils.moose import MOOSE_LOGS_DIR
 from utils.ping import ping
 from utils.router import IPStack, IPProto
@@ -171,21 +171,23 @@ async def get_moose_db_file(
     container_backup_path: str,
     local_path: str,
 ) -> None:
-    print(f"[{datetime.now()}]: `get_moose_db_file::start")
+    log.info("get_moose_db_file::start")
     Path(local_path).unlink(missing_ok=True)
 
-    print(f"[{datetime.now()}]: `get_moose_db_file::backup")
-    await connection.create_process([
-        "sqlite3",
-        container_path,
-        "--cmd",
-        "PRAGMA busy_timeout = 30000;",
-        f".backup {container_backup_path}",
-    ]).execute(privileged=True)
+    log.info("get_moose_db_file::backup")
+    await connection.create_process(
+        [
+            "sqlite3",
+            container_path,
+            "--cmd",
+            "PRAGMA busy_timeout = 30000;",
+            f".backup {container_backup_path}",
+        ],
+    ).execute(privileged=True)
 
-    print(f"[{datetime.now()}]: `get_moose_db_file::download")
+    log.info("get_moose_db_file::download")
     await connection.download(container_backup_path, local_path)
-    print(f"[{datetime.now()}]: `get_moose_db_file::done")
+    log.info("get_moose_db_file::done")
 
 
 async def wait_for_event_dump(
@@ -202,14 +204,18 @@ async def wait_for_event_dump(
         )
         events = fetch_moose_events(events_path)
         if len(events) == nr_events:
-            print(
-                f"Found db from {connection.target_name()} with the expected {nr_events} events."
+            log.info(
+                "Found db from %s with the expected %s events.",
+                connection.target_name(),
+                nr_events,
             )
             return events
         await asyncio.sleep(DEFAULT_CHECK_INTERVAL)
-    print(
-        f"Failed looking db from {connection.target_name()}, expected {nr_events} but"
-        f" {len(events)} were found."
+    log.critical(
+        "Failed looking db from %s, expected %s but %s were found.",
+        connection.target_name(),
+        nr_events,
+        len(events),
     )
     return None
 
