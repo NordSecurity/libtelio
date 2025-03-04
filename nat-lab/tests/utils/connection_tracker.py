@@ -260,10 +260,10 @@ class TCPStateSequence(ConnTrackerEventsValidator):
         return merge_results(violations)
 
 
-def parse_input(input_string) -> ConntrackerEvent:
+def parse_input(input_string, container_name: Optional[str] = None) -> ConntrackerEvent:
     event = ConntrackerEvent()
+    print(datetime.now(), [{container_name}], "Conntracker reported event:", input_string)
 
-    print(datetime.now(), "Conntracker reported event:", input_string)
     match = re.search(r"\[([A-Z]+)\] (\w+)", input_string)
     if match:
         event.event_type = EventType(match.group(1))
@@ -325,7 +325,7 @@ class ConnectionTracker:
             return
 
         for line in stdout.splitlines():
-            event = parse_input(line)
+            event = parse_input(line, self._connection.tag.name)
             connection = event.five_tuple
             if connection is FiveTuple():
                 continue
