@@ -1,12 +1,10 @@
 import asyncio
 import os
 import pytest
-import random
 import shutil
 import subprocess
 from config import DERP_PRIMARY
 from contextlib import AsyncExitStack
-from datetime import datetime
 from helpers import SetupParameters
 from interderp_cli import InterDerpClient
 from itertools import combinations
@@ -18,6 +16,7 @@ from utils.connection_util import (
     ConnectionTag,
     new_connection_raw,
     new_connection_with_conn_tracker,
+    EPHEMERAL_SETUP_SET,
 )
 from utils.ping import ping
 from utils.process import ProcessExecError
@@ -76,90 +75,6 @@ def event_loop():
         finally:
             asyncio.events.set_event_loop(None)
             loop.close()
-
-
-async def os_ephemeral_ports(vm_tag):
-    async def on_output(output: str) -> None:
-        print(datetime.now(), f"os_ephemeral_ports_{vm_tag}: {output}")
-
-    start_port = random.randint(5000, 55000)
-    num_ports = random.randint(2000, 5000)
-    print(
-        datetime.now(),
-        f"Setting up ports for {vm_tag}: start={start_port}, num={num_ports}",
-    )
-
-    if vm_tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
-        cmd = [
-            "netsh",
-            "int",
-            "ipv4",
-            "set",
-            "dynamic",
-            "tcp",
-            f"start={start_port}",
-            f"num={num_ports}",
-        ]
-    elif vm_tag is ConnectionTag.MAC_VM:
-        cmd = [
-            "sysctl",
-            "-w",
-            f"net.inet.ip.portrange.first={start_port}",
-            f"net.inet.ip.portrange.last={start_port + num_ports}",
-        ]
-    else:
-        # Linux
-        cmd = [
-            "sysctl",
-            "-w",
-            f"net.ipv4.ip_local_port_range={start_port} {start_port + num_ports}",
-        ]
-
-    async with new_connection_raw(vm_tag) as connection:
-        await connection.create_process(cmd).execute(on_output, on_output)
-
-
-@pytest.fixture(autouse=True)
-def setup_ephemeral_ports(request):
-    def execute_setup(vm_tag):
-        try:
-            asyncio.run(os_ephemeral_ports(vm_tag))
-        except ProcessExecError as e:
-            print(
-                datetime.now(),
-                f"os_ephemeral_ports_{vm_tag} process execution failed: {e}",
-            )
-
-    connection_tags = set()
-
-    # Setup for all Docker clients
-    connection_tags.update([
-        tag
-        for tag in ConnectionTag.__members__.values()
-        if tag.name.startswith("DOCKER_") and "CLIENT" in tag.name
-    ])
-
-    # Handle test name (params) to search for VM tags
-    test_name = request.node.name
-    if "_VM_" in test_name:
-        # Extract all connection tags from test name
-        connection_tags.update([
-            ConnectionTag[param]
-            for param in test_name.split("[")[1].split("]")[0].split("-")
-            if param in ConnectionTag.__members__
-        ])
-
-    # Handle test markers to search for VMs tags
-    for mark in request.node.own_markers:
-        if mark.name == "windows":
-            connection_tags.update(
-                [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]
-            )
-        elif mark.name == "mac":
-            connection_tags.add(ConnectionTag.MAC_VM)
-
-    for tag in connection_tags:
-        execute_setup(tag)
 
 
 # Keep in mind that Windows can consider the filesize too big if parameters are not stripped
@@ -346,9 +261,11 @@ async def kill_natlab_processes():
     subprocess.run(["sudo", cleanup_script_path]).check_returncode()
 
 
-PRETEST_CLEANUPS = [
-    kill_natlab_processes,
-]
+async def clear_ephemeral_setups_set():
+    EPHEMERAL_SETUP_SET.clear()
+
+
+PRETEST_CLEANUPS = [kill_natlab_processes, clear_ephemeral_setups_set]
 
 
 async def perform_pretest_cleanups():
