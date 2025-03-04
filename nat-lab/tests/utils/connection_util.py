@@ -1,9 +1,11 @@
 import config
+import random
 from aiodocker import Docker
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum, auto
-from typing import AsyncIterator, Dict, Tuple, Optional, List, Union
+from typing import AsyncIterator, Dict, Tuple, Optional, List, Union, Set
 from utils.connection import Connection, TargetOS, DockerConnection
 from utils.connection_tracker import (
     ConnTrackerEventsValidator,
@@ -175,6 +177,8 @@ LAN_ADDR_MAP_V6: Dict[ConnectionTag, str] = {
     ),
 }
 
+EPHEMERAL_SETUP_SET: Set[ConnectionTag] = set()
+
 
 @dataclass
 class ConnectionManager:
@@ -210,6 +214,19 @@ def get_uniffi_path(connection: Connection) -> str:
 
 
 @asynccontextmanager
+async def connection_setup(
+    connection: Connection, tag: ConnectionTag
+) -> AsyncIterator[Connection]:
+    await setup_ephemeral_ports(connection, tag)
+    try:
+        yield connection
+    finally:
+        if isinstance(connection, DockerConnection):
+            await connection.restore_ip_tables()
+            await connection.clean_interface()
+
+
+@asynccontextmanager
 async def new_connection_raw(
     tag: ConnectionTag,
 ) -> AsyncIterator[Connection]:
@@ -218,19 +235,18 @@ async def new_connection_raw(
             connection: Connection = await DockerConnection.new(
                 docker, container_id(tag)
             )
-            try:
-                yield connection
-            finally:
-                await connection.restore_ip_tables()
-                await connection.clean_interface()
+            async with connection_setup(connection, tag) as conn:
+                yield conn
 
     elif tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
         async with windows_vm_util.new_connection(LAN_ADDR_MAP[tag]) as connection:
-            yield connection
+            async with connection_setup(connection, tag) as conn:
+                yield conn
 
     elif tag == ConnectionTag.MAC_VM:
         async with mac_vm_util.new_connection() as connection:
-            yield connection
+            async with connection_setup(connection, tag) as conn:
+                yield conn
 
     else:
         assert False, f"tag {tag} not supported"
@@ -256,23 +272,22 @@ async def new_connection_manager_by_tag(
     tag: ConnectionTag,
     conn_tracker_config: Optional[List[ConnTrackerEventsValidator]] = None,
 ) -> AsyncIterator[ConnectionManager]:
+    # pylint: disable-next=contextmanager-generator-missing-cleanup
     async with new_connection_raw(tag) as connection:
         network_switcher = await create_network_switcher(tag, connection)
         async with network_switcher.switch_to_primary_network():
             if tag in DOCKER_GW_MAP:
+                # pylint: disable-next=contextmanager-generator-missing-cleanup
                 async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
                     async with ConnectionTracker(
                         gw_connection, conn_tracker_config
                     ).run() as conn_tracker:
-                        try:
-                            yield ConnectionManager(
-                                connection,
-                                gw_connection,
-                                network_switcher,
-                                conn_tracker,
-                            )
-                        finally:
-                            pass
+                        yield ConnectionManager(
+                            connection,
+                            gw_connection,
+                            network_switcher,
+                            conn_tracker,
+                        )
             else:
                 async with ConnectionTracker(
                     connection, conn_tracker_config
@@ -287,12 +302,14 @@ async def new_connection_with_conn_tracker(
     tag: ConnectionTag,
     conn_tracker_config: Optional[List[ConnTrackerEventsValidator]],
 ) -> AsyncIterator[Tuple[Connection, ConnectionTracker]]:
+    # pylint: disable-next=contextmanager-generator-missing-cleanup
     async with new_connection_manager_by_tag(tag, conn_tracker_config) as conn_manager:
         yield (conn_manager.connection, conn_manager.tracker)
 
 
 @asynccontextmanager
 async def new_connection_by_tag(tag: ConnectionTag) -> AsyncIterator[Connection]:
+    # pylint: disable-next=contextmanager-generator-missing-cleanup
     async with new_connection_manager_by_tag(tag, None) as conn_manager:
         yield conn_manager.connection
 
@@ -303,6 +320,7 @@ async def new_connection_with_node_tracker(
     conn_tracker_config: Optional[List[ConnTrackerEventsValidator]],
 ) -> AsyncIterator[Tuple[Connection, ConnectionTracker]]:
     if tag in DOCKER_SERVICE_IDS:
+        # pylint: disable-next=contextmanager-generator-missing-cleanup
         async with new_connection_raw(tag) as connection:
             network_switcher = await create_network_switcher(tag, connection)
             async with network_switcher.switch_to_primary_network():
@@ -492,3 +510,44 @@ async def remove_traffic_control_rules(connection):
         ]).execute()
     except:
         pass
+
+
+async def setup_ephemeral_ports(connection: Connection, connection_tag: ConnectionTag):
+    if connection_tag in EPHEMERAL_SETUP_SET:
+        return
+
+    async def on_output(output: str) -> None:
+        print(datetime.now(), f"[{connection_tag.name}]: {output}")
+
+    start_port = random.randint(5000, 55000)
+    num_ports = random.randint(2000, 5000)
+
+    if connection_tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
+        cmd = [
+            "netsh",
+            "int",
+            "ipv4",
+            "set",
+            "dynamic",
+            "tcp",
+            f"start={start_port}",
+            f"num={num_ports}",
+        ]
+    elif connection_tag is ConnectionTag.MAC_VM:
+        cmd = [
+            "sysctl",
+            "-w",
+            f"net.inet.ip.portrange.first={start_port}",
+            f"net.inet.ip.portrange.last={start_port + num_ports}",
+        ]
+    elif connection_tag.name.startswith("DOCKER_") and "CLIENT" in connection_tag.name:
+        cmd = [
+            "sysctl",
+            "-w",
+            f"net.ipv4.ip_local_port_range={start_port} {start_port + num_ports}",
+        ]
+    else:
+        return
+
+    await connection.create_process(cmd).execute(on_output, on_output)
+    EPHEMERAL_SETUP_SET.add(connection_tag)
