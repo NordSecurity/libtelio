@@ -47,7 +47,6 @@ def insert_version_to_libtelio_binaries_in_dir(new_version: str, path: str):
                         )
                         if target_os == "macos":
                             os.system(f"codesign --remove-signature {binary}")
-                            os.system(f"codesign --sign - {binary}") #Maybe TODO
     if not is_valid_package:
         raise ValueError(f"Path {path} doesn't contain any libtelio packages")
 
