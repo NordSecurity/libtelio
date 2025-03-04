@@ -43,7 +43,7 @@ class SshConnection(Connection):
         return (ip, ip)
 
     def target_name(self) -> str:
-        return str(self._target_os)
+        return self._vm_name
 
     async def download(self, remote_path: str, local_path: str) -> None:
         """Copy file from 'remote_path' on the node connected via this connection, to local directory 'local_path'"""
