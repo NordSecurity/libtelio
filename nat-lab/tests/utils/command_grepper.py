@@ -1,6 +1,7 @@
 import asyncio
 from typing import List, Optional
 from utils.connection import Connection
+from utils.logger import log
 from utils.process import ProcessExecError
 
 
@@ -56,15 +57,15 @@ class CommandGrepper:
                 self._timeout,
             )
         except ProcessExecError as e:
-            print(f"Process exec error: {e}")
+            log.error(f"Process exec error: {e}")
             raise
         except TimeoutError as e:
-            print(
+            log.error(
                 f"Timeout error: {e}, last stdout: {self._last_stdout}, last stderr: {self._last_stderr}"
             )
             return False
         except Exception as e:
-            print(f"Some other exception happened: {e}")
+            log.error(f"Some other exception happened: {e}")
             raise
 
     async def check_not_exists(
@@ -86,13 +87,13 @@ class CommandGrepper:
                 self._timeout,
             )
         except ProcessExecError as e:
-            print(f"Process exec error: {e}, last stdout: {self._last_stdout}")
+            log.error(f"Process exec error: {e}, last stdout: {self._last_stdout}")
             raise
         except TimeoutError as e:
-            print(f"Timeout error: {e}, last stdout: {self._last_stdout}")
+            log.error(f"Timeout error: {e}, last stdout: {self._last_stdout}")
             return False
         except Exception as e:
-            print(
+            log.error(
                 f"Some other exception happened: {e}, last stdout: {self._last_stdout}"
             )
             raise

@@ -1,7 +1,6 @@
 import os
 import re
 import warnings
-from datetime import datetime
 from typing import Optional, Tuple, TypeVar
 
 MAX_PATH_LENGTH = 192

@@ -18,6 +18,7 @@ from utils.connection_util import (
     new_connection_with_conn_tracker,
     EPHEMERAL_SETUP_SET,
 )
+from utils.logger import log
 from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPStack
@@ -162,17 +163,17 @@ async def setup_check_connectivity():
                     await ping(connection, dest_ip, 5)
                     results[source].append((reverse[dest_ip], True))
             except Exception as e:  # pylint: disable=broad-exception-caught
-                print(
+                log.error(
                     f"Failed to connect from {source} to {reverse[dest_ip]}: {repr(e)}"
                 )
-                print(f"Exception type: {e.__class__.__name__}")
-                print(f"Exception args: {e.args}")
-                print(f"Exception attributes: {dir(e)}")
+                log.error(f"Exception type: {e.__class__.__name__}")
+                log.error(f"Exception args: {e.args}")
+                log.error(f"Exception attributes: {dir(e)}")
                 results[source].append((reverse[dest_ip], False))
 
-    print("Connectivity between VMs (and docker):")
+    log.info("Connectivity between VMs (and docker):")
     for k, v in results.items():
-        print(f"{k}: {v}")
+        log.info(f"{k}: {v}")
 
     for k, v in results.items():
         for dest_ip, status in v:
@@ -232,9 +233,9 @@ async def perform_setup_checks() -> bool:
                 await asyncio.wait_for(asyncio.shield(target()), timeout)
                 break
             except asyncio.TimeoutError:
-                print(f"{target}() timeout, retrying...")
+                log.warning(f"{target}() timeout, retrying...")
             except ProcessExecError as e:
-                print(f"{target}() process exec error {e}, retrying...")
+                log.warning(f"{target}() process exec error {e}, retrying...")
             retries -= 1
         else:
             return False
@@ -276,7 +277,7 @@ async def perform_pretest_cleanups():
 async def _copy_vm_binaries(tag: ConnectionTag):
     if tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
         try:
-            print(f"copying for {tag}")
+            log.info(f"Copying binaries for {tag}")
             async with windows_vm_util.new_connection(
                 LAN_ADDR_MAP[tag], copy_binaries=True, reenable_nat=True
             ):
@@ -324,7 +325,7 @@ def save_dmesg_from_host(suffix):
             check=True,
         ).stdout
     except subprocess.CalledProcessError as e:
-        print(f"Error executing dmesg: {e}")
+        log.error(f"Error executing dmesg: {e}")
         return
 
     if result:
@@ -340,9 +341,9 @@ def save_audit_log_from_host(suffix):
         if os.path.exists(source_path):
             shutil.copy2(source_path, f"logs/audit_{suffix}.log")
         else:
-            print(f"The audit file {source_path} does not exist.")
+            log.warning(f"The audit file {source_path} does not exist.")
     except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"An error occurred when processing audit log: {e}")
+        log.warning(f"An error occurred when processing audit log: {e}")
 
 
 async def _save_macos_logs(conn, suffix):
@@ -353,7 +354,7 @@ async def _save_macos_logs(conn, suffix):
         ) as f:
             f.write(dmesg_proc.get_stdout())
     except ProcessExecError as e:
-        print(f"Failed to collect dmesg logs {e}")
+        log.warning(f"Failed to collect dmesg logs {e}")
 
 
 async def collect_kernel_logs(items, suffix):
@@ -459,19 +460,20 @@ def copy_file_from_container(container_name, src_path, dst_path):
     docker_cp_command = f"docker cp {container_name}:{src_path} {dst_path}"
     try:
         subprocess.run(docker_cp_command, shell=True, check=True)
-        print(
-            f"Log file {src_path} copied successfully from {container_name} to"
-            f" {dst_path}"
+        log.info(
+            f"Log file {src_path} copied successfully from {container_name} to {dst_path}"
         )
     except subprocess.CalledProcessError:
-        print(f"Error copying log file {src_path} from {container_name} to {dst_path}")
+        log.warning(
+            f"Error copying log file {src_path} from {container_name} to {dst_path}"
+        )
 
 
 async def collect_mac_diagnostic_reports():
     is_ci = "GITLAB_CI" in os.environ
     if not (is_ci or "NATLAB_COLLECT_MAC_DIAGNOSTIC_LOGS" in os.environ):
         return
-    print("Collect mac diagnostic reports")
+    log.info("Collect mac diagnostic reports")
     try:
         async with mac_vm_util.new_connection() as connection:
             await connection.download(
@@ -481,6 +483,6 @@ async def collect_mac_diagnostic_reports():
                 "/root/Library/Logs/DiagnosticReports", "logs/user_diagnostic_reports"
             )
     except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"Failed to connect to the mac VM: {e}")
+        log.error(f"Failed to connect to the mac VM: {e}")
         if is_ci:
             raise e

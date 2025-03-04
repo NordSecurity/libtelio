@@ -1,9 +1,9 @@
 import asyncssh
 import shlex
 from .connection import Connection, TargetOS
-from datetime import datetime
 from typing import List
 from utils import cmd_exe_escape
+from utils.logger import log
 from utils.process import Process, SshProcess
 
 
@@ -26,7 +26,7 @@ class SshConnection(Connection):
     def create_process(
         self, command: List[str], kill_id=None, term_type=None
     ) -> "Process":
-        print(datetime.now(), "Executing", command, "on", self.target_os)
+        log.info(f"[{self._vm_name}] Executing {' '.join(command)}")
         if self._target_os == TargetOS.Windows:
             escape_argument = cmd_exe_escape.escape_argument
         elif self._target_os in [TargetOS.Linux, TargetOS.Mac]:

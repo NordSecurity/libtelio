@@ -3,10 +3,10 @@ from aiodocker import Docker
 from aiodocker.containers import DockerContainer
 from asyncio import to_thread
 from config import LINUX_INTERFACE_NAME
-from datetime import datetime
 from subprocess import run, DEVNULL
 from typing import List, Type
 from typing_extensions import Self
+from utils.logger import log
 from utils.process import Process, DockerProcess
 
 
@@ -51,13 +51,7 @@ class DockerConnection(Connection):
         process = DockerProcess(
             self._container, self.container_name(), command, kill_id
         )
-        print(
-            datetime.now(),
-            "Executing",
-            command,
-            "on",
-            self._name,
-        )
+        log.info(f"[{self._name}] Executing {' '.join(command)}")
         return process
 
     async def get_ip_address(self) -> tuple[str, str]:

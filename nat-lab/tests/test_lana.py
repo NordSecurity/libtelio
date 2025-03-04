@@ -13,7 +13,6 @@ from config import (
     DERP_TERTIARY,
 )
 from contextlib import AsyncExitStack
-from datetime import datetime
 from helpers import connectivity_stack
 from mesh_api import API, Node
 from pathlib import Path
@@ -70,6 +69,7 @@ from utils.connection_util import (
     new_connection_by_tag,
     add_outgoing_packets_delay,
 )
+from utils.logger import log
 from utils.moose import MOOSE_LOGS_DIR
 from utils.ping import ping
 from utils.router import IPStack, IPProto
@@ -198,14 +198,13 @@ async def wait_for_event_dump(
         )
         events = fetch_moose_events(events_path)
         if len(events) == nr_events:
-            print(
+            log.info(
                 f"Found db from {connection.target_name()} with the expected {nr_events} events."
             )
             return events
         await asyncio.sleep(DEFAULT_CHECK_INTERVAL)
-    print(
-        f"Failed looking db from {connection.target_name()}, expected {nr_events} but"
-        f" {len(events)} were found."
+    log.critical(
+        f"Failed looking db from {connection.target_name()}, expected {nr_events} but {len(events)} were found."
     )
     return None
 

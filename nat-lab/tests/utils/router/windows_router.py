@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, List
 from utils.command_grepper import CommandGrepper
 from utils.connection import Connection
+from utils.logger import log
 from utils.process import ProcessExecError
 
 
@@ -45,7 +46,7 @@ class WindowsRouter(Router):
                     f"Adapter '{self._interface_name}' didn't report connected state. "
                 )
 
-            print(
+            log.info(
                 f"windows_router: connected state established. Interface info: {cmd.get_stdout()} stderr: {cmd.get_stderr()}"
             )
 
