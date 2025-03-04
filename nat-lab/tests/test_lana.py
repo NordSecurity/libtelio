@@ -170,10 +170,8 @@ async def get_moose_db_file(
     container_backup_path: str,
     local_path: str,
 ) -> None:
-    print(f"[{datetime.now()}]: `get_moose_db_file::start")
     Path(local_path).unlink(missing_ok=True)
 
-    print(f"[{datetime.now()}]: `get_moose_db_file::backup")
     await connection.create_process([
         "sqlite3",
         container_path,
@@ -182,9 +180,7 @@ async def get_moose_db_file(
         f".backup {container_backup_path}",
     ]).execute(privileged=True)
 
-    print(f"[{datetime.now()}]: `get_moose_db_file::download")
     await connection.download(container_backup_path, local_path)
-    print(f"[{datetime.now()}]: `get_moose_db_file::done")
 
 
 async def wait_for_event_dump(

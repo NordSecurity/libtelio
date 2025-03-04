@@ -328,7 +328,6 @@ async def setup_environment(
 
     yield Environment(api, nodes, connection_managers, clients)
 
-    print(datetime.now(), "Checking connection limits")
     for conn_manager in connection_managers:
         if conn_manager.tracker:
             violations = await conn_manager.tracker.find_conntracker_violations()

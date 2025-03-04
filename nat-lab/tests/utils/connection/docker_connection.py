@@ -5,7 +5,7 @@ from asyncio import to_thread
 from config import LINUX_INTERFACE_NAME
 from contextlib import asynccontextmanager
 from datetime import datetime
-from subprocess import run
+from subprocess import run, DEVNULL
 from typing import List, Type, Dict, AsyncIterator
 from typing_extensions import Self
 from utils.process import Process, DockerProcess
@@ -112,7 +112,9 @@ class DockerConnection(Connection):
     async def download(self, remote_path: str, local_path: str) -> None:
         def aux():
             run(
-                ["docker", "cp", container_id(self.tag) + ":" + remote_path, local_path]
+                ["docker", "cp", container_id(self.tag) + ":" + remote_path, local_path],
+                stdout=DEVNULL,
+                stderr=DEVNULL,
             )
 
         await to_thread(aux)
@@ -129,8 +131,6 @@ class DockerConnection(Connection):
             command,
             "on",
             self.tag.name,
-            "with Kill ID:",
-            process.get_kill_id(),
         )
         return process
 
