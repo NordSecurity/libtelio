@@ -1,7 +1,11 @@
 import os
 import re
+import warnings
 from datetime import datetime
 from typing import Optional, Tuple, TypeVar
+
+MAX_PATH_LENGTH = 192
+MAX_PARAMETER_LENGTH = 64
 
 T = TypeVar("T")
 
@@ -35,10 +39,9 @@ def _format_path_string(input_str: str) -> str:
     """
     Format the input string to be safely used as a system path or file name.
     """
-    # truncate if it's longer than 64 characters
     # replace any non-alphanumeric characters with "_"
     # remove any trailing "_"
-    return re.sub(r"\W+", "_", input_str[:64]).rstrip("_")
+    return re.sub(r"\W+", "_", input_str).rstrip("_")
 
 
 def get_current_test_log_path(base_dir: str = "logs") -> str:
@@ -52,8 +55,24 @@ def get_current_test_log_path(base_dir: str = "logs") -> str:
         logs_dir = os.path.join(base_dir, test_name)
         # add the test parameters suffx
         if test_parameters:
-            return logs_dir + "_" + test_parameters
+            if len(test_parameters) > MAX_PARAMETER_LENGTH:
+                warnings.warn(
+                    f"""parameter path is too long: {len(test_parameters)} > {MAX_PARAMETER_LENGTH}.
+                please consider anotating the parameters with 'id=' or 'ids='."""
+                )
+            result = logs_dir + "_" + test_parameters
         # there were no parameters
-        return logs_dir
+        else:
+            result = logs_dir
     # we are not in a test
-    return base_dir
+    else:
+        result = base_dir
+
+    # check if the total path name is too log
+    # on windows absolute path to a file must not exceed 255 characters
+    assert (
+        len(result) < MAX_PATH_LENGTH
+    ), f"""log path too long: {len(result)} >= {MAX_PATH_LENGTH}.
+    please shorten the test name and anotate the parameters with 'id=' or 'ids='."""
+
+    return result

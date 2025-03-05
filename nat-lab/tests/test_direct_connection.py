@@ -170,8 +170,9 @@ async def _disable_direct_connection(env: Environment, reflexive_ips: List[str])
     [
         pytest.param(
             *_generate_setup_parameters_with_reflexive_ips(clients),
+            id=f"parameters_{i}",
         )
-        for clients in UHP_WORKING_PATHS_PARAMS
+        for i, clients in enumerate(UHP_WORKING_PATHS_PARAMS)
     ],
 )
 @pytest.mark.timeout(timeouts.TEST_DIRECT_WORKING_PATHS_TIMEOUT)

@@ -61,7 +61,8 @@ def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=(1, 1),
                 ),
-            )
+            ),
+            id="a_lne",
         ),
         pytest.param(
             SetupParameters(
@@ -73,6 +74,7 @@ def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:
                 ),
             ),
             marks=pytest.mark.linux_native,
+            id="a_lna",
         ),
         pytest.param(
             SetupParameters(
@@ -84,6 +86,7 @@ def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:
                 ),
             ),
             marks=pytest.mark.windows,
+            id="a_wna",
         ),
         pytest.param(
             SetupParameters(
@@ -95,6 +98,7 @@ def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:
                 ),
             ),
             marks=pytest.mark.windows,
+            id="a_wgo",
         ),
         pytest.param(
             SetupParameters(
@@ -106,6 +110,7 @@ def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:
                 ),
             ),
             marks=pytest.mark.mac,
+            id="a_mac",
         ),
     ],
 )
@@ -119,7 +124,8 @@ def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     derp_1_limits=(1, 1),
                 ),
-            )
+            ),
+            id="b",
         )
     ],
 )
@@ -231,6 +237,7 @@ async def test_event_content_meshnet(
                 is_meshnet=False,
             ),
             "10.0.254.1",
+            id="a_lne",
         ),
         pytest.param(
             SetupParameters(
@@ -245,6 +252,7 @@ async def test_event_content_meshnet(
             ),
             "10.0.254.1",
             marks=pytest.mark.linux_native,
+            id="a_lna",
         ),
         pytest.param(
             SetupParameters(
@@ -261,6 +269,7 @@ async def test_event_content_meshnet(
             marks=[
                 pytest.mark.windows,
             ],
+            id="a_wna",
         ),
         pytest.param(
             SetupParameters(
@@ -277,6 +286,7 @@ async def test_event_content_meshnet(
             marks=[
                 pytest.mark.windows,
             ],
+            id="a_wgo",
         ),
         pytest.param(
             SetupParameters(
@@ -291,6 +301,7 @@ async def test_event_content_meshnet(
             ),
             "10.0.254.7",
             marks=pytest.mark.mac,
+            id="a_mac",
         ),
     ],
 )
@@ -385,7 +396,8 @@ async def test_event_content_vpn_connection(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     derp_1_limits=(1, 1),
                 ),
-            )
+            ),
+            id="a_lne",
         ),
         pytest.param(
             SetupParameters(
@@ -397,6 +409,7 @@ async def test_event_content_vpn_connection(
                 ),
             ),
             marks=pytest.mark.linux_native,
+            id="a_lna",
         ),
         pytest.param(
             SetupParameters(
@@ -408,6 +421,7 @@ async def test_event_content_vpn_connection(
                 ),
             ),
             marks=pytest.mark.windows,
+            id="a_wna",
         ),
         pytest.param(
             SetupParameters(
@@ -419,6 +433,7 @@ async def test_event_content_vpn_connection(
                 ),
             ),
             marks=pytest.mark.windows,
+            id="a_wgo",
         ),
         pytest.param(
             SetupParameters(
@@ -430,6 +445,7 @@ async def test_event_content_vpn_connection(
                 ),
             ),
             marks=pytest.mark.mac,
+            id="a_mac",
         ),
     ],
 )
@@ -445,8 +461,9 @@ async def test_event_content_vpn_connection(
                     stun_limits=(1, 2),
                 ),
                 features=default_features(enable_firewall_exclusion_range="10.0.0.0/8"),
-            )
-        )
+            ),
+            id="b",
+        ),
     ],
 )
 async def test_event_content_exit_through_peer(
@@ -535,6 +552,7 @@ async def test_event_content_exit_through_peer(
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
             "10.0.254.1",
+            id="a_lne",
         ),
         pytest.param(
             SetupParameters(
@@ -548,6 +566,7 @@ async def test_event_content_exit_through_peer(
             ),
             "10.0.254.1",
             marks=pytest.mark.linux_native,
+            id="a_lna",
         ),
         pytest.param(
             SetupParameters(
@@ -561,6 +580,7 @@ async def test_event_content_exit_through_peer(
             ),
             "10.0.254.7",
             marks=pytest.mark.windows,
+            id="a_wna",
         ),
         pytest.param(
             SetupParameters(
@@ -574,6 +594,7 @@ async def test_event_content_exit_through_peer(
             ),
             "10.0.254.7",
             marks=pytest.mark.windows,
+            id="a_wgo",
         ),
         pytest.param(
             SetupParameters(
@@ -587,6 +608,7 @@ async def test_event_content_exit_through_peer(
             ),
             "10.0.254.7",
             marks=[pytest.mark.mac],
+            id="a_mac",
         ),
     ],
 )
@@ -602,6 +624,7 @@ async def test_event_content_exit_through_peer(
                 ),
             ),
             "10.0.254.2",
+            id="b",
         )
     ],
 )
