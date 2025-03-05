@@ -4924,10 +4924,12 @@ dependencies = [
 name = "telio-utils"
 version = "0.1.0"
 dependencies = [
+ "backtrace",
  "blake3",
  "futures",
  "hashlink",
  "ipnet",
+ "libc",
  "lru_time_cache",
  "maplit",
  "mockall",

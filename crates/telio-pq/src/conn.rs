@@ -70,7 +70,14 @@ impl ConnKeyRotation {
 
             interval.tick().await; // This call returns immedietly
             loop {
+                telio_log_debug!(
+                    "PQ rekey tick before: interval: {:?} request_retry: {:?}, rekey_interval: {:?}",
+                    interval,
+                    request_retry,
+                    rekey_interval,
+                );
                 interval.tick().await;
+                telio_log_debug!("PQ rekey tick after: {:?}", interval);
 
                 // Dylint is unhappy about the `rekey` future size
                 // and asks for using `Box::pin` to move it on the heap

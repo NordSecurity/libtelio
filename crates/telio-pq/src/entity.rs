@@ -1,12 +1,13 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use parking_lot::Mutex;
 
 use telio_model::features::FeaturePostQuantumVPN;
 use telio_task::io::chan;
 use telio_utils::telio_log_debug;
+use telio_utils::TelioInstant;
 
 // This constant is based on section 6.1 of the wireguard whitepaper
 // It is the amount of time that has to happen since the last handshake before a connection is abandoned
@@ -19,7 +20,18 @@ struct Peer {
     /// This is a key rotation task guard, its `Drop` implementation aborts the task
     _rotation_task: super::conn::ConnKeyRotation,
     keys: Option<super::Keys>,
-    last_handshake_ts: Option<Instant>,
+    last_handshake_ts: Option<TelioInstant>,
+}
+
+use std::fmt;
+
+impl fmt::Debug for Peer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Peer")
+            .field("pubkey", &self.pubkey)
+            .field("last_handshake_ts", &self.last_handshake_ts)
+            .finish()
+    }
 }
 
 pub struct Entity {
@@ -55,11 +67,19 @@ impl Entity {
 
     pub fn on_event(&self, event: super::Event) {
         if let Some(peer) = self.peer.lock().as_mut() {
+            telio_log_debug!("pq event: {:?} for {:?}", event, peer.pubkey);
             match event {
                 super::Event::Handshake(addr, keys) => {
                     if peer.addr == addr {
                         peer.keys = Some(keys);
-                        peer.last_handshake_ts = Some(Instant::now());
+
+                        telio_log_debug!(
+                            "pq handshake event, set ts to {:?} for {:?} at {:?}",
+                            peer.last_handshake_ts,
+                            peer.pubkey,
+                            TelioInstant::now(),
+                        );
+                        peer.last_handshake_ts = Some(TelioInstant::now());
                     }
                 }
                 super::Event::Rekey(super::Keys {
@@ -72,7 +92,13 @@ impl Entity {
                             // and only then update the preshared key,
                             // otherwise we're connecting to different node already
                             keys.pq_shared = pq_shared;
-                            peer.last_handshake_ts = Some(Instant::now());
+                            telio_log_debug!(
+                                "pq rekey event, set ts to {:?} for {:?} at {:?}",
+                                peer.last_handshake_ts,
+                                peer.pubkey,
+                                TelioInstant::now()
+                            );
+                            peer.last_handshake_ts = Some(TelioInstant::now());
                         } else {
                             telio_log_debug!(
                                 "PQ secret key does not match, ignoring shared secret rotation"
@@ -110,6 +136,7 @@ impl Entity {
         peer: telio_crypto::PublicKey,
     ) {
         self.stop().await;
+        telio_log_debug!("start {:?}", peer);
         self.start_impl(addr, wg_secret, peer).await;
     }
 
@@ -124,10 +151,23 @@ impl Entity {
     pub async fn maybe_restart(&self) {
         let peer = {
             let mut peer = self.peer.lock();
+            telio_log_debug!(
+                "Maybe restart PQ. Peer: {:?} at {:?}",
+                peer,
+                TelioInstant::now()
+            );
             let should_restart = peer
                 .as_ref()
                 .and_then(|peer| peer.last_handshake_ts)
-                .is_some_and(|ts| ts.elapsed() > REJECT_AFTER_TIME);
+                .is_some_and(|ts| {
+                    telio_log_debug!(
+                        "maybe restart, elapsed: {:?}, vs {:?}",
+                        ts.elapsed(),
+                        REJECT_AFTER_TIME
+                    );
+
+                    ts.elapsed() > REJECT_AFTER_TIME
+                });
             if should_restart {
                 peer.take()
             } else {
