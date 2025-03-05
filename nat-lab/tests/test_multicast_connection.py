@@ -42,6 +42,7 @@ MUILTICAST_TEST_PARAMS = [
             (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
         ]),
         "ssdp",
+        marks=pytest.mark.windows,
     ),
     pytest.param(
         generate_setup_parameter_pair([
@@ -49,6 +50,7 @@ MUILTICAST_TEST_PARAMS = [
             (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
         ]),
         "mdns",
+        marks=pytest.mark.windows,
     ),
     pytest.param(
         generate_setup_parameter_pair([
