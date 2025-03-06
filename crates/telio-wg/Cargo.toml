@@ -32,9 +32,10 @@ tokio = { workspace = true, features = ["full"] }
 
 telio-crypto.workspace = true
 telio-model.workspace = true
-telio-sockets.workspace = true
+telio-sockets = { workspace = true, features = ["mockall"] }
 telio-task.workspace = true
 telio-utils.workspace = true
+telio-pinger.workspace = true
 itertools.workspace = true
 
 [dev-dependencies]

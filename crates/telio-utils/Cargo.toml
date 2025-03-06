@@ -24,7 +24,6 @@ serde.workspace = true
 smart-default.workspace = true
 sn_fake_clock = { workspace = true, optional = true }
 socket2.workspace = true
-surge-ping.workspace = true
 time.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }

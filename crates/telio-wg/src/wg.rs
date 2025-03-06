@@ -346,6 +346,7 @@ impl DynamicWg {
     where
         Self: Sized,
     {
+        let socket_pool = cfg.socket_pool.clone();
         let adapter = Self::start_adapter(cfg.try_clone()?)?;
         #[cfg(unix)]
         return Ok(Self::start_with(
@@ -356,6 +357,7 @@ impl DynamicWg {
             ipv6_enabled,
             polling_period,
             polling_period_after_update,
+            socket_pool,
         ));
         #[cfg(windows)]
         return Ok(Self::start_with(
@@ -365,9 +367,11 @@ impl DynamicWg {
             ipv6_enabled,
             polling_period,
             polling_period_after_update,
+            socket_pool,
         ));
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn start_with(
         io: Io,
         adapter: Box<dyn Adapter>,
@@ -376,6 +380,7 @@ impl DynamicWg {
         ipv6_enabled: bool,
         polling_period: Duration,
         polling_period_after_update: Duration,
+        socket_pool: Arc<SocketPool>,
     ) -> Self {
         let interval = interval(polling_period);
         Self {
@@ -388,7 +393,8 @@ impl DynamicWg {
                 event: io.events,
                 analytics_tx: io.analytics_tx,
                 uapi_fail_counter: 0,
-                link_detection: link_detection.map(|ld| LinkDetection::new(ld, ipv6_enabled)),
+                link_detection: link_detection
+                    .map(|ld| LinkDetection::new(ld, ipv6_enabled, socket_pool)),
                 libtelio_event: io.libtelio_wide_event_publisher,
                 stats: HashMap::new(),
                 ip_stack: None,
@@ -1136,7 +1142,7 @@ pub mod tests {
     use mockall::predicate;
     use rand::{Rng, RngCore, SeedableRng};
     use telio_crypto::PresharedKey;
-    use telio_sockets::NativeProtector;
+    use telio_sockets::protector::MockProtector;
     use telio_utils::Hidden;
     use tokio::{runtime::Handle, sync::Mutex, task, time::sleep};
 
@@ -1294,6 +1300,8 @@ pub mod tests {
                 })
             });
 
+        let socket_pool = Arc::new(SocketPool::new(MockProtector::default()));
+
         let wg = DynamicWg::start_with(
             Io {
                 events: events_ch.tx.clone(),
@@ -1309,6 +1317,7 @@ pub mod tests {
             true,
             Duration::from_millis(DEFAULT_POLLING_PERIOD_MS),
             Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS),
+            socket_pool,
         );
         time::advance(Duration::from_millis(0)).await;
         adapter.lock().await.checkpoint();
