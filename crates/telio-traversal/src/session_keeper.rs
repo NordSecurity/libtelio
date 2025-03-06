@@ -222,6 +222,7 @@ impl SessionKeeperTrait for SessionKeeper {
                             }
                         }
 
+                        telio_log_debug!("Performing ping {:?}", dual_target);
                         if let Err(e) = ping(&c.pingers, (&public_key, &dual_target)).await {
                             telio_log_warn!(
                                 "Failed to ping, peer with key: {:?}, error: {:?}",
@@ -229,6 +230,7 @@ impl SessionKeeperTrait for SessionKeeper {
                                 e
                             );
                         }
+                        telio_log_debug!("Ping finished");
                         Ok(())
                     })
                 }),
