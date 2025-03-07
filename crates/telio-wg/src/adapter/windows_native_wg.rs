@@ -10,14 +10,14 @@ use sha2::{Digest, Sha256};
 use std::io::Error as IOError;
 use std::slice::Windows;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::thread::sleep;
 use std::time::Duration;
 use std::{mem, option, result};
 use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
 };
+use tokio::time::sleep;
 #[cfg(windows)]
-use wireguard_nt::{self, set_logger, SetInterface, SetPeer};
+use wireguard_nt::{self, set_logger, SetInterface, SetPeer, WIREGUARD_STATE_UP};
 use wireguard_uapi::xplatform;
 
 /// Telio wrapper around wireguard-nt
@@ -159,19 +159,7 @@ impl WindowsNativeWg {
             ))));
         }
 
-        let mut os_error = IOError::from_raw_os_error(0);
-        for _ in 0..5 {
-            if wg_dev.adapter.up() {
-                telio_log_debug!("Adapter state set to up");
-                return Ok(wg_dev);
-            }
-            os_error = IOError::last_os_error();
-            telio_log_warn!("Failed to set adapter state to up, last error: {os_error:?}");
-            sleep(Duration::from_millis(200));
-        }
-        Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-            "Failed to set adapter's state to up, last error: {os_error:?}",
-        ))))
+        Ok(wg_dev)
     }
 
     fn get_config_uapi(&self) -> Response {
@@ -185,6 +173,60 @@ impl WindowsNativeWg {
                 interface: None,
             },
         }
+    }
+
+    /// Ensure adapter state (up/down)
+    ///
+    /// `ensure_adapter_state` attempts to bring interface up (requested_state == true) if
+    /// it is requested to be up and is not already up. Or bring it down if it is requested
+    /// to be down, but adapter is not yet down.
+    ///
+    /// As one may expect - this function is idempotent.
+    async fn ensure_adapter_state(&self, requested_state: bool) -> Result<(), AdapterError> {
+        // We have seen a few cases where single attempt to bring
+        // The adapter up caused some issues. Especially if performed
+        // Early after driver installation.
+        // Exact root cause is not yet found, therefore lets attempt to bring
+        // The interface up for slightly longer before declaring error.
+        let state_str = if requested_state { "up" } else { "down" };
+        let mut os_error = IOError::from_raw_os_error(0);
+        for _ in 0..5 {
+            // Retreive up/down state of the adapter
+            let actual_state = match self.adapter.get_adapter_state() {
+                Ok(state) => state == WIREGUARD_STATE_UP,
+                Err(_) => {
+                    os_error = IOError::last_os_error();
+                    telio_log_warn!("Failed to get adapter state, last error: {os_error:?}");
+                    continue;
+                }
+            };
+
+            // Make this function idempotent
+            if requested_state == actual_state {
+                return Ok(());
+            }
+
+            // The wireguard-nt-rust-wrapper here indicates success using
+            // bool for `.up()` or `.down()` functions
+            let success = match requested_state {
+                true => self.adapter.up(),
+                false => self.adapter.down(),
+            };
+
+            // Terminate if we succeeded
+            if success {
+                return Ok(());
+            }
+
+            // Continue if we failed
+            os_error = IOError::last_os_error();
+            telio_log_warn!("Failed to set adapter state to {state_str}, last error: {os_error:?}");
+            sleep(Duration::from_millis(200)).await;
+        }
+        telio_log_warn!("Failed to set adapter state for 5 times. Giving up!");
+        Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+            "Failed to set adapter's state to {state_str}, last error: {os_error:?}",
+        ))))
     }
 
     fn cleanup(&self) {
@@ -208,22 +250,41 @@ impl Adapter for WindowsNativeWg {
     async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, AdapterError> {
         match cmd {
             Get => Ok(self.get_config_uapi()),
-            Set(set_cfg) => match self.adapter.set_config_uapi(set_cfg) {
-                Ok(()) => {
-                    // Remember last successfully set configuration
-                    if let Ok(mut interface_watcher) =
-                        (self as &WindowsNativeWg).watcher.clone().lock()
-                    {
-                        interface_watcher.set_last_known_configuration(set_cfg);
-                    }
-
-                    Ok(self.get_config_uapi())
+            Set(set_cfg) => {
+                // If we have any peers added -> bring the adapter up
+                if !set_cfg.peers.is_empty() {
+                    self.ensure_adapter_state(true).await?;
                 }
-                Err(_err) => Ok(Response {
-                    errno: 1,
-                    interface: None,
-                }),
-            },
+
+                let (resp, peer_cnt) = match self.adapter.set_config_uapi(set_cfg) {
+                    Ok(()) => {
+                        // Remember last successfully set configuration
+                        if let Ok(mut interface_watcher) =
+                            (self as &WindowsNativeWg).watcher.clone().lock()
+                        {
+                            interface_watcher.set_last_known_configuration(set_cfg);
+                        }
+
+                        let resp = self.get_config_uapi();
+                        let peer_cnt = resp.interface.as_ref().map(|i| i.peers.len());
+                        (Ok(resp), peer_cnt)
+                    }
+                    Err(_err) => (
+                        Ok(Response {
+                            errno: 1,
+                            interface: None,
+                        }),
+                        None,
+                    ),
+                };
+
+                // If all of the peers has been removed -> bring the adapter down
+                if peer_cnt.map(|p| p == 0).unwrap_or(false) {
+                    self.ensure_adapter_state(false).await?;
+                }
+
+                resp
+            }
         }
     }
 
