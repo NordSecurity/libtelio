@@ -8,6 +8,7 @@ from dataclasses_json import (
     config as json_config,
 )
 from flatten_json import flatten  # type: ignore
+from utils.logger import log
 
 DEFAULT_TABLE_NAME = "queue_elements"
 
@@ -90,6 +91,6 @@ def fetch_moose_events(database_name) -> list[Event]:
             flatten_json_str = json.dumps(flatten_event_json).replace("'", '"')
             event_list.append(Event.from_json(flatten_json_str))
     except sqlite3.OperationalError:
-        print("No such table: " + DEFAULT_TABLE_NAME)
+        log.warning("No such table: %s", DEFAULT_TABLE_NAME)
 
     return event_list

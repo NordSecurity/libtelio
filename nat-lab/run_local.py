@@ -185,11 +185,13 @@ def get_pytest_arguments(options) -> List[str]:
     else:
         os.environ["TELIO_BIN_PROFILE"] = "release"
 
+    args.extend(["-k", "test_event_content_meshnet"])
+
     if options.v:
         args.extend(["--capture=no"])
 
-    if options.k:
-        args.extend(["-k", options.k])
+    # if options.k:
+    #     args.extend(["-k", options.k])
 
     if options.x:
         args.extend(["-x"])
