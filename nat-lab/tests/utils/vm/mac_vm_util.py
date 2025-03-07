@@ -1,61 +1,14 @@
 import asyncssh
 import os
-import subprocess
-from config import (
-    get_root_path,
-    LIBTELIO_BINARY_PATH_MAC_VM,
-    MAC_VM_IP,
-    UNIFFI_PATH_MAC_VM,
-)
-from contextlib import asynccontextmanager
-from typing import AsyncIterator
-from utils.connection import Connection, SshConnection, TargetOS
+from config import get_root_path, LIBTELIO_BINARY_PATH_MAC_VM, UNIFFI_PATH_MAC_VM
+from utils.connection import Connection
 from utils.process import ProcessExecError
 
 VM_TCLI_DIR = LIBTELIO_BINARY_PATH_MAC_VM
 VM_UNIFFI_DIR = UNIFFI_PATH_MAC_VM
 
 
-@asynccontextmanager
-async def new_connection(
-    ip: str = MAC_VM_IP,
-    copy_binaries: bool = False,
-    reenable_nat=False,
-) -> AsyncIterator[Connection]:
-    if reenable_nat:
-        subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
-        subprocess.check_call(["sudo", "bash", "vm_nat.sh", "enable"])
-
-    # Speedup large file transfer: https://github.com/ronf/asyncssh/issues/374
-    ssh_options = asyncssh.SSHClientConnectionOptions(
-        encryption_algs=[
-            "aes128-gcm@openssh.com",
-            "aes256-ctr",
-            "aes192-ctr",
-            "aes128-ctr",
-        ],
-        compression_algs=None,
-    )
-
-    async with asyncssh.connect(
-        ip,
-        username="root",
-        password="vagrant",  # NOTE: this is hardcoded password for transient vm existing only during the tests
-        known_hosts=None,
-        options=ssh_options,
-    ) as ssh_connection:
-        connection = SshConnection(ssh_connection, "Mac", TargetOS.Mac)
-
-        if copy_binaries:
-            await _copy_binaries(ssh_connection, connection)
-
-        try:
-            yield connection
-        finally:
-            pass
-
-
-async def _copy_binaries(
+async def copy_binaries(
     ssh_connection: asyncssh.SSHClientConnection, connection: Connection
 ) -> None:
     for directory in [VM_TCLI_DIR, VM_UNIFFI_DIR]:

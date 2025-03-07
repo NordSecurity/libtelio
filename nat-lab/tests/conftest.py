@@ -18,7 +18,6 @@ from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPStack
 from utils.tcpdump import make_tcpdump, make_local_tcpdump
-from utils.vm import mac_vm_util, windows_vm_util
 
 DERP_SERVER_1_ADDR = "http://10.0.10.1:8765"
 DERP_SERVER_2_ADDR = "http://10.0.10.2:8765"
@@ -266,27 +265,16 @@ async def perform_pretest_cleanups():
 
 
 async def _copy_vm_binaries(tag: ConnectionTag):
-    if tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
-        try:
-            print(f"copying for {tag}")
-            async with windows_vm_util.new_connection(
-                LAN_ADDR_MAP[tag], copy_binaries=True, reenable_nat=True
-            ):
-                pass
-        except OSError as e:
-            if os.environ.get("GITLAB_CI"):
-                raise e
-            print(e)
-    elif tag is ConnectionTag.MAC_VM:
-        try:
-            async with mac_vm_util.new_connection(
-                copy_binaries=True, reenable_nat=True
-            ):
-                pass
-        except OSError as e:
-            if os.environ.get("GITLAB_CI"):
-                raise e
-            print(e)
+    try:
+        print(f"copying for {tag}")
+        async with SshConnection.new_connection(
+            LAN_ADDR_MAP[tag], tag, copy_binaries=True, reenable_nat=True
+        ):
+            pass
+    except OSError as e:
+        if os.environ.get("GITLAB_CI"):
+            raise e
+        print(e)
 
 
 async def _copy_vm_binaries_if_needed(items):
@@ -358,7 +346,9 @@ async def collect_kernel_logs(items, suffix):
     for item in items:
         if any(mark.name == "mac" for mark in item.own_markers):
             try:
-                async with mac_vm_util.new_connection() as conn:
+                async with SshConnection.new_connection(
+                    LAN_ADDR_MAP[ConnectionTag.MAC_VM], ConnectionTag.MAC_VM
+                ) as conn:
                     await _save_macos_logs(conn, suffix)
             except OSError as e:
                 if os.environ.get("GITLAB_CI"):
@@ -465,7 +455,9 @@ async def collect_mac_diagnostic_reports():
         return
     print("Collect mac diagnostic reports")
     try:
-        async with mac_vm_util.new_connection() as connection:
+        async with SshConnection.new_connection(
+            LAN_ADDR_MAP[ConnectionTag.MAC_VM], ConnectionTag.MAC_VM
+        ) as connection:
             await connection.download(
                 "/Library/Logs/DiagnosticReports", "logs/system_diagnostic_reports"
             )

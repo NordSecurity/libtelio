@@ -59,42 +59,23 @@ def get_uniffi_path(connection: Connection) -> str:
 
 
 @asynccontextmanager
-async def connection_setup(
-    connection: Connection, tag: ConnectionTag
-) -> AsyncIterator[Connection]:
-    await setup_ephemeral_ports(connection, tag)
-    try:
-        yield connection
-    finally:
-        if isinstance(connection, DockerConnection):
-            await connection.restore_ip_tables()
-            await connection.clean_interface()
-
-
-@asynccontextmanager
 async def new_connection_raw(
     tag: ConnectionTag,
 ) -> AsyncIterator[Connection]:
-    if tag in DOCKER_SERVICE_IDS:
-        async with Docker() as docker:
-            connection: Connection = await DockerConnection.new(
-                docker, container_id(tag)
-            )
-            async with connection_setup(connection, tag) as conn:
-                yield conn
-
-    elif tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
-        async with windows_vm_util.new_connection(LAN_ADDR_MAP[tag]) as connection:
-            async with connection_setup(connection, tag) as conn:
-                yield conn
-
-    elif tag == ConnectionTag.MAC_VM:
-        async with mac_vm_util.new_connection() as connection:
-            async with connection_setup(connection, tag) as conn:
-                yield conn
-
-    else:
-        assert False, f"tag {tag} not supported"
+    try:
+        if tag in DOCKER_SERVICE_IDS:
+            async with Docker() as docker:
+                async with DockerConnection.new_connection(docker, tag) as connection:
+                    yield connection
+        elif is_tag_valid_for_ssh_connection(tag):
+            async with SshConnection.new_connection(
+                LAN_ADDR_MAP[tag], tag
+            ) as connection:
+                yield connection
+        else:
+            assert False, f"Tag {tag} not supported"
+    finally:
+        pass
 
 
 async def create_network_switcher(
@@ -102,10 +83,8 @@ async def create_network_switcher(
 ) -> NetworkSwitcher:
     if tag in DOCKER_SERVICE_IDS:
         return NetworkSwitcherDocker(connection)
-
     if tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
         return await NetworkSwitcherWindows.create(connection)
-
     if tag == ConnectionTag.MAC_VM:
         return NetworkSwitcherMac(connection)
 
@@ -117,22 +96,23 @@ async def new_connection_manager_by_tag(
     tag: ConnectionTag,
     conn_tracker_config: Optional[List[ConnTrackerEventsValidator]] = None,
 ) -> AsyncIterator[ConnectionManager]:
-    # pylint: disable-next=contextmanager-generator-missing-cleanup
     async with new_connection_raw(tag) as connection:
         network_switcher = await create_network_switcher(tag, connection)
         async with network_switcher.switch_to_primary_network():
             if tag in DOCKER_GW_MAP:
-                # pylint: disable-next=contextmanager-generator-missing-cleanup
                 async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
                     async with ConnectionTracker(
                         gw_connection, conn_tracker_config
                     ).run() as conn_tracker:
-                        yield ConnectionManager(
-                            connection,
-                            gw_connection,
-                            network_switcher,
-                            conn_tracker,
-                        )
+                        try:
+                            yield ConnectionManager(
+                                connection,
+                                gw_connection,
+                                network_switcher,
+                                conn_tracker,
+                            )
+                        finally:
+                            pass
             else:
                 async with ConnectionTracker(
                     connection, conn_tracker_config
@@ -147,14 +127,12 @@ async def new_connection_with_conn_tracker(
     tag: ConnectionTag,
     conn_tracker_config: Optional[List[ConnTrackerEventsValidator]],
 ) -> AsyncIterator[Tuple[Connection, ConnectionTracker]]:
-    # pylint: disable-next=contextmanager-generator-missing-cleanup
     async with new_connection_manager_by_tag(tag, conn_tracker_config) as conn_manager:
         yield (conn_manager.connection, conn_manager.tracker)
 
 
 @asynccontextmanager
 async def new_connection_by_tag(tag: ConnectionTag) -> AsyncIterator[Connection]:
-    # pylint: disable-next=contextmanager-generator-missing-cleanup
     async with new_connection_manager_by_tag(tag, None) as conn_manager:
         yield conn_manager.connection
 
@@ -165,7 +143,6 @@ async def new_connection_with_node_tracker(
     conn_tracker_config: Optional[List[ConnTrackerEventsValidator]],
 ) -> AsyncIterator[Tuple[Connection, ConnectionTracker]]:
     if tag in DOCKER_SERVICE_IDS:
-        # pylint: disable-next=contextmanager-generator-missing-cleanup
         async with new_connection_raw(tag) as connection:
             network_switcher = await create_network_switcher(tag, connection)
             async with network_switcher.switch_to_primary_network():
@@ -173,15 +150,8 @@ async def new_connection_with_node_tracker(
                     connection, conn_tracker_config
                 ).run() as conn_tracker:
                     yield (connection, conn_tracker)
-
     else:
         assert False, f"tag {tag} not supported with node tracker"
-
-
-def container_id(tag: ConnectionTag) -> str:
-    if tag in DOCKER_SERVICE_IDS:
-        return f"nat-lab-{DOCKER_SERVICE_IDS[tag]}-1"
-    assert False, f"tag {tag} not a docker container"
 
 
 def convert_port_to_integer(port: Union[str, int, None]) -> int:

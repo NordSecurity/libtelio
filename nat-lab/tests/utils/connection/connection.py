@@ -71,9 +71,11 @@ class TargetOS(Enum):
 
 class Connection(ABC):
     _target_os: Optional[TargetOS]
+    _tag: Optional[ConnectionTag]
 
-    def __init__(self, target_os: TargetOS) -> None:
+    def __init__(self, target_os: TargetOS, tag: ConnectionTag) -> None:
         self._target_os = target_os
+        self._tag = tag
 
     @abstractmethod
     def create_process(
@@ -90,9 +92,14 @@ class Connection(ABC):
     def target_os(self, target_os: TargetOS) -> None:
         self._target_os = target_os
 
-    @abstractmethod
-    def target_name(self) -> str:
-        pass
+    @property
+    def tag(self) -> ConnectionTag:
+        assert self._tag
+        return self._tag
+
+    @tag.setter
+    def tag(self, tag: ConnectionTag) -> None:
+        self._tag = tag
 
     @abstractmethod
     async def download(self, remote_path: str, local_path: str) -> None:
