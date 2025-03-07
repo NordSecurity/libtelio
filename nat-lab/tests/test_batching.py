@@ -161,7 +161,7 @@ async def test_batching(
         gateway_container_names = [container_id(conn_tag) for conn_tag in gateways]
         conns = [client.get_connection() for client in clients]
         node_container_names = [
-            conn.container_name()
+            container_id(conn.tag)
             for conn in conns
             if isinstance(conn, DockerConnection)
         ]

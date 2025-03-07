@@ -3,9 +3,10 @@ from aiodocker import Docker
 from aiodocker.containers import DockerContainer
 from asyncio import to_thread
 from config import LINUX_INTERFACE_NAME
+from contextlib import asynccontextmanager
 from datetime import datetime
 from subprocess import run
-from typing import List, Type
+from typing import List, Type, Dict, AsyncIterator
 from typing_extensions import Self
 from utils.process import Process, DockerProcess
 
@@ -82,32 +83,37 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
 
 class DockerConnection(Connection):
     _container: DockerContainer
-    _name: str
 
-    def __init__(self, container: DockerContainer, container_name: str):
-        super().__init__(TargetOS.Linux)
-        self._name = container_name
+    def __init__(self, container: DockerContainer, tag: ConnectionTag):
+        super().__init__(TargetOS.Linux, tag)
         self._container = container
 
+    async def __aenter__(self):
+        await self.restore_ip_tables()
+        await self.clean_interface()
+        await setup_ephemeral_ports(self)
+        return self
+
+    async def __aexit__(self, *exc_details):
+        await self.restore_ip_tables()
+        await self.clean_interface()
+        return self
+
     @classmethod
-    async def new(cls: Type[Self], docker: Docker, container_name: str) -> Self:
-        new_docker_conn = cls(
-            await docker.containers.get(container_name), container_name
-        )
-        await new_docker_conn.restore_ip_tables()
-        await new_docker_conn.clean_interface()
-
-        return new_docker_conn
-
-    def container_name(self) -> str:
-        return self._name
-
-    def target_name(self) -> str:
-        return self.container_name()
+    @asynccontextmanager
+    async def new_connection(
+        cls: Type[Self], docker: Docker, tag: ConnectionTag
+    ) -> AsyncIterator["DockerConnection"]:
+        async with cls(
+            await docker.containers.get(container_id(tag)), tag
+        ) as connection:
+            yield connection
 
     async def download(self, remote_path: str, local_path: str) -> None:
         def aux():
-            run(["docker", "cp", self._name + ":" + remote_path, local_path])
+            run(
+                ["docker", "cp", container_id(self.tag) + ":" + remote_path, local_path]
+            )
 
         await to_thread(aux)
 
@@ -115,14 +121,14 @@ class DockerConnection(Connection):
         self, command: List[str], kill_id=None, term_type=None
     ) -> "Process":
         process = DockerProcess(
-            self._container, self.container_name(), command, kill_id
+            self._container, container_id(self.tag), command, kill_id
         )
         print(
             datetime.now(),
             "Executing",
             command,
             "on",
-            self._name,
+            self.tag.name,
             "with Kill ID:",
             process.get_kill_id(),
         )
@@ -161,3 +167,9 @@ class DockerConnection(Connection):
             ).execute()
         except:
             pass  # Most of the time there will be no interface to be deleted
+
+
+def container_id(tag: ConnectionTag) -> str:
+    if tag in DOCKER_SERVICE_IDS:
+        return f"nat-lab-{DOCKER_SERVICE_IDS[tag]}-1"
+    assert False, f"tag {tag} not a docker container"

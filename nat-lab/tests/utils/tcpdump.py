@@ -245,7 +245,7 @@ async def make_tcpdump(
                     continue
 
                 path = find_unique_path_for_tcpdump(
-                    store_in if store_in else log_dir, conn.target_name()
+                    store_in if store_in else log_dir, conn.tag.name
                 )
                 await conn.download(PCAP_FILE_PATH[conn.target_os], path)
 
