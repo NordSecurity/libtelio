@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.2.0
+### **Pork Kibin**
+---
+* LLT-6016: Update moose tracker v15.0.1 -> v16.0.1
+
+<br>
+
 ### v5.1.9
 ### **Pork Kibin**
 ---
