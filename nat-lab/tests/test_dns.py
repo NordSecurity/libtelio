@@ -4,7 +4,6 @@ import asyncio
 import config
 import itertools
 import pytest
-import time
 import timeouts
 from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6
 from contextlib import AsyncExitStack
@@ -188,23 +187,12 @@ async def test_dns(
         await client_beta.enable_magic_dns(["10.0.80.82"])
 
         # If everything went correctly, these calls should not timeout
-        start_time = time.time()
         await query_dns(
-            connection_alpha,
-            "google.com",
-            dns_server=dns_server_address_alpha,
-            options=["-timeout=30"],
+            connection_alpha, "google.com", dns_server=dns_server_address_alpha
         )
-        assert time.time() - start_time < 1
-
-        start_time = time.time()
         await query_dns(
-            connection_beta,
-            "google.com",
-            dns_server=dns_server_address_beta,
-            options=["-timeout=30"],
+            connection_beta, "google.com", dns_server=dns_server_address_beta
         )
-        assert time.time() - start_time < 1
 
         # If the previous calls didn't fail, we can assume that the resolver is running so no need to wait for the timeout and test the validity of the response
         await query_dns(

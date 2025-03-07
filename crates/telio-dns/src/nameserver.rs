@@ -87,10 +87,7 @@ impl LocalNameServer {
         let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_QUERIES));
         loop {
             let bytes_read = match socket.recv(&mut receiving_buffer).await {
-                Ok(bytes) => {
-                    telio_log_debug!("Pkt recvd");
-                    bytes
-                }
+                Ok(bytes) => bytes,
                 Err(e) => {
                     telio_log_error!("[DNS] Failed to read bytes: {:?}", e);
                     continue;
@@ -112,7 +109,7 @@ impl LocalNameServer {
                     _ => break,
                 };
             }
-            telio_log_debug!("Timers updated");
+
             let peer = peer.clone();
             let socket = socket.clone();
             let nameserver = nameserver.clone();
@@ -125,7 +122,6 @@ impl LocalNameServer {
                     receiving_buffer.get(..bytes_read).unwrap_or(&[]),
                     &mut sending_buffer,
                 );
-                telio_log_debug!("Pkt decapsulated");
                 match res {
                     // Handshake packets
                     TunnResult::WriteToNetwork(packet) => {
@@ -145,7 +141,6 @@ impl LocalNameServer {
                                 return;
                             };
                         }
-                        telio_log_debug!("Handshake pkt");
                     }
                     // DNS packets
                     TunnResult::WriteToTunnelV4(packet, _)
@@ -158,22 +153,16 @@ impl LocalNameServer {
                                 return;
                             }
                         };
-                        telio_log_debug!("Write2Tun");
 
                         let nameserver = nameserver.clone();
-                        let length = match Box::pin(LocalNameServer::process_packet(
+                        let length = match LocalNameServer::process_packet(
                             nameserver,
                             packet,
                             &mut receiving_buffer,
-                        ))
+                        )
                         .await
                         {
-                            Ok(length) => {
-                                telio_log_debug!(
-                                    "Finished processing dns request with length: {length}"
-                                );
-                                length
-                            }
+                            Ok(length) => length,
                             Err(e) => {
                                 telio_log_error!(
                                     "[DNS] {}. Offending request packet: {:?}",
@@ -183,7 +172,6 @@ impl LocalNameServer {
                                 return;
                             }
                         };
-                        telio_log_debug!("Pkt processed");
 
                         let tunn_res = peer.lock().await.encapsulate(
                             receiving_buffer.get(..length).unwrap_or(&[]),
@@ -204,14 +192,10 @@ impl LocalNameServer {
                                     e
                                 )
                             }
-                            res => {
-                                telio_log_debug!("Took ignored path for TunnResult: {:?}", res);
-                            }
+                            _ => {}
                         }
                     }
-                    res => {
-                        telio_log_debug!("Took ignored path for TunnResult: {:?}", res);
-                    }
+                    _ => {}
                 }
             });
         }
@@ -222,52 +206,30 @@ impl LocalNameServer {
         request_info: &mut RequestInfo,
     ) -> Result<Vec<u8>, String> {
         telio_log_debug!("Resolving dns");
-        let ts = std::time::Instant::now();
         let resolver = Resolver::new();
-        telio_log_debug!("Getting DNS zones. Time taken: {:?}", ts.elapsed());
-        let ts = std::time::Instant::now();
+        telio_log_debug!("Getting DNS zones");
         let zones = nameserver.zones().await;
 
-        telio_log_debug!("Preparing DNS request. Time taken: {:?}", ts.elapsed());
-        let ts = std::time::Instant::now();
+        telio_log_debug!("Preparing DNS request");
         let dns_request = match &mut request_info.payload {
             PayloadRequestInfo::Udp {
                 ref mut dns_request,
                 ..
             } => dns_request
                 .take()
-                .ok_or_else(|| String::from("Nonexistent DNS request"))?,
-            _ => {
-                telio_log_debug!("Found DNS request with wrong protocol");
-                return Ok(Vec::new());
-            }
+                .ok_or_else(|| String::from("Inexistent DNS request"))?,
+            _ => return Ok(Vec::new()),
         };
-        telio_log_debug!(
-            "Exctraced dns request: {dns_request:?}. Time taken: {:?}",
-            ts.elapsed()
-        );
-        let ts = std::time::Instant::now();
         let dns_request = Request::new(dns_request, request_info.dns_source(), Protocol::Udp);
-        telio_log_debug!(
-            "DNS request: {:?}. Time taken: {:?}",
-            &dns_request,
-            ts.elapsed()
-        );
-        let ts = std::time::Instant::now();
+        telio_log_debug!("DNS request: {:?}", &dns_request);
 
         zones
             .lookup(&dns_request, resolver.clone())
             .await
             .map_err(|e| format!("Lookup failed {}", e))?;
-        telio_log_debug!("Finished zone lookup. Time taken: {:?}", ts.elapsed());
-        let ts = std::time::Instant::now();
 
         let dns_response = resolver.0.lock().await;
-        telio_log_debug!(
-            "Nameserver response: {:?}. Time taken: {:?}",
-            &dns_response,
-            ts.elapsed()
-        );
+        telio_log_debug!("Nameserver response: {:?}", &dns_response);
         Ok(dns_response.to_vec())
     }
 
@@ -673,14 +635,7 @@ trait WithZones {
 #[async_trait]
 impl WithZones for Arc<RwLock<LocalNameServer>> {
     async fn zones(&self) -> Arc<ClonableZones> {
-        let start = std::time::Instant::now();
-        telio_log_debug!("Aquiring read lock for DNS zones");
-        let zones = { self.read().await.zones.clone() };
-        telio_log_debug!(
-            "Released read lock for DNS zones after: {:?}",
-            start.elapsed()
-        );
-        zones
+        self.read().await.zones.clone()
     }
 
     async fn zones_mut(&self) -> RwLockMappedWriteGuard<ClonableZones> {
@@ -698,28 +653,16 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
     ) -> Result<(), String> {
         let azone = Arc::new(AuthoritativeZone::new(zone, records, ttl_value).await?);
 
-        let start = std::time::Instant::now();
-        telio_log_debug!("Aquiring write lock for DNS zones (upsert)");
         self.zones_mut()
             .await
             .upsert(LowerName::from_str(zone)?, Box::new(azone));
-        telio_log_debug!(
-            "Released write lock for DNS zones (upsert) after: {:?}",
-            start.elapsed()
-        );
         Ok(())
     }
 
     async fn forward(&self, to: &[IpAddr]) -> Result<(), String> {
-        let start = std::time::Instant::now();
-        telio_log_debug!("Aquiring write lock for DNS zones (forward)");
         self.zones_mut().await.upsert(
             LowerName::from_str(".")?,
             Box::new(Arc::new(ForwardZone::new(".", to).await?)),
-        );
-        telio_log_debug!(
-            "Released write lock for DNS zones (forward) after: {:?}",
-            start.elapsed()
         );
         Ok(())
     }

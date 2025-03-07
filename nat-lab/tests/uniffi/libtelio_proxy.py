@@ -29,21 +29,18 @@ def move_to_async_thread(f):
 
 
 class LibtelioProxy:
-    def __init__(self, name: str, object_uri: str, features: libtelio.Features):
-        self._name = name
+    def __init__(self, object_uri: str, features: libtelio.Features):
         self._uri = object_uri
         self._iterations = 20
         self._features = features
 
     def _handle_remote_error(self, f):
         with Proxy(self._uri) as remote:
-            print(f"[{self._name}]:{datetime.now()}: _handle_remote_error: {self._uri}")
             fn_res = f(remote)
             if fn_res is None:
                 return None
             (res, err) = fn_res
             if err is not None:
-                print(f"[{self._name}]:{datetime.now()}: Pyro error: {err}")
                 raise Exception(err)
             return res
 
@@ -90,14 +87,7 @@ class LibtelioProxy:
 
     @move_to_async_thread
     def next_event(self) -> libtelio.Event:
-        try:
-            ev = self._handle_remote_error(lambda r: r.next_event())
-            print(f"[{self._name}]:{datetime.now()} proxy::next_event returned: {ev}")
-        except Exception as e:
-            print(f"[{self._name}]:{datetime.now()} proxy::next_event: exception {e}")
-            raise
-
-        return ev
+        return self._handle_remote_error(lambda r: r.next_event())
 
     @move_to_async_thread
     def stop(self):

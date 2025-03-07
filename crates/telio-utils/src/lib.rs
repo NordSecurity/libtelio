@@ -4,9 +4,6 @@
 /// export utils
 pub mod utils;
 
-/// re-export time dependency
-pub use ::time;
-
 /// Utils for rust std map types
 pub mod map;
 pub use map::*;

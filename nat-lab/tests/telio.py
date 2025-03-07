@@ -430,7 +430,6 @@ class Client:
             await exit_stack.enter_async_context(
                 self._process.run(stdout_callback=on_stdout, stderr_callback=on_stderr)
             )
-            name = self._node.name
             try:
                 await self._process.wait_stdin_ready()
 
@@ -449,9 +448,7 @@ class Client:
                 else:
                     object_uri = f"PYRO:{object_name}@localhost:{host_port}"
 
-                self._libtelio_proxy = LibtelioProxy(
-                    name, object_uri, self._telio_features
-                )
+                self._libtelio_proxy = LibtelioProxy(object_uri, self._telio_features)
                 try:
                     await self.get_proxy().create()
                 except ProxyConnectionError as err:
@@ -475,26 +472,30 @@ class Client:
                     yield self
             finally:
                 print(
-                    f"[{name}]:{datetime.now()} Test cleanup: Stopping tcpdump and collecting core dumps"
+                    datetime.now(),
+                    "Test cleanup: Stopping tcpdump and collecting core dumps",
                 )
                 if isinstance(self._connection, DockerConnection):
                     await self.collect_core_dumps()
+
                 print(
-                    f"[{name}]:{datetime.now()} Test cleanup: Saving MacOS network info"
+                    datetime.now(),
+                    "Test cleanup: Saving MacOS network info",
                 )
                 await self.save_mac_network_info()
 
-                print(f"[{name}]:{datetime.now()} Test cleanup: Stopping device")
+                print(datetime.now(), "Test cleanup: Stopping device")
                 if self._process.is_executing():
                     if self._libtelio_proxy:
                         await self.stop_device()
                     else:
                         print(
-                            f"[{name}]:{datetime.now()} Test cleanup: We don't have LibtelioProxy instance, Stop() not called."
+                            datetime.now(),
+                            "[Debug] We don't have LibtelioProxy instance, Stop() not called.",
                         )
                     self._quit = True
 
-                print(f"[{name}]:{datetime.now()} Test cleanup: Shutting down")
+                print(datetime.now(), "Test cleanup: Shutting down")
                 if self._libtelio_proxy:
                     # flush_logs() is allowed to fail here:
                     try:
@@ -502,30 +503,32 @@ class Client:
                     # Since this is clean up code, catching general exceptions is fine:
                     except Exception as e:  # pylint: disable=broad-exception-caught
                         print(
-                            f"[{name}]:{datetime.now()} Test cleanup: Exception while flushing logs: {e}"
+                            datetime.now(),
+                            f"Test cleanup: Exception while flushing logs: {e}",
                         )
 
                     await self.get_proxy().shutdown(self._connection.target_name())
                 else:
                     print(
-                        f"[{name}]:{datetime.now()} We don't have LibtelioProxy instance, Shutdown() not called."
+                        datetime.now(),
+                        "[Debug] We don't have LibtelioProxy instance, Shutdown() not called.",
                     )
 
-                print(f"[{name}]:{datetime.now()} Test cleanup: Clearing up routes")
+                print(datetime.now(), "Test cleanup: Clearing up routes")
                 await self._router.delete_vpn_route()
                 await self._router.delete_exit_node_route()
                 await self._router.delete_interface()
 
-                print(f"[{name}]:{datetime.now()} Test cleanup: Saving moose dbs")
+                print(datetime.now(), "Test cleanup: Saving moose dbs")
                 await self.save_moose_db()
 
-                print(f"[{name}]:{datetime.now()} Test cleanup: Checking logs")
+                print(datetime.now(), "Test cleanup: Checking logs")
                 await self._check_logs_for_errors()
 
-                print(f"[{name}]:{datetime.now()} Test cleanup: Saving logs")
+                print(datetime.now(), "Test cleanup: Saving logs")
                 await self._save_logs()
 
-                print(f"[{name}]:{datetime.now()} Test cleanup complete")
+                print(datetime.now(), "Test cleanup complete")
 
     async def simple_start(self):
         await self.get_proxy().start_named(
@@ -905,16 +908,11 @@ class Client:
                 event = await self.get_proxy().next_event()
                 while event:
                     if self._runtime:
-                        print(
-                            f"[{self._node.name}]:[{datetime.now()}] event loop processing: {event}"
-                        )
+                        print(f"[{self._node.name}]: event [{datetime.now()}]: {event}")
                         self._runtime.handle_event(event)
                         event = await self.get_proxy().next_event()
                 await asyncio.sleep(1)
-            except Exception as e:
-                print(
-                    f"[{self._node.name}]:{datetime.now()} event loop exiting due to: {e}. self._quit: {self._quit}"
-                )
+            except:
                 if self._quit:
                     return
                 raise
