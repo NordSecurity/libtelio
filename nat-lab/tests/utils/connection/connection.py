@@ -1,8 +1,55 @@
 import platform
+import random
 from abc import ABC, abstractmethod
+from datetime import datetime
 from enum import Enum, auto
-from typing import List, Optional
+from typing import List, Optional, Set
 from utils.process import Process
+
+
+class ConnectionTag(Enum):
+    DOCKER_CONE_CLIENT_1 = auto()
+    DOCKER_CONE_CLIENT_2 = auto()
+    DOCKER_FULLCONE_CLIENT_1 = auto()
+    DOCKER_FULLCONE_CLIENT_2 = auto()
+    DOCKER_SYMMETRIC_CLIENT_1 = auto()
+    DOCKER_SYMMETRIC_CLIENT_2 = auto()
+    DOCKER_UPNP_CLIENT_1 = auto()
+    DOCKER_UPNP_CLIENT_2 = auto()
+    DOCKER_SHARED_CLIENT_1 = auto()
+    DOCKER_OPEN_INTERNET_CLIENT_1 = auto()
+    DOCKER_OPEN_INTERNET_CLIENT_2 = auto()
+    DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK = auto()
+    DOCKER_UDP_BLOCK_CLIENT_1 = auto()
+    DOCKER_UDP_BLOCK_CLIENT_2 = auto()
+    DOCKER_INTERNAL_SYMMETRIC_CLIENT = auto()
+    WINDOWS_VM_1 = auto()
+    WINDOWS_VM_2 = auto()
+    MAC_VM = auto()
+    DOCKER_CONE_GW_1 = auto()
+    DOCKER_CONE_GW_2 = auto()
+    DOCKER_CONE_GW_3 = auto()
+    DOCKER_CONE_GW_4 = auto()
+    DOCKER_FULLCONE_GW_1 = auto()
+    DOCKER_FULLCONE_GW_2 = auto()
+    DOCKER_SYMMETRIC_GW_1 = auto()
+    DOCKER_SYMMETRIC_GW_2 = auto()
+    DOCKER_UDP_BLOCK_GW_1 = auto()
+    DOCKER_UDP_BLOCK_GW_2 = auto()
+    DOCKER_UPNP_GW_1 = auto()
+    DOCKER_UPNP_GW_2 = auto()
+    DOCKER_VPN_1 = auto()
+    DOCKER_VPN_2 = auto()
+    DOCKER_NLX_1 = auto()
+    DOCKER_INTERNAL_SYMMETRIC_GW = auto()
+    DOCKER_DERP_1 = auto()
+    DOCKER_DERP_2 = auto()
+    DOCKER_DERP_3 = auto()
+    DOCKER_DNS_SERVER_1 = auto()
+    DOCKER_DNS_SERVER_2 = auto()
+
+
+EPHEMERAL_SETUP_SET: Set[ConnectionTag] = set()
 
 
 class TargetOS(Enum):
@@ -24,9 +71,11 @@ class TargetOS(Enum):
 
 class Connection(ABC):
     _target_os: Optional[TargetOS]
+    _tag: Optional[ConnectionTag]
 
-    def __init__(self, target_os: TargetOS) -> None:
+    def __init__(self, target_os: TargetOS, tag: ConnectionTag) -> None:
         self._target_os = target_os
+        self._tag = tag
 
     @abstractmethod
     def create_process(
@@ -43,9 +92,14 @@ class Connection(ABC):
     def target_os(self, target_os: TargetOS) -> None:
         self._target_os = target_os
 
-    @abstractmethod
-    def target_name(self) -> str:
-        pass
+    @property
+    def tag(self) -> ConnectionTag:
+        assert self._tag
+        return self._tag
+
+    @tag.setter
+    def tag(self, tag: ConnectionTag) -> None:
+        self._tag = tag
 
     @abstractmethod
     async def download(self, remote_path: str, local_path: str) -> None:
@@ -63,3 +117,51 @@ class Connection(ABC):
 
     async def clean_interface(self) -> None:
         pass
+
+
+async def clear_ephemeral_setups_set():
+    EPHEMERAL_SETUP_SET.clear()
+
+
+async def setup_ephemeral_ports(connection: Connection):
+    if connection.tag in EPHEMERAL_SETUP_SET:
+        return
+
+    async def on_output(output: str) -> None:
+        print(datetime.now(), f"[{connection.tag.name}]: {output}")
+
+    start_port = random.randint(5000, 55000)
+    num_ports = random.randint(2000, 5000)
+
+    if connection.tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
+        cmd = [
+            "netsh",
+            "int",
+            "ipv4",
+            "set",
+            "dynamic",
+            "tcp",
+            f"start={start_port}",
+            f"num={num_ports}",
+        ]
+    elif connection.tag is ConnectionTag.MAC_VM:
+        cmd = [
+            "sysctl",
+            "-w",
+            f"net.inet.ip.portrange.first={start_port}",
+            f"net.inet.ip.portrange.last={start_port + num_ports}",
+        ]
+    elif (
+        connection.tag.name.lower().startswith("docker")
+        and "client" in connection.tag.name.lower()
+    ):
+        cmd = [
+            "sysctl",
+            "-w",
+            f"net.ipv4.ip_local_port_range={start_port} {start_port + num_ports}",
+        ]
+    else:
+        return
+
+    await connection.create_process(cmd).execute(on_output, on_output)
+    EPHEMERAL_SETUP_SET.add(connection.tag)

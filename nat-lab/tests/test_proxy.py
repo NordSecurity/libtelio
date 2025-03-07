@@ -4,7 +4,7 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from typing import Optional
 from utils.bindings import TelioNode
-from utils.connection_util import ConnectionTag
+from utils.connection import ConnectionTag
 from utils.ping import ping
 
 

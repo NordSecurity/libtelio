@@ -6,10 +6,9 @@ from helpers import SetupParameters, setup_environment
 from telio import Client
 from utils import stun
 from utils.bindings import TelioAdapterType, NodeState, PathType
-from utils.connection import Connection
+from utils.connection import Connection, ConnectionTag
 from utils.connection_util import (
     generate_connection_tracker_config,
-    ConnectionTag,
     new_connection_by_tag,
 )
 from utils.dns import query_dns

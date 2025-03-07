@@ -62,10 +62,9 @@ from utils.bindings import (
     NodeState,
     RelayState,
 )
-from utils.connection import Connection
+from utils.connection import Connection, ConnectionTag
 from utils.connection_util import (
     generate_connection_tracker_config,
-    ConnectionTag,
     new_connection_with_conn_tracker,
     new_connection_by_tag,
     add_outgoing_packets_delay,
@@ -203,12 +202,12 @@ async def wait_for_event_dump(
         events = fetch_moose_events(events_path)
         if len(events) == nr_events:
             print(
-                f"Found db from {connection.target_name()} with the expected {nr_events} events."
+                f"Found db from {connection.tag.name} with the expected {nr_events} events."
             )
             return events
         await asyncio.sleep(DEFAULT_CHECK_INTERVAL)
     print(
-        f"Failed looking db from {connection.target_name()}, expected {nr_events} but"
+        f"Failed looking db from {connection.tag.name}, expected {nr_events} but"
         f" {len(events)} were found."
     )
     return None
