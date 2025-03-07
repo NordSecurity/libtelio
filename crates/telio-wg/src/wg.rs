@@ -745,10 +745,13 @@ impl State {
 
         telio_log_debug!("Sending new event {event:?}");
 
-        self.event
+        let result = self
+            .event
             .send(Box::new(event))
             .await
-            .map_err(|_| Error::InternalError("Failed to send node event"))
+            .map_err(|_| Error::InternalError("Failed to send node event"));
+        telio_log_debug!("Sent new event");
+        result
     }
 
     #[allow(mpsc_blocking_send)]

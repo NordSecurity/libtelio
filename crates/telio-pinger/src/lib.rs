@@ -1,14 +1,39 @@
 use socket2::Type;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::os::fd::RawFd;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{convert::TryInto, net::IpAddr};
-use surge_ping::{Client, Config as PingerConfig, PingIdentifier, PingSequence, ICMP};
+use surge_ping::{
+    AsyncSocket, Client, Config as PingerConfig, PingIdentifier, PingSequence,
+    Pinger as SurgePinger, SurgeError, ICMP,
+};
 
 use telio_sockets::SocketPool;
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn, DualTarget};
+use telio_utils::{
+    telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn, DualTarget, DualTargetError,
+};
 
-const PING_PAYLOAD_SIZE: usize = 56;
+const MAX_PING_PAYLOAD_SIZE: usize = 56;
+
+/// Possible [Pinger] errors.
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    /// Pinger errors
+    #[error(transparent)]
+    PingerError(#[from] SurgeError),
+    /// Pinger creation error
+    #[error("Pinger creation for {0:?} error: {1}")]
+    PingerCreationError(surge_ping::ICMP, std::io::Error),
+    /// IPV6 Client error
+    #[error("Pinger IPv6 client is missing")]
+    PingerIpv6ClientMissing,
+    // Target error
+    #[error(transparent)]
+    DualTargetError(#[from] DualTargetError),
+}
+
+type Result<T> = std::result::Result<T, Error>;
 
 /// Information needed to check the reachability of endpoints.
 ///
@@ -20,6 +45,8 @@ pub struct Pinger {
     /// Number of tries
     pub no_of_tries: u32,
     socket_pool: Arc<SocketPool>,
+    /// data of the ping, used for tracing pcaps
+    payload_data: Option<String>,
 }
 
 /// Information gathered after a ping action
@@ -55,10 +82,12 @@ impl Pinger {
     /// * `no_of_tries` - How many pings should be sent.
     /// * `ipv6` - Enable IPv6 support.
     /// * `socket_pool` - SocketPool used to protect the sockets.
+    /// * `payload_data` - Optional payload used for tracing the ping packets, only in debug.
     pub fn new(
         no_of_tries: u32,
         ipv6: bool,
         socket_pool: Arc<SocketPool>,
+        payload_data: Option<&str>,
     ) -> std::io::Result<Self> {
         let client_v6 = if ipv6 {
             let client_v6 = Arc::new(Self::build_client(ICMP::V6)?);
@@ -78,116 +107,8 @@ impl Pinger {
             client_v6,
             no_of_tries,
             socket_pool,
+            payload_data: payload_data.map(|s| s.to_string()),
         })
-    }
-
-    /// Perform the configured number of pings against the endpoint specified in the argument node.
-    ///
-    /// # Arguments
-    ///
-    /// * `target` - `DualTarget` instance representing the target node.
-    pub async fn perform(&self, target: DualTarget) -> DualPingResults {
-        let dpr = self.perform_average_rtt(&target).await;
-        telio_log_debug!("{:?}, no_of_tries: {}", dpr, self.no_of_tries);
-
-        dpr
-    }
-
-    async fn perform_average_rtt(&self, target: &DualTarget) -> DualPingResults {
-        let mut dpresults = DualPingResults::default();
-
-        match target.get_targets() {
-            Ok(t) => {
-                match t.0 {
-                    IpAddr::V4(_) => {
-                        dpresults.v4 = self.ping_action(t.0).await;
-                    }
-                    IpAddr::V6(_) => {
-                        dpresults.v6 = self.ping_action(t.0).await;
-                    }
-                }
-
-                if let Some(secondary) = t.1 {
-                    match secondary {
-                        IpAddr::V4(_) => {
-                            dpresults.v4 = self.ping_action(secondary).await;
-                        }
-                        IpAddr::V6(_) => {
-                            dpresults.v6 = self.ping_action(secondary).await;
-                        }
-                    }
-                }
-            }
-            Err(_) => {
-                telio_log_error!("No target to ping");
-            }
-        }
-
-        dpresults
-    }
-
-    async fn ping_action(&self, host: IpAddr) -> Option<PingResults> {
-        let mut results = PingResults {
-            host: Some(host),
-            ..Default::default()
-        };
-
-        let ping_id = PingIdentifier(rand::random());
-        telio_log_debug!("Trying to ping {:?} host, {:#06x}", host, ping_id.0);
-
-        let (mut pinger, socket) = match host {
-            IpAddr::V4(_) => (
-                self.client_v4.pinger(host, ping_id).await,
-                self.client_v4.get_socket().get_native_sock(),
-            ),
-            IpAddr::V6(_) => {
-                if let Some(client) = &self.client_v6 {
-                    (
-                        client.pinger(host, ping_id).await,
-                        client.get_socket().get_native_sock(),
-                    )
-                } else {
-                    return None;
-                }
-            }
-        };
-
-        pinger.timeout(Self::PING_TIMEOUT);
-        #[cfg(test)]
-        pinger.timeout(Duration::from_millis(10));
-
-        let mut sum = Duration::default();
-
-        for i in 0..self.no_of_tries {
-            // This is a solution for iOS due to NECP re-binding the socket to
-            // the main interface after every write, refer to LLT-5886
-            if cfg!(any(target_os = "ios", target_os = "tvos")) {
-                telio_log_trace!("Making pinger socket internal");
-                if let Err(e) = self.socket_pool.make_internal(socket) {
-                    telio_log_warn!("Failed to make socket internal, error: {:?}", e);
-                }
-            }
-
-            match pinger
-                .ping(
-                    PingSequence(i.try_into().unwrap_or(0)),
-                    &[0; PING_PAYLOAD_SIZE],
-                )
-                .await
-            {
-                Ok((_, duration)) => {
-                    sum = sum.saturating_add(duration);
-                    results.successful_pings += 1;
-                }
-                Err(e) => {
-                    results.unsuccessful_pings += 1;
-                    telio_log_debug!("Ping {} error: {}", host, e.to_string());
-                }
-            }
-        }
-
-        results.avg_rtt = sum.checked_div(results.successful_pings);
-        Some(results)
     }
 
     fn build_client(proto: ICMP) -> std::io::Result<Client> {
@@ -212,6 +133,180 @@ impl Pinger {
         }
         Client::new(&config_builder.build())
     }
+
+    async fn prepare_pinger(&self, host: IpAddr) -> Result<(SurgePinger, RawFd)> {
+        let ping_id = PingIdentifier(rand::random());
+        telio_log_debug!(
+            "Preparing to ping {:?} host, id: {:#06x} module: {}",
+            host,
+            ping_id.0,
+            self.payload_data.as_ref().unwrap_or(&"none".to_string())
+        );
+
+        let (mut pinger, socket) = match host {
+            IpAddr::V4(_) => (
+                self.client_v4.pinger(host, ping_id).await,
+                self.client_v4.get_socket().get_native_sock(),
+            ),
+            IpAddr::V6(_) => {
+                if let Some(client) = &self.client_v6 {
+                    (
+                        client.pinger(host, ping_id).await,
+                        client.get_socket().get_native_sock(),
+                    )
+                } else {
+                    return Err(Error::PingerIpv6ClientMissing);
+                }
+            }
+        };
+
+        pinger.timeout(Self::PING_TIMEOUT);
+        #[cfg(test)]
+        pinger.timeout(Duration::from_millis(10));
+
+        Ok((pinger, socket))
+    }
+
+    fn prepare_payload(&self) -> [u8; MAX_PING_PAYLOAD_SIZE] {
+        let mut payload = [0; MAX_PING_PAYLOAD_SIZE];
+
+        // Trace the compomnent that sent the ping for debugging purposes
+        #[cfg(debug_assertions)]
+        if let Some(data) = &self.payload_data {
+            let data = data.as_bytes();
+            for (dest, &src) in payload.iter_mut().zip(data) {
+                *dest = src;
+            }
+        }
+
+        payload
+    }
+
+    /// Helper for iOS/tvOS.
+    fn make_socket_internal_if_needed(&self, socket: RawFd) {
+        // This is a solution for iOS/tvOS due to NECP re-binding the socket to
+        // the main interface after every write, refer to LLT-5886.
+        if cfg!(any(target_os = "ios", target_os = "tvos")) {
+            telio_log_trace!("Making pinger socket internal");
+            if let Err(e) = self.socket_pool.make_internal(socket) {
+                telio_log_warn!("Failed to make socket internal, error: {:?}", e);
+            }
+        }
+    }
+
+    /// Perform a single ping against the endpoint specified in the argument node.
+    /// Without waiting for a reply.
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - `DualTarget` instance representing the target node.
+    pub async fn send_ping(&self, target: &DualTarget) -> Result<()> {
+        match target.get_targets() {
+            Ok((primary, maybe_secondary)) => {
+                if let Err(e) = self.send_ping_inner(primary).await {
+                    telio_log_warn!("Primary target failed: {}", e.to_string());
+                    if let Some(secondary) = maybe_secondary {
+                        self.send_ping_inner(secondary).await?
+                    } else {
+                        telio_log_error!("No secondary target to ping");
+                        return Err(Error::DualTargetError(DualTargetError::NoTarget));
+                    }
+                }
+            }
+            Err(_) => {
+                telio_log_error!("No target to ping");
+                return Err(Error::DualTargetError(DualTargetError::NoTarget));
+            }
+        }
+        Ok(())
+    }
+
+    async fn send_ping_inner(&self, host: IpAddr) -> Result<()> {
+        let payload = self.prepare_payload();
+        let (pinger, socket) = self.prepare_pinger(host).await?;
+
+        self.make_socket_internal_if_needed(socket);
+        pinger.send_ping(PingSequence(0), &payload).await?;
+        Ok(())
+    }
+
+    /// Perform the configured number of pings against the endpoint specified in the argument node.
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - `DualTarget` instance representing the target node.
+    pub async fn perform_rtt(&self, target: &DualTarget) -> DualPingResults {
+        let mut dpresults = DualPingResults::default();
+
+        match target.get_targets() {
+            Ok((primary, maybe_secondary)) => {
+                match primary {
+                    IpAddr::V4(_) => {
+                        dpresults.v4 = self.perform_rtt_inner(primary).await;
+                    }
+                    IpAddr::V6(_) => {
+                        dpresults.v6 = self.perform_rtt_inner(primary).await;
+                    }
+                }
+                if let Some(secondary) = maybe_secondary {
+                    match secondary {
+                        IpAddr::V4(_) => {
+                            dpresults.v4 = self.perform_rtt_inner(secondary).await;
+                        }
+                        IpAddr::V6(_) => {
+                            dpresults.v6 = self.perform_rtt_inner(secondary).await;
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                telio_log_error!("No target to ping");
+            }
+        }
+
+        telio_log_debug!("{:?}, no_of_tries: {}", dpresults, self.no_of_tries);
+        dpresults
+    }
+
+    async fn perform_rtt_inner(&self, host: IpAddr) -> Option<PingResults> {
+        let mut results = PingResults {
+            host: Some(host),
+            ..Default::default()
+        };
+
+        let mut sum = Duration::default();
+        let payload = self.prepare_payload();
+        let (mut pinger, socket) = self.prepare_pinger(host).await.ok()?;
+
+        for i in 0..self.no_of_tries {
+            self.make_socket_internal_if_needed(socket);
+
+            match pinger
+                .ping(PingSequence(i.try_into().unwrap_or(0)), &payload)
+                .await
+            {
+                Ok((_, duration)) => {
+                    sum = sum.saturating_add(duration);
+                    results.successful_pings += 1;
+                }
+                Err(e) => {
+                    results.unsuccessful_pings += 1;
+                    telio_log_debug!("Ping {} error: {}", host, e.to_string());
+                }
+            }
+        }
+
+        results.avg_rtt = sum.checked_div(results.successful_pings);
+        Some(results)
+    }
+
+    /// Consume the Pinger but return the sockets for each client
+    pub fn take_sockets(self) -> (AsyncSocket, Option<AsyncSocket>) {
+        (
+            self.client_v4.get_socket(),
+            self.client_v6.map(|c| c.get_socket()),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -225,7 +320,7 @@ mod tests {
         let mut protect = MockProtector::default();
         protect.expect_make_internal().returning(|_| Ok(()));
 
-        let pinger = Pinger::new(1, true, Arc::new(SocketPool::new(protect)))
+        let pinger = Pinger::new(1, true, Arc::new(SocketPool::new(protect)), None)
             .expect("Failed to create Pinger");
         assert!(pinger.client_v4.get_socket().get_native_sock() > 0);
         assert!(pinger.client_v6.is_some());
@@ -238,13 +333,13 @@ mod tests {
         let mut protect = MockProtector::default();
         protect.expect_make_internal().returning(|_| Ok(()));
 
-        let pinger = Pinger::new(2, false, Arc::new(SocketPool::new(protect)))
+        let pinger = Pinger::new(2, false, Arc::new(SocketPool::new(protect)), None)
             .expect("Failed to create Pinger");
 
         let target =
             DualTarget::new(("127.0.0.1".parse().ok(), None)).expect("Failed to create target");
 
-        let result = pinger.perform(target).await;
+        let result = pinger.perform_rtt(&target).await;
         assert!(
             result.v4.unwrap().successful_pings > 0,
             "Expected at least one successful ping to 127.0.0.1"
