@@ -8,8 +8,7 @@ use telio_pinger::Pinger;
 use telio_sockets::SocketPool;
 use telio_task::{task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
-    dual_target, repeated_actions, telio_log_debug, telio_log_trace, telio_log_warn, DualTarget,
-    RepeatedActions,
+    dual_target, repeated_actions, telio_log_debug, telio_log_warn, DualTarget, RepeatedActions,
 };
 
 /// Possible [SessionKeeper] errors.
@@ -114,19 +113,14 @@ impl SessionKeeperTrait for SessionKeeper {
                 Arc::new(move |c| {
                     Box::pin(async move {
                         telio_log_debug!("Performing ping {:?}", dual_target);
-                        let result = c.pinger.perform_individual(dual_target).await;
-                        telio_log_debug!("Ping finished");
-                        let failed = match (result.v4, result.v6) {
-                            (None, None) => true,
-                            (Some(v4res), None) => v4res.successful_pings == 0,
-                            (None, Some(v6res)) => v6res.successful_pings == 0,
-                            (Some(v4res), Some(v6res)) => {
-                                (v4res.successful_pings == 0) && (v6res.successful_pings == 0)
-                            }
-                        };
-                        if failed {
-                            telio_log_warn!("Failed to ping node: {:?}", public_key);
+                        if let Err(e) = c.pinger.send_ping(&dual_target).await {
+                            telio_log_warn!(
+                                "Failed to ping, peer with key: {:?}, error: {:?}",
+                                public_key,
+                                e
+                            );
                         }
+                        telio_log_debug!("Ping finished");
                         Ok(())
                     })
                 }),
