@@ -9,13 +9,14 @@ from mesh_api import Node
 from typing import Tuple, Optional
 from utils import testing, stun
 from utils.bindings import default_features, Features, TelioAdapterType
+from utils.connection import ConnectionTag
 from utils.connection_tracker import (
     FiveTuple,
     TCPStateSequence,
     TcpState,
     ConnectionTracker,
 )
-from utils.connection_util import generate_connection_tracker_config, ConnectionTag
+from utils.connection_util import generate_connection_tracker_config
 from utils.netcat import NetCatServer, NetCatClient
 from utils.ping import ping
 from utils.router import IPProto, IPStack

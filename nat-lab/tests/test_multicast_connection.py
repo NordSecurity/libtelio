@@ -3,7 +3,7 @@ from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from typing import List, Tuple
 from utils.bindings import default_features, TelioAdapterType
-from utils.connection_util import ConnectionTag, Connection, TargetOS
+from utils.connection import ConnectionTag, Connection, TargetOS
 from utils.multicast import MulticastClient, MulticastServer
 from utils.process import ProcessExecError
 

@@ -12,7 +12,7 @@ from utils.bindings import (
     TelioAdapterType,
     RelayState,
 )
-from utils.connection_util import ConnectionTag
+from utils.connection import ConnectionTag
 from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import new_router, IPStack

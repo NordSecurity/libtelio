@@ -4,7 +4,8 @@ from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from utils import asyncio_util
 from utils.bindings import NodeState, RelayState, TelioAdapterType
-from utils.connection_util import generate_connection_tracker_config, ConnectionTag
+from utils.connection import ConnectionTag
+from utils.connection_util import generate_connection_tracker_config
 from utils.ping import ping
 
 

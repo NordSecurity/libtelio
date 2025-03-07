@@ -5,7 +5,8 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from enum import Enum
 from helpers import send_https_request, verify_uuid
-from utils.connection_util import ConnectionTag, new_connection_by_tag
+from utils.connection import ConnectionTag
+from utils.connection_util import new_connection_by_tag
 
 
 @dataclass

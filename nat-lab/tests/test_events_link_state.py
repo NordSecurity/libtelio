@@ -12,8 +12,7 @@ from utils.bindings import (
     LinkState,
     TelioAdapterType,
 )
-from utils.connection import Connection
-from utils.connection_util import ConnectionTag
+from utils.connection import Connection, ConnectionTag
 from utils.ping import ping
 
 RTT_SECONDS = 1

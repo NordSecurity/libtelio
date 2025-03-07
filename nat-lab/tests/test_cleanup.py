@@ -2,8 +2,9 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment
 from utils.bindings import TelioAdapterType
-from utils.connection_util import ConnectionTag, new_connection_raw
-from utils.vm.windows_vm_util import _get_network_interface_tunnel_keys
+from utils.connection import ConnectionTag
+from utils.connection_util import new_connection_raw
+from utils.vm.windows_vm_util import get_network_interface_tunnel_keys
 
 
 @pytest.mark.asyncio

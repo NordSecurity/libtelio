@@ -5,7 +5,8 @@ from config import CORE_API_CA_CERTIFICATE_PATH, CORE_API_URL
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from helpers import send_https_request, verify_uuid
-from utils.connection_util import ConnectionTag, new_connection_by_tag
+from utils.connection import ConnectionTag
+from utils.connection_util import new_connection_by_tag
 from utils.output_notifier import OutputNotifier
 
 

@@ -19,8 +19,7 @@ from utils.bindings import (
     NodeState,
     RelayState,
 )
-from utils.connection import TargetOS
-from utils.connection_util import ConnectionTag
+from utils.connection import TargetOS, ConnectionTag
 from utils.ping import ping
 
 

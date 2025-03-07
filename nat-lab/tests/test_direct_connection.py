@@ -31,7 +31,7 @@ from utils.bindings import (
     NodeState,
     RelayState,
 )
-from utils.connection_util import Connection, ConnectionTag
+from utils.connection import Connection, ConnectionTag
 from utils.ping import ping
 from utils.telio_log_notifier import TelioLogNotifier
 

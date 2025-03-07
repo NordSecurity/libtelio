@@ -1,8 +1,10 @@
 import asyncssh
 import shlex
-from .connection import Connection, TargetOS
+import subprocess
+from .connection import Connection, TargetOS, ConnectionTag, setup_ephemeral_ports
+from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import List
+from typing import List, AsyncIterator
 from utils import cmd_exe_escape
 from utils.process import Process, SshProcess
 

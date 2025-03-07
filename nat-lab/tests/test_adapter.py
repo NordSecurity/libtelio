@@ -2,8 +2,7 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes, setup_connections
 from utils.bindings import ErrorEvent, ErrorCode, ErrorLevel, TelioAdapterType
-from utils.connection import TargetOS
-from utils.connection_util import ConnectionTag
+from utils.connection import TargetOS, ConnectionTag
 from utils.process import ProcessExecError
 
 

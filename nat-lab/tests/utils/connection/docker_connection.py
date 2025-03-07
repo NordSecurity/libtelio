@@ -1,4 +1,4 @@
-from .connection import Connection, TargetOS
+from .connection import Connection, TargetOS, ConnectionTag, setup_ephemeral_ports
 from aiodocker import Docker
 from aiodocker.containers import DockerContainer
 from asyncio import to_thread
@@ -8,6 +8,76 @@ from subprocess import run
 from typing import List, Type
 from typing_extensions import Self
 from utils.process import Process, DockerProcess
+
+DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
+    ConnectionTag.DOCKER_CONE_CLIENT_1: "cone-client-01",
+    ConnectionTag.DOCKER_CONE_CLIENT_2: "cone-client-02",
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_1: "fullcone-client-01",
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_2: "fullcone-client-02",
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: "symmetric-client-01",
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2: "symmetric-client-02",
+    ConnectionTag.DOCKER_UPNP_CLIENT_1: "upnp-client-01",
+    ConnectionTag.DOCKER_UPNP_CLIENT_2: "upnp-client-02",
+    ConnectionTag.DOCKER_SHARED_CLIENT_1: "shared-client-01",
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: "open-internet-client-01",
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: "open-internet-client-02",
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: (
+        "open-internet-client-dual-stack"
+    ),
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "udp-block-client-01",
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "udp-block-client-02",
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: "internal-symmetric-client-01",
+    ConnectionTag.DOCKER_CONE_GW_1: "cone-gw-01",
+    ConnectionTag.DOCKER_CONE_GW_2: "cone-gw-02",
+    ConnectionTag.DOCKER_CONE_GW_3: "cone-gw-03",
+    ConnectionTag.DOCKER_CONE_GW_4: "cone-gw-04",
+    ConnectionTag.DOCKER_FULLCONE_GW_1: "fullcone-gw-01",
+    ConnectionTag.DOCKER_FULLCONE_GW_2: "fullcone-gw-02",
+    ConnectionTag.DOCKER_SYMMETRIC_GW_1: "symmetric-gw-01",
+    ConnectionTag.DOCKER_SYMMETRIC_GW_2: "symmetric-gw-02",
+    ConnectionTag.DOCKER_UDP_BLOCK_GW_1: "udp-block-gw-01",
+    ConnectionTag.DOCKER_UDP_BLOCK_GW_2: "udp-block-gw-02",
+    ConnectionTag.DOCKER_UPNP_GW_1: "upnp-gw-01",
+    ConnectionTag.DOCKER_UPNP_GW_2: "upnp-gw-02",
+    ConnectionTag.DOCKER_NLX_1: "nlx-01",
+    ConnectionTag.DOCKER_VPN_1: "vpn-01",
+    ConnectionTag.DOCKER_VPN_2: "vpn-02",
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "internal-symmetric-gw-01",
+    ConnectionTag.DOCKER_DERP_1: "derp-01",
+    ConnectionTag.DOCKER_DERP_2: "derp-02",
+    ConnectionTag.DOCKER_DERP_3: "derp-03",
+    ConnectionTag.DOCKER_DNS_SERVER_1: "dns-server-1",
+    ConnectionTag.DOCKER_DNS_SERVER_2: "dns-server-2",
+}
+
+DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
+    ConnectionTag.DOCKER_CONE_CLIENT_1: ConnectionTag.DOCKER_CONE_GW_1,
+    ConnectionTag.DOCKER_CONE_CLIENT_2: ConnectionTag.DOCKER_CONE_GW_2,
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_1: ConnectionTag.DOCKER_FULLCONE_GW_1,
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_2: ConnectionTag.DOCKER_FULLCONE_GW_2,
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: ConnectionTag.DOCKER_SYMMETRIC_GW_1,
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2: ConnectionTag.DOCKER_SYMMETRIC_GW_2,
+    ConnectionTag.DOCKER_UPNP_CLIENT_1: ConnectionTag.DOCKER_UPNP_GW_1,
+    ConnectionTag.DOCKER_UPNP_CLIENT_2: ConnectionTag.DOCKER_UPNP_GW_2,
+    ConnectionTag.DOCKER_SHARED_CLIENT_1: ConnectionTag.DOCKER_CONE_GW_1,
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: ConnectionTag.DOCKER_UDP_BLOCK_GW_1,
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: ConnectionTag.DOCKER_UDP_BLOCK_GW_2,
+    ConnectionTag.WINDOWS_VM_1: ConnectionTag.DOCKER_CONE_GW_3,
+    ConnectionTag.WINDOWS_VM_2: ConnectionTag.DOCKER_CONE_GW_3,
+    ConnectionTag.MAC_VM: ConnectionTag.DOCKER_CONE_GW_3,
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: (
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1
+    ),
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: (
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2
+    ),
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: (
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK
+    ),
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: (
+        ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW
+    ),
+}
 
 
 class DockerConnection(Connection):
