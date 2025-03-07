@@ -362,9 +362,8 @@ async def _copy_vm_binaries(tag: ConnectionTag):
             ):
                 pass
         except OSError as e:
-            if os.environ.get("GITLAB_CI"):
-                raise e
             log.error(e)
+            raise e
     elif tag is ConnectionTag.MAC_VM:
         try:
             async with mac_vm_util.new_connection(
@@ -372,9 +371,8 @@ async def _copy_vm_binaries(tag: ConnectionTag):
             ):
                 pass
         except OSError as e:
-            if os.environ.get("GITLAB_CI"):
-                raise e
             log.error(e)
+            raise e
 
 
 async def _copy_vm_binaries_if_needed(items):
