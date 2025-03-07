@@ -22,8 +22,12 @@ from utils.bindings import (
     TelioAdapterType,
     LinkState,
 )
-from utils.connection import DockerConnection
-from utils.connection_util import ConnectionTag, DOCKER_GW_MAP, container_id
+from utils.connection import ConnectionTag
+from utils.connection.docker_connection import (
+    DockerConnection,
+    container_id,
+    DOCKER_GW_MAP,
+)
 from utils.traffic import (
     capture_traffic,
     render_chart,

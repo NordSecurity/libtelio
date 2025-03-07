@@ -30,7 +30,8 @@ from utils.bindings import (
     TelioAdapterType,
 )
 from utils.command_grepper import CommandGrepper
-from utils.connection import Connection, DockerConnection, TargetOS
+from utils.connection import Connection, TargetOS
+from utils.connection.docker_connection import DockerConnection, container_id
 from utils.connection_util import get_uniffi_path
 from utils.moose import MOOSE_LOGS_DIR
 from utils.output_notifier import OutputNotifier

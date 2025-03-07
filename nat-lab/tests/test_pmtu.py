@@ -9,7 +9,8 @@ from utils.bindings import (
     FeaturePmtuDiscovery,
     TelioAdapterType,
 )
-from utils.connection_util import ConnectionTag, generate_connection_tracker_config
+from utils.connection import ConnectionTag
+from utils.connection_util import generate_connection_tracker_config
 from utils.ping import ping
 from utils.router import IPStack
 

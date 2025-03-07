@@ -20,9 +20,9 @@ from utils.bindings import (
     telio_node,
     TelioAdapterType,
 )
+from utils.connection import ConnectionTag
 from utils.connection_util import (
     generate_connection_tracker_config,
-    ConnectionTag,
     new_connection_with_conn_tracker,
 )
 from utils.ping import ping

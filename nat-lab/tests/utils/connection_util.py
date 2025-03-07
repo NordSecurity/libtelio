@@ -1,12 +1,16 @@
 import config
-import random
 from aiodocker import Docker
+from config import LAN_ADDR_MAP, LAN_ADDR_MAP_V6
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime
-from enum import Enum, auto
-from typing import AsyncIterator, Dict, Tuple, Optional, List, Union, Set
-from utils.connection import Connection, TargetOS, DockerConnection
+from typing import AsyncIterator, Tuple, Optional, List, Union
+from utils.connection import Connection, TargetOS, ConnectionTag
+from utils.connection.docker_connection import (
+    DockerConnection,
+    DOCKER_GW_MAP,
+    DOCKER_SERVICE_IDS,
+)
+from utils.connection.ssh_connection import SshConnection
 from utils.connection_tracker import (
     ConnTrackerEventsValidator,
     ConnectionTracker,
@@ -19,165 +23,6 @@ from utils.network_switcher import (
     NetworkSwitcherMac,
     NetworkSwitcherWindows,
 )
-from utils.vm import windows_vm_util, mac_vm_util
-
-
-class ConnectionTag(Enum):
-    DOCKER_CONE_CLIENT_1 = auto()
-    DOCKER_CONE_CLIENT_2 = auto()
-    DOCKER_FULLCONE_CLIENT_1 = auto()
-    DOCKER_FULLCONE_CLIENT_2 = auto()
-    DOCKER_SYMMETRIC_CLIENT_1 = auto()
-    DOCKER_SYMMETRIC_CLIENT_2 = auto()
-    DOCKER_UPNP_CLIENT_1 = auto()
-    DOCKER_UPNP_CLIENT_2 = auto()
-    DOCKER_SHARED_CLIENT_1 = auto()
-    DOCKER_OPEN_INTERNET_CLIENT_1 = auto()
-    DOCKER_OPEN_INTERNET_CLIENT_2 = auto()
-    DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK = auto()
-    DOCKER_UDP_BLOCK_CLIENT_1 = auto()
-    DOCKER_UDP_BLOCK_CLIENT_2 = auto()
-    DOCKER_INTERNAL_SYMMETRIC_CLIENT = auto()
-    WINDOWS_VM_1 = auto()
-    WINDOWS_VM_2 = auto()
-    MAC_VM = auto()
-    DOCKER_CONE_GW_1 = auto()
-    DOCKER_CONE_GW_2 = auto()
-    DOCKER_CONE_GW_3 = auto()
-    DOCKER_CONE_GW_4 = auto()
-    DOCKER_FULLCONE_GW_1 = auto()
-    DOCKER_FULLCONE_GW_2 = auto()
-    DOCKER_SYMMETRIC_GW_1 = auto()
-    DOCKER_SYMMETRIC_GW_2 = auto()
-    DOCKER_UDP_BLOCK_GW_1 = auto()
-    DOCKER_UDP_BLOCK_GW_2 = auto()
-    DOCKER_UPNP_GW_1 = auto()
-    DOCKER_UPNP_GW_2 = auto()
-    DOCKER_VPN_1 = auto()
-    DOCKER_VPN_2 = auto()
-    DOCKER_NLX_1 = auto()
-    DOCKER_INTERNAL_SYMMETRIC_GW = auto()
-    DOCKER_DERP_1 = auto()
-    DOCKER_DERP_2 = auto()
-    DOCKER_DERP_3 = auto()
-    DOCKER_DNS_SERVER_1 = auto()
-    DOCKER_DNS_SERVER_2 = auto()
-
-
-DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
-    ConnectionTag.DOCKER_CONE_CLIENT_1: "cone-client-01",
-    ConnectionTag.DOCKER_CONE_CLIENT_2: "cone-client-02",
-    ConnectionTag.DOCKER_FULLCONE_CLIENT_1: "fullcone-client-01",
-    ConnectionTag.DOCKER_FULLCONE_CLIENT_2: "fullcone-client-02",
-    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: "symmetric-client-01",
-    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2: "symmetric-client-02",
-    ConnectionTag.DOCKER_UPNP_CLIENT_1: "upnp-client-01",
-    ConnectionTag.DOCKER_UPNP_CLIENT_2: "upnp-client-02",
-    ConnectionTag.DOCKER_SHARED_CLIENT_1: "shared-client-01",
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: "open-internet-client-01",
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: "open-internet-client-02",
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: (
-        "open-internet-client-dual-stack"
-    ),
-    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "udp-block-client-01",
-    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "udp-block-client-02",
-    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: "internal-symmetric-client-01",
-    ConnectionTag.DOCKER_CONE_GW_1: "cone-gw-01",
-    ConnectionTag.DOCKER_CONE_GW_2: "cone-gw-02",
-    ConnectionTag.DOCKER_CONE_GW_3: "cone-gw-03",
-    ConnectionTag.DOCKER_CONE_GW_4: "cone-gw-04",
-    ConnectionTag.DOCKER_FULLCONE_GW_1: "fullcone-gw-01",
-    ConnectionTag.DOCKER_FULLCONE_GW_2: "fullcone-gw-02",
-    ConnectionTag.DOCKER_SYMMETRIC_GW_1: "symmetric-gw-01",
-    ConnectionTag.DOCKER_SYMMETRIC_GW_2: "symmetric-gw-02",
-    ConnectionTag.DOCKER_UDP_BLOCK_GW_1: "udp-block-gw-01",
-    ConnectionTag.DOCKER_UDP_BLOCK_GW_2: "udp-block-gw-02",
-    ConnectionTag.DOCKER_UPNP_GW_1: "upnp-gw-01",
-    ConnectionTag.DOCKER_UPNP_GW_2: "upnp-gw-02",
-    ConnectionTag.DOCKER_NLX_1: "nlx-01",
-    ConnectionTag.DOCKER_VPN_1: "vpn-01",
-    ConnectionTag.DOCKER_VPN_2: "vpn-02",
-    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "internal-symmetric-gw-01",
-    ConnectionTag.DOCKER_DERP_1: "derp-01",
-    ConnectionTag.DOCKER_DERP_2: "derp-02",
-    ConnectionTag.DOCKER_DERP_3: "derp-03",
-    ConnectionTag.DOCKER_DNS_SERVER_1: "dns-server-1",
-    ConnectionTag.DOCKER_DNS_SERVER_2: "dns-server-2",
-}
-
-
-DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
-    ConnectionTag.DOCKER_CONE_CLIENT_1: ConnectionTag.DOCKER_CONE_GW_1,
-    ConnectionTag.DOCKER_CONE_CLIENT_2: ConnectionTag.DOCKER_CONE_GW_2,
-    ConnectionTag.DOCKER_FULLCONE_CLIENT_1: ConnectionTag.DOCKER_FULLCONE_GW_1,
-    ConnectionTag.DOCKER_FULLCONE_CLIENT_2: ConnectionTag.DOCKER_FULLCONE_GW_2,
-    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: ConnectionTag.DOCKER_SYMMETRIC_GW_1,
-    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2: ConnectionTag.DOCKER_SYMMETRIC_GW_2,
-    ConnectionTag.DOCKER_UPNP_CLIENT_1: ConnectionTag.DOCKER_UPNP_GW_1,
-    ConnectionTag.DOCKER_UPNP_CLIENT_2: ConnectionTag.DOCKER_UPNP_GW_2,
-    ConnectionTag.DOCKER_SHARED_CLIENT_1: ConnectionTag.DOCKER_CONE_GW_1,
-    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: ConnectionTag.DOCKER_UDP_BLOCK_GW_1,
-    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: ConnectionTag.DOCKER_UDP_BLOCK_GW_2,
-    ConnectionTag.WINDOWS_VM_1: ConnectionTag.DOCKER_CONE_GW_3,
-    ConnectionTag.WINDOWS_VM_2: ConnectionTag.DOCKER_CONE_GW_3,
-    ConnectionTag.MAC_VM: ConnectionTag.DOCKER_CONE_GW_3,
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: (
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1
-    ),
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: (
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2
-    ),
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: (
-        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK
-    ),
-    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: (
-        ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW
-    ),
-}
-
-LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
-    ConnectionTag.DOCKER_CONE_CLIENT_1: "192.168.101.104",
-    ConnectionTag.DOCKER_CONE_CLIENT_2: "192.168.102.54",
-    ConnectionTag.DOCKER_FULLCONE_CLIENT_1: "192.168.109.88",
-    ConnectionTag.DOCKER_FULLCONE_CLIENT_2: "192.168.106.88",
-    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: "192.168.103.88",
-    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2: "192.168.104.88",
-    ConnectionTag.DOCKER_UPNP_CLIENT_1: "192.168.105.88",
-    ConnectionTag.DOCKER_UPNP_CLIENT_2: "192.168.112.88",
-    ConnectionTag.DOCKER_SHARED_CLIENT_1: "192.168.101.67",
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: "10.0.11.2",
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: "10.0.11.3",
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: "10.0.11.4",
-    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "192.168.110.100",
-    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "192.168.111.100",
-    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: "192.168.114.88",
-    ConnectionTag.WINDOWS_VM_1: "10.55.0.13",
-    ConnectionTag.WINDOWS_VM_2: "10.55.0.14",
-    ConnectionTag.MAC_VM: "10.55.0.12",
-    ConnectionTag.DOCKER_CONE_GW_1: "192.168.101.254",
-    ConnectionTag.DOCKER_CONE_GW_2: "192.168.102.254",
-    ConnectionTag.DOCKER_CONE_GW_3: "192.168.107.254",
-    ConnectionTag.DOCKER_CONE_GW_4: "192.168.108.254",
-    ConnectionTag.DOCKER_FULLCONE_GW_1: "192.168.109.254",
-    ConnectionTag.DOCKER_FULLCONE_GW_2: "192.168.106.254",
-    ConnectionTag.DOCKER_SYMMETRIC_GW_1: "192.168.103.254",
-    ConnectionTag.DOCKER_SYMMETRIC_GW_2: "192.168.104.254",
-    ConnectionTag.DOCKER_UDP_BLOCK_GW_1: "192.168.110.254",
-    ConnectionTag.DOCKER_UDP_BLOCK_GW_2: "192.168.111.254",
-    ConnectionTag.DOCKER_UPNP_GW_1: "192.168.105.254",
-    ConnectionTag.DOCKER_UPNP_GW_2: "192.168.112.254",
-    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "192.168.114.254",
-    ConnectionTag.DOCKER_VPN_1: "10.0.100.1",
-    ConnectionTag.DOCKER_NLX_1: "10.0.100.51",
-}
-
-LAN_ADDR_MAP_V6: Dict[ConnectionTag, str] = {
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: (
-        "2001:db8:85a4::dead:beef:ceed"
-    ),
-}
-
-EPHEMERAL_SETUP_SET: Set[ConnectionTag] = set()
 
 
 @dataclass
@@ -512,42 +357,9 @@ async def remove_traffic_control_rules(connection):
         pass
 
 
-async def setup_ephemeral_ports(connection: Connection, connection_tag: ConnectionTag):
-    if connection_tag in EPHEMERAL_SETUP_SET:
-        return
-
-    async def on_output(output: str) -> None:
-        print(datetime.now(), f"[{connection_tag.name}]: {output}")
-
-    start_port = random.randint(5000, 55000)
-    num_ports = random.randint(2000, 5000)
-
-    if connection_tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
-        cmd = [
-            "netsh",
-            "int",
-            "ipv4",
-            "set",
-            "dynamic",
-            "tcp",
-            f"start={start_port}",
-            f"num={num_ports}",
-        ]
-    elif connection_tag is ConnectionTag.MAC_VM:
-        cmd = [
-            "sysctl",
-            "-w",
-            f"net.inet.ip.portrange.first={start_port}",
-            f"net.inet.ip.portrange.last={start_port + num_ports}",
-        ]
-    elif connection_tag.name.startswith("DOCKER_") and "CLIENT" in connection_tag.name:
-        cmd = [
-            "sysctl",
-            "-w",
-            f"net.ipv4.ip_local_port_range={start_port} {start_port + num_ports}",
-        ]
-    else:
-        return
-
-    await connection.create_process(cmd).execute(on_output, on_output)
-    EPHEMERAL_SETUP_SET.add(connection_tag)
+def is_tag_valid_for_ssh_connection(tag: ConnectionTag) -> bool:
+    return tag in [
+        ConnectionTag.WINDOWS_VM_1,
+        ConnectionTag.WINDOWS_VM_2,
+        ConnectionTag.MAC_VM,
+    ]

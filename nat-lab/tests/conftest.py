@@ -3,21 +3,17 @@ import os
 import pytest
 import shutil
 import subprocess
-from config import DERP_PRIMARY
+from config import DERP_PRIMARY, LAN_ADDR_MAP
 from contextlib import AsyncExitStack
 from helpers import SetupParameters
 from interderp_cli import InterDerpClient
 from itertools import combinations
 from typing import Dict, List, Tuple
 from utils.bindings import TelioAdapterType
-from utils.connection import DockerConnection
-from utils.connection_util import (
-    LAN_ADDR_MAP,
-    ConnectionTag,
-    new_connection_raw,
-    new_connection_with_conn_tracker,
-    EPHEMERAL_SETUP_SET,
-)
+from utils.connection import ConnectionTag, clear_ephemeral_setups_set
+from utils.connection.docker_connection import DockerConnection
+from utils.connection.ssh_connection import SshConnection
+from utils.connection_util import new_connection_raw, new_connection_with_conn_tracker
 from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPStack
@@ -259,10 +255,6 @@ async def kill_natlab_processes():
         os.path.dirname(__file__), "../bin/cleanup_natlab_processes"
     )
     subprocess.run(["sudo", cleanup_script_path]).check_returncode()
-
-
-async def clear_ephemeral_setups_set():
-    EPHEMERAL_SETUP_SET.clear()
 
 
 PRETEST_CLEANUPS = [kill_natlab_processes, clear_ephemeral_setups_set]

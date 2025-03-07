@@ -62,10 +62,9 @@ from utils.bindings import (
     NodeState,
     RelayState,
 )
-from utils.connection import Connection
+from utils.connection import Connection, ConnectionTag
 from utils.connection_util import (
     generate_connection_tracker_config,
-    ConnectionTag,
     new_connection_with_conn_tracker,
     new_connection_by_tag,
     add_outgoing_packets_delay,
