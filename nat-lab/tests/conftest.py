@@ -278,9 +278,8 @@ async def _copy_vm_binaries(tag: ConnectionTag):
         ):
             pass
     except OSError as e:
-        if os.environ.get("GITLAB_CI"):
-            raise e
-        print(e)
+        log.error(e)
+        raise e
 
 
 async def _copy_vm_binaries_if_needed(items):
