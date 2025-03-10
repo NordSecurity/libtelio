@@ -174,7 +174,7 @@ windows = { version = "0.60", features = [
     "Win32_NetworkManagement_IpHelper",
 ] }
 
-neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v1.0.2", features = ["device"] }
+neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v1.0.4", features = ["device"] }
 x25519-dalek = { version = "2.0.1", features = ["reusable_secrets", "static_secrets"] }
 
 
