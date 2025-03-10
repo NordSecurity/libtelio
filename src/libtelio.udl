@@ -429,6 +429,8 @@ interface Telio {
     [Throws=TelioError]
     void trigger_qos_collection();
     [Throws=TelioError]
+    void trigger_throughput_test();
+    [Throws=TelioError]
     string receive_ping();
     [Throws=TelioError]
     u32 probe_pmtu(string host);

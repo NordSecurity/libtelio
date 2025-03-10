@@ -36,10 +36,10 @@ async def test_throughput(
     beta_setup_params: SetupParameters,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(exit_stack, [alpha_setup_params])
+        env = await setup_mesh_nodes(exit_stack, [alpha_setup_params, beta_setup_params])
         [client_alpha] = env.clients
 
-        await asyncio.sleep(DEFAULT_WAITING_TIME)
+        await client_alpha.enable_magic_dns
         await client_alpha.restart_interface()
 
         await client_alpha.wait_for_log("Updating local addr cache")
