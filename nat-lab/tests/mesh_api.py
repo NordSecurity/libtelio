@@ -67,10 +67,6 @@ class MissingNodeError(NodeError):
     pass
 
 
-class AddressCollisionError(NodeError):
-    pass
-
-
 class NicknameInvalidError(NicknameError):
     pass
 
@@ -244,10 +240,15 @@ class API:
     def remove(self, node_id) -> None:
         del self.nodes[node_id]
 
-    def assign_ip(self, node_id: str, address: str) -> None:
-        for _, node in self.nodes.items():
-            if address in node.ip_addresses:
-                raise AddressCollisionError(node.id)
+    def assign_random_ip(self, node_id: str, proto: IPProto) -> None:
+        def get_random_ip(proto: IPProto) -> str:
+            if proto == IPProto.IPv4:
+                return f"100.{random.randint(64, 127)}.{random.randint(0, 255)}.{random.randint(8, 254)}"
+            return f"{LIBTELIO_IPV6_WG_SUBNET}:0:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(8, 0xFFFF), 'x')}"
+
+        address = get_random_ip(proto)
+        while any(address in node.ip_addresses for node in self.nodes.values()):
+            address = get_random_ip(proto)
 
         node = self._get_node(node_id)
         node.ip_addresses.append(address)
@@ -437,14 +438,12 @@ class API:
                 is_local=is_local,
                 ip_stack=ip_stack,
             )
-            ipv4 = f"100.{random.randint(64, 127)}.{random.randint(0, 255)}.{random.randint(8, 254)}"
-            ipv6 = f"{LIBTELIO_IPV6_WG_SUBNET}:0:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(0, 0xFFFF), 'x')}:{format(random.randint(8, 0xFFFF), 'x')}"
 
             if ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
-                self.assign_ip(node.id, ipv4)
+                self.assign_random_ip(node.id, IPProto.IPv4)
 
             if ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
-                self.assign_ip(node.id, ipv6)
+                self.assign_random_ip(node.id, IPProto.IPv6)
 
         assert (len(node_configs) + current_node_list_len) == len(self.nodes)
 
