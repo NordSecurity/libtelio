@@ -3,7 +3,7 @@ use futures::FutureExt;
 use ipnet::IpNet;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::iter::FromIterator;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
@@ -88,6 +88,13 @@ pub async fn consolidate_wg_state(
         &*entities.wireguard_interface,
         &entities.postquantum_wg,
         &entities.dns,
+    )
+    .await?;
+    consolidate_wg_listen_port(
+        requested_state,
+        &*entities.wireguard_interface,
+        entities.meshnet.left().map(|m| &*m.proxy),
+        entities.starcast_vpeer(),
     )
     .await?;
     consolidate_wg_fwmark(requested_state, &*entities.wireguard_interface).await?;
@@ -178,6 +185,27 @@ async fn consolidate_wg_private_key<W: WireGuard>(
         if let Some(resolver) = dns.resolver.as_ref() {
             resolver.set_peer_public_key(private_key.public()).await;
         }
+    }
+
+    Ok(())
+}
+
+async fn consolidate_wg_listen_port<W: WireGuard, P: Proxy>(
+    _: &RequestedState,
+    wireguard_interface: &W,
+    proxy: Option<&P>,
+    starcast_vpeer: Option<&Arc<StarcastPeer>>,
+) -> Result {
+    if let Some(proxy) = proxy {
+        let listen_port = wireguard_interface.get_interface().await?.listen_port;
+        let wg_addr = listen_port.map(|p| (Ipv4Addr::LOCALHOST, p).into());
+        proxy.set_wg_address(wg_addr).await?;
+    }
+
+    if let Some(starcast_vpeer) = starcast_vpeer {
+        let listen_port = wireguard_interface.get_interface().await?.listen_port;
+        let wg_addr = listen_port.map(|p| (Ipv4Addr::LOCALHOST, p).into());
+        starcast_vpeer.set_wg_address(wg_addr).await?;
     }
 
     Ok(())
