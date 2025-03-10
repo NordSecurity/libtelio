@@ -1,69 +1,18 @@
 import asyncssh
 import os
-import subprocess
 from config import (
     get_root_path,
     LIBTELIO_BINARY_PATH_WINDOWS_VM,
     UNIFFI_PATH_WINDOWS_VM,
-    WINDOWS_1_VM_IP,
-    WINDOWS_2_VM_IP,
 )
-from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import AsyncIterator, List
-from utils.connection import Connection, SshConnection, TargetOS
+from typing import List
+from utils.connection import Connection
 from utils.process import ProcessExecError
 
 VM_TCLI_DIR = LIBTELIO_BINARY_PATH_WINDOWS_VM
 VM_UNIFFI_DIR = UNIFFI_PATH_WINDOWS_VM
 VM_SYSTEM32 = "C:\\Windows\\System32"
-
-NAME = {
-    WINDOWS_1_VM_IP: "Windows-1",
-    WINDOWS_2_VM_IP: "Windows-2",
-}
-
-
-@asynccontextmanager
-async def new_connection(
-    ip: str = WINDOWS_1_VM_IP,
-    copy_binaries: bool = False,
-    reenable_nat=False,
-) -> AsyncIterator[Connection]:
-    if reenable_nat:
-        subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
-        subprocess.check_call(["sudo", "bash", "vm_nat.sh", "enable"])
-
-    # Speedup large file transfer: https://github.com/ronf/asyncssh/issues/374
-    ssh_options = asyncssh.SSHClientConnectionOptions(
-        encryption_algs=[
-            "aes128-gcm@openssh.com",
-            "aes256-ctr",
-            "aes192-ctr",
-            "aes128-ctr",
-        ],
-        compression_algs=None,
-    )
-
-    async with asyncssh.connect(
-        ip,
-        username="vagrant",
-        password="vagrant",  # NOTE: this is hardcoded password for transient vm existing only during the tests
-        known_hosts=None,
-        options=ssh_options,
-    ) as ssh_connection:
-        connection = SshConnection(ssh_connection, NAME[ip], TargetOS.Windows)
-
-        keys = await _get_network_interface_tunnel_keys(connection)
-        for key in keys:
-            await connection.create_process(["reg", "delete", key, "/F"]).execute()
-
-        if copy_binaries:
-            await _copy_binaries(ssh_connection, connection)
-        try:
-            yield connection
-        finally:
-            pass
 
 
 def _file_copy_progress_handler(
@@ -112,7 +61,7 @@ async def _copy_file_with_progress_handler(
         raise e
 
 
-async def _copy_binaries(
+async def copy_binaries(
     ssh_connection: asyncssh.SSHClientConnection, connection: Connection
 ) -> None:
     for directory in [VM_TCLI_DIR, VM_UNIFFI_DIR]:
@@ -156,7 +105,7 @@ async def _copy_binaries(
         await _copy_file_with_progress_handler(ssh_connection, src, dst, allow_missing)
 
 
-async def _get_network_interface_tunnel_keys(connection):
+async def get_network_interface_tunnel_keys(connection):
     result = await connection.create_process([
         "reg",
         "query",

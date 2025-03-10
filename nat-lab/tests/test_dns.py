@@ -5,11 +5,12 @@ import config
 import itertools
 import pytest
 import timeouts
-from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6
+from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6, LAN_ADDR_MAP
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
 from typing import List, Optional
 from utils.bindings import default_features, FeatureDns, TelioAdapterType
+from utils.connection import ConnectionTag
 from utils.connection_tracker import (
     ConntrackerEvent,
     ConnTrackerViolation,
@@ -17,11 +18,7 @@ from utils.connection_tracker import (
     FiveTuple,
     EventType as ConnTrackerEventType,
 )
-from utils.connection_util import (
-    ConnectionTag,
-    generate_connection_tracker_config,
-    LAN_ADDR_MAP,
-)
+from utils.connection_util import generate_connection_tracker_config
 from utils.dns import query_dns, query_dns_port
 from utils.process import ProcessExecError
 from utils.router import IPStack

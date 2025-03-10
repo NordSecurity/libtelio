@@ -19,11 +19,10 @@ from utils.bindings import (
     PathType,
     TelioAdapterType,
 )
-from utils.connection import Connection
+from utils.connection import Connection, ConnectionTag
 from utils.connection_tracker import ConnTrackerEventsValidator
 from utils.connection_util import (
     ConnectionManager,
-    ConnectionTag,
     new_connection_manager_by_tag,
     new_connection_raw,
 )

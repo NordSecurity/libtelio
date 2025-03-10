@@ -2,8 +2,8 @@ import asyncio
 import config
 import pytest
 from contextlib import AsyncExitStack
-from utils.connection import Connection, TargetOS
-from utils.connection_util import ConnectionTag, new_connection_by_tag
+from utils.connection import Connection, TargetOS, ConnectionTag
+from utils.connection_util import new_connection_by_tag
 from utils.process import ProcessExecError
 
 

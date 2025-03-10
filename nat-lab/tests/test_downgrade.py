@@ -12,7 +12,7 @@ from utils.bindings import (
     TelioAdapterType,
     NodeState,
 )
-from utils.connection_util import ConnectionTag
+from utils.connection import ConnectionTag
 from utils.ping import ping
 
 

@@ -12,14 +12,14 @@ from utils.bindings import (
     generate_secret_key,
     generate_public_key,
 )
-from utils.connection import Connection
+from utils.connection import Connection, ConnectionTag
 from utils.connection_tracker import (
     ConnectionTracker,
     TCPStateSequence as ConnTrackerTCPStateSequence,
     FiveTuple,
     TcpState,
 )
-from utils.connection_util import generate_connection_tracker_config, ConnectionTag
+from utils.connection_util import generate_connection_tracker_config
 from utils.netcat import NetCatClient
 from utils.ping import ping
 from utils.python import get_python_binary
