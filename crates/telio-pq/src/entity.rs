@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime};
 
 use parking_lot::Mutex;
 
@@ -19,7 +19,7 @@ struct Peer {
     /// This is a key rotation task guard, its `Drop` implementation aborts the task
     _rotation_task: super::conn::ConnKeyRotation,
     keys: Option<super::Keys>,
-    last_handshake_ts: Option<Instant>,
+    last_handshake_ts: Option<SystemTime>,
 }
 
 pub struct Entity {
@@ -59,7 +59,7 @@ impl Entity {
                 super::Event::Handshake(addr, keys) => {
                     if peer.addr == addr {
                         peer.keys = Some(keys);
-                        peer.last_handshake_ts = Some(Instant::now());
+                        peer.last_handshake_ts = Some(SystemTime::now());
                     }
                 }
                 super::Event::Rekey(super::Keys {
@@ -72,7 +72,7 @@ impl Entity {
                             // and only then update the preshared key,
                             // otherwise we're connecting to different node already
                             keys.pq_shared = pq_shared;
-                            peer.last_handshake_ts = Some(Instant::now());
+                            peer.last_handshake_ts = Some(SystemTime::now());
                         } else {
                             telio_log_debug!(
                                 "PQ secret key does not match, ignoring shared secret rotation"
@@ -127,7 +127,9 @@ impl Entity {
             let should_restart = peer
                 .as_ref()
                 .and_then(|peer| peer.last_handshake_ts)
-                .is_some_and(|ts| ts.elapsed() > REJECT_AFTER_TIME);
+                .and_then(|ts| ts.elapsed().ok())
+                .is_some_and(|dur| dur > REJECT_AFTER_TIME);
+
             if should_restart {
                 peer.take()
             } else {
