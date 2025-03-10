@@ -23,8 +23,16 @@ async def new_connection(
     reenable_nat=False,
 ) -> AsyncIterator[Connection]:
     if reenable_nat:
-        subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
-        subprocess.check_call(["sudo", "bash", "vm_nat.sh", "enable"])
+        subprocess.check_call(
+            ["sudo", "bash", "vm_nat.sh", "disable"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.check_call(
+            ["sudo", "bash", "vm_nat.sh", "enable"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     # Speedup large file transfer: https://github.com/ronf/asyncssh/issues/374
     ssh_options = asyncssh.SSHClientConnectionOptions(

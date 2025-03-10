@@ -12,6 +12,7 @@ from serialization import (  # type: ignore # pylint: disable=import-error
 from threading import Lock
 from typing import List
 
+
 REMOTE_LOG = "remote.log"
 TCLI_LOG = "tcli.log"
 MOOSE_LOGS_DIR = "/moose_logs"

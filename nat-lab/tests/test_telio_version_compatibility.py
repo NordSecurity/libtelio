@@ -23,6 +23,7 @@ from utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
 )
+from utils.logger import log
 from utils.output_notifier import OutputNotifier
 from utils.ping import ping
 from utils.router import IPProto, IPStack, new_router
@@ -167,7 +168,7 @@ async def test_connect_different_telio_version_through_relay(
         output_notifier.notify_output("started telio with BoringTun", started_event)
 
         async def on_stdout_stderr(output):
-            print(f"[{beta.name}]: stdout: {output}")
+            log.info("[%s]: stdout: %s", beta.name, output)
             await output_notifier.handle_output(output)
 
         beta_router = new_router(beta_conn, beta.ip_stack)
