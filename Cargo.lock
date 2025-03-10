@@ -4766,6 +4766,7 @@ dependencies = [
  "surge-ping",
  "telio-sockets",
  "telio-utils",
+ "thiserror 2.0.11",
  "tokio",
  "tracing",
 ]
@@ -4996,6 +4997,7 @@ dependencies = [
  "telio-crypto",
  "telio-model",
  "telio-network-monitors",
+ "telio-pinger",
  "telio-proto",
  "telio-sockets",
  "telio-task",
