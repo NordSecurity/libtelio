@@ -1,3 +1,4 @@
 [submodule "3rd-party/rust_build_utils"]
-	path = 3rd-party/rust_build_utils
-	url = https://github.com/NordSecurity/rust_build_utils.git
+    path = 3rd-party/rust_build_utils
+    url = https://github.com/tghs/rust_build_utils.git
+    branch = fix/LLT-5973
