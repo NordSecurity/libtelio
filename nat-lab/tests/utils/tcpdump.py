@@ -5,6 +5,7 @@ import subprocess
 from asyncio import Event, wait_for, sleep
 from config import WINDUMP_BINARY_WINDOWS
 from contextlib import asynccontextmanager, AsyncExitStack
+from datetime import datetime
 from typing import AsyncIterator, Optional
 from utils.connection import TargetOS, Connection
 from utils.output_notifier import OutputNotifier
@@ -46,6 +47,7 @@ class TcpDump:
         self.count = count
         self.stdout = ""
         self.stderr = ""
+        self.kill_id = "DO_NOT_KILL" + secrets.token_hex(8).upper() if session else None
 
         self.output_notifier.notify_output("listening on", self.start_event)
 
@@ -65,7 +67,7 @@ class TcpDump:
             # handle signals properly while `tcpdump -w file` is running, without writing
             # to file, everything works fine
             term_type="xterm" if self.connection.target_os == TargetOS.Mac else None,
-            kill_id="DO_NOT_KILL" + secrets.token_hex(8).upper() if session else None,
+            kill_id=self.kill_id,
         )
 
     def get_stdout(self) -> str:
@@ -94,7 +96,25 @@ class TcpDump:
     @asynccontextmanager
     async def run(self) -> AsyncIterator["TcpDump"]:
         async with self.process.run(self.on_stdout, self.on_stderr, True):
-            await wait_for(self.start_event.wait(), 10)
+            try:
+                await wait_for(self.start_event.wait(), 0.2)
+            except TimeoutError as e:
+                print(
+                    datetime.now(),
+                    "tcpdump timed out, killing it to create a coredump 🗡️",
+                )
+                if self.connection.target_os != TargetOS.Windows:
+                    if self.kill_id:
+                        await self.connection.create_process([
+                            "/opt/bin/kill_process_by_natlab_id",
+                            str(self.kill_id),
+                            "--SEGV",
+                        ]).execute()
+                    else:
+                        await self.connection.create_process(
+                            ["killall", "-11", "tcpdump"]
+                        ).execute()
+                raise TimeoutError from e
             yield self
             # Windump takes so long to flush packets to stdout/file
             if self.connection.target_os == TargetOS.Windows:
