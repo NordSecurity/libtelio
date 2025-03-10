@@ -11,6 +11,7 @@ yanked = "warn"
 notice = "warn"
 ignore = [
     { id = "RUSTSEC-2024-0344", reason = "This is temporary ignore untill we get rid of this dependency" },
+    { id = "RUSTSEC-2024-0437", reason = "We are waiting for the fix in the dependency. Should be there soon" },
 ]
 
 
