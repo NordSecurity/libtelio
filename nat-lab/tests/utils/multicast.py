@@ -29,7 +29,7 @@ class MulticastClient:
             f"--{protocol}",
             "-c",
             "-t",
-            "10",
+            "5",
         ])
 
     async def execute(self) -> None:
