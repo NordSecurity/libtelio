@@ -34,6 +34,14 @@ impl InterfaceHelper {
         run_command(&["ip", "link", "set", "up", "dev", ifc_name], &[""]).unwrap();
     }
 
+    pub fn create_meshnet_route(ifc_name: &str) {
+        run_command(
+            &["ip", "-4", "addr", "add", "100.64.0.0/10", "dev", ifc_name],
+            &[""],
+        )
+        .unwrap();
+    }
+
     pub fn create_vpn_route(ifc_name: &str) {
         for network in ["10.0.0.0/16", "100.64.0.1", "10.5.0.0/16"] {
             run_command(

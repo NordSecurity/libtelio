@@ -18,6 +18,7 @@ mod windows_native_wg;
 use async_trait::async_trait;
 #[cfg(any(test, feature = "test-adapter"))]
 pub use mockall::automock;
+use serde::{Deserialize, Serialize};
 use std::{
     io,
     net::{IpAddr, Ipv4Addr},
@@ -61,6 +62,9 @@ const DEFAULT_NAME: &str = "utun10";
     any(target_os = "linux", target_os = "android")
 ))]
 const DEFAULT_NAME: &str = "nlx0";
+
+#[cfg(any(test, feature = "test-adapter"))]
+const DEFAULT_NAME: &str = "tun10";
 
 /// Generic Adapter
 #[cfg_attr(any(test, feature = "test-adapter"), automock)]
@@ -172,7 +176,7 @@ pub enum Error {
 }
 
 /// Enumeration of types for `Adapter` struct
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum AdapterType {
     /// NepTUN
     NepTUN,

@@ -5,9 +5,6 @@ edition = "2018"
 license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 
-[[bin]]
-name = "systests"
-
 [dependencies]
 dersp = { git = "https://github.com/mathiaspeters/dersp.git", branch = "librarification"}
 env_logger = "0.10.1"
@@ -37,6 +34,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender.workspace = true
 parking_lot.workspace = true
+pnet_packet.workspace = true
 rand = { workspace = true, features = ["std", "std_rng"] }
 regex.workspace = true
 serde.workspace = true

@@ -85,6 +85,7 @@ rstest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
 dersp = { git = "https://github.com/mathiaspeters/dersp.git", branch = "librarification"}
+systests.workspace = true
 
 telio-dns = { workspace = true, features = ["mockall"] }
 telio-firewall = { workspace = true, features = ["mockall"] }
@@ -180,6 +181,7 @@ windows = { version = "0.60", features = [
 neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v1.0.4", features = ["device"] }
 x25519-dalek = { version = "2.0.1", features = ["reusable_secrets", "static_secrets"] }
 
+systests = { version = "0.1.0", path = "./systests" }
 
 telio-crypto = { version = "0.1.0", path = "./crates/telio-crypto" }
 telio-dns = { version = "0.1.0", path = "./crates/telio-dns" }

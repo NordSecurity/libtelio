@@ -1,5 +1,6 @@
 use std::net::IpAddr;
 
+use base64::{prelude::BASE64_STANDARD, Engine};
 use telio_crypto::SecretKey;
 use telio_model::config::Peer;
 
@@ -10,6 +11,15 @@ pub struct VpnConfig {
     pub port: u16,
     pub key: SecretKey,
     pub container: String,
+}
+
+impl VpnConfig {
+    fn key(&self) -> String {
+        let key_bytes = self.key.as_bytes();
+        let mut buf = [0u8; 44];
+        let _ = BASE64_STANDARD.encode_slice(key_bytes, &mut buf);
+        String::from_utf8(buf.to_vec()).unwrap_or_else(|_| "Invalid key".to_owned())
+    }
 }
 
 impl VpnConfig {
@@ -26,7 +36,8 @@ impl VpnConfig {
 pub fn setup_vpn_servers(peers: &[&Peer], vpn_config: &VpnConfig) {
     let mut wg_conf = format!(
         "[Interface]\nPrivateKey = {}\nListenPort = {}\nAddress = 100.64.0.1/10\n\n",
-        vpn_config.key, vpn_config.port
+        vpn_config.key(),
+        vpn_config.port
     );
     let peer_config = peers.iter().map(|peer| {
         let allowed_ips = peer

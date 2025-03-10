@@ -56,7 +56,7 @@ pub struct Node {
 
 /// Description of the Exit Node
 /// It is the gateway node to the internet
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ExitNode {
     /// An identifier for an exit node
     /// Makes it possible to distinguish different exit nodes in the presence of key reuse

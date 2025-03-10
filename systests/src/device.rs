@@ -1,38 +1,19 @@
-use std::{
-    collections::HashMap,
-    net::IpAddr,
-    sync::{Arc, Mutex},
-};
+use std::process::Child;
 
-use telio::device::{Device, DeviceConfig};
-use telio_crypto::{PublicKey, SecretKey};
-use telio_model::{
-    config::{Config, Peer, PeerBase},
-    event::Event,
-    features::{Features, PathType},
-    mesh::{ExitNode, NodeState},
-};
-use telio_utils::Hidden;
-use telio_wg::AdapterType;
-
-use super::{derp::get_derp_servers, interface_helper::InterfaceHelper, ip::generate_ipv4};
-
-pub struct TestClient {
-    pub ifc_name: String,
-    pub ifc_configured: bool,
-    pub peer: Peer,
-    pub private_key: SecretKey,
-    pub ip: IpAddr,
-    pub dev: Device,
-    pub events: Arc<Mutex<Vec<Event>>>,
+pub struct Device {
+    child: Child,
 }
 
-impl TestClient {
-    pub fn generate_clients(
+impl Device {
+    pub fn destroy(mut self) {
+        self.child.kill().unwrap()
+    }
+
+    /*pub fn generate_clients(
         ids: Vec<&'static str>,
         ifc_helper: &mut InterfaceHelper,
         features: Features,
-    ) -> HashMap<&'static str, TestClient> {
+    ) -> HashMap<&'static str, Self> {
         ids.into_iter()
             .map(|id| {
                 let private_key = SecretKey::gen();
@@ -50,6 +31,8 @@ impl TestClient {
                     allow_peer_send_files: false,
                     allow_multicast: false,
                     peer_allows_multicast: false,
+                    allow_peer_traffic_routing: false,
+                    allow_peer_local_network_access: false,
                 };
                 let events = Arc::new(Mutex::new(Vec::new()));
                 let events_clone = events.clone();
@@ -76,8 +59,8 @@ impl TestClient {
     pub fn start(&mut self) {
         self.dev
             .start(&DeviceConfig {
-                private_key: self.private_key,
-                adapter: AdapterType::BoringTun,
+                private_key: self.private_key.clone(),
+                adapter: AdapterType::NepTUN,
                 fwmark: None,
                 name: Some(self.ifc_name.to_owned()),
                 tun: None,
@@ -145,5 +128,5 @@ impl TestClient {
 
     pub fn shutdown(&mut self) {
         self.dev.shutdown_art();
-    }
+    }*/
 }
