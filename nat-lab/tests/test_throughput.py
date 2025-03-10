@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
@@ -36,7 +35,9 @@ async def test_throughput(
     beta_setup_params: SetupParameters,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(exit_stack, [alpha_setup_params, beta_setup_params])
+        env = await setup_mesh_nodes(
+            exit_stack, [alpha_setup_params, beta_setup_params]
+        )
         [client_alpha] = env.clients
 
         await client_alpha.enable_magic_dns
