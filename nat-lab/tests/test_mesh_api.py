@@ -1,9 +1,11 @@
+import ipaddress
 import mesh_api
 import platform
 import pytest
 from config import DERP_PRIMARY, DERP_FAKE
 from mesh_api import Node, API
 from utils.bindings import Config, Peer, PeerBase
+from utils.router import IPProto
 
 if platform.machine() != "x86_64":
     import pure_wg as Key
@@ -132,15 +134,6 @@ class TestMeshApi:
         meshnet_config = api.get_meshnet_config("id", derp_servers=derp_servers)
         assert meshnet_config.derp_servers == derp_servers
 
-    def test_assign_ip_collision(self):
-        api = API()
-        api.register(name="name", node_id="id1", private_key="sk", public_key="pk")
-        api.register(name="name", node_id="id2", private_key="sk", public_key="pk")
-        api.assign_ip("id1", "0.0.0.0")
-        with pytest.raises(mesh_api.AddressCollisionError) as e:
-            api.assign_ip("id2", "0.0.0.0")
-        assert e.value.node_id == "id1"
-
     def test_assign_ip(self):
         api = API()
         node1 = api.register(
@@ -149,11 +142,24 @@ class TestMeshApi:
         node2 = api.register(
             name="name", node_id="id2", private_key="sk", public_key="pk"
         )
-        api.assign_ip("id1", "1.1.1.1")
-        api.assign_ip("id2", "2.2.2.2")
-        api.assign_ip("id2", "3.3.3.3")
-        assert node1.ip_addresses == ["1.1.1.1"]
-        assert node2.ip_addresses == ["2.2.2.2", "3.3.3.3"]
+        api.assign_random_ip("id1", IPProto.IPv4)
+        api.assign_random_ip("id2", IPProto.IPv4)
+        api.assign_random_ip("id2", IPProto.IPv6)
+        api.assign_random_ip("id2", IPProto.IPv4)
+        assert len(node1.ip_addresses) == 1
+        assert isinstance(
+            ipaddress.ip_address(node1.ip_addresses[0]), ipaddress.IPv4Address
+        )
+        assert len(node2.ip_addresses) == 3
+        assert isinstance(
+            ipaddress.ip_address(node2.ip_addresses[0]), ipaddress.IPv4Address
+        )
+        assert isinstance(
+            ipaddress.ip_address(node2.ip_addresses[1]), ipaddress.IPv6Address
+        )
+        assert isinstance(
+            ipaddress.ip_address(node2.ip_addresses[2]), ipaddress.IPv4Address
+        )
 
     def test_assign_nickname(self):
         api = API()
