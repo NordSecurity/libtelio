@@ -171,6 +171,7 @@ pub async fn rekey(
 
     telio_log_debug!("Sending rekey request");
     sock.send(&pkgbuf).await?;
+    telio_log_debug!("Sent rekey request");
 
     let mut recvbuf = [0u8; 2048];
 

@@ -8,6 +8,10 @@ pub mod utils;
 pub mod map;
 pub use map::*;
 
+/// Instant time that compensates for suspended time
+pub mod instant;
+pub use instant::*;
+
 /// Pinned sleep with return val
 pub mod sleep;
 pub use sleep::*;
