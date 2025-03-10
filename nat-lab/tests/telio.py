@@ -865,8 +865,8 @@ class Client:
                 "--cmd",
                 "PRAGMA busy_timeout = 30000;",
                 (
-                    "INSERT OR REPLACE INTO shared_context (key, val, is_essential) VALUES"
-                    f" ('device.fp._string', '\"{fingerprint}\"', 1)"
+                    "INSERT OR REPLACE INTO shared_context (key, val) VALUES"
+                    f" ('device.fp._string', '\"{fingerprint}\"')"
                 ),
             ]).execute()
 
