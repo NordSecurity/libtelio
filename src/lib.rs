@@ -6,6 +6,10 @@ pub mod _telio_integration_documentation {
     #![doc = include_str!["./doc/integrating_telio.md"]]
 }
 
+/// Version of Moose which this libtelio version supports
+#[allow(dead_code)]
+const SUPPORTED_MOOSE_VERSION: &'static str = include_str!("../ci/moose.ver.in");
+
 pub mod ffi;
 pub use crate::ffi::*;
 use crate::{defaults_builder::FeaturesDefaultsBuilder, types::*};

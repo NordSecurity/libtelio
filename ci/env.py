@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 import os
+from pathlib import Path
 
-LIBTELIO_ENV_MOOSE_RELEASE_TAG = "v16.0.1-libtelioApp"
+LIBTELIO_ENV_MOOSE_RELEASE_TAG = Path(__file__).with_name("moose.ver.in").read_text()
 LIBTELIO_ENV_NAT_LAB_DEPS_TAG = "v0.0.30"
 LIBTELIO_ENV_ANDROID_BUILDER_TAG = "v0.0.3"
 LIBTELIO_ENV_LINUX_BUILDER_TAG = "v0.0.7"
