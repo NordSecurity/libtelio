@@ -28,7 +28,7 @@ pub struct OccupiedEntry<'a, K, V> {
     map: &'a mut LinkedHashMap<K, TimedValue<V>, BuildHasherDefault<FxHasher>>,
 }
 
-impl<'a, K: Hash + Eq, V> OccupiedEntry<'a, K, V> {
+impl<K: Hash + Eq, V> OccupiedEntry<'_, K, V> {
     /// Gets a reference to the key in the entry.
     #[inline(always)]
     pub fn key(&self) -> &K {
@@ -84,7 +84,7 @@ pub struct VacantEntry<'a, K, V> {
     map: &'a mut LinkedHashMap<K, TimedValue<V>, BuildHasherDefault<FxHasher>>,
 }
 
-impl<'a, K, V> VacantEntry<'a, K, V> {
+impl<K, V> VacantEntry<'_, K, V> {
     /// Gets a reference to the key in the entry.
     #[inline(always)]
     pub fn key(&self) -> &K {
@@ -170,6 +170,8 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
         self.map.is_empty()
     }
 
+    /// Returns the number of unexpired entries.
+    /// Without removing expired elements.
     #[cfg(test)]
     pub fn len_slow(&mut self) -> usize {
         let now = Instant::now();
@@ -179,6 +181,8 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
             .count()
     }
 
+    /// Returns true if the map contains no unexpired elements.
+    /// Without removing expired elements.
     #[cfg(test)]
     pub fn is_empty_slow(&mut self) -> bool {
         self.len_slow() == 0
@@ -221,10 +225,10 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
     /// Retrieves a reference to the value stored under `key`, or `None` if the key doesn't exist.
     /// Also removes expired elements and updates the time.
     #[inline(always)]
-    pub fn get<Q: ?Sized>(&mut self, key: &Q) -> Option<&Value>
+    pub fn get<Q>(&mut self, key: &Q) -> Option<&Value>
     where
         Key: Borrow<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         self.get_mut(key).map(|value| &*value)
     }
@@ -232,10 +236,10 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
     /// Retrieves a mutable reference to the value stored under `key`, or `None` if the key doesn't
     /// exist.  Also removes expired elements and updates the time.
     #[inline(always)]
-    pub fn get_mut<Q: ?Sized>(&mut self, key: &Q) -> Option<&mut Value>
+    pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut Value>
     where
         Key: Borrow<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         let now = self.remove_expired().0;
 
@@ -268,10 +272,10 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
 
     /// Returns a reference to the value with the given `key`, if present and not expired, without
     /// updating the timestamp.
-    pub fn peek<Q: ?Sized>(&self, key: &Q) -> Option<&Value>
+    pub fn peek<Q>(&self, key: &Q) -> Option<&Value>
     where
         Key: Borrow<Q>,
-        Q: Hash + Eq,
+        Q: Hash + Eq + ?Sized,
     {
         let timed_value = self.map.get(key)?;
         if timed_value.is_expired(self.ttl, Instant::now()) {

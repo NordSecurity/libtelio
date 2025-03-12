@@ -1148,7 +1148,7 @@ fn deduplicate_peer_ips(peers: &[telio_model::config::Peer]) -> HashMap<PublicKe
 
 // Select endpoint for peer
 #[allow(clippy::too_many_arguments)]
-async fn select_endpoint_for_peer<'a>(
+async fn select_endpoint_for_peer(
     public_key: &PublicKey,
     actual_peer: &Option<Peer>,
     time_since_last_rx: &Option<Duration>,
