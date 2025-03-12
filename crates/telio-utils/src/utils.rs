@@ -1,5 +1,4 @@
-/// Utilities
-///
+//! Utilities
 
 /// wrapping tracing::trace and adding more information
 #[macro_export]

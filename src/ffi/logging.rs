@@ -146,7 +146,7 @@ impl Drop for FfiCallback {
     }
 }
 
-impl<'a> MakeWriter<'a> for FfiCallback {
+impl MakeWriter<'_> for FfiCallback {
     type Writer = FfiCallbackWriter;
 
     fn make_writer(&self) -> Self::Writer {
@@ -422,7 +422,7 @@ mod test {
     #[test]
     fn blocking_telio_cb_handling() {
         const LOGS_TO_DROP: usize = 5;
-        let log = BlockedLog::default();
+        let log = BlockedLog;
         let subscriber = build_subscriber(TelioLogLevel::Debug, Box::new(log));
 
         tracing::subscriber::with_default(subscriber, || {

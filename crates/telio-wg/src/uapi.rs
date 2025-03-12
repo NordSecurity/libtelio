@@ -393,7 +393,7 @@ impl Peer {
         // influenced by any system time change.
 
         self.time_since_last_rx
-            .map_or(false, |d| d < REJECT_AFTER_TIME + REKEY_TIMEOUT_JITTER)
+            .is_some_and(|d| d < REJECT_AFTER_TIME + REKEY_TIMEOUT_JITTER)
     }
 
     /// Returns the current state of the peer
@@ -454,10 +454,7 @@ impl Peer {
                     if target.0.is_none() {
                         target.0 = Some(ipv4.to_owned());
                     } else {
-                        dual_ip_addresses.push(match DualTarget::new(target) {
-                            Ok(dt) => dt,
-                            Err(DualTargetError::NoTarget) => DualTarget::default(),
-                        });
+                        dual_ip_addresses.push(DualTarget::new(target).unwrap_or_default());
                         target = (Some(ipv4.to_owned()), None);
                     }
                 }
@@ -465,20 +462,14 @@ impl Peer {
                     if target.1.is_none() {
                         target.1 = Some(ipv6.to_owned());
                     } else {
-                        dual_ip_addresses.push(match DualTarget::new(target) {
-                            Ok(dt) => dt,
-                            Err(DualTargetError::NoTarget) => DualTarget::default(),
-                        });
+                        dual_ip_addresses.push(DualTarget::new(target).unwrap_or_default());
                         target = (None, Some(ipv6.to_owned()));
                     }
                 }
             }
         }
         if target != (None, None) {
-            dual_ip_addresses.push(match DualTarget::new(target) {
-                Ok(dt) => dt,
-                Err(DualTargetError::NoTarget) => DualTarget::default(),
-            });
+            dual_ip_addresses.push(DualTarget::new(target).unwrap_or_default());
         }
         dual_ip_addresses
     }
