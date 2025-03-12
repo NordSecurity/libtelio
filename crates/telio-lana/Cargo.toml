@@ -9,13 +9,16 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
+[features]
+moose = []
+
 [dependencies]
 tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 time.workspace = true
-cargo-platform = { version = "=0.1.7", optional = true  } # moose v5.0.0 requires this
+cargo-platform = { version = "=0.1.7", optional = true } # moose v5.0.0 requires this
 
 telio-utils.workspace = true
 

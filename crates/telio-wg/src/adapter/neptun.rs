@@ -116,7 +116,7 @@ impl Adapter for NepTUN {
             tun: &'a TunSocket,
         }
 
-        impl<'a> io::Write for Sink4<'a> {
+        impl io::Write for Sink4<'_> {
             fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
                 Ok(self.tun.write4(buf))
             }
@@ -126,7 +126,7 @@ impl Adapter for NepTUN {
             }
         }
 
-        impl<'a> io::Write for Sink6<'a> {
+        impl io::Write for Sink6<'_> {
             fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
                 Ok(self.tun.write6(buf))
             }

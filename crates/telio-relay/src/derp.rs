@@ -422,7 +422,6 @@ impl DerpRelay {
     ///
     /// return message  including: type (0x05) + Nonce + payload
     /// Or Error
-
     fn encrypt_if_needed(
         secret_key: SecretKey,
         public_key: PublicKey,
@@ -475,7 +474,6 @@ impl DerpRelay {
     /// data       : received encrypted message
     ///
     /// return the plain text
-
     fn decrypt_if_needed(
         secret_key: SecretKey,
         public_key: PublicKey,

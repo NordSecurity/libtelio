@@ -227,7 +227,7 @@ async fn fetch_identifier_from_api(
     debug!("Fetching machine identifier");
     let client = Client::new();
     let response = client
-        .get(&format!("{}/meshnet/machines", API_BASE))
+        .get(format!("{}/meshnet/machines", API_BASE))
         .header(
             header::AUTHORIZATION,
             format!("Bearer token:{}", auth_token),
@@ -270,7 +270,7 @@ async fn update_machine(device_identity: &DeviceIdentity, auth_token: &str) -> R
     debug!("Updating machine");
     let client = Client::new();
     let status = client
-        .patch(&format!(
+        .patch(format!(
             "{}/meshnet/machines/{}",
             API_BASE, device_identity.machine_identifier
         ))
@@ -306,7 +306,7 @@ pub async fn get_meshmap(
     let client = Client::new();
     Ok(serde_json::from_str(
         &client
-            .get(&format!(
+            .get(format!(
                 "{}/meshnet/machines/{}/map",
                 API_BASE, device_identity.machine_identifier
             ))
@@ -330,7 +330,7 @@ async fn register_machine(
     info!("Registering machine");
     let client = Client::new();
     let response = client
-        .post(&format!("{}/meshnet/machines", API_BASE))
+        .post(format!("{}/meshnet/machines", API_BASE))
         .header(
             header::AUTHORIZATION,
             format!("Bearer token:{}", auth_token),

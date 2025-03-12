@@ -193,6 +193,7 @@ impl UdpProxy {
     }
 
     #[cfg(test)]
+    /// Stop proxy
     pub async fn stop_reverse(self) {
         let _ = self.task_egress.stop().await.resume_unwind();
         let _ = self.task_ingress.stop().await.resume_unwind();

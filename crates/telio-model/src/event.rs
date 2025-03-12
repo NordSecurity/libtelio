@@ -185,10 +185,9 @@ impl Modifier<EventBuilder> for ErrorLevel {
                 *body = Some(Error::default());
             }
 
-            body.as_mut().map(|b| {
+            if let Some(b) = body.as_mut() {
                 b.level = self;
-                b
-            });
+            }
         }
     }
 }
@@ -199,11 +198,9 @@ impl Modifier<EventBuilder> for ErrorCode {
             if body.is_none() {
                 *body = Some(Error::default());
             }
-
-            body.as_mut().map(|b| {
+            if let Some(b) = body.as_mut() {
                 b.code = self;
-                b
-            });
+            }
         }
     }
 }
@@ -215,11 +212,9 @@ impl Modifier<EventBuilder> for EventMsg {
             if body.is_none() {
                 *body = Some(Error::default());
             }
-
-            body.as_mut().map(|b| {
+            if let Some(b) = body.as_mut() {
                 b.msg = self;
-                b
-            });
+            }
         }
     }
 }

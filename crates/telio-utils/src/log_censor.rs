@@ -80,10 +80,10 @@ impl LogCensor {
     }
 
     fn incorret_chars_on_bounds(input: &str, m: &Match) -> bool {
-        return [m.start().wrapping_sub(1), m.end()]
+        [m.start().wrapping_sub(1), m.end()]
             .iter()
             .flat_map(|pos| input.chars().nth(*pos))
-            .any(|c| c.is_alphanumeric() || c == '_' || c == '.');
+            .any(|c| c.is_alphanumeric() || c == '_' || c == '.')
     }
 
     fn hash(&self, name: &str, input: &[u8]) -> String {

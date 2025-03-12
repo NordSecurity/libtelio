@@ -76,7 +76,7 @@ fn telio_task(
     // tests with core API. This is to not look for tokens in a test environment
     // right now as the values are dummy and program will not run as it expects
     // real tokens.
-    if !auth_token.as_str().eq("") {
+    if !auth_token.as_str().is_empty() {
         start_telio(
             &mut telio,
             node_identity.private_key.clone(),
@@ -118,10 +118,7 @@ fn telio_task(
                 }
                 TelioTaskCmd::SetIp(new_ip_address) => {
                     // update the interface only if the address is new
-                    if state
-                        .interface_ip_address
-                        .map_or(true, |ip| ip != new_ip_address)
-                    {
+                    if state.interface_ip_address != Some(new_ip_address) {
                         state.interface_ip_address = Some(new_ip_address);
                         _ = sys_config.set_ip(&interface_config.name, &new_ip_address);
                     }
