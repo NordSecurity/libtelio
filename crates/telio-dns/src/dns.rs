@@ -95,7 +95,7 @@ impl LocalDnsResolver {
         let nameserver = LocalNameServer::new(forward_ips).await?;
 
         let auto_switch_ips =
-            exit_dns.map_or(false, |feature| feature.auto_switch_dns_ips.unwrap_or(true));
+            exit_dns.is_some_and(|feature| feature.auto_switch_dns_ips.unwrap_or(true));
 
         Ok(LocalDnsResolver {
             socket: Arc::new(socket),

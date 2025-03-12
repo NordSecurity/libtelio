@@ -529,7 +529,13 @@ pub fn setup_network_path_monitor() {
             telio_log_warn!("Failed to get global background queue");
             return;
         }
-        nw_path_monitor_set_queue(monitor, std::mem::transmute(queue));
+        nw_path_monitor_set_queue(
+            monitor,
+            std::mem::transmute::<
+                *mut dispatch::ffi::dispatch_object_s,
+                *mut network_framework_sys::dispatch_queue,
+            >(queue),
+        );
 
         nw_path_monitor_set_update_handler(
             monitor,

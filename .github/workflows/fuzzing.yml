@@ -9,7 +9,7 @@ jobs:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
           with:
-            toolchain: nightly-2024-04-23
+            toolchain: nightly-2025-03-26
             override: true
         - run: cargo install cargo-fuzz --locked --version 0.12.0
         - name: fuzz telio proto
@@ -21,7 +21,7 @@ jobs:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
           with:
-            toolchain: nightly-2024-04-23
+            toolchain: nightly-2025-03-26
             override: true
         - run: cargo install cargo-fuzz --locked --version 0.12.0
         - name: fuzz telio crypto decrypt_request
@@ -39,7 +39,7 @@ jobs:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
           with:
-            toolchain: nightly-2024-04-23
+            toolchain: nightly-2025-03-26
             override: true
         - run: cargo install cargo-fuzz --locked --version 0.12.0
         - name: fuzz telio pq parse_get_packet
@@ -54,7 +54,7 @@ jobs:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
         with:
-          toolchain: nightly-2024-04-23
+          toolchain: nightly-2025-03-26
           override: true
       - run: cargo install cargo-fuzz --locked --version 0.12.0
       - name: fuzz telio starcast nat translate_incoming

@@ -16,8 +16,8 @@ alias d := deny
 [private]
 alias p := prepush
 
-nightly := "nightly-2024-04-23"
-rust1_80 := "1.80.0"
+nightly := "nightly-2025-03-26"
+rust1_85 := "1.85.0"
 
 # Run all rust tests
 test:
@@ -100,10 +100,10 @@ autoflake:
     uv run --isolated autoflake --quiet --check .
 
 _udeps-install: _nightly-install
-    cargo +{{ nightly }} install cargo-udeps@0.1.47 --locked
+    cargo +{{ nightly }} install cargo-udeps@0.1.55 --locked
 
-_unused-install: _rust1_80-install _rust-from-toolchain-file-install
-    cargo +{{ rust1_80 }} install --version 0.2.0 cargo-unused-features --locked
+_unused-install: _rust1_85-install _rust-from-toolchain-file-install
+    cargo +{{ rust1_85 }} install --version 0.2.0 cargo-unused-features --locked
 
 _deny-install:
     cargo install --locked cargo-deny@0.15.1
@@ -111,8 +111,8 @@ _deny-install:
 _nightly-install:
     rustup toolchain add {{ nightly }}
 
-_rust1_80-install:
-    rustup toolchain add {{ rust1_80}}
+_rust1_85-install:
+    rustup toolchain add {{ rust1_85}}
 
 _rust-from-toolchain-file-install:
     rustup toolchain install
