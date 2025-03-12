@@ -19,9 +19,9 @@ class SshConnection(Connection):
         connection: asyncssh.SSHClientConnection,
         tag: ConnectionTag,
     ):
-        if tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
+        if tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
             target_os = TargetOS.Windows
-        elif tag is ConnectionTag.MAC_VM:
+        elif tag is ConnectionTag.VM_MAC:
             target_os = TargetOS.Mac
         else:
             assert False, format(
@@ -63,7 +63,7 @@ class SshConnection(Connection):
 
         async with asyncssh.connect(
             ip,
-            username="root" if tag is ConnectionTag.MAC_VM else "vagrant",
+            username="root" if tag is ConnectionTag.VM_MAC else "vagrant",
             password="vagrant",  # Hardcoded password for transient VM used in tests
             known_hosts=None,
             options=ssh_options,

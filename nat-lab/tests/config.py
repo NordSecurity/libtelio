@@ -33,9 +33,9 @@ LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "192.168.110.100",
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "192.168.111.100",
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: "192.168.114.88",
-    ConnectionTag.WINDOWS_VM_1: "10.55.0.13",
-    ConnectionTag.WINDOWS_VM_2: "10.55.0.14",
-    ConnectionTag.MAC_VM: "10.55.0.12",
+    ConnectionTag.VM_WINDOWS_1: "10.55.0.13",
+    ConnectionTag.VM_WINDOWS_2: "10.55.0.14",
+    ConnectionTag.VM_MAC: "10.55.0.12",
     ConnectionTag.DOCKER_CONE_GW_1: "192.168.101.254",
     ConnectionTag.DOCKER_CONE_GW_2: "192.168.102.254",
     ConnectionTag.DOCKER_CONE_GW_3: "192.168.107.254",
@@ -114,10 +114,10 @@ else:
 
 # Libtelio binary path inside Windows and Mac VMs
 LIBTELIO_BINARY_PATH_WINDOWS_VM = "C:/workspace/binaries/".replace("/", "\\")
-LIBTELIO_BINARY_PATH_MAC_VM = "/var/root/workspace/binaries/"
+LIBTELIO_BINARY_PATH_VM_MAC = "/var/root/workspace/binaries/"
 
 UNIFFI_PATH_WINDOWS_VM = "C:/workspace/uniffi/".replace("/", "\\")
-UNIFFI_PATH_MAC_VM = "/var/root/workspace/uniffi/"
+UNIFFI_PATH_VM_MAC = "/var/root/workspace/uniffi/"
 
 LIBTELIO_IPV6_WG_SUBNET = "fd74:656c:696f"
 LIBTELIO_IPV6_WAN_SUBNET = "2001:db8:85a4"

@@ -23,9 +23,9 @@ class ConnectionTag(Enum):
     DOCKER_UDP_BLOCK_CLIENT_1 = auto()
     DOCKER_UDP_BLOCK_CLIENT_2 = auto()
     DOCKER_INTERNAL_SYMMETRIC_CLIENT = auto()
-    WINDOWS_VM_1 = auto()
-    WINDOWS_VM_2 = auto()
-    MAC_VM = auto()
+    VM_WINDOWS_1 = auto()
+    VM_WINDOWS_2 = auto()
+    VM_MAC = auto()
     DOCKER_CONE_GW_1 = auto()
     DOCKER_CONE_GW_2 = auto()
     DOCKER_CONE_GW_3 = auto()
@@ -133,7 +133,7 @@ async def setup_ephemeral_ports(connection: Connection):
     start_port = random.randint(5000, 55000)
     num_ports = random.randint(2000, 5000)
 
-    if connection.tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
+    if connection.tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
         cmd = [
             "netsh",
             "int",
@@ -144,7 +144,7 @@ async def setup_ephemeral_ports(connection: Connection):
             f"start={start_port}",
             f"num={num_ports}",
         ]
-    elif connection.tag is ConnectionTag.MAC_VM:
+    elif connection.tag is ConnectionTag.VM_MAC:
         cmd = [
             "sysctl",
             "-w",

@@ -65,11 +65,11 @@ from utils.router import IPProto, IPStack
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 ip_stack=IPStack.IPv4v6,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 1),
                 ),
             ),
@@ -77,11 +77,11 @@ from utils.router import IPProto, IPStack
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 ip_stack=IPStack.IPv4v6,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 1),
                 ),
             ),
@@ -89,11 +89,11 @@ from utils.router import IPProto, IPStack
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 ip_stack=IPStack.IPv4v6,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.MAC_VM,
+                    ConnectionTag.VM_MAC,
                     derp_1_limits=(1, 1),
                 ),
             ),
@@ -223,21 +223,21 @@ async def test_mesh_exit_through_peer(
             marks=pytest.mark.linux_native,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM_1,
+            ConnectionTag.VM_WINDOWS_1,
             TelioAdapterType.WINDOWS_NATIVE_TUN,
             marks=[
                 pytest.mark.windows,
             ],
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM_1,
+            ConnectionTag.VM_WINDOWS_1,
             TelioAdapterType.WIREGUARD_GO_TUN,
             marks=[
                 pytest.mark.windows,
             ],
         ),
         pytest.param(
-            ConnectionTag.MAC_VM, TelioAdapterType.NEP_TUN, marks=pytest.mark.mac
+            ConnectionTag.VM_MAC, TelioAdapterType.NEP_TUN, marks=pytest.mark.mac
         ),
     ],
 )

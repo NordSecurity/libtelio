@@ -109,7 +109,7 @@ FEATURE_ENABLED_PARAMS = [
     pytest.param(
         _generate_setup_parameter_pair(
             [
-                (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+                (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
             ],
             False,
@@ -119,7 +119,7 @@ FEATURE_ENABLED_PARAMS = [
     pytest.param(
         _generate_setup_parameter_pair(
             [
-                (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+                (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
             ],
             True,

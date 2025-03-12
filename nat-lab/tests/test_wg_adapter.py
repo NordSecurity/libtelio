@@ -10,7 +10,7 @@ from utils.process import ProcessExecError
 
 
 @pytest.mark.windows
-@pytest.mark.parametrize("conn_tag", [ConnectionTag.WINDOWS_VM_1])
+@pytest.mark.parametrize("conn_tag", [ConnectionTag.VM_WINDOWS_1])
 async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
     QUERY_CMD = [
         "reg",

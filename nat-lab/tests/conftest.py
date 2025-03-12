@@ -121,26 +121,26 @@ async def setup_check_connectivity():
         return
 
     reverse: Dict[str, str] = {
-        LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1]: "WINDOWS_VM_1",
-        LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2]: "WINDOWS_VM_2",
-        LAN_ADDR_MAP[ConnectionTag.MAC_VM]: "MAC_VM",
+        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]: "VM_WINDOWS_1",
+        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2]: "VM_WINDOWS_2",
+        LAN_ADDR_MAP[ConnectionTag.VM_MAC]: "VM_MAC",
         DERP_PRIMARY.ipv4: "PRIMARY_DERP",
     }
 
     test_nodes = {
-        ConnectionTag.WINDOWS_VM_1: [
-            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2],
-            LAN_ADDR_MAP[ConnectionTag.MAC_VM],
+        ConnectionTag.VM_WINDOWS_1: [
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2],
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC],
             DERP_PRIMARY.ipv4,
         ],
-        ConnectionTag.WINDOWS_VM_2: [
-            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1],
-            LAN_ADDR_MAP[ConnectionTag.MAC_VM],
+        ConnectionTag.VM_WINDOWS_2: [
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1],
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC],
             DERP_PRIMARY.ipv4,
         ],
-        ConnectionTag.MAC_VM: [
-            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1],
-            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2],
+        ConnectionTag.VM_MAC: [
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1],
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2],
             DERP_PRIMARY.ipv4,
         ],
     }
@@ -284,11 +284,11 @@ async def _copy_vm_binaries_if_needed(items):
     for item in items:
         for mark in item.own_markers:
             if mark.name == "windows" and not windows_bins_copied:
-                await _copy_vm_binaries(ConnectionTag.WINDOWS_VM_1)
-                await _copy_vm_binaries(ConnectionTag.WINDOWS_VM_2)
+                await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_1)
+                await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_2)
                 windows_bins_copied = True
             elif mark.name == "mac" and not mac_bins_copied:
-                await _copy_vm_binaries(ConnectionTag.MAC_VM)
+                await _copy_vm_binaries(ConnectionTag.VM_MAC)
                 mac_bins_copied = True
 
             if windows_bins_copied and mac_bins_copied:
@@ -347,7 +347,7 @@ async def collect_kernel_logs(items, suffix):
         if any(mark.name == "mac" for mark in item.own_markers):
             try:
                 async with SshConnection.new_connection(
-                    LAN_ADDR_MAP[ConnectionTag.MAC_VM], ConnectionTag.MAC_VM
+                    LAN_ADDR_MAP[ConnectionTag.VM_MAC], ConnectionTag.VM_MAC
                 ) as conn:
                     await _save_macos_logs(conn, suffix)
             except OSError as e:
@@ -456,7 +456,7 @@ async def collect_mac_diagnostic_reports():
     print("Collect mac diagnostic reports")
     try:
         async with SshConnection.new_connection(
-            LAN_ADDR_MAP[ConnectionTag.MAC_VM], ConnectionTag.MAC_VM
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC], ConnectionTag.VM_MAC
         ) as connection:
             await connection.download(
                 "/Library/Logs/DiagnosticReports", "logs/system_diagnostic_reports"

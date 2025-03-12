@@ -19,7 +19,7 @@ from utils.vm.windows_vm_util import get_network_interface_tunnel_keys
 async def test_get_network_interface_tunnel_keys(adapter_type, name) -> None:
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(
-            new_connection_raw(ConnectionTag.WINDOWS_VM_1)
+            new_connection_raw(ConnectionTag.VM_WINDOWS_1)
         )
         assert [] == await get_network_interface_tunnel_keys(connection)
         _env = await exit_stack.enter_async_context(
@@ -27,7 +27,7 @@ async def test_get_network_interface_tunnel_keys(adapter_type, name) -> None:
                 exit_stack,
                 [
                     SetupParameters(
-                        connection_tag=ConnectionTag.WINDOWS_VM_1,
+                        connection_tag=ConnectionTag.VM_WINDOWS_1,
                         adapter_type_override=adapter_type,
                     ),
                     SetupParameters(

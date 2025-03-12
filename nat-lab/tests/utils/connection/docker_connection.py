@@ -63,9 +63,9 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.DOCKER_SHARED_CLIENT_1: ConnectionTag.DOCKER_CONE_GW_1,
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: ConnectionTag.DOCKER_UDP_BLOCK_GW_1,
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: ConnectionTag.DOCKER_UDP_BLOCK_GW_2,
-    ConnectionTag.WINDOWS_VM_1: ConnectionTag.DOCKER_CONE_GW_3,
-    ConnectionTag.WINDOWS_VM_2: ConnectionTag.DOCKER_CONE_GW_3,
-    ConnectionTag.MAC_VM: ConnectionTag.DOCKER_CONE_GW_3,
+    ConnectionTag.VM_WINDOWS_1: ConnectionTag.DOCKER_CONE_GW_3,
+    ConnectionTag.VM_WINDOWS_2: ConnectionTag.DOCKER_CONE_GW_3,
+    ConnectionTag.VM_MAC: ConnectionTag.DOCKER_CONE_GW_3,
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: (
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1
     ),

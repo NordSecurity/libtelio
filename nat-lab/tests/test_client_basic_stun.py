@@ -11,11 +11,11 @@ from utils.connection_util import new_connection_by_tag
     [
         pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, "10.0.254.1"),
         pytest.param(
-            ConnectionTag.WINDOWS_VM_1,
+            ConnectionTag.VM_WINDOWS_1,
             "10.0.254.7",
             marks=pytest.mark.windows,
         ),
-        pytest.param(ConnectionTag.MAC_VM, "10.0.254.7", marks=pytest.mark.mac),
+        pytest.param(ConnectionTag.VM_MAC, "10.0.254.7", marks=pytest.mark.mac),
     ],
 )
 async def test_client_basic_stun(connection_tag: ConnectionTag, public_ip: str) -> None:

@@ -1,11 +1,11 @@
 import asyncssh
 import os
-from config import get_root_path, LIBTELIO_BINARY_PATH_MAC_VM, UNIFFI_PATH_MAC_VM
+from config import get_root_path, LIBTELIO_BINARY_PATH_VM_MAC, UNIFFI_PATH_VM_MAC
 from utils.connection import Connection
 from utils.process import ProcessExecError
 
-VM_TCLI_DIR = LIBTELIO_BINARY_PATH_MAC_VM
-VM_UNIFFI_DIR = UNIFFI_PATH_MAC_VM
+VM_TCLI_DIR = LIBTELIO_BINARY_PATH_VM_MAC
+VM_UNIFFI_DIR = UNIFFI_PATH_VM_MAC
 
 
 async def copy_binaries(

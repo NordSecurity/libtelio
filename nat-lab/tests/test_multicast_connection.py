@@ -38,7 +38,7 @@ MUILTICAST_TEST_PARAMS = [
     ),
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WIREGUARD_GO_TUN),
+            (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WIREGUARD_GO_TUN),
             (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
         ]),
         "ssdp",
@@ -47,14 +47,14 @@ MUILTICAST_TEST_PARAMS = [
     pytest.param(
         generate_setup_parameter_pair([
             (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
-            (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+            (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
         ]),
         "mdns",
         marks=pytest.mark.windows,
     ),
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.MAC_VM, TelioAdapterType.NEP_TUN),
+            (ConnectionTag.VM_MAC, TelioAdapterType.NEP_TUN),
             (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
         ]),
         "ssdp",
@@ -63,7 +63,7 @@ MUILTICAST_TEST_PARAMS = [
     pytest.param(
         generate_setup_parameter_pair([
             (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
-            (ConnectionTag.MAC_VM, TelioAdapterType.NEP_TUN),
+            (ConnectionTag.VM_MAC, TelioAdapterType.NEP_TUN),
         ]),
         "mdns",
         marks=pytest.mark.mac,

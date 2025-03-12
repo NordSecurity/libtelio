@@ -141,7 +141,7 @@ async def test_upnp_route_removed(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.UPNP]),
             ),
@@ -149,7 +149,7 @@ async def test_upnp_route_removed(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.UPNP]),
             ),
@@ -157,7 +157,7 @@ async def test_upnp_route_removed(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.UPNP]),
             ),

@@ -42,7 +42,7 @@ def get_libtelio_binary_path(path: str, connection: Connection) -> str:
         return config.LIBTELIO_BINARY_PATH_WINDOWS_VM + path
 
     if target_os == TargetOS.Mac:
-        return config.LIBTELIO_BINARY_PATH_MAC_VM + path
+        return config.LIBTELIO_BINARY_PATH_VM_MAC + path
 
     assert False, f"target_os not supported '{target_os}'"
 
@@ -83,9 +83,9 @@ async def create_network_switcher(
 ) -> NetworkSwitcher:
     if tag in DOCKER_SERVICE_IDS:
         return NetworkSwitcherDocker(connection)
-    if tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
+    if tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
         return await NetworkSwitcherWindows.create(connection)
-    if tag == ConnectionTag.MAC_VM:
+    if tag == ConnectionTag.VM_MAC:
         return NetworkSwitcherMac(connection)
 
     assert False, f"tag {tag} not supported"
@@ -329,7 +329,7 @@ async def remove_traffic_control_rules(connection):
 
 def is_tag_valid_for_ssh_connection(tag: ConnectionTag) -> bool:
     return tag in [
-        ConnectionTag.WINDOWS_VM_1,
-        ConnectionTag.WINDOWS_VM_2,
-        ConnectionTag.MAC_VM,
+        ConnectionTag.VM_WINDOWS_1,
+        ConnectionTag.VM_WINDOWS_2,
+        ConnectionTag.VM_MAC,
     ]

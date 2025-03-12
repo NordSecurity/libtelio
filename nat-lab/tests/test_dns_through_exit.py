@@ -82,10 +82,10 @@ from utils.router import IPStack
         # This test is failing, but currently is non critical
         # pytest.param(
         #     SetupParameters(
-        #         connection_tag=ConnectionTag.MAC_VM,
+        #         connection_tag=ConnectionTag.VM_MAC,
         #         adapter_type_override=TelioAdapterType.NEP_TUN,
         #         connection_tracker_config=generate_connection_tracker_config(
-        #             ConnectionTag.MAC_VM,
+        #             ConnectionTag.VM_MAC,
         #             derp_1_limits=(1, 1),
         #         ),
         #     ),

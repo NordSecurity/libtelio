@@ -17,7 +17,7 @@ PORT = 12345
     [
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
             ),
             marks=pytest.mark.mac,
         ),

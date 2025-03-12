@@ -18,8 +18,8 @@ async def _get_running_process_list(connection: Connection) -> str:
     "connection_tag,command",
     [
         pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, "/usr/bin/ls"),
-        pytest.param(ConnectionTag.WINDOWS_VM_1, "dir", marks=pytest.mark.windows),
-        pytest.param(ConnectionTag.MAC_VM, "/bin/ls", marks=pytest.mark.mac),
+        pytest.param(ConnectionTag.VM_WINDOWS_1, "dir", marks=pytest.mark.windows),
+        pytest.param(ConnectionTag.VM_MAC, "/bin/ls", marks=pytest.mark.mac),
     ],
 )
 async def test_process_execute_success(connection_tag: ConnectionTag, command: str):
@@ -35,8 +35,8 @@ async def test_process_execute_success(connection_tag: ConnectionTag, command: s
     "connection_tag",
     [
         pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1),
-        pytest.param(ConnectionTag.WINDOWS_VM_1, marks=pytest.mark.windows),
-        pytest.param(ConnectionTag.MAC_VM, marks=pytest.mark.mac),
+        pytest.param(ConnectionTag.VM_WINDOWS_1, marks=pytest.mark.windows),
+        pytest.param(ConnectionTag.VM_MAC, marks=pytest.mark.mac),
     ],
 )
 async def test_process_execute_fail(connection_tag: ConnectionTag):
@@ -59,12 +59,12 @@ async def test_process_execute_fail(connection_tag: ConnectionTag):
             ["ping", config.PHOTO_ALBUM_IP],
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM_1,
+            ConnectionTag.VM_WINDOWS_1,
             ["ping", "-t", config.PHOTO_ALBUM_IP],
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.MAC_VM,
+            ConnectionTag.VM_MAC,
             ["ping", config.PHOTO_ALBUM_IP],
             marks=pytest.mark.mac,
         ),
@@ -96,12 +96,12 @@ async def test_process_run_success(
             ["bash", "-c", "exit 77"],
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM_1,
+            ConnectionTag.VM_WINDOWS_1,
             ["cmd.exe", "/c", "exit 77"],
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.MAC_VM,
+            ConnectionTag.VM_MAC,
             ["bash", "-c", "exit 77"],
             marks=pytest.mark.mac,
         ),
@@ -127,11 +127,11 @@ async def test_process_run_fail(connection_tag: ConnectionTag, command: list[str
             ConnectionTag.DOCKER_CONE_CLIENT_1,
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM_1,
+            ConnectionTag.VM_WINDOWS_1,
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.MAC_VM,
+            ConnectionTag.VM_MAC,
             marks=pytest.mark.mac,
         ),
     ],
@@ -157,12 +157,12 @@ async def test_process_run_not_found(connection_tag: ConnectionTag):
             ["ping", config.PHOTO_ALBUM_IP],
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM_1,
+            ConnectionTag.VM_WINDOWS_1,
             ["ping", "-t", config.PHOTO_ALBUM_IP],
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.MAC_VM,
+            ConnectionTag.VM_MAC,
             ["ping", config.PHOTO_ALBUM_IP],
             marks=pytest.mark.mac,
         ),
@@ -198,12 +198,12 @@ async def test_process_run_cancel(
             ["ping", config.PHOTO_ALBUM_IP],
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM_1,
+            ConnectionTag.VM_WINDOWS_1,
             ["ping", "-t", config.PHOTO_ALBUM_IP],
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.MAC_VM,
+            ConnectionTag.VM_MAC,
             ["ping", config.PHOTO_ALBUM_IP],
             marks=pytest.mark.mac,
         ),
