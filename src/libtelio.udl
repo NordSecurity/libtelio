@@ -429,7 +429,7 @@ interface Telio {
     [Throws=TelioError]
     void trigger_qos_collection();
     [Throws=TelioError]
-    void trigger_throughput_test();
+    void trigger_throughput_test(string peer_ip);
     [Throws=TelioError]
     string receive_ping();
     [Throws=TelioError]

@@ -4,9 +4,6 @@ from helpers import setup_mesh_nodes, SetupParameters
 from utils.bindings import TelioAdapterType
 from utils.connection_util import ConnectionTag
 
-DEFAULT_WAITING_TIME = 2
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_setup_params",
@@ -38,9 +35,10 @@ async def test_throughput(
         env = await setup_mesh_nodes(
             exit_stack, [alpha_setup_params, beta_setup_params]
         )
-        [client_alpha] = env.clients
+        [_, beta] = env.nodes
+        [client_alpha, _] = env.clients
 
-        await client_alpha.enable_magic_dns
-        await client_alpha.restart_interface()
+        peer_ip = beta.get_ip_address()
+        await client_alpha.trigger_throughput_test(peer_ip)
 
-        await client_alpha.wait_for_log("Updating local addr cache")
+        await client_alpha.wait_for_log("MiB/s Packet loss")
