@@ -4763,11 +4763,9 @@ name = "telio-perf"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
  "futures",
  "ipnet",
  "neptun",
- "pnet_packet 0.35.0",
  "telio-sockets",
  "telio-starcast",
  "telio-task",

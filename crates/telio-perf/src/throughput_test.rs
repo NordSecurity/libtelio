@@ -74,6 +74,9 @@ pub enum Error {
     /// IO Error
     #[error(transparent)]
     IoError(#[from] std::io::Error),
+    /// Buffer error
+    #[error("Invalid index buffer")]
+    InvalidIndex,
 }
 
 enum PacketType {
@@ -242,7 +245,7 @@ impl State {
                     *state = HandlerState::Test;
                 }
             }
-            PacketType::End => self.send_results().await,
+            PacketType::End => self.send_results().await?,
             PacketType::Result => {
                 {
                     let mut state = self.handler_state.write().await;
@@ -252,13 +255,17 @@ impl State {
                         *state = HandlerState::End;
                     }
                 }
-                let bytes: [u8; PKT_LOSS_DATA_SIZE] = self.recv_buffer
-                    [PKT_LOSS_OFFSET..PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE]
+                let bytes: [u8; PKT_LOSS_DATA_SIZE] = self
+                    .recv_buffer
+                    .get(PKT_LOSS_OFFSET..PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE)
+                    .ok_or(Error::InvalidIndex)?
                     .try_into()?;
                 let pkt_loss = f32::from_be_bytes(bytes);
 
-                let bytes: [u8; THROUGHPUT_DATA_SIZE] = self.recv_buffer
-                    [THROUGHPUT_OFFSET..THROUGHPUT_OFFSET + THROUGHPUT_DATA_SIZE]
+                let bytes: [u8; THROUGHPUT_DATA_SIZE] = self
+                    .recv_buffer
+                    .get(THROUGHPUT_OFFSET..THROUGHPUT_OFFSET + THROUGHPUT_DATA_SIZE)
+                    .ok_or(Error::InvalidIndex)?
                     .try_into()?;
                 let throughput = u32::from_be_bytes(bytes);
                 // This is to notify the test and throughput measurement
@@ -282,10 +289,22 @@ impl State {
     async fn send_ack(&mut self) -> Result<(), Error> {
         let send_buffer = vec![PacketType::Ack as u8; 1];
         let ip_addr = IpAddr::V4(Ipv4Addr::new(
-            self.recv_buffer[IP_ADDR_OFFSET],
-            self.recv_buffer[IP_ADDR_OFFSET + 1],
-            self.recv_buffer[IP_ADDR_OFFSET + 2],
-            self.recv_buffer[IP_ADDR_OFFSET + 3],
+            *self
+                .recv_buffer
+                .get(IP_ADDR_OFFSET)
+                .ok_or(Error::InvalidIndex)?,
+            *self
+                .recv_buffer
+                .get(IP_ADDR_OFFSET + 1)
+                .ok_or(Error::InvalidIndex)?,
+            *self
+                .recv_buffer
+                .get(IP_ADDR_OFFSET + 2)
+                .ok_or(Error::InvalidIndex)?,
+            *self
+                .recv_buffer
+                .get(IP_ADDR_OFFSET + 3)
+                .ok_or(Error::InvalidIndex)?,
         ));
         let endpoint = SocketAddr::new(
             ip_addr,
@@ -308,14 +327,17 @@ impl State {
         Ok(())
     }
 
-    async fn send_results(&mut self) {
+    async fn send_results(&mut self) -> Result<(), Error> {
         let duration = self.duration.elapsed();
         let mut send_buffer = vec![0u8; 1 + PKT_LOSS_DATA_SIZE + THROUGHPUT_DATA_SIZE];
         send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Result as u8);
 
         // Parse # of sent packets
-        let pkts_sent: [u8; std::mem::size_of::<u64>()] =
-            self.recv_buffer[5..13].try_into().unwrap();
+        let pkts_sent: [u8; std::mem::size_of::<u64>()] = self
+            .recv_buffer
+            .get(5..13)
+            .ok_or(Error::InvalidIndex)?
+            .try_into()?;
         let pkts_sent = u64::from_be_bytes(pkts_sent);
 
         // Calculate packet loss
@@ -333,10 +355,22 @@ impl State {
 
         // Get endpoint of the client to respond to
         let ip_addr = IpAddr::V4(Ipv4Addr::new(
-            self.recv_buffer[IP_ADDR_OFFSET],
-            self.recv_buffer[IP_ADDR_OFFSET + 1],
-            self.recv_buffer[IP_ADDR_OFFSET + 2],
-            self.recv_buffer[IP_ADDR_OFFSET + 3],
+            *self
+                .recv_buffer
+                .get(IP_ADDR_OFFSET)
+                .ok_or(Error::InvalidIndex)?,
+            *self
+                .recv_buffer
+                .get(IP_ADDR_OFFSET + 1)
+                .ok_or(Error::InvalidIndex)?,
+            *self
+                .recv_buffer
+                .get(IP_ADDR_OFFSET + 2)
+                .ok_or(Error::InvalidIndex)?,
+            *self
+                .recv_buffer
+                .get(IP_ADDR_OFFSET + 3)
+                .ok_or(Error::InvalidIndex)?,
         ));
         let endpoint = SocketAddr::new(
             ip_addr,
@@ -348,13 +382,14 @@ impl State {
         if self
             .transport_socket
             .as_ref()
-            .unwrap()
+            .ok_or(Error::TransportSocketNotOpen)?
             .send_to(&send_buffer, endpoint)
             .await
             .is_err()
         {
             telio_log_warn!("Unable to send ack")
         }
+        Ok(())
     }
 
     /// Start the throughput test with given endpoint
@@ -509,7 +544,10 @@ async fn throughput_test_handler(
                 send_buffer[IP_ADDR_OFFSET..IP_ADDR_OFFSET + SIZE_OF_IP_ADDR]
                     .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr()?.ip()));
                 send_buffer[5..13].copy_from_slice(&total_pkts.to_be_bytes());
-                if let Err(e) = transport_socket.send_to(&send_buffer[..13], endpoint).await {
+                if let Err(e) = transport_socket
+                    .send_to(send_buffer.get(..13).ok_or(Error::InvalidIndex)?, endpoint)
+                    .await
+                {
                     telio_log_warn!("Unable to send test end: {:?}", e);
                 }
                 // Exp backoff to either recieve response

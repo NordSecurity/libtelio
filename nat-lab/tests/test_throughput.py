@@ -3,7 +3,7 @@ from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from utils.bindings import TelioAdapterType
 from utils.connection_util import ConnectionTag
-
+from utils.router import IPProto
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
@@ -39,7 +39,7 @@ async def test_throughput(
         [_, beta] = env.nodes
         [client_alpha, _] = env.clients
 
-        peer_ip = beta.get_ip_address()
+        peer_ip = beta.get_ip_address(IPProto.IPv4)
         await client_alpha.trigger_throughput_test(peer_ip)
 
         await client_alpha.wait_for_log("MiB/s Packet loss")
