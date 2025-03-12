@@ -70,8 +70,8 @@ class TargetOS(Enum):
 
 
 class Connection(ABC):
-    _target_os: Optional[TargetOS]
-    _tag: Optional[ConnectionTag]
+    _target_os: TargetOS
+    _tag: ConnectionTag
 
     def __init__(self, target_os: TargetOS, tag: ConnectionTag) -> None:
         self._target_os = target_os
@@ -85,20 +85,20 @@ class Connection(ABC):
 
     @property
     def target_os(self) -> TargetOS:
-        assert self._target_os
         return self._target_os
 
     @target_os.setter
     def target_os(self, target_os: TargetOS) -> None:
+        assert self.target_os
         self._target_os = target_os
 
     @property
     def tag(self) -> ConnectionTag:
-        assert self._tag
         return self._tag
 
     @tag.setter
     def tag(self, tag: ConnectionTag) -> None:
+        assert tag
         self._tag = tag
 
     @abstractmethod
