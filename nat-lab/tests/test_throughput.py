@@ -4,6 +4,7 @@ from helpers import setup_mesh_nodes, SetupParameters
 from utils.bindings import TelioAdapterType
 from utils.connection_util import ConnectionTag
 
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_setup_params",
