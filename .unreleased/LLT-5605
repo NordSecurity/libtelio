@@ -1,1 +1,0 @@
-Fix libtelio panic when epty Direct config is passed, now a proper error is returned instead
