@@ -5,6 +5,7 @@ from utils.bindings import TelioAdapterType
 from utils.connection_util import ConnectionTag
 from utils.router import IPProto
 
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_setup_params",
