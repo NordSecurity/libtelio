@@ -1,5 +1,28 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.3.0-rc1
+### **Tomato**
+---
+* LLT-5457: Clear memory for sensitive key material on destructor
+* LLT-5609: Prevents possible IP spoofing in the rust-igd (upnp) crate.
+* LLT-4749: Modify incoming firewall handler
+* LLT-5605: Fix libtelio panic when epty Direct config is passed, now a proper error is returned instead
+* LLT-5814: Emit 'CONNECTING' node event when starting the PQ handshake
+* LLT-5639: Add DERP userspace keepalives
+* LLT-5913: Update XCFramework structure
+* LLT-5884: Restart postquantum if the last handshake has passed the wireguard reject timeout
+* LLT-5815: PQ: validate handshake response packet origin
+* LLT-5789: Impose a timeout on all PQ socket recv() calls
+* LLT-5968: Remove fortification suppression
+* LLT-5886: Use the SocketPool component in order to bind the Pinger raw socket to the tunnel interface on macOS.
+            For iOS and tvOS use DGRAM socket instead, and re-bind to the tunnel interface before every write.
+* LLT-5801: Make sure apple socket protector respects nw_path_monitor interface preference order
+* LLT-5892: Add faster WireGuard polling after update
+* LLT-5780: Use neptun instead of boringtun. Rename boringtun_reset_conns feature flag to neptun_reset_conns.
+            boringtun_reset_conns stays as an alias for backwards compatibility and will be removed in the next major release.
+
+<br>
+
 ### v5.1.0
 ### **Pork Kibin**
 ---

@@ -1,1 +1,0 @@
-Prevents possible IP spoofing in the rust-igd (upnp) crate.
