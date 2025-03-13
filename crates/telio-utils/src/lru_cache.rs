@@ -28,7 +28,7 @@ pub struct OccupiedEntry<'a, K, V> {
     map: &'a mut LinkedHashMap<K, TimedValue<V>, BuildHasherDefault<FxHasher>>,
 }
 
-impl<'a, K: Hash + Eq, V> OccupiedEntry<'a, K, V> {
+impl<K: Hash + Eq, V> OccupiedEntry<'_, K, V> {
     /// Gets a reference to the key in the entry.
     #[inline(always)]
     pub fn key(&self) -> &K {
@@ -84,7 +84,7 @@ pub struct VacantEntry<'a, K, V> {
     map: &'a mut LinkedHashMap<K, TimedValue<V>, BuildHasherDefault<FxHasher>>,
 }
 
-impl<'a, K, V> VacantEntry<'a, K, V> {
+impl<K, V> VacantEntry<'_, K, V> {
     /// Gets a reference to the key in the entry.
     #[inline(always)]
     pub fn key(&self) -> &K {

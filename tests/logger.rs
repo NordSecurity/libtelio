@@ -14,7 +14,7 @@ mod test_module {
         logging::{ASYNC_CHANNEL_CLOSED_MSG, START_ASYNC_LOGGER_MSG},
     };
 
-    use super::*;
+    
 
     #[test]
     fn test_logger() {
