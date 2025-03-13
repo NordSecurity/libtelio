@@ -90,7 +90,7 @@ use telio_model::{
     EndpointMap,
 };
 
-use telio_perf::throughput_test::Throughput as ThroughputEntity;
+use telio_perf::throughput_test::{Throughput as ThroughputEntity, PERFORMANCE_TRANSPORT_PORT};
 
 #[cfg(target_os = "android")]
 use telio_network_monitors::monitor::PATH_CHANGE_BROADCAST;
@@ -1590,10 +1590,10 @@ impl Runtime {
                 meshnet_ip.to_owned(),
                 self.entities.socket_pool.clone(),
                 cmd_chan,
-                #[cfg(test)]
-                0,
-                #[cfg(test)]
-                None,
+                // #[cfg(test)]
+                // 0,
+                // #[cfg(test)]
+                // None,
             )
             .await?,
         )))
@@ -1774,7 +1774,7 @@ impl Runtime {
             .throughput
             .as_ref()
             .ok_or(Error::ThroughputNotConfigured)?
-            .start_test(ip_addr)
+            .start_test(ip_addr, PERFORMANCE_TRANSPORT_PORT)
             .await?;
         Ok(())
     }

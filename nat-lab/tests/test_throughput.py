@@ -41,6 +41,12 @@ async def test_throughput(
         [client_alpha, _] = env.clients
 
         peer_ip = beta.get_ip_address(IPProto.IPv4)
-        await client_alpha.trigger_throughput_test(peer_ip)
+        await client_alpha.trigger_throughput_test(get_str(peer_ip))
 
         await client_alpha.wait_for_log("MiB/s Packet loss")
+
+
+def get_str(value: str | None) -> str:  # type: ignore
+    if value is None:
+        raise TypeError("Expected a string, but got None")
+    return value

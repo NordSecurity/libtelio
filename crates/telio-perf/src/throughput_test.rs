@@ -22,15 +22,14 @@ use telio_utils::{
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
-#[cfg(test)]
-use tokio::sync::Notify;
+// #[cfg(test)]
+// use tokio::sync::Notify;
 use tokio::sync::RwLock;
 use tokio::time::Duration as TokioDuration;
 
 /// Port is randomly chosen
 /// perf % 65535 = 46750
-#[cfg(not(test))]
-const PERFORMANCE_TRANSPORT_PORT: u16 = 46750;
+pub const PERFORMANCE_TRANSPORT_PORT: u16 = 46750;
 const MAX_PACKET_SIZE: usize = 1500;
 const TEST_DURATION: Duration = Duration::new(10, 0);
 const PACKET_TYPE_OFFSET: usize = 0;
@@ -126,8 +125,6 @@ impl Throughput {
         meshnet_ip: IpAddr,
         socket_pool: Arc<SocketPool>,
         packet_chan: Chan<SocketAddr>,
-        #[cfg(test)] port: u16,
-        #[cfg(test)] notify: Option<Arc<Notify>>,
     ) -> Result<Self, Error> {
         let exponential_backoff = ExponentialBackoff::new(ExponentialBackoffBounds {
             initial: Duration::from_secs(2),
@@ -142,7 +139,7 @@ impl Throughput {
             #[cfg(not(test))]
             PERFORMANCE_TRANSPORT_PORT,
             #[cfg(test)]
-            port,
+            0,
         )
         .await
         {
@@ -167,21 +164,13 @@ impl Throughput {
                 handler_state: Arc::new(RwLock::new(HandlerState::Start)),
                 pkts_recvd: 0,
                 duration: Instant::now(),
-                #[cfg(test)]
-                notify,
             }),
         })
     }
 
     /// Start the throughput test with given endpoint
-    pub async fn start_test(&self, ip_addr: IpAddr) -> Result<(), Error> {
-        let endpoint = SocketAddr::new(
-            ip_addr,
-            #[cfg(not(test))]
-            PERFORMANCE_TRANSPORT_PORT,
-            #[cfg(test)]
-            54321,
-        );
+    pub async fn start_test(&self, ip_addr: IpAddr, port: u16) -> Result<(), Error> {
+        let endpoint = SocketAddr::new(ip_addr, port);
         task_exec!(&self.task, async move |state| {
             state.start_test(endpoint).await
         })
@@ -192,6 +181,12 @@ impl Throughput {
     /// Stop the throughput component
     pub async fn stop(self) {
         let _ = self.task.stop().await.resume_unwind();
+    }
+
+    /// Get the transport port
+    pub async fn get_port(&self) -> Result<u16, Error> {
+        task_exec!(&self.task, async move |state| state.get_port().await).await?;
+        Ok(0)
     }
 }
 
@@ -221,8 +216,6 @@ struct State {
     handler_state: Arc<RwLock<HandlerState>>,
     pkts_recvd: u64,
     duration: Instant,
-    #[cfg(test)]
-    notify: Option<Arc<Notify>>,
 }
 
 impl State {
@@ -268,13 +261,6 @@ impl State {
                     .ok_or(Error::InvalidIndex)?
                     .try_into()?;
                 let throughput = u32::from_be_bytes(bytes);
-                // This is to notify the test and throughput measurement
-                // has been completed successfully
-                #[cfg(test)]
-                if let Some(n) = self.notify.as_ref() {
-                    n.notify_one()
-                };
-                // This print is intentional for now. Can be removed later.
                 telio_log_info!("Throughput {throughput} MiB/s Packet loss - {pkt_loss} %");
             }
             PacketType::Test => {
@@ -308,10 +294,10 @@ impl State {
         ));
         let endpoint = SocketAddr::new(
             ip_addr,
-            #[cfg(not(test))]
+            // #[cfg(not(test))]
             PERFORMANCE_TRANSPORT_PORT,
-            #[cfg(test)]
-            12345,
+            // #[cfg(test)]
+            // 12345,
         );
 
         telio_log_debug!("Sending ACK to {:?}", endpoint);
@@ -342,6 +328,7 @@ impl State {
 
         // Calculate packet loss
         let pkt_loss = (1_f32 - (self.pkts_recvd as f32 / pkts_sent as f32)) * 100_f32;
+        #[allow(index_access_check)]
         send_buffer[PKT_LOSS_OFFSET..PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE]
             .copy_from_slice(&pkt_loss.to_be_bytes());
 
@@ -350,6 +337,7 @@ impl State {
         let throughput = (((self.pkts_recvd * (BUFFER_LEN as u64 + 32 + 20 + 8) * 8) as f64)
             / duration.as_secs_f64()) as u32
             / 1_000_000;
+        #[allow(index_access_check)]
         send_buffer[THROUGHPUT_OFFSET..THROUGHPUT_OFFSET + THROUGHPUT_DATA_SIZE]
             .copy_from_slice(&throughput.to_be_bytes());
 
@@ -374,10 +362,10 @@ impl State {
         ));
         let endpoint = SocketAddr::new(
             ip_addr,
-            #[cfg(not(test))]
+            // #[cfg(not(test))]
             PERFORMANCE_TRANSPORT_PORT,
-            #[cfg(test)]
-            12345,
+            // #[cfg(test)]
+            // 12345,
         );
         if self
             .transport_socket
@@ -396,6 +384,17 @@ impl State {
     async fn start_test(&self, endpoint: SocketAddr) -> Result<(), Error> {
         self.cmd_chan.tx.try_send(endpoint)?;
         Ok(())
+    }
+
+    /// Start the throughput test with given endpoint
+    async fn get_port(&self) -> Result<u16, Error> {
+        let port = self
+            .transport_socket
+            .as_ref()
+            .ok_or(Error::TransportSocketNotOpen)?
+            .local_addr()?
+            .port();
+        Ok(port)
     }
 }
 
@@ -488,6 +487,7 @@ async fn throughput_test_handler(
                 // Inform the peer that test is starting
                 telio_log_debug!("Sending start for throughput test to {:?}", endpoint);
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Start as u8);
+                #[allow(index_access_check)]
                 send_buffer[IP_ADDR_OFFSET..IP_ADDR_OFFSET + SIZE_OF_IP_ADDR]
                     .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr()?.ip()));
                 if let Err(e) = transport_socket
@@ -541,8 +541,10 @@ async fn throughput_test_handler(
             HandlerState::Results => {
                 // Tell the other peer test has ended
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::End as u8);
+                #[allow(index_access_check)]
                 send_buffer[IP_ADDR_OFFSET..IP_ADDR_OFFSET + SIZE_OF_IP_ADDR]
                     .copy_from_slice(&ip_to_bytes(&transport_socket.local_addr()?.ip()));
+                #[allow(index_access_check)]
                 send_buffer[5..13].copy_from_slice(&total_pkts.to_be_bytes());
                 if let Err(e) = transport_socket
                     .send_to(send_buffer.get(..13).ok_or(Error::InvalidIndex)?, endpoint)
@@ -589,21 +591,18 @@ mod tests {
         let test_ended = Arc::new(Notify::new());
 
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let client = Throughput::start(
-            ip_addr,
-            socket_pool.clone(),
-            client_cmd_chan,
-            12345,
-            Some(test_ended.clone()),
-        )
-        .await;
+        let client = Throughput::start(ip_addr, socket_pool.clone(), client_cmd_chan).await;
 
         let server_cmd_chan = Chan::new(5);
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let server =
-            Throughput::start(ip_addr, socket_pool.clone(), server_cmd_chan, 54321, None).await;
-
-        assert!(client.as_ref().unwrap().start_test(ip_addr).await.is_ok());
+        let server = Throughput::start(ip_addr, socket_pool.clone(), server_cmd_chan).await;
+        let port = server.unwrap().get_port().await.unwrap();
+        assert!(client
+            .as_ref()
+            .unwrap()
+            .start_test(ip_addr, port)
+            .await
+            .is_ok());
         assert!(timeout(TEST_DURATION * 4, test_ended.notified())
             .await
             .is_ok());
