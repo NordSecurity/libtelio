@@ -2,9 +2,8 @@ import asyncio
 import config
 import re
 from .network_switcher import NetworkSwitcher
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncIterator, List, Optional
+from typing import List, Optional
 from utils.command_grepper import CommandGrepper
 from utils.connection import Connection
 from utils.logger import log
@@ -85,8 +84,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             connection, await ConfiguredInterfaces.create(connection)
         )
 
-    @asynccontextmanager
-    async def switch_to_primary_network(self) -> AsyncIterator:
+    async def switch_to_primary_network(self) -> None:
         """Set default route via Linux VM @ $LINUX_VM_PRIMARY_GATEWAY"""
 
         await self._delete_existing_route()
@@ -119,18 +117,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         ):
             raise Exception("Failed to switch to primary network")
 
-        try:
-            yield
-        finally:
-            # Restoring management interface after a test
-            # Seems to be causing some flakyness. In order to
-            # Test this theory, restoring is being disabled
-            #
-            # await self._enable_management_interface()
-            pass
-
-    @asynccontextmanager
-    async def switch_to_secondary_network(self) -> AsyncIterator:
+    async def switch_to_secondary_network(self) -> None:
         """Set default route via Linux VM @ $LINUX_VM_SECONDARY_GATEWAY"""
 
         await self._delete_existing_route()
@@ -162,16 +149,6 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             ],
         ):
             raise Exception("Failed to switch to secondary network")
-
-        try:
-            yield
-        finally:
-            # Restoring management interface after a test
-            # Seems to be causing some flakyness. In order to
-            # Test this theory, restoring is being disabled
-            #
-            # await self._enable_management_interface()
-            pass
 
     async def _delete_existing_route(self) -> None:
         # Deleting routes by interface name instead of network destination (0.0.0.0/0) makes
