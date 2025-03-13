@@ -767,9 +767,7 @@ impl Device {
             task_exec!(self.rt()?, async move |rt| {
                 Ok(rt.disconnect_exit_node(&node_key).boxed().await)
             })
-            .await?
-            .map_err(Error::from)
-        })
+            .await?})
     }
 
     /// Disconnects from any VPN and/or demotes any meshnet node to be a regular meshnet node
@@ -779,9 +777,7 @@ impl Device {
             task_exec!(self.rt()?, async move |rt| {
                 Ok(rt.disconnect_exit_nodes().boxed().await)
             })
-            .await?
-            .map_err(Error::from)
-        })
+            .await?})
     }
 
     fn rt(&self) -> Result<&Task<Runtime>> {
@@ -2380,7 +2376,7 @@ impl TaskRuntime for Runtime {
 
                 if let Some(mesh_entities) = self.entities.meshnet.left() {
                     if let Some(proxy_endpoints) = mesh_entities.proxy.get_endpoint_map().await.ok().as_mut().and_then(|proxy_map| proxy_map.remove(&public_key)) {
-                        let is_proxying = mesh_event.peer.endpoint.map_or(false, |ep| proxy_endpoints.contains(&ep));
+                        let is_proxying = mesh_event.peer.endpoint.is_some_and(|ep| proxy_endpoints.contains(&ep));
                         let was_proxying = mesh_event.old_peer.as_ref().and_then(|peer| peer.endpoint.map(|ep| proxy_endpoints.contains(&ep))).unwrap_or_default();
 
                         if !was_proxying && is_proxying {
