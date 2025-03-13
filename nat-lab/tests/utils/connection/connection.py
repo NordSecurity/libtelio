@@ -3,7 +3,7 @@ import random
 from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum, auto
-from typing import List, Optional, Set
+from typing import List, Set
 from utils.process import Process
 
 

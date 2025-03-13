@@ -51,22 +51,11 @@ class SshConnection(Connection):
             subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
             subprocess.check_call(["sudo", "bash", "vm_nat.sh", "enable"])
 
-        ssh_options = asyncssh.SSHClientConnectionOptions(
-            encryption_algs=[
-                "aes128-gcm@openssh.com",
-                "aes256-ctr",
-                "aes192-ctr",
-                "aes128-ctr",
-            ],
-            compression_algs=None,
-        )
-
         async with asyncssh.connect(
             ip,
             username="root" if tag is ConnectionTag.VM_MAC else "vagrant",
-            password="vagrant",  # Hardcoded password for transient VM used in tests
+            password="vagrant",
             known_hosts=None,
-            options=ssh_options,
         ) as ssh_connection:
             async with cls(ssh_connection, tag) as connection:
                 if copy_binaries:
