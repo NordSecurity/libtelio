@@ -1,4 +1,3 @@
-use telio;
 
 mod test_module {
     use std::{
