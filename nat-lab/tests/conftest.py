@@ -8,6 +8,7 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters
 from interderp_cli import InterDerpClient
 from itertools import combinations
+from logging import FileHandler
 from typing import Dict, List, Tuple
 from utils.bindings import TelioAdapterType
 from utils.connection import DockerConnection
@@ -23,6 +24,7 @@ from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPStack
 from utils.tcpdump import make_tcpdump, make_local_tcpdump
+from utils.testing import get_current_test_log_path
 from utils.vm import mac_vm_util, windows_vm_util
 
 DERP_SERVER_1_ADDR = "http://10.0.10.1:8765"
@@ -479,3 +481,22 @@ async def start_tcpdump_processes():
         make_tcpdump(connections, session=True)
     )
     await SESSION_SCOPE_EXIT_STACK.enter_async_context(make_local_tcpdump())
+
+
+@pytest.fixture(autouse=True)
+def setup_logger(tmp_path, request):
+    # if os.environ.get("NATLAB_SAVE_LOGS"):
+    log_dir = get_current_test_log_path()
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "debug.log")
+    # else:
+    #     log_file = os.path.join(tmp_path, f"{request.node.nodeid}.log")
+
+    file_handler = FileHandler(log_file, mode="w")
+    log.addFileHandler(file_handler)
+
+    try:
+        yield
+    finally:
+        log.removeHandler(file_handler)
+        file_handler.close()
