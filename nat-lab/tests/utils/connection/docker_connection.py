@@ -4,6 +4,7 @@ from aiodocker.containers import DockerContainer
 from asyncio import to_thread
 from config import LINUX_INTERFACE_NAME
 from contextlib import asynccontextmanager
+from logging import DEBUG, INFO
 from subprocess import run, DEVNULL
 from typing import List, Type, Dict, AsyncIterator
 from typing_extensions import Self
@@ -125,12 +126,18 @@ class DockerConnection(Connection):
         await to_thread(aux)
 
     def create_process(
-        self, command: List[str], kill_id=None, term_type=None
+        self, command: List[str], kill_id=None, term_type=None, quiet=False
     ) -> "Process":
         process = DockerProcess(
             self._container, container_id(self.tag), command, kill_id
         )
-        log.info("[%s] Executing %s", self.tag.name, " ".join(command))
+
+        if not quiet:
+            log_level = INFO
+        else:
+            log_level = DEBUG
+        log.log(log_level, "[%s] Executing %s", self.tag.name, " ".join(command))
+
         return process
 
     async def get_ip_address(self) -> tuple[str, str]:
