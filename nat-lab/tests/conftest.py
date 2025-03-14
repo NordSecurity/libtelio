@@ -377,34 +377,8 @@ def pytest_runtest_setup():
 
 # pylint: disable=unused-argument
 def pytest_sessionstart(session):
-    if os.environ.get("NATLAB_SAVE_LOGS") is None:
-        return
-
-    async def async_context():
-        connections = [
-            await SESSION_SCOPE_EXIT_STACK.enter_async_context(
-                new_connection_raw(gw_tag)
-            )
-            for gw_tag in ConnectionTag
-            if "_GW" in gw_tag.name
-        ]
-
-        connections += [
-            await SESSION_SCOPE_EXIT_STACK.enter_async_context(
-                new_connection_raw(conn_tag)
-            )
-            for conn_tag in [
-                ConnectionTag.DOCKER_DNS_SERVER_1,
-                ConnectionTag.DOCKER_DNS_SERVER_2,
-            ]
-        ]
-
-        await SESSION_SCOPE_EXIT_STACK.enter_async_context(
-            make_tcpdump(connections, session=True)
-        )
-        await SESSION_SCOPE_EXIT_STACK.enter_async_context(make_local_tcpdump())
-
-    RUNNER.run(async_context())
+    if os.environ.get("NATLAB_SAVE_LOGS"):
+        RUNNER.run(start_tcpdump_processes())
 
 
 # pylint: disable=unused-argument
@@ -480,6 +454,26 @@ async def collect_mac_diagnostic_reports():
         log.error("Failed to connect to the mac VM: %s", e)
         if is_ci:
             raise e
+
+
+async def start_tcpdump_processes():
+    connections = [
+        await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(gw_tag))
+        for gw_tag in ConnectionTag
+        if "_GW" in gw_tag.name
+    ]
+    connections += [
+        await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(conn_tag))
+        for conn_tag in [
+            ConnectionTag.DOCKER_DNS_SERVER_1,
+            ConnectionTag.DOCKER_DNS_SERVER_2,
+        ]
+    ]
+
+    await SESSION_SCOPE_EXIT_STACK.enter_async_context(
+        make_tcpdump(connections, session=True)
+    )
+    await SESSION_SCOPE_EXIT_STACK.enter_async_context(make_local_tcpdump())
 
 
 @pytest.fixture(autouse=True)
