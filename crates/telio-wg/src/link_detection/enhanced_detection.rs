@@ -4,7 +4,7 @@ use std::{net::IpAddr, sync::Arc};
 use telio_pinger::Pinger;
 use telio_sockets::SocketPool;
 use telio_task::{io::chan, task_exec, Runtime, RuntimeExt, Task, WaitResponse};
-use telio_utils::{ip_stack, DualTarget, IpStack};
+use telio_utils::{ip_stack, telio_log_warn, DualTarget, IpStack};
 
 use telio_utils::telio_log_debug;
 /// Component used to check the link state when we think it's down.
@@ -50,7 +50,7 @@ impl State {
     ) -> std::io::Result<Self> {
         Ok(State {
             ping_channel,
-            pinger: Pinger::new(no_of_pings, ipv6_enabled, socket_pool)?,
+            pinger: Pinger::new(no_of_pings, ipv6_enabled, socket_pool, "link_detection")?,
         })
     }
 }
@@ -82,8 +82,9 @@ impl Runtime for State {
                             _ => telio_log_debug!("Unsupported target combination"),
                         }
                         if let Ok(t) = DualTarget::new(t) {
-                            telio_log_debug!("Perform actual ping");
-                            let _ = self.pinger.perform(t).await;
+                            if let Err(e) = self.pinger.send_ping(&t).await {
+                                telio_log_warn!("Failed to ping peer: {:?}", e);
+                            }
                         }
                     }
                 } else {

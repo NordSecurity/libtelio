@@ -13,6 +13,7 @@ telio-sockets.workspace = true
 surge-ping.workspace = true
 rand.workspace = true
 tracing.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["net", "sync", "test-util"] }
