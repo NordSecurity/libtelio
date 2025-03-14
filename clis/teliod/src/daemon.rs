@@ -2,7 +2,7 @@ use futures::stream::StreamExt;
 use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use nix::sys::signal::Signal;
 use signal_hook_tokio::Signals;
-use std::{fs, net::IpAddr, sync::Arc};
+use std::{net::IpAddr, sync::Arc};
 use telio::{
     crypto::SecretKey,
     device::{Device, DeviceConfig, Error as DeviceError},
@@ -16,6 +16,7 @@ use tokio::{sync::mpsc, sync::oneshot, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::core_api::{get_meshmap as get_meshmap_from_server, init_with_api};
+use crate::logging::setup_logging;
 use crate::ClientCmd;
 use crate::{
     command_listener::CommandListener,
@@ -207,15 +208,12 @@ async fn daemon_init(
 }
 
 pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError> {
-    let (non_blocking_writer, _tracing_worker_guard) =
-        tracing_appender::non_blocking(fs::File::create(&config.log_file_path)?);
-    tracing_subscriber::fmt()
-        .with_max_level(config.log_level)
-        .with_writer(non_blocking_writer)
-        .with_ansi(false)
-        .with_line_number(true)
-        .with_level(true)
-        .init();
+    let _tracing_worker_guard = setup_logging(
+        &config.log_file_path,
+        config.log_level,
+        config.log_file_count,
+    )
+    .await?;
 
     debug!("started with config: {config:?}");
 

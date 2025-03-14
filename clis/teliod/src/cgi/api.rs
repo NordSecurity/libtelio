@@ -278,6 +278,7 @@ mod tests {
         let mut expected_config = TeliodDaemonConfig {
             log_level: LevelFilter::DEBUG,
             log_file_path: "/path/to/log".to_owned(),
+            log_file_count: 7,
             interface: InterfaceConfig {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
@@ -319,6 +320,7 @@ mod tests {
 
         expected_config.log_level = LevelFilter::INFO;
         expected_config.log_file_path = "/new/path/to/log".to_owned();
+        expected_config.log_file_count = 8;
         expected_config.authentication_token =
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned();
         expected_config.interface = InterfaceConfig {
@@ -335,6 +337,7 @@ mod tests {
         {
             "log_level": "info",
             "log_file_path": "/new/path/to/log",
+            "log_file_count": 8,
             "authentication_token": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "interface": {
                 "name": "eth1",
@@ -362,6 +365,7 @@ mod tests {
         let mut expected_config = TeliodDaemonConfig {
             log_level: LevelFilter::DEBUG,
             log_file_path: "/path/to/log".to_owned(),
+            log_file_count: 7,
             interface: InterfaceConfig {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,

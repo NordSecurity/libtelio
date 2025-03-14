@@ -22,7 +22,8 @@ There is a command for running the daemon:
      - `debug`
      - `trace`
      - `off`
-   - `log_file_path` - a path to the daemon's logging file (relative paths are starting in Teliod's working directory)
+   - `log_file_path` - a path to the daemon's logging file, needs to specify both the directory and the file name
+   - `log_file_count` - number of recent log files (log files are rotated daily)
    - `authentication_token` - Token from Nord VPN account to authenticate API calls
    - `app_user_uid` - A unique number for each user of the application
    - `interface`

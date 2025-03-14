@@ -11,6 +11,7 @@ use tokio::{
     time::{timeout, Duration},
 };
 use tracing::{debug, error};
+use tracing_appender::rolling::InitError;
 
 #[cfg(feature = "cgi")]
 mod cgi;
@@ -20,6 +21,7 @@ mod config;
 mod configure_interface;
 mod core_api;
 mod daemon;
+mod logging;
 mod nc;
 
 use crate::{
@@ -85,6 +87,10 @@ enum TeliodError {
     CoreApiError(#[from] ApiError),
     #[error(transparent)]
     DeviceError(#[from] DeviceError),
+    #[error("Invalid config option {0}: {1} (value '{2}')")]
+    InvalidConfigOption(String, String, String),
+    #[error(transparent)]
+    LogAppenderError(#[from] InitError),
 }
 
 /// Libtelio and meshnet status report
@@ -152,20 +158,12 @@ async fn main() -> Result<(), TeliodError> {
         #[cfg(feature = "cgi")]
         Cmd::Cgi => {
             #[cfg(debug_assertions)]
-            let (non_blocking_writer, _tracing_worker_guard) = tracing_appender::non_blocking(
-                fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(cgi::constants::CGI_LOG)?,
-            );
-            #[cfg(debug_assertions)]
-            tracing_subscriber::fmt()
-                .with_max_level(tracing::Level::TRACE)
-                .with_writer(non_blocking_writer)
-                .with_ansi(false)
-                .with_line_number(true)
-                .with_level(true)
-                .init();
+            let _tracing_worker_guard = logging::setup_logging(
+                cgi::constants::CGI_LOG,
+                tracing::level_filters::LevelFilter::TRACE,
+                7,
+            )
+            .await?;
 
             tokio::task::spawn_blocking(|| {
                 rust_cgi::handle(cgi::handle_request);
