@@ -122,9 +122,9 @@ def setup_api(node_params: List[Tuple[bool, IPStack]]) -> Tuple[API, List[Node]]
         if node != other_node:
             node.set_peer_firewall_settings(other_node.id, True, True)
 
-    log.info("Nodes in API:")
+    log.debug("Nodes in API:")
     for node in api.nodes.values():
-        log.info(node)
+        log.debug(node)
 
     return api, nodes
 
@@ -469,7 +469,7 @@ async def send_https_request(
 
     log.info("Curl command: %s", curl_command)
 
-    process = await connection.create_process(curl_command).execute()
+    process = await connection.create_process(curl_command, quiet=True).execute()
     response = process.get_stdout()
     if expect_response:
         try:

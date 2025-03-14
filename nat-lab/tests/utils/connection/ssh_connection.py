@@ -74,7 +74,8 @@ class SshConnection(Connection):
                     keys = await utils_win.get_network_interface_tunnel_keys(connection)
                     for key in keys:
                         await connection.create_process(
-                            ["reg", "delete", key, "/F"]
+                            ["reg", "delete", key, "/F"],
+                            quiet=True,
                         ).execute()
 
                 yield connection

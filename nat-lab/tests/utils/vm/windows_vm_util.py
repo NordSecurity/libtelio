@@ -63,7 +63,9 @@ async def copy_binaries(
 ) -> None:
     for directory in [VM_TCLI_DIR, VM_UNIFFI_DIR]:
         try:
-            await connection.create_process(["rmdir", "/s", "/q", directory]).execute()
+            await connection.create_process(
+                ["rmdir", "/s", "/q", directory], quiet=True
+            ).execute()
         except ProcessExecError as exception:
             if (
                 exception.stderr.find("The system cannot find the file specified") < 0
@@ -103,14 +105,17 @@ async def copy_binaries(
 
 
 async def get_network_interface_tunnel_keys(connection):
-    result = await connection.create_process([
-        "reg",
-        "query",
-        "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}",
-        "/s",
-        "/f",
-        "DriverDesc",
-    ]).execute()
+    result = await connection.create_process(
+        [
+            "reg",
+            "query",
+            "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}",
+            "/s",
+            "/f",
+            "DriverDesc",
+        ],
+        quiet=True,
+    ).execute()
 
     lines = result.get_stdout().splitlines()
     keys = []

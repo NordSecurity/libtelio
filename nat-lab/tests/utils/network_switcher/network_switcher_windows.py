@@ -20,11 +20,11 @@ class Interface:
     @staticmethod
     async def get_network_interfaces(connection: Connection) -> List["Interface"]:
         process = await connection.create_process(
-            ["netsh", "interface", "ipv4", "show", "addresses"]
+            ["netsh", "interface", "ipv4", "show", "addresses"], quiet=True
         ).execute()
 
         stdout = process.get_stdout()
-        log.info(stdout)
+        log.debug(stdout)
 
         matches = re.finditer(
             r'Configuration for interface "([^"]+)"\s+(.*?)InterfaceMetric',
@@ -184,15 +184,18 @@ class NetworkSwitcherWindows(NetworkSwitcher):
 
     async def _delete_route(self, interface_name: str) -> None:
         try:
-            await self._connection.create_process([
-                "netsh",
-                "interface",
-                "ipv4",
-                "delete",
-                "route",
-                "0.0.0.0/0",
-                interface_name,
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4",
+                    "delete",
+                    "route",
+                    "0.0.0.0/0",
+                    interface_name,
+                ],
+                quiet=True,
+            ).execute()
         except ProcessExecError as exception:
             if (
                 "The filename, directory name, or volume label syntax is incorrect"
@@ -223,14 +226,17 @@ class NetworkSwitcherWindows(NetworkSwitcher):
 
     async def _disable_management_interface(self) -> None:
         if self._interfaces.default is not None:
-            await self._connection.create_process([
-                "netsh",
-                "interface",
-                "set",
-                "interface",
-                self._interfaces.default,
-                "disable",
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "netsh",
+                    "interface",
+                    "set",
+                    "interface",
+                    self._interfaces.default,
+                    "disable",
+                ],
+                quiet=True,
+            ).execute()
 
             if not await CommandGrepper(
                 self._connection,
@@ -248,14 +254,17 @@ class NetworkSwitcherWindows(NetworkSwitcher):
 
     async def _enable_management_interface(self) -> None:
         if self._interfaces.default is not None:
-            await self._connection.create_process([
-                "netsh",
-                "interface",
-                "set",
-                "interface",
-                self._interfaces.default,
-                "enable",
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "netsh",
+                    "interface",
+                    "set",
+                    "interface",
+                    self._interfaces.default,
+                    "enable",
+                ],
+                quiet=True,
+            ).execute()
 
             # wait for interface to appear in the list
             while not bool([

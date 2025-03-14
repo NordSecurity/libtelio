@@ -112,12 +112,13 @@ class CommandGrepper:
         while True:
             try:
                 process = await self._connection.create_process(
-                    self._check_cmd
+                    self._check_cmd,
+                    quiet=True,
                 ).execute()
             except ProcessExecError as e:
                 if self._allow_process_failure:
                     log.debug(
-                        "Process exeuction failed in CommandGrepper, but it is allowed to fail. Ignoring. Error: %s",
+                        "Process execution failed in CommandGrepper, but it is allowed to fail. Ignoring. Error: %s",
                         e,
                     )
                     continue

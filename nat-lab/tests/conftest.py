@@ -332,7 +332,7 @@ def save_audit_log_from_host(suffix):
 
 async def _save_macos_logs(conn, suffix):
     try:
-        dmesg_proc = await conn.create_process(["dmesg"]).execute()
+        dmesg_proc = await conn.create_process(["dmesg"], quiet=True).execute()
         with open(
             os.path.join("logs", f"dmesg-macos-{suffix}.txt"), "w", encoding="utf-8"
         ) as f:

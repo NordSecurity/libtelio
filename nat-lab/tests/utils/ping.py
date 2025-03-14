@@ -39,6 +39,7 @@ class Ping:
         if connection.target_os == TargetOS.Windows:
             self._process = connection.create_process(
                 ["ping", ("-4" if self._ip_proto == IPProto.IPv4 else "-6"), "-t", ip],
+                quiet=True,
             )
         elif connection.target_os == TargetOS.Mac:
             self._process = connection.create_process(
@@ -48,6 +49,7 @@ class Ping:
                     kill_id,
                     ip,
                 ],
+                quiet=True,
             )
         else:
             self._process = connection.create_process(
@@ -59,6 +61,7 @@ class Ping:
                     ip,
                 ],
                 kill_id,
+                quiet=True,
             )
         self._next_ping_event = asyncio.Event()
 

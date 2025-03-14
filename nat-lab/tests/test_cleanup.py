@@ -48,6 +48,9 @@ async def test_get_network_interface_tunnel_keys(adapter_type, name) -> None:
         assert (
             name
             in (
-                await connection.create_process(["reg", "query", keys[0]]).execute()
+                await connection.create_process(
+                    ["reg", "query", keys[0]],
+                    quiet=True,
+                ).execute()
             ).get_stdout()
         )
