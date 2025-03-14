@@ -264,9 +264,9 @@ def parse_input(input_string, container_name: Optional[str] = None) -> Conntrack
     event = ConntrackerEvent()
 
     if container_name:
-        log.info(f"[{container_name}] Conntracker reported event: {input_string}")
+        log.debug(f"[{container_name}] Conntracker reported event: {input_string}")
     else:
-        log.info(f"Conntracker reported event: {input_string}")
+        log.debug(f"Conntracker reported event: {input_string}")
 
     match = re.search(r"\[([A-Z]+)\] (\w+)", input_string)
     if match:
@@ -313,7 +313,7 @@ class ConnectionTracker:
         validators: Optional[List[ConnTrackerEventsValidator]] = None,
     ):
         args = ["conntrack", "-E"]
-        self._process: Process = connection.create_process(args)
+        self._process: Process = connection.create_process(args, quiet=True)
         self._connection: Connection = connection
         self._validators: Optional[List[ConnTrackerEventsValidator]] = validators
         self._events: List[ConntrackerEvent] = []

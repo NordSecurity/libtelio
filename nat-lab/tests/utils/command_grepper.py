@@ -102,7 +102,9 @@ class CommandGrepper:
         self, exp_primary: str, exp_secondary: Optional[List[str]], exists: bool
     ) -> bool:
         while True:
-            process = await self._connection.create_process(self._check_cmd).execute()
+            process = await self._connection.create_process(
+                self._check_cmd, quiet=True
+            ).execute()
             self._last_stdout = process.get_stdout()
             self._last_stderr = process.get_stderr()
 

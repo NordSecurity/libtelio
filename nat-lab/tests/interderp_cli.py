@@ -33,6 +33,7 @@ class InterDerpClient:
                 "--secret-key-2",
                 sk2,
             ],
+            quiet=True,
         )
         self._connection = connection
 
@@ -49,9 +50,11 @@ class InterDerpClient:
 
     async def get_log(self) -> str:
         process = (
-            self._connection.create_process(["type", "interderpcli.log"])
+            self._connection.create_process(["type", "interderpcli.log"], quiet=True)
             if self._connection.target_os == TargetOS.Windows
-            else self._connection.create_process(["cat", "./interderpcli.log"])
+            else self._connection.create_process(
+                ["cat", "./interderpcli.log"], quiet=True
+            )
         )
         await process.execute()
         return process.get_stdout()
@@ -66,7 +69,9 @@ class InterDerpClient:
         log_content = await self.get_log()
 
         if self._connection.target_os == TargetOS.Linux:
-            process = self._connection.create_process(["cat", "/etc/hostname"])
+            process = self._connection.create_process(
+                ["cat", "/etc/hostname"], quiet=True
+            )
             await process.execute()
             container_id = process.get_stdout().strip()
         else:

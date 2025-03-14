@@ -3,7 +3,6 @@ import random
 from aiodocker import Docker
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum, auto
 from typing import AsyncIterator, Dict, Tuple, Optional, List, Union, Set
 from utils.connection import Connection, TargetOS, DockerConnection
@@ -13,6 +12,7 @@ from utils.connection_tracker import (
     ConnectionCountLimit,
     FiveTuple,
 )
+from utils.logger import log
 from utils.network_switcher import (
     NetworkSwitcher,
     NetworkSwitcherDocker,
@@ -480,17 +480,20 @@ async def add_outgoing_packets_delay(
     connection: Connection, delay: str
 ) -> AsyncIterator:
     await remove_traffic_control_rules(connection)
-    await connection.create_process([
-        "tc",
-        "qdisc",
-        "add",
-        "dev",
-        "eth0",
-        "root",
-        "netem",
-        "delay",
-        delay,
-    ]).execute()
+    await connection.create_process(
+        [
+            "tc",
+            "qdisc",
+            "add",
+            "dev",
+            "eth0",
+            "root",
+            "netem",
+            "delay",
+            delay,
+        ],
+        quiet=True,
+    ).execute()
     try:
         yield
     finally:
@@ -499,15 +502,18 @@ async def add_outgoing_packets_delay(
 
 async def remove_traffic_control_rules(connection):
     try:
-        await connection.create_process([
-            "tc",
-            "qdisc",
-            "del",
-            "dev",
-            "eth0",
-            "root",
-            "netem",
-        ]).execute()
+        await connection.create_process(
+            [
+                "tc",
+                "qdisc",
+                "del",
+                "dev",
+                "eth0",
+                "root",
+                "netem",
+            ],
+            quiet=True,
+        ).execute()
     except:
         pass
 
@@ -517,7 +523,7 @@ async def setup_ephemeral_ports(connection: Connection, connection_tag: Connecti
         return
 
     async def on_output(output: str) -> None:
-        print(datetime.now(), f"[{connection_tag.name}]: {output}")
+        log.debug(f"[{connection_tag.name}]: {output}")
 
     start_port = random.randint(5000, 55000)
     num_ports = random.randint(2000, 5000)
@@ -549,5 +555,5 @@ async def setup_ephemeral_ports(connection: Connection, connection_tag: Connecti
     else:
         return
 
-    await connection.create_process(cmd).execute(on_output, on_output)
+    await connection.create_process(cmd, quiet=True).execute(on_output, on_output)
     EPHEMERAL_SETUP_SET.add(connection_tag)
