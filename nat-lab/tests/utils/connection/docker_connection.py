@@ -46,12 +46,18 @@ class DockerConnection(Connection):
         await to_thread(aux)
 
     def create_process(
-        self, command: List[str], kill_id=None, term_type=None
+        self, command: List[str], kill_id=None, term_type=None, quiet=False
     ) -> "Process":
         process = DockerProcess(
             self._container, self.container_name(), command, kill_id
         )
-        log.info(f"[{self._name}] Executing {' '.join(command)}")
+
+        log_msg = f"[{self._name}] Executing {' '.join(command)}"
+        if not quiet:
+            log.info(log_msg)
+        else:
+            log.debug(log_msg)
+
         return process
 
     async def get_ip_address(self) -> tuple[str, str]:

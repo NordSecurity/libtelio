@@ -24,9 +24,15 @@ class SshConnection(Connection):
         self._target_os = target_os
 
     def create_process(
-        self, command: List[str], kill_id=None, term_type=None
+        self, command: List[str], kill_id=None, term_type=None, quiet=False
     ) -> "Process":
-        log.info(f"[{self._vm_name}] Executing {' '.join(command)}")
+
+        log_msg = f"[{self._vm_name}] Executing {' '.join(command)}"
+        if not quiet:
+            log.info(log_msg)
+        else:
+            log.debug(log_msg)
+
         if self._target_os == TargetOS.Windows:
             escape_argument = cmd_exe_escape.escape_argument
         elif self._target_os in [TargetOS.Linux, TargetOS.Mac]:
