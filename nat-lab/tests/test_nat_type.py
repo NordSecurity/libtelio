@@ -2,7 +2,7 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment
 from uniffi.telio_bindings import NatType
-from utils.connection_util import ConnectionTag
+from utils.connection import ConnectionTag
 
 
 @pytest.mark.nat

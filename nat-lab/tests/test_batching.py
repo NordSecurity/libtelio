@@ -22,8 +22,12 @@ from utils.bindings import (
     TelioAdapterType,
     LinkState,
 )
-from utils.connection import DockerConnection
-from utils.connection_util import ConnectionTag, DOCKER_GW_MAP, container_id
+from utils.connection import ConnectionTag
+from utils.connection.docker_connection import (
+    DockerConnection,
+    container_id,
+    DOCKER_GW_MAP,
+)
 from utils.traffic import (
     capture_traffic,
     render_chart,
@@ -157,7 +161,7 @@ async def test_batching(
         gateway_container_names = [container_id(conn_tag) for conn_tag in gateways]
         conns = [client.get_connection() for client in clients]
         node_container_names = [
-            conn.container_name()
+            container_id(conn.tag)
             for conn in conns
             if isinstance(conn, DockerConnection)
         ]

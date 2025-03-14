@@ -2,7 +2,7 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, ping_between_all_nodes, setup_mesh_nodes
 from typing import List
 from utils.bindings import default_features, TelioAdapterType
-from utils.connection_util import ConnectionTag
+from utils.connection import ConnectionTag
 
 
 def _generate_setup_parameters(

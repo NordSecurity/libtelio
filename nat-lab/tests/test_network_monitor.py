@@ -3,7 +3,7 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from utils.bindings import TelioAdapterType
-from utils.connection_util import ConnectionTag
+from utils.connection import ConnectionTag
 
 DEFAULT_WAITING_TIME = 2
 
@@ -20,14 +20,14 @@ DEFAULT_WAITING_TIME = 2
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
             ),
             marks=[pytest.mark.windows],
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
             ),
             marks=[

@@ -18,8 +18,8 @@ from utils.bindings import (
     RelayState,
     NodeState,
 )
+from utils.connection import ConnectionTag
 from utils.connection_util import (
-    ConnectionTag,
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
 )

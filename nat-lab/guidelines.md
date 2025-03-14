@@ -11,8 +11,8 @@
 
    **Example:**
    ```
-   @pytest.mark.parametrize("alpha_node", [ConnectionTag.MAC_VM, ConnectionTag.WINDOWS_VM, ConnectionTag.DOCKER_CONE_CLIENT_1])
-   @pytest.mark.parametrize("beta_node", ConnectionTag.MAC_VM)
+   @pytest.mark.parametrize("alpha_node", [ConnectionTag.VM_MAC, ConnectionTag.WINDOWS_VM, ConnectionTag.DOCKER_CONE_CLIENT_1])
+   @pytest.mark.parametrize("beta_node", ConnectionTag.VM_MAC)
    def test_params(alpha_node, beta_node):
    ```
 

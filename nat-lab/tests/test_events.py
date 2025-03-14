@@ -20,9 +20,9 @@ from utils.bindings import (
     telio_node,
     TelioAdapterType,
 )
+from utils.connection import ConnectionTag
 from utils.connection_util import (
     generate_connection_tracker_config,
-    ConnectionTag,
     new_connection_with_conn_tracker,
 )
 from utils.ping import ping
@@ -78,10 +78,10 @@ def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 1),
                 ),
             ),
@@ -90,10 +90,10 @@ def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 1),
                 ),
             ),
@@ -102,10 +102,10 @@ def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.MAC_VM,
+                    ConnectionTag.VM_MAC,
                     derp_1_limits=(1, 1),
                 ),
             ),
@@ -256,10 +256,10 @@ async def test_event_content_meshnet(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     vpn_1_limits=(1, 1),
                     stun_limits=(1, 2),
                 ),
@@ -273,10 +273,10 @@ async def test_event_content_meshnet(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     vpn_1_limits=(1, 1),
                     stun_limits=(1, 2),
                 ),
@@ -290,10 +290,10 @@ async def test_event_content_meshnet(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.MAC_VM,
+                    ConnectionTag.VM_MAC,
                     vpn_1_limits=(1, 1),
                     stun_limits=(1, 2),
                 ),
@@ -413,10 +413,10 @@ async def test_event_content_vpn_connection(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 1),
                 ),
             ),
@@ -425,10 +425,10 @@ async def test_event_content_vpn_connection(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 1),
                 ),
             ),
@@ -437,10 +437,10 @@ async def test_event_content_vpn_connection(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.MAC_VM,
+                    ConnectionTag.VM_MAC,
                     derp_1_limits=(1, 1),
                 ),
             ),
@@ -570,10 +570,10 @@ async def test_event_content_exit_through_peer(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 1),
                 ),
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
@@ -584,10 +584,10 @@ async def test_event_content_exit_through_peer(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 1),
                 ),
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
@@ -598,10 +598,10 @@ async def test_event_content_exit_through_peer(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.MAC_VM,
+                    ConnectionTag.VM_MAC,
                     derp_1_limits=(1, 1),
                 ),
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),

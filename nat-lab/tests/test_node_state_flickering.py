@@ -12,7 +12,8 @@ from utils.bindings import (
     NodeState,
     RelayState,
 )
-from utils.connection_util import generate_connection_tracker_config, ConnectionTag
+from utils.connection import ConnectionTag
+from utils.connection_util import generate_connection_tracker_config
 
 
 @pytest.mark.asyncio
@@ -44,10 +45,10 @@ from utils.connection_util import generate_connection_tracker_config, Connection
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 1),
                 ),
             ),
@@ -55,10 +56,10 @@ from utils.connection_util import generate_connection_tracker_config, Connection
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 1),
                 ),
             ),
@@ -66,10 +67,10 @@ from utils.connection_util import generate_connection_tracker_config, Connection
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.MAC_VM,
+                    ConnectionTag.VM_MAC,
                     derp_1_limits=(1, 1),
                 ),
             ),
@@ -137,13 +138,13 @@ async def test_node_state_flickering_direct(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         alpha_conn_tag = (
-            ConnectionTag.WINDOWS_VM_1
+            ConnectionTag.VM_WINDOWS_1
             if alpha_adapter_type
             in [TelioAdapterType.WINDOWS_NATIVE_TUN, TelioAdapterType.WIREGUARD_GO_TUN]
             else ConnectionTag.DOCKER_CONE_CLIENT_1
         )
         beta_conn_tag = (
-            ConnectionTag.WINDOWS_VM_2
+            ConnectionTag.VM_WINDOWS_2
             if beta_adapter_type
             in [TelioAdapterType.WINDOWS_NATIVE_TUN, TelioAdapterType.WIREGUARD_GO_TUN]
             else ConnectionTag.DOCKER_CONE_CLIENT_2

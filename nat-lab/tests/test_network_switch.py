@@ -19,8 +19,7 @@ from utils.bindings import (
     NodeState,
     RelayState,
 )
-from utils.connection import TargetOS
-from utils.connection_util import ConnectionTag
+from utils.connection import TargetOS, ConnectionTag
 from utils.ping import ping
 
 
@@ -34,13 +33,13 @@ from utils.ping import ping
             "10.0.254.13",
         ),
         pytest.param(
-            ConnectionTag.WINDOWS_VM_1,
+            ConnectionTag.VM_WINDOWS_1,
             "10.0.254.7",
             "10.0.254.8",
             marks=pytest.mark.windows,
         ),
         pytest.param(
-            ConnectionTag.MAC_VM,
+            ConnectionTag.VM_MAC,
             "10.0.254.7",
             "10.0.254.8",
             marks=pytest.mark.mac,
@@ -80,14 +79,14 @@ async def test_network_switcher(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
             ),
             marks=pytest.mark.windows,
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
             ),
             marks=[
@@ -96,7 +95,7 @@ async def test_network_switcher(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
             ),
             marks=[
@@ -156,7 +155,7 @@ async def test_mesh_network_switch(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 is_meshnet=False,
             ),
@@ -164,7 +163,7 @@ async def test_mesh_network_switch(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 is_meshnet=False,
             ),
@@ -172,7 +171,7 @@ async def test_mesh_network_switch(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 is_meshnet=False,
             ),
@@ -243,7 +242,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
@@ -253,7 +252,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
@@ -261,7 +260,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),

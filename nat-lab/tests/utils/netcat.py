@@ -1,5 +1,5 @@
 import asyncio
-from config import LIBTELIO_BINARY_PATH_MAC_VM
+from config import LIBTELIO_BINARY_PATH_VM_MAC
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional, AsyncIterator
@@ -16,7 +16,7 @@ def _get_netcat_base_command(connection: Connection) -> list[str]:
     if connection.target_os == TargetOS.Mac:
         return [
             get_python_binary(connection),
-            LIBTELIO_BINARY_PATH_MAC_VM + "netcat.py",
+            LIBTELIO_BINARY_PATH_VM_MAC + "netcat.py",
         ]
     # use the built in netcat command on linux
     return ["nc"]
