@@ -17,7 +17,7 @@ class TelioLogNotifier:
         ), "TelioLogNotifier supported only on Linux"
         self._connection = connection
         self._process = connection.create_process(
-            ["tail", "-n", "1", "-F", "/tcli.log"]
+            ["tail", "-n", "1", "-F", "/tcli.log"], quiet=True
         )
         self._output_notifier = OutputNotifier()
 

@@ -295,17 +295,20 @@ async def add_outgoing_packets_delay(
     connection: Connection, delay: str
 ) -> AsyncIterator:
     await remove_traffic_control_rules(connection)
-    await connection.create_process([
-        "tc",
-        "qdisc",
-        "add",
-        "dev",
-        "eth0",
-        "root",
-        "netem",
-        "delay",
-        delay,
-    ]).execute()
+    await connection.create_process(
+        [
+            "tc",
+            "qdisc",
+            "add",
+            "dev",
+            "eth0",
+            "root",
+            "netem",
+            "delay",
+            delay,
+        ],
+        quiet=True,
+    ).execute()
     try:
         yield
     finally:
@@ -314,15 +317,18 @@ async def add_outgoing_packets_delay(
 
 async def remove_traffic_control_rules(connection):
     try:
-        await connection.create_process([
-            "tc",
-            "qdisc",
-            "del",
-            "dev",
-            "eth0",
-            "root",
-            "netem",
-        ]).execute()
+        await connection.create_process(
+            [
+                "tc",
+                "qdisc",
+                "del",
+                "dev",
+                "eth0",
+                "root",
+                "netem",
+            ],
+            quiet=True,
+        ).execute()
     except:
         pass
 

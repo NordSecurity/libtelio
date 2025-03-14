@@ -32,6 +32,7 @@ class MacRouter(Router):
                         "255.192.0.0",
                         address,
                     ],
+                    quiet=True,
                 ).execute()
             elif addr_proto == IPProto.IPv6:
                 await self._connection.create_process(
@@ -44,6 +45,7 @@ class MacRouter(Router):
                         "prefixlen",
                         "64",
                     ],
+                    quiet=True,
                 ).execute()
 
     async def deconfigure_interface(self, addresses: List[str]) -> None:
@@ -61,6 +63,7 @@ class MacRouter(Router):
                         "255.192.0.0",
                         address,
                     ],
+                    quiet=True,
                 ).execute()
             elif addr_proto == IPProto.IPv6:
                 await self._connection.create_process(
@@ -73,6 +76,7 @@ class MacRouter(Router):
                         "prefixlen",
                         "64",
                     ],
+                    quiet=True,
                 ).execute()
 
     async def create_meshnet_route(self) -> None:
@@ -86,6 +90,7 @@ class MacRouter(Router):
                     "-interface",
                     self._interface_name,
                 ],
+                quiet=True,
             ).execute()
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
@@ -98,6 +103,7 @@ class MacRouter(Router):
                     "-interface",
                     self._interface_name,
                 ],
+                quiet=True,
             ).execute()
 
     async def create_vpn_route(self) -> None:
@@ -135,7 +141,8 @@ class MacRouter(Router):
     async def delete_vpn_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             await self._connection.create_process(
-                ["route", "delete", "-inet", "0/1"]
+                ["route", "delete", "-inet", "0/1"],
+                quiet=True,
             ).execute()
 
             await self._connection.create_process(
@@ -144,7 +151,8 @@ class MacRouter(Router):
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             await self._connection.create_process(
-                ["route", "delete", "-inet6", "default"]
+                ["route", "delete", "-inet6", "default"],
+                quiet=True,
             ).execute()
 
     async def create_exit_node_route(self) -> None:

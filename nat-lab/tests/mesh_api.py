@@ -1,8 +1,8 @@
 import json
-import os
 import platform
 import pprint
 import random
+import subprocess
 import time
 import uuid
 from config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
@@ -392,8 +392,13 @@ class API:
 
                 for cmd in commands:
                     full_cmd = f"docker exec --privileged {server_config['container']} bash -c '{cmd}'"
-                    ret = os.system(full_cmd)
-                    log.info(
+                    ret = subprocess.run(
+                        full_cmd,
+                        shell=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    log.debug(
                         "Executing %s on %s with result %s",
                         full_cmd,
                         server_config["container"],
@@ -409,8 +414,13 @@ class API:
                     f' \'echo "{wg_conf}" > /etc/wireguard/wg0.conf; wg-quick down'
                     " /etc/wireguard/wg0.conf; wg-quick up /etc/wireguard/wg0.conf'"
                 )
-                ret = os.system(cmd)
-                log.info(
+                ret = subprocess.run(
+                    cmd,
+                    shell=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                log.debug(
                     "Executing %s on %s with result %s",
                     cmd,
                     server_config["container"],

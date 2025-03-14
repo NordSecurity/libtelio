@@ -163,5 +163,5 @@ async def setup_ephemeral_ports(connection: Connection):
     else:
         return
 
-    await connection.create_process(cmd).execute(on_output, on_output)
+    await connection.create_process(cmd, quiet=True).execute(on_output, on_output)
     EPHEMERAL_SETUP_SET.add(connection.tag)

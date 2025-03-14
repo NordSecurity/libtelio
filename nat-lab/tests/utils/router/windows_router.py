@@ -50,65 +50,80 @@ class WindowsRouter(Router):
 
             # Set address
             if addr_proto == IPProto.IPv4:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv4",
-                    "add",
-                    "address",
-                    self._interface_name,
-                    address,
-                    "255.255.255.255",
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv4",
+                        "add",
+                        "address",
+                        self._interface_name,
+                        address,
+                        "255.255.255.255",
+                    ],
+                    quiet=True,
+                ).execute()
             elif addr_proto == IPProto.IPv6:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv6",
-                    "add",
-                    "address",
-                    self._interface_name,
-                    address + "/128",
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv6",
+                        "add",
+                        "address",
+                        self._interface_name,
+                        address + "/128",
+                    ],
+                    quiet=True,
+                ).execute()
 
     async def deconfigure_interface(self, addresses: List[str]) -> None:
         for address in addresses:
             addr_proto = self.check_ip_address(address)
 
             if addr_proto == IPProto.IPv4:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv4",
-                    "delete",
-                    "address",
-                    self._interface_name,
-                    address,
-                    "255.255.255.255",
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv4",
+                        "delete",
+                        "address",
+                        self._interface_name,
+                        address,
+                        "255.255.255.255",
+                    ],
+                    quiet=True,
+                ).execute()
             elif addr_proto == IPProto.IPv6:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv6",
-                    "delete",
-                    "address",
-                    self._interface_name,
-                    address,
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv6",
+                        "delete",
+                        "address",
+                        self._interface_name,
+                        address,
+                    ],
+                    quiet=True,
+                ).execute()
 
     async def create_meshnet_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             try:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv4",
-                    "add",
-                    "route",
-                    "100.64.0.0/10",
-                    self._interface_name,
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv4",
+                        "add",
+                        "route",
+                        "100.64.0.0/10",
+                        self._interface_name,
+                    ],
+                    quiet=True,
+                ).execute()
             except ProcessExecError as exception:
                 if exception.stdout.find("The object already exists.") < 0:
                     raise exception
@@ -128,15 +143,18 @@ class WindowsRouter(Router):
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             try:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv6",
-                    "add",
-                    "route",
-                    LIBTELIO_IPV6_WG_SUBNET + "::/64",
-                    self._interface_name,
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv6",
+                        "add",
+                        "route",
+                        LIBTELIO_IPV6_WG_SUBNET + "::/64",
+                        self._interface_name,
+                    ],
+                    quiet=True,
+                ).execute()
             except ProcessExecError as exception:
                 if exception.stdout.find("The object already exists.") < 0:
                     raise exception
@@ -218,15 +236,18 @@ class WindowsRouter(Router):
 
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             try:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv4",
-                    "delete",
-                    "route",
-                    "0.0.0.0/0",
-                    self._interface_name,
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv4",
+                        "delete",
+                        "route",
+                        "0.0.0.0/0",
+                        self._interface_name,
+                    ],
+                    quiet=True,
+                ).execute()
             except ProcessExecError as exception:
                 if (
                     exception.stdout.find(
@@ -253,15 +274,18 @@ class WindowsRouter(Router):
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             try:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv6",
-                    "delete",
-                    "route",
-                    "::/0",
-                    self._interface_name,
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv6",
+                        "delete",
+                        "route",
+                        "::/0",
+                        self._interface_name,
+                    ],
+                    quiet=True,
+                ).execute()
             except ProcessExecError as exception:
                 if (
                     exception.stdout.find(
