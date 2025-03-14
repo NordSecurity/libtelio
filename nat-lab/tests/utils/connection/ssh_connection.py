@@ -5,6 +5,7 @@ import utils.vm.mac_vm_util as utils_mac
 import utils.vm.windows_vm_util as utils_win
 from .connection import Connection, TargetOS, ConnectionTag, setup_ephemeral_ports
 from contextlib import asynccontextmanager
+from logging import INFO, DEBUG
 from typing import List, AsyncIterator
 from utils import cmd_exe_escape
 from utils.logger import log
@@ -79,9 +80,15 @@ class SshConnection(Connection):
                 yield connection
 
     def create_process(
-        self, command: List[str], kill_id=None, term_type=None
+        self, command: List[str], kill_id=None, term_type=None, quiet=False
     ) -> "Process":
-        log.info("[%s] Executing %s", self.tag.name, " ".join(command))
+
+        if not quiet:
+            log_level = INFO
+        else:
+            log_level = DEBUG
+        log.log(log_level, "[%s] Executing %s", self.tag.name, " ".join(command))
+
         if self.target_os == TargetOS.Windows:
             escape_argument = cmd_exe_escape.escape_argument
         elif self.target_os in [TargetOS.Linux, TargetOS.Mac]:

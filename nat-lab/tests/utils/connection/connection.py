@@ -79,7 +79,7 @@ class Connection(ABC):
 
     @abstractmethod
     def create_process(
-        self, command: List[str], kill_id=None, term_type=None
+        self, command: List[str], kill_id=None, term_type=None, quiet=False
     ) -> "Process":
         pass
 
