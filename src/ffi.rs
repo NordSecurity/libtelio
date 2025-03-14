@@ -792,6 +792,15 @@ impl Telio {
         })
     }
 
+    pub fn trigger_throughput_test(&self, peer_ip: String) -> FfiResult<()> {
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.trigger_throughput_test(peer_ip.clone())
+                    .log_result("Telio::trigger_throughput_test")
+            })
+        })
+    }
+
     pub fn receive_ping(&self) -> FfiResult<String> {
         catch_ffi_panic(|| {
             self.device_op(true, |dev| match dev.receive_ping() {

@@ -4559,6 +4559,7 @@ dependencies = [
  "telio-nat-detect",
  "telio-network-monitors",
  "telio-nurse",
+ "telio-perf",
  "telio-pinger",
  "telio-pmtu",
  "telio-pq",
@@ -4755,6 +4756,24 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "telio-perf"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "ipnet",
+ "neptun",
+ "telio-sockets",
+ "telio-starcast",
+ "telio-task",
+ "telio-utils",
+ "thiserror 2.0.11",
+ "tokio",
+ "tracing",
+ "x25519-dalek",
 ]
 
 [[package]]
