@@ -3,10 +3,10 @@ from aiodocker import Docker
 from aiodocker.containers import DockerContainer
 from asyncio import to_thread
 from config import LINUX_INTERFACE_NAME
-from datetime import datetime
-from subprocess import run
+from subprocess import run, DEVNULL
 from typing import List, Type
 from typing_extensions import Self
+from utils.logger import log
 from utils.process import Process, DockerProcess
 
 
@@ -37,25 +37,27 @@ class DockerConnection(Connection):
 
     async def download(self, remote_path: str, local_path: str) -> None:
         def aux():
-            run(["docker", "cp", self._name + ":" + remote_path, local_path])
+            run(
+                ["docker", "cp", self._name + ":" + remote_path, local_path],
+                stdout=DEVNULL,
+                stderr=DEVNULL,
+            )
 
         await to_thread(aux)
 
     def create_process(
-        self, command: List[str], kill_id=None, term_type=None
+        self, command: List[str], kill_id=None, term_type=None, quiet=False
     ) -> "Process":
         process = DockerProcess(
             self._container, self.container_name(), command, kill_id
         )
-        print(
-            datetime.now(),
-            "Executing",
-            command,
-            "on",
-            self._name,
-            "with Kill ID:",
-            process.get_kill_id(),
-        )
+
+        log_msg = f"[{self._name}] Executing {' '.join(command)}"
+        if not quiet:
+            log.info(log_msg)
+        else:
+            log.debug(log_msg)
+
         return process
 
     async def get_ip_address(self) -> tuple[str, str]:
@@ -80,14 +82,18 @@ class DockerConnection(Connection):
         return (str(host_port), str(container_port))
 
     async def restore_ip_tables(self) -> None:
-        await self.create_process(["conntrack", "-F"]).execute()
-        await self.create_process(["iptables-restore", "iptables_backup"]).execute()
-        await self.create_process(["ip6tables-restore", "ip6tables_backup"]).execute()
+        await self.create_process(["conntrack", "-F"], quiet=True).execute()
+        await self.create_process(
+            ["iptables-restore", "iptables_backup"], quiet=True
+        ).execute()
+        await self.create_process(
+            ["ip6tables-restore", "ip6tables_backup"], quiet=True
+        ).execute()
 
     async def clean_interface(self) -> None:
         try:
             await self.create_process(
-                ["ip", "link", "delete", LINUX_INTERFACE_NAME]
+                ["ip", "link", "delete", LINUX_INTERFACE_NAME], quiet=True
             ).execute()
         except:
             pass  # Most of the time there will be no interface to be deleted

@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, List
 from utils.command_grepper import CommandGrepper
 from utils.connection import Connection
+from utils.logger import log
 from utils.process import ProcessExecError
 
 
@@ -45,31 +46,37 @@ class WindowsRouter(Router):
                     f"Adapter '{self._interface_name}' didn't report connected state. "
                 )
 
-            print(
+            log.debug(
                 f"windows_router: connected state established. Interface info: {cmd.get_stdout()} stderr: {cmd.get_stderr()}"
             )
 
             if addr_proto == IPProto.IPv4:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv4",
-                    "add",
-                    "address",
-                    self._interface_name,
-                    address,
-                    "255.255.255.255",
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv4",
+                        "add",
+                        "address",
+                        self._interface_name,
+                        address,
+                        "255.255.255.255",
+                    ],
+                    quiet=True,
+                ).execute()
             elif addr_proto == IPProto.IPv6:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv6",
-                    "add",
-                    "address",
-                    self._interface_name,
-                    address + "/128",
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv6",
+                        "add",
+                        "address",
+                        self._interface_name,
+                        address + "/128",
+                    ],
+                    quiet=True,
+                ).execute()
 
             if not await CommandGrepper(
                 self._connection,
@@ -90,26 +97,32 @@ class WindowsRouter(Router):
             addr_proto = self.check_ip_address(address)
 
             if addr_proto == IPProto.IPv4:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv4",
-                    "delete",
-                    "address",
-                    self._interface_name,
-                    address,
-                    "255.255.255.255",
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv4",
+                        "delete",
+                        "address",
+                        self._interface_name,
+                        address,
+                        "255.255.255.255",
+                    ],
+                    quiet=True,
+                ).execute()
             elif addr_proto == IPProto.IPv6:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv6",
-                    "delete",
-                    "address",
-                    self._interface_name,
-                    address,
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv6",
+                        "delete",
+                        "address",
+                        self._interface_name,
+                        address,
+                    ],
+                    quiet=True,
+                ).execute()
 
             if not await CommandGrepper(
                 self._connection,
@@ -128,15 +141,18 @@ class WindowsRouter(Router):
     async def create_meshnet_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             try:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv4",
-                    "add",
-                    "route",
-                    "100.64.0.0/10",
-                    self._interface_name,
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv4",
+                        "add",
+                        "route",
+                        "100.64.0.0/10",
+                        self._interface_name,
+                    ],
+                    quiet=True,
+                ).execute()
             except ProcessExecError as exception:
                 if exception.stdout.find("The object already exists.") < 0:
                     raise exception
@@ -156,15 +172,18 @@ class WindowsRouter(Router):
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             try:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv6",
-                    "add",
-                    "route",
-                    LIBTELIO_IPV6_WG_SUBNET + "::/64",
-                    self._interface_name,
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv6",
+                        "add",
+                        "route",
+                        LIBTELIO_IPV6_WG_SUBNET + "::/64",
+                        self._interface_name,
+                    ],
+                    quiet=True,
+                ).execute()
             except ProcessExecError as exception:
                 if exception.stdout.find("The object already exists.") < 0:
                     raise exception
@@ -246,15 +265,18 @@ class WindowsRouter(Router):
 
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             try:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv4",
-                    "delete",
-                    "route",
-                    "0.0.0.0/0",
-                    self._interface_name,
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv4",
+                        "delete",
+                        "route",
+                        "0.0.0.0/0",
+                        self._interface_name,
+                    ],
+                    quiet=True,
+                ).execute()
             except ProcessExecError as exception:
                 if (
                     exception.stdout.find(
@@ -281,15 +303,18 @@ class WindowsRouter(Router):
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             try:
-                await self._connection.create_process([
-                    "netsh",
-                    "interface",
-                    "ipv6",
-                    "delete",
-                    "route",
-                    "::/0",
-                    self._interface_name,
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "netsh",
+                        "interface",
+                        "ipv6",
+                        "delete",
+                        "route",
+                        "::/0",
+                        self._interface_name,
+                    ],
+                    quiet=True,
+                ).execute()
             except ProcessExecError as exception:
                 if (
                     exception.stdout.find(

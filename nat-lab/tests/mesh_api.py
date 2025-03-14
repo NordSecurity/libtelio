@@ -1,15 +1,15 @@
 import json
-import os
 import platform
 import pprint
 import random
+import subprocess
 import time
 import uuid
 from config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
-from datetime import datetime
 from ipaddress import ip_address
 from typing import Dict, Any, List, Tuple, Optional
 from utils.bindings import Config, Server, Peer, PeerBase
+from utils.logger import log
 from utils.router import IPStack, IPProto, get_ip_address_type
 
 if platform.machine() != "x86_64":
@@ -391,15 +391,14 @@ class API:
 
                 for cmd in commands:
                     full_cmd = f"docker exec --privileged {server_config['container']} bash -c '{cmd}'"
-                    ret = os.system(full_cmd)
-                    print(
-                        datetime.now(),
-                        "Executing",
+                    ret = subprocess.run(
                         full_cmd,
-                        "on",
-                        server_config["container"],
-                        "with result",
-                        ret,
+                        shell=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    log.debug(
+                        f"Executing {full_cmd} on {server_config['container']} with result {ret}"
                     )
 
             else:
@@ -411,15 +410,14 @@ class API:
                     f' \'echo "{wg_conf}" > /etc/wireguard/wg0.conf; wg-quick down'
                     " /etc/wireguard/wg0.conf; wg-quick up /etc/wireguard/wg0.conf'"
                 )
-                ret = os.system(cmd)
-                print(
-                    datetime.now(),
-                    "Executing",
+                ret = subprocess.run(
                     cmd,
-                    "on",
-                    server_config["container"],
-                    "with result",
-                    ret,
+                    shell=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                log.debug(
+                    f"Executing {cmd} on {server_config['container']} with result {ret}"
                 )
 
     def config_dynamic_nodes(

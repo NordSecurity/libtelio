@@ -1,9 +1,9 @@
 import asyncssh
 import shlex
 from .connection import Connection, TargetOS
-from datetime import datetime
 from typing import List
 from utils import cmd_exe_escape
+from utils.logger import log
 from utils.process import Process, SshProcess
 
 
@@ -24,9 +24,15 @@ class SshConnection(Connection):
         self._target_os = target_os
 
     def create_process(
-        self, command: List[str], kill_id=None, term_type=None
+        self, command: List[str], kill_id=None, term_type=None, quiet=False
     ) -> "Process":
-        print(datetime.now(), "Executing", command, "on", self.target_os)
+
+        log_msg = f"[{self._vm_name}] Executing {' '.join(command)}"
+        if not quiet:
+            log.info(log_msg)
+        else:
+            log.debug(log_msg)
+
         if self._target_os == TargetOS.Windows:
             escape_argument = cmd_exe_escape.escape_argument
         elif self._target_os in [TargetOS.Linux, TargetOS.Mac]:
@@ -43,7 +49,7 @@ class SshConnection(Connection):
         return (ip, ip)
 
     def target_name(self) -> str:
-        return str(self._target_os)
+        return self._vm_name
 
     async def download(self, remote_path: str, local_path: str) -> None:
         """Copy file from 'remote_path' on the node connected via this connection, to local directory 'local_path'"""

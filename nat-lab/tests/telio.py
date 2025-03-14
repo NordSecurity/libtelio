@@ -32,6 +32,7 @@ from utils.bindings import (
 from utils.command_grepper import CommandGrepper
 from utils.connection import Connection, DockerConnection, TargetOS
 from utils.connection_util import get_uniffi_path
+from utils.logger import log
 from utils.moose import MOOSE_LOGS_DIR
 from utils.output_notifier import OutputNotifier
 from utils.process import Process, ProcessExecError
@@ -388,13 +389,13 @@ class Client:
                 if line.startswith("libtelio-port:"):
                     self._proxy_port = line[len("libtelio-port:") :]
                 if not any(string in line for string in supress_print_list):
-                    print(f"[{self._node.name}]: stdout: {line}")
+                    log.info(f"[{self._node.name}] stdout: {line}")
                 if self._runtime:
                     await self._runtime.handle_output_line(line)
 
         async def on_stderr(stderr: str) -> None:
             for line in stderr.splitlines():
-                print(f"[{self._node.name}]: stderr: {line}")
+                log.error(f"[{self._node.name}] stderr: {line}")
                 if self._runtime:
                     await self._runtime.handle_output_line(line)
 
@@ -412,13 +413,16 @@ class Client:
         python_cmd = get_python_binary(self._connection)
         uniffi_path = get_uniffi_path(self._connection)
 
-        self._process = self._connection.create_process([
-            python_cmd,
-            uniffi_path,
-            object_name,
-            container_ip,
-            container_port,
-        ])
+        self._process = self._connection.create_process(
+            [
+                python_cmd,
+                uniffi_path,
+                object_name,
+                container_ip,
+                container_port,
+            ],
+            quiet=True,
+        )
 
         async with AsyncExitStack() as exit_stack:
             await exit_stack.enter_async_context(make_tcpdump([self._connection]))
@@ -452,7 +456,7 @@ class Client:
                 try:
                     await self.get_proxy().create()
                 except ProxyConnectionError as err:
-                    print(str(err))
+                    log.error(str(err))
                     raise err
 
                 await self.maybe_write_device_fingerprint_to_moose_db()
@@ -471,64 +475,56 @@ class Client:
                         await self.set_meshnet_config(meshnet_config)
                     yield self
             finally:
-                print(
-                    datetime.now(),
-                    "Test cleanup: Stopping tcpdump and collecting core dumps",
+                log.info(
+                    f"[{self._node.name}] Test cleanup: Stopping tcpdump and collecting core dumps"
                 )
                 if isinstance(self._connection, DockerConnection):
                     await self.collect_core_dumps()
-
-                print(
-                    datetime.now(),
-                    "Test cleanup: Saving MacOS network info",
-                )
+                log.info(f"[{self._node.name}] Test cleanup: Saving MacOS network info")
                 await self.save_mac_network_info()
 
-                print(datetime.now(), "Test cleanup: Stopping device")
+                log.info(f"[{self._node.name}] Test cleanup: Stopping device")
                 if self._process.is_executing():
                     if self._libtelio_proxy:
                         await self.stop_device()
                     else:
-                        print(
-                            datetime.now(),
-                            "[Debug] We don't have LibtelioProxy instance, Stop() not called.",
+                        log.info(
+                            f"[{self._node.name}] Test cleanup: We don't have LibtelioProxy instance, Stop() not called."
                         )
                     self._quit = True
 
-                print(datetime.now(), "Test cleanup: Shutting down")
+                log.info(f"[{self._node.name}]  Test cleanup: Shutting down")
                 if self._libtelio_proxy:
                     # flush_logs() is allowed to fail here:
                     try:
                         await self.get_proxy().flush_logs()
                     # Since this is clean up code, catching general exceptions is fine:
                     except Exception as e:  # pylint: disable=broad-exception-caught
-                        print(
-                            datetime.now(),
-                            f"Test cleanup: Exception while flushing logs: {e}",
+                        log.info(
+                            f"[{self._node.name}] Test cleanup: Exception while flushing logs: {e}"
                         )
 
                     await self.get_proxy().shutdown(self._connection.target_name())
                 else:
-                    print(
-                        datetime.now(),
-                        "[Debug] We don't have LibtelioProxy instance, Shutdown() not called.",
+                    log.info(
+                        f"[{self._node.name}] We don't have LibtelioProxy instance, Shutdown() not called."
                     )
 
-                print(datetime.now(), "Test cleanup: Clearing up routes")
+                log.info(f"[{self._node.name}] Test cleanup: Clearing up routes")
                 await self._router.delete_vpn_route()
                 await self._router.delete_exit_node_route()
                 await self._router.delete_interface()
 
-                print(datetime.now(), "Test cleanup: Saving moose dbs")
+                log.info("[self._node.name] Test cleanup: Saving moose dbs")
                 await self.save_moose_db()
 
-                print(datetime.now(), "Test cleanup: Checking logs")
+                log.info(f"[{self._node.name}] Test cleanup: Checking logs")
                 await self._check_logs_for_errors()
 
-                print(datetime.now(), "Test cleanup: Saving logs")
+                log.info(f"[{self._node.name}] Test cleanup: Saving logs")
                 await self._save_logs()
 
-                print(datetime.now(), "Test cleanup complete")
+                log.info(f"[{self._node.name}] Test cleanup complete")
 
     async def simple_start(self):
         await self.get_proxy().start_named(
@@ -594,9 +590,6 @@ class Client:
         is_vpn: bool = False,
         timeout: Optional[float] = None,
     ) -> None:
-        event_info = f"peer({public_key}) with states({states}), paths({paths}), is_exit={is_exit}, is_vpn={is_vpn}"
-
-        print(datetime.now(), f"[{self._node.name}]: wait for event {event_info}")
         await self.get_events().wait_for_event_peer(
             public_key,
             states,
@@ -605,7 +598,6 @@ class Client:
             is_vpn,
             timeout,
         )
-        print(datetime.now(), f"[{self._node.name}]: got event {event_info}")
 
     def get_link_state_events(self, public_key: str) -> List[LinkState]:
         return self.get_events().get_link_state_events(public_key)
@@ -908,7 +900,7 @@ class Client:
                 event = await self.get_proxy().next_event()
                 while event:
                     if self._runtime:
-                        print(f"[{self._node.name}]: event [{datetime.now()}]: {event}")
+                        log.info(f"[{self._node.name}] -> {event}")
                         self._runtime.handle_event(event)
                         event = await self.get_proxy().next_event()
                 await asyncio.sleep(1)
@@ -921,16 +913,19 @@ class Client:
         if self._fingerprint is not None:
             await self.wait_for_log("[Moose] Init callback success")
             database, fingerprint = self._fingerprint
-            await self._connection.create_process([
-                "sqlite3",
-                database,
-                "--cmd",
-                "PRAGMA busy_timeout = 30000;",
-                (
-                    "INSERT OR REPLACE INTO shared_context (key, val, is_essential) VALUES"
-                    f" ('device.fp._string', '\"{fingerprint}\"', 1)"
-                ),
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "sqlite3",
+                    database,
+                    "--cmd",
+                    "PRAGMA busy_timeout = 30000;",
+                    (
+                        "INSERT OR REPLACE INTO shared_context (key, val, is_essential) VALUES"
+                        f" ('device.fp._string', '\"{fingerprint}\"', 1)"
+                    ),
+                ],
+                quiet=True,
+            ).execute()
 
     async def trigger_event_collection(self) -> None:
         await self.get_proxy().trigger_analytics_event()
@@ -957,10 +952,10 @@ class Client:
         if case_insensitive:
             what = what.lower()
         while True:
-            log = await self.get_log()
+            logs = await self.get_log()
             if case_insensitive:
-                log = log.lower()
-            if log.count(what) >= count:
+                logs = logs.lower()
+            if logs.count(what) >= count:
                 break
             await asyncio.sleep(1)
 
@@ -980,14 +975,17 @@ class Client:
             logs = ""
             for log_name in ["Application", "System"]:
                 try:
-                    log_output = await self._connection.create_process([
-                        "powershell",
-                        "-Command",
-                        (
-                            f"Get-EventLog -LogName {log_name} -Newest 100 |"
-                            " format-table -wrap"
-                        ),
-                    ]).execute()
+                    log_output = await self._connection.create_process(
+                        [
+                            "powershell",
+                            "-Command",
+                            (
+                                f"Get-EventLog -LogName {log_name} -Newest 100 |"
+                                " format-table -wrap"
+                            ),
+                        ],
+                        quiet=True,
+                    ).execute()
                     logs += log_output.get_stdout()
                 except ProcessExecError:
                     # ignore exec error, since it happens if no events were found
@@ -1002,24 +1000,31 @@ class Client:
         """
         if self._connection.target_os == TargetOS.Windows:
             for log_name in ["Application", "System"]:
-                await self._connection.create_process([
-                    "powershell",
-                    "-Command",
-                    f"Clear-EventLog -LogName {log_name}",
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "powershell",
+                        "-Command",
+                        f"Clear-EventLog -LogName {log_name}",
+                    ],
+                    quiet=True,
+                ).execute()
 
     async def get_network_info(self) -> str:
         if self._connection.target_os == TargetOS.Mac:
-            interface_info = self._connection.create_process(["ifconfig", "-a"])
+            interface_info = self._connection.create_process(
+                ["ifconfig", "-a"], quiet=True
+            )
             await interface_info.execute()
-            routing_table_info = self._connection.create_process(["netstat", "-rn"])
+            routing_table_info = self._connection.create_process(
+                ["netstat", "-rn"], quiet=True
+            )
             await routing_table_info.execute()
             # syslog does not provide a way to filter events by timestamp, so only using the last 20 lines.
-            syslog_info = self._connection.create_process(["syslog"])
+            syslog_info = self._connection.create_process(["syslog"], quiet=True)
             await syslog_info.execute()
             start_time_str = self._start_time.strftime("%Y-%m-%d %H:%M:%S")
             log_info = self._connection.create_process(
-                ["log", "show", "--start", start_time_str]
+                ["log", "show", "--start", start_time_str], quiet=True
             )
             await log_info.execute()
             return (
@@ -1083,7 +1088,9 @@ class Client:
         system_log_content = await self.get_system_log()
 
         if self._connection.target_os == TargetOS.Linux:
-            process = self._connection.create_process(["cat", "/etc/hostname"])
+            process = self._connection.create_process(
+                ["cat", "/etc/hostname"], quiet=True
+            )
             await process.execute()
             container_id = process.get_stdout().strip()
         else:
@@ -1196,10 +1203,12 @@ class Client:
         coredump_folder, _ = self.get_coredump_folder()
 
         # clear the existing system core dumps
-        await self._connection.create_process(["rm", "-rf", coredump_folder]).execute()
+        await self._connection.create_process(
+            ["rm", "-rf", coredump_folder], quiet=True
+        ).execute()
         # make sure we have the path where the new cores will be dumped
         await self._connection.create_process(
-            ["mkdir", "-p", coredump_folder]
+            ["mkdir", "-p", coredump_folder], quiet=True
         ).execute()
 
     async def collect_core_dumps(self):
@@ -1238,7 +1247,7 @@ async def find_files(connection, where, name_pattern):
 
     try:
         process = await connection.create_process(
-            ["find", where, "-maxdepth", "1", "-name", name_pattern]
+            ["find", where, "-maxdepth", "1", "-name", name_pattern], quiet=True
         ).execute()
         return process.get_stdout().strip().split()
     except ProcessExecError:
@@ -1258,7 +1267,7 @@ def copy_file(from_connection, from_path, destination_path):
             "docker container cp"
             f" {container_name}:{from_path} {core_dump_destination}"
         )
-        print(datetime.now(), cmd)
+        log.info(cmd)
         os.system(cmd)
     else:
         raise Exception(f"Copying files from {from_connection} is not supported")
@@ -1271,9 +1280,9 @@ async def get_log_without_flush(connection) -> str:
     nothing to flush and attempting to do so will cause errors.
     """
     process = (
-        connection.create_process(["type", "tcli.log"])
+        connection.create_process(["type", "tcli.log"], quiet=True)
         if connection.target_os == TargetOS.Windows
-        else connection.create_process(["cat", "./tcli.log"])
+        else connection.create_process(["cat", "./tcli.log"], quiet=True)
     )
     await process.execute()
     return process.get_stdout()
