@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.1.10
+### **Pork Kibin**
+---
+* LLT-6071: Suppress DuplicateCounter error logs until a proper fix has been implemented
+
+<br>
+
 ### v5.1.9
 ### **Pork Kibin**
 ---
