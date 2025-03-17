@@ -10,12 +10,14 @@ class CommandGrepper:
     _timeout: Optional[float]
     _last_stdout: Optional[str]
     _last_stderr: Optional[str]
+    _allow_process_failure: bool
 
     def __init__(
         self,
         connection: Connection,
         check_cmd: List[str],
         timeout: Optional[float] = None,
+        allow_process_failure: bool = False,
     ):
         """
         A class that runs a command and checks if the expected strings are present or not present in the output.
@@ -30,6 +32,7 @@ class CommandGrepper:
         self._timeout = timeout
         self._last_stdout = None
         self._last_stderr = None
+        self._allow_process_failure = allow_process_failure
 
     def get_stdout(self) -> Optional[str]:
         return self._last_stdout
@@ -101,7 +104,17 @@ class CommandGrepper:
         self, exp_primary: str, exp_secondary: Optional[List[str]], exists: bool
     ) -> bool:
         while True:
-            process = await self._connection.create_process(self._check_cmd).execute()
+            try:
+                process = await self._connection.create_process(
+                    self._check_cmd
+                ).execute()
+            except ProcessExecError as e:
+                if self._allow_process_failure:
+                    print(
+                        f"Process exeuction failed in CommandGrepper, but it is allowed to fail. Ignoring. Error: {e}"
+                    )
+                    continue
+                raise e
             self._last_stdout = process.get_stdout()
             self._last_stderr = process.get_stderr()
 
