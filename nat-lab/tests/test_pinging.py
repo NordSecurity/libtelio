@@ -14,12 +14,11 @@ from utils.bindings import (
     TelioAdapterType,
     NodeState,
 )
-from utils.connection import Connection
+from utils.connection import Connection, ConnectionTag
 from utils.connection_tracker import ConnectionTracker
 from utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_node_tracker,
-    ConnectionTag,
 )
 from utils.router import IPStack
 

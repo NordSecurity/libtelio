@@ -2,8 +2,7 @@ import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes, setup_connections
 from utils.bindings import ErrorEvent, ErrorCode, ErrorLevel, TelioAdapterType
-from utils.connection import TargetOS
-from utils.connection_util import ConnectionTag
+from utils.connection import TargetOS, ConnectionTag
 from utils.process import ProcessExecError
 
 
@@ -25,14 +24,14 @@ from utils.process import ProcessExecError
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
             ),
             marks=[pytest.mark.windows],
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
             ),
             marks=[pytest.mark.windows],
@@ -84,14 +83,14 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
     [
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
             ),
             marks=[pytest.mark.windows],
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
             ),
             marks=[pytest.mark.windows],

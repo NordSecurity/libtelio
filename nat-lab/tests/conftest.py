@@ -3,26 +3,21 @@ import os
 import pytest
 import shutil
 import subprocess
-from config import DERP_PRIMARY
+from config import DERP_PRIMARY, LAN_ADDR_MAP
 from contextlib import AsyncExitStack
 from helpers import SetupParameters
 from interderp_cli import InterDerpClient
 from itertools import combinations
 from typing import Dict, List, Tuple
 from utils.bindings import TelioAdapterType
-from utils.connection import DockerConnection
-from utils.connection_util import (
-    LAN_ADDR_MAP,
-    ConnectionTag,
-    new_connection_raw,
-    new_connection_with_conn_tracker,
-    EPHEMERAL_SETUP_SET,
-)
+from utils.connection import ConnectionTag, clear_ephemeral_setups_set
+from utils.connection.docker_connection import DockerConnection
+from utils.connection.ssh_connection import SshConnection
+from utils.connection_util import new_connection_raw, new_connection_with_conn_tracker
 from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPStack
 from utils.tcpdump import make_tcpdump, make_local_tcpdump
-from utils.vm import mac_vm_util, windows_vm_util
 
 DERP_SERVER_1_ADDR = "http://10.0.10.1:8765"
 DERP_SERVER_2_ADDR = "http://10.0.10.2:8765"
@@ -126,26 +121,26 @@ async def setup_check_connectivity():
         return
 
     reverse: Dict[str, str] = {
-        LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1]: "WINDOWS_VM_1",
-        LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2]: "WINDOWS_VM_2",
-        LAN_ADDR_MAP[ConnectionTag.MAC_VM]: "MAC_VM",
+        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]: "VM_WINDOWS_1",
+        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2]: "VM_WINDOWS_2",
+        LAN_ADDR_MAP[ConnectionTag.VM_MAC]: "VM_MAC",
         DERP_PRIMARY.ipv4: "PRIMARY_DERP",
     }
 
     test_nodes = {
-        ConnectionTag.WINDOWS_VM_1: [
-            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2],
-            LAN_ADDR_MAP[ConnectionTag.MAC_VM],
+        ConnectionTag.VM_WINDOWS_1: [
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2],
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC],
             DERP_PRIMARY.ipv4,
         ],
-        ConnectionTag.WINDOWS_VM_2: [
-            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1],
-            LAN_ADDR_MAP[ConnectionTag.MAC_VM],
+        ConnectionTag.VM_WINDOWS_2: [
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1],
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC],
             DERP_PRIMARY.ipv4,
         ],
-        ConnectionTag.MAC_VM: [
-            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_1],
-            LAN_ADDR_MAP[ConnectionTag.WINDOWS_VM_2],
+        ConnectionTag.VM_MAC: [
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1],
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2],
             DERP_PRIMARY.ipv4,
         ],
     }
@@ -261,10 +256,6 @@ async def kill_natlab_processes():
     subprocess.run(["sudo", cleanup_script_path]).check_returncode()
 
 
-async def clear_ephemeral_setups_set():
-    EPHEMERAL_SETUP_SET.clear()
-
-
 PRETEST_CLEANUPS = [kill_natlab_processes, clear_ephemeral_setups_set]
 
 
@@ -274,27 +265,16 @@ async def perform_pretest_cleanups():
 
 
 async def _copy_vm_binaries(tag: ConnectionTag):
-    if tag in [ConnectionTag.WINDOWS_VM_1, ConnectionTag.WINDOWS_VM_2]:
-        try:
-            print(f"copying for {tag}")
-            async with windows_vm_util.new_connection(
-                LAN_ADDR_MAP[tag], copy_binaries=True, reenable_nat=True
-            ):
-                pass
-        except OSError as e:
-            if os.environ.get("GITLAB_CI"):
-                raise e
-            print(e)
-    elif tag is ConnectionTag.MAC_VM:
-        try:
-            async with mac_vm_util.new_connection(
-                copy_binaries=True, reenable_nat=True
-            ):
-                pass
-        except OSError as e:
-            if os.environ.get("GITLAB_CI"):
-                raise e
-            print(e)
+    try:
+        print(f"copying for {tag}")
+        async with SshConnection.new_connection(
+            LAN_ADDR_MAP[tag], tag, copy_binaries=True, reenable_nat=True
+        ):
+            pass
+    except OSError as e:
+        if os.environ.get("GITLAB_CI"):
+            raise e
+        print(e)
 
 
 async def _copy_vm_binaries_if_needed(items):
@@ -304,11 +284,11 @@ async def _copy_vm_binaries_if_needed(items):
     for item in items:
         for mark in item.own_markers:
             if mark.name == "windows" and not windows_bins_copied:
-                await _copy_vm_binaries(ConnectionTag.WINDOWS_VM_1)
-                await _copy_vm_binaries(ConnectionTag.WINDOWS_VM_2)
+                await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_1)
+                await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_2)
                 windows_bins_copied = True
             elif mark.name == "mac" and not mac_bins_copied:
-                await _copy_vm_binaries(ConnectionTag.MAC_VM)
+                await _copy_vm_binaries(ConnectionTag.VM_MAC)
                 mac_bins_copied = True
 
             if windows_bins_copied and mac_bins_copied:
@@ -366,7 +346,9 @@ async def collect_kernel_logs(items, suffix):
     for item in items:
         if any(mark.name == "mac" for mark in item.own_markers):
             try:
-                async with mac_vm_util.new_connection() as conn:
+                async with SshConnection.new_connection(
+                    LAN_ADDR_MAP[ConnectionTag.VM_MAC], ConnectionTag.VM_MAC
+                ) as conn:
                     await _save_macos_logs(conn, suffix)
             except OSError as e:
                 if os.environ.get("GITLAB_CI"):
@@ -473,7 +455,9 @@ async def collect_mac_diagnostic_reports():
         return
     print("Collect mac diagnostic reports")
     try:
-        async with mac_vm_util.new_connection() as connection:
+        async with SshConnection.new_connection(
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC], ConnectionTag.VM_MAC
+        ) as connection:
             await connection.download(
                 "/Library/Logs/DiagnosticReports", "logs/system_diagnostic_reports"
             )

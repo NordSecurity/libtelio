@@ -6,10 +6,9 @@ from helpers import SetupParameters, setup_environment
 from telio import Client
 from utils import stun
 from utils.bindings import TelioAdapterType, NodeState, PathType
-from utils.connection import Connection
+from utils.connection import Connection, ConnectionTag
 from utils.connection_util import (
     generate_connection_tracker_config,
-    ConnectionTag,
     new_connection_by_tag,
 )
 from utils.dns import query_dns
@@ -85,10 +84,10 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     stun_limits=(1, 1),
                     nlx_1_limits=(1, 2),
                 ),
@@ -101,10 +100,10 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     stun_limits=(1, 1),
                     nlx_1_limits=(1, 2),
                 ),
@@ -117,10 +116,10 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.MAC_VM,
+                    ConnectionTag.VM_MAC,
                     stun_limits=(1, 1),
                     nlx_1_limits=(1, 2),
                 ),
@@ -184,10 +183,10 @@ async def test_pq_vpn_connection(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     stun_limits=(1, 1),
                     nlx_1_limits=(1, 2),
                 ),
@@ -200,10 +199,10 @@ async def test_pq_vpn_connection(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     stun_limits=(1, 1),
                     nlx_1_limits=(1, 2),
                 ),
@@ -216,10 +215,10 @@ async def test_pq_vpn_connection(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.MAC_VM,
+                    ConnectionTag.VM_MAC,
                     stun_limits=(1, 1),
                     nlx_1_limits=(1, 2),
                 ),
@@ -301,10 +300,10 @@ async def test_pq_vpn_rekey(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
@@ -315,10 +314,10 @@ async def test_pq_vpn_rekey(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
@@ -329,10 +328,10 @@ async def test_pq_vpn_rekey(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.MAC_VM,
+                    ConnectionTag.VM_MAC,
                     nlx_1_limits=(1, 2),
                 ),
                 is_meshnet=False,
@@ -548,10 +547,10 @@ async def test_pq_vpn_upgrade_from_non_pq(
         # TODO(LLT-6000)
         # pytest.param(
         #     SetupParameters(
-        #         connection_tag=ConnectionTag.WINDOWS_VM_1,
+        #         connection_tag=ConnectionTag.VM_WINDOWS_1,
         #         adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
         #         connection_tracker_config=generate_connection_tracker_config(
-        #             ConnectionTag.WINDOWS_VM_1,
+        #             ConnectionTag.VM_WINDOWS_1,
         #             stun_limits=(1, 1),
         #             nlx_1_limits=(1, 4),
         #         ),
@@ -562,10 +561,10 @@ async def test_pq_vpn_upgrade_from_non_pq(
         # ),
         # pytest.param(
         #     SetupParameters(
-        #         connection_tag=ConnectionTag.WINDOWS_VM_1,
+        #         connection_tag=ConnectionTag.VM_WINDOWS_1,
         #         adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
         #         connection_tracker_config=generate_connection_tracker_config(
-        #             ConnectionTag.WINDOWS_VM_1,
+        #             ConnectionTag.VM_WINDOWS_1,
         #             stun_limits=(1, 1),
         #             nlx_1_limits=(1, 4),
         #         ),

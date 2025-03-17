@@ -7,7 +7,7 @@ from copy import deepcopy
 from helpers import SetupParameters, setup_mesh_nodes
 from typing import List
 from utils.bindings import RelayState, FeatureDerp, default_features
-from utils.connection_util import ConnectionTag
+from utils.connection import ConnectionTag
 from utils.ping import ping
 
 DERP1_IP = str(DERP_PRIMARY.ipv4)

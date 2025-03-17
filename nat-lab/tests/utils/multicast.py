@@ -1,6 +1,6 @@
 import asyncio
 from asyncio import Event
-from config import LIBTELIO_BINARY_PATH_MAC_VM, LIBTELIO_BINARY_PATH_WINDOWS_VM
+from config import LIBTELIO_BINARY_PATH_VM_MAC, LIBTELIO_BINARY_PATH_WINDOWS_VM
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import AsyncIterator
@@ -14,7 +14,7 @@ def _get_multicast_script_path(connection: Connection) -> str:
         return "/libtelio/nat-lab/bin/multicast.py"
     if connection.target_os == TargetOS.Windows:
         return LIBTELIO_BINARY_PATH_WINDOWS_VM + "multicast.py"
-    return LIBTELIO_BINARY_PATH_MAC_VM + "multicast.py"
+    return LIBTELIO_BINARY_PATH_VM_MAC + "multicast.py"
 
 
 class MulticastClient:

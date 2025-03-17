@@ -4,12 +4,13 @@ from datetime import datetime
 from helpers import SetupParameters, setup_environment
 from Pyro5.errors import CommunicationError  # type:ignore
 from utils.bindings import TelioAdapterType
-from utils.connection_util import ConnectionTag, new_connection_by_tag
+from utils.connection import ConnectionTag
+from utils.connection_util import new_connection_by_tag
 from utils.process import ProcessExecError
 
 
 @pytest.mark.windows
-@pytest.mark.parametrize("conn_tag", [ConnectionTag.WINDOWS_VM_1])
+@pytest.mark.parametrize("conn_tag", [ConnectionTag.VM_WINDOWS_1])
 async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
     QUERY_CMD = [
         "reg",

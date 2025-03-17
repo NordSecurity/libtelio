@@ -3,11 +3,12 @@ import enum
 import pytest
 import socket
 import struct
+from config import LAN_ADDR_MAP
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from protobuf.pinger_pb2 import Pinger
 from utils.asyncio_util import run_async_context
-from utils.connection_util import ConnectionTag, LAN_ADDR_MAP
+from utils.connection import ConnectionTag
 
 TEST_PING_PONG_PORT = 5000
 

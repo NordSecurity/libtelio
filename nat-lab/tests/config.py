@@ -2,6 +2,7 @@ import os
 import platform
 from typing import Dict, Union
 from utils.bindings import Server, RelayState
+from utils.connection import ConnectionTag
 
 if platform.machine() != "x86_64":
     import pure_wg as Key
@@ -16,11 +17,47 @@ def get_root_path(path: str) -> str:
     return os.path.normpath(PROJECT_ROOT + path)
 
 
-# Same as defined in `Vagrantfile`
-LINUX_VM_IP = "10.55.0.10"
-MAC_VM_IP = "10.55.0.12"
-WINDOWS_1_VM_IP = "10.55.0.13"
-WINDOWS_2_VM_IP = "10.55.0.14"
+LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
+    ConnectionTag.DOCKER_CONE_CLIENT_1: "192.168.101.104",
+    ConnectionTag.DOCKER_CONE_CLIENT_2: "192.168.102.54",
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_1: "192.168.109.88",
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_2: "192.168.106.88",
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: "192.168.103.88",
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2: "192.168.104.88",
+    ConnectionTag.DOCKER_UPNP_CLIENT_1: "192.168.105.88",
+    ConnectionTag.DOCKER_UPNP_CLIENT_2: "192.168.112.88",
+    ConnectionTag.DOCKER_SHARED_CLIENT_1: "192.168.101.67",
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: "10.0.11.2",
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: "10.0.11.3",
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: "10.0.11.4",
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "192.168.110.100",
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "192.168.111.100",
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: "192.168.114.88",
+    ConnectionTag.VM_WINDOWS_1: "10.55.0.13",
+    ConnectionTag.VM_WINDOWS_2: "10.55.0.14",
+    ConnectionTag.VM_MAC: "10.55.0.12",
+    ConnectionTag.DOCKER_CONE_GW_1: "192.168.101.254",
+    ConnectionTag.DOCKER_CONE_GW_2: "192.168.102.254",
+    ConnectionTag.DOCKER_CONE_GW_3: "192.168.107.254",
+    ConnectionTag.DOCKER_CONE_GW_4: "192.168.108.254",
+    ConnectionTag.DOCKER_FULLCONE_GW_1: "192.168.109.254",
+    ConnectionTag.DOCKER_FULLCONE_GW_2: "192.168.106.254",
+    ConnectionTag.DOCKER_SYMMETRIC_GW_1: "192.168.103.254",
+    ConnectionTag.DOCKER_SYMMETRIC_GW_2: "192.168.104.254",
+    ConnectionTag.DOCKER_UDP_BLOCK_GW_1: "192.168.110.254",
+    ConnectionTag.DOCKER_UDP_BLOCK_GW_2: "192.168.111.254",
+    ConnectionTag.DOCKER_UPNP_GW_1: "192.168.105.254",
+    ConnectionTag.DOCKER_UPNP_GW_2: "192.168.112.254",
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "192.168.114.254",
+    ConnectionTag.DOCKER_VPN_1: "10.0.100.1",
+    ConnectionTag.DOCKER_NLX_1: "10.0.100.51",
+}
+
+LAN_ADDR_MAP_V6: Dict[ConnectionTag, str] = {
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: (
+        "2001:db8:85a4::dead:beef:ceed"
+    ),
+}
 
 LINUX_VM_PRIMARY_GATEWAY = "10.55.0.10"
 LINUX_VM_SECONDARY_GATEWAY = "10.66.0.10"
@@ -77,10 +114,10 @@ else:
 
 # Libtelio binary path inside Windows and Mac VMs
 LIBTELIO_BINARY_PATH_WINDOWS_VM = "C:/workspace/binaries/".replace("/", "\\")
-LIBTELIO_BINARY_PATH_MAC_VM = "/var/root/workspace/binaries/"
+LIBTELIO_BINARY_PATH_VM_MAC = "/var/root/workspace/binaries/"
 
 UNIFFI_PATH_WINDOWS_VM = "C:/workspace/uniffi/".replace("/", "\\")
-UNIFFI_PATH_MAC_VM = "/var/root/workspace/uniffi/"
+UNIFFI_PATH_VM_MAC = "/var/root/workspace/uniffi/"
 
 LIBTELIO_IPV6_WG_SUBNET = "fd74:656c:696f"
 LIBTELIO_IPV6_WAN_SUBNET = "2001:db8:85a4"

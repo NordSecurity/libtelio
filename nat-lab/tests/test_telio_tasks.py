@@ -11,7 +11,7 @@ from utils.bindings import (
     RttType,
     default_features,
 )
-from utils.connection_util import ConnectionTag
+from utils.connection import ConnectionTag
 
 
 @pytest.mark.asyncio

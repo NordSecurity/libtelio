@@ -4,7 +4,8 @@ from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from utils import asyncio_util
 from utils.bindings import NodeState, RelayState, TelioAdapterType
-from utils.connection_util import generate_connection_tracker_config, ConnectionTag
+from utils.connection import ConnectionTag
+from utils.connection_util import generate_connection_tracker_config
 from utils.ping import ping
 
 
@@ -35,10 +36,10 @@ from utils.ping import ping
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 2),
                 ),
             ),
@@ -48,10 +49,10 @@ from utils.ping import ping
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.WINDOWS_VM_1,
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.WINDOWS_VM_1,
+                    ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 2),
                 ),
             ),
@@ -61,10 +62,10 @@ from utils.ping import ping
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.MAC_VM,
+                    ConnectionTag.VM_MAC,
                     derp_1_limits=(1, 2),
                 ),
             ),

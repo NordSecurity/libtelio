@@ -30,7 +30,8 @@ from utils.bindings import (
     TelioAdapterType,
 )
 from utils.command_grepper import CommandGrepper
-from utils.connection import Connection, DockerConnection, TargetOS
+from utils.connection import Connection, TargetOS
+from utils.connection.docker_connection import DockerConnection, container_id
 from utils.connection_util import get_uniffi_path
 from utils.moose import MOOSE_LOGS_DIR
 from utils.output_notifier import OutputNotifier
@@ -507,7 +508,7 @@ class Client:
                             f"Test cleanup: Exception while flushing logs: {e}",
                         )
 
-                    await self.get_proxy().shutdown(self._connection.target_name())
+                    await self.get_proxy().shutdown(self._connection.tag.name)
                 else:
                     print(
                         datetime.now(),
@@ -1082,14 +1083,7 @@ class Client:
 
         system_log_content = await self.get_system_log()
 
-        if self._connection.target_os == TargetOS.Linux:
-            process = self._connection.create_process(["cat", "/etc/hostname"])
-            await process.execute()
-            container_id = process.get_stdout().strip()
-        else:
-            container_id = str(self._connection.target_os.name)
-
-        filename = container_id + ".log"
+        filename = self._connection.tag.name.lower() + ".log"
         if len(filename.encode("utf-8")) > 256:
             filename = f"{filename[:251]}.log"
 
@@ -1116,7 +1110,9 @@ class Client:
             file_name = os.path.basename(trace_path)
             os.rename(
                 os.path.join(log_dir, file_name),
-                os.path.join(log_dir, f"{container_id}-{file_name}"),
+                os.path.join(
+                    log_dir, f"{self._connection.tag.name.lower()}-{file_name}"
+                ),
             )
 
     async def save_moose_db(self) -> None:
@@ -1149,9 +1145,7 @@ class Client:
 
         network_info_info = await self.get_network_info()
 
-        container_id = str(self._connection.target_os.name)
-
-        filename = container_id + "_network_info.log"
+        filename = self._connection.tag.name.lower() + "_network_info.log"
         if len(filename.encode("utf-8")) > 256:
             filename = f"{filename[:251]}.log"
 
@@ -1219,7 +1213,7 @@ class Client:
 
         # if we collected some core dumps, copy them
         if isinstance(self._connection, DockerConnection) and should_copy_coredumps:
-            container_name = self._connection.container_name()
+            container_name = container_id(self._connection.tag)
             test_name = get_current_test_case_and_parameters()[0] or ""
             for i, file_path in enumerate(dump_files):
                 file_name = file_path.rsplit("/", 1)[-1]
@@ -1249,7 +1243,7 @@ async def find_files(connection, where, name_pattern):
 def copy_file(from_connection, from_path, destination_path):
     """Copy a file from within the docker container connection to the destination path"""
     if isinstance(from_connection, DockerConnection):
-        container_name = from_connection.container_name()
+        container_name = container_id(from_connection.tag)
 
         file_name = os.path.basename(from_path)
         core_dump_destination = os.path.join(destination_path, file_name)

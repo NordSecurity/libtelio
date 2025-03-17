@@ -2,7 +2,8 @@ import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment
-from utils.connection_util import ConnectionTag, new_connection_by_tag
+from utils.connection import ConnectionTag
+from utils.connection_util import new_connection_by_tag
 from utils.netcat import NetCatServer, NetCatClient
 
 TEST_STRING = "test_data"
@@ -16,7 +17,7 @@ PORT = 12345
     [
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.MAC_VM,
+                connection_tag=ConnectionTag.VM_MAC,
             ),
             marks=pytest.mark.mac,
         ),

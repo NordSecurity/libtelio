@@ -12,8 +12,7 @@ from utils.bindings import (
     LinkState,
     TelioAdapterType,
 )
-from utils.connection import Connection
-from utils.connection_util import ConnectionTag
+from utils.connection import Connection, ConnectionTag
 from utils.ping import ping
 
 RTT_SECONDS = 1
@@ -110,7 +109,7 @@ FEATURE_ENABLED_PARAMS = [
     pytest.param(
         _generate_setup_parameter_pair(
             [
-                (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+                (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
             ],
             False,
@@ -120,7 +119,7 @@ FEATURE_ENABLED_PARAMS = [
     pytest.param(
         _generate_setup_parameter_pair(
             [
-                (ConnectionTag.WINDOWS_VM_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+                (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
                 (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
             ],
             True,

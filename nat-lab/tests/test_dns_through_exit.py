@@ -5,7 +5,8 @@ from contextlib import AsyncExitStack
 from helpers import setup_api, setup_mesh_nodes, SetupParameters
 from typing import List, Tuple
 from utils.bindings import default_features, TelioAdapterType
-from utils.connection_util import generate_connection_tracker_config, ConnectionTag
+from utils.connection import ConnectionTag
+from utils.connection_util import generate_connection_tracker_config
 from utils.dns import query_dns
 from utils.router import IPStack
 
@@ -81,10 +82,10 @@ from utils.router import IPStack
         # This test is failing, but currently is non critical
         # pytest.param(
         #     SetupParameters(
-        #         connection_tag=ConnectionTag.MAC_VM,
+        #         connection_tag=ConnectionTag.VM_MAC,
         #         adapter_type_override=TelioAdapterType.NEP_TUN,
         #         connection_tracker_config=generate_connection_tracker_config(
-        #             ConnectionTag.MAC_VM,
+        #             ConnectionTag.VM_MAC,
         #             derp_1_limits=(1, 1),
         #         ),
         #     ),

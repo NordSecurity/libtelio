@@ -1,43 +1,119 @@
-from .connection import Connection, TargetOS
+from .connection import Connection, TargetOS, ConnectionTag, setup_ephemeral_ports
 from aiodocker import Docker
 from aiodocker.containers import DockerContainer
 from asyncio import to_thread
 from config import LINUX_INTERFACE_NAME
+from contextlib import asynccontextmanager
 from datetime import datetime
 from subprocess import run
-from typing import List, Type
+from typing import List, Type, Dict, AsyncIterator
 from typing_extensions import Self
 from utils.process import Process, DockerProcess
+
+DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
+    ConnectionTag.DOCKER_CONE_CLIENT_1: "cone-client-01",
+    ConnectionTag.DOCKER_CONE_CLIENT_2: "cone-client-02",
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_1: "fullcone-client-01",
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_2: "fullcone-client-02",
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: "symmetric-client-01",
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2: "symmetric-client-02",
+    ConnectionTag.DOCKER_UPNP_CLIENT_1: "upnp-client-01",
+    ConnectionTag.DOCKER_UPNP_CLIENT_2: "upnp-client-02",
+    ConnectionTag.DOCKER_SHARED_CLIENT_1: "shared-client-01",
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: "open-internet-client-01",
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: "open-internet-client-02",
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: (
+        "open-internet-client-dual-stack"
+    ),
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "udp-block-client-01",
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "udp-block-client-02",
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: "internal-symmetric-client-01",
+    ConnectionTag.DOCKER_CONE_GW_1: "cone-gw-01",
+    ConnectionTag.DOCKER_CONE_GW_2: "cone-gw-02",
+    ConnectionTag.DOCKER_CONE_GW_3: "cone-gw-03",
+    ConnectionTag.DOCKER_CONE_GW_4: "cone-gw-04",
+    ConnectionTag.DOCKER_FULLCONE_GW_1: "fullcone-gw-01",
+    ConnectionTag.DOCKER_FULLCONE_GW_2: "fullcone-gw-02",
+    ConnectionTag.DOCKER_SYMMETRIC_GW_1: "symmetric-gw-01",
+    ConnectionTag.DOCKER_SYMMETRIC_GW_2: "symmetric-gw-02",
+    ConnectionTag.DOCKER_UDP_BLOCK_GW_1: "udp-block-gw-01",
+    ConnectionTag.DOCKER_UDP_BLOCK_GW_2: "udp-block-gw-02",
+    ConnectionTag.DOCKER_UPNP_GW_1: "upnp-gw-01",
+    ConnectionTag.DOCKER_UPNP_GW_2: "upnp-gw-02",
+    ConnectionTag.DOCKER_NLX_1: "nlx-01",
+    ConnectionTag.DOCKER_VPN_1: "vpn-01",
+    ConnectionTag.DOCKER_VPN_2: "vpn-02",
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "internal-symmetric-gw-01",
+    ConnectionTag.DOCKER_DERP_1: "derp-01",
+    ConnectionTag.DOCKER_DERP_2: "derp-02",
+    ConnectionTag.DOCKER_DERP_3: "derp-03",
+    ConnectionTag.DOCKER_DNS_SERVER_1: "dns-server-1",
+    ConnectionTag.DOCKER_DNS_SERVER_2: "dns-server-2",
+}
+
+DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
+    ConnectionTag.DOCKER_CONE_CLIENT_1: ConnectionTag.DOCKER_CONE_GW_1,
+    ConnectionTag.DOCKER_CONE_CLIENT_2: ConnectionTag.DOCKER_CONE_GW_2,
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_1: ConnectionTag.DOCKER_FULLCONE_GW_1,
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_2: ConnectionTag.DOCKER_FULLCONE_GW_2,
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: ConnectionTag.DOCKER_SYMMETRIC_GW_1,
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2: ConnectionTag.DOCKER_SYMMETRIC_GW_2,
+    ConnectionTag.DOCKER_UPNP_CLIENT_1: ConnectionTag.DOCKER_UPNP_GW_1,
+    ConnectionTag.DOCKER_UPNP_CLIENT_2: ConnectionTag.DOCKER_UPNP_GW_2,
+    ConnectionTag.DOCKER_SHARED_CLIENT_1: ConnectionTag.DOCKER_CONE_GW_1,
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: ConnectionTag.DOCKER_UDP_BLOCK_GW_1,
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: ConnectionTag.DOCKER_UDP_BLOCK_GW_2,
+    ConnectionTag.VM_WINDOWS_1: ConnectionTag.DOCKER_CONE_GW_3,
+    ConnectionTag.VM_WINDOWS_2: ConnectionTag.DOCKER_CONE_GW_3,
+    ConnectionTag.VM_MAC: ConnectionTag.DOCKER_CONE_GW_3,
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: (
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1
+    ),
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: (
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2
+    ),
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: (
+        ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK
+    ),
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: (
+        ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW
+    ),
+}
 
 
 class DockerConnection(Connection):
     _container: DockerContainer
-    _name: str
 
-    def __init__(self, container: DockerContainer, container_name: str):
-        super().__init__(TargetOS.Linux)
-        self._name = container_name
+    def __init__(self, container: DockerContainer, tag: ConnectionTag):
+        super().__init__(TargetOS.Linux, tag)
         self._container = container
 
+    async def __aenter__(self):
+        await self.restore_ip_tables()
+        await self.clean_interface()
+        await setup_ephemeral_ports(self)
+        return self
+
+    async def __aexit__(self, *exc_details):
+        await self.restore_ip_tables()
+        await self.clean_interface()
+        return self
+
     @classmethod
-    async def new(cls: Type[Self], docker: Docker, container_name: str) -> Self:
-        new_docker_conn = cls(
-            await docker.containers.get(container_name), container_name
-        )
-        await new_docker_conn.restore_ip_tables()
-        await new_docker_conn.clean_interface()
-
-        return new_docker_conn
-
-    def container_name(self) -> str:
-        return self._name
-
-    def target_name(self) -> str:
-        return self.container_name()
+    @asynccontextmanager
+    async def new_connection(
+        cls: Type[Self], docker: Docker, tag: ConnectionTag
+    ) -> AsyncIterator["DockerConnection"]:
+        async with cls(
+            await docker.containers.get(container_id(tag)), tag
+        ) as connection:
+            yield connection
 
     async def download(self, remote_path: str, local_path: str) -> None:
         def aux():
-            run(["docker", "cp", self._name + ":" + remote_path, local_path])
+            run(
+                ["docker", "cp", container_id(self.tag) + ":" + remote_path, local_path]
+            )
 
         await to_thread(aux)
 
@@ -45,14 +121,14 @@ class DockerConnection(Connection):
         self, command: List[str], kill_id=None, term_type=None
     ) -> "Process":
         process = DockerProcess(
-            self._container, self.container_name(), command, kill_id
+            self._container, container_id(self.tag), command, kill_id
         )
         print(
             datetime.now(),
             "Executing",
             command,
             "on",
-            self._name,
+            self.tag.name,
             "with Kill ID:",
             process.get_kill_id(),
         )
@@ -91,3 +167,9 @@ class DockerConnection(Connection):
             ).execute()
         except:
             pass  # Most of the time there will be no interface to be deleted
+
+
+def container_id(tag: ConnectionTag) -> str:
+    if tag in DOCKER_SERVICE_IDS:
+        return f"nat-lab-{DOCKER_SERVICE_IDS[tag]}-1"
+    assert False, f"tag {tag} not a docker container"
