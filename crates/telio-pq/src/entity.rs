@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime};
 
 use parking_lot::Mutex;
 
@@ -19,7 +19,7 @@ struct Peer {
     /// This is a key rotation task guard, its `Drop` implementation aborts the task
     _rotation_task: super::conn::ConnKeyRotation,
     keys: Option<super::Keys>,
-    last_handshake_ts: Option<Instant>,
+    last_handshake_ts: Option<SystemTime>,
 }
 
 pub struct Entity {
@@ -59,7 +59,7 @@ impl Entity {
                 super::Event::Handshake(addr, keys) => {
                     if peer.addr == addr {
                         peer.keys = Some(keys);
-                        peer.last_handshake_ts = Some(Instant::now());
+                        peer.last_handshake_ts = Some(SystemTime::now());
                     }
                 }
                 super::Event::Rekey(super::Keys {
@@ -72,7 +72,7 @@ impl Entity {
                             // and only then update the preshared key,
                             // otherwise we're connecting to different node already
                             keys.pq_shared = pq_shared;
-                            peer.last_handshake_ts = Some(Instant::now());
+                            peer.last_handshake_ts = Some(SystemTime::now());
                         } else {
                             telio_log_debug!(
                                 "PQ secret key does not match, ignoring shared secret rotation"
@@ -121,13 +121,24 @@ impl Entity {
     //
     // To solve this we can restart the postquantum entity if the time since the last handshake exceeds 180s, which is what this function does.
     // The postquantum peer stores a timestamp of the last handshake, which is used in this function to check whether we should restart.
+    // We store the timestamp of the last handshake as a SystemTime instead of an Instant because Instant does not guarantee
+    // whether time spent while the system is asleep is counted or not.
+    // Since we use SystemTime, it is possible that changes to the system clock by the user may affect our measurements.
+    // Because of this, we must also restart when ts.elapsed() returns an error, which happens when the elapsed() call
+    // would return a negative value. The error returned contains the absolute value of the time difference.
+    // We ignore values smaller than 5 seconds (chosen arbitrarily) because SystemTime does not guarantee monotonicity,
+    // so it is possible that ts.elapsed() returns a small negative value when called shortly after ts was saved.
     pub async fn maybe_restart(&self) {
         let peer = {
             let mut peer = self.peer.lock();
             let should_restart = peer
                 .as_ref()
                 .and_then(|peer| peer.last_handshake_ts)
-                .is_some_and(|ts| ts.elapsed() > REJECT_AFTER_TIME);
+                .is_some_and(|ts| match ts.elapsed() {
+                    Ok(dur) => dur > REJECT_AFTER_TIME,
+                    Err(err) => err.duration() > Duration::from_secs(5),
+                });
+
             if should_restart {
                 peer.take()
             } else {
