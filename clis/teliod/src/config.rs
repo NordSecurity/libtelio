@@ -98,6 +98,8 @@ pub struct TeliodDaemonConfig {
     )]
     pub log_level: LevelFilter,
     pub log_file_path: String,
+    #[serde(default = "default_log_file_count")]
+    pub log_file_count: usize,
     pub interface: InterfaceConfig,
 
     #[serde(
@@ -121,6 +123,9 @@ impl TeliodDaemonConfig {
         }
         if let Some(log_file_path) = update.log_file_path {
             self.log_file_path = log_file_path;
+        }
+        if let Some(log_file_count) = update.log_file_count {
+            self.log_file_count = log_file_count;
         }
         if let Some(authentication_token) = update.authentication_token {
             self.authentication_token = authentication_token;
@@ -155,6 +160,7 @@ impl Default for TeliodDaemonConfig {
                     "./teliod.log".to_string()
                 }
             },
+            log_file_count: default_log_file_count(),
             interface: InterfaceConfig {
                 name: "nlx".to_string(),
                 config_provider: Default::default(),
@@ -229,6 +235,10 @@ where
     }
 }
 
+const fn default_log_file_count() -> usize {
+    7
+}
+
 #[derive(Default, PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
 pub struct InterfaceConfig {
     pub name: String,
@@ -241,6 +251,7 @@ pub struct TeliodDaemonConfigPartial {
     #[serde(default, deserialize_with = "deserialize_partial_log_level")]
     pub log_level: Option<LevelFilter>,
     pub log_file_path: Option<String>,
+    pub log_file_count: Option<usize>,
     pub interface: Option<InterfaceConfig>,
     pub app_user_uid: Option<Uuid>,
     #[serde(default, deserialize_with = "deserialize_partial_authentication_token")]
@@ -302,6 +313,7 @@ mod tests {
         let expected = TeliodDaemonConfig {
             log_level: LevelFilter::INFO,
             log_file_path: "test.log".to_owned(),
+            log_file_count: 7,
             interface: InterfaceConfig {
                 name: "utun10".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
