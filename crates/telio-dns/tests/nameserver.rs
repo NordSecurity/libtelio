@@ -523,11 +523,7 @@ async fn init_client(
     let client = WGClient::new(client_secret_key, server_public_key, server_address).await;
 
     nameserver
-        .start(
-            server_peer.clone(),
-            server_socket.clone(),
-            client.client_address(),
-        )
+        .start(server_peer.clone(), server_socket.clone())
         .await;
 
     client

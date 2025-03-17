@@ -1729,10 +1729,6 @@ impl Runtime {
 
                 let dns = LocalDnsResolver::new(
                     &public_key,
-                    self.entities
-                        .wireguard_interface
-                        .wait_for_listen_port(Duration::from_millis(100))
-                        .await?,
                     upstream_dns_servers,
                     dns_entity.virtual_host_tun_fd,
                     self.features.dns.exit_dns.clone(),
@@ -1819,12 +1815,6 @@ impl Runtime {
                         .await
                 });
 
-            let wg_port = self
-                .entities
-                .wireguard_interface
-                .wait_for_proxy_listen_port(Duration::from_secs(1))
-                .await?;
-
             let meshnet_entities: MeshnetEntities = if let MeshnetState::Entities(entities) =
                 std::mem::replace(
                     &mut self.entities.meshnet,
@@ -1836,7 +1826,7 @@ impl Runtime {
             };
 
             let proxy_config = ProxyConfig {
-                wg_port: Some(wg_port),
+                wg_port: None,
                 peers: peers.clone(),
             };
 
@@ -1845,7 +1835,7 @@ impl Runtime {
             if let Some(ref starcast) = meshnet_entities.starcast {
                 let starcast_vpeer_config = StarcastPeerConfig {
                     public_key: secret_key.public(),
-                    wg_port,
+                    wg_port: None,
                 };
                 let multicast_peers = config
                     .clone()

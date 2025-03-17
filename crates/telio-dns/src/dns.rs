@@ -52,7 +52,6 @@ pub struct LocalDnsResolver {
     secret_key: SecretKey,
     peer: Arc<Mutex<Tunn>>,
     socket_port: u16,
-    dst_address: SocketAddr,
     nameserver: Arc<RwLock<LocalNameServer>>,
     /// Controls if it is allowed to reconfigure DNS peer when exit node is
     /// (dis)connected.
@@ -63,7 +62,6 @@ impl LocalDnsResolver {
     /// Creates new instance of `LocalDnsResolver`.
     pub async fn new(
         public_key: &PublicKey,
-        port: u16,
         forward_ips: &[IpAddr],
         tun: Option<i32>,
         exit_dns: Option<FeatureExitDns>,
@@ -82,8 +80,6 @@ impl LocalDnsResolver {
                 format!("Failed to get socket port: {:?}", e)
             })?
             .port();
-
-        let dst_address: SocketAddr = ([127, 0, 0, 1], port).into();
 
         bind_tun::set_tun(tun).map_err(|e| {
             telio_log_debug!("Failing setting tun: {:?}", e);
@@ -113,7 +109,6 @@ impl LocalDnsResolver {
                 None,
             )?)),
             socket_port,
-            dst_address,
             nameserver,
             auto_switch_ips,
         })
@@ -124,7 +119,7 @@ impl LocalDnsResolver {
 impl DnsResolver for LocalDnsResolver {
     async fn start(&self) {
         self.nameserver
-            .start(self.peer.clone(), self.socket.clone(), self.dst_address)
+            .start(self.peer.clone(), self.socket.clone())
             .await;
     }
 
@@ -216,7 +211,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_default_dns_allowed_ips() {
-        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), 42, &[], None, None)
+        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), &[], None, None)
             .await
             .unwrap();
         assert_eq!(
@@ -232,7 +227,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_exit_connected_dns_allowed_ips() {
-        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), 42, &[], None, None)
+        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), &[], None, None)
             .await
             .unwrap();
         assert_eq!(
@@ -246,7 +241,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_default_dns_servers() {
-        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), 42, &[], None, None)
+        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), &[], None, None)
             .await
             .unwrap();
         assert_eq!(
