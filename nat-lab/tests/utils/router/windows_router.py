@@ -28,27 +28,27 @@ class WindowsRouter(Router):
         for address in addresses:
             addr_proto = self.check_ip_address(address)
 
+            # Disable Duplicate Address detection on tunnel interface
             cmd = CommandGrepper(
                 self._connection,
                 [
                     "netsh",
                     "interface",
                     "ipv4" if addr_proto == IPProto.IPv4 else "ipv6",
-                    "show",
+                    "set",
                     "interface",
                     self._interface_name,
+                    "dadtransmits=0",
                 ],
                 timeout=self._status_check_timeout,
+                allow_process_failure=True,
             )
-            if not await cmd.check_exists("State", ["connected"]):
+            if not await cmd.check_exists("Ok"):
                 raise RuntimeError(
-                    f"Adapter '{self._interface_name}' didn't report connected state. "
+                    f"Failed to disable Duplicate Address Detection on Tunnel interface {self._interface_name}"
                 )
 
-            print(
-                f"windows_router: connected state established. Interface info: {cmd.get_stdout()} stderr: {cmd.get_stderr()}"
-            )
-
+            # Set address
             if addr_proto == IPProto.IPv4:
                 await self._connection.create_process([
                     "netsh",
@@ -70,20 +70,6 @@ class WindowsRouter(Router):
                     self._interface_name,
                     address + "/128",
                 ]).execute()
-
-            if not await CommandGrepper(
-                self._connection,
-                [
-                    "netsh",
-                    "interface",
-                    "ipv4" if addr_proto == IPProto.IPv4 else "ipv6",
-                    "show",
-                    "addresses",
-                    self._interface_name,
-                ],
-                timeout=self._status_check_timeout,
-            ).check_exists(address, None):
-                raise Exception("Failed to set up the interface")
 
     async def deconfigure_interface(self, addresses: List[str]) -> None:
         for address in addresses:
@@ -110,20 +96,6 @@ class WindowsRouter(Router):
                     self._interface_name,
                     address,
                 ]).execute()
-
-            if not await CommandGrepper(
-                self._connection,
-                [
-                    "netsh",
-                    "interface",
-                    "ipv4" if addr_proto == IPProto.IPv4 else "ipv6",
-                    "show",
-                    "addresses",
-                    self._interface_name,
-                ],
-                timeout=self._status_check_timeout,
-            ).check_not_exists(address, None):
-                raise Exception("Failed to deconfigure the interface")
 
     async def create_meshnet_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:

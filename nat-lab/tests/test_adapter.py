@@ -1,9 +1,40 @@
+import config
 import pytest
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_mesh_nodes, setup_connections
+from enum import Enum
+from helpers import (
+    SetupParameters,
+    setup_environment,
+    setup_mesh_nodes,
+    setup_connections,
+)
 from utils.bindings import ErrorEvent, ErrorCode, ErrorLevel, TelioAdapterType
 from utils.connection import TargetOS, ConnectionTag
+from utils.connection_util import generate_connection_tracker_config
 from utils.process import ProcessExecError
+
+
+class AdapterState(Enum):
+    DOWN = (0,)
+    UP = 1
+
+
+async def get_interface_state(client_conn, client):
+    itf_name = client.get_router().get_interface_name()
+    process = await client_conn.create_process([
+        "powershell",
+        "-Command",
+        f'(Get-NetAdapter | Where-Object {{$_.Name -eq "{itf_name}"}}).Status',
+    ]).execute()
+    output = process.get_stdout()
+    state_str = output.strip().lower()
+
+    if state_str in ("disconnected", "down"):
+        return AdapterState.DOWN
+    if state_str in ("connected", "up"):
+        return AdapterState.UP
+
+    raise Exception(f'Unexpected adapter state: "{output}"')
 
 
 @pytest.mark.parametrize(
@@ -138,3 +169,121 @@ async def test_adapter_service_loading(
 
     async with AsyncExitStack() as exit_stack:
         _ = await setup_mesh_nodes(exit_stack, [alpha_setup_params, beta_setup_params])
+
+
+@pytest.mark.parametrize(
+    "alpha_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    connection_tag=ConnectionTag.VM_WINDOWS_1,
+                    vpn_1_limits=(1, 1),
+                ),
+                is_meshnet=False,
+            ),
+            marks=[pytest.mark.windows],
+        ),
+    ],
+)
+async def test_adapter_state_for_vpn_and_dns(
+    alpha_setup_params: SetupParameters,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+        )
+
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+
+        # Verify that interface is disconnected before any configuration is provided
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.DOWN
+
+        # Enable telio dns
+        await client_alpha.enable_magic_dns(["1.2.3.4"])
+
+        # Verify that interface is connected now
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.UP
+
+        # Disable telio dns
+        await client_alpha.disable_magic_dns()
+
+        # Verify that interface is disconnected now
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.DOWN
+
+        # attempt to connect to VPN
+        server_ip = config.WG_SERVER["ipv4"]
+        server_port = config.WG_SERVER["port"]
+        server_public_key = config.WG_SERVER["public_key"]
+        assert (
+            isinstance(server_ip, str)
+            and isinstance(server_port, int)
+            and isinstance(server_public_key, str)
+        )
+        await client_alpha.connect_to_vpn(server_ip, server_port, server_public_key)
+
+        # Verify that interface is connected now
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.UP
+
+        # Disconnect from VPN
+        await client_alpha.disconnect_from_vpn(server_public_key)
+
+        # Verify that interface is disconnected now
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.DOWN
+
+
+@pytest.mark.parametrize(
+    "alpha_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    connection_tag=ConnectionTag.VM_WINDOWS_1,
+                    derp_1_limits=(1, 1),
+                ),
+            ),
+            marks=[pytest.mark.windows],
+        ),
+    ],
+)
+async def test_adapter_state_for_meshnet(alpha_setup_params: SetupParameters) -> None:
+    async with AsyncExitStack() as exit_stack:
+        # Creates and enables meshnet without any nodes
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+        )
+
+        api = env.api
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+
+        # Verify that interface is disconnected before any configuration is provided
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.DOWN
+
+        # Add node to meshnet
+        api.default_config_two_nodes()
+        first_node_id = next(iter(api.nodes))
+        await client_alpha.set_meshnet_config(
+            api.get_meshnet_config(first_node_id, derp_servers=[config.DERP_PRIMARY])
+        )
+
+        # Verify that interface is connected after we have enabled meshnet with peers
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.UP
+
+        await client_alpha.set_mesh_off()
+
+        # Verify that interface is disconnected after meshnet was disabled again
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.DOWN

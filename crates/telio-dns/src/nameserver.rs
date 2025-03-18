@@ -43,7 +43,7 @@ pub trait NameServer {
     ///
     /// Server will listen on `socket`, expect connections from `peer` and will
     /// reply to `dst_address`.
-    async fn start(&self, peer: Arc<Mutex<Tunn>>, socket: Arc<UdpSocket>, dst_address: SocketAddr);
+    async fn start(&self, peer: Arc<Mutex<Tunn>>, socket: Arc<UdpSocket>);
     /// Stop the server.
     async fn stop(&self);
     /// Configure list of forward DNS servers for zone '.'.
@@ -80,25 +80,32 @@ impl LocalNameServer {
         peer: Arc<Mutex<Tunn>>,
         nameserver: Arc<RwLock<LocalNameServer>>,
         socket: Arc<UdpSocket>,
-        dst_address: SocketAddr,
     ) {
         let mut receiving_buffer = vec![0u8; MAX_PACKET];
         let mut sending_buffer = vec![0u8; MAX_PACKET];
         let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_QUERIES));
         loop {
-            let bytes_read = match socket.recv(&mut receiving_buffer).await {
-                Ok(bytes) => bytes,
+            let (bytes_read, sender_addr) = match socket.recv_from(&mut receiving_buffer).await {
+                Ok((bytes, sender_addr)) => (bytes, sender_addr),
                 Err(e) => {
                     telio_log_error!("[DNS] Failed to read bytes: {:?}", e);
                     continue;
                 }
             };
 
+            if sender_addr.ip() != IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)) {
+                telio_log_debug!(
+                    "[DNS] Received packet from unexpected address {:?}",
+                    sender_addr
+                );
+                continue;
+            }
+
             loop {
                 let res = peer.lock().await.update_timers(&mut sending_buffer);
                 match res {
                     TunnResult::WriteToNetwork(packet) => {
-                        if let Err(e) = socket.send_to(packet, dst_address).await {
+                        if let Err(e) = socket.send_to(packet, sender_addr).await {
                             telio_log_warn!("[DNS] Failed to send timer update packet : {:?}", e)
                         };
                     }
@@ -125,7 +132,7 @@ impl LocalNameServer {
                 match res {
                     // Handshake packets
                     TunnResult::WriteToNetwork(packet) => {
-                        if let Err(e) = socket.send_to(packet, dst_address).await {
+                        if let Err(e) = socket.send_to(packet, sender_addr).await {
                             telio_log_warn!("[DNS] Failed to send handshake packet  : {:?}", e);
                             return;
                         };
@@ -136,7 +143,7 @@ impl LocalNameServer {
                                 .await
                                 .decapsulate(None, &[], &mut temporary_buffer)
                         {
-                            if let Err(e) = socket.send_to(empty, dst_address).await {
+                            if let Err(e) = socket.send_to(empty, sender_addr).await {
                                 telio_log_warn!("[DNS] Failed to send handshake packet  : {:?}", e);
                                 return;
                             };
@@ -179,7 +186,7 @@ impl LocalNameServer {
                         );
                         match tunn_res {
                             TunnResult::WriteToNetwork(dns) => {
-                                if let Err(e) = socket.send_to(dns, dst_address).await {
+                                if let Err(e) = socket.send_to(dns, sender_addr).await {
                                     telio_log_warn!(
                                         "[DNS] Failed to send DNS query response  {:?}",
                                         e
@@ -675,13 +682,10 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
     }
 
     #[allow(unwrap_check)]
-    async fn start(&self, peer: Arc<Mutex<Tunn>>, socket: Arc<UdpSocket>, dst_address: SocketAddr) {
+    async fn start(&self, peer: Arc<Mutex<Tunn>>, socket: Arc<UdpSocket>) {
         let nameserver = self.clone();
         self.write().await.task_handle = Some(tokio::spawn(LocalNameServer::dns_service(
-            peer,
-            nameserver,
-            socket,
-            dst_address,
+            peer, nameserver, socket,
         )));
         telio_log_trace!("start_sucessfull");
     }

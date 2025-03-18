@@ -11,7 +11,7 @@ use telio_task::{
     task_exec, Runtime, RuntimeExt, Task, WaitResponse,
 };
 use telio_utils::interval;
-use telio_utils::{telio_log_error, telio_log_warn};
+use telio_utils::{telio_log_error, telio_log_info, telio_log_warn};
 use telio_wg::uapi::Peer;
 use tokio::{net::UdpSocket, sync::mpsc::error::SendTimeoutError, time::Interval};
 use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
@@ -57,7 +57,7 @@ pub struct Config {
     /// Public key of the peer with which the starcast virtual peer shall communicate.
     pub public_key: PublicKey,
     /// Port number through which the virtual starcast peer shall communicate with WireGuard.
-    pub wg_port: u16,
+    pub wg_port: Option<u16>,
 }
 
 impl StarcastPeer {
@@ -121,6 +121,31 @@ impl StarcastPeer {
         Ok(())
     }
 
+    /// Configure (or reconfigure) the wireguard listen address.
+    ///
+    /// # Arguments
+    ///
+    /// * `wg_addr` - An optional address which is used as destination for WG encapsulated data
+    ///
+    /// # Returns
+    ///
+    /// A result indicating wether the configuration was successful.
+    pub async fn set_wg_address(&self, wg_addr: Option<SocketAddr>) -> Result<(), Error> {
+        task_exec!(&self.task, async move |state| {
+            if state.wg_sock_addr != wg_addr {
+                telio_log_info!(
+                    "Updating wg_listen_port from {:?} to {:?}",
+                    state.wg_sock_addr,
+                    wg_addr
+                );
+                state.wg_sock_addr = wg_addr;
+            }
+            Ok(())
+        })
+        .await?;
+        Ok(())
+    }
+
     /// Get the starcast virtual peer which can be treated as a regular peer by telio.
     ///
     /// # Returns
@@ -164,7 +189,10 @@ struct State {
 impl State {
     async fn configure(&mut self, config: Config) -> Result<(), Error> {
         // Because this is a virtual peer, all communication happens on loopback.
-        self.wg_sock_addr = Some(SocketAddr::from(([127, 0, 0, 1], config.wg_port)));
+        self.wg_sock_addr = config
+            .wg_port
+            .map(|p| SocketAddr::from(([127, 0, 0, 1], p)));
+
         // No point in handling old handshakes if the public key and addr have changed.
         self.packets_present_in_tunnel = false;
 
@@ -336,11 +364,11 @@ mod tests {
 
         let config_a = Config {
             public_key: b_peer.public_key,
-            wg_port: peer_b_addr.port(),
+            wg_port: Some(peer_b_addr.port()),
         };
         let config_b = Config {
             public_key: a_peer.public_key,
-            wg_port: peer_a_addr.port(),
+            wg_port: Some(peer_a_addr.port()),
         };
 
         let udp_packet = make_udp_v4(&peer_a_addr.to_string(), &peer_b_addr.to_string());

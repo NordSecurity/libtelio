@@ -3,7 +3,7 @@ use futures::FutureExt;
 use ipnet::IpNet;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::iter::FromIterator;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
@@ -129,6 +129,12 @@ pub async fn consolidate_wg_state(
         entities.cross_ping_check(),
     )
     .await?;
+    consolidate_wg_listen_port(
+        &*entities.wireguard_interface,
+        entities.meshnet.left().map(|m| &*m.proxy),
+        entities.starcast_vpeer(),
+    )
+    .await?;
 
     let starcast_pub_key = if let Some(starcast_vpeer) = entities.starcast_vpeer() {
         Some(starcast_vpeer.get_peer().await?.public_key)
@@ -178,6 +184,45 @@ async fn consolidate_wg_private_key<W: WireGuard>(
         if let Some(resolver) = dns.resolver.as_ref() {
             resolver.set_peer_public_key(private_key.public()).await;
         }
+    }
+
+    Ok(())
+}
+
+async fn consolidate_wg_listen_port<W: WireGuard, P: Proxy>(
+    wireguard_interface: &W,
+    proxy: Option<&P>,
+    starcast_vpeer: Option<&Arc<StarcastPeer>>,
+) -> Result {
+    // WireGuard listen port may change during runtime, for example when using WireGuard-NT, it's
+    // up/down state is controlled according to the needs. This means that every time we go into
+    // down->up transition, listen-port may change. Therefore this consolidation has been added to
+    // keep it in sync all the time.
+
+    if let (None, None) = (proxy, starcast_vpeer) {
+        return Ok(());
+    }
+
+    // Determine WireGuard port. Prefer listen_proxy_port if it is set, otherwise - use
+    // listen_port.
+    // This is only required due to peculiarities of WireGuard-go bind. Other WireGuard
+    // implementations rely solely on `listen_port`.
+    let listen_port = wireguard_interface.get_interface().await?.listen_port;
+    let listen_proxy_port = wireguard_interface.get_interface().await?.proxy_listen_port;
+    let wg_port = match (listen_port, listen_proxy_port) {
+        (_, Some(listen_proxy_port)) => Some(listen_proxy_port),
+        (Some(listen_port), _) => Some(listen_port),
+        (None, None) => None,
+    };
+
+    // notify about the port to required modules
+    if let Some(proxy) = proxy {
+        let wg_addr = wg_port.map(|p| (Ipv4Addr::LOCALHOST, p).into());
+        proxy.set_wg_address(wg_addr).await?;
+    }
+    if let Some(starcast_vpeer) = starcast_vpeer {
+        let wg_addr = wg_port.map(|p| (Ipv4Addr::LOCALHOST, p).into());
+        starcast_vpeer.set_wg_address(wg_addr).await?;
     }
 
     Ok(())

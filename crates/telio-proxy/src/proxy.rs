@@ -90,6 +90,8 @@ impl From<std::io::Error> for ErrorType {
 pub trait Proxy {
     /// Get currently mapped sockets
     async fn get_endpoint_map(&self) -> Result<EndpointMap, Error>;
+    /// Set currently used WG listen port
+    async fn set_wg_address(&self, wg_addr: Option<SocketAddr>) -> Result<(), Error>;
     /// Mute peer for duration (or unmute if duration is None)
     async fn mute_peer(&self, pk: PublicKey, dur: Option<Duration>) -> Result<(), Error>;
 }
@@ -213,6 +215,22 @@ impl Proxy for UdpProxy {
             Ok(state.get_endpoints_map().await)
         })
         .await?
+    }
+
+    async fn set_wg_address(&self, wg_addr: Option<SocketAddr>) -> Result<(), Error> {
+        task_exec!(&self.task_egress, async move |state| {
+            if state.wg_addr != wg_addr {
+                telio_log_info!(
+                    "Updating wg_listen_port from {:?} to {:?}",
+                    state.wg_addr,
+                    wg_addr
+                );
+                state.wg_addr = wg_addr;
+            }
+            Ok(())
+        })
+        .await?;
+        Ok(())
     }
 
     async fn mute_peer(&self, pk: PublicKey, dur: Option<Duration>) -> Result<(), Error> {
