@@ -1,5 +1,14 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.2.1
+### **Pork Kibin**
+---
+* LLT-6071: Suppress DuplicateCounter error logs until a proper fix has been implemented
+* LLT-6041: Use SystemTime in PQ restart logic to avoid problems when OS is asleep
+* Remove codesign for macos
+
+<br>
+
 ### v5.2.0
 ### **Pork Kibin**
 ---
