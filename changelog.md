@@ -1,5 +1,13 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.1.11
+### **Pork Kibin**
+---
+* LLT-6041: Use SystemTime in PQ restart logic to avoid problems when OS is asleep
+* Remove codesign for macos
+
+<br>
+
 ### v5.1.10
 ### **Pork Kibin**
 ---
