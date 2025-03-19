@@ -919,6 +919,11 @@ class Client:
                         event = await self.get_proxy().next_event()
                 await asyncio.sleep(1)
             except:
+                log.error(
+                    "[%s] Exception thrown:",
+                    self.get_connection().tag.name,
+                    exc_info=True,
+                )
                 if self._quit:
                     return
                 raise

@@ -65,6 +65,7 @@ class SshProcess(Process):
                 self._stderr_loop(self._process.stderr, stderr_callback),
             )
         except:
+            log.error("[%s] Exception thrown:", self._vm_name, exc_info=True)
             if self._process and self._process.returncode is None:
                 self._process.kill()
                 self._process.close()
