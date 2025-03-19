@@ -98,7 +98,6 @@ class DockerConnection(Connection):
     async def __aexit__(self, *exc_details):
         await self.restore_ip_tables()
         await self.clean_interface()
-        return self
 
     @classmethod
     @asynccontextmanager
