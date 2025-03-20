@@ -2,9 +2,9 @@ import asyncio
 from asyncio import Event
 from config import LIBTELIO_BINARY_PATH_VM_MAC, LIBTELIO_BINARY_PATH_WINDOWS_VM
 from contextlib import asynccontextmanager
-from datetime import datetime
 from typing import AsyncIterator
 from utils.connection import Connection, TargetOS
+from utils.logger import log
 from utils.process import Process
 from utils.python import get_python_binary
 
@@ -60,11 +60,11 @@ class MulticastServer:
 
     async def wait_till_ready(self) -> None:
         await asyncio.wait_for(self._server_ready_event.wait(), timeout=10.0)
-        print(datetime.now(), "MulticastServer is ready")
+        log.info("MulticastServer is ready")
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["MulticastServer"]:
-        print(datetime.now(), "MulticastServer starting")
+        log.info("MulticastServer starting")
         async with self._process.run(stdout_callback=self.on_stdout):
             await asyncio.sleep(0.1)
             yield self

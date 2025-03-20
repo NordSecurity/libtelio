@@ -9,6 +9,7 @@ from aiodocker.stream import Stream
 from contextlib import asynccontextmanager
 from typing import List, Optional, AsyncIterator
 from utils.asyncio_util import run_async_context
+from utils.logger import log
 from utils.moose import MOOSE_LOGS_DIR
 
 
@@ -51,17 +52,21 @@ class DockerProcess(Process):
         stderr_callback: Optional[StreamCallback] = None,
         privileged: bool = False,
     ) -> "DockerProcess":
-        self._execute = await self._container.exec(
-            self._command,
-            stdin=True,
-            environment={
-                "MOOSE_LOG": "Trace",
-                "MOOSE_LOG_FILE": MOOSE_LOGS_DIR,
-                "RUST_BACKTRACE": "full",
-                "KILL_ID": self._kill_id,
-            },
-            privileged=privileged,
-        )
+        try:
+            self._execute = await self._container.exec(
+                self._command,
+                stdin=True,
+                environment={
+                    "MOOSE_LOG": "Trace",
+                    "MOOSE_LOG_FILE": MOOSE_LOGS_DIR,
+                    "RUST_BACKTRACE": "full",
+                    "KILL_ID": self._kill_id,
+                },
+                privileged=privileged,
+            )
+        except:
+            log.error("[%s] Exception thrown:", self._container_name, exc_info=True)
+            raise
         if self._execute is None:
             return self
         async with self._execute.start() as exe_stream:
@@ -76,14 +81,18 @@ class DockerProcess(Process):
                         inspect = await self._execute.inspect()
                         await asyncio.sleep(0.01)
                     if inspect["ExitCode"] is None:
-                        subprocess.run([
-                            "docker",
-                            "exec",
-                            "--privileged",
-                            self._container.id,
-                            "/opt/bin/kill_process_by_natlab_id",
-                            self._kill_id,
-                        ])
+                        subprocess.run(
+                            [
+                                "docker",
+                                "exec",
+                                "--privileged",
+                                self._container.id,
+                                "/opt/bin/kill_process_by_natlab_id",
+                                self._kill_id,
+                            ],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
                 raise
             finally:
                 self._stream = None
@@ -127,14 +136,18 @@ class DockerProcess(Process):
                         inspect = await self._execute.inspect()
                         await asyncio.sleep(0.01)
                     if inspect["ExitCode"] is None:
-                        subprocess.run([
-                            "docker",
-                            "exec",
-                            "--privileged",
-                            self._container.id,
-                            "/opt/bin/kill_process_by_natlab_id",
-                            self._kill_id,
-                        ])
+                        subprocess.run(
+                            [
+                                "docker",
+                                "exec",
+                                "--privileged",
+                                self._container.id,
+                                "/opt/bin/kill_process_by_natlab_id",
+                                self._kill_id,
+                            ],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
 
     async def _read_loop(
         self,
@@ -207,9 +220,6 @@ class DockerProcess(Process):
 
     def get_stderr(self) -> str:
         return self._stderr
-
-    def get_kill_id(self) -> str:
-        return self._kill_id
 
     def is_executing(self) -> bool:
         return self._stream is not None

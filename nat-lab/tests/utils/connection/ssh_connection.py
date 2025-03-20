@@ -5,9 +5,10 @@ import utils.vm.mac_vm_util as utils_mac
 import utils.vm.windows_vm_util as utils_win
 from .connection import Connection, TargetOS, ConnectionTag, setup_ephemeral_ports
 from contextlib import asynccontextmanager
-from datetime import datetime
+from logging import INFO, DEBUG
 from typing import List, AsyncIterator
 from utils import cmd_exe_escape
+from utils.logger import log
 from utils.process import Process, SshProcess
 
 
@@ -48,8 +49,16 @@ class SshConnection(Connection):
         reenable_nat=False,
     ) -> AsyncIterator["SshConnection"]:
         if reenable_nat:
-            subprocess.check_call(["sudo", "bash", "vm_nat.sh", "disable"])
-            subprocess.check_call(["sudo", "bash", "vm_nat.sh", "enable"])
+            subprocess.check_call(
+                ["sudo", "bash", "vm_nat.sh", "disable"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.check_call(
+                ["sudo", "bash", "vm_nat.sh", "enable"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
 
         async with asyncssh.connect(
             ip,
@@ -65,15 +74,22 @@ class SshConnection(Connection):
                     keys = await utils_win.get_network_interface_tunnel_keys(connection)
                     for key in keys:
                         await connection.create_process(
-                            ["reg", "delete", key, "/F"]
+                            ["reg", "delete", key, "/F"],
+                            quiet=True,
                         ).execute()
 
                 yield connection
 
     def create_process(
-        self, command: List[str], kill_id=None, term_type=None
+        self, command: List[str], kill_id=None, term_type=None, quiet=False
     ) -> "Process":
-        print(datetime.now(), "Executing", command, "on", self.target_os)
+
+        if not quiet:
+            log_level = INFO
+        else:
+            log_level = DEBUG
+        log.log(log_level, "[%s] Executing %s", self.tag.name, " ".join(command))
+
         if self.target_os == TargetOS.Windows:
             escape_argument = cmd_exe_escape.escape_argument
         elif self.target_os in [TargetOS.Linux, TargetOS.Mac]:

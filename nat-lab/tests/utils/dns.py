@@ -1,8 +1,8 @@
 import re
 from config import LIBTELIO_DNS_IPV4
-from datetime import datetime
 from typing import List, Optional
 from utils.connection import Connection
+from utils.logger import log
 
 
 async def query_dns(
@@ -21,8 +21,8 @@ async def query_dns(
     args.append(dns_server if dns_server else LIBTELIO_DNS_IPV4)
     response = await connection.create_process(args).execute()
     dns_output = response.get_stdout()
-    print(datetime.now(), "nslookup stdout:", dns_output)
-    print(datetime.now(), "nslookup expected_output:", expected_output)
+    log.info("nslookup stdout: %s", dns_output)
+    log.info("nslookup expected_output: %s", expected_output)
     if expected_output:
         for expected_str in expected_output:
             assert re.search(expected_str, dns_output, re.DOTALL) is not None

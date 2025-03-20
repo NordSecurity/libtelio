@@ -8,7 +8,6 @@ import timeouts
 from collections import defaultdict
 from config import DERP_SERVERS
 from contextlib import AsyncExitStack, asynccontextmanager
-from datetime import datetime
 from helpers import (
     Environment,
     ping_between_all_nodes,
@@ -32,6 +31,7 @@ from utils.bindings import (
     RelayState,
 )
 from utils.connection import Connection, ConnectionTag
+from utils.logger import log
 from utils.ping import ping
 from utils.telio_log_notifier import TelioLogNotifier
 
@@ -182,10 +182,10 @@ async def test_direct_working_paths(
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(exit_stack, setup_params)
 
-        print(datetime.now(), "Test direct connection")
+        log.info("Test direct connection")
         await _check_if_true_direct_connection(env)
         async with _disable_direct_connection(env, reflexive_ips):
-            print(datetime.now(), "Downgrade to relay connections")
+            log.info("Downgrade to relay connections")
             await asyncio.gather(*[
                 await exit_stack.enter_async_context(
                     run_async_context(
@@ -199,7 +199,7 @@ async def test_direct_working_paths(
             ])
             await ping_between_all_nodes(env)
 
-        print(datetime.now(), "Reconnect to direct connections")
+        log.info("Reconnect to direct connections")
         await asyncio.gather(*[
             await exit_stack.enter_async_context(
                 run_async_context(
@@ -212,10 +212,10 @@ async def test_direct_working_paths(
             if not client.is_node(node)
         ])
 
-        print(datetime.now(), "Test direct connection again")
+        log.info("Test direct connection again")
         await _check_if_true_direct_connection(env)
 
-        print(datetime.now(), "Test direct connection on short connection loss")
+        log.info("Test direct connection on short connection loss")
         possible_relay_events: Dict[Connection, Dict[Node, Any]] = defaultdict(dict)
         for (client, conn), node in itertools.product(
             zip(env.clients, env.connections), env.nodes
