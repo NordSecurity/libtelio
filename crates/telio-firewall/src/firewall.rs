@@ -8,7 +8,7 @@ use pnet_packet::{
     icmp::{
         destination_unreachable::IcmpCodes, IcmpPacket, IcmpType, IcmpTypes, MutableIcmpPacket,
     },
-    icmpv6::{Icmpv6Packet, Icmpv6Type, Icmpv6Types},
+    icmpv6::{Icmpv6Type, Icmpv6Types},
     ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
     ipv4::{Ipv4Flags, Ipv4Packet, MutableIpv4Packet},
     ipv6::Ipv6Packet,
@@ -65,33 +65,13 @@ pub const FILE_SEND_PORT: u16 = 49111;
 
 trait Icmp: Sized {
     const BLOCKED_TYPES: [u8; 4];
-    fn new(payload: &[u8]) -> Option<Self>;
-    fn get_type(&self) -> u8;
 }
 
 impl Icmp for IcmpType {
-    fn new(payload: &[u8]) -> Option<Self> {
-        // We only need the type
-        IcmpPacket::new(payload).map(|p| p.get_icmp_type())
-    }
-
-    fn get_type(&self) -> u8 {
-        self.0
-    }
-
     const BLOCKED_TYPES: [u8; 4] = ICMP_BLOCKED_TYPES;
 }
 
 impl Icmp for Icmpv6Type {
-    fn new(payload: &[u8]) -> Option<Self> {
-        // We only need the type
-        Icmpv6Packet::new(payload).map(|p| p.get_icmpv6_type())
-    }
-
-    fn get_type(&self) -> u8 {
-        self.0
-    }
-
     const BLOCKED_TYPES: [u8; 4] = ICMPV6_BLOCKED_TYPES;
 }
 
@@ -1334,7 +1314,7 @@ impl StatefullFirewall {
                 ipv4.is_private()
                     && !self
                         .exclude_ip_range
-                        .map_or(false, |range| range.contains(ipv4))
+                        .is_some_and(|range| range.contains(ipv4))
             }
             StdIpAddr::V6(ipv6) => {
                 // Check if IPv6 address is within Unique Local Addresses range, except for meshnet IP
