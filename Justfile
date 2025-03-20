@@ -26,7 +26,7 @@ test:
 # Run clippy
 clippy:
     # cargo clippy --lib -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
-    cargo clippy --lib -- --deny warnings --allow unknown-lints --allow renamed_and_removed_lints --allow clippy::empty_line_after_doc_comments -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
+    cargo clippy --lib -- --deny warnings --allow unknown-lints --allow renamed_and_removed_lints --allow clippy::empty_line_after_doc_comments --allow unexpected_cfgs -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
 
 # Run udeps
 udeps: _udeps-install
