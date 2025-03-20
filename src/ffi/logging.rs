@@ -95,6 +95,7 @@ pub fn build_subscriber(
         .with(LevelFilter::from_level(log_level.into()))
         .with(
             fmt::layer()
+                .with_span_events(fmt::format::FmtSpan::CLOSE)
                 .event_format(TelioEventFmt)
                 .with_ansi(false)
                 .with_writer(FfiCallback::new(log_sender)),
@@ -116,11 +117,20 @@ where
     ) -> std::fmt::Result {
         let tid = std::thread::current().id();
         let meta = event.metadata();
+        let span_name = if meta.is_span() {
+            meta.name()
+        } else {
+            match ctx.current_span().into_inner() {
+                Some((_, metadata)) => metadata.name(),
+                None => "<unknown span>",
+            }
+        };
         write!(
             writer,
-            "{tid:?} {:?}:{} ",
+            "{tid:?} {:?}:{} ({}) ",
             meta.module_path().unwrap_or("<unknown module>"),
             meta.line().unwrap_or(0),
+            span_name,
         )?;
 
         ctx.format_fields(writer.by_ref(), event)?;
