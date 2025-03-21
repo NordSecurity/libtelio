@@ -166,8 +166,8 @@ class LibtelioProxy:
         self._handle_remote_error(lambda r: r.trigger_qos_collection())
 
     @move_to_async_thread
-    def trigger_throughput_test(self, peer_ip):
-        self._handle_remote_error(lambda r: r.trigger_throughput_test(peer_ip))
+    def trigger_peer_link_speed_test(self, peer_ip):
+        self._handle_remote_error(lambda r: r.trigger_peer_link_speed_test(peer_ip))
 
     @move_to_async_thread
     def receive_ping(self) -> str:

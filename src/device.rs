@@ -90,7 +90,7 @@ use telio_model::{
     EndpointMap,
 };
 
-use telio_perf::throughput_test::{Throughput as ThroughputEntity, PERFORMANCE_TRANSPORT_PORT};
+use telio_perf::link_speed_test::{Speedtest as SpeedtestEntity, SPEEDTEST_PORT};
 
 #[cfg(target_os = "android")]
 use telio_network_monitors::monitor::PATH_CHANGE_BROADCAST;
@@ -116,8 +116,8 @@ pub enum Error {
     NotStarted,
     #[error("Meshnet not configured.")]
     MeshnetNotConfigured,
-    #[error("Throughput test not configured.")]
-    ThroughputNotConfigured,
+    #[error("Speedtest test not configured.")]
+    SpeedtestNotConfigured,
     #[error("Adapter is misconfigured: {0}.")]
     AdapterConfig(String),
     #[error("Private key does not match meshnet config's public key.")]
@@ -192,7 +192,7 @@ pub enum Error {
     #[error("Polling period cannot be zero")]
     PollingPeriodZero,
     #[error(transparent)]
-    ThroughputTestError(#[from] telio_perf::throughput_test::Error),
+    SpeedtestError(#[from] telio_perf::link_speed_test::Error),
     #[error(transparent)]
     ParseError(#[from] std::net::AddrParseError),
 }
@@ -268,8 +268,8 @@ pub struct MeshnetEntities {
     // Keepalive sender
     session_keeper: Option<Arc<SessionKeeper>>,
 
-    // Component to test throughput speeds between peers and server
-    throughput: Option<Arc<ThroughputEntity>>,
+    // Component to test network link speeds between peers
+    speedtest: Option<Arc<SpeedtestEntity>>,
 }
 
 #[derive(Default, Debug)]
@@ -880,11 +880,11 @@ impl Device {
         })
     }
 
-    pub fn trigger_throughput_test(&self, ip_addr: String) -> Result {
+    pub fn trigger_peer_link_speed_test(&self, ip_addr: String) -> Result {
         let addr = ip_addr.parse::<IpAddr>()?;
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt
-                .trigger_throughput_test(addr)
+                .trigger_peer_link_speed_test(addr)
                 .await))
             .await?
         })
@@ -1048,8 +1048,8 @@ impl MeshnetEntities {
 
         stop_arc_entity!(self.multiplexer, "Multiplexer");
         stop_arc_entity!(self.derp, "Derp");
-        if let Some(throughput_test) = self.throughput {
-            stop_arc_entity!(throughput_test, "Throughput");
+        if let Some(speedtest) = self.speedtest {
+            stop_arc_entity!(speedtest, "Speedtest");
         }
 
         let endpoint_map = self.proxy.get_endpoint_map().await.unwrap_or_default();
@@ -1540,8 +1540,8 @@ impl Runtime {
             None
         });
 
-        let throughput = self.start_throughput().await.unwrap_or_else(|e| {
-            telio_log_error!("Couldn't start throughput test entity: {e:?}");
+        let speedtest = self.start_speedtest().await.unwrap_or_else(|e| {
+            telio_log_error!("Couldn't start speedtest test entity: {e:?}");
             None
         });
 
@@ -1552,7 +1552,7 @@ impl Runtime {
             direct,
             starcast,
             session_keeper,
-            throughput,
+            speedtest,
         })
     }
 
@@ -1567,8 +1567,8 @@ impl Runtime {
         Ok(nodes)
     }
 
-    async fn start_throughput(&self) -> Result<Option<Arc<ThroughputEntity>>> {
-        if !self.features.throughput {
+    async fn start_speedtest(&self) -> Result<Option<Arc<SpeedtestEntity>>> {
+        if !self.features.speedtest {
             return Ok(None);
         }
 
@@ -1586,7 +1586,7 @@ impl Runtime {
 
         let cmd_chan = Chan::new(5);
         Ok(Some(Arc::new(
-            ThroughputEntity::start(
+            SpeedtestEntity::start(
                 meshnet_ip.to_owned(),
                 self.entities.socket_pool.clone(),
                 cmd_chan,
@@ -1761,16 +1761,16 @@ impl Runtime {
         Ok(())
     }
 
-    async fn trigger_throughput_test(&mut self, ip_addr: IpAddr) -> Result {
+    async fn trigger_peer_link_speed_test(&mut self, ip_addr: IpAddr) -> Result {
         self.entities
             .meshnet
             .left()
             .as_ref()
             .ok_or(Error::MeshnetNotConfigured)?
-            .throughput
+            .speedtest
             .as_ref()
-            .ok_or(Error::ThroughputNotConfigured)?
-            .start_test(ip_addr, PERFORMANCE_TRANSPORT_PORT)
+            .ok_or(Error::SpeedtestNotConfigured)?
+            .start_test(ip_addr, SPEEDTEST_PORT)
             .await?;
         Ok(())
     }

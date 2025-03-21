@@ -4767,7 +4767,6 @@ dependencies = [
  "ipnet",
  "neptun",
  "telio-sockets",
- "telio-starcast",
  "telio-task",
  "telio-utils",
  "thiserror 2.0.11",

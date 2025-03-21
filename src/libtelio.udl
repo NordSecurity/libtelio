@@ -429,7 +429,7 @@ interface Telio {
     [Throws=TelioError]
     void trigger_qos_collection();
     [Throws=TelioError]
-    void trigger_throughput_test(string peer_ip);
+    void trigger_peer_link_speed_test(string peer_ip);
     [Throws=TelioError]
     string receive_ping();
     [Throws=TelioError]
@@ -525,9 +525,9 @@ interface FeaturesDefaultsBuilder {
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_batching();
 
-    /// Eanable throughput tests with defaults
+    /// Eanable link speed tests with defaults
     [Self=ByArc]
-    FeaturesDefaultsBuilder enable_throughput_tests();
+    FeaturesDefaultsBuilder enable_link_speed_test();
 };
 
 
@@ -571,8 +571,8 @@ dictionary Features {
     boolean multicast;
     /// Batching
     FeatureBatching? batching;
-    /// Throughput test support
-    boolean throughput;
+    /// speedtest support
+    boolean speedtest;
 };
 
 dictionary FeatureBatching {

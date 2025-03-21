@@ -26,7 +26,7 @@ use tokio::time::Duration as TokioDuration;
 
 /// Port is randomly chosen
 /// perf % 65535 = 46750
-pub const PERFORMANCE_TRANSPORT_PORT: u16 = 46750;
+pub const SPEEDTEST_PORT: u16 = 46750;
 const MAX_PACKET_SIZE: usize = 1500;
 #[cfg(not(test))]
 const TEST_DURATION: Duration = Duration::new(10, 0);
@@ -35,8 +35,8 @@ const TEST_DURATION: Duration = Duration::new(2, 0);
 const PACKET_TYPE_OFFSET: usize = 0;
 const PKT_LOSS_OFFSET: usize = 1;
 const PKT_LOSS_DATA_SIZE: usize = std::mem::size_of::<f32>();
-const THROUGHPUT_OFFSET: usize = PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE;
-const THROUGHPUT_DATA_SIZE: usize = std::mem::size_of::<u32>();
+const LINK_SPEED_OFFSET: usize = PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE;
+const LINK_SPEED_DATA_SIZE: usize = std::mem::size_of::<u32>();
 const BUFFER_LEN: usize = 1350;
 /// Performance test specific errors
 #[derive(Debug, thiserror::Error)]
@@ -106,14 +106,14 @@ enum HandlerState {
     End,
 }
 
-/// The throughput transport component
+/// The link speed test component
 /// Manages the task that does the actual transport
-pub struct Throughput {
+pub struct Speedtest {
     task: Task<State>,
 }
 
-impl Throughput {
-    /// Starts the transport component
+impl Speedtest {
+    /// Starts the link speed test component
     ///
     /// Parameters:
     /// * meshnet_ip - The meshnet IP of the node on which this component is currently running
@@ -135,7 +135,7 @@ impl Throughput {
             socket_pool.clone(),
             meshnet_ip,
             #[cfg(not(test))]
-            PERFORMANCE_TRANSPORT_PORT,
+            SPEEDTEST_PORT,
             #[cfg(test)]
             0,
         )
@@ -166,7 +166,7 @@ impl Throughput {
         })
     }
 
-    /// Start the throughput test with given endpoint
+    /// Start the link speed test test with given endpoint
     pub async fn start_test(&self, ip_addr: IpAddr, port: u16) -> Result<(), Error> {
         let endpoint = SocketAddr::new(ip_addr, port);
         task_exec!(&self.task, async move |state| {
@@ -176,7 +176,7 @@ impl Throughput {
         Ok(())
     }
 
-    /// Stop the throughput component
+    /// Stop the link speed test component
     pub async fn stop(self) {
         let _ = self.task.stop().await.resume_unwind();
     }
@@ -226,13 +226,13 @@ struct State {
 }
 
 impl State {
-    /// Separate method for handling starcast packets received on the transport socket from other
-    /// meshnet nodes and dropping those packets if multicast isn't allowed for those nodes.
+    /// Separate method for handling throughput packets received on the transport socket from other
+    /// meshnet nodes
     async fn handle_incoming_packet(&mut self, socket: SocketAddr) -> Result<(), Error> {
         match (*self.recv_buffer.first().unwrap_or(&0)).into() {
             PacketType::Start => {
                 // Reset bytes received and ack sent by reciever
-                telio_log_trace!("Recieved throughput-test request");
+                telio_log_trace!("Recieved link speed test request");
                 self.pkts_recvd = 0;
                 self.send_ack(socket).await?;
                 self.duration = Instant::now();
@@ -262,13 +262,13 @@ impl State {
                     .try_into()?;
                 let pkt_loss = f32::from_be_bytes(bytes);
 
-                let bytes: [u8; THROUGHPUT_DATA_SIZE] = self
+                let bytes: [u8; LINK_SPEED_DATA_SIZE] = self
                     .recv_buffer
-                    .get(THROUGHPUT_OFFSET..THROUGHPUT_OFFSET + THROUGHPUT_DATA_SIZE)
+                    .get(LINK_SPEED_OFFSET..LINK_SPEED_OFFSET + LINK_SPEED_DATA_SIZE)
                     .ok_or(Error::InvalidIndex)?
                     .try_into()?;
-                let throughput = u32::from_be_bytes(bytes);
-                telio_log_info!("Throughput {throughput} MiB/s Packet loss - {pkt_loss} %");
+                let link_speed = u32::from_be_bytes(bytes);
+                telio_log_info!("Throughput {link_speed} MiB/s Packet loss - {pkt_loss} %");
             }
             PacketType::Test => {
                 self.pkts_recvd += 1;
@@ -297,7 +297,7 @@ impl State {
 
     async fn send_results(&mut self, endpoint: SocketAddr) -> Result<(), Error> {
         let duration = self.duration.elapsed();
-        let mut send_buffer = vec![0u8; 1 + PKT_LOSS_DATA_SIZE + THROUGHPUT_DATA_SIZE];
+        let mut send_buffer = vec![0u8; 1 + PKT_LOSS_DATA_SIZE + LINK_SPEED_DATA_SIZE];
         send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Result as u8);
 
         // Parse # of sent packets
@@ -315,16 +315,16 @@ impl State {
             .ok_or(Error::InvalidIndex)?
             .copy_from_slice(&pkt_loss.to_be_bytes());
 
-        // Calculate throughput
+        // Calculate link speed
         // Bytes should be data + wg_offset + ip header + udp header
-        let throughput = (((self.pkts_recvd * (BUFFER_LEN as u64 + 32 + 20 + 8) * 8) as f64)
+        let link_speed = (((self.pkts_recvd * (BUFFER_LEN as u64 + 32 + 20 + 8) * 8) as f64)
             / duration.as_secs_f64()) as u32
             / 1_000_000;
 
         send_buffer
-            .get_mut(THROUGHPUT_OFFSET..THROUGHPUT_OFFSET + THROUGHPUT_DATA_SIZE)
+            .get_mut(LINK_SPEED_OFFSET..LINK_SPEED_OFFSET + LINK_SPEED_DATA_SIZE)
             .ok_or(Error::InvalidIndex)?
-            .copy_from_slice(&throughput.to_be_bytes());
+            .copy_from_slice(&link_speed.to_be_bytes());
 
         if self
             .transport_socket
@@ -339,14 +339,14 @@ impl State {
         Ok(())
     }
 
-    /// Start the throughput test with given endpoint
+    /// Start the link speed test with given endpoint
     async fn start_test(&self, endpoint: SocketAddr) -> Result<(), Error> {
         self.cmd_chan.tx.try_send(endpoint)?;
         Ok(())
     }
 
     #[cfg(test)]
-    /// Start the throughput test with given endpoint
+    /// Start the link speed test with given endpoint
     async fn get_port(&self) -> Result<u16, Error> {
         let port = self
             .transport_socket
@@ -366,7 +366,7 @@ impl State {
 
 #[async_trait]
 impl Runtime for State {
-    const NAME: &'static str = "Throughput Test";
+    const NAME: &'static str = "Speedtest";
 
     type Err = Error;
 
@@ -380,20 +380,20 @@ impl Runtime for State {
                     self.socket_pool.clone(),
                     self.meshnet_ip,
                     #[cfg(not(test))]
-                    PERFORMANCE_TRANSPORT_PORT,
+                    SPEEDTEST_PORT,
                     #[cfg(test)]
                     12345,
                 )
                 .await
                 else {
                     telio_log_warn!(
-                        "Throughput transport socket still not opened, will retry in {:?}",
+                        "link speed test transport socket still not opened, will retry in {:?}",
                         self.exponential_backoff.get_backoff()
                     );
                     self.exponential_backoff.next_backoff();
                     return Self::next();
                 };
-                telio_log_debug!("Throughput transport socket opened");
+                telio_log_debug!("link speed test transport socket opened");
                 self.transport_socket = Some(transport_socket.clone());
                 self.exponential_backoff.reset();
                 transport_socket
@@ -411,11 +411,11 @@ impl Runtime for State {
                         *state = HandlerState::Start;
                     }
                 }
-                tokio::spawn(throughput_test_handler(endpoint, transport_socket.clone(), self.handler_state.clone()));
+                tokio::spawn(link_speed_test_handler(endpoint, transport_socket.clone(), self.handler_state.clone()));
                 Ok(())
             },
             else => {
-                telio_log_warn!("ThroughputListener: no events to wait on");
+                telio_log_warn!("SpeedtestListener: no events to wait on");
                 Ok(())
             },
         };
@@ -426,7 +426,7 @@ impl Runtime for State {
     }
 }
 
-async fn throughput_test_handler(
+async fn link_speed_test_handler(
     endpoint: SocketAddr,
     transport_socket: Arc<UdpSocket>,
     handler_state: Arc<RwLock<HandlerState>>,
@@ -444,14 +444,14 @@ async fn throughput_test_handler(
         match state {
             HandlerState::Start => {
                 // Inform the peer that test is starting
-                telio_log_debug!("Sending start for throughput test to {:?}", endpoint);
+                telio_log_debug!("Sending start for link speed test to {:?}", endpoint);
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Start as u8);
                 if let Err(e) = transport_socket
                     .send_to(send_buffer.get(..1).ok_or(Error::InvalidIndex)?, endpoint)
                     .await
                 {
                     telio_log_warn!(
-                        "Unable to send start throughput to {:?} due to {e}",
+                        "Unable to send start link speed test to {:?} due to {e}",
                         endpoint
                     );
                 };
@@ -532,7 +532,7 @@ mod tests {
     use super::*;
     use std::net::Ipv4Addr;
 
-    async fn wait_for_results(expected_state: HandlerState, client: Result<Throughput, Error>) {
+    async fn wait_for_results(expected_state: HandlerState, client: Result<Speedtest, Error>) {
         let test_ended = Arc::new(Notify::new());
         // Spawn a background task to monitor results
         let notify_clone = test_ended.clone();
@@ -564,14 +564,14 @@ mod tests {
         let client_cmd_chan = Chan::new(5);
 
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let client = Throughput::start(ip_addr, socket_pool.clone(), client_cmd_chan).await;
+        let client = Speedtest::start(ip_addr, socket_pool.clone(), client_cmd_chan).await;
 
         // Simulating "start" packet drop
         tokio::time::sleep(Duration::from_secs(4)).await;
 
         let server_cmd_chan = Chan::new(5);
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let server = Throughput::start(ip_addr, socket_pool.clone(), server_cmd_chan).await;
+        let server = Speedtest::start(ip_addr, socket_pool.clone(), server_cmd_chan).await;
         let port = server.as_ref().unwrap().get_port().await.unwrap();
 
         assert!(client
@@ -596,10 +596,10 @@ mod tests {
         let client_cmd_chan = Chan::new(5);
 
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let client = Throughput::start(ip_addr, socket_pool.clone(), client_cmd_chan).await;
+        let client = Speedtest::start(ip_addr, socket_pool.clone(), client_cmd_chan).await;
         let server_cmd_chan = Chan::new(5);
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let server = Throughput::start(ip_addr, socket_pool.clone(), server_cmd_chan).await;
+        let server = Speedtest::start(ip_addr, socket_pool.clone(), server_cmd_chan).await;
         let port = server.as_ref().unwrap().get_port().await.unwrap();
 
         assert!(client
@@ -625,10 +625,10 @@ mod tests {
         let client_cmd_chan = Chan::new(5);
 
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let client = Throughput::start(ip_addr, socket_pool.clone(), client_cmd_chan).await;
+        let client = Speedtest::start(ip_addr, socket_pool.clone(), client_cmd_chan).await;
         let server_cmd_chan = Chan::new(5);
         let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let server = Throughput::start(ip_addr, socket_pool.clone(), server_cmd_chan).await;
+        let server = Speedtest::start(ip_addr, socket_pool.clone(), server_cmd_chan).await;
         let port = server.as_ref().unwrap().get_port().await.unwrap();
 
         assert!(client

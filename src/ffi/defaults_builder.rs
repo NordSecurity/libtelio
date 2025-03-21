@@ -35,7 +35,7 @@ impl FeaturesDefaultsBuilder {
             ipv6: false,
             nicknames: false,
             batching: None,
-            throughput: false,
+            speedtest: false,
         };
 
         Self {
@@ -146,9 +146,9 @@ impl FeaturesDefaultsBuilder {
         self
     }
 
-    /// Enable throughput tests
-    pub fn enable_throughput_tests(self: Arc<Self>) -> Arc<Self> {
-        self.config.lock().throughput = true;
+    /// Enable speedtest tests
+    pub fn enable_link_speed_test(self: Arc<Self>) -> Arc<Self> {
+        self.config.lock().speedtest = true;
         self
     }
 }

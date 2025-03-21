@@ -8,8 +8,6 @@ publish = false
 
 [features]
 default = []
-# Compile task crate for testing
-test-util = []
 
 [dependencies]
 async-trait.workspace = true
@@ -24,7 +22,3 @@ x25519-dalek.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
-telio-starcast.workspace = true
-
-[dev-dependencies]
-telio-utils = { workspace = true, features = ["sn_fake_clock"] }

@@ -8,4 +8,4 @@
 pub mod nat;
 pub mod starcast_peer;
 pub mod transport;
-pub mod utils;
+pub(crate) mod utils;

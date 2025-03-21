@@ -413,13 +413,15 @@ class Client:
         python_cmd = get_python_binary(self._connection)
         uniffi_path = get_uniffi_path(self._connection)
 
-        self._process = self._connection.create_process([
-            python_cmd,
-            uniffi_path,
-            object_name,
-            container_ip,
-            container_port,
-        ])
+        self._process = self._connection.create_process(
+            [
+                python_cmd,
+                uniffi_path,
+                object_name,
+                container_ip,
+                container_port,
+            ]
+        )
 
         async with AsyncExitStack() as exit_stack:
             await exit_stack.enter_async_context(make_tcpdump([self._connection]))
@@ -619,10 +621,12 @@ class Client:
     async def wait_for_state_on_any_derp(
         self, states: List[RelayState], timeout: Optional[float] = None
     ) -> None:
-        async with asyncio_util.run_async_contexts([
-            self.get_events().wait_for_state_derp(str(derp.ipv4), states, timeout)
-            for derp in DERP_SERVERS
-        ]) as futures:
+        async with asyncio_util.run_async_contexts(
+            [
+                self.get_events().wait_for_state_derp(str(derp.ipv4), states, timeout)
+                for derp in DERP_SERVERS
+            ]
+        ) as futures:
             try:
                 while not any(fut.done() for fut in futures):
                     await asyncio.sleep(0.01)
@@ -632,14 +636,16 @@ class Client:
     async def wait_for_every_derp_disconnection(
         self, timeout: Optional[float] = None
     ) -> None:
-        async with asyncio_util.run_async_contexts([
-            self.get_events().wait_for_state_derp(
-                str(derp.ipv4),
-                [RelayState.DISCONNECTED, RelayState.CONNECTING],
-                timeout,
-            )
-            for derp in DERP_SERVERS
-        ]) as futures:
+        async with asyncio_util.run_async_contexts(
+            [
+                self.get_events().wait_for_state_derp(
+                    str(derp.ipv4),
+                    [RelayState.DISCONNECTED, RelayState.CONNECTING],
+                    timeout,
+                )
+                for derp in DERP_SERVERS
+            ]
+        ) as futures:
             try:
                 while not all(fut.done() for fut in futures):
                     await asyncio.sleep(0.1)
@@ -654,10 +660,12 @@ class Client:
     async def wait_for_event_on_any_derp(
         self, states: List[RelayState], timeout: Optional[float] = None
     ) -> None:
-        async with asyncio_util.run_async_contexts([
-            self.get_events().wait_for_event_derp(str(derp.ipv4), states, timeout)
-            for derp in DERP_SERVERS
-        ]) as futures:
+        async with asyncio_util.run_async_contexts(
+            [
+                self.get_events().wait_for_event_derp(str(derp.ipv4), states, timeout)
+                for derp in DERP_SERVERS
+            ]
+        ) as futures:
             try:
                 while not any(fut.done() for fut in futures):
                     await asyncio.sleep(0.1)
@@ -922,16 +930,18 @@ class Client:
         if self._fingerprint is not None:
             await self.wait_for_log("[Moose] Init callback success")
             database, fingerprint = self._fingerprint
-            await self._connection.create_process([
-                "sqlite3",
-                database,
-                "--cmd",
-                "PRAGMA busy_timeout = 30000;",
-                (
-                    "INSERT OR REPLACE INTO shared_context (key, val, is_essential) VALUES"
-                    f" ('device.fp._string', '\"{fingerprint}\"', 1)"
-                ),
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "sqlite3",
+                    database,
+                    "--cmd",
+                    "PRAGMA busy_timeout = 30000;",
+                    (
+                        "INSERT OR REPLACE INTO shared_context (key, val, is_essential) VALUES"
+                        f" ('device.fp._string', '\"{fingerprint}\"', 1)"
+                    ),
+                ]
+            ).execute()
 
     async def trigger_event_collection(self) -> None:
         await self.get_proxy().trigger_analytics_event()
@@ -939,8 +949,8 @@ class Client:
     async def trigger_qos_collection(self) -> None:
         await self.get_proxy().trigger_qos_collection()
 
-    async def trigger_throughput_test(self, peer_ip: str) -> None:
-        await self.get_proxy().trigger_throughput_test(peer_ip)
+    async def trigger_peer_link_speed_test(self, peer_ip: str) -> None:
+        await self.get_proxy().trigger_peer_link_speed_test(peer_ip)
 
     def get_endpoint_address(self, public_key: str) -> str:
         node = self.get_node_state(public_key)
@@ -984,14 +994,16 @@ class Client:
             logs = ""
             for log_name in ["Application", "System"]:
                 try:
-                    log_output = await self._connection.create_process([
-                        "powershell",
-                        "-Command",
-                        (
-                            f"Get-EventLog -LogName {log_name} -Newest 100 |"
-                            " format-table -wrap"
-                        ),
-                    ]).execute()
+                    log_output = await self._connection.create_process(
+                        [
+                            "powershell",
+                            "-Command",
+                            (
+                                f"Get-EventLog -LogName {log_name} -Newest 100 |"
+                                " format-table -wrap"
+                            ),
+                        ]
+                    ).execute()
                     logs += log_output.get_stdout()
                 except ProcessExecError:
                     # ignore exec error, since it happens if no events were found
@@ -1006,11 +1018,13 @@ class Client:
         """
         if self._connection.target_os == TargetOS.Windows:
             for log_name in ["Application", "System"]:
-                await self._connection.create_process([
-                    "powershell",
-                    "-Command",
-                    f"Clear-EventLog -LogName {log_name}",
-                ]).execute()
+                await self._connection.create_process(
+                    [
+                        "powershell",
+                        "-Command",
+                        f"Clear-EventLog -LogName {log_name}",
+                    ]
+                ).execute()
 
     async def get_network_info(self) -> str:
         if self._connection.target_os == TargetOS.Mac:
