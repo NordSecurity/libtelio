@@ -62,7 +62,7 @@ dependencies = [
     "pyyaml==6.0.2",
     "regex==2024.5.15",
     "requests==2.32.3",
-    "scapy==2.5.0",
+    "scapy==2.6.0",
     "serpent==1.41",
     "setuptools==70.0.0",
     "six==1.16.0",

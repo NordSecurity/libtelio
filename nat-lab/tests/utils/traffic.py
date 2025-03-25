@@ -103,12 +103,13 @@ def generate_packet_delay_histogram(
 
     with PcapReader(pcap_path) as pcap_reader:
         for pkt in pcap_reader:
+            pkttime = pkt.time  # type: ignore
             if last_packet_time is None:
-                last_packet_time = pkt.time
+                last_packet_time = pkttime
 
             if all(f[1](pkt) for f in allow_packet_filters):
-                timestamps.append(pkt.time - last_packet_time)
-                last_packet_time = pkt.time
+                timestamps.append(pkttime - last_packet_time)
+                last_packet_time = pkttime
 
     if len(timestamps) == 0:
         raise ValueError(
@@ -141,11 +142,12 @@ def generate_packet_distribution_histogram(
 
     with PcapReader(pcap_path) as pcap_reader:
         for pkt in pcap_reader:
+            pkttime = pkt.time  # type: ignore
             if first_packet_time is None:
-                first_packet_time = pkt.time
+                first_packet_time = pkttime
 
             if all(f[1](pkt) for f in allow_packet_filters):
-                timestamps.append(pkt.time - first_packet_time)
+                timestamps.append(pkttime - first_packet_time)
 
     if len(timestamps) == 0:
         raise ValueError(
