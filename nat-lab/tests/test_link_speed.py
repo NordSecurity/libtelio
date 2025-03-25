@@ -47,4 +47,3 @@ async def test_link_speed(
 
         await client_alpha.trigger_peer_link_speed_test(peer_ip)
         await client_alpha.wait_for_log("MiB/s Packet loss")
-
