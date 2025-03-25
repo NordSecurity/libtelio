@@ -90,6 +90,9 @@ pub struct FeatureWireguard {
     /// Configurable wireguard polling period
     #[serde(default)]
     pub polling: FeaturePolling,
+    /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
+    #[serde(default)]
+    pub enable_dynamic_wg_nt_control: bool,
 }
 
 impl FeatureWireguard {
@@ -515,7 +518,8 @@ mod tests {
                 "polling": {
                     "wireguard_polling_period": 1000,
                     "wireguard_polling_period_after_state_change": 50
-                }
+                },
+                "enable_dynamic_wg_nt_control": true
             },
             "nurse": {
                 "fingerprint": "test_fingerprint",
@@ -609,7 +613,8 @@ mod tests {
                         polling: FeaturePolling {
                             wireguard_polling_period: 1000,
                             wireguard_polling_period_after_state_change: 50
-                        }
+                        },
+                        enable_dynamic_wg_nt_control: true,
                     },
                     nurse: Some(FeatureNurse {
                         heartbeat_interval: 5,

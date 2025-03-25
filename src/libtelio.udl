@@ -522,6 +522,10 @@ interface FeaturesDefaultsBuilder {
     /// Enable keepalive batching feature
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_batching();
+
+    /// Enable dynamic WireGuard-NT control as per RFC LLT-0089
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_dynamic_wg_nt_control();
 };
 
 
@@ -584,6 +588,8 @@ dictionary FeatureWireguard {
     FeaturePersistentKeepalive persistent_keepalive;
     /// Configurable WireGuard polling periods
     FeaturePolling polling;
+    /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
+    boolean enable_dynamic_wg_nt_control;
 };
 
 /// Configurable persistent keepalive periods for different types of peers

@@ -32,6 +32,7 @@ pub struct InterfaceWatcher {
     iface_cb_handle: Arc<Mutex<usize>>, // iface_cb_handle: HANDLE,
 
     watched_adapter: Arc<Mutex<AdapterConfiguration>>,
+    enable_dynamic_wg_nt_control: bool,
 }
 
 struct AdapterConfiguration {
@@ -84,12 +85,13 @@ impl AdapterConfiguration {
 }
 
 impl InterfaceWatcher {
-    pub fn new() -> Self {
+    pub fn new(enable_dynamic_wg_nt_control: bool) -> Self {
         telio_log_trace!("InterfaceWatcher::new");
         Self {
             iface_cb_handle: Arc::new(Mutex::new(0)), // iface_cb_handle: NULL,
 
             watched_adapter: Arc::new(Mutex::new(AdapterConfiguration::new())),
+            enable_dynamic_wg_nt_control,
         }
     }
 
@@ -307,12 +309,19 @@ impl InterfaceWatcher {
                         if let Err(err) = adapter.set_config_uapi(&last_known_config.config) {
                             telio_log_error!("Failed to set last known config: {}", err);
                         }
-
-                        if !last_known_config.config.peers.is_empty() && !adapter.up() {
-                            telio_log_error!("Adapter could not be set to online state");
-                        }
                     } else {
                         telio_log_info!("Adapter config not set");
+                    }
+
+                    // Bring interface up if needed
+                    let has_peers = &watched_adapter
+                        .last_known_config
+                        .as_ref()
+                        .map_or(false, |c| !c.config.peers.is_empty());
+                    if self.enable_dynamic_wg_nt_control && !has_peers {
+                        telio_log_info!("Skipping adatper.up() due to empty peer list");
+                    } else if !adapter.up() {
+                        telio_log_error!("Adapter could not be set to online state");
                     }
                 }
             } else {

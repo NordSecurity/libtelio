@@ -1120,12 +1120,13 @@ impl Runtime {
                             firewall_filter_outbound_packets,
                         )),
                         firewall_reset_connections,
+                        enable_dynamic_wg_nt_control: features.wireguard.enable_dynamic_wg_nt_control,
                     },
                     features.link_detection,
                     features.ipv6,
                     Duration::from_millis(features.wireguard.polling.wireguard_polling_period.into()),
                     Duration::from_millis(features.wireguard.polling.wireguard_polling_period_after_state_change.into()),
-                )?);
+                ).await?);
                 let wg_events = wg_events.rx;
             } else {
                 let wg::tests::Env {
@@ -1144,6 +1145,7 @@ impl Runtime {
                                 firewall_filter_outbound_packets,
                             )),
                             firewall_reset_connections,
+                            enable_dynamic_wg_nt_control: features.wireguard.enable_dynamic_wg_nt_control,
                         }
                     ).await;
 

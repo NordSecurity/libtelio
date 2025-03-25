@@ -8,7 +8,13 @@ from helpers import (
     setup_mesh_nodes,
     setup_connections,
 )
-from utils.bindings import ErrorEvent, ErrorCode, ErrorLevel, TelioAdapterType
+from utils.bindings import (
+    ErrorEvent,
+    ErrorCode,
+    ErrorLevel,
+    TelioAdapterType,
+    default_features,
+)
 from utils.connection import TargetOS, ConnectionTag
 from utils.connection_util import generate_connection_tracker_config
 from utils.process import ProcessExecError
@@ -183,6 +189,20 @@ async def test_adapter_service_loading(
                     vpn_1_limits=(1, 1),
                 ),
                 is_meshnet=False,
+                features=default_features(enable_dynamic_wg_nt_control=True),
+            ),
+            marks=[pytest.mark.windows],
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    connection_tag=ConnectionTag.VM_WINDOWS_1,
+                    vpn_1_limits=(1, 1),
+                ),
+                is_meshnet=False,
+                features=default_features(enable_dynamic_wg_nt_control=False),
             ),
             marks=[pytest.mark.windows],
         ),
@@ -199,23 +219,24 @@ async def test_adapter_state_for_vpn_and_dns(
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        # Verify that interface is disconnected before any configuration is provided
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.DOWN
+        expected_idle_state = (
+            AdapterState.DOWN
+            if alpha_setup_params.features.wireguard.enable_dynamic_wg_nt_control
+            else AdapterState.UP
+        )
 
-        # Enable telio dns
+        actual_state = await get_interface_state(client_conn, client_alpha)
+        assert actual_state == expected_idle_state
+
         await client_alpha.enable_magic_dns(["1.2.3.4"])
 
-        # Verify that interface is connected now
         state = await get_interface_state(client_conn, client_alpha)
         assert state == AdapterState.UP
 
-        # Disable telio dns
         await client_alpha.disable_magic_dns()
 
-        # Verify that interface is disconnected now
         state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.DOWN
+        assert state == expected_idle_state
 
         # attempt to connect to VPN
         server_ip = config.WG_SERVER["ipv4"]
@@ -228,16 +249,13 @@ async def test_adapter_state_for_vpn_and_dns(
         )
         await client_alpha.connect_to_vpn(server_ip, server_port, server_public_key)
 
-        # Verify that interface is connected now
         state = await get_interface_state(client_conn, client_alpha)
         assert state == AdapterState.UP
 
-        # Disconnect from VPN
         await client_alpha.disconnect_from_vpn(server_public_key)
 
-        # Verify that interface is disconnected now
         state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.DOWN
+        assert state == expected_idle_state
 
 
 @pytest.mark.parametrize(
@@ -251,6 +269,19 @@ async def test_adapter_state_for_vpn_and_dns(
                     connection_tag=ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 1),
                 ),
+                features=default_features(enable_dynamic_wg_nt_control=True),
+            ),
+            marks=[pytest.mark.windows],
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    connection_tag=ConnectionTag.VM_WINDOWS_1,
+                    derp_1_limits=(1, 1),
+                ),
+                features=default_features(enable_dynamic_wg_nt_control=False),
             ),
             marks=[pytest.mark.windows],
         ),
@@ -267,9 +298,14 @@ async def test_adapter_state_for_meshnet(alpha_setup_params: SetupParameters) ->
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        # Verify that interface is disconnected before any configuration is provided
+        expected_idle_state = (
+            AdapterState.DOWN
+            if alpha_setup_params.features.wireguard.enable_dynamic_wg_nt_control
+            else AdapterState.UP
+        )
+
         state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.DOWN
+        assert state == expected_idle_state
 
         # Add node to meshnet
         api.default_config_two_nodes()
@@ -278,12 +314,10 @@ async def test_adapter_state_for_meshnet(alpha_setup_params: SetupParameters) ->
             api.get_meshnet_config(first_node_id, derp_servers=[config.DERP_PRIMARY])
         )
 
-        # Verify that interface is connected after we have enabled meshnet with peers
         state = await get_interface_state(client_conn, client_alpha)
         assert state == AdapterState.UP
 
         await client_alpha.set_mesh_off()
 
-        # Verify that interface is disconnected after meshnet was disabled again
         state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.DOWN
+        assert state == expected_idle_state
