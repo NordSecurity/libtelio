@@ -73,7 +73,7 @@ pub enum Error {
     IoError(#[from] std::io::Error),
     /// Buffer error
     #[error("Invalid index buffer")]
-    InvalidIndex,
+    MalformedMessage,
 }
 
 enum PacketType {
@@ -258,14 +258,14 @@ impl State {
                 let bytes: [u8; PKT_LOSS_DATA_SIZE] = self
                     .recv_buffer
                     .get(PKT_LOSS_OFFSET..PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE)
-                    .ok_or(Error::InvalidIndex)?
+                    .ok_or(Error::MalformedMessage)?
                     .try_into()?;
                 let pkt_loss = f32::from_be_bytes(bytes);
 
                 let bytes: [u8; LINK_SPEED_DATA_SIZE] = self
                     .recv_buffer
                     .get(LINK_SPEED_OFFSET..LINK_SPEED_OFFSET + LINK_SPEED_DATA_SIZE)
-                    .ok_or(Error::InvalidIndex)?
+                    .ok_or(Error::MalformedMessage)?
                     .try_into()?;
                 let link_speed = u32::from_be_bytes(bytes);
                 telio_log_info!("Throughput {link_speed} MiB/s Packet loss - {pkt_loss} %");
@@ -304,7 +304,7 @@ impl State {
         let pkts_sent: [u8; std::mem::size_of::<u64>()] = self
             .recv_buffer
             .get(1..9)
-            .ok_or(Error::InvalidIndex)?
+            .ok_or(Error::MalformedMessage)?
             .try_into()?;
         let pkts_sent = u64::from_be_bytes(pkts_sent);
 
@@ -312,7 +312,7 @@ impl State {
         let pkt_loss = (1_f32 - (self.pkts_recvd as f32 / pkts_sent as f32)) * 100_f32;
         send_buffer
             .get_mut(PKT_LOSS_OFFSET..PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE)
-            .ok_or(Error::InvalidIndex)?
+            .ok_or(Error::MalformedMessage)?
             .copy_from_slice(&pkt_loss.to_be_bytes());
 
         // Calculate link speed
@@ -323,7 +323,7 @@ impl State {
 
         send_buffer
             .get_mut(LINK_SPEED_OFFSET..LINK_SPEED_OFFSET + LINK_SPEED_DATA_SIZE)
-            .ok_or(Error::InvalidIndex)?
+            .ok_or(Error::MalformedMessage)?
             .copy_from_slice(&link_speed.to_be_bytes());
 
         if self
@@ -374,7 +374,6 @@ impl Runtime for State {
         let transport_socket = match &self.transport_socket {
             Some(transport_socket) => transport_socket.to_owned(),
             None => {
-                telio_log_trace!("no socket yet");
                 PinnedSleep::new(self.exponential_backoff.get_backoff(), ()).await;
                 let Ok(transport_socket) = open_transport_socket(
                     self.socket_pool.clone(),
@@ -447,7 +446,10 @@ async fn link_speed_test_handler(
                 telio_log_debug!("Sending start for link speed test to {:?}", endpoint);
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Start as u8);
                 if let Err(e) = transport_socket
-                    .send_to(send_buffer.get(..1).ok_or(Error::InvalidIndex)?, endpoint)
+                    .send_to(
+                        send_buffer.get(..1).ok_or(Error::MalformedMessage)?,
+                        endpoint,
+                    )
                     .await
                 {
                     telio_log_warn!(
@@ -502,10 +504,13 @@ async fn link_speed_test_handler(
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::End as u8);
                 send_buffer
                     .get_mut(1..9)
-                    .ok_or(Error::InvalidIndex)?
+                    .ok_or(Error::MalformedMessage)?
                     .copy_from_slice(&total_pkts.to_be_bytes());
                 if let Err(e) = transport_socket
-                    .send_to(send_buffer.get(..9).ok_or(Error::InvalidIndex)?, endpoint)
+                    .send_to(
+                        send_buffer.get(..9).ok_or(Error::MalformedMessage)?,
+                        endpoint,
+                    )
                     .await
                 {
                     telio_log_warn!("Unable to send test end: {:?}", e);
@@ -536,13 +541,15 @@ mod tests {
     use super::*;
     use std::net::Ipv4Addr;
 
-    async fn wait_for_results(expected_state: HandlerState, client: Result<Speedtest, Error>) {
+    const IP_ADDR: std::net::IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+
+    async fn wait_for_results(expected_state: HandlerState, client: Speedtest) {
         let test_ended = Arc::new(Notify::new());
         // Spawn a background task to monitor results
         let notify_clone = test_ended.clone();
         tokio::spawn(async move {
             loop {
-                let state = client.as_ref().unwrap().get_handler_state().await.unwrap();
+                let state = client.get_handler_state().await.unwrap();
                 if expected_state == state {
                     notify_clone.notify_one();
                     break;
@@ -565,31 +572,28 @@ mod tests {
             )
             .unwrap(),
         ));
-        let client_cmd_chan = Chan::new(5);
-
-        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let client = Speedtest::start(ip_addr, socket_pool.clone(), client_cmd_chan).await;
+        let client = setup_peer(socket_pool.clone()).await;
 
         // Simulating "start" packet drop
         tokio::time::sleep(Duration::from_secs(4)).await;
 
-        let server_cmd_chan = Chan::new(5);
-        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let server = Speedtest::start(ip_addr, socket_pool.clone(), server_cmd_chan).await;
-        let port = server.as_ref().unwrap().get_port().await.unwrap();
+        let server = setup_peer(socket_pool.clone()).await;
+        let port = server.get_port().await.unwrap();
 
-        assert!(client
-            .as_ref()
-            .unwrap()
-            .start_test(ip_addr, port)
-            .await
-            .is_ok());
+        assert!(client.start_test(IP_ADDR, port).await.is_ok());
 
         wait_for_results(HandlerState::Test, client).await;
     }
 
-    #[tokio::test]
-    async fn test_starting_test() {
+    async fn setup_peer(socket_pool: Arc<SocketPool>) -> Speedtest {
+        let client_cmd_chan = Chan::new(5);
+
+        Speedtest::start(IP_ADDR, socket_pool, client_cmd_chan)
+            .await
+            .unwrap()
+    }
+
+    async fn setup_peers() -> (Speedtest, Speedtest, u16) {
         let socket_pool = Arc::new(SocketPool::new(
             telio_sockets::NativeProtector::new(
                 #[cfg(target_os = "macos")]
@@ -597,21 +601,19 @@ mod tests {
             )
             .unwrap(),
         ));
-        let client_cmd_chan = Chan::new(5);
 
-        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let client = Speedtest::start(ip_addr, socket_pool.clone(), client_cmd_chan).await;
-        let server_cmd_chan = Chan::new(5);
-        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let server = Speedtest::start(ip_addr, socket_pool.clone(), server_cmd_chan).await;
-        let port = server.as_ref().unwrap().get_port().await.unwrap();
+        let client = setup_peer(socket_pool.clone()).await;
 
-        assert!(client
-            .as_ref()
-            .unwrap()
-            .start_test(ip_addr, port)
-            .await
-            .is_ok());
+        let server = setup_peer(socket_pool.clone()).await;
+
+        let port = server.get_port().await.unwrap();
+        (client, server, port)
+    }
+
+    #[tokio::test]
+    async fn test_starting_test() {
+        let (client, _server, port) = setup_peers().await;
+        assert!(client.start_test(IP_ADDR, port).await.is_ok());
 
         // State changed to test -> Ack recieved from server -> client
         wait_for_results(HandlerState::Test, client).await;
@@ -619,28 +621,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_end_to_end() {
-        let socket_pool = Arc::new(SocketPool::new(
-            telio_sockets::NativeProtector::new(
-                #[cfg(target_os = "macos")]
-                false,
-            )
-            .unwrap(),
-        ));
-        let client_cmd_chan = Chan::new(5);
+        let (client, _server, port) = setup_peers().await;
 
-        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let client = Speedtest::start(ip_addr, socket_pool.clone(), client_cmd_chan).await;
-        let server_cmd_chan = Chan::new(5);
-        let ip_addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        let server = Speedtest::start(ip_addr, socket_pool.clone(), server_cmd_chan).await;
-        let port = server.as_ref().unwrap().get_port().await.unwrap();
-
-        assert!(client
-            .as_ref()
-            .unwrap()
-            .start_test(ip_addr, port)
-            .await
-            .is_ok());
+        assert!(client.start_test(IP_ADDR, port).await.is_ok());
 
         // Handler state -> End. Test results sent server -> client
         wait_for_results(HandlerState::End, client).await;

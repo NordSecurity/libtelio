@@ -42,12 +42,9 @@ async def test_link_speed(
         [_, beta] = env.nodes
         [client_alpha, _] = env.clients
 
-        peer_ip = get_str(beta.get_ip_address(IPProto.IPv4))
+        peer_ip = beta.get_ip_address(IPProto.IPv4)
+        assert peer_ip is not None, "Expected a string, but got None"
+
         await client_alpha.trigger_peer_link_speed_test(peer_ip)
         await client_alpha.wait_for_log("MiB/s Packet loss")
 
-
-def get_str(value: str | None) -> str:  # type: ignore
-    if value is None:
-        raise TypeError("Expected a string, but got None")
-    return value
