@@ -35,8 +35,8 @@ class SshConnection(Connection):
         await setup_ephemeral_ports(self)
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
-        return None
+    async def __aexit__(self, *_):
+        pass
 
     @classmethod
     @asynccontextmanager

@@ -222,6 +222,12 @@ impl WindowsNativeWg {
                 return Ok(());
             }
 
+            telio_log_debug!(
+                "Attempting to bring interface {:?}, currently it is: {:?}",
+                want_adapter_state,
+                have_adapter_state
+            );
+
             // The wireguard-nt-rust-wrapper here indicates success using
             // bool for `.up()` or `.down()` functions
             let success = match want_adapter_state {

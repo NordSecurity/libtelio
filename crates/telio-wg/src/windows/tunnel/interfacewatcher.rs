@@ -307,12 +307,12 @@ impl InterfaceWatcher {
                         if let Err(err) = adapter.set_config_uapi(&last_known_config.config) {
                             telio_log_error!("Failed to set last known config: {}", err);
                         }
+
+                        if !last_known_config.config.peers.is_empty() && !adapter.up() {
+                            telio_log_error!("Adapter could not be set to online state");
+                        }
                     } else {
                         telio_log_info!("Adapter config not set");
-                    }
-
-                    if !adapter.up() {
-                        telio_log_error!("Adapter could not be set to online state");
                     }
                 }
             } else {
