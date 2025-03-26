@@ -387,7 +387,7 @@ class ICMP_control:
         ])
         await proc.execute()
 
-    async def __aexit__(self, _exc_t, exc_v, exc_tb):
+    async def __aexit__(self, *_):
         proc = self._conn.create_process([
             "iptables",
             "-D",

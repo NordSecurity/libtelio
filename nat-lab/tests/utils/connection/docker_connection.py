@@ -94,10 +94,9 @@ class DockerConnection(Connection):
         await setup_ephemeral_ports(self)
         return self
 
-    async def __aexit__(self, *exc_details):
+    async def __aexit__(self, *_):
         await self.restore_ip_tables()
         await self.clean_interface()
-        return self
 
     @classmethod
     @asynccontextmanager
