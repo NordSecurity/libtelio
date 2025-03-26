@@ -1,12 +1,19 @@
 import asyncio
+import os
 import Pyro5.errors  # type:ignore
+import sys
 import time
 import uniffi.telio_bindings as libtelio
-from datetime import datetime
 from functools import wraps
 from Pyro5.api import Proxy  # type: ignore
 from typing import Optional
 from uniffi.serialization import init_serialization  # type: ignore
+
+# isort: off
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from utils.logger import log  # type: ignore # pylint: disable=wrong-import-position
+
+# isort: on
 
 # This call will allow the proxy-side of the Pyro5 connection to handle types defined in libtelio.udl
 init_serialization(libtelio)
@@ -49,10 +56,8 @@ class LibtelioProxy:
         try:
             with Proxy(self._uri) as remote:
                 remote.shutdown()
-            print(
-                datetime.now(),
-                "Libtelio Proxy connection has been succesfully shut down",
-                "on",
+            log.info(
+                "Libtelio Proxy connection has been successfully shut down on %s",
                 "Unknown" if container_or_vm_name is None else container_or_vm_name,
             )
 
@@ -65,12 +70,9 @@ class LibtelioProxy:
             # there is a need to verify whether this specific race is in-fact actual
             # cause of the flakyness. Therefore the exception for ConnectionClosedError
             # is added
-            print(
-                datetime.now(),
-                "ConnectionClosedError raised during shutdown of libtelio RPC daemon",
-                "on",
+            log.warning(
+                "ConnectionClosedError raised during shutdown of libtelio RPC daemon on %s exception: %s",
                 "Unknown" if container_or_vm_name is None else container_or_vm_name,
-                "exception:",
                 e,
             )
 

@@ -55,10 +55,12 @@ class LinuxRouter(Router):
                     "dev",
                     self._interface_name,
                 ],
+                quiet=True,
             ).execute()
 
         await self._connection.create_process(
-            ["ip", "link", "set", "up", "dev", self._interface_name]
+            ["ip", "link", "set", "up", "dev", self._interface_name],
+            quiet=True,
         ).execute()
 
     def set_interface_name(self, new_interface_name: str) -> None:
@@ -76,9 +78,11 @@ class LinuxRouter(Router):
                     "dev",
                     self._interface_name,
                 ],
+                quiet=True,
             ).execute()
         await self._connection.create_process(
-            ["ip", "link", "set", "down", "dev", self._interface_name]
+            ["ip", "link", "set", "down", "dev", self._interface_name],
+            quiet=True,
         ).execute()
 
     async def create_meshnet_route(self):
@@ -93,6 +97,7 @@ class LinuxRouter(Router):
                     "dev",
                     self._interface_name,
                 ],
+                quiet=True,
             ).execute()
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
@@ -106,6 +111,7 @@ class LinuxRouter(Router):
                     "dev",
                     self._interface_name,
                 ],
+                quiet=True,
             ).execute()
 
     async def create_vpn_route(self):
@@ -183,7 +189,8 @@ class LinuxRouter(Router):
     async def delete_interface(self) -> None:
         try:
             await self._connection.create_process(
-                ["ip", "link", "delete", self._interface_name]
+                ["ip", "link", "delete", self._interface_name],
+                quiet=True,
             ).execute()
         except ProcessExecError as exception:
             if exception.stderr.find("Cannot find device") < 0:
@@ -193,7 +200,8 @@ class LinuxRouter(Router):
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             try:
                 await self._connection.create_process(
-                    ["ip", "rule", "del", "priority", ROUTING_PRIORITY]
+                    ["ip", "rule", "del", "priority", ROUTING_PRIORITY],
+                    quiet=True,
                 ).execute()
             except ProcessExecError as exception:
                 if (
@@ -207,7 +215,8 @@ class LinuxRouter(Router):
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             try:
                 await self._connection.create_process(
-                    ["ip", "-6", "rule", "del", "priority", ROUTING_PRIORITY]
+                    ["ip", "-6", "rule", "del", "priority", ROUTING_PRIORITY],
+                    quiet=True,
                 ).execute()
             except ProcessExecError as exception:
                 if (
@@ -220,20 +229,23 @@ class LinuxRouter(Router):
 
     async def create_exit_node_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
-            await self._connection.create_process([
-                "iptables",
-                "-t",
-                "nat",
-                "-A",
-                "POSTROUTING",
-                "-s",
-                "100.64.0.0/10",
-                "!",
-                "-o",
-                self._interface_name,
-                "-j",
-                "MASQUERADE",
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "iptables",
+                    "-t",
+                    "nat",
+                    "-A",
+                    "POSTROUTING",
+                    "-s",
+                    "100.64.0.0/10",
+                    "!",
+                    "-o",
+                    self._interface_name,
+                    "-j",
+                    "MASQUERADE",
+                ],
+                quiet=True,
+            ).execute()
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             await self._connection.create_process(
@@ -251,6 +263,7 @@ class LinuxRouter(Router):
                     "-j",
                     "MASQUERADE",
                 ],
+                quiet=True,
             ).execute()
 
     async def delete_exit_node_route(self) -> None:
@@ -271,6 +284,7 @@ class LinuxRouter(Router):
                         "-j",
                         "MASQUERADE",
                     ],
+                    quiet=True,
                 ).execute()
             except ProcessExecError as exception:
                 if exception.stderr.find("No chain/target/match by that name") < 0:
@@ -293,6 +307,7 @@ class LinuxRouter(Router):
                         "-j",
                         "MASQUERADE",
                     ],
+                    quiet=True,
                 ).execute()
             except ProcessExecError as exception:
                 if (
@@ -310,54 +325,66 @@ class LinuxRouter(Router):
 
         iptables_string = ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables"
 
-        await self._connection.create_process([
-            iptables_string,
-            "-t",
-            "filter",
-            "-A",
-            "INPUT",
-            "-s",
-            address,
-            "-j",
-            "DROP",
-        ]).execute()
-        await self._connection.create_process([
-            iptables_string,
-            "-t",
-            "filter",
-            "-A",
-            "OUTPUT",
-            "-d",
-            address,
-            "-j",
-            "DROP",
-        ]).execute()
-
-        try:
-            yield
-        finally:
-            await self._connection.create_process([
+        await self._connection.create_process(
+            [
                 iptables_string,
                 "-t",
                 "filter",
-                "-D",
+                "-A",
                 "INPUT",
                 "-s",
                 address,
                 "-j",
                 "DROP",
-            ]).execute()
-            await self._connection.create_process([
+            ],
+            quiet=True,
+        ).execute()
+        await self._connection.create_process(
+            [
                 iptables_string,
                 "-t",
                 "filter",
-                "-D",
+                "-A",
                 "OUTPUT",
                 "-d",
                 address,
                 "-j",
                 "DROP",
-            ]).execute()
+            ],
+            quiet=True,
+        ).execute()
+
+        try:
+            yield
+        finally:
+            await self._connection.create_process(
+                [
+                    iptables_string,
+                    "-t",
+                    "filter",
+                    "-D",
+                    "INPUT",
+                    "-s",
+                    address,
+                    "-j",
+                    "DROP",
+                ],
+                quiet=True,
+            ).execute()
+            await self._connection.create_process(
+                [
+                    iptables_string,
+                    "-t",
+                    "filter",
+                    "-D",
+                    "OUTPUT",
+                    "-d",
+                    address,
+                    "-j",
+                    "DROP",
+                ],
+                quiet=True,
+            ).execute()
 
     @asynccontextmanager
     async def break_tcp_conn_to_host(self, address: str) -> AsyncIterator:
@@ -368,30 +395,12 @@ class LinuxRouter(Router):
 
         iptables_string = ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables"
 
-        await self._connection.create_process([
-            iptables_string,
-            "-t",
-            "filter",
-            "-A",
-            "OUTPUT",
-            "--destination",
-            address,
-            "-p",
-            "tcp",
-            "-j",
-            "REJECT",
-            "--reject-with",
-            "tcp-reset",
-        ]).execute()
-
-        try:
-            yield
-        finally:
-            await self._connection.create_process([
+        await self._connection.create_process(
+            [
                 iptables_string,
                 "-t",
                 "filter",
-                "-D",
+                "-A",
                 "OUTPUT",
                 "--destination",
                 address,
@@ -401,7 +410,31 @@ class LinuxRouter(Router):
                 "REJECT",
                 "--reject-with",
                 "tcp-reset",
-            ]).execute()
+            ],
+            quiet=True,
+        ).execute()
+
+        try:
+            yield
+        finally:
+            await self._connection.create_process(
+                [
+                    iptables_string,
+                    "-t",
+                    "filter",
+                    "-D",
+                    "OUTPUT",
+                    "--destination",
+                    address,
+                    "-p",
+                    "tcp",
+                    "-j",
+                    "REJECT",
+                    "--reject-with",
+                    "tcp-reset",
+                ],
+                quiet=True,
+            ).execute()
 
     @asynccontextmanager
     async def break_udp_conn_to_host(self, address: str) -> AsyncIterator:
@@ -412,30 +445,12 @@ class LinuxRouter(Router):
 
         iptables_string = ("ip" if addr_proto == IPProto.IPv4 else "ip6") + "tables"
 
-        await self._connection.create_process([
-            iptables_string,
-            "-t",
-            "filter",
-            "-A",
-            "OUTPUT",
-            "--destination",
-            address,
-            "-p",
-            "udp",
-            "-j",
-            "REJECT",
-            "--reject-with",
-            "icmp-host-unreachable",
-        ]).execute()
-
-        try:
-            yield
-        finally:
-            await self._connection.create_process([
+        await self._connection.create_process(
+            [
                 iptables_string,
                 "-t",
                 "filter",
-                "-D",
+                "-A",
                 "OUTPUT",
                 "--destination",
                 address,
@@ -445,30 +460,40 @@ class LinuxRouter(Router):
                 "REJECT",
                 "--reject-with",
                 "icmp-host-unreachable",
-            ]).execute()
+            ],
+            quiet=True,
+        ).execute()
+
+        try:
+            yield
+        finally:
+            await self._connection.create_process(
+                [
+                    iptables_string,
+                    "-t",
+                    "filter",
+                    "-D",
+                    "OUTPUT",
+                    "--destination",
+                    address,
+                    "-p",
+                    "udp",
+                    "-j",
+                    "REJECT",
+                    "--reject-with",
+                    "icmp-host-unreachable",
+                ],
+                quiet=True,
+            ).execute()
 
     # This function blocks outgoing data for a specific port to simulate permission denied error for the socket bound to that port.
     # It was added for LLT-4980, to test a specific code path in proxy.rs
     @asynccontextmanager
     async def block_udp_port(self, port: int) -> AsyncIterator:
-        await self._connection.create_process([
-            "iptables",
-            "-A",
-            "OUTPUT",
-            "-p",
-            "udp",
-            "--sport",
-            str(port),
-            "-j",
-            "DROP",
-        ]).execute()
-
-        try:
-            yield
-        finally:
-            await self._connection.create_process([
+        await self._connection.create_process(
+            [
                 "iptables",
-                "-D",
+                "-A",
                 "OUTPUT",
                 "-p",
                 "udp",
@@ -476,13 +501,37 @@ class LinuxRouter(Router):
                 str(port),
                 "-j",
                 "DROP",
-            ]).execute()
+            ],
+            quiet=True,
+        ).execute()
 
-    @asynccontextmanager
-    async def reset_upnpd(self) -> AsyncIterator:
-        await self._connection.create_process(["killall", "-w", "upnpd"]).execute()
-        await self._connection.create_process(["conntrack", "-F"]).execute()
         try:
             yield
         finally:
-            await self._connection.create_process(["upnpd", "eth0", "eth1"]).execute()
+            await self._connection.create_process(
+                [
+                    "iptables",
+                    "-D",
+                    "OUTPUT",
+                    "-p",
+                    "udp",
+                    "--sport",
+                    str(port),
+                    "-j",
+                    "DROP",
+                ],
+                quiet=True,
+            ).execute()
+
+    @asynccontextmanager
+    async def reset_upnpd(self) -> AsyncIterator:
+        await self._connection.create_process(
+            ["killall", "-w", "upnpd"], quiet=True
+        ).execute()
+        await self._connection.create_process(["conntrack", "-F"], quiet=True).execute()
+        try:
+            yield
+        finally:
+            await self._connection.create_process(
+                ["upnpd", "eth0", "eth1"], quiet=True
+            ).execute()

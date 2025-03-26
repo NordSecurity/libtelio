@@ -1,9 +1,9 @@
 import platform
 import random
 from abc import ABC, abstractmethod
-from datetime import datetime
 from enum import Enum, auto
 from typing import List, Set
+from utils.logger import log
 from utils.process import Process
 
 
@@ -79,7 +79,7 @@ class Connection(ABC):
 
     @abstractmethod
     def create_process(
-        self, command: List[str], kill_id=None, term_type=None
+        self, command: List[str], kill_id=None, term_type=None, quiet=False
     ) -> "Process":
         pass
 
@@ -128,7 +128,7 @@ async def setup_ephemeral_ports(connection: Connection):
         return
 
     async def on_output(output: str) -> None:
-        print(datetime.now(), f"[{connection.tag.name}]: {output}")
+        log.debug("[%s]: %s", connection.tag.name, output)
 
     start_port = random.randint(5000, 55000)
     num_ports = random.randint(2000, 5000)
@@ -163,5 +163,5 @@ async def setup_ephemeral_ports(connection: Connection):
     else:
         return
 
-    await connection.create_process(cmd).execute(on_output, on_output)
+    await connection.create_process(cmd, quiet=True).execute(on_output, on_output)
     EPHEMERAL_SETUP_SET.add(connection.tag)

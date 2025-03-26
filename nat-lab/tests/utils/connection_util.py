@@ -98,28 +98,28 @@ async def new_connection_manager_by_tag(
 ) -> AsyncIterator[ConnectionManager]:
     async with new_connection_raw(tag) as connection:
         network_switcher = await create_network_switcher(tag, connection)
-        async with network_switcher.switch_to_primary_network():
-            if tag in DOCKER_GW_MAP:
-                async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
-                    async with ConnectionTracker(
-                        gw_connection, conn_tracker_config
-                    ).run() as conn_tracker:
-                        try:
-                            yield ConnectionManager(
-                                connection,
-                                gw_connection,
-                                network_switcher,
-                                conn_tracker,
-                            )
-                        finally:
-                            pass
-            else:
+        await network_switcher.switch_to_primary_network()
+        if tag in DOCKER_GW_MAP:
+            async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
                 async with ConnectionTracker(
-                    connection, conn_tracker_config
+                    gw_connection, conn_tracker_config
                 ).run() as conn_tracker:
-                    yield ConnectionManager(
-                        connection, None, network_switcher, conn_tracker
-                    )
+                    try:
+                        yield ConnectionManager(
+                            connection,
+                            gw_connection,
+                            network_switcher,
+                            conn_tracker,
+                        )
+                    finally:
+                        pass
+        else:
+            async with ConnectionTracker(
+                connection, conn_tracker_config
+            ).run() as conn_tracker:
+                yield ConnectionManager(
+                    connection, None, network_switcher, conn_tracker
+                )
 
 
 @asynccontextmanager
@@ -145,11 +145,11 @@ async def new_connection_with_node_tracker(
     if tag in DOCKER_SERVICE_IDS:
         async with new_connection_raw(tag) as connection:
             network_switcher = await create_network_switcher(tag, connection)
-            async with network_switcher.switch_to_primary_network():
-                async with ConnectionTracker(
-                    connection, conn_tracker_config
-                ).run() as conn_tracker:
-                    yield (connection, conn_tracker)
+            await network_switcher.switch_to_primary_network()
+            async with ConnectionTracker(
+                connection, conn_tracker_config
+            ).run() as conn_tracker:
+                yield (connection, conn_tracker)
     else:
         assert False, f"tag {tag} not supported with node tracker"
 
@@ -295,17 +295,20 @@ async def add_outgoing_packets_delay(
     connection: Connection, delay: str
 ) -> AsyncIterator:
     await remove_traffic_control_rules(connection)
-    await connection.create_process([
-        "tc",
-        "qdisc",
-        "add",
-        "dev",
-        "eth0",
-        "root",
-        "netem",
-        "delay",
-        delay,
-    ]).execute()
+    await connection.create_process(
+        [
+            "tc",
+            "qdisc",
+            "add",
+            "dev",
+            "eth0",
+            "root",
+            "netem",
+            "delay",
+            delay,
+        ],
+        quiet=True,
+    ).execute()
     try:
         yield
     finally:
@@ -314,15 +317,18 @@ async def add_outgoing_packets_delay(
 
 async def remove_traffic_control_rules(connection):
     try:
-        await connection.create_process([
-            "tc",
-            "qdisc",
-            "del",
-            "dev",
-            "eth0",
-            "root",
-            "netem",
-        ]).execute()
+        await connection.create_process(
+            [
+                "tc",
+                "qdisc",
+                "del",
+                "dev",
+                "eth0",
+                "root",
+                "netem",
+            ],
+            quiet=True,
+        ).execute()
     except:
         pass
 

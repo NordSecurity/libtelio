@@ -4,7 +4,6 @@ import json
 import pytest
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
 from itertools import product, zip_longest
 from mesh_api import Node, API
 from telio import Client
@@ -26,6 +25,7 @@ from utils.connection_util import (
     new_connection_manager_by_tag,
     new_connection_raw,
 )
+from utils.logger import log
 from utils.ping import ping
 from utils.router import IPStack
 from utils.tcpdump import make_tcpdump
@@ -122,9 +122,9 @@ def setup_api(node_params: List[Tuple[bool, IPStack]]) -> Tuple[API, List[Node]]
         if node != other_node:
             node.set_peer_firewall_settings(other_node.id, True, True)
 
-    print("Nodes in API:")
+    log.debug("Nodes in API:")
     for node in api.nodes.values():
-        print(node)
+        log.debug(node)
 
     return api, nodes
 
@@ -328,7 +328,6 @@ async def setup_environment(
 
     yield Environment(api, nodes, connection_managers, clients)
 
-    print(datetime.now(), "Checking connection limits")
     for conn_manager in connection_managers:
         if conn_manager.tracker:
             violations = await conn_manager.tracker.find_conntracker_violations()
@@ -468,9 +467,9 @@ async def send_https_request(
     if authorization_header:
         curl_command.extend(["-H", f"Authorization: {authorization_header}"])
 
-    print(f"Curl command: {curl_command}")
+    log.info("Curl command: %s", curl_command)
 
-    process = await connection.create_process(curl_command).execute()
+    process = await connection.create_process(curl_command, quiet=True).execute()
     response = process.get_stdout()
     if expect_response:
         try:

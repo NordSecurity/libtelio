@@ -1,6 +1,7 @@
 import os
 from utils.connection import Connection, TargetOS
 from utils.connection_util import get_libtelio_binary_path
+from utils.logger import log
 from utils.process import Process, ProcessExecError
 
 
@@ -19,36 +20,41 @@ class InterDerpClient:
     ) -> None:
         self._stop = None
         self._instance_id = instance_id
-        self._process = connection.create_process([
-            get_libtelio_binary_path("interderpcli", connection),
-            "-v",
-            "--derp-1",
-            server_1,
-            "--derp-2",
-            server_2,
-            "--secret-key-1",
-            sk1,
-            "--secret-key-2",
-            sk2,
-        ])
+        self._process = connection.create_process(
+            [
+                get_libtelio_binary_path("interderpcli", connection),
+                "-v",
+                "--derp-1",
+                server_1,
+                "--derp-2",
+                server_2,
+                "--secret-key-1",
+                sk1,
+                "--secret-key-2",
+                sk2,
+            ],
+            quiet=True,
+        )
         self._connection = connection
 
     async def execute(self) -> None:
         async def on_output(output: str) -> None:
-            print(f"interderpcli_{self._instance_id}: {output}")
+            log.info("interderpcli_%s: %s", self._instance_id, output)
 
         try:
             await self._process.execute(on_output, on_output)
         except ProcessExecError as e:
-            print(f"Interderpcli process execution failed: {e}")
+            log.error("Interderpcli process execution failed: %s", e)
             await self.save_logs()
             raise
 
     async def get_log(self) -> str:
         process = (
-            self._connection.create_process(["type", "interderpcli.log"])
+            self._connection.create_process(["type", "interderpcli.log"], quiet=True)
             if self._connection.target_os == TargetOS.Windows
-            else self._connection.create_process(["cat", "./interderpcli.log"])
+            else self._connection.create_process(
+                ["cat", "./interderpcli.log"], quiet=True
+            )
         )
         await process.execute()
         return process.get_stdout()
@@ -63,7 +69,9 @@ class InterDerpClient:
         log_content = await self.get_log()
 
         if self._connection.target_os == TargetOS.Linux:
-            process = self._connection.create_process(["cat", "/etc/hostname"])
+            process = self._connection.create_process(
+                ["cat", "/etc/hostname"], quiet=True
+            )
             await process.execute()
             container_id = process.get_stdout().strip()
         else:

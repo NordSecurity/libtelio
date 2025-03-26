@@ -6,6 +6,7 @@ import tempfile
 import typing
 from scapy.all import PcapReader  # type: ignore
 from typing import List, Any
+from utils.logger import log
 
 
 def generate_histogram(data: list, buckets: int, bucket_size: int = 1) -> List[int]:
@@ -48,7 +49,7 @@ async def capture_traffic(container_name: str, duration_s: int) -> str:
     # leaves ability for us to inspect it manually
     with tempfile.NamedTemporaryFile(delete=False) as tmpfile:
         local_path = tmpfile.name
-        print(f"Copying pcap to {local_path}")
+        log.info("Copying pcap to %s", local_path)
         subprocess.run([
             "docker",
             "cp",
@@ -96,7 +97,7 @@ def generate_packet_delay_histogram(
 ) -> typing.List[int]:
     """Generate histogram based on the relative packet(and packet before) timestamp differences. Good for observing bursts"""
 
-    print("Looking for a pcap at", pcap_path)
+    log.debug("Looking for a pcap at %s", pcap_path)
 
     last_packet_time = None
     timestamps = []
@@ -135,7 +136,7 @@ def generate_packet_distribution_histogram(
 ) -> typing.List[int]:
     """Generate histogram based on absolute packet timestamps. Good for observing trends and patterns"""
 
-    print("Looking for a pcap at", pcap_path)
+    log.debug("Looking for a pcap at %s", pcap_path)
 
     first_packet_time = None
     timestamps = []

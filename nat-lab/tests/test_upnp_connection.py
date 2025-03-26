@@ -13,6 +13,7 @@ from utils.bindings import (
     RelayState,
 )
 from utils.connection import ConnectionTag
+from utils.logger import log
 from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import new_router, IPStack
@@ -25,7 +26,7 @@ async def execute_upnpc_with_retry(connection, timeout=10.0):
             return await connection.create_process(["upnpc", "-i", "-l"]).execute()
         except ProcessExecError as e:
             if asyncio.get_event_loop().time() - start_time >= timeout:
-                print(f"Timeout while waiting for upnpc to start: {str(e)}")
+                log.error("Timeout while waiting for upnpc to start: %s", e)
                 raise
 
         await asyncio.sleep(1.0)
