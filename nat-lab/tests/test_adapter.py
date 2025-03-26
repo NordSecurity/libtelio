@@ -196,6 +196,7 @@ async def test_adapter_state_for_vpn_and_dns(
             setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
 
+        assert False
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
