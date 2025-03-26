@@ -939,7 +939,7 @@ class Client:
     async def trigger_qos_collection(self) -> None:
         await self.get_proxy().trigger_qos_collection()
 
-    async def trigger_peer_link_speed_test(self, peer_ip: str) -> None:
+    async def trigger_peer_link_speed_test(self, peer_ip: str) -> int:
         await self.get_proxy().trigger_peer_link_speed_test(peer_ip)
 
     def get_endpoint_address(self, public_key: str) -> str:

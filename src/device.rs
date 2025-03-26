@@ -880,11 +880,20 @@ impl Device {
         })
     }
 
-    pub fn trigger_peer_link_speed_test(&self, ip_addr: String) -> Result {
+    pub fn trigger_peer_link_speed_test(&self, ip_addr: String) -> Result<u32> {
         let addr = ip_addr.parse::<IpAddr>()?;
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt
                 .trigger_peer_link_speed_test(addr)
+                .await))
+            .await?
+        })
+    }
+
+    pub fn fetch_peer_link_speed_test(&self) -> Result<u32> {
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| Ok(rt
+                .fetch_peer_link_speed_test()
                 .await))
             .await?
         })
@@ -1584,14 +1593,9 @@ impl Runtime {
             .first()
             .ok_or(Error::NoMeshnetIP)?;
 
-        let cmd_chan = Chan::new(5);
         Ok(Some(Arc::new(
-            SpeedtestEntity::start(
-                meshnet_ip.to_owned(),
-                self.entities.socket_pool.clone(),
-                cmd_chan,
-            )
-            .await?,
+            SpeedtestEntity::start(meshnet_ip.to_owned(), self.entities.socket_pool.clone())
+                .await?,
         )))
     }
 
@@ -1761,8 +1765,9 @@ impl Runtime {
         Ok(())
     }
 
-    async fn trigger_peer_link_speed_test(&mut self, ip_addr: IpAddr) -> Result {
-        self.entities
+    async fn trigger_peer_link_speed_test(&mut self, ip_addr: IpAddr) -> Result<u32> {
+        let duration = self
+            .entities
             .meshnet
             .left()
             .as_ref()
@@ -1772,7 +1777,22 @@ impl Runtime {
             .ok_or(Error::SpeedtestNotConfigured)?
             .start_test(ip_addr, SPEEDTEST_PORT)
             .await?;
-        Ok(())
+        Ok(duration)
+    }
+
+    async fn fetch_peer_link_speed_test(&mut self) -> Result<u32> {
+        let speed = self
+            .entities
+            .meshnet
+            .left()
+            .as_ref()
+            .ok_or(Error::MeshnetNotConfigured)?
+            .speedtest
+            .as_ref()
+            .ok_or(Error::SpeedtestNotConfigured)?
+            .get_results()
+            .await?;
+        Ok(speed)
     }
 
     async fn start_dns(&mut self, upstream_dns_servers: &[IpAddr]) -> Result {

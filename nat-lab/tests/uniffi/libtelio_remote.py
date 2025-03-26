@@ -198,7 +198,7 @@ class LibtelioWrapper:
         self._libtelio.trigger_qos_collection()
 
     @serialize_error
-    def trigger_peer_link_speed_test(self, peer_ip: str) -> None:
+    def trigger_peer_link_speed_test(self, peer_ip: str) -> int:
         self._libtelio.trigger_peer_link_speed_test(peer_ip)
 
     @serialize_error

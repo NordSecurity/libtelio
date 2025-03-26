@@ -74,6 +74,12 @@ pub enum Error {
     /// Buffer error
     #[error("Invalid index buffer")]
     MalformedMessage,
+    /// Buffer error
+    #[error("Results aren't ready. Test in progress")]
+    TestNotCompleted,
+    /// Task timeout error
+    #[error(transparent)]
+    TestTimeout(#[from] tokio::time::error::Elapsed),
 }
 
 enum PacketType {
@@ -119,11 +125,7 @@ impl Speedtest {
     /// * meshnet_ip - The meshnet IP of the node on which this component is currently running
     /// * socket_pool - To create the transport socket
     /// * packet_chan - A channel to send packets to and receive packets from the virtual peer component
-    pub async fn start(
-        meshnet_ip: IpAddr,
-        socket_pool: Arc<SocketPool>,
-        packet_chan: Chan<SocketAddr>,
-    ) -> Result<Self, Error> {
+    pub async fn start(meshnet_ip: IpAddr, socket_pool: Arc<SocketPool>) -> Result<Self, Error> {
         let exponential_backoff = ExponentialBackoff::new(ExponentialBackoffBounds {
             initial: Duration::from_secs(2),
             maximal: Some(Duration::from_secs(120)),
@@ -150,11 +152,12 @@ impl Speedtest {
                 None
             }
         };
-
+        let cmd_chan = Chan::new(5);
+        let test_results_chan = Chan::new(5);
         Ok(Self {
             task: Task::start(State {
                 transport_socket,
-                cmd_chan: packet_chan,
+                cmd_chan,
                 recv_buffer: vec![0; MAX_PACKET_SIZE],
                 socket_pool,
                 meshnet_ip,
@@ -162,18 +165,28 @@ impl Speedtest {
                 handler_state: Arc::new(RwLock::new(HandlerState::Start)),
                 pkts_recvd: 0,
                 test_duration: Instant::now(),
+                test_results_chan,
             }),
         })
     }
 
     /// Start the link speed test test with given endpoint
-    pub async fn start_test(&self, ip_addr: IpAddr, port: u16) -> Result<(), Error> {
+    pub async fn start_test(&self, ip_addr: IpAddr, port: u16) -> Result<u32, Error> {
         let endpoint = SocketAddr::new(ip_addr, port);
         task_exec!(&self.task, async move |state| {
             state.start_test(endpoint).await
         })
         .await?;
-        Ok(())
+        Ok(TEST_DURATION.as_secs() as u32)
+    }
+
+    /// Start the link speed test test with given endpoint
+    pub async fn get_results(&self) -> Result<u32, Error> {
+        let speed = task_exec!(&self.task, async move |state| {
+            state.await_results().await
+        })
+        .await?;
+        Ok(speed)
     }
 
     /// Stop the link speed test component
@@ -223,6 +236,7 @@ struct State {
     handler_state: Arc<RwLock<HandlerState>>,
     pkts_recvd: u64,
     test_duration: Instant,
+    test_results_chan: Chan<u32>,
 }
 
 impl State {
@@ -268,6 +282,7 @@ impl State {
                     .ok_or(Error::MalformedMessage)?
                     .try_into()?;
                 let link_speed = u32::from_be_bytes(bytes);
+                let _ = self.test_results_chan.tx.send(link_speed).await;
                 telio_log_info!("Throughput {link_speed} MiB/s Packet loss - {pkt_loss} %");
             }
             PacketType::Test => {
@@ -343,6 +358,14 @@ impl State {
     async fn start_test(&self, endpoint: SocketAddr) -> Result<(), Error> {
         self.cmd_chan.tx.try_send(endpoint)?;
         Ok(())
+    }
+
+    /// Start the link speed test with given endpoint
+    async fn await_results(&mut self) -> Result<u32, Error> {
+        let speed = tokio::time::timeout(TEST_DURATION / 10, self.test_results_chan.rx.recv())
+            .await?
+            .ok_or(Error::MalformedMessage)?;
+        Ok(speed)
     }
 
     #[cfg(test)]
@@ -535,7 +558,6 @@ async fn link_speed_test_handler(
 #[cfg(test)]
 mod tests {
 
-    use telio_task::io::Chan;
     use tokio::{sync::Notify, time::timeout};
 
     use super::*;
@@ -586,11 +608,7 @@ mod tests {
     }
 
     async fn setup_peer(socket_pool: Arc<SocketPool>) -> Speedtest {
-        let client_cmd_chan = Chan::new(5);
-
-        Speedtest::start(IP_ADDR, socket_pool, client_cmd_chan)
-            .await
-            .unwrap()
+        Speedtest::start(IP_ADDR, socket_pool).await.unwrap()
     }
 
     async fn setup_peers() -> (Speedtest, Speedtest, u16) {
