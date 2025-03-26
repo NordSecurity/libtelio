@@ -4,6 +4,7 @@ import glob
 import os
 import platform
 import re
+import socket
 import uuid
 import warnings
 from collections import Counter
@@ -1101,6 +1102,12 @@ class Client:
             if system_log_content:
                 f.write("\n\n\n\n--- SYSTEM LOG ---\n\n")
                 f.write(system_log_content)
+
+        # Send files to opensearch
+        opensearch_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        opensearch_socket.connect("/var/run/fluentbit/fluentbit_libtelio.sock")
+        opensearch_socket.sendall(log_content.encode("utf-8"))
+        opensearch_socket.close()
 
         moose_traces = await find_files(
             self._connection, MOOSE_LOGS_DIR, "moose_trace.log*"
