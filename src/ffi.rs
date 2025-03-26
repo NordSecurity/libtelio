@@ -792,11 +792,22 @@ impl Telio {
         })
     }
 
-    pub fn trigger_peer_link_speed_test(&self, peer_ip: String) -> FfiResult<()> {
+    pub fn trigger_peer_link_speed_test(&self, peer_ip: String) -> FfiResult<u32> {
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
-                dev.trigger_peer_link_speed_test(peer_ip.clone())
-                    .log_result("Telio::trigger_peer_link_speed_test")
+                match dev.trigger_peer_link_speed_test(peer_ip.clone()) {
+                    Ok(res) => Ok(res),
+                    Err(e) => Err(e.into()),
+                }
+            })
+        })
+    }
+
+    pub fn fetch_peer_link_speed(&self) -> FfiResult<u32> {
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| match dev.fetch_peer_link_speed() {
+                Ok(res) => Ok(res),
+                Err(e) => Err(e.into()),
             })
         })
     }
