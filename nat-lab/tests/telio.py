@@ -4,6 +4,7 @@ import glob
 import os
 import platform
 import re
+import socket
 import uuid
 import warnings
 from collections import Counter
@@ -1071,8 +1072,8 @@ class Client:
 
         if os.environ.get("NATLAB_SAVE_LOGS") is None:
             return
-
-        log_dir = get_current_test_log_path()
+        base_dir = "logs"
+        log_dir = get_current_test_log_path(base_dir)
         os.makedirs(log_dir, exist_ok=True)
 
         try:
@@ -1082,8 +1083,8 @@ class Client:
             return
 
         system_log_content = await self.get_system_log()
-
-        filename = self._connection.tag.name.lower() + ".log"
+        conn_name = self._connection.tag.name.lower()
+        filename = conn_name + ".log"
         if len(filename.encode("utf-8")) > 256:
             filename = f"{filename[:251]}.log"
 
@@ -1101,6 +1102,32 @@ class Client:
             if system_log_content:
                 f.write("\n\n\n\n--- SYSTEM LOG ---\n\n")
                 f.write(system_log_content)
+
+        # change the if to -> `true`
+        if os.environ.get("GITHUB_SCHEDULE") == "true":
+            processed_log = ""
+            pattern = re.compile(r"^(\S+\s\S+)\s(TelioLogLevel\.\S+)\s(\S+Z)\s(.*)")
+            (_, test_name) = os.path.split(log_dir)
+            pipeline_id = os.environ.get("CI_PIPELINE_ID")
+            job_id = os.environ.get("CI_JOB_ID")
+            for log_line in log_content.splitlines():
+                match = pattern.match(log_line)
+                if match:
+                    output = f"{pipeline_id} {job_id} {test_name} {conn_name} {match.group(3)} {match.group(2)} {match.group(4)}"
+                    processed_log += output + "\n"
+                else:
+                    # Remove the carriage return
+                    processed_log = processed_log[:-1]
+                    processed_log += log_line + "\n"
+
+            try:
+                opensearch_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                for log_line in processed_log.splitlines():
+                    # Send to vagrant_under_docker image
+                    opensearch_socket.sendto(log_line.encode(), ("10.55.0.1", 12345))
+                opensearch_socket.close()
+            except (socket.gaierror, socket.error, UnicodeEncodeError) as e:
+                print(f"Failed to send log line: {e}")
 
         moose_traces = await find_files(
             self._connection, MOOSE_LOGS_DIR, "moose_trace.log*"
