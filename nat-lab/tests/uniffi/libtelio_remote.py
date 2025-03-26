@@ -199,7 +199,11 @@ class LibtelioWrapper:
 
     @serialize_error
     def trigger_peer_link_speed_test(self, peer_ip: str) -> int:
-        self._libtelio.trigger_peer_link_speed_test(peer_ip)
+        return self._libtelio.trigger_peer_link_speed_test(peer_ip)
+
+    @serialize_error
+    def fetch_peer_link_speed(self) -> int:
+        return self._libtelio.fetch_peer_link_speed()
 
     @serialize_error
     def receive_ping(self) -> str:

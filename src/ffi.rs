@@ -803,9 +803,9 @@ impl Telio {
         })
     }
 
-    pub fn fetch_peer_link_speed_test(&self) -> FfiResult<u32> {
+    pub fn fetch_peer_link_speed(&self) -> FfiResult<u32> {
         catch_ffi_panic(|| {
-            self.device_op(true, |dev| match dev.fetch_peer_link_speed_test() {
+            self.device_op(true, |dev| match dev.fetch_peer_link_speed() {
                 Ok(res) => Ok(res),
                 Err(e) => Err(e.into()),
             })
