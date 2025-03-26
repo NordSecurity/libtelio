@@ -429,7 +429,9 @@ interface Telio {
     [Throws=TelioError]
     void trigger_qos_collection();
     [Throws=TelioError]
-    void trigger_peer_link_speed_test(string peer_ip);
+    u32 trigger_peer_link_speed_test(string peer_ip);
+    [Throws=TelioError]
+    u32 fetch_peer_link_speed();
     [Throws=TelioError]
     string receive_ping();
     [Throws=TelioError]
