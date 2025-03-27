@@ -282,6 +282,7 @@ impl State {
                     .ok_or(Error::MalformedMessage)?
                     .try_into()?;
                 let link_speed = u32::from_be_bytes(bytes);
+                #[allow(mpsc_blocking_send)]
                 let _ = self.test_results_chan.tx.send(link_speed).await;
                 telio_log_info!("Throughput {link_speed} MiB/s Packet loss - {pkt_loss} %");
             }

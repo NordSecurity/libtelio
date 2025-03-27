@@ -1047,7 +1047,11 @@ class Client:
         return ""
 
     async def limit_network_speed(self, speed: str) -> None:
-        cmd = "tc qdisc add dev eth0 root tbf rate " + speed + "mbit latency 50ms burst 32kbit"
+        cmd = (
+            "tc qdisc add dev eth0 root tbf rate "
+            + speed
+            + "mbit latency 50ms burst 32kbit"
+        )
         os.system(cmd)
 
     async def delete_limiter_rule(self) -> None:

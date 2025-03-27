@@ -5,6 +5,7 @@ from utils.bindings import default_features, TelioAdapterType
 from utils.connection_util import ConnectionTag
 from utils.router import IPProto
 
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "alpha_setup_params",
@@ -30,7 +31,7 @@ from utils.router import IPProto
         ),
     ],
 )
-async def test_link_speed(
+async def test_throughput_real(
     alpha_setup_params: SetupParameters,
     beta_setup_params: SetupParameters,
 ) -> None:
