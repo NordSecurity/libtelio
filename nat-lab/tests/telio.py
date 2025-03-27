@@ -1046,6 +1046,14 @@ class Client:
             )
         return ""
 
+    async def limit_network_speed(self, speed: str) -> None:
+        cmd = "tc qdisc add dev eth0 root tbf rate " + speed + "mbit latency 50ms burst 32kbit"
+        os.system(cmd)
+
+    async def delete_limiter_rule(self) -> None:
+        cmd = "tc qdisc del dev eth0 root"
+        os.system(cmd)
+
     async def _check_logs_for_errors(self) -> None:
         """
         Check logs for error and raise error/warning if unexpected errors
