@@ -60,7 +60,13 @@ pub use telio_lana;
 pub use telio_firewall;
 
 pub use uniffi_libtelio::*;
-#[allow(clippy::panic, clippy::unwrap_used, clippy::expect_used, unwrap_check)]
+#[allow(
+    clippy::panic,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    unwrap_check,
+    clippy::empty_line_after_doc_comments
+)]
 mod uniffi_libtelio {
     use std::net::{IpAddr, SocketAddr};
 

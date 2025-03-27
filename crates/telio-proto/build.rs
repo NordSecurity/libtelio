@@ -1,8 +1,9 @@
-use protobuf_codegen_pure::{Codegen, Customize};
+use anyhow::Result;
+use protobuf_codegen::Codegen;
 use std::{
     env,
     fs::create_dir,
-    io::{Error, ErrorKind, Result},
+    io::{Error, ErrorKind},
     path::Path,
 };
 
@@ -16,10 +17,7 @@ fn main() -> Result<()> {
         _ => Err(err),
     })?;
     Codegen::new()
-        .customize(Customize {
-            gen_mod_rs: Some(true),
-            ..Default::default()
-        })
+        .pure()
         .include("protos")
         .inputs([
             "protos/nurse.proto",
@@ -29,5 +27,6 @@ fn main() -> Result<()> {
             "protos/derppoll.proto",
         ])
         .out_dir(out_dir)
-        .run()
+        .run()?;
+    Ok(())
 }
