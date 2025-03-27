@@ -4,7 +4,7 @@ use crate::{
     MAX_PACKET_SIZE,
 };
 use bytes::BufMut;
-use protobuf::{Message, RepeatedField};
+use protobuf::Message;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use telio_crypto::PublicKey;
@@ -49,7 +49,7 @@ impl DerpPollRequestMsg {
         Self {
             session,
             msg: DerpPollRequest {
-                peers: RepeatedField::from_vec(peers.iter().map(|peer| peer.to_string()).collect()),
+                peers: peers.iter().map(|peer| peer.to_string()).collect(),
                 ..Default::default()
             },
         }

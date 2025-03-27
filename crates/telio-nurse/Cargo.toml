@@ -47,4 +47,4 @@ tokio = { workspace = true, features = ["net", "sync", "test-util"] }
 telio-nurse = { workspace = true, features = ["mockall"] }
 
 [build-dependencies]
-protobuf-codegen-pure.workspace = true
+protobuf-codegen.workspace = true

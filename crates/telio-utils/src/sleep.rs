@@ -7,7 +7,6 @@ use std::{
 use tokio::time::{sleep, Duration, Sleep};
 
 /// Wrapper for Sleep to be pinned and return a value on completion
-
 pub struct PinnedSleep<T: Copy>(Pin<Box<Sleep>>, Pin<Box<T>>);
 
 impl<T> fmt::Debug for PinnedSleep<T>
