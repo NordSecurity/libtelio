@@ -1,12 +1,12 @@
-use std::iter::FromIterator;
 use std::net::SocketAddr;
 
 use crate::{
-    messages::natter::*, Codec, CodecError, CodecResult, DowncastPacket, PacketRelayed,
-    PacketTypeRelayed, PeerId, Session, MAX_PACKET_SIZE,
+    messages::natter::*, CallMeMaybeDeprecatedType, CallMeMaybeType, Codec, CodecError,
+    CodecResult, DowncastPacket, PacketRelayed, PacketTypeRelayed, PeerId, Session,
+    MAX_PACKET_SIZE,
 };
 use bytes::BufMut;
-use protobuf::{Message, RepeatedField};
+use protobuf::Message;
 use telio_utils::Hidden;
 
 /// Packet encapsulating containing WG packets
@@ -35,13 +35,11 @@ impl CallMeMaybeMsg {
     ) -> Self {
         Self(CallMeMaybe {
             i_am: if initiator {
-                CallMeMaybe_Type::INITIATOR
+                CallMeMaybeType::INITIATOR.into()
             } else {
-                CallMeMaybe_Type::RESPONDER
+                CallMeMaybeType::RESPONDER.into()
             },
-            my_addresses: RepeatedField::from_vec(
-                addrs.into_iter().map(|addr| addr.to_string()).collect(),
-            ),
+            my_addresses: addrs.into_iter().map(|addr| addr.to_string()).collect(),
             session,
             ..Default::default()
         })
@@ -58,13 +56,16 @@ impl CallMeMaybeMsg {
     }
 
     /// Returns [`CallMeMaybe_Type`] of the message
-    pub fn get_message_type(&self) -> CallMeMaybe_Type {
-        self.0.get_i_am()
+    pub fn get_message_type(&self) -> CodecResult<CallMeMaybeType> {
+        self.0
+            .i_am
+            .enum_value()
+            .map_err(|_| CodecError::DecodeFailed)
     }
 
     /// Get unique session number
     pub fn get_session(&self) -> u64 {
-        self.0.get_session()
+        self.0.session
     }
 }
 
@@ -125,9 +126,10 @@ impl std::fmt::Display for CallMeMaybeMsg {
         write!(
             f,
             "CallMeMaybe: i-am: {}, heres-my-number: {:?}, session: {}",
-            match self.0.i_am {
-                CallMeMaybe_Type::INITIATOR => "initiator",
-                CallMeMaybe_Type::RESPONDER => "responder",
+            match self.0.i_am.enum_value() {
+                Ok(CallMeMaybeType::INITIATOR) => "initiator",
+                Ok(CallMeMaybeType::RESPONDER) => "responder",
+                Err(_) => "unexpected value",
             },
             self.0.my_addresses,
             self.0.session,
@@ -149,13 +151,11 @@ impl CallMeMaybeMsgDeprecated {
     ) -> Self {
         Self(CallMeMaybeDeprecated {
             i_am: if initiator {
-                CallMeMaybeDeprecated_Type::INITIATOR
+                CallMeMaybeDeprecatedType::INITIATOR.into()
             } else {
-                CallMeMaybeDeprecated_Type::RESPONDER
+                CallMeMaybeDeprecatedType::RESPONDER.into()
             },
-            my_addresses: RepeatedField::from_iter(
-                addrs.into_iter().map(|addr| addr.0.to_string()),
-            ),
+            my_addresses: addrs.into_iter().map(|addr| addr.0.to_string()).collect(),
             my_peer_id: peer_id.0 as u32,
             session,
             ..Default::default()
@@ -174,18 +174,21 @@ impl CallMeMaybeMsgDeprecated {
     }
 
     /// Returns [`CallMeMaybe_Type`] of the message
-    pub fn get_message_type(&self) -> CallMeMaybeDeprecated_Type {
-        self.0.get_i_am()
+    pub fn get_message_type(&self) -> CodecResult<CallMeMaybeDeprecatedType> {
+        self.0
+            .i_am
+            .enum_value()
+            .map_err(|_| CodecError::DecodeFailed)
     }
 
     /// Get peer id
     pub fn get_peer_id(&self) -> PeerId {
-        PeerId(self.0.get_my_peer_id() as u16)
+        PeerId(self.0.my_peer_id as u16)
     }
 
     /// Get unique session number
     pub fn get_session(&self) -> u64 {
-        self.0.get_session()
+        self.0.session
     }
 }
 
@@ -247,9 +250,10 @@ impl std::fmt::Display for CallMeMaybeMsgDeprecated {
         write!(
             f,
             "CallMeMaybeDeprecated: i-am: {}, heres-my-number: {:?}, peer-id: {}, session: {}",
-            match self.0.i_am {
-                CallMeMaybeDeprecated_Type::INITIATOR => "initiator",
-                CallMeMaybeDeprecated_Type::RESPONDER => "responder",
+            match self.0.i_am.enum_value() {
+                Ok(CallMeMaybeDeprecatedType::INITIATOR) => "initiator",
+                Ok(CallMeMaybeDeprecatedType::RESPONDER) => "responder",
+                Err(_) => "unexpected value",
             },
             self.0.my_addresses,
             self.0.my_peer_id,

@@ -6,7 +6,7 @@ use crate::{
 };
 
 use bytes::BufMut;
-use protobuf::Message;
+use protobuf::{EnumOrUnknown, Message};
 use telio_model::features::EndpointProvider;
 
 /// Packet encapsulating ugprade message
@@ -40,7 +40,7 @@ impl Codec<PacketTypeRelayed> for UpgradeMsg {
                     Upgrade::parse_from_bytes(bytes.get(1..).ok_or(CodecError::DecodeFailed)?)
                         .map_err(|_| CodecError::DecodeFailed)?;
                 let endpoint: SocketAddr = proto_upgrade
-                    .get_endpoint()
+                    .endpoint
                     .parse()
                     .map_err(|_| CodecError::DecodeFailed)?;
                 let session: Session = proto_upgrade.session;
@@ -49,11 +49,11 @@ impl Codec<PacketTypeRelayed> for UpgradeMsg {
                     endpoint,
                     session,
                     endpoint_type: proto_upgrade
-                        .get_endpoint_type()
+                        .endpoint_type
                         .try_into()
                         .map_err(|_| CodecError::DecodeFailed)?,
                     receiver_endpoint_type: proto_upgrade
-                        .get_receiver_endpoint_type()
+                        .receiver_endpoint_type
                         .try_into()
                         .map_err(|_| CodecError::DecodeFailed)?,
                 })
@@ -65,10 +65,10 @@ impl Codec<PacketTypeRelayed> for UpgradeMsg {
     fn encode(self) -> CodecResult<Vec<u8>> {
         let mut bytes = Vec::with_capacity(MAX_PACKET_SIZE);
         let mut msg = Upgrade::new();
-        msg.set_endpoint(self.endpoint.to_string());
-        msg.set_session(self.session);
-        msg.set_endpoint_type(self.endpoint_type.into());
-        msg.set_receiver_endpoint_type(self.receiver_endpoint_type.into());
+        msg.endpoint = self.endpoint.to_string();
+        msg.session = self.session;
+        msg.endpoint_type = self.endpoint_type.into();
+        msg.receiver_endpoint_type = self.receiver_endpoint_type.into();
 
         bytes.put_u8(PacketTypeRelayed::Upgrade as u8);
         msg.write_to_vec(&mut bytes)
@@ -154,7 +154,11 @@ impl Codec<PacketTypeRelayed> for UpgradeDecisionMsg {
             PacketTypeRelayed::UpgradeDecision => {
                 let proto_upgrade_decision = UpgradeDecision::parse_from_bytes(rest)
                     .map_err(|_| CodecError::DecodeFailed)?;
-                let decision: Decision = proto_upgrade_decision.get_decision().into();
+                let decision: Decision = proto_upgrade_decision
+                    .decision
+                    .enum_value()
+                    .map(|d| d.into())
+                    .map_err(|_| CodecError::DecodeFailed)?;
                 let session: Session = proto_upgrade_decision.session;
 
                 Ok(Self { decision, session })
@@ -169,8 +173,8 @@ impl Codec<PacketTypeRelayed> for UpgradeDecisionMsg {
     {
         let mut bytes = Vec::with_capacity(MAX_PACKET_SIZE);
         let mut msg = UpgradeDecision::new();
-        msg.set_decision(self.decision.into());
-        msg.set_session(self.session);
+        msg.decision = EnumOrUnknown::new(self.decision.into());
+        msg.session = self.session;
 
         bytes.put_u8(PacketTypeRelayed::UpgradeDecision as u8);
         msg.write_to_vec(&mut bytes)
