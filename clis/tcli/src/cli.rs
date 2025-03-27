@@ -174,12 +174,21 @@ enum Cmd {
     Pmtu {
         host: String,
     },
+    #[clap(subcommand)]
+    LinkSpeedTest(LinkSpeedTestCmd),
     Quit,
 }
 
 enum StatusCmd {
     Simple,
     Pretty,
+}
+
+#[derive(Parser)]
+#[clap(about = "Start a speed test with a peer")]
+enum LinkSpeedTestCmd {
+    #[clap(about = "Peer IP address")]
+    Peer { ip_addr: String },
 }
 
 #[derive(Parser)]
@@ -442,6 +451,7 @@ impl Cli {
             Cmd::Dns(cmd) => cli_res!(res; (j self.exec_dns(cmd))),
             Cmd::Nat(cmd) => cli_res!(res; (j self.exec_nat_detect(cmd))),
             Cmd::Derp(cmd) => cli_res!(res; (j self.derp_client.exec_cmd(cmd))),
+            Cmd::LinkSpeedTest(cmd) => cli_res!(res; (j self.exec_link_speed_test(cmd))),
             Cmd::Quit => cli_res!(res; q),
             #[cfg(any(target_os = "linux", target_os = "android"))]
             Cmd::Pmtu { host } => cli_res!(res; (j self.exec_pmtu(&host))),
@@ -743,6 +753,18 @@ impl Cli {
                     cli_res!(res; (i "problem: {}", error));
                 }
             },
+        }
+
+        res
+    }
+
+    fn exec_link_speed_test(&mut self, cmd: LinkSpeedTestCmd) -> Vec<Resp> {
+        let mut res = Vec::new();
+
+        match cmd {
+            LinkSpeedTestCmd::Peer { ip_addr } => {
+                cli_try!(res; self.telio.trigger_peer_link_speed_test(ip_addr));
+            }
         }
 
         res

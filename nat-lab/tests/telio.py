@@ -939,6 +939,12 @@ class Client:
     async def trigger_qos_collection(self) -> None:
         await self.get_proxy().trigger_qos_collection()
 
+    async def trigger_peer_link_speed_test(self, peer_ip: str) -> int:
+        return await self.get_proxy().trigger_peer_link_speed_test(peer_ip)
+
+    async def fetch_peer_link_speed(self) -> int:
+        return await self.get_proxy().fetch_peer_link_speed()
+
     def get_endpoint_address(self, public_key: str) -> str:
         node = self.get_node_state(public_key)
         if node is None:
@@ -1039,6 +1045,18 @@ class Client:
                 + "\n"
             )
         return ""
+
+    async def limit_network_speed(self, speed: str) -> None:
+        cmd = (
+            "tc qdisc add dev eth0 root tbf rate "
+            + speed
+            + "mbit latency 50ms burst 32kbit"
+        )
+        os.system(cmd)
+
+    async def delete_limiter_rule(self) -> None:
+        cmd = "tc qdisc del dev eth0 root"
+        os.system(cmd)
 
     async def _check_logs_for_errors(self) -> None:
         """
