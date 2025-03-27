@@ -174,7 +174,7 @@ impl Runtime for State {
                     .await
                     .map_or_else(|e| {
                         telio_log_warn!("({}) Error sending keepalive to {} node: {}", Self::NAME, pk, e.to_string());
-                        Ok(())
+                        Ok::<(), ()>(())
                     }, |_| Ok(()))?;
             }
             update = update => {

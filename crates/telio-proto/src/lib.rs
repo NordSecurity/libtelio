@@ -16,10 +16,10 @@ mod packet;
 pub use codec::{Codec, Error as CodecError, Result as CodecResult};
 pub use packet::*;
 
-pub use messages::nurse::Heartbeat_NatType as HeartbeatNatType;
-pub use messages::nurse::Heartbeat_Status as HeartbeatStatus;
-pub use messages::nurse::Heartbeat_Type as HeartbeatType;
+pub use messages::nurse::heartbeat::NatType as HeartbeatNatType;
+pub use messages::nurse::heartbeat::Status as HeartbeatStatus;
+pub use messages::nurse::heartbeat::Type as HeartbeatType;
 
-pub use messages::natter::CallMeMaybe_Type as CallMeMaybeType;
+pub use messages::natter::call_me_maybe::Type as CallMeMaybeType;
 
-pub use messages::natter::CallMeMaybeDeprecated_Type as CallMeMaybeDeprecatedType;
+pub use messages::natter::call_me_maybe_deprecated::Type as CallMeMaybeDeprecatedType;
