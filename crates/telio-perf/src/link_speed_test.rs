@@ -282,6 +282,7 @@ impl State {
                     .ok_or(Error::MalformedMessage)?
                     .try_into()?;
                 let link_speed = u32::from_be_bytes(bytes);
+                #[allow(mpsc_blocking_send)]
                 let _ = self.test_results_chan.tx.send(link_speed).await;
                 telio_log_info!("Throughput {link_speed} MiB/s Packet loss - {pkt_loss} %");
             }
@@ -495,7 +496,7 @@ async fn link_speed_test_handler(
                 let start = Instant::now();
                 // Start sending packets to the peer
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Test as u8);
-                let delay = TokioDuration::from_millis(1);
+                let delay = TokioDuration::from_millis(10);
                 while start.elapsed() < TEST_DURATION {
                     for _ in 0..1_000 {
                         match transport_socket.try_send_to(&send_buffer, endpoint) {
