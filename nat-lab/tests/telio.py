@@ -1103,11 +1103,13 @@ class Client:
                 f.write("\n\n\n\n--- SYSTEM LOG ---\n\n")
                 f.write(system_log_content)
 
+        async def on_stdout(content: str):
+            opensearch_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            opensearch_socket.connect("/var/run/fluentbit/fluentbit_libtelio.sock")
+            opensearch_socket.sendall(content.encode("utf-8"))
+            opensearch_socket.close()
         # Send files to opensearch
-        opensearch_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        opensearch_socket.connect("/var/run/fluentbit/fluentbit_libtelio.sock")
-        opensearch_socket.sendall(log_content.encode("utf-8"))
-        opensearch_socket.close()
+        formatted_content = self._connection.create_process([log_content, "|", "awk '{printf $4 \" \" $3} {for (i=5; i<=NF; i++) printf \"%s \", $i;}'"], on_stdout).execute()
 
         moose_traces = await find_files(
             self._connection, MOOSE_LOGS_DIR, "moose_trace.log*"
