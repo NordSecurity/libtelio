@@ -1109,7 +1109,14 @@ class Client:
             opensearch_socket.sendall(content.encode("utf-8"))
             opensearch_socket.close()
         # Send files to opensearch
-        formatted_content = self._connection.create_process([log_content, "|", "awk '{printf $4 \" \" $3} {for (i=5; i<=NF; i++) printf \"%s \", $i;}'"], on_stdout).execute()
+        self._connection.create_process(
+            [
+                log_content,
+                "|",
+                'awk \'{printf $4 " " $3} {for (i=5; i<=NF; i++) printf "%s ", $i;}\'',
+            ],
+            on_stdout,
+        ).execute()
 
         moose_traces = await find_files(
             self._connection, MOOSE_LOGS_DIR, "moose_trace.log*"
