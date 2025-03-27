@@ -940,7 +940,10 @@ class Client:
         await self.get_proxy().trigger_qos_collection()
 
     async def trigger_peer_link_speed_test(self, peer_ip: str) -> int:
-        await self.get_proxy().trigger_peer_link_speed_test(peer_ip)
+        return await self.get_proxy().trigger_peer_link_speed_test(peer_ip)
+
+    async def fetch_peer_link_speed(self) -> int:
+        return await self.get_proxy().fetch_peer_link_speed()
 
     def get_endpoint_address(self, public_key: str) -> str:
         node = self.get_node_state(public_key)
