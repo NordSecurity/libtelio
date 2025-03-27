@@ -44,13 +44,13 @@ async def test_throughput_real(
 
         peer_ip = beta.get_ip_address(IPProto.IPv4)
         assert peer_ip is not None, "Expected a string, but got None"
-        test_speed = 2
+        test_speed = "2"
         await client_alpha.limit_network_speed(test_speed)
         await client_alpha.trigger_peer_link_speed_test(peer_ip)
         await client_alpha.wait_for_log("MiB/s Packet loss")
         speed = await client_alpha.fetch_peer_link_speed()
         await client_alpha.delete_limiter_rule()
-        assert test_speed == speed
+        assert test_speed == str(speed)
 
 
 @pytest.mark.asyncio
