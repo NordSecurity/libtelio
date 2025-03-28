@@ -1108,8 +1108,9 @@ class Client:
             opensearch_socket.connect("/var/run/fluentbit/fluentbit_libtelio.sock")
             opensearch_socket.sendall(content.encode("utf-8"))
             opensearch_socket.close()
+
         # Send files to opensearch
-        self._connection.create_process(
+        await self._connection.create_process(
             [
                 log_content,
                 "|",
