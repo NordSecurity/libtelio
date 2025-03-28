@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use telio_model::features::{
-    FeatureDerp, FeatureLana, FeaturePersistentKeepalive, FeaturePolling, FeatureValidateKeys,
-    FeatureWireguard, Features,
-};
+use telio_model::features::{FeatureDerp, FeatureLana, FeatureValidateKeys, Features};
 
 pub struct FeaturesDefaultsBuilder {
     config: Mutex<Features>,
@@ -74,19 +71,14 @@ impl FeaturesDefaultsBuilder {
     /// Enable default wireguard timings, derp timings and other features for best battery performance
     pub fn enable_battery_saving_defaults(self: Arc<Self>) -> Arc<Self> {
         {
+            // Do not override any preexisting values not related to battery savings
             let mut cfg = self.config.lock();
-            cfg.wireguard = FeatureWireguard {
-                persistent_keepalive: FeaturePersistentKeepalive {
-                    vpn: Some(115),
-                    direct: 10,
-                    proxying: Some(125),
-                    stun: Some(125),
-                },
-                polling: FeaturePolling {
-                    wireguard_polling_period: 1000,
-                    wireguard_polling_period_after_state_change: 50,
-                },
-            };
+            cfg.wireguard.persistent_keepalive.vpn = Some(115);
+            cfg.wireguard.persistent_keepalive.direct = 10;
+            cfg.wireguard.persistent_keepalive.proxying = Some(125);
+            cfg.wireguard.persistent_keepalive.stun = Some(125);
+
+            // Preseve any previous values if those were set.
             let prev = cfg.derp.as_ref().cloned().unwrap_or_default();
             cfg.derp = Some(FeatureDerp {
                 tcp_keepalive: Some(125),
@@ -142,6 +134,11 @@ impl FeaturesDefaultsBuilder {
 
     pub fn enable_batching(self: Arc<Self>) -> Arc<Self> {
         self.config.lock().batching = Some(default());
+        self
+    }
+
+    pub fn enable_dynamic_wg_nt_control(self: Arc<Self>) -> Arc<Self> {
+        self.config.lock().wireguard.enable_dynamic_wg_nt_control = true;
         self
     }
 }

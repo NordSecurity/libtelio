@@ -44,7 +44,7 @@ pub enum Error {
 
 impl LinuxNativeWg {
     #[cfg(not(any(test, feature = "test-adapter")))]
-    pub fn start(name: &str, _tun: Option<NativeTun>) -> Result<Self, AdapterError> {
+    pub fn start(name: &str) -> Result<Self, AdapterError> {
         let mut rtsocket = RouteSocket::connect().map_err(Error::from)?;
 
         rtsocket.add_device(name).map_err(Error::from)?;

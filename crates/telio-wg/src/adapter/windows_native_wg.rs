@@ -33,6 +33,9 @@ pub struct WindowsNativeWg {
     // during Adapter::stop(), or needs to be done in drop()
     cleaned_up: Arc<Mutex<bool>>,
     watcher: Arc<Mutex<InterfaceWatcher>>,
+
+    /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
+    enable_dynamic_wg_nt_control: bool,
 }
 
 /// Error type implementation for wg-nt
@@ -57,12 +60,14 @@ impl WindowsNativeWg {
         adapter: &Arc<wireguard_nt::Adapter>,
         luid: u64,
         watcher: &Arc<Mutex<InterfaceWatcher>>,
+        enable_dynamic_wg_nt_control: bool,
     ) -> Self {
         Self {
             adapter: adapter.clone(),
             luid,
             cleaned_up: Arc::new(Mutex::new(false)),
             watcher: watcher.clone(),
+            enable_dynamic_wg_nt_control,
         }
     }
 
@@ -77,18 +82,24 @@ impl WindowsNativeWg {
         guid
     }
 
-    /// Returns a wireguard adapter inside the pool `pool` with name `name`, loading dll from path 'path'
+    /// Returns a wireguard adapter with name `name`, loading dll from path 'path'
     ///
     /// # Errors
     /// Returns a wg-nt error if dll file couldn't be loaded or adapter couldn't be  created
     ///
-    fn create(pool: &str, name: &str, path: &str) -> Result<Self, AdapterError> {
+    fn create(
+        name: &str,
+        path: &str,
+        enable_dynamic_wg_nt_control: bool,
+    ) -> Result<Self, AdapterError> {
         unsafe {
             // try to load dll
             match wireguard_nt::load_from_path(path) {
                 Ok(wg_dll) => {
                     // Someone to watch over me while I sleep
-                    let watcher = Arc::new(Mutex::new(InterfaceWatcher::new()));
+                    let watcher = Arc::new(Mutex::new(InterfaceWatcher::new(
+                        enable_dynamic_wg_nt_control,
+                    )));
                     if let Ok(mut watcher) = watcher.lock() {
                         if let Err(monitoring_err) = watcher.start_monitoring() {
                             return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
@@ -104,11 +115,22 @@ impl WindowsNativeWg {
 
                     // Try to create a new adapter
                     let adapter_guid = Self::get_adapter_guid_from_name_hash(name);
-                    match wireguard_nt::Adapter::create(wg_dll, pool, name, Some(adapter_guid)) {
+
+                    // Adapter name and pool name must be the same, because netsh
+                    // identifies interfaces by their pool name and not the adapter or device name.
+                    // This replicates the behavior of Wireguard-Go adapter which relies on WinTun.sys.
+                    // If the pool name does not match the passed adapter name, then netsh in the nat-lab
+                    // tests won't be able to find this adapter and the tests will fail.
+                    match wireguard_nt::Adapter::create(wg_dll, name, name, Some(adapter_guid)) {
                         Ok(raw_adapter) => {
                             let adapter = Arc::new(raw_adapter);
                             let luid = adapter.get_luid();
-                            let wgnt = WindowsNativeWg::new(&adapter, luid, &watcher);
+                            let wgnt = WindowsNativeWg::new(
+                                &adapter,
+                                luid,
+                                &watcher,
+                                enable_dynamic_wg_nt_control,
+                            );
                             if let Ok(mut watcher) = watcher.lock() {
                                 watcher.configure(wgnt.adapter.clone(), luid);
                                 Ok(wgnt)
@@ -134,22 +156,21 @@ impl WindowsNativeWg {
 
     /// Start adapter with name `name`
     ///
-    /// `_tun` is unused for Windows and might be set to `None`
     ///
     /// # Errors
     /// Returns a wg-nt error if adapter couldn't be created or started
     ///
-    pub fn start(name: &str, _tun: Option<NativeTun>) -> Result<Self, AdapterError> {
-        // Adapter name and pool name must be the same, because netsh
-        // identifies interfaces by their pool name and not the adapter or device name.
-        // This replicates the behavior of Wireguard-Go adapter which relies on WinTun.sys.
-        // If the pool name does not match the passed adapter name, then netsh in the nat-lab
-        // tests won't be able to find this adapter and the tests will fail.
-        //let pool = "WireGuard";
-        let pool = name;
+    pub async fn start(
+        name: &str,
+        enable_dynamic_wg_nt_control: bool,
+    ) -> Result<Self, AdapterError> {
         let dll_path = "wireguard.dll";
-        let wg_dev = Self::create(pool, name, dll_path)?;
-        telio_log_info!("Adapter '{}' created successfully", name);
+        let wg_dev = Self::create(name, dll_path, enable_dynamic_wg_nt_control)?;
+        telio_log_info!(
+            "Adapter '{}' using created successfully. enable_dynamic_wg_nt_control: {}",
+            name,
+            enable_dynamic_wg_nt_control
+        );
         if !service::wait_for_service("WireGuard", service::DEFAULT_SERVICE_WAIT_TIMEOUT) {
             return Err(AdapterError::WindowsNativeWg(Error::Fail(
                 "WireGuard service not running".to_string(),
@@ -163,6 +184,10 @@ impl WindowsNativeWg {
             return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
                 "Failed to set logging for adapter, last error: {os_error:?}",
             ))));
+        }
+
+        if !wg_dev.enable_dynamic_wg_nt_control {
+            wg_dev.ensure_adapter_state(AdapterState::Up).await?;
         }
 
         Ok(wg_dev)
@@ -223,9 +248,10 @@ impl WindowsNativeWg {
             }
 
             telio_log_debug!(
-                "Attempting to bring interface {:?}, currently it is: {:?}",
+                "Attempting to bring interface {:?}, currently it is: {:?}, enable_dynamic_wg_nt_control: {:?}",
                 want_adapter_state,
-                have_adapter_state
+                have_adapter_state,
+                self.enable_dynamic_wg_nt_control
             );
 
             // The wireguard-nt-rust-wrapper here indicates success using
@@ -276,7 +302,7 @@ impl Adapter for WindowsNativeWg {
             Get => Ok(self.get_config_uapi()),
             Set(set_cfg) => {
                 // If we have any peers added -> bring the adapter up
-                if !set_cfg.peers.is_empty() {
+                if self.enable_dynamic_wg_nt_control && !set_cfg.peers.is_empty() {
                     self.ensure_adapter_state(AdapterState::Up).await?;
                 }
 
@@ -303,7 +329,7 @@ impl Adapter for WindowsNativeWg {
                 };
 
                 // If all of the peers has been removed -> bring the adapter down
-                if peer_cnt.map(|p| p == 0).unwrap_or(false) {
+                if self.enable_dynamic_wg_nt_control && peer_cnt.map(|p| p == 0).unwrap_or(false) {
                     self.ensure_adapter_state(AdapterState::Down).await?;
                 }
 

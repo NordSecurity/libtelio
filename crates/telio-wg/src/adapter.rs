@@ -29,6 +29,7 @@ use telio_sockets::{Protect, SocketPool};
 use thiserror::Error as TError;
 
 use crate::uapi::{self, Cmd, Response};
+use crate::wg::Config;
 
 /// Function pointer to Firewall Callback
 pub type FirewallCb = Option<Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>>;
@@ -45,6 +46,21 @@ pub type Tun = std::os::unix::io::RawFd;
 #[cfg(target_os = "windows")]
 #[cfg_attr(docsrs, doc(cfg(windows)))]
 pub type Tun = ();
+
+#[cfg(all(not(any(test, feature = "test-adapter")), windows))]
+const DEFAULT_NAME: &str = "NordLynx";
+
+#[cfg(all(
+    not(any(test, feature = "test-adapter")),
+    any(target_os = "macos", target_os = "ios", target_os = "tvos")
+))]
+const DEFAULT_NAME: &str = "utun10";
+
+#[cfg(all(
+    not(any(test, feature = "test-adapter")),
+    any(target_os = "linux", target_os = "android")
+))]
+const DEFAULT_NAME: &str = "nlx0";
 
 /// Generic Adapter
 #[cfg_attr(any(test, feature = "test-adapter"), automock)]
@@ -200,30 +216,24 @@ impl FromStr for AdapterType {
 }
 
 #[cfg(not(any(test, feature = "test-adapter")))]
-pub(crate) fn start(
-    adapter: AdapterType,
-    name: &str,
-    tun: Option<Tun>,
-    socket_pool: Arc<SocketPool>,
-    firewall_process_inbound_callback: FirewallCb,
-    firewall_process_outbound_callback: FirewallCb,
-    firewall_reset_conns_callback: FirewallResetConnsCb,
-) -> Result<Box<dyn Adapter>, Error> {
+pub(crate) async fn start(cfg: &Config) -> Result<Box<dyn Adapter>, Error> {
     #![allow(unused_variables)]
 
-    match adapter {
+    let name = cfg.name.clone().unwrap_or_else(|| DEFAULT_NAME.to_owned());
+
+    match cfg.adapter {
         AdapterType::NepTUN => {
             #[cfg(windows)]
             return Err(Error::UnsupportedAdapter);
 
             #[cfg(unix)]
             Ok(Box::new(neptun::NepTUN::start(
-                name,
-                tun,
-                socket_pool,
-                firewall_process_inbound_callback,
-                firewall_process_outbound_callback,
-                firewall_reset_conns_callback,
+                &name,
+                cfg.tun,
+                cfg.socket_pool.clone(),
+                cfg.firewall_process_inbound_callback.clone(),
+                cfg.firewall_process_outbound_callback.clone(),
+                cfg.firewall_reset_connections.clone(),
             )?))
         }
         AdapterType::LinuxNativeWg => {
@@ -231,23 +241,24 @@ pub(crate) fn start(
             return Err(Error::UnsupportedAdapter);
 
             #[cfg(target_os = "linux")]
-            Ok(Box::new(linux_native_wg::LinuxNativeWg::start(name, tun)?))
+            Ok(Box::new(linux_native_wg::LinuxNativeWg::start(&name)?))
         }
         AdapterType::WireguardGo => {
             #[cfg(not(windows))]
             return Err(Error::UnsupportedAdapter);
 
             #[cfg(windows)]
-            Ok(Box::new(wireguard_go::WireguardGo::start(name, tun)?))
+            Ok(Box::new(wireguard_go::WireguardGo::start(&name, cfg.tun)?))
         }
         AdapterType::WindowsNativeWg => {
             #[cfg(not(windows))]
             return Err(Error::UnsupportedAdapter);
 
             #[cfg(windows)]
-            Ok(Box::new(windows_native_wg::WindowsNativeWg::start(
-                name, tun,
-            )?))
+            Ok(Box::new(
+                windows_native_wg::WindowsNativeWg::start(&name, cfg.enable_dynamic_wg_nt_control)
+                    .await?,
+            ))
         }
     }
 }

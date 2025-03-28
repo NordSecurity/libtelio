@@ -33,6 +33,7 @@ def long_persistent_keepalive_periods() -> FeatureWireguard:
             wireguard_polling_period=1000,
             wireguard_polling_period_after_state_change=50,
         ),
+        enable_dynamic_wg_nt_control=False,
     )
 
 
