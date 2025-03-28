@@ -5,8 +5,30 @@ permissions: {}
 jobs:
   telio-firewall:
       runs-on: ubuntu-22.04
+      env:
+        CARGO_TARGET_DIR: "/home/runner/work/libtelio/libtelio/target/criterion"
       steps:
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - name: Install critcmp for benchmark comparison
+          run: cargo install critcmp
         - name: Telio firewall benchmarks
           working-directory: crates/telio-firewall
-          run: cargo bench --features test_utils --bench firewall_bench "64" -- --warm-up-time 1 --measurement-time 1
+          run: cargo bench --features test_utils --bench firewall_bench "64" -- --warm-up-time 1 --measurement-time 1 --save-baseline current
+        - name: Benchmark baseline
+          working-directory: crates/telio-firewall
+          run: | # v4.0.0 is just a placeholder
+            git fetch --all
+            git checkout v5.0.0-rc3
+            cargo bench --features test_utils --bench firewall_bench "64" -- --warm-up-time 1 --measurement-time 1 --save-baseline baseline
+        - name: Compare benchmarks
+          working-directory: crates/telio-firewall
+          run: |
+            result=$(critcmp current baseline -t 5)
+            output=$($output | awk '{if (NR > 2) { if ($10 == 1.00 ||  $14 == 1.00) { if ($10 < $14) {exit 1} } else { if ($13 < $17) {exit 1}}}}')
+            if [ -z "$output" ]; then
+              echo "No performance regression detected."
+            else
+              echo "Performance regression detected! Failing the build."
+              echo "$result"
+              exit 1
+            fi
