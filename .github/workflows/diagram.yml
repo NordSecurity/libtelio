@@ -11,7 +11,7 @@ jobs:
     steps:
         # Checkout nat-lab files
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           sparse-checkout: nat-lab
 
