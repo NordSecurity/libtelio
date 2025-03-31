@@ -171,8 +171,8 @@ impl LocalNameServer {
                         {
                             Ok(length) => length,
                             Err(e) => {
-                                telio_log_error!(
-                                    "[DNS] {}. Offending request packet: {:?}",
+                                telio_log_debug!(
+                                    "[DNS] {}. Offending request packet: [{:?}]",
                                     e,
                                     packet
                                 );
