@@ -23,6 +23,7 @@ def default_features(
     enable_link_detection: bool = False,
     enable_pmtu_discovery: bool = False,
     enable_multicast: bool = False,
+    enable_dynamic_wg_nt_control: bool = False,
 ) -> Features:
     features_builder = FeaturesDefaultsBuilder()
     if enable_lana is not None:
@@ -45,6 +46,8 @@ def default_features(
         features_builder = features_builder.enable_pmtu_discovery()
     if enable_multicast:
         features_builder = features_builder.enable_multicast()
+    if enable_dynamic_wg_nt_control:
+        features_builder = features_builder.enable_dynamic_wg_nt_control()
 
     features = features_builder.build()
     features.is_test_env = True

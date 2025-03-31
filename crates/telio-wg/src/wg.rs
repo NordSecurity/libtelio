@@ -110,6 +110,8 @@ pub struct Config {
     /// Callback of firewall to create connection reset packets
     /// for all active connections
     pub firewall_reset_connections: FirewallResetConnsCb,
+    /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
+    pub enable_dynamic_wg_nt_control: bool,
 }
 
 /// Events and analytics transmission channels
@@ -248,21 +250,6 @@ struct State {
 
 const MAX_UAPI_FAIL_COUNT: i32 = 10;
 
-#[cfg(all(not(any(test, feature = "test-adapter")), windows))]
-const DEFAULT_NAME: &str = "NordLynx";
-
-#[cfg(all(
-    not(any(test, feature = "test-adapter")),
-    any(target_os = "macos", target_os = "ios", target_os = "tvos")
-))]
-const DEFAULT_NAME: &str = "utun10";
-
-#[cfg(all(
-    not(any(test, feature = "test-adapter")),
-    any(target_os = "linux", target_os = "android")
-))]
-const DEFAULT_NAME: &str = "nlx0";
-
 impl DynamicWg {
     /// Starts the WireGuard adapter with the given parameters.
     ///
@@ -327,6 +314,7 @@ impl DynamicWg {
     ///             firewall_process_outbound_callback:
     ///                 Some(Arc::new(firewall_filter_outbound_packets)),
     ///             firewall_reset_connections: None,
+    ///             enable_dynamic_wg_nt_control: false,
     ///         },
     ///         None,
     ///         true,
@@ -335,7 +323,7 @@ impl DynamicWg {
     ///     );
     /// }
     /// ```
-    pub fn start(
+    pub async fn start(
         io: Io,
         cfg: Config,
         link_detection: Option<FeatureLinkDetection>,
@@ -347,7 +335,7 @@ impl DynamicWg {
         Self: Sized,
     {
         let socket_pool = cfg.socket_pool.clone();
-        let adapter = Self::start_adapter(cfg.try_clone()?)?;
+        let adapter = Self::start_adapter(cfg.try_clone()?).await?;
         #[cfg(unix)]
         return Ok(Self::start_with(
             io,
@@ -406,20 +394,12 @@ impl DynamicWg {
     }
 
     #[cfg(not(any(test, feature = "test-adapter")))]
-    fn start_adapter(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
-        adapter::start(
-            cfg.adapter,
-            &cfg.name.unwrap_or_else(|| DEFAULT_NAME.to_owned()),
-            cfg.tun,
-            cfg.socket_pool,
-            cfg.firewall_process_inbound_callback,
-            cfg.firewall_process_outbound_callback,
-            cfg.firewall_reset_connections,
-        )
+    async fn start_adapter(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
+        adapter::start(&cfg).await
     }
 
     #[cfg(any(test, feature = "test-adapter"))]
-    fn start_adapter(_cfg: Config) -> Result<Box<dyn Adapter>, Error> {
+    async fn start_adapter(_cfg: Config) -> Result<Box<dyn Adapter>, Error> {
         use std::sync::Mutex;
 
         if let Some(adapter) = tests::RUNTIME_ADAPTER.lock().unwrap().take() {
@@ -629,6 +609,7 @@ impl Config {
             firewall_process_inbound_callback: self.firewall_process_inbound_callback.clone(),
             firewall_process_outbound_callback: self.firewall_process_outbound_callback.clone(),
             firewall_reset_connections: self.firewall_reset_connections.clone(),
+            enable_dynamic_wg_nt_control: self.enable_dynamic_wg_nt_control,
         })
     }
 }
@@ -1224,6 +1205,7 @@ pub mod tests {
                 firewall_process_inbound_callback: Default::default(),
                 firewall_process_outbound_callback: Default::default(),
                 firewall_reset_connections: None,
+                enable_dynamic_wg_nt_control: false,
             })
         }
     }
