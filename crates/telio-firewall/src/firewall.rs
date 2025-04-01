@@ -471,9 +471,19 @@ impl StatefullFirewall {
         public_key: &[u8; 32],
         buffer: &'a [u8],
     ) -> bool {
+        telio_log_debug!(
+            "process_outbound_ip_packet: [{:?}] towards: {:?}",
+            telio_utils::format_hex(buffer),
+            public_key
+        );
         let ip = unwrap_option_or_return!(P::try_from(buffer), false);
+
         let peer: PublicKey = PublicKey(*public_key);
         let proto = ip.get_next_level_protocol();
+        let src = ip.get_source();
+        let dst = ip.get_destination();
+
+        telio_log_debug!("  oproto: {}", proto);
 
         // whitelist read-lock scope
         let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);
@@ -532,9 +542,16 @@ impl StatefullFirewall {
         public_key: &[u8; 32],
         buffer: &'a [u8],
     ) -> bool {
+        telio_log_debug!(
+            "process_inbound_ip_packet: [{:?}] from: {:?}",
+            telio_utils::format_hex(buffer),
+            public_key
+        );
+
         let ip = unwrap_option_or_return!(P::try_from(buffer), false);
         let peer = PublicKey(*public_key);
         let proto = ip.get_next_level_protocol();
+        telio_log_debug!("  iproto: {}", proto);
 
         let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);
 
@@ -923,6 +940,13 @@ impl StatefullFirewall {
         };
 
         let key = if inbound {
+            telio_log_debug!(
+                "  inbound remote_addr: {:?}, remote_port: {:?}, local_port: {:?}",
+                ip.get_source().into(),
+                src,
+                dest
+            );
+
             IpConnWithPort {
                 remote_addr: ip.get_source().into(),
                 remote_port: src,
@@ -930,6 +954,12 @@ impl StatefullFirewall {
                 local_port: dest,
             }
         } else {
+            telio_log_debug!(
+                "  outbound remote_addr: {:?}, remote_port: {:?}, local_port: {:?}",
+                ip.get_destination().into(),
+                dest,
+                src
+            );
             IpConnWithPort {
                 remote_addr: ip.get_destination().into(),
                 remote_port: dest,
@@ -1460,6 +1490,7 @@ impl Firewall for StatefullFirewall {
         unwrap_lock_or_return!(self.whitelist.write()).vpn_peer = None;
     }
 
+    // POI
     fn process_outbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
         match unwrap_option_or_return!(buffer.first(), false) >> 4 {
             4 => self.process_outbound_ip_packet::<Ipv4Packet>(public_key, buffer),
