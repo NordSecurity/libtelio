@@ -61,6 +61,15 @@ macro_rules! telio_err_with_log {
     }};
 }
 
+/// Format byte array to hex
+pub fn format_hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("{:02X}", b))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};

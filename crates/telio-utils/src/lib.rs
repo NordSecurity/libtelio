@@ -4,6 +4,8 @@
 /// export utils
 pub mod utils;
 
+pub use utils::format_hex;
+
 /// Utils for rust std map types
 pub mod map;
 pub use map::*;
