@@ -1,5 +1,14 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.3.0-rc2
+### **Tomato**
+---
+* LLT-6041: Use SystemTime in PQ restart logic to avoid problems when OS is asleep
+* LLT-6086: Add feature flag for dynamic WireGuard-NT control
+* LLT-5972: Configure_windows_adapter_according_to_needs: Bring WG-NT interface up and down according to peer list as per RFC LLT-0089
+
+<br>
+
 ### v5.3.0-rc1
 ### **Tomato**
 ---
