@@ -98,6 +98,93 @@ services:
       - ./data/core_api/test.pem:/etc/ssl/server_certificate/test.pem
     healthcheck:
       test: "ls /ready"
+
+  windows-client-01: &windows-client
+    hostname: windows-client-01
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:master
+    privileged: true
+    devices:
+      - "/dev/net/tun"
+      - "/dev/kvm"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+      - NET_BIND_SERVICE
+      - SETUID
+      - SETGID
+    sysctls:
+      # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
+      # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
+      # seem to work. So for now disable return path filter outright.
+      - net.ipv4.conf.all.rp_filter=0
+      - net.ipv4.conf.default.rp_filter=0
+      # Enable IPv6, by default, docker has this set to '1'
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.default.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
+    security_opt:
+      - no-new-privileges:true
+    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
+    # When this comment was added, the only scenario where the port mapping is changed is CI running tests
+    ports: ["58001"]
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+      - "pmtu-probe:10.0.80.84"
+      - "mqtt.nordvpn.com:10.0.80.85"
+      - "api.nordvpn.com:10.0.80.86"
+    volumes:
+      - ../:/libtelio
+      - ./data/teliod:/etc/teliod
+      - ./data/core_api/test.pem:/etc/ssl/server_certificate/test.pem
+      - /home/gytsto/repos/dockur_windows/src/entry.sh:/run/entry.sh
+      - /home/gytsto/repos/dockur_windows/src/network.sh:/run/network.sh
+      - /home/gytsto/repos/dockur_windows/src/qga.py:/run/qga.py
+    healthcheck:
+      test: "[ -f /storage/ready ] || exit 1"
+      interval: 30s
+      retries: 20
+      start_period: 60s
+      timeout: 2s
+    environment:
+      USERNAME: "bill"
+      PASSWORD: "gates"
+      NETWORK: "bridge"
+      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/configure_route.sh primary windows"
+      CLIENT_GATEWAY_PRIMARY: 192.168.150.254
+      CLIENT_GATEWAY_SECONDARY: 192.168.151.254
+    networks:
+      windows-net-01:
+        ipv4_address: 192.168.150.54
+      windows-net-02:
+        ipv4_address: 192.168.151.54
+
+  windows-client-02:
+    hostname: windows-client-02
+    <<: *windows-client
+    networks:
+      windows-net-03:
+        ipv4_address: 192.168.152.54
+      windows-net-04:
+        ipv4_address: 192.168.153.54
+    environment:
+      USERNAME: "bill"
+      PASSWORD: "gates"
+      NETWORK: "bridge"
+      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/configure_route.sh primary windows"
+      CLIENT_GATEWAY_PRIMARY: 192.168.152.254
+      CLIENT_GATEWAY_SECONDARY: 192.168.153.254
+
   cone-client-02:
     hostname: cone-client-02
     <<: *common-client
@@ -476,6 +563,28 @@ services:
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
+  windows-gw-01: &windows-gw
+    hostname: windows-gw-01
+    image: nat-lab:base
+    entrypoint: /opt/bin/cone-gw
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_forward=1
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: "ls /ready"
+    networks:
+      internet:
+        ipv4_address: 10.0.254.15
+        priority: 1000
+      windows-net-01:
+        ipv4_address: 192.168.150.254
+        priority: 900
 
   openwrt-gw-01:
     hostname: openwrt-gw-01
@@ -507,6 +616,37 @@ services:
     dns:
       - 10.0.80.82
       - 10.0.80.83
+  windows-gw-02:
+    hostname: windows-gw-02
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.16
+        priority: 1000
+      windows-net-02:
+        ipv4_address: 192.168.151.254
+        priority: 900
+  windows-gw-03:
+    hostname: windows-gw-03
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.17
+        priority: 1000
+      windows-net-03:
+        ipv4_address: 192.168.152.254
+        priority: 900
+
+  windows-gw-04:
+    hostname: windows-gw-04
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.18
+        priority: 1000
+      windows-net-04:
+        ipv4_address: 192.168.153.254
+        priority: 900
 
   ###########################################################
   #                       MISC SERVERS                      #
@@ -851,3 +991,31 @@ networks:
       driver: default
       config:
         - subnet: 192.168.115.0/24
+
+  windows-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.150.0/24
+
+  windows-net-02:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.151.0/24
+
+  windows-net-03:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.152.0/24
+
+  windows-net-04:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.153.0/24
