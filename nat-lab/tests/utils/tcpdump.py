@@ -5,6 +5,7 @@ import subprocess
 from asyncio import Event, wait_for, sleep
 from config import WINDUMP_BINARY_WINDOWS
 from contextlib import asynccontextmanager, AsyncExitStack
+from datetime import datetime
 from typing import AsyncIterator, Optional
 from utils.connection import TargetOS, Connection
 from utils.logger import log
@@ -23,6 +24,7 @@ class TcpDump:
     interfaces: Optional[list[str]]
     connection: Connection
     process: Process
+    command: list[str]
     stdout: str
     stderr: str
     output_file: Optional[str]
@@ -50,7 +52,7 @@ class TcpDump:
 
         self.output_notifier.notify_output("listening on", self.start_event)
 
-        command = build_tcpdump_command(
+        self.command = build_tcpdump_command(
             self.connection.target_os,
             flags,
             expressions,
@@ -61,7 +63,7 @@ class TcpDump:
         )
 
         self.process = self.connection.create_process(
-            command,
+            self.command,
             # xterm type is needed here, because Mac on default term type doesn't
             # handle signals properly while `tcpdump -w file` is running, without writing
             # to file, everything works fine
@@ -77,10 +79,12 @@ class TcpDump:
         return self.stderr
 
     async def on_stdout(self, output: str) -> None:
+        log.info("tcpdump: %s", output)
         self.stdout += output
         await self.output_notifier.handle_output(output)
 
     async def on_stderr(self, output: str) -> None:
+        log.debug("tcpdump err: %s", output)
         self.stderr += output
         await self.output_notifier.handle_output(output)
 
@@ -93,8 +97,16 @@ class TcpDump:
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["TcpDump"]:
+        start_time = datetime.now()
         async with self.process.run(self.on_stdout, self.on_stderr, True):
             await wait_for(self.start_event.wait(), 10)
+            delta = datetime.now() - start_time
+            log.info(
+                "[%s] '%s' time till ready: %s",
+                self.connection.tag,
+                " ".join(self.command),
+                delta,
+            )
             yield self
             # Windump takes so long to flush packets to stdout/file
             if self.connection.target_os == TargetOS.Windows:
