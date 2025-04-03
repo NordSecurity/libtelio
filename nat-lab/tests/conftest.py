@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import pytest
 import shutil
@@ -14,10 +15,12 @@ from utils.connection import ConnectionTag, clear_ephemeral_setups_set
 from utils.connection.docker_connection import DockerConnection
 from utils.connection.ssh_connection import SshConnection
 from utils.connection_util import new_connection_raw, new_connection_with_conn_tracker
+from utils.logger import log
 from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPStack
 from utils.tcpdump import make_tcpdump, make_local_tcpdump
+from utils.testing import get_current_test_log_path
 
 DERP_SERVER_1_ADDR = "http://10.0.10.1:8765"
 DERP_SERVER_2_ADDR = "http://10.0.10.2:8765"
@@ -157,17 +160,20 @@ async def setup_check_connectivity():
                     await ping(connection, dest_ip, 5)
                     results[source].append((reverse[dest_ip], True))
             except Exception as e:  # pylint: disable=broad-exception-caught
-                print(
-                    f"Failed to connect from {source} to {reverse[dest_ip]}: {repr(e)}"
+                log.error(
+                    "Failed to connect from %s to %s: %s",
+                    source,
+                    reverse[dest_ip],
+                    repr(e),
                 )
-                print(f"Exception type: {e.__class__.__name__}")
-                print(f"Exception args: {e.args}")
-                print(f"Exception attributes: {dir(e)}")
+                log.error("Exception type: %s", e.__class__.__name__)
+                log.error("Exception args: %s", e.args)
+                log.error("Exception attributes: %s", dir(e))
                 results[source].append((reverse[dest_ip], False))
 
-    print("Connectivity between VMs (and docker):")
+    log.info("Connectivity between VMs (and docker):")
     for k, v in results.items():
-        print(f"{k}: {v}")
+        log.info("%s: %s", k, v)
 
     for k, v in results.items():
         for dest_ip, status in v:
@@ -227,9 +233,9 @@ async def perform_setup_checks() -> bool:
                 await asyncio.wait_for(asyncio.shield(target()), timeout)
                 break
             except asyncio.TimeoutError:
-                print(f"{target}() timeout, retrying...")
+                log.warning("%s() timeout, retrying...", target)
             except ProcessExecError as e:
-                print(f"{target}() process exec error {e}, retrying...")
+                log.warning("%s() process exec error %s, retrying...", target, e)
             retries -= 1
         else:
             return False
@@ -266,15 +272,14 @@ async def perform_pretest_cleanups():
 
 async def _copy_vm_binaries(tag: ConnectionTag):
     try:
-        print(f"copying for {tag}")
+        log.info("Copying binaries for %s", tag)
         async with SshConnection.new_connection(
             LAN_ADDR_MAP[tag], tag, copy_binaries=True, reenable_nat=True
         ):
             pass
     except OSError as e:
-        if os.environ.get("GITLAB_CI"):
-            raise e
-        print(e)
+        log.error(e)
+        raise e
 
 
 async def _copy_vm_binaries_if_needed(items):
@@ -304,7 +309,7 @@ def save_dmesg_from_host(suffix):
             check=True,
         ).stdout
     except subprocess.CalledProcessError as e:
-        print(f"Error executing dmesg: {e}")
+        log.error("Error executing dmesg: %s", e)
         return
 
     if result:
@@ -320,20 +325,20 @@ def save_audit_log_from_host(suffix):
         if os.path.exists(source_path):
             shutil.copy2(source_path, f"logs/audit_{suffix}.log")
         else:
-            print(f"The audit file {source_path} does not exist.")
+            log.warning("The audit file %s", source_path)
     except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"An error occurred when processing audit log: {e}")
+        log.warning("An error occurred when processing audit log: %s", e)
 
 
 async def _save_macos_logs(conn, suffix):
     try:
-        dmesg_proc = await conn.create_process(["dmesg"]).execute()
+        dmesg_proc = await conn.create_process(["dmesg"], quiet=True).execute()
         with open(
             os.path.join("logs", f"dmesg-macos-{suffix}.txt"), "w", encoding="utf-8"
         ) as f:
             f.write(dmesg_proc.get_stdout())
     except ProcessExecError as e:
-        print(f"Failed to collect dmesg logs {e}")
+        log.warning("Failed to collect dmesg logs %s", e)
 
 
 async def collect_kernel_logs(items, suffix):
@@ -372,34 +377,8 @@ def pytest_runtest_setup():
 
 # pylint: disable=unused-argument
 def pytest_sessionstart(session):
-    if os.environ.get("NATLAB_SAVE_LOGS") is None:
-        return
-
-    async def async_context():
-        connections = [
-            await SESSION_SCOPE_EXIT_STACK.enter_async_context(
-                new_connection_raw(gw_tag)
-            )
-            for gw_tag in ConnectionTag
-            if "_GW" in gw_tag.name
-        ]
-
-        connections += [
-            await SESSION_SCOPE_EXIT_STACK.enter_async_context(
-                new_connection_raw(conn_tag)
-            )
-            for conn_tag in [
-                ConnectionTag.DOCKER_DNS_SERVER_1,
-                ConnectionTag.DOCKER_DNS_SERVER_2,
-            ]
-        ]
-
-        await SESSION_SCOPE_EXIT_STACK.enter_async_context(
-            make_tcpdump(connections, session=True)
-        )
-        await SESSION_SCOPE_EXIT_STACK.enter_async_context(make_local_tcpdump())
-
-    RUNNER.run(async_context())
+    if os.environ.get("NATLAB_SAVE_LOGS"):
+        RUNNER.run(start_tcpdump_processes())
 
 
 # pylint: disable=unused-argument
@@ -441,19 +420,26 @@ def copy_file_from_container(container_name, src_path, dst_path):
     docker_cp_command = f"docker cp {container_name}:{src_path} {dst_path}"
     try:
         subprocess.run(docker_cp_command, shell=True, check=True)
-        print(
-            f"Log file {src_path} copied successfully from {container_name} to"
-            f" {dst_path}"
+        log.info(
+            "Log file %s copied successfully from %s to %s",
+            src_path,
+            container_name,
+            dst_path,
         )
     except subprocess.CalledProcessError:
-        print(f"Error copying log file {src_path} from {container_name} to {dst_path}")
+        log.warning(
+            "Error copying log file %s from %s to %s",
+            src_path,
+            container_name,
+            dst_path,
+        )
 
 
 async def collect_mac_diagnostic_reports():
     is_ci = "GITLAB_CI" in os.environ
     if not (is_ci or "NATLAB_COLLECT_MAC_DIAGNOSTIC_LOGS" in os.environ):
         return
-    print("Collect mac diagnostic reports")
+    log.info("Collect mac diagnostic reports")
     try:
         async with SshConnection.new_connection(
             LAN_ADDR_MAP[ConnectionTag.VM_MAC], ConnectionTag.VM_MAC
@@ -465,6 +451,51 @@ async def collect_mac_diagnostic_reports():
                 "/root/Library/Logs/DiagnosticReports", "logs/user_diagnostic_reports"
             )
     except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"Failed to connect to the mac VM: {e}")
+        log.error("Failed to connect to the mac VM: %s", e)
         if is_ci:
             raise e
+
+
+async def start_tcpdump_processes():
+    connections = [
+        await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(gw_tag))
+        for gw_tag in ConnectionTag
+        if "_GW" in gw_tag.name
+    ]
+    connections += [
+        await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(conn_tag))
+        for conn_tag in [
+            ConnectionTag.DOCKER_DNS_SERVER_1,
+            ConnectionTag.DOCKER_DNS_SERVER_2,
+        ]
+    ]
+
+    await SESSION_SCOPE_EXIT_STACK.enter_async_context(
+        make_tcpdump(connections, session=True)
+    )
+    await SESSION_SCOPE_EXIT_STACK.enter_async_context(make_local_tcpdump())
+
+
+@pytest.fixture(autouse=True)
+def setup_logger(tmp_path, request):
+    file_handler = None
+    if os.environ.get("NATLAB_SAVE_LOGS"):
+        log_dir = get_current_test_log_path()
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "debug.log")
+
+        file_handler = logging.FileHandler(log_file, mode="w")
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(
+            logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s")
+        )
+        log.addHandler(file_handler)
+
+    try:
+        yield
+    finally:
+        if file_handler:
+            log.removeHandler(file_handler)
+            file_handler.close()
+        else:
+            pass

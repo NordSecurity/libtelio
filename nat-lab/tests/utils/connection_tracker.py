@@ -4,10 +4,10 @@ import re
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, AsyncIterator
 from utils.connection import Connection
+from utils.logger import log
 from utils.ping import ping
 from utils.process import Process
 
@@ -260,10 +260,14 @@ class TCPStateSequence(ConnTrackerEventsValidator):
         return merge_results(violations)
 
 
-def parse_input(input_string) -> ConntrackerEvent:
+def parse_input(input_string, container_name: Optional[str] = None) -> ConntrackerEvent:
     event = ConntrackerEvent()
 
-    print(datetime.now(), "Conntracker reported event:", input_string)
+    if container_name:
+        log.debug("[%s] Conntracker reported event: %s", container_name, input_string)
+    else:
+        log.debug("Conntracker reported event: %s", input_string)
+
     match = re.search(r"\[([A-Z]+)\] (\w+)", input_string)
     if match:
         event.event_type = EventType(match.group(1))
@@ -309,7 +313,7 @@ class ConnectionTracker:
         validators: Optional[List[ConnTrackerEventsValidator]] = None,
     ):
         args = ["conntrack", "-E"]
-        self._process: Process = connection.create_process(args)
+        self._process: Process = connection.create_process(args, quiet=True)
         self._connection: Connection = connection
         self._validators: Optional[List[ConnTrackerEventsValidator]] = validators
         self._events: List[ConntrackerEvent] = []
@@ -325,7 +329,7 @@ class ConnectionTracker:
             return
 
         for line in stdout.splitlines():
-            event = parse_input(line)
+            event = parse_input(line, self._connection.tag.name)
             connection = event.five_tuple
             if connection is FiveTuple():
                 continue
@@ -360,7 +364,6 @@ class ConnectionTracker:
         await self._synchronize()
 
         for v in self._validators:
-            print(v)
             v.find_conntracker_violations(self._events)
 
         return merge_results(
@@ -385,7 +388,7 @@ class ConnectionTracker:
         if not self._validators:
             return None
 
-        print(datetime.now(), "ConnectionTracker waiting for _sync_event")
+        log.debug("ConnectionTracker waiting for _sync_event")
         # wait to synchronize over a known event
         while not self._sync_event.is_set():
             # use ping helper, that returns after the first reply is received

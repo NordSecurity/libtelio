@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 
 if [[ "$#" -ne 1 ]]; then
-    echo "Wrong number of parameters"
-    exit 1
+    # Invalid arguments
+    exit 2
 fi
 
 NATLAB_ID=$1
 
 for pid in $(ps -e -o pid=); do
-    if grep --null-data --text KILL_ID=${NATLAB_ID} /proc/${pid}/environ; then
-        cmd=$(tr -d '\000' < /proc/${pid}/cmdline || echo "N/A")
-        echo "$(date) Killing ${pid} ${cmd}"
-        kill "${pid}"
-        wait "${pid}" 2>/dev/null
-        exit 0
+    if [[ -f "/proc/${pid}/environ" ]]; then
+        if grep --null-data --text KILL_ID=${NATLAB_ID} /proc/${pid}/environ > /dev/null; then
+            cmd=$(tr -d '\000' < /proc/${pid}/cmdline || echo "N/A")
+            kill "${pid}"
+            wait "${pid}" 2>/dev/null
+            exit 0
+        fi
     fi
 done
 
-echo "The process to kill not found"
+# No such process
+exit 3

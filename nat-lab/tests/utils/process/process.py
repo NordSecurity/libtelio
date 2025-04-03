@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from typing import List, Optional, Callable, Awaitable, AsyncIterator, Any
+from utils.logger import log
 
 StreamCallback = Callable[[str], Awaitable[Any]]
 
@@ -27,8 +28,13 @@ class ProcessExecError(Exception):
         self.stderr = stderr
 
     def print(self) -> None:
-        print(
-            f"Executed command {self.cmd} on {self.remote_name} exited with ret code '{self.returncode}'. STDOUT: '{self.stdout}'. STDERR: '{self.stderr}'"
+        log.error(
+            "Executed command %s on %s exited with ret code '%s'. STDOUT: '%s'. STDERR: '%s'",
+            " ".join(self.cmd),
+            self.remote_name,
+            self.returncode,
+            self.stdout,
+            self.stderr,
         )
 
 

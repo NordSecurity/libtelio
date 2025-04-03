@@ -2,11 +2,11 @@ import asyncio
 import config
 import re
 from .network_switcher import NetworkSwitcher
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncIterator, List, Optional
+from typing import List, Optional
 from utils.command_grepper import CommandGrepper
 from utils.connection import Connection
+from utils.logger import log
 from utils.process import ProcessExecError
 
 
@@ -19,11 +19,11 @@ class Interface:
     @staticmethod
     async def get_network_interfaces(connection: Connection) -> List["Interface"]:
         process = await connection.create_process(
-            ["netsh", "interface", "ipv4", "show", "addresses"]
+            ["netsh", "interface", "ipv4", "show", "addresses"], quiet=True
         ).execute()
 
         stdout = process.get_stdout()
-        print(stdout)
+        log.debug(stdout)
 
         matches = re.finditer(
             r'Configuration for interface "([^"]+)"\s+(.*?)InterfaceMetric',
@@ -84,8 +84,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             connection, await ConfiguredInterfaces.create(connection)
         )
 
-    @asynccontextmanager
-    async def switch_to_primary_network(self) -> AsyncIterator:
+    async def switch_to_primary_network(self) -> None:
         """Set default route via Linux VM @ $LINUX_VM_PRIMARY_GATEWAY"""
 
         await self._delete_existing_route()
@@ -118,18 +117,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         ):
             raise Exception("Failed to switch to primary network")
 
-        try:
-            yield
-        finally:
-            # Restoring management interface after a test
-            # Seems to be causing some flakyness. In order to
-            # Test this theory, restoring is being disabled
-            #
-            # await self._enable_management_interface()
-            pass
-
-    @asynccontextmanager
-    async def switch_to_secondary_network(self) -> AsyncIterator:
+    async def switch_to_secondary_network(self) -> None:
         """Set default route via Linux VM @ $LINUX_VM_SECONDARY_GATEWAY"""
 
         await self._delete_existing_route()
@@ -162,16 +150,6 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         ):
             raise Exception("Failed to switch to secondary network")
 
-        try:
-            yield
-        finally:
-            # Restoring management interface after a test
-            # Seems to be causing some flakyness. In order to
-            # Test this theory, restoring is being disabled
-            #
-            # await self._enable_management_interface()
-            pass
-
     async def _delete_existing_route(self) -> None:
         # Deleting routes by interface name instead of network destination (0.0.0.0/0) makes
         # it possible to have multiple default routes at the same time: first default route
@@ -183,15 +161,18 @@ class NetworkSwitcherWindows(NetworkSwitcher):
 
     async def _delete_route(self, interface_name: str) -> None:
         try:
-            await self._connection.create_process([
-                "netsh",
-                "interface",
-                "ipv4",
-                "delete",
-                "route",
-                "0.0.0.0/0",
-                interface_name,
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4",
+                    "delete",
+                    "route",
+                    "0.0.0.0/0",
+                    interface_name,
+                ],
+                quiet=True,
+            ).execute()
         except ProcessExecError as exception:
             if (
                 "The filename, directory name, or volume label syntax is incorrect"
@@ -222,14 +203,17 @@ class NetworkSwitcherWindows(NetworkSwitcher):
 
     async def _disable_management_interface(self) -> None:
         if self._interfaces.default is not None:
-            await self._connection.create_process([
-                "netsh",
-                "interface",
-                "set",
-                "interface",
-                self._interfaces.default,
-                "disable",
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "netsh",
+                    "interface",
+                    "set",
+                    "interface",
+                    self._interfaces.default,
+                    "disable",
+                ],
+                quiet=True,
+            ).execute()
 
             if not await CommandGrepper(
                 self._connection,
@@ -247,14 +231,17 @@ class NetworkSwitcherWindows(NetworkSwitcher):
 
     async def _enable_management_interface(self) -> None:
         if self._interfaces.default is not None:
-            await self._connection.create_process([
-                "netsh",
-                "interface",
-                "set",
-                "interface",
-                self._interfaces.default,
-                "enable",
-            ]).execute()
+            await self._connection.create_process(
+                [
+                    "netsh",
+                    "interface",
+                    "set",
+                    "interface",
+                    self._interfaces.default,
+                    "enable",
+                ],
+                quiet=True,
+            ).execute()
 
             # wait for interface to appear in the list
             while not bool([

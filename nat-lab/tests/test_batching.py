@@ -28,6 +28,7 @@ from utils.connection.docker_connection import (
     container_id,
     DOCKER_GW_MAP,
 )
+from utils.logger import log
 from utils.traffic import (
     capture_traffic,
     render_chart,
@@ -170,7 +171,7 @@ async def test_batching(
             list(set(gateway_container_names + node_container_names))
         )
 
-        print("Will capture batching on containers: ", container_names)
+        log.info("Will capture batching on containers: %s", container_names)
         pcap_capture_tasks = []
         for name in container_names:
             pcap_task = asyncio.create_task(
@@ -216,13 +217,13 @@ async def test_batching(
             if not client.is_node(node)
         ])
 
-        print("All peers directly interconnected")
+        log.info("All peers directly interconnected")
 
         pyro5_ports = [
             int(port) for port in {client.get_proxy_port() for client in clients}
         ]
 
-        print("Pyro ports", pyro5_ports)
+        log.info("Pyro ports %s", pyro5_ports)
         allow_pcap_filters = [
             (
                 "No Pyro5 and no ARP",
@@ -253,18 +254,18 @@ async def test_batching(
 
             batch_str = "batch" if is_batching_enabled else "nobatch"
 
-            print(f"*** {container}-{batch_str} ***")
+            log.info("*** %s-%s ***", container, batch_str)
 
             distribution_chart = render_chart(distribution_hs)
             delay_chart = render_chart(delay_hs)
 
-            print("Distribution chart below")
-            print(distribution_chart)
+            log.info("Distribution chart below")
+            log.info(distribution_chart)
 
-            print("Delay chart below")
-            print(delay_chart)
+            log.info("Delay chart below")
+            log.info(delay_chart)
 
-            print("Score: ", get_ordered_histogram_score(delay_hs))
+            log.info("Score: %s", get_ordered_histogram_score(delay_hs))
 
 
 def proxying_peer_parameters(clients: List[ConnectionTag]):
