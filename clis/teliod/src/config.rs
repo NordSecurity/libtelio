@@ -90,6 +90,16 @@ impl DeviceIdentity {
     }
 }
 
+#[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Default, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum AdapterType {
+    /// NepTUN
+    #[default]
+    NepTUN,
+    /// Linux Native WG
+    Native,
+}
+
 #[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone)]
 pub struct TeliodDaemonConfig {
     #[serde(
@@ -100,6 +110,7 @@ pub struct TeliodDaemonConfig {
     pub log_file_path: String,
     #[serde(default = "default_log_file_count")]
     pub log_file_count: usize,
+    pub adapter_type: AdapterType,
     pub interface: InterfaceConfig,
 
     #[serde(
@@ -161,6 +172,7 @@ impl Default for TeliodDaemonConfig {
                 }
             },
             log_file_count: default_log_file_count(),
+            adapter_type: AdapterType::default(),
             interface: InterfaceConfig {
                 name: "nlx".to_string(),
                 config_provider: Default::default(),
@@ -314,6 +326,7 @@ mod tests {
             log_level: LevelFilter::INFO,
             log_file_path: "test.log".to_owned(),
             log_file_count: 7,
+            adapter_type: AdapterType::default(),
             interface: InterfaceConfig {
                 name: "utun10".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
@@ -333,6 +346,7 @@ mod tests {
             let json = r#"{
             "log_level": "Info",
             "log_file_path": "test.log",
+            "adapter_type": "neptun",
             "interface": {
                 "name": "utun10",
                 "config_provider": "manual"
@@ -347,6 +361,7 @@ mod tests {
             let json = r#"{
                 "log_level": "Info",
                 "log_file_path": "test.log",
+                "adapter_type": "neptun",
                 "interface": {
                     "name": "utun10",
                     "config_provider": "manual"

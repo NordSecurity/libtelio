@@ -268,7 +268,7 @@ mod tests {
     use super::{update_config, TeliodDaemonConfig};
     use crate::{
         cgi::constants::TELIOD_CFG,
-        config::{InterfaceConfig, MqttConfig, Percentage},
+        config::{AdapterType, InterfaceConfig, MqttConfig, Percentage},
         configure_interface::InterfaceConfigurationProvider,
     };
 
@@ -279,6 +279,7 @@ mod tests {
             log_level: LevelFilter::DEBUG,
             log_file_path: "/path/to/log".to_owned(),
             log_file_count: 7,
+            adapter_type: AdapterType::NepTUN,
             interface: InterfaceConfig {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
@@ -298,6 +299,7 @@ mod tests {
             "log_level": "debug",
             "log_file_path": "/path/to/log",
             "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "adapter_type": "neptun",
             "interface": {
                 "name": "eth0",
                 "config_provider": "manual"
@@ -339,6 +341,7 @@ mod tests {
             "log_file_path": "/new/path/to/log",
             "log_file_count": 8,
             "authentication_token": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "adapter_type": "neptun",
             "interface": {
                 "name": "eth1",
                 "config_provider": "ifconfig"
@@ -366,6 +369,7 @@ mod tests {
             log_level: LevelFilter::DEBUG,
             log_file_path: "/path/to/log".to_owned(),
             log_file_count: 7,
+            adapter_type: AdapterType::NepTUN,
             interface: InterfaceConfig {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
@@ -380,6 +384,7 @@ mod tests {
             "log_level": "debug",
             "log_file_path": "/path/to/log",
             "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "adapter_type": "neptun",
             "interface": {
                 "name": "eth0",
                 "config_provider": "manual"
