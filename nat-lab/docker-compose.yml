@@ -101,7 +101,7 @@ services:
 
   windows-client-01: &windows-client
     hostname: windows-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:master
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:gytsto-general-improvements
     privileged: true
     devices:
       - "/dev/net/tun"
@@ -147,9 +147,6 @@ services:
       - ../:/libtelio
       - ./data/teliod:/etc/teliod
       - ./data/core_api/test.pem:/etc/ssl/server_certificate/test.pem
-      - /home/gytsto/repos/dockur_windows/src/entry.sh:/run/entry.sh
-      - /home/gytsto/repos/dockur_windows/src/network.sh:/run/network.sh
-      - /home/gytsto/repos/dockur_windows/src/qga.py:/run/qga.py
     healthcheck:
       test: "[ -f /storage/ready ] || exit 1"
       interval: 30s
