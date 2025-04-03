@@ -1,9 +1,9 @@
 use crate::{
-    messages::nurse::*, Codec, CodecError, CodecResult, DowncastPacket, PacketRelayed,
-    PacketTypeRelayed, MAX_PACKET_SIZE,
+    messages::nurse::*, Codec, CodecError, CodecResult, DowncastPacket, HeartbeatNatType,
+    HeartbeatStatus, HeartbeatType, PacketRelayed, PacketTypeRelayed, MAX_PACKET_SIZE,
 };
 use bytes::BufMut;
-use protobuf::{Message, RepeatedField};
+use protobuf::Message;
 
 /// Meshnet heartbeat message.
 /// ```rust
@@ -14,7 +14,7 @@ use protobuf::{Message, RepeatedField};
 /// ];
 /// let data = HeartbeatMessage::decode(bytes).expect("Failed to parse packet");
 /// assert_eq!(data.packet_type(), PacketTypeRelayed::Heartbeat);
-/// assert_eq!(data.get_message_type(), HeartbeatType::RESPONSE);
+/// assert_eq!(data.get_message_type().unwrap(), HeartbeatType::RESPONSE);
 /// assert_eq!(data.get_meshnet_id(), &[0x45]);
 /// assert_eq!(data.get_node_fingerprint(), "fingerprint");
 /// assert_eq!(data.get_statuses(), &[HeartbeatStatus::new()]);
@@ -28,7 +28,7 @@ impl HeartbeatMessage {
     /// Returns new request [`HeartbeatMessage`].
     pub fn request() -> Self {
         Self(Heartbeat {
-            message_type: Heartbeat_Type::REQUEST,
+            message_type: heartbeat::Type::REQUEST.into(),
             ..Default::default()
         })
     }
@@ -37,42 +37,48 @@ impl HeartbeatMessage {
     pub fn response(
         meshnet_id: Vec<u8>,
         node_fingerprint: String,
-        statuses: &[Heartbeat_Status],
-        nat_type: Heartbeat_NatType,
+        statuses: &[heartbeat::Status],
+        nat_type: heartbeat::NatType,
     ) -> Self {
         Self(Heartbeat {
-            message_type: Heartbeat_Type::RESPONSE,
-            statuses: RepeatedField::from_slice(statuses),
+            message_type: heartbeat::Type::RESPONSE.into(),
+            statuses: statuses.into(),
             node_fingerprint,
             meshnet_id,
-            nat_type,
+            nat_type: nat_type.into(),
             ..Default::default()
         })
     }
 
     /// Returns [`Heartbeat_Type`] of the message
-    pub fn get_message_type(&self) -> Heartbeat_Type {
-        self.0.get_message_type()
+    pub fn get_message_type(&self) -> CodecResult<HeartbeatType> {
+        self.0
+            .message_type
+            .enum_value()
+            .map_err(|_| CodecError::DecodeFailed)
     }
 
     /// Returns the [`Heartbeat_Status`]'es slice of the message
-    pub fn get_statuses(&self) -> &[Heartbeat_Status] {
-        self.0.get_statuses()
+    pub fn get_statuses(&self) -> &[HeartbeatStatus] {
+        &self.0.statuses
     }
 
     /// Returns the Node Fingerprint of the message
     pub fn get_node_fingerprint(&self) -> &str {
-        self.0.get_node_fingerprint()
+        &self.0.node_fingerprint
     }
 
     /// Returns the Meshnet ID of the message
     pub fn get_meshnet_id(&self) -> &[u8] {
-        self.0.get_meshnet_id()
+        &self.0.meshnet_id
     }
 
     /// Returns the Nat Type of the message
-    pub fn get_nat_type(&self) -> Heartbeat_NatType {
-        self.0.get_nat_type()
+    pub fn get_nat_type(&self) -> CodecResult<HeartbeatNatType> {
+        self.0
+            .nat_type
+            .enum_value()
+            .map_err(|_| CodecError::DecodeFailed)
     }
 }
 
@@ -147,8 +153,8 @@ mod tests {
         let message = HeartbeatMessage::response(
             meshnet_id,
             "fingerprint".to_string(),
-            &[Heartbeat_Status::new()],
-            Heartbeat_NatType::UdpBlocked,
+            &[HeartbeatStatus::new()],
+            HeartbeatNatType::UdpBlocked,
         );
 
         let bytes = &[

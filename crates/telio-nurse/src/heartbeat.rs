@@ -604,7 +604,7 @@ impl Analytics {
 
         match heartbeat_message.get_message_type() {
             // We received a request to send data over
-            HeartbeatType::REQUEST => {
+            Ok(HeartbeatType::REQUEST) => {
                 telio_log_trace!(
                     "Received heartbeat request message: {:?}",
                     heartbeat_message
@@ -613,7 +613,7 @@ impl Analytics {
             }
 
             // We received a response with data from node
-            HeartbeatType::RESPONSE => {
+            Ok(HeartbeatType::RESPONSE) => {
                 // If we are currently not expecting to receive any response packets, we drop them
                 if self.state != RuntimeState::Collecting {
                     telio_log_debug!("Received a response message at an unexpected time, dropping");
@@ -625,6 +625,8 @@ impl Analytics {
                 );
                 self.handle_response_message(pk, &heartbeat_message).await;
             }
+
+            Err(i) => telio_log_error!("Unexpected message type value: {i}"),
         }
     }
 
@@ -661,6 +663,14 @@ impl Analytics {
     }
 
     async fn handle_response_message(&mut self, pk: PublicKey, message: &HeartbeatMessage) {
+        let nat_type = match message.get_nat_type() {
+            Ok(e) => e,
+            Err(_) => {
+                telio_log_error!("Unexpected nat type");
+                return;
+            }
+        };
+
         // Add the received fingerprint to the collection
         self.collection
             .add_fingerprint(pk, message.get_node_fingerprint().to_string());
@@ -680,9 +690,7 @@ impl Analytics {
 
         self.collection.add_peer_nat_type(
             pk,
-            <nat_detect::NatType as crate::heartbeat::From<HeartbeatNatType>>::from(
-                message.get_nat_type(),
-            ),
+            <nat_detect::NatType as crate::heartbeat::From<HeartbeatNatType>>::from(nat_type),
         );
 
         message.get_statuses().iter().for_each(|status| {

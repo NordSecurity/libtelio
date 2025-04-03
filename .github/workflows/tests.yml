@@ -121,7 +121,7 @@ jobs:
         toolchain: nightly-2024-04-17
         components: rust-docs
 
-    - run: cargo +nightly-2024-04-17 doc --no-deps --workspace --document-private-items
+    - run: cargo +nightly-2025-03-26 doc --no-deps --workspace --document-private-items
 
   test-release:
     runs-on: ubuntu-22.04

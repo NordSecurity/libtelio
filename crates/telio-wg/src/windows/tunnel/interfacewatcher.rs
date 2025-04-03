@@ -317,7 +317,7 @@ impl InterfaceWatcher {
                     let has_peers = &watched_adapter
                         .last_known_config
                         .as_ref()
-                        .map_or(false, |c| !c.config.peers.is_empty());
+                        .is_some_and(|c| !c.config.peers.is_empty());
                     if self.enable_dynamic_wg_nt_control && !has_peers {
                         telio_log_info!("Skipping adatper.up() due to empty peer list");
                     } else if !adapter.up() {
