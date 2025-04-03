@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.2.2
+### **Pork Kibin**
+---
+* LLT-6115: Update moose from v16.0.1 to v16.0.2
+
+<br>
+
 ### v5.2.1
 ### **Pork Kibin**
 ---
