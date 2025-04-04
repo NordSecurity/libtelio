@@ -13,7 +13,7 @@ class Logger:
             console_handler = logging.StreamHandler()
             console_handler.setLevel(level)
             console_handler.setFormatter(
-                logging.Formatter("[%(asctime)s]: %(message)s")
+                logging.Formatter("%(asctime)s,%(msecs)03d | %(message)s")
             )
             self.logger.addHandler(console_handler)
 

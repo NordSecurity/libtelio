@@ -487,7 +487,7 @@ def setup_logger(tmp_path, request):
         file_handler = logging.FileHandler(log_file, mode="w")
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(
-            logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s")
+            logging.Formatter("%(asctime)s,%(msecs)03d | %(levelname)s %(message)s")
         )
         log.addHandler(file_handler)
 
@@ -495,6 +495,7 @@ def setup_logger(tmp_path, request):
         yield
     finally:
         if file_handler:
+            file_handler.flush()
             log.removeHandler(file_handler)
             file_handler.close()
         else:
