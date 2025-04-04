@@ -50,11 +50,13 @@ def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
         if task.cancelled():
             continue
         if task.exception() is not None:
-            loop.call_exception_handler({
-                "message": "unhandled exception during asyncio.run() shutdown",
-                "exception": task.exception(),
-                "task": task,
-            })
+            loop.call_exception_handler(
+                {
+                    "message": "unhandled exception during asyncio.run() shutdown",
+                    "exception": task.exception(),
+                    "task": task,
+                }
+            )
 
 
 @pytest.fixture(scope="function")
@@ -324,17 +326,17 @@ def save_audit_log_from_host(suffix):
     except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"An error occurred when processing audit log: {e}")
 
+
 async def save_fakefm_logs():
     async with new_connection_raw(ConnectionTag.DOCKER_NLX_1) as conn:
         try:
             source_path = "/var/log/fakefm.log"
             cat_proc = await conn.create_process(["cat", source_path]).execute()
-            with open(
-                os.path.join("logs", f"fakefm.log"), "w", encoding="utf-8"
-            ) as f:
+            with open(os.path.join("logs", f"fakefm.log"), "w", encoding="utf-8") as f:
                 f.write(cat_proc.get_stdout())
         except Exception as e:
             print(f"An error occurred when processing fakefm log: {e}")
+
 
 async def _save_macos_logs(conn, suffix):
     try:
