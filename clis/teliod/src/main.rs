@@ -37,6 +37,8 @@ const TIMEOUT_SEC: u64 = 1;
 #[clap()]
 #[derive(Serialize, Deserialize)]
 enum ClientCmd {
+    #[clap(about = "Connect to recommended VPN server")]
+    ConnectToVPN,
     #[clap(about = "Retrieve the status report")]
     GetStatus,
     #[clap(about = "Query if daemon is running")]

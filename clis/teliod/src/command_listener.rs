@@ -59,6 +59,18 @@ impl CommandListener {
         command: &ClientCmd,
     ) -> Result<CommandResponse, TeliodError> {
         match command {
+            ClientCmd::ConnectToVPN =>
+            {
+                #[allow(mpsc_blocking_send)]
+                self.telio_task_tx
+                    .send(TelioTaskCmd::FetchVpnServer)
+                    .await
+                    .map(|_| CommandResponse::Ok)
+                    .map_err(|e| {
+                        error!("Error sending command: {}", e);
+                        TeliodError::CommandFailed(ClientCmd::ConnectToVPN)
+                    })
+            }
             ClientCmd::GetStatus => {
                 info!("Reporting telio status");
                 let (response_tx, response_rx) = oneshot::channel();

@@ -5,9 +5,11 @@ use reqwest::{header, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::{create_dir_all, OpenOptions};
+use std::net::{IpAddr, SocketAddr};
 use std::os::unix::fs::OpenOptionsExt;
 use std::sync::Arc;
 use telio::crypto::SecretKey;
+use telio::telio_model::mesh::ExitNode;
 use telio::telio_utils::exponential_backoff::{
     Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
 };
@@ -61,6 +63,23 @@ struct MeshConfig {
     os_version: String,
     device_type: String,
     traffic_routing_supported: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct Server {
+    station: IpAddr,
+    technologies: Vec<Tech>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Tech {
+    id: i32,
+    metadata: Vec<Meta>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Meta {
+    value: String,
 }
 
 fn build_backoff() -> Result<ExponentialBackoff, Error> {
@@ -362,4 +381,51 @@ async fn register_machine(
 
     error!("Unable to register due to {:?}", response.text().await);
     Err(Error::PeerRegistering(status))
+}
+
+pub async fn fetch_vpn_server(auth_token: Arc<String>) -> Result<ExitNode, Error> {
+    info!("Fetching VPN Server");
+    let client = Client::new();
+    let response = client
+        .get(&format!("{}/servers/recommendations", API_BASE))
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer token:{}", auth_token),
+        )
+        .header(header::ACCEPT, "application/json")
+        .query(&[
+            ("filters[servers_technologies][identifier]", "wireguard_udp"),
+            ("filters[servers_technologies][pivot][status]", "online"),
+            ("limit", "1"),
+        ])
+        .send()
+        .await?;
+
+    let status = response.status();
+    if status == StatusCode::OK {
+        let servers = serde_json::from_str::<Vec<Server>>(&response.text().await?)?;
+        let server = servers.first().ok_or(Error::InvalidResponse)?;
+
+        let endpoint = (server.station, 51820).into();
+        if let Some(public_key) = server.technologies.iter().find_map(|t| {
+            if t.id == 35 {
+                t.metadata.first().and_then(|m| m.value.parse().ok())
+            } else {
+                None
+            }
+        }) {
+            info!("VPN server fetched: {:?}", server);
+            return Ok(ExitNode {
+                public_key,
+                endpoint: Some(endpoint),
+                ..Default::default()
+            });
+        };
+    } else {
+        error!("Unable to fetch server due to {:?}", response.text().await);
+        return Err(Error::InvalidResponse);
+    }
+
+    error!("Unable to find wireguard servers");
+    Err(Error::InvalidResponse)
 }

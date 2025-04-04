@@ -3,6 +3,7 @@ use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use nix::sys::signal::Signal;
 use signal_hook_tokio::Signals;
 use std::{net::IpAddr, sync::Arc};
+use telio::telio_model::mesh::ExitNode;
 use telio::{
     crypto::SecretKey,
     device::{Device, DeviceConfig, Error as DeviceError},
@@ -15,7 +16,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::{sync::mpsc, sync::oneshot, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 
-use crate::core_api::{get_meshmap as get_meshmap_from_server, init_with_api};
+use crate::core_api::{fetch_vpn_server, get_meshmap as get_meshmap_from_server, init_with_api};
 use crate::logging::setup_logging;
 use crate::ClientCmd;
 use crate::{
@@ -29,6 +30,8 @@ use crate::{
 
 #[derive(Debug)]
 pub enum TelioTaskCmd {
+    FetchVpnServer,
+    ConnectToExit(ExitNode),
     // Command to set the downloaded meshmap to telio instance
     UpdateMeshmap(MeshMap),
     // Get telio status
@@ -84,11 +87,23 @@ fn telio_task(
             &interface_config.name,
             adapter,
         )?;
-        task_retrieve_meshmap(node_identity, auth_token, tx_channel.clone());
+        task_retrieve_meshmap(node_identity, auth_token.clone(), tx_channel.clone());
 
         while let Some(cmd) = rx_channel.blocking_recv() {
             info!("Got command {:?}", cmd);
             match cmd {
+                TelioTaskCmd::FetchVpnServer => {
+                    task_retrieve_vpn_server(auth_token.clone(), tx_channel.clone())
+                }
+                TelioTaskCmd::ConnectToExit(node) => match telio.connect_exit_node(&node) {
+                    Ok(_) => {
+                        eprintln!("Connected to exit node {node:?}");
+                        debug!("connect to exit node successful {node:?}");
+                    }
+                    Err(e) => {
+                        error!("Unable to connect to exit node due to {e}");
+                    }
+                },
                 TelioTaskCmd::UpdateMeshmap(map) => {
                     let some_new_ip_address = map
                         .ip_addresses
@@ -136,6 +151,22 @@ fn telio_task(
         }
     }
     Ok(())
+}
+
+fn task_retrieve_vpn_server(auth_token: Arc<String>, tx: mpsc::Sender<TelioTaskCmd>) {
+    tokio::spawn(async move {
+        let result = fetch_vpn_server(auth_token).await;
+        match result {
+            Ok(vpn_server) => {
+                trace!("Vpn {:#?}", vpn_server);
+                #[allow(mpsc_blocking_send)]
+                if let Err(e) = tx.send(TelioTaskCmd::ConnectToExit(vpn_server)).await {
+                    error!("Unable to connect to vpn due to {e}");
+                }
+            }
+            Err(e) => error!("Getting VPN Server failed due to {e}"),
+        }
+    });
 }
 
 fn task_retrieve_meshmap(
