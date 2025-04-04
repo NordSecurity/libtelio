@@ -253,7 +253,7 @@ async def test_event_content_meshnet(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -537,7 +537,7 @@ async def test_event_content_exit_through_peer(
                 ),
                 features=features_with_endpoint_providers([EndpointProvider.STUN]),
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=pytest.mark.windows,
             id="a_wna",
         ),

@@ -105,7 +105,7 @@ class VpnConfig:
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -236,7 +236,7 @@ async def test_vpn_connection(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -708,7 +708,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
