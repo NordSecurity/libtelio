@@ -41,7 +41,6 @@ case "$1" in
         exit 1
     fi
 
-    ln -fs ${QPKG_ROOT}/web /home/Qhttpd/Web/NordSecurityMeshnet
     ln -fs ${QPKG_ROOT}/teliod.cgi /home/httpd/cgi-bin/qpkg/teliod.cgi
 
     SOCKET_PATH=$(get_ipc_socket_path)
