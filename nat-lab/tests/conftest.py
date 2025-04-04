@@ -121,26 +121,26 @@ async def setup_check_connectivity():
         return
 
     reverse: Dict[str, str] = {
-        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]: "VM_WINDOWS_1",
-        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2]: "VM_WINDOWS_2",
-        LAN_ADDR_MAP[ConnectionTag.VM_MAC]: "VM_MAC",
+        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"]: "VM_WINDOWS_1",
+        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2]["primary"]: "VM_WINDOWS_2",
+        LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"]: "VM_MAC",
         DERP_PRIMARY.ipv4: "PRIMARY_DERP",
     }
 
     test_nodes = {
         ConnectionTag.VM_WINDOWS_1: [
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2],
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC],
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2]["primary"],
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"],
             DERP_PRIMARY.ipv4,
         ],
         ConnectionTag.VM_WINDOWS_2: [
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1],
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC],
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"],
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"],
             DERP_PRIMARY.ipv4,
         ],
         ConnectionTag.VM_MAC: [
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1],
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2],
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"],
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2]["primary"],
             DERP_PRIMARY.ipv4,
         ],
     }
@@ -268,7 +268,7 @@ async def _copy_vm_binaries(tag: ConnectionTag):
     try:
         print(f"copying for {tag}")
         async with SshConnection.new_connection(
-            LAN_ADDR_MAP[tag], tag, copy_binaries=True, reenable_nat=True
+            LAN_ADDR_MAP[tag]["primary"], tag, copy_binaries=True, reenable_nat=True
         ):
             pass
     except OSError as e:
@@ -347,7 +347,7 @@ async def collect_kernel_logs(items, suffix):
         if any(mark.name == "mac" for mark in item.own_markers):
             try:
                 async with SshConnection.new_connection(
-                    LAN_ADDR_MAP[ConnectionTag.VM_MAC], ConnectionTag.VM_MAC
+                    LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
                 ) as conn:
                     await _save_macos_logs(conn, suffix)
             except OSError as e:
@@ -456,7 +456,7 @@ async def collect_mac_diagnostic_reports():
     print("Collect mac diagnostic reports")
     try:
         async with SshConnection.new_connection(
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC], ConnectionTag.VM_MAC
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
         ) as connection:
             await connection.download(
                 "/Library/Logs/DiagnosticReports", "logs/system_diagnostic_reports"

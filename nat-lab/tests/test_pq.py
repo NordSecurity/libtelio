@@ -93,7 +93,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -109,7 +109,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -192,7 +192,7 @@ async def test_pq_vpn_connection(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -208,7 +208,7 @@ async def test_pq_vpn_connection(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -556,7 +556,7 @@ async def test_pq_vpn_upgrade_from_non_pq(
         #         ),
         #         is_meshnet=False,
         #     ),
-        #     "10.0.254.7",
+        #     "10.0.254.15",
         #     marks=pytest.mark.windows,
         # ),
         # pytest.param(
@@ -570,7 +570,7 @@ async def test_pq_vpn_upgrade_from_non_pq(
         #         ),
         #         is_meshnet=False,
         #     ),
-        #     "10.0.254.7",
+        #     "10.0.254.15",
         #     marks=pytest.mark.windows,
         # ),
     ],

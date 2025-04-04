@@ -69,7 +69,7 @@ async def new_connection_raw(
                     yield connection
         elif is_tag_valid_for_ssh_connection(tag):
             async with SshConnection.new_connection(
-                LAN_ADDR_MAP[tag], tag
+                LAN_ADDR_MAP[tag]["primary"], tag
             ) as connection:
                 yield connection
         else:
@@ -182,7 +182,7 @@ def generate_connection_tracker_config(
     derp_2_limits: tuple[Optional[int], Optional[int]] = (0, 0),
     derp_3_limits: tuple[Optional[int], Optional[int]] = (0, 0),
 ) -> List[ConnTrackerEventsValidator]:
-    lan_addr = LAN_ADDR_MAP[connection_tag]
+    lan_addr = LAN_ADDR_MAP[connection_tag]["primary"]
     ctc_list = [
         ConnectionCountLimit.create_with_tuple(
             "nlx_1",

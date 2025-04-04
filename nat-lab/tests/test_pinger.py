@@ -33,19 +33,28 @@ async def send_ping_pong(ping_type) -> None:
     if ping_type == PingType.PING:
         sock.sendto(
             struct.pack(">BBB", 7, 0, 3) + ping.SerializeToString(),
-            (LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1], TEST_PING_PONG_PORT),
+            (
+                LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1]["primary"],
+                TEST_PING_PONG_PORT,
+            ),
         )
     elif ping_type == PingType.PONG:
         # Send a PONG type message
         ping.message_type = ping.PONG  # pylint: disable=no-member
         sock.sendto(
             struct.pack(">BBB", 9, 0, 3) + ping.SerializeToString(),
-            (LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1], TEST_PING_PONG_PORT),
+            (
+                LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1]["primary"],
+                TEST_PING_PONG_PORT,
+            ),
         )
     else:
         sock.sendto(
             struct.pack(">BBBBBBBBBBBB", 4, 0, 8, 17, 9, 0, 0, 0, 0, 0, 0, 0),
-            (LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1], TEST_PING_PONG_PORT),
+            (
+                LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1]["primary"],
+                TEST_PING_PONG_PORT,
+            ),
         )
 
 

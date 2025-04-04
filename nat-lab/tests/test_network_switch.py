@@ -34,8 +34,8 @@ from utils.ping import ping
         ),
         pytest.param(
             ConnectionTag.VM_WINDOWS_1,
-            "10.0.254.7",
-            "10.0.254.8",
+            "10.0.254.15",
+            "10.0.254.16",
             marks=pytest.mark.windows,
         ),
         pytest.param(

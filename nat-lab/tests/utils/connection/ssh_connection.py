@@ -56,6 +56,7 @@ class SshConnection(Connection):
             username="root" if tag is ConnectionTag.VM_MAC else "bill",
             password="vagrant" if tag is ConnectionTag.VM_MAC else "gates",
             known_hosts=None,
+            agent_path=None,
         ) as ssh_connection:
             async with cls(ssh_connection, tag) as connection:
                 if copy_binaries:
@@ -90,8 +91,7 @@ class SshConnection(Connection):
         return (ip, ip)
 
     async def download(self, remote_path: str, local_path: str) -> None:
-        """Copy file from 'remote_path' on the node connected via this connection, to local directory 'local_path'
-        """
+        """Copy file from 'remote_path' on the node connected via this connection, to local directory 'local_path'"""
         try:
             await asyncssh.scp(
                 (self._connection, remote_path), local_path, recurse=True
