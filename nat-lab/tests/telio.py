@@ -482,10 +482,17 @@ class Client:
                 )
                 if isinstance(self._connection, DockerConnection):
                     await self.collect_core_dumps()
-                log.info("[%s", self._node.name)
+
+                log.info(
+                    "[%s] Test cleanup: Saving MacOS network info",
+                    self._node.name,
+                )
                 await self.save_mac_network_info()
 
-                log.info("[%s", self._node.name)
+                log.info(
+                    "[%s] Test cleanup: Stopping device",
+                    self._node.name,
+                )
                 if self._process.is_executing():
                     if self._libtelio_proxy:
                         await self.stop_device()
