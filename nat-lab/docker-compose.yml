@@ -101,7 +101,7 @@ services:
 
   windows-client-01: &windows-client
     hostname: windows-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:gytsto-general-improvements
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:master
     privileged: true
     devices:
       - "/dev/net/tun"
@@ -145,8 +145,6 @@ services:
       - "api.nordvpn.com:10.0.80.86"
     volumes:
       - ../:/libtelio
-      - ./data/teliod:/etc/teliod
-      - ./data/core_api/test.pem:/etc/ssl/server_certificate/test.pem
     healthcheck:
       test: "[ -f /storage/ready ] || exit 1"
       interval: 30s
@@ -157,7 +155,7 @@ services:
       USERNAME: "bill"
       PASSWORD: "gates"
       NETWORK: "bridge"
-      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/configure_route.sh primary windows"
+      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/windows-client"
       CLIENT_GATEWAY_PRIMARY: 192.168.150.254
       CLIENT_GATEWAY_SECONDARY: 192.168.151.254
     networks:
@@ -178,7 +176,7 @@ services:
       USERNAME: "bill"
       PASSWORD: "gates"
       NETWORK: "bridge"
-      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/configure_route.sh primary windows"
+      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/windows-client"
       CLIENT_GATEWAY_PRIMARY: 192.168.152.254
       CLIENT_GATEWAY_SECONDARY: 192.168.153.254
 
