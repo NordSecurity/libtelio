@@ -7,7 +7,7 @@ import re
 import uuid
 import warnings
 from collections import Counter
-from config import DERP_SERVERS
+from config import DERP_SERVERS, LINUX_INTERFACE_NAME
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from mesh_api import Node
@@ -1048,13 +1048,13 @@ class Client:
 
     async def limit_network_speed(self, speed: str) -> None:
         cmd = [
-            "tc", "qdisc", "add", "dev", "eth0", "root", "tbf", "rate"
+            "tc", "qdisc", "add", "dev", LINUX_INTERFACE_NAME, "root", "tbf", "rate"
             , speed, "mbit", "latency", "50ms", "burst", "32kbit"
         ]
         self._connection.create_process(cmd).execute()
 
     async def delete_limiter_rule(self) -> None:
-        cmd = ["tc", "qdisc", "del", "dev", "eth0", "root"]
+        cmd = ["tc", "qdisc", "del", "dev", LINUX_INTERFACE_NAME, "root"]
         self._connection.create_process(cmd).execute()
 
     async def _check_logs_for_errors(self) -> None:

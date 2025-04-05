@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
@@ -46,10 +47,12 @@ async def test_throughput_real(
         assert peer_ip is not None, "Expected a string, but got None"
         test_speed = "2"
         await client_alpha.limit_network_speed(test_speed)
-        await client_alpha.trigger_peer_link_speed_test(peer_ip)
-        await client_alpha.wait_for_log("MiB/s Packet loss")
+        test_time = await client_alpha.trigger_peer_link_speed_test(peer_ip)
+        # sleep for test duration + grace time for results to be propagated
+        await asyncio.sleep(test_time + 5)
         speed = await client_alpha.fetch_peer_link_speed()
         await client_alpha.delete_limiter_rule()
+        print(speed)
         assert test_speed == str(speed)
 
 
