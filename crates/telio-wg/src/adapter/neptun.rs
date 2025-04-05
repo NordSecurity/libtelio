@@ -17,7 +17,6 @@ use libc::socket;
 pub use neptun::device::Error;
 use telio_sockets::SocketPool;
 
-#[cfg(not(any(test, feature = "test-adapter")))]
 pub type FirewallCb = Option<Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>>;
 
 pub struct NepTUN {
@@ -26,7 +25,6 @@ pub struct NepTUN {
 }
 
 impl NepTUN {
-    #[cfg(not(any(test, feature = "test-adapter")))]
     pub fn start(
         name: &str,
         tun: Option<NativeTun>,

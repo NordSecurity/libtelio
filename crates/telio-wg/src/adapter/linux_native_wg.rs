@@ -43,7 +43,6 @@ pub enum Error {
 }
 
 impl LinuxNativeWg {
-    #[cfg(not(any(test, feature = "test-adapter")))]
     pub fn start(name: &str) -> Result<Self, AdapterError> {
         let mut rtsocket = RouteSocket::connect().map_err(Error::from)?;
 
