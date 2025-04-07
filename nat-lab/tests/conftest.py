@@ -330,6 +330,17 @@ def save_audit_log_from_host(suffix):
         log.warning("An error occurred when processing audit log: %s", e)
 
 
+async def save_fakefm_logs():
+    async with new_connection_raw(ConnectionTag.DOCKER_NLX_1) as conn:
+        try:
+            source_path = "/var/log/fakefm.log"
+            cat_proc = await conn.create_process(["cat", source_path]).execute()
+            with open(os.path.join("logs", "fakefm.log"), "w", encoding="utf-8") as f:
+                f.write(cat_proc.get_stdout())
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            print(f"An error occurred when processing fakefm log: {e}")
+
+
 async def _save_macos_logs(conn, suffix):
     try:
         dmesg_proc = await conn.create_process(["dmesg"], quiet=True).execute()
@@ -392,6 +403,7 @@ def pytest_sessionfinish(session, exitstatus):
         collect_dns_server_logs()
         asyncio.run(collect_kernel_logs(session.items, "after_tests"))
         asyncio.run(collect_mac_diagnostic_reports())
+        asyncio.run(save_fakefm_logs())
 
 
 def collect_nordderper_logs():
