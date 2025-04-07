@@ -102,7 +102,7 @@ services:
 
   windows-client-01: &windows-client
     hostname: windows-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:master
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:gytsto-wait-for-interface-to-be-up
     privileged: true
     devices:
       - "/dev/net/tun"
