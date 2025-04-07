@@ -50,18 +50,6 @@ def get_dns_server_address(ip_stack: IPStack) -> str:
             marks=pytest.mark.ipv4,
         ),
         pytest.param(
-            IPStack.IPv4,
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=(1, 1),
-                ),
-            ),
-            marks=[pytest.mark.ipv4, pytest.mark.linux_native],
-        ),
-        pytest.param(
             IPStack.IPv6,
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -74,18 +62,6 @@ def get_dns_server_address(ip_stack: IPStack) -> str:
             marks=pytest.mark.ipv6,
         ),
         pytest.param(
-            IPStack.IPv6,
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=(1, 1),
-                ),
-            ),
-            marks=[pytest.mark.ipv6, pytest.mark.linux_native],
-        ),
-        pytest.param(
             IPStack.IPv4v6,
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -96,18 +72,6 @@ def get_dns_server_address(ip_stack: IPStack) -> str:
                 ),
             ),
             marks=pytest.mark.ipv4v6,
-        ),
-        pytest.param(
-            IPStack.IPv4v6,
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=(1, 1),
-                ),
-            ),
-            marks=[pytest.mark.ipv4v6, pytest.mark.linux_native],
         ),
     ],
 )
@@ -119,24 +83,12 @@ def get_dns_server_address(ip_stack: IPStack) -> str:
             marks=pytest.mark.ipv4,
         ),
         pytest.param(
-            IPStack.IPv4,
-            marks=[pytest.mark.ipv4, pytest.mark.linux_native],
-        ),
-        pytest.param(
             IPStack.IPv6,
             marks=pytest.mark.ipv6,
         ),
         pytest.param(
-            IPStack.IPv6,
-            marks=[pytest.mark.ipv6, pytest.mark.linux_native],
-        ),
-        pytest.param(
             IPStack.IPv4v6,
             marks=pytest.mark.ipv4v6,
-        ),
-        pytest.param(
-            IPStack.IPv4v6,
-            marks=[pytest.mark.ipv4v6, pytest.mark.linux_native],
         ),
     ],
 )
@@ -237,18 +189,6 @@ async def test_dns(
             marks=pytest.mark.ipv4,
         ),
         pytest.param(
-            IPStack.IPv4,
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=(1, 1),
-                ),
-            ),
-            marks=[pytest.mark.ipv4, pytest.mark.linux_native],
-        ),
-        pytest.param(
             IPStack.IPv6,
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -261,18 +201,6 @@ async def test_dns(
             marks=pytest.mark.ipv6,
         ),
         pytest.param(
-            IPStack.IPv6,
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=(1, 1),
-                ),
-            ),
-            marks=[pytest.mark.ipv6, pytest.mark.linux_native],
-        ),
-        pytest.param(
             IPStack.IPv4v6,
             SetupParameters(
                 connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
@@ -283,18 +211,6 @@ async def test_dns(
                 ),
             ),
             marks=pytest.mark.ipv4v6,
-        ),
-        pytest.param(
-            IPStack.IPv4v6,
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    derp_1_limits=(1, 1),
-                ),
-            ),
-            marks=[pytest.mark.ipv4v6, pytest.mark.linux_native],
         ),
     ],
 )
