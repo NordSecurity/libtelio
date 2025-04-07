@@ -10,7 +10,11 @@ from utils.process import ProcessExecError
 async def _get_running_process_list(connection: Connection) -> str:
     command = ["ps", "aux"]
     if connection.target_os is TargetOS.Windows:
-        command = ["WMIC", "path", "win32_process", "get", "Commandline"]
+        command = [
+            "powershell",
+            "-Command",
+            "Get-WmiObject Win32_Process | Select-Object -ExpandProperty CommandLine",
+        ]
     return (await connection.create_process(command).execute()).get_stdout()
 
 
@@ -18,7 +22,7 @@ async def _get_running_process_list(connection: Connection) -> str:
     "connection_tag,command",
     [
         pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, "/usr/bin/ls"),
-        pytest.param(ConnectionTag.VM_WINDOWS_1, "dir", marks=pytest.mark.windows),
+        pytest.param(ConnectionTag.VM_WINDOWS_1, "dir.exe", marks=pytest.mark.windows),
         pytest.param(ConnectionTag.VM_MAC, "/bin/ls", marks=pytest.mark.mac),
     ],
 )
