@@ -332,9 +332,9 @@ impl State {
             .copy_from_slice(&pkt_loss.to_be_bytes());
 
         // Calculate link speed
-        // Bytes should be data + wg_offset + ip header + udp header
+        // Bytes should be data + wg_header + ip header + udp header
         let link_speed = (((self.pkts_recvd * (BUFFER_LEN as u64 + 32 + 20 + 8) * 8) as f64)
-            / duration.as_secs_f64()) as u32
+            / TEST_DURATION.as_secs_f64()) as u32
             / 1_000_000;
 
         send_buffer
