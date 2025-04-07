@@ -79,6 +79,18 @@ class MacRouter(Router):
                     quiet=True,
                 ).execute()
 
+    async def enable_interface(self) -> None:
+        await self._connection.create_process(
+            ["ifconfig", self._interface_name, "up"],
+            quiet=True,
+        ).execute()
+
+    async def disable_interface(self) -> None:
+        await self._connection.create_process(
+            ["ifconfig", self._interface_name, "down"],
+            quiet=True,
+        ).execute()
+
     async def create_meshnet_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             await self._connection.create_process(

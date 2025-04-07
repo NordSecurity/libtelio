@@ -58,10 +58,7 @@ class LinuxRouter(Router):
                 quiet=True,
             ).execute()
 
-        await self._connection.create_process(
-            ["ip", "link", "set", "up", "dev", self._interface_name],
-            quiet=True,
-        ).execute()
+        await self.enable_interface()
 
     def set_interface_name(self, new_interface_name: str) -> None:
         self._interface_name = new_interface_name
@@ -80,6 +77,16 @@ class LinuxRouter(Router):
                 ],
                 quiet=True,
             ).execute()
+
+        await self.disable_interface()
+
+    async def enable_interface(self) -> None:
+        await self._connection.create_process(
+            ["ip", "link", "set", "up", "dev", self._interface_name],
+            quiet=True,
+        ).execute()
+
+    async def disable_interface(self) -> None:
         await self._connection.create_process(
             ["ip", "link", "set", "down", "dev", self._interface_name],
             quiet=True,
