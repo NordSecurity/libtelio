@@ -50,13 +50,11 @@ def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
         if task.cancelled():
             continue
         if task.exception() is not None:
-            loop.call_exception_handler(
-                {
-                    "message": "unhandled exception during asyncio.run() shutdown",
-                    "exception": task.exception(),
-                    "task": task,
-                }
-            )
+            loop.call_exception_handler({
+                "message": "unhandled exception during asyncio.run() shutdown",
+                "exception": task.exception(),
+                "task": task,
+            })
 
 
 @pytest.fixture(scope="function")
@@ -85,9 +83,7 @@ def pytest_make_parametrize_id(config, val):
         param_id = f"{param_id[1:]}"
     elif isinstance(val, (SetupParameters,)):
         short_conn_tag_name = val.connection_tag.name.removeprefix("DOCKER_")
-        param_id = (
-            f"{short_conn_tag_name}-{val.adapter_type_override.name.replace('_', '') if val.adapter_type_override is not None else ''}"
-        )
+        param_id = f"{short_conn_tag_name}-{val.adapter_type_override.name.replace('_', '') if val.adapter_type_override is not None else ''}"
         if (
             val.features.direct is not None
             and val.features.direct.providers is not None
