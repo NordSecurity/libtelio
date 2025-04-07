@@ -83,6 +83,14 @@ class Router(ABC):
         pass
 
     @abstractmethod
+    async def enable_interface(self) -> None:
+        pass
+
+    @abstractmethod
+    async def disable_interface(self) -> None:
+        pass
+
+    @abstractmethod
     async def create_meshnet_route(self) -> None:
         pass
 

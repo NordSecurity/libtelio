@@ -109,6 +109,32 @@ class WindowsRouter(Router):
                     quiet=True,
                 ).execute()
 
+    async def enable_interface(self) -> None:
+        await self._connection.create_process(
+            [
+                "netsh",
+                "interface",
+                "set",
+                "interface",
+                self._interface_name,
+                "admin=enable",
+            ],
+            quiet=True,
+        ).execute()
+
+    async def disable_interface(self) -> None:
+        await self._connection.create_process(
+            [
+                "netsh",
+                "interface",
+                "set",
+                "interface",
+                self._interface_name,
+                "admin=disable",
+            ],
+            quiet=True,
+        ).execute()
+
     async def create_meshnet_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             try:
