@@ -23,17 +23,13 @@ Let's go through the most important ones.
 
 The first of them is the expected function `::new`.
 It takes three arguments, let's describe them briefly:
- - [`features`](telio_model::features::Features) - tells Libtelio which of the additional features should be enabled - the
- description of them is out of the scope of this README
- - `event_cb` - event handler, takes a [`Box<Event>`][telio_model::event::Event], which will be called by Libtelio to handle
- events of three types:
-   - `Error` - an error occurs, especially urgent are Critical error events, which means
-   that the library is unable to continue running and it requires a call to `hard_reset` method
-   - `Relay` - when the relay (i.e. Derp) server configuration is changed, contains
-   a JSON with a new one
-   - `Node` - appears when the Meshnet node's configuration is changed, it contains
-   a JSON with a new one
- - `protect` - callback for excluding connections from VPN tunnel (currently used only for android).
+
+- [`features`](telio_model::features::Features) - tells Libtelio which of the additional features should be enabled - the description of them is out of the scope of this README
+- `event_cb` - event handler, takes a [`Box<Event>`][telio_model::event::Event], which will be called by Libtelio to handle events of three types:
+  - `Error` - an error occurs, especially urgent are Critical error events, which means that the library is unable to continue running and it requires a call to `hard_reset` method
+  - `Relay` - when the relay (i.e. Derp) server configuration is changed, contains a JSON with a new one
+  - `Node` - appears when the Meshnet node's configuration is changed, it contains a JSON with a new one
+- `protect` - callback for excluding connections from VPN tunnel (currently used only for android).
 
 `telio::Device` implements `Drop` trait, so we don't need to worry
 about deinitialization in the end.
@@ -90,10 +86,11 @@ pub struct DeviceConfig {
 ```
 
 Let's discuss its fields shortly:
- - `private_key` a `telio::crypto::SecretKey` instance containing a 256-bit key,
- - `adapter` indicating which Wireguard implementation we want to use,
- - `name` is the name of the network interface, when omitted, Telio uses the default one,
- - `tun` a file descriptor of the already opened tunnel, if it's not provided Telio will open a new one.
+
+- `private_key` a `telio::crypto::SecretKey` instance containing a 256-bit key,
+- `adapter` indicating which Wireguard implementation we want to use,
+- `name` is the name of the network interface, when omitted, Telio uses the default one,
+- `tun` a file descriptor of the already opened tunnel, if it's not provided Telio will open a new one.
 
 The API provides a default config which is almost sufficient for simple cases,
 the only need that needs to be done is the generation of a private key:
@@ -217,4 +214,3 @@ let exit_node = ExitNode {
 };
 device.connect_exit_node(&exit_node);
 ```
-

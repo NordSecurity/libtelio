@@ -1,5 +1,3 @@
-use telio;
-
 mod test_module {
     use std::{
         sync::{
@@ -15,13 +13,11 @@ mod test_module {
         logging::{ASYNC_CHANNEL_CLOSED_MSG, START_ASYNC_LOGGER_MSG},
     };
 
-    use super::*;
-
     #[test]
     fn test_logger() {
         // Line number of tracing::info! call in this fill, down below
-        const INFO_LINE1: u32 = 77;
-        const INFO_LINE2: u32 = 78;
+        const INFO_LINE1: u32 = 73;
+        const INFO_LINE2: u32 = 74;
 
         let call_count = Arc::new(AtomicUsize::new(0));
 

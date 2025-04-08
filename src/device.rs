@@ -768,7 +768,6 @@ impl Device {
                 Ok(rt.disconnect_exit_node(&node_key).boxed().await)
             })
             .await?
-            .map_err(Error::from)
         })
     }
 
@@ -780,7 +779,6 @@ impl Device {
                 Ok(rt.disconnect_exit_nodes().boxed().await)
             })
             .await?
-            .map_err(Error::from)
         })
     }
 
@@ -2164,8 +2162,8 @@ impl Runtime {
         Ok(self.entities.socket_pool.clone())
     }
 
-    async fn peer_to_node<'a>(
-        &'a self,
+    async fn peer_to_node(
+        &self,
         peer: &uapi::Peer,
         state: Option<PeerState>,
         link_state: Option<LinkState>,
@@ -2181,17 +2179,16 @@ impl Runtime {
             .or(self.requested_state.last_exit_node.as_ref())
             .filter(|node| node.public_key == peer.public_key);
 
-        // Find a peer with matching public key in meshnet_config and retrieve the needed
-        // information about it from there
-        let get_config_peer = |config: Option<&'a Config>| {
-            config
-                .and_then(|cfg| cfg.peers.as_ref())?
-                .iter()
-                .find(|&p| p.base.public_key == peer.public_key)
-        };
-        let meshnet_peer: Option<&Peer> =
-            get_config_peer(self.requested_state.meshnet_config.as_ref())
-                .or_else(|| get_config_peer(self.requested_state.old_meshnet_config.as_ref()));
+        let meshnet_peer: Option<&Peer> = get_config_peer(
+            self.requested_state.meshnet_config.as_ref(),
+            &peer.public_key,
+        )
+        .or_else(|| {
+            get_config_peer(
+                self.requested_state.old_meshnet_config.as_ref(),
+                &peer.public_key,
+            )
+        });
 
         // Resolve what type of path is used
         let endpoint_map = match &self.entities.meshnet {
@@ -2372,7 +2369,7 @@ impl TaskRuntime for Runtime {
 
                 if let Some(mesh_entities) = self.entities.meshnet.left() {
                     if let Some(proxy_endpoints) = mesh_entities.proxy.get_endpoint_map().await.ok().as_mut().and_then(|proxy_map| proxy_map.remove(&public_key)) {
-                        let is_proxying = mesh_event.peer.endpoint.map_or(false, |ep| proxy_endpoints.contains(&ep));
+                        let is_proxying = mesh_event.peer.endpoint.is_some_and(|ep| proxy_endpoints.contains(&ep));
                         let was_proxying = mesh_event.old_peer.as_ref().and_then(|peer| peer.endpoint.map(|ep| proxy_endpoints.contains(&ep))).unwrap_or_default();
 
                         if !was_proxying && is_proxying {
@@ -2628,6 +2625,16 @@ fn node_from_exit_node(exit_node: &ExitNode) -> Node {
         peer_allows_multicast: false,
         ..Default::default()
     }
+}
+
+/// Find a peer with matching public key in meshnet_config and retrieve the needed
+/// information about it from there
+fn get_config_peer<'a>(config: Option<&'a Config>, public_key: &'a PublicKey) -> Option<&'a Peer> {
+    config?
+        .peers
+        .as_ref()?
+        .iter()
+        .find(|p| p.base.public_key == *public_key)
 }
 
 #[cfg(test)]

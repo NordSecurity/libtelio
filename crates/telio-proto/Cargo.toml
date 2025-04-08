@@ -7,7 +7,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-protobuf = "2"
+protobuf = "3.7.2"
 
 bytes.workspace = true
 tracing.workspace = true
@@ -19,4 +19,5 @@ telio-model.workspace = true
 telio-utils.workspace = true
 
 [build-dependencies]
-protobuf-codegen-pure.workspace = true
+anyhow.workspace = true
+protobuf-codegen.workspace = true

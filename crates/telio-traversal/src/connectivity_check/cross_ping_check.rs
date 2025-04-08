@@ -465,7 +465,7 @@ impl<E: Backoff> State<E> {
         (public_key, message): (PublicKey, CallMeMaybeMsg),
     ) -> Result<(), Error> {
         match message.get_message_type() {
-            CallMeMaybeType::INITIATOR => {
+            Ok(CallMeMaybeType::INITIATOR) => {
                 // First send UDP pings to all of the received endpoints via endpoint providers
                 let endpoints = message.get_addrs();
                 let (_, local_session_id) = self
@@ -503,7 +503,7 @@ impl<E: Backoff> State<E> {
                     .await?;
             }
 
-            CallMeMaybeType::RESPONDER => {
+            Ok(CallMeMaybeType::RESPONDER) => {
                 // Find session and forward the call me maybe message there
                 let session_id = message.get_session();
                 let session = State::get_connectivty_check_state(
@@ -518,6 +518,8 @@ impl<E: Backoff> State<E> {
                     )
                     .await?;
             }
+
+            Err(e) => return Err(e.into()),
         }
         Ok(())
     }

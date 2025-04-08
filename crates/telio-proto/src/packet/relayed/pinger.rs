@@ -73,8 +73,8 @@ impl PingerMsg {
             IpAddr::V4(v4address) => Some(PlaintextPongerMsg {
                 session: self.session,
                 msg: Ponger {
-                    start_timestamp: self.msg.get_start_timestamp(),
-                    ping_source_address: Some(Ponger_oneof_ping_source_address::v4(u32::from(
+                    start_timestamp: self.msg.start_timestamp,
+                    ping_source_address: Some(ponger::Ping_source_address::V4(u32::from(
                         *v4address,
                     ))),
                     wg_port: wg_port.0 as u32,
@@ -98,7 +98,7 @@ impl PingerMsg {
 
     /// Get ping start timestamp
     pub fn get_start_timestamp(&self) -> Timestamp {
-        self.msg.get_start_timestamp()
+        self.msg.start_timestamp
     }
 
     /// Decode and decrypt `bytes` using `decrypt` function.
@@ -220,13 +220,13 @@ impl PlaintextPongerMsg {
 
     /// Get ping start ts
     pub fn get_start_timestamp(&self) -> Timestamp {
-        self.msg.get_start_timestamp()
+        self.msg.start_timestamp
     }
 
     /// Get source address of the ping packet as seen by the pinged node
     pub fn get_ping_source_address(&self) -> CodecResult<Ipv4Addr> {
         if self.msg.has_v4() {
-            Ok(Ipv4Addr::from(self.msg.get_v4()))
+            Ok(Ipv4Addr::from(self.msg.v4()))
         } else {
             Err(CodecError::DecodeFailed)
         }
@@ -234,7 +234,7 @@ impl PlaintextPongerMsg {
 
     /// Get ponging endpoint provider
     pub fn get_ponging_ep_provider(&self) -> CodecResult<Option<EndpointProvider>> {
-        let ep_provider_raw = self.msg.get_ponging_ep_provider();
+        let ep_provider_raw = self.msg.ponging_ep_provider;
         if ep_provider_raw == 0 {
             Ok(None)
         } else {

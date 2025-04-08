@@ -144,7 +144,7 @@ pnet_packet = "0.35"
 pretty_assertions = "1"
 proptest = "1.2"
 proptest-derive = "0.5"
-protobuf-codegen-pure = "2"
+protobuf-codegen = "3.7.2"
 rand = "0.8"
 regex = "1.5"
 rstest = "0.24.0"
@@ -174,7 +174,7 @@ windows = { version = "0.60", features = [
     "Win32_NetworkManagement_IpHelper",
 ] }
 
-neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v1.0.5", features = ["device"] }
+neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v1.0.6", features = ["device"] }
 x25519-dalek = { version = "2.0.1", features = ["reusable_secrets", "static_secrets"] }
 
 

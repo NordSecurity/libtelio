@@ -12,6 +12,7 @@ const LOGFILE_PATH: &str = "events-moose.log";
 /// Parameters:
 /// * func_name - Name of the called function.
 /// * arg_set   - Contains the arguments passed to the called function, if any.
+///
 /// Returns:
 /// * The number of bytes written into file or moose::Error otherwise
 fn event_log(

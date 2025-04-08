@@ -66,8 +66,7 @@ pub enum PacketTypeRelayed {
     /// CallMeMaybe messages from/to natter
     CallMeMaybeDeprecated = 0x03,
 
-    /// PingerDeprecated = 0x04,
-
+    // PingerDeprecated = 0x04,
     /// Encrypted package which is not Data type
     Encrypted = 0x05,
     /// CallMeMaybe messages from/to natter
