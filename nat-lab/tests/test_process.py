@@ -21,18 +21,22 @@ async def _get_running_process_list(connection: Connection) -> str:
 @pytest.mark.parametrize(
     "connection_tag,command",
     [
-        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, "/usr/bin/ls"),
-        pytest.param(ConnectionTag.VM_WINDOWS_1, "dir.exe", marks=pytest.mark.windows),
-        pytest.param(ConnectionTag.VM_MAC, "/bin/ls", marks=pytest.mark.mac),
+        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, ["/usr/bin/ls"]),
+        pytest.param(
+            ConnectionTag.VM_WINDOWS_1, ["dir", "C:"], marks=pytest.mark.windows
+        ),
+        pytest.param(ConnectionTag.VM_MAC, ["/bin/ls"], marks=pytest.mark.mac),
     ],
 )
-async def test_process_execute_success(connection_tag: ConnectionTag, command: str):
+async def test_process_execute_success(
+    connection_tag: ConnectionTag, command: list[str]
+):
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(
             new_connection_by_tag(connection_tag)
         )
-        await connection.create_process([command]).execute()
-        assert command not in await _get_running_process_list(connection)
+        await connection.create_process(command).execute()
+        assert " ".join(command) not in await _get_running_process_list(connection)
 
 
 @pytest.mark.parametrize(
