@@ -97,8 +97,8 @@ fn telio_task(
                 }
                 TelioTaskCmd::ConnectToExit(node) => match telio.connect_exit_node(&node) {
                     Ok(_) => {
-                        eprintln!("Connected to exit node {node:?}");
-                        debug!("connect to exit node successful {node:?}");
+                        eprintln!("Connecting to exit node {:?}", node.endpoint);
+                        debug!("Connecting to exit node {:?}", node.endpoint);
                     }
                     Err(e) => {
                         error!("Unable to connect to exit node due to {e}");
