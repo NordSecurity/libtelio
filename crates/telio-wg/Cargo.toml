@@ -49,6 +49,8 @@ telio-firewall.workspace = true
 telio-task = { workspace = true, features = ["test-util"] }
 telio-test.workspace = true
 proptest.workspace = true
+proptest-derive.workspace = true
+test-log = { version = "0.2.17", features = ["trace"] }
 
 [build-dependencies]
 cc.workspace = true

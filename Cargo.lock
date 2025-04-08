@@ -5073,6 +5073,7 @@ dependencies = [
  "num_cpus",
  "pretty_assertions",
  "proptest",
+ "proptest-derive",
  "rand",
  "rstest",
  "serde",
@@ -5088,6 +5089,7 @@ dependencies = [
  "telio-task",
  "telio-test",
  "telio-utils",
+ "test-log",
  "thiserror 2.0.11",
  "tokio",
  "tracing",
@@ -5173,6 +5175,28 @@ name = "termtree"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f50febec83f5ee1df3015341d8bd429f2d1cc62bcba7ea2076759d315084683"
+
+[[package]]
+name = "test-log"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7f46083d221181166e5b6f6b1e5f1d499f3a76888826e6cb1d057554157cd0f"
+dependencies = [
+ "env_logger",
+ "test-log-macros",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "test-log-macros"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "888d0c3c6db53c0fdab160d2ed5e12ba745383d3e85813f2ea0f2b1475ab553f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.98",
+]
 
 [[package]]
 name = "textwrap"

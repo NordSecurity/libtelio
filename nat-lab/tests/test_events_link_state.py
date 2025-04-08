@@ -325,7 +325,8 @@ async def test_event_link_state_peer_goes_offline(
             ),
             return_exceptions=True,
         )
-        for result in results:
+
+        for idx, result in enumerate(results):
             if not isinstance(result, asyncio.TimeoutError):
                 raise AssertionError(f"Expected to timeout but got {result}")
 

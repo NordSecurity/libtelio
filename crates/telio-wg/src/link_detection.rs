@@ -223,7 +223,7 @@ impl State {
             stats: stats.clone(),
             variant: match stats.lock() {
                 Ok(s) => {
-                    if s.is_link_up(cfg_max_allowed_rtt) {
+                    if s.is_link_up(cfg_max_allowed_rtt, Instant::now()) {
                         StateVariant::Up
                     } else {
                         StateVariant::Down
@@ -238,8 +238,9 @@ impl State {
     }
 
     fn update(&mut self, cfg_max_allowed_rtt: Duration, ping_enabled: bool) -> StateUpdateResult {
+        let now = Instant::now();
         let is_link_up = match self.stats.lock() {
-            Ok(s) => s.is_link_up(cfg_max_allowed_rtt),
+            Ok(s) => s.is_link_up(cfg_max_allowed_rtt, now),
             Err(e) => {
                 telio_log_error!("poisoned lock - {}", e);
                 false
@@ -266,7 +267,7 @@ impl State {
                     // No notify
                     self.variant = StateVariant::Up;
                     Self::build_result(StateDecision::NoAction, LinkState::Up)
-                } else if Instant::now() >= *deadline {
+                } else if now >= *deadline {
                     // Transition to Down
                     // Report link state Down
                     self.variant = StateVariant::Down;
@@ -293,9 +294,7 @@ impl State {
                     };
 
                     self.variant = StateVariant::PossibleDown {
-                        deadline: Instant::now()
-                            .checked_add(delay)
-                            .unwrap_or_else(Instant::now),
+                        deadline: now.checked_add(delay).unwrap_or(now),
                     };
                     telio_log_debug!("Possibly down. delay={:?}", delay);
                     Self::build_result(StateDecision::Ping, LinkState::Up)
@@ -337,9 +336,17 @@ mod tests {
 
     #[test]
     fn test_state_build() {
-        let stats_down = Arc::new(Mutex::new(BytesAndTimestamps::new(None, None)));
-        let stats_up = Arc::new(Mutex::new(BytesAndTimestamps::new(Some(100), Some(100))));
-        let rtt = Duration::from_secs(0);
+        let stats_down = Arc::new(Mutex::new(BytesAndTimestamps::new(
+            None,
+            None,
+            Instant::now(),
+        )));
+        let stats_up = Arc::new(Mutex::new(BytesAndTimestamps::new(
+            Some(100),
+            Some(100),
+            Instant::now(),
+        )));
+        let rtt = Duration::ZERO;
 
         let down = State::new(stats_down, rtt);
         let up = State::new(stats_up, rtt);
@@ -348,57 +355,64 @@ mod tests {
         assert!(matches!(down.variant, StateVariant::Down));
     }
 
-    #[tokio::test(start_paused = true)]
+    #[test_log::test(tokio::test(start_paused = true))]
     async fn test_state_transitions_from_down() {
         let mut state = State {
-            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(None, None))),
+            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(
+                None,
+                None,
+                Instant::now(),
+            ))),
             variant: StateVariant::Down,
         };
         assert!(matches!(state.variant, StateVariant::Down));
 
         time::advance(ONE_SECOND).await;
 
-        state.stats.lock().unwrap().update(0, 1);
+        state.stats.lock().unwrap().update(0, 1, Instant::now());
+
+        time::advance(WG_KEEPALIVE).await;
+
+        state.update(Duration::ZERO, false);
+        assert!(matches!(state.variant, StateVariant::Down));
+
         assert!(matches!(state.variant, StateVariant::Down));
 
         time::advance(ONE_SECOND).await;
 
-        state.stats.lock().unwrap().update(0, 1);
-        state.update(Duration::from_secs(0), false);
+        state.stats.lock().unwrap().update(1, 1, Instant::now());
         assert!(matches!(state.variant, StateVariant::Down));
 
-        assert!(matches!(state.variant, StateVariant::Down));
-
-        time::advance(ONE_SECOND).await;
-
-        state.stats.lock().unwrap().update(1, 1);
-        assert!(matches!(state.variant, StateVariant::Down));
-
-        state.update(Duration::from_secs(0), false);
+        state.update(Duration::ZERO, false);
         assert!(matches!(state.variant, StateVariant::Up));
     }
 
-    #[tokio::test(start_paused = true)]
+    #[test_log::test(tokio::test(start_paused = true))]
     async fn test_state_transition_from_up() {
         let mut state = State {
-            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(Some(0), Some(0)))),
+            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(
+                Some(0),
+                Some(0),
+                Instant::now(),
+            ))),
             variant: StateVariant::Up,
         };
 
-        time::advance(ONE_SECOND).await;
+        state.stats.lock().unwrap().update(0, 1, Instant::now());
+        time::advance(WG_KEEPALIVE).await;
 
-        state.stats.lock().unwrap().update(0, 1);
-        assert!(matches!(state.variant, StateVariant::Up));
-
-        state.stats.lock().unwrap().update(0, 2);
-        state.update(Duration::from_secs(0), false);
+        state.update(Duration::ZERO, false);
         assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_state_transition_from_possible_down_to_down() {
         let mut state = State {
-            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(None, None))),
+            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(
+                None,
+                None,
+                Instant::now(),
+            ))),
             variant: StateVariant::PossibleDown {
                 deadline: Instant::now().checked_add(Duration::from_secs(3)).unwrap(),
             },
@@ -406,21 +420,25 @@ mod tests {
         assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
 
         time::advance(Duration::from_secs(3)).await;
-        state.update(Duration::from_secs(0), false);
+        state.update(Duration::ZERO, false);
         assert!(matches!(state.variant, StateVariant::Down));
     }
 
     #[tokio::test(start_paused = true)]
     async fn test_state_transition_from_possible_down_to_up() {
         let mut state = State {
-            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(None, None))),
+            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(
+                None,
+                None,
+                Instant::now(),
+            ))),
             variant: StateVariant::PossibleDown {
                 deadline: Instant::now().checked_add(Duration::from_secs(3)).unwrap(),
             },
         };
         assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
 
-        state.stats.lock().unwrap().update(1, 1);
+        state.stats.lock().unwrap().update(1, 1, Instant::now());
         state.update(ONE_SECOND, false);
         assert!(matches!(state.variant, StateVariant::Up));
     }
@@ -428,17 +446,29 @@ mod tests {
     #[test]
     fn test_state_current_link_state() {
         let down = State {
-            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(None, None))),
+            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(
+                None,
+                None,
+                Instant::now(),
+            ))),
             variant: StateVariant::Down,
         };
         let possible_down = State {
-            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(None, None))),
+            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(
+                None,
+                None,
+                Instant::now(),
+            ))),
             variant: StateVariant::PossibleDown {
                 deadline: Instant::now(),
             },
         };
         let up = State {
-            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(None, None))),
+            stats: Arc::new(Mutex::new(BytesAndTimestamps::new(
+                None,
+                None,
+                Instant::now(),
+            ))),
             variant: StateVariant::Up,
         };
 
