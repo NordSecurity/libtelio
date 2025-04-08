@@ -57,7 +57,7 @@ secondary)
             exit 2
         fi
 
-        python3 /run/qga.py powershell -Command "New-NetRoute -DestinationPrefix '0.0.0.0/0' -NextHop '$CLIENT_GATEWAY_SECONDARY' -InterfaceAlias 'Ethernet'"
+        python3 /run/qga.py powershell -Command "New-NetRoute -DestinationPrefix '0.0.0.0/0' -NextHop '$CLIENT_GATEWAY_SECONDARY' -InterfaceAlias 'Ethernet 2'"
         if [[ $? -ne 0 ]]; then
             echo "Failed to add new route using qga.py" >&2
             exit 2
