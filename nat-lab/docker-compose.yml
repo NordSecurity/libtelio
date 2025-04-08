@@ -146,7 +146,7 @@ services:
     volumes:
       - ../:/libtelio
     healthcheck:
-      test: "[ -f /storage/ready ] || exit 1"
+      test: "[ -f /local/ready ] || exit 1"
       interval: 30s
       retries: 20
       start_period: 60s
