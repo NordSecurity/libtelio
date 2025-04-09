@@ -36,6 +36,11 @@ mockall.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
 rand.workspace = true
+rstest.workspace = true
 tokio = { workspace = true, features = ["time", "rt", "macros", "test-util"] }
 
 telio-test.workspace = true
+
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(kani)'] }
+
