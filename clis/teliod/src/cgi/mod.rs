@@ -85,6 +85,12 @@ pub trait AuthorizationValidator {
 
 pub fn handle_request(request: Request) -> Response {
     let request = CgiRequest::new(request);
+
+    #[cfg(feature = "qnap")]
+    if let Err(error) = authorize::<QnapUserAuthorization>(&request) {
+        return text_response(StatusCode::UNAUTHORIZED, format!("Unauthorized: {}", error));
+    }
+
     if let Some(response) = web::handle_web_ui(&request) {
         trace!(
             "Returning response..: {:?}",
@@ -92,11 +98,6 @@ pub fn handle_request(request: Request) -> Response {
         );
 
         return response;
-    }
-
-    #[cfg(feature = "qnap")]
-    if let Err(error) = authorize::<QnapUserAuthorization>(&request) {
-        return text_response(StatusCode::UNAUTHORIZED, format!("Unauthorized: {}", error));
     }
 
     if let Some(response) = api::handle_api(&request) {
