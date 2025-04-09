@@ -4673,7 +4673,6 @@ name = "telio-lana"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "cargo-platform",
  "serde",
  "serde_json",
  "serial_test",
