@@ -101,7 +101,7 @@ services:
 
   windows-client-01: &windows-client
     hostname: windows-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:gytsto-wait-for-interface-to-be-up
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:gytsto-improve-qemu-guest-agent-script
     privileged: true
     devices:
       - "/dev/net/tun"
@@ -571,7 +571,6 @@ services:
       windows-net-01:
         ipv4_address: 192.168.150.254
         priority: 900
-
   windows-gw-02:
     hostname: windows-gw-02
     <<: *common-gw
@@ -592,7 +591,6 @@ services:
       windows-net-03:
         ipv4_address: 192.168.152.254
         priority: 900
-
   windows-gw-04:
     hostname: windows-gw-04
     <<: *common-gw
