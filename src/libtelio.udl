@@ -431,7 +431,7 @@ interface Telio {
     [Throws=TelioError]
     u32 trigger_peer_link_speed_test(string peer_ip);
     [Throws=TelioError]
-    u32 fetch_peer_link_speed();
+    i32 fetch_peer_link_speed();
     [Throws=TelioError]
     string receive_ping();
     [Throws=TelioError]

@@ -888,7 +888,7 @@ impl Device {
         })
     }
 
-    pub fn fetch_peer_link_speed(&self) -> Result<u32> {
+    pub fn fetch_peer_link_speed(&self) -> Result<i32> {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt
                 .fetch_peer_link_speed()
@@ -1780,7 +1780,7 @@ impl Runtime {
         Ok(duration)
     }
 
-    async fn fetch_peer_link_speed(&mut self) -> Result<u32> {
+    async fn fetch_peer_link_speed(&mut self) -> Result<i32> {
         let speed = self
             .entities
             .meshnet
