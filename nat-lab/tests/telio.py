@@ -1089,7 +1089,7 @@ class Client:
             "latency",
             "500ms",
             "burst",
-            "32kbit"
+            "32kbit",
         ]
         await self._connection.create_process(cmd).execute()
 
