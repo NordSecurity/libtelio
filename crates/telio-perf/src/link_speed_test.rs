@@ -75,11 +75,8 @@ pub enum Error {
     #[error("Invalid index buffer")]
     MalformedMessage,
     /// Buffer error
-    #[error("Results aren't ready. Test in progress")]
-    TestNotCompleted,
-    /// Task timeout error
-    #[error(transparent)]
-    TestTimeout(#[from] tokio::time::error::Elapsed),
+    #[error("Unable to complete test")]
+    TestTimeout,
 }
 
 enum PacketType {
@@ -181,7 +178,7 @@ impl Speedtest {
     }
 
     /// Start the link speed test test with given endpoint
-    pub async fn get_results(&self) -> Result<u32, Error> {
+    pub async fn get_results(&self) -> Result<i32, Error> {
         let speed = task_exec!(&self.task, async move |state| {
             state.await_results().await
         })
@@ -312,7 +309,7 @@ impl State {
     }
 
     async fn send_results(&mut self, endpoint: SocketAddr) -> Result<(), Error> {
-        let duration = self.test_duration.elapsed();
+        // let duration = self.test_duration.elapsed();
         let mut send_buffer = vec![0u8; 1 + PKT_LOSS_DATA_SIZE + LINK_SPEED_DATA_SIZE];
         send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Result as u8);
 
@@ -362,11 +359,17 @@ impl State {
     }
 
     /// Start the link speed test with given endpoint
-    async fn await_results(&mut self) -> Result<u32, Error> {
-        let speed = tokio::time::timeout(TEST_DURATION / 10, self.test_results_chan.rx.recv())
-            .await?
-            .ok_or(Error::MalformedMessage)?;
-        Ok(speed)
+    async fn await_results(&mut self) -> Result<i32, Error> {
+        match self.test_results_chan.rx.try_recv() {
+            Ok(s) => Ok(s as i32),
+            Err(_) => {
+                if *self.handler_state.read().await == HandlerState::End {
+                    return Err(Error::TestTimeout);
+                }
+                // -1 denotes result isn't ready yet
+                Ok(-1)
+            }
+        }
     }
 
     #[cfg(test)]
@@ -461,7 +464,10 @@ async fn link_speed_test_handler(
     })?;
     let mut total_pkts: u64 = 0;
     let mut retries = 0;
+    #[cfg(not(test))]
     const MAX_RETRIES: usize = 10;
+    #[cfg(test)]
+    const MAX_RETRIES: usize = 3;
     loop {
         let state = { *{ handler_state.read().await } };
         match state {
@@ -487,6 +493,10 @@ async fn link_speed_test_handler(
                 exponential_backoff.next_backoff();
                 if exponential_backoff.get_backoff() == Duration::from_secs(30) {
                     telio_log_warn!("Unable to connect to peer");
+                    {
+                        let mut handler = handler_state.write().await;
+                        *handler = HandlerState::End;
+                    }
                     break;
                 }
                 total_pkts = 0;
@@ -545,6 +555,10 @@ async fn link_speed_test_handler(
                 PinnedSleep::new(Duration::from_secs(1), ()).await;
                 if retries == MAX_RETRIES {
                     telio_log_warn!("Unable to get test results");
+                    {
+                        let mut handler = handler_state.write().await;
+                        *handler = HandlerState::End;
+                    }
                     break;
                 }
             }
@@ -646,5 +660,36 @@ mod tests {
 
         // Handler state -> End. Test results sent server -> client
         wait_for_results(HandlerState::End, client).await;
+    }
+
+    #[tokio::test]
+    async fn test_fetching_results() {
+        let (client, _server, port) = setup_peers().await;
+
+        assert!(client.start_test(IP_ADDR, port).await.is_ok());
+        // Get results is not ready response
+        assert!(client.get_results().await.unwrap() == -1);
+        // Extra wait to make sure test has completed
+        tokio::time::sleep(TEST_DURATION + TEST_DURATION).await;
+        // Get actual results
+        assert!(client.get_results().await.unwrap() != -1);
+    }
+
+    #[tokio::test]
+    async fn test_unable_to_fetch_results() {
+        let (client, server, port) = setup_peers().await;
+
+        assert!(client.start_test(IP_ADDR, port).await.is_ok());
+
+        // Extra wait to make sure test has completed
+        tokio::time::sleep(TEST_DURATION / 2).await;
+
+        // Close the server end
+        drop(server);
+
+        // Extra wait to make sure exp backoff time has expired
+        tokio::time::sleep(TEST_DURATION * 3).await;
+        // Get actual results
+        assert!(client.get_results().await.is_err());
     }
 }
