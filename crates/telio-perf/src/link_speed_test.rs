@@ -309,7 +309,7 @@ impl State {
     }
 
     async fn send_results(&mut self, endpoint: SocketAddr) -> Result<(), Error> {
-        // let duration = self.test_duration.elapsed();
+        let duration = self.test_duration.elapsed();
         let mut send_buffer = vec![0u8; 1 + PKT_LOSS_DATA_SIZE + LINK_SPEED_DATA_SIZE];
         send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Result as u8);
 
@@ -331,7 +331,7 @@ impl State {
         // Calculate link speed
         // Bytes should be data + wg_header + ip header + udp header
         let link_speed = (((self.pkts_recvd * (BUFFER_LEN as u64 + 32 + 20 + 8) * 8) as f64)
-            / TEST_DURATION.as_secs_f64()) as u32
+            / duration.as_secs_f64()) as u32
             / 1_000_000;
 
         send_buffer
@@ -672,7 +672,7 @@ mod tests {
         // Extra wait to make sure test has completed
         tokio::time::sleep(TEST_DURATION + TEST_DURATION).await;
         // Get actual results
-        assert!(client.get_results().await.unwrap() != -1);
+        assert!(client.get_results().await.unwrap() > 0);
     }
 
     #[tokio::test]

@@ -45,11 +45,25 @@ async def test_measuring_link_speed(
 
         peer_ip = beta.get_ip_address(IPProto.IPv4)
         assert peer_ip is not None, "Expected a string, but got None"
-        test_speed = "20"
-        await client_alpha.limit_network_speed(test_speed)
+        test_speed = 20
+        await client_alpha.limit_network_speed(str(test_speed))
         await client_alpha.trigger_peer_link_speed_test(peer_ip)
         await client_alpha.wait_for_log("MiB/s Packet loss")
         speed = await client_alpha.fetch_peer_link_speed()
         await client_alpha.delete_limiter_rule()
         log.info("Got %d Expected %s", speed, test_speed)
-        assert test_speed == str(speed), f"Expected {str(speed)} but got {test_speed}"
+        assert (
+            test_speed * 0.8 < speed < test_speed * 1.2
+        ), f"Expected {str(speed)} but got {test_speed}"
+
+        await client_alpha.flush_logs()
+        test_speed = 30
+        await client_alpha.limit_network_speed(str(test_speed))
+        await client_alpha.trigger_peer_link_speed_test(peer_ip)
+        await client_alpha.wait_for_log("MiB/s Packet loss")
+        speed = await client_alpha.fetch_peer_link_speed()
+        await client_alpha.delete_limiter_rule()
+        log.info("Got %d Expected %s", speed, test_speed)
+        assert (
+            test_speed * 0.8 < speed < test_speed * 1.2
+        ), f"Expected {str(speed)} but got {test_speed}"
