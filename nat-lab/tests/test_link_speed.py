@@ -3,6 +3,7 @@ from contextlib import AsyncExitStack
 from helpers import setup_mesh_nodes, SetupParameters
 from utils.bindings import default_features, TelioAdapterType
 from utils.connection_util import ConnectionTag
+from utils.logger import log
 from utils.router import IPProto
 
 
@@ -50,6 +51,5 @@ async def test_measuring_link_speed(
         await client_alpha.wait_for_log("MiB/s Packet loss")
         speed = await client_alpha.fetch_peer_link_speed()
         await client_alpha.delete_limiter_rule()
-        print(speed)
-        print("Expected " + test_speed)
+        log.info("Got %d Expected %s", speed, test_speed)
         assert test_speed == str(speed), f"Expected {str(speed)} but got {test_speed}"

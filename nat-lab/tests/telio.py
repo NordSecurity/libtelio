@@ -1077,8 +1077,19 @@ class Client:
 
     async def limit_network_speed(self, speed: str) -> None:
         cmd = [
-            "tc", "qdisc", "add", "dev", LINUX_INTERFACE_NAME, "root", "tbf", "rate"
-            , str(speed) + "mbit", "latency", "500ms", "burst", "32kbit"
+            "tc",
+            "qdisc",
+            "add",
+            "dev",
+            LINUX_INTERFACE_NAME,
+            "root",
+            "tbf",
+            "rate",
+            str(speed) + "mbit",
+            "latency",
+            "500ms",
+            "burst",
+            "32kbit"
         ]
         await self._connection.create_process(cmd).execute()
 
