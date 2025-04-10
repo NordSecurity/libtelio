@@ -10,6 +10,7 @@ from collections import Counter
 from config import DERP_SERVERS
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
+from itertools import groupby
 from mesh_api import Node
 from typing import AsyncIterator, List, Optional, Set
 from uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
@@ -169,11 +170,14 @@ class Runtime:
             await asyncio.sleep(0.1)
 
     def get_link_state_events(self, public_key: str) -> List[LinkState]:
-        return [
+        raw_states = [
             peer.link_state
             for peer in self._peer_state_events
             if peer and peer.public_key == public_key and peer.link_state is not None
         ]
+        # This removes consecutive UP events (connecting + connected)
+        deduplicated = [state for state, _ in groupby(raw_states)]
+        return deduplicated
 
     def get_peer_info(self, public_key: str) -> Optional[TelioNode]:
         events = [

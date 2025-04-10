@@ -312,8 +312,13 @@ async def test_event_link_state_peer_goes_offline(
             client_alpha, client_beta, alpha.public_key, beta.public_key
         )
 
-        await ping(connection_alpha, beta.ip_addresses[0])
         await ping(connection_beta, alpha.ip_addresses[0])
+        # Sending ping from alpha to beta ensures that the WireGuard's internal timer for Keepalive-Timeout (10s) is
+        # reset. This is because the ICMP Reply message that is sent from the beta to alpha, is the last packet and
+        # it's an incomming packet from the point of view of alpha. Which means that the stop_device below can take
+        # any amount of time without triggering passive keepalive timeout. The WireGuard's internal timer will be
+        # restarted by the ping sent in the gather section further down below.
+        await ping(connection_alpha, beta.ip_addresses[0])
 
         await client_beta.stop_device()
 
@@ -325,9 +330,10 @@ async def test_event_link_state_peer_goes_offline(
             ),
             return_exceptions=True,
         )
-        for result in results:
+
+        for idx, result in enumerate(results):
             if not isinstance(result, asyncio.TimeoutError):
-                raise AssertionError(f"Expected to timeout but got {result}")
+                raise AssertionError(f"{idx}: Expected to timeout but got {result}")
 
         # Expect the link down event
         # It should arrive in 11-15 seconds after the link is cut and enhanced detection disabled
