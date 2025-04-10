@@ -444,7 +444,10 @@ fn dynamic_store_callback(
     context: &mut Context,
 ) {
     if let Some(sockets) = context.sockets.upgrade() {
-        sockets.lock().rebind_all(false);
+        // NMACOS-8047 The callback is executed when `IPConfiugrationBusy` key in the DynamicStore changes.
+        // In such case we should force rebind the sockets to avoid no-net when `includeAllNetworks` is set.
+        telio_log_debug!("Force rebinding the sockets because of `IPConfigurationBusy` key change");
+        sockets.lock().rebind_all(true);
     }
 }
 
@@ -457,7 +460,7 @@ fn get_dynamic_store(sockets: Weak<Mutex<Sockets>>) -> SCDynamicStore {
         .callback_context(callback_context)
         .build();
     let watch_keys: CFArray<CFString> = CFArray::from_CFTypes(&[]);
-    let watch_patterns = CFArray::from_CFTypes(&[CFString::from("State:/Network/Service/.*/IPv4")]);
+    let watch_patterns = CFArray::from_CFTypes(&[CFString::from("State:/Network/Interface/.*/IPConfigurationBusy")]);
     if !store.set_notification_keys(&watch_keys, &watch_patterns) {
         debug_panic!("Unable to register notifications for primary service update dynamic store");
     }
