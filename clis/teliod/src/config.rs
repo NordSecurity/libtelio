@@ -6,7 +6,7 @@ use std::fs;
 use tracing::{debug, info, level_filters::LevelFilter, warn, Level};
 use uuid::Uuid;
 
-use telio::crypto::SecretKey;
+use telio::{crypto::SecretKey, device::AdapterType};
 
 use crate::configure_interface::InterfaceConfigurationProvider;
 
@@ -100,6 +100,7 @@ pub struct TeliodDaemonConfig {
     pub log_file_path: String,
     #[serde(default = "default_log_file_count")]
     pub log_file_count: usize,
+    pub adapter_type: AdapterType,
     pub interface: InterfaceConfig,
 
     #[serde(
@@ -129,6 +130,9 @@ impl TeliodDaemonConfig {
         }
         if let Some(authentication_token) = update.authentication_token {
             self.authentication_token = authentication_token;
+        }
+        if let Some(adapter) = update.adapter_type {
+            self.adapter_type = adapter;
         }
         if let Some(interface) = update.interface {
             self.interface = interface;
@@ -161,6 +165,7 @@ impl Default for TeliodDaemonConfig {
                 }
             },
             log_file_count: default_log_file_count(),
+            adapter_type: AdapterType::default(),
             interface: InterfaceConfig {
                 name: "nlx".to_string(),
                 config_provider: Default::default(),
@@ -252,6 +257,7 @@ pub struct TeliodDaemonConfigPartial {
     pub log_level: Option<LevelFilter>,
     pub log_file_path: Option<String>,
     pub log_file_count: Option<usize>,
+    pub adapter_type: Option<AdapterType>,
     pub interface: Option<InterfaceConfig>,
     pub app_user_uid: Option<Uuid>,
     #[serde(default, deserialize_with = "deserialize_partial_authentication_token")]
@@ -314,6 +320,7 @@ mod tests {
             log_level: LevelFilter::INFO,
             log_file_path: "test.log".to_owned(),
             log_file_count: 7,
+            adapter_type: AdapterType::LinuxNativeWg,
             interface: InterfaceConfig {
                 name: "utun10".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
@@ -333,6 +340,7 @@ mod tests {
             let json = r#"{
             "log_level": "Info",
             "log_file_path": "test.log",
+            "adapter_type": "linux-native",
             "interface": {
                 "name": "utun10",
                 "config_provider": "manual"
@@ -347,6 +355,7 @@ mod tests {
             let json = r#"{
                 "log_level": "Info",
                 "log_file_path": "test.log",
+                "adapter_type": "linux-native",
                 "interface": {
                     "name": "utun10",
                     "config_provider": "manual"
