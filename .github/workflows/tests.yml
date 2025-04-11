@@ -7,32 +7,28 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
-        with:
-          command: test
-          args: --all -- --nocapture
-      - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
-        with:
-          command: test
-          args: --all --features pretend_to_be_macos -- --nocapture
+      - run: cargo test --all -- --nocapture
+        env:
+          RUST_BACKTRACE: full
+      - run: cargo test --all --features pretend_to_be_macos -- --nocapture
+        env:
+          RUST_BACKTRACE: full
 
   test-windows:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
-        with:
-          command: test
-          args: --all --lib -- --nocapture
+      - run: cargo test --all --lib -- --nocapture
+        env:
+          RUST_BACKTRACE: full
 
   test-mac:
     runs-on: macos-13
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
-      - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
-        with:
-          command: test
-          args: --all --lib -- --nocapture
+      - run: cargo test --all --lib -- --nocapture
+        env:
+          RUST_BACKTRACE: full
 
   test-replacement-script:
     runs-on: ubuntu-22.04
@@ -128,3 +124,5 @@ jobs:
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - run: cargo test --release -- --ignored
+        env:
+          RUST_BACKTRACE: full
