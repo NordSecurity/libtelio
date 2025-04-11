@@ -230,7 +230,10 @@ mod proptests {
     ) {
         let rtt = Duration::from_secs(rtt);
 
-        let start = Instant::now();
+        let max_delta = Duration::from_secs(rx_sec_ago.max(tx_sec_ago).unwrap_or_default());
+        // The Instant might be a time since boot, and if this test is run right after boot
+        // it can result in a overflow while subtracting few lines below.
+        let start = Instant::now() + max_delta;
 
         let mut ops: Vec<(PacketsDelta, Instant)> = vec![];
 
@@ -243,11 +246,8 @@ mod proptests {
             ops.push((PacketsDelta::Tx, ts));
         }
 
-        let oldest: Instant = ops
-            .iter()
-            .map(|(_, ts)| *ts)
-            .min()
-            .unwrap_or_else(Instant::now);
+        let oldest: Instant = ops.iter().map(|(_, ts)| *ts).min().unwrap_or(start);
+
         let mut stats = BytesAndTimestamps::new(None, None, oldest);
         let mut rx = 0;
         let mut tx = 0;
