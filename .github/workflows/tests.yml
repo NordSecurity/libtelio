@@ -126,3 +126,12 @@ jobs:
       - run: cargo test --release -- --ignored
         env:
           RUST_BACKTRACE: full
+      
+  kani-proofs:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - name: 'Run Kani'
+        uses: model-checking/kani-github-action@f838096619a707b0f6b2118cf435eaccfa33e51f # v1.1
+        with:
+          working-directory: 'crates/telio-utils'

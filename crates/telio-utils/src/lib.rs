@@ -60,3 +60,7 @@ pub mod log_censor;
 
 /// Utilities for working with backtraces/stacktraces/callstacks
 pub mod backtrace;
+
+/// Types needed by to recover internal WG timers state
+pub mod bytes_and_timestamps;
+pub use bytes_and_timestamps::*;
