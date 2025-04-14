@@ -14,7 +14,7 @@ use interprocess::{
         traits::tokio::{Listener, Stream},
         ListenerOptions, ToFsName,
     },
-    os::unix::local_socket::FilesystemUdSocket,
+    os::unix::local_socket::{FilesystemUdSocket, ListenerOptionsExt},
 };
 
 /// Struct for handling connections of the daemon's side of the IPC communication with the API.
@@ -56,10 +56,19 @@ impl DaemonSocket {
     pub fn new(ipc_socket_path: &Path) -> Result<Self> {
         // Delete the socket file if it already exists
         let _ = fs::remove_file(ipc_socket_path);
-        let socket = ListenerOptions::new()
+
+        let options = ListenerOptions::new()
             .name(ipc_socket_path.to_fs_name::<FilesystemUdSocket>()?)
-            .reclaim_name(true)
-            .create_tokio()?;
+            .reclaim_name(true);
+
+        // Disable setting umask for tests.
+        // `umask()` C API call is operating on a process level, and therfore is not thread-safe.
+        // As multiple cargo tests are executing in parallel this causes a panic.
+        #[cfg(not(test))]
+        // Mode for unix socket rw-------
+        let options = options.mode(0o600);
+
+        let socket = options.create_tokio()?;
 
         Ok(Self { socket })
     }

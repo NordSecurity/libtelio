@@ -152,7 +152,9 @@ mod tests {
     // Simulate client sending command and waiting for response
     async fn client_send_command(path: &str, cmd: &str) -> std::io::Result<CommandResponse> {
         let mut client_stream = UnixStream::connect(&Path::new(path)).await?;
-        client_stream.write(format!("{}\n", cmd).as_bytes()).await?;
+        client_stream
+            .write_all(format!("{}\n", cmd).as_bytes())
+            .await?;
 
         let mut data = vec![0; 1024];
         let size = client_stream.read(&mut data).await?;
@@ -163,7 +165,9 @@ mod tests {
     // Broken client, closes connection without waiting for response
     async fn broken_client_send_command(path: &str, cmd: &str) -> std::io::Result<()> {
         let mut client_stream = UnixStream::connect(&Path::new(path)).await?;
-        client_stream.write(format!("{}\n", cmd).as_bytes()).await?;
+        client_stream
+            .write_all(format!("{}\n", cmd).as_bytes())
+            .await?;
 
         Ok(())
     }

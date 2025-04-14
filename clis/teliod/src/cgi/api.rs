@@ -126,7 +126,8 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
     };
     match Command::new("setsid")
         .arg(TELIOD_BIN)
-        .arg("daemon")
+        .arg("start")
+        .arg("--no-detach")
         .arg(TELIOD_CFG)
         .stdout(stdout)
         .stderr(stderr)
