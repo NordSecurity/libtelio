@@ -308,11 +308,24 @@ impl State {
         Ok(())
     }
 
+    async fn calculate_results(
+        pkts_recvd: u64,
+        duration: Duration,
+        pkts_sent: u64,
+    ) -> Result<(f32, u32), Error> {
+        // Calculate packet loss
+        let pkt_loss = (1_f32 - (pkts_recvd as f32 / pkts_sent as f32)) * 100_f32;
+        // Calculate link speed
+        // Bytes should be data + wg_header + ip header + udp header
+        let link_speed = (((pkts_recvd * (BUFFER_LEN as u64 + 32 + 20 + 8) * 8) as f64)
+            / duration.as_secs_f64()) as u32
+            / 1_000_000;
+
+        Ok((pkt_loss, link_speed))
+    }
+
     async fn send_results(&mut self, endpoint: SocketAddr) -> Result<(), Error> {
         let duration = self.test_duration.elapsed();
-        let mut send_buffer = vec![0u8; 1 + PKT_LOSS_DATA_SIZE + LINK_SPEED_DATA_SIZE];
-        send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Result as u8);
-
         // Parse # of sent packets
         let pkts_sent: [u8; std::mem::size_of::<u64>()] = self
             .recv_buffer
@@ -321,18 +334,16 @@ impl State {
             .try_into()?;
         let pkts_sent = u64::from_be_bytes(pkts_sent);
 
-        // Calculate packet loss
-        let pkt_loss = (1_f32 - (self.pkts_recvd as f32 / pkts_sent as f32)) * 100_f32;
+        let (pkt_loss, link_speed) =
+            State::calculate_results(self.pkts_recvd, duration, pkts_sent).await?;
+
+        let mut send_buffer = vec![0u8; 1 + PKT_LOSS_DATA_SIZE + LINK_SPEED_DATA_SIZE];
+        send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Result as u8);
+
         send_buffer
             .get_mut(PKT_LOSS_OFFSET..PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE)
             .ok_or(Error::MalformedMessage)?
             .copy_from_slice(&pkt_loss.to_be_bytes());
-
-        // Calculate link speed
-        // Bytes should be data + wg_header + ip header + udp header
-        let link_speed = (((self.pkts_recvd * (BUFFER_LEN as u64 + 32 + 20 + 8) * 8) as f64)
-            / duration.as_secs_f64()) as u32
-            / 1_000_000;
 
         send_buffer
             .get_mut(LINK_SPEED_OFFSET..LINK_SPEED_OFFSET + LINK_SPEED_DATA_SIZE)
@@ -663,6 +674,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_restart() {
+        let (client, _server, port) = setup_peers().await;
+
+        assert!(client.start_test(IP_ADDR, port).await.is_ok());
+
+        // Extra wait to make sure test has completed
+        tokio::time::sleep(TEST_DURATION * 2).await;
+
+        assert!(client.start_test(IP_ADDR, port).await.is_ok());
+
+        // Handler state -> End. Test results sent server -> client
+        wait_for_results(HandlerState::Test, client).await;
+    }
+
+    #[tokio::test]
+    async fn test_calculating_results() {
+        let duration = Duration::from_secs(10);
+        let (pkt_loss, speed) = State::calculate_results(222333, duration, 444666)
+            .await
+            .unwrap();
+        assert!(pkt_loss == 50.0);
+        assert!(speed == 250);
+    }
+
+    #[tokio::test]
     async fn test_fetching_results() {
         let (client, _server, port) = setup_peers().await;
 
@@ -670,7 +706,7 @@ mod tests {
         // Get results is not ready response
         assert!(client.get_results().await.unwrap() == -1);
         // Extra wait to make sure test has completed
-        tokio::time::sleep(TEST_DURATION + TEST_DURATION).await;
+        tokio::time::sleep(TEST_DURATION * 2).await;
         // Get actual results
         assert!(client.get_results().await.unwrap() > 0);
     }
@@ -681,7 +717,7 @@ mod tests {
 
         assert!(client.start_test(IP_ADDR, port).await.is_ok());
 
-        // Extra wait to make sure test has completed
+        // Extra wait to make sure test has started
         tokio::time::sleep(TEST_DURATION / 2).await;
 
         // Close the server end
