@@ -91,7 +91,7 @@ class Router(ABC):
         pass
 
     @abstractmethod
-    async def delete_interface(self) -> None:
+    async def delete_interface(self, name=None) -> None:
         pass
 
     @abstractmethod
