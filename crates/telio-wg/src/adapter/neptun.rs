@@ -145,7 +145,10 @@ impl Adapter for NepTUN {
 
         cb(exit_pubkey, exit_ipv4, &mut sink4, &mut sink6);
     }
-    async fn set_iface(&self, iface: &str) {
-        self.device.write().await.wait();
+
+    async fn set_iface(&self, iface: &str) -> Result<(), AdapterError> {
+        let new_tun = todo!();
+        self.device.write().await.set_iface(new_tun);
+        Ok(())
     }
 }
