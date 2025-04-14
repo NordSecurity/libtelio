@@ -104,14 +104,15 @@ impl BytesAndTimestamps {
             self.first_tx_after_rx
         );
 
+        if self.rx_ts.is_none() {
+            return false;
+        }
+
         if let Some(first_tx_after_rx) = self.first_tx_after_rx {
             return now.duration_since(first_tx_after_rx) < WG_KEEPALIVE + rtt;
         }
 
-        match (self.rx_ts, self.tx_ts) {
-            (Some(rx_ts), Some(tx_ts)) => tx_ts <= rx_ts,
-            _ => false,
-        }
+        self.tx_ts.is_some()
     }
 }
 
@@ -211,7 +212,7 @@ mod proptests {
     #[rstest]
     #[case(None, None, 0, false)]
     #[case(Some(0), None, 0, false)]
-    #[case(None, Some(0), 0, true)]
+    #[case(None, Some(0), 0, false)]
     #[case(Some(0), Some(0), 0, true)]
     #[case(Some(0), Some(1), 0, true)]
     #[case(Some(1), Some(0), 0, true)]
