@@ -640,6 +640,17 @@ impl Device {
         })
     }
 
+    /// TODO
+    pub fn set_iface(&self, iface: &str) -> Result {
+        let iface = iface.to_owned();
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| {
+                Ok(rt.set_iface(&iface).boxed().await)
+            })
+            .await?
+        })
+    }
+
     /// Retrieves currently configured private key for the interface
     pub fn get_private_key(&self) -> Result<SecretKey> {
         self.async_runtime()?.block_on(async {
@@ -1640,6 +1651,10 @@ impl Runtime {
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
             .boxed()
             .await?;
+        Ok(())
+    }
+    async fn set_iface(&mut self, iface: &str) -> Result {
+        self.entities.wireguard_interface.set_iface(iface).await;
         Ok(())
     }
 

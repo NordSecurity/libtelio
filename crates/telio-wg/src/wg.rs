@@ -318,6 +318,9 @@ impl DynamicWg {
             Err(Error::RestartFailed)
         }
     }
+
+    /// TODO
+    pub async fn set_iface(&self, iface: &str) {}
 }
 
 #[async_trait]

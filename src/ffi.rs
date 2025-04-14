@@ -485,6 +485,18 @@ impl Telio {
         })
     }
 
+    /// TODO
+    pub fn set_iface(&self, iface: String) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::set_iface for instance id: {}, iface: '{:?}'",
+            self.id,
+            iface
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| dev.set_iface(&iface).map_err(TelioError::from))
+        })
+    }
+
     pub fn get_secret_key(&self) -> SecretKey {
         self.device_op(true, |dev| dev.get_private_key().map_err(|e| e.into()))
             .unwrap_or_else(|err| {
