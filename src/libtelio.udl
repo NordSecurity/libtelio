@@ -261,6 +261,9 @@ interface Telio {
     [Throws=TelioError]
     void set_secret_key([ByRef] SecretKey secret_key);
 
+    [Throws=TelioError]
+    void set_tun(i32 tun);
+
 
     SecretKey get_secret_key();
 
