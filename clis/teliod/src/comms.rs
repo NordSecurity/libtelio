@@ -14,7 +14,7 @@ use interprocess::{
         traits::tokio::{Listener, Stream},
         ListenerOptions, ToFsName,
     },
-    os::unix::local_socket::FilesystemUdSocket,
+    os::unix::local_socket::{FilesystemUdSocket, ListenerOptionsExt},
 };
 
 /// Struct for handling connections of the daemon's side of the IPC communication with the API.
@@ -24,23 +24,13 @@ pub struct DaemonSocket {
 }
 
 impl DaemonSocket {
-    /// Returns the path to the Teliod socket, when available it uses `/run/`, then
-    /// checks `/var/run` and if none of them is available it returns an error.
+    /// Returns the path to the Teliod socket
     ///
     /// # Returns
     ///
     /// A path to the Teliod socket wrapped inside result
     pub fn get_ipc_socket_path() -> Result<PathBuf> {
-        if Path::new("/run").exists() {
-            Ok(PathBuf::from("/run/teliod.sock"))
-        } else if Path::new("/var/run/").exists() {
-            Ok(PathBuf::from("/var/run/teliod.sock"))
-        } else {
-            Err(Error::new(
-                ErrorKind::NotFound,
-                "Neither /run/ nor /var/run/ exists",
-            ))
-        }
+        Ok(get_wd_path()?.join("teliod.sock"))
     }
 
     /// Binds the IPC socket to the specified address and returns a handle to the struct
@@ -56,10 +46,18 @@ impl DaemonSocket {
     pub fn new(ipc_socket_path: &Path) -> Result<Self> {
         // Delete the socket file if it already exists
         let _ = fs::remove_file(ipc_socket_path);
-        let socket = ListenerOptions::new()
+
+        let options = ListenerOptions::new()
             .name(ipc_socket_path.to_fs_name::<FilesystemUdSocket>()?)
-            .reclaim_name(true)
-            .create_tokio()?;
+            .reclaim_name(true);
+
+        // Disable setting umask for tests,
+        // they are running in parallel and this panics because of a concurent umask call
+        #[cfg(not(test))]
+        // Mode for unix socket rw-------
+        let options = options.mode(0o600);
+
+        let socket = options.create_tokio()?;
 
         Ok(Self { socket })
     }
@@ -158,4 +156,25 @@ impl DaemonConnection {
 
         Ok(())
     }
+}
+
+/// Helper function for getting the path to the daemon's working directory.
+/// when available it uses `/run/`, or `/var/run/`
+/// if none of them is available returns an error.
+///
+/// # Returns
+///
+/// Result containing the path of the daemons work directory.
+pub fn get_wd_path() -> Result<PathBuf> {
+    Ok(if Path::new("/run/").exists() {
+        PathBuf::from("/run/")
+    } else if Path::new("/var/run/").exists() {
+        PathBuf::from("/var/run/")
+    } else {
+        return Err(Error::new(
+            ErrorKind::NotFound,
+            "Neither /run/ nor /var/run/ exists",
+        ));
+    }
+    .join("teliod"))
 }
