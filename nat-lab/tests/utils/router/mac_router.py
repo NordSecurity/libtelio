@@ -13,6 +13,8 @@ class MacRouter(Router):
         super().__init__(ip_stack)
         self._connection = connection
         self._interface_name = "utun10"
+        self._meshnet_route_v4_created = False
+        self._meshnet_route_v6_created = False
 
     def get_interface_name(self) -> str:
         return self._interface_name
@@ -49,6 +51,33 @@ class MacRouter(Router):
                 ).execute()
 
     async def deconfigure_interface(self, addresses: List[str]) -> None:
+        if self._meshnet_route_v4_created is True:
+            await self._connection.create_process(
+                [
+                    "route",
+                    "delete",
+                    "-inet",
+                    "100.64.0.0/10",
+                    "-interface",
+                    self._interface_name,
+                ],
+                quiet=False,
+            ).execute()
+            self._meshnet_route_v4_created = True
+        if self._meshnet_route_v6_created is True:
+            await self._connection.create_process(
+                [
+                    "route",
+                    "delete",
+                    "-inet6",
+                    LIBTELIO_IPV6_WG_SUBNET + "::/64",
+                    "-interface",
+                    self._interface_name,
+                ],
+                quiet=True,
+            ).execute()
+            self._meshnet_route_v6_created = False
+
         for address in addresses:
             addr_proto = self.check_ip_address(address)
 
@@ -104,6 +133,7 @@ class MacRouter(Router):
                 ],
                 quiet=True,
             ).execute()
+            self._meshnet_route_v4_created = True
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             await self._connection.create_process(
@@ -117,6 +147,7 @@ class MacRouter(Router):
                 ],
                 quiet=True,
             ).execute()
+            self._meshnet_route_v6_created = True
 
     async def create_vpn_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
@@ -147,7 +178,7 @@ class MacRouter(Router):
                 self._interface_name,
             ]).execute()
 
-    async def delete_interface(self) -> None:
+    async def delete_interface(self, name=None) -> None:
         pass
 
     async def delete_vpn_route(self) -> None:
@@ -204,4 +235,4 @@ class MacRouter(Router):
     def set_interface_name(
         self, new_interface_name: str  # pylint: disable=unused-argument
     ) -> None:
-        pass
+        self._interface_name = new_interface_name
