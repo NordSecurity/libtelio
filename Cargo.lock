@@ -5107,6 +5107,7 @@ dependencies = [
  "base64 0.22.1",
  "clap 4.5.31",
  "const_format",
+ "daemonize",
  "dirs",
  "form_urlencoded",
  "futures",

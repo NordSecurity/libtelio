@@ -11,20 +11,18 @@ use telio::{
     telio_utils::select,
     telio_wg::AdapterType,
 };
-use tokio::sync::mpsc::Sender;
-use tokio::{sync::mpsc, sync::oneshot, time::Duration};
+use tokio::{sync::mpsc, sync::mpsc::Sender, sync::oneshot, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 
-use crate::core_api::{get_meshmap as get_meshmap_from_server, init_with_api};
-use crate::logging::setup_logging;
-use crate::ClientCmd;
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
     config::DeviceIdentity,
     config::{InterfaceConfig, TeliodDaemonConfig},
+    core_api::{get_meshmap as get_meshmap_from_server, init_with_api},
+    logging::setup_logging,
     nc::NotificationCenter,
-    TelioStatusReport, TeliodError,
+    ClientCmd, TelioStatusReport, TeliodError,
 };
 
 #[derive(Debug)]
@@ -247,7 +245,7 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
     });
 
     info!("Entering event loop");
-    eprintln!("Daemon started");
+    println!("Daemon started");
 
     loop {
         select! {
