@@ -427,6 +427,10 @@ impl Adapter for WindowsNativeWg {
         self.adapter.down();
         self.cleanup();
     }
+
+    async fn set_tun(&self, _tun: i32) -> Result<(), AdapterError> {
+        Err(AdapterError::UnsupportedAdapter)
+    }
 }
 
 #[cfg(windows)]

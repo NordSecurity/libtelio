@@ -498,6 +498,22 @@ impl Telio {
         })
     }
 
+    /// Sets the tun interface file descriptor
+    ///
+    /// This function only does something on NepTUN adapter.
+    ///
+    /// # Paramaters
+    /// - `tun`: file descriptor of the (u)tun interface
+    pub fn set_tun(&self, tun_fd: i32) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::set_tun for instance id: {}, tun fd: {tun_fd}",
+            self.id,
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| dev.set_tun(tun_fd).map_err(TelioError::from))
+        })
+    }
+
     pub fn get_secret_key(&self) -> SecretKey {
         self.device_op(true, |dev| dev.get_private_key().map_err(|e| e.into()))
             .unwrap_or_else(|err| {

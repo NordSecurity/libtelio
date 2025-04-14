@@ -88,6 +88,9 @@ pub trait Adapter: Send + Sync {
 
     /// Reset all the connections by injecting packets into the tunnel
     async fn inject_reset_packets(&self, _exit_pubkey: &PublicKey, _exit_ipv4_addr: Ipv4Addr) {}
+
+    /// Set the (u)tun file descriptor to be used by the adapter
+    async fn set_tun(&self, tun: i32) -> Result<(), Error>;
 }
 
 /// Enumeration of `Error` types for `Adapter` struct

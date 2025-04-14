@@ -116,4 +116,10 @@ impl Adapter for NepTUN {
 
         cb(exit_pubkey, exit_ipv4, &mut tun);
     }
+
+    async fn set_tun(&self, tun: i32) -> Result<(), AdapterError> {
+        let new_tun = TunSocket::new_from_fd(tun)?;
+        self.device.write().await.set_iface(new_tun)?;
+        Ok(())
+    }
 }

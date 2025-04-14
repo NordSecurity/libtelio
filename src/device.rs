@@ -640,6 +640,16 @@ impl Device {
         })
     }
 
+    /// Set the (u)tun file descriptor to be used by the adapter
+    pub fn set_tun(&self, tun: i32) -> Result {
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| {
+                Ok(rt.set_tun(tun).boxed().await)
+            })
+            .await?
+        })
+    }
+
     /// Retrieves currently configured private key for the interface
     pub fn get_private_key(&self) -> Result<SecretKey> {
         self.async_runtime()?.block_on(async {
@@ -1596,6 +1606,23 @@ impl Runtime {
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
             .boxed()
             .await?;
+        Ok(())
+    }
+
+    async fn set_tun(&mut self, tun: i32) -> Result {
+        self.entities.wireguard_interface.set_tun(tun).await?;
+
+        self.requested_state.device_config.name = None;
+        #[cfg(not(target_os = "windows"))]
+        {
+            self.requested_state.device_config.tun = Some(tun);
+        }
+
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+        if let Some(index) = fd_to_if_index(tun as std::os::fd::RawFd) {
+            self.entities.socket_pool.set_tunnel_interface(index);
+        }
+
         Ok(())
     }
 
@@ -2568,6 +2595,20 @@ fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
     }
     if let Some(tunnel_if_index) = tunnel_if_index {
         socket_pool.set_tunnel_interface(tunnel_if_index)
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+fn fd_to_if_index(tun_fd: i32) -> Option<u64> {
+    match native::interface_index_from_tun(tun_fd) {
+        Ok(index) => Some(index),
+        Err(e) => {
+            telio_log_warn!(
+                "Could not get tunnel index from tunnel file descriptor: {}",
+                e
+            );
+            None
+        }
     }
 }
 

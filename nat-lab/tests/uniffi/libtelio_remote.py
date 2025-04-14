@@ -3,6 +3,8 @@ import os
 import Pyro5.api  # type: ignore
 import Pyro5.server  # type: ignore
 import shutil
+import socket
+import struct
 import sys
 import telio_bindings as libtelio  # type: ignore # pylint: disable=import-error
 import time
@@ -21,10 +23,11 @@ init_serialization(libtelio)
 
 
 def serialize_error(f):
+    fname = str(f).split(" ")[1]
+
     def wrap(*args, **kwargs):
+        args_str = ", ".join(map(str, args[1:]))
         with open(REMOTE_LOG, "a", encoding="utf-8") as logfile:
-            fname = str(f).split(" ")[1]
-            args_str = ", ".join(map(str, args[1:]))
             try:
                 res = f(*args, **kwargs)
                 logfile.write(
@@ -33,7 +36,7 @@ def serialize_error(f):
                 return (res, None)
             except libtelio.TelioError as e:
                 logfile.write(
-                    f"{datetime.datetime.now()} {fname}({args_str}) => {str(e)}\n"
+                    f"{datetime.datetime.now()} {fname}({args_str}) -> {str(e)}\n"
                 )
                 return (None, str(e))
 
@@ -111,29 +114,8 @@ class LibtelioWrapper:
         )
 
     @serialize_error
-    def create_tun(self, tun_name: str) -> int:
-        # Bypassing some checks, because we're handling platform specific things here
-        # but pylint is still complaining.
-        if os.name != "posix":  # pylint: disable=no-else-return
-            return 0
-        else:
-            import fcntl  # pylint: disable=import-outside-toplevel
-            import struct  # pylint: disable=import-outside-toplevel
-
-            # Constants for TUN/TAP interface creation (from Linux's if_tun.h)
-            TUNSETIFF = 0x400454CA
-            IFF_TUN = 0x0001
-            IFF_MULTI_QUEUE = 0x0100
-            IFF_NO_PI = 0x1000
-            tun_name_bytes = tun_name.encode("ascii")
-            tun_fd = os.open("/dev/net/tun", os.O_RDWR)
-            # '16sH' means we need to pass 16-byte string (interface name) and 2-byte short (flags)
-            ifr = struct.pack(
-                "16sH", tun_name_bytes, IFF_TUN | IFF_MULTI_QUEUE | IFF_NO_PI
-            )
-            fcntl.ioctl(tun_fd, TUNSETIFF, ifr)
-
-            return tun_fd
+    def create_tun(self, tun_id: int) -> int:
+        return create_tun(tun_id)
 
     @serialize_error
     def start_with_tun(self, private_key, adapter, tun: int):
@@ -144,6 +126,10 @@ class LibtelioWrapper:
     @serialize_error
     def set_fwmark(self, fwmark: int):
         self._libtelio.set_fwmark(fwmark)
+
+    @serialize_error
+    def set_tun(self, tun: int):
+        self._libtelio.set_tun(tun)
 
     @serialize_error
     def notify_network_change(self):
@@ -241,6 +227,54 @@ def main():
     except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"libtelio_remote error: {e}")
         raise e
+
+
+def create_tun(tun_id: int) -> int:
+    if os.name != "posix":
+        return 0
+
+    # This can't be imported on all platforms, since it's not present on Windows
+    import fcntl  # pylint: disable=import-outside-toplevel
+
+    # Check if running on macOS
+    if sys.platform == "darwin":
+        # macOS uses system socket interface to create utun devices
+        fd = socket.socket(socket.PF_SYSTEM, socket.SOCK_DGRAM, socket.SYSPROTO_CONTROL)
+
+        # Prepare the control info structure
+        # see: https://github.com/apple-oss-distributions/xnu/blob/8d741a5de7ff4191bf97d57b9f54c2f6d4a15585/bsd/net/if_utun.h#L51
+        CTLIOCGINFO = 0xC0644E03  # From <sys/ioctl.h>
+        UTUN_CONTROL_NAME = "com.apple.net.utun_control"
+
+        # Create a struct to hold control information
+        # see: https://github.com/apple-oss-distributions/xnu/blob/8d741a5de7ff4191bf97d57b9f54c2f6d4a15585/bsd/sys/kern_control.h#L111-L121
+        info = struct.pack("I96s", 0, UTUN_CONTROL_NAME.encode())
+
+        # Get the control ID
+        info = fcntl.ioctl(fd, CTLIOCGINFO, info)
+        ctrl_id = struct.unpack("I96s", info)[0]
+
+        fd.connect((ctrl_id, tun_id + 1))
+
+        fcntl.fcntl(fd, fcntl.F_SETFL, os.O_NONBLOCK)
+
+        fd_num = fd.fileno()
+        fd.detach()
+        return fd_num
+
+    # Constants for TUN/TAP interface creation (from Linux's if_tun.h)
+    TUNSETIFF = 0x400454CA
+    IFF_TUN = 0x0001
+    IFF_MULTI_QUEUE = 0x0100
+    IFF_NO_PI = 0x1000
+    tun_name = f"tun{tun_id}"
+    tun_name_bytes = tun_name.encode("ascii")
+    tun_fd = os.open("/dev/net/tun", os.O_RDWR)
+    # '16sH' means we need to pass 16-byte string (interface name) and 2-byte short (flags)
+    ifr = struct.pack("16sH", tun_name_bytes, IFF_TUN | IFF_MULTI_QUEUE | IFF_NO_PI)
+    fcntl.ioctl(tun_fd, TUNSETIFF, ifr)
+
+    return tun_fd
 
 
 if __name__ == "__main__":

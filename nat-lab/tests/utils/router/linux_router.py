@@ -193,10 +193,12 @@ class LinuxRouter(Router):
                 ROUTING_TABLE_ID,
             ]).execute()
 
-    async def delete_interface(self) -> None:
+    async def delete_interface(self, name=None) -> None:
         try:
+            if not name:
+                name = self._interface_name
             await self._connection.create_process(
-                ["ip", "link", "delete", self._interface_name],
+                ["ip", "link", "delete", name],
                 quiet=True,
             ).execute()
         except ProcessExecError as exception:
