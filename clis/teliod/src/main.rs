@@ -49,12 +49,22 @@ enum ClientCmd {
 #[clap()]
 enum Cmd {
     #[clap(about = "Runs the teliod event loop")]
-    Daemon { config_path: String },
+    Daemon(DaemonOpts),
     #[clap(flatten)]
     Client(ClientCmd),
     #[cfg(feature = "cgi")]
     #[clap(about = "Receive and parse http requests")]
     Cgi,
+}
+
+#[derive(Parser, Debug)]
+struct DaemonOpts {
+    /// Path to the config file
+    config_path: String,
+
+    /// Run in the foreground instead of daemonizing
+    #[clap(short = 'n', long = "no-detach")]
+    no_detach: bool,
 }
 
 #[derive(Debug, ThisError)]
@@ -107,11 +117,11 @@ pub struct TelioStatusReport {
 #[tokio::main]
 async fn main() -> Result<(), TeliodError> {
     match Cmd::parse() {
-        Cmd::Daemon { config_path } => {
+        Cmd::Daemon(opts) => {
             if DaemonSocket::get_ipc_socket_path()?.exists() {
                 Err(TeliodError::DaemonIsRunning)
             } else {
-                let file = fs::File::open(&config_path)?;
+                let file = fs::File::open(&opts.config_path)?;
 
                 let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
 
