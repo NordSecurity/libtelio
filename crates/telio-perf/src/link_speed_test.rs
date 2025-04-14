@@ -127,18 +127,11 @@ impl Speedtest {
             initial: Duration::from_secs(2),
             maximal: Some(Duration::from_secs(120)),
         })?;
-        // If transport socket cannot be opened right now (for example, if meshnet had been started before
-        // the tunnel interface's IP had been configured), transport socket cannot be opened at start and
-        // will be opened later.
-        let transport_socket = match open_transport_socket(
-            socket_pool.clone(),
-            meshnet_ip,
-            #[cfg(not(test))]
-            SPEEDTEST_PORT,
-            #[cfg(test)]
-            0,
-        )
-        .await
+        // Open transport socket here for unit tests, otherwise they fail.
+        // To pass the unit tests then, an unnecessary delay would be needed
+        // to make sure socket is open.
+        #[cfg(test)]
+        let transport_socket = match open_transport_socket(socket_pool.clone(), meshnet_ip, 0).await
         {
             Ok(transport_socket) => Some(transport_socket),
             Err(_) => {
@@ -149,6 +142,8 @@ impl Speedtest {
                 None
             }
         };
+        #[cfg(not(test))]
+        let transport_socket = None;
         let cmd_chan = Chan::new(5);
         let test_results_chan = Chan::new(5);
         Ok(Self {
