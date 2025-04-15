@@ -127,29 +127,11 @@ impl Speedtest {
             initial: Duration::from_secs(2),
             maximal: Some(Duration::from_secs(120)),
         })?;
-        // Open transport socket here for unit tests, otherwise they fail.
-        // To pass the unit tests then, an unnecessary delay would be needed
-        // to make sure socket is open.
-        #[cfg(test)]
-        let transport_socket = match open_transport_socket(socket_pool.clone(), meshnet_ip, 0).await
-        {
-            Ok(transport_socket) => Some(transport_socket),
-            Err(_) => {
-                telio_log_warn!(
-                    "Will try to open transport socket again in {:?}",
-                    exponential_backoff.get_backoff()
-                );
-                None
-            }
-        };
-        #[cfg(not(test))]
-        let transport_socket = None;
-        let cmd_chan = Chan::new(5);
-        let test_results_chan = Chan::new(5);
+
         Ok(Self {
             task: Task::start(State {
-                transport_socket,
-                cmd_chan,
+                transport_socket: None,
+                cmd_chan: Chan::new(5),
                 recv_buffer: vec![0; MAX_PACKET_SIZE],
                 socket_pool,
                 meshnet_ip,
@@ -157,19 +139,19 @@ impl Speedtest {
                 handler_state: Arc::new(RwLock::new(HandlerState::Start)),
                 pkts_recvd: 0,
                 test_duration: Instant::now(),
-                test_results_chan,
+                test_results_chan: Chan::new(5),
             }),
         })
     }
 
     /// Start the link speed test test with given endpoint
-    pub async fn start_test(&self, ip_addr: IpAddr, port: u16) -> Result<u32, Error> {
+    pub async fn start_test(&self, ip_addr: IpAddr, port: u16) -> Result<Duration, Error> {
         let endpoint = SocketAddr::new(ip_addr, port);
         task_exec!(&self.task, async move |state| {
             state.start_test(endpoint).await
         })
         .await?;
-        Ok(TEST_DURATION.as_secs() as u32)
+        Ok(TEST_DURATION)
     }
 
     /// Start the link speed test test with given endpoint
@@ -407,14 +389,13 @@ impl Runtime for State {
         let transport_socket = match &self.transport_socket {
             Some(transport_socket) => transport_socket.to_owned(),
             None => {
-                PinnedSleep::new(self.exponential_backoff.get_backoff(), ()).await;
                 let Ok(transport_socket) = open_transport_socket(
                     self.socket_pool.clone(),
                     self.meshnet_ip,
                     #[cfg(not(test))]
                     SPEEDTEST_PORT,
                     #[cfg(test)]
-                    12345,
+                    0,
                 )
                 .await
                 else {
@@ -422,6 +403,7 @@ impl Runtime for State {
                         "link speed test transport socket still not opened, will retry in {:?}",
                         self.exponential_backoff.get_backoff()
                     );
+                    PinnedSleep::new(self.exponential_backoff.get_backoff(), ()).await;
                     self.exponential_backoff.next_backoff();
                     return Self::next();
                 };
@@ -629,7 +611,10 @@ mod tests {
     }
 
     async fn setup_peer(socket_pool: Arc<SocketPool>) -> Speedtest {
-        Speedtest::start(IP_ADDR, socket_pool).await.unwrap()
+        let sp = Speedtest::start(IP_ADDR, socket_pool).await.unwrap();
+        // Give it a little delay for task to start and socket to open
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        sp
     }
 
     async fn setup_peers() -> (Speedtest, Speedtest, u16) {

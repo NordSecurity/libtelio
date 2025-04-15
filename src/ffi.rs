@@ -796,7 +796,7 @@ impl Telio {
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 match dev.trigger_peer_link_speed_test(peer_ip.clone()) {
-                    Ok(res) => Ok(res),
+                    Ok(res) => Ok(res.as_secs() as u32),
                     Err(e) => Err(e.into()),
                 }
             })

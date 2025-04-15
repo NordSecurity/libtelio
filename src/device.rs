@@ -878,7 +878,7 @@ impl Device {
         })
     }
 
-    pub fn trigger_peer_link_speed_test(&self, ip_addr: String) -> Result<u32> {
+    pub fn trigger_peer_link_speed_test(&self, ip_addr: String) -> Result<Duration> {
         let addr = ip_addr.parse::<IpAddr>()?;
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt
@@ -1765,7 +1765,7 @@ impl Runtime {
         Ok(())
     }
 
-    async fn trigger_peer_link_speed_test(&mut self, ip_addr: IpAddr) -> Result<u32> {
+    async fn trigger_peer_link_speed_test(&mut self, ip_addr: IpAddr) -> Result<Duration> {
         let duration = self
             .entities
             .meshnet
