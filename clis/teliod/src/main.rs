@@ -1,9 +1,15 @@
 //! Main and implementation of config and commands for Teliod - simple telio daemon for Linux and OpenWRT
 
 use clap::Parser;
+use comms::get_wd_path;
+use daemonize::{Daemonize, Outcome, Parent};
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
-use std::{fs, net::IpAddr};
+use std::{
+    fs::{self, File},
+    net::IpAddr,
+    process::exit,
+};
 use telio::{device::Error as DeviceError, telio_model::mesh::Node};
 use thiserror::Error as ThisError;
 use tokio::{
@@ -101,6 +107,8 @@ enum TeliodError {
     InvalidConfigOption(String, String, String),
     #[error(transparent)]
     LogAppenderError(#[from] InitError),
+    #[error(transparent)]
+    DaemonizeError(#[from] daemonize::Error),
 }
 
 /// Libtelio and meshnet status report
@@ -118,6 +126,16 @@ pub struct TelioStatusReport {
 async fn main() -> Result<(), TeliodError> {
     match Cmd::parse() {
         Cmd::Daemon(opts) => {
+            // Check if teliod working directory is available, otherwise create it
+            let wd_path = get_wd_path()?;
+            if !wd_path.exists() {
+                fs::create_dir_all(&wd_path)?;
+            }
+            println!(
+                "Starting teliod daemon with working directory {}",
+                wd_path.to_string_lossy()
+            );
+
             if DaemonSocket::get_ipc_socket_path()?.exists() {
                 Err(TeliodError::DaemonIsRunning)
             } else {
@@ -131,6 +149,41 @@ async fn main() -> Result<(), TeliodError> {
                         config.authentication_token = token;
                     } else {
                         error!("Token from env not valid")
+                    }
+                }
+
+                // daemonize the process
+                if !opts.no_detach {
+                    println!("Daemonizing teliod process");
+                    debug!("Daemonizing teliod process");
+                    // redirect stdout and stderr
+                    let stdout = File::create(wd_path.join("out.log"))?;
+                    let stderr = File::create(wd_path.join("err.log"))?;
+                    let pid_file = wd_path.join("teliod.pid");
+                    let daemon = Daemonize::new()
+                        .pid_file(pid_file)
+                        .chown_pid_file(true)
+                        .working_directory(wd_path)
+                        .stdout(stdout)
+                        .stderr(stderr);
+
+                    match daemon.execute() {
+                        Outcome::Parent(Ok(Parent {
+                            first_child_exit_code,
+                            ..
+                        })) => {
+                            eprintln!("parent Ok {}", first_child_exit_code);
+                            exit(first_child_exit_code);
+                        }
+                        Outcome::Parent(Err(err)) => {
+                            eprintln!("parent error {}", err);
+                        }
+                        Outcome::Child(Ok(child)) => {
+                            eprintln!("Ok child {:?}", child.privileged_action_result);
+                        }
+                        Outcome::Child(Err(err)) => {
+                            eprintln!("child error {}", err);
+                        }
                     }
                 }
 
