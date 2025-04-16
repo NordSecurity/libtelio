@@ -959,8 +959,11 @@ impl State {
     }
 
     pub async fn set_tun(&mut self, tun: i32) -> Result<(), Error> {
-        self.cfg.tun = Some(tun);
-        self.cfg.name = None;
+        #[cfg(unix)]
+        {
+            self.cfg.tun = Some(tun);
+            self.cfg.name = None;
+        }
 
         self.adapter.set_tun(tun).await?;
         Ok(())

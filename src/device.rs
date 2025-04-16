@@ -1654,7 +1654,10 @@ impl Runtime {
     }
     async fn set_tun(&mut self, tun: i32) -> Result {
         self.requested_state.device_config.name = None;
-        self.requested_state.device_config.tun = Some(tun);
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+        {
+            self.requested_state.device_config.tun = Some(tun);
+        }
 
         self.entities.wireguard_interface.set_tun(tun).await?;
 
