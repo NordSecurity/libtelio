@@ -1653,11 +1653,14 @@ impl Runtime {
         Ok(())
     }
     async fn set_tun(&mut self, tun: i32) -> Result {
-        self.entities
-            .wireguard_interface
-            .set_tun(tun)
-            .await
-            .map_err(|e| e.into())
+        self.entities.wireguard_interface.set_tun(tun).await?;
+
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+        if let Some(index) = fd_to_if_index(tun as std::os::fd::RawFd) {
+            self.entities.socket_pool.set_tunnel_interface(index);
+        }
+
+        Ok(())
     }
 
     async fn get_private_key(&self) -> Result<SecretKey> {
@@ -2619,6 +2622,19 @@ fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
     }
     if let Some(tunnel_if_index) = tunnel_if_index {
         socket_pool.set_tunnel_interface(tunnel_if_index)
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+fn fd_to_if_index(tun_fd: i32) -> Option<u64> {
+    match native::interface_index_from_tun(tun_fd) {
+        Ok(index) => tunnel_if_index = Some(index),
+        Err(e) => {
+            telio_log_warn!(
+                "Could not get tunnel index from tunnel file descriptor: {}",
+                e
+            );
+        }
     }
 }
 
