@@ -526,6 +526,10 @@ interface FeaturesDefaultsBuilder {
     /// Enable dynamic WireGuard-NT control as per RFC LLT-0089
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_dynamic_wg_nt_control();
+
+    /// Enable custom socket buffer sizes for NepTUN
+    [Self=ByArc]
+    FeaturesDefaultsBuilder set_skt_buffer_size(u32 skt_buffer_size);
 };
 
 
@@ -590,6 +594,8 @@ dictionary FeatureWireguard {
     FeaturePolling polling;
     /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
     boolean enable_dynamic_wg_nt_control;
+    /// Configurable socket buffer size for NepTUN
+    u32? skt_buffer_size;
 };
 
 /// Configurable persistent keepalive periods for different types of peers

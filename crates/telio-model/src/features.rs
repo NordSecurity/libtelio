@@ -93,6 +93,9 @@ pub struct FeatureWireguard {
     /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
     #[serde(default)]
     pub enable_dynamic_wg_nt_control: bool,
+    /// Configurable socket buffer size for NepTUN
+    #[serde(default)]
+    pub skt_buffer_size: Option<u32>,
 }
 
 impl FeatureWireguard {
@@ -519,7 +522,8 @@ mod tests {
                     "wireguard_polling_period": 1000,
                     "wireguard_polling_period_after_state_change": 50
                 },
-                "enable_dynamic_wg_nt_control": true
+                "enable_dynamic_wg_nt_control": true,
+                "skt_buffer_size": 123456
             },
             "nurse": {
                 "fingerprint": "test_fingerprint",
@@ -615,6 +619,7 @@ mod tests {
                             wireguard_polling_period_after_state_change: 50
                         },
                         enable_dynamic_wg_nt_control: true,
+                        skt_buffer_size: Some(123456),
                     },
                     nurse: Some(FeatureNurse {
                         heartbeat_interval: 5,

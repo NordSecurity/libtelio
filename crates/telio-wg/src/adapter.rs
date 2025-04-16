@@ -172,7 +172,7 @@ pub enum Error {
 }
 
 /// Enumeration of types for `Adapter` struct
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AdapterType {
     /// NepTUN
     NepTUN,
@@ -234,6 +234,7 @@ pub(crate) async fn start(cfg: &Config) -> Result<Box<dyn Adapter>, Error> {
                 cfg.firewall_process_inbound_callback.clone(),
                 cfg.firewall_process_outbound_callback.clone(),
                 cfg.firewall_reset_connections.clone(),
+                cfg.skt_buffer_size,
             )?))
         }
         AdapterType::LinuxNativeWg => {
