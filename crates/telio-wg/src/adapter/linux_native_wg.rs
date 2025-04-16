@@ -83,7 +83,7 @@ impl Adapter for LinuxNativeWg {
     async fn stop(&self) {
         let _ = self.rtsocket.lock().await.del_device(&self.ifname);
     }
-    async fn set_iface(&self, iface: &str) -> Result<(), AdapterError> {
+    async fn set_tun(&self, _tun: i32) -> Result<(), AdapterError> {
         Err(AdapterError::UnsupportedAdapter)
     }
 }

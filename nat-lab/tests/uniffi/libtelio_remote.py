@@ -144,6 +144,10 @@ class LibtelioWrapper:
     @serialize_error
     def set_fwmark(self, fwmark: int):
         self._libtelio.set_fwmark(fwmark)
+        
+    @serialize_error
+    def set_tun(self, tun: int):
+        self._libtelio.set_tun(tun)
 
     @serialize_error
     def notify_network_change(self):

@@ -114,6 +114,11 @@ class LibtelioProxy:
     @move_to_async_thread
     def set_fwmark(self, fwmark: int):
         self._handle_remote_error(lambda r: r.set_fwmark(fwmark))
+        
+    @move_to_async_thread
+    def set_tun(self, tun: int):
+        log.info("set_tun with %s", tun)
+        self._handle_remote_error(lambda r: r.set_tun(tun))
 
     @move_to_async_thread
     def notify_network_change(self):

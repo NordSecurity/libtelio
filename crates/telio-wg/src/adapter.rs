@@ -89,7 +89,7 @@ pub trait Adapter: Send + Sync {
     async fn inject_reset_packets(&self, _exit_pubkey: &PublicKey, _exit_ipv4_addr: Ipv4Addr) {}
 
     /// TODO
-    async fn set_iface(&self, iface: &str) -> Result<(), Error>;
+    async fn set_tun(&self, tun: i32) -> Result<(), Error>;
 }
 
 /// Enumeration of `Error` types for `Adapter` struct

@@ -831,10 +831,12 @@ class Client:
 
         return False
 
-    async def restart_interface(self):
+    async def restart_interface(self, new_name=None):
         if self._interface_configured:
             await self.get_router().deconfigure_interface(self._node.ip_addresses)
             self._interface_configured = False
+        if new_name:
+            self.get_router().set_interface_name(new_name)
         await self._configure_interface()
 
     async def connect_to_exit_node(

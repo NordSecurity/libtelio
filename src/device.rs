@@ -641,11 +641,10 @@ impl Device {
     }
 
     /// TODO
-    pub fn set_iface(&self, iface: &str) -> Result {
-        let iface = iface.to_owned();
+    pub fn set_tun(&self, tun: i32) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_iface(&iface).boxed().await)
+                Ok(rt.set_tun(tun).boxed().await)
             })
             .await?
         })
@@ -1653,9 +1652,12 @@ impl Runtime {
             .await?;
         Ok(())
     }
-    async fn set_iface(&mut self, iface: &str) -> Result {
-        self.entities.wireguard_interface.set_iface(iface).await;
-        Ok(())
+    async fn set_tun(&mut self, tun: i32) -> Result {
+        self.entities
+            .wireguard_interface
+            .set_tun(tun)
+            .await
+            .map_err(|e| e.into())
     }
 
     async fn get_private_key(&self) -> Result<SecretKey> {
