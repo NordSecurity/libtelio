@@ -958,8 +958,12 @@ impl State {
         Ok(success)
     }
 
-    pub async fn set_tun(&self, tun: i32) {
-        self.adapter.set_tun(tun).await.unwrap();
+    pub async fn set_tun(&mut self, tun: i32) -> Result<(), Error> {
+        self.cfg.tun = Some(tun);
+        self.cfg.name = None;
+
+        self.adapter.set_tun(tun).await?;
+        Ok(())
     }
 
     /// This is like the normal '==' but ignores the time_since_last_rx field in peers
