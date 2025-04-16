@@ -2631,12 +2631,13 @@ fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 fn fd_to_if_index(tun_fd: i32) -> Option<u64> {
     match native::interface_index_from_tun(tun_fd) {
-        Ok(index) => tunnel_if_index = Some(index),
+        Ok(index) => Some(index),
         Err(e) => {
             telio_log_warn!(
                 "Could not get tunnel index from tunnel file descriptor: {}",
                 e
             );
+            None
         }
     }
 }
