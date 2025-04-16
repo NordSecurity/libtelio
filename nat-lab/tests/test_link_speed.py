@@ -49,7 +49,7 @@ async def test_measuring_link_speed(
         await client_alpha.limit_network_speed(str(test_speed))
         await client_alpha.trigger_peer_link_speed_test(peer_ip)
         await client_alpha.wait_for_log("MiB/s Packet loss")
-        speed = await client_alpha.fetch_peer_link_speed()
+        speed = await client_alpha.try_fetch_peer_link_speed()
         await client_alpha.delete_limiter_rule()
         log.info("Got %d Expected %s", speed, test_speed)
         assert (

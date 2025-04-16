@@ -961,8 +961,8 @@ class Client:
     async def trigger_peer_link_speed_test(self, peer_ip: str) -> int:
         return await self.get_proxy().trigger_peer_link_speed_test(peer_ip)
 
-    async def fetch_peer_link_speed(self) -> int:
-        return await self.get_proxy().fetch_peer_link_speed()
+    async def try_fetch_peer_link_speed(self) -> int:
+        return await self.get_proxy().try_fetch_peer_link_speed()
 
     def get_endpoint_address(self, public_key: str) -> str:
         node = self.get_node_state(public_key)

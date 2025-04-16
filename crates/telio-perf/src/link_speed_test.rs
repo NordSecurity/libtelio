@@ -37,6 +37,8 @@ const PKT_LOSS_OFFSET: usize = 1;
 const PKT_LOSS_DATA_SIZE: usize = std::mem::size_of::<f32>();
 const LINK_SPEED_OFFSET: usize = PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE;
 const LINK_SPEED_DATA_SIZE: usize = std::mem::size_of::<u32>();
+const RESULT_DATA_OFFSET: usize = 1;
+const RESULT_DATA_SIZE: usize = std::mem::size_of::<u64>();
 const BUFFER_LEN: usize = 1350;
 /// Performance test specific errors
 #[derive(Debug, thiserror::Error)]
@@ -73,10 +75,13 @@ pub enum Error {
     IoError(#[from] std::io::Error),
     /// Buffer error
     #[error("Invalid index buffer")]
-    MalformedMessage,
+    InvalidBufferIndex,
     /// Buffer error
     #[error("Unable to complete test")]
     TestTimeout,
+    /// Buffer error
+    #[error("A test is already in progress. Cannot run another test")]
+    TestAlreadyInProgress,
 }
 
 enum PacketType {
@@ -103,6 +108,7 @@ impl From<u8> for PacketType {
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum HandlerState {
+    Init,
     Start,
     Test,
     Results,
@@ -121,7 +127,6 @@ impl Speedtest {
     /// Parameters:
     /// * meshnet_ip - The meshnet IP of the node on which this component is currently running
     /// * socket_pool - To create the transport socket
-    /// * packet_chan - A channel to send packets to and receive packets from the virtual peer component
     pub async fn start(meshnet_ip: IpAddr, socket_pool: Arc<SocketPool>) -> Result<Self, Error> {
         let exponential_backoff = ExponentialBackoff::new(ExponentialBackoffBounds {
             initial: Duration::from_secs(2),
@@ -136,7 +141,7 @@ impl Speedtest {
                 socket_pool,
                 meshnet_ip,
                 exponential_backoff,
-                handler_state: Arc::new(RwLock::new(HandlerState::Start)),
+                handler_state: Arc::new(RwLock::new(HandlerState::Init)),
                 pkts_recvd: 0,
                 test_duration: Instant::now(),
                 test_results_chan: Chan::new(5),
@@ -155,9 +160,9 @@ impl Speedtest {
     }
 
     /// Start the link speed test test with given endpoint
-    pub async fn get_results(&self) -> Result<i32, Error> {
+    pub async fn try_fetch_results(&self) -> Result<i32, Error> {
         let speed = task_exec!(&self.task, async move |state| {
-            state.await_results().await
+            state.try_fetch_results().await
         })
         .await?;
         Ok(speed)
@@ -240,20 +245,21 @@ impl State {
                     if *state == HandlerState::Results {
                         // Move the state to Test for the handler to start
                         // sending the data packets
+                        println!("Ending");
                         *state = HandlerState::End;
                     }
                 }
                 let bytes: [u8; PKT_LOSS_DATA_SIZE] = self
                     .recv_buffer
                     .get(PKT_LOSS_OFFSET..PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE)
-                    .ok_or(Error::MalformedMessage)?
+                    .ok_or(Error::InvalidBufferIndex)?
                     .try_into()?;
                 let pkt_loss = f32::from_be_bytes(bytes);
 
                 let bytes: [u8; LINK_SPEED_DATA_SIZE] = self
                     .recv_buffer
                     .get(LINK_SPEED_OFFSET..LINK_SPEED_OFFSET + LINK_SPEED_DATA_SIZE)
-                    .ok_or(Error::MalformedMessage)?
+                    .ok_or(Error::InvalidBufferIndex)?
                     .try_into()?;
                 let link_speed = u32::from_be_bytes(bytes);
                 #[allow(mpsc_blocking_send)]
@@ -304,10 +310,10 @@ impl State {
     async fn send_results(&mut self, endpoint: SocketAddr) -> Result<(), Error> {
         let duration = self.test_duration.elapsed();
         // Parse # of sent packets
-        let pkts_sent: [u8; std::mem::size_of::<u64>()] = self
+        let pkts_sent: [u8; RESULT_DATA_SIZE] = self
             .recv_buffer
-            .get(1..9)
-            .ok_or(Error::MalformedMessage)?
+            .get(RESULT_DATA_OFFSET..RESULT_DATA_OFFSET + RESULT_DATA_SIZE)
+            .ok_or(Error::InvalidBufferIndex)?
             .try_into()?;
         let pkts_sent = u64::from_be_bytes(pkts_sent);
 
@@ -319,12 +325,12 @@ impl State {
 
         send_buffer
             .get_mut(PKT_LOSS_OFFSET..PKT_LOSS_OFFSET + PKT_LOSS_DATA_SIZE)
-            .ok_or(Error::MalformedMessage)?
+            .ok_or(Error::InvalidBufferIndex)?
             .copy_from_slice(&pkt_loss.to_be_bytes());
 
         send_buffer
             .get_mut(LINK_SPEED_OFFSET..LINK_SPEED_OFFSET + LINK_SPEED_DATA_SIZE)
-            .ok_or(Error::MalformedMessage)?
+            .ok_or(Error::InvalidBufferIndex)?
             .copy_from_slice(&link_speed.to_be_bytes());
 
         if self
@@ -342,16 +348,21 @@ impl State {
 
     /// Start the link speed test with given endpoint
     async fn start_test(&self, endpoint: SocketAddr) -> Result<(), Error> {
+        // Here add a check that if a test is going on, it returns as error!
+        let state = self.handler_state.read().await;
+        if *state != HandlerState::Init {
+            return Err(Error::TestAlreadyInProgress);
+        }
         self.cmd_chan.tx.try_send(endpoint)?;
         Ok(())
     }
 
     /// Start the link speed test with given endpoint
-    async fn await_results(&mut self) -> Result<i32, Error> {
+    async fn try_fetch_results(&mut self) -> Result<i32, Error> {
         match self.test_results_chan.rx.try_recv() {
             Ok(s) => Ok(s as i32),
             Err(_) => {
-                if *self.handler_state.read().await == HandlerState::End {
+                if *self.handler_state.read().await == HandlerState::Init {
                     return Err(Error::TestTimeout);
                 }
                 // -1 denotes result isn't ready yet
@@ -419,12 +430,6 @@ impl Runtime for State {
                 self.handle_incoming_packet(recv_ep).await
             },
             Some(endpoint) = self.cmd_chan.rx.recv() => {
-                {
-                    let mut state = self.handler_state.write().await;
-                    if *state == HandlerState::End {
-                        *state = HandlerState::Start;
-                    }
-                }
                 tokio::spawn(link_speed_test_handler(endpoint, transport_socket.clone(), self.handler_state.clone()));
                 Ok(())
             },
@@ -459,13 +464,17 @@ async fn link_speed_test_handler(
     loop {
         let state = { *{ handler_state.read().await } };
         match state {
+            HandlerState::Init => {
+                let mut handler = handler_state.write().await;
+                *handler = HandlerState::Start;
+            }
             HandlerState::Start => {
                 // Inform the peer that test is starting
                 telio_log_debug!("Sending start for link speed test to {:?}", endpoint);
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::Start as u8);
                 if let Err(e) = transport_socket
                     .send_to(
-                        send_buffer.get(..1).ok_or(Error::MalformedMessage)?,
+                        send_buffer.get(..1).ok_or(Error::InvalidBufferIndex)?,
                         endpoint,
                     )
                     .await
@@ -485,7 +494,6 @@ async fn link_speed_test_handler(
                         let mut handler = handler_state.write().await;
                         *handler = HandlerState::End;
                     }
-                    break;
                 }
                 total_pkts = 0;
             }
@@ -525,12 +533,14 @@ async fn link_speed_test_handler(
                 // Tell the other peer test has ended
                 send_buffer.insert(PACKET_TYPE_OFFSET, PacketType::End as u8);
                 send_buffer
-                    .get_mut(1..9)
-                    .ok_or(Error::MalformedMessage)?
+                    .get_mut(RESULT_DATA_OFFSET..RESULT_DATA_OFFSET + RESULT_DATA_SIZE)
+                    .ok_or(Error::InvalidBufferIndex)?
                     .copy_from_slice(&total_pkts.to_be_bytes());
                 if let Err(e) = transport_socket
                     .send_to(
-                        send_buffer.get(..9).ok_or(Error::MalformedMessage)?,
+                        send_buffer
+                            .get(..RESULT_DATA_SIZE + 1)
+                            .ok_or(Error::InvalidBufferIndex)?,
                         endpoint,
                     )
                     .await
@@ -547,10 +557,13 @@ async fn link_speed_test_handler(
                         let mut handler = handler_state.write().await;
                         *handler = HandlerState::End;
                     }
-                    break;
                 }
             }
             HandlerState::End => {
+                {
+                    let mut handler = handler_state.write().await;
+                    *handler = HandlerState::Init;
+                }
                 break;
             }
         }
@@ -660,12 +673,24 @@ mod tests {
         assert!(client.start_test(IP_ADDR, port).await.is_ok());
 
         // Extra wait to make sure test has completed
-        tokio::time::sleep(TEST_DURATION * 2).await;
+        tokio::time::sleep(TEST_DURATION * 3).await;
 
         assert!(client.start_test(IP_ADDR, port).await.is_ok());
 
         // Handler state -> End. Test results sent server -> client
         wait_for_results(HandlerState::Test, client).await;
+    }
+
+    #[tokio::test]
+    async fn test_multiple_tests_at_same_time() {
+        let (client, _server, port) = setup_peers().await;
+
+        assert!(client.start_test(IP_ADDR, port).await.is_ok());
+
+        // Wait a little while to make sure tests have started
+        tokio::time::sleep(TEST_DURATION / 4).await;
+
+        assert!(client.start_test(IP_ADDR, port).await.is_err());
     }
 
     #[tokio::test]
@@ -684,11 +709,11 @@ mod tests {
 
         assert!(client.start_test(IP_ADDR, port).await.is_ok());
         // Get results is not ready response
-        assert!(client.get_results().await.unwrap() == -1);
+        assert!(client.try_fetch_results().await.unwrap() == -1);
         // Extra wait to make sure test has completed
         tokio::time::sleep(TEST_DURATION * 2).await;
         // Get actual results
-        assert!(client.get_results().await.unwrap() > 0);
+        assert!(client.try_fetch_results().await.unwrap() > 0);
     }
 
     #[tokio::test]
@@ -706,6 +731,6 @@ mod tests {
         // Extra wait to make sure exp backoff time has expired
         tokio::time::sleep(TEST_DURATION * 3).await;
         // Get actual results
-        assert!(client.get_results().await.is_err());
+        assert!(client.try_fetch_results().await.is_err());
     }
 }

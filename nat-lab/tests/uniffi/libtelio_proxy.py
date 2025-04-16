@@ -174,8 +174,8 @@ class LibtelioProxy:
         )
 
     @move_to_async_thread
-    def fetch_peer_link_speed(self) -> int:
-        return self._handle_remote_error(lambda r: r.fetch_peer_link_speed())
+    def try_fetch_peer_link_speed(self) -> int:
+        return self._handle_remote_error(lambda r: r.try_fetch_peer_link_speed())
 
     @move_to_async_thread
     def receive_ping(self) -> str:
