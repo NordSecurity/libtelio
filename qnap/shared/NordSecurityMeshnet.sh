@@ -23,12 +23,12 @@ system_log() {
 }
 
 get_ipc_socket_path() {
-    if [ -d "/run" ]; then
-        echo "/run/teliod.sock"
-    elif [ -d "/var/run" ]; then
-        echo "/var/run/teliod.sock"
+    if [ -d "/run/teliod/" ]; then
+        echo "/run/teliod/teliod.sock"
+    elif [ -d "/var/run/teliod/" ]; then
+        echo "/var/run/teliod/teliod.sock"
     else
-        system_log ERROR "Neither /run/ nor /var/run/ exists"
+        system_log ERROR "Neither /run/teliod/ nor /var/run/teliod/ exists"
         exit 1
     fi
 }
