@@ -1119,6 +1119,7 @@ impl Runtime {
                         )),
                         firewall_reset_connections,
                         enable_dynamic_wg_nt_control: features.wireguard.enable_dynamic_wg_nt_control,
+                        skt_buffer_size: features.wireguard.skt_buffer_size
                     },
                     features.link_detection,
                     features.ipv6,
@@ -1144,6 +1145,7 @@ impl Runtime {
                             )),
                             firewall_reset_connections,
                             enable_dynamic_wg_nt_control: features.wireguard.enable_dynamic_wg_nt_control,
+                            skt_buffer_size: features.wireguard.skt_buffer_size,
                         }
                     ).await;
 
