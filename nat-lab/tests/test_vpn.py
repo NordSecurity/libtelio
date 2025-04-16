@@ -5,6 +5,7 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
 from telio import Client
 from typing import Optional
+from uniffi import FirewallBlacklistTuple, IpProtocol
 from utils import testing, stun
 from utils.bindings import (
     default_features,
@@ -22,6 +23,7 @@ from utils.connection_tracker import (
 from utils.connection_util import generate_connection_tracker_config
 from utils.netcat import NetCatClient
 from utils.ping import ping
+from utils.process import ProcessExecError
 from utils.python import get_python_binary
 from utils.router import IPProto, IPStack
 
@@ -438,6 +440,54 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             # But our connection killing mechanism will reset connection resulting in CLOSE output.
             # Wait for close on both clients
             await conntrack.wait()
+
+
+@pytest.mark.asyncio
+async def test_firewall_blacklist() -> None:
+    serv_ip = config.PHOTO_ALBUM_IP
+    wg_server: dict = config.WG_SERVER
+
+    setup_params = [
+        SetupParameters(
+            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
+            ip_stack=IPStack.IPv4,
+        ),
+        SetupParameters(
+            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
+            ip_stack=IPStack.IPv4,
+        ),
+    ]
+
+    setup_params[1].features.firewall.outgoing_blacklist = [
+        FirewallBlacklistTuple(IpProtocol.TCP, serv_ip, 80)
+    ]
+
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, setup_params, prepare_vpn=True)
+        )
+
+        alpha_connection, beta_connection, *_ = [
+            conn.connection for conn in env.connections
+        ]
+        alpha, beta, *_ = env.clients
+
+        await alpha.connect_to_vpn(
+            wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+        )
+
+        await beta.connect_to_vpn(
+            wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+        )
+
+        await alpha_connection.create_process(["curl", serv_ip]).execute()
+
+        with pytest.raises(ProcessExecError):
+            await beta_connection.create_process(
+                ["curl", "--connect-timeout", "5", serv_ip]
+            ).execute()
 
 
 @pytest.mark.asyncio
