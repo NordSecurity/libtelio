@@ -64,7 +64,7 @@ impl NepTUN {
             protect: socket_pool,
             firewall_process_inbound_callback,
             firewall_process_outbound_callback,
-            skt_buffer_size,
+            skt_buffer_size: Some(1310720), // TODO to remove
         };
 
         let device = match tun {
