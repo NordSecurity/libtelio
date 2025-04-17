@@ -32,8 +32,9 @@ use tokio::{
 use crate::native::{interface_index_from_name, NativeSocket};
 use crate::Protector;
 use network_framework_sys::{
-    nw_interface_get_name, nw_interface_t, nw_path_monitor_create, nw_path_monitor_set_queue,
-    nw_path_monitor_start, nw_path_monitor_t, nw_path_t,
+    nw_interface_get_name, nw_interface_t, nw_path_get_status, nw_path_monitor_create,
+    nw_path_monitor_set_queue, nw_path_monitor_start, nw_path_monitor_t, nw_path_status_satisfied,
+    nw_path_t,
 };
 use nix::sys::socket::{getsockname, AddressFamily, SockaddrLike, SockaddrStorage};
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
@@ -268,12 +269,17 @@ impl Sockets {
         }
     }
 
-    fn rebind_all(&mut self, force: bool) {
-        telio_log_debug!("Rebinding all relay sockets, force: {}", force);
+    fn rebind_all(&mut self) {
+        telio_log_debug!("Rebinding all relay sockets");
 
-        if !self.set_new_default_interface(force) {
+        if !self.set_new_default_interface(true) {
+            telio_log_info!(
+                "Will not rebind relay sockets for {:?}",
+                self.default_interface
+            );
             return;
         }
+        telio_log_info!("Will rebind relay sockets for {:?}", self.default_interface);
 
         if let Some(&interface) = self.default_interface.as_ref() {
             for socket in &self.sockets {
@@ -343,7 +349,7 @@ fn spawn_monitors(
                 match notify.recv().await {
                     Ok(()) => {
                         let mut sockets = sockets.lock();
-                        sockets.rebind_all(false);
+                        sockets.rebind_all();
                     }
                     Err(e) => {
                         telio_log_warn!(
@@ -364,7 +370,7 @@ fn spawn_monitors(
 
                 update.notified().await;
                 let mut sockets = sockets.lock();
-                sockets.rebind_all(true);
+                sockets.rebind_all();
             }
         }),
         nw_path_monitor_monitor_handle,
@@ -444,7 +450,12 @@ fn dynamic_store_callback(
     context: &mut Context,
 ) {
     if let Some(sockets) = context.sockets.upgrade() {
-        sockets.lock().rebind_all(false);
+        // NMACOS-8047 The callback is executed when specified keys in the DynamicStore change.
+        // In such case we should force rebind the sockets to avoid no-net when `includeAllNetworks` is set.
+        telio_log_info!("Force rebinding the sockets because of DynamicStore key change");
+        telio_log_debug!("DynamicStore key changed: {:?}", _changed_keys);
+
+        sockets.lock().rebind_all();
     }
 }
 
@@ -456,8 +467,11 @@ fn get_dynamic_store(sockets: Weak<Mutex<Sockets>>) -> SCDynamicStore {
     let store = dynamic_store::SCDynamicStoreBuilder::new("primary-service-update-store")
         .callback_context(callback_context)
         .build();
-    let watch_keys: CFArray<CFString> = CFArray::from_CFTypes(&[]);
-    let watch_patterns = CFArray::from_CFTypes(&[CFString::from("State:/Network/Service/.*/IPv4")]);
+    let watch_keys: CFArray<CFString> =
+        CFArray::from_CFTypes(&[CFString::from("State:/Network/Global/IPv4")]);
+    let watch_patterns = CFArray::from_CFTypes(&[CFString::from(
+        "State:/Network/Interface/.*/IPConfigurationBusy",
+    )]);
     if !store.set_notification_keys(&watch_keys, &watch_patterns) {
         debug_panic!("Unable to register notifications for primary service update dynamic store");
     }
@@ -503,12 +517,19 @@ pub fn setup_network_path_monitor() {
             )
         };
 
-        *INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER.lock() = names.borrow().clone();
-        if let Err(e) = PROTECTOR_PATH_CHANGE_BROADCAST.send(()) {
-            telio_log_warn!(
-                "Failed to notify about changed path, error: {e}, path: {:?}",
-                names.borrow()
-            );
+        let path_status = unsafe { nw_path_get_status(path) };
+
+        // Rebind only on satisfied paths
+        if path_status == nw_path_status_satisfied {
+            *INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER.lock() = names.borrow().clone();
+            if let Err(e) = PROTECTOR_PATH_CHANGE_BROADCAST.send(()) {
+                telio_log_warn!(
+                    "Failed to notify about changed path, error: {e}, path: {:?}",
+                    names.borrow()
+                );
+            } else {
+                telio_log_info!("Notify about changed path: {:?}", names.borrow())
+            }
         }
 
         telio_log_info!(
