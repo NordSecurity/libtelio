@@ -8,7 +8,6 @@ use serde_json::error::Error as SerdeJsonError;
 use std::{
     fs::{self, File},
     net::IpAddr,
-    process::exit,
 };
 use telio::{device::Error as DeviceError, telio_model::mesh::Node};
 use thiserror::Error as ThisError;
@@ -122,20 +121,65 @@ pub struct TelioStatusReport {
     pub external_nodes: Vec<Node>,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), TeliodError> {
-    match Cmd::parse() {
-        Cmd::Daemon(opts) => {
-            // Check if teliod working directory is available, otherwise create it
-            let wd_path = get_wd_path()?;
-            if !wd_path.exists() {
-                fs::create_dir_all(&wd_path)?;
-            }
-            println!(
-                "Starting teliod daemon with working directory {}",
-                wd_path.to_string_lossy()
-            );
+fn main() -> Result<(), TeliodError> {
+    let cmd = Cmd::parse();
 
+    // Pre-daemon setup
+    if let Cmd::Daemon(opts) = &cmd {
+        // Check if teliod working directory is available, otherwise create it
+        let wd_path = get_wd_path()?;
+        if !wd_path.exists() {
+            fs::create_dir_all(&wd_path)?;
+        }
+        println!(
+            "Starting teliod daemon with working directory {}",
+            wd_path.to_string_lossy()
+        );
+
+        // daemonize the process
+        if !opts.no_detach {
+            println!("Daemonizing teliod process");
+            debug!("Daemonizing teliod process");
+            // redirect stdout and stderr
+            let stdout = File::create(wd_path.join("out.log"))?;
+            let stderr = File::create(wd_path.join("err.log"))?;
+            let pid_file = wd_path.join("teliod.pid");
+            let daemon = Daemonize::new()
+                .pid_file(pid_file)
+                .chown_pid_file(true)
+                .umask(0)
+                .working_directory(wd_path)
+                .stdout(stdout)
+                .stderr(stderr);
+
+            match daemon.execute() {
+                Outcome::Parent(Ok(Parent {
+                    first_child_exit_code,
+                    ..
+                })) => {
+                    eprintln!("parent Ok {}", first_child_exit_code);
+                    return Ok(());
+                    // exit(first_child_exit_code);
+                }
+                Outcome::Parent(Err(err)) => {
+                    eprintln!("parent error {}", err);
+                }
+                Outcome::Child(Ok(child)) => {
+                    eprintln!("Ok child {:?}", child.privileged_action_result);
+                }
+                Outcome::Child(Err(err)) => {
+                    eprintln!("child error {}", err);
+                }
+            }
+        }
+    }
+    tokio_main(cmd)
+}
+
+#[tokio::main]
+async fn tokio_main(cmd: Cmd) -> Result<(), TeliodError> {
+    match cmd {
+        Cmd::Daemon(opts) => {
             if DaemonSocket::get_ipc_socket_path()?.exists() {
                 Err(TeliodError::DaemonIsRunning)
             } else {
@@ -151,42 +195,6 @@ async fn main() -> Result<(), TeliodError> {
                         error!("Token from env not valid")
                     }
                 }
-
-                // daemonize the process
-                if !opts.no_detach {
-                    println!("Daemonizing teliod process");
-                    debug!("Daemonizing teliod process");
-                    // redirect stdout and stderr
-                    let stdout = File::create(wd_path.join("out.log"))?;
-                    let stderr = File::create(wd_path.join("err.log"))?;
-                    let pid_file = wd_path.join("teliod.pid");
-                    let daemon = Daemonize::new()
-                        .pid_file(pid_file)
-                        .chown_pid_file(true)
-                        .working_directory(wd_path)
-                        .stdout(stdout)
-                        .stderr(stderr);
-
-                    match daemon.execute() {
-                        Outcome::Parent(Ok(Parent {
-                            first_child_exit_code,
-                            ..
-                        })) => {
-                            eprintln!("parent Ok {}", first_child_exit_code);
-                            exit(first_child_exit_code);
-                        }
-                        Outcome::Parent(Err(err)) => {
-                            eprintln!("parent error {}", err);
-                        }
-                        Outcome::Child(Ok(child)) => {
-                            eprintln!("Ok child {:?}", child.privileged_action_result);
-                        }
-                        Outcome::Child(Err(err)) => {
-                            eprintln!("child error {}", err);
-                        }
-                    }
-                }
-
                 Box::pin(daemon::daemon_event_loop(config)).await
             }
         }
