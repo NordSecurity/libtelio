@@ -32,6 +32,7 @@ impl FeaturesDefaultsBuilder {
             ipv6: false,
             nicknames: false,
             batching: None,
+            speedtest: false,
         };
 
         Self {
@@ -139,6 +140,12 @@ impl FeaturesDefaultsBuilder {
 
     pub fn enable_dynamic_wg_nt_control(self: Arc<Self>) -> Arc<Self> {
         self.config.lock().wireguard.enable_dynamic_wg_nt_control = true;
+        self
+    }
+
+    /// Enable speedtest tests
+    pub fn enable_link_speed_test(self: Arc<Self>) -> Arc<Self> {
+        self.config.lock().speedtest = true;
         self
     }
 }

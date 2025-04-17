@@ -429,6 +429,10 @@ interface Telio {
     [Throws=TelioError]
     void trigger_qos_collection();
     [Throws=TelioError]
+    u32 trigger_peer_link_speed_test(string peer_ip);
+    [Throws=TelioError]
+    i32 try_fetch_peer_link_speed();
+    [Throws=TelioError]
     string receive_ping();
     [Throws=TelioError]
     u32 probe_pmtu(string host);
@@ -526,6 +530,9 @@ interface FeaturesDefaultsBuilder {
     /// Enable dynamic WireGuard-NT control as per RFC LLT-0089
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_dynamic_wg_nt_control();
+    /// Eanable link speed tests with defaults
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_link_speed_test();
 };
 
 
@@ -569,6 +576,8 @@ dictionary Features {
     boolean multicast;
     /// Batching
     FeatureBatching? batching;
+    /// speedtest support
+    boolean speedtest;
 };
 
 dictionary FeatureBatching {
