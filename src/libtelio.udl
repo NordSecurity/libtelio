@@ -529,7 +529,7 @@ interface FeaturesDefaultsBuilder {
 
     /// Enable custom socket buffer sizes for NepTUN
     [Self=ByArc]
-    FeaturesDefaultsBuilder enable_custom_skt_buffer_size(u32 skt_buffer_size);
+    FeaturesDefaultsBuilder set_skt_buffer_size(u32 skt_buffer_size);
 };
 
 

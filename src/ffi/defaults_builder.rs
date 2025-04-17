@@ -142,7 +142,7 @@ impl FeaturesDefaultsBuilder {
         self
     }
 
-    pub fn enable_custom_skt_buffer_size(self: Arc<Self>, skt_buffer_size: u32) -> Arc<Self> {
+    pub fn set_skt_buffer_size(self: Arc<Self>, skt_buffer_size: u32) -> Arc<Self> {
         self.config.lock().wireguard.skt_buffer_size = Some(skt_buffer_size);
         self
     }
