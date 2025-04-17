@@ -50,9 +50,7 @@ def default_features(
     if enable_dynamic_wg_nt_control:
         features_builder = features_builder.enable_dynamic_wg_nt_control()
     if custom_skt_buffer_size:
-        features_builder = features_builder.set_skt_buffer_size(
-            custom_skt_buffer_size
-        )
+        features_builder = features_builder.set_skt_buffer_size(custom_skt_buffer_size)
 
     features = features_builder.build()
     features.is_test_env = True
