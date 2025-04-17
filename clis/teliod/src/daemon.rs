@@ -53,6 +53,7 @@ fn telio_task(
     mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
     tx_channel: mpsc::Sender<TelioTaskCmd>,
     interface_config: &InterfaceConfig,
+    adapter: &AdapterType,
 ) -> Result<(), TeliodError> {
     debug!("Initializing telio device");
 
@@ -81,6 +82,7 @@ fn telio_task(
             &mut telio,
             node_identity.private_key.clone(),
             &interface_config.name,
+            adapter.to_owned(),
         )?;
         task_retrieve_meshmap(node_identity, auth_token, tx_channel.clone());
 
@@ -166,15 +168,16 @@ fn start_telio(
     telio: &mut Device,
     private_key: SecretKey,
     interface_name: &str,
+    adapter: AdapterType,
 ) -> Result<(), DeviceError> {
     telio.start(&DeviceConfig {
         private_key,
         name: Some(interface_name.to_owned()),
-        adapter: AdapterType::NepTUN,
+        adapter,
         ..Default::default()
     })?;
 
-    debug!("started telio with {:?}...", AdapterType::NepTUN,);
+    debug!("started telio with {:?}...", adapter);
     Ok(())
 }
 
@@ -239,6 +242,7 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
             telio_rx,
             tx_clone,
             &config.interface,
+            &config.adapter_type,
         )
     });
 

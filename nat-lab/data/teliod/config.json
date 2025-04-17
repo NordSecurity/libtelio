@@ -2,6 +2,7 @@
     "log_level": "trace",
     "log_file_path": "./teliod_natlab.log",
     "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "adapter_type": "neptun",
     "interface": {
       "name": "teliod",
       "config_provider": "manual"
