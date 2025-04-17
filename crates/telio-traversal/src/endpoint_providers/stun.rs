@@ -309,7 +309,7 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
                 if s.stun_session.is_none() {
                     let err = s.start_stun_session().await;
                     if err.is_err() {
-                        telio_log_error!("Starting session failed: {:?}", err)
+                        telio_log_warn!("Starting session failed: {:?}", err)
                     }
                 }
             }
@@ -647,7 +647,7 @@ impl<Wg: WireGuard, E: Backoff> State<Wg, E> {
             self.stun_state = StunState::SearchingForServer;
             let err = self.start_stun_session().await;
             if err.is_err() {
-                telio_log_error!("Starting session failed: {:?}", err)
+                telio_log_warn!("Starting session failed: {:?}", err)
             }
         }
     }
@@ -840,7 +840,7 @@ impl<Wg: WireGuard, E: Backoff> Runtime for State<Wg, E> {
                             // This is a poll interval. We're still in HasEndpoints state
                             let res = self.start_stun_session().await;
                             if let Err(err) = res {
-                                telio_log_error!("Starting STUN session failed with error: {:?}", err);
+                                telio_log_warn!("Starting STUN session failed with error: {:?}", err);
                                 self.transition_to_backing_off_state_or_change_proto().await;
                             }
                         }
