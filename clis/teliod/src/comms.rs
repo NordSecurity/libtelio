@@ -1,7 +1,7 @@
 //! Code for handling inter process communication and abstracting away it's dependencies.
 
 use std::{
-    fs,
+    env, fs,
     io::{Error, ErrorKind, Result, Write},
     path::{Path, PathBuf},
 };
@@ -24,23 +24,13 @@ pub struct DaemonSocket {
 }
 
 impl DaemonSocket {
-    /// Returns the path to the Teliod socket, when available it uses `/run/`, then
-    /// checks `/var/run` and if none of them is available it returns an error.
+    /// Returns the path to the Teliod socket
     ///
     /// # Returns
     ///
     /// A path to the Teliod socket wrapped inside result
     pub fn get_ipc_socket_path() -> Result<PathBuf> {
-        if Path::new("/run").exists() {
-            Ok(PathBuf::from("/run/teliod.sock"))
-        } else if Path::new("/var/run/").exists() {
-            Ok(PathBuf::from("/var/run/teliod.sock"))
-        } else {
-            Err(Error::new(
-                ErrorKind::NotFound,
-                "Neither /run/ nor /var/run/ exists",
-            ))
-        }
+        Ok(get_wd_path()?.join("teliod.sock"))
     }
 
     /// Binds the IPC socket to the specified address and returns a handle to the struct
@@ -158,4 +148,24 @@ impl DaemonConnection {
 
         Ok(())
     }
+}
+
+/// Helper function for getting the path to the daemon's working directory.
+/// when available it uses `/run/`, or `/var/run/`
+/// if none of them is available it uses the current directory.
+///
+/// # Returns
+///
+/// Result containing the path of the daemons work directory.
+pub fn get_wd_path() -> Result<PathBuf> {
+    let base = if Path::new("/run/").exists() {
+        PathBuf::from("/run/")
+    } else if Path::new("/var/run/").exists() {
+        PathBuf::from("/var/run/")
+    } else {
+        env::current_dir()?
+    }
+    .join("teliod");
+
+    Ok(base)
 }

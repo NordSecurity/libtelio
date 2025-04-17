@@ -1,9 +1,14 @@
 //! Main and implementation of config and commands for Teliod - simple telio daemon for Linux and OpenWRT
 
 use clap::Parser;
+use comms::get_wd_path;
+use daemonize::{Daemonize, Outcome, Parent};
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
-use std::{fs, net::IpAddr};
+use std::{
+    fs::{self, File},
+    net::IpAddr,
+};
 use telio::{device::Error as DeviceError, telio_model::mesh::Node};
 use thiserror::Error as ThisError;
 use tokio::{
@@ -49,12 +54,22 @@ enum ClientCmd {
 #[clap()]
 enum Cmd {
     #[clap(about = "Runs the teliod event loop")]
-    Daemon { config_path: String },
+    Daemon(DaemonOpts),
     #[clap(flatten)]
     Client(ClientCmd),
     #[cfg(feature = "cgi")]
     #[clap(about = "Receive and parse http requests")]
     Cgi,
+}
+
+#[derive(Parser, Debug)]
+struct DaemonOpts {
+    /// Path to the config file
+    config_path: String,
+
+    /// Run in the foreground instead of daemonizing
+    #[clap(short = 'n', long = "no-detach")]
+    no_detach: bool,
 }
 
 #[derive(Debug, ThisError)]
@@ -91,6 +106,8 @@ enum TeliodError {
     InvalidConfigOption(String, String, String),
     #[error(transparent)]
     LogAppenderError(#[from] InitError),
+    #[error(transparent)]
+    DaemonizeError(#[from] daemonize::Error),
 }
 
 /// Libtelio and meshnet status report
@@ -104,14 +121,69 @@ pub struct TelioStatusReport {
     pub external_nodes: Vec<Node>,
 }
 
+fn main() -> Result<(), TeliodError> {
+    let cmd = Cmd::parse();
+
+    // Pre-daemon setup
+    if let Cmd::Daemon(opts) = &cmd {
+        // Check if teliod working directory is available, otherwise create it
+        let wd_path = get_wd_path()?;
+        if !wd_path.exists() {
+            fs::create_dir_all(&wd_path)?;
+        }
+        println!(
+            "Starting teliod daemon with working directory {}",
+            wd_path.to_string_lossy()
+        );
+
+        // daemonize the process
+        if !opts.no_detach {
+            println!("Daemonizing teliod process");
+            debug!("Daemonizing teliod process");
+            // redirect stdout and stderr
+            let stdout = File::create(wd_path.join("out.log"))?;
+            let stderr = File::create(wd_path.join("err.log"))?;
+            let pid_file = wd_path.join("teliod.pid");
+            let daemon = Daemonize::new()
+                .pid_file(pid_file)
+                .chown_pid_file(true)
+                .umask(0)
+                .working_directory(wd_path)
+                .stdout(stdout)
+                .stderr(stderr);
+
+            match daemon.execute() {
+                Outcome::Parent(Ok(Parent {
+                    first_child_exit_code,
+                    ..
+                })) => {
+                    eprintln!("parent Ok {}", first_child_exit_code);
+                    return Ok(());
+                    // exit(first_child_exit_code);
+                }
+                Outcome::Parent(Err(err)) => {
+                    eprintln!("parent error {}", err);
+                }
+                Outcome::Child(Ok(child)) => {
+                    eprintln!("Ok child {:?}", child.privileged_action_result);
+                }
+                Outcome::Child(Err(err)) => {
+                    eprintln!("child error {}", err);
+                }
+            }
+        }
+    }
+    tokio_main(cmd)
+}
+
 #[tokio::main]
-async fn main() -> Result<(), TeliodError> {
-    match Cmd::parse() {
-        Cmd::Daemon { config_path } => {
+async fn tokio_main(cmd: Cmd) -> Result<(), TeliodError> {
+    match cmd {
+        Cmd::Daemon(opts) => {
             if DaemonSocket::get_ipc_socket_path()?.exists() {
                 Err(TeliodError::DaemonIsRunning)
             } else {
-                let file = fs::File::open(&config_path)?;
+                let file = fs::File::open(&opts.config_path)?;
 
                 let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
 
@@ -123,7 +195,6 @@ async fn main() -> Result<(), TeliodError> {
                         error!("Token from env not valid")
                     }
                 }
-
                 Box::pin(daemon::daemon_event_loop(config)).await
             }
         }
