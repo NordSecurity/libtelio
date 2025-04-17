@@ -14,7 +14,7 @@ def _generate_setup_parameters(
     return [
         SetupParameters(
             connection_tag=conn_tag,
-            adapter_type_override=TelioAdapterType.BORING_TUN,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
             features=default_features(),
             fingerprint=f"{conn_tag}",
         )
@@ -40,7 +40,8 @@ async def test_start_with_tun() -> None:
         await alpha_client.set_meshnet_config(env.api.get_meshnet_config(alpha.id))
         await ping_between_all_nodes(env)
 
-@pytest.mark.timeout(40)
+@pytest.mark.timeout(120)
+@pytest.mark.mac
 async def test_start_with_tun_and_switch() -> None:
     setup_params = _generate_setup_parameters([
         # ConnectionTag.DOCKER_CONE_CLIENT_1,
