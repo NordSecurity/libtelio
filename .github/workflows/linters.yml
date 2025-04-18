@@ -8,7 +8,7 @@ jobs:
       container:
           image: ghcr.io/nordsecurity/uniffi-generators:v0.25.0-8
       steps:
-        - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - run: uniffi-bindgen generate src/libtelio.udl --language python
         - run: mkdir -p dist/bindings/
         - run: cp src/telio.py dist/bindings/telio_bindings.py
@@ -19,7 +19,7 @@ jobs:
   check:
       runs-on: ubuntu-22.04
       steps:
-        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
           with:
             command: check
@@ -27,7 +27,7 @@ jobs:
   clippy:
       runs-on: ubuntu-22.04
       steps:
-        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
             just-version: '1.38.0'
@@ -35,7 +35,7 @@ jobs:
   clippy-win:
       runs-on: windows-2022
       steps:
-        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
             just-version: '1.38.0'
@@ -43,7 +43,7 @@ jobs:
   clippy-mac:
       runs-on: macos-13
       steps:
-        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
             just-version: '1.38.0'
@@ -51,13 +51,13 @@ jobs:
   clippy-teliod:
       runs-on: ubuntu-22.04
       steps:
-        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - run: cargo clippy --verbose --color always -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
           working-directory: clis/teliod
   deny:
       runs-on: ubuntu-22.04
       steps:
-        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
             just-version: '1.38.0'
@@ -65,7 +65,7 @@ jobs:
   udeps:
       runs-on: ubuntu-22.04
       steps:
-        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
             just-version: '1.38.0'
@@ -73,7 +73,7 @@ jobs:
   rustfmt:
       runs-on: ubuntu-22.04
       steps:
-        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
           with:
             components: rustfmt
@@ -84,7 +84,7 @@ jobs:
   python-format-black:
       runs-on: ubuntu-24.04
       steps:
-        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
             just-version: '1.38.0'
@@ -97,7 +97,7 @@ jobs:
   python-format-isort:
       runs-on: ubuntu-24.04
       steps:
-        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
             just-version: '1.38.0'
@@ -110,7 +110,7 @@ jobs:
   python-format-autoflake:
       runs-on: ubuntu-24.04
       steps:
-        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
             just-version: '1.38.0'
@@ -124,7 +124,7 @@ jobs:
       needs: uniffi-bindings
       runs-on: ubuntu-24.04
       steps:
-        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
           with:
             name: telio_bindings.py
@@ -143,7 +143,7 @@ jobs:
       needs: uniffi-bindings
       runs-on: ubuntu-24.04
       steps:
-        - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+        - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
           with:
             name: telio_bindings.py
@@ -162,7 +162,7 @@ jobs:
   unused-features:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
         with:
           just-version: '1.38.0'
