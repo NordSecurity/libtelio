@@ -13,6 +13,7 @@ from utils.bindings import (
     Features,
     Server,
     Config,
+    LinkState,
     RelayState,
     NodeState,
     PathType,
@@ -395,11 +396,32 @@ async def setup_mesh_nodes(
         and instance.derp_servers != []
         and other_instance.derp_servers != []
     ])
+
+    link_state_future = asyncio.gather(*[
+        client.wait_for_link_state(
+            other_node.public_key,
+            LinkState.UP,
+            timeout=90 if is_timeout_expected else None,
+        )
+        for (client, node, instance), (
+            _,
+            other_node,
+            _,
+        ) in product(zip_longest(env.clients, env.nodes, instances), repeat=2)
+        if node != other_node and instance.features.link_detection is not None
+    ])
+
     if is_timeout_expected:
         with pytest.raises(asyncio.TimeoutError):
-            await connection_future
+            await asyncio.gather(
+                connection_future,
+                link_state_future,
+            )
     else:
-        await connection_future
+        await asyncio.gather(
+            connection_future,
+            link_state_future,
+        )
 
     return env
 
