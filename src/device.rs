@@ -576,12 +576,15 @@ impl Device {
     }
 
     pub fn stop(&mut self) {
+        telio_log_info!("device::stop enter");
         if let Some(rt) = self.rt.take() {
             if let Some(art) = &self.async_runtime {
                 let _ = art.block_on(rt.stop());
                 self.flush_events();
             }
         }
+
+        telio_log_info!("device::stop exit");
     }
 
     fn flush_events(&self) {
@@ -2552,6 +2555,7 @@ impl TaskRuntime for Runtime {
     }
 
     async fn stop(#[allow(unused_mut)] mut self) {
+        telio_log_debug!("device::runtime::stop enter");
         macro_rules! stop_entity {
             ($entity: expr, $name: expr) => {{
                 if let Ok(task) = $entity
@@ -2585,6 +2589,7 @@ impl TaskRuntime for Runtime {
             meshnet_entities.stop().await;
         }
 
+        telio_log_debug!("device::runtime::stop half");
         if let Some(nurse) = self.entities.nurse {
             stop_arc_entity!(nurse, "Nurse");
         }
@@ -2595,6 +2600,7 @@ impl TaskRuntime for Runtime {
         stop_arc_entity!(self.entities.wireguard_interface, "WireguardInterface");
 
         self.requested_state = Default::default();
+        telio_log_debug!("device::runtime::stop exit");
     }
 }
 
