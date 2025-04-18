@@ -11,7 +11,7 @@ jobs:
           submodules: true
       - name: Generate bindings
         run: python3 ci/build_libtelio.py bindings --dockerized
-      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: libtelio-bindings
           path: dist/
@@ -50,7 +50,7 @@ jobs:
         run: pip3 install requests==2.32.3 --break-system-packages
       - name: Build libtelio
         run: python3 ci/build_libtelio.py build ${{ matrix.target_os }} ${{ matrix.arch }} --msvc
-      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: libtelio-build-native-${{ matrix.target_os }}-${{ matrix.arch }}
           path: dist/
@@ -93,7 +93,7 @@ jobs:
           key: ${{ matrix.target_os }}-${{ matrix.arch }}
       - name: Build libtelio
         run: python3 ci/build_libtelio.py build ${{ matrix.target_os }} ${{ matrix.arch }}
-      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: libtelio-build-docker-${{ matrix.target_os }}-${{ matrix.arch }}
           path: dist/
