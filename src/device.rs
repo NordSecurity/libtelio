@@ -2579,11 +2579,13 @@ impl TaskRuntime for Runtime {
         }
 
         let _ = self.stop_dns().boxed().await;
+        telio_log_debug!("device::runtime::stop after stop_dns");
 
         // Nurse is keeping Arc to Derp, so we need to get rid of it before stopping Derp
         if let Some(nurse) = self.entities.nurse.as_ref() {
             nurse.configure_meshnet(None).await;
         }
+        telio_log_debug!("device::runtime::stop after configure_meshnet(None)");
 
         if let MeshnetState::Entities(meshnet_entities) = self.entities.meshnet {
             meshnet_entities.stop().await;
