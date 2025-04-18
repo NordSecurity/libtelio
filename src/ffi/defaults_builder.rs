@@ -141,6 +141,11 @@ impl FeaturesDefaultsBuilder {
         self.config.lock().wireguard.enable_dynamic_wg_nt_control = true;
         self
     }
+
+    pub fn set_skt_buffer_size(self: Arc<Self>, skt_buffer_size: u32) -> Arc<Self> {
+        self.config.lock().wireguard.skt_buffer_size = Some(skt_buffer_size);
+        self
+    }
 }
 
 impl Default for FeaturesDefaultsBuilder {

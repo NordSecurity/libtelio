@@ -112,6 +112,8 @@ pub struct Config {
     pub firewall_reset_connections: FirewallResetConnsCb,
     /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
     pub enable_dynamic_wg_nt_control: bool,
+    /// Configurable socket buffer size, if None doesn't modify default OS set values
+    pub skt_buffer_size: Option<u32>,
 }
 
 /// Events and analytics transmission channels
@@ -225,6 +227,7 @@ impl DynamicWg {
     ///                 Some(Arc::new(firewall_filter_outbound_packets)),
     ///             firewall_reset_connections: None,
     ///             enable_dynamic_wg_nt_control: false,
+    ///             skt_buffer_size: None
     ///         },
     ///         None,
     ///         true,
@@ -520,6 +523,7 @@ impl Config {
             firewall_process_outbound_callback: self.firewall_process_outbound_callback.clone(),
             firewall_reset_connections: self.firewall_reset_connections.clone(),
             enable_dynamic_wg_nt_control: self.enable_dynamic_wg_nt_control,
+            skt_buffer_size: self.skt_buffer_size,
         })
     }
 }
@@ -1115,6 +1119,7 @@ pub mod tests {
                 firewall_process_outbound_callback: Default::default(),
                 firewall_reset_connections: None,
                 enable_dynamic_wg_nt_control: false,
+                skt_buffer_size: None,
             })
         }
     }
