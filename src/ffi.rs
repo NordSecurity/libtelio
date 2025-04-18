@@ -314,6 +314,7 @@ impl Telio {
 
     /// Completely stop and uninit telio lib.
     pub fn shutdown(&self) -> FfiResult<()> {
+        telio_log_info!("shutdown");
         catch_ffi_panic(|| {
             self.device_op(false, |dev| {
                 dev.stop();
