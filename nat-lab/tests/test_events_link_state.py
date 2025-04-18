@@ -154,13 +154,6 @@ async def wait_for_any_with_timeout(tasks, timeout: float):
         raise asyncio.TimeoutError
 
 
-async def wait_for_up_events(client_alpha, client_beta, alpha_key, beta_key):
-    await asyncio.gather(
-        client_alpha.wait_for_link_state(beta_key, LinkState.UP),
-        client_beta.wait_for_link_state(alpha_key, LinkState.UP),
-    )
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS)
 async def test_event_link_state_peers_idle_all_time(
@@ -170,10 +163,6 @@ async def test_event_link_state_peers_idle_all_time(
         env = await setup_mesh_nodes(exit_stack, setup_params)
         alpha, beta = env.nodes
         client_alpha, client_beta = env.clients
-
-        await wait_for_up_events(
-            client_alpha, client_beta, alpha.public_key, beta.public_key
-        )
 
         # Expect no link event while peers are idle
         with pytest.raises(asyncio.TimeoutError):
@@ -207,10 +196,6 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
             conn.connection for conn in env.connections
         ]
 
-        await wait_for_up_events(
-            client_alpha, client_beta, alpha.public_key, beta.public_key
-        )
-
         for _ in range(0, 25):
             await asyncio.sleep(1)
             await ping(connection_alpha, beta.ip_addresses[0])
@@ -238,10 +223,6 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
         connection_alpha, connection_beta = [
             conn.connection for conn in env.connections
         ]
-
-        await wait_for_up_events(
-            client_alpha, client_beta, alpha.public_key, beta.public_key
-        )
 
         await ping(connection_alpha, beta.ip_addresses[0])
         await ping(connection_beta, alpha.ip_addresses[0])
@@ -308,10 +289,6 @@ async def test_event_link_state_peer_goes_offline(
         connection_alpha, connection_beta = [
             conn.connection for conn in env.connections
         ]
-
-        await wait_for_up_events(
-            client_alpha, client_beta, alpha.public_key, beta.public_key
-        )
 
         await ping(connection_beta, alpha.ip_addresses[0])
         # Sending ping from alpha to beta ensures that the WireGuard's internal timer for Keepalive-Timeout (10s) is
@@ -424,10 +401,6 @@ async def test_event_link_state_peer_doesnt_respond(
         connection_alpha, connection_beta = [
             conn.connection for conn in env.connections
         ]
-
-        await wait_for_up_events(
-            client_alpha, client_beta, alpha.public_key, beta.public_key
-        )
 
         async with ICMP_control(connection_beta):
             with pytest.raises(asyncio.TimeoutError):
