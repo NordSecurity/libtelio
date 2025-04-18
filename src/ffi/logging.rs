@@ -51,7 +51,7 @@ impl LoggerStopper {
                 stop_logger_thread(sender, true);
             }
             None => {
-                println!("No global logger set");
+                // println!("No global logger set");
             }
         }
     }
@@ -64,10 +64,10 @@ fn stop_logger_thread(sender: &SyncSender<LogMessage>, explicit: bool) {
     match sender.try_send(LogMessage::Quit(b.clone())) {
         Ok(()) => {
             b.wait();
-            println!("Waited for {kind}log flush for {:?}", start.elapsed());
+            // println!("Waited for {kind}log flush for {:?}", start.elapsed());
         }
         Err(e) => {
-            eprintln!("Failed to do {kind}log flush: {e}");
+            // eprintln!("Failed to do {kind}log flush: {e}");
         }
     }
 }
@@ -290,10 +290,10 @@ fn start_async_logger(cb: Box<dyn TelioLoggerCb>, buffer_size: usize) -> SyncSen
                     }
                 }
             }
-            println!("Global logging thread ending");
+            // println!("Global logging thread ending");
         });
     if let Err(e) = handle {
-        eprintln!("Failed to start logging thread: {e:?}");
+        // eprintln!("Failed to start logging thread: {e:?}");
     }
     sender
 }
@@ -363,7 +363,7 @@ mod test {
 
         // Need to wait for the async thread to process above logs
         while logs.lock().unwrap().len() < EXPECTED_SIZE {
-            println!("collected logs count: {}", logs.lock().unwrap().len());
+            // println!("collected logs count: {}", logs.lock().unwrap().len());
         }
         let actual = logs.lock().unwrap().clone();
         assert_eq!(&expected[..], &actual[..]);
