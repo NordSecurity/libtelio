@@ -13,11 +13,15 @@ async def copy_binaries(
 ) -> None:
     for directory in [VM_TCLI_DIR, VM_UNIFFI_DIR]:
         try:
-            await connection.create_process(["rm", "-rf", directory]).execute()
+            await connection.create_process(
+                ["rm", "-rf", directory], quiet=True
+            ).execute()
         except ProcessExecError as exception:
             if exception.stderr.find("The system cannot find the file specified.") < 0:
                 raise exception
-        await connection.create_process(["mkdir", "-p", directory]).execute()
+        await connection.create_process(
+            ["mkdir", "-p", directory], quiet=True
+        ).execute()
 
     DIST_PATH = f"dist/darwin/macos/{os.getenv('TELIO_BIN_PROFILE')}/x86_64/"
     LOCAL_UNIFFI_PATH = "nat-lab/tests/uniffi/"
@@ -52,7 +56,7 @@ async def copy_binaries(
             (ssh_connection, dst),
         )
         if set_exec:
-            await connection.create_process(["chmod", "+x", dst]).execute()
+            await connection.create_process(["chmod", "+x", dst], quiet=True).execute()
 
     await asyncssh.scp(
         get_root_path("nat-lab/bin/mac/list_interfaces_with_router_property.py"),

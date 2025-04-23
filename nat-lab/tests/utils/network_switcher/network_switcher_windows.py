@@ -70,7 +70,7 @@ class ConfiguredInterfaces:
 
 
 class NetworkSwitcherWindows(NetworkSwitcher):
-    _status_check_timeout: float = 20.0
+    _status_check_timeout_s: float = 20.0
 
     def __init__(
         self, connection: Connection, interfaces: ConfiguredInterfaces
@@ -108,7 +108,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
                 "show",
                 "route",
             ],
-            timeout=self._status_check_timeout,
+            timeout=self._status_check_timeout_s,
         ).check_exists(
             "0.0.0.0/0",
             [
@@ -141,7 +141,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
                 "show",
                 "route",
             ],
-            timeout=self._status_check_timeout,
+            timeout=self._status_check_timeout_s,
         ).check_exists(
             "0.0.0.0/0",
             [
@@ -192,7 +192,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
                 "show",
                 "route",
             ],
-            timeout=self._status_check_timeout,
+            timeout=self._status_check_timeout_s,
         ).check_not_exists(
             "0.0.0.0/0",
             [
@@ -225,7 +225,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
                     "addresses",
                     self._interfaces.default,
                 ],
-                timeout=self._status_check_timeout,
+                timeout=self._status_check_timeout_s,
             ).check_not_exists(self._interfaces.default, None):
                 raise Exception("Failed to disable management interface")
 

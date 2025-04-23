@@ -26,7 +26,7 @@ class CommandGrepper:
         Args:
             connection: Connection object to container to run the command on.
             check_cmd: Command to run.
-            timeout: Timeout for the check. If the check does not have expected results within the timeout, it will return False.
+            timeout: Timeout (in seconds) for the check. If the check does not have expected results within the timeout, it will return False.
         """
         self._connection = connection
         self._check_cmd = check_cmd
