@@ -74,7 +74,15 @@ class DockerProcess(Process):
             self._stdin_ready.set()
             try:
                 await self._read_loop(exe_stream, stdout_callback, stderr_callback)
+            except asyncio.CancelledError:
+                log.debug(
+                    "[%s] '%s' process cancelled.", self._container_name, self._command
+                )
+                raise
             except:
+                log.error("[%s] Exception thrown:", self._container_name, exc_info=True)
+                raise
+            finally:
                 if self._execute:
                     inspect = await self._execute.inspect()
                     while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
@@ -93,8 +101,6 @@ class DockerProcess(Process):
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                         )
-                raise
-            finally:
                 self._stream = None
 
         inspect = await self._execute.inspect()
@@ -136,7 +142,7 @@ class DockerProcess(Process):
                         inspect = await self._execute.inspect()
                         await asyncio.sleep(0.01)
                     if inspect["ExitCode"] is None:
-                        subprocess.run(
+                        proc = subprocess.run(
                             [
                                 "docker",
                                 "exec",
@@ -145,9 +151,16 @@ class DockerProcess(Process):
                                 "/opt/bin/kill_process_by_natlab_id",
                                 self._kill_id,
                             ],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
                         )
+                        if proc.returncode != 0:
+                            log.warning(
+                                "[%s] Cleanup failed: %s",
+                                self._container_name,
+                                proc.stdout + proc.stderr,
+                            )
 
     async def _read_loop(
         self,
