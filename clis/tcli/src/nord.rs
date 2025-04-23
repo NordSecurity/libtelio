@@ -64,19 +64,20 @@ struct Creds {
     nordlynx_private_key: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Server {
+    id: u32,
     station: IpAddr,
     technologies: Vec<Tech>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Tech {
     id: i32,
     metadata: Vec<Meta>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct Meta {
     value: String,
 }
@@ -180,16 +181,24 @@ impl Nord {
 
     pub fn find_server(&self) -> Result<ExitNode, Error> {
         let client = Client::new();
-        let server: [Server; 1] = client
+        let servers: Vec<Server> = client
             .get(&format!("{}/servers/recommendations", API_BASE))
             .query(&[
                 ("filters[servers_technologies][identifier]", "wireguard_udp"),
                 ("filters[servers_technologies][pivot][status]", "online"),
-                ("limit", "1"),
+                ("filters[country_id]", "125"),
+                ("limit", "15"),
             ])
             .send()?
             .checked()?
             .json()?;
+
+        let server: Vec<Server> = servers.
+            into_iter()
+            .filter(|s: &Server| s.id == 1005292)
+            .collect();
+
+        println!("{:?}", server);
         let endpoint: SocketAddr = (
             server.first().ok_or(Error::NoPublicKeyWithId(35))?.station,
             51820,

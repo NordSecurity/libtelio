@@ -574,6 +574,7 @@ impl Cli {
                     } else {
                         "neptun"
                     };
+                    cli_res!(res; (i "{:?}", &server));
                     cli_res!(res; (j self.exec_dev(DevCmd::Start {
                         adapter: adapter.to_owned(),
                         private_key: None,

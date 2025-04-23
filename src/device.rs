@@ -1783,6 +1783,7 @@ impl Runtime {
             let keys_match =
                 cfg.this.public_key == self.get_private_key().await.map(|key| key.public())?;
             if should_validate_keys && !keys_match {
+                println!("{:?}   {:?}", cfg.this.public_key, self.get_private_key().await.map(|key| key.public())?);
                 return Err(Error::BadPublicKey);
             }
         }
