@@ -644,6 +644,7 @@ impl Device {
     pub fn set_tun(&self, tun: i32) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
+                let _guard = rt.entities.network_monitor.pause();
                 Ok(rt.set_tun(tun).boxed().await)
             })
             .await?
