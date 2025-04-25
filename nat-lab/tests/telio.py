@@ -451,7 +451,7 @@ class Client:
                 #   we can't currently use mapped ports. In those cases we let Pyro5 select a port on its own (by giving it 0 as the port number).
                 #   libtelio_remote prints what port was used after binding and we collect it here in self._proxy_port
                 if host_port == "0":
-                    while len(self._proxy_port) == 0:
+                    while len(self._proxy_port) == 0 and self._process.is_executing():
                         await asyncio.sleep(0.25)
                     object_uri = f"PYRO:{object_name}@{host_ip}:{self._proxy_port}"
                 else:
