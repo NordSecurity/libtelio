@@ -34,6 +34,7 @@ impl NepTUN {
         firewall_process_inbound_callback: FirewallCb,
         firewall_process_outbound_callback: FirewallCb,
         firewall_reset_connections_callback: super::FirewallResetConnsCb,
+        skt_buffer_size: Option<u32>,
     ) -> Result<Self, AdapterError> {
         let config = DeviceConfig {
             // Apple's NepTUN device runs most efficiently on a single perf-core
@@ -63,6 +64,7 @@ impl NepTUN {
             protect: socket_pool,
             firewall_process_inbound_callback,
             firewall_process_outbound_callback,
+            skt_buffer_size,
         };
 
         let device = match tun {

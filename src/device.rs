@@ -1119,6 +1119,7 @@ impl Runtime {
                         )),
                         firewall_reset_connections,
                         enable_dynamic_wg_nt_control: features.wireguard.enable_dynamic_wg_nt_control,
+                        skt_buffer_size : Runtime::sanitize_skt_buffer_size(features.wireguard.skt_buffer_size, config.adapter),
                     },
                     features.link_detection,
                     features.ipv6,
@@ -1144,6 +1145,7 @@ impl Runtime {
                             )),
                             firewall_reset_connections,
                             enable_dynamic_wg_nt_control: features.wireguard.enable_dynamic_wg_nt_control,
+                            skt_buffer_size: features.wireguard.skt_buffer_size,
                         }
                     ).await;
 
@@ -2336,6 +2338,19 @@ impl Runtime {
             self.last_transmitted_event.remove(&node.public_key);
         } else {
             self.last_transmitted_event.insert(node.public_key, node);
+        }
+    }
+
+    fn sanitize_skt_buffer_size(skt_buffer_size: Option<u32>, adapter: AdapterType) -> Option<u32> {
+        match skt_buffer_size {
+            Some(b) if adapter == AdapterType::NepTUN => Some(b),
+            Some(_) => {
+                telio_log_warn!(
+                    "Socket buffers size set in non-Neptun adapter, setting it to None"
+                );
+                None
+            }
+            None => None,
         }
     }
 }
@@ -3780,5 +3795,15 @@ mod tests {
             });
 
         assert_eq!(ipv6, has_ipv6_address);
+    }
+
+    #[test]
+    fn test_sanitizing_skt_buffer_size() {
+        assert!(Runtime::sanitize_skt_buffer_size(None, AdapterType::NepTUN).is_none());
+        assert!(Runtime::sanitize_skt_buffer_size(None, AdapterType::LinuxNativeWg).is_none());
+        assert!(Runtime::sanitize_skt_buffer_size(Some(12345), AdapterType::NepTUN).is_some());
+        assert!(
+            Runtime::sanitize_skt_buffer_size(Some(12345), AdapterType::LinuxNativeWg).is_none()
+        );
     }
 }
