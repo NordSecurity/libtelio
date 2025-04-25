@@ -6,7 +6,7 @@ from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_mesh_nodes
 from mesh_api import API
 from telio import Client
-from utils import stun
+from utils import stun, asyncio_util
 from utils.bindings import (
     features_with_endpoint_providers,
     EndpointProvider,
@@ -364,10 +364,14 @@ async def test_vpn_plus_mesh(
         await ping(connection_alpha, beta.ip_addresses[0])
 
         # Testing if the VPN node is not cleared after disabling meshnet. See LLT-4266 for more details.
-        await client_alpha.set_mesh_off()
-        await client_alpha.wait_for_event_peer(
-            beta.public_key, [NodeState.DISCONNECTED], list(PathType)
-        )
+        async with asyncio_util.run_async_context(
+            client_alpha.wait_for_event_peer(
+                beta.public_key, [NodeState.DISCONNECTED], list(PathType)
+            )
+        ) as event:
+            await client_alpha.set_mesh_off()
+            await event
+
         ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
