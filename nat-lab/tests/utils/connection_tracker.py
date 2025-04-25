@@ -363,9 +363,6 @@ class ConnectionTracker:
 
         await self._synchronize()
 
-        for v in self._validators:
-            v.find_conntracker_violations(self._events)
-
         return merge_results(
             [v.find_conntracker_violations(self._events) for v in self._validators]
         )
