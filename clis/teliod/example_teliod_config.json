@@ -2,6 +2,7 @@
     "log_level": "trace",
     "log_file_path": "./example_log_file.log",
     "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "adapter_type": "neptun",
     "interface": {
       "name": "utun10",
       "config_provider": "manual"
