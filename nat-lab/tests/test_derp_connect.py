@@ -257,7 +257,7 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
 
 
 @asynccontextmanager
-async def restart_container(container_name: str):
+async def stop_container(container_name: str):
     try:
         os.system(f"docker stop {container_name}")
         yield
@@ -366,7 +366,7 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         #  [GW1]    [GW2]   [Symmetric-GW]
         #    |        |        |
         # [ALPHA]   [BETA]  [GAMMA]
-        async with restart_container("nat-lab-derp-01-1"):
+        async with stop_container("nat-lab-derp-01-1"):
             await asyncio.gather(
                 alpha_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
                 beta_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
@@ -396,7 +396,7 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         #    |        |        |
         # [ALPHA]   [BETA]  [GAMMA]
 
-        async with restart_container("nat-lab-derp-02-1"):
+        async with stop_container("nat-lab-derp-02-1"):
             await asyncio.gather(
                 alpha_client.wait_for_state_derp(_DERP1_IP, [RelayState.CONNECTED]),
                 beta_client.wait_for_state_derp(_DERP3_IP, [RelayState.CONNECTED]),
@@ -426,7 +426,7 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         #    |        |        |
         # [ALPHA]   [BETA]  [GAMMA]
 
-        async with restart_container("nat-lab-derp-03-1"):
+        async with stop_container("nat-lab-derp-03-1"):
             await asyncio.gather(
                 alpha_client.wait_for_state_derp(_DERP1_IP, [RelayState.CONNECTED]),
                 beta_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
