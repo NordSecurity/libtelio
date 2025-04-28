@@ -2,7 +2,7 @@ import asyncio
 import os
 import pytest
 from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 from copy import deepcopy
 from helpers import SetupParameters, setup_mesh_nodes
 from typing import List
@@ -256,6 +256,15 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
         await ping(gamma_connection, beta.ip_addresses[0])
 
 
+@asynccontextmanager
+async def restart_container(container_name: str):
+    try:
+        os.system(f"docker stop {container_name}")
+        yield
+    finally:
+        os.system(f"docker start {container_name}")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "setup_params",
@@ -357,16 +366,12 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         #  [GW1]    [GW2]   [Symmetric-GW]
         #    |        |        |
         # [ALPHA]   [BETA]  [GAMMA]
-
-        os.system("docker stop nat-lab-derp-01-1")
-
-        await asyncio.gather(
-            alpha_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
-            beta_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
-            gamma_client.wait_for_state_derp(_DERP3_IP, [RelayState.CONNECTED]),
-        )
-
-        os.system("docker start nat-lab-derp-01-1")
+        async with restart_container("nat-lab-derp-01-1"):
+            await asyncio.gather(
+                alpha_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
+                beta_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
+                gamma_client.wait_for_state_derp(_DERP3_IP, [RelayState.CONNECTED]),
+            )
 
         # Ping ALPHA --> BETA
         await ping(alpha_connection, beta.ip_addresses[0])
@@ -391,15 +396,12 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         #    |        |        |
         # [ALPHA]   [BETA]  [GAMMA]
 
-        os.system("docker stop nat-lab-derp-02-1")
-
-        await asyncio.gather(
-            alpha_client.wait_for_state_derp(_DERP1_IP, [RelayState.CONNECTED]),
-            beta_client.wait_for_state_derp(_DERP3_IP, [RelayState.CONNECTED]),
-            gamma_client.wait_for_state_derp(_DERP3_IP, [RelayState.CONNECTED]),
-        )
-
-        os.system("docker start nat-lab-derp-02-1")
+        async with restart_container("nat-lab-derp-02-1"):
+            await asyncio.gather(
+                alpha_client.wait_for_state_derp(_DERP1_IP, [RelayState.CONNECTED]),
+                beta_client.wait_for_state_derp(_DERP3_IP, [RelayState.CONNECTED]),
+                gamma_client.wait_for_state_derp(_DERP3_IP, [RelayState.CONNECTED]),
+            )
 
         # Ping ALPHA --> BETA
         await ping(alpha_connection, beta.ip_addresses[0])
@@ -424,15 +426,12 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         #    |        |        |
         # [ALPHA]   [BETA]  [GAMMA]
 
-        os.system("docker stop nat-lab-derp-03-1")
-
-        await asyncio.gather(
-            alpha_client.wait_for_state_derp(_DERP1_IP, [RelayState.CONNECTED]),
-            beta_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
-            gamma_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
-        )
-
-        os.system("docker start nat-lab-derp-03-1")
+        async with restart_container("nat-lab-derp-03-1"):
+            await asyncio.gather(
+                alpha_client.wait_for_state_derp(_DERP1_IP, [RelayState.CONNECTED]),
+                beta_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
+                gamma_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
+            )
 
         # Ping ALPHA --> BETA
         await ping(alpha_connection, beta.ip_addresses[0])
