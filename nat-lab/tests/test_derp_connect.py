@@ -358,13 +358,15 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         #    |        |        |
         # [ALPHA]   [BETA]  [GAMMA]
 
-        os.system("docker restart nat-lab-derp-01-1")
+        os.system("docker stop nat-lab-derp-01-1")
 
         await asyncio.gather(
             alpha_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
             beta_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
             gamma_client.wait_for_state_derp(_DERP3_IP, [RelayState.CONNECTED]),
         )
+
+        os.system("docker start nat-lab-derp-01-1")
 
         # Ping ALPHA --> BETA
         await ping(alpha_connection, beta.ip_addresses[0])
@@ -389,13 +391,15 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         #    |        |        |
         # [ALPHA]   [BETA]  [GAMMA]
 
-        os.system("docker restart nat-lab-derp-02-1")
+        os.system("docker stop nat-lab-derp-02-1")
 
         await asyncio.gather(
             alpha_client.wait_for_state_derp(_DERP1_IP, [RelayState.CONNECTED]),
             beta_client.wait_for_state_derp(_DERP3_IP, [RelayState.CONNECTED]),
             gamma_client.wait_for_state_derp(_DERP3_IP, [RelayState.CONNECTED]),
         )
+
+        os.system("docker start nat-lab-derp-02-1")
 
         # Ping ALPHA --> BETA
         await ping(alpha_connection, beta.ip_addresses[0])
@@ -420,13 +424,15 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         #    |        |        |
         # [ALPHA]   [BETA]  [GAMMA]
 
-        os.system("docker restart nat-lab-derp-03-1")
+        os.system("docker stop nat-lab-derp-03-1")
 
         await asyncio.gather(
             alpha_client.wait_for_state_derp(_DERP1_IP, [RelayState.CONNECTED]),
             beta_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
             gamma_client.wait_for_state_derp(_DERP2_IP, [RelayState.CONNECTED]),
         )
+
+        os.system("docker start nat-lab-derp-03-1")
 
         # Ping ALPHA --> BETA
         await ping(alpha_connection, beta.ip_addresses[0])
