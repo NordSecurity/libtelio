@@ -46,7 +46,7 @@ class SshConnection(Connection):
         ip: str,
         tag: ConnectionTag,
         copy_binaries: bool = False,
-        reenable_nat=False,
+        reenable_nat=True,
     ) -> AsyncIterator["SshConnection"]:
         if reenable_nat:
             subprocess.check_call(
