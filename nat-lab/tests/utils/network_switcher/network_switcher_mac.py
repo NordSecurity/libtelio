@@ -1,11 +1,8 @@
 import config
 from .network_switcher import NetworkSwitcher
-from config import (
-    DERP_SERVERS,
-    LINUX_VM_PRIMARY_GATEWAY,
-    LINUX_VM_SECONDARY_GATEWAY,
-    VPN_SERVER_SUBNET,
-)
+from config import DERP_SERVERS, GW_ADDR_MAP, VPN_SERVER_SUBNET
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 from utils.connection import Connection
 
 
@@ -18,11 +15,15 @@ class NetworkSwitcherMac(NetworkSwitcher):
 
         await self._delete_existing_route()
         await self._connection.create_process(
-            ["route", "add", "default", LINUX_VM_PRIMARY_GATEWAY]
+            ["route", "add", "default", GW_ADDR_MAP[self._connection.tag]["primary"]]
         ).execute()
-        await self._connection.create_process(
-            ["route", "add", "-inet", VPN_SERVER_SUBNET, LINUX_VM_PRIMARY_GATEWAY]
-        ).execute()
+        await self._connection.create_process([
+            "route",
+            "add",
+            "-inet",
+            VPN_SERVER_SUBNET,
+            GW_ADDR_MAP[self._connection.tag]["primary"],
+        ]).execute()
 
         for derp in DERP_SERVERS:
             await self._connection.create_process(
@@ -30,7 +31,7 @@ class NetworkSwitcherMac(NetworkSwitcher):
                     "route",
                     "add",
                     str(derp.ipv4) + "/32",
-                    LINUX_VM_PRIMARY_GATEWAY,
+                    GW_ADDR_MAP[self._connection.tag]["primary"],
                 ],
             ).execute()
 
@@ -39,11 +40,15 @@ class NetworkSwitcherMac(NetworkSwitcher):
 
         await self._delete_existing_route()
         await self._connection.create_process(
-            ["route", "add", "default", LINUX_VM_SECONDARY_GATEWAY]
+            ["route", "add", "default", GW_ADDR_MAP[self._connection.tag]["secondary"]]
         ).execute()
-        await self._connection.create_process(
-            ["route", "add", "-inet", VPN_SERVER_SUBNET, LINUX_VM_SECONDARY_GATEWAY]
-        ).execute()
+        await self._connection.create_process([
+            "route",
+            "add",
+            "-inet",
+            VPN_SERVER_SUBNET,
+            GW_ADDR_MAP[self._connection.tag]["secondary"],
+        ]).execute()
 
         for derp in config.DERP_SERVERS:
             await self._connection.create_process(
@@ -51,7 +56,7 @@ class NetworkSwitcherMac(NetworkSwitcher):
                     "route",
                     "add",
                     str(derp.ipv4) + "/32",
-                    LINUX_VM_SECONDARY_GATEWAY,
+                    GW_ADDR_MAP[self._connection.tag]["secondary"],
                 ],
             ).execute()
 
