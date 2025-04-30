@@ -4,7 +4,7 @@ set -euxo pipefail
 trap - ERR
 
 print_help() {
-    echo "Usage: ./configure_route.sh <primary|secondary> [linux|windows]"
+    echo "Usage: ./configure_route.sh <primary|secondary> [linux|windows|mac]"
     exit 1
 }
 
@@ -37,6 +37,10 @@ primary)
             exit 2
         fi
         ;;
+    mac)
+        python3 /run/qga.py --sh "route delete default || true"
+        python3 /run/qga.py --sh "route add default '$CLIENT_GATEWAY_PRIMARY'"
+        ;;
     *)
         echo "Invalid OS type '${OS_TYPE}'"
         print_help
@@ -62,6 +66,10 @@ secondary)
             echo "Failed to add new route using qga.py" >&2
             exit 2
         fi
+        ;;
+    mac)
+        python3 /run/qga.py --sh "route delete default || true"
+        python3 /run/qga.py --sh "route add default '$CLIENT_GATEWAY_SECONDARY'"
         ;;
     *)
         echo "Invalid OS type '${OS_TYPE}'"

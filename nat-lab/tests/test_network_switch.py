@@ -40,8 +40,8 @@ from utils.ping import ping
         ),
         pytest.param(
             ConnectionTag.VM_MAC,
-            "10.0.254.7",
-            "10.0.254.8",
+            "10.0.254.19",
+            "10.0.254.20",
             marks=pytest.mark.mac,
         ),
     ],

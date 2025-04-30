@@ -189,6 +189,72 @@ services:
         ipv4_address: 192.168.102.54
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.102.254
+
+  mac-client-01: &mac-client
+    hostname: mac-client-01
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos:add-custom-features
+    privileged: true
+    devices:
+      - "/dev/net/tun"
+      - "/dev/kvm"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+      - NET_BIND_SERVICE
+      - SETUID
+      - SETGID
+    sysctls:
+      # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
+      # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
+      # seem to work. So for now disable return path filter outright.
+      - net.ipv4.conf.all.rp_filter=0
+      - net.ipv4.conf.default.rp_filter=0
+      # Enable IPv6, by default, docker has this set to '1'
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.default.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
+    security_opt:
+      - no-new-privileges:true
+    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
+    # When this comment was added, the only scenario where the port mapping is changed is CI running tests
+    ports: ["58001"]
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+      - "pmtu-probe:10.0.80.84"
+      - "mqtt.nordvpn.com:10.0.80.85"
+      - "api.nordvpn.com:10.0.80.86"
+    volumes:
+      - ../:/libtelio
+    healthcheck:
+      test: "ls /ready"
+      interval: 30s
+      retries: 20
+      start_period: 60s
+      timeout: 2s
+    environment:
+      USERNAME: "steve"
+      PASSWORD: "jobs"
+      NETWORK: "bridge"
+      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/mac-client"
+      CLIENT_GATEWAY_PRIMARY: 192.168.154.254
+      CLIENT_GATEWAY_SECONDARY: 192.168.155.254
+    networks:
+      mac-net-01:
+        ipv4_address: 192.168.154.54
+      mac-net-02:
+        ipv4_address: 192.168.155.54
+
   # Client that shares two cone networks on different interfaces
   shared-client-01:
     hostname: shared-client-01
@@ -490,21 +556,9 @@ services:
       udp-block-net-02:
         ipv4_address: 192.168.111.254
         priority: 900
-  windows-gw-01: &windows-gw
+  windows-gw-01:
     hostname: windows-gw-01
-    image: nat-lab:base
-    entrypoint: /opt/bin/cone-gw
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    sysctls:
-      - net.ipv4.ip_forward=1
-    security_opt:
-      - no-new-privileges:true
-    healthcheck:
-      test: "ls /ready"
+    <<: *common-gw
     networks:
       internet:
         ipv4_address: 10.0.254.15
@@ -542,7 +596,26 @@ services:
       windows-net-04:
         ipv4_address: 192.168.153.254
         priority: 900
-
+  mac-gw-01:
+    hostname: mac-gw-01
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.19
+        priority: 1000
+      mac-net-01:
+        ipv4_address: 192.168.154.254
+        priority: 900
+  mac-gw-02:
+    hostname: mac-gw-02
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.20
+        priority: 1000
+      mac-net-02:
+        ipv4_address: 192.168.155.254
+        priority: 900
   ###########################################################
   #                       MISC SERVERS                      #
   ###########################################################
@@ -918,3 +991,17 @@ networks:
       driver: default
       config:
         - subnet: 192.168.153.0/24
+
+  mac-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.154.0/24
+
+  mac-net-02:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.155.0/24
