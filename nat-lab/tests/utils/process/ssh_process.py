@@ -52,26 +52,29 @@ class SshProcess(Process):
         escaped = [self._escape_argument(arg) for arg in self._command]
         command_str = " ".join(escaped)
 
-        self._process = await self._ssh_connection.create_process(
-            command_str, term_type=self._term_type
-        )
-        self._running = True
-        self._stdin = self._process.stdin
-        self._stdin_ready.set()
-
         try:
+            self._process = await self._ssh_connection.create_process(
+                command_str, term_type=self._term_type
+            )
+            self._running = True
+            self._stdin = self._process.stdin
+            self._stdin_ready.set()
+
             await asyncio.gather(
                 self._stdout_loop(self._process.stdout, stdout_callback),
                 self._stderr_loop(self._process.stderr, stderr_callback),
             )
+        except asyncio.CancelledError:
+            log.debug("[%s] '%s' process cancelled.", self._vm_name, self._command)
+            raise
         except:
             log.error("[%s] Exception thrown:", self._vm_name, exc_info=True)
+            raise
+        finally:
             if self._process and self._process.returncode is None:
                 self._process.kill()
                 self._process.close()
                 await self._process.wait_closed()
-            raise
-        finally:
             self._running = False
 
         completed_process: asyncssh.SSHCompletedProcess = await self._process.wait()

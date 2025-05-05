@@ -12,7 +12,7 @@ class WindowsRouter(Router):
     _connection: Connection
     _interface_name: str
     # The average time it takes to set up an interface on Windows is ~3 seconds
-    _status_check_timeout: float = 10.0
+    _status_check_timeout_s: float = 10.0
 
     def __init__(self, connection: Connection, ip_stack: IPStack):
         super().__init__(ip_stack)
@@ -40,7 +40,7 @@ class WindowsRouter(Router):
                     self._interface_name,
                     "dadtransmits=0",
                 ],
-                timeout=self._status_check_timeout,
+                timeout=self._status_check_timeout_s,
                 allow_process_failure=True,
             )
             if not await cmd.check_exists("Ok"):
@@ -109,6 +109,32 @@ class WindowsRouter(Router):
                     quiet=True,
                 ).execute()
 
+    async def enable_interface(self) -> None:
+        await self._connection.create_process(
+            [
+                "netsh",
+                "interface",
+                "set",
+                "interface",
+                self._interface_name,
+                "admin=enable",
+            ],
+            quiet=True,
+        ).execute()
+
+    async def disable_interface(self) -> None:
+        await self._connection.create_process(
+            [
+                "netsh",
+                "interface",
+                "set",
+                "interface",
+                self._interface_name,
+                "admin=disable",
+            ],
+            quiet=True,
+        ).execute()
+
     async def create_meshnet_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             try:
@@ -137,7 +163,7 @@ class WindowsRouter(Router):
                     "show",
                     "route",
                 ],
-                timeout=self._status_check_timeout,
+                timeout=self._status_check_timeout_s,
             ).check_exists("100.64.0.0/10", [self._interface_name]):
                 raise Exception("Failed to create ipv4 meshnet route")
 
@@ -168,7 +194,7 @@ class WindowsRouter(Router):
                     "show",
                     "route",
                 ],
-                timeout=self._status_check_timeout,
+                timeout=self._status_check_timeout_s,
             ).check_exists(LIBTELIO_IPV6_WG_SUBNET + "::/64", [self._interface_name]):
                 raise Exception("Failed to create ipv6 meshnet route")
 
@@ -197,7 +223,7 @@ class WindowsRouter(Router):
                 "show",
                 "route",
             ],
-            timeout=self._status_check_timeout,
+            timeout=self._status_check_timeout_s,
         ).check_exists("0.0.0.0/0", [self._interface_name]):
             raise Exception("Failed to create ipv4 vpn route")
 
@@ -224,7 +250,7 @@ class WindowsRouter(Router):
                 "show",
                 "route",
             ],
-            timeout=self._status_check_timeout,
+            timeout=self._status_check_timeout_s,
         ).check_exists("::/0", [self._interface_name]):
             raise Exception("Failed to create ipv6 vpn route")
 
@@ -268,7 +294,7 @@ class WindowsRouter(Router):
                     "show",
                     "route",
                 ],
-                timeout=self._status_check_timeout,
+                timeout=self._status_check_timeout_s,
             ).check_not_exists("0.0.0.0/0", [self._interface_name]):
                 raise Exception("Failed to delete ipv4 vpn route")
 
@@ -306,7 +332,7 @@ class WindowsRouter(Router):
                     "show",
                     "route",
                 ],
-                timeout=self._status_check_timeout,
+                timeout=self._status_check_timeout_s,
             ).check_not_exists("::/0", [self._interface_name]):
                 raise Exception("Failed to delete ipv6 vpn route")
 

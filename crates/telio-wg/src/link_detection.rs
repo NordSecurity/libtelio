@@ -56,8 +56,8 @@ impl LinkDetection {
 
         telio_log_debug!(
             "instantiating link detection. cfg.rtt_seconds: {:?}, enhanced_detection: {}",
+            cfg.rtt_seconds,
             enhanced_detection.is_some(),
-            cfg.rtt_seconds
         );
 
         LinkDetection {

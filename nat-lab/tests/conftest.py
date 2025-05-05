@@ -274,7 +274,7 @@ async def _copy_vm_binaries(tag: ConnectionTag):
     try:
         log.info("Copying binaries for %s", tag)
         async with SshConnection.new_connection(
-            LAN_ADDR_MAP[tag], tag, copy_binaries=True, reenable_nat=True
+            LAN_ADDR_MAP[tag], tag, copy_binaries=True
         ):
             pass
     except OSError as e:

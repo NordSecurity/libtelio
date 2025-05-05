@@ -46,19 +46,17 @@ class SshConnection(Connection):
         ip: str,
         tag: ConnectionTag,
         copy_binaries: bool = False,
-        reenable_nat=False,
     ) -> AsyncIterator["SshConnection"]:
-        if reenable_nat:
-            subprocess.check_call(
-                ["sudo", "bash", "vm_nat.sh", "disable"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            subprocess.check_call(
-                ["sudo", "bash", "vm_nat.sh", "enable"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+        subprocess.check_call(
+            ["sudo", "bash", "vm_nat.sh", "disable"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.check_call(
+            ["sudo", "bash", "vm_nat.sh", "enable"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
         async with asyncssh.connect(
             ip,
