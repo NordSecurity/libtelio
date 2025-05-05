@@ -1653,14 +1653,15 @@ impl Runtime {
             .await?;
         Ok(())
     }
+
     async fn set_tun(&mut self, tun: i32) -> Result {
+        self.entities.wireguard_interface.set_tun(tun).await?;
+
         self.requested_state.device_config.name = None;
-        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+        #[cfg(not(target_os = "windows"))]
         {
             self.requested_state.device_config.tun = Some(tun);
         }
-
-        self.entities.wireguard_interface.set_tun(tun).await?;
 
         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
         if let Some(index) = fd_to_if_index(tun as std::os::fd::RawFd) {
