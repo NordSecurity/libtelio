@@ -2,6 +2,7 @@ import asyncio
 import pytest
 from config import LIBTELIO_BINARY_PATH_DOCKER
 from contextlib import AsyncExitStack
+from datetime import datetime
 from helpers import setup_connections
 from utils.connection import ConnectionTag
 from utils.process.process import ProcessExecError
@@ -11,7 +12,8 @@ CONFIG_FILE_PATH = "/etc/teliod/config.json"
 SOCKET_FILE_PATH = "/run/teliod.sock"
 STDOUT_FILE_PATH = "/var/log/teliod_stdout.log"
 STDERR_FILE_PATH = "/var/log/teliod_stdout.log"
-LOG_FILE_GLOB = "/var/log/teliod_natlab.log*"
+# Build today's dated log filename
+LOG_FILE_PATH = f"/var/log/teliod_natlab.log.{datetime.today().strftime('%Y-%m-%d')}"
 
 TELIOD_START_PARAMS = [
     TELIOD_EXEC_PATH,
@@ -141,14 +143,12 @@ async def test_teliod_logs() -> None:
 
         # Delete any old logs
         await connection.create_process(
-            ["rm", "-f", STDOUT_FILE_PATH, STDERR_FILE_PATH, LOG_FILE_GLOB]
+            ["rm", "-f", STDOUT_FILE_PATH, STDERR_FILE_PATH, LOG_FILE_PATH]
         ).execute()
 
         # Make sure they are indeed deleted
-        with pytest.raises(ProcessExecError):
-            await connection.create_process(
-                ["ls", STDOUT_FILE_PATH, STDERR_FILE_PATH, LOG_FILE_GLOB]
-            ).execute()
+        for path in [STDOUT_FILE_PATH, STDERR_FILE_PATH, LOG_FILE_PATH]:
+            await connection.create_process(["test", "!", "-f", path]).execute()
 
         # Run teliod
         await exit_stack.enter_async_context(
@@ -177,8 +177,6 @@ async def test_teliod_logs() -> None:
 
         assert not await is_teliod_running(connection)
 
-        # Check if ls files exist
-        # ls fails if the given path does not exist
-        await connection.create_process(
-            ["ls", STDOUT_FILE_PATH, STDERR_FILE_PATH, LOG_FILE_GLOB]
-        ).execute()
+        # Check if log files exist
+        for path in [STDOUT_FILE_PATH, STDERR_FILE_PATH, LOG_FILE_PATH]:
+            await connection.create_process(["test", "-f", path]).execute()
