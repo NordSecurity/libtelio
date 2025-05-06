@@ -25,10 +25,10 @@ use telio_proto::{CallMeMaybeMsg, CallMeMaybeType, Session};
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    interval, telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn, LruCache,
+    interval, telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn, Instant, LruCache,
 };
 use tokio::sync::Mutex;
-use tokio::time::{Instant, Interval};
+use tokio::time::Interval;
 
 const CPC_TIMEOUT: Duration = Duration::from_secs(10);
 const UPGRADE_TIMEOUT: Duration = Duration::from_secs(60);
@@ -993,7 +993,7 @@ mod tests {
     use rstest::rstest;
     use tokio::{
         sync::mpsc::{Receiver, Sender},
-        time::{self, Instant},
+        time,
     };
 
     use telio_crypto::{PublicKey, SecretKey};

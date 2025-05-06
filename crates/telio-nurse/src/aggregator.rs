@@ -1,6 +1,6 @@
 use std::{collections::hash_map::Entry, mem, net::SocketAddr, sync::Arc, time::Duration};
 
-use tokio::{sync::Mutex, time::Instant};
+use tokio::sync::Mutex;
 
 use serde::{ser::SerializeTuple, Serialize};
 
@@ -11,7 +11,7 @@ use telio_model::{
     features::EndpointProvider,
     HashMap,
 };
-use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn, Instant};
 use telio_wg::{
     uapi::{AnalyticsEvent, PeerState},
     WireGuard,

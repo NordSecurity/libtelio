@@ -7,11 +7,11 @@ use std::{
         Arc, Barrier, Mutex,
     },
     thread::Builder,
-    time::{Instant, SystemTime},
+    time::SystemTime,
 };
 
 use once_cell::sync::Lazy;
-use telio_utils::log_censor::LogCensor;
+use telio_utils::{log_censor::LogCensor, Instant};
 use tracing::{level_filters::LevelFilter, Subscriber};
 use tracing_subscriber::{
     fmt::{self, FormatEvent, FormatFields, MakeWriter},
