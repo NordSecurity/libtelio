@@ -139,6 +139,17 @@ async def test_teliod_logs() -> None:
             await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
         )[0].connection
 
+        # Delete any old logs
+        await connection.create_process(
+            ["rm", "-f", STDOUT_FILE_PATH, STDERR_FILE_PATH, LOG_FILE_GLOB]
+        ).execute()
+
+        # Make sure they are indeed deleted
+        with pytest.raises(ProcessExecError):
+            await connection.create_process(
+                ["ls", STDOUT_FILE_PATH, STDERR_FILE_PATH, LOG_FILE_GLOB]
+            ).execute()
+
         # Run teliod
         await exit_stack.enter_async_context(
             connection.create_process(TELIOD_START_DAEMONIZE_PARAMS).run()
@@ -165,10 +176,9 @@ async def test_teliod_logs() -> None:
         )
 
         assert not await is_teliod_running(connection)
-        # Check if stdout files exist
-        for path in [STDOUT_FILE_PATH, STDERR_FILE_PATH]:
-            await connection.create_process(["test", "-f", path]).execute()
 
-        # Check if log files exist
-        # if the glob dies not match anything, ls fails with exit code 2
-        await connection.create_process(["ls", LOG_FILE_GLOB]).execute()
+        # Check if ls files exist
+        # ls fails if the given path does not exist
+        await connection.create_process(
+            ["ls", STDOUT_FILE_PATH, STDERR_FILE_PATH, LOG_FILE_GLOB]
+        ).execute()
