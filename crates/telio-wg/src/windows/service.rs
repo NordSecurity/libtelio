@@ -1,8 +1,8 @@
 #![cfg(windows)]
 
 use std::convert::{TryFrom, TryInto};
-use std::time::{Duration, Instant};
-use telio_utils::{telio_log_debug, telio_log_warn};
+use std::time::Duration;
+use telio_utils::{telio_log_debug, telio_log_warn, Instant};
 use windows::{
     core::{w, Error, Result as WindowsResult, HRESULT, PCWSTR},
     Win32::System::Services::{

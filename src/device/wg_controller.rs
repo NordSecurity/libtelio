@@ -22,12 +22,11 @@ use telio_traversal::{
     cross_ping_check::CrossPingCheckTrait, endpoint_providers::EndpointProvider,
     SessionKeeperTrait, UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
 };
-use telio_utils::{build_ping_endpoint, telio_log_debug, telio_log_info, telio_log_warn};
+use telio_utils::{build_ping_endpoint, telio_log_debug, telio_log_info, telio_log_warn, Instant};
 use telio_wg::uapi::{AnalyticsEvent, UpdateReason};
 use telio_wg::{uapi::Peer, WireGuard};
 use thiserror::Error as TError;
 use tokio::sync::Mutex;
-use tokio::time::Instant;
 
 pub const DEFAULT_PEER_UPGRADE_WINDOW: u64 = 15;
 
@@ -1366,7 +1365,6 @@ mod tests {
     use telio_traversal::{MockSessionKeeperTrait, MockUpgradeSyncTrait, UpgradeRequest};
     use telio_wg::uapi::Interface;
     use telio_wg::MockWireGuard;
-    use tokio::time::Instant;
 
     type AllowIncomingConnections = bool;
     type AllowLocalAreaAccess = bool;

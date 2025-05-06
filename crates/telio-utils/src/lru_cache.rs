@@ -11,7 +11,7 @@ use std::{
 #[cfg(any(test, feature = "sn_fake_clock"))]
 use sn_fake_clock::FakeClock as Instant;
 #[cfg(not(any(test, feature = "sn_fake_clock")))]
-use std::time::Instant;
+type Instant = crate::Instant;
 
 /// A view into a single entry in a map, which may either be vacant or occupied.
 pub enum Entry<'a, K, V> {

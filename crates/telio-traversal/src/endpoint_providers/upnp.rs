@@ -24,10 +24,9 @@ use telio_task::{io::chan::Tx, task_exec, BoxAction, Runtime, Task};
 use telio_utils::interval;
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    telio_log_debug, telio_log_info, telio_log_warn, PinnedSleep,
+    telio_log_debug, telio_log_info, telio_log_warn, Instant, PinnedSleep,
 };
 use telio_wg::{DynamicWg, WireGuard};
-use tokio::time::Instant;
 use tokio::{net::UdpSocket, pin, sync::Mutex};
 
 #[cfg(test)]

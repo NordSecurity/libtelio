@@ -3,7 +3,7 @@ use rustc_hash::FxHashMap;
 use std::{
     sync::Arc,
     thread::{current, sleep, spawn, ThreadId},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 const ALERT_DURATION: Duration = Duration::from_secs(10);
@@ -19,22 +19,22 @@ enum ThreadStatus {
 
 /// ThreadTracker will track changes of state of tokio's threads.
 pub struct ThreadTracker {
-    statuses: FxHashMap<ThreadId, (ThreadStatus, Instant)>,
-    last_change: Instant,
+    statuses: FxHashMap<ThreadId, (ThreadStatus, crate::Instant)>,
+    last_change: crate::Instant,
 }
 
 impl Default for ThreadTracker {
     fn default() -> Self {
         Self {
             statuses: Default::default(),
-            last_change: Instant::now(),
+            last_change: crate::Instant::now(),
         }
     }
 }
 
 impl ThreadTracker {
     fn set_status(&mut self, status: ThreadStatus) {
-        let now = Instant::now();
+        let now = crate::Instant::now();
         let tid = current().id();
 
         self.last_change = now;
@@ -49,7 +49,7 @@ impl ThreadTracker {
     }
 
     fn check_for_long_unparked_threads(&self) {
-        let now = Instant::now();
+        let now = crate::Instant::now();
         for (tid, (status, last_status_change)) in &self.statuses {
             if *status == ThreadStatus::Unparked {
                 let delta = now - *last_status_change;
@@ -99,7 +99,7 @@ impl Monitor for Arc<parking_lot::Mutex<ThreadTracker>> {
             let mut last_alert = None;
             loop {
                 sleep(ALERT_DURATION);
-                let now = Instant::now();
+                let now = crate::Instant::now();
                 let thread_tracker = self.lock();
                 let time_since_last_change = now - thread_tracker.last_change;
                 thread_tracker.check_for_long_unparked_threads();

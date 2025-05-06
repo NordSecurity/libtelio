@@ -66,7 +66,7 @@ use std::{
     io::{self, Error as IoError},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use cfg_if::cfg_if;
@@ -77,7 +77,7 @@ use telio_utils::{
     exponential_backoff::ExponentialBackoffBounds,
     get_ip_stack, interval, telio_log_debug, telio_log_error, telio_log_info, telio_log_warn,
     tokio::{Monitor, ThreadTracker},
-    version_tag,
+    version_tag, Instant,
 };
 
 use telio_model::{

@@ -14,12 +14,12 @@ use telio::telio_utils::{
     exponential_backoff::{
         Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
     },
-    Hidden,
+    sleep_until, Hidden, Instant,
 };
 use tokio::{
     select,
     sync::Mutex,
-    time::{error::Elapsed, timeout, Instant},
+    time::{error::Elapsed, timeout},
 };
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -126,7 +126,7 @@ async fn start_mqtt(nc_config: NCConfig) -> Result<(), Error> {
 
             loop {
                 select! {
-                    _ = tokio::time::sleep_until(expires_at) => {
+                    _ = sleep_until(expires_at) => {
                         info!("Notification Center credentials expired, mqtt will be restarted");
                         break;
                     },

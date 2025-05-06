@@ -5,10 +5,10 @@ use telio_utils::exponential_backoff;
 use thiserror::Error as TError;
 
 use telio_model::{features::EndpointProvider, SocketAddr};
+use telio_utils::Instant;
 
 use telio_crypto::PublicKey;
 use telio_proto::{CallMeMaybeMsg, Session};
-use tokio::time::Instant;
 
 #[derive(Debug, TError)]
 pub enum Error {
