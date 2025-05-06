@@ -21,7 +21,7 @@ manage it.
 There is a command for running the daemon:
 
 - `teliod daemon <path_to_config_file>` - starts the daemon.
-  - `--no-detach` - run the daemon in the foreground as a regular process.
+  - `--daemonize` - run the process in the background detaching from the terminal.
 
 The config file should be provided in a JSON format
 (see `example_teliod_config.json` file).
@@ -36,7 +36,7 @@ Currently supported configuration variables:
   - `trace`
   - `off`
 - `log_file_path` - a path to store the daemon's logs,
-needs be absolute otherwise `/var/run/` will be used
+needs be absolute, otherwise `/var/run/` will be used when daemonized
 - `log_file_count` - number of recent log files (log files are rotated daily)
 - `authentication_token` - Token from Nord VPN account to authenticate API calls
 - `app_user_uid` - A unique number for each user of the application

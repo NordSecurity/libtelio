@@ -8,7 +8,10 @@ from utils.process.process import ProcessExecError
 
 TELIOD_EXEC_PATH = f"{LIBTELIO_BINARY_PATH_DOCKER}/teliod"
 CONFIG_FILE_PATH = "/etc/teliod/config.json"
-SOCKET_FILE_PATH = "/run/teliod/teliod.sock"
+SOCKET_FILE_PATH = "/run/teliod.sock"
+STDOUT_FILE_PATH = "/var/log/teliod_stdout.log"
+STDERR_FILE_PATH = "/var/log/teliod_stdout.log"
+LOG_FILE_GLOB = "/var/log/teliod_natlab.log*"
 
 TELIOD_START_PARAMS = [
     TELIOD_EXEC_PATH,
@@ -16,10 +19,10 @@ TELIOD_START_PARAMS = [
     CONFIG_FILE_PATH,
 ]
 
-TELIOD_START_NO_DETACH_PARAMS = [
+TELIOD_START_DAEMONIZE_PARAMS = [
     TELIOD_EXEC_PATH,
     "daemon",
-    "-n",
+    "-d",
     CONFIG_FILE_PATH,
 ]
 
@@ -38,8 +41,8 @@ async def is_teliod_running(connection):
 
 @pytest.mark.parametrize(
     "start_daemon_params",
-    [(TELIOD_START_PARAMS), (TELIOD_START_NO_DETACH_PARAMS)],
-    ids=["daemonized_mode", "no_detach_mode"],
+    [(TELIOD_START_PARAMS), (TELIOD_START_DAEMONIZE_PARAMS)],
+    ids=["process_mode", "daemonized_mode"],
 )
 async def test_teliod(start_daemon_params) -> None:
     async with AsyncExitStack() as exit_stack:
@@ -83,8 +86,8 @@ async def test_teliod(start_daemon_params) -> None:
 
 @pytest.mark.parametrize(
     "start_daemon_params",
-    [(TELIOD_START_PARAMS), (TELIOD_START_NO_DETACH_PARAMS)],
-    ids=["daemonized_mode", "no_detach_mode"],
+    [(TELIOD_START_PARAMS), (TELIOD_START_DAEMONIZE_PARAMS)],
+    ids=["process_mode", "daemonized_mode"],
 )
 async def test_teliod_quit(start_daemon_params) -> None:
     async with AsyncExitStack() as exit_stack:
@@ -128,3 +131,44 @@ async def test_teliod_quit(start_daemon_params) -> None:
         with pytest.raises(ProcessExecError) as err:
             await connection.create_process(TELIOD_IS_ALIVE_PARAMS).execute()
         assert err.value.stderr == "Error: DaemonIsNotRunning"
+
+
+async def test_teliod_logs() -> None:
+    async with AsyncExitStack() as exit_stack:
+        connection = (
+            await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
+        )[0].connection
+
+        # Run teliod
+        await exit_stack.enter_async_context(
+            connection.create_process(TELIOD_START_DAEMONIZE_PARAMS).run()
+        )
+
+        # Let the daemon start
+        while not await is_teliod_running(connection):
+            await asyncio.sleep(0.1)
+
+        # Run the is-alive command
+        assert (
+            "Command executed successfully"
+            in (
+                await connection.create_process(TELIOD_IS_ALIVE_PARAMS).execute()
+            ).get_stdout()
+        )
+
+        # Send quit-daemon command
+        assert (
+            "Command executed successfully"
+            in (
+                await connection.create_process(TELIOD_QUIT_DAEMON_PARAMS).execute()
+            ).get_stdout()
+        )
+
+        assert not await is_teliod_running(connection)
+        # Check if stdout files exist
+        for path in [STDOUT_FILE_PATH, STDERR_FILE_PATH]:
+            await connection.create_process(["test", "-f", path]).execute()
+
+        # Check if log files exist
+        # if the glob dies not match anything, ls fails with exit code 2
+        await connection.create_process(["ls", LOG_FILE_GLOB]).execute()

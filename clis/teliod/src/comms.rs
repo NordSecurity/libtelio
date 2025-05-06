@@ -51,8 +51,9 @@ impl DaemonSocket {
             .name(ipc_socket_path.to_fs_name::<FilesystemUdSocket>()?)
             .reclaim_name(true);
 
-        // Disable setting umask for tests,
-        // they are running in parallel and this panics because of a concurent umask call
+        // Disable setting umask for tests.
+        // `umask()` C API call is operating on a process level, and therfore is not thread-safe.
+        // As multiple cargo tests are executing in parallel this causes a panic.
         #[cfg(not(test))]
         // Mode for unix socket rw-------
         let options = options.mode(0o600);
@@ -159,22 +160,21 @@ impl DaemonConnection {
 }
 
 /// Helper function for getting the path to the daemon's working directory.
-/// when available it uses `/run/`, or `/var/run/`
+/// when available it uses `/run`, or `/var/run`
 /// if none of them is available returns an error.
 ///
 /// # Returns
 ///
 /// Result containing the path of the daemons work directory.
 pub fn get_wd_path() -> Result<PathBuf> {
-    Ok(if Path::new("/run/").exists() {
-        PathBuf::from("/run/")
-    } else if Path::new("/var/run/").exists() {
-        PathBuf::from("/var/run/")
+    Ok(if Path::new("/run").exists() {
+        PathBuf::from("/run")
+    } else if Path::new("/var/run").exists() {
+        PathBuf::from("/var/run")
     } else {
         return Err(Error::new(
             ErrorKind::NotFound,
-            "Neither /run/ nor /var/run/ exists",
+            "Neither /run nor /var/run exists",
         ));
-    }
-    .join("teliod"))
+    })
 }
