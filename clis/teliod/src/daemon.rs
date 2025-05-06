@@ -20,7 +20,6 @@ use crate::{
     config::DeviceIdentity,
     config::{InterfaceConfig, TeliodDaemonConfig},
     core_api::{get_meshmap as get_meshmap_from_server, init_with_api},
-    logging::setup_logging,
     nc::NotificationCenter,
     ClientCmd, TelioStatusReport, TeliodError,
 };
@@ -206,13 +205,6 @@ async fn daemon_init(
 }
 
 pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError> {
-    let _tracing_worker_guard = setup_logging(
-        &config.log_file_path,
-        config.log_level,
-        config.log_file_count,
-    )
-    .await?;
-
     debug!("started with config: {config:?}");
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
@@ -245,8 +237,6 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
     });
 
     info!("Entering event loop");
-    println!("Daemon started");
-
     loop {
         select! {
             // Check if telio_task completes and exit if it fails

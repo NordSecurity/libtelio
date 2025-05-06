@@ -23,12 +23,12 @@ system_log() {
 }
 
 get_ipc_socket_path() {
-    if [ -d "/run/teliod/" ]; then
-        echo "/run/teliod/teliod.sock"
-    elif [ -d "/var/run/teliod/" ]; then
-        echo "/var/run/teliod/teliod.sock"
+    if [ -d "/run" ]; then
+        echo "/run/teliod.sock"
+    elif [ -d "/var/run" ]; then
+        echo "/var/run/teliod.sock"
     else
-        system_log ERROR "Neither /run/teliod/ nor /var/run/teliod/ exists"
+        system_log ERROR "Neither /run/ nor /var/run/ exists"
         exit 1
     fi
 }
@@ -49,7 +49,7 @@ case "$1" in
         exit 0
     fi
 
-    ${QPKG_ROOT}/teliod daemon -n $TELIOD_CFG_FILE > $TELIOD_LOG_FILE 2>&1 &
+    ${QPKG_ROOT}/teliod daemon $TELIOD_CFG_FILE > $TELIOD_LOG_FILE 2>&1 &
     system_log INFO "Teliod daemon started."
     ;;
 

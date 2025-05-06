@@ -3,6 +3,7 @@
 use clap::Parser;
 use comms::get_wd_path;
 use daemonize::{Daemonize, Outcome};
+use logging::setup_logging;
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
 use std::{
@@ -16,6 +17,7 @@ use tokio::{
     task::JoinError,
     time::{timeout, Duration},
 };
+use tracing::{debug, warn};
 use tracing_appender::rolling::InitError;
 
 #[cfg(feature = "cgi")]
@@ -70,9 +72,9 @@ struct DaemonOpts {
     /// Path to the config file
     config_path: String,
 
-    /// Run in the foreground instead of daemonizing
-    #[clap(short = 'n', long = "no-detach")]
-    no_detach: bool,
+    /// Daemonize the teliod process
+    #[clap(short = 'd', long = "daemonize")]
+    daemonize: bool,
 }
 
 #[derive(Debug, ThisError)]
@@ -129,35 +131,34 @@ fn main() -> Result<(), TeliodError> {
 
     // Pre-daemonizing setup
     if let Cmd::Daemon(opts) = &mut cmd {
-        // Check if teliod working directory is available, otherwise create it
-        let wd_path = get_wd_path()?;
-        if !wd_path.exists() {
-            fs::create_dir_all(&wd_path)?;
-        }
-
         // Check if daemon already is running before forking
         if DaemonSocket::get_ipc_socket_path()?.exists() {
             return Err(TeliodError::DaemonIsRunning);
         }
 
-        // Fork the process before starting tokio runtime
-        if !opts.no_detach {
-            // Fix relative path before changing working directory
+        // Fork the process before starting Tokio runtime.
+        // Tokio creates a multi-threaded asynchronous runtime,
+        // but during forking only a single thread survives,
+        // leaving tokio runtime in an undefined state and resulting in a panic.
+        // https://github.com/tokio-rs/tokio/issues/4301
+        if opts.daemonize {
+            // Fix relative config path before changing daemons working directory
             let config_path = PathBuf::from(&opts.config_path);
             if config_path.is_relative() {
                 opts.config_path = config_path.canonicalize()?.to_string_lossy().to_string();
             }
 
-            // redirect stdout and stderr to files
-            let stdout = File::create(wd_path.join("stdout.log"))?;
-            let stderr = File::create(wd_path.join("stderr.log"))?;
+            // Redirect stdout and stderr to files in /var/log
+            let log_path = PathBuf::from("/var/log");
+            let stdout = File::create(log_path.join("teliod_stdout.log"))?;
+            let stderr = File::create(log_path.join("teliod_stderr.log"))?;
             let daemon = Daemonize::new()
                 .umask(DEFAULT_UMASK)
-                .working_directory(wd_path)
+                .working_directory(get_wd_path()?)
                 .stdout(stdout)
                 .stderr(stderr);
 
-            // daemonize the process
+            // Daemonize the process
             match daemon.execute() {
                 // Quit parent process
                 Outcome::Parent(Ok(_)) => {
@@ -184,18 +185,22 @@ fn main() -> Result<(), TeliodError> {
 async fn tokio_main(cmd: Cmd) -> Result<(), TeliodError> {
     match cmd {
         Cmd::Daemon(opts) => {
-            println!("Loading config from {}", &opts.config_path);
-
             let file = fs::File::open(&opts.config_path)?;
-
             let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
 
+            let _tracing_worker_guard = setup_logging(
+                &config.log_file_path,
+                config.log_level,
+                config.log_file_count,
+            )
+            .await?;
+
             if let Ok(token) = std::env::var("NORD_TOKEN") {
-                println!("Overriding token from env");
+                debug!("Overriding token from env");
                 if token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) {
                     config.authentication_token = token;
                 } else {
-                    eprintln!("Token from env not valid")
+                    warn!("Token from env not valid")
                 }
             }
             Box::pin(daemon::daemon_event_loop(config)).await
@@ -231,7 +236,7 @@ async fn tokio_main(cmd: Cmd) -> Result<(), TeliodError> {
         #[cfg(feature = "cgi")]
         Cmd::Cgi => {
             #[cfg(debug_assertions)]
-            let _tracing_worker_guard = logging::setup_logging(
+            let _tracing_worker_guard = setup_logging(
                 cgi::constants::CGI_LOG,
                 tracing::level_filters::LevelFilter::TRACE,
                 7,
