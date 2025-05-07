@@ -1,0 +1,140 @@
+ /** @type {import('tailwindcss').Config} */
+ export default {
+  darkMode: 'class',
+  content: ["./src/**/*.{html,js}"],
+  theme: {
+    extend: {
+      fontFamily: {
+        'sans': ['Inter', ...require('tailwindcss/defaultTheme').fontFamily.sans],
+      },
+      fontSize: {
+        '2xs': '0.625rem',
+        xs: '0.75rem',
+        sm: '0.875rem',
+        md: '1rem',
+        lg: '1.25rem',
+        xl: '1.375rem',
+        '2xl': '1.75rem',
+        '3xl': '2rem',
+        '4xl': '2.5rem',
+        '5xl': '3rem',
+        '6xl': '4rem',
+      },
+      fontWeight: {
+        normal: 400,
+        medium: 500,
+        bold: 600,
+        inherit: 'inherit',
+      },  
+      borderRadius: {
+        none: '0',
+        xs: '3px',
+        sm: '6px',
+        md: '12px',
+        lg: '20px',
+        full: '9999px',
+      },
+      borderWidth: {
+        none: '0',
+        md: '1px',
+        lg: '2px',
+        xl: '3px',
+      },
+      colors: {
+        transparent: 'transparent',
+        neutral: {
+          0: '#FFFFFF',
+          100: '#F7F7F8',
+          200: '#E2E2E4',
+          300: '#C8C9CB',
+          400: '#B1B1B4',
+          500: '#8D8E96',
+          600: '#6C6D75',
+          700: '#4D4E56',
+          800: '#3C3D44',
+          900: '#2A2B32',
+          1000: '#151823',
+        },
+        blue: {
+          100: '#F3F7FC',
+          200: '#D4E2F7',
+          300: '#B5CDF5',
+          400: '#8CAEF8',
+          500: '#6B90FA',
+          600: '#3E5FFF',
+          700: '#243DCC',
+          800: '#263482',
+          900: '#22294F',
+          1000: '#12162B',
+        },
+        red: {
+          100: '#FCEFEE',
+          200: '#F9D7D3',
+          300: '#F6BEB9',
+          400: '#F29086',
+          500: '#EC6255',
+          600: '#E02F1F',
+          700: '#9E1C10',
+          800: '#771209',
+          900: '#5A0E07',
+          1000: '#2F0704',
+        },
+        green: {
+          100: '#ECF9EE',
+          200: '#B7F2C5',
+          300: '#81E4A2',
+          400: '#37C871',
+          500: '#0EA464',
+          600: '#0A8550',
+          700: '#075F3C',
+          800: '#05472B',
+          900: '#043420',
+          1000: '#02180E',
+        },
+        yellow: {
+          100: '#FFF6DB',
+          200: '#FEE071',
+          300: '#FAC900',
+          400: '#D1A900',
+          500: '#AE8604',
+          600: '#8E6C10',
+          700: '#654A0B',
+          800: '#4E3709',
+          900: '#3C2A07',
+          1000: '#1B1509',
+        },
+      },
+      opacity: {
+        0: '0',
+        25: '0.25',
+        50: '0.5',
+        100: '1',
+      },
+      boxShadow: {
+        'focus': '0px 0px 0 2px #FFFFFF, 0 0 0 4px #3E5FFF',
+        'focus-inset': 'inset 0 0 0 2px #3E5FFF, inset 0px 0px 0 4px #FFFFFF'
+      },
+    },
+  },
+  plugins: [
+    function ({ addBase, theme }) {
+      addBase({
+        ':focus': {
+          outline: '2px solid',
+          outlineColor: theme('colors.blue.600'), 
+          outlineOffset: '2px',
+          boxShadow: theme('boxShadow.outline'), 
+        },
+        ':focus:not(:focus-visible)': {
+          outline: 'none',
+          boxShadow: 'none',
+        },
+        ':focus-visible': {
+          outline: '2px solid',
+          outlineColor: theme('colors.blue.600'),
+          outlineOffset: '2px',
+        }
+      });
+    },
+  ],
+}
