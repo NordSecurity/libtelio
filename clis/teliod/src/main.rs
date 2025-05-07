@@ -59,7 +59,7 @@ enum ClientCmd {
 #[clap()]
 enum Cmd {
     #[clap(about = "Runs the teliod event loop")]
-    Daemon(DaemonOpts),
+    Start(DaemonOpts),
     #[clap(flatten)]
     Client(ClientCmd),
     #[cfg(feature = "cgi")]
@@ -72,9 +72,9 @@ struct DaemonOpts {
     /// Path to the config file
     config_path: String,
 
-    /// Daemonize the teliod process
-    #[clap(short = 'd', long = "daemonize")]
-    daemonize: bool,
+    /// Do not detach the teliod process from the terminal
+    #[clap(long = "no-detach")]
+    no_detach: bool,
 }
 
 #[derive(Debug, ThisError)]
@@ -130,7 +130,7 @@ fn main() -> Result<(), TeliodError> {
     let mut cmd = Cmd::parse();
 
     // Pre-daemonizing setup
-    if let Cmd::Daemon(opts) = &mut cmd {
+    if let Cmd::Start(opts) = &mut cmd {
         // Check if daemon already is running before forking
         if DaemonSocket::get_ipc_socket_path()?.exists() {
             return Err(TeliodError::DaemonIsRunning);
@@ -141,7 +141,7 @@ fn main() -> Result<(), TeliodError> {
         // but during forking only a single thread survives,
         // leaving tokio runtime in an undefined state and resulting in a panic.
         // https://github.com/tokio-rs/tokio/issues/4301
-        if opts.daemonize {
+        if !opts.no_detach {
             // Fix relative config path before changing daemons working directory
             let config_path = PathBuf::from(&opts.config_path);
             if config_path.is_relative() {
@@ -151,7 +151,7 @@ fn main() -> Result<(), TeliodError> {
             // Redirect stdout and stderr to files in /var/log
             let log_path = PathBuf::from("/var/log");
             let stdout = File::create(log_path.join("teliod_stdout.log"))?;
-            let stderr = File::create(log_path.join("teliod_stderr.log"))?;
+            let stderr = File::create(log_path.join("teliod_error.log"))?;
             let daemon = Daemonize::new()
                 .umask(DEFAULT_UMASK)
                 .working_directory(get_wd_path()?)
@@ -184,7 +184,7 @@ fn main() -> Result<(), TeliodError> {
 #[tokio::main]
 async fn tokio_main(cmd: Cmd) -> Result<(), TeliodError> {
     match cmd {
-        Cmd::Daemon(opts) => {
+        Cmd::Start(opts) => {
             let file = fs::File::open(&opts.config_path)?;
             let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
 
