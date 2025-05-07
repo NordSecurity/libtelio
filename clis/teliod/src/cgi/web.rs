@@ -316,7 +316,7 @@ fn meshnet(app: &AppState) -> Markup {
                 .map(|ip| format!("{}", ip))
                 .unwrap_or_default()
         )
-    };
+    }; 
 
     html! {
         div class="bg-neutral-0 dark:bg-[#1C1F2B] border border-secondary max-w-[768px] mx-auto w-full p-6 rounded-md flex flex-col gap-6"
