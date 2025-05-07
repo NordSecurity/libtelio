@@ -3,7 +3,6 @@
 import getpass
 import os
 import sys
-import subprocess
 import moose_utils
 from fetch_artifacts import ArtifactsDownloader
 import shutil
