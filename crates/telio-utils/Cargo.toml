@@ -12,6 +12,7 @@ sn_fake_clock = ["dep:sn_fake_clock"]
 [dependencies]
 backtrace = "0.3.74"
 blake3 = "1.5.4"
+boot-time = "0.1.2"
 futures.workspace = true
 hashlink.workspace = true
 ipnet.workspace = true
