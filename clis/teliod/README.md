@@ -1,5 +1,8 @@
 # Teliod
 
+Teliod is small Meshnet and VPN application, designed to be used in standalone
+and embedded environments.
+
 ## Building Teliod
 
 For typical Linux environment it might be built using simply:
@@ -13,15 +16,16 @@ and the fact the OpenWRT is MUSLE-based, for example:
 
 You may need to download some sufficient MUSLE toolchains from `musle.cc`.
 
-## Using Teliod daemon
+## Using Teliod
 
 Teliod runs Telio library in the background and provides a simple CLI tool to
 manage it.
 
 There is a command for running the daemon:
 
-- `teliod daemon <path_to_config_file>` - starts the daemon.
-  - `--daemonize` - run the process in the background detaching from the terminal.
+- `teliod start <path_to_config_file>` - starts the daemon.
+  - `--no-detach` - run the teliod in the foreground as a regular process,
+  without detaching from the terminal.
 
 The config file should be provided in a JSON format
 (see `example_teliod_config.json` file).

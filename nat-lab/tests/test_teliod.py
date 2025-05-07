@@ -11,20 +11,20 @@ TELIOD_EXEC_PATH = f"{LIBTELIO_BINARY_PATH_DOCKER}/teliod"
 CONFIG_FILE_PATH = "/etc/teliod/config.json"
 SOCKET_FILE_PATH = "/run/teliod.sock"
 STDOUT_FILE_PATH = "/var/log/teliod_stdout.log"
-STDERR_FILE_PATH = "/var/log/teliod_stdout.log"
-# Build today's dated log filename
+STDERR_FILE_PATH = "/var/log/teliod_error.log"
+# Build a dated log filename
 LOG_FILE_PATH = f"/var/log/teliod_natlab.log.{datetime.today().strftime('%Y-%m-%d')}"
 
 TELIOD_START_PARAMS = [
     TELIOD_EXEC_PATH,
-    "daemon",
+    "start",
     CONFIG_FILE_PATH,
 ]
 
-TELIOD_START_DAEMONIZE_PARAMS = [
+TELIOD_START_NODETACH_PARAMS = [
     TELIOD_EXEC_PATH,
-    "daemon",
-    "-d",
+    "start",
+    "--no-detach",
     CONFIG_FILE_PATH,
 ]
 
@@ -43,8 +43,8 @@ async def is_teliod_running(connection):
 
 @pytest.mark.parametrize(
     "start_daemon_params",
-    [(TELIOD_START_PARAMS), (TELIOD_START_DAEMONIZE_PARAMS)],
-    ids=["process_mode", "daemonized_mode"],
+    [(TELIOD_START_PARAMS), (TELIOD_START_NODETACH_PARAMS)],
+    ids=["daemonized_mode", "no_detach_mode"],
 )
 async def test_teliod(start_daemon_params) -> None:
     async with AsyncExitStack() as exit_stack:
@@ -88,8 +88,8 @@ async def test_teliod(start_daemon_params) -> None:
 
 @pytest.mark.parametrize(
     "start_daemon_params",
-    [(TELIOD_START_PARAMS), (TELIOD_START_DAEMONIZE_PARAMS)],
-    ids=["process_mode", "daemonized_mode"],
+    [(TELIOD_START_PARAMS), (TELIOD_START_NODETACH_PARAMS)],
+    ids=["daemonized_mode", "no_detach_mode"],
 )
 async def test_teliod_quit(start_daemon_params) -> None:
     async with AsyncExitStack() as exit_stack:
@@ -152,7 +152,7 @@ async def test_teliod_logs() -> None:
 
         # Run teliod
         await exit_stack.enter_async_context(
-            connection.create_process(TELIOD_START_DAEMONIZE_PARAMS).run()
+            connection.create_process(TELIOD_START_PARAMS).run()
         )
 
         # Let the daemon start
