@@ -715,6 +715,24 @@ dictionary FeatureDerp {
     boolean use_built_in_root_certificates;
 };
 
+/// Next layer protocol for IP packet
+enum IpProtocol {
+    /// UDP protocol
+    "UDP",
+    /// TCP protocol
+    "TCP"
+};
+
+/// Tuple used to blacklist outgoing connections in Telio firewall
+dictionary FirewallBlacklistTuple {
+    /// Protocol of the packet to be blacklisted
+    IpProtocol protocol;
+    /// Destination IP address of the packet
+    IpAddr ip;
+    /// Destination port of the packet
+    u16 port;
+};
+
 /// Feature config for firewall
 dictionary FeatureFirewall {
     /// Turns on connection resets upon VPN server change
@@ -723,6 +741,8 @@ dictionary FeatureFirewall {
     boolean boringtun_reset_conns;
     /// Ip range from RFC1918 to exclude from firewall blocking
     Ipv4Net? exclude_private_ip_range;
+    /// Blackist for outgoing connections
+    sequence<FirewallBlacklistTuple> outgoing_blacklist;
 };
 
 /// Link detection mechanism

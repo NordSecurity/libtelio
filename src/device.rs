@@ -1044,7 +1044,7 @@ impl Runtime {
         features: Features,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
-        let firewall = Arc::new(StatefullFirewall::new(features.ipv6, features.firewall));
+        let firewall = Arc::new(StatefullFirewall::new(features.ipv6, &features.firewall));
 
         let firewall_filter_inbound_packets = {
             let fw = firewall.clone();
