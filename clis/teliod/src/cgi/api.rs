@@ -1,10 +1,4 @@
-use std::{
-    fs, io,
-    process::{Command, Stdio},
-    str,
-    thread::sleep,
-    time::Duration,
-};
+use std::{fs, io, path::PathBuf, process::Command, str, thread::sleep, time::Duration};
 
 use rust_cgi::{
     http::{Method, StatusCode},
@@ -18,7 +12,7 @@ use crate::{
 };
 
 use super::{
-    constants::{MESHNET_LOG, TELIOD_BIN, TELIOD_CFG, TELIOD_LOG},
+    constants::{TELIOD_BIN, TELIOD_CFG, TELIOD_EROR, TELIOD_LOG_PATH, TELIOD_LOG_PREFIX},
     CgiRequest,
 };
 
@@ -53,7 +47,7 @@ pub(crate) fn handle_api(request: &CgiRequest) -> Option<Response> {
         }
         (&Method::GET, "/get-status") => Some(get_status()),
         (&Method::GET, "/get-teliod-logs") => Some(get_teliod_logs()),
-        (&Method::GET, "/get-meshnet-logs") => Some(get_meshnet_logs()),
+        (&Method::GET, "/get-teliod-error") => Some(get_teliod_error()),
         (_, _) => Some(text_response(
             StatusCode::NOT_FOUND,
             "Non-existing endpoint",
@@ -81,46 +75,9 @@ pub(crate) fn start_daemon() -> Response {
         return text_response(StatusCode::BAD_REQUEST, "Application is already running.");
     }
 
-    let teliod_log_file = match fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .read(true)
-        .truncate(true)
-        .open(TELIOD_LOG)
-    {
-        Ok(file) => file,
-        Err(err) => {
-            return text_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to open teliod log file {TELIOD_LOG}, err: {err}"),
-            );
-        }
-    };
-    let stdout = match teliod_log_file.try_clone() {
-        Ok(file) => Stdio::from(file),
-        Err(error) => {
-            return text_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to start the application: {error}"),
-            )
-        }
-    };
-    let stderr = match teliod_log_file.try_clone() {
-        Ok(file) => Stdio::from(file),
-        Err(error) => {
-            return text_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to start the application: {error}"),
-            )
-        }
-    };
-    match Command::new("setsid")
-        .arg(TELIOD_BIN)
+    match Command::new(TELIOD_BIN)
         .arg("start")
-        .arg("--no-detach")
         .arg(TELIOD_CFG)
-        .stdout(stdout)
-        .stderr(stderr)
         .spawn()
     {
         Ok(_process) => {
@@ -239,17 +196,51 @@ fn get_status() -> Response {
 }
 
 fn get_teliod_logs() -> Response {
-    match fs::read_to_string(TELIOD_LOG) {
-        Ok(logs) => text_response(StatusCode::OK, logs),
-        Err(error) => text_response(
+    let mut log_files: Vec<PathBuf> = Vec::new();
+
+    // Due to log rotation, teliod logs have the format of
+    // teliod.log.YYYY_MM_DD, we collect all the files that start with teliod.log
+    // from /var/log and sort by name to get the latest one, as a fall back if log rotation is
+    // disabled, it will return teliod.log file without the date suffix.
+    if let Ok(entries) = fs::read_dir(TELIOD_LOG_PATH) {
+        log_files = entries
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.is_file()
+                    && path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(|name| name.starts_with(TELIOD_LOG_PREFIX))
+                        .unwrap_or(false)
+            })
+            .collect();
+
+        // Sort by file name to get the latest log first
+        log_files.sort_by(|a, b| {
+            b.file_name()
+                .unwrap_or_default()
+                .cmp(a.file_name().unwrap_or_default())
+        });
+    }
+
+    match log_files.into_iter().next() {
+        Some(path) => match fs::read_to_string(&path) {
+            Ok(logs) => text_response(StatusCode::OK, logs),
+            Err(e) => text_response(
+                StatusCode::BAD_GATEWAY,
+                format!("Error reading log file {:?}: {}", path, e),
+            ),
+        },
+        None => text_response(
             StatusCode::BAD_GATEWAY,
-            format!("Error reading teliod log file: {}", error),
+            format!("No Teliod log files found in {}", TELIOD_LOG_PATH),
         ),
     }
 }
 
-fn get_meshnet_logs() -> Response {
-    match fs::read_to_string(MESHNET_LOG) {
+fn get_teliod_error() -> Response {
+    match fs::read_to_string(TELIOD_EROR) {
         Ok(logs) => text_response(StatusCode::OK, logs),
         Err(error) => text_response(
             StatusCode::BAD_GATEWAY,
