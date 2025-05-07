@@ -114,8 +114,12 @@ services:
     networks:
       cone-net-01:
         ipv4_address: 192.168.101.67
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       cone-net-05:
         ipv4_address: 192.168.113.67
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.101.254
       CLIENT_GATEWAY_SECONDARY: 192.168.113.254
@@ -257,9 +261,13 @@ services:
         ipv4_address: 10.0.254.1
         ipv6_address: 2001:db8:85a4::1000:2541
         priority: 1000
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       cone-net-01:
         ipv4_address: 192.168.101.254
         priority: 900
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
   cone-gw-02:
     hostname: cone-gw-02
     <<: *common-gw
@@ -267,9 +275,13 @@ services:
       internet:
         ipv4_address: 10.0.254.2
         priority: 1000
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       cone-net-02:
         ipv4_address: 192.168.102.254
         priority: 90
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
   cone-gw-03:
     hostname: cone-gw-03
     <<: *common-gw
@@ -277,9 +289,13 @@ services:
       internet:
         ipv4_address: 10.0.254.7
         priority: 1000
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       cone-net-03:
         ipv4_address: 192.168.107.254
         priority: 900
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
   cone-gw-04:
     hostname: cone-gw-04
     <<: *common-gw
@@ -287,9 +303,13 @@ services:
       internet:
         ipv4_address: 10.0.254.8
         priority: 1000
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       cone-net-04:
         ipv4_address: 192.168.108.254
         priority: 900
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
   cone-gw-05:
     hostname: cone-gw-05
     <<: *common-gw
@@ -297,9 +317,13 @@ services:
       internet:
         ipv4_address: 10.0.254.13
         priority: 1000
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       cone-net-05:
         ipv4_address: 192.168.113.254
         priority: 900
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
 
   fullcone-gw-01:
     hostname: fullcone-gw-01
@@ -309,9 +333,13 @@ services:
       internet:
         ipv4_address: 10.0.254.9
         priority: 1000
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       fullcone-net-01:
         ipv4_address: 192.168.109.254
         priority: 900
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
   fullcone-gw-02:
     hostname: fullcone-gw-02
     <<: *common-gw
@@ -320,9 +348,13 @@ services:
       internet:
         ipv4_address: 10.0.254.6
         priority: 1000
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       fullcone-net-02:
         ipv4_address: 192.168.106.254
         priority: 900
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
 
   symmetric-gw-01:
     hostname: symmetric-gw-01
@@ -332,9 +364,13 @@ services:
       internet:
         ipv4_address: 10.0.254.3
         priority: 1000
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       hsymmetric-net-01:
         ipv4_address: 192.168.103.254
         priority: 900
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
   symmetric-gw-02:
     hostname: symmetric-gw-02
     <<: *common-gw
@@ -343,9 +379,13 @@ services:
       internet:
         ipv4_address: 10.0.254.4
         priority: 1000
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       hsymmetric-net-02:
         ipv4_address: 192.168.104.254
         priority: 900
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
   internal-symmetric-gw-01:
     hostname: internal-symmetric-gw-01
     <<: *common-gw
@@ -355,8 +395,12 @@ services:
     networks:
       hsymmetric-net-01:
         ipv4_address: 192.168.103.44
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
       hsymmetric-internal-net-01:
         ipv4_address: 192.168.114.254
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
     volumes:
       - ../:/libtelio
 
@@ -368,9 +412,13 @@ services:
       internet:
         ipv4_address: 10.0.254.5
         priority: 1000
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       upnp-net-01:
         ipv4_address: 192.168.105.254
         priority: 900
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
     volumes:
       - ./data/upnpd/upnpd.conf:/etc/upnpd.conf
   upnp-gw-02:
@@ -381,9 +429,13 @@ services:
       internet:
         ipv4_address: 10.0.254.12
         priority: 1000
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       upnp-net-02:
         ipv4_address: 192.168.112.254
         priority: 900
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
 
   # Gateways which block udp traffic
   udp-block-gw-01:
@@ -394,9 +446,13 @@ services:
       internet:
         ipv4_address: 10.0.254.10
         priority: 1000
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       udp-block-net-01:
         ipv4_address: 192.168.110.254
         priority: 900
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
   udp-block-gw-02:
     hostname: udp-block-gw-02
     <<: *common-gw
@@ -405,9 +461,13 @@ services:
       internet:
         ipv4_address: 10.0.254.11
         priority: 1000
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
       udp-block-net-02:
         ipv4_address: 192.168.111.254
         priority: 900
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
 
 
   ###########################################################
@@ -677,12 +737,16 @@ networks:
         - subnet: 192.168.102.0/24
   cone-net-03:
     driver: bridge
+    driver_opts:
+        com.docker.network.bridge.gateway_mode_ipv4: 'nat-unprotected'
     ipam:
       driver: default
       config:
         - subnet: 192.168.107.0/24
   cone-net-04:
     driver: bridge
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: 'nat-unprotected'
     ipam:
       driver: default
       config:
