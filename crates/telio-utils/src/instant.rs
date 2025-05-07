@@ -2,14 +2,21 @@ use std::time::Duration;
 
 const CHECK_PERIOD: Duration = Duration::from_secs(60);
 
-/// Wrapper for the `tokio::time::Instant`
+#[cfg(debug_assertions)]
+type InnerInstant = tokio::time::Instant;
+#[cfg(not(debug_assertions))]
+type InnerInstant = boot_time::Instant;
+
+/// A measurement of a monotonically nondecreasing clock. Opaque and useful only with Duration.
+/// In the Debug mode, it is a trivial wrapper for `tokio::time::Instant`. In the Release mode,
+/// it measures the time including time spent when the operating system is sleeping / suspended.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Instant(tokio::time::Instant);
+pub struct Instant(InnerInstant);
 
 impl Instant {
     /// Returns an instant corresponding to “now”.
     pub fn now() -> Self {
-        Self(tokio::time::Instant::now())
+        Self(InnerInstant::now())
     }
 
     /// Returns the amount of time elapsed from another instant to this one, or zero duration if that instant is later than this one.
