@@ -8,7 +8,6 @@ QPKG_ROOT=`/sbin/getcfg $QPKG_NAME Install_Path -f ${CONF}`
 export QNAP_QPKG=$QPKG_NAME
 
 TELIOD_CFG_FILE=${QPKG_ROOT}/teliod.cfg
-TELIOD_LOG_FILE="/var/log/teliod.log"
 
 system_log() {
     local log_level
@@ -48,7 +47,7 @@ case "$1" in
         exit 0
     fi
 
-    ${QPKG_ROOT}/teliod start --no-detach $TELIOD_CFG_FILE > $TELIOD_LOG_FILE 2>&1 &
+    ${QPKG_ROOT}/teliod start $TELIOD_CFG_FILE
     system_log INFO "Teliod daemon started."
     ;;
 

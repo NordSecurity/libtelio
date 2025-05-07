@@ -181,16 +181,7 @@ impl Default for TeliodDaemonConfig {
             } else {
                 Level::INFO
             }),
-            log_file_path: {
-                #[cfg(feature = "cgi")]
-                {
-                    crate::cgi::constants::TELIOD_LOG.to_string()
-                }
-                #[cfg(not(feature = "cgi"))]
-                {
-                    "./teliod.log".to_string()
-                }
-            },
+            log_file_path: "/var/log/teliod_lib.log".to_string(),
             log_file_count: default_log_file_count(),
             adapter_type: AdapterType::default(),
             interface: InterfaceConfig {
