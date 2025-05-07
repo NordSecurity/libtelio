@@ -883,6 +883,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1137cd7e7fc0fb5d3c5a8678be38ec56e819125d8d7907411fe24ccb943faca8"
+dependencies = [
+ "crossbeam-channel",
+ "crossbeam-deque",
+ "crossbeam-epoch",
+ "crossbeam-queue",
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "crossbeam-channel"
 version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -906,6 +919,15 @@ name = "crossbeam-epoch"
 version = "0.9.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5b82ac4a3c2ca9c3460964f020e1402edd5753411d7737aa39c3714ad1b5420e"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-queue"
+version = "0.3.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f58bbc28f91df819d0aa2a2c00cd19754769c2fad90579b3592b1c9ba7a3115"
 dependencies = [
  "crossbeam-utils",
 ]
@@ -2651,12 +2673,13 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "0.6.0"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v1.0.7#da23f2b13468efe3754f7e49732c500dd4632e3a"
+source = "git+https://github.com/NordSecurity/neptun.git?branch=LLT-5850_break_tx_into_tasks#5fa3642ad97ea243d3fbd27291c0cda2f615a691"
 dependencies = [
  "aead",
  "base64 0.13.1",
  "blake2",
  "chacha20poly1305",
+ "crossbeam",
  "dispatch",
  "hex",
  "hmac",
@@ -2664,6 +2687,7 @@ dependencies = [
  "ip_network_table",
  "libc",
  "nix 0.29.0",
+ "once_cell",
  "parking_lot",
  "rand_core 0.6.4",
  "ring",
