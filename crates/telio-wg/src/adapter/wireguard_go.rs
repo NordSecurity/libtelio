@@ -177,6 +177,10 @@ impl Adapter for WireguardGo {
             Ok(None) // Not supported by platform
         }
     }
+
+    async fn set_tun(&self, _tun: i32) -> Result<(), AdapterError> {
+        Err(AdapterError::UnsupportedAdapter)
+    }
 }
 
 /// Safety: wg_go_stop is synchronious,
