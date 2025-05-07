@@ -1,0 +1,809 @@
+ ~/Development/neptun/ [main*] cargo mutants --baseline --iterate       
+error: a value is required for '--baseline <BASELINE>' but none was supplied
+  [possible values: run, skip]
+
+For more information, try '--help'.
+ ~/Development/neptun/ [main*] cargo mutants --baseline skip --iterate
+ WARN referent of mod not found definition_site="neptun/src/noise/timers.rs:22:1" mod_name=_instant_boottime tried_paths=["/home/lukaspukenis/Development/neptun/neptun/src/noise/timers/_instant_boottime.rs", "/home/lukaspukenis/Development/neptun/neptun/src/noise/timers/_instant_boottime/mod.rs"]
+ INFO Iteration excludes 0 previously caught or unviable mutants
+Found 1239 mutants to test
+ WARN An explicit test timeout is recommended when using --baseline=skip; using 300 seconds by default
+MISSED   neptun-cli/src/main.rs:153:31: delete ! in main in 7.8s build + 0.1s test
+MISSED   xtask/src/xray.rs:150:9: replace Cmd::create_wg_adapter -> Result<()> with Ok(()) in 10.1s build + 0.1s test
+MISSED   neptun/src/noise/mod.rs:568:28: replace >> with << in Tunn::validate_decapsulated_packet in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:555:18: replace match guard with true in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:256:45: replace > with == in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:401:39: replace || with && in DeviceHandle::new_thread_local in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:264:89: delete - in EventPoll<H>::register_event in 0.1s build + 0.3s test
+MISSED   xray/src/client.rs:234:30: replace + with * in Client::make_udp_packet in 1.3s build + 0.2s test
+MISSED   neptun/src/noise/handshake.rs:471:43: replace | with ^ in Handshake::inc_index in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:91:9: replace Peer::endpoint -> parking_lot::RwLockReadGuard<'_, Endpoint> with RwLockReadGuard::new() in 0.9s build + 0.3s test
+MISSED   neptun/src/device/dev_lock.rs:66:9: replace LockReadGuard<'a, T>::try_writeable -> Option<U> with None in 0.1s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:190:9: replace TunSocket::write4 -> usize with 0 in 0.1s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:198:9: replace Peer::index -> u32 with 0 in 0.6s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:247:20: replace == with != in EventPoll<H>::register_event in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:401:34: replace == with != in DeviceHandle::new_thread_local in 0.1s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:142:9: replace EventPoll<H>::new_notifier -> Result<EventRef, Error> with Ok(Default::default()) in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:51:5: replace b2s_hmac -> [u8; 32] with [0; 32] in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:127:31: replace % with + in EventLoop::on_recv_cmd in 1.3s build + 0.2s test
+MISSED   xray/src/event_loop.rs:99:64: replace + with * in EventLoop::on_recv_cmd::prepare_packet in 1.2s build + 0.2s test
+MISSED   neptun/src/noise/timers.rs:281:32: replace - with + in Tunn::update_timers in 1.0s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:190:32: replace == with != in TunSocket::name in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:648:25: replace += with -= in Tunn::estimate_loss in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:464:9: replace Device::remove_peer with () in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:279:30: replace == with != in Session::is_right_session in 0.8s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:305:33: replace - with + in EventPoll<H>::trigger_notification in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/rate_limiter.rs:75:9: replace RateLimiter::rand_bytes -> [u8; 32] with [1; 32] in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:71:5: replace b2s_keyed_mac_16 -> [u8; 16] with [0; 16] in 1.0s build + 0.3s test
+MISSED   neptun/src/device/api.rs:117:5: replace api_exec with () in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:657:9: replace Handshake::receive_cookie_reply -> Result<(), WireGuardError> with Ok(()) in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:280:44: replace < with == in Tunn::update_timers in 1.0s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:412:56: replace == with != in block_signal in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:153:34: replace | with & in EventPoll<H>::new_periodic_event in 0.1s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:274:28: replace <= with > in EventPoll<H>::insert_at in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/rate_limiter.rs:132:58: replace + with * in RateLimiter::format_cookie_reply in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:198:22: replace < with == in Session::format_packet_data in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:220:5: replace api_set -> i32 with 1 in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:86:9: replace EventPoll<H>::new_event -> Result<EventRef, Error> with Ok(Default::default()) in 0.1s build + 0.3s test
+MISSED   xray/src/types.rs:140:36: replace + with * in Packet::send_size in 1.2s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:284:27: replace += with *= in Tunn::encapsulate in 0.9s build + 0.3s test
+MISSED   neptun/src/device/drop_privileges.rs:68:28: replace != with == in drop_privileges in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:42:5: replace b2s_hash -> [u8; 32] with [1; 32] in 1.0s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:165:9: replace TunSocket::new_from_fd -> Result<TunSocket, Error> with Ok(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/allowed_ips.rs:60:9: replace AllowedIps<D>::iter -> Iter<D> with Iter::new() in 0.1s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1268:32: replace >> with << in IndexLfsr::next in 0.1s build + 0.3s test
+MISSED   neptun/src/sleepyinstant/unix.rs:37:19: replace < with > in Instant::checked_duration_since in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:185:9: replace Peer::preshared_key -> Option<[u8; 32]> with Some([1; 32]) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:282:9: replace DeviceHandle::wait with () in 0.6s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:58:32: replace << with >> in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:228:64: replace && with || in Tai64N::after in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:228:9: replace TunSocket::write6 -> usize with 0 in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:578:49: replace match guard with false in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:375:28: replace - with + in Tunn::last_handshake_time in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:194:9: replace TunSocket::write6 -> usize with 0 in 0.9s build + 0.3s test
+MISSED   xray/src/client.rs:234:30: replace + with - in Client::make_udp_packet in 1.2s build + 0.2s test
+MISSED   xray/src/pcap.rs:87:40: replace - with + in process_udp_packet in 0.6s build + 0.2s test
+MISSED   neptun/src/device/epoll.rs:399:21: replace | with & in EventGuard<'a, H>::notify_writable in 0.6s build + 0.3s test
+MISSED   neptun/src/noise/safe_duration.rs:74:9: replace <impl PartialOrd<SafeDuration> for Duration>::partial_cmp -> Option<std::cmp::Ordering> with None in 0.8s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:243:22: replace < with == in Session::receive_packet_data in 0.9s build + 0.3s test
+MISSED   xray/src/main.rs:115:50: replace match guard with false in 1.2s build + 0.2s test
+MISSED   neptun/src/device/peer.rs:102:9: replace Peer::set_endpoint with () in 0.8s build + 0.3s test
+MISSED   neptun/src/device/api.rs:365:17: delete match arm in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:642:40: replace == with != in Tunn::estimate_loss in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:109:43: replace + with - in EventLoop::on_recv_cmd in 1.2s build + 0.2s test
+MISSED   neptun/src/device/peer.rs:162:9: replace Peer::allowed_ips -> Vec<AllowedIP> with vec![] in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:665:32: replace != with == in Handshake::receive_cookie_reply in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:232:9: replace TunSocket::read -> Result<&'a mut[u8], Error> with Ok(Vec::leak(Vec::new())) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/drop_privileges.rs:60:11: replace == with != in drop_privileges in 0.1s build + 0.3s test
+MISSED   xray/src/event_loop.rs:159:31: replace == with != in EventLoop::on_recv_crypto_packet in 1.2s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:186:31: replace >= with < in Tunn::dst_address in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:293:50: replace == with != in Session::decrypt_data_packet in 0.8s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1268:79: replace & with ^ in IndexLfsr::next in 0.8s build + 0.3s test
+MISSED   xtask/src/xray.rs:203:9: replace Cmd::stop_tcpdump -> Result<()> with Ok(()) in 1.2s build + 0.1s test
+MISSED   neptun/src/noise/mod.rs:195:55: replace + with * in Tunn::dst_address in 0.8s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:235:19: replace |= with &= in EventPoll<H>::register_event in 0.8s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:987:26: replace -= with += in Device::register_udp_handler in 0.8s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:126:20: replace - with / in ReceivingKeyCounterValidator::mark_did_receive in 0.8s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:173:9: replace Peer::add_allowed_ips with () in 0.8s build + 0.3s test
+MISSED   neptun/src/device/api.rs:102:9: replace Device::register_api_signal_handlers -> Result<(), Error> with Ok(()) in 0.6s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:396:9: replace EventGuard<'a, H>::notify_writable with () in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:200:9: replace TunSocket::mtu -> Result<usize, Error> with Ok(1) in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:85:5: replace b2s_mac_24 -> [u8; 24] with [0; 24] in 1.0s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:54:58: replace <= with > in <impl FromStr for AllowedIP>::from_str in 1.0s build + 0.3s test
+MISSED   xray/src/key_pair.rs:48:9: replace <impl NepTUNKey for PublicKey>::bytes -> &[u8] with Vec::leak(vec![1]) in 1.2s build + 0.2s test
+MISSED   neptun/src/device/allowed_ips.rs:52:9: replace AllowedIps<D>::find -> Option<&D> with None in 0.6s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:264:45: replace >= with < in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:195:55: replace + with - in Tunn::dst_address in 0.9s build + 0.3s test
+MISSED   xray/src/main.rs:82:22: replace % with + in main in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/timers.rs:357:9: replace Tunn::time_since_last_handshake -> Option<std::time::Duration> with Some(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:645:25: replace - with / in Tunn::estimate_loss in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:214:9: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:143:13: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:58:39: replace - with + in 0.9s build + 0.3s test
+TIMEOUT  neptun/src/noise/session.rs:138:33: replace < with > in ReceivingKeyCounterValidator::mark_did_receive in 0.9s build + 300.0s test
+MISSED   neptun/src/device/tun_linux.rs:41:9: replace <impl Drop for TunSocket>::drop with () in 0.8s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:107:30: replace | with ^ in EventPoll<H>::new_write_event in 0.6s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:784:21: delete match arm in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:481:55: replace % with + in Tunn::set_current_session in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:71:8: delete ! in parse_utun_name in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:187:27: replace == with != in EventLoop::on_recv_plaintext_packet in 1.3s build + 0.2s test
+MISSED   xray/src/event_loop.rs:139:45: replace + with - in EventLoop::on_recv_cmd in 0.6s build + 0.2s test
+MISSED   neptun/src/device/kqueue.rs:181:9: replace EventPoll<H>::wait -> WaitResult<'_, H> with WaitResult::from_iter([Default::default()]) in 0.6s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:177:9: replace Tunn::is_expired -> bool with true in 0.9s build + 0.3s test
+MISSED   xray/src/client.rs:245:69: replace * with + in Client::parse_udp_packet in 0.6s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:1102:26: replace -= with /= in Device::register_conn_handler in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1268:38: replace ^ with & in IndexLfsr::next in 0.6s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:613:9: replace Tunn::queue_packet with () in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:445:13: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:480:9: replace Handshake::set_static_private -> Result<(), WireGuardError> with Ok(()) in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:126:45: replace + with - in EventLoop::on_recv_cmd in 1.2s build + 0.2s test
+MISSED   neptun/src/noise/handshake.rs:471:43: replace | with & in Handshake::inc_index in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:584:25: replace > with < in Tunn::validate_decapsulated_packet in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:161:44: replace % with / in EventLoop::on_recv_crypto_packet in 1.2s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:1173:25: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:185:9: replace Peer::preshared_key -> Option<[u8; 32]> with None in 0.9s build + 0.3s test
+MISSED   xray/src/pcap.rs:99:5: replace extract_send_index -> u64 with 1 in 1.2s build + 0.2s test
+MISSED   xray/src/pcap.rs:50:25: replace match guard with false in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:193:31: replace >= with < in Tunn::dst_address in 0.9s build + 0.3s test
+MISSED   xray/src/types.rs:140:9: replace Packet::send_size -> usize with 0 in 1.3s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:621:9: replace Tunn::requeue_packet with () in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:224:9: replace TunSocket::write4 -> usize with 0 in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:181:9: replace EventPoll<H>::wait -> WaitResult<'_, H> with WaitResult::new(Default::default()) in 0.1s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:146:79: delete - in EventPoll<H>::new_periodic_event in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:107:30: replace | with & in EventPoll<H>::new_write_event in 0.1s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:258:35: replace - with / in TunSocket::read in 0.1s build + 0.3s test
+MISSED   xtask/src/main.rs:14:5: replace main with () in 1.2s build + 0.1s test
+MISSED   xray/src/event_loop.rs:213:39: replace + with - in EventLoop::on_maybe_recv_all in 0.6s build + 0.2s test
+MISSED   xray/src/path_generator.rs:37:9: replace PathGenerator::base -> PathBuf with Default::default() in 1.2s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:1252:9: replace IndexLfsr::random_index -> u32 with 0 in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:70:9: replace ReceivingKeyCounterValidator::clear_word with () in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:202:33: replace != with == in EventPoll<H>::wait in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:650:24: replace /= with *= in Tunn::estimate_loss in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:228:9: replace TunSocket::write6 -> usize with 1 in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:471:34: replace & with ^ in Handshake::inc_index in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:322:13: delete match arm in 1.0s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:436:9: replace <impl Drop for DeviceHandle>::drop with () in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:397:42: replace | with ^ in EventGuard<'a, H>::notify_writable in 0.1s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:179:9: replace TunSocket::name -> Result<String, Error> with Ok(String::new()) in 0.1s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:263:9: replace DeviceHandle::send_uapi_cmd -> String with "xyzzy".into() in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:399:21: replace | with ^ in EventGuard<'a, H>::notify_writable in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/rate_limiter.rs:125:22: replace < with == in RateLimiter::format_cookie_reply in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:293:50: replace - with + in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:248:9: replace Tunn::set_static_private -> Result<(), WireGuardError> with Ok(()) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:577:49: replace match guard with true in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:179:9: replace TunSocket::name -> Result<String, Error> with Ok("xyzzy".into()) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/safe_duration.rs:22:9: replace SafeDuration::checked_sub -> Option<Duration> with None in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1134:35: replace == with != in Device::register_iface_handler in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:324:31: replace += with -= in Tunn::decapsulate in 0.9s build + 0.3s test
+MISSED   neptun/src/device/dev_lock.rs:29:9: replace Lock<T>::read -> LockReadGuard<T> with LockReadGuard::from_iter([Default::default()]) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:57:21: delete match arm in 0.1s build + 0.3s test
+MISSED   neptun/src/device/dev_lock.rs:29:9: replace Lock<T>::read -> LockReadGuard<T> with LockReadGuard::new(Default::default()) in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:250:9: replace <impl std::fmt::Debug for NoiseParams>::fmt -> std::fmt::Result with Ok(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:123:34: replace | with ^ in EventPoll<H>::new_periodic_event in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:397:32: replace | with ^ in EventGuard<'a, H>::notify_writable in 0.9s build + 0.3s test
+MISSED   neptun-cli/src/main.rs:17:5: replace check_tun_name -> Result<String, String> with Ok(String::new()) in 1.0s build + 0.1s test
+MISSED   neptun/src/noise/handshake.rs:61:5: replace b2s_hmac2 -> [u8; 32] with [0; 32] in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/rate_limiter.rs:132:58: replace + with - in RateLimiter::format_cookie_reply in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:198:9: replace TunSocket::read -> Result<&'a mut[u8], Error> with Ok(Vec::leak(vec![0])) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:164:34: replace | with ^ in EventPoll<H>::new_signal_event in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:628:9: replace Tunn::dequeue_packet -> Option<Vec<u8>> with Some(vec![1]) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:71:5: replace parse_utun_name -> Result<u32, Error> with Ok(0) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/allowed_ips.rs:21:9: replace <impl FromIterator<(&'a AllowedIP, D)> for AllowedIps<D>>::from_iter -> Self with Default::default() in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:53:58: replace <= with > in <impl FromStr for AllowedIP>::from_str in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:281:54: replace >= with < in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:348:17: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:895:86: replace >> with << in Device::register_udp_handler in 0.8s build + 0.3s test
+MISSED   xray/src/utils.rs:12:5: replace run_command -> Result<String, String> with Ok("xyzzy".into()) in 1.3s build + 0.2s test
+MISSED   xray/src/key_pair.rs:48:9: replace <impl NepTUNKey for PublicKey>::bytes -> &[u8] with Vec::leak(Vec::new()) in 1.3s build + 0.2s test
+MISSED   neptun/src/device/api.rs:119:23: replace && with || in api_exec in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1268:79: replace & with | in IndexLfsr::next in 0.1s build + 0.3s test
+MISSED   xray/src/key_pair.rs:26:9: replace NepTUNKey::as_hex -> String with "xyzzy".into() in 1.2s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:577:60: replace + with - in Tunn::validate_decapsulated_packet in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:140:61: replace / with * in EventLoop::on_recv_cmd in 1.3s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:690:30: replace == with != in Device::set_key in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:183:30: replace > with == in Tunn::update_session_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:392:17: delete match arm in 0.8s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:469:9: replace Handshake::inc_index -> u32 with 0 in 0.9s build + 0.3s test
+MISSED   neptun/src/sleepyinstant/unix.rs:25:53: replace < with == in Instant::checked_duration_since in 0.9s build + 0.3s test
+MISSED   neptun/src/device/drop_privileges.rs:51:5: replace drop_privileges -> Result<(), Error> with Ok(()) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:382:22: replace > with == in Tunn::persistent_keepalive in 0.8s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:578:49: replace match guard with true in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1069:36: delete ! in Device::register_conn_handler in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:183:25: replace - with + in Tunn::update_session_timers in 1.1s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:54:53: replace match guard with false in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:127:74: replace == with != in EventLoop::on_recv_cmd in 1.4s build + 0.2s test
+MISSED   neptun/src/noise/timers.rs:292:32: replace - with + in Tunn::update_timers in 1.2s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:241:25: replace & with | in EventPoll<H>::wait in 2.1s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:332:45: replace > with < in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:316:9: replace <impl Deref for EventGuard<'a, H>>::deref -> &H with &Default::default() in 1.0s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:241:25: replace & with ^ in EventPoll<H>::wait in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/rate_limiter.rs:125:22: replace < with > in RateLimiter::format_cookie_reply in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:190:9: replace TunSocket::write4 -> usize with 1 in 1.0s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:273:9: replace DeviceHandle::trigger_exit with () in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:42:5: replace b2s_hash -> [u8; 32] with [0; 32] in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:158:9: replace Peer::is_allowed_ip -> bool with true in 1.3s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1255:18: replace > with < in IndexLfsr::random_index in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:161:74: replace / with % in EventLoop::on_recv_crypto_packet in 0.9s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:362:21: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:177:9: replace Tunn::is_expired -> bool with false in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:259:52: replace - with / in EventPoll<H>::trigger_notification in 0.8s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:273:9: replace EventPoll<H>::insert_at with () in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:126:9: replace <impl IndexMut<TimerName> for Timers>::index_mut -> &mut Duration with Box::leak(Box::new(Default::default())) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:91:9: replace Peer::endpoint -> parking_lot::RwLockReadGuard<'_, Endpoint> with RwLockReadGuard::new(Default::default()) in 0.8s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:649:30: replace += with *= in Tunn::estimate_loss in 1.2s build + 0.3s test
+MISSED   xray/src/key_pair.rs:26:9: replace NepTUNKey::as_hex -> String with String::new() in 1.3s build + 0.2s test
+MISSED   neptun/src/sleepyinstant/unix.rs:28:56: replace + with - in Instant::checked_duration_since in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:275:9: replace EventPoll<H>::stop_notification with () in 0.8s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:107:9: replace EventPoll<H>::new_write_event -> Result<EventRef, Error> with Ok(Default::default()) in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:340:9: replace Tunn::decrypt -> Result<&'a[u8], WireGuardError> with Ok(Vec::leak(Vec::new())) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:340:9: replace Tunn::decrypt -> Result<&'a[u8], WireGuardError> with Ok(Vec::leak(vec![1])) in 0.8s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:273:9: replace Session::current_packet_cnt -> (u64, u64) with (0, 1) in 0.9s build + 0.3s test
+MISSED   xray/src/main.rs:121:43: delete ! in main in 1.3s build + 0.2s test
+MISSED   neptun-cli/src/main.rs:17:5: replace check_tun_name -> Result<String, String> with Ok("xyzzy".into()) in 1.0s build + 0.1s test
+MISSED   xray/src/event_loop.rs:124:33: delete ! in EventLoop::on_recv_cmd in 1.3s build + 0.2s test
+MISSED   neptun/src/noise/session.rs:279:9: replace Session::is_right_session -> bool with true in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:164:34: replace | with & in EventPoll<H>::new_signal_event in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:657:21: replace / with % in Tunn::estimate_loss in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:380:9: replace Tunn::persistent_keepalive -> Option<u16> with Some(1) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:650:24: replace /= with %= in Tunn::estimate_loss in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1254:38: replace & with ^ in IndexLfsr::random_index in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:59:9: replace <impl Drop for TunSocket>::drop with () in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:481:55: replace % with / in Tunn::set_current_session in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:153:9: replace TunSocket::mtu -> Result<usize, Error> with Ok(1) in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:161:44: replace % with + in EventLoop::on_recv_crypto_packet in 0.6s build + 0.2s test
+MISSED   neptun/src/device/api.rs:142:5: replace api_get -> i32 with 0 in 0.6s build + 0.3s test
+MISSED   neptun/src/noise/safe_duration.rs:34:9: replace <impl Add for SafeDuration>::add -> Self::Output with Default::default() in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:241:43: replace != with == in EventPoll<H>::wait in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/rate_limiter.rs:125:9: replace RateLimiter::format_cookie_reply -> Result<&'a mut[u8], WireGuardError> with Ok(Vec::leak(vec![0])) in 1.0s build + 0.3s test
+MISSED   neptun/src/device/api.rs:275:25: delete match arm in 1.0s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:195:68: replace - with / in TunSocket::name in 0.6s build + 0.3s test
+MISSED   neptun/src/device/drop_privileges.rs:53:11: replace == with != in drop_privileges in 0.1s build + 0.3s test
+MISSED   xray/src/client.rs:193:45: replace - with + in Client::recv_encrypted in 0.6s build + 0.2s test
+MISSED   neptun/src/device/epoll.rs:153:34: replace | with ^ in EventPoll<H>::new_periodic_event in 0.8s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:232:9: replace TunSocket::read -> Result<&'a mut[u8], Error> with Ok(Vec::leak(vec![1])) in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:657:21: replace / with * in Tunn::estimate_loss in 0.9s build + 0.3s test
+MISSED   neptun/src/sleepyinstant/unix.rs:28:34: replace - with / in Instant::checked_duration_since in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:91:9: replace TunSocket::write -> usize with 1 in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:683:9: replace Device::set_key with () in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/safe_duration.rs:86:9: replace <impl From<SafeDuration> for Duration>::from -> Self with Default::default() in 0.8s build + 0.3s test
+MISSED   neptun/src/device/api.rs:344:17: delete match arm in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:189:40: replace % with + in EventLoop::on_recv_plaintext_packet in 1.3s build + 0.2s test
+MISSED   xray/src/types.rs:148:9: replace Packet::ts_size -> usize with 0 in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/session.rs:279:51: replace || with && in Session::is_right_session in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1114:9: replace Device::register_iface_handler -> Result<(), Error> with Ok(()) in 0.8s build + 0.3s test
+MISSED   neptun/src/device/api.rs:125:17: delete match arm in 0.1s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:655:17: replace == with != in Device::open_listen_socket in 0.1s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:153:9: replace TunSocket::mtu -> Result<usize, Error> with Ok(0) in 0.8s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:303:9: replace DeviceHandle::set_iface -> Result<(), Error> with Ok(()) in 0.1s build + 0.3s test
+MISSED   neptun/src/serialization.rs:18:13: delete match arm in 1.3s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:289:22: replace < with > in Session::decrypt_data_packet in 1.3s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:234:20: replace - with + in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:645:43: replace / with % in Tunn::estimate_loss in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:293:70: replace - with + in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:78:5: replace b2s_keyed_mac_16_2 -> [u8; 16] with [0; 16] in 1.0s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1266:9: replace IndexLfsr::next -> u32 with 1 in 0.9s build + 0.3s test
+MISSED   xray/src/pcap.rs:78:5: replace process_udp_packet -> Option<(bool, u64)> with Some((true, 1)) in 1.3s build + 0.2s test
+MISSED   xray/src/event_loop.rs:160:39: replace += with *= in EventLoop::on_recv_crypto_packet in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:481:17: replace >= with < in Tunn::set_current_session in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:119:9: replace EventPoll<H>::new_periodic_event -> Result<EventRef, Error> with Ok(Default::default()) in 0.9s build + 0.3s test
+MISSED   xtask/src/xray.rs:122:12: delete ! in Cmd::run_xray in 1.3s build + 0.1s test
+MISSED   xray/src/types.rs:66:13: delete match arm in 0.5s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:569:84: replace + with * in Tunn::validate_decapsulated_packet in 0.9s build + 0.3s test
+MISSED   neptun/src/device/drop_privileges.rs:53:8: delete - in drop_privileges in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:83:20: delete ! in Device::register_monitor in 0.1s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:224:9: replace TunSocket::write4 -> usize with 1 in 0.8s build + 0.3s test
+MISSED   neptun/src/device/dev_lock.rs:29:9: replace Lock<T>::read -> LockReadGuard<T> with LockReadGuard::from(Default::default()) in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:133:21: replace % with + in ReceivingKeyCounterValidator::mark_did_receive in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:940:36: delete ! in Device::register_udp_handler in 0.9s build + 0.3s test
+MISSED   neptun/src/device/allowed_ips.rs:45:9: replace AllowedIps<D>::insert -> Option<D> with None in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:271:9: replace <impl std::fmt::Debug for HandshakeInitSentState>::fmt -> std::fmt::Result with Ok(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:462:23: replace += with *= in Tunn::handle_cookie_reply in 1.0s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:406:5: replace block_signal -> Result<sigset_t, String> with Ok(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:228:13: delete match arm in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:484:9: replace Handshake::set_preshared_key with () in 0.8s build + 0.3s test
+MISSED   xray/src/event_loop.rs:140:31: replace % with / in EventLoop::on_recv_cmd in 1.3s build + 0.2s test
+MISSED   neptun/src/device/tun_darwin.rs:169:9: replace TunSocket::set_non_blocking -> Result<TunSocket, Error> with Ok(Default::default()) in 0.8s build + 0.3s test
+MISSED   xray/src/main.rs:112:43: replace match guard with false in 1.3s build + 0.2s test
+MISSED   neptun/src/device/epoll.rs:146:76: replace == with != in EventPoll<H>::new_periodic_event in 0.6s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:288:9: replace Session::decrypt_data_packet -> Result<&'a mut[u8], WireGuardError> with Ok(Vec::leak(vec![0])) in 0.9s build + 0.3s test
+MISSED   xray/src/main.rs:121:43: replace match guard with false in 1.3s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:767:9: replace Device::register_timers -> Result<(), Error> with Ok(()) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:280:44: replace < with > in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:303:5: replace api_set_peer -> i32 with 0 in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:281:25: replace && with || in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:134:13: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:86:29: replace | with ^ in EventPoll<H>::new_event in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:556:84: replace + with * in Tunn::validate_decapsulated_packet in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:189:39: replace << with >> in TimeStamper::stamp in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:71:5: replace parse_utun_name -> Result<u32, Error> with Ok(1) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:133:38: replace && with || in ReceivingKeyCounterValidator::mark_did_receive in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1270:15: replace ^ with | in IndexLfsr::next in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:456:9: replace Handshake::is_expired -> bool with false in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:185:25: replace >> with << in Tunn::dst_address in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1232:9: replace Device::iface -> &TunSocket with &Default::default() in 0.8s build + 0.3s test
+MISSED   neptun/src/device/api.rs:393:21: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:289:9: replace DeviceHandle::wait with () in 0.9s build + 0.3s test
+MISSED   xray/src/pcap.rs:87:36: replace match guard with true in 1.3s build + 0.2s test
+MISSED   neptun/src/device/tun_linux.rs:115:9: replace TunSocket::new_from_fd -> Result<TunSocket, Error> with Ok(Default::default()) in 0.9s build + 0.3s test
+MISSED   xtask/src/xray.rs:208:9: replace Cmd::destroy_wg_adapter -> Result<()> with Ok(()) in 1.3s build + 0.1s test
+MISSED   xray/src/pcap.rs:44:5: replace process_packet -> Option<PcapPacket> with None in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:648:33: replace * with / in Tunn::estimate_loss in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:350:9: replace DeviceHandle::event_loop with () in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:324:25: replace && with || in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:371:9: replace Tunn::last_handshake_time -> Option<std::time::Duration> with None in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:227:24: replace - with + in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:123:34: replace | with & in EventPoll<H>::new_periodic_event in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:855:9: replace Device::register_udp_handler -> Result<(), Error> with Ok(()) in 0.1s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:281:28: replace != with == in EventPoll<H>::stop_notification in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:460:9: replace Handshake::has_cookie -> bool with false in 0.9s build + 0.3s test
+MISSED   xray/src/key_pair.rs:30:9: replace NepTUNKey::as_b64 -> String with String::new() in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/timers.rs:311:54: replace >= with < in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:190:13: replace || with && in TunSocket::name in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:170:9: replace Tunn::clear_all with () in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:143:21: replace < with > in ReceivingKeyCounterValidator::mark_did_receive in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:71:29: replace / with % in ReceivingKeyCounterValidator::clear_word in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:140:74: replace == with != in EventLoop::on_recv_cmd in 1.3s build + 0.2s test
+MISSED   neptun/src/noise/timers.rs:227:17: replace && with || in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:922:36: delete ! in Device::register_udp_handler in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:223:28: replace <= with > in EventPoll<H>::register_event in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/safe_duration.rs:62:9: replace <impl PartialOrd<Duration> for SafeDuration>::partial_cmp -> Option<std::cmp::Ordering> with None in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1252:9: replace IndexLfsr::random_index -> u32 with 1 in 0.9s build + 0.3s test
+MISSED   xray/src/pcap.rs:99:5: replace extract_send_index -> u64 with 0 in 1.3s build + 0.2s test
+MISSED   neptun/src/noise/session.rs:133:21: replace % with / in ReceivingKeyCounterValidator::mark_did_receive in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:219:81: replace - with + in EventPoll<H>::register_event in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:332:9: replace EventGuard<'a, H>::cancel with () in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:273:9: replace Session::current_packet_cnt -> (u64, u64) with (1, 0) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:295:39: replace == with != in Session::decrypt_data_packet in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:654:25: replace == with != in Tunn::estimate_loss in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/rate_limiter.rs:93:9: replace RateLimiter::current_cookie -> Cookie with Default::default() in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:805:25: delete match arm in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:188:35: replace += with -= in EventLoop::on_recv_plaintext_packet in 1.3s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:613:36: replace < with == in Tunn::queue_packet in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:440:9: replace Handshake::is_in_progress -> bool with false in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:348:42: replace match guard with false in 0.9s build + 0.3s test
+MISSED   xray/src/types.rs:97:13: delete match arm in 1.3s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:277:9: replace DeviceHandle::drop_connected_sockets with () in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:196:9: replace EventPoll<H>::new_signal_event -> Result<EventRef, Error> with Ok(Default::default()) in 0.1s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:62:9: replace <impl Drop for EventPoll<H>>::drop with () in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:86:29: replace | with & in EventPoll<H>::new_event in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:479:34: replace % with / in Tunn::set_current_session in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:126:18: replace & with | in TunSocket::new_from_fd in 0.9s build + 0.3s test
+MISSED   neptun/src/sleepyinstant/unix.rs:28:34: replace - with + in Instant::checked_duration_since in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:226:9: replace EventPoll<H>::wait -> WaitResult<'_, H> with WaitResult::from_iter([Default::default()]) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:724:9: replace Device::set_fwmark -> Result<(), Error> with Ok(()) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:297:12: delete ! in EventPoll<H>::trigger_notification in 0.6s build + 0.3s test
+MISSED   xray/src/key_pair.rs:42:9: replace <impl NepTUNKey for StaticSecret>::bytes -> &[u8] with Vec::leak(vec![0]) in 1.3s build + 0.2s test
+MISSED   neptun/src/noise/session.rs:198:34: replace + with * in Session::format_packet_data in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:353:39: replace != with == in DeviceHandle::event_loop in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:42:9: replace Device::register_api_handler -> Result<(), Error> with Ok(()) in 0.6s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:102:9: replace Timers::is_initiator -> bool with true in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:107:40: replace | with & in EventPoll<H>::new_write_event in 0.9s build + 0.3s test
+MISSED   neptun/src/serialization.rs:14:59: replace * with / in <impl std::str::FromStr for KeyBytes>::from_str in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:464:9: replace Handshake::clear_cookie with () in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:226:9: replace EventPoll<H>::wait -> WaitResult<'_, H> with WaitResult::new(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:186:18: replace match guard with false in 0.9s build + 0.3s test
+MISSED   xtask/src/perf.rs:37:5: replace build_neptun_cli with () in 1.3s build + 0.1s test
+MISSED   xray/src/event_loop.rs:188:35: replace += with *= in EventLoop::on_recv_plaintext_packet in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/session.rs:138:21: replace + with * in ReceivingKeyCounterValidator::mark_did_receive in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:288:12: delete ! in Tunn::encapsulate in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:209:30: replace >= with < in EventLoop::on_maybe_recv_all in 1.3s build + 0.2s test
+MISSED   neptun/src/device/epoll.rs:363:9: replace <impl Drop for EventGuard<'a, H>>::drop with () in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:158:9: replace Peer::is_allowed_ip -> bool with false in 0.1s build + 0.3s test
+MISSED   neptun/src/device/api.rs:336:17: delete match arm in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:183:30: replace > with < in Tunn::update_session_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/serialization.rs:14:71: replace + with * in <impl std::str::FromStr for KeyBytes>::from_str in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:189:9: replace TimeStamper::stamp -> [u8; 12] with [1; 12] in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:91:9: replace Peer::endpoint -> parking_lot::RwLockReadGuard<'_, Endpoint> with RwLockReadGuard::from_iter([Default::default()]) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:489:9: replace Device::update_peer -> Result<(), Error> with Ok(()) in 0.1s build + 0.3s test
+MISSED   xray/src/event_loop.rs:127:61: replace / with * in EventLoop::on_recv_cmd in 1.3s build + 0.2s test
+MISSED   xray/src/event_loop.rs:99:64: replace + with - in EventLoop::on_recv_cmd::prepare_packet in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:589:23: replace += with *= in Tunn::validate_decapsulated_packet in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:232:9: replace TunSocket::read -> Result<&'a mut[u8], Error> with Ok(Vec::leak(vec![0])) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:480:51: replace % with / in Tunn::set_current_session in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:633:9: replace Device::open_listen_socket -> Result<(), Error> with Ok(()) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:291:44: replace < with > in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   xray/src/types.rs:67:13: delete match arm in 1.3s build + 0.2s test
+MISSED   neptun/src/noise/handshake.rs:189:46: replace + with - in TimeStamper::stamp in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:800:25: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:799:22: replace < with == in Handshake::format_handshake_response in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:161:74: replace / with * in EventLoop::on_recv_crypto_packet in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/timers.rs:333:34: replace - with + in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/serialization.rs:14:67: replace * with / in <impl std::str::FromStr for KeyBytes>::from_str in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:171:67: replace | with ^ in TunSocket::set_non_blocking in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:804:25: delete match arm in 0.1s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:200:9: replace TunSocket::mtu -> Result<usize, Error> with Ok(0) in 0.1s build + 0.3s test
+MISSED   neptun/src/device/api.rs:207:9: delete match arm in 0.1s build + 0.3s test
+MISSED   neptun-cli/src/main.rs:126:55: replace == with != in main in 1.1s build + 0.1s test
+MISSED   xray/src/main.rs:118:50: delete ! in main in 1.3s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:583:9: replace Device::new_with_tun -> Result<Device, Error> with Ok(Default::default()) in 0.6s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:279:73: replace == with != in Session::is_right_session in 0.9s build + 0.3s test
+MISSED   neptun/src/device/allowed_ips.rs:39:9: replace AllowedIps<D>::clear with () in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:22:5: replace create_sock_dir with () in 0.1s build + 0.3s test
+MISSED   neptun/src/device/api.rs:361:17: delete match arm in 0.1s build + 0.3s test
+MISSED   xray/src/client.rs:245:69: replace * with / in Client::parse_udp_packet in 1.3s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:1254:38: replace & with | in IndexLfsr::random_index in 0.6s build + 0.3s test
+MISSED   neptun/src/device/api.rs:303:5: replace api_set_peer -> i32 with 1 in 0.1s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:235:19: replace |= with ^= in EventPoll<H>::register_event in 0.9s build + 0.3s test
+MISSED   xray/src/pcap.rs:29:48: replace + with - in process_pcap in 1.3s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:628:9: replace Tunn::dequeue_packet -> Option<Vec<u8>> with Some(vec![]) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/rate_limiter.rs:109:9: replace RateLimiter::nonce -> [u8; COOKIE_NONCE_SIZE] with [0; COOKIE_NONCE_SIZE] in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:555:38: replace && with || in Tunn::validate_decapsulated_packet in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:719:22: replace < with == in Handshake::format_handshake_initiation in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:162:9: replace Peer::allowed_ips -> Vec<AllowedIP> with vec![Default::default()] in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:288:9: replace Session::decrypt_data_packet -> Result<&'a mut[u8], WireGuardError> with Ok(Vec::leak(vec![1])) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:568:18: replace match guard with false in 0.9s build + 0.3s test
+MISSED   neptun-cli/src/main.rs:126:47: replace && with || in main in 1.1s build + 0.1s test
+MISSED   neptun-cli/src/main.rs:155:26: delete ! in main in 0.4s build + 0.1s test
+MISSED   neptun/src/device/allowed_ips.rs:45:9: replace AllowedIps<D>::insert -> Option<D> with Some(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:61:5: replace b2s_hmac2 -> [u8; 32] with [1; 32] in 1.0s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:190:9: replace Peer::set_preshared_key with () in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:340:9: replace Tunn::decrypt -> Result<&'a[u8], WireGuardError> with Ok(Vec::leak(vec![0])) in 1.0s build + 0.3s test
+MISSED   neptun/src/sleepyinstant/unix.rs:27:54: replace - with + in Instant::checked_duration_since in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:188:55: replace + with - in Tunn::dst_address in 0.9s build + 0.3s test
+MISSED   xray/src/main.rs:82:22: replace % with / in main in 1.4s build + 0.2s test
+MISSED   neptun-cli/src/main.rs:32:5: replace main with () in 1.0s build + 0.1s test
+MISSED   neptun/src/noise/safe_duration.rs:56:9: replace <impl PartialEq<Duration> for SafeDuration>::eq -> bool with true in 1.0s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:226:9: replace EventPoll<H>::wait -> WaitResult<'_, H> with WaitResult::new() in 1.0s build + 0.3s test
+MISSED   xray/src/key_pair.rs:30:9: replace NepTUNKey::as_b64 -> String with "xyzzy".into() in 1.3s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:1268:70: replace & with ^ in IndexLfsr::next in 0.6s build + 0.3s test
+MISSED   neptun-cli/src/main.rs:91:22: delete ! in main in 1.1s build + 0.1s test
+MISSED   neptun/src/device/mod.rs:1267:31: replace - with + in IndexLfsr::next in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:454:5: replace modify_skt_buffer_size with () in 0.9s build + 0.3s test
+MISSED   neptun/src/sleepyinstant/unix.rs:27:54: replace - with / in Instant::checked_duration_since in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:161:9: replace Tunn::timer_tick_session_established with () in 0.9s build + 0.3s test
+MISSED   neptun/src/serialization.rs:21:42: replace == with != in <impl std::str::FromStr for KeyBytes>::from_str in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:258:35: replace - with + in TunSocket::read in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:108:9: replace Timers::clear with () in 0.9s build + 0.3s test
+MISSED   xray/src/pcap.rs:78:5: replace process_udp_packet -> Option<(bool, u64)> with Some((false, 0)) in 1.4s build + 0.2s test
+MISSED   neptun/src/noise/rate_limiter.rs:109:9: replace RateLimiter::nonce -> [u8; COOKIE_NONCE_SIZE] with [1; COOKIE_NONCE_SIZE] in 1.0s build + 0.3s test
+MISSED   xray/src/event_loop.rs:140:31: replace % with + in EventLoop::on_recv_cmd in 1.4s build + 0.2s test
+MISSED   neptun/src/noise/timers.rs:102:9: replace Timers::is_initiator -> bool with false in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:628:9: replace Tunn::dequeue_packet -> Option<Vec<u8>> with None in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:209:34: replace | with ^ in EventPoll<H>::new_signal_event in 0.9s build + 0.3s test
+MISSED   xray/src/client.rs:245:74: replace + with * in Client::parse_udp_packet in 1.3s build + 0.2s test
+MISSED   xray/src/event_loop.rs:189:70: replace / with * in EventLoop::on_recv_plaintext_packet in 1.4s build + 0.2s test
+MISSED   xray/src/pcap.rs:87:40: replace - with / in process_udp_packet in 0.6s build + 0.2s test
+MISSED   neptun/src/device/api.rs:124:17: delete match arm in 0.9s build + 0.3s test
+MISSED   xray/src/main.rs:115:50: replace match guard with true in 1.4s build + 0.2s test
+MISSED   neptun/src/sleepyinstant/unix.rs:28:56: replace + with * in Instant::checked_duration_since in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:95:9: replace Peer::shutdown_endpoint with () in 0.9s build + 0.3s test
+MISSED   xray/src/pcap.rs:87:48: replace == with != in process_udp_packet in 1.4s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:186:18: replace match guard with true in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:54:9: replace <impl Drop for EventPoll<H>>::drop with () in 0.9s build + 0.3s test
+MISSED   xray/src/key_pair.rs:42:9: replace <impl NepTUNKey for StaticSecret>::bytes -> &[u8] with Vec::leak(vec![1]) in 1.3s build + 0.2s test
+MISSED   neptun/src/device/kqueue.rs:276:52: replace - with + in EventPoll<H>::stop_notification in 0.9s build + 0.3s test
+TIMEOUT  neptun/src/noise/session.rs:136:19: replace += with *= in ReceivingKeyCounterValidator::mark_did_receive in 0.9s build + 300.0s test
+MISSED   xray/src/main.rs:118:50: replace match guard with false in 1.3s build + 0.2s test
+MISSED   neptun/src/noise/safe_duration.rs:18:9: replace SafeDuration::is_zero -> bool with true in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/rate_limiter.rs:125:9: replace RateLimiter::format_cookie_reply -> Result<&'a mut[u8], WireGuardError> with Ok(Vec::leak(Vec::new())) in 1.0s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:195:68: replace - with + in TunSocket::name in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:451:9: replace Handshake::set_expired with () in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:175:9: replace EventPoll<H>::new_notifier -> Result<EventRef, Error> with Ok(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:367:92: delete - in <impl Drop for EventGuard<'a, H>>::drop in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:363:21: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:460:9: replace Device::next_index -> u32 with 1 in 0.8s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:327:13: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:649:30: replace += with -= in Tunn::estimate_loss in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:139:45: replace + with * in EventLoop::on_recv_cmd in 1.3s build + 0.2s test
+MISSED   xray/src/key_pair.rs:53:5: replace format_key -> String with "xyzzy".into() in 1.3s build + 0.2s test
+MISSED   neptun/src/device/epoll.rs:313:9: replace EventPoll<H>::stop_notification with () in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:160:39: replace += with -= in EventLoop::on_recv_crypto_packet in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:342:13: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:320:20: delete ! in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   xray/src/path_generator.rs:46:9: replace PathGenerator::csv -> PathBuf with Default::default() in 1.3s build + 0.2s test
+MISSED   neptun/src/device/kqueue.rs:181:9: replace EventPoll<H>::wait -> WaitResult<'_, H> with WaitResult::new() in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:632:9: replace Tunn::estimate_loss -> f32 with 0.0 in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:397:32: replace | with & in EventGuard<'a, H>::notify_writable in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:217:9: replace DeviceHandle::start_event_loop_threads -> EventLoopThreads with Default::default() in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:469:9: replace Handshake::inc_index -> u32 with 1 in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:189:43: replace += with *= in Session::receiving_counter_mark in 0.9s build + 0.3s test
+MISSED   xray/src/pcap.rs:50:25: replace match guard with true in 1.3s build + 0.2s test
+MISSED   xray/src/pcap.rs:78:5: replace process_udp_packet -> Option<(bool, u64)> with Some((false, 1)) in 0.6s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:317:28: delete ! in DeviceHandle::set_iface in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:161:80: replace == with != in EventLoop::on_recv_crypto_packet in 1.4s build + 0.2s test
+MISSED   xray/src/event_loop.rs:140:61: replace / with % in EventLoop::on_recv_cmd in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:648:25: replace += with *= in Tunn::estimate_loss in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:331:33: replace != with == in api_set_peer in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:91:9: replace Peer::endpoint -> parking_lot::RwLockReadGuard<'_, Endpoint> with RwLockReadGuard::from(Default::default()) in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:127:31: replace % with / in EventLoop::on_recv_cmd in 1.3s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:577:60: replace + with * in Tunn::validate_decapsulated_packet in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:352:17: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/device/allowed_ips.rs:60:9: replace AllowedIps<D>::iter -> Iter<D> with Iter::from(Default::default()) in 0.1s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:409:46: delete - in block_signal in 0.8s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:228:78: replace > with < in Tai64N::after in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:259:24: delete - in EventPoll<H>::trigger_notification in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1268:70: replace & with | in IndexLfsr::next in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:227:62: delete - in EventPoll<H>::wait in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:238:41: replace > with < in Tunn::update_timers in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:324:50: replace >= with < in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   xray/src/pcap.rs:87:36: replace match guard with false in 1.5s build + 0.2s test
+MISSED   neptun/src/device/tun_linux.rs:138:9: replace TunSocket::set_non_blocking -> Result<TunSocket, Error> with Ok(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:193:18: replace match guard with true in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:318:12: delete ! in EventPoll<H>::stop_notification in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:140:67: replace | with & in TunSocket::set_non_blocking in 0.1s build + 0.3s test
+MISSED   neptun/src/device/api.rs:73:9: replace Device::register_monitor -> Result<(), Error> with Ok(()) in 0.6s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:357:9: replace <impl Deref for EventGuard<'a, H>>::deref -> &H with &Default::default() in 0.6s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:371:9: replace Tunn::last_handshake_time -> Option<std::time::Duration> with Some(Default::default()) in 0.8s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:324:31: replace += with *= in Tunn::decapsulate in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:471:34: replace & with | in Handshake::inc_index in 0.9s build + 0.3s test
+MISSED   xray/src/path_generator.rs:25:9: replace PathGenerator::analyze_script -> PathBuf with Default::default() in 1.3s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:1134:71: replace == with != in Device::register_iface_handler in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1266:9: replace IndexLfsr::next -> u32 with 0 in 0.1s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:107:40: replace | with ^ in EventPoll<H>::new_write_event in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:293:29: replace >= with < in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   xray/src/main.rs:121:43: replace match guard with true in 1.3s build + 0.2s test
+MISSED   neptun/src/noise/session.rs:143:21: replace < with == in ReceivingKeyCounterValidator::mark_did_receive in 0.9s build + 0.3s test
+MISSED   xray/src/client.rs:216:22: replace + with - in Client::make_udp_packet in 1.4s build + 0.2s test
+TIMEOUT  neptun/src/noise/session.rs:146:19: replace += with *= in ReceivingKeyCounterValidator::mark_did_receive in 0.9s build + 300.0s test
+MISSED   neptun/src/noise/rate_limiter.rs:125:9: replace RateLimiter::format_cookie_reply -> Result<&'a mut[u8], WireGuardError> with Ok(Vec::leak(vec![1])) in 1.0s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:219:56: delete - in EventPoll<H>::register_event in 1.0s build + 0.3s test
+MISSED   xray/src/path_generator.rs:29:9: replace PathGenerator::results_dir -> PathBuf with Default::default() in 1.4s build + 0.2s test
+MISSED   neptun/src/device/kqueue.rs:190:77: replace == with != in EventPoll<H>::wait in 0.9s build + 0.3s test
+MISSED   neptun-cli/src/main.rs:173:8: delete ! in main in 1.1s build + 0.1s test
+MISSED   neptun/src/noise/mod.rs:348:42: replace match guard with true in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:141:37: replace & with ^ in ReceivingKeyCounterValidator::mark_did_receive in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:412:59: delete - in block_signal in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:148:9: replace TunSocket::name -> Result<String, Error> with Ok("xyzzy".into()) in 0.1s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1268:38: replace ^ with | in IndexLfsr::next in 0.1s build + 0.3s test
+MISSED   xray/src/types.rs:144:9: replace Packet::index_size -> usize with 0 in 0.6s build + 0.2s test
+MISSED   xray/src/event_loop.rs:189:76: replace == with != in EventLoop::on_recv_plaintext_packet in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:480:13: replace || with && in Tunn::set_current_session in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:621:36: replace < with == in Tunn::requeue_packet in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:893:93: replace >> with << in Device::register_udp_handler in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:190:26: replace == with != in Peer::set_preshared_key in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:172:17: delete match arm in 0.1s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1103:29: replace == with != in Device::register_conn_handler in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/rate_limiter.rs:85:68: replace >= with < in RateLimiter::reset_count in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:119:18: replace == with != in api_exec in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:227:58: replace >= with < in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1267:31: replace - with / in IndexLfsr::next in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:53:9: replace TunSocket::write -> usize with 0 in 0.6s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:357:9: replace Tunn::time_since_last_handshake -> Option<std::time::Duration> with None in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:99:31: replace | with & in EventPoll<H>::new_event in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:180:9: replace Tunn::update_session_timers with () in 1.0s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:160:9: replace EventPoll<H>::new_signal_event -> Result<EventRef, Error> with Ok(Default::default()) in 1.0s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:752:9: replace Device::register_notifiers -> Result<(), Error> with Ok(()) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:185:9: replace Peer::preshared_key -> Option<[u8; 32]> with Some([0; 32]) in 0.6s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:209:34: replace | with & in EventPoll<H>::new_signal_event in 1.0s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:322:9: replace <impl Drop for EventGuard<'a, H>>::drop with () in 0.2s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:71:5: replace b2s_keyed_mac_16 -> [u8; 16] with [1; 16] in 1.2s build + 0.3s test
+MISSED   xray/src/client.rs:193:45: replace - with / in Client::recv_encrypted in 1.6s build + 0.2s test
+MISSED   xray/src/types.rs:148:9: replace Packet::ts_size -> usize with 1 in 0.7s build + 0.2s test
+MISSED   neptun/src/device/api.rs:119:69: replace > with < in api_exec in 1.1s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:214:51: replace < with > in TunSocket::mtu in 0.6s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:840:9: replace Device::drop_connected_sockets with () in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:568:18: replace match guard with true in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:632:9: replace Tunn::estimate_loss -> f32 with -1.0 in 1.0s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:237:75: replace == with != in EventPoll<H>::register_event in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:162:13: delete match arm in 1.2s build + 0.4s test
+MISSED   xtask/src/perf.rs:31:9: replace <impl Drop for GitWorktree>::drop with () in 1.6s build + 0.2s test
+MISSED   neptun/src/noise/rate_limiter.rs:115:9: replace RateLimiter::is_under_load -> bool with false in 1.0s build + 0.3s test
+MISSED   neptun/src/device/api.rs:235:41: replace != with == in api_set in 0.9s build + 0.3s test
+MISSED   xray/src/client.rs:249:27: replace + with * in Client::parse_udp_packet in 1.4s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:1255:18: replace > with == in IndexLfsr::random_index in 0.6s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:540:9: replace Device::new_peer -> Result<Arc<Peer>, Error> with Ok(Arc::new(Default::default())) in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/rate_limiter.rs:83:9: replace RateLimiter::reset_count with () in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:573:55: replace + with * in Tunn::validate_decapsulated_packet in 1.0s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:117:9: replace Peer::connect_endpoint -> Result<socket2::Socket, Error> with Ok(Default::default()) in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:589:23: replace += with -= in Tunn::validate_decapsulated_packet in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:70:27: replace % with / in ReceivingKeyCounterValidator::clear_word in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:238:41: replace > with == in Tunn::update_timers in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:358:42: replace % with / in Tunn::time_since_last_handshake in 1.0s build + 0.3s test
+MISSED   neptun/src/serialization.rs:14:71: replace + with - in <impl std::str::FromStr for KeyBytes>::from_str in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:259:52: replace - with + in EventPoll<H>::trigger_notification in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:228:49: replace == with != in Tai64N::after in 1.1s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:521:47: delete ! in Tunn::format_handshake_initiation in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:568:38: replace && with || in Tunn::validate_decapsulated_packet in 1.0s build + 0.3s test
+MISSED   xray/src/client.rs:110:9: replace Client::tick_timers with () in 1.5s build + 0.2s test
+MISSED   xray/src/main.rs:115:50: delete ! in main in 0.7s build + 0.2s test
+MISSED   neptun/src/device/api.rs:356:17: delete match arm in 1.0s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:53:53: replace match guard with false in 0.2s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:53:9: replace TunSocket::write -> usize with 1 in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:140:13: delete match arm in 1.0s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1102:26: replace -= with += in Device::register_conn_handler in 1.0s build + 0.3s test
+MISSED   neptun/src/device/drop_privileges.rs:68:35: replace || with && in drop_privileges in 0.1s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:258:9: replace EventPoll<H>::trigger_notification with () in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:289:22: replace < with == in Session::decrypt_data_packet in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:460:9: replace Handshake::has_cookie -> bool with true in 1.0s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1270:15: replace ^ with & in IndexLfsr::next in 1.0s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:830:9: replace Device::trigger_yield with () in 0.1s build + 0.3s test
+MISSED   xray/src/client.rs:190:40: replace - with / in Client::recv_encrypted in 1.5s build + 0.2s test
+MISSED   neptun/src/device/dev_lock.rs:66:9: replace LockReadGuard<'a, T>::try_writeable -> Option<U> with Some(Default::default()) in 1.1s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:613:36: replace < with > in Tunn::queue_packet in 1.0s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:53:53: replace match guard with true in 1.3s build + 0.4s test
+MISSED   neptun/src/device/epoll.rs:397:42: replace | with & in EventGuard<'a, H>::notify_writable in 0.2s build + 0.3s test
+MISSED   neptun/src/device/drop_privileges.rs:68:52: delete - in drop_privileges in 0.2s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:462:23: replace += with -= in Tunn::handle_cookie_reply in 1.0s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:194:9: replace TunSocket::write6 -> usize with 1 in 1.0s build + 0.3s test
+MISSED   xray/src/types.rs:82:9: replace <impl std::fmt::Display for TestType>::fmt -> std::fmt::Result with Ok(Default::default()) in 1.5s build + 0.2s test
+MISSED   neptun/src/noise/rate_limiter.rs:102:84: replace / with * in RateLimiter::current_cookie in 1.0s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:189:11: replace < with == in TunSocket::name in 1.0s build + 0.3s test
+MISSED   neptun/src/device/allowed_ips.rs:56:32: delete ! in AllowedIps<D>::remove in 1.0s build + 0.3s test
+MISSED   neptun/src/device/drop_privileges.rs:60:8: delete - in drop_privileges in 1.0s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:211:9: replace EventPoll<H>::register_event -> Result<EventRef, Error> with Ok(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:568:54: replace >= with < in Tunn::validate_decapsulated_packet in 1.0s build + 0.3s test
+MISSED   neptun/src/sleepyinstant/unix.rs:32:33: replace - with / in Instant::checked_duration_since in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:578:63: replace == with != in Handshake::receive_handshake_response in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:323:45: replace >= with < in Tunn::update_timers in 1.0s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:276:52: replace - with / in EventPoll<H>::stop_notification in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:256:9: replace EventPoll<H>::register_event -> Result<EventRef, Error> with Ok(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:148:9: replace TunSocket::name -> Result<String, Error> with Ok(String::new()) in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:444:9: replace Handshake::timer -> Option<Instant> with None in 1.1s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:188:55: replace + with * in Tunn::dst_address in 1.1s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:193:18: replace match guard with false in 1.3s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:292:25: replace && with || in Tunn::update_timers in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/safe_duration.rs:56:9: replace <impl PartialEq<Duration> for SafeDuration>::eq -> bool with false in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:471:36: delete ! in Handshake::inc_index in 1.1s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:397:22: replace | with & in EventGuard<'a, H>::notify_writable in 1.0s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:293:9: replace DeviceHandle::clean with () in 0.1s build + 0.3s test
+MISSED   xray/src/main.rs:118:50: replace match guard with true in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/timers.rs:311:30: replace - with + in Tunn::update_timers in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:256:45: replace > with < in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:201:22: delete - in EventPoll<H>::new_signal_event in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:746:9: replace Device::clear_peers with () in 0.1s build + 0.3s test
+MISSED   neptun/src/serialization.rs:14:59: replace * with + in <impl std::str::FromStr for KeyBytes>::from_str in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:367:89: replace != with == in <impl Drop for EventGuard<'a, H>>::drop in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:288:9: replace Session::decrypt_data_packet -> Result<&'a mut[u8], WireGuardError> with Ok(Vec::leak(Vec::new())) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/safe_duration.rs:68:9: replace <impl PartialEq<SafeDuration> for Duration>::eq -> bool with false in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:262:9: replace Tunn::set_preshared_key with () in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:206:22: replace < with > in Tai64N::parse in 1.1s build + 0.4s test
+MISSED   neptun/src/device/tun_linux.rs:198:9: replace TunSocket::read -> Result<&'a mut[u8], Error> with Ok(Vec::leak(vec![1])) in 1.3s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:202:24: replace & with | in EventPoll<H>::wait in 0.2s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:447:5: replace set_sock_opt with () in 1.0s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1032:29: delete match arm in 0.1s build + 0.3s test
+MISSED   neptun/src/sleepyinstant/unix.rs:27:33: replace - with / in Instant::checked_duration_since in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:334:29: replace >= with < in Tunn::update_timers in 1.0s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:264:86: replace == with != in EventPoll<H>::register_event in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1172:25: delete match arm in 1.0s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:181:9: replace EventPoll<H>::wait -> WaitResult<'_, H> with WaitResult::from(Default::default()) in 0.2s build + 0.3s test
+MISSED   xray/src/key_pair.rs:42:9: replace <impl NepTUNKey for StaticSecret>::bytes -> &[u8] with Vec::leak(Vec::new()) in 1.4s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:835:9: replace Device::trigger_exit with () in 0.6s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:198:9: replace TunSocket::read -> Result<&'a mut[u8], Error> with Ok(Vec::leak(Vec::new())) in 0.2s build + 0.3s test
+MISSED   neptun/src/device/api.rs:270:25: delete match arm in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:228:9: replace Tai64N::after -> bool with true in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:284:27: replace += with -= in Tunn::encapsulate in 1.0s build + 0.3s test
+MISSED   neptun/src/device/api.rs:242:25: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:460:9: replace Device::next_index -> u32 with 0 in 0.2s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1052:36: delete ! in Device::register_conn_handler in 0.1s build + 0.3s test
+MISSED   xray/src/client.rs:216:22: replace + with * in Client::make_udp_packet in 1.4s build + 0.2s test
+MISSED   neptun/src/device/peer.rs:54:53: replace match guard with true in 0.6s build + 0.3s test
+MISSED   xray/src/pcap.rs:29:36: replace * with + in process_pcap in 1.4s build + 0.2s test
+MISSED   neptun/src/device/epoll.rs:385:9: replace EventGuard<'a, H>::get_mut -> &mut H with Box::leak(Box::new(Default::default())) in 1.0s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:397:22: replace | with ^ in EventGuard<'a, H>::notify_writable in 0.2s build + 0.3s test
+MISSED   neptun/src/device/api.rs:220:5: replace api_set -> i32 with 0 in 0.1s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1004:9: replace Device::register_conn_handler -> Result<(), Error> with Ok(()) in 0.1s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:214:51: replace < with == in TunSocket::mtu in 1.0s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:58:39: replace - with / in 0.1s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:237:78: delete - in EventPoll<H>::register_event in 0.9s build + 0.3s test
+MISSED   xray/src/client.rs:190:40: replace - with + in Client::recv_encrypted in 1.4s build + 0.2s test
+MISSED   neptun/src/device/epoll.rs:292:9: replace EventPoll<H>::trigger_notification with () in 0.6s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:219:81: replace - with / in EventPoll<H>::register_event in 0.1s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:263:9: replace DeviceHandle::send_uapi_cmd -> String with String::new() in 0.1s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:894:93: replace >> with << in Device::register_udp_handler in 0.1s build + 0.3s test
+MISSED   xray/src/main.rs:108:12: delete ! in main in 1.4s build + 0.2s test
+MISSED   neptun/src/noise/rate_limiter.rs:75:9: replace RateLimiter::rand_bytes -> [u8; 32] with [0; 32] in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:390:9: replace Tunn::set_persistent_keepalive with () in 1.1s build + 0.4s test
+MISSED   xray/src/client.rs:245:74: replace + with - in Client::parse_udp_packet in 0.6s build + 0.2s test
+MISSED   xray/src/pcap.rs:45:25: replace match guard with true in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:140:22: replace < with == in Tunn::parse_incoming_packet in 1.0s build + 0.3s test
+MISSED   xray/src/utils.rs:12:5: replace run_command -> Result<String, String> with Ok(String::new()) in 1.4s build + 0.2s test
+MISSED   neptun/src/device/tun_darwin.rs:91:9: replace TunSocket::write -> usize with 0 in 0.9s build + 0.3s test
+MISSED   neptun/src/device/dev_lock.rs:29:9: replace Lock<T>::read -> LockReadGuard<T> with LockReadGuard::new() in 0.9s build + 0.3s test
+MISSED   neptun/src/device/drop_privileges.rs:13:5: replace get_saved_ids -> Result<(uid_t, gid_t), Error> with Ok((Default::default(), Default::default())) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1178:25: delete match arm in 1.0s build + 0.3s test
+MISSED   neptun/src/device/api.rs:248:25: delete match arm in 0.6s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:409:43: replace == with != in block_signal in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/safe_duration.rs:18:9: replace SafeDuration::is_zero -> bool with false in 1.0s build + 0.3s test
+MISSED   xray/src/pcap.rs:78:5: replace process_udp_packet -> Option<(bool, u64)> with Some((true, 0)) in 1.6s build + 0.2s test
+MISSED   neptun/src/device/tun_darwin.rs:171:67: replace | with & in TunSocket::set_non_blocking in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:645:43: replace / with * in Tunn::estimate_loss in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:132:9: replace Tunn::timer_tick with () in 1.0s build + 0.3s test
+MISSED   xray/src/types.rs:98:13: delete match arm in 1.4s build + 0.2s test
+MISSED   neptun/src/device/tun_linux.rs:140:67: replace | with ^ in TunSocket::set_non_blocking in 0.9s build + 0.3s test
+MISSED   neptun/src/device/allowed_ips.rs:56:9: replace AllowedIps<D>::remove with () in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:324:32: replace - with + in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:138:33: replace < with == in ReceivingKeyCounterValidator::mark_did_receive in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:264:28: replace != with == in EventPoll<H>::trigger_notification in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/safe_duration.rs:68:9: replace <impl PartialEq<SafeDuration> for Duration>::eq -> bool with true in 0.9s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:390:9: replace EventGuard<'a, H>::cancel with () in 0.9s build + 0.3s test
+MISSED   xray/src/event_loop.rs:189:70: replace / with % in EventLoop::on_recv_plaintext_packet in 1.4s build + 0.2s test
+MISSED   neptun/src/noise/session.rs:180:9: replace Session::receiving_counter_quick_check -> Result<(), WireGuardError> with Ok(()) in 1.0s build + 0.3s test
+MISSED   xray/src/types.rs:140:36: replace + with - in Packet::send_size in 1.4s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:801:25: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:103:26: replace == with != in Peer::set_endpoint in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:401:9: replace NoiseParams::set_static_private -> Result<(), WireGuardError> with Ok(()) in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:569:84: replace + with - in Tunn::validate_decapsulated_packet in 1.0s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:229:13: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:273:9: replace Session::current_packet_cnt -> (u64, u64) with (1, 1) in 0.9s build + 0.3s test
+MISSED   xray/src/pcap.rs:78:5: replace process_udp_packet -> Option<(bool, u64)> with None in 1.4s build + 0.2s test
+MISSED   xray/src/pcap.rs:29:36: replace * with / in process_pcap in 0.6s build + 0.2s test
+MISSED   neptun/src/device/tun_darwin.rs:65:9: replace <impl AsRawFd for TunSocket>::as_raw_fd -> RawFd with Default::default() in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:46:9: replace <impl FromStr for AllowedIP>::from_str -> Result<Self, Self::Err> with Ok(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:276:24: delete - in EventPoll<H>::stop_notification in 0.1s build + 0.3s test
+MISSED   neptun/src/device/drop_privileges.rs:68:31: delete - in drop_privileges in 0.1s build + 0.3s test
+MISSED   xray/src/key_pair.rs:48:9: replace <impl NepTUNKey for PublicKey>::bytes -> &[u8] with Vec::leak(vec![0]) in 0.6s build + 0.2s test
+MISSED   neptun/src/device/api.rs:119:69: replace > with == in api_exec in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:255:25: delete match arm in 1.0s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:305:33: replace - with / in EventPoll<H>::trigger_notification in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:186:9: replace Session::receiving_counter_mark -> Result<(), WireGuardError> with Ok(()) in 1.0s build + 0.3s test
+MISSED   xray/src/client.rs:249:27: replace + with - in Client::parse_udp_packet in 1.5s build + 0.2s test
+MISSED   xray/src/pcap.rs:29:48: replace + with * in process_pcap in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/timers.rs:382:22: replace > with < in Tunn::persistent_keepalive in 0.9s build + 0.3s test
+MISSED   xray/src/main.rs:108:54: delete ! in main in 1.4s build + 0.2s test
+MISSED   neptun/src/device/mod.rs:1134:65: replace || with && in Device::register_iface_handler in 0.9s build + 0.3s test
+MISSED   neptun/src/serialization.rs:14:67: replace * with + in <impl std::str::FromStr for KeyBytes>::from_str in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:85:5: replace b2s_mac_24 -> [u8; 24] with [1; 24] in 1.1s build + 0.3s test
+MISSED   xray/src/event_loop.rs:126:45: replace + with * in EventLoop::on_recv_cmd in 1.5s build + 0.2s test
+MISSED   neptun/src/device/tun_darwin.rs:84:28: replace + with * in parse_utun_name in 1.1s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:1162:28: delete ! in Device::register_iface_handler in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:988:29: replace == with != in Device::register_udp_handler in 0.1s build + 0.3s test
+MISSED   xray/src/client.rs:151:12: delete ! in Client::send_encrypted in 1.4s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:529:38: delete ! in Tunn::format_handshake_initiation in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:273:9: replace Session::current_packet_cnt -> (u64, u64) with (0, 0) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:141:17: delete match arm in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:397:9: replace DeviceHandle::new_thread_local -> ThreadData with Default::default() in 0.1s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:202:24: replace & with ^ in EventPoll<H>::wait in 0.1s build + 0.3s test
+MISSED   xray/src/main.rs:112:43: delete ! in main in 1.5s build + 0.2s test
+MISSED   neptun/src/noise/timers.rs:311:76: replace + with - in Tunn::update_timers in 1.0s build + 0.3s test
+MISSED   neptun/src/sleepyinstant/unix.rs:27:33: replace - with + in Instant::checked_duration_since in 0.9s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:850:9: replace Device::cancel_yield with () in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:380:9: replace Tunn::persistent_keepalive -> Option<u16> with None in 1.0s build + 0.3s test
+MISSED   xray/src/main.rs:82:26: replace == with != in main in 0.6s build + 0.2s test
+MISSED   xray/src/types.rs:51:9: replace <impl std::fmt::Display for Wg>::fmt -> std::fmt::Result with Ok(Default::default()) in 0.6s build + 0.2s test
+MISSED   xray/src/types.rs:140:9: replace Packet::send_size -> usize with 1 in 0.6s build + 0.2s test
+MISSED   neptun/src/device/allowed_ips.rs:52:9: replace AllowedIps<D>::find -> Option<&D> with Some(&Default::default()) in 1.0s build + 0.3s test
+MISSED   neptun/src/device/api.rs:220:5: replace api_set -> i32 with -1 in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:208:20: replace == with != in api_get in 0.1s build + 0.3s test
+MISSED   xray/src/key_pair.rs:53:5: replace format_key -> String with String::new() in 1.4s build + 0.2s test
+MISSED   neptun/src/device/tun_darwin.rs:189:11: replace < with > in TunSocket::name in 0.6s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:99:9: replace EventPoll<H>::new_event -> Result<EventRef, Error> with Ok(Default::default()) in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:380:9: replace Tunn::persistent_keepalive -> Option<u16> with Some(0) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/allowed_ips.rs:74:9: replace <impl Iterator for Iter<'a, D>>::next -> Option<Self::Item> with Some(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:47:9: replace <impl AsRawFd for TunSocket>::as_raw_fd -> RawFd with Default::default() in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:645:25: replace - with + in Tunn::estimate_loss in 0.9s build + 0.3s test
+MISSED   xray/src/path_generator.rs:41:9: replace PathGenerator::pcap -> PathBuf with Default::default() in 1.4s build + 0.2s test
+MISSED   neptun/src/device/kqueue.rs:99:31: replace | with ^ in EventPoll<H>::new_event in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:340:17: delete match arm in 0.1s build + 0.3s test
+MISSED   neptun/src/device/api.rs:142:5: replace api_get -> i32 with -1 in 1.0s build + 0.3s test
+MISSED   xray/src/main.rs:108:51: replace || with && in main in 1.5s build + 0.2s test
+MISSED   xray/src/event_loop.rs:127:61: replace / with % in EventLoop::on_recv_cmd in 0.6s build + 0.2s test
+MISSED   xtask/src/xray.rs:83:9: replace Cmd::run with () in 0.6s build + 0.1s test
+MISSED   neptun/src/device/mod.rs:401:42: delete ! in DeviceHandle::new_thread_local in 0.6s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:126:18: replace & with ^ in TunSocket::new_from_fd in 0.6s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:226:9: replace EventPoll<H>::wait -> WaitResult<'_, H> with WaitResult::from(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/rate_limiter.rs:102:84: replace / with % in RateLimiter::current_cookie in 1.0s build + 0.3s test
+MISSED   xray/src/pcap.rs:78:35: replace == with != in process_udp_packet in 1.9s build + 0.2s test
+MISSED   xray/src/event_loop.rs:189:40: replace % with / in EventLoop::on_recv_plaintext_packet in 1.6s build + 0.2s test
+MISSED   neptun/src/device/drop_privileges.rs:68:49: replace != with == in drop_privileges in 1.0s build + 0.3s test
+MISSED   xray/src/pcap.rs:45:25: replace match guard with false in 1.5s build + 0.2s test
+MISSED   xray/src/path_generator.rs:51:9: replace PathGenerator::png -> PathBuf with Default::default() in 0.6s build + 0.2s test
+MISSED   neptun/src/device/peer.rs:47:21: replace != with == in <impl FromStr for AllowedIP>::from_str in 0.6s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:279:9: replace Session::is_right_session -> bool with false in 0.9s build + 0.3s test
+MISSED   xray/src/types.rs:65:13: delete match arm in 1.4s build + 0.2s test
+MISSED   xray/src/path_generator.rs:56:9: replace PathGenerator::txt -> PathBuf with Default::default() in 0.6s build + 0.2s test
+MISSED   neptun/src/noise/mod.rs:621:36: replace < with > in Tunn::requeue_packet in 0.9s build + 0.3s test
+MISSED   neptun/src/device/kqueue.rs:190:80: delete - in EventPoll<H>::wait in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:228:78: replace > with == in Tai64N::after in 0.9s build + 0.3s test
+MISSED   xtask/src/xray.rs:87:12: delete ! in Cmd::run in 1.4s build + 0.1s test
+MISSED   neptun/src/sleepyinstant/unix.rs:33:34: replace - with + in Instant::checked_duration_since in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:628:9: replace Tunn::dequeue_packet -> Option<Vec<u8>> with Some(vec![0]) in 1.0s build + 0.3s test
+MISSED   neptun/src/device/allowed_ips.rs:60:9: replace AllowedIps<D>::iter -> Iter<D> with Iter::from_iter([Default::default()]) in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/safe_duration.rs:42:9: replace <impl Sub for SafeDuration>::sub -> Self::Output with Default::default() in 1.1s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:987:26: replace -= with /= in Device::register_udp_handler in 1.0s build + 0.3s test
+MISSED   xtask/src/perf.rs:46:9: replace Cmd::run with () in 1.4s build + 0.1s test
+MISSED   neptun/src/noise/mod.rs:632:9: replace Tunn::estimate_loss -> f32 with 1.0 in 1.0s build + 0.3s test
+MISSED   neptun/src/device/dev_lock.rs:106:9: replace <impl Deref for LockReadGuard<'a, T>>::deref -> &T with &Default::default() in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:141:24: replace + with * in ReceivingKeyCounterValidator::mark_did_receive in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:568:33: replace == with != in Tunn::validate_decapsulated_packet in 1.1s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:22:9: replace <impl std::fmt::Debug for Session>::fmt -> std::fmt::Result with Ok(Default::default()) in 1.0s build + 0.3s test
+MISSED   xray/src/event_loop.rs:209:9: replace EventLoop::on_maybe_recv_all with () in 1.6s build + 0.2s test
+MISSED   neptun/src/device/peer.rs:198:9: replace Peer::index -> u32 with 1 in 1.1s build + 0.3s test
+MISSED   xray/src/main.rs:112:43: replace match guard with true in 1.6s build + 0.2s test
+MISSED   neptun/src/serialization.rs:11:13: delete match arm in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/session.rs:175:9: replace Session::local_index -> usize with 1 in 1.0s build + 0.3s test
+MISSED   xray/src/types.rs:96:13: delete match arm in 0.6s build + 0.2s test
+MISSED   neptun/src/device/allowed_ips.rs:74:9: replace <impl Iterator for Iter<'a, D>>::next -> Option<Self::Item> with None in 0.9s build + 0.3s test
+MISSED   neptun/src/device/peer.rs:181:9: replace Peer::set_allowed_ips with () in 0.1s build + 0.3s test
+MISSED   neptun/src/device/tun_darwin.rs:84:28: replace + with - in parse_utun_name in 0.1s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:248:44: replace >= with < in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:281:16: delete ! in Tunn::encapsulate in 1.0s build + 0.3s test
+MISSED   neptun/src/device/epoll.rs:127:9: replace EventPoll<H>::new_periodic_event -> Result<EventRef, Error> with Ok(Default::default()) in 0.9s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:335:29: replace || with && in Tunn::update_timers in 0.9s build + 0.3s test
+MISSED   neptun/src/device/api.rs:142:5: replace api_get -> i32 with 1 in 1.0s build + 0.3s test
+MISSED   xray/src/types.rs:144:9: replace Packet::index_size -> usize with 1 in 1.5s build + 0.2s test
+MISSED   neptun/src/device/api.rs:303:5: replace api_set_peer -> i32 with -1 in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:291:44: replace < with == in Tunn::update_timers in 1.0s build + 0.3s test
+MISSED   neptun/src/device/tun_linux.rs:126:39: replace == with != in TunSocket::new_from_fd in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:648:33: replace * with + in Tunn::estimate_loss in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:78:5: replace b2s_keyed_mac_16_2 -> [u8; 16] with [1; 16] in 1.2s build + 0.3s test
+MISSED   xray/src/path_generator.rs:33:9: replace PathGenerator::binary_dir -> PathBuf with Default::default() in 1.7s build + 0.2s test
+MISSED   neptun/src/device/allowed_ips.rs:60:9: replace AllowedIps<D>::iter -> Iter<D> with Iter::new(Default::default()) in 1.1s build + 0.3s test
+MISSED   neptun/src/device/api.rs:146:22: replace != with == in api_get in 0.2s build + 0.3s test
+MISSED   neptun/src/device/mod.rs:197:9: replace DeviceHandle::new_with_tun -> Result<DeviceHandle, Error> with Ok(Default::default()) in 1.1s build + 0.3s test
+MISSED   neptun/src/noise/handshake.rs:51:5: replace b2s_hmac -> [u8; 32] with [1; 32] in 1.2s build + 0.3s test
+MISSED   neptun/src/noise/mod.rs:480:51: replace % with + in Tunn::set_current_session in 1.2s build + 0.3s test
+MISSED   xtask/src/xray.rs:122:9: replace Cmd::run_xray -> Result<()> with Ok(()) in 1.6s build + 0.1s test
+MISSED   neptun/src/noise/mod.rs:181:9: replace Tunn::dst_address -> Option<IpAddr> with None in 1.1s build + 0.3s test
+MISSED   neptun/src/noise/safe_duration.rs:80:9: replace <impl From<Duration> for SafeDuration>::from -> Self with Default::default() in 1.0s build + 0.3s test
+MISSED   neptun/src/noise/timers.rs:248:24: replace - with + in Tunn::update_timers in 0.9s build + 0.3s test
+1239 mutants tested in 36m 43s: 795 missed, 257 caught, 184 unviable, 3 timeouts

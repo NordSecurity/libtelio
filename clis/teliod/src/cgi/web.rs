@@ -9,6 +9,7 @@ use rust_cgi::{
     Response,
 };
 use telio::telio_model::mesh::{Node, NodeState};
+use telio::telio_utils::telio_log_debug;
 use tracing::{level_filters::LevelFilter, warn, Level};
 
 use crate::{
@@ -32,27 +33,33 @@ lazy_static! {
     static ref ASSETS: HashMap<&'static str, (&'static str, &'static [u8])> = {
         [
             ("/static/telio.js", ("text/javascript", asset!("telio.js"))),
+            ("/static/style.css", ("text/css", asset!("style.css"))),
+            ("/static/output.css", ("text/css", asset!("output.css"))),
             (
-                "/static/spinner.svg",
-                ("image/svg+xml", asset!("spinner.svg")),
+                "/static/tailwind.config.js",
+                ("text/javascript", asset!("tailwind.config.js")),
             ),
             (
-                "/static/tailwindcss.js",
-                ("text/javascript", asset!("tailwindcss.js")),
+                "/static/fonts/inter-v18-latin-100.woff2",
+                ("font/ttf", asset!("fonts/inter-v18-latin-100.woff2")),
+            ),
+            (
+                "/static/fonts/inter-v18-latin-500.woff2",
+                ("font/ttf", asset!("fonts/inter-v18-latin-500.woff2")),
+            ),
+            (
+                "/static/fonts/inter-v18-latin-600.woff2",
+                ("font/ttf", asset!("fonts/inter-v18-latin-600.woff2")),
+            ),
+            (
+                "/static/fonts/inter-v18-latin-900.woff2",
+                ("font/ttf", asset!("fonts/inter-v18-latin-900.woff2")),
+            ),
+            (
+                "/static/fonts/inter-v18-latin-regular.woff2",
+                ("font/ttf", asset!("fonts/inter-v18-latin-regular.woff2")),
             ),
             ("/static/htmx.js", ("text/javascript", asset!("htmx.js"))),
-            (
-                "/static/fonts/Inter_18pt-Regular.ttf",
-                ("font/ttf", asset!("fonts/Inter_18pt-Regular.ttf")),
-            ),
-            (
-                "/static/fonts/Inter_18pt-Medium.ttf",
-                ("font/ttf", asset!("fonts/Inter_18pt-Medium.ttf")),
-            ),
-            (
-                "/static/fonts/Inter_18pt-SemiBold.ttf",
-                ("font/ttf", asset!("fonts/Inter_18pt-SemiBold.ttf")),
-            ),
         ]
         .into_iter()
         .collect()
@@ -72,13 +79,11 @@ pub fn handle_web_ui(request: &CgiRequest) -> Option<Response> {
             let base_ref = format!("{}/teliod.cgi", request.uri().path());
             render(index(base_ref))
         }
-        (&Method::GET, "/pannel") => render(pannel(&AppState::collect())),
-        (&Method::GET, "/pannel/status") => render(status(&AppState::collect())),
-        (&Method::POST, "/pannel") => {
+        (&Method::GET, "/meshnet") => render(meshnet(&AppState::collect())),
+        (&Method::POST, "/meshnet") => {
             let mut app = AppState::collect();
             update_config(&mut app, request);
 
-            // TODO: need quite a bit of cleanup, api should probably be mostly removed
             if !app.running {
                 let res = start_daemon();
                 warn!(
@@ -89,7 +94,7 @@ pub fn handle_web_ui(request: &CgiRequest) -> Option<Response> {
                 stop_daemon();
             };
 
-            render(pannel(&AppState::collect()))
+            render(view(&AppState::collect()))
         }
         (&Method::GET, route) => {
             let (mime, data) = ASSETS.get(route)?;
@@ -110,55 +115,25 @@ fn index(base_ref: String) -> Markup {
                 title { "Nord Security Meshnet" }
                 base href=(base_ref);
 
-                script src="static/tailwindcss.js" {}
-                script {
-                    "tailwind.config = {"
-                    "darkMode: 'class',"
-                    "theme: {"
-                    "extend: {"
-                    "colors: {"
-                    "'nord-blue': '#5E81AC',"
-                    "'nord-green': '#A3BE8C',"
-                    "'nord-orange': '#D08770'"
-                    "}" "}" "}" "}";
-                }
+                script src="static/tailwind.config.js" {}
+                link rel="stylesheet" href="static/output.css" {}
+                link rel="stylesheet" href="static/style.css" {}
                 script src="static/htmx.js" {}
-                style {
-                    "@font-face { font-family: 'Inter'; src: url('static/fonts/Inter_18pt-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; }"
-                    "@font-face { font-family: 'Inter'; src: url('static/fonts/Inter_18pt-Medium.ttf') format('truetype'); font-weight: 500; font-style: normal; }"
-                    "@font-face { font-family: 'Inter'; src: url('static/fonts/Inter-SemiBold.ttf') format('truetype'); font-weight: 600; font-style: normal; }"
-                    "body { font-family: 'Inter', sans-serif; }"
-                    ".htmx-indicator { display: none; }"
-                    ".htmx-request .htmx-indicator { display: inline; }"
-                    ".htmx-request.htmx-indicator { display: inline; }"
-                }
                 script src="static/telio.js" {}
             }
-            body class="bg-gray-900 text-gray-100 min-h-screen p-8" {
-                div class="max-w-2xl mx-auto space-y-6" {
-                    div class="bg-gray-800 rounded-lg p-4 flex items-center justify-between" {
-                        div class="flex items-center space-x-3" {
-                            div class="w-10 h-10 bg-nord-blue rounded-lg flex items-center justify-center" {
-                                svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" {
-                                    path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z";
-                                }
-                            }
-                            h1 class="text-xl font-semibold" { "Nord Security Meshnet" }
-                        }
-                        a href="https://meshnet.nordvpn.com/" class="text-nord-blue hover:underline" { "Docs >" }
-                    }
-                    div id="pannel" hx-get="pannel" hx-trigger="load" {}
-                }
+            body class="bg-neutral-100 dark:bg-neutral-1000  py-10 flex items-top justify-start justify-center min-h-screen gap-3" {
+                (view(&AppState::collect()))
             }
         }
     }
 }
 
-fn pannel(app: &AppState) -> Markup {
+fn view(app: &AppState) -> Markup {
     html! {
-        (config(app))
+        (config_view(app))
+
         @if app.running {
-            (status(app))
+            (meshnet(app))
         }
     }
 }
@@ -180,7 +155,7 @@ fn update_config(app: &mut AppState, request: &CgiRequest) {
     };
 
     if ctype != "application/x-www-form-urlencoded" {
-        warn!("Expected to recieve form data, got: {}", ctype);
+        warn!("Expected to receive form data, got: {}", ctype);
         return;
     }
 
@@ -222,114 +197,76 @@ fn update_config(app: &mut AppState, request: &CgiRequest) {
     }
 }
 
-fn config(app: &AppState) -> Markup {
-    html! {
-        div class="bg-gray-800 rounded-lg p-4" {
-            div class="flex items-center justify-between mb-4" {
-                div class="flex items-center space-x-3" {
-                    div class={
-                        "w-6 h-6 rounded-full "
-                        (if app.running { "bg-nord-green" } else { "bg-nord-orange" })
-                        } {}
-                    h2 class="text-lg font-medium" { "Configuration" }
-                }
-                button class="bg-nord-blue
-                        text-white 
-                        px-4 py-2 
-                        rounded-md 
-                        hover:bg-blue-600 
-                        transition"
-                    hx-on:click="htmx.trigger('#config', 'submit')" {
-                    span {
-                        @if app.running {
-                            "Stop"
-                        } @else {
-                            "Start"
-                        }
-                    }
-                    img #config-load
-                        class="htmx-indicator h-6 ml-4"
-                        src="static/spinner.svg"
-                        {}
-                }
-            }
-
-            div."space-y-4" {
-                (config_form(app))
-            }
-        }
-    }
-}
-
-fn config_form(app: &AppState) -> Markup {
-    let label_style = "block text-sm font-medium mb-1";
-    let input_style = "w-full
-        bg-gray-700 
-        border border-gray-600 rounded-md 
-        px-3 py-2 
-        focus:outline-none focus:ring-2 focus:ring-nord-blue
-        mb-2";
-    let log_options = [
-        #[cfg(debug_assertions)]
-        Level::TRACE.as_str(),
-        #[cfg(debug_assertions)]
-        Level::DEBUG.as_str(),
-        Level::INFO.as_str(),
-        Level::WARN.as_str(),
-        Level::ERROR.as_str(),
-    ];
-    let level = app
+fn config_view(app: &AppState) -> Markup {
+    let log_options = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
+    let curr_level = app
         .config
         .log_level
         .into_level()
-        .unwrap_or(if cfg!(debug_assertions) {
-            Level::TRACE
-        } else {
-            Level::INFO
-        });
+        .unwrap_or(Level::INFO)
+        .as_str();
 
+    let is_running = app.running;
+
+    let divclass = if is_running {
+        "relative w-11 h-6 bg-gray-200 darkpeer-focus-visible:outline-none peer-focus-visible:shadow-focus rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
+    } else {
+        "relative w-11 h-6 bg-gray-200 darkpeer-focus-visible:outline-none peer-focus-visible:shadow-focus rounded-full peer after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all"
+    };
     html! {
-        form #config hx-post="pannel" hx-target="#pannel" hx-indicator="#config-load" {
-            label for=(ACCESS_TOKEN)
-                class=(label_style) {
-                "Access Token:"
+        div id="card" class="bg-neutral-0 dark:bg-[#1C1F2B] border border-secondary max-w-[768px] mx-auto w-full p-6 rounded-md flex flex-col gap-6" {
+            div class="flex justify-between items-center" {
+                div class="flex items-center space-x-3" {
+                    svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" {
+                        path d="M0 6C0 2.68629 2.68629 0 6 0H34C37.3137 0 40 2.68629 40 6V34C40 37.3137 37.3137 40 34 40H6C2.68629 40 0 37.3137 0 34V6Z" class="dark:fill-blue-400 fill-blue-100" {}
+                        path d="M26.5963 17.1273C26.0157 17.1273 25.4852 17.2974 25.0248 17.5777L22.5024 15.0553C22.8127 14.5849 23.0029 14.0143 23.0029 13.4037C23.0029 11.7422 21.6616 10.4009 20 10.4009C18.3384 10.4009 16.9971 11.7422 16.9971 13.4037C16.9971 14.0243 17.1873 14.5949 17.4976 15.0653L14.9852 17.5777C14.5248 17.2874 13.9843 17.1173 13.4037 17.1173C11.7422 17.1173 10.4009 18.4585 10.4009 20.1201C10.4009 21.7817 11.7422 23.123 13.4037 23.123C14.0543 23.123 14.6449 22.9128 15.1354 22.5724L17.4976 24.9347C17.1773 25.4151 16.9971 25.9757 16.9971 26.5963C16.9971 28.2578 18.3384 29.5991 20 29.5991C21.6616 29.5991 23.0029 28.2578 23.0029 26.5963C23.0029 25.9857 22.8227 25.4252 22.5124 24.9547L24.8746 22.5925C25.3651 22.9328 25.9557 23.143 26.5963 23.143C28.2578 23.143 29.5991 21.8017 29.5991 20.1401C29.5991 18.4786 28.2578 17.1373 26.5963 17.1373V17.1273ZM20 23.5934C19.3894 23.5934 18.8189 23.7736 18.3484 24.0939L15.9562 21.7016C16.2364 21.2412 16.4066 20.7107 16.4066 20.1301C16.4066 19.4895 16.1964 18.899 15.8561 18.4085L18.3484 15.9161C18.8189 16.2264 19.3894 16.4066 19.99 16.4066C20.5906 16.4066 21.1711 16.2164 21.6516 15.9061L24.1439 18.3985C23.7936 18.8889 23.5934 19.4795 23.5934 20.1301C23.5934 20.7107 23.7636 21.2512 24.0539 21.7116L21.6616 24.1039C21.1811 23.7836 20.6106 23.6034 20 23.6034V23.5934ZM20 11.602C20.9909 11.602 21.8017 12.4128 21.8017 13.4037C21.8017 14.3947 20.9909 15.2054 20 15.2054C19.0091 15.2054 18.1983 14.3947 18.1983 13.4037C18.1983 12.4128 19.0091 11.602 20 11.602ZM11.602 20.1301C11.602 19.1392 12.4128 18.3284 13.4037 18.3284C14.3947 18.3284 15.2054 19.1392 15.2054 20.1301C15.2054 21.1211 14.3947 21.9318 13.4037 21.9318C12.4128 21.9318 11.602 21.1211 11.602 20.1301ZM20 28.398C19.0091 28.398 18.1983 27.5872 18.1983 26.5963C18.1983 25.6053 19.0091 24.7946 20 24.7946C20.9909 24.7946 21.8017 25.6053 21.8017 26.5963C21.8017 27.5872 20.9909 28.398 20 28.398ZM26.5963 21.9318C25.6053 21.9318 24.7946 21.1211 24.7946 20.1301C24.7946 19.1392 25.6053 18.3284 26.5963 18.3284C27.5872 18.3284 28.398 19.1392 28.398 20.1301C28.398 21.1211 27.5872 21.9318 26.5963 21.9318Z" class="dark:fill-blue-900 fill-blue-600" {}
+                    }
+                    span class="text-primary body-md-medium" { "Nord Security Meshnet" }
+                }
+                a href="https://meshnet.nordvpn.com" class="text-accent body-xs-medium hover:text-blue-400 active:text-blue-700 dark:hover:text-blue-400 dark:active:text-blue-700" {
+                    "Docs"
+                    span class="ml-2 inline-block" { "›" }
+                }
             }
-            input type="password"
-                class=(input_style)
-                id=(ACCESS_TOKEN)
-                name=(ACCESS_TOKEN)
-                value=(app.config.authentication_token)
-                "hx-on:htmx:validation:validate"="telio.validateToken(this)"
-                {}
-
-            label for=(TUNNEL_NAME)
-                class=(label_style) {
-                "Tunnel Name:"
+            hr class="border-neutral-200 dark:border-neutral-800";
+            div class="flex justify-between items-center" {
+                span class="text-primary body-md-medium" { "Configuration" }
+                label class="inline-flex items-center cursor-pointer" {
+                    span id="toggleLabel" class="mr-2 text-primary body-xs-bold" {( if is_running { "On" } else { "Off" })};
+                    input type="checkbox" checked?[is_running] class="sr-only peer" {}
+                    div class=({divclass}) hx-on:click="document.getElementById('config').requestSubmit()" {}
+                }
             }
-            input type="text"
-                class=(input_style)
-                id=(TUNNEL_NAME)
-                name=(TUNNEL_NAME)
-                value=(app.config.interface.name)
-                "hx-on:htmx:validation:validate"="telio.validateTunnel(this)"
-                {}
-
-            label for=(LOG_LEVEL)
-                class=(label_style) {
-                "Log Level"
-            }
-            // Validation not need option ensures correctness
-            select class=(input_style)
-                name=(LOG_LEVEL)
-                id=(LOG_LEVEL) {
-                @for option in log_options {
-                    @if option == level.as_str() {
-                        option value=(option) selected = "true" {
-                            (option)
+            // Inputs
+            form id="config" hx-post="meshnet" hx-target="body" class="mb-0" {
+                div class="flex flex-col gap-4" {
+                    div class="space-y-2" {
+                        label class="block text-primary body-xs-medium" { "Access Token" }
+                        input name=(ACCESS_TOKEN) type="password" class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(app.config.authentication_token) "hx-on:htmx:validation:validate"="telio.validateToken(this)";
+                    }
+                    div class="flex flex-col gap-2" {
+                        div class="space-y-2" {
+                            label class="block text-primary body-xs-medium" { "Tunnel Name" }
+                            input name=(TUNNEL_NAME) type="text" class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(app.config.interface.name) "hx-on:htmx:validation:validate"="telio.validateTunnel(this)";
                         }
-                    } @else {
-                        option value=(option) {
-                            (option)
+                    }
+                    div class="space-y-2" {
+                        label class="block text-primary body-xs-medium" { "Log Level" }
+                        div class="relative" {
+                            select name=(LOG_LEVEL) class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm appearance-none focus-visible:outline-none focus-visible:shadow-focus" {
+                                @for opt in &log_options {
+                                    @if *opt == curr_level {
+                                        option value=(opt) selected="true" { (opt) }
+                                    } @else {
+                                        option value=(opt) { (opt) }
+                                    }
+                                }
+                            }
+                            div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-primary" {
+                                svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {
+                                    path fill-rule="evenodd" clip-rule="evenodd" d="M12 14.5L8 9.5L16 9.5L12 14.5Z" fill="#2A2B32" {}
+                                }
+                            }
                         }
                     }
                 }
@@ -338,15 +275,10 @@ fn config_form(app: &AppState) -> Markup {
     }
 }
 
-fn status(app: &AppState) -> Markup {
+fn meshnet(app: &AppState) -> Markup {
     let Some(status) = &app.status else {
         return html!();
     };
-
-    let my_ip = status
-        .meshnet_ip
-        .map(|ip| format!("( {ip} )"))
-        .unwrap_or_default();
 
     let node_name = |node: &Node| match (&node.nickname, &node.hostname) {
         (None, None) => "unknown".to_string(),
@@ -362,59 +294,63 @@ fn status(app: &AppState) -> Markup {
             .unwrap_or_else(|| "unknown".to_string())
     };
 
-    let status_color = |node: &Node| match node.state {
-        NodeState::Disconnected => "text-nord-orange",
-        NodeState::Connecting => "text-nord-orange",
-        NodeState::Connected => "text-nord-green",
+    let peer_status = |node: &Node| match node.state {
+        NodeState::Disconnected => {
+            html! {span class="px-3 py-1 body-xs-medium text-critical bg-critical-subtle rounded-full"{"Disconnected"}}
+        }
+        NodeState::Connecting => {
+            html! {span class="px-3 py-1 body-xs-medium text-primary bg-tertiary rounded-full" {"Connecting..."}}
+        }
+        NodeState::Connected => {
+            html! {span class="px-3 py-1 body-xs-medium text-success bg-success-subtle rounded-full" {"Connected"}}
+        }
     };
 
-    let status_text = |node: &Node| match node.state {
-        NodeState::Disconnected => "Disconnected",
-        NodeState::Connecting => "Connecting",
-        NodeState::Connected => "Connected",
+    let meshnet_status_text = if status.meshnet_ip.is_none() {
+        "Connecting..."
+    } else {
+        &format!(
+            "Meshnet Status ({})",
+            status
+                .meshnet_ip
+                .map(|ip| format!("{}", ip))
+                .unwrap_or_default()
+        )
     };
 
     html! {
-        div id="status" class="bg-gray-800 rounded-lg p-4 mt-6"
-            hx-get="pannel/status"
+        div class="bg-neutral-0 dark:bg-[#1C1F2B] border border-secondary max-w-[768px] mx-auto w-full p-6 rounded-md flex flex-col gap-6"
+            hx-get="meshnet"
             hx-trigger="every 2s"
-            hx-swap="outerHTML" {
-            div class="flex items-center justify-between mb-4" {
-                h2 class="text-lg font-medium" {
-                    {"Meshnet Status " (my_ip)}
-                }
-                a href="get-teliod-logs" class="text-nord-blue hover:underline" { "Logs >" }
+            hx-swap="outerHTML"
+            {
+            div class="flex justify-between items-center" {
+                span class="text-primary body-md-medium" { ({meshnet_status_text}) }
+                a href="get-teliod-logs" class="body-xs-medium text-accent hover:text-blue-400 active:text-blue-700 dark:hover:text-blue-400 dark:active:text-blue-700" {"Logs"}
             }
-            div class="space-y-3" {
+
+            div class="flex flex-col gap-4" {
                 @for node in &status.external_nodes {
-                    div class="bg-gray-700 rounded-lg p-3 flex items-center justify-between" {
-                        div class="flex items-center space-x-3" {
-                            div class="w-8 h-8 bg-gray-600 rounded-lg flex items-center justify-center" {
-                                (device_icon())
-                            }
-                            div {
-                                div class="font-medium" { ({node_name(node)}) }
-                                div class="text-sm text-gray-400" { ({show_address(node)}) }
+                    div class="w-full flex items-center justify-between rounded-sm bg-transparent border border-secondary p-4" {
+                    div class="flex items-center space-x-4" {
+                        div class="flex items-center justify-center px-2" {
+                            svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" {
+                                path stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                                    {}
                             }
                         }
-                        div class={"text-nord-green " ({status_color(node)})} {
-                            "Status: " ({status_text(node)})
+                        div {
+                            p class="text-primary body-sm-medium" { ({node_name(node)}) }
+                            p class="text-tertiary body-xs-medium" { ({show_address(node)}) }
                         }
+                    }
+                    ({peer_status(node)})
                     }
                 }
             }
-        }
-    }
-}
-
-fn device_icon() -> Markup {
-    html! {
-        svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" {
-            path stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                {}
         }
     }
 }
