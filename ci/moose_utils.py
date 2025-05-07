@@ -1,9 +1,9 @@
 import os
 import re
 import subprocess
-import sys
 
 from env import LIBTELIO_ENV_MOOSE_RELEASE_TAG
+from utils import run_with_retry
 
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/..")
 
@@ -44,8 +44,13 @@ def _download_moose_file(target_os: str, arch: str, file_name: str):
 
     url = f"{nexus_url}/repository/ll-gitlab-release/{MOOSE_PROJECT_ID}/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/{target_os}/{arch}/{file_name}"
 
-    subprocess.check_call(
-        ["curl", "-f", "-u", nexus_credentials, url, "-o", output_path]
+    run_with_retry(
+        lambda: subprocess.run(
+            ["curl", "-f", "-u", nexus_credentials, url, "-o", output_path],
+            capture_output=True,
+            check=True,
+        ),
+        exceptions=(subprocess.CalledProcessError,),
     )
 
 
