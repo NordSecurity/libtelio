@@ -16,6 +16,7 @@ pub struct Instant(InnerInstant);
 impl Instant {
     /// Returns an instant corresponding to “now”.
     pub fn now() -> Self {
+        #[allow(instant)]
         Self(InnerInstant::now())
     }
 

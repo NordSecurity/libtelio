@@ -1088,6 +1088,7 @@ impl Analytics {
 
 /// Resets the Sleep instance to a new deadline.
 pub fn reset_sleep(sleep: &mut std::pin::Pin<Box<Sleep>>, offset: Duration) {
+    #[allow(instant)]
     sleep.as_mut().reset(tokio::time::Instant::now() + offset);
 }
 

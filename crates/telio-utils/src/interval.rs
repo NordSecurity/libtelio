@@ -10,6 +10,7 @@ pub fn interval(period: Duration) -> Interval {
 /// tick behaviour is set to `Delay`.
 #[allow(tokio_time_interval)]
 pub fn interval_after(offset: Duration, period: Duration) -> Interval {
+    #[allow(instant)]
     let start = time::Instant::now() + offset;
     let mut interval = time::interval_at(start, period);
     interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -18,5 +19,6 @@ pub fn interval_after(offset: Duration, period: Duration) -> Interval {
 
 /// Resets the interval after the specified `std::time::Duration`.
 pub fn reset_after(interval: &mut Interval, offset: Duration) {
+    #[allow(instant)]
     interval.reset_at(time::Instant::now() + offset);
 }
