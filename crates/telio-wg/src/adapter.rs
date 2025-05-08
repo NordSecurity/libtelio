@@ -9,10 +9,6 @@ mod linux_native_wg;
 
 #[cfg(any(windows, doc))]
 #[cfg_attr(docsrs, doc(cfg(windows)))]
-mod wireguard_go;
-
-#[cfg(any(windows, doc))]
-#[cfg_attr(docsrs, doc(cfg(windows)))]
 mod windows_native_wg;
 
 use async_trait::async_trait;
@@ -103,12 +99,6 @@ pub enum Error {
     #[error("LinuxNativeWg adapter error {0}")]
     LinuxNativeWg(#[from] linux_native_wg::Error),
 
-    /// Error types from WireGuard Go implementation
-    #[cfg(any(windows, doc))]
-    #[cfg_attr(docsrs, doc(cfg(windows)))]
-    #[error("WireguardGo adapter error {0}")]
-    WireguardGo(#[from] wireguard_go::Error),
-
     /// Error types from Windows native implementation
     #[cfg(any(windows, doc))]
     #[cfg_attr(docsrs, doc(cfg(windows)))]
@@ -172,14 +162,12 @@ pub enum Error {
 }
 
 /// Enumeration of types for `Adapter` struct
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AdapterType {
     /// NepTUN
     NepTUN,
     /// Linux Native
     LinuxNativeWg,
-    /// Wireguard Go
-    WireguardGo,
     /// Windows Native
     WindowsNativeWg,
 }
@@ -194,8 +182,7 @@ impl Default for AdapterType {
         )) {
             AdapterType::NepTUN
         } else {
-            // TODO: Use AdapterType::WindowsNativeWg on Windows
-            AdapterType::WireguardGo
+            AdapterType::WindowsNativeWg
         }
     }
 }
@@ -206,7 +193,6 @@ impl FromStr for AdapterType {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "neptun" => Ok(AdapterType::NepTUN),
-            "wireguard-go" => Ok(AdapterType::WireguardGo),
             "linux-native" => Ok(AdapterType::LinuxNativeWg),
             "wireguard-nt" => Ok(AdapterType::WindowsNativeWg),
             "" => Ok(AdapterType::default()),
@@ -243,13 +229,6 @@ pub(crate) async fn start(cfg: &Config) -> Result<Box<dyn Adapter>, Error> {
             #[cfg(target_os = "linux")]
             Ok(Box::new(linux_native_wg::LinuxNativeWg::start(&name)?))
         }
-        AdapterType::WireguardGo => {
-            #[cfg(not(windows))]
-            return Err(Error::UnsupportedAdapter);
-
-            #[cfg(windows)]
-            Ok(Box::new(wireguard_go::WireguardGo::start(&name, cfg.tun)?))
-        }
         AdapterType::WindowsNativeWg => {
             #[cfg(not(windows))]
             return Err(Error::UnsupportedAdapter);
@@ -259,6 +238,48 @@ pub(crate) async fn start(cfg: &Config) -> Result<Box<dyn Adapter>, Error> {
                 windows_native_wg::WindowsNativeWg::start(&name, cfg.enable_dynamic_wg_nt_control)
                     .await?,
             ))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::iter::zip;
+
+    use super::*;
+
+    #[test]
+    fn test_from_str() {
+        let test_input: [&str; 3] = ["neptun", "linux-native", "wireguard-nt"];
+        let expected_result: [AdapterType; 3] = [
+            AdapterType::NepTUN,
+            AdapterType::LinuxNativeWg,
+            AdapterType::WindowsNativeWg,
+        ];
+        for (input, expected_adapter) in zip(test_input, expected_result) {
+            let adapter = AdapterType::from_str(input).unwrap();
+            assert_eq!(adapter, expected_adapter);
+        }
+    }
+
+    #[test]
+    fn test_from_str_default() {
+        let adapter = AdapterType::from_str("").unwrap();
+        assert_eq!(adapter, AdapterType::default());
+    }
+
+    #[test]
+    fn test_from_str_wrong() {
+        let test_input: [&str; 3] = ["NepTUN", "linux-native-wg", "whatever_completely_wrong"];
+
+        for input in test_input {
+            let err = AdapterType::from_str(input).unwrap_err();
+            match err {
+                Error::AdapterTypeParsingError => {}
+                _ => {
+                    panic!("wrong error {}", err);
+                }
+            }
         }
     }
 }
