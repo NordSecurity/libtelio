@@ -37,8 +37,15 @@ macro_rules! teliod_blocking_query {
 
 pub(crate) fn handle_api(request: &CgiRequest) -> Option<Response> {
     match (request.method(), request.route()) {
-        (&Method::POST, "" | "/") => Some(start_daemon()),
-        (&Method::DELETE, "" | "/") => Some(stop_daemon()),
+        (&Method::POST, "" | "/") => {
+            let (status_code, body) = start_daemon();
+            Some(text_response(status_code, body))
+        }
+        (&Method::DELETE, "" | "/") => {
+            let (status_code, body) = stop_daemon();
+            Some(text_response(status_code, body))
+        }
+
         (&Method::PATCH, "" | "/") => {
             let body = match str::from_utf8(request.body()) {
                 Ok(body) => body,
@@ -76,9 +83,12 @@ fn shutdown_teliod() -> Result<(), TeliodError> {
     Err(TeliodError::ClientTimeoutError)
 }
 
-pub(crate) fn start_daemon() -> Response {
+pub(crate) fn start_daemon() -> (StatusCode, String) {
     if is_teliod_running() {
-        return text_response(StatusCode::BAD_REQUEST, "Application is already running.");
+        return (
+            StatusCode::BAD_REQUEST,
+            "Application is already running.".to_string(),
+        );
     }
 
     let teliod_log_file = match fs::OpenOptions::new()
@@ -90,7 +100,7 @@ pub(crate) fn start_daemon() -> Response {
     {
         Ok(file) => file,
         Err(err) => {
-            return text_response(
+            return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to open teliod log file {TELIOD_LOG}, err: {err}"),
             );
@@ -99,7 +109,7 @@ pub(crate) fn start_daemon() -> Response {
     let stdout = match teliod_log_file.try_clone() {
         Ok(file) => Stdio::from(file),
         Err(error) => {
-            return text_response(
+            return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to start the application: {error}"),
             )
@@ -108,7 +118,7 @@ pub(crate) fn start_daemon() -> Response {
     let stderr = match teliod_log_file.try_clone() {
         Ok(file) => Stdio::from(file),
         Err(error) => {
-            return text_response(
+            return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to start the application: {error}"),
             )
@@ -126,27 +136,33 @@ pub(crate) fn start_daemon() -> Response {
             // Wait for teliod to become available
             for _ in 0..10 {
                 if is_teliod_running() {
-                    return text_response(StatusCode::CREATED, "Application started successfully.");
+                    return (
+                        StatusCode::CREATED,
+                        "Application started successfully.".to_string(),
+                    );
                 }
                 sleep(Duration::from_millis(500));
             }
 
-            text_response(
+            (
                 StatusCode::REQUEST_TIMEOUT,
-                "Failed to start the application, check logs.",
+                "Failed to start the application, check logs.".to_string(),
             )
         }
-        Err(error) => text_response(
+        Err(error) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Failed to start the application: {error}"),
         ),
     }
 }
 
-pub(crate) fn stop_daemon() -> Response {
+pub(crate) fn stop_daemon() -> (StatusCode, String) {
     match shutdown_teliod() {
-        Ok(_) => text_response(StatusCode::OK, "Application stopped successfully."),
-        Err(error) => text_response(
+        Ok(_) => (
+            StatusCode::OK,
+            "Application stopped successfully.".to_string(),
+        ),
+        Err(error) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("Unable to stop application: {error}"),
         ),
