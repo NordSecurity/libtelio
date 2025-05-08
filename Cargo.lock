@@ -5092,7 +5092,6 @@ dependencies = [
  "thiserror 2.0.11",
  "tokio",
  "tracing",
- "wg-go-rust-wrapper",
  "winapi",
  "windows 0.60.0",
  "wireguard-nt",
@@ -5968,14 +5967,6 @@ version = "4.0.0"
 source = "git+https://github.com/NordSecurity/uniffi-rs.git?tag=v0.3.1%2Bv0.25.0#1a5dc527165589456c3d7233107917e065192b03"
 dependencies = [
  "nom",
-]
-
-[[package]]
-name = "wg-go-rust-wrapper"
-version = "1.0.0"
-dependencies = [
- "cc",
- "libc",
 ]
 
 [[package]]

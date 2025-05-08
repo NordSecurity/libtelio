@@ -23,12 +23,6 @@ tcli.log
 /nat-lab/logs
 /nat-lab/coredumps
 /src/telio.py
-/3rd-party/wireguard-go/*.lib
-/3rd-party/wireguard-go/*.h
-/3rd-party/wireguard-go/*.a
-/3rd-party/wireguard-go/.pc
-/3rd-party/wireguard-go/defaultroutemonitor_windows.go
-/3rd-party/wireguard-go/interfacewatcher_windows.go
 /build/
 /dist/
 target/
@@ -39,7 +33,6 @@ target/
 /windows-local-dev-out/
 /nat-lab/*.log
 /nat-lab/.vagrant
-/nat-lab/bin/wireguard-go
 __pycache__
 event.db
 alpha-events.db
