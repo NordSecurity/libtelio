@@ -453,8 +453,7 @@ dependencies = [
 [[package]]
 name = "boot-time"
 version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce2b094c3b8fd302af9393806bb8af1b83a5a948ca7a91e87a92ea32167157f6"
+source = "git+https://github.com/NordSecurity/boot_time.git?rev=14f9a90d43a601ae50e69044894538c1398120a7#14f9a90d43a601ae50e69044894538c1398120a7"
 dependencies = [
  "cfg-if",
  "libc",
