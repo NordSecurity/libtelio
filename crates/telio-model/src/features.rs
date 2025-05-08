@@ -1,7 +1,7 @@
 //! Object descriptions of various
 //! telio configurable features via API
 
-use std::{collections::HashSet, fmt};
+use std::{collections::HashSet, fmt, net::IpAddr};
 
 use ipnet::Ipv4Net;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
@@ -370,8 +370,28 @@ impl Default for FeatureValidateKeys {
     }
 }
 
+/// Next layer protocol for IP packet
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub enum IpProtocol {
+    /// UDP protocol
+    UDP,
+    /// TCP protocol
+    TCP,
+}
+
+/// Tuple used to blacklist outgoing connections in Telio firewall
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub struct FirewallBlacklistTuple {
+    /// Protocol of the packet to be blacklisted
+    pub protocol: IpProtocol,
+    /// Destination IP address of the packet
+    pub ip: IpAddr,
+    /// Destination port of the packet
+    pub port: u16,
+}
+
 /// Feature config for firewall
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Default, Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct FeatureFirewall {
     /// Turns on connection resets upon VPN server change
     #[serde(default)]
@@ -382,6 +402,9 @@ pub struct FeatureFirewall {
     /// Customizable private IP range to treat certain private IP ranges
     /// as public IPs for testing purposes.
     pub exclude_private_ip_range: Option<Ipv4Net>,
+    /// Blackist for outgoing connections
+    #[serde(default)]
+    pub outgoing_blacklist: Vec<FirewallBlacklistTuple>,
 }
 
 /// Turns on post quantum VPN tunnel
@@ -465,6 +488,8 @@ pub struct FeatureUpnp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::str::FromStr;
 
     macro_rules! assert_json {
         ($json_str:expr, $expected:expr, $access_expr:ident . $($access_rest:tt)* ) => {
@@ -577,7 +602,12 @@ mod tests {
             "firewall": {
                 "neptun_reset_conns": true,
                 "boringtun_reset_conns": true,
-                "exclude_private_ip_range": null
+                "exclude_private_ip_range": null,
+                "outgoing_blacklist": [{
+                    "protocol": "UDP",
+                    "ip": "8.8.4.4",
+                    "port": 30
+                }]
             },
             "flush_events_on_stop_timeout_seconds": 15,
             "post_quantum_vpn": {
@@ -675,6 +705,11 @@ mod tests {
                         neptun_reset_conns: true,
                         boringtun_reset_conns: true,
                         exclude_private_ip_range: None,
+                        outgoing_blacklist: vec![FirewallBlacklistTuple {
+                            protocol: IpProtocol::UDP,
+                            ip: IpAddr::from_str("8.8.4.4").unwrap(),
+                            port: 30,
+                        }],
                     },
                     flush_events_on_stop_timeout_seconds: Some(15),
                     post_quantum_vpn: FeaturePostQuantumVPN {

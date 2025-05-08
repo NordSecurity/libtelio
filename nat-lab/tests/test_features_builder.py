@@ -1,4 +1,9 @@
-from uniffi import FeaturesDefaultsBuilder, deserialize_feature_config
+from uniffi import (
+    FeaturesDefaultsBuilder,
+    deserialize_feature_config,
+    FirewallBlacklistTuple,
+    IpProtocol,
+)
 
 
 def test_telio_features_builder_empty():
@@ -25,12 +30,21 @@ def test_telio_features_builder_empty():
 def test_telio_features_builder_firewall():
     built = FeaturesDefaultsBuilder().build()
     built.firewall.exclude_private_ip_range = "1.2.3.4/10"
+    built.firewall.outgoing_blacklist = [
+        FirewallBlacklistTuple(IpProtocol.UDP, "8.8.4.4", 30)
+    ]
+
     json = """
     {
         "lana": null,
         "nurse": null,
         "firewall": {
             "exclude_private_ip_range": "1.2.3.4/10",
+            "outgoing_blacklist": [{
+                    "protocol": "UDP",
+                    "ip": "8.8.4.4",
+                    "port": 30
+            }],
             "neptun_reset_conns": false
         },
         "direct": null,

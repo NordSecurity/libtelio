@@ -13,6 +13,6 @@ pub mod uapi;
 mod link_detection;
 
 pub use crate::{
-    adapter::{Adapter, AdapterType, Error, FirewallCb, Tun},
+    adapter::{Adapter, AdapterType, Error, FirewallInboundCb, FirewallOutboundCb, Tun},
     wg::*,
 };

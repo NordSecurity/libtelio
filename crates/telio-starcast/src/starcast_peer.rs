@@ -320,8 +320,7 @@ impl Runtime for State {
                                         self.packets_present_in_tunnel = true;
                                     },
                                     // Starcast packets
-                                    TunnResult::WriteToTunnelV4(packet, _)
-                                    | TunnResult::WriteToTunnelV6(packet, _) => {
+                                    TunnResult::WriteToTunnel(packet, _) => {
                                         permit.send(packet.to_vec());
                                     },
                                     TunnResult::Done => (),
