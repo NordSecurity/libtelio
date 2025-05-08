@@ -28,12 +28,16 @@ use thiserror::Error as TError;
 use crate::uapi::{self, Cmd, Response};
 use crate::wg::Config;
 
-/// Function pointer to Firewall Callback
-pub type FirewallCb = Option<Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>>;
+/// Function pointer to Firewall Inbound Callback
+pub type FirewallInboundCb = Option<Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>>;
+
+/// Function pointer to Firewall Outbound Callback
+pub type FirewallOutboundCb =
+    Option<Arc<dyn Fn(&[u8; 32], &[u8], &mut dyn io::Write) -> bool + Send + Sync>>;
 
 /// Function pointer for reseting all the connections
 pub type FirewallResetConnsCb =
-    Option<Arc<dyn Fn(&PublicKey, Ipv4Addr, &mut dyn io::Write, &mut dyn io::Write) + Send + Sync>>;
+    Option<Arc<dyn Fn(&PublicKey, Ipv4Addr, &mut dyn io::Write) + Send + Sync>>;
 
 /// Tunnel file descriptor
 #[cfg(not(target_os = "windows"))]
