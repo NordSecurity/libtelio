@@ -4,7 +4,7 @@ use ipnet::{AddrParseError as IpnetParseError, IpNet};
 use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PresharedKey, PublicKey, SecretKey};
 use telio_model::mesh::{LinkState, Node, NodeState};
-use telio_utils::{telio_log_warn, DualTarget, DualTargetError};
+use telio_utils::{allow_dead_code_windows, telio_log_warn, DualTarget, DualTargetError};
 use tokio::time::Instant;
 use wireguard_uapi::{get, xplatform::set};
 
@@ -499,217 +499,219 @@ impl Display for Response {
     }
 }
 
-pub(super) fn response_from_str(string: &str) -> Result<Response, Error> {
-    response_from_read(string.as_bytes())
-}
-
-fn response_from_read<R: Read>(reader: R) -> Result<Response, Error> {
-    let mut reader = BufReader::new(reader);
-    let mut interface = Interface::default();
-    let mut inited = false;
-    let mut errno = 0;
-    let mut cmd = String::new();
-
-    while reader.read_line(&mut cmd).is_ok() {
-        cmd.pop(); // remove newline if any
-        if cmd.is_empty() {
-            return Ok(Response {
-                errno,
-                interface: if inited { Some(interface) } else { None },
-            }); // Done
-        }
-        {
-            let parsed: Vec<&str> = cmd.splitn(2, '=').collect();
-            if parsed.len() != 2 {
-                return Err(Error::ParsingError("cmd", "not in A=B format".to_owned()));
-            }
-            let (key, val) = (
-                *parsed
-                    .first()
-                    .ok_or_else(|| Error::ParsingError("cmd", "No key found".to_owned()))?,
-                *parsed
-                    .get(1)
-                    .ok_or_else(|| Error::ParsingError("cmd", "No val found".to_owned()))?,
-            );
-
-            match key {
-                "private_key" => {
-                    inited = true;
-                    interface.private_key = Some(val.parse().map_err(|e: KeyDecodeError| {
-                        Error::ParsingError("private_key", e.to_string())
-                    })?);
-                }
-                "listen_port" => {
-                    inited = true;
-                    let port = val.parse().map_err(|e: ParseIntError| {
-                        Error::ParsingError("listen_port", e.to_string())
-                    })?;
-                    if port > 0 {
-                        interface.listen_port = Some(port);
-                    }
-                }
-                "fwmark" => {
-                    inited = true;
-                    interface.fwmark = val
-                        .parse()
-                        .map_err(|e: ParseIntError| Error::ParsingError("fwmark", e.to_string()))?;
-                }
-                "public_key" => {
-                    inited = true;
-                    let mut public = val.parse().map_err(|e: KeyDecodeError| {
-                        Error::ParsingError("public_key", e.to_string())
-                    })?;
-                    loop {
-                        let (peer, next, err) = parse_peer(public, &mut reader)?;
-                        let _ = interface.peers.insert(peer.public_key, peer);
-                        if let Some(err) = err {
-                            errno = err;
-                            break;
-                        }
-                        if let Some(next) = next {
-                            public = next;
-                        } else {
-                            break;
-                        }
-                    }
-                }
-                "errno" => {
-                    errno = val
-                        .parse()
-                        .map_err(|e: ParseIntError| Error::ParsingError("errno", e.to_string()))?
-                }
-                _ => (),
-            }
-        }
-        cmd.clear();
+allow_dead_code_windows! {
+    pub(super) fn response_from_str(string: &str) -> Result<Response, Error> {
+        response_from_read(string.as_bytes())
     }
 
-    Ok(Response {
-        errno,
-        interface: if inited { Some(interface) } else { None },
-    })
-}
+    fn response_from_read<R: Read>(reader: R) -> Result<Response, Error> {
+        let mut reader = BufReader::new(reader);
+        let mut interface = Interface::default();
+        let mut inited = false;
+        let mut errno = 0;
+        let mut cmd = String::new();
 
-fn parse_peer<R: Read>(
-    public_key: PublicKey,
-    reader: &mut BufReader<R>,
-) -> Result<(Peer, Option<PublicKey>, Option<i32>), Error> {
-    let mut cmd = String::new();
-
-    let mut peer = Peer {
-        public_key,
-        ..Peer::default()
-    };
-
-    let mut last_handshake_time = None;
-    let mut resp =
-        loop {
-            if reader.read_line(&mut cmd).is_err() {
-                break (peer, None, None);
-            }
-
+        while reader.read_line(&mut cmd).is_ok() {
             cmd.pop(); // remove newline if any
             if cmd.is_empty() {
-                break (peer, None, None);
+                return Ok(Response {
+                    errno,
+                    interface: if inited { Some(interface) } else { None },
+                }); // Done
             }
-
-            let parsed: Vec<&str> = cmd.splitn(2, '=').collect();
-            if parsed.len() != 2 {
-                return Err(Error::ParsingError("cmd", "not in A=B format".to_owned()));
-            }
-            let (key, val) = (
-                *parsed
-                    .first()
-                    .ok_or_else(|| Error::ParsingError("cmd", "No key found".to_owned()))?,
-                *parsed
-                    .get(1)
-                    .ok_or_else(|| Error::ParsingError("cmd", "Invalid value".to_owned()))?,
-            );
-
-            match key {
-                "endpoint" => {
-                    peer.endpoint = Some(val.parse().map_err(|e: AddrParseError| {
-                        Error::ParsingError("endpoint", e.to_string())
-                    })?)
+            {
+                let parsed: Vec<&str> = cmd.splitn(2, '=').collect();
+                if parsed.len() != 2 {
+                    return Err(Error::ParsingError("cmd", "not in A=B format".to_owned()));
                 }
-                "persistent_keepalive_interval" => {
-                    peer.persistent_keepalive_interval =
-                        Some(val.parse().map_err(|e: ParseIntError| {
-                            Error::ParsingError("persistent_keepalive_interval", e.to_string())
+                let (key, val) = (
+                    *parsed
+                        .first()
+                        .ok_or_else(|| Error::ParsingError("cmd", "No key found".to_owned()))?,
+                    *parsed
+                        .get(1)
+                        .ok_or_else(|| Error::ParsingError("cmd", "No val found".to_owned()))?,
+                );
+
+                match key {
+                    "private_key" => {
+                        inited = true;
+                        interface.private_key = Some(val.parse().map_err(|e: KeyDecodeError| {
+                            Error::ParsingError("private_key", e.to_string())
                         })?);
-                }
-                "allowed_ip" => {
-                    peer.allowed_ips
-                        .push(val.parse().map_err(|e: IpnetParseError| {
-                            Error::ParsingError("allowed_ip", e.to_string())
-                        })?)
-                }
-                "rx_bytes" => {
-                    peer.rx_bytes = Some(val.parse().map_err(|e: ParseIntError| {
-                        Error::ParsingError("rx_bytes", e.to_string())
-                    })?)
-                }
-                "tx_bytes" => {
-                    peer.tx_bytes = Some(val.parse().map_err(|e: ParseIntError| {
-                        Error::ParsingError("tx_bytes", e.to_string())
-                    })?)
-                }
-                "last_handshake_time_nsec" => {
-                    let nsec = Duration::from_nanos(val.parse().map_err(|e: ParseIntError| {
-                        Error::ParsingError("last_handshake_time_nsec", e.to_string())
-                    })?);
-                    if let Some(ref mut timestamp) = last_handshake_time {
-                        *timestamp += nsec;
-                    } else {
-                        last_handshake_time = Some(nsec);
                     }
-                }
-                "last_handshake_time_sec" => {
-                    let sec = Duration::from_secs(val.parse().map_err(|e: ParseIntError| {
-                        Error::ParsingError("last_handshake_time_sec", e.to_string())
-                    })?);
-                    if let Some(ref mut timestamp) = last_handshake_time {
-                        *timestamp += sec;
-                    } else {
-                        last_handshake_time = Some(sec);
+                    "listen_port" => {
+                        inited = true;
+                        let port = val.parse().map_err(|e: ParseIntError| {
+                            Error::ParsingError("listen_port", e.to_string())
+                        })?;
+                        if port > 0 {
+                            interface.listen_port = Some(port);
+                        }
                     }
-                }
-                "preshared_key" => {
-                    let preshared: PresharedKey = val.parse().map_err(|e: KeyDecodeError| {
-                        Error::ParsingError("preshared_key", e.to_string())
-                    })?;
-
-                    if preshared.0 != [0; 32] {
-                        peer.preshared_key = Some(preshared);
+                    "fwmark" => {
+                        inited = true;
+                        interface.fwmark = val
+                            .parse()
+                            .map_err(|e: ParseIntError| Error::ParsingError("fwmark", e.to_string()))?;
                     }
-                }
-                "public_key" => {
-                    break (
-                        peer,
-                        Some(val.parse().map_err(|e: KeyDecodeError| {
+                    "public_key" => {
+                        inited = true;
+                        let mut public = val.parse().map_err(|e: KeyDecodeError| {
                             Error::ParsingError("public_key", e.to_string())
-                        })?), // Indicate next peer's public
-                        None,
-                    );
+                        })?;
+                        loop {
+                            let (peer, next, err) = parse_peer(public, &mut reader)?;
+                            let _ = interface.peers.insert(peer.public_key, peer);
+                            if let Some(err) = err {
+                                errno = err;
+                                break;
+                            }
+                            if let Some(next) = next {
+                                public = next;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    "errno" => {
+                        errno = val
+                            .parse()
+                            .map_err(|e: ParseIntError| Error::ParsingError("errno", e.to_string()))?
+                    }
+                    _ => (),
                 }
-                "errno" => {
-                    break (
-                        peer,
-                        None,
-                        Some(val.parse().map_err(|e: ParseIntError| {
-                            Error::ParsingError("errno", e.to_string())
-                        })?),
-                    )
-                }
-                _ => (),
             }
             cmd.clear();
+        }
+
+        Ok(Response {
+            errno,
+            interface: if inited { Some(interface) } else { None },
+        })
+    }
+
+    fn parse_peer<R: Read>(
+        public_key: PublicKey,
+        reader: &mut BufReader<R>,
+    ) -> Result<(Peer, Option<PublicKey>, Option<i32>), Error> {
+        let mut cmd = String::new();
+
+        let mut peer = Peer {
+            public_key,
+            ..Peer::default()
         };
 
-    resp.0.time_since_last_handshake =
-        Peer::calculate_time_since_last_handshake(last_handshake_time);
+        let mut last_handshake_time = None;
+        let mut resp =
+            loop {
+                if reader.read_line(&mut cmd).is_err() {
+                    break (peer, None, None);
+                }
 
-    Ok(resp)
+                cmd.pop(); // remove newline if any
+                if cmd.is_empty() {
+                    break (peer, None, None);
+                }
+
+                let parsed: Vec<&str> = cmd.splitn(2, '=').collect();
+                if parsed.len() != 2 {
+                    return Err(Error::ParsingError("cmd", "not in A=B format".to_owned()));
+                }
+                let (key, val) = (
+                    *parsed
+                        .first()
+                        .ok_or_else(|| Error::ParsingError("cmd", "No key found".to_owned()))?,
+                    *parsed
+                        .get(1)
+                        .ok_or_else(|| Error::ParsingError("cmd", "Invalid value".to_owned()))?,
+                );
+
+                match key {
+                    "endpoint" => {
+                        peer.endpoint = Some(val.parse().map_err(|e: AddrParseError| {
+                            Error::ParsingError("endpoint", e.to_string())
+                        })?)
+                    }
+                    "persistent_keepalive_interval" => {
+                        peer.persistent_keepalive_interval =
+                            Some(val.parse().map_err(|e: ParseIntError| {
+                                Error::ParsingError("persistent_keepalive_interval", e.to_string())
+                            })?);
+                    }
+                    "allowed_ip" => {
+                        peer.allowed_ips
+                            .push(val.parse().map_err(|e: IpnetParseError| {
+                                Error::ParsingError("allowed_ip", e.to_string())
+                            })?)
+                    }
+                    "rx_bytes" => {
+                        peer.rx_bytes = Some(val.parse().map_err(|e: ParseIntError| {
+                            Error::ParsingError("rx_bytes", e.to_string())
+                        })?)
+                    }
+                    "tx_bytes" => {
+                        peer.tx_bytes = Some(val.parse().map_err(|e: ParseIntError| {
+                            Error::ParsingError("tx_bytes", e.to_string())
+                        })?)
+                    }
+                    "last_handshake_time_nsec" => {
+                        let nsec = Duration::from_nanos(val.parse().map_err(|e: ParseIntError| {
+                            Error::ParsingError("last_handshake_time_nsec", e.to_string())
+                        })?);
+                        if let Some(ref mut timestamp) = last_handshake_time {
+                            *timestamp += nsec;
+                        } else {
+                            last_handshake_time = Some(nsec);
+                        }
+                    }
+                    "last_handshake_time_sec" => {
+                        let sec = Duration::from_secs(val.parse().map_err(|e: ParseIntError| {
+                            Error::ParsingError("last_handshake_time_sec", e.to_string())
+                        })?);
+                        if let Some(ref mut timestamp) = last_handshake_time {
+                            *timestamp += sec;
+                        } else {
+                            last_handshake_time = Some(sec);
+                        }
+                    }
+                    "preshared_key" => {
+                        let preshared: PresharedKey = val.parse().map_err(|e: KeyDecodeError| {
+                            Error::ParsingError("preshared_key", e.to_string())
+                        })?;
+
+                        if preshared.0 != [0; 32] {
+                            peer.preshared_key = Some(preshared);
+                        }
+                    }
+                    "public_key" => {
+                        break (
+                            peer,
+                            Some(val.parse().map_err(|e: KeyDecodeError| {
+                                Error::ParsingError("public_key", e.to_string())
+                            })?), // Indicate next peer's public
+                            None,
+                        );
+                    }
+                    "errno" => {
+                        break (
+                            peer,
+                            None,
+                            Some(val.parse().map_err(|e: ParseIntError| {
+                                Error::ParsingError("errno", e.to_string())
+                            })?),
+                        )
+                    }
+                    _ => (),
+                }
+                cmd.clear();
+            };
+
+        resp.0.time_since_last_handshake =
+            Peer::calculate_time_since_last_handshake(last_handshake_time);
+
+        Ok(resp)
+    }
 }
 
 #[cfg(test)]
@@ -721,16 +723,6 @@ mod tests {
     use itertools::iproduct;
     use pretty_assertions::assert_eq;
     use proptest::prelude::*;
-
-    trait PeerHelp {
-        fn peer_map(self) -> BTreeMap<PublicKey, Peer>;
-    }
-
-    impl PeerHelp for Vec<Peer> {
-        fn peer_map(self) -> BTreeMap<PublicKey, Peer> {
-            self.into_iter().map(|p| (p.public_key, p)).collect()
-        }
-    }
 
     #[test]
     fn bytes_data_overflow() -> Result<(), Error> {
@@ -784,7 +776,7 @@ errno=0
             errno: 0,
             interface: Some(Interface::default()),
         };
-        assert_eq!(response_from_str(&resp_str), Ok(resp));
+        assert_eq!(response_from_str(resp_str), Ok(resp));
     }
 
     #[test]

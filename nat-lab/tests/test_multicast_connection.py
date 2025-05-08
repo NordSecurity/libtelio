@@ -38,7 +38,7 @@ MUILTICAST_TEST_PARAMS = [
     ),
     pytest.param(
         generate_setup_parameter_pair([
-            (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WIREGUARD_GO_TUN),
+            (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
             (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
         ]),
         "ssdp",
