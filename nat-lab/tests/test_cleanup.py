@@ -12,7 +12,6 @@ from utils.vm.windows_vm_util import get_network_interface_tunnel_keys
 @pytest.mark.parametrize(
     "adapter_type, name",
     [
-        (TelioAdapterType.WIREGUARD_GO_TUN, "Wintun Userspace Tunnel"),
         (TelioAdapterType.WINDOWS_NATIVE_TUN, "WireGuard Tunnel"),
     ],
 )
