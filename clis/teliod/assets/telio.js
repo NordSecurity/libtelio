@@ -17,3 +17,9 @@ window.telio = {
     }
   },
 };
+
+// Add support to switch to dark mode based on system settings. 
+document.documentElement.classList.toggle(
+  "dark", window.matchMedia('(prefers-color-scheme: dark)').matches
+);
+
