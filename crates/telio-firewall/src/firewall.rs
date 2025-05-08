@@ -183,7 +183,12 @@ pub trait Firewall {
     /// For new connections it opens a pinhole for incoming connection
     /// If connection is already cached, it resets its timer and extends its lifetime
     /// Only returns false for invalid or not ipv4 packets
-    fn process_outbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool;
+    fn process_outbound_packet(
+        &self,
+        public_key: &[u8; 32],
+        buffer: &[u8],
+        sink: &mut dyn io::Write,
+    ) -> bool;
 
     /// Checks if incoming packet should be accepted.
     /// Does not extend pinhole lifetime on success
@@ -197,8 +202,7 @@ pub trait Firewall {
         &self,
         pubkey: &PublicKey,
         endpoint_ipv4: StdIpv4Addr,
-        sink4: &mut dyn io::Write,
-        sink6: &mut dyn io::Write,
+        sink: &mut dyn io::Write,
     ) -> io::Result<()>;
 
     /// Saves local node Ip address into firewall object
@@ -480,6 +484,7 @@ impl StatefullFirewall {
         &self,
         public_key: &[u8; 32],
         buffer: &'a [u8],
+        sink: &mut dyn io::Write,
     ) -> bool {
         let ip = unwrap_option_or_return!(P::try_from(buffer), false);
         let peer: PublicKey = PublicKey(*public_key);
@@ -1153,7 +1158,7 @@ impl StatefullFirewall {
         }
     }
 
-    fn reset_tcp_conns(&self, pubkey: &PublicKey, sink4: &mut dyn io::Write) -> io::Result<()> {
+    fn reset_tcp_conns(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) -> io::Result<()> {
         let Ok(mut tcp_conn_cache) = self.tcp.lock() else {
             telio_log_error!("TCP cache poisoned");
             return Ok(());
@@ -1234,8 +1239,7 @@ impl StatefullFirewall {
 
                     #[allow(index_access_check)]
                     ipv4pkgbuf[IPV4_LEN..].copy_from_slice(tcppkg.packet());
-
-                    sink4.write_all(&ipv4pkgbuf)?;
+                    sink.write_all(&ipv4pkgbuf)?;
                 }
                 (IpAddr::Ipv6(_), IpAddr::Ipv6(_)) => (), // TODO(msz): implement this pice when IPv6 will be fully supported
                 _ => telio_log_warn!(
@@ -1251,7 +1255,7 @@ impl StatefullFirewall {
         &self,
         pubkey: &PublicKey,
         endpoint_ipv4: StdIpv4Addr,
-        sink4: &mut dyn io::Write,
+        sink: &mut dyn io::Write,
     ) -> io::Result<()> {
         let Ok(mut udp_conn_cache) = self.udp.lock() else {
             telio_log_error!("UDP cache poisoned");
@@ -1338,7 +1342,7 @@ impl StatefullFirewall {
                     drop(ipv4pkg);
 
                     telio_log_debug!("Injecting IPv4 ICMP (for UDP) packet {key:#?}");
-                    sink4.write_all(ipv4pkgbuf)?;
+                    sink.write_all(ipv4pkgbuf)?;
                 }
                 (IpAddr::Ipv6(_), IpAddr::Ipv6(_)) => (), // TODO(msz): implement this piece when IPv6 will be fully supported
                 _ => telio_log_warn!(
@@ -1488,11 +1492,16 @@ impl Firewall for StatefullFirewall {
         unwrap_lock_or_return!(self.whitelist.write()).vpn_peer = None;
     }
 
-    fn process_outbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
+    fn process_outbound_packet(
+        &self,
+        public_key: &[u8; 32],
+        buffer: &[u8],
+        sink: &mut dyn io::Write,
+    ) -> bool {
         match unwrap_option_or_return!(buffer.first(), false) >> 4 {
-            4 => self.process_outbound_ip_packet::<Ipv4Packet>(public_key, buffer),
+            4 => self.process_outbound_ip_packet::<Ipv4Packet>(public_key, buffer, sink),
             6 if self.allow_ipv6 => {
-                self.process_outbound_ip_packet::<Ipv6Packet>(public_key, buffer)
+                self.process_outbound_ip_packet::<Ipv6Packet>(public_key, buffer, sink)
             }
             version => {
                 telio_log_warn!("Unexpected IP version {version} for outbound packet");
@@ -1522,13 +1531,12 @@ impl Firewall for StatefullFirewall {
         &self,
         pubkey: &PublicKey,
         endpoint_ipv4: StdIpv4Addr,
-        sink4: &mut dyn io::Write,
-        _: &mut dyn io::Write,
+        sink: &mut dyn io::Write,
     ) -> io::Result<()> {
         telio_log_debug!("Constructing connetion reset packets");
 
-        self.reset_tcp_conns(pubkey, sink4)?;
-        self.reset_udp_conns(pubkey, endpoint_ipv4, sink4)?;
+        self.reset_tcp_conns(pubkey, sink)?;
+        self.reset_udp_conns(pubkey, endpoint_ipv4, sink)?;
 
         Ok(())
     }
