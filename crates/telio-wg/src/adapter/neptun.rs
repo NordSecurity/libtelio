@@ -18,7 +18,7 @@ pub use neptun::device::Error;
 use telio_sockets::SocketPool;
 
 #[cfg(not(any(test, feature = "test-adapter")))]
-pub type FirewallCb = Option<Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>>;
+use crate::{FirewallInboundCb, FirewallOutboundCb};
 
 pub struct NepTUN {
     device: RwLock<DeviceHandle>,
@@ -31,8 +31,8 @@ impl NepTUN {
         name: &str,
         tun: Option<NativeTun>,
         socket_pool: Arc<SocketPool>,
-        firewall_process_inbound_callback: FirewallCb,
-        firewall_process_outbound_callback: FirewallCb,
+        firewall_process_inbound_callback: FirewallInboundCb,
+        firewall_process_outbound_callback: FirewallOutboundCb,
         firewall_reset_connections_callback: super::FirewallResetConnsCb,
         skt_buffer_size: Option<u32>,
     ) -> Result<Self, AdapterError> {
@@ -110,41 +110,10 @@ impl Adapter for NepTUN {
 
         telio_log_debug!("Reseting existing connection with packet injection");
 
-        struct Sink4<'a> {
-            tun: &'a TunSocket,
-        }
-
-        struct Sink6<'a> {
-            tun: &'a TunSocket,
-        }
-
-        impl io::Write for Sink4<'_> {
-            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-                Ok(self.tun.write4(buf))
-            }
-
-            fn flush(&mut self) -> io::Result<()> {
-                Ok(())
-            }
-        }
-
-        impl io::Write for Sink6<'_> {
-            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-                Ok(self.tun.write6(buf))
-            }
-
-            fn flush(&mut self) -> io::Result<()> {
-                Ok(())
-            }
-        }
-
         let dev = self.device.read().await;
         let dev = dev.device.read();
-        let tun = dev.iface();
+        let mut tun = dev.iface();
 
-        let mut sink4 = Sink4 { tun };
-        let mut sink6 = Sink6 { tun };
-
-        cb(exit_pubkey, exit_ipv4, &mut sink4, &mut sink6);
+        cb(exit_pubkey, exit_ipv4, &mut tun);
     }
 }

@@ -98,7 +98,7 @@ static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
 
 pub use wg::{
     uapi::Event as WGEvent, uapi::Interface, AdapterType, DynamicWg, Error as AdapterError,
-    FirewallCb, Tun, WireGuard,
+    FirewallInboundCb, FirewallOutboundCb, Tun, WireGuard,
 };
 
 #[cfg(test)]
@@ -1056,18 +1056,18 @@ impl Runtime {
         };
         let firewall_filter_outbound_packets = {
             let fw = firewall.clone();
-            move |peer: &[u8; 32], packet: &[u8]| fw.process_outbound_packet(peer, packet)
+            move |peer: &[u8; 32], packet: &[u8], sink: &mut dyn io::Write| {
+                fw.process_outbound_packet(peer, packet, sink)
+            }
         };
         let firewall_reset_connections = if features.firewall.neptun_reset_conns {
             let fw = firewall.clone();
-            let cb = move |exit_pubkey: &PublicKey,
-                           exit_ipv4: Ipv4Addr,
-                           sink4: &mut dyn io::Write,
-                           sink6: &mut dyn io::Write| {
-                if let Err(err) = fw.reset_connections(exit_pubkey, exit_ipv4, sink4, sink6) {
-                    telio_log_warn!("Failed to reset all connections: {err:?}");
-                }
-            };
+            let cb =
+                move |exit_pubkey: &PublicKey, exit_ipv4: Ipv4Addr, sink: &mut dyn io::Write| {
+                    if let Err(err) = fw.reset_connections(exit_pubkey, exit_ipv4, sink) {
+                        telio_log_warn!("Failed to reset all connections: {err:?}");
+                    }
+                };
             Some(Arc::new(cb) as Arc<_>)
         } else {
             None

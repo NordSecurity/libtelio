@@ -34,7 +34,7 @@ use crate::{
     adapter::{self, Adapter, AdapterType, Error, FirewallResetConnsCb, Tun},
     link_detection::{self, LinkDetection, LinkDetectionUpdateResult},
     uapi::{self, AnalyticsEvent, Cmd, Event, Interface, Peer, PeerState, Response, UpdateReason},
-    FirewallCb,
+    FirewallInboundCb, FirewallOutboundCb,
 };
 
 use std::{
@@ -104,9 +104,9 @@ pub struct Config {
     /// Sockets to be protected, in order to avoid loopback
     pub socket_pool: Arc<SocketPool>,
     /// Callback of firewall to process incoming packets
-    pub firewall_process_inbound_callback: FirewallCb,
+    pub firewall_process_inbound_callback: FirewallInboundCb,
     /// Callback of firewall to process outgoing packets
-    pub firewall_process_outbound_callback: FirewallCb,
+    pub firewall_process_outbound_callback: FirewallOutboundCb,
     /// Callback of firewall to create connection reset packets
     /// for all active connections
     pub firewall_reset_connections: FirewallResetConnsCb,
@@ -205,7 +205,9 @@ impl DynamicWg {
     ///     };
     ///     let firewall_filter_outbound_packets = {
     ///         let fw = firewall.clone();
-    ///         move |peer: &[u8; 32], packet: &[u8]| fw.process_outbound_packet(peer, packet)
+    ///         move |peer: &[u8; 32], packet: &[u8], sink: &mut dyn io::Write| {
+    ///             fw.process_outbound_packet(peer, packet, sink)
+    ///         }
     ///     };
     ///
     ///     let chan = Chan::default();

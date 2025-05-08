@@ -183,7 +183,12 @@ pub trait Firewall {
     /// For new connections it opens a pinhole for incoming connection
     /// If connection is already cached, it resets its timer and extends its lifetime
     /// Only returns false for invalid or not ipv4 packets
-    fn process_outbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool;
+    fn process_outbound_packet(
+        &self,
+        public_key: &[u8; 32],
+        buffer: &[u8],
+        sink: &mut dyn io::Write,
+    ) -> bool;
 
     /// Checks if incoming packet should be accepted.
     /// Does not extend pinhole lifetime on success
@@ -197,8 +202,7 @@ pub trait Firewall {
         &self,
         pubkey: &PublicKey,
         endpoint_ipv4: StdIpv4Addr,
-        sink4: &mut dyn io::Write,
-        sink6: &mut dyn io::Write,
+        sink: &mut dyn io::Write,
     ) -> io::Result<()>;
 
     /// Saves local node Ip address into firewall object
@@ -480,6 +484,7 @@ impl StatefullFirewall {
         &self,
         public_key: &[u8; 32],
         buffer: &'a [u8],
+        sink: &mut dyn io::Write,
     ) -> bool {
         let ip = unwrap_option_or_return!(P::try_from(buffer), false);
         let peer: PublicKey = PublicKey(*public_key);
@@ -490,13 +495,50 @@ impl StatefullFirewall {
                 let blacklist = unwrap_lock_or_return!(self.outgoing_udp_blacklist.read(), false);
                 let link = unwrap_option_or_return!(Self::build_conn_info(&ip, false), false).0;
                 if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
+                    let Some(first_chunk) = ip
+                        .packet()
+                        .chunks(UdpConnectionInfo::LAST_PKG_MAX_CHUNK_LEN)
+                        .next()
+                    else {
+                        telio_log_warn!("Failed to extract headers of UDP packet for {peer:?}");
+                        return false;
+                    };
+
+                    match link.remote_addr {
+                        IpAddr::Ipv4(remote_addr) => {
+                            _ = self.send_v4_imcp_port_unreachable_packets(
+                                remote_addr.into(),
+                                std::iter::once((&link, first_chunk)),
+                                sink,
+                            );
+                        }
+                        IpAddr::Ipv6(_) => {
+                            telio_log_warn!("IPv6 blacklist not implemented");
+                            // TODO(LLT-6284)
+                        }
+                    }
                     return false;
                 }
             }
             IpNextHeaderProtocols::Tcp => {
                 let blacklist = unwrap_lock_or_return!(self.outgoing_tcp_blacklist.read(), false);
-                let link = unwrap_option_or_return!(Self::build_conn_info(&ip, false), false).0;
+                let (link, tcp_packet) =
+                    unwrap_option_or_return!(Self::build_conn_info(&ip, false), false);
+                let tcp_packet = unwrap_option_or_return!(tcp_packet, false);
                 if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
+                    match link.remote_addr {
+                        IpAddr::Ipv4(_) => {
+                            _ = self.send_v4_tcp_rst_packets(
+                                std::iter::once((&link, 0, Some(tcp_packet.get_sequence() + 1))),
+                                sink,
+                            );
+                        }
+                        IpAddr::Ipv6(_) => {
+                            telio_log_warn!("IPv6 blacklist not implemented");
+                            // TODO(LLT-6284)
+                        }
+                    }
+
                     return false;
                 }
             }
@@ -1153,7 +1195,7 @@ impl StatefullFirewall {
         }
     }
 
-    fn reset_tcp_conns(&self, pubkey: &PublicKey, sink4: &mut dyn io::Write) -> io::Result<()> {
+    fn reset_tcp_conns(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) -> io::Result<()> {
         let Ok(mut tcp_conn_cache) = self.tcp.lock() else {
             telio_log_error!("TCP cache poisoned");
             return Ok(());
@@ -1164,6 +1206,29 @@ impl StatefullFirewall {
             tcp_conn_cache.len()
         );
 
+        let iter = tcp_conn_cache.iter().filter_map(|(k, v)| {
+            if k.pubkey == *pubkey {
+                // When we don't have the sequence number that means the
+                // connection is half open and we don't have a response
+                // from the remote peer yet. We need to skip this kind of
+                // connections
+                v.next_seq.map(|next_seq| (&k.link, next_seq, None))
+            } else {
+                None
+            }
+        });
+
+        self.send_v4_tcp_rst_packets(iter, sink)
+    }
+
+    fn send_v4_tcp_rst_packets<'a, I>(
+        &self,
+        connections: I,
+        sink: &mut dyn io::Write,
+    ) -> io::Result<()>
+    where
+        I: IntoIterator<Item = (&'a IpConnWithPort, u32, Option<u32>)>,
+    {
         const IPV4_LEN: usize = 20;
         const TCP_LEN: usize = 20;
 
@@ -1174,7 +1239,6 @@ impl StatefullFirewall {
         #[allow(clippy::expect_used)]
         let mut tcppkg =
             MutableTcpPacket::new(&mut tcpbuf).expect("TCP buffer should not be too small");
-        tcppkg.set_flags(TcpFlags::RST);
         tcppkg.set_data_offset(5);
 
         #[allow(clippy::expect_used)]
@@ -1189,26 +1253,16 @@ impl StatefullFirewall {
 
         let mut ipv4pkgbuf = [0u8; IPV4_LEN + TCP_LEN];
 
-        let iter = tcp_conn_cache.iter().filter_map(|(k, v)| {
-            if k.pubkey == *pubkey {
-                Some((&k.link, v))
-            } else {
-                None
-            }
-        });
-
-        for (key, val) in iter {
-            let Some(seq) = val.next_seq else {
-                // When we don't have the sequence number that means the
-                // connection is half open and we don't have a response
-                // from the remote peer yet. We need to skip this kind of
-                // connections
-                continue;
-            };
-
+        for (key, next_seq, ack) in connections {
             tcppkg.set_source(key.remote_port);
             tcppkg.set_destination(key.local_port);
-            tcppkg.set_sequence(seq);
+            tcppkg.set_sequence(next_seq);
+            if let Some(ack) = ack {
+                tcppkg.set_flags(TcpFlags::RST | TcpFlags::ACK);
+                tcppkg.set_acknowledgement(ack);
+            } else {
+                tcppkg.set_flags(TcpFlags::RST);
+            }
 
             match (key.local_addr, key.remote_addr) {
                 (IpAddr::Ipv4(local_addr), IpAddr::Ipv4(remote_addr)) => {
@@ -1234,8 +1288,7 @@ impl StatefullFirewall {
 
                     #[allow(index_access_check)]
                     ipv4pkgbuf[IPV4_LEN..].copy_from_slice(tcppkg.packet());
-
-                    sink4.write_all(&ipv4pkgbuf)?;
+                    sink.write_all(&ipv4pkgbuf)?;
                 }
                 (IpAddr::Ipv6(_), IpAddr::Ipv6(_)) => (), // TODO(msz): implement this pice when IPv6 will be fully supported
                 _ => telio_log_warn!(
@@ -1247,22 +1300,15 @@ impl StatefullFirewall {
         Ok(())
     }
 
-    fn reset_udp_conns(
+    fn send_v4_imcp_port_unreachable_packets<'a, I>(
         &self,
-        pubkey: &PublicKey,
-        endpoint_ipv4: StdIpv4Addr,
-        sink4: &mut dyn io::Write,
-    ) -> io::Result<()> {
-        let Ok(mut udp_conn_cache) = self.udp.lock() else {
-            telio_log_error!("UDP cache poisoned");
-            return Ok(());
-        };
-
-        telio_log_debug!(
-            "Inspecting {} UDP connections for reset",
-            udp_conn_cache.len()
-        );
-
+        source_ip: StdIpv4Addr,
+        connections: I,
+        sink: &mut dyn io::Write,
+    ) -> io::Result<()>
+    where
+        I: IntoIterator<Item = (&'a IpConnWithPort, &'a [u8])>,
+    {
         const IPV4_HEADER_LEN: usize = 20;
         const ICMP_HEADER_LEN: usize = 8;
         const ICMP_MAX_DATA_LEN: usize = UdpConnectionInfo::LAST_PKG_MAX_CHUNK_LEN;
@@ -1280,7 +1326,7 @@ impl StatefullFirewall {
         ipv4pkg.set_flags(Ipv4Flags::DontFragment);
         ipv4pkg.set_ttl(0xFF);
         ipv4pkg.set_next_level_protocol(IpNextHeaderProtocols::Icmp);
-        ipv4pkg.set_source(endpoint_ipv4);
+        ipv4pkg.set_source(source_ip);
         drop(ipv4pkg);
 
         #[allow(clippy::expect_used)]
@@ -1293,18 +1339,7 @@ impl StatefullFirewall {
         icmppkg.set_icmp_code(IcmpCodes::DestinationPortUnreachable);
         drop(icmppkg);
 
-        let iter = udp_conn_cache.iter().filter_map(|(k, v)| {
-            // Skip connection without outbounded packages
-            let last_headers = v.last_out_pkg_chunk.as_deref()?;
-
-            if k.pubkey != *pubkey {
-                return None;
-            }
-
-            Some((&k.link, last_headers))
-        });
-
-        for (key, last_headers) in iter {
+        for (key, last_headers) in connections {
             let end = IPV4_HEADER_LEN + ICMP_HEADER_LEN + last_headers.len();
 
             #[allow(index_access_check)]
@@ -1338,7 +1373,7 @@ impl StatefullFirewall {
                     drop(ipv4pkg);
 
                     telio_log_debug!("Injecting IPv4 ICMP (for UDP) packet {key:#?}");
-                    sink4.write_all(ipv4pkgbuf)?;
+                    sink.write_all(ipv4pkgbuf)?;
                 }
                 (IpAddr::Ipv6(_), IpAddr::Ipv6(_)) => (), // TODO(msz): implement this piece when IPv6 will be fully supported
                 _ => telio_log_warn!(
@@ -1348,6 +1383,36 @@ impl StatefullFirewall {
         }
 
         Ok(())
+    }
+
+    fn reset_udp_conns(
+        &self,
+        pubkey: &PublicKey,
+        endpoint_ipv4: StdIpv4Addr,
+        sink: &mut dyn io::Write,
+    ) -> io::Result<()> {
+        let Ok(mut udp_conn_cache) = self.udp.lock() else {
+            telio_log_error!("UDP cache poisoned");
+            return Ok(());
+        };
+
+        telio_log_debug!(
+            "Inspecting {} UDP connections for reset",
+            udp_conn_cache.len()
+        );
+
+        let iter = udp_conn_cache.iter().filter_map(|(k, v)| {
+            // Skip connection without outbounded packages
+            let last_headers = v.last_out_pkg_chunk.as_deref()?;
+
+            if k.pubkey != *pubkey {
+                return None;
+            }
+
+            Some((&k.link, last_headers))
+        });
+
+        self.send_v4_imcp_port_unreachable_packets(endpoint_ipv4, iter, sink)
     }
 
     fn is_private_address_except_local_interface(&self, ip: &StdIpAddr) -> bool {
@@ -1488,11 +1553,16 @@ impl Firewall for StatefullFirewall {
         unwrap_lock_or_return!(self.whitelist.write()).vpn_peer = None;
     }
 
-    fn process_outbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
+    fn process_outbound_packet(
+        &self,
+        public_key: &[u8; 32],
+        buffer: &[u8],
+        sink: &mut dyn io::Write,
+    ) -> bool {
         match unwrap_option_or_return!(buffer.first(), false) >> 4 {
-            4 => self.process_outbound_ip_packet::<Ipv4Packet>(public_key, buffer),
+            4 => self.process_outbound_ip_packet::<Ipv4Packet>(public_key, buffer, sink),
             6 if self.allow_ipv6 => {
-                self.process_outbound_ip_packet::<Ipv6Packet>(public_key, buffer)
+                self.process_outbound_ip_packet::<Ipv6Packet>(public_key, buffer, sink)
             }
             version => {
                 telio_log_warn!("Unexpected IP version {version} for outbound packet");
@@ -1522,13 +1592,12 @@ impl Firewall for StatefullFirewall {
         &self,
         pubkey: &PublicKey,
         endpoint_ipv4: StdIpv4Addr,
-        sink4: &mut dyn io::Write,
-        _: &mut dyn io::Write,
+        sink: &mut dyn io::Write,
     ) -> io::Result<()> {
         telio_log_debug!("Constructing connetion reset packets");
 
-        self.reset_tcp_conns(pubkey, sink4)?;
-        self.reset_udp_conns(pubkey, endpoint_ipv4, sink4)?;
+        self.reset_tcp_conns(pubkey, sink)?;
+        self.reset_udp_conns(pubkey, endpoint_ipv4, sink)?;
 
         Ok(())
     }
@@ -1592,6 +1661,12 @@ pub mod tests {
                 StdIpAddr::V4(addr) => addr.into(),
                 StdIpAddr::V6(addr) => addr.into(),
             }
+        }
+    }
+
+    impl StatefullFirewall {
+        fn process_outbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
+            Firewall::process_outbound_packet(self, public_key, buffer, &mut &io::sink())
         }
     }
 
@@ -3601,11 +3676,11 @@ pub mod tests {
         ));
 
         #[derive(Default)]
-        struct Sink4 {
+        struct Sink {
             pkgs: Vec<Vec<u8>>,
         }
 
-        impl io::Write for Sink4 {
+        impl io::Write for Sink {
             fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
                 self.pkgs.push(buf.to_vec());
                 Ok(buf.len())
@@ -3616,17 +3691,12 @@ pub mod tests {
             }
         }
 
-        let mut sink4 = Sink4::default();
-        fw.reset_connections(
-            &PublicKey(peer),
-            StdIpv4Addr::new(10, 5, 0, 2),
-            &mut sink4,
-            &mut std::io::sink(),
-        ); // We do not test IPv6 yet
+        let mut sink = Sink::default();
+        fw.reset_connections(&PublicKey(peer), StdIpv4Addr::new(10, 5, 0, 2), &mut sink); // We do not test IPv6 yet
 
-        assert_eq!(sink4.pkgs.len(), 3); // 3 packets in random order (without the half opened outbound one)
+        assert_eq!(sink.pkgs.len(), 3); // 3 packets in random order (without the half opened outbound one)
 
-        let mut ippkgs: Vec<_> = sink4
+        let mut ippkgs: Vec<_> = sink
             .pkgs
             .iter()
             .map(|buf| Ipv4Packet::new(&buf).unwrap())
@@ -3691,11 +3761,11 @@ pub mod tests {
         assert!(fw.process_outbound_packet(&peer, &test_udppkg,));
 
         #[derive(Default)]
-        struct Sink4 {
+        struct Sink {
             pkgs: Vec<Vec<u8>>,
         }
 
-        impl io::Write for Sink4 {
+        impl io::Write for Sink {
             fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
                 self.pkgs.push(buf.to_vec());
                 Ok(buf.len())
@@ -3706,17 +3776,12 @@ pub mod tests {
             }
         }
 
-        let mut sink4 = Sink4::default();
-        fw.reset_connections(
-            &PublicKey(peer),
-            StdIpv4Addr::new(10, 5, 0, 2),
-            &mut sink4,
-            &mut std::io::sink(),
-        ); // We do not test IPv6 yet
+        let mut sink = Sink::default();
+        fw.reset_connections(&PublicKey(peer), StdIpv4Addr::new(10, 5, 0, 2), &mut sink); // We do not test IPv6 yet
 
-        assert_eq!(sink4.pkgs.len(), 1);
+        assert_eq!(sink.pkgs.len(), 1);
 
-        let ip = Ipv4Packet::new(&sink4.pkgs[0]).unwrap();
+        let ip = Ipv4Packet::new(&sink.pkgs[0]).unwrap();
 
         // Check common conditions
         assert_eq!(ip.get_version(), 4);

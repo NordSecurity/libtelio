@@ -150,8 +150,7 @@ impl LocalNameServer {
                         }
                     }
                     // DNS packets
-                    TunnResult::WriteToTunnelV4(packet, _)
-                    | TunnResult::WriteToTunnelV6(packet, _) => {
+                    TunnResult::WriteToTunnel(packet, _) => {
                         // !
                         let _lease = match semaphore.try_acquire() {
                             Ok(lease) => lease,

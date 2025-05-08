@@ -128,8 +128,7 @@ pub async fn fetch_keys(
             noise::TunnResult::Err(err) => {
                 return Err(format!("Failed to decapsulate PQ keys message: {err:?}").into())
             }
-            noise::TunnResult::WriteToTunnelV4(buf, _) => match parse_get_response(buf, local_port)
-            {
+            noise::TunnResult::WriteToTunnel(buf, _) => match parse_get_response(buf, local_port) {
                 Ok(cipehrtext) => break cipehrtext,
                 Err(err) => telio_log_warn!("Invalid PQ keys response: {err:?}"),
             },
