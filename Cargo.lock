@@ -451,6 +451,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "boot-time"
+version = "0.1.2"
+source = "git+https://github.com/NordSecurity/boot_time.git?rev=14f9a90d43a601ae50e69044894538c1398120a7#14f9a90d43a601ae50e69044894538c1398120a7"
+dependencies = [
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "bstr"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5112,6 +5121,7 @@ version = "0.1.0"
 dependencies = [
  "backtrace",
  "blake3",
+ "boot-time",
  "futures",
  "hashlink",
  "ipnet",

@@ -25,11 +25,11 @@ use telio_task::{
     Runtime, RuntimeExt, WaitResponse,
 };
 use telio_utils::{
-    get_ip_stack, interval_at, map_enum, telio_log_debug, telio_log_error, telio_log_trace,
-    telio_log_warn, IpStack,
+    get_ip_stack, interval_after, map_enum, reset_after, telio_log_debug, telio_log_error,
+    telio_log_trace, telio_log_warn, IpStack,
 };
 use telio_wg::uapi::PeerState;
-use tokio::time::{sleep, Duration, Instant, Interval, Sleep};
+use tokio::time::{sleep, Duration, Interval, Sleep};
 use uuid::Uuid;
 
 #[mockall_double::double]
@@ -382,8 +382,7 @@ impl Analytics {
         io: Io,
         aggregator: Arc<ConnectivityDataAggregator>,
     ) -> Self {
-        let far_future_from_now = Instant::now() + FAR_FUTURE;
-        let interval: Interval = interval_at(far_future_from_now, config.collect_interval);
+        let interval: Interval = interval_after(FAR_FUTURE, config.collect_interval);
 
         let mut config_nodes = HashMap::new();
         // Add self in config_nodes hashset
@@ -416,8 +415,10 @@ impl Analytics {
             derp_event_channel,
         }) = meshnet_entities
         {
-            let start_time = Instant::now() + self.config.initial_collect_interval;
-            self.task_interval.reset_at(start_time);
+            reset_after(
+                &mut self.task_interval,
+                self.config.initial_collect_interval,
+            );
 
             self.io.chan = Some(multiplexer);
             self.io.derp_event_channel = Some(derp_event_channel.subscribe());
@@ -569,15 +570,12 @@ impl Analytics {
             }
         }
 
-        // Check whether there are any responses to wait for
-        let collection_deadline = if requests_sent {
-            Instant::now() + self.config.collect_answer_timeout
+        let collection_offset = if requests_sent {
+            self.config.collect_answer_timeout
         } else {
-            Instant::now()
+            Duration::ZERO
         };
-
-        // Start collection timer before starting to aggregate the data
-        self.collect_period.as_mut().reset(collection_deadline);
+        reset_sleep(&mut self.collect_period, collection_offset);
 
         // Transition to the collection state
         self.state = RuntimeState::Collecting;
@@ -880,9 +878,7 @@ impl Analytics {
         }
 
         // Shamelessly stolen from tokio's far_future(), we set the timer to timeout in the far future, effectively pausing it until needed again
-        self.collect_period
-            .as_mut()
-            .reset(Instant::now() + FAR_FUTURE);
+        reset_sleep(&mut self.collect_period, FAR_FUTURE);
 
         // Transition back to the monitoring state afterwards
         self.state = RuntimeState::Monitoring;
@@ -1090,13 +1086,19 @@ impl Analytics {
     }
 }
 
+/// Resets the Sleep instance to a new deadline.
+pub fn reset_sleep(sleep: &mut std::pin::Pin<Box<Sleep>>, offset: Duration) {
+    #[allow(instant)]
+    sleep.as_mut().reset(tokio::time::Instant::now() + offset);
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use telio_model::{features::FeatureNurse, mesh::Node};
     use telio_sockets::{native::NativeSocket, Protector};
     use telio_task::{io::McChan, Task};
-    use telio_utils::sync::mpsc::Receiver;
+    use telio_utils::{sync::mpsc::Receiver, Instant};
     use tokio::time::{self, timeout};
 
     use crate::aggregator::{
@@ -1429,6 +1431,10 @@ mod tests {
         assert_eq!("vpn:7600617f9f9db5691a8c2768bd9d8110:2", external_links);
     }
 
+    fn reset_before(interval: &mut Interval, offset: Duration) {
+        interval.reset_at(time::Instant::now() - offset);
+    }
+
     #[tokio::test]
     // After a pause libtelio should send only one analytic even
     // if it missed more than one analytic interval.
@@ -1440,9 +1446,7 @@ mod tests {
         } = setup(Some(Duration::from_secs(5)), None);
 
         // Reset analytic timer 25s in the past
-        analytics
-            .task_interval
-            .reset_at(Instant::now() - Duration::from_secs(25));
+        reset_before(&mut analytics.task_interval, Duration::from_secs(25));
 
         // Set analytic collect interval 200 ms
         analytics.config.collect_answer_timeout = Duration::from_millis(200);

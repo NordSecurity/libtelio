@@ -5,13 +5,13 @@ use std::{
 };
 use thiserror::Error as ThisError;
 
-use crate::{interval, interval_at};
+use crate::{interval, interval_after};
 use futures::{
     future::BoxFuture,
     stream::{FuturesUnordered, StreamExt},
     FutureExt,
 };
-use tokio::time::{Duration, Instant, Interval};
+use tokio::time::{Duration, Interval};
 
 /// Possible [RepeatedAction] errors.
 #[derive(ThisError, Debug)]
@@ -91,8 +91,7 @@ where
         self.actions.get_mut(key).map_or_else(
             || Err(RepeatedActionError::RepeatedActionNotFound),
             |a| {
-                let interval = interval_at(Instant::now() + dur, dur);
-                a.0 = interval;
+                a.0 = interval_after(dur, dur);
                 Ok(())
             },
         )
@@ -137,6 +136,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Instant;
     use maplit::hashset;
     use telio_test::assert_elapsed;
     use tokio::time;

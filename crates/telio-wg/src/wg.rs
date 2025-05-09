@@ -14,12 +14,12 @@ use telio_model::{
 use telio_sockets::{NativeProtector, SocketPool};
 use telio_utils::{
     dual_target::{DualTarget, DualTargetError},
-    get_ip_stack, interval, interval_at, telio_err_with_log, telio_log_debug, telio_log_error,
+    get_ip_stack, interval, interval_after, telio_err_with_log, telio_log_debug, telio_log_error,
     telio_log_trace, telio_log_warn, IpStack,
 };
 use thiserror::Error as TError;
 use tokio::sync::watch;
-use tokio::time::{self, sleep, Instant, Interval, MissedTickBehavior};
+use tokio::time::{self, sleep, Interval, MissedTickBehavior};
 use wireguard_uapi::xplatform::set;
 
 use telio_crypto::{PublicKey, SecretKey};
@@ -131,7 +131,7 @@ pub const KEEPALIVE_PACKET_SIZE: u64 = 32;
 /// Default wireguard keepalive duration
 pub const WG_KEEPALIVE: Duration = Duration::from_secs(10);
 
-pub use telio_utils::bytes_and_timestamps::BytesAndTimestamps;
+pub use telio_utils::{BytesAndTimestamps, Instant};
 
 struct State {
     #[cfg(unix)]
@@ -840,8 +840,8 @@ impl State {
         let now = Instant::now();
         if reason == UpdateReason::Push {
             self.last_update = now;
-            self.interval = interval_at(
-                Instant::now() + self.polling_period_after_update,
+            self.interval = interval_after(
+                self.polling_period_after_update,
                 self.polling_period_after_update,
             );
         }
@@ -942,7 +942,7 @@ impl State {
                         tx_bytes,
                         rx_bytes,
                         peer_state,
-                        timestamp: tokio::time::Instant::now(),
+                        timestamp: Instant::now(),
                     };
                     if analytics_tx.send(Box::new(event)).is_err() {
                         telio_log_debug!("Failed to send analytics info for {:?}", pubkey);
@@ -1005,7 +1005,7 @@ impl Runtime for State {
         if self.interval.period() == self.polling_period_after_update
             && Instant::now() - self.last_update >= self.polling_period
         {
-            self.interval = interval_at(Instant::now() + self.polling_period, self.polling_period);
+            self.interval = interval_after(self.polling_period, self.polling_period);
         }
         let _ = self.interval.tick().await;
         Self::guard(self.sync())
@@ -1068,7 +1068,7 @@ pub mod tests {
                     rng.gen::<u32>().into(),
                     rng.gen(),
                 ))),
-                endpoint_changed_at: Some((tokio::time::Instant::now(), UpdateReason::Push)),
+                endpoint_changed_at: Some((Instant::now(), UpdateReason::Push)),
                 ip_addresses: vec![
                     IpAddr::V4(rng.gen::<u32>().into()),
                     IpAddr::V4(rng.gen::<u32>().into()),

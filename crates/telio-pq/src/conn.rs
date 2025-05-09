@@ -4,7 +4,7 @@ use tokio::task::JoinHandle;
 
 use telio_model::features::FeaturePostQuantumVPN;
 use telio_task::io::chan;
-use telio_utils::{telio_log_debug, telio_log_warn};
+use telio_utils::{reset_after, telio_log_debug, telio_log_warn};
 
 use crate::proto;
 
@@ -89,7 +89,7 @@ impl ConnKeyRotation {
                     }
                     Ok(Err(err)) => {
                         telio_log_warn!("Failed to perform PQ rekey: {err}");
-                        interval.reset_after(request_retry);
+                        reset_after(&mut interval, request_retry);
                     }
                     Err(_timeout) => {
                         telio_log_warn!(

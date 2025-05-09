@@ -6,7 +6,7 @@ use std::sync::Arc;
 use telio_model::constants::{VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
 
 use tokio::sync::mpsc;
-use tokio::time::{Duration, Instant, Interval};
+use tokio::time::{Duration, Interval};
 
 use telio_crypto::PublicKey;
 use telio_model::features::RttType;
@@ -15,7 +15,7 @@ use telio_wg::uapi::{AnalyticsEvent, PeerState};
 
 use telio_pinger::{DualPingResults, Pinger};
 use telio_sockets::SocketPool;
-use telio_utils::{interval, telio_log_debug, telio_log_trace, DualTarget, IpStack};
+use telio_utils::{interval, telio_log_debug, telio_log_trace, DualTarget, Instant, IpStack};
 
 use crate::{config::QoSConfig, data::MeshConfigUpdateEvent};
 
