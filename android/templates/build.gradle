@@ -55,12 +55,8 @@ android {
         targetCompatibility JavaVersion.VERSION_11
     }
 
-    lint {
-        baseline = file("lint-baseline.xml")
-    }
-
     lintOptions {
-        tasks.lint.enabled = false
+        abortOnError false
     }
 
     namespace 'com.nordsec.telio'
