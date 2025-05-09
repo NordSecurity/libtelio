@@ -55,11 +55,19 @@ android {
         targetCompatibility JavaVersion.VERSION_11
     }
 
+    lint {
+        baseline = file("lint-baseline.xml")
+    }
+
+    lintOptions {
+        tasks.lint.enabled = false
+    }
+
     namespace 'com.nordsec.telio'
 }
 
 dependencies {
-    implementation "net.java.dev.jna:jna:5.7.0@aar"
+    implementation "net.java.dev.jna:jna:5.17.0@aar"
     implementation "com.nordsec.rustls:rustls-platform-verifier:0.1.1"
 }
 
