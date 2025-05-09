@@ -31,7 +31,7 @@ def test_telio_features_builder_firewall():
     built = FeaturesDefaultsBuilder().build()
     built.firewall.exclude_private_ip_range = "1.2.3.4/10"
     built.firewall.outgoing_blacklist = [
-        FirewallBlacklistTuple(IpProtocol.UDP, "8.8.4.4", 30)
+        FirewallBlacklistTuple(protocol=IpProtocol.UDP, ip="8.8.4.4", port=30)
     ]
 
     json = """

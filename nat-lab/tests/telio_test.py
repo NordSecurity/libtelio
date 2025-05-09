@@ -172,7 +172,7 @@ class TestRuntime:
             conn_state=RelayState.CONNECTED,
         )
         event = Event.RELAY(server)
-        runtime.handle_event(event)
+        runtime.handle_event(event)  # type: ignore
 
         await runtime.notify_derp_state("1.1.1.1", [RelayState.CONNECTED])
 
@@ -189,7 +189,7 @@ class TestRuntime:
             is_vpn=True,
         )
         event = Event.NODE(node)
-        runtime.handle_event(event)
+        runtime.handle_event(event)  # type: ignore
 
         await runtime.notify_peer_state(
             "AAA", [NodeState.CONNECTED], [PathType.RELAY], is_exit=True, is_vpn=True

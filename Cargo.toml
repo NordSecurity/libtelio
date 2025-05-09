@@ -162,7 +162,7 @@ time = { version = "0.3", features = ["formatting"] }
 tokio = ">=1.22"
 tracing-subscriber = { version = "0.3", features = ["local-time", "env-filter"] }
 tracing-appender = "0.2"
-uniffi = { git = "https://github.com/NordSecurity/uniffi-rs.git", tag = "v0.3.1+v0.25.0" }
+uniffi = "0.28.3"
 url = "2.5"
 uuid = { version = "1.16", features = ["v4"] }
 winapi = { version = "0.3", features = ["netioapi", "ws2def"] }

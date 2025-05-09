@@ -98,7 +98,9 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
             raise RuntimeError("unsupported os")
 
         await client.wait_for_event_error(
-            ErrorEvent(ErrorLevel.CRITICAL, ErrorCode.UNKNOWN, "Interface gone")
+            ErrorEvent(
+                level=ErrorLevel.CRITICAL, code=ErrorCode.UNKNOWN, msg="Interface gone"
+            )
         )
 
         client.allow_errors([
