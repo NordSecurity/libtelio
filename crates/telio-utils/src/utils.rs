@@ -69,6 +69,21 @@ pub fn format_hex(bytes: &[u8]) -> String {
         .join(" ")
 }
 
+/// Allow dead code if the target_os is Windows
+#[macro_export]
+macro_rules! allow_dead_code_windows {
+    ($($item:item)*) => {
+        $(
+            #[cfg(target_os = "windows")]
+            #[allow(dead_code)]
+            $item
+
+            #[cfg(not(target_os = "windows"))]
+            $item
+        )*
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};

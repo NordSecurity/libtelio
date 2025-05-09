@@ -84,15 +84,6 @@ async def test_network_switcher(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-            ),
-            marks=[
-                pytest.mark.windows,
-            ],
-        ),
-        pytest.param(
-            SetupParameters(
                 connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
             ),
@@ -155,14 +146,6 @@ async def test_mesh_network_switch(
             SetupParameters(
                 connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                is_meshnet=False,
-            ),
-            marks=[pytest.mark.windows],
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 is_meshnet=False,
             ),
             marks=[pytest.mark.windows],
@@ -245,14 +228,6 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
             marks=[
                 pytest.mark.windows,
             ],
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-                features=features_with_endpoint_providers([EndpointProvider.STUN]),
-            ),
-            marks=pytest.mark.windows,
         ),
         pytest.param(
             SetupParameters(

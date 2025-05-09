@@ -77,18 +77,6 @@ from utils.router import IPProto, IPStack
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                ip_stack=IPStack.IPv4v6,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_WINDOWS_1,
-                    derp_1_limits=(1, 1),
-                ),
-            ),
-            marks=pytest.mark.windows,
-        ),
-        pytest.param(
-            SetupParameters(
                 connection_tag=ConnectionTag.VM_MAC,
                 ip_stack=IPStack.IPv4v6,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
@@ -225,13 +213,6 @@ async def test_mesh_exit_through_peer(
         pytest.param(
             ConnectionTag.VM_WINDOWS_1,
             TelioAdapterType.WINDOWS_NATIVE_TUN,
-            marks=[
-                pytest.mark.windows,
-            ],
-        ),
-        pytest.param(
-            ConnectionTag.VM_WINDOWS_1,
-            TelioAdapterType.WIREGUARD_GO_TUN,
             marks=[
                 pytest.mark.windows,
             ],
