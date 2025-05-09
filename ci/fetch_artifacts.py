@@ -5,6 +5,7 @@ import subprocess
 import requests
 import zipfile
 from datetime import datetime
+from utils import run_with_retry
 
 
 # This script is used to download the latest tagged build artifacts from the GitLab CI pipeline.
@@ -47,8 +48,13 @@ class ArtifactsDownloader:
 
     def _get_latest_tag(self):
         """Find the latest tag with the given prefix."""
-        subprocess.run(
-            ["git", "-C", self.repo_dir, "fetch", "--tags", "--quiet"], check=True
+        run_with_retry(
+            lambda: subprocess.run(
+                ["git", "-C", self.repo_dir, "fetch", "--tags", "--quiet"],
+                capture_output=True,
+                check=True,
+            ),
+            exceptions=(subprocess.CalledProcessError,),
         )
 
         tags = (
@@ -117,16 +123,21 @@ class ArtifactsDownloader:
             response_string = request.content.decode("utf-8")
             return response_string
 
-    def _get_artifacts(self, job, timeout=300, unzip=False):
+    def _get_artifacts(self, job, timeout=300):
         full_path = self.path_to_save + job["artifacts_file"]["filename"]
 
         print("Getting artficats for ", job["name"], ", filename: ", full_path)
 
-        r = requests.get(
-            self._get_remote_path() + "/jobs/" + str(job["id"]) + "/artifacts",
-            headers={"PRIVATE-TOKEN": self.token if self.token else ""},
-            timeout=timeout,
+        artifacts_url = (
+            self._get_remote_path() + "/jobs/" + str(job["id"]) + "/artifacts"
         )
+        headers = {"PRIVATE-TOKEN": self.token if self.token else ""}
+
+        r = run_with_retry(
+            lambda: requests.get(artifacts_url, headers=headers, timeout=timeout),
+            exceptions=(requests.RequestException,),
+        )
+
         with open(str(full_path), "wb") as f:
             f.write(r.content)
 
