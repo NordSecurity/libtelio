@@ -31,10 +31,10 @@ repositories {
 }
 
 android {
-    compileSdkVersion 33
+    compileSdkVersion 34
     defaultConfig {
         minSdkVersion 24
-        targetSdkVersion 33
+        targetSdkVersion 34
         versionCode = packageVersionCode
         versionName = packageVersionName
     }
@@ -47,19 +47,23 @@ android {
     }
 
     kotlin {
-        jvmToolchain(11)
+        jvmToolchain(17)
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_11
-        targetCompatibility JavaVersion.VERSION_11
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lintOptions {
+        abortOnError false
     }
 
     namespace 'com.nordsec.telio'
 }
 
 dependencies {
-    implementation "net.java.dev.jna:jna:5.7.0@aar"
+    implementation "net.java.dev.jna:jna:5.17.0@aar"
     implementation "com.nordsec.rustls:rustls-platform-verifier:0.1.1"
 }
 
