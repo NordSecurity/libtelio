@@ -198,7 +198,7 @@ enum LoginCmd {
 enum DevCmd {
     Start {
         /// Select adapter type to run
-        #[clap(value_parser = ["neptun", "wireguard-go", "wireguard-nt", "linux-native", ""], default_value ="")]
+        #[clap(value_parser = ["neptun", "wireguard-nt", "linux-native", ""], default_value ="")]
         adapter: String,
         /// Name of device
         #[clap(default_value = DEFAULT_TUNNEL_NAME)]
@@ -254,7 +254,7 @@ enum MeshCmd {
     /// Turn mesnet on
     On {
         name: String,
-        #[clap(value_parser = ["neptun", "wireguard-go", "wireguard-nt", "linux-native", ""], default_value ="")]
+        #[clap(value_parser = ["neptun", "wireguard-nt", "linux-native", ""], default_value ="")]
         adapter: String,
     },
     /// Set own meshnet ip address for the adapter
@@ -569,8 +569,7 @@ impl Cli {
                 let server = cli_try!(res; nord.find_server());
                 if !self.telio.is_running() {
                     let adapter = if cfg!(windows) {
-                        // TODO: Use "wireguard-nt" as default later
-                        "wireguard-go"
+                        "wireguard-nt"
                     } else {
                         "neptun"
                     };

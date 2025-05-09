@@ -345,12 +345,12 @@ class Client:
         self._router: Router = new_router(self._connection, self._node.ip_stack)
         # If the passed adapter_type is None, use the default for the given OS
         # At the time of writing this comment, that means:
-        #   Windows -> WireguardGo
+        #   Windows -> WindowsNativeWG
         #   All other platforms -> NepTUN
         if adapter_type is not None:
             self._adapter_type = adapter_type
         elif isinstance(self.get_router(), WindowsRouter):
-            self._adapter_type = TelioAdapterType.WIREGUARD_GO_TUN
+            self._adapter_type = TelioAdapterType.WINDOWS_NATIVE_TUN
         else:
             self._adapter_type = TelioAdapterType.NEP_TUN
         self._telio_features = telio_features

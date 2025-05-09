@@ -65,20 +65,6 @@ from utils.ping import ping
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_WINDOWS_1,
-                    derp_1_limits=(1, 1),
-                    vpn_1_limits=(1, 1),
-                ),
-            ),
-            marks=[
-                pytest.mark.windows,
-            ],
-        ),
-        pytest.param(
-            SetupParameters(
                 connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
@@ -176,20 +162,6 @@ async def test_mesh_plus_vpn_one_peer(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_WINDOWS_1,
-                    derp_1_limits=(1, 1),
-                    vpn_1_limits=(1, 1),
-                ),
-            ),
-            marks=[
-                pytest.mark.windows,
-            ],
-        ),
-        pytest.param(
-            SetupParameters(
                 connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
@@ -279,12 +251,6 @@ async def test_mesh_plus_vpn_both_peers(
         pytest.param(
             ConnectionTag.VM_WINDOWS_1,
             TelioAdapterType.WINDOWS_NATIVE_TUN,
-            "10.0.254.7",
-            marks=pytest.mark.windows,
-        ),
-        pytest.param(
-            ConnectionTag.VM_WINDOWS_1,
-            TelioAdapterType.WIREGUARD_GO_TUN,
             "10.0.254.7",
             marks=pytest.mark.windows,
         ),
@@ -419,23 +385,6 @@ async def test_vpn_plus_mesh(
             SetupParameters(
                 connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_WINDOWS_1,
-                    derp_1_limits=(1, 1),
-                    vpn_1_limits=(1, 1),
-                ),
-                features=features_with_endpoint_providers(
-                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
-                ),
-            ),
-            marks=[
-                pytest.mark.windows,
-            ],
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.VM_WINDOWS_1,
                     derp_1_limits=(1, 1),
@@ -589,23 +538,6 @@ async def test_vpn_plus_mesh_over_direct(
                 ),
             ),
             marks=pytest.mark.windows,
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_WINDOWS_1,
-                    derp_1_limits=(1, 1),
-                    vpn_1_limits=(1, 1),
-                ),
-                features=features_with_endpoint_providers(
-                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
-                ),
-            ),
-            marks=[
-                pytest.mark.windows,
-            ],
         ),
         pytest.param(
             SetupParameters(

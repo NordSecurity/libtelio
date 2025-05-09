@@ -107,9 +107,6 @@ members = [
 	"crates/*",
 	"clis/*",
 ]
-exclude = [
-	"wireguard-go-rust-wrapper"
-]
 
 [workspace.dependencies]
 anyhow = "1"
