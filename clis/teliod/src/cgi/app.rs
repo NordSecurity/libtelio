@@ -13,10 +13,6 @@ pub struct AppState {
     pub running: bool,
     pub config: TeliodDaemonConfig,
     pub status: Option<TelioStatusReport>,
-
-    // TODO: if error occur durring upade_config, this should collect it
-    // and add info to the generated form
-    pub errors: HashMap<String, String>,
 }
 
 impl AppState {
@@ -26,7 +22,6 @@ impl AppState {
             running: is_teliod_running(),
             config: get_local_or_default_config(),
             status: get_status_report().ok(),
-            errors: HashMap::new(),
         }
     }
 }
