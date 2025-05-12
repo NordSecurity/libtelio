@@ -1,5 +1,6 @@
 import asyncio
 import pytest
+import time
 from config import LIBTELIO_BINARY_PATH_DOCKER
 from contextlib import AsyncExitStack
 from datetime import datetime
@@ -11,7 +12,6 @@ TELIOD_EXEC_PATH = f"{LIBTELIO_BINARY_PATH_DOCKER}/teliod"
 CONFIG_FILE_PATH = "/etc/teliod/config.json"
 SOCKET_FILE_PATH = "/run/teliod.sock"
 STDOUT_FILE_PATH = "/var/log/teliod_stdout.log"
-STDERR_FILE_PATH = "/var/log/teliod_error.log"
 # Build a dated log filename
 LOG_FILE_PATH = f"/var/log/teliod_natlab.log.{datetime.today().strftime('%Y-%m-%d')}"
 
@@ -41,6 +41,14 @@ async def is_teliod_running(connection):
         return False
 
 
+async def wait_for_teliod(connection, timeout: float):
+    start_time = time.monotonic()
+    while not await is_teliod_running(connection):
+        if time.monotonic() - start_time > timeout:
+            raise TimeoutError("teliod did not start within timeout")
+        await asyncio.sleep(0.1)
+
+
 @pytest.mark.parametrize(
     "start_daemon_params",
     [(TELIOD_START_PARAMS), (TELIOD_START_NODETACH_PARAMS)],
@@ -58,8 +66,7 @@ async def test_teliod(start_daemon_params) -> None:
         )
 
         # Let the daemon start
-        while not await is_teliod_running(connection):
-            await asyncio.sleep(0.1)
+        await wait_for_teliod(connection, timeout=1)
 
         with pytest.raises(ProcessExecError) as err:
             await connection.create_process(start_daemon_params).execute()
@@ -108,8 +115,7 @@ async def test_teliod_quit(start_daemon_params) -> None:
         )
 
         # Let the daemon start
-        while not await is_teliod_running(connection):
-            await asyncio.sleep(0.1)
+        await wait_for_teliod(connection, timeout=1)
 
         # Run the is-alive command
         assert (
@@ -143,11 +149,11 @@ async def test_teliod_logs() -> None:
 
         # Delete any old logs
         await connection.create_process(
-            ["rm", "-f", STDOUT_FILE_PATH, STDERR_FILE_PATH, LOG_FILE_PATH]
+            ["rm", "-f", STDOUT_FILE_PATH, LOG_FILE_PATH]
         ).execute()
 
         # Make sure they are indeed deleted
-        for path in [STDOUT_FILE_PATH, STDERR_FILE_PATH, LOG_FILE_PATH]:
+        for path in [STDOUT_FILE_PATH, LOG_FILE_PATH]:
             await connection.create_process(["test", "!", "-f", path]).execute()
 
         # Run teliod
@@ -156,8 +162,7 @@ async def test_teliod_logs() -> None:
         )
 
         # Let the daemon start
-        while not await is_teliod_running(connection):
-            await asyncio.sleep(0.1)
+        await wait_for_teliod(connection, timeout=1)
 
         # Run the is-alive command
         assert (
@@ -177,6 +182,15 @@ async def test_teliod_logs() -> None:
 
         assert not await is_teliod_running(connection)
 
-        # Check if log files exist
-        for path in [STDOUT_FILE_PATH, STDERR_FILE_PATH, LOG_FILE_PATH]:
-            await connection.create_process(["test", "-f", path]).execute()
+        # expected substrings for each log file
+        expected_log_contents = {
+            STDOUT_FILE_PATH: "started with config",
+            LOG_FILE_PATH: "telio::device",
+        }
+
+        # Check if log files exist and are not empty
+        for path, expected_string in expected_log_contents.items():
+            await connection.create_process(["test", "-s", path]).execute()
+            await connection.create_process(
+                ["grep", "-q", expected_string, path]
+            ).execute()

@@ -2,13 +2,11 @@
 
 use clap::Parser;
 use daemonize::{Daemonize, Outcome};
-use logging::setup_logging;
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
 use std::{
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     net::IpAddr,
-    path::PathBuf,
 };
 use telio::{device::Error as DeviceError, telio_model::mesh::Node};
 use thiserror::Error as ThisError;
@@ -233,7 +231,7 @@ async fn tokio_main(cmd: Cmd) -> Result<(), TeliodError> {
         #[cfg(feature = "cgi")]
         Cmd::Cgi => {
             #[cfg(debug_assertions)]
-            let _tracing_worker_guard = setup_logging(
+            let _tracing_worker_guard = logging::setup_logging(
                 cgi::constants::CGI_LOG,
                 tracing::level_filters::LevelFilter::TRACE,
                 7,
