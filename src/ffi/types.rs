@@ -49,8 +49,6 @@ pub enum TelioAdapterType {
     BoringTun,
     /// Linux in-kernel WireGuard implementation
     LinuxNativeTun,
-    /// WireguardGo implementation
-    WireguardGoTun,
     /// WindowsNativeWireguardNt implementation
     WindowsNativeTun,
 }
@@ -118,7 +116,6 @@ impl From<&DevError> for TelioError {
 map_enum! {
     AdapterType -> TelioAdapterType,
     NepTUN = BoringTun,
-    WireguardGo = WireguardGoTun,
     LinuxNativeWg = LinuxNativeTun,
     WindowsNativeWg = WindowsNativeTun
 }
@@ -127,7 +124,6 @@ map_enum! {
     TelioAdapterType -> AdapterType,
     NepTUN = NepTUN,
     BoringTun = NepTUN,
-    WireguardGoTun = WireguardGo,
     LinuxNativeTun = LinuxNativeWg,
     WindowsNativeTun = WindowsNativeWg
 }

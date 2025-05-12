@@ -499,10 +499,12 @@ impl Display for Response {
     }
 }
 
+#[cfg(any(not(windows), test))]
 pub(super) fn response_from_str(string: &str) -> Result<Response, Error> {
     response_from_read(string.as_bytes())
 }
 
+#[cfg(any(not(windows), test))]
 fn response_from_read<R: Read>(reader: R) -> Result<Response, Error> {
     let mut reader = BufReader::new(reader);
     let mut interface = Interface::default();
@@ -590,6 +592,7 @@ fn response_from_read<R: Read>(reader: R) -> Result<Response, Error> {
     })
 }
 
+#[cfg(any(not(windows), test))]
 fn parse_peer<R: Read>(
     public_key: PublicKey,
     reader: &mut BufReader<R>,
@@ -722,16 +725,6 @@ mod tests {
     use pretty_assertions::assert_eq;
     use proptest::prelude::*;
 
-    trait PeerHelp {
-        fn peer_map(self) -> BTreeMap<PublicKey, Peer>;
-    }
-
-    impl PeerHelp for Vec<Peer> {
-        fn peer_map(self) -> BTreeMap<PublicKey, Peer> {
-            self.into_iter().map(|p| (p.public_key, p)).collect()
-        }
-    }
-
     #[test]
     fn bytes_data_overflow() -> Result<(), Error> {
         let sk1 = SecretKey::gen();
@@ -784,7 +777,7 @@ errno=0
             errno: 0,
             interface: Some(Interface::default()),
         };
-        assert_eq!(response_from_str(&resp_str), Ok(resp));
+        assert_eq!(response_from_str(resp_str), Ok(resp));
     }
 
     #[test]

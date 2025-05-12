@@ -29,16 +29,15 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
                     [
                         SetupParameters(
                             connection_tag=conn_tag,
-                            adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
+                            adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                         )
                     ],
                 )
             )
 
             conn, *_ = [conn.connection for conn in env.connections]
-
             assert (
-                "Wintun"
+                "WireGuard"
                 in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
             )
 
@@ -51,12 +50,12 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
     # Check if libtelio left hanging wintun adapter, might now always happen, so we just leave test
     async with new_connection_by_tag(conn_tag) as conn:
         if (
-            "Wintun"
+            "WireGuard"
             not in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
         ):
             return
 
-    # Try to start libtelio and see if it properly cleans up oprhaned wintun adapter and starts normaly
+    # Try to start libtelio and see if it properly cleans up orphaned wintun adapter and starts normaly
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
             setup_environment(
@@ -64,7 +63,7 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
                 [
                     SetupParameters(
                         connection_tag=conn_tag,
-                        adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
+                        adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                     )
                 ],
             )
@@ -73,5 +72,7 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
         conn, *_ = [conn.connection for conn in env.connections]
         client, *_ = env.clients
 
-        assert "Wintun" in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
+        assert (
+            "WireGuard" in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
+        )
         assert "Removed orphaned adapter" in client.get_stderr()

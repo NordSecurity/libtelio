@@ -49,17 +49,6 @@ from utils.ping import ping
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_WINDOWS_1,
-                    derp_1_limits=(1, 1),
-                ),
-            ),
-            marks=pytest.mark.windows,
-        ),
-        pytest.param(
-            SetupParameters(
                 connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
