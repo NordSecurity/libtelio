@@ -2,8 +2,11 @@
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
+import warnings
+from packaging import version
 from typing import List
 
 # isort: off
@@ -33,6 +36,8 @@ def run_command_with_output(command, hide_output=False):
 
 
 def start():
+    check_docker_version_compatibility()
+
     original_port_mapping = 'ports: ["58001"]'
     disabled_port_mapping = "ports: []"
     with open("docker-compose.yml", "r", encoding="utf-8") as file:
@@ -118,6 +123,39 @@ def find_container(service: str, docker_status: List[str]) -> bool:
             return True
 
     return False
+
+
+def check_docker_version_compatibility():
+    docker_version = version.parse(get_docker_version())
+
+    with open("docker-compose.yml", "r", encoding="utf-8") as compose_file:
+        compose_content = compose_file.read()
+    if docker_version < version.parse("28.0") and "nat-unprotected" in compose_content:
+        warnings.warn(
+            f"Nat-lab uses 'unprotected nat' bridge mode which require Docker >= v28.0 (detected: v{docker_version})"
+        )
+
+        compose_content = compose_content.replace("nat-unprotected", "nat")
+        shutil.copy("docker-compose.yml", "docker-compose.yml.bak")
+        with open("docker-compose.yml", "w", encoding="utf-8") as compose_file:
+            compose_file.write(compose_content)
+
+        print("Docker compose backup file created: ./docker-compose.yml.bak")
+        print("Changed to 'nat' bridge gateway mode")
+
+
+def get_docker_version():
+    try:
+        result = subprocess.run(
+            ["docker", "version", "--format", "{{.Server.Version}}"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError:
+        print("Error: Docker is not installed or not running.")
+        sys.exit(1)
+    return result.stdout.strip()
 
 
 def main():
