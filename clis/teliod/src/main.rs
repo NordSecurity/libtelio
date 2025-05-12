@@ -142,12 +142,6 @@ fn main() -> Result<(), TeliodError> {
         // leaving tokio runtime in an undefined state and resulting in a panic.
         // https://github.com/tokio-rs/tokio/issues/4301
         if !opts.no_detach {
-            // Fix relative config path before changing daemons working directory
-            let config_path = PathBuf::from(&opts.config_path);
-            if config_path.is_relative() {
-                opts.config_path = config_path.canonicalize()?.to_string_lossy().to_string();
-            }
-
             // Redirect stdout and stderr to files in /var/log
             let log_path = PathBuf::from("/var/log");
             let stdout = File::create(log_path.join("teliod_stdout.log"))?;
