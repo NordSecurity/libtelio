@@ -1,7 +1,6 @@
 //! Main and implementation of config and commands for Teliod - simple telio daemon for Linux and OpenWRT
 
 use clap::Parser;
-use comms::get_wd_path;
 use daemonize::{Daemonize, Outcome};
 use logging::setup_logging;
 use serde::{Deserialize, Serialize};
@@ -148,7 +147,6 @@ fn main() -> Result<(), TeliodError> {
             let stderr = File::create(log_path.join("teliod_error.log"))?;
             let daemon = Daemonize::new()
                 .umask(DEFAULT_UMASK)
-                .working_directory(get_wd_path()?)
                 .stdout(stdout)
                 .stderr(stderr);
 

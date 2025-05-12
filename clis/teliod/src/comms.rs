@@ -24,13 +24,23 @@ pub struct DaemonSocket {
 }
 
 impl DaemonSocket {
-    /// Returns the path to the Teliod socket
+    /// Returns the path to the Teliod socket, when available it uses `/run/`, then
+    /// checks `/var/run` and if none of them is available it returns an error.
     ///
     /// # Returns
     ///
     /// A path to the Teliod socket wrapped inside result
     pub fn get_ipc_socket_path() -> Result<PathBuf> {
-        Ok(get_wd_path()?.join("teliod.sock"))
+        if Path::new("/run").exists() {
+            Ok(PathBuf::from("/run/teliod.sock"))
+        } else if Path::new("/var/run/").exists() {
+            Ok(PathBuf::from("/var/run/teliod.sock"))
+        } else {
+            Err(Error::new(
+                ErrorKind::NotFound,
+                "Neither /run/ nor /var/run/ exists",
+            ))
+        }
     }
 
     /// Binds the IPC socket to the specified address and returns a handle to the struct
@@ -157,24 +167,4 @@ impl DaemonConnection {
 
         Ok(())
     }
-}
-
-/// Helper function for getting the path to the daemon's working directory.
-/// when available it uses `/run`, or `/var/run`
-/// if none of them is available returns an error.
-///
-/// # Returns
-///
-/// Result containing the path of the daemons work directory.
-pub fn get_wd_path() -> Result<PathBuf> {
-    Ok(if Path::new("/run").exists() {
-        PathBuf::from("/run")
-    } else if Path::new("/var/run").exists() {
-        PathBuf::from("/var/run")
-    } else {
-        return Err(Error::new(
-            ErrorKind::NotFound,
-            "Neither /run nor /var/run exists",
-        ));
-    })
 }
