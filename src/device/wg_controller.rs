@@ -1853,6 +1853,7 @@ mod tests {
                         None
                     },
                     hide_user_data: false,
+                    hide_thread_id: false,
                     derp: None,
                     validate_keys: Default::default(),
                     ipv6: true,

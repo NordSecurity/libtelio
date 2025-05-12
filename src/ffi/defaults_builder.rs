@@ -21,6 +21,7 @@ impl FeaturesDefaultsBuilder {
             direct: None,
             is_test_env: None,
             hide_user_data: true,
+            hide_thread_id: true,
             // All inner values of derp are None's or false's
             // and as it does not actualy control derp
             // builder part is not added

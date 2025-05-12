@@ -29,6 +29,7 @@ static DROPPED_LOGS: AtomicUsize = AtomicUsize::new(0);
 static DROPPED_LOGS_LAST_CHECKED_VALUE: AtomicUsize = AtomicUsize::new(0);
 pub static LOGGER_STOPPER: LoggerStopper = LoggerStopper::new();
 pub static TIMESTAMPS_IN_LOGS: AtomicBool = AtomicBool::new(false);
+pub static HIDE_THREAD_ID_IN_LOGS: AtomicBool = AtomicBool::new(true);
 
 pub struct LoggerStopper {
     sender: parking_lot::Mutex<Option<SyncSender<LogMessage>>>,
@@ -114,14 +115,15 @@ where
         mut writer: fmt::format::Writer<'_>,
         event: &tracing::Event<'_>,
     ) -> std::fmt::Result {
-        let tid = std::thread::current().id();
         let meta = event.metadata();
-        write!(
-            writer,
-            "{tid:?} {:?}:{} ",
-            meta.module_path().unwrap_or("<unknown module>"),
-            meta.line().unwrap_or(0),
-        )?;
+        let line = meta.line().unwrap_or(0);
+        let module_path = meta.module_path().unwrap_or("<unknown module>");
+        if HIDE_THREAD_ID_IN_LOGS.load(std::sync::atomic::Ordering::Relaxed) {
+            write!(writer, "{module_path}:{line} ",)?;
+        } else {
+            let tid = std::thread::current().id();
+            write!(writer, "{tid:?} {module_path}:{line} ",)?;
+        }
 
         ctx.format_fields(writer.by_ref(), event)?;
 
@@ -335,21 +337,20 @@ mod test {
             ); // +4
         };
         let mpath = module_path!();
-        let tid = std::thread::current().id();
         let expected: [_; EXPECTED_SIZE] = [
             (TelioLogLevel::Debug, START_ASYNC_LOGGER_MSG.to_owned()),
             (
                 TelioLogLevel::Debug,
-                format!("{tid:?} {:?}:{} second message", mpath, start + 2),
+                format!("{}:{} second message", mpath, start + 2),
             ),
             (
                 TelioLogLevel::Info,
-                format!("{tid:?} {:?}:{} third\nmutiline\nmessage", mpath, start + 3),
+                format!("{}:{} third\nmutiline\nmessage", mpath, start + 3),
             ),
             (
                 TelioLogLevel::Warning,
                 format!(
-                    "{tid:?} {:?}:{} fourth message with info n=2 extra=\"extra info\"",
+                    "{}:{} fourth message with info n=2 extra=\"extra info\"",
                     mpath,
                     start + 4
                 ),
@@ -389,21 +390,20 @@ mod test {
             ); // +4
         };
         let mpath = module_path!();
-        let tid = std::thread::current().id();
         let expected: [_; EXPECTED_SIZE] = [
             (TelioLogLevel::Debug, START_ASYNC_LOGGER_MSG.to_owned()),
             (
                 TelioLogLevel::Debug,
-                format!("{tid:?} {:?}:{} second message", mpath, start + 2),
+                format!("{}:{} second message", mpath, start + 2),
             ),
             (
                 TelioLogLevel::Info,
-                format!("{tid:?} {:?}:{} third\nmutiline\nmessage", mpath, start + 3),
+                format!("{}:{} third\nmutiline\nmessage", mpath, start + 3),
             ),
             (
                 TelioLogLevel::Warning,
                 format!(
-                    "{tid:?} {:?}:{} fourth message with info n=2 extra=\"extra info\"",
+                    "{}:{} fourth message with info n=2 extra=\"extra info\"",
                     mpath,
                     start + 4
                 ),

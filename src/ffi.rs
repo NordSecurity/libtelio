@@ -20,7 +20,9 @@ use std::{
     time::Duration,
 };
 
-use self::{logging::LOGGER_STOPPER, logging::TIMESTAMPS_IN_LOGS, types::*};
+use self::{
+    logging::HIDE_THREAD_ID_IN_LOGS, logging::LOGGER_STOPPER, logging::TIMESTAMPS_IN_LOGS, types::*,
+};
 use crate::device::{Device, DeviceConfig, Result as DevResult};
 use telio_model::{
     config::{Config, ConfigParseError},
@@ -85,6 +87,11 @@ pub fn unset_global_logger() {
 /// When enabled host application doesn't need to add timestamps in the logging callback.
 pub fn add_timestamps_to_logs() {
     TIMESTAMPS_IN_LOGS.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Control if thread IDs should be shown in the logs
+pub fn hide_thread_id_in_logs(hide: bool) {
+    HIDE_THREAD_ID_IN_LOGS.store(hide, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Get default recommended adapter type for platform.
