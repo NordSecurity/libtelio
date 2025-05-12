@@ -6,7 +6,7 @@ use logging::setup_logging;
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
 use std::{
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     net::IpAddr,
     path::PathBuf,
 };
@@ -141,14 +141,19 @@ fn main() -> Result<(), TeliodError> {
         // leaving tokio runtime in an undefined state and resulting in a panic.
         // https://github.com/tokio-rs/tokio/issues/4301
         if !opts.no_detach {
-            // Redirect stdout and stderr to files in /var/log
-            let log_path = PathBuf::from("/var/log");
-            let stdout = File::create(log_path.join("teliod_stdout.log"))?;
-            let stderr = File::create(log_path.join("teliod_error.log"))?;
+            // Redirect stdout and stderr to file in /var/log/teliod_stdout.log
+            let log_file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open("/var/log/teliod_stdout.log")?;
+
+            // daemon chroot path is set to `/`
+            // any relative path operations from now on could fail
             let daemon = Daemonize::new()
                 .umask(DEFAULT_UMASK)
-                .stdout(stdout)
-                .stderr(stderr);
+                .stdout(log_file.try_clone()?)
+                .stderr(log_file);
 
             // Daemonize the process
             match daemon.execute() {
