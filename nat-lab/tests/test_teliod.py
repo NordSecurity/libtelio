@@ -11,7 +11,7 @@ from utils.process.process import ProcessExecError
 TELIOD_EXEC_PATH = f"{LIBTELIO_BINARY_PATH_DOCKER}/teliod"
 CONFIG_FILE_PATH = "/etc/teliod/config.json"
 SOCKET_FILE_PATH = "/run/teliod.sock"
-STDOUT_FILE_PATH = "/var/log/teliod_stdout.log"
+STDOUT_FILE_PATH = "/var/log/teliod.log"
 # Build a dated log filename
 LOG_FILE_PATH = f"/var/log/teliod_natlab.log.{datetime.today().strftime('%Y-%m-%d')}"
 
@@ -184,7 +184,7 @@ async def test_teliod_logs() -> None:
 
         # expected substrings for each log file
         expected_log_contents = {
-            STDOUT_FILE_PATH: "started with config",
+            STDOUT_FILE_PATH: "task started",
             LOG_FILE_PATH: "telio::device",
         }
 

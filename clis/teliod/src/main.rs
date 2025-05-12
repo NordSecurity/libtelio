@@ -139,12 +139,12 @@ fn main() -> Result<(), TeliodError> {
         // leaving tokio runtime in an undefined state and resulting in a panic.
         // https://github.com/tokio-rs/tokio/issues/4301
         if !opts.no_detach {
-            // Redirect stdout and stderr to file in /var/log/teliod_stdout.log
+            // Redirect stdout and stderr to file in /var/log/teliod.log
             let log_file = OpenOptions::new()
                 .create(true)
                 .write(true)
                 .truncate(true)
-                .open("/var/log/teliod_stdout.log")?;
+                .open("/var/log/teliod.log")?;
 
             // daemon chroot path is set to `/`
             // any relative path operations from now on could fail
@@ -173,17 +173,17 @@ fn main() -> Result<(), TeliodError> {
             }
         }
     }
-    tokio_main(cmd)
+    async_main(cmd)
 }
 
 #[tokio::main]
-async fn tokio_main(cmd: Cmd) -> Result<(), TeliodError> {
+async fn async_main(cmd: Cmd) -> Result<(), TeliodError> {
     match cmd {
         Cmd::Start(opts) => {
             let file = fs::File::open(&opts.config_path)?;
             let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
 
-            let _tracing_worker_guard = setup_logging(
+            let _tracing_worker_guard = logging::setup_logging(
                 &config.log_file_path,
                 config.log_level,
                 config.log_file_count,
