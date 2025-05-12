@@ -2673,7 +2673,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "0.6.0"
-source = "git+https://github.com/NordSecurity/neptun.git?branch=LLT-5850_break_tx_into_tasks#5fa3642ad97ea243d3fbd27291c0cda2f615a691"
+source = "git+https://github.com/NordSecurity/neptun.git?branch=LLT-5850_break_tx_into_tasks#f85740e48a0d85c6a2bd81b6acfe1aa3a356398d"
 dependencies = [
  "aead",
  "base64 0.13.1",
