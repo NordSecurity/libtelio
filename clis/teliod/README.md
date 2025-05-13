@@ -36,6 +36,9 @@ There is a command for running the daemon:
       - `manual` - do not configure interfaces automatically
       - `ifconfig` - systems using ifconfig command
       - `iproute` - systems using iproute2 command
+  - `vpn`
+    - `server_endpoint` - The endpoint (ip:port) of the server/endpoint to connect to 
+    - `server_pubkey` - The public key of the server/peer to connect to
 
 And following cli commands:
 
