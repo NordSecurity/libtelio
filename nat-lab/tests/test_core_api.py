@@ -108,15 +108,19 @@ async def clean_up_machines(connection, api_url):
         )
 
 
+# this key is only used for testing
+linux_vm_public_key = "IMk1XXVnlPngn1qQ4Xp27oGMVj9rfqb7lvCvNYVDTCE="
 linux_vm = MachineData(
-    public_key="linux-vm-public-key",
+    public_key=linux_vm_public_key,
     hardware_identifier="linux-vm-hardware-identifier",
     os="linux",
     os_version="Ubuntu 22.04; kernel=5.15.0-78-generic",
 )
 
+# this key is only used for testing
+windows_vm_public_key = "5qTlXKYQUtlcOevUvb4+ldjZjnY0t6EZXJLM5iTx5gk="
 windows_vm = MachineData(
-    public_key="windows-vm-public-key",
+    public_key=windows_vm_public_key,
     hardware_identifier="linux-vm-hardware-identifier",
     os="windows",
     os_version="Windows 11; kernel=10.0.22621.2283",

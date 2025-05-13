@@ -213,7 +213,7 @@ class API:
     def __init__(self) -> None:
         self.nodes = {}
 
-    def register(
+    def register(  # pylint: disable=dangerous-default-value
         self,
         name: str,
         node_id: str,
@@ -221,6 +221,7 @@ class API:
         public_key: str,
         is_local=False,
         ip_stack: IPStack = IPStack.IPv4,
+        ip_addresses: Optional[List[str]] = None,
     ) -> Node:
         if node_id in self.nodes:
             raise DuplicateNodeError(node_id)
@@ -233,6 +234,8 @@ class API:
         node.is_local = is_local
         node.hostname = name + ".nord"
         node.ip_stack = ip_stack
+        if ip_addresses is not None:
+            node.ip_addresses = ip_addresses
 
         self.nodes[node_id] = node
         return node

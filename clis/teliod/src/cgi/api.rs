@@ -387,7 +387,7 @@ fn get_logs(
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, num::NonZeroU64, path::PathBuf};
+    use std::{fs, num::NonZeroU64, path::PathBuf, sync::Arc};
 
     use reqwest::StatusCode;
     use serial_test::serial;
@@ -415,11 +415,14 @@ mod tests {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
-            authentication_token:
+            vpn: None,
+            authentication_token: Arc::new(
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_owned()
                     .into(),
+            ),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
+            device_identity_file_path: None,
             mqtt: MqttConfig {
                 backoff_initial: NonZeroU64::new(5).unwrap(),
                 backoff_maximal: NonZeroU64::new(600).unwrap(),
@@ -456,10 +459,11 @@ mod tests {
         expected_config.log_level = LevelFilter::INFO;
         expected_config.log_file_path = "/new/path/to/log".to_owned();
         expected_config.log_file_count = 8;
-        expected_config.authentication_token =
+        expected_config.authentication_token = Arc::new(
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
                 .to_owned()
-                .into();
+                .into(),
+        );
         expected_config.interface = InterfaceConfig {
             name: "eth1".to_owned(),
             config_provider: InterfaceConfigurationProvider::Ifconfig,
@@ -509,11 +513,14 @@ mod tests {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
-            authentication_token:
+            vpn: None,
+            authentication_token: Arc::new(
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_owned()
                     .into(),
+            ),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
+            device_identity_file_path: None,
             mqtt: MqttConfig::default(),
         };
         let initial_config = r#"
@@ -559,10 +566,11 @@ mod tests {
                 .unwrap();
         assert_eq!(updated_config, expected_config);
 
-        expected_config.authentication_token =
+        expected_config.authentication_token = Arc::new(
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
                 .to_owned()
-                .into();
+                .into(),
+        );
         let update_body = r#"
         {
             "authentication_token": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
