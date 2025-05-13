@@ -64,3 +64,7 @@ pub mod backtrace;
 /// Types needed by to recover internal WG timers state
 pub mod bytes_and_timestamps;
 pub use bytes_and_timestamps::*;
+
+/// suspend-aware replacement for {std,tokio}::time::Instant
+pub mod instant;
+pub use instant::*;

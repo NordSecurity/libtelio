@@ -9,11 +9,8 @@ use telio_crypto::{smaller_key_in_meshnet_canonical_order, PublicKey};
 use telio_model::features::EndpointProvider;
 use telio_proto::{Decision, Session, UpgradeDecisionMsg, UpgradeMsg};
 use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::{interval, telio_log_debug, telio_log_info, telio_log_warn, LruCache};
-use tokio::{
-    sync::mpsc::error::SendError,
-    time::{Instant, Interval},
-};
+use telio_utils::{interval, telio_log_debug, telio_log_info, telio_log_warn, Instant, LruCache};
+use tokio::{sync::mpsc::error::SendError, time::Interval};
 
 use crate::cross_ping_check::UpgradeController;
 

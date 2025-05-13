@@ -15,7 +15,7 @@ use std::{
 };
 use telio_sockets::{SocketBufSizes, SocketPool, TcpParams};
 use telio_task::io::Chan;
-use telio_utils::{interval_at, telio_log_debug, telio_log_warn};
+use telio_utils::{interval_after, telio_log_debug, telio_log_warn};
 use webpki_roots::TLS_SERVER_ROOTS;
 
 use crate::{Config, DerpKeepaliveConfig};
@@ -222,7 +222,7 @@ async fn connect_and_start<RW: AsyncRead + AsyncWrite + Send + 'static>(
         join_receiver: tokio::spawn(async move {
             start_write(writer, receiver_relayed, receiver_direct, addr).await
         }),
-        poll_timer: { interval_at(tokio::time::Instant::now() + poll_interval, poll_interval) },
+        poll_timer: { interval_after(poll_interval, poll_interval) },
     })
 }
 
@@ -311,7 +311,7 @@ mod tests {
     use hyper::server::conn::http1;
     use hyper::service::service_fn;
     use hyper::{
-        body::{Body, Bytes, Incoming},
+        body::{Bytes, Incoming},
         Request, Response,
     };
     use hyper_util::rt::TokioIo;

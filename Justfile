@@ -29,7 +29,7 @@ clippy: _clippy-install
 
 # Run udeps
 udeps: _udeps-install
-    cargo +{{ nightly }} udeps --workspace --locked --output human --backend depinfo
+    cargo +{{ nightly }} udeps --workspace --locked --output human --backend depinfo --release
 
 # Run unused features
 unused: _unused-install

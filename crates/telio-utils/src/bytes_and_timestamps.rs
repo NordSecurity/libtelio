@@ -13,7 +13,7 @@ pub const WG_KEEPALIVE: Duration = Duration::from_secs(10);
 #[cfg(kani)]
 type Instant = kani_instant::Instant;
 #[cfg(not(kani))]
-type Instant = tokio::time::Instant;
+type Instant = crate::Instant;
 
 #[derive(Copy, Clone, Debug)]
 /// A structure to hold the bytes and timestamps for received and transmitted data.

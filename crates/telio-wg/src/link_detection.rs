@@ -6,7 +6,6 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use tokio::time::Instant;
 
 use telio_crypto::PublicKey;
 use telio_model::{
@@ -17,7 +16,7 @@ use telio_sockets::SocketPool;
 use telio_task::io::{chan, Chan};
 use telio_utils::{
     get_ip_stack, telio_err_with_log, telio_log_debug, telio_log_error, telio_log_trace,
-    telio_log_warn, IpStack,
+    telio_log_warn, Instant, IpStack,
 };
 
 use crate::{
