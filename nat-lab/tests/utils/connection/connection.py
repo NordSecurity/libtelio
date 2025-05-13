@@ -130,7 +130,7 @@ async def setup_ephemeral_ports(connection: Connection):
     async def on_output(output: str) -> None:
         log.debug("[%s]: %s", connection.tag.name, output)
 
-    start_port = random.randint(5000, 55000)
+    start_port = random.randint(15000, 55000)
     num_ports = random.randint(2000, 5000)
 
     if connection.tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
