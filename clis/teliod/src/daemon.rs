@@ -3,6 +3,7 @@ use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use nix::sys::signal::Signal;
 use signal_hook_tokio::Signals;
 use std::{net::IpAddr, sync::Arc};
+use telio::telio_utils::Hidden;
 use telio::{
     crypto::SecretKey,
     device::{Device, DeviceConfig, Error as DeviceError},
@@ -14,7 +15,6 @@ use telio::{
 use tokio::{sync::mpsc, sync::mpsc::Sender, sync::oneshot, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 
-use crate::Hidden;
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
@@ -188,7 +188,7 @@ async fn daemon_init(
     // on when we have proper integration tests with core API.
     // This is to not look for tokens in a test environment right now as the values
     // are dummy and program will not run as it expects real tokens.
-    let identity = Arc::new(if !(*config.authentication_token).eq(EMPTY_TOKEN) {
+    let identity = Arc::new(if *config.authentication_token != EMPTY_TOKEN {
         init_with_api(&config.authentication_token).await?
     } else {
         DeviceIdentity::default()

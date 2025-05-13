@@ -139,7 +139,7 @@ impl LinuxNativeWg {
                                 .collect(),
                         );
 
-                    dev_peer.preshared_key = peer.preshared_key.as_ref();
+                    dev_peer.preshared_key = peer.preshared_key.as_deref();
                     dev_peer.endpoint = peer.endpoint.as_ref();
                     dev_peer.persistent_keepalive_interval = peer.persistent_keepalive_interval;
 
@@ -148,7 +148,7 @@ impl LinuxNativeWg {
                 .collect(),
         );
 
-        dev.private_key = device.private_key.as_ref();
+        dev.private_key = device.private_key.as_deref();
         dev.listen_port = device.listen_port;
         dev.fwmark = device.fwmark;
 

@@ -288,7 +288,6 @@ mod tests {
         cgi::constants::TELIOD_CFG,
         config::{InterfaceConfig, MqttConfig, Percentage},
         configure_interface::InterfaceConfigurationProvider,
-        Hidden,
     };
 
     #[test]
@@ -303,9 +302,10 @@ mod tests {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
-            authentication_token: Hidden(
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
-            ),
+            authentication_token:
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .to_owned()
+                    .into(),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
             mqtt: MqttConfig {
                 backoff_initial: NonZeroU64::new(5).unwrap(),
@@ -344,7 +344,9 @@ mod tests {
         expected_config.log_file_path = "/new/path/to/log".to_owned();
         expected_config.log_file_count = 8;
         expected_config.authentication_token =
-            Hidden("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned());
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                .to_owned()
+                .into();
         expected_config.interface = InterfaceConfig {
             name: "eth1".to_owned(),
             config_provider: InterfaceConfigurationProvider::Ifconfig,
@@ -394,9 +396,10 @@ mod tests {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
-            authentication_token: Hidden(
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
-            ),
+            authentication_token:
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .to_owned()
+                    .into(),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
             mqtt: MqttConfig::default(),
         };
@@ -444,7 +447,9 @@ mod tests {
         assert_eq!(updated_config, expected_config);
 
         expected_config.authentication_token =
-            Hidden("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned());
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                .to_owned()
+                .into();
         let update_body = r#"
         {
             "authentication_token": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

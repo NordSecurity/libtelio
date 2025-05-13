@@ -5,7 +5,7 @@ use daemonize::{Daemonize, Outcome};
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
 use std::{fs::OpenOptions, net::IpAddr};
-use telio::{device::Error as DeviceError, telio_model::mesh::Node, telio_utils::Hidden};
+use telio::{device::Error as DeviceError, telio_model::mesh::Node};
 use thiserror::Error as ThisError;
 use tokio::{
     task::JoinError,

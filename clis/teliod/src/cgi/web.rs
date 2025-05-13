@@ -9,12 +9,12 @@ use rust_cgi::{
     Response,
 };
 use telio::telio_model::mesh::{Node, NodeState};
+use telio::telio_utils::hidden::Hidden;
 use tracing::{info, level_filters::LevelFilter, warn, Level};
 
 use crate::{
     cgi::constants::TELIOD_CFG,
     config::{InterfaceConfig, TeliodDaemonConfigPartial},
-    Hidden,
 };
 
 use super::{
