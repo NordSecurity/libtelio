@@ -2,7 +2,10 @@ use futures::stream::StreamExt;
 use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use nix::sys::signal::Signal;
 use signal_hook_tokio::Signals;
+use std::net::SocketAddr;
 use std::{net::IpAddr, sync::Arc};
+use telio::crypto::PublicKey;
+use telio::telio_model::mesh::{ExitNode, NodeState};
 use telio::telio_utils::Hidden;
 use telio::{
     crypto::SecretKey,
@@ -15,9 +18,10 @@ use telio::{
 use tokio::{sync::mpsc, sync::mpsc::Sender, sync::oneshot, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 
+use crate::config::VpnConfig;
+use crate::ClientCmd;
 use crate::{
     command_listener::CommandListener,
-    comms::DaemonSocket,
     config::DeviceIdentity,
     config::{InterfaceConfig, TeliodDaemonConfig},
     core_api::{get_meshmap as get_meshmap_from_server, init_with_api},
@@ -33,6 +37,8 @@ pub enum TelioTaskCmd {
     GetStatus(oneshot::Sender<TelioStatusReport>),
     // Configure the system interface
     SetIp(IpAddr),
+    // Connect to exit node with IP and public key
+    ConnectToExitNode(SocketAddr, PublicKey),
     // Break the receive loop to quit the daemon and exit gracefully
     Quit,
 }
@@ -82,6 +88,7 @@ fn telio_task(
             &interface_config.name,
             adapter.to_owned(),
         )?;
+        _ = sys_config.initialize(&interface_config.name);
         task_retrieve_meshmap(node_identity, auth_token, tx_channel.clone());
 
         while let Some(cmd) = rx_channel.blocking_recv() {
@@ -123,8 +130,44 @@ fn telio_task(
                         _ = sys_config.set_ip(&interface_config.name, &new_ip_address);
                     }
                 }
+                TelioTaskCmd::ConnectToExitNode(ip, pubkey) => {
+                    let node = ExitNode {
+                        identifier: uuid::Uuid::new_v4().to_string(),
+                        public_key: pubkey,
+                        allowed_ips: None,
+                        endpoint: Some(ip),
+                    };
+                    match telio.connect_exit_node(&node) {
+                        Ok(_) => {
+                            _ = sys_config.set_exit_routes(&interface_config.name, &ip.ip());
+
+                            // Wait for VPN to actually be connected before handing control back to the event loop
+                            loop {
+                                let is_connected = telio
+                                    .external_nodes()
+                                    .ok()
+                                    .and_then(|nodes| {
+                                        nodes
+                                            .iter()
+                                            .find(|n| n.public_key == node.public_key)
+                                            .map(|n| n.state == NodeState::Connected)
+                                    })
+                                    .unwrap_or(false);
+                                if is_connected {
+                                    debug!("Successfully connected to VPN");
+                                    break;
+                                }
+                                std::thread::sleep(Duration::from_millis(100));
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to connect to VPN with error: {e:?}");
+                        }
+                    }
+                }
                 TelioTaskCmd::Quit => {
                     telio.stop();
+                    let _ = sys_config.cleanup_exit_routes();
                     break;
                 }
             }
@@ -236,6 +279,21 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
             &config.adapter_type,
         )
     });
+
+    #[allow(mpsc_blocking_send)]
+    if let Some(VpnConfig {
+        server_endpoint,
+        server_pubkey,
+    }) = &config.vpn
+    {
+        _ = telio_tx
+            .send(TelioTaskCmd::ConnectToExitNode(
+                *server_endpoint,
+                *server_pubkey,
+            ))
+            .await
+            .inspect_err(|e| error!("Failed to send connect to exit node event: {e:?}"));
+    }
 
     info!("Entering event loop");
     loop {
