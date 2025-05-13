@@ -138,6 +138,7 @@ class Runtime:
         while True:
             peer = self.get_peer_info(public_key)
             if peer and peer.link_state == state:
+                print(f"matched: {peer.link_state} == {state}")
                 return
             await asyncio.sleep(0.1)
 

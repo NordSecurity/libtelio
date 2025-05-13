@@ -1,7 +1,8 @@
 import asyncio
 import pytest
-from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_mesh_nodes
+from contextlib import AsyncExitStack, asynccontextmanager
+from helpers import SetupParameters, setup_mesh_nodes, setup_api
+from telio import Client
 from typing import List, Tuple
 from utils.bindings import (
     default_features,
@@ -10,18 +11,27 @@ from utils.bindings import (
     FeaturePersistentKeepalive,
     FeaturePolling,
     LinkState,
+    RelayState,
+    NodeState,
+    PathType,
     TelioAdapterType,
 )
-from utils.connection import Connection, ConnectionTag
-from utils.ping import ping
+from utils.connection import Connection, ConnectionTag, TargetOS
+from utils.connection_util import new_connection_manager_by_tag, set_nic_state
+from utils.logger import log
+from utils.ping import ping, Ping
 
-RTT_SECONDS = 1
-PING_TIMEOUT = 3
+MAX_RTT_ALLOWED_S = 1
+PING_TIMEOUT_S = 3
+WG_PASSIVE_KEEPALIVE_S = 10
 # The interval at which link-state events are emitted.
 # Determined by WG-PASSIVE_KEEPALIVE + RTT delay
-LINK_STATE_INTERVAL = 10 + RTT_SECONDS
+LINK_STATE_INTERVAL_S = WG_PASSIVE_KEEPALIVE_S + MAX_RTT_ALLOWED_S
 # The time by which we otherwise would expect to emit at least one link-state event.
-IDLE_TIMEOUT = 2 * LINK_STATE_INTERVAL
+# Enhanced detection has a delay interval which is equal to LINK_STATE_INTERVAL, in cases
+# where the ED is enabled, we can have a reasonable expectation of:
+# 2*LINK_STATE_INTERVAL < link-state event < 3*LINK_STATE_INTERVAL
+IDLE_TIMEOUT_S = 3 * LINK_STATE_INTERVAL_S
 
 
 def long_persistent_keepalive_periods() -> FeatureWireguard:
@@ -49,7 +59,7 @@ def _generate_setup_parameter_pair(
 
     features = default_features(enable_link_detection=True)
     features.link_detection = FeatureLinkDetection(
-        rtt_seconds=RTT_SECONDS, no_of_pings=count, use_for_downgrade=False
+        rtt_seconds=MAX_RTT_ALLOWED_S, no_of_pings=count, use_for_downgrade=False
     )
     features.wireguard = long_persistent_keepalive_periods()
 
@@ -179,7 +189,7 @@ async def test_event_link_state_peers_idle_all_time(
                         )
                     ),
                 ],
-                timeout=IDLE_TIMEOUT,
+                timeout=IDLE_TIMEOUT_S,
             )
 
 
@@ -242,7 +252,7 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
                         )
                     ),
                 ],
-                timeout=IDLE_TIMEOUT,
+                timeout=IDLE_TIMEOUT_S,
             )
 
         await ping(connection_alpha, beta.ip_addresses[0])
@@ -302,7 +312,7 @@ async def test_event_link_state_peer_goes_offline(
 
         # Expect the link to still be UP for the fist 10 + RTT seconds
         results = await asyncio.gather(
-            ping(connection_alpha, beta.ip_addresses[0], PING_TIMEOUT),
+            ping(connection_alpha, beta.ip_addresses[0], PING_TIMEOUT_S),
             client_alpha.wait_for_link_state(
                 beta.public_key, LinkState.DOWN, LINK_STATE_INTERVAL
             ),
@@ -404,8 +414,7 @@ async def test_event_link_state_peer_doesnt_respond(
 
         async with ICMP_control(connection_beta):
             with pytest.raises(asyncio.TimeoutError):
-                await ping(connection_alpha, beta.ip_addresses[0], PING_TIMEOUT)
-
+                await ping(connection_alpha, beta.ip_addresses[0], PING_TIMEOUT_S)
             # Wait enough to pass 10 second mark since our ping request, which should trigger passive-keepalive by wireguard
             # + rtt delay for enhanced detection mode
             with pytest.raises(asyncio.TimeoutError):
@@ -422,5 +431,122 @@ async def test_event_link_state_peer_doesnt_respond(
                             )
                         ),
                     ],
-                    timeout=IDLE_TIMEOUT,
+                    timeout=IDLE_TIMEOUT_S,
                 )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "setup_params, alpha_secondary_ifc_name",
+    [
+        pytest.param(
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
+                    (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
+                ],
+                False,
+            ),
+            "eth1",
+        ),
+        pytest.param(
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
+                    (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
+                ],
+                True,
+            ),
+            "eth1",
+        ),
+        pytest.param(
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+                    (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
+                ],
+                False,
+            ),
+            "Ethernet Instance 0 3",
+            marks=pytest.mark.windows,
+            id="VM_WINDOWS_1-WINDOWSNATIVETUN-CONE_CLIENT_1-NEPTUN-1",
+        ),
+        pytest.param(
+            _generate_setup_parameter_pair(
+                [
+                    (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+                    (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
+                ],
+                True,
+            ),
+            "Ethernet Instance 0 2",
+            marks=pytest.mark.windows,
+            id="VM_WINDOWS_1-WINDOWSNATIVETUN-CONE_CLIENT_1-NEPTUN-2",
+        ),
+    ],
+)
+async def test_event_link_detection_after_disabling_ethernet_adapter(
+    setup_params: List[SetupParameters],
+    alpha_secondary_ifc_name: str,
+) -> None:
+    @asynccontextmanager
+    async def toggle_adapter(conn: Connection, ifc_name: str, enable: bool) -> None:
+        await set_nic_state(conn, ifc_name, enable)
+        try:
+            yield
+        finally:
+            await set_nic_state(conn, ifc_name, not enable)
+
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        alpha, beta = env.nodes
+        client_alpha, client_beta = env.clients
+        conn_mgr_alpha, connection_alpha = (
+            env.connections[0],
+            env.connections[0].connection,
+        )
+
+        # Switch to secondary network interface so that we can disable it while
+        # keeping the container/VM connection alive through the primary interface.
+        await conn_mgr_alpha.network_switcher.switch_to_secondary_network()
+        await client_alpha.notify_network_change()
+
+        # We can think that after this ping beta node will have tx_ts > rx_ts (ICMP reply),
+        # however due to the granularity of the update rate (=WG polling period) it's not guaranteed
+        # and most of the times will be tx_ts == rx_ts.
+        #
+        # See comment below about the link state assertion on Beta.
+        await ping(connection_alpha, beta.ip_addresses[0])
+
+        # Disable secondary ethernet interface (in use for meshnet)
+        await exit_stack.enter_async_context(
+            toggle_adapter(connection_alpha, alpha_secondary_ifc_name, False)
+        )
+
+        # log.info("Adapter disabled, sleeping 1 minute before pinging..")
+        # await asyncio.sleep(60)
+
+        # alpha client sends icmp request and doesn't gets reply back, this will cause tx_ts > rx_ts
+        with pytest.raises(asyncio.TimeoutError):
+            await ping(connection_alpha, beta.ip_addresses[0], PING_TIMEOUT_S),
+        log.info("Ping timed out..")
+
+        # On some implementations (eg: WireguardNT) TX packet counter doesn't increase when the adapter is
+        # disabled, which means link state detection might fail.
+        await client_alpha.wait_for_link_state(
+            beta.public_key, LinkState.DOWN, IDLE_TIMEOUT_S
+        ),
+        assert client_alpha.get_link_state_events(beta.public_key) == [
+            LinkState.DOWN,
+            LinkState.UP,
+            LinkState.DOWN,
+        ]
+        # We cannot ensure the link state on Beta client at this stage (due to the rx/ts timestamps update rate),
+        # for that we would have to wait for the handshake to happen (keepalive timeout (10s) + rekey timeout (5s)),
+        # so that tx_ts > rx_ts, plus the LINK_STATE_INTERVAL to detect that the link state is down.
+        # Alternatively we could ping alpha after disabling its interface which will make tx_ts > rx_ts.
+        #
+        # assert client_beta.get_link_state_events(alpha.public_key) == [
+        #     LinkState.DOWN,
+        #     LinkState.UP,
+        # ]
