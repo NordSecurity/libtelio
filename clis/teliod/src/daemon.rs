@@ -2,7 +2,10 @@ use futures::stream::StreamExt;
 use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use nix::sys::signal::Signal;
 use signal_hook_tokio::Signals;
+use std::net::SocketAddr;
 use std::{net::IpAddr, sync::Arc};
+use telio::crypto::PublicKey;
+use telio::telio_model::mesh::ExitNode;
 use telio::{
     crypto::SecretKey,
     device::{Device, DeviceConfig, Error as DeviceError},
@@ -15,6 +18,7 @@ use tokio::sync::mpsc::Sender;
 use tokio::{sync::mpsc, sync::oneshot, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 
+use crate::config::VpnConfig;
 use crate::core_api::{get_meshmap as get_meshmap_from_server, init_with_api};
 use crate::logging::setup_logging;
 use crate::ClientCmd;
@@ -35,6 +39,8 @@ pub enum TelioTaskCmd {
     GetStatus(oneshot::Sender<TelioStatusReport>),
     // Configure the system interface
     SetIp(IpAddr),
+    // Connect to exit node with IP and public key
+    ConnectToExitNode(SocketAddr, PublicKey),
     // Break the receive loop to quit the daemon and exit gracefully
     Quit,
 }
@@ -121,6 +127,23 @@ fn telio_task(
                     if state.interface_ip_address != Some(new_ip_address) {
                         state.interface_ip_address = Some(new_ip_address);
                         _ = sys_config.set_ip(&interface_config.name, &new_ip_address);
+                    }
+                }
+                TelioTaskCmd::ConnectToExitNode(ip, pubkey) => {
+                    let node = ExitNode {
+                        identifier: uuid::Uuid::new_v4().to_string(),
+                        public_key: pubkey,
+                        allowed_ips: None,
+                        endpoint: Some(ip),
+                    };
+                    match telio.connect_exit_node(&node) {
+                        Ok(_) => {
+                            debug!("Successfully connected to VPN");
+                            _ = sys_config.set_exit_routes(&interface_config.name, &ip.ip())
+                        }
+                        Err(e) => {
+                            error!("Failed to connect to VPN with error: {e:?}");
+                        }
                     }
                 }
                 TelioTaskCmd::Quit => {
@@ -241,6 +264,17 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
             &config.interface,
         )
     });
+
+    if let Some(VpnConfig {
+        server_ip: ip,
+        server_pubkey: pubkey,
+    }) = &config.vpn
+    {
+        telio_tx
+            .send(TelioTaskCmd::ConnectToExitNode(*ip, *pubkey))
+            .await
+            .unwrap();
+    }
 
     info!("Entering event loop");
     eprintln!("Daemon started");
