@@ -28,6 +28,7 @@ socket2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
+zeroize = { version = "1.8.1", features = ["derive"] }
 
 [dev-dependencies]
 lru_time_cache = { version = "0.11.11", features = ["sn_fake_clock"] }

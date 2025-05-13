@@ -118,7 +118,7 @@ async fn main() -> Result<(), TeliodError> {
                 if let Ok(token) = std::env::var("NORD_TOKEN") {
                     debug!("Overriding token from env");
                     if token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) {
-                        config.authentication_token = token;
+                        config.authentication_token = token.into();
                     } else {
                         error!("Token from env not valid")
                     }
