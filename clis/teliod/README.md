@@ -26,6 +26,10 @@ There is a command for running the daemon:
 - `teliod start <path_to_config_file>` - starts the daemon.
   - `--no-detach` - run the teliod in the foreground as a regular process,
   without detaching from the terminal.
+  - `--stdout_path` - Redirect standard output to the specified file,
+  Defaults to "/var/log/teliod.log", ignored when used with `--no-detach`
+  - `--working_directory` - Specifies the daemons working directory,
+  Defaults to "/", ignored when used with `--no-detach`
 
 The config file should be provided in a JSON format
 (see `example_teliod_config.json` file).

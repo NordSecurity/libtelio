@@ -4,17 +4,13 @@ use clap::Parser;
 use daemonize::{Daemonize, Outcome};
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
-use std::{
-    fs::{self, OpenOptions},
-    net::IpAddr,
-};
+use std::{fs::OpenOptions, net::IpAddr};
 use telio::{device::Error as DeviceError, telio_model::mesh::Node};
 use thiserror::Error as ThisError;
 use tokio::{
     task::JoinError,
     time::{timeout, Duration},
 };
-use tracing::{debug, warn};
 use tracing_appender::rolling::InitError;
 
 #[cfg(feature = "cgi")]
@@ -72,6 +68,19 @@ struct DaemonOpts {
     /// Do not detach the teliod process from the terminal
     #[clap(long = "no-detach")]
     no_detach: bool,
+
+    /// Specifies the daemons working directory.
+    ///
+    /// Defaults to "/".
+    /// Ignored with no_detach flag.
+    #[clap(long = "working_directory")]
+    working_directory: Option<String>,
+    /// Redirect standard output to the specified file
+    ///
+    /// Defaults to "/var/log/teliod.log".
+    /// Ignored with no_detach flag.
+    #[clap(long = "stdout_path")]
+    stdout_path: Option<String>,
 }
 
 #[derive(Debug, ThisError)]
@@ -133,25 +142,39 @@ fn main() -> Result<(), TeliodError> {
             return Err(TeliodError::DaemonIsRunning);
         }
 
+        // Parse config file
+        let config = TeliodDaemonConfig::from_file(&opts.config_path)?;
+        println!("Starting daemon");
+
         // Fork the process before starting Tokio runtime.
         // Tokio creates a multi-threaded asynchronous runtime,
         // but during forking only a single thread survives,
         // leaving tokio runtime in an undefined state and resulting in a panic.
         // https://github.com/tokio-rs/tokio/issues/4301
         if !opts.no_detach {
-            // Redirect stdout and stderr to file in /var/log/teliod.log
-            let log_file = OpenOptions::new()
+            // Redirect stdout and stderr to a specified file or /var/log/teliod.log by default
+            let stdout_path = match &opts.stdout_path {
+                Some(path) => path.as_str(),
+                None => "/var/log/teliod.log",
+            };
+
+            let stdout_log_file = OpenOptions::new()
                 .create(true)
                 .write(true)
                 .truncate(true)
-                .open("/var/log/teliod.log")?;
+                .open(stdout_path)?;
 
-            // daemon chroot path is set to `/`
+            // Daemon working directory is set to `/` by default
             // any relative path operations from now on could fail
-            let daemon = Daemonize::new()
+            let mut daemon = Daemonize::new()
                 .umask(DEFAULT_UMASK)
-                .stdout(log_file.try_clone()?)
-                .stderr(log_file);
+                .stdout(stdout_log_file.try_clone()?)
+                .stderr(stdout_log_file);
+
+            // Optionally set the daemons working directory to a specified path
+            if let Some(working_directory) = &opts.working_directory {
+                daemon = daemon.working_directory(working_directory);
+            }
 
             // Daemonize the process
             match daemon.execute() {
@@ -172,17 +195,11 @@ fn main() -> Result<(), TeliodError> {
                 }
             }
         }
-    }
-    async_main(cmd)
-}
 
-#[tokio::main]
-async fn async_main(cmd: Cmd) -> Result<(), TeliodError> {
-    match cmd {
-        Cmd::Start(opts) => {
-            let file = fs::File::open(&opts.config_path)?;
-            let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
-
+        // Run the daemon event loop
+        let rt = tokio::runtime::Runtime::new()?;
+        rt.block_on(async {
+            // Setup daemon logging
             let _tracing_worker_guard = logging::setup_logging(
                 &config.log_file_path,
                 config.log_level,
@@ -190,16 +207,16 @@ async fn async_main(cmd: Cmd) -> Result<(), TeliodError> {
             )
             .await?;
 
-            if let Ok(token) = std::env::var("NORD_TOKEN") {
-                debug!("Overriding token from env");
-                if token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) {
-                    config.authentication_token = token;
-                } else {
-                    warn!("Token from env not valid")
-                }
-            }
             Box::pin(daemon::daemon_event_loop(config)).await
-        }
+        })
+    } else {
+        client_main(cmd)
+    }
+}
+
+#[tokio::main]
+async fn client_main(cmd: Cmd) -> Result<(), TeliodError> {
+    match cmd {
         Cmd::Client(cmd) => {
             let socket_path = DaemonSocket::get_ipc_socket_path()?;
             if socket_path.exists() {
@@ -244,5 +261,7 @@ async fn async_main(cmd: Cmd) -> Result<(), TeliodError> {
             .await?;
             Ok(())
         }
+        // Unexpected command, Cmd::Start should be handled by main
+        _ => Err(TeliodError::InvalidCommand(format!("{:?}", cmd))),
     }
 }
