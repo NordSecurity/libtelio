@@ -173,7 +173,7 @@ class ArtifactsDownloader:
                 and self.target_arch is not None
                 and self.target_arch in job["name"]
             ):
-                self._get_artifacts(job, unzip=True)
+                self._get_artifacts(job)
                 job_found = True
 
         if not job_found:
