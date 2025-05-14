@@ -88,6 +88,7 @@ fn telio_task(
             node_identity.private_key.clone(),
             &interface_config.name,
         )?;
+        let _ = sys_config.initialize(&interface_config.name);
         task_retrieve_meshmap(node_identity, auth_token, tx_channel.clone());
 
         while let Some(cmd) = rx_channel.blocking_recv() {
@@ -139,7 +140,7 @@ fn telio_task(
                     match telio.connect_exit_node(&node) {
                         Ok(_) => {
                             debug!("Successfully connected to VPN");
-                            _ = sys_config.set_exit_routes(&interface_config.name, &ip.ip())
+                            let _ = sys_config.set_exit_routes(&interface_config.name, &ip.ip());
                         }
                         Err(e) => {
                             error!("Failed to connect to VPN with error: {e:?}");
@@ -147,6 +148,7 @@ fn telio_task(
                     }
                 }
                 TelioTaskCmd::Quit => {
+                    // TODO(mathiaspeters): remove VPN route
                     telio.stop();
                     break;
                 }
