@@ -1,10 +1,10 @@
 import logging
 
-LOG_LEVEL = logging.INFO
+LOG_LEVEL = logging.DEBUG
 
 
 class Logger:
-    def __init__(self, level=logging.INFO):
+    def __init__(self, level=logging.DEBUG):
         self.logger = logging.getLogger("natlab-logger")
 
         if not self.logger.hasHandlers():
