@@ -84,17 +84,23 @@ pub fn handle_web_ui(request: &CgiRequest) -> Option<Response> {
             let mut app = AppState::collect();
             update_config(&mut app, request);
 
+            let mut err_msg: Option<String> = None;
+
             if !app.running {
                 let res = start_daemon();
-                warn!(
-                    "start: {}",
-                    std::str::from_utf8(res.body()).unwrap_or_default()
-                )
+                warn!("start: {} -> {}", res.0, res.1);
+                if !res.0.is_success() {
+                    err_msg = Some(res.1);
+                }
             } else {
-                stop_daemon();
+                let res = stop_daemon();
+                warn!("stop: {} -> {}", res.0, res.1);
+                if !res.0.is_success() {
+                    err_msg = Some(res.1);
+                }
             };
 
-            render(view(&AppState::collect()))
+            render(view(&AppState::collect(), err_msg))
         }
         (&Method::GET, route) => {
             let (mime, data) = ASSETS.get(route)?;
@@ -122,15 +128,15 @@ fn index(base_ref: String) -> Markup {
                 script src="static/telio.js" {}
             }
             body class="bg-neutral-100 dark:bg-neutral-1000  py-10 flex items-top justify-start justify-center min-h-screen gap-3" {
-                (view(&AppState::collect()))
+                (view(&AppState::collect(), None))
             }
         }
     }
 }
 
-fn view(app: &AppState) -> Markup {
+fn view(app: &AppState, error: Option<String>) -> Markup {
     html! {
-        (config_view(app))
+        (config_view(app, error))
 
         @if app.running {
             (meshnet(app))
@@ -197,7 +203,7 @@ fn update_config(app: &mut AppState, request: &CgiRequest) {
     }
 }
 
-fn config_view(app: &AppState) -> Markup {
+fn config_view(app: &AppState, error: Option<String>) -> Markup {
     let log_options = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
     let curr_level = app
         .config
@@ -269,6 +275,17 @@ fn config_view(app: &AppState) -> Markup {
                             }
                         }
                     }
+                }
+            }
+
+            // Error message if needed
+            @if let Some(error) = error {
+                div class="rounded-sm flex items-center p-4 mb-4 text-critical border border-critical rounded-xs bg-critical-subtle" role="alert" {
+                    svg class="w-4 h-4 mr-2 text-critical" width="16" height="18" viewBox="0 0 16 18" fill="none" xmlns="http://www.w3.org/2000/svg" {
+                      path d="M14.2576 13.0249L8.92513 3.9249C8.72013 3.5749 8.36013 3.3999 8.00013 3.3999C7.64013 3.3999 7.28013 3.5749 7.05263 3.9249L1.72264 13.0249C1.33539 13.7224 1.84641 14.5999 2.66864 14.5999H13.3336C14.1526 14.5999 14.6651 13.7249 14.2576 13.0249ZM2.91464 13.3999L7.97763 4.7199L13.0851 13.3999H2.91464ZM8.00013 11.0274C7.56613 11.0274 7.21413 11.3794 7.21413 11.8134C7.21413 12.2474 7.56688 12.5994 8.00113 12.5994C8.43538 12.5994 8.78613 12.2474 8.78613 11.8134C8.78513 11.3799 8.43513 11.0274 8.00013 11.0274ZM7.40013 7.1999V9.5999C7.40013 9.9324 7.67013 10.1999 8.00013 10.1999C8.33013 10.1999 8.60013 9.93115 8.60013 9.5999V7.1999C8.60013 6.8699 8.33263 6.5999 8.00013 6.5999C7.66763 6.5999 7.40013 6.8699 7.40013 7.1999Z" fill="#9E1C10" {}
+                    }
+
+                    span class="body-xs-medium" {({error})}
                 }
             }
         }
