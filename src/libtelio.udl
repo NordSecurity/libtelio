@@ -545,8 +545,10 @@ dictionary Features {
     FeatureDirect? direct;
     /// Should only be set for macos sideload
     boolean? is_test_env;
-    /// Controll if IP addresses and domains should be hidden in logs
+    /// Control if IP addresses and domains should be hidden in logs
     boolean hide_user_data;
+    /// Control if thread IDs should be shown in the logs
+    boolean hide_thread_id;
     /// Derp server specific configuration
     FeatureDerp? derp;
     /// Flag to specify if keys should be validated

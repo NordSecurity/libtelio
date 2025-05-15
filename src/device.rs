@@ -104,7 +104,10 @@ pub use wg::{
 #[cfg(test)]
 use wg::tests::AdapterExpectation;
 
-use crate::logging::{logs_dropped_since_last_checked, logs_dropped_until_now, LOG_CENSOR};
+use crate::{
+    hide_thread_id_in_logs,
+    logging::{logs_dropped_since_last_checked, logs_dropped_until_now, LOG_CENSOR},
+};
 
 #[derive(Debug, TError)]
 pub enum Error {
@@ -473,6 +476,7 @@ impl Device {
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
         LOG_CENSOR.set_enabled(features.hide_user_data);
+        hide_thread_id_in_logs(features.hide_thread_id);
 
         let version_tag = version_tag();
         let commit_sha = commit_sha();
