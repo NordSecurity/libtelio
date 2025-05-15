@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use telio::{crypto::SecretKey, device::AdapterType};
 
-use crate::configure_interface::InterfaceConfigurationProvider;
+use crate::{configure_interface::InterfaceConfigurationProvider, TeliodError};
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
 #[repr(transparent)]
@@ -143,6 +143,33 @@ impl TeliodDaemonConfig {
         if let Some(mqtt) = update.mqtt {
             self.mqtt = mqtt;
         }
+    }
+
+    /// Construct a TeliodDaemonConfig by deserializing a file at given path
+    pub fn from_file(path: &str) -> Result<Self, TeliodError> {
+        println!("Reading config from: {}", path);
+
+        let file = fs::File::open(path)?;
+        let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
+
+        // Validate log path
+        let log_path = PathBuf::from(&config.log_file_path);
+        if log_path.is_relative() {
+            config.log_file_path = log_path.canonicalize()?.to_string_lossy().to_string();
+        }
+        println!("Saving logs to: {}", config.log_file_path);
+
+        // Validate token
+        if let Ok(token) = std::env::var("NORD_TOKEN") {
+            println!("Overriding token from env");
+            if token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) {
+                config.authentication_token = token;
+            } else {
+                eprintln!("Token from env not valid")
+            }
+        }
+
+        Ok(config)
     }
 }
 

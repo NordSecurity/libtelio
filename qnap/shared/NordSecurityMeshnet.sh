@@ -48,7 +48,7 @@ case "$1" in
         exit 0
     fi
 
-    ${QPKG_ROOT}/teliod daemon $TELIOD_CFG_FILE > $TELIOD_LOG_FILE 2>&1 &
+    ${QPKG_ROOT}/teliod start --no-detach $TELIOD_CFG_FILE > $TELIOD_LOG_FILE 2>&1 &
     system_log INFO "Teliod daemon started."
     ;;
 

@@ -138,12 +138,9 @@ mod tests {
 
         // spawn a fake telio task
         task::spawn(async move {
-            match task_rx.recv().await.unwrap() {
-                TelioTaskCmd::GetStatus(response_tx_channel) => {
-                    let status_report = TelioStatusReport::default();
-                    response_tx_channel.send(status_report).unwrap();
-                }
-                _ => (),
+            if let TelioTaskCmd::GetStatus(response_tx_channel) = task_rx.recv().await.unwrap() {
+                let status_report = TelioStatusReport::default();
+                response_tx_channel.send(status_report).unwrap();
             }
         });
 
@@ -155,7 +152,9 @@ mod tests {
     // Simulate client sending command and waiting for response
     async fn client_send_command(path: &str, cmd: &str) -> std::io::Result<CommandResponse> {
         let mut client_stream = UnixStream::connect(&Path::new(path)).await?;
-        client_stream.write(format!("{}\n", cmd).as_bytes()).await?;
+        client_stream
+            .write_all(format!("{}\n", cmd).as_bytes())
+            .await?;
 
         let mut data = vec![0; 1024];
         let size = client_stream.read(&mut data).await?;
@@ -166,7 +165,9 @@ mod tests {
     // Broken client, closes connection without waiting for response
     async fn broken_client_send_command(path: &str, cmd: &str) -> std::io::Result<()> {
         let mut client_stream = UnixStream::connect(&Path::new(path)).await?;
-        client_stream.write(format!("{}\n", cmd).as_bytes()).await?;
+        client_stream
+            .write_all(format!("{}\n", cmd).as_bytes())
+            .await?;
 
         Ok(())
     }
@@ -205,7 +206,7 @@ mod tests {
         let command = "garbage";
         let (cmd, _) = tokio::join!(
             listener.handle_client_connection(),
-            client_send_command(&path, &command)
+            client_send_command(&path, command)
         );
 
         assert!(matches!(cmd, Err(TeliodError::InvalidCommand(_))));
@@ -219,7 +220,7 @@ mod tests {
         let command = "garbage";
         let (cmd, _) = tokio::join!(
             listener.handle_client_connection(),
-            broken_client_send_command(&path, &command)
+            broken_client_send_command(&path, command)
         );
 
         assert!(matches!(cmd, Err(TeliodError::Io(_))));
