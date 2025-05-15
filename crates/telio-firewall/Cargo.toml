@@ -33,6 +33,8 @@ proptest-derive.workspace = true
 rand.workspace = true
 sn_fake_clock.workspace = true
 
+telio-utils = {workspace = true, features = ["sn_fake_clock"] }
+
 [[bench]]
 name = "firewall_bench"
 harness = false
