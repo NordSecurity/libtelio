@@ -2660,7 +2660,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "0.6.0"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v1.0.7#da23f2b13468efe3754f7e49732c500dd4632e3a"
+source = "git+https://github.com/NordSecurity/neptun.git?branch=LLT-6122-reject-blacklisted-packets-in-firewall#3b980f5e6d5b139d6e4251ce12cdba44616a1d0a"
 dependencies = [
  "aead",
  "base64 0.13.1",

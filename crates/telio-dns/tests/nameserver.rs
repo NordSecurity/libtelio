@@ -169,40 +169,36 @@ impl WGClient {
             &receiving_buffer[..bytes_read],
             &mut sending_buffer,
         ) {
-            TunnResult::WriteToTunnelV4(response, _) => {
-                if test_type.is_ipv6() {
-                    panic!("Decapsulate into IPv4 for IPv6");
+            TunnResult::WriteToTunnel(response, addr) => match addr {
+                IpAddr::V4(_) => {
+                    let ip_response =
+                        Ipv4Packet::new(response).expect("Failed to parse ip response");
+                    if test_type.is_tcp() {
+                        let tcp_response = TcpPacket::new(ip_response.payload())
+                            .expect("Failed to parse tcp response");
+                        assert_eq!(tcp_response.get_flags(), TcpFlags::RST);
+                    } else {
+                        let udp_response = UdpPacket::new(ip_response.payload())
+                            .expect("Failed to parse udp response");
+                        dns_parser::Packet::parse(udp_response.payload())
+                            .expect("Failed to parse dns response");
+                    }
                 }
-
-                let ip_response = Ipv4Packet::new(response).expect("Failed to parse ip response");
-                if test_type.is_tcp() {
-                    let tcp_response = TcpPacket::new(ip_response.payload())
-                        .expect("Failed to parse tcp response");
-                    assert_eq!(tcp_response.get_flags(), TcpFlags::RST);
-                } else {
-                    let udp_response = UdpPacket::new(ip_response.payload())
-                        .expect("Failed to parse udp response");
-                    dns_parser::Packet::parse(udp_response.payload())
-                        .expect("Failed to parse dns response");
+                IpAddr::V6(_) => {
+                    let ip_response =
+                        Ipv6Packet::new(response).expect("Failed to parse ip response");
+                    if test_type.is_tcp() {
+                        let tcp_response = TcpPacket::new(ip_response.payload())
+                            .expect("Failed to parse tcp response");
+                        assert_eq!(tcp_response.get_flags(), TcpFlags::RST);
+                    } else {
+                        let udp_response = UdpPacket::new(ip_response.payload())
+                            .expect("Failed to parse udp response");
+                        dns_parser::Packet::parse(udp_response.payload())
+                            .expect("Failed to parse dns response");
+                    }
                 }
-            }
-            TunnResult::WriteToTunnelV6(response, _) => {
-                if test_type.is_ipv4() {
-                    panic!("Decapsulate into IPv6 for IPv4");
-                }
-
-                let ip_response = Ipv6Packet::new(response).expect("Failed to parse ip response");
-                if test_type.is_tcp() {
-                    let tcp_response = TcpPacket::new(ip_response.payload())
-                        .expect("Failed to parse tcp response");
-                    assert_eq!(tcp_response.get_flags(), TcpFlags::RST);
-                } else {
-                    let udp_response = UdpPacket::new(ip_response.payload())
-                        .expect("Failed to parse udp response");
-                    dns_parser::Packet::parse(udp_response.payload())
-                        .expect("Failed to parse dns response");
-                }
-            }
+            },
             TunnResult::Err(e) => panic!("Decapsulate error: {:?}", e),
             _ => panic!("Unexpected TunnResult while receiving the dns response"),
         }

@@ -285,8 +285,11 @@ pub fn firewall_tcp_outbound_benchmarks(c: &mut Criterion) {
                         let mut which_peer = 0usize;
                         b.iter(|| {
                             for _ in 0..PACKET_COUNT {
-                                assert!(firewall
-                                    .process_outbound_packet(&peers[which_peer], &param.packet));
+                                assert!(firewall.process_outbound_packet(
+                                    &peers[which_peer],
+                                    &param.packet,
+                                    &mut &std::io::sink()
+                                ));
                                 which_peer = (which_peer + 1) % peers.len();
                             }
                         });
@@ -329,8 +332,11 @@ pub fn firewall_tcp_outbound_benchmarks(c: &mut Criterion) {
                         let mut which_peer = 0usize;
                         b.iter(|| {
                             for _ in 0..PACKET_COUNT {
-                                assert!(firewall
-                                    .process_outbound_packet(&peers[which_peer], &param.packet));
+                                assert!(firewall.process_outbound_packet(
+                                    &peers[which_peer],
+                                    &param.packet,
+                                    &mut &std::io::sink()
+                                ));
                                 which_peer = (which_peer + 1) % peers.len();
                             }
                         });
@@ -366,8 +372,11 @@ pub fn firewall_tcp_outbound_benchmarks(c: &mut Criterion) {
                         let mut which_peer = 0usize;
                         b.iter(|| {
                             for _ in 0..PACKET_COUNT {
-                                assert!(firewall
-                                    .process_outbound_packet(&peers[which_peer], &param.packet));
+                                assert!(firewall.process_outbound_packet(
+                                    &peers[which_peer],
+                                    &param.packet,
+                                    &mut &std::io::sink()
+                                ));
                                 which_peer = (which_peer + 1) % peers.len();
                             }
                         });
@@ -584,8 +593,11 @@ pub fn firewall_udp_outbound_benchmarks(c: &mut Criterion) {
                         let mut which_peer = 0usize;
                         b.iter(|| {
                             for _ in 0..PACKET_COUNT {
-                                assert!(firewall
-                                    .process_outbound_packet(&peers[which_peer], &param.packet));
+                                assert!(firewall.process_outbound_packet(
+                                    &peers[which_peer],
+                                    &param.packet,
+                                    &mut &std::io::sink()
+                                ));
                                 which_peer = (which_peer + 1) % peers.len();
                             }
                         });
@@ -618,8 +630,11 @@ pub fn firewall_udp_outbound_benchmarks(c: &mut Criterion) {
                         let mut which_peer = 0usize;
                         b.iter(|| {
                             for _ in 0..PACKET_COUNT {
-                                assert!(firewall
-                                    .process_outbound_packet(&peers[which_peer], &param.packet));
+                                assert!(firewall.process_outbound_packet(
+                                    &peers[which_peer],
+                                    &param.packet,
+                                    &mut &std::io::sink()
+                                ));
                                 which_peer = (which_peer + 1) % peers.len();
                             }
                         });
