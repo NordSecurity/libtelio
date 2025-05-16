@@ -11,6 +11,7 @@ use telio::crypto::SecretKey;
 use telio::telio_utils::exponential_backoff::{
     Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
 };
+use telio::telio_utils::Hidden;
 use telio::{crypto::PublicKey, telio_model::config::Config as MeshMap};
 use thiserror::Error;
 use tokio::time::Duration;
@@ -300,7 +301,7 @@ async fn update_machine(device_identity: &DeviceIdentity, auth_token: &str) -> R
 
 pub async fn get_meshmap(
     device_identity: Arc<DeviceIdentity>,
-    auth_token: Arc<String>,
+    auth_token: Arc<Hidden<String>>,
 ) -> Result<MeshMap, Error> {
     debug!("Getting meshmap");
     let client = Client::new();
