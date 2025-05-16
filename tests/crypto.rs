@@ -1,7 +1,8 @@
+use std::sync::LazyLock;
 use telio_crypto::{PresharedKey, SecretKey};
 
-const SK: SecretKey = SecretKey::new([0xBAu8; 32]);
-const PSK: PresharedKey = PresharedKey::new([0xBAu8; 32]);
+static SK: LazyLock<SecretKey> = LazyLock::new(|| SecretKey::new([0xBAu8; 32]));
+static PSK: LazyLock<PresharedKey> = LazyLock::new(|| PresharedKey::new([0xBAu8; 32]));
 
 #[ignore]
 #[test]
@@ -11,6 +12,6 @@ fn secret_key_printing() {
     // CI (and pass), you know that it was run in the release mode.
     #[cfg(debug_assertions)]
     panic!("This test makes no sense in the debug mode, only run it in release mode");
-    assert_eq!("SecretKey(****)", format!("{SK:?}"));
-    assert_eq!("PresharedKey(****)", format!("{PSK:?}"));
+    assert_eq!("SecretKey(****)", format!("{:?}", *SK));
+    assert_eq!("PresharedKey(****)", format!("{:?}", *PSK));
 }

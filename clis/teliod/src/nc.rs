@@ -78,7 +78,7 @@ pub struct NotificationCenter {
 }
 
 struct NCConfig {
-    authentication_token: String,
+    authentication_token: Hidden<String>,
     app_user_uid: Uuid,
     callbacks: Arc<Mutex<Vec<Callback>>>,
     http_certificate_file_path: Option<PathBuf>,
