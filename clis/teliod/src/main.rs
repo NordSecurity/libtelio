@@ -4,7 +4,7 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
 use std::{fs, net::IpAddr};
-use telio::{device::Error as DeviceError, telio_model::mesh::Node};
+use telio::{device::Error as DeviceError, telio_model::mesh::Node, telio_utils::Hidden};
 use thiserror::Error as ThisError;
 use tokio::{
     task::JoinError,
@@ -118,7 +118,7 @@ async fn main() -> Result<(), TeliodError> {
                 if let Ok(token) = std::env::var("NORD_TOKEN") {
                     debug!("Overriding token from env");
                     if token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) {
-                        config.authentication_token = token;
+                        config.authentication_token = Hidden::<String>(token);
                     } else {
                         error!("Token from env not valid")
                     }
