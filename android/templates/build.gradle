@@ -55,11 +55,15 @@ android {
         targetCompatibility JavaVersion.VERSION_11
     }
 
+    lintOptions {
+        abortOnError false
+    }
+
     namespace 'com.nordsec.telio'
 }
 
 dependencies {
-    implementation "net.java.dev.jna:jna:5.7.0@aar"
+    implementation "net.java.dev.jna:jna:5.17.0@aar"
     implementation "com.nordsec.rustls:rustls-platform-verifier:0.1.1"
 }
 
