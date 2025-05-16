@@ -138,12 +138,9 @@ mod tests {
 
         // spawn a fake telio task
         task::spawn(async move {
-            match task_rx.recv().await.unwrap() {
-                TelioTaskCmd::GetStatus(response_tx_channel) => {
-                    let status_report = TelioStatusReport::default();
-                    response_tx_channel.send(status_report).unwrap();
-                }
-                _ => (),
+            if let TelioTaskCmd::GetStatus(response_tx_channel) = task_rx.recv().await.unwrap() {
+                let status_report = TelioStatusReport::default();
+                response_tx_channel.send(status_report).unwrap();
             }
         });
 
@@ -205,7 +202,7 @@ mod tests {
         let command = "garbage";
         let (cmd, _) = tokio::join!(
             listener.handle_client_connection(),
-            client_send_command(&path, &command)
+            client_send_command(&path, command)
         );
 
         assert!(matches!(cmd, Err(TeliodError::InvalidCommand(_))));
@@ -219,7 +216,7 @@ mod tests {
         let command = "garbage";
         let (cmd, _) = tokio::join!(
             listener.handle_client_connection(),
-            broken_client_send_command(&path, &command)
+            broken_client_send_command(&path, command)
         );
 
         assert!(matches!(cmd, Err(TeliodError::Io(_))));

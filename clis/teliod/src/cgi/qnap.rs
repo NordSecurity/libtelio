@@ -1,3 +1,4 @@
+use crate::Hidden;
 use rust_cgi::{http::header::COOKIE, Request};
 use serde::Deserialize;
 
@@ -57,7 +58,7 @@ pub(crate) struct QnapUserAuthorization {
 }
 
 impl AuthorizationValidator for QnapUserAuthorization {
-    fn retrieve_token(request: &Request) -> Result<String, Error> {
+    fn retrieve_token(request: &Request) -> Result<Hidden<String>, Error> {
         request
             .headers()
             .get(COOKIE)
@@ -67,7 +68,7 @@ impl AuthorizationValidator for QnapUserAuthorization {
             .filter_map(|pair| {
                 let mut parts = pair.trim().split('=');
                 match (parts.next(), parts.next()) {
-                    (Some("NAS_SID"), Some(value)) => Some(value.to_string()),
+                    (Some("NAS_SID"), Some(value)) => Some(Hidden(value.to_string())),
                     _ => None,
                 }
             })
@@ -75,7 +76,7 @@ impl AuthorizationValidator for QnapUserAuthorization {
             .ok_or(Error::MissingAuthToken)
     }
 
-    async fn is_token_valid(sid: String) -> Result<Self, Error> {
+    async fn is_token_valid(sid: &str) -> Result<impl AuthorizationValidator, Error> {
         let url = format!(
             "http://127.0.0.1:8080/cgi-bin/filemanager/utilRequest.cgi?func=check_sid&sid={}",
             sid

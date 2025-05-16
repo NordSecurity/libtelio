@@ -3,6 +3,7 @@ use std::{env::var, ops::Deref};
 use rust_cgi::{http::StatusCode, text_response, Request, Response};
 
 use crate::TIMEOUT_SEC;
+use telio::telio_utils::Hidden;
 use tracing::trace;
 
 #[cfg(feature = "qnap")]
@@ -76,9 +77,9 @@ enum AdminGroupStatus {
 
 pub trait AuthorizationValidator {
     // Retrieve sid token from the cookie of an http request.
-    fn retrieve_token(request: &Request) -> Result<String, Error>;
+    fn retrieve_token(request: &Request) -> Result<Hidden<String>, Error>;
     // Check user's sid against a provided validator.
-    async fn is_token_valid(sid: String) -> Result<impl AuthorizationValidator, Error>;
+    async fn is_token_valid(sid: &str) -> Result<impl AuthorizationValidator, Error>;
     // Validate user authorization
     fn validate(&self) -> Result<(), Error>;
 }
@@ -118,7 +119,7 @@ pub fn authorize<T: AuthorizationValidator>(request: &Request) -> Result<(), Err
         let user_authorization =
             match tokio::runtime::Handle::current().block_on(tokio::time::timeout(
                 std::time::Duration::from_secs(TIMEOUT_SEC),
-                T::is_token_valid(sid),
+                T::is_token_valid(&sid),
             )) {
                 Ok(Ok(resp)) => resp,
                 Ok(Err(error)) => return Err(error),

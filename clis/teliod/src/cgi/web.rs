@@ -9,12 +9,12 @@ use rust_cgi::{
     Response,
 };
 use telio::telio_model::mesh::{Node, NodeState};
-use telio::telio_utils::telio_log_debug;
 use tracing::{level_filters::LevelFilter, warn, Level};
 
 use crate::{
     cgi::constants::TELIOD_CFG,
     config::{InterfaceConfig, TeliodDaemonConfigPartial},
+    Hidden,
 };
 
 use super::{
@@ -168,7 +168,9 @@ fn update_config(app: &mut AppState, request: &CgiRequest) {
     let values: HashMap<_, _> = form_urlencoded::parse(request.body()).collect();
 
     let partial = TeliodDaemonConfigPartial {
-        authentication_token: values.get(ACCESS_TOKEN).map(ToString::to_string),
+        authentication_token: values
+            .get(ACCESS_TOKEN)
+            .map(|n| Hidden(ToString::to_string(n))),
         log_level: values
             .get(LOG_LEVEL)
             .and_then(|v| LevelFilter::from_str(v).ok()),

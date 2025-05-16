@@ -18,6 +18,7 @@ use tracing::{debug, error, info, trace, warn};
 use crate::core_api::{get_meshmap as get_meshmap_from_server, init_with_api};
 use crate::logging::setup_logging;
 use crate::ClientCmd;
+use crate::Hidden;
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
@@ -49,7 +50,7 @@ pub struct TelioTaskStates {
 // From async context Telio needs to be run in separate task
 fn telio_task(
     node_identity: Arc<DeviceIdentity>,
-    auth_token: Arc<String>,
+    auth_token: Arc<Hidden<String>>,
     mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
     tx_channel: mpsc::Sender<TelioTaskCmd>,
     interface_config: &InterfaceConfig,
@@ -137,7 +138,7 @@ fn telio_task(
 
 fn task_retrieve_meshmap(
     device_identity: Arc<DeviceIdentity>,
-    auth_token: Arc<String>,
+    auth_token: Arc<Hidden<String>>,
     tx: mpsc::Sender<TelioTaskCmd>,
 ) {
     tokio::spawn(async move {
@@ -184,13 +185,13 @@ fn start_telio(
 async fn daemon_init(
     config: TeliodDaemonConfig,
     telio_tx: Sender<TelioTaskCmd>,
-    token: Arc<String>,
+    token: Arc<Hidden<String>>,
 ) -> Result<Arc<DeviceIdentity>, TeliodError> {
     // TODO: This if condition and ::default call is temporary to be removed later
     // on when we have proper integration tests with core API.
     // This is to not look for tokens in a test environment right now as the values
     // are dummy and program will not run as it expects real tokens.
-    let identity = Arc::new(if !config.authentication_token.eq(EMPTY_TOKEN) {
+    let identity = Arc::new(if !(*config.authentication_token).eq(EMPTY_TOKEN) {
         init_with_api(&config.authentication_token).await?
     } else {
         DeviceIdentity::default()
