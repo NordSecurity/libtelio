@@ -2660,7 +2660,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "0.6.0"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v1.0.7#da23f2b13468efe3754f7e49732c500dd4632e3a"
+source = "git+https://github.com/NordSecurity/neptun.git?rev=7305d2067505d23eeb16e3edb7225848412a2353#7305d2067505d23eeb16e3edb7225848412a2353"
 dependencies = [
  "aead",
  "base64 0.13.1",
