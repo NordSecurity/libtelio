@@ -17,6 +17,8 @@ use telio_utils::{
 };
 use tokio::time::sleep;
 #[cfg(windows)]
+use winreg::{enums::*, RegKey, HKEY};
+#[cfg(windows)]
 use wireguard_nt::{self, set_logger, SetInterface, SetPeer, WIREGUARD_STATE_UP};
 use wireguard_uapi::xplatform;
 
@@ -51,6 +53,56 @@ pub enum Error {
 enum AdapterState {
     Up,
     Down,
+}
+
+#[cfg(windows)]
+fn hive_to_str(hive: HKEY) -> &'static str {
+    match hive {
+        HKEY_LOCAL_MACHINE => "HKEY_LOCAL_MACHINE",
+        HKEY_CURRENT_USER => "HKEY_CURRENT_USER",
+        HKEY_CLASSES_ROOT => "HKEY_CLASSES_ROOT",
+        HKEY_USERS => "HKEY_USERS",
+        HKEY_CURRENT_CONFIG => "HKEY_CURRENT_CONFIG",
+        _ => "UNKNOWN_HIVE",
+    }
+}
+
+#[cfg(windows)]
+fn print_registry_key_contents(hive: HKEY, path: &str) -> std::io::Result<()> {
+    let root = RegKey::predef(hive);
+    let key = root.open_subkey(path)?;
+
+    telio_log_debug!("Path: {}\\{}", hive_to_str(hive), path);
+
+    for name_result in key.enum_keys() {
+        let name = match name_result {
+            Ok(n) => n,
+            Err(e) => {
+                telio_log_error!("Failed to enumerate subkey: {}", e);
+                continue;
+            }
+        };
+
+        telio_log_debug!("Subkey: {}", name);
+
+        let subkey = match key.open_subkey(&name) {
+            Ok(sk) => sk,
+            Err(e) => {
+                telio_log_error!("   Failed to open subkey '{}': {}", name, e);
+                continue;
+            }
+        };
+
+        for value_result in subkey.enum_values() {
+            match value_result {
+                Ok((val_name, val_data)) => {
+                    telio_log_debug!("   {} = {:?}", val_name, val_data);
+                }
+                Err(e) => telio_log_error!("   Failed to read value: {}", e),
+            }
+        }
+    }
+    Ok(())
 }
 
 // Windows native associated functions
@@ -115,6 +167,16 @@ impl WindowsNativeWg {
 
                     // Try to create a new adapter
                     let adapter_guid = Self::get_adapter_guid_from_name_hash(name);
+                    telio_log_debug!(
+                        "Try to create adapter for name: {:#?} with guid: {:#?}",
+                        name,
+                        adapter_guid
+                    );
+
+                    const GUID_DEVINTERFACE_NET: &str = r"SYSTEM\CurrentControlSet\Control\DeviceClasses\{CAC88484-7515-4C03-82E6-71A87ABAC361}";
+                    const SWD_WIREGUARD: &str = r"SYSTEM\CurrentControlSet\Enum\SWD\WireGuard";
+                    let _ = print_registry_key_contents(HKEY_LOCAL_MACHINE, GUID_DEVINTERFACE_NET);
+                    let _ = print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
 
                     // Adapter name and pool name must be the same, because netsh
                     // identifies interfaces by their pool name and not the adapter or device name.
@@ -140,10 +202,17 @@ impl WindowsNativeWg {
                                 )))
                             }
                         }
-                        Err((e, _)) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                            "Failed to create adapter: {:?}",
-                            e
-                        )))),
+                        Err((e, _)) => {
+                            let _ = print_registry_key_contents(
+                                HKEY_LOCAL_MACHINE,
+                                GUID_DEVINTERFACE_NET,
+                            );
+                            let _ = print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
+                            Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                                "Failed to create adapter: {:?}",
+                                e
+                            ))))
+                        }
                     }
                 }
                 Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
