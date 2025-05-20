@@ -10,6 +10,9 @@ export QNAP_QPKG=$QPKG_NAME
 TELIOD_CFG_FILE=${QPKG_ROOT}/teliod.cfg
 TELIOD_LOG_FILE="/var/log/teliod.log"
 
+# Change the config file permissions
+chmod 0600 $TELIOD_CFG_FILE
+
 system_log() {
     local log_level
     case "$1" in
