@@ -6,6 +6,7 @@ use std::fs;
 use tracing::{debug, info, level_filters::LevelFilter, warn, Level};
 use uuid::Uuid;
 
+use telio::telio_utils::Hidden;
 use telio::{crypto::SecretKey, device::AdapterType};
 
 use crate::configure_interface::InterfaceConfigurationProvider;
@@ -107,7 +108,7 @@ pub struct TeliodDaemonConfig {
         deserialize_with = "deserialize_authentication_token",
         serialize_with = "serialize_authentication_token"
     )]
-    pub authentication_token: String,
+    pub authentication_token: Hidden<String>,
 
     /// Path to a http pem certificate to be used when connecting to CoreApi
     pub http_certificate_file_path: Option<PathBuf>,
@@ -170,7 +171,7 @@ impl Default for TeliodDaemonConfig {
                 name: "nlx".to_string(),
                 config_provider: Default::default(),
             },
-            authentication_token: "".to_string(),
+            authentication_token: Hidden("".to_string()),
             http_certificate_file_path: None,
             mqtt: MqttConfig::default(),
         }
@@ -217,11 +218,11 @@ where
 
 fn deserialize_authentication_token<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<String, D::Error> {
+) -> Result<Hidden<String>, D::Error> {
     let raw_string: String = de::Deserialize::deserialize(deserializer)?;
     let re = regex::Regex::new("[0-9a-f]{64}").map_err(de::Error::custom)?;
     if raw_string.is_empty() || re.is_match(&raw_string) {
-        Ok(raw_string)
+        Ok(Hidden(raw_string))
     } else {
         Err(de::Error::custom("Incorrect authentication token"))
     }
@@ -261,7 +262,7 @@ pub struct TeliodDaemonConfigPartial {
     pub interface: Option<InterfaceConfig>,
     pub app_user_uid: Option<Uuid>,
     #[serde(default, deserialize_with = "deserialize_partial_authentication_token")]
-    pub authentication_token: Option<String>,
+    pub authentication_token: Option<Hidden<String>>,
     pub http_certificate_file_path: Option<Option<PathBuf>>,
     pub mqtt: Option<MqttConfig>,
 }
@@ -284,8 +285,8 @@ fn deserialize_partial_log_level<'de, D: Deserializer<'de>>(
 
 fn deserialize_partial_authentication_token<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<Option<String>, D::Error> {
-    let deserialized_auth_token: Option<String> = Option::deserialize(deserializer)?;
+) -> Result<Option<Hidden<String>>, D::Error> {
+    let deserialized_auth_token: Option<Hidden<String>> = Option::deserialize(deserializer)?;
 
     match deserialized_auth_token {
         Some(ref raw_auth_token) => {
@@ -326,7 +327,9 @@ mod tests {
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
             authentication_token:
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    .to_owned()
+                    .into(),
             http_certificate_file_path: None,
             mqtt: MqttConfig {
                 backoff_initial: NonZeroU64::new(1).unwrap(),

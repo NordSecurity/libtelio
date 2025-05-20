@@ -1,7 +1,5 @@
 //! App logic for web ui
 
-use std::collections::HashMap;
-
 use tracing::error;
 
 use crate::{config::TeliodDaemonConfig, TelioStatusReport};

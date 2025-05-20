@@ -78,7 +78,7 @@ pub struct NotificationCenter {
 }
 
 struct NCConfig {
-    authentication_token: String,
+    authentication_token: Hidden<String>,
     app_user_uid: Uuid,
     callbacks: Arc<Mutex<Vec<Callback>>>,
     http_certificate_file_path: Option<PathBuf>,
@@ -470,7 +470,7 @@ mod tests {
             expires_in: 86400,
         };
 
-        let credentials: NotificationCenterCredentials = serde_json::from_str(&input).unwrap();
+        let credentials: NotificationCenterCredentials = serde_json::from_str(input).unwrap();
         assert_eq!(expected, credentials);
     }
 
@@ -530,7 +530,7 @@ mod tests {
                 },
             },
         };
-        let notification: Notification = serde_json::from_str(&input).unwrap();
+        let notification: Notification = serde_json::from_str(input).unwrap();
         assert_eq!(expected, notification);
     }
 }
