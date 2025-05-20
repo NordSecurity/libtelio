@@ -128,8 +128,8 @@ mod tests {
 
     // Create a random socket path for the test, since tests run in parallel they can deadlock
     fn make_socket_path() -> String {
-        let mut rng = rand::thread_rng();
-        format!("{}_{}", TEST_SOCKET_PATH, rng.gen::<u16>())
+        let mut rng = rand::rng();
+        format!("{}_{}", TEST_SOCKET_PATH, rng.random::<u16>())
     }
 
     // Helper to create a fake command listener

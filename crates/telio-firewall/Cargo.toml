@@ -25,7 +25,7 @@ telio-model.workspace = true
 telio-network-monitors.workspace = true
 
 [dev-dependencies]
-criterion = "0.5.1"
+criterion = "0.6.0"
 
 mockall.workspace = true
 proptest.workspace = true

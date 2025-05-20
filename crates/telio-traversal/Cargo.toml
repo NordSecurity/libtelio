@@ -7,10 +7,10 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-bytecodec = "0.4.15"
+bytecodec = "0.5.0"
 enum-map = "2.7.3"
 igd = { git = "https://github.com/NordSecurity/rust-igd.git", tag = "v0.13.1", features = ["aio"], default-features = false }
-stun_codec = "0.3"
+stun_codec = "0.4"
 
 async-trait.workspace = true
 base64.workspace = true

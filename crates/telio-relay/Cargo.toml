@@ -36,7 +36,7 @@ telio-proto.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
-webpki-roots = "0.26.11"
+webpki-roots = "1.0.0"
 smart-default.workspace = true
 
 [dev-dependencies]

@@ -12,10 +12,10 @@ tclid = ["sysinfo", "interprocess", "daemonize"]
 [dependencies]
 dirs = "6.0.0"
 reqwest = { version = "0.12.15", default-features = false, features = ["json", "blocking", "rustls-tls"] }
-rustyline = "11.0.0"
+rustyline = "15.0.0"
 shellwords = "1.1.0"
 # Used only for checking if the daemon is running.
-sysinfo = { version = "0.33.1", optional = true }
+sysinfo = { version = "0.35.1", optional = true }
 # Used as a lightweight and safe (because a TCP server has the risk of remote code execution)
 # way for the API and daemon to communicate.
 # Tokio support is needed, because the daemon runs on the async runtime.
