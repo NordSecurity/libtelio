@@ -706,6 +706,23 @@ services:
       - 10.0.80.82
       - 10.0.80.83
 
+  esp32-qemu:
+    hostname: esp32-qemu
+    build:
+      context: .
+      dockerfile: esp32_qemu.Dockerfile
+    entrypoint: /opt/bin/esp32_qemu_entrypoint
+    networks:
+      internet:
+        ipv4_address: 10.0.80.87
+        ipv6_address: 2001:db8:85a4::adda:edde:c
+    depends_on:
+      core-api:
+        condition: service_healthy
+    dns:
+      - 10.0.80.82
+      - 10.0.80.83
+
 networks:
   # Network representing public internet,
   # various services like DERP/STUN will be hosted
