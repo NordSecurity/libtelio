@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 aead = { version = "0.5.2", default-features = false }
-serde_with = { features = ["macros"], default-features = false, version = "3.7.0" }
+serde_with = { features = ["macros"], default-features = false, version = "3.12.0" }
 chacha20poly1305 = { default-features = false, version = "0.10.1" }
 chacha20 = "0.9.1"
 zeroize = { version = "1.8.1", features = ["derive"] }
@@ -25,4 +25,4 @@ thiserror.workspace = true
 telio-utils.workspace = true
 
 [dev-dependencies]
-bstr = "1.11"
+bstr = "1.12"

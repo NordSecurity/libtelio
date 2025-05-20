@@ -8,7 +8,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 
 [dependencies]
 clap.workspace = true
-ring = { default-features = false, version = "0.17.5" }
+ring = { default-features = false, version = "0.17.14" }
 
 anyhow.workspace = true
 itertools.workspace = true

@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 bytecodec = "0.4.15"
-enum-map = "2.5.0"
+enum-map = "2.7.3"
 igd = { git = "https://github.com/NordSecurity/rust-igd.git", tag = "v0.13.1", features = ["aio"], default-features = false }
 stun_codec = "0.3"
 
