@@ -4,6 +4,7 @@ from helpers import SetupParameters, ping_between_all_nodes, setup_mesh_nodes
 from typing import List
 from utils.bindings import default_features, TelioAdapterType
 from utils.connection import ConnectionTag
+from utils.logger import log
 
 
 def _generate_setup_parameters(
@@ -46,6 +47,7 @@ async def test_start_with_tun() -> None:
         pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1),
     ],
 )
+@pytest.mark.timeout(90)
 async def test_start_with_tun_and_switch_it_at_runtime(alpha_tag) -> None:
     setup_params = _generate_setup_parameters([
         alpha_tag,
@@ -62,6 +64,8 @@ async def test_start_with_tun_and_switch_it_at_runtime(alpha_tag) -> None:
 
         await alpha_client.stop_device()
 
+        log.debug("starting tun11");
+
         tun11 = await alpha_client.create_tun(11)
         await alpha_client.start_with_tun(tun11, tun_name_prefix + "11")
         alpha_client.get_router().set_interface_name(tun_name_prefix + "11")
@@ -69,8 +73,12 @@ async def test_start_with_tun_and_switch_it_at_runtime(alpha_tag) -> None:
         await alpha_client.get_router().delete_interface(tun_name_prefix + "10")
         await ping_between_all_nodes(env)
 
+        log.debug("starting tun12");
+
         tun12 = await alpha_client.create_tun(12)
         await alpha_client.get_proxy().set_tun(tun12)
         await alpha_client.restart_interface(new_name=tun_name_prefix + "12")
         await alpha_client.get_router().delete_interface(tun_name_prefix + "11")
+        log.debug("tun12 will ping");
         await ping_between_all_nodes(env)
+        log.debug("tun12 did ping");
