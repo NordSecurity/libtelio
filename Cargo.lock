@@ -1379,15 +1379,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "etherparse"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcb08c4aab4e2985045305551e67126b43f1b6b136bc4e1cd87fb0327877a611"
-dependencies = [
- "arrayvec",
-]
-
-[[package]]
 name = "event-listener"
 version = "2.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2572,12 +2563,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mock_instant"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "717e29a243b81f8130e31e24e04fb151b04a44b5a7d05370935f7d937e9de06d"
-
-[[package]]
 name = "mockall"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2675,31 +2660,25 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "0.6.0"
+source = "git+https://github.com/NordSecurity/neptun.git?rev=f77b1d36a8057ecfb3afd47b424aab7b966a1686#f77b1d36a8057ecfb3afd47b424aab7b966a1686"
 dependencies = [
  "aead",
  "base64 0.13.1",
  "blake2",
  "chacha20poly1305",
- "criterion",
  "dispatch",
- "etherparse",
  "hex",
  "hmac",
  "ip_network",
  "ip_network_table",
  "libc",
- "mock_instant",
  "nix 0.29.0",
  "parking_lot",
- "rand 0.8.5",
  "rand_core 0.6.4",
  "ring",
  "socket2",
- "test-log",
  "thiserror 1.0.69",
- "tokio",
  "tracing",
- "tracing-subscriber",
  "untrusted",
  "x25519-dalek",
 ]
