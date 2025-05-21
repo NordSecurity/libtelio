@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use std::{
     net::{IpAddr, SocketAddr},
+    os::fd::FromRawFd,
     panic::{self, AssertUnwindSafe},
     sync::{Arc, Mutex, Once},
     time::Duration,
@@ -428,7 +429,7 @@ impl Telio {
             &adapter
         );
         #[cfg(not(target_os = "windows"))]
-        let tun = Some(_tun);
+        let tun = Some(Arc::new(unsafe { std::os::fd::OwnedFd::from_raw_fd(_tun) }));
         #[cfg(target_os = "windows")]
         let tun = None;
         catch_ffi_panic(|| {
@@ -438,7 +439,7 @@ impl Telio {
                     adapter: adapter.into(),
                     fwmark: None,
                     name: None,
-                    tun,
+                    tun: tun.clone(),
                 })
                 .log_result("Telio::start_with_tun")
             })

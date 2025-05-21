@@ -65,6 +65,7 @@ use std::{
     future::Future,
     io::{self, Error as IoError},
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    os::fd::AsRawFd,
     sync::Arc,
     time::Duration,
 };
@@ -200,7 +201,7 @@ pub struct DeviceConfig {
     pub adapter: AdapterType,
     pub fwmark: Option<u32>,
     pub name: Option<String>,
-    pub tun: Option<Tun>,
+    pub tun: Option<Arc<Tun>>,
 }
 
 pub struct Device {
@@ -1111,7 +1112,7 @@ impl Runtime {
                     wg::Config {
                         adapter: config.adapter,
                         name: config.name.clone(),
-                        tun: config.tun,
+                        tun: config.tun.clone(),
                         socket_pool: socket_pool.clone(),
                         firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
                         firewall_process_outbound_callback: Some(Arc::new(
@@ -1137,7 +1138,7 @@ impl Runtime {
                         wg::Config {
                             adapter: config.adapter,
                             name: config.name.clone(),
-                            tun: config.tun,
+                            tun: config.tun.clone(),
                             socket_pool: socket_pool.clone(),
                             firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
                             firewall_process_outbound_callback: Some(Arc::new(
@@ -1224,7 +1225,7 @@ impl Runtime {
         let dns = Arc::new(Mutex::new(DNS {
             resolver: None,
             #[cfg(unix)]
-            virtual_host_tun_fd: config.tun,
+            virtual_host_tun_fd: config.tun.as_ref().map(|tun| tun.as_raw_fd()),
             #[cfg(windows)]
             virtual_host_tun_fd: None,
         }));

@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fmt, io,
     net::{IpAddr, Ipv4Addr},
+    os::fd::OwnedFd,
     str::FromStr,
     sync::Arc,
 };
@@ -38,7 +39,7 @@ pub type FirewallResetConnsCb =
 /// Tunnel file descriptor
 #[cfg(not(target_os = "windows"))]
 #[cfg_attr(docsrs, doc(cfg(not(windows))))]
-pub type Tun = std::os::unix::io::RawFd;
+pub type Tun = OwnedFd;
 /// Tunnel file descriptor is unused on Windows, thus an empty type alias
 #[cfg(target_os = "windows")]
 #[cfg_attr(docsrs, doc(cfg(windows)))]
@@ -217,9 +218,12 @@ pub(crate) async fn start(cfg: &Config) -> Result<Box<dyn Adapter>, Error> {
             return Err(Error::UnsupportedAdapter);
 
             #[cfg(unix)]
+            use std::os::fd::AsRawFd;
+
+            #[cfg(unix)]
             Ok(Box::new(neptun::NepTUN::start(
                 &name,
-                cfg.tun,
+                cfg.tun.as_ref().map(|tun| tun.as_raw_fd()),
                 cfg.socket_pool.clone(),
                 cfg.firewall_process_inbound_callback.clone(),
                 cfg.firewall_process_outbound_callback.clone(),
