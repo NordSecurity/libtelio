@@ -38,12 +38,12 @@ impl InterfaceLuid {
         family: ADDRESS_FAMILY,
     ) -> Result<MIB_IPINTERFACE_ROW, NETIO_STATUS> {
         let mut row = MIB_IPINTERFACE_ROW::default();
-        InitializeIpInterfaceEntry(&mut row);
+        unsafe { InitializeIpInterfaceEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
         row.Family = family;
 
-        let result = GetIpInterfaceEntry(&mut row);
+        let result = unsafe { GetIpInterfaceEntry(&mut row) };
         if NO_ERROR == result {
             Ok(row)
         } else {
@@ -54,7 +54,7 @@ impl InterfaceLuid {
     /// https://learn.microsoft.com/en-us/windows/win32/api/netioapi/nf-netioapi-setipinterfaceentry
     /// If only InterfaceIndex was specified, SetIpInterfaceEntry() will modify ipif with a correct InterfaceLuid
     pub fn set_ip_interface(&self, ipif: *mut MIB_IPINTERFACE_ROW) -> Result<(), NETIO_STATUS> {
-        let result = SetIpInterfaceEntry(ipif);
+        let result = unsafe { SetIpInterfaceEntry(ipif) };
         if NO_ERROR == result {
             Ok(())
         } else {
@@ -70,7 +70,7 @@ impl InterfaceLuid {
             ..MIB_IF_ROW2::default()
         };
 
-        let result = GetIfEntry2(&mut row);
+        let result = unsafe { GetIfEntry2(&mut row) };
         if NO_ERROR == result {
             Ok(row)
         } else {
@@ -83,7 +83,7 @@ impl InterfaceLuid {
     pub fn get_guid(&self) -> Result<GUID, NETIO_STATUS> {
         let mut interface_guid = GUID::default();
 
-        let result = ConvertInterfaceLuidToGuid(&self.luid, &mut interface_guid);
+        let result = unsafe { ConvertInterfaceLuidToGuid(&self.luid, &mut interface_guid) };
 
         if NO_ERROR == result {
             Ok(interface_guid)
@@ -97,7 +97,7 @@ impl InterfaceLuid {
     pub fn luid_from_guid(interface_guid: &GUID) -> Result<Self, NETIO_STATUS> {
         let mut interface_luid = NET_LUID::default();
 
-        let result = ConvertInterfaceGuidToLuid(interface_guid, &mut interface_luid);
+        let result = unsafe { ConvertInterfaceGuidToLuid(interface_guid, &mut interface_luid) };
 
         if NO_ERROR == result {
             Ok(Self {
@@ -113,7 +113,7 @@ impl InterfaceLuid {
     pub fn luid_from_index(interface_index: u32) -> Result<Self, NETIO_STATUS> {
         let mut interface_luid = NET_LUID::default();
 
-        let result = ConvertInterfaceIndexToLuid(interface_index, &mut interface_luid);
+        let result = unsafe { ConvertInterfaceIndexToLuid(interface_index, &mut interface_luid) };
 
         if NO_ERROR == result {
             Ok(Self {
@@ -131,11 +131,11 @@ impl InterfaceLuid {
         ip: &Ipv4Addr,
     ) -> Result<MIB_UNICASTIPADDRESS_ROW, NETIO_STATUS> {
         let mut row = MIB_UNICASTIPADDRESS_ROW::default();
-        InitializeUnicastIpAddressEntry(&mut row);
+        unsafe { InitializeUnicastIpAddressEntry(&mut row) };
 
         *row.Address.Ipv4_mut() = convert_ipv4addr_to_sockaddr(ip);
 
-        let result = GetUnicastIpAddressEntry(&mut row);
+        let result = unsafe { GetUnicastIpAddressEntry(&mut row) };
 
         if NO_ERROR == result {
             Ok(row)
@@ -151,9 +151,9 @@ impl InterfaceLuid {
         ip: &Ipv6Addr,
     ) -> Result<MIB_UNICASTIPADDRESS_ROW, NETIO_STATUS> {
         let mut row = MIB_UNICASTIPADDRESS_ROW::default();
-        InitializeUnicastIpAddressEntry(&mut row);
+        unsafe { InitializeUnicastIpAddressEntry(&mut row) };
 
-        *row.Address.Ipv6_mut() = convert_ipv6addr_to_sockaddr(ip);
+        unsafe { *row.Address.Ipv6_mut() = convert_ipv6addr_to_sockaddr(ip) };
 
         let result = GetUnicastIpAddressEntry(&mut row);
 
@@ -168,7 +168,7 @@ impl InterfaceLuid {
     /// (https://docs.microsoft.com/en-us/windows/desktop/api/netioapi/nf-netioapi-createunicastipaddressentry).
     pub fn add_ipv4_address(&self, address: &Ipv4Net) -> Result<(), NETIO_STATUS> {
         let mut row = MIB_UNICASTIPADDRESS_ROW::default();
-        InitializeUnicastIpAddressEntry(&mut row);
+        unsafe { InitializeUnicastIpAddressEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
         row.DadState = IpDadStatePreferred;
@@ -191,7 +191,7 @@ impl InterfaceLuid {
     /// (https://docs.microsoft.com/en-us/windows/desktop/api/netioapi/nf-netioapi-createunicastipaddressentry).
     pub fn add_ipv6_address(&self, address: &Ipv6Net) -> Result<(), NETIO_STATUS> {
         let mut row = MIB_UNICASTIPADDRESS_ROW::default();
-        InitializeUnicastIpAddressEntry(&mut row);
+        unasfe { InitializeUnicastIpAddressEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
         row.DadState = IpDadStatePreferred;
@@ -258,7 +258,7 @@ impl InterfaceLuid {
     /// (https://docs.microsoft.com/en-us/windows/desktop/api/netioapi/nf-netioapi-deleteunicastipaddressentry).
     pub fn delete_ipv4_address(&self, address: &Ipv4Net) -> Result<(), NETIO_STATUS> {
         let mut row = MIB_UNICASTIPADDRESS_ROW::default();
-        InitializeUnicastIpAddressEntry(&mut row);
+        unsafe { InitializeUnicastIpAddressEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
         row.DadState = IpDadStatePreferred;
@@ -285,7 +285,7 @@ impl InterfaceLuid {
         prefix_len: u8,
     ) -> Result<(), NETIO_STATUS> {
         let mut row = MIB_UNICASTIPADDRESS_ROW::default();
-        InitializeUnicastIpAddressEntry(&mut row);
+        unsafe { InitializeUnicastIpAddressEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
         row.DadState = IpDadStatePreferred;
@@ -309,7 +309,7 @@ impl InterfaceLuid {
     /// (https://docs.microsoft.com/en-us/windows/desktop/api/netioapi/nf-netioapi-deleteunicastipaddressentry).
     pub fn delete_ipv6_address(&self, address: &Ipv6Net) -> Result<(), NETIO_STATUS> {
         let mut row = MIB_UNICASTIPADDRESS_ROW::default();
-        InitializeUnicastIpAddressEntry(&mut row);
+        unsafe { InitializeUnicastIpAddressEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
         row.DadState = IpDadStatePreferred;
@@ -336,7 +336,7 @@ impl InterfaceLuid {
         prefix_len: u8,
     ) -> Result<(), NETIO_STATUS> {
         let mut row = MIB_UNICASTIPADDRESS_ROW::default();
-        InitializeUnicastIpAddressEntry(&mut row);
+        unsafe { InitializeUnicastIpAddressEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
         row.DadState = IpDadStatePreferred;
@@ -624,7 +624,7 @@ impl InterfaceLuid {
         let mut last_error: NETIO_STATUS = NO_ERROR;
 
         let mut p_table: PMIB_IPFORWARD_TABLE2 = ptr::null_mut();
-        let result = GetIpForwardTable2(address_family, &mut p_table);
+        let result = unsafe { GetIpForwardTable2(address_family, &mut p_table) };
         if NO_ERROR != result {
             return Err(result);
         }

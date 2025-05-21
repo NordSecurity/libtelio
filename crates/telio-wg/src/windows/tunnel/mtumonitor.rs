@@ -143,7 +143,7 @@ impl MtuMonitor {
         assert!(!self_ptr.is_null());
         if 0 == unsafe { *Row }.DestinationPrefix.PrefixLength {
             // Result can be ignored
-            match unsafe { *self_ptr.do_it() } {
+            match unsafe { (*self_ptr).do_it() } {
                 Ok(_) => {}
                 Err(err) => {
                     telio_log_trace!("MtuMonitor::do_it returned error {}", err);
@@ -176,7 +176,7 @@ impl MtuMonitor {
         assert!(!self_ptr.is_null());
         if NotificationType == MibParameterNotification {
             // Result can be ignored
-            match unsafe { *self_ptr.do_it() } {
+            match unsafe { (*self_ptr).do_it() } {
                 Ok(_) => {}
                 Err(err) => {
                     telio_log_trace!("MtuMonitor::do_it returned error {}", err);
@@ -220,7 +220,7 @@ impl MtuMonitor {
             }
 
             telio_log_trace!("+++ MtuMonitor::do_it: SetIpInterfaceEntry");
-            let result = SetIpInterfaceEntry(&mut own_iface);
+            let result = unsafe { SetIpInterfaceEntry(&mut own_iface) };
             if NO_ERROR != result {
                 return Err(result);
             }
@@ -234,7 +234,7 @@ impl MtuMonitor {
 
     fn find_default_luid(&mut self) -> Result<(), NETIO_STATUS> {
         let mut p_table: PMIB_IPFORWARD_TABLE2 = ptr::null_mut();
-        let result = GetIpForwardTable2(self.family, &mut p_table);
+        let result = unsafe { GetIpForwardTable2(self.family, &mut p_table) };
         if NO_ERROR != result {
             telio_log_trace!(
                 "find_default_luid failed GetIpForwardTable2 with {}",
@@ -251,16 +251,17 @@ impl MtuMonitor {
         let num_entries = unsafe { *p_table }.NumEntries;
         let x_table = unsafe { *p_table }.Table.as_ptr();
         for i in 0..num_entries {
-            let current_entry = x_table.add(i as _);
+            let current_entry = unsafe { x_table.add(i as _) };
 
-            if 0 != (*current_entry).DestinationPrefix.PrefixLength {
+            if 0 != unsafe { *current_entry }.DestinationPrefix.PrefixLength {
                 continue;
             }
-            if (*current_entry).InterfaceLuid.Value == self.own_luid {
+            if unsafe { *current_entry }.InterfaceLuid.Value == self.own_luid {
                 continue;
             }
 
-            let current_interface = InterfaceLuid::new((*current_entry).InterfaceLuid.Value);
+            let current_interface =
+                InterfaceLuid::new(unsafe { *current_entry }.InterfaceLuid.Value);
             match current_interface.get_interface() {
                 Ok(ifrow) => {
                     if IfOperStatusUp != ifrow.OperStatus {
@@ -273,11 +274,11 @@ impl MtuMonitor {
             }
             match current_interface.get_ip_interface(self.family) {
                 Ok(iface) => {
-                    let current_metric = (*current_entry).Metric + iface.Metric;
+                    let current_metric = unsafe { *current_entry }.Metric + iface.Metric;
                     if current_metric < lowest_metric {
                         lowest_metric = current_metric;
-                        index = (*current_entry).InterfaceIndex;
-                        luid = (*current_entry).InterfaceLuid.Value;
+                        index = unsafe { *current_entry }.InterfaceIndex;
+                        luid = unsafe { *current_entry }.InterfaceLuid.Value;
                     }
                 }
                 Err(_) => {
@@ -286,7 +287,7 @@ impl MtuMonitor {
             }
         }
 
-        FreeMibTable(p_table as _);
+        unsafe { FreeMibTable(p_table as _) };
 
         self.last_luid = luid;
         self.last_index = index as i32;
