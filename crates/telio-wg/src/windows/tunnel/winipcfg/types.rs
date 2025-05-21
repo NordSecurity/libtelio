@@ -29,7 +29,7 @@ pub struct RouteDataIpv6 {
 
 /// This function converts std::net::Ipv4Addr to winapi::shared::inaddr::in_addr
 #[inline]
-pub unsafe fn convert_ipv4addr_to_inaddr(ip: &Ipv4Addr) -> winapi::shared::inaddr::in_addr {
+pub fn convert_ipv4addr_to_inaddr(ip: &Ipv4Addr) -> winapi::shared::inaddr::in_addr {
     let mut winaddr = winapi::shared::inaddr::in_addr::default();
 
     winaddr.S_un.S_un_b_mut().s_b1 = ip.octets()[0];
@@ -42,7 +42,7 @@ pub unsafe fn convert_ipv4addr_to_inaddr(ip: &Ipv4Addr) -> winapi::shared::inadd
 
 /// This function converts std::net::Ipv6Addr to winapi::shared::in6addr::in6_addr
 #[inline]
-pub unsafe fn convert_ipv6addr_to_inaddr(ip: &Ipv6Addr) -> winapi::shared::in6addr::in6_addr {
+pub fn convert_ipv6addr_to_inaddr(ip: &Ipv6Addr) -> winapi::shared::in6addr::in6_addr {
     let mut winaddr = winapi::shared::in6addr::in6_addr::default();
 
     for i in 0..7 {
@@ -53,7 +53,7 @@ pub unsafe fn convert_ipv6addr_to_inaddr(ip: &Ipv6Addr) -> winapi::shared::in6ad
 }
 
 /// This function converts std::net::Ipv4Addr to winapi::shared::ws2def::SOCKADDR_IN
-pub unsafe fn convert_ipv4addr_to_sockaddr(ip: &Ipv4Addr) -> SOCKADDR_IN {
+pub fn convert_ipv4addr_to_sockaddr(ip: &Ipv4Addr) -> SOCKADDR_IN {
     SOCKADDR_IN {
         sin_family: AF_INET as ADDRESS_FAMILY,
         sin_addr: convert_ipv4addr_to_inaddr(ip),
@@ -62,7 +62,7 @@ pub unsafe fn convert_ipv4addr_to_sockaddr(ip: &Ipv4Addr) -> SOCKADDR_IN {
 }
 
 /// This function converts ipnet::Ipv6Addr to winapi::shared::ws2ipdef::SOCKADDR_IN6
-pub unsafe fn convert_ipv6addr_to_sockaddr(ip: &Ipv6Addr) -> SOCKADDR_IN6 {
+pub fn convert_ipv6addr_to_sockaddr(ip: &Ipv6Addr) -> SOCKADDR_IN6 {
     SOCKADDR_IN6 {
         sin6_family: AF_INET6 as ADDRESS_FAMILY,
         sin6_addr: convert_ipv6addr_to_inaddr(ip),
@@ -71,7 +71,7 @@ pub unsafe fn convert_ipv6addr_to_sockaddr(ip: &Ipv6Addr) -> SOCKADDR_IN6 {
 }
 
 /// This function converts winapi::shared::ws2def::SOCKADDR_IN to std::net::Ipv4Addr
-pub unsafe fn convert_sockaddr_to_ipv4addr(sockaddr: &SOCKADDR_IN) -> Ipv4Addr {
+pub fn convert_sockaddr_to_ipv4addr(sockaddr: &SOCKADDR_IN) -> Ipv4Addr {
     Ipv4Addr::new(
         sockaddr.sin_addr.S_un.S_un_b().s_b1,
         sockaddr.sin_addr.S_un.S_un_b().s_b2,
@@ -81,17 +81,23 @@ pub unsafe fn convert_sockaddr_to_ipv4addr(sockaddr: &SOCKADDR_IN) -> Ipv4Addr {
 }
 
 /// This function converts a null-terminated Windows Unicode PWCHAR/LPWSTR to an OsString
-pub unsafe fn u16_ptr_to_osstring(ptr: *const u16) -> OsString {
-    let len = (0..).take_while(|&i| *ptr.offset(i) != 0).count();
-    let slice = std::slice::from_raw_parts(ptr, len);
+pub fn u16_ptr_to_osstring(ptr: *const u16) -> OsString {
+    assert!(!ptr.is_null());
+    let len = (0..)
+        .take_while(|&i| unsafe { *ptr.offset(i) } != 0)
+        .count();
+    let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
 
     OsString::from_wide(slice)
 }
 
 /// This function converts a null-terminated Windows PWCHAR/LPWSTR to a String
-pub unsafe fn u16_ptr_to_string(ptr: *const u16) -> String {
-    let len = (0..).take_while(|&i| *ptr.offset(i) != 0).count();
-    let slice = std::slice::from_raw_parts(ptr, len);
+pub fn u16_ptr_to_string(ptr: *const u16) -> String {
+    assert!(!ptr.is_null());
+    let len = (0..)
+        .take_while(|&i| unsafe { *ptr.offset(i) } != 0)
+        .count();
+    let slice = unsafe { std::slice::from_raw_parts(ptr, len) };
 
     String::from_utf16_lossy(slice)
 }

@@ -95,7 +95,7 @@ impl InterfaceWatcher {
         }
     }
 
-    pub unsafe fn start_monitoring(&mut self) -> Result<(), NETIO_STATUS> {
+    pub fn start_monitoring(&mut self) -> Result<(), NETIO_STATUS> {
         /*
         TODO: implement a watchdog which will wait up to 1 min for our adapter to come up. Does not seem necessary.
         //

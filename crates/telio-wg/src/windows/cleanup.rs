@@ -17,13 +17,11 @@ pub fn cleanup_network_config(luid: u64) {
 
     #[allow(unused)]
     // Ignore Result<> of the functions below, it only has diagnostic purposes
-    unsafe {
-        iface.flush_routes_ipv4();
-        iface.flush_ipv4_addresses();
-        iface.flush_dns_ipv4();
+    iface.flush_routes_ipv4();
+    iface.flush_ipv4_addresses();
+    iface.flush_dns_ipv4();
 
-        iface.flush_routes_ipv6();
-        iface.flush_ipv6_addresses();
-        iface.flush_dns_ipv6();
-    }
+    iface.flush_routes_ipv6();
+    iface.flush_ipv6_addresses();
+    iface.flush_dns_ipv6();
 }

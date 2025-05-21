@@ -32,7 +32,7 @@ use winapi::shared::{
 };
 use winapi::um::{iphlpapi::*, iptypes::*};
 
-unsafe fn cleanup_addresses_on_disconnected_interfaces2(
+fn cleanup_addresses_on_disconnected_interfaces2(
     ptr_adapters: PIP_ADAPTER_ADDRESSES,
     _addresses: &[IP_ADDRESS_PREFIX],
 ) {
@@ -47,10 +47,10 @@ unsafe fn cleanup_addresses_on_disconnected_interfaces2(
             let mut address = (*iface).FirstUnicastAddress;
             while !address.is_null() {
                 let sockaddr_raw = (*address).Address.lpSockaddr;
-                match (*sockaddr_raw).sa_family as i32 {
+                match unsafe { *sockaddr_raw }.sa_family as i32 {
                     AF_INET => {
                         let sockaddr_ipv4: *mut SOCKADDR_IN = sockaddr_raw as _;
-                        let ipv4_addr = convert_sockaddr_to_ipv4addr(&(*sockaddr_ipv4));
+                        let ipv4_addr = convert_sockaddr_to_ipv4addr(&unsafe { *sockaddr_ipv4 });
                         telio_log_info!(
                             "Cleaning up stale IPv4 address {} from itf {}",
                             ipv4_addr,
@@ -67,7 +67,7 @@ unsafe fn cleanup_addresses_on_disconnected_interfaces2(
                         let sockaddr_ipv6: *mut SOCKADDR_IN6 = sockaddr_raw as _;
                         telio_log_info!(
                             "Cleaning up stale IPv6 address {:?} from itf {}",
-                            (*sockaddr_ipv6).sin6_addr.u.Byte(),
+                            unsafe { *sockaddr_ipv6 }.sin6_addr.u.Byte(),
                             iface_friendly_name
                         );
                         match luid
@@ -88,7 +88,7 @@ unsafe fn cleanup_addresses_on_disconnected_interfaces2(
     }
 }
 
-unsafe fn cleanup_addresses_on_disconnected_interfaces(
+fn cleanup_addresses_on_disconnected_interfaces(
     family: ADDRESS_FAMILY,
     addresses: &[IP_ADDRESS_PREFIX],
 ) -> Result<(), u32> {
@@ -105,12 +105,13 @@ unsafe fn cleanup_addresses_on_disconnected_interfaces(
                 return Err(ERROR_NOT_ENOUGH_MEMORY);
             }
         };
-        let ptr_adapters: PIP_ADAPTER_ADDRESSES = alloc(layout_adapters) as PIP_ADAPTER_ADDRESSES;
+        let ptr_adapters: PIP_ADAPTER_ADDRESSES =
+            unsafe { alloc(layout_adapters) } as PIP_ADAPTER_ADDRESSES;
         if ptr_adapters.is_null() {
             return Err(ERROR_NOT_ENOUGH_MEMORY);
         }
         // ATTENTION, CLEANUP: Don't remove, this is for auto-deallocating ptr_adapters in this scope
-        let _box_adapters = Box::from_raw(ptr_adapters);
+        let _box_adapters = unsafe { Box::from_raw(ptr_adapters) };
 
         let result = GetAdaptersAddresses(family as _, 0, NULL, ptr_adapters, &mut size_adapters);
         match result {
@@ -200,7 +201,7 @@ pub fn configure_interface(
 
     // OPTWGWINCONF: option for not setting routes
     // if !conf.interface.TableOff {
-    match unsafe { iface.set_routes_ipv4(routes_ipv4) } {
+    match iface.set_routes_ipv4(routes_ipv4) {
         Ok(_) => {}
         Err(err) => {
             /*
@@ -216,7 +217,7 @@ pub fn configure_interface(
             return Err(err);
         }
     }
-    match unsafe { iface.set_routes_ipv6(routes_ipv6) } {
+    match iface.set_routes_ipv6(routes_ipv6) {
         Ok(_) => {}
         Err(err) => {
             /*
@@ -249,7 +250,7 @@ pub fn configure_interface(
     }
     */
 
-    let mut ipif = unsafe { iface.get_ip_interface(family) }?;
+    let mut ipif = iface.get_ip_interface(family)?;
     ipif.RouterDiscoveryBehavior = RouterDiscoveryDisabled;
     ipif.DadTransmits = 0;
     ipif.ManagedAddressConfigurationSupported = false as _;
@@ -268,7 +269,7 @@ pub fn configure_interface(
         ipif.Metric = 0;
     }
 
-    match unsafe { iface.set_ip_interface(&mut ipif) } {
+    match iface.set_ip_interface(&mut ipif) {
         Ok(_) => {}
         Err(err) => {
             /*

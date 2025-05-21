@@ -54,7 +54,7 @@ impl MtuMonitor {
         }
     }
 
-    pub unsafe fn start_monitoring(&mut self) -> Result<(), NETIO_STATUS> {
+    pub fn start_monitoring(&mut self) -> Result<(), NETIO_STATUS> {
         self.do_it()?;
 
         if let Ok(mut route_cb_handle) = self.route_cb_handle.clone().lock() {
@@ -122,11 +122,12 @@ impl MtuMonitor {
     }
 
     #[allow(non_snake_case)]
-    unsafe extern "system" fn route_change_callback(
+    extern "system" fn route_change_callback(
         CallerContext: PVOID,
         Row: *mut MIB_IPFORWARD_ROW2,
         NotificationType: MIB_NOTIFICATION_TYPE,
     ) {
+        assert!(!Row.is_null());
         telio_log_trace!(
             "+++ MtuMonitor::route_change_callback: CallerContext {:p}, Row {:p}, NotificationType {}",
             CallerContext,
@@ -135,9 +136,10 @@ impl MtuMonitor {
         );
 
         let self_ptr = CallerContext as *mut MtuMonitor;
-        if 0 == (*Row).DestinationPrefix.PrefixLength {
+        assert!(!self_ptr.is_null());
+        if 0 == unsafe { *Row }.DestinationPrefix.PrefixLength {
             // Result can be ignored
-            match (*self_ptr).do_it() {
+            match unsafe { *self_ptr }.do_it() {
                 Ok(_) => {}
                 Err(err) => {
                     telio_log_trace!("MtuMonitor::do_it returned error {}", err);
@@ -154,7 +156,7 @@ impl MtuMonitor {
     }
 
     #[allow(non_snake_case)]
-    unsafe extern "system" fn interface_change_callback(
+    extern "system" fn interface_change_callback(
         CallerContext: PVOID,
         Row: *mut MIB_IPINTERFACE_ROW,
         NotificationType: MIB_NOTIFICATION_TYPE,
@@ -167,9 +169,10 @@ impl MtuMonitor {
         );
 
         let self_ptr = CallerContext as *mut MtuMonitor;
+        assert!(!self_ptr.is_null());
         if NotificationType == MibParameterNotification {
             // Result can be ignored
-            match (*self_ptr).do_it() {
+            match unsafe { *self_ptr }.do_it() {
                 Ok(_) => {}
                 Err(err) => {
                     telio_log_trace!("MtuMonitor::do_it returned error {}", err);
@@ -185,7 +188,7 @@ impl MtuMonitor {
         );
     }
 
-    unsafe fn do_it(&mut self) -> Result<(), NETIO_STATUS> {
+    fn do_it(&mut self) -> Result<(), NETIO_STATUS> {
         telio_log_trace!("+++ MtuMonitor::do_it");
 
         telio_log_trace!("+++ MtuMonitor::do_it: find_default_luid");
@@ -225,7 +228,7 @@ impl MtuMonitor {
         Ok(())
     }
 
-    unsafe fn find_default_luid(&mut self) -> Result<(), NETIO_STATUS> {
+    fn find_default_luid(&mut self) -> Result<(), NETIO_STATUS> {
         let mut p_table: PMIB_IPFORWARD_TABLE2 = ptr::null_mut();
         let result = GetIpForwardTable2(self.family, &mut p_table);
         if NO_ERROR != result {
@@ -240,8 +243,9 @@ impl MtuMonitor {
         let mut index: u32 = 0;
         let mut luid: u64 = 0;
 
-        let num_entries = (*p_table).NumEntries;
-        let x_table = (*p_table).Table.as_ptr();
+        assert!(!p_table.is_null());
+        let num_entries = unsafe { *p_table }.NumEntries;
+        let x_table = unsafe { *p_table }.Table.as_ptr();
         for i in 0..num_entries {
             let current_entry = x_table.add(i as _);
 
