@@ -261,9 +261,9 @@ fn config_view(app: &AppState, error: Option<String>) -> Markup {
                     div class="space-y-2" {
                         label class="block text-primary body-xs-medium" { "Access Token" }
                         (if is_running {
-                            html!{input disabled name=(ACCESS_TOKEN) type="password" class="text-disabled w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(app.config.authentication_token) "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
+                            html!{input disabled name=(ACCESS_TOKEN) type="password" class="text-disabled w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(*app.config.authentication_token) "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
                         } else {
-                            html!{input name=(ACCESS_TOKEN) type="password" class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(app.config.authentication_token) "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
+                            html!{input name=(ACCESS_TOKEN) type="password" class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(*app.config.authentication_token) "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
                         })
                     }
                     div class="flex flex-col gap-2" {
