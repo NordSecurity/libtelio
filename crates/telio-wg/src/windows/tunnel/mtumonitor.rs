@@ -59,13 +59,15 @@ impl MtuMonitor {
 
         if let Ok(mut route_cb_handle) = self.route_cb_handle.clone().lock() {
             let mut cb_handle: HANDLE = NULL;
-            let result = winapi::shared::netioapi::NotifyRouteChange2(
-                self.family,
-                Some(Self::route_change_callback),
-                self as *mut Self as _,
-                false as _,
-                &mut cb_handle,
-            );
+            let result = unsafe {
+                winapi::shared::netioapi::NotifyRouteChange2(
+                    self.family,
+                    Some(Self::route_change_callback),
+                    self as *mut Self as _,
+                    false as _,
+                    &mut cb_handle,
+                )
+            };
             if NO_ERROR != result {
                 return Err(result);
             }
@@ -74,13 +76,15 @@ impl MtuMonitor {
 
         if let Ok(mut iface_cb_handle) = self.iface_cb_handle.clone().lock() {
             let mut cb_handle: HANDLE = NULL;
-            let result = winapi::shared::netioapi::NotifyIpInterfaceChange(
-                self.family,
-                Some(Self::interface_change_callback),
-                self as *mut Self as _,
-                false as _,
-                &mut cb_handle,
-            );
+            let result = unsafe {
+                winapi::shared::netioapi::NotifyIpInterfaceChange(
+                    self.family,
+                    Some(Self::interface_change_callback),
+                    self as *mut Self as _,
+                    false as _,
+                    &mut cb_handle,
+                )
+            };
             if NO_ERROR != result {
                 return Err(result);
             }
@@ -139,7 +143,7 @@ impl MtuMonitor {
         assert!(!self_ptr.is_null());
         if 0 == unsafe { *Row }.DestinationPrefix.PrefixLength {
             // Result can be ignored
-            match unsafe { *self_ptr }.do_it() {
+            match unsafe { *self_ptr.do_it() } {
                 Ok(_) => {}
                 Err(err) => {
                     telio_log_trace!("MtuMonitor::do_it returned error {}", err);
@@ -172,7 +176,7 @@ impl MtuMonitor {
         assert!(!self_ptr.is_null());
         if NotificationType == MibParameterNotification {
             // Result can be ignored
-            match unsafe { *self_ptr }.do_it() {
+            match unsafe { *self_ptr.do_it() } {
                 Ok(_) => {}
                 Err(err) => {
                     telio_log_trace!("MtuMonitor::do_it returned error {}", err);

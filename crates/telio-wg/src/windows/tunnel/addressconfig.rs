@@ -38,15 +38,15 @@ fn cleanup_addresses_on_disconnected_interfaces2(
 ) {
     let mut iface: PIP_ADAPTER_ADDRESSES = ptr_adapters;
     while !iface.is_null() {
-        let iface_friendly_name = u16_ptr_to_string((*iface).FriendlyName);
+        let iface_friendly_name = u16_ptr_to_string(unsafe { *iface }.FriendlyName);
 
-        if (*iface).OperStatus != IfOperStatusUp {
-            let luid = InterfaceLuid::new((*iface).Luid.Value);
+        if unsafe { *iface }.OperStatus != IfOperStatusUp {
+            let luid = InterfaceLuid::new(unsafe { *iface }.Luid.Value);
             // TODO: collect addresses, deduplicate as in the original code
 
-            let mut address = (*iface).FirstUnicastAddress;
+            let mut address = unsafe { *iface }.FirstUnicastAddress;
             while !address.is_null() {
-                let sockaddr_raw = (*address).Address.lpSockaddr;
+                let sockaddr_raw = unsafe { *address }.Address.lpSockaddr;
                 match unsafe { *sockaddr_raw }.sa_family as i32 {
                     AF_INET => {
                         let sockaddr_ipv4: *mut SOCKADDR_IN = sockaddr_raw as _;
@@ -56,9 +56,10 @@ fn cleanup_addresses_on_disconnected_interfaces2(
                             ipv4_addr,
                             iface_friendly_name
                         );
-                        match luid
-                            .delete_ipv4_address2(sockaddr_ipv4, (*address).OnLinkPrefixLength)
-                        {
+                        match luid.delete_ipv4_address2(
+                            sockaddr_ipv4,
+                            unsafe { *address }.OnLinkPrefixLength,
+                        ) {
                             Ok(_) => {}
                             Err(_err) => {}
                         };
@@ -67,12 +68,13 @@ fn cleanup_addresses_on_disconnected_interfaces2(
                         let sockaddr_ipv6: *mut SOCKADDR_IN6 = sockaddr_raw as _;
                         telio_log_info!(
                             "Cleaning up stale IPv6 address {:?} from itf {}",
-                            unsafe { *sockaddr_ipv6 }.sin6_addr.u.Byte(),
+                            unsafe { *(*sockaddr_ipv6*).sin6_addr.u.Byte() },
                             iface_friendly_name
                         );
-                        match luid
-                            .delete_ipv6_address2(sockaddr_ipv6, (*address).OnLinkPrefixLength)
-                        {
+                        match luid.delete_ipv6_address2(
+                            sockaddr_ipv6,
+                            unsafe { *address }.OnLinkPrefixLength,
+                        ) {
                             Ok(_) => {}
                             Err(_err) => {}
                         };
@@ -80,11 +82,11 @@ fn cleanup_addresses_on_disconnected_interfaces2(
                     _ => {}
                 }
 
-                address = (*address).Next;
+                address = unsafe { *address }.Next;
             }
         }
 
-        iface = (*iface).Next;
+        iface = unsafe { *iface }.Next;
     }
 }
 
@@ -113,7 +115,8 @@ fn cleanup_addresses_on_disconnected_interfaces(
         // ATTENTION, CLEANUP: Don't remove, this is for auto-deallocating ptr_adapters in this scope
         let _box_adapters = unsafe { Box::from_raw(ptr_adapters) };
 
-        let result = GetAdaptersAddresses(family as _, 0, NULL, ptr_adapters, &mut size_adapters);
+        let result =
+            unsafe { GetAdaptersAddresses(family as _, 0, NULL, ptr_adapters, &mut size_adapters) };
         match result {
             NO_ERROR => {
                 cleanup_addresses_on_disconnected_interfaces2(ptr_adapters, addresses);

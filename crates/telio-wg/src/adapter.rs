@@ -11,6 +11,9 @@ mod linux_native_wg;
 #[cfg_attr(docsrs, doc(cfg(windows)))]
 mod windows_native_wg;
 
+#[cfg(not(windows))]
+use std::os::fd::OwnedFd;
+
 use async_trait::async_trait;
 #[cfg(any(test, feature = "test-adapter"))]
 pub use mockall::automock;
@@ -18,7 +21,6 @@ use serde::{Deserialize, Serialize};
 use std::{
     fmt, io,
     net::{IpAddr, Ipv4Addr},
-    os::fd::OwnedFd,
     str::FromStr,
     sync::Arc,
 };
