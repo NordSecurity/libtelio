@@ -2591,8 +2591,8 @@ impl TaskRuntime for Runtime {
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
     let mut tunnel_if_index = None;
-    if let Some(tun) = config.tun {
-        match native::interface_index_from_tun(tun) {
+    if let Some(tun) = config.tun.as_ref() {
+        match native::interface_index_from_tun(tun.as_raw_fd()) {
             Ok(index) => tunnel_if_index = Some(index),
             Err(e) => {
                 telio_log_warn!(
