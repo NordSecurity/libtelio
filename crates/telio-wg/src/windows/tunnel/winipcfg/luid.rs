@@ -133,7 +133,7 @@ impl InterfaceLuid {
         let mut row = MIB_UNICASTIPADDRESS_ROW::default();
         unsafe { InitializeUnicastIpAddressEntry(&mut row) };
 
-        *row.Address.Ipv4_mut() = convert_ipv4addr_to_sockaddr(ip);
+        unsafe { *row.Address.Ipv4_mut() = convert_ipv4addr_to_sockaddr(ip) };
 
         let result = unsafe { GetUnicastIpAddressEntry(&mut row) };
 
@@ -175,7 +175,7 @@ impl InterfaceLuid {
         row.ValidLifetime = 0xffffffff;
         row.PreferredLifetime = 0xffffffff;
 
-        *row.Address.Ipv4_mut() = convert_ipv4addr_to_sockaddr(&address.addr());
+        unsafe { *row.Address.Ipv4_mut() = convert_ipv4addr_to_sockaddr(&address.addr()) };
         row.OnLinkPrefixLength = address.prefix_len();
 
         let result = CreateUnicastIpAddressEntry(&row);
@@ -265,7 +265,7 @@ impl InterfaceLuid {
         row.ValidLifetime = 0xffffffff;
         row.PreferredLifetime = 0xffffffff;
 
-        *row.Address.Ipv4_mut() = convert_ipv4addr_to_sockaddr(&address.addr());
+        unsafe { *row.Address.Ipv4_mut() = convert_ipv4addr_to_sockaddr(&address.addr()) };
         row.OnLinkPrefixLength = address.prefix_len();
 
         let result = DeleteUnicastIpAddressEntry(&row);
@@ -293,7 +293,7 @@ impl InterfaceLuid {
         row.PreferredLifetime = 0xffffffff;
 
         assert!(!address.is_null());
-        *row.Address.Ipv4_mut() = unsafe { *address };
+        unsafe { *row.Address.Ipv4_mut() = *address };
         row.OnLinkPrefixLength = prefix_len;
 
         let result = DeleteUnicastIpAddressEntry(&row);
@@ -374,7 +374,7 @@ impl InterfaceLuid {
             }
         }
 
-        FreeMibTable(p_table as _);
+        unsafe { FreeMibTable(p_table as _) };
 
         Ok(())
     }
@@ -398,7 +398,7 @@ impl InterfaceLuid {
         next_hop: &Ipv4Addr,
     ) -> Result<MIB_IPFORWARD_ROW2, NETIO_STATUS> {
         let mut row = MIB_IPFORWARD_ROW2::default();
-        InitializeIpForwardEntry(&mut row);
+        unsafe { InitializeIpForwardEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
         row.ValidLifetime = 0xffffffff;
@@ -410,7 +410,7 @@ impl InterfaceLuid {
 
         *row.NextHop.Ipv4_mut() = convert_ipv4addr_to_sockaddr(next_hop);
 
-        let result = GetIpForwardEntry2(&mut row);
+        let result = unsafe { GetIpForwardEntry2(&mut row) };
 
         if NO_ERROR == result {
             Ok(row)
@@ -428,7 +428,7 @@ impl InterfaceLuid {
         next_hop: &Ipv6Addr,
     ) -> Result<MIB_IPFORWARD_ROW2, NETIO_STATUS> {
         let mut row = MIB_IPFORWARD_ROW2::default();
-        InitializeIpForwardEntry(&mut row);
+        unsafe { InitializeIpForwardEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
         row.ValidLifetime = 0xffffffff;
@@ -440,7 +440,7 @@ impl InterfaceLuid {
 
         *row.NextHop.Ipv6_mut() = convert_ipv6addr_to_sockaddr(next_hop);
 
-        let result = GetIpForwardEntry2(&mut row);
+        let result = unsafe { GetIpForwardEntry2(&mut row) };
 
         if NO_ERROR == result {
             Ok(row)
@@ -458,7 +458,7 @@ impl InterfaceLuid {
         metric: u32,
     ) -> Result<(), NETIO_STATUS> {
         let mut row = MIB_IPFORWARD_ROW2::default();
-        InitializeIpForwardEntry(&mut row);
+        unsafe { InitializeIpForwardEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
         row.ValidLifetime = 0xffffffff;
@@ -490,7 +490,7 @@ impl InterfaceLuid {
         metric: u32,
     ) -> Result<(), NETIO_STATUS> {
         let mut row = MIB_IPFORWARD_ROW2::default();
-        InitializeIpForwardEntry(&mut row);
+        unsafe { InitializeIpForwardEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
         row.ValidLifetime = 0xffffffff;
@@ -563,7 +563,7 @@ impl InterfaceLuid {
         next_hop: &Ipv4Addr,
     ) -> Result<(), NETIO_STATUS> {
         let mut row = MIB_IPFORWARD_ROW2::default();
-        InitializeIpForwardEntry(&mut row);
+        unsafe { InitializeIpForwardEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
 
@@ -573,7 +573,7 @@ impl InterfaceLuid {
 
         *row.NextHop.Ipv4_mut() = convert_ipv4addr_to_sockaddr(next_hop);
 
-        let result = GetIpForwardEntry2(&mut row);
+        let result = unsafe { GetIpForwardEntry2(&mut row) };
         if NO_ERROR != result {
             return Err(result);
         }
@@ -594,7 +594,7 @@ impl InterfaceLuid {
         next_hop: &Ipv6Addr,
     ) -> Result<(), NETIO_STATUS> {
         let mut row = MIB_IPFORWARD_ROW2::default();
-        InitializeIpForwardEntry(&mut row);
+        unsafe { InitializeIpForwardEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
 
@@ -604,7 +604,7 @@ impl InterfaceLuid {
 
         *row.NextHop.Ipv6_mut() = convert_ipv6addr_to_sockaddr(next_hop);
 
-        let result = GetIpForwardEntry2(&mut row);
+        let result = unsafe { GetIpForwardEntry2(&mut row) };
         if NO_ERROR != result {
             return Err(result);
         }
@@ -642,7 +642,7 @@ impl InterfaceLuid {
             }
         }
 
-        FreeMibTable(p_table as _);
+        unsafe { FreeMibTable(p_table as _) };
 
         if NO_ERROR == last_error {
             Ok(())
