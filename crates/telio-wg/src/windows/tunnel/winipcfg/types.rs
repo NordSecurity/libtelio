@@ -32,10 +32,11 @@ pub struct RouteDataIpv6 {
 pub fn convert_ipv4addr_to_inaddr(ip: &Ipv4Addr) -> winapi::shared::inaddr::in_addr {
     let mut winaddr = winapi::shared::inaddr::in_addr::default();
 
-    winaddr.S_un.S_un_b_mut().s_b1 = ip.octets()[0];
-    winaddr.S_un.S_un_b_mut().s_b2 = ip.octets()[1];
-    winaddr.S_un.S_un_b_mut().s_b3 = ip.octets()[2];
-    winaddr.S_un.S_un_b_mut().s_b4 = ip.octets()[3];
+    let s_un_b = unsafe { winaddr.S_un.S_un_b_mut() };
+    s_un_b.s_b1 = ip.octets()[0];
+    s_un_b.s_b2 = ip.octets()[1];
+    s_un_b.s_b3 = ip.octets()[2];
+    s_un_b.s_b4 = ip.octets()[3];
 
     winaddr
 }
