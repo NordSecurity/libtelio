@@ -65,6 +65,7 @@ use std::{
     future::Future,
     io::{self, Error as IoError},
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    os::fd::AsRawFd,
     sync::Arc,
     time::Duration,
 };
@@ -201,7 +202,7 @@ pub struct DeviceConfig {
     pub adapter: AdapterType,
     pub fwmark: Option<u32>,
     pub name: Option<String>,
-    pub tun: Option<Tun>,
+    pub tun: Option<Arc<Tun>>,
 }
 
 pub struct Device {
@@ -1073,7 +1074,7 @@ impl Runtime {
                     wg::Config {
                         adapter: config.adapter,
                         name: config.name.clone(),
-                        tun: config.tun,
+                        tun: config.tun.clone(),
                         socket_pool: socket_pool.clone(),
                         firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
                         firewall_process_outbound_callback: Some(Arc::new(
@@ -1099,7 +1100,7 @@ impl Runtime {
                         wg::Config {
                             adapter: config.adapter,
                             name: config.name.clone(),
-                            tun: config.tun,
+                            tun: config.tun.clone(),
                             socket_pool: socket_pool.clone(),
                             firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
                             firewall_process_outbound_callback: Some(Arc::new(
@@ -1186,7 +1187,7 @@ impl Runtime {
         let dns = Arc::new(Mutex::new(DNS {
             resolver: None,
             #[cfg(unix)]
-            virtual_host_tun_fd: config.tun,
+            virtual_host_tun_fd: config.tun.as_ref().map(|tun| tun.as_raw_fd()),
             #[cfg(windows)]
             virtual_host_tun_fd: None,
         }));
@@ -2536,8 +2537,8 @@ impl TaskRuntime for Runtime {
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
     let mut tunnel_if_index = None;
-    if let Some(tun) = config.tun {
-        match native::interface_index_from_tun(tun) {
+    if let Some(tun) = config.tun.as_ref() {
+        match native::interface_index_from_tun(tun.as_raw_fd()) {
             Ok(index) => tunnel_if_index = Some(index),
             Err(e) => {
                 telio_log_warn!(

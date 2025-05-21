@@ -16,8 +16,8 @@ pub fn cleanup_network_config(luid: u64) {
     let iface = InterfaceLuid::new(luid);
 
     #[allow(unused)]
-    // Ignore Result<> of the functions below, it only has diagnostic purposes
-    unsafe {
+    {
+        // Ignore Result<> of the functions below, it only has diagnostic purposes
         iface.flush_routes_ipv4();
         iface.flush_ipv4_addresses();
         iface.flush_dns_ipv4();
