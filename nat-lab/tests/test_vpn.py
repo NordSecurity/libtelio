@@ -415,8 +415,9 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
 
 
 @pytest.mark.asyncio
-async def test_firewall_blacklist() -> None:
+async def test_firewall_blacklist_tcp() -> None:
     serv_ip = config.PHOTO_ALBUM_IP
+    serv_port = 80
     wg_server: dict = config.WG_SERVER
 
     setup_params = [
@@ -433,7 +434,7 @@ async def test_firewall_blacklist() -> None:
     ]
 
     setup_params[1].features.firewall.outgoing_blacklist = [
-        FirewallBlacklistTuple(IpProtocol.TCP, serv_ip, 80)
+        FirewallBlacklistTuple(IpProtocol.TCP, serv_ip, serv_port)
     ]
 
     async with AsyncExitStack() as exit_stack:
@@ -454,11 +455,97 @@ async def test_firewall_blacklist() -> None:
             wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
         )
 
-        await alpha_connection.create_process(["curl", serv_ip]).execute()
+        async with ConnectionTracker(
+            alpha_connection,
+            [
+                ConnTrackerTCPStateSequence(
+                    "telio-kill-blacklisted-connection",
+                    FiveTuple(protocol="tcp", dst_ip=serv_ip, dst_port=serv_port),
+                    [TcpState.FIN_WAIT, TcpState.LAST_ACK, TcpState.TIME_WAIT],
+                )
+            ],
+        ).run() as conntrack:
+
+            await alpha_connection.create_process(["curl", serv_ip]).execute()
+            await conntrack.wait()
+
+        async with ConnectionTracker(
+            beta_connection,
+            [
+                ConnTrackerTCPStateSequence(
+                    "telio-kill-blacklisted-connection",
+                    FiveTuple(protocol="tcp", dst_ip=serv_ip, dst_port=serv_port),
+                    [TcpState.SYN_SENT, TcpState.CLOSE],
+                )
+            ],
+        ).run() as conntrack:
+
+            with pytest.raises(ProcessExecError):
+                await beta_connection.create_process(["curl", serv_ip]).execute()
+
+            await conntrack.wait()
+
+
+@pytest.mark.asyncio
+async def test_firewall_blacklist_udp() -> None:
+    serv_ip = config.UDP_SERVER_IP4
+    serv_port = 2000
+    wg_server: dict = config.WG_SERVER
+
+    setup_params = [
+        SetupParameters(
+            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
+            ip_stack=IPStack.IPv4,
+        ),
+        SetupParameters(
+            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
+            ip_stack=IPStack.IPv4,
+        ),
+    ]
+
+    setup_params[1].features.firewall.outgoing_blacklist = [
+        FirewallBlacklistTuple(IpProtocol.UDP, serv_ip, serv_port)
+    ]
+
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, setup_params, prepare_vpn=True)
+        )
+
+        alpha, beta, *_ = env.nodes
+        alpha_connection, beta_connection, *_ = [
+            conn.connection for conn in env.connections
+        ]
+        alpha_client, beta_client, *_ = env.clients
+
+        await alpha_client.connect_to_vpn(
+            wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+        )
+
+        await beta_client.connect_to_vpn(
+            wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+        )
+
+        alpha_nc_client = await exit_stack.enter_async_context(
+            NetCatClient(
+                alpha_connection,
+                serv_ip,
+                2000,
+                udp=True,
+                source_ip=testing.unpack_optional(alpha.get_ip_address(IPProto.IPv4)),
+            ).run()
+        )
+        await alpha_nc_client.connection_succeeded()
 
         with pytest.raises(ProcessExecError):
-            await beta_connection.create_process(
-                ["curl", "--connect-timeout", "5", serv_ip]
+            await NetCatClient(
+                beta_connection,
+                serv_ip,
+                2000,
+                udp=True,
+                source_ip=testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
             ).execute()
 
 
