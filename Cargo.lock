@@ -5184,6 +5184,7 @@ dependencies = [
  "tracing",
  "winapi",
  "windows 0.60.0",
+ "winreg",
  "wireguard-nt",
  "wireguard-uapi",
 ]
