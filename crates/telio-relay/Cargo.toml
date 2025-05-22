@@ -8,9 +8,9 @@ publish = false
 
 [dependencies]
 rand_core = { version = "0.6.4", default-features = false }
-tokio-rustls = { version = "0.26.1", default-features = false }
-tokio-util = "0.7.3"
-tokio-stream = { default-features = false, version = "0.1.9" }
+tokio-rustls = { version = "0.26.2", default-features = false }
+tokio-util = "0.7.15"
+tokio-stream = { default-features = false, version = "0.1.17" }
 
 async-trait.workspace = true
 bytes.workspace = true
@@ -36,11 +36,11 @@ telio-proto.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
-webpki-roots = "0.26.6"
+webpki-roots = "1.0.0"
 smart-default.workspace = true
 
 [dev-dependencies]
-async-std = { version = "1.5", features = ["attributes"] }
+async-std = { version = "1.13", features = ["attributes"] }
 
 env_logger.workspace = true
 hex.workspace = true
@@ -57,9 +57,9 @@ tokio = { workspace = true, features = [
 telio-nurse = { workspace = true, features = ["mockall"] }
 telio-task = { workspace = true, features = ["test-util"] }
 telio-test.workspace = true
-hyper = { version = "1.5.2", features = ["full", "http1"] }
-hyper-util = "0.1.10"
-http-body-util = "0.1.2"
+hyper = { version = "1.6.0", features = ["full", "http1"] }
+hyper-util = "0.1.12"
+http-body-util = "0.1.3"
 
 [target.'cfg(windows)'.dependencies]
 static_assertions = "1.1.0"

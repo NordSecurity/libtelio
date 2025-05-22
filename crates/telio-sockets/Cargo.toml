@@ -31,7 +31,7 @@ version-compare = "0.2"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))'.dependencies]
 debug_panic = "0.2.1"
-nix = { version = "0.29", features=["socket"] }
+nix = { version = "0.30", features=["socket"] }
 system-configuration = { git = 'https://github.com/NordSecurity/system-configuration-rs.git' }
 network-framework-sys = "0.1"
 block = "0.1"

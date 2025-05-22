@@ -10,7 +10,7 @@ publish = false
 test-adapter = []
 
 [dependencies]
-slog-stdlog = "4.1.0"
+slog-stdlog = "4.1.1"
 wireguard-uapi = { version = "2.0.5", features = ["xplatform"], default-features = false }
 
 async-trait.workspace = true
