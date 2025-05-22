@@ -65,7 +65,6 @@ use std::{
     future::Future,
     io::{self, Error as IoError},
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    os::fd::AsRawFd,
     sync::Arc,
     time::Duration,
 };
@@ -414,7 +413,7 @@ pub struct DNS<D: DnsResolver = LocalDnsResolver> {
 
     // A file descriptor for virtual host hosting the DNS server within libtelio used for
     // configuring routing on some platforms
-    virtual_host_tun_fd: Option<i32>,
+    virtual_host_tun_fd: Option<Arc<Tun>>,
 }
 
 struct Runtime {
@@ -1187,7 +1186,7 @@ impl Runtime {
         let dns = Arc::new(Mutex::new(DNS {
             resolver: None,
             #[cfg(unix)]
-            virtual_host_tun_fd: config.tun.as_ref().map(|tun| tun.as_raw_fd()),
+            virtual_host_tun_fd: config.tun.clone(),
             #[cfg(windows)]
             virtual_host_tun_fd: None,
         }));
@@ -1687,7 +1686,7 @@ impl Runtime {
                 let dns = LocalDnsResolver::new(
                     &public_key,
                     upstream_dns_servers,
-                    dns_entity.virtual_host_tun_fd,
+                    dns_entity.virtual_host_tun_fd.as_ref(),
                     self.features.dns.exit_dns.clone(),
                 )
                 .await
@@ -2536,6 +2535,7 @@ impl TaskRuntime for Runtime {
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
+    use std::os::fd::AsRawFd;
     let mut tunnel_if_index = None;
     if let Some(tun) = config.tun.as_ref() {
         match native::interface_index_from_tun(tun.as_raw_fd()) {
