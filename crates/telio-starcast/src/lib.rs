@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 //! telio-starcast crate implements multicast support for the meshnet
 //!
 //! There are three main components to allow this:

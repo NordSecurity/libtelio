@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 use async_trait::async_trait;
 use futures::future::{pending, select_all, FutureExt};
 use std::{

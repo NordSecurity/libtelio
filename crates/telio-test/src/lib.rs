@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 use std::net::Ipv4Addr;
 
 // This makes hanging tests easier to debug. Its immediately clear on which line the test has hung.
