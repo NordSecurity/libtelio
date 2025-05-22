@@ -24,8 +24,8 @@ test:
     cargo test --all --quiet
 
 # Run clippy
-clippy package="": _clippy-install
-    cargo clippy {{ if package == "" {"--lib"} else {"--package=" + package} }} -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
+clippy package="" features="": _clippy-install
+    cargo clippy {{ if package == "" {"--lib"} else {"--package=" + package} }} {{ if features == "" {""} else {"--features=" + features} }} -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
 
 # Run udeps
 udeps: _udeps-install
