@@ -55,6 +55,7 @@ def default_features(
     features = features_builder.build()
     features.is_test_env = True
     features.hide_user_data = False
+    features.hide_thread_id = False
     features.dns.exit_dns = FeatureExitDns(auto_switch_dns_ips=True)
     if enable_firewall_exclusion_range is not None:
         features.firewall.exclude_private_ip_range = enable_firewall_exclusion_range

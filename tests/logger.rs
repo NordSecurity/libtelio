@@ -16,8 +16,8 @@ mod test_module {
     #[test]
     fn test_logger() {
         // Line number of tracing::info! call in this fill, down below
-        const INFO_LINE1: u32 = 73;
-        const INFO_LINE2: u32 = 74;
+        const INFO_LINE1: u32 = 74;
+        const INFO_LINE2: u32 = 75;
 
         let call_count = Arc::new(AtomicUsize::new(0));
 
@@ -43,7 +43,7 @@ mod test_module {
                 if self.call_count.load(Ordering::Relaxed) == 0 {
                     assert_eq!(
                         format!(
-                            r#"{:?} "logger::test_module":{INFO_LINE1} test message"#,
+                            r#"{:?} logger::test_module:{INFO_LINE1} test message"#,
                             self.log_caller_tid
                         ),
                         payload
@@ -51,7 +51,7 @@ mod test_module {
                 } else {
                     assert_eq!(
                         format!(
-                            r#"{:?} "logger::test_module":{INFO_LINE2} test message"#,
+                            r#"{:?} logger::test_module:{INFO_LINE2} test message"#,
                             self.log_caller_tid
                         ),
                         payload
@@ -68,6 +68,7 @@ mod test_module {
         };
 
         telio::set_global_logger(telio::ffi_types::TelioLogLevel::Info, Box::new(logger));
+        telio::hide_thread_id_in_logs(false);
 
         tracing::debug!("this will be ignored since it's below info");
         tracing::info!("test message");

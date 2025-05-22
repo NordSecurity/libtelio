@@ -32,10 +32,13 @@ pub struct Features {
     /// Test environment (natlab) requires binding feature disabled
     /// TODO: Remove it once mac integration tests support the binding mechanism
     pub is_test_env: Option<bool>,
-    /// Controll if IP addresses and domains should be hidden in logs
+    /// Control if IP addresses and domains should be hidden in logs
     #[serde(alias = "hide_ips")] // Old name
     #[default(true)]
     pub hide_user_data: bool,
+    /// Control if thread IDs should be shown in the logs
+    #[default(true)]
+    pub hide_thread_id: bool,
     /// Derp server specific configuration
     pub derp: Option<FeatureDerp>,
     /// Flag to specify if keys should be validated
@@ -589,6 +592,7 @@ mod tests {
             },
             "is_test_env": true,
             "hide_user_data": false,
+            "hide_thread_id": false,
             "derp": {
                 "tcp_keepalive": 13,
                 "derp_keepalive": 14,
@@ -691,6 +695,7 @@ mod tests {
                     }),
                     is_test_env: Some(true),
                     hide_user_data: false,
+                    hide_thread_id: false,
                     derp: Some(FeatureDerp {
                         tcp_keepalive: Some(13),
                         derp_keepalive: Some(14),
