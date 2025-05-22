@@ -47,7 +47,7 @@ pub fn convert_ipv6addr_to_inaddr(ip: &Ipv6Addr) -> winapi::shared::in6addr::in6
     let mut winaddr = winapi::shared::in6addr::in6_addr::default();
 
     for i in 0..7 {
-        winaddr.u.Word_mut()[i] = ip.segments()[i];
+        unsafe { winaddr.u.Word_mut()[i] = ip.segments()[i] };
     }
 
     winaddr
@@ -73,12 +73,14 @@ pub fn convert_ipv6addr_to_sockaddr(ip: &Ipv6Addr) -> SOCKADDR_IN6 {
 
 /// This function converts winapi::shared::ws2def::SOCKADDR_IN to std::net::Ipv4Addr
 pub fn convert_sockaddr_to_ipv4addr(sockaddr: &SOCKADDR_IN) -> Ipv4Addr {
-    Ipv4Addr::new(
-        sockaddr.sin_addr.S_un.S_un_b().s_b1,
-        sockaddr.sin_addr.S_un.S_un_b().s_b2,
-        sockaddr.sin_addr.S_un.S_un_b().s_b3,
-        sockaddr.sin_addr.S_un.S_un_b().s_b4,
-    )
+    unsafe {
+        Ipv4Addr::new(
+            sockaddr.sin_addr.S_un.S_un_b().s_b1,
+            sockaddr.sin_addr.S_un.S_un_b().s_b2,
+            sockaddr.sin_addr.S_un.S_un_b().s_b3,
+            sockaddr.sin_addr.S_un.S_un_b().s_b4,
+        )
+    }
 }
 
 /// This function converts a null-terminated Windows Unicode PWCHAR/LPWSTR to an OsString
