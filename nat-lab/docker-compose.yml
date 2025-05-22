@@ -90,7 +90,6 @@ services:
       - "derp-02:10.0.10.2"
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
-      - "pmtu-probe:10.0.80.84"
       - "mqtt.nordvpn.com:10.0.80.85"
       - "api.nordvpn.com:10.0.80.86"
     volumes:
@@ -641,27 +640,6 @@ services:
     healthcheck:
       test: "nslookup google.com localhost"
 
-
-  # A host which drop all packets with size larger than 1300
-  pmtu-probe:
-    hostname: pmtu-probe
-    image: nat-lab:base
-    entrypoint: /opt/bin/pmtu-probe
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_RAW
-      - NET_ADMIN
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      internet:
-        ipv4_address: 10.0.80.84
-        ipv6_address: 2001:db8:85a4::adda:edde:9
-    volumes:
-      - ../:/libtelio
-    healthcheck:
-      test: "ls /ready"
 
   mqtt-broker:
     hostname: mqtt-broker

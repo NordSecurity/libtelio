@@ -27,7 +27,6 @@ impl FeaturesDefaultsBuilder {
             // builder part is not added
             derp: None,
             link_detection: None,
-            pmtu_discovery: None,
             flush_events_on_stop_timeout_seconds: None,
             multicast: false,
             ipv6: false,
@@ -118,12 +117,6 @@ impl FeaturesDefaultsBuilder {
     /// Enable Link detection mechanism with defaults
     pub fn enable_link_detection(self: Arc<Self>) -> Arc<Self> {
         self.config.lock().link_detection = Some(default());
-        self
-    }
-
-    /// Enable PMTU discovery with defaults
-    pub fn enable_pmtu_discovery(self: Arc<Self>) -> Arc<Self> {
-        self.config.lock().pmtu_discovery = Some(default());
         self
     }
 

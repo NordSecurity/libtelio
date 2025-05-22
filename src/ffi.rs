@@ -808,28 +808,6 @@ impl Telio {
         })
     }
 
-    pub fn probe_pmtu(&self, #[allow(unused)] host: String) -> FfiResult<u32> {
-        #[cfg(any(target_os = "linux", target_os = "android"))]
-        {
-            catch_ffi_panic(|| {
-                self.device_op(true, |dev| {
-                    let host: IpAddr = match host.parse() {
-                        Ok(ip) => ip,
-                        Err(_) => return Err(TelioError::InvalidString),
-                    };
-                    match dev.probe_pmtu(host) {
-                        Ok(res) => Ok(res),
-                        Err(e) => Err(e.into()),
-                    }
-                })
-            })
-        }
-        #[cfg(not(any(target_os = "linux", target_os = "android")))]
-        {
-            catch_ffi_panic(|| Ok(0u32))
-        }
-    }
-
     pub fn get_nat(&self, ip: String, port: u16) -> FfiResult<NatType> {
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {

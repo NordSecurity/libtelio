@@ -429,8 +429,6 @@ interface Telio {
     [Throws=TelioError]
     string receive_ping();
     [Throws=TelioError]
-    u32 probe_pmtu(string host);
-    [Throws=TelioError]
     NatType get_nat(string ip, u16 port);
 
     /// For testing only.
@@ -509,10 +507,6 @@ interface FeaturesDefaultsBuilder {
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_link_detection();
 
-    /// Enable PMTU discovery with defaults;
-    [Self=ByArc]
-    FeaturesDefaultsBuilder enable_pmtu_discovery();
-
     /// Eanable multicast with defaults
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_multicast();
@@ -567,8 +561,6 @@ dictionary Features {
     FeatureDns dns;
     /// Post quantum VPN tunnel configuration
     FeaturePostQuantumVPN post_quantum_vpn;
-    /// Enable PMTU discovery, enabled by default
-    FeaturePmtuDiscovery? pmtu_discovery;
     /// Multicast support
     boolean multicast;
     /// Batching
@@ -769,12 +761,6 @@ dictionary FeaturePostQuantumVPN {
     u32 handshake_retry_interval_s;
     /// Rekey interval in seconds
     u32 rekey_interval_s;
-};
-
-/// PMTU discovery configuration for VPN connection
-dictionary FeaturePmtuDiscovery {
-    /// A timeout for wait for the ICMP response packet
-    u32 response_wait_timeout_s;
 };
 
 /// Configurable features for UPNP endpoint provider
