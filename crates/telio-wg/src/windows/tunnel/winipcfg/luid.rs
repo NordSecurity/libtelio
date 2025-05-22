@@ -155,7 +155,7 @@ impl InterfaceLuid {
 
         unsafe { *row.Address.Ipv6_mut() = convert_ipv6addr_to_sockaddr(ip) };
 
-        let result = GetUnicastIpAddressEntry(&mut row);
+        let result = unsafe { GetUnicastIpAddressEntry(&mut row) };
 
         if NO_ERROR == result {
             Ok(row)
@@ -178,7 +178,7 @@ impl InterfaceLuid {
         unsafe { *row.Address.Ipv4_mut() = convert_ipv4addr_to_sockaddr(&address.addr()) };
         row.OnLinkPrefixLength = address.prefix_len();
 
-        let result = CreateUnicastIpAddressEntry(&row);
+        let result = unsafe { CreateUnicastIpAddressEntry(&row) };
 
         if NO_ERROR == result {
             Ok(())
@@ -191,7 +191,7 @@ impl InterfaceLuid {
     /// (https://docs.microsoft.com/en-us/windows/desktop/api/netioapi/nf-netioapi-createunicastipaddressentry).
     pub fn add_ipv6_address(&self, address: &Ipv6Net) -> Result<(), NETIO_STATUS> {
         let mut row = MIB_UNICASTIPADDRESS_ROW::default();
-        unasfe { InitializeUnicastIpAddressEntry(&mut row) };
+        unsafe { InitializeUnicastIpAddressEntry(&mut row) };
 
         row.InterfaceLuid = self.luid;
         row.DadState = IpDadStatePreferred;
@@ -201,7 +201,7 @@ impl InterfaceLuid {
         *row.Address.Ipv6_mut() = convert_ipv6addr_to_sockaddr(&address.addr());
         row.OnLinkPrefixLength = address.prefix_len();
 
-        let result = CreateUnicastIpAddressEntry(&row);
+        let result = unsafe { CreateUnicastIpAddressEntry(&row) };
 
         if NO_ERROR == result {
             Ok(())
@@ -268,7 +268,7 @@ impl InterfaceLuid {
         unsafe { *row.Address.Ipv4_mut() = convert_ipv4addr_to_sockaddr(&address.addr()) };
         row.OnLinkPrefixLength = address.prefix_len();
 
-        let result = DeleteUnicastIpAddressEntry(&row);
+        let result = unsafe { DeleteUnicastIpAddressEntry(&row) };
 
         if NO_ERROR == result {
             Ok(())
@@ -296,7 +296,7 @@ impl InterfaceLuid {
         unsafe { *row.Address.Ipv4_mut() = *address };
         row.OnLinkPrefixLength = prefix_len;
 
-        let result = DeleteUnicastIpAddressEntry(&row);
+        let result = unsafe { DeleteUnicastIpAddressEntry(&row) };
 
         if NO_ERROR == result {
             Ok(())
@@ -316,10 +316,10 @@ impl InterfaceLuid {
         row.ValidLifetime = 0xffffffff;
         row.PreferredLifetime = 0xffffffff;
 
-        *row.Address.Ipv6_mut() = convert_ipv6addr_to_sockaddr(&address.addr());
+        unsafe { *row.Address.Ipv6_mut() = convert_ipv6addr_to_sockaddr(&address.addr()) };
         row.OnLinkPrefixLength = address.prefix_len();
 
-        let result = DeleteUnicastIpAddressEntry(&row);
+        let result = unsafe { DeleteUnicastIpAddressEntry(&row) };
 
         if NO_ERROR == result {
             Ok(())
@@ -344,10 +344,10 @@ impl InterfaceLuid {
         row.PreferredLifetime = 0xffffffff;
 
         assert!(!address.is_null());
-        *row.Address.Ipv6_mut() = unsafe { *address };
+        unsafe { *row.Address.Ipv6_mut() = *address };
         row.OnLinkPrefixLength = prefix_len;
 
-        let result = DeleteUnicastIpAddressEntry(&row);
+        let result = unsafe { DeleteUnicastIpAddressEntry(&row) };
 
         if NO_ERROR == result {
             Ok(())
@@ -359,7 +359,7 @@ impl InterfaceLuid {
     /// flush_ip_addresses method deletes all interface's unicast IP addresses.
     pub fn flush_ip_addresses(&self, address_family: ADDRESS_FAMILY) -> Result<(), NETIO_STATUS> {
         let mut p_table: PMIB_UNICASTIPADDRESS_TABLE = ptr::null_mut();
-        let result = GetUnicastIpAddressTable(address_family, &mut p_table);
+        let result = unsafe { GetUnicastIpAddressTable(address_family, &mut p_table) };
         if NO_ERROR != result {
             return Err(result);
         }
@@ -368,9 +368,9 @@ impl InterfaceLuid {
         let num_entries = unsafe { *p_table }.NumEntries;
         let x_table = unsafe { *p_table }.Table.as_ptr();
         for i in 0..num_entries {
-            let current_entry = x_table.add(i as _);
-            if (*current_entry).InterfaceLuid.Value == self.luid.Value {
-                DeleteUnicastIpAddressEntry(current_entry);
+            let current_entry = unsafe { x_table.add(i as _) };
+            if unsafe { (*current_entry).InterfaceLuid.Value } == self.luid.Value {
+                unsafe { DeleteUnicastIpAddressEntry(current_entry) };
             }
         }
 
@@ -404,11 +404,13 @@ impl InterfaceLuid {
         row.ValidLifetime = 0xffffffff;
         row.PreferredLifetime = 0xffffffff;
 
-        *row.DestinationPrefix.Prefix.Ipv4_mut() =
-            convert_ipv4addr_to_sockaddr(&destination.addr());
+        unsafe {
+            *row.DestinationPrefix.Prefix.Ipv4_mut() =
+                convert_ipv4addr_to_sockaddr(&destination.addr())
+        };
         row.DestinationPrefix.PrefixLength = destination.prefix_len();
 
-        *row.NextHop.Ipv4_mut() = convert_ipv4addr_to_sockaddr(next_hop);
+        unsafe { *row.NextHop.Ipv4_mut() = convert_ipv4addr_to_sockaddr(next_hop) };
 
         let result = unsafe { GetIpForwardEntry2(&mut row) };
 
@@ -434,11 +436,13 @@ impl InterfaceLuid {
         row.ValidLifetime = 0xffffffff;
         row.PreferredLifetime = 0xffffffff;
 
-        *row.DestinationPrefix.Prefix.Ipv6_mut() =
-            convert_ipv6addr_to_sockaddr(&destination.addr());
+        unsafe {
+            *row.DestinationPrefix.Prefix.Ipv6_mut() =
+                convert_ipv6addr_to_sockaddr(&destination.addr())
+        };
         row.DestinationPrefix.PrefixLength = destination.prefix_len();
 
-        *row.NextHop.Ipv6_mut() = convert_ipv6addr_to_sockaddr(next_hop);
+        unsafe { *row.NextHop.Ipv6_mut() = convert_ipv6addr_to_sockaddr(next_hop) };
 
         let result = unsafe { GetIpForwardEntry2(&mut row) };
 
@@ -464,11 +468,13 @@ impl InterfaceLuid {
         row.ValidLifetime = 0xffffffff;
         row.PreferredLifetime = 0xffffffff;
 
-        *row.DestinationPrefix.Prefix.Ipv4_mut() =
-            convert_ipv4addr_to_sockaddr(&destination.addr());
+        unsafe {
+            *row.DestinationPrefix.Prefix.Ipv4_mut() =
+                convert_ipv4addr_to_sockaddr(&destination.addr())
+        };
         row.DestinationPrefix.PrefixLength = destination.prefix_len();
 
-        *row.NextHop.Ipv4_mut() = convert_ipv4addr_to_sockaddr(next_hop);
+        unsafe { *row.NextHop.Ipv4_mut() = convert_ipv4addr_to_sockaddr(next_hop) };
 
         row.Metric = metric;
 
@@ -496,11 +502,13 @@ impl InterfaceLuid {
         row.ValidLifetime = 0xffffffff;
         row.PreferredLifetime = 0xffffffff;
 
-        *row.DestinationPrefix.Prefix.Ipv6_mut() =
-            convert_ipv6addr_to_sockaddr(&destination.addr());
+        unsafe {
+            *row.DestinationPrefix.Prefix.Ipv6_mut() =
+                convert_ipv6addr_to_sockaddr(&destination.addr())
+        };
         row.DestinationPrefix.PrefixLength = destination.prefix_len();
 
-        *row.NextHop.Ipv6_mut() = convert_ipv6addr_to_sockaddr(next_hop);
+        unsafe { *row.NextHop.Ipv6_mut() = convert_ipv6addr_to_sockaddr(next_hop) };
 
         row.Metric = metric;
 
@@ -567,11 +575,13 @@ impl InterfaceLuid {
 
         row.InterfaceLuid = self.luid;
 
-        *row.DestinationPrefix.Prefix.Ipv4_mut() =
-            convert_ipv4addr_to_sockaddr(&destination.addr());
+        unsafe {
+            *row.DestinationPrefix.Prefix.Ipv4_mut() =
+                convert_ipv4addr_to_sockaddr(&destination.addr())
+        };
         row.DestinationPrefix.PrefixLength = destination.prefix_len();
 
-        *row.NextHop.Ipv4_mut() = convert_ipv4addr_to_sockaddr(next_hop);
+        unsafe { *row.NextHop.Ipv4_mut() = convert_ipv4addr_to_sockaddr(next_hop) };
 
         let result = unsafe { GetIpForwardEntry2(&mut row) };
         if NO_ERROR != result {
@@ -598,11 +608,13 @@ impl InterfaceLuid {
 
         row.InterfaceLuid = self.luid;
 
-        *row.DestinationPrefix.Prefix.Ipv6_mut() =
-            convert_ipv6addr_to_sockaddr(&destination.addr());
+        unsafe {
+            *row.DestinationPrefix.Prefix.Ipv6_mut() =
+                convert_ipv6addr_to_sockaddr(&destination.addr())
+        };
         row.DestinationPrefix.PrefixLength = destination.prefix_len();
 
-        *row.NextHop.Ipv6_mut() = convert_ipv6addr_to_sockaddr(next_hop);
+        unsafe { *row.NextHop.Ipv6_mut() = convert_ipv6addr_to_sockaddr(next_hop) };
 
         let result = unsafe { GetIpForwardEntry2(&mut row) };
         if NO_ERROR != result {
@@ -633,8 +645,8 @@ impl InterfaceLuid {
         let num_entries = unsafe { *p_table }.NumEntries;
         let x_table = unsafe { *p_table }.Table.as_ptr();
         for i in 0..num_entries {
-            let current_entry = x_table.add(i as _);
-            if (*current_entry).InterfaceLuid.Value == self.luid.Value {
+            let current_entry = unsafe { x_table.add(i as _) };
+            if unsafe { (*current_entry).InterfaceLuid.Value } == self.luid.Value {
                 let result = DeleteIpForwardEntry2(current_entry);
                 if NO_ERROR != result {
                     last_error = result;

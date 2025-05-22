@@ -68,7 +68,7 @@ fn cleanup_addresses_on_disconnected_interfaces2(
                         let sockaddr_ipv6: *mut SOCKADDR_IN6 = sockaddr_raw as _;
                         telio_log_info!(
                             "Cleaning up stale IPv6 address {:?} from itf {}",
-                            unsafe { *(*sockaddr_ipv6*).sin6_addr.u.Byte() },
+                            unsafe { *(*sockaddr_ipv6).sin6_addr.u.Byte() },
                             iface_friendly_name
                         );
                         match luid.delete_ipv6_address2(
