@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 #![deny(missing_docs)]
 
 //! Nurse is responsible for collecting various meshnet health data and transmitting it to other nodes

@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 #![warn(missing_docs)]
 
 //! A component runs during runtime, react to events and produces events or channels
