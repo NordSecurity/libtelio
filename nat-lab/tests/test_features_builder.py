@@ -15,7 +15,6 @@ def test_telio_features_builder_empty():
         "direct": null,
         "derp": null,
         "link_detection": null,
-        "pmtu_discovery": null,
         "flush_events_on_stop_timeout_seconds": null,
         "multicast": false,
         "ipv6": false,
@@ -50,7 +49,6 @@ def test_telio_features_builder_firewall():
         "direct": null,
         "derp": null,
         "link_detection": null,
-        "pmtu_discovery": null,
         "flush_events_on_stop_timeout_seconds": null,
         "multicast": false,
         "ipv6": false,
@@ -74,7 +72,6 @@ def test_telio_features_builder_lana():
         "direct": null,
         "derp": null,
         "link_detection": null,
-        "pmtu_discovery": null,
         "flush_events_on_stop_timeout_seconds": null,
         "multicast": false,
         "ipv6": false,
@@ -93,7 +90,6 @@ def test_telio_features_builder_all_defaults():
         .enable_direct()
         .enable_battery_saving_defaults()
         .enable_link_detection()
-        .enable_pmtu_discovery()
         .enable_flush_events_on_stop_timeout_seconds()
         .enable_multicast()
         .enable_ipv6()
@@ -120,7 +116,6 @@ def test_telio_features_builder_all_defaults():
         "nurse": {},
         "direct": {},
         "link_detection": {},
-        "pmtu_discovery": {},
         "flush_events_on_stop_timeout_seconds": 0,
         "multicast": true,
         "ipv6": true,

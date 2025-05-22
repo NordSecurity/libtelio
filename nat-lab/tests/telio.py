@@ -1190,9 +1190,6 @@ class Client:
         ) as f:
             f.write(network_info_info)
 
-    async def probe_pmtu(self, host: str) -> int:
-        return await self.get_proxy().probe_pmtu(host)
-
     async def flush_logs(self) -> None:
         await self.get_proxy().flush_logs()
 

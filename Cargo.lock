@@ -4652,7 +4652,6 @@ dependencies = [
  "telio-network-monitors",
  "telio-nurse",
  "telio-pinger",
- "telio-pmtu",
  "telio-pq",
  "telio-proto",
  "telio-proxy",
@@ -4860,22 +4859,6 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tracing",
-]
-
-[[package]]
-name = "telio-pmtu"
-version = "0.1.0"
-dependencies = [
- "libc",
- "pnet_packet 0.35.0",
- "rand 0.8.5",
- "socket2",
- "telio-lana",
- "telio-sockets",
- "telio-utils",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
