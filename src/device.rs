@@ -415,7 +415,7 @@ pub struct DNS<D: DnsResolver = LocalDnsResolver> {
 
     // A file descriptor for virtual host hosting the DNS server within libtelio used for
     // configuring routing on some platforms
-    virtual_host_tun_fd: Option<i32>,
+    virtual_host_tun_fd: Option<Arc<Tun>>,
 }
 
 struct Runtime {
@@ -1225,7 +1225,8 @@ impl Runtime {
         let dns = Arc::new(Mutex::new(DNS {
             resolver: None,
             #[cfg(unix)]
-            virtual_host_tun_fd: config.tun.as_ref().map(|tun| tun.as_raw_fd()),
+            // virtual_host_tun_fd: config.tun.as_ref().map(|tun| tun.as_raw_fd()),
+            virtual_host_tun_fd: config.tun.clone(),
             #[cfg(windows)]
             virtual_host_tun_fd: None,
         }));
@@ -1733,7 +1734,7 @@ impl Runtime {
                 let dns = LocalDnsResolver::new(
                     &public_key,
                     upstream_dns_servers,
-                    dns_entity.virtual_host_tun_fd,
+                    dns_entity.virtual_host_tun_fd.as_ref(),
                     self.features.dns.exit_dns.clone(),
                 )
                 .await

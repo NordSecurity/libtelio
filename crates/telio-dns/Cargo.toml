@@ -26,6 +26,7 @@ telio-crypto.workspace = true
 telio-model.workspace = true
 telio-utils.workspace = true
 telio-wg.workspace = true
+nix = { version = "0.30.1", features = ["net", "socket"] }
 
 [dev-dependencies]
 dns-parser = "0.8.0"
