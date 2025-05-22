@@ -2660,12 +2660,13 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "0.6.0"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v1.0.7#da23f2b13468efe3754f7e49732c500dd4632e3a"
+source = "git+https://github.com/NordSecurity/neptun.git?branch=LLT-5850_break_tx_into_tasks#3e169b44c9e74a628ab902cfa44aca90b970c6e2"
 dependencies = [
  "aead",
  "base64 0.13.1",
  "blake2",
  "chacha20poly1305",
+ "crossbeam-channel",
  "dispatch",
  "hex",
  "hmac",
@@ -2673,6 +2674,7 @@ dependencies = [
  "ip_network_table",
  "libc",
  "nix 0.29.0",
+ "num_cpus",
  "parking_lot",
  "rand_core 0.6.4",
  "ring",
