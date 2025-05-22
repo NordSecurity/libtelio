@@ -1033,6 +1033,7 @@ mod tests {
         cell::RefCell,
         net::{Ipv4Addr, Ipv6Addr, SocketAddr},
         rc::Rc,
+        sync::atomic::{AtomicUsize, Ordering},
     };
     use stun_codec::rfc5389::{
         self,
@@ -1865,11 +1866,11 @@ mod tests {
         // In the end we should be asked twice:
         //  - when the peer is added and is_wg_ready check finally passes
         //  - when we get the interface while starting the session
+        let run_no = AtomicUsize::new(0);
         wg.expect_get_interface()
-            .returning(move || unsafe {
-                static mut RUN_NO: i32 = 0;
-                RUN_NO += 1;
-                if RUN_NO <= 3 {
+            .returning(move || {
+                run_no.fetch_add(1, Ordering::Relaxed);
+                if run_no.load(Ordering::Relaxed) <= 3 {
                     Ok(Interface {
                         listen_port: Some(wg_port),
                         peers: Default::default(),
