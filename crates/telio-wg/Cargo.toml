@@ -11,7 +11,7 @@ test-adapter = []
 
 [dependencies]
 slog-stdlog = "4.1.1"
-wireguard-uapi = { version = "2.0.5", features = ["xplatform"], default-features = false }
+wireguard-uapi = { git = "https://github.com/NordSecurity/wireguard-uapi-rs.git", rev = "5f5d9952ced4faf10f56d98153e4a8e560102e5c", features = ["xplatform", "zeroize"], default-features = false  }
 
 async-trait.workspace = true
 neptun.workspace = true
@@ -59,7 +59,7 @@ sha2.workspace = true
 winapi = { workspace = true, features = ["nldef"] }
 winreg.workspace = true
 
-wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", tag = "v1.0.6" }
+wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", tag = "v1.1.0" }
 
 windows = { workspace = true, features = [
     "Win32_Security",

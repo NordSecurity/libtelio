@@ -790,7 +790,7 @@ impl State {
         });
 
         set::Device {
-            private_key: to.private_key.clone().map(|key| key.into_bytes()),
+            private_key: to.private_key.clone().map(|key| key.into_bytes().into()),
             listen_port: Self::update_calculate_set_listen_port(
                 self.interface.listen_port,
                 to.listen_port,

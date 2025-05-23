@@ -17,7 +17,7 @@ use crate::windows::cleanup::*;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{mem, option, ptr};
 use telio_utils::{
-    telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
+    telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn, Hidden,
 };
 use winapi::shared::{
     ifdef::IfOperStatusUp,
@@ -62,7 +62,7 @@ impl WireGuardUapiSetDevice {
         // Create a local copy of the configuration
         WireGuardUapiSetDevice {
             config: wireguard_uapi::xplatform::set::Device {
-                private_key: config.private_key,
+                private_key: config.private_key.clone(),
                 listen_port: config.listen_port,
                 fwmark: config.fwmark,
                 replace_peers: config.replace_peers,
