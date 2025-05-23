@@ -290,7 +290,7 @@ async def _copy_vm_binaries_if_needed(items):
         for mark in item.own_markers:
             if mark.name == "windows" and not windows_bins_copied:
                 await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_1)
-                await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_2)
+                # await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_2)
                 windows_bins_copied = True
             elif mark.name == "mac" and not mac_bins_copied:
                 await _copy_vm_binaries(ConnectionTag.VM_MAC)

@@ -9,21 +9,40 @@ from utils.connection import Connection
 from utils.logger import log
 from utils.process import ProcessExecError
 
+STATUS_CHECK_TIMEOUT_S: float = 20.0
+
 
 @dataclass
 class Interface:
-    def __init__(self, name: str, ipv4: str) -> None:
+    def __init__(self, name: str, ipv4: str, enabled: bool = True) -> None:
         self.name = name
         self.ipv4 = ipv4
+        self.enabled = enabled
 
     @staticmethod
     async def get_network_interfaces(connection: Connection) -> List["Interface"]:
         process = await connection.create_process(
-            ["netsh", "interface", "ipv4", "show", "addresses"], quiet=True
+            ["netsh", "interface", "ipv4", "show", "addresses"],
+            quiet=True,  # ["netsh", "interface", "show", "interface"], quiet=True
         ).execute()
 
         stdout = process.get_stdout()
         log.debug(stdout)
+
+        # matches = re.finditer(
+        #     r"^([^\s]+).*(Ethernet.*$)",
+        #     stdout,
+        #     re.DOTALL,
+        # )
+
+        # result: List[Interface] = []
+        # for match in matches:
+        #     enabled = True if match.group(1) == "Enabled" else False
+        #     name = match.group(2)
+
+        #     result.append(Interface(name, enabled))
+
+        # return result
 
         matches = re.finditer(
             r'Configuration for interface "([^"]+)"\s+(.*?)InterfaceMetric',
@@ -42,21 +61,131 @@ class Interface:
 
         return result
 
+    async def delete_route(self, connection: Connection) -> None:
+        try:
+            await connection.create_process(
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4",
+                    "delete",
+                    "route",
+                    "0.0.0.0/0",
+                    self.name,
+                ],
+                quiet=True,
+            ).execute()
+        except ProcessExecError as exception:
+            if (
+                "The filename, directory name, or volume label syntax is incorrect"
+                in exception.stdout
+            ):
+                return
+            if "Element not found" in exception.stdout:
+                return
+            raise exception
 
-class ConfiguredInterfaces:
-    def __init__(self, default: Optional[str], primary: str, secondary: str) -> None:
-        self.default = default
-        self.primary = primary
-        self.secondary = secondary
+        if not await CommandGrepper(
+            connection,
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "show",
+                "route",
+            ],
+            timeout=STATUS_CHECK_TIMEOUT_S,
+        ).check_not_exists(
+            "0.0.0.0/0",
+            [
+                self.name,
+            ],
+        ):
+            raise Exception("Failed to delete " + self.name + " route")
+
+    async def disable_interface(self, connection: Connection) -> None:
+        await connection.create_process(
+            [
+                "netsh",
+                "interface",
+                "set",
+                "interface",
+                self.name,
+                "disable",
+            ],
+            quiet=True,
+        ).execute()
+
+        if not await CommandGrepper(
+            connection,
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "show",
+                "addresses",
+                self.name,
+            ],
+            timeout=STATUS_CHECK_TIMEOUT_S,
+        ).check_not_exists(self.name, None):
+            raise Exception("Failed to disable management interface")
+
+    async def enable_interface(self, connection: Connection) -> None:
+        await connection.create_process(
+            [
+                "netsh",
+                "interface",
+                "set",
+                "interface",
+                self.name,
+                "enable",
+            ],
+            quiet=True,
+        ).execute()
+
+        # wait for interface to appear in the list
+        while not bool([
+            iface
+            for iface in await Interface.get_network_interfaces(connection)
+            if self.name == iface.name
+        ]):
+            await asyncio.sleep(0.1)
+
+        # wait for interface's ip to be assigned
+        while bool([
+            iface
+            for iface in await Interface.get_network_interfaces(connection)
+            if Interface(self.name, "").ipv4 == iface.ipv4
+        ]):
+            await asyncio.sleep(0.1)
+
+
+class NetworkSwitcherWindows(NetworkSwitcher):
+    def __init__(
+        self,
+        connection: Connection,
+        mgmt_ifc: Optional[Interface],
+        primary_ifc: Interface,
+        secondary_ifc: Interface,
+    ) -> None:
+        self._connection = connection
+        self._mgmt_interface = mgmt_ifc
+        self._primary_interface = primary_ifc
+        self._secondary_interface = secondary_ifc
 
     @staticmethod
-    async def create(connection: Connection) -> "ConfiguredInterfaces":
+    async def create(connection: Connection) -> "NetworkSwitcherWindows":
         interfaces = await Interface.get_network_interfaces(connection)
 
-        def find_interface(prefix: str) -> Optional[str]:
+        for interface in interfaces:
+            if not interface.enabled:
+                pass
+
+        def find_interface(prefix: str) -> Optional[Interface]:
             for interface in interfaces:
-                if interface.ipv4.startswith(prefix):
-                    return interface.name
+                if interface is not None:
+                    if interface.ipv4.startswith(prefix):
+                        return interface
             return None
 
         # Allow management interface to be shut down
@@ -66,22 +195,11 @@ class ConfiguredInterfaces:
         assert primary_itf is not None
         assert secondary_itf is not None
 
-        return ConfiguredInterfaces(management_itf, primary_itf, secondary_itf)
-
-
-class NetworkSwitcherWindows(NetworkSwitcher):
-    _status_check_timeout_s: float = 20.0
-
-    def __init__(
-        self, connection: Connection, interfaces: ConfiguredInterfaces
-    ) -> None:
-        self._connection = connection
-        self._interfaces = interfaces
-
-    @staticmethod
-    async def create(connection: Connection) -> "NetworkSwitcherWindows":
         return NetworkSwitcherWindows(
-            connection, await ConfiguredInterfaces.create(connection)
+            connection,
+            management_itf,
+            primary_itf,
+            secondary_itf,
         )
 
     async def switch_to_primary_network(self) -> None:
@@ -95,7 +213,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             "add",
             "route",
             "0.0.0.0/0",
-            self._interfaces.primary,
+            self._primary_interface.name,
             f"nexthop={config.LINUX_VM_PRIMARY_GATEWAY}",
         ]).execute()
 
@@ -108,7 +226,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
                 "show",
                 "route",
             ],
-            timeout=self._status_check_timeout_s,
+            timeout=STATUS_CHECK_TIMEOUT_S,
         ).check_exists(
             "0.0.0.0/0",
             [
@@ -128,7 +246,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             "add",
             "route",
             "0.0.0.0/0",
-            self._interfaces.secondary,
+            self._secondary_interface.name,
             f"nexthop={config.LINUX_VM_SECONDARY_GATEWAY}",
         ]).execute()
 
@@ -141,7 +259,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
                 "show",
                 "route",
             ],
-            timeout=self._status_check_timeout_s,
+            timeout=STATUS_CHECK_TIMEOUT_S,
         ).check_exists(
             "0.0.0.0/0",
             [
@@ -154,107 +272,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         # Deleting routes by interface name instead of network destination (0.0.0.0/0) makes
         # it possible to have multiple default routes at the same time: first default route
         # for LAN network, and second default route for VPN network.
-
-        await self._disable_management_interface()
-        await self._delete_route(self._interfaces.primary)
-        await self._delete_route(self._interfaces.secondary)
-
-    async def _delete_route(self, interface_name: str) -> None:
-        try:
-            await self._connection.create_process(
-                [
-                    "netsh",
-                    "interface",
-                    "ipv4",
-                    "delete",
-                    "route",
-                    "0.0.0.0/0",
-                    interface_name,
-                ],
-                quiet=True,
-            ).execute()
-        except ProcessExecError as exception:
-            if (
-                "The filename, directory name, or volume label syntax is incorrect"
-                in exception.stdout
-            ):
-                return
-            if "Element not found" in exception.stdout:
-                return
-            raise exception
-
-        if not await CommandGrepper(
-            self._connection,
-            [
-                "netsh",
-                "interface",
-                "ipv4",
-                "show",
-                "route",
-            ],
-            timeout=self._status_check_timeout_s,
-        ).check_not_exists(
-            "0.0.0.0/0",
-            [
-                interface_name,
-            ],
-        ):
-            raise Exception("Failed to delete " + interface_name + " route")
-
-    async def _disable_management_interface(self) -> None:
-        if self._interfaces.default is not None:
-            await self._connection.create_process(
-                [
-                    "netsh",
-                    "interface",
-                    "set",
-                    "interface",
-                    self._interfaces.default,
-                    "disable",
-                ],
-                quiet=True,
-            ).execute()
-
-            if not await CommandGrepper(
-                self._connection,
-                [
-                    "netsh",
-                    "interface",
-                    "ipv4",
-                    "show",
-                    "addresses",
-                    self._interfaces.default,
-                ],
-                timeout=self._status_check_timeout_s,
-            ).check_not_exists(self._interfaces.default, None):
-                raise Exception("Failed to disable management interface")
-
-    async def _enable_management_interface(self) -> None:
-        if self._interfaces.default is not None:
-            await self._connection.create_process(
-                [
-                    "netsh",
-                    "interface",
-                    "set",
-                    "interface",
-                    self._interfaces.default,
-                    "enable",
-                ],
-                quiet=True,
-            ).execute()
-
-            # wait for interface to appear in the list
-            while not bool([
-                iface
-                for iface in await Interface.get_network_interfaces(self._connection)
-                if self._interfaces.default == iface.name
-            ]):
-                await asyncio.sleep(0.1)
-
-            # wait for interface's ip to be assigned
-            while bool([
-                iface
-                for iface in await Interface.get_network_interfaces(self._connection)
-                if Interface(self._interfaces.default, "").ipv4 == iface.ipv4
-            ]):
-                await asyncio.sleep(0.1)
+        if self._mgmt_interface:
+            await self._mgmt_interface.disable_interface(self._connection)
+        await self._primary_interface.delete_route(self._connection)
+        await self._secondary_interface.delete_route(self._connection)

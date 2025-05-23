@@ -339,3 +339,29 @@ def is_tag_valid_for_ssh_connection(tag: ConnectionTag) -> bool:
         ConnectionTag.VM_WINDOWS_2,
         ConnectionTag.VM_MAC,
     ]
+
+
+async def set_nic_state(conn: Connection, nic_name: str, enable: bool) -> None:
+    if conn._tag.name.startswith("DOCKER") and conn._target_os == TargetOS.Linux:
+        await conn.create_process([
+            "ip",
+            "link",
+            "set",
+            nic_name,
+            "up" if enable else "down",
+        ]).execute()
+    elif conn.target_os == TargetOS.Mac:
+        await conn.create_process([
+            "ifconfig",
+            nic_name,
+            "up" if enable else "down",
+        ]).execute()
+    elif conn.target_os == TargetOS.Windows:
+        await conn.create_process([
+            "netsh",
+            "interface",
+            "set",
+            "interface",
+            nic_name,
+            "admin=enable" if enable else "admin=disable",
+        ]).execute()
