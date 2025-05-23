@@ -9,7 +9,7 @@ use rust_cgi::{
     Response,
 };
 use telio::telio_model::mesh::{Node, NodeState};
-use tracing::{level_filters::LevelFilter, warn, Level};
+use tracing::{info, level_filters::LevelFilter, warn, Level};
 
 use crate::{
     cgi::constants::TELIOD_CFG,
@@ -82,19 +82,23 @@ pub fn handle_web_ui(request: &CgiRequest) -> Option<Response> {
         (&Method::GET, "/meshnet") => render(meshnet(&AppState::collect())),
         (&Method::POST, "/meshnet") => {
             let mut app = AppState::collect();
-            update_config(&mut app, request);
 
             let mut err_msg: Option<String> = None;
 
             if !app.running {
+                // TODO: it makes more sense to update the config when starting
+                // meshnet. For the future improvement it makes sense to have separate
+                // idempotent POST and DELETE endpoints instead
+                update_config(&mut app, request);
+
                 let res = start_daemon();
-                warn!("start: {} -> {}", res.0, res.1);
+                info!("start: {} -> {}", res.0, res.1);
                 if !res.0.is_success() {
                     err_msg = Some(res.1);
                 }
             } else {
                 let res = stop_daemon();
-                warn!("stop: {} -> {}", res.0, res.1);
+                info!("stop: {} -> {}", res.0, res.1);
                 if !res.0.is_success() {
                     err_msg = Some(res.1);
                 }
@@ -206,7 +210,11 @@ fn update_config(app: &mut AppState, request: &CgiRequest) {
 }
 
 fn config_view(app: &AppState, error: Option<String>) -> Markup {
+    #[cfg(debug_assertions)]
     let log_options = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
+    #[cfg(not(debug_assertions))]
+    let log_options = ["INFO", "WARN", "ERROR"];
+
     let curr_level = app
         .config
         .log_level
@@ -216,11 +224,12 @@ fn config_view(app: &AppState, error: Option<String>) -> Markup {
 
     let is_running = app.running;
 
-    let divclass = if is_running {
+    let toggle_class = if is_running {
         "relative w-11 h-6 bg-gray-200 darkpeer-focus-visible:outline-none peer-focus-visible:shadow-focus rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
     } else {
         "relative w-11 h-6 bg-gray-200 darkpeer-focus-visible:outline-none peer-focus-visible:shadow-focus rounded-full peer after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all"
     };
+
     html! {
         div id="card" class="bg-neutral-0 dark:bg-[#1C1F2B] border border-secondary max-w-[768px] mx-auto w-full p-6 rounded-md flex flex-col gap-6" {
             div class="flex justify-between items-center" {
@@ -239,37 +248,63 @@ fn config_view(app: &AppState, error: Option<String>) -> Markup {
             hr class="border-neutral-200 dark:border-neutral-800";
             div class="flex justify-between items-center" {
                 span class="text-primary body-md-medium" { "Configuration" }
-                label class="inline-flex items-center cursor-pointer" {
+                div class="inline-flex items-center cursor-pointer" {
                     span id="toggleLabel" class="mr-2 text-primary body-xs-bold" {( if is_running { "On" } else { "Off" })};
                     input type="checkbox" checked?[is_running] class="sr-only peer" {}
-                    div class=({divclass}) hx-on:click="document.getElementById('config').requestSubmit()" {}
+                    div class=({toggle_class}) hx-on:click="htmx.trigger('#config', 'submit'); document.getElementById('config').reportValidity();" {}
                 }
             }
             // Inputs
             form id="config" hx-post="meshnet" hx-target="body" class="mb-0" {
+                button type="submit" class="hidden" {}
                 div class="flex flex-col gap-4" {
                     div class="space-y-2" {
                         label class="block text-primary body-xs-medium" { "Access Token" }
-                        input name=(ACCESS_TOKEN) type="password" class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(app.config.authentication_token) "hx-on:htmx:validation:validate"="telio.validateToken(this)";
+                        (if is_running {
+                            html!{input disabled name=(ACCESS_TOKEN) type="password" class="text-disabled w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(app.config.authentication_token) "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
+                        } else {
+                            html!{input name=(ACCESS_TOKEN) type="password" class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(app.config.authentication_token) "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
+                        })
                     }
                     div class="flex flex-col gap-2" {
                         div class="space-y-2" {
                             label class="block text-primary body-xs-medium" { "Tunnel Name" }
-                            input name=(TUNNEL_NAME) type="text" class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(app.config.interface.name) "hx-on:htmx:validation:validate"="telio.validateTunnel(this)";
+                            (if is_running {
+                                html!{input disabled name=(TUNNEL_NAME) type="text" class="text-disabled w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(app.config.interface.name) "hx-on:htmx:validation:validate"="telio.validateTunnel(this)";}
+                            } else {
+                                html!{input name=(TUNNEL_NAME) type="text" class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(app.config.interface.name) "hx-on:htmx:validation:validate"="telio.validateTunnel(this)";}
+                            })
                         }
                     }
                     div class="space-y-2" {
                         label class="block text-primary body-xs-medium" { "Log Level" }
                         div class="relative" {
-                            select name=(LOG_LEVEL) class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm appearance-none focus-visible:outline-none focus-visible:shadow-focus" {
-                                @for opt in &log_options {
-                                    @if *opt == curr_level {
-                                        option value=(opt) selected="true" { (opt) }
-                                    } @else {
-                                        option value=(opt) { (opt) }
+                            (if is_running {
+                                html! {
+                                    select disabled name=(LOG_LEVEL) class="text-disabled w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm appearance-none focus-visible:outline-none focus-visible:shadow-focus" {
+                                        @for opt in &log_options {
+                                            @if *opt == curr_level {
+                                                option value=(opt) selected="true" { (opt) }
+                                            } @else {
+                                                option value=(opt) { (opt) }
+                                            }
+                                        }
                                     }
                                 }
-                            }
+                            } else {
+                                html! {
+                                    select name=(LOG_LEVEL) class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm appearance-none focus-visible:outline-none focus-visible:shadow-focus" {
+                                        @for opt in &log_options {
+                                            @if *opt == curr_level {
+                                                option value=(opt) selected="true" { (opt) }
+                                            } @else {
+                                                option value=(opt) { (opt) }
+                                            }
+                                        }
+                                }
+                                }
+                            })
+
                             div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-primary" {
                                 svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" {
                                     path fill-rule="evenodd" clip-rule="evenodd" d="M12 14.5L8 9.5L16 9.5L12 14.5Z" fill="#2A2B32" {}
