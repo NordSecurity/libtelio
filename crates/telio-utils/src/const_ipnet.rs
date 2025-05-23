@@ -14,11 +14,11 @@ impl ConstIpv4Net {
     /// Creates a new IPv4 network address from an `Ipv4Addr` and prefix
     /// length. If called from a const context it will verify prefix length
     /// at compile time. Otherwise it will panic at runtime if prefix length
-    /// is not less then or equal to 32.
+    /// is not less than or equal to 32.
     pub const fn new(ip: Ipv4Addr, prefix_len: u8) -> Self {
         assert!(
             prefix_len <= 32,
-            "PREFIX_LEN must be less then or equal to 32 for ConstIpv4Net"
+            "PREFIX_LEN must be less than or equal to 32 for ConstIpv4Net"
         );
         Self { ip, prefix_len }
     }
@@ -50,11 +50,11 @@ impl ConstIpv6Net {
     /// Creates a new IPv6 network address from an `Ipv6Addr` and prefix
     /// length. If called from a const context it will verify prefix length
     /// at compile time. Otherwise it will panic at runtime if prefix length
-    /// is not less then or equal to 128.
+    /// is not less than or equal to 128.
     pub const fn new(ip: Ipv6Addr, prefix_len: u8) -> Self {
         assert!(
             prefix_len <= 128,
-            "PREFIX_LEN must be less then or equal to 128 for ConstIpv6Net"
+            "PREFIX_LEN must be less than or equal to 128 for ConstIpv6Net"
         );
         Self { ip, prefix_len }
     }
