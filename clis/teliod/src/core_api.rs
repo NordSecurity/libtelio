@@ -132,6 +132,7 @@ pub async fn init_with_api(auth_token: &str) -> Result<DeviceIdentity, Error> {
 
     let mut options = OpenOptions::new();
     // User has read/write but others have none
+    // Mode for identity file rw-------
     options.mode(0o600);
     let mut file = options.create(true).write(true).open(identity_path)?;
     serde_json::to_writer(&mut file, &device_identity)?;

@@ -1,6 +1,6 @@
 {
     "log_level": "trace",
-    "log_file_path": "./teliod_natlab.log",
+    "log_file_path": "/var/log/teliod_natlab.log",
     "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "adapter_type": "neptun",
     "interface": {

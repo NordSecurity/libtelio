@@ -11,21 +11,18 @@ use telio::{
     telio_utils::select,
     telio_wg::AdapterType,
 };
-use tokio::sync::mpsc::Sender;
-use tokio::{sync::mpsc, sync::oneshot, time::Duration};
+use tokio::{sync::mpsc, sync::mpsc::Sender, sync::oneshot, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 
-use crate::core_api::{get_meshmap as get_meshmap_from_server, init_with_api};
-use crate::logging::setup_logging;
-use crate::ClientCmd;
 use crate::Hidden;
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
     config::DeviceIdentity,
     config::{InterfaceConfig, TeliodDaemonConfig},
+    core_api::{get_meshmap as get_meshmap_from_server, init_with_api},
     nc::NotificationCenter,
-    TelioStatusReport, TeliodError,
+    ClientCmd, TelioStatusReport, TeliodError,
 };
 
 #[derive(Debug)]
@@ -209,13 +206,6 @@ async fn daemon_init(
 }
 
 pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError> {
-    let _tracing_worker_guard = setup_logging(
-        &config.log_file_path,
-        config.log_level,
-        config.log_file_count,
-    )
-    .await?;
-
     debug!("started with config: {config:?}");
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
@@ -248,8 +238,6 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
     });
 
     info!("Entering event loop");
-    eprintln!("Daemon started");
-
     loop {
         select! {
             // Check if telio_task completes and exit if it fails
