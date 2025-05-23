@@ -3,6 +3,8 @@ on:
   pull_request_target:
     types: [labeled]
   push:
+    branches-ignore:
+      - main
   merge_group:
     types: [checks_requested]
   schedule:
