@@ -1,4 +1,4 @@
-use std::{num::NonZeroU64, path::PathBuf, str::FromStr};
+use std::{net::SocketAddr, num::NonZeroU64, path::PathBuf, str::FromStr};
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use smart_default::SmartDefault;
@@ -7,7 +7,10 @@ use tracing::{debug, info, level_filters::LevelFilter, warn, Level};
 use uuid::Uuid;
 
 use telio::telio_utils::Hidden;
-use telio::{crypto::SecretKey, device::AdapterType};
+use telio::{
+    crypto::{PublicKey, SecretKey},
+    device::AdapterType,
+};
 
 use crate::configure_interface::InterfaceConfigurationProvider;
 
@@ -103,6 +106,7 @@ pub struct TeliodDaemonConfig {
     pub log_file_count: usize,
     pub adapter_type: AdapterType,
     pub interface: InterfaceConfig,
+    pub vpn: Option<VpnConfig>,
 
     #[serde(
         deserialize_with = "deserialize_authentication_token",
@@ -138,6 +142,9 @@ impl TeliodDaemonConfig {
         if let Some(interface) = update.interface {
             self.interface = interface;
         }
+        if let Some(vpn) = update.vpn {
+            self.vpn = Some(vpn);
+        }
         if let Some(http_certificate_file_path) = update.http_certificate_file_path {
             self.http_certificate_file_path = http_certificate_file_path;
         }
@@ -171,6 +178,7 @@ impl Default for TeliodDaemonConfig {
                 name: "nlx".to_string(),
                 config_provider: Default::default(),
             },
+            vpn: None,
             authentication_token: Hidden("".to_string()),
             http_certificate_file_path: None,
             mqtt: MqttConfig::default(),
@@ -251,6 +259,12 @@ pub struct InterfaceConfig {
     pub config_provider: InterfaceConfigurationProvider,
 }
 
+#[derive(PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
+pub struct VpnConfig {
+    pub server_endpoint: SocketAddr,
+    pub server_pubkey: PublicKey,
+}
+
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, Default)]
 pub struct TeliodDaemonConfigPartial {
@@ -260,6 +274,7 @@ pub struct TeliodDaemonConfigPartial {
     pub log_file_count: Option<usize>,
     pub adapter_type: Option<AdapterType>,
     pub interface: Option<InterfaceConfig>,
+    pub vpn: Option<VpnConfig>,
     pub app_user_uid: Option<Uuid>,
     #[serde(default, deserialize_with = "deserialize_partial_authentication_token")]
     pub authentication_token: Option<Hidden<String>>,
@@ -326,6 +341,7 @@ mod tests {
                 name: "utun10".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
+            vpn: None,
             authentication_token:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_owned()
