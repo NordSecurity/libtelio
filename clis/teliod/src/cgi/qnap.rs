@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn test_sid_retrieval_with_cookie() {
-        let expected_sid = "nastestsid0%&)+";
+        let expected_sid = Hidden("nastestsid0%&)+".to_owned());
         let request = Request::builder()
             .uri("http://example.com/")
             .header("User-Agent", "test-agent/1.0")
@@ -119,7 +119,7 @@ mod tests {
 
         let parsed_sid = QnapUserAuthorization::retrieve_token(&request).unwrap();
 
-        assert!(parsed_sid.eq(expected_sid));
+        assert!(parsed_sid.eq(&expected_sid));
     }
 
     #[test]

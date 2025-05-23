@@ -37,6 +37,17 @@ jobs:
       - name: Test replacement script
         run: python3 ci/test_replace_string.py
 
+  test-teliod:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - run: cargo test --package=teliod -- --nocapture
+        env:
+          RUST_BACKTRACE: full
+      - run: cargo test --package=teliod --features=cgi -- --nocapture
+        env:
+          RUST_BACKTRACE: full
+
   test-build-version-replacement:
     strategy:
       matrix:

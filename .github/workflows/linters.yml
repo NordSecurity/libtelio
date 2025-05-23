@@ -56,6 +56,7 @@ jobs:
           with:
             just-version: '1.38.0'
         - run: just clippy teliod
+        - run: just clippy teliod cgi
   deny:
       runs-on: ubuntu-22.04
       steps:
