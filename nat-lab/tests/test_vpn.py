@@ -434,7 +434,7 @@ async def test_firewall_blacklist_tcp() -> None:
     ]
 
     setup_params[1].features.firewall.outgoing_blacklist = [
-        FirewallBlacklistTuple(IpProtocol.TCP, serv_ip, serv_port)
+        FirewallBlacklistTuple(protocol=IpProtocol.TCP, ip=serv_ip, port=serv_port)
     ]
 
     async with AsyncExitStack() as exit_stack:
@@ -506,7 +506,7 @@ async def test_firewall_blacklist_udp() -> None:
     ]
 
     setup_params[1].features.firewall.outgoing_blacklist = [
-        FirewallBlacklistTuple(IpProtocol.UDP, serv_ip, serv_port)
+        FirewallBlacklistTuple(protocol=IpProtocol.UDP, ip=serv_ip, port=serv_port)
     ]
 
     async with AsyncExitStack() as exit_stack:
