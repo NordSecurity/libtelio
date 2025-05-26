@@ -17,6 +17,8 @@ use telio_utils::{
 };
 use tokio::time::sleep;
 #[cfg(windows)]
+use uuid::Uuid;
+#[cfg(windows)]
 use winreg::{enums::*, RegKey, HKEY};
 #[cfg(windows)]
 use wireguard_nt::{self, set_logger, SetInterface, SetPeer, WIREGUARD_STATE_UP};
@@ -118,9 +120,12 @@ impl WindowsNativeWg {
                     // Try to create a new adapter
                     let adapter_guid = Self::get_adapter_guid_from_name_hash(name);
                     telio_log_debug!(
-                        "Try to create adapter for name: {:#?} with guid: {:#?}",
+                        "Try to create adapter for name: {:#?} with guid: {{{}}}",
                         name,
-                        adapter_guid
+                        Uuid::from_u128(adapter_guid)
+                            .hyphenated()
+                            .to_string()
+                            .to_uppercase()
                     );
 
                     // Adapter name and pool name must be the same, because netsh

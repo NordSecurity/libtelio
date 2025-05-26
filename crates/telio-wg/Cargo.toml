@@ -58,6 +58,7 @@ cc.workspace = true
 sha2.workspace = true
 winapi = { workspace = true, features = ["nldef"] }
 winreg.workspace = true
+uuid.workspace = true
 
 wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", tag = "v1.0.6" }
 
