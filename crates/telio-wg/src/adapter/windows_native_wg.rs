@@ -123,11 +123,6 @@ impl WindowsNativeWg {
                         adapter_guid
                     );
 
-                    const GUID_DEVINTERFACE_NET: &str = r"SYSTEM\CurrentControlSet\Control\DeviceClasses\{CAC88484-7515-4C03-82E6-71A87ABAC361}";
-                    const SWD_WIREGUARD: &str = r"SYSTEM\CurrentControlSet\Enum\SWD\WireGuard";
-                    Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, GUID_DEVINTERFACE_NET);
-                    Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
-
                     // Adapter name and pool name must be the same, because netsh
                     // identifies interfaces by their pool name and not the adapter or device name.
                     // This replicates the behavior of Wireguard-Go adapter which relies on WinTun.sys.
@@ -152,17 +147,10 @@ impl WindowsNativeWg {
                                 )))
                             }
                         }
-                        Err((e, _)) => {
-                            Self::print_registry_key_contents(
-                                HKEY_LOCAL_MACHINE,
-                                GUID_DEVINTERFACE_NET,
-                            );
-                            Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
-                            Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                                "Failed to create adapter: {:?}",
-                                e
-                            ))))
-                        }
+                        Err((e, _)) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                            "Failed to create adapter: {:?}",
+                            e
+                        )))),
                     }
                 }
                 Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
@@ -183,8 +171,20 @@ impl WindowsNativeWg {
         name: &str,
         enable_dynamic_wg_nt_control: bool,
     ) -> Result<Self, AdapterError> {
+        const GUID_DEVINTERFACE_NET: &str = r"SYSTEM\CurrentControlSet\Control\DeviceClasses\{CAC88484-7515-4C03-82E6-71A87ABAC361}";
+        const SWD_WIREGUARD: &str = r"SYSTEM\CurrentControlSet\Enum\SWD\WireGuard";
+        telio_log_debug!("Print registry before adapter creation!");
+        Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, GUID_DEVINTERFACE_NET);
+        Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
+
         let dll_path = "wireguard.dll";
-        let wg_dev = Self::create(name, dll_path, enable_dynamic_wg_nt_control)?;
+        let tmp_wg_dev = Self::create(name, dll_path, enable_dynamic_wg_nt_control);
+
+        telio_log_debug!("Print registry after adapter creation!");
+        Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, GUID_DEVINTERFACE_NET);
+        Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
+
+        let wg_dev = tmp_wg_dev?;
         telio_log_info!(
             "Adapter '{}' using created successfully. enable_dynamic_wg_nt_control: {}",
             name,
