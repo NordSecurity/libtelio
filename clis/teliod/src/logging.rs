@@ -40,8 +40,12 @@ pub async fn setup_logging(
     };
 
     let log_appender = Builder::new()
-        .rotation(Rotation::DAILY)
         .filename_prefix(log_file.to_string_lossy())
+        .rotation(if log_file_count == 0 {
+            Rotation::NEVER
+        } else {
+            Rotation::DAILY
+        })
         .max_log_files(log_file_count)
         .build(log_dir)?;
 

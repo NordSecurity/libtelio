@@ -3,7 +3,6 @@ import pytest
 import time
 from config import LIBTELIO_BINARY_PATH_DOCKER
 from contextlib import AsyncExitStack
-from datetime import datetime
 from helpers import setup_connections
 from utils.connection import ConnectionTag
 from utils.process.process import ProcessExecError
@@ -12,8 +11,7 @@ TELIOD_EXEC_PATH = f"{LIBTELIO_BINARY_PATH_DOCKER}/teliod"
 CONFIG_FILE_PATH = "/etc/teliod/config.json"
 SOCKET_FILE_PATH = "/run/teliod.sock"
 STDOUT_FILE_PATH = "/var/log/teliod.log"
-# Build a dated log filename
-LOG_FILE_PATH = f"/var/log/teliod_natlab.log.{datetime.today().strftime('%Y-%m-%d')}"
+LOG_FILE_PATH = "/var/log/teliod_natlab.log"
 
 TELIOD_START_PARAMS = [
     TELIOD_EXEC_PATH,
