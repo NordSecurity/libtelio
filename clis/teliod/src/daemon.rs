@@ -139,7 +139,7 @@ fn task_retrieve_meshmap(
     tx: mpsc::Sender<TelioTaskCmd>,
 ) {
     tokio::spawn(async move {
-        let result = get_meshmap_from_server(device_identity, auth_token).await;
+        let result = get_meshmap_from_server(device_identity, &auth_token).await;
         match result {
             Ok(meshmap) => {
                 trace!("Meshmap {:#?}", meshmap);
