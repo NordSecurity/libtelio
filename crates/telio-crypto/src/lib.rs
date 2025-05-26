@@ -30,7 +30,7 @@ use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 use telio_utils::Hidden;
-use zeroize::ZeroizeOnDrop;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Secret, Public and Wireguard Preshared key size in bytes
 pub const KEY_SIZE: usize = 32;
@@ -130,12 +130,14 @@ impl SecretKey {
     /// Create new key from bytes
     /// This ensures bytes are properly clamped
     #[allow(index_access_check)]
-    pub const fn new(mut bytes: [u8; KEY_SIZE]) -> Self {
+    pub fn new(mut bytes: [u8; KEY_SIZE]) -> Self {
         bytes[0] &= 248;
         bytes[31] &= 127;
         bytes[31] |= 64;
 
-        Self(Hidden(bytes))
+        let ret = Self(Hidden(bytes));
+        bytes.zeroize();
+        ret
     }
 
     /// Generates a new random SecretKey.
@@ -201,8 +203,10 @@ impl PublicKey {
 
 impl PresharedKey {
     /// Create new key from bytes
-    pub const fn new(bytes: [u8; 32]) -> Self {
-        Self(Hidden(bytes))
+    pub fn new(mut bytes: [u8; 32]) -> Self {
+        let ret = Self(Hidden(bytes));
+        bytes.zeroize();
+        ret
     }
 }
 
@@ -272,13 +276,13 @@ macro_rules! gen_common {
             type Target = [u8];
 
             fn deref(&self) -> &Self::Target {
-                &self.0.as_ref()
+                *&self.0.as_ref()
             }
         }
 
         impl std::convert::AsRef<[u8]> for $t {
             fn as_ref(&self) -> &[u8] {
-                &self.0.as_ref()
+                *&self.0.as_ref()
             }
         }
 
@@ -318,7 +322,9 @@ macro_rules! gen_common {
                     l => return Err(KeyDecodeError::InvalidLength(l)),
                 }
 
-                Ok(Self::new(key))
+                let ret = Ok(Self::new(key));
+                key.zeroize();
+                ret
             }
         }
 
@@ -332,9 +338,12 @@ gen_common!(SecretKey, PublicKey, PresharedKey);
 
 #[cfg(test)]
 mod tests {
+
+    use std::sync::LazyLock;
+
     use super::*;
 
-    const SK: SecretKey = SecretKey::new([0xBAu8; 32]);
+    static SK: LazyLock<SecretKey> = LazyLock::new(|| SecretKey::new([0xBAu8; 32]));
     const SK_HEX: &str = "b8babababababababababababababababababababababababababababababa7a";
     const SK_B64: &str = "uLq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uno=";
     const PK: PublicKey = PublicKey([
@@ -344,7 +353,7 @@ mod tests {
     const PK_HEX: &str = "7c8a6119d2ddc1a9f013eb489344085d43011a4936247481f80c7c2ceee14e35";
     const PK_B64: &str = "fIphGdLdwanwE+tIk0QIXUMBGkk2JHSB+Ax8LO7hTjU=";
     const PK_B64_SHORT: &str = "\"fIph...TjU=\"";
-    const PSK: PresharedKey = PresharedKey::new([0xBAu8; 32]);
+    static PSK: LazyLock<PresharedKey> = LazyLock::new(|| PresharedKey::new([0xBAu8; 32]));
 
     #[test]
     fn secret_key_is_clammped() {
@@ -360,8 +369,8 @@ mod tests {
     #[test]
     #[cfg(debug_assertions)]
     fn secrets_printing_in_debug_mode() {
-        assert_eq!("SecretKey([184, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 122])", &format!("{SK:?}"));
-        assert_eq!("PresharedKey([186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186])", &format!("{PSK:?}"));
+        assert_eq!("SecretKey([184, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 122])", &format!("{:?}", *SK));
+        assert_eq!("PresharedKey([186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186, 186])", &format!("{:?}", *PSK));
     }
 
     #[test]
@@ -371,7 +380,7 @@ mod tests {
 
     #[test]
     fn convert_from_base64() {
-        assert_eq!(SK, SK_B64.parse().unwrap());
+        assert_eq!(*SK, SK_B64.parse().unwrap());
         assert_eq!(PK, PK_B64.parse().unwrap());
     }
 
@@ -382,7 +391,7 @@ mod tests {
 
     #[test]
     fn convert_from_hex() {
-        assert_eq!(SK, SK_HEX.parse().unwrap());
+        assert_eq!(*SK, SK_HEX.parse().unwrap());
         assert_eq!(PK, PK_HEX.parse().unwrap());
     }
 }

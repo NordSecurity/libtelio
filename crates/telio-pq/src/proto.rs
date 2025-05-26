@@ -1,4 +1,5 @@
 use std::{
+    array::TryFromSliceError,
     io::{self, Read},
     net::Ipv4Addr,
     ops::RangeInclusive,
@@ -14,10 +15,10 @@ use pnet_packet::{
     udp::{self, MutableUdpPacket, UdpPacket},
     Packet,
 };
-use pqcrypto_kyber::kyber768;
-use pqcrypto_traits::kem::{Ciphertext, PublicKey, SharedSecret};
+use pqcrypto_kyber::{ffi::PQCLEAN_KYBER768_CLEAN_CRYPTO_SECRETKEYBYTES, kyber768};
+use pqcrypto_traits::kem::{Ciphertext, PublicKey, SecretKey, SharedSecret};
 use rand::{prelude::Distribution, rngs::OsRng};
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn, Hidden};
 use tokio::net::{ToSocketAddrs, UdpSocket};
 
 const SERVICE_PORT: u16 = 6480;
@@ -66,7 +67,7 @@ struct TunnelSock {
 
 pub struct KeySet {
     pub wg_keys: super::Keys,
-    pub pq_secret: kyber768::SecretKey,
+    pub pq_secret: Hidden<[u8; PQCLEAN_KYBER768_CLEAN_CRYPTO_SECRETKEYBYTES]>,
 }
 
 /// Get PQ keys from the VPN server
@@ -150,14 +151,19 @@ pub async fn fetch_keys(
             pq_shared,
             wg_secret,
         },
-        pq_secret,
+        pq_secret: Hidden(
+            pq_secret
+                .as_bytes()
+                .try_into()
+                .map_err(|e: TryFromSliceError| super::Error::Generic(e.to_string()))?,
+        ),
     })
 }
 
 /// Establsh new PQ preshared key with the VPN server
 pub async fn rekey(
     sock_pool: &telio_sockets::SocketPool,
-    pq_secret: &kyber768::SecretKey,
+    pq_secret: &Hidden<[u8; PQCLEAN_KYBER768_CLEAN_CRYPTO_SECRETKEYBYTES]>,
 ) -> super::Result<telio_crypto::PresharedKey> {
     telio_log_debug!("Rekeying");
     let mut pkgbuf = Vec::with_capacity(1024 * 4); // 4 KiB
@@ -183,7 +189,10 @@ pub async fn rekey(
     let ciphertext = parse_response_payload(pkg)?;
 
     // Extract the shared secret
-    let pq_shared = kyber768::decapsulate(&ciphertext, pq_secret);
+    let pq_shared = kyber768::decapsulate(
+        &ciphertext,
+        &SecretKey::from_bytes(&**pq_secret).map_err(|e| super::Error::Generic(e.to_string()))?,
+    );
     let pq_shared = telio_crypto::PresharedKey::new(
         pq_shared
             .as_bytes()

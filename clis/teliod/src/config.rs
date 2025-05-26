@@ -6,9 +6,9 @@ use std::fs;
 use tracing::{debug, info, level_filters::LevelFilter, warn, Level};
 use uuid::Uuid;
 
-use telio::{crypto::SecretKey, device::AdapterType};
+use telio::{crypto::SecretKey, device::AdapterType, telio_utils::Hidden};
 
-use crate::{configure_interface::InterfaceConfigurationProvider, Hidden, TeliodError};
+use crate::{configure_interface::InterfaceConfigurationProvider, TeliodError};
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
 #[repr(transparent)]
@@ -197,7 +197,7 @@ impl Default for TeliodDaemonConfig {
                 name: "nlx".to_string(),
                 config_provider: Default::default(),
             },
-            authentication_token: Hidden("".to_string()),
+            authentication_token: "".to_string().into(),
             http_certificate_file_path: None,
             mqtt: MqttConfig::default(),
         }
@@ -245,10 +245,10 @@ where
 fn deserialize_authentication_token<'de, D: Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Hidden<String>, D::Error> {
-    let raw_string: String = de::Deserialize::deserialize(deserializer)?;
+    let raw_string: Hidden<String> = de::Deserialize::deserialize(deserializer)?;
     let re = regex::Regex::new("[0-9a-f]{64}").map_err(de::Error::custom)?;
     if raw_string.is_empty() || re.is_match(&raw_string) {
-        Ok(Hidden(raw_string))
+        Ok(raw_string)
     } else {
         Err(de::Error::custom("Incorrect authentication token"))
     }
@@ -315,10 +315,10 @@ fn deserialize_partial_authentication_token<'de, D: Deserializer<'de>>(
     let deserialized_auth_token: Option<Hidden<String>> = Option::deserialize(deserializer)?;
 
     match deserialized_auth_token {
-        Some(ref raw_auth_token) => {
+        Some(raw_auth_token) => {
             let re = regex::Regex::new("[0-9a-f]{64}").map_err(de::Error::custom)?;
-            if re.is_match(raw_auth_token) {
-                Ok(Some(raw_auth_token.to_owned()))
+            if re.is_match(&raw_auth_token) {
+                Ok(Some(raw_auth_token))
             } else {
                 Err(de::Error::custom("Incorrect authentication token"))
             }

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PresharedKey, PublicKey, SecretKey};
 use telio_model::mesh::{LinkState, Node, NodeState};
 use telio_utils::{telio_log_warn, DualTarget, DualTargetError, Instant};
-use wireguard_uapi::{get, xplatform::set};
+use wireguard_uapi::{get, key::Key, xplatform::set};
 
 use std::{
     collections::BTreeMap,
@@ -69,7 +69,7 @@ impl From<get::Peer> for Peer {
     /// Convert from WireGuard get::Peer to telio Peer
     fn from(item: get::Peer) -> Self {
         Self {
-            public_key: PublicKey(item.public_key),
+            public_key: PublicKey(*item.public_key),
             endpoint: item.endpoint,
             // Unknown here
             endpoint_changed_at: None,
@@ -87,10 +87,10 @@ impl From<get::Peer> for Peer {
             time_since_last_handshake: Peer::calculate_time_since_last_handshake(Some(
                 item.last_handshake_time,
             )),
-            preshared_key: if item.preshared_key == [0; 32] {
+            preshared_key: if item.preshared_key == Key::default() {
                 None
             } else {
-                Some(PresharedKey(item.preshared_key.into()))
+                Some(PresharedKey((*item.preshared_key).into()))
             },
         }
     }
@@ -109,7 +109,7 @@ impl From<set::Peer> for Peer {
                 .map(|ip| IpNet::new(ip.ipaddr, ip.cidr_mask))
                 .collect::<Result<Vec<IpNet>, _>>()
                 .unwrap_or_default(),
-            preshared_key: item.preshared_key.map(|k| PresharedKey(k.into())),
+            preshared_key: item.preshared_key.map(|k| PresharedKey((*k).into())),
             ..Default::default()
         }
     }
@@ -165,7 +165,7 @@ impl From<&Peer> for set::Peer {
                     cidr_mask: ip.prefix_len(),
                 })
                 .collect(),
-            preshared_key: item.preshared_key.clone().map(|psk| psk.0 .0),
+            preshared_key: item.preshared_key.clone().map(|psk| psk.0 .0.into()),
             ..Default::default()
         }
     }
@@ -193,14 +193,14 @@ impl From<get::Device> for Interface {
     /// Convert from wireguard get::Device to telio Interface
     fn from(item: get::Device) -> Self {
         Self {
-            private_key: item.private_key.map(SecretKey::new),
+            private_key: item.private_key.map(|pk| SecretKey::new(*pk)),
             listen_port: Some(item.listen_port),
             proxy_listen_port: None,
             fwmark: item.fwmark,
             peers: item
                 .peers
                 .into_iter()
-                .map(|p| (PublicKey(p.public_key), Peer::from(p)))
+                .map(|p| (PublicKey(*p.public_key), Peer::from(p)))
                 .collect(),
         }
     }
@@ -210,7 +210,7 @@ impl From<set::Device> for Interface {
     /// Convert from wireguard set::Device to telio Interface
     fn from(item: set::Device) -> Self {
         Self {
-            private_key: item.private_key.map(SecretKey::new),
+            private_key: item.private_key.map(|pk| SecretKey::new(*pk)),
             listen_port: item.listen_port,
             proxy_listen_port: None,
             fwmark: item.fwmark.map_or(0, |x| x),
@@ -227,7 +227,7 @@ impl From<Interface> for set::Device {
     /// Convert from telio Interface to wireguard set::Device
     fn from(item: Interface) -> Self {
         Self {
-            private_key: item.private_key.map(|key| key.into_bytes()),
+            private_key: item.private_key.map(|key| key.into_bytes().into()),
             listen_port: item.listen_port,
             fwmark: match item.fwmark {
                 0 => None,
