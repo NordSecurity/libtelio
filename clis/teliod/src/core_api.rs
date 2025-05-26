@@ -306,22 +306,27 @@ pub async fn get_meshmap(
 ) -> Result<MeshMap, Error> {
     debug!("Getting meshmap");
     let client = Client::new();
-    Ok(serde_json::from_str(
-        &client
-            .get(format!(
-                "{}/meshnet/machines/{}/map",
-                API_BASE, device_identity.machine_identifier
-            ))
-            .header(
-                header::AUTHORIZATION,
-                format!("Bearer token:{}", auth_token),
-            )
-            .header(header::ACCEPT, "application/json")
-            .send()
-            .await?
-            .text()
-            .await?,
-    )?)
+    let r = &client
+        .get(format!(
+            "{}/meshnet/machines/{}/map",
+            API_BASE, device_identity.machine_identifier
+        ))
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer token:{}", auth_token),
+        )
+        .header(header::ACCEPT, "application/json")
+        .send()
+        .await?
+        .text()
+        .await?;
+
+    error!("qnap: {:?}", r);
+    println!("qnap: {:?}", r);
+    println!("qnap: {}", r);
+    error!("qnap: {}", r);
+
+    Ok(serde_json::from_str(r)?)
 }
 
 async fn register_machine(
