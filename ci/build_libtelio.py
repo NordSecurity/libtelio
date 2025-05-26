@@ -16,7 +16,12 @@ WORKING_DIR = f"{PROJECT_ROOT}"
 sys.path += [f"{PROJECT_ROOT}/3rd-party/rust_build_utils"]
 
 import rust_build_utils.rust_utils as rutils
-from rust_build_utils.rust_utils_config import GLOBAL_CONFIG
+import rust_build_utils.msvc as msvc
+from rust_build_utils.rust_utils_config import (
+    GLOBAL_CONFIG,
+    WINDOWS_RUNTIME_LINKING,
+    WindowsLinkingMethod,
+)
 import rust_build_utils.darwin_build_utils as dbu
 import rust_build_utils.android_build_utils as abu
 from env import LIBTELIO_ENV_MOOSE_RELEASE_TAG
@@ -77,6 +82,36 @@ def post_copy_windows_debug_symbols_to_distribution_dir(config, args):
                             config.target_os, config.arch, "", config.debug
                         ),
                     )
+
+
+def post_check_for_windows_static_runtime(config, args):
+    packages = LIBTELIO_CONFIG[config.target_os].get("packages", None)
+    if packages and config.target_os == "windows" and args.msvc:
+        for _, bins in packages.items():
+            for _, bin in bins.items():
+                dll_bin = os.path.splitext(bin)[0] + ".dll"
+                dll_bin_path = PROJECT_CONFIG.get_cargo_path(
+                    config.rust_target, dll_bin, config.debug
+                )
+                if os.path.isfile(dll_bin_path):
+                    should_link_statically = (
+                        WINDOWS_RUNTIME_LINKING[WindowsLinkingMethod.STATIC]
+                        in GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"]
+                    )
+                    msvc_context = None
+                    if not msvc.is_msvc_active():
+                        msvc_context = msvc.activate_msvc(
+                            "amd64" if config.arch == "x86_64" else config.arch
+                        )
+                    res = msvc.check_for_static_runtime(
+                        Path(dll_bin_path), should_link_statically
+                    )
+                    if msvc_context is not None:
+                        msvc.deactivate_msvc(msvc_context)
+                    if not res:
+                        print("Incorrect windows runtime linking")
+                        exit(1)
+                    print("Runtime linking for windows is correct!")
 
 
 def post_copy_darwin_debug_symbols_to_distribution_dir(config, args):
@@ -203,7 +238,10 @@ LIBTELIO_CONFIG = {
             "interderpcli": {"interderpcli": "interderpcli.exe"},
             NAME: {NAME: f"{NAME}.dll"},
         },
-        "post_build": [post_copy_windows_debug_symbols_to_distribution_dir],
+        "post_build": [
+            post_copy_windows_debug_symbols_to_distribution_dir,
+            post_check_for_windows_static_runtime,
+        ],
     },
     "android": {
         "archs": {
@@ -523,7 +561,7 @@ def exec_build(args):
                 GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"] = ()
 
             GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"] += (
-                [" -C target-feature=-crt-static "],
+                WINDOWS_RUNTIME_LINKING[WindowsLinkingMethod.STATIC],
                 "set",
             )
             if args.moose:
