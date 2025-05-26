@@ -82,7 +82,7 @@ web:
 
     cd $(pwd)/contrib/http_root; \
     echo -n $(whoami) > cgi-bin/builder; \
-    sudo busybox httpd -f -p 127.0.0.1:8080 -vv -u root -h $(pwd)
+    sudo busybox httpd -f -p 0.0.0.0:8080 -vv -u root -h $(pwd)
 
 # Run the isort linter
 [working-directory: 'nat-lab']
