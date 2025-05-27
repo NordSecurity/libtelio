@@ -401,14 +401,6 @@ impl Cli {
         })
     }
 
-    /// Function for only handling the help message without extra overhead. Used by the TCLID API.
-    pub fn print_help(args: Vec<String>) -> anyhow::Result<String> {
-        match Cmd::try_parse_from(args) {
-            Err(e) => anyhow::Result::Ok(e.to_string()),
-            _ => Err(anyhow::anyhow!("This is not a help command")),
-        }
-    }
-
     pub fn exec(&mut self, cmd: &str) -> Vec<Resp> {
         let mut res = Vec::new();
         let mut args = cli_try![shellwords::split(cmd)];
