@@ -1,4 +1,4 @@
-use crate::Hidden;
+use crate::cgi::Hidden;
 use rust_cgi::{http::header::COOKIE, Request};
 use serde::Deserialize;
 
