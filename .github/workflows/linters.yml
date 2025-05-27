@@ -6,7 +6,7 @@ jobs:
   uniffi-bindings:
       runs-on: ubuntu-22.04
       container:
-          image: ghcr.io/nordsecurity/uniffi-generators:v0.28.3-2
+          image: ghcr.io/nordsecurity/uniffi-generators:v0.28.3-3
       steps:
         - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         - run: uniffi-bindgen generate src/libtelio.udl --language python
