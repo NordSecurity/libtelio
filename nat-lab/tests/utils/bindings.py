@@ -21,7 +21,6 @@ def default_features(
     enable_ipv6: bool = False,
     enable_nicknames: bool = False,
     enable_link_detection: bool = False,
-    enable_pmtu_discovery: bool = False,
     enable_multicast: bool = False,
     enable_dynamic_wg_nt_control: bool = False,
     custom_skt_buffer_size: Optional[int] = None,
@@ -43,8 +42,6 @@ def default_features(
         features_builder = features_builder.enable_nicknames()
     if enable_link_detection:
         features_builder = features_builder.enable_link_detection()
-    if enable_pmtu_discovery:
-        features_builder = features_builder.enable_pmtu_discovery()
     if enable_multicast:
         features_builder = features_builder.enable_multicast()
     if enable_dynamic_wg_nt_control:

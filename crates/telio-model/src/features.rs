@@ -57,9 +57,6 @@ pub struct Features {
     pub link_detection: Option<FeatureLinkDetection>,
     /// Feature configuration for DNS.
     pub dns: FeatureDns,
-    /// PMTU discovery configuration, enabled by default
-    #[default(Some(Default::default()))]
-    pub pmtu_discovery: Option<FeaturePmtuDiscovery>,
     /// Multicast support
     pub multicast: bool,
     /// Batching feature configuration, disabled by default, used for batching keep-alives
@@ -470,15 +467,6 @@ pub struct FeatureExitDns {
     pub auto_switch_dns_ips: Option<bool>,
 }
 
-/// PMTU discovery configuration for VPN connection
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
-#[serde(default)]
-pub struct FeaturePmtuDiscovery {
-    /// A timeout for wait for the ICMP response packet
-    #[default = 5]
-    pub response_wait_timeout_s: u32,
-}
-
 /// Configurable features for UPNP endpoint provider
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
 #[serde(default)]
@@ -629,9 +617,6 @@ mod tests {
                     "auto_switch_dns_ips": true
                 }
             },
-            "pmtu_discovery": {
-                "response_wait_timeout_s": 20
-            },
             "multicast": true,
             "batching": {
                 "direct_connection_threshold": 60,
@@ -732,9 +717,6 @@ mod tests {
                             auto_switch_dns_ips: Some(true),
                         }),
                     },
-                    pmtu_discovery: Some(FeaturePmtuDiscovery {
-                        response_wait_timeout_s: 20,
-                    }),
                     multicast: true,
                     batching: Some(FeatureBatching {
                         direct_connection_threshold: 60,
@@ -865,15 +847,6 @@ mod tests {
                 r#"{"dns": {"exit_dns": {}}}"#,
                 FeatureExitDns::default(),
                 dns.exit_dns.unwrap()
-            );
-        }
-
-        #[test]
-        fn test_empty_pmtu_discovery() {
-            assert_json!(
-                r#"{"pmtu_discovery": {}}"#,
-                FeaturePmtuDiscovery::default(),
-                pmtu_discovery.unwrap()
             );
         }
 

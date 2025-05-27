@@ -202,10 +202,6 @@ class LibtelioWrapper:
         return self._libtelio.receive_ping()
 
     @serialize_error
-    def probe_pmtu(self, host: str) -> int:
-        return self._libtelio.probe_pmtu(host)
-
-    @serialize_error
     def get_nat(self, ip: str, port: int) -> libtelio.NatType:
         return self._libtelio.get_nat(ip, port)
 
