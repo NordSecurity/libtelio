@@ -4,6 +4,7 @@ import glob
 import os
 import platform
 import re
+import time
 import uuid
 import warnings
 from collections import Counter
@@ -12,7 +13,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from itertools import groupby
 from mesh_api import Node
-from typing import AsyncIterator, List, Optional, Set
+from typing import AsyncIterator, List, Optional, Set, Tuple
 from uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
 from utils import asyncio_util
 from utils.bindings import (
@@ -49,9 +50,13 @@ from utils.testing import (
 )
 
 
+class WontHappenError(Exception):
+    pass
+
+
 class Runtime:
     _output_notifier: OutputNotifier
-    _peer_state_events: List[TelioNode]
+    _peer_state_events: List[Tuple[float, TelioNode]]
     _derp_state_events: List[Server]
     _error_events: List[ErrorEvent]
     _started_tasks: List[str]
@@ -85,9 +90,9 @@ class Runtime:
 
         return False
 
-    def handle_event(self, event: Event):
+    def handle_event(self, event: Event, timestamp: float):
         if isinstance(event, Event.NODE):
-            self._handle_node_event(event.body)
+            self._handle_node_event(event.body, timestamp)
         elif isinstance(event, Event.RELAY):
             self._handle_derp_event(event.body)
         elif isinstance(event, Event.ERROR):
@@ -95,12 +100,12 @@ class Runtime:
         else:
             raise TypeError(f"Got invalid event type: {event}")
 
-    def _handle_node_event(self, node_event: TelioNode):
+    def _handle_node_event(self, node_event: TelioNode, timestamp: float):
         assert node_event.is_exit or (
             "0.0.0.0/0" not in node_event.allowed_ips
             and "::/0" not in node_event.allowed_ips
         )
-        self.set_peer(node_event)
+        self.set_peer(node_event, timestamp)
 
     def _handle_derp_event(self, server: Server):
         self.set_derp(server)
@@ -152,7 +157,7 @@ class Runtime:
         def _get_events() -> List[TelioNode]:
             return [
                 peer
-                for peer in self._peer_state_events
+                for (ts, peer) in self._peer_state_events
                 if peer
                 and peer.public_key == public_key
                 and peer.path in paths
@@ -169,10 +174,56 @@ class Runtime:
                 return
             await asyncio.sleep(0.1)
 
+    async def notify_peer_event_in_duration(
+        self,
+        public_key: str,
+        states: List[NodeState],
+        duration_from_now: float,
+        paths: List[PathType],
+        is_exit: bool = False,
+        is_vpn: bool = False,
+    ) -> None:
+        now = time.time()
+        deadline = now + duration_from_now
+
+        def is_within_duration(ts):
+            return ts <= deadline
+
+        def is_matching(peer):
+            return (
+                peer
+                and peer.public_key == public_key
+                and peer.path in paths
+                and peer.state in states
+                and is_exit == peer.is_exit
+                and is_vpn == peer.is_vpn
+            )
+
+        def _get_events() -> List[Tuple[float, TelioNode]]:
+            ret = [
+                (ts, peer)
+                for (ts, peer) in self._peer_state_events
+                if is_within_duration(ts) and is_matching(peer)
+            ]
+            if len(ret) == 0:
+                if [ts for (ts, peer) in self._peer_state_events if (deadline) < ts]:
+                    # We got an (non matching) event which is later than the deadline, so
+                    # there is no chance that we will get any new events from before the deadline.
+                    raise WontHappenError()
+            return ret
+
+        old_events = _get_events()
+
+        while True:
+            new_events = _get_events()[len(old_events) :]
+            if new_events:
+                return
+            await asyncio.sleep(0.1)
+
     def get_link_state_events(self, public_key: str) -> List[LinkState]:
         raw_states = [
             peer.link_state
-            for peer in self._peer_state_events
+            for (ts, peer) in self._peer_state_events
             if peer and peer.public_key == public_key and peer.link_state is not None
         ]
         # This removes consecutive UP events (connecting + connected)
@@ -182,7 +233,7 @@ class Runtime:
     def get_peer_info(self, public_key: str) -> Optional[TelioNode]:
         events = [
             peer_event
-            for peer_event in self._peer_state_events
+            for (ts, peer_event) in self._peer_state_events
             if peer_event.public_key == public_key
         ]
         if events:
@@ -226,9 +277,9 @@ class Runtime:
             return events[-1]
         return None
 
-    def set_peer(self, peer: TelioNode) -> None:
+    def set_peer(self, peer: TelioNode, timestamp: float) -> None:
         assert peer.public_key in self.allowed_pub_keys
-        self._peer_state_events.append(peer)
+        self._peer_state_events.append((timestamp, peer))
 
     def set_derp(self, derp: Server) -> None:
         self._derp_state_events.append(derp)
@@ -300,6 +351,19 @@ class Events:
         await asyncio.wait_for(
             self._runtime.notify_peer_event(public_key, states, paths, is_exit, is_vpn),
             timeout,
+        )
+
+    async def wait_for_future_event_peer(
+        self,
+        public_key: str,
+        states: List[NodeState],
+        duration_from_now: float,
+        paths: List[PathType],
+        is_exit: bool = False,
+        is_vpn: bool = False,
+    ) -> None:
+        await self._runtime.notify_peer_event_in_duration(
+            public_key, states, duration_from_now, paths, is_exit, is_vpn
         )
 
     def get_link_state_events(self, public_key: str) -> List[LinkState]:
@@ -620,6 +684,35 @@ class Client:
         )
         log.debug("[%s]: got peer event %s", self._node.name, event_info)
 
+    async def wait_for_future_event_peer(
+        self,
+        public_key: str,
+        states: List[NodeState],
+        duration_from_now=float,
+        paths: Optional[List[PathType]] = None,
+        is_exit: bool = False,
+        is_vpn: bool = False,
+    ) -> None:
+        """
+        Wait for a matching event, until it occurs or throw an WontHappenError if it's guaranteed it will not happen.
+
+        This method is useful to avoid problem related to transient netwroking issues which can delay events by few seconds.
+        It uses the timestamps of events generated on the remote side where libtelio is located, instead of using the local
+        time of receiving of event.
+        """
+        event_info = f"peer({public_key}) with states({states}), duration_from_now={duration_from_now}, paths({paths}), is_exit={is_exit}, is_vpn={is_vpn}"
+
+        log.debug("[%s]: wait for peer event %s", self._node.name, event_info)
+        await self.get_events().wait_for_future_event_peer(
+            public_key,
+            states,
+            duration_from_now,
+            paths if paths else [PathType.RELAY],
+            is_exit,
+            is_vpn,
+        )
+        log.debug("[%s]: got peer event %s", self._node.name, event_info)
+
     def get_link_state_events(self, public_key: str) -> List[LinkState]:
         return self.get_events().get_link_state_events(public_key)
 
@@ -925,8 +1018,8 @@ class Client:
                 event = await self.get_proxy().next_event()
                 while event:
                     if self._runtime:
-                        log.info("[%s] -> %s", self._node.name, event)
-                        self._runtime.handle_event(event)
+                        log.info("[%s] -> %s @ %s", self._node.name, event[1], event[0])
+                        self._runtime.handle_event(event[1], event[0])
                         event = await self.get_proxy().next_event()
                 await asyncio.sleep(1)
             except:
