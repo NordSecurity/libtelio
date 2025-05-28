@@ -7,7 +7,9 @@ pub const APP_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/deb
 
 pub const TELIOD_BIN: &str = concatcp!(APP_DIR, "/teliod");
 pub const TELIOD_CFG: &str = concatcp!(APP_DIR, "/teliod.cfg");
-pub const MESHNET_LOG: &str = concatcp!(APP_DIR, "/meshnet.log");
-pub const TELIOD_LOG: &str = "/var/log/teliod.log";
+pub const TELIOD_LOG_PATH: &str = "/var/log";
+pub const TELIOD_LOG_PREFIX: &str = "teliod_lib.log";
+pub const TELIOD_STDOUT: &str = concatcp!(TELIOD_LOG_PATH, "/teliod.log");
+pub const TELIOD_INIT_LOG: &str = concatcp!(TELIOD_LOG_PATH, "/teliod_init.log");
 #[cfg(debug_assertions)]
 pub const CGI_LOG: &str = concatcp!(APP_DIR, "/cgi.log");

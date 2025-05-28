@@ -1,5 +1,6 @@
 use std::{
     fs, io,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     str,
     thread::sleep,
@@ -18,7 +19,9 @@ use crate::{
 };
 
 use super::{
-    constants::{MESHNET_LOG, TELIOD_BIN, TELIOD_CFG, TELIOD_LOG},
+    constants::{
+        TELIOD_BIN, TELIOD_CFG, TELIOD_INIT_LOG, TELIOD_LOG_PATH, TELIOD_LOG_PREFIX, TELIOD_STDOUT,
+    },
     CgiRequest,
 };
 
@@ -59,8 +62,12 @@ pub(crate) fn handle_api(request: &CgiRequest) -> Option<Response> {
             Some(update_config(body))
         }
         (&Method::GET, "/get-status") => Some(get_status()),
-        (&Method::GET, "/get-teliod-logs") => Some(get_teliod_logs()),
-        (&Method::GET, "/get-meshnet-logs") => Some(get_meshnet_logs()),
+        (&Method::GET, "/get-logs") => Some(get_logs(
+            2,
+            Path::new(TELIOD_INIT_LOG),
+            Path::new(TELIOD_STDOUT),
+            Path::new(TELIOD_LOG_PATH),
+        )),
         (_, _) => Some(text_response(
             StatusCode::NOT_FOUND,
             "Non-existing endpoint",
@@ -91,22 +98,22 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
         );
     }
 
-    let teliod_log_file = match fs::OpenOptions::new()
+    let teliod_init_log_file = match fs::OpenOptions::new()
         .create(true)
         .write(true)
         .read(true)
         .truncate(true)
-        .open(TELIOD_LOG)
+        .open(TELIOD_INIT_LOG)
     {
         Ok(file) => file,
         Err(err) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to open teliod log file {TELIOD_LOG}, err: {err}"),
+                format!("Failed to open teliod log file {TELIOD_INIT_LOG}, err: {err}"),
             );
         }
     };
-    let stdout = match teliod_log_file.try_clone() {
+    let stdout = match teliod_init_log_file.try_clone() {
         Ok(file) => Stdio::from(file),
         Err(error) => {
             return (
@@ -115,7 +122,7 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
             )
         }
     };
-    let stderr = match teliod_log_file.try_clone() {
+    let stderr = match teliod_init_log_file.try_clone() {
         Ok(file) => Stdio::from(file),
         Err(error) => {
             return (
@@ -124,10 +131,9 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
             )
         }
     };
-    match Command::new("setsid")
-        .arg(TELIOD_BIN)
+
+    match Command::new(TELIOD_BIN)
         .arg("start")
-        .arg("--no-detach")
         .arg(TELIOD_CFG)
         .stdout(stdout)
         .stderr(stderr)
@@ -254,24 +260,87 @@ fn get_status() -> Response {
     }
 }
 
-fn get_teliod_logs() -> Response {
-    match fs::read_to_string(TELIOD_LOG) {
-        Ok(logs) => text_response(StatusCode::OK, logs),
-        Err(error) => text_response(
-            StatusCode::BAD_GATEWAY,
-            format!("Error reading teliod log file: {}", error),
-        ),
-    }
-}
+fn get_logs(
+    days_count: usize,
+    init_log_path: &Path,
+    stdout_log_path: &Path,
+    logs_dir: &Path,
+) -> Response {
+    let mut concatenated_logs = String::new();
 
-fn get_meshnet_logs() -> Response {
-    match fs::read_to_string(MESHNET_LOG) {
-        Ok(logs) => text_response(StatusCode::OK, logs),
-        Err(error) => text_response(
-            StatusCode::BAD_GATEWAY,
-            format!("Error reading meshnet log file: {}", error),
-        ),
+    // Helper to append a section
+    let mut append_log_section = |label: &str, path: &Path| -> Result<(), Response> {
+        match fs::read_to_string(path) {
+            Ok(content) => {
+                concatenated_logs.push_str(&format!("--- {} ---\n\n{}\n", label, content));
+                Ok(())
+            }
+            Err(err) => Err(text_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "{concatenated_logs}\nError reading log file {}: {}",
+                    path.to_string_lossy(),
+                    err
+                ),
+            )),
+        }
+    };
+
+    // Init and stdout logs
+    if let Err(err) = append_log_section("init", init_log_path) {
+        return err;
     }
+    if let Err(err) = append_log_section("stdout", stdout_log_path) {
+        return err;
+    };
+
+    // Due to log rotation, teliod lib logs have the format of
+    // teliod_lib.log.YYYY_MM_DD, we collect all the files that start with teliod_lib.log
+    // from TELIOD_LOG_PATH and sort by name to get the latest one, as a fall back if log rotation is
+    // disabled, it will return teliod_lib.log file without the date suffix.
+    // Gather rotated teliod_lib logs
+    let mut log_files: Vec<PathBuf> = match fs::read_dir(logs_dir) {
+        Ok(entries) => entries
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| {
+                p.is_file()
+                    && p.file_name()
+                        .and_then(|n| n.to_str())
+                        .map(|n| n.starts_with(TELIOD_LOG_PREFIX))
+                        .unwrap_or(false)
+            })
+            .collect(),
+        Err(err) => {
+            return text_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("{concatenated_logs}\nFailed to read log directory: {}", err),
+            );
+        }
+    };
+
+    if log_files.is_empty() {
+        return text_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!(
+                "{concatenated_logs}\nNo teliod log files {} found in: {}",
+                TELIOD_LOG_PREFIX, TELIOD_LOG_PATH
+            ),
+        );
+    }
+
+    // Sort by filename (aka date)
+    log_files.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+
+    // Concatenate the logs, but only up to days_count
+    for path in log_files.iter().take(days_count) {
+        let path_str = path.to_string_lossy();
+        if let Err(err) = append_log_section(&path_str, path.as_path()) {
+            return err;
+        };
+    }
+
+    text_response(StatusCode::OK, concatenated_logs)
 }
 
 #[cfg(test)]
@@ -281,8 +350,10 @@ mod tests {
     use reqwest::StatusCode;
     use serial_test::serial;
     use telio::device::AdapterType;
+    use temp_dir::TempDir;
     use tracing::level_filters::LevelFilter;
 
+    use super::*;
     use super::{update_config, TeliodDaemonConfig};
     use crate::{
         cgi::constants::TELIOD_CFG,
@@ -461,5 +532,112 @@ mod tests {
             serde_json::from_str::<TeliodDaemonConfig>(&fs::read_to_string(TELIOD_CFG).unwrap())
                 .unwrap();
         assert_eq!(updated_config, expected_config);
+    }
+
+    #[test]
+    fn test_get_logs_valid_files() {
+        let dir = TempDir::new().unwrap();
+        let log_dir_path = dir.path().to_path_buf();
+
+        let init_log = log_dir_path.join("teliod_init.log");
+        let stdout_log = log_dir_path.join("teliod_stdout.log");
+        fs::write(&init_log, "init log content").unwrap();
+        fs::write(&stdout_log, "stdout log content").unwrap();
+
+        for i in 0..3 {
+            let rotated_log = log_dir_path.join(format!("teliod_lib.log.2024_05_0{}", i + 1));
+            fs::write(rotated_log, format!("rotated log {}", i + 1)).unwrap();
+        }
+
+        let response = get_logs(2, &init_log, &stdout_log, &log_dir_path);
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let text = String::from_utf8_lossy(response.body());
+        assert!(text.contains("init log content"));
+        assert!(text.contains("stdout log content"));
+        assert!(text.contains("rotated log 3")); // newest first
+        assert!(text.contains("rotated log 2"));
+        assert!(!text.contains("rotated log 1")); // not included
+    }
+
+    #[test]
+    fn test_get_logs_missing_files() {
+        let dir = TempDir::new().unwrap();
+        let log_dir_path = dir.path().to_path_buf();
+
+        // Create init and stdout log files
+        let init_log = log_dir_path.join("teliod_init.log");
+        let stdout_log = log_dir_path.join("teliod_stdout.log");
+        fs::write(&init_log, "init log content").unwrap();
+        fs::write(&stdout_log, "stdout log content").unwrap();
+
+        let response = get_logs(1, &init_log, &stdout_log, &log_dir_path);
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = String::from_utf8_lossy(response.body());
+        assert!(body.contains("No teliod log files"));
+    }
+
+    #[test]
+    fn test_get_logs_no_files() {
+        let dir = TempDir::new().unwrap();
+        let log_dir_path = dir.path().to_path_buf();
+
+        let init_log = log_dir_path.join("teliod_init.log");
+        let stdout_log = log_dir_path.join("teliod_stdout.log");
+        fs::write(&init_log, "init log content").unwrap();
+        fs::write(&stdout_log, "stdout log content").unwrap();
+
+        for i in 0..3 {
+            let rotated_log = log_dir_path.join(format!("teliod_lib.log.2024_05_0{}", i + 1));
+            fs::write(rotated_log, format!("rotated log {}", i + 1)).unwrap();
+        }
+
+        let response = get_logs(0, &init_log, &stdout_log, &log_dir_path);
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let text = String::from_utf8_lossy(response.body());
+        assert!(text.contains("init log content"));
+        assert!(text.contains("stdout log content"));
+        // not included
+        assert!(!text.contains("rotated log 3"));
+        assert!(!text.contains("rotated log 2"));
+        assert!(!text.contains("rotated log 1"));
+    }
+
+    #[test]
+    fn test_missing_init_log() {
+        let dir = TempDir::new().unwrap();
+        let log_dir_path = dir.path().to_path_buf();
+
+        // Create stdout log file
+        let init_log = log_dir_path.join("teliod_init.log");
+        let stdout_log = log_dir_path.join("teliod_stdout.log");
+        fs::write(&stdout_log, "stdout log content").unwrap();
+
+        let response = get_logs(1, &init_log, &stdout_log, &log_dir_path);
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = String::from_utf8_lossy(response.body());
+        assert!(body.contains("Error reading log file"));
+    }
+
+    #[test]
+    fn test_missing_log_dir() {
+        let dir = TempDir::new().unwrap();
+        let log_dir_path = dir.path().to_path_buf();
+
+        let fake_log_dir_path = Path::new("/something/made/up");
+
+        let init_log = log_dir_path.join("teliod_init.log");
+        let stdout_log = log_dir_path.join("teliod_stdout.log");
+        fs::write(&init_log, "init log content").unwrap();
+        fs::write(&stdout_log, "stdout log content").unwrap();
+
+        let response = get_logs(1, &init_log, &stdout_log, fake_log_dir_path);
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = String::from_utf8_lossy(response.body());
+        assert!(body.contains("Failed to read log directory"));
     }
 }
