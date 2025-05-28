@@ -258,6 +258,10 @@ fn serialize_authentication_token<S>(auth_token: &str, serializer: S) -> Result<
 where
     S: Serializer,
 {
+    if auth_token.len() == 0 {
+        Err(serde::ser::Error::custom("Authentication token empty"))
+    }
+
     if auth_token.len() == 64 && auth_token.chars().all(|c| c.is_ascii_hexdigit()) {
         serializer.serialize_str(auth_token)
     } else {

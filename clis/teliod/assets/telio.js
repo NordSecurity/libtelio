@@ -1,5 +1,12 @@
 window.telio = {
   validateToken: input => {
+    // Allow an empty token to be submitted. It means
+    // that we do not wish to update it
+    if (input.value.length == 0) {
+      input.setCustomValidity("");
+      return true;
+    }
+
     const valid = /^[0-9a-fA-F]{64}$/.test(input.value);
     if (valid) {
       input.setCustomValidity("");
