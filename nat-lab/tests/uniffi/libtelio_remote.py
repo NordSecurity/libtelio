@@ -10,7 +10,7 @@ from serialization import (  # type: ignore # pylint: disable=import-error
     init_serialization,
 )
 from threading import Lock
-from typing import List
+from typing import List, Tuple
 
 REMOTE_LOG = "remote.log"
 TCLI_LOG = "tcli.log"
@@ -42,12 +42,12 @@ def serialize_error(f):
 
 class TelioEventCbImpl(libtelio.TelioEventCb):
     def __init__(self):
-        self._events: list[libtelio.Event] = []
+        self._events: list[Tuple[float, libtelio.Event]] = []
 
     def event(self, payload):
-        self._events.append(payload)
+        self._events.append((time.time(), payload))
 
-    def next_event(self) -> libtelio.Event:
+    def next_event(self) -> Tuple[float, libtelio.Event] | None:
         if len(self._events) > 0:
             return self._events.pop(0)
         return None
