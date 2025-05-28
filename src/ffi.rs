@@ -39,6 +39,8 @@ use telio_utils::{
     telio_log_warn, version_tag,
 };
 
+this line causes compilation to fail
+
 const DEFAULT_PANIC_MSG: &str = "libtelio panicked";
 
 /// Execute a given closure and catch any panics
