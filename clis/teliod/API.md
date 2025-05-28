@@ -67,26 +67,12 @@ This REST API allows interaction with the Teliod daemon. It provides endpoints f
         ...
     }
     ```
-  - **502 Internal Server Error**: Failed to retrieve status (Bad daemon response).
+  - **500 Internal Server Error**: Failed to retrieve status (Bad daemon response).
   - **410 Gone**: Failed to communicate with the daemon (Couldn't send command/Daemon not accessible).
   - **502 Gateway Timeout**: Failed to communicate with the daemon (Timeout while waiting daemon).
 
-#### 5. **Get Teliod stdout**
-- **Endpoint**: `/?info=get-teliod-stdout`
-- **Method**: `GET`
-- **Description**: Retrieves the latest stdout of Teliod.
-- **Request Body**: None
-- **Responses**:
-  - **200 OK**: Log content in text format.
-    ```
-    {
-        "Log line 1\nLog line 2\nLog line 3\n..."
-    }
-    ```
-  - **502 Bad Gateway**: Error reading log file.
-
-#### 6. **Get Teliod Logs**
-- **Endpoint**: `/?info=get-teliod-logs`
+#### 5. **Get Logs**
+- **Endpoint**: `/?info=get-logs`
 - **Method**: `GET`
 - **Description**: Retrieves the latest logs of the Teliod Daemon.
 - **Request Body**: None
@@ -97,7 +83,7 @@ This REST API allows interaction with the Teliod daemon. It provides endpoints f
         "Log line 1\nLog line 2\nLog line 3\n..."
     }
     ```
-  - **502 Bad Gateway**: Error reading log file.
+  - **500 Internal Server Error **: Error reading log file.
 
 ### Error Handling
 
@@ -119,7 +105,7 @@ curl -X DELETE http://<NAS-IP>:8080/
 
 #### Get Teliod logs:
 ```bash
-curl -X GET "http://<NAS-IP>:8080/?info=get-teliod-logs"
+curl -X GET "http://<NAS-IP>:8080/?info=get-logs"
 ```
 
 #### Update Config:
