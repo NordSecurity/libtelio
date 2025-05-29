@@ -16,10 +16,10 @@ socket2.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
 mockall = { workspace = true, optional = true }
+nix.workspace = true
 
 telio-utils.workspace = true
 once_cell.workspace = true
-nix = { version = "0.30", features = ["socket"] }
 
 [dev-dependencies]
 mockall.workspace = true
@@ -32,7 +32,6 @@ version-compare = "0.2"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))'.dependencies]
 debug_panic = "0.2.1"
-nix = { version = "0.30", features=["socket"] }
 system-configuration = { git = 'https://github.com/NordSecurity/system-configuration-rs.git' }
 network-framework-sys = "0.1"
 block = "0.1"

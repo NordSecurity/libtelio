@@ -25,6 +25,7 @@ ipnet.workspace = true
 if-addrs.workspace = true
 lazy_static.workspace = true
 libc.workspace = true
+nix.workspace = true
 modifier.workspace = true
 num_cpus.workspace = true
 parking_lot.workspace = true
@@ -131,6 +132,7 @@ mockall = "0.13"
 mockall_double = "0.3.1"
 modifier = "0.1.0"
 nat-detect = { git = "https://github.com/NordSecurity/nat-detect.git", tag = "v0.1.8" }
+nix = { version = "0.30.1", features = ["fs", "socket", "uio", "net"] }
 ntest = "0.9"
 num_cpus = "1"
 num_enum = "0.7"
