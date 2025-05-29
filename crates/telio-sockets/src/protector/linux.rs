@@ -1,4 +1,6 @@
-use std::{io, sync::Mutex};
+use std::{io, os::fd::BorrowedFd, sync::Mutex};
+
+use nix::sys::socket::{setsockopt, sockopt::Mark};
 
 use crate::native::NativeSocket;
 
@@ -52,13 +54,9 @@ impl Protector for NativeProtector {
 }
 
 fn set_fwmark(fd: i32, fwmark: u32) -> io::Result<()> {
-    let fwmark_ptr = &fwmark as *const u32 as *const libc::c_void;
-
-    let res = unsafe { libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_MARK, fwmark_ptr, 4_u32) };
-    match res {
-        0 => Ok(()),
-        _ => Err(io::Error::last_os_error()),
-    }
+    let fd = unsafe { BorrowedFd::borrow_raw(fd) };
+    setsockopt(&fd, Mark, &fwmark)?;
+    Ok(())
 }
 
 #[cfg(test)]

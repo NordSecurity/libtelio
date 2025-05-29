@@ -1,3 +1,4 @@
+// #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![allow(unused_imports)]
 #![cfg_attr(docsrs, feature(doc_cfg))]

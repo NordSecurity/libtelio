@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 #![deny(missing_docs)]
 //! Contains macros to simplify using Moose functions from within libtelio
 

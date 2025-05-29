@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 mod conn;
 mod entity;
 mod proto;

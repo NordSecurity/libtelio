@@ -96,73 +96,71 @@ impl WindowsNativeWg {
         path: &str,
         enable_dynamic_wg_nt_control: bool,
     ) -> Result<Self, AdapterError> {
-        unsafe {
-            // try to load dll
-            match wireguard_nt::load_from_path(path) {
-                Ok(wg_dll) => {
-                    // Someone to watch over me while I sleep
-                    let watcher = Arc::new(Mutex::new(InterfaceWatcher::new(
-                        enable_dynamic_wg_nt_control,
+        // try to load dll
+        match unsafe { wireguard_nt::load_from_path(path) } {
+            Ok(wg_dll) => {
+                // Someone to watch over me while I sleep
+                let watcher = Arc::new(Mutex::new(InterfaceWatcher::new(
+                    enable_dynamic_wg_nt_control,
+                )));
+                if let Ok(mut watcher) = watcher.lock() {
+                    if let Err(monitoring_err) = watcher.start_monitoring() {
+                        return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                            "Failed to start watcher with err {}",
+                            monitoring_err
+                        ))));
+                    }
+                } else {
+                    return Err(AdapterError::WindowsNativeWg(Error::Fail(
+                        "error obtaining lock".into(),
                     )));
-                    if let Ok(mut watcher) = watcher.lock() {
-                        if let Err(monitoring_err) = watcher.start_monitoring() {
-                            return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                                "Failed to start watcher with err {}",
-                                monitoring_err
-                            ))));
-                        }
-                    } else {
-                        return Err(AdapterError::WindowsNativeWg(Error::Fail(
-                            "error obtaining lock".into(),
-                        )));
-                    }
-
-                    // Try to create a new adapter
-                    let adapter_guid = Self::get_adapter_guid_from_name_hash(name);
-                    telio_log_debug!(
-                        "Try to create adapter for name: {:#?} with guid: {{{}}}",
-                        name,
-                        Uuid::from_u128(adapter_guid)
-                            .hyphenated()
-                            .to_string()
-                            .to_uppercase()
-                    );
-
-                    // Adapter name and pool name must be the same, because netsh
-                    // identifies interfaces by their pool name and not the adapter or device name.
-                    // This replicates the behavior of Wireguard-Go adapter which relies on WinTun.sys.
-                    // If the pool name does not match the passed adapter name, then netsh in the nat-lab
-                    // tests won't be able to find this adapter and the tests will fail.
-                    match wireguard_nt::Adapter::create(wg_dll, name, name, Some(adapter_guid)) {
-                        Ok(raw_adapter) => {
-                            let adapter = Arc::new(raw_adapter);
-                            let luid = adapter.get_luid();
-                            let wgnt = WindowsNativeWg::new(
-                                &adapter,
-                                luid,
-                                &watcher,
-                                enable_dynamic_wg_nt_control,
-                            );
-                            if let Ok(mut watcher) = watcher.lock() {
-                                watcher.configure(wgnt.adapter.clone(), luid);
-                                Ok(wgnt)
-                            } else {
-                                Err(AdapterError::WindowsNativeWg(Error::Fail(
-                                    "error obtaining lock".into(),
-                                )))
-                            }
-                        }
-                        Err((e, _)) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                            "Failed to create adapter: {:?}",
-                            e
-                        )))),
-                    }
                 }
-                Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                    "Failed to load wireguard dll: {:?}",
-                    e
-                )))),
+
+                // Try to create a new adapter
+                let adapter_guid = Self::get_adapter_guid_from_name_hash(name);
+                telio_log_debug!(
+                    "Try to create adapter for name: {:#?} with guid: {{{}}}",
+                    name,
+                    Uuid::from_u128(adapter_guid)
+                        .hyphenated()
+                        .to_string()
+                        .to_uppercase()
+                );
+
+                // Adapter name and pool name must be the same, because netsh
+                // identifies interfaces by their pool name and not the adapter or device name.
+                // This replicates the behavior of Wireguard-Go adapter which relies on WinTun.sys.
+                // If the pool name does not match the passed adapter name, then netsh in the nat-lab
+                // tests won't be able to find this adapter and the tests will fail.
+                match wireguard_nt::Adapter::create(wg_dll, name, name, Some(adapter_guid)) {
+                    Ok(raw_adapter) => {
+                        let adapter = Arc::new(raw_adapter);
+                        let luid = adapter.get_luid();
+                        let wgnt = WindowsNativeWg::new(
+                            &adapter,
+                            luid,
+                            &watcher,
+                            enable_dynamic_wg_nt_control,
+                        );
+                        if let Ok(mut watcher) = watcher.lock() {
+                            watcher.configure(wgnt.adapter.clone(), luid);
+                            Ok(wgnt)
+                        } else {
+                            Err(AdapterError::WindowsNativeWg(Error::Fail(
+                                "error obtaining lock".into(),
+                            )))
+                        }
+                    }
+                    Err((e, _)) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                        "Failed to create adapter: {:?}",
+                        e
+                    )))),
+                }
             }
+            Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                "Failed to load wireguard dll: {:?}",
+                e
+            )))),
         }
     }
 

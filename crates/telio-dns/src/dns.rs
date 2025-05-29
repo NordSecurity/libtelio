@@ -6,6 +6,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::{net::SocketAddr, sync::Arc};
 use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::uapi::Peer;
+use telio_wg::Tun;
 use tokio::net::UdpSocket;
 use tokio::sync::{Mutex, RwLock};
 use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
@@ -63,7 +64,7 @@ impl LocalDnsResolver {
     pub async fn new(
         public_key: &PublicKey,
         forward_ips: &[IpAddr],
-        tun: Option<i32>,
+        tun: Option<&Arc<Tun>>,
         exit_dns: Option<FeatureExitDns>,
     ) -> Result<Self, String> {
         let socket = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))

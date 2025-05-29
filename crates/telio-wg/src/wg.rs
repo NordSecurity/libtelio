@@ -100,7 +100,7 @@ pub struct Config {
     /// Name of network interface in readable string
     pub name: Option<String>,
     /// Tunnel file descriptor
-    pub tun: Option<Tun>,
+    pub tun: Option<Arc<Tun>>,
     /// Sockets to be protected, in order to avoid loopback
     pub socket_pool: Arc<SocketPool>,
     /// Callback of firewall to process incoming packets
@@ -176,6 +176,7 @@ impl DynamicWg {
     ///
     /// # Example
     /// ```
+    /// use std::os::fd::FromRawFd;
     /// use std::{sync::Arc, io, time::Duration};
     /// use telio_firewall::firewall::{StatefullFirewall, Firewall};
     /// use telio_model::features::FeatureFirewall;
@@ -221,7 +222,7 @@ impl DynamicWg {
     ///         Config {
     ///             adapter: AdapterType::default(),
     ///             name: Some("tun10".to_string()),
-    ///             tun: Some(Tun::default()),
+    ///             tun: Some(Arc::new(unsafe { std::os::fd::OwnedFd::from_raw_fd(0) })),
     ///             socket_pool: socket_pool,
     ///             firewall_process_inbound_callback:
     ///                 Some(Arc::new(firewall_filter_inbound_packets)),
@@ -503,14 +504,8 @@ impl WireGuard for DynamicWg {
 impl Config {
     fn try_clone(&self) -> Result<Self, io::Error> {
         #[cfg(unix)]
-        let tun = match self.tun {
-            Some(fd) => {
-                let dup_fd = unsafe { libc::dup(fd as libc::c_int) };
-                if dup_fd < 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                Some(dup_fd)
-            }
+        let tun = match &self.tun {
+            Some(fd) => Some(Arc::new(fd.try_clone()?)),
             None => None,
         };
         #[cfg(windows)]
@@ -1019,9 +1014,9 @@ impl Runtime for State {
             link_detection.stop().await;
         }
         #[cfg(unix)]
-        self.cfg
-            .tun
-            .map(|tun| unsafe { libc::close(tun as libc::c_int) });
+        use std::os::fd::AsRawFd;
+        #[cfg(unix)]
+        self.cfg.tun.map(|tun| nix::unistd::close(tun.as_raw_fd()));
     }
 }
 
