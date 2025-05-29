@@ -5,7 +5,9 @@ use parking_lot::{Mutex, RwLock};
 use std::{
     cell::RefCell,
     ffi::{c_long, c_void, CStr},
-    io, os,
+    io,
+    num::NonZeroU32,
+    os::fd::BorrowedFd,
     rc::Rc,
     sync::{Arc, Weak},
 };
@@ -87,36 +89,34 @@ pub(crate) fn bind_to_tun(sock: NativeSocket, tunnel_interface: u64) -> io::Resu
     res
 }
 
-pub(crate) fn bind(interface_index: u32, socket: i32) -> io::Result<()> {
-    if let Some(sock_addr) = getsockname::<SockaddrStorage>(socket)?.family() {
-        let (option, level) = match sock_addr {
-            AddressFamily::Inet6 => (libc::IPV6_BOUND_IF, libc::IPPROTO_IPV6),
-            AddressFamily::Inet => (libc::IP_BOUND_IF, libc::IPPROTO_IP),
+pub(crate) fn bind(interface_index: u32, native_socket: NativeSocket) -> io::Result<()> {
+    let socket = unsafe { BorrowedFd::borrow_raw(native_socket) };
+    let socket = socket2::SockRef::from(&socket);
+    let interface_index: NonZeroU32 = match NonZeroU32::new(interface_index) {
+        Some(index) => index,
+        None => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Invalid interface index",
+            ))
+        }
+    };
 
+    if let Some(sock_addr) = getsockname::<SockaddrStorage>(native_socket)?.family() {
+        match sock_addr {
+            AddressFamily::Inet => {
+                socket.bind_device_by_index_v4(Some(interface_index))?;
+            }
+            AddressFamily::Inet6 => {
+                socket.bind_device_by_index_v6(Some(interface_index))?;
+            }
             _ => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     "Invalid IP family type",
                 ))
             }
-        };
-
-        const ARRAY_LEN: libc::size_t = std::mem::size_of::<u32>();
-        let array: [i8; ARRAY_LEN] = unsafe { std::mem::transmute(interface_index) };
-        unsafe {
-            if libc::setsockopt(
-                socket,
-                level,
-                option,
-                array.as_ptr() as *const os::raw::c_void,
-                std::mem::size_of_val(&array) as libc::socklen_t,
-            ) != 0
-            {
-                return Err(std::io::Error::last_os_error());
-            }
         }
-    } else {
-        telio_log_warn!("Failed to find sock addr for socket : {}", socket);
     }
 
     Ok(())
@@ -538,18 +538,20 @@ pub fn setup_network_path_monitor() {
         );
     })
     .copy();
-    unsafe {
-        let monitor = nw_path_monitor_create();
-        if monitor.is_null() {
-            telio_log_warn!("Failed to start network path monitor");
-            return;
-        }
 
-        let queue = dispatch::ffi::dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
-        if queue.is_null() {
-            telio_log_warn!("Failed to get global background queue");
-            return;
-        }
+    let monitor = unsafe { nw_path_monitor_create() };
+    if monitor.is_null() {
+        telio_log_warn!("Failed to start network path monitor");
+        return;
+    }
+
+    let queue =
+        unsafe { dispatch::ffi::dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0) };
+    if queue.is_null() {
+        telio_log_warn!("Failed to get global background queue");
+        return;
+    }
+    unsafe {
         nw_path_monitor_set_queue(
             monitor,
             std::mem::transmute::<

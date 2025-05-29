@@ -8,9 +8,6 @@ use socket2::Socket;
 use {std::os::windows::io::AsRawSocket, windows::Win32::Networking::WinSock};
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", doc))]
-use std::os::unix::io::AsRawFd;
-
-#[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", doc))]
 /// time after which tcp retransmissions will be stopped and the connection will be dropped
 const TCP_RXT_CONNDROPTIME: libc::c_int = 0x80;
 
@@ -41,21 +38,20 @@ impl TcpParams {
 
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     fn set_tcp_timeout(&self, socket: &Socket) -> Result<(), Error> {
+        use nix::{setsockopt_impl, sockopt_impl, sys::socket::setsockopt};
+
+        sockopt_impl!(
+            ConnDropTime,
+            SetOnly,
+            libc::IPPROTO_TCP,
+            TCP_RXT_CONNDROPTIME,
+            u32
+        );
+
         // Setting TCP timeout (darwin)
         if let Some(user_timeout) = self.user_timeout {
             let user_timeout = user_timeout.as_secs() as u32;
-            let err = unsafe {
-                libc::setsockopt(
-                    socket.as_raw_fd(),
-                    libc::IPPROTO_TCP as libc::c_int,
-                    TCP_RXT_CONNDROPTIME as libc::c_int,
-                    &user_timeout as *const u32 as *const libc::c_void,
-                    4, /* value length */
-                )
-            };
-            if err != 0 {
-                return Err(Error::from_raw_os_error(err));
-            }
+            setsockopt(socket, ConnDropTime, &user_timeout)?;
         }
 
         Ok(())

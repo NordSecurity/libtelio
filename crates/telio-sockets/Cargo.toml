@@ -19,6 +19,7 @@ mockall = { workspace = true, optional = true }
 
 telio-utils.workspace = true
 once_cell.workspace = true
+nix = { version = "0.30", features = ["socket"] }
 
 [dev-dependencies]
 mockall.workspace = true
