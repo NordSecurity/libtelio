@@ -18,17 +18,15 @@ pub(crate) use any::{bind_to_tun, set_tun};
     doc(cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos")))
 )]
 mod darwin {
-    use lazy_static::lazy_static;
     use nix::net::if_::if_nametoindex;
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
     use nix::sys::socket::sockopt::UtunIfname;
     use nix::sys::socket::{getsockopt, setsockopt};
     use nix::{setsockopt_impl, sockopt_impl};
-    use std::convert::TryInto;
     use std::os::fd::AsFd;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
-    use std::{io, os::unix::prelude::AsRawFd, sync::Mutex};
+    use std::{io, sync::Mutex};
     use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
     use telio_wg::Tun;
 
@@ -39,14 +37,10 @@ mod darwin {
         SetOnly,
         libc::IPPROTO_IP,
         libc::IP_BOUND_IF,
-        i32
+        u32
     );
 
-    lazy_static! {
-        // TODO: since 1.63.0 Mutex::new is const and with that we can get rid
-        // of lazy_static here.
-        static ref TUN_INDEX: Mutex<Option<i32>> = Mutex::new(None);
-    }
+    static TUN_INDEX: Mutex<Option<u32>> = Mutex::new(None);
 
     pub(crate) fn set_tun(tun: Option<&Arc<Tun>>) -> io::Result<()> {
         // For darwin bind socket to tun interface.
@@ -60,7 +54,7 @@ mod darwin {
             let mut tun = TUN_INDEX
                 .lock()
                 .map_err(|_| io::Error::new(io::ErrorKind::Other, "TUN_INDEX lock failed"))?;
-            *tun = Some(index.try_into().unwrap());
+            *tun = Some(index);
         } else {
             telio_log_warn!("Tunnel file descriptor was not provided.");
         }
