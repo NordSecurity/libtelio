@@ -27,6 +27,7 @@ use tokio::{
     self,
     sync::{broadcast::Sender, Notify},
     task::JoinHandle,
+    time::{sleep_until, Duration, Instant},
 };
 
 use crate::native::{interface_index_from_name, NativeSocket};
@@ -60,6 +61,11 @@ pub const DISPATCH_QUEUE_PRIORITY_BACKGROUND: c_long = -1 << 15;
 
 static INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static PROTECTOR_PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(1));
+// NMACOS-8047 When `includeAllNetworks` is set on the Apple platform, it happens that the user
+// experiences no-net after rebinding the sockets. We have not foud a better way of dealing with
+// that problem as to do delayed rebinding.
+static APPLE_BUG_AKS_WORKAROUND_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(1));
+static APPLE_BUG_AKS_WORKAROUND_DELAY: Duration = Duration::from_secs(5);
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
 use objc::{class, msg_send, runtime::Object, sel, sel_impl};
@@ -127,8 +133,11 @@ pub enum Error {}
 
 pub struct SocketWatcher {
     sockets: Arc<Mutex<Sockets>>,
-    monitor: JoinHandle<io::Result<()>>,
-    nw_monitor: JoinHandle<io::Result<()>>,
+    network_monitors: NetworkMonitors,
+}
+
+struct NetworkMonitors {
+    monitors: Vec<JoinHandle<io::Result<()>>>,
 }
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
@@ -160,12 +169,11 @@ impl NativeProtector {
 
         if should_create_socket_watcher {
             let sockets = Arc::new(Mutex::new(Sockets::new()));
-            let (monitor, nw_monitor) = spawn_monitors(sockets.clone());
+            let network_monitors = NetworkMonitors::new(sockets.clone());
             Ok(Self {
                 socket_watcher: Some(SocketWatcher {
                     sockets,
-                    monitor,
-                    nw_monitor,
+                    network_monitors,
                 }),
                 tunnel_interface: RwLock::new(None),
             })
@@ -206,8 +214,9 @@ impl NativeProtector {
 impl Drop for NativeProtector {
     fn drop(&mut self) {
         if let Some(ref sw) = self.socket_watcher {
-            sw.monitor.abort();
-            sw.nw_monitor.abort();
+            for monitor in &sw.network_monitors.monitors {
+                monitor.abort();
+            }
         }
     }
 }
@@ -284,6 +293,13 @@ impl Sockets {
         if let Some(&interface) = self.default_interface.as_ref() {
             for socket in &self.sockets {
                 Sockets::bind(interface as u32, socket);
+
+                // NMACOS-8047 Writing an empty packet to the socket unblocks the sockets when
+                // `includeAllNetworks` flag is enabled.
+                #[cfg(target_os = "macos")]
+                unsafe {
+                    _ = libc::write(*socket, std::ptr::null(), 0);
+                }
             }
         }
     }
@@ -336,45 +352,99 @@ impl Sockets {
     }
 }
 
-#[allow(unreachable_code)]
-fn spawn_monitors(
-    sockets: Arc<Mutex<Sockets>>,
-) -> (JoinHandle<io::Result<()>>, JoinHandle<io::Result<()>>) {
-    spawn_dynamic_store_loop(Arc::downgrade(&sockets));
-    let nw_path_monitor_monitor_handle = tokio::spawn({
-        let sockets = sockets.clone();
-        let mut notify = PROTECTOR_PATH_CHANGE_BROADCAST.subscribe();
-        async move {
-            loop {
-                match notify.recv().await {
-                    Ok(()) => {
-                        let mut sockets = sockets.lock();
-                        sockets.rebind_all();
-                    }
-                    Err(e) => {
-                        telio_log_warn!(
-                            "Failed to receive new path for sockets ({sockets:?}): {e}"
-                        );
+impl NetworkMonitors {
+    pub fn new(sockets: Arc<Mutex<Sockets>>) -> Self {
+        spawn_dynamic_store_loop(Arc::downgrade(&sockets));
+
+        let nw_path_monitor_monitor_handle = tokio::spawn({
+            let sockets = sockets.clone();
+            let mut notify = PROTECTOR_PATH_CHANGE_BROADCAST.subscribe();
+            async move {
+                loop {
+                    match notify.recv().await {
+                        Ok(()) => {
+                            let mut sockets = sockets.lock();
+                            sockets.rebind_all();
+
+                            #[cfg(target_os = "macos")]
+                            if let Err(e) = APPLE_BUG_AKS_WORKAROUND_BROADCAST.send(()) {
+                                telio_log_warn!("Failed to notify about sockets rebinding");
+                            } else {
+                                telio_log_info!("Notfiy about sockets rebinding");
+                            }
+                        }
+                        Err(e) => {
+                            telio_log_warn!(
+                                "Failed to receive new path for sockets ({sockets:?}): {e}"
+                            );
+                        }
                     }
                 }
             }
-        }
-    });
-    (
-        tokio::spawn(async move {
-            loop {
-                let update = {
-                    let sockets = sockets.lock();
-                    sockets.notify.clone()
-                };
+        });
 
-                update.notified().await;
-                let mut sockets = sockets.lock();
-                sockets.rebind_all();
+        let apple_bug_aks_workaround_monitor_handle = tokio::spawn({
+            let sockets = sockets.clone();
+            let mut notify = APPLE_BUG_AKS_WORKAROUND_BROADCAST.subscribe();
+            let mut last_event_time: Option<Instant> = None;
+
+            async move {
+                loop {
+                    match last_event_time {
+                        Some(last_time) => {
+                            let deadline = last_time + APPLE_BUG_AKS_WORKAROUND_DELAY;
+
+                            tokio::select! {
+                                _ = notify.recv() => {
+                                    telio_log_info!("Apple AKS Bug workaround event received, resetting timer");
+                                    last_event_time = Some(Instant::now());
+                                }
+                                _ = sleep_until(deadline.into()) => {
+                                    telio_log_info!("Apple AKS Bug workaround timer expired. Rebinding sockets");
+                                    sockets.lock().rebind_all();
+                                    last_event_time = None
+                                }
+                            }
+                        }
+                        None => {
+                            // No pending timer, wait for the first event
+                            match notify.recv().await {
+                                Ok(()) => {
+                                    telio_log_info!("Received first event for Apple AKS Bug workaround. Waiting for {:?}", APPLE_BUG_AKS_WORKAROUND_DELAY);
+                                    last_event_time = Some(Instant::now());
+                                }
+                                Err(e) => {
+                                    telio_log_warn!(
+                                        "Failed to receive event for Apple AKS Bug workaround"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
             }
-        }),
-        nw_path_monitor_monitor_handle,
-    )
+        });
+
+        NetworkMonitors {
+            monitors: vec![
+                tokio::spawn(async move {
+                    loop {
+                        let update = {
+                            let sockets = sockets.lock();
+                            sockets.notify.clone()
+                        };
+
+                        update.notified().await;
+                        let mut sockets = sockets.lock();
+                        sockets.rebind_all();
+                    }
+                }),
+                nw_path_monitor_monitor_handle,
+                #[cfg(target_os = "macos")]
+                apple_bug_aks_workaround_monitor_handle,
+            ],
+        }
+    }
 }
 
 fn get_service_order(store: &SCDynamicStore) -> Option<Vec<String>> {
@@ -455,7 +525,12 @@ fn dynamic_store_callback(
         telio_log_info!("Force rebinding the sockets because of DynamicStore key change");
         telio_log_debug!("DynamicStore key changed: {:?}", _changed_keys);
 
-        sockets.lock().rebind_all();
+        if let Err(e) = PROTECTOR_PATH_CHANGE_BROADCAST.send(()) {
+            telio_log_warn!("Failed to notify about Dynamic Store change");
+        } else {
+            telio_log_info!("Notfiy about DynamicStore key change");
+        }
+        telio_log_debug!("DynamicStore key changed: {:?}", _changed_keys);
     }
 }
 
