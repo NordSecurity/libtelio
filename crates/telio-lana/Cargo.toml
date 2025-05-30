@@ -9,9 +9,6 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
-[features]
-moose = []
-
 [dependencies]
 tracing.workspace = true
 serde.workspace = true
@@ -26,3 +23,6 @@ serial_test = "3.2.0"
 
 [build-dependencies]
 anyhow.workspace = true
+
+[features]
+moose = []
