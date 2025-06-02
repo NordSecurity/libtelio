@@ -1,6 +1,7 @@
 //! Code for serving static web ui
 
 use std::{collections::HashMap, fs, str::FromStr};
+use telio::telio_utils::hidden::Hidden;
 
 use lazy_static::lazy_static;
 use maud::{html, Markup, Render};
@@ -9,9 +10,9 @@ use rust_cgi::{
     Response,
 };
 use telio::telio_model::mesh::{Node, NodeState};
-use telio::telio_utils::hidden::Hidden;
-use tracing::{info, level_filters::LevelFilter, warn, Level};
+use tracing::{error, info, level_filters::LevelFilter, Level};
 
+use crate::TeliodDaemonConfig;
 use crate::{
     cgi::constants::TELIOD_CFG,
     config::{InterfaceConfig, TeliodDaemonConfigPartial},
@@ -22,6 +23,7 @@ use super::{
     app::AppState,
     CgiRequest,
 };
+use anyhow::{anyhow, Result};
 
 macro_rules! asset {
     ($path:literal) => {
@@ -82,15 +84,22 @@ pub fn handle_web_ui(request: &CgiRequest) -> Option<Response> {
             let mut err_msg: Option<String> = None;
 
             if !app.running {
-                // TODO: it makes more sense to update the config when starting
-                // meshnet. For the future improvement it makes sense to have separate
-                // idempotent POST and DELETE endpoints instead
-                update_config(&mut app, request);
+                // TODO: For the future improvement it makes sense to have separate
+                // endpoints - one for modifying config and another one for daemon control
+                let updated_config = update_config(&mut app, request);
 
-                let res = start_daemon();
-                info!("start: {} -> {}", res.0, res.1);
-                if !res.0.is_success() {
-                    err_msg = Some(res.1);
+                match updated_config {
+                    Err(e) => {
+                        error!("update config: {:?}", e);
+                        err_msg = Some(e.to_string())
+                    }
+                    Ok(_) => {
+                        let res = start_daemon();
+                        info!("start: {} -> {}", res.0, res.1);
+                        if !res.0.is_success() {
+                            err_msg = Some(res.1);
+                        }
+                    }
                 }
             } else {
                 let res = stop_daemon();
@@ -148,20 +157,18 @@ const TUNNEL_NAME: &str = "interface-name";
 const LOG_LEVEL: &str = "log-level";
 
 /// Try to update persisted config
-fn update_config(app: &mut AppState, request: &CgiRequest) {
+fn update_config(app: &mut AppState, request: &CgiRequest) -> Result<TeliodDaemonConfig> {
     // TODO: should probably be Result, creating error report for a user in web
     let Some(ctype) = request
         .headers()
         .get("x-cgi-content-type")
         .and_then(|v| v.to_str().ok())
     else {
-        warn!("x-cgi-content-type header not found");
-        return;
+        return Err(anyhow!("x-cgi-content-type header not found"));
     };
 
     if ctype != "application/x-www-form-urlencoded" {
-        warn!("Expected to receive form data, got: {}", ctype);
-        return;
+        return Err(anyhow!("Expected to receive form data, got: {}", ctype));
     }
 
     let values: HashMap<_, _> = form_urlencoded::parse(request.body()).collect();
@@ -192,17 +199,18 @@ fn update_config(app: &mut AppState, request: &CgiRequest) {
     let config = match serde_json::to_string_pretty(&new_config) {
         Ok(c) => c,
         Err(err) => {
-            warn!("Failed to serialize config, err: {err}");
-            return;
+            return Err(anyhow!("Failed to serialize config, err: {err}"));
         }
     };
 
     match fs::write(TELIOD_CFG, config) {
         Ok(_) => {
-            app.config = new_config;
+            app.config = new_config.clone();
         }
         Err(err) => {
-            warn!("Failed to persist a new config into {TELIOD_CFG}, err: {err}");
+            return Err(anyhow!(
+                "Failed to persist a new config into {TELIOD_CFG}, err: {err}"
+            ));
         }
     }
 
