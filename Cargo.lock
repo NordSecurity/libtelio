@@ -4766,6 +4766,8 @@ dependencies = [
  "num_enum",
  "once_cell",
  "pretty_assertions",
+ "proptest",
+ "proptest-derive",
  "serde",
  "serde_json",
  "smart-default",

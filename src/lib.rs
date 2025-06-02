@@ -70,8 +70,6 @@ pub use uniffi_libtelio::*;
 mod uniffi_libtelio {
     use std::net::{IpAddr, SocketAddr};
 
-    use ipnet::Ipv4Net;
-
     use super::crypto::{PublicKey, SecretKey};
     use super::*;
 
@@ -166,7 +164,7 @@ mod uniffi_libtelio {
         }
     }
 
-    impl UniffiCustomTypeConverter for Ipv4Net {
+    impl UniffiCustomTypeConverter for telio_model::features::Ipv4Net {
         type Builtin = String;
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
