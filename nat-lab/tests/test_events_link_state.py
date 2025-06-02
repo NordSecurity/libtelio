@@ -15,13 +15,19 @@ from utils.bindings import (
 from utils.connection import Connection, ConnectionTag
 from utils.ping import ping
 
-RTT_SECONDS = 1
-PING_TIMEOUT = 3
-# The interval at which link-state events are emitted.
-# Determined by WG-PASSIVE_KEEPALIVE + RTT delay
-LINK_STATE_INTERVAL = 10 + RTT_SECONDS
-# The time by which we otherwise would expect to emit at least one link-state event.
-IDLE_TIMEOUT = 2 * LINK_STATE_INTERVAL
+WG_POLLING_PERIOD_S = 1
+WG_PASSIVE_KEEPALIVE_S = 10
+MAX_RTT_ALLOWED_S = 1
+# The duration which after a link is considered not to be up. (ie: PossibleDown->Down)
+LINK_STATE_TIMEOUT_S = WG_PASSIVE_KEEPALIVE_S + MAX_RTT_ALLOWED_S
+POSSIBLE_DOWN_DELAY = 3
+# Enhanced detection (ED) issues a ping when there's the Up->PossibleDown link state transition,
+# if no ICMP reply is received for LINK_STATE_TIMEOUT_S the link state will transit to Down.
+POSSIBLE_DOWN_DELAY_ED = LINK_STATE_TIMEOUT_S
+# The time by which we would expect to emit at least one link-state event, when tx_ts > rx_ts and none rx packet for the same period.
+TOLERANCE = 1.5
+IDLE_TIMEOUT_S = round((LINK_STATE_TIMEOUT_S + POSSIBLE_DOWN_DELAY) * TOLERANCE)
+IDLE_TIMEOUT_ED_S = round((LINK_STATE_TIMEOUT_S + POSSIBLE_DOWN_DELAY_ED) * TOLERANCE)
 
 
 def long_persistent_keepalive_periods() -> FeatureWireguard:
@@ -51,7 +57,7 @@ def _generate_setup_parameter_pair(
 
     features = default_features(enable_link_detection=True)
     features.link_detection = FeatureLinkDetection(
-        rtt_seconds=RTT_SECONDS, no_of_pings=count, use_for_downgrade=False
+        rtt_seconds=MAX_RTT_ALLOWED_S, no_of_pings=count, use_for_downgrade=False
     )
     features.wireguard = long_persistent_keepalive_periods()
 
@@ -156,6 +162,13 @@ async def wait_for_any_with_timeout(tasks, timeout: float):
         raise asyncio.TimeoutError
 
 
+def resolve_idle_timeout(params: SetupParameters) -> int:
+    assert params.features.link_detection
+    if params.features.link_detection.no_of_pings > 0:
+        return IDLE_TIMEOUT_ED_S
+    return IDLE_TIMEOUT_S
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS)
 async def test_event_link_state_peers_idle_all_time(
@@ -181,8 +194,17 @@ async def test_event_link_state_peers_idle_all_time(
                         )
                     ),
                 ],
-                timeout=IDLE_TIMEOUT,
+                timeout=resolve_idle_timeout(setup_params[0]),
             )
+
+        assert client_alpha.get_link_state_events(beta.public_key) == [
+            LinkState.DOWN,
+            LinkState.UP,
+        ]
+        assert client_beta.get_link_state_events(alpha.public_key) == [
+            LinkState.DOWN,
+            LinkState.UP,
+        ]
 
 
 @pytest.mark.asyncio
@@ -244,7 +266,7 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
                         )
                     ),
                 ],
-                timeout=IDLE_TIMEOUT,
+                timeout=resolve_idle_timeout(setup_params[0]),
             )
 
         await ping(connection_alpha, beta.ip_addresses[0])
@@ -265,7 +287,7 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
                         )
                     ),
                 ],
-                timeout=5,
+                timeout=resolve_idle_timeout(setup_params[0]),
             )
 
         # Expect the links are still UP
@@ -301,24 +323,28 @@ async def test_event_link_state_peer_goes_offline(
         await ping(connection_alpha, beta.ip_addresses[0])
 
         await client_beta.stop_device()
+        # Stopping beta generates rx/tx traffic with alpha, so wait 1 second before the next ping to skip the current
+        # polling interval and therefore guarantee that only tx increases
+        await asyncio.sleep(WG_POLLING_PERIOD_S)
 
-        # Expect the link to still be UP for the fist 10 + RTT seconds
-        results = await asyncio.gather(
-            ping(connection_alpha, beta.ip_addresses[0], PING_TIMEOUT),
-            client_alpha.wait_for_link_state(
-                beta.public_key, LinkState.DOWN, LINK_STATE_INTERVAL
-            ),
-            return_exceptions=True,
+        # Expect the link to still be UP for the duration of WG Keepalive timeout + Max. RTT Allowed
+        with pytest.raises(asyncio.TimeoutError):
+            await ping(connection_alpha, beta.ip_addresses[0], MAX_RTT_ALLOWED_S)
+        with pytest.raises(asyncio.TimeoutError):
+            await client_alpha.wait_for_link_state(
+                beta.public_key, LinkState.DOWN, WG_PASSIVE_KEEPALIVE_S
+            )
+
+        # DOWN link state is expected after we send a packet and don't receive for more than:
+        # WG Keep alive + Max. RTT allowed + Delay, where,
+        #      Delay = 3s when Enhanced detection is disabled
+        #      Delay = (WG Keep alive + Max. RTT allowed) when Enhanced detection is enabled
+        await client_alpha.wait_for_link_state(
+            beta.public_key,
+            LinkState.DOWN,
+            (resolve_idle_timeout(setup_params[0]) - WG_PASSIVE_KEEPALIVE_S),
         )
 
-        for idx, result in enumerate(results):
-            if not isinstance(result, asyncio.TimeoutError):
-                raise AssertionError(f"{idx}: Expected to timeout but got {result}")
-
-        # Expect the link down event
-        # It should arrive in 11-15 seconds after the link is cut and enhanced detection disabled
-        # And 22-25 seconds if the enhanced detection is enabled
-        await client_alpha.wait_for_link_state(beta.public_key, LinkState.DOWN)
         assert client_alpha.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
@@ -347,7 +373,7 @@ async def test_event_link_state_feature_disabled(
         await ping(connection_alpha, beta.ip_addresses[0])
         await ping(connection_beta, alpha.ip_addresses[0])
 
-        await asyncio.sleep(30)
+        await asyncio.sleep(IDLE_TIMEOUT_ED_S)
 
         alpha_events = client_beta.get_link_state_events(alpha.public_key)
         beta_events = client_alpha.get_link_state_events(beta.public_key)
@@ -404,12 +430,15 @@ async def test_event_link_state_peer_doesnt_respond(
             conn.connection for conn in env.connections
         ]
 
+        # After this ping beta will have ts_tx > ts_rx (ICMP reply)
+        await ping(connection_alpha, beta.ip_addresses[0])
+
         async with ICMP_control(connection_beta):
             with pytest.raises(asyncio.TimeoutError):
-                await ping(connection_alpha, beta.ip_addresses[0], PING_TIMEOUT)
+                await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
 
-            # Wait enough to pass 10 second mark since our ping request, which should trigger passive-keepalive by wireguard
-            # + rtt delay for enhanced detection mode
+            # If there was no connection, DOWN link state should be detected after 14-21s (ie: IDLE_TIMEOUT_S),
+            # however beta is sending a keepalive after WG_PASSIVE_KEEPALIVE_S to let alpha knows that he's alive.
             with pytest.raises(asyncio.TimeoutError):
                 await wait_for_any_with_timeout(
                     [
@@ -424,5 +453,5 @@ async def test_event_link_state_peer_doesnt_respond(
                             )
                         ),
                     ],
-                    timeout=IDLE_TIMEOUT,
+                    timeout=resolve_idle_timeout(setup_params[0]),
                 )
