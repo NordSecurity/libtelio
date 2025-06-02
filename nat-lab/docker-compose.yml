@@ -655,6 +655,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+    depends_on:
+      dns-server-1:
+        condition: service_healthy
+      dns-server-2:
+        condition: service_healthy
     volumes:
       - ./data/core_api/rumqttd.toml:/etc/mqtt/rumqttd.toml
       - ./data/core_api/test.pem:/etc/ssl/server_certificate/test.pem
