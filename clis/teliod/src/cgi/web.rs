@@ -172,9 +172,12 @@ fn update_config(app: &mut AppState, request: &CgiRequest) {
     let values: HashMap<_, _> = form_urlencoded::parse(request.body()).collect();
 
     let partial = TeliodDaemonConfigPartial {
-        authentication_token: values
-            .get(ACCESS_TOKEN)
-            .map(|n| Hidden(ToString::to_string(n))),
+        // Empty token submitted means we don't update it.
+        // this means we do not provide a way to clear it on this endpoint
+        authentication_token: match values.get(ACCESS_TOKEN) {
+            Some(token) if !token.to_string().trim().is_empty() => Some(Hidden(token.to_string())),
+            _ => None,
+        },
         log_level: values
             .get(LOG_LEVEL)
             .and_then(|v| LevelFilter::from_str(v).ok()),
@@ -185,7 +188,7 @@ fn update_config(app: &mut AppState, request: &CgiRequest) {
         ..Default::default()
     };
 
-    warn!("Got new values: {partial:#?}");
+    info!("Got new values: {partial:#?}");
 
     // Build a new temprorary config
     let mut new_config = app.config.clone();
@@ -207,6 +210,8 @@ fn update_config(app: &mut AppState, request: &CgiRequest) {
             warn!("Failed to persist a new config into {TELIOD_CFG}, err: {err}");
         }
     }
+
+    Ok(new_config)
 }
 
 fn config_view(app: &AppState, error: Option<String>) -> Markup {
@@ -261,9 +266,9 @@ fn config_view(app: &AppState, error: Option<String>) -> Markup {
                     div class="space-y-2" {
                         label class="block text-primary body-xs-medium" { "Access Token" }
                         (if is_running {
-                            html!{input disabled name=(ACCESS_TOKEN) type="password" class="text-disabled w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(*app.config.authentication_token) "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
+                            html!{input disabled name=(ACCESS_TOKEN) type="password" class="text-disabled w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
                         } else {
-                            html!{input name=(ACCESS_TOKEN) type="password" class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(*app.config.authentication_token) "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
+                            html!{input name=(ACCESS_TOKEN) type="password" class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
                         })
                     }
                     div class="flex flex-col gap-2" {

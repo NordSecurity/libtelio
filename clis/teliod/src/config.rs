@@ -258,7 +258,9 @@ fn serialize_authentication_token<S>(auth_token: &str, serializer: S) -> Result<
 where
     S: Serializer,
 {
-    if auth_token.len() == 64 && auth_token.chars().all(|c| c.is_ascii_hexdigit()) {
+    if auth_token.len() == 0
+        || (auth_token.len() == 64 && auth_token.chars().all(|c| c.is_ascii_hexdigit()))
+    {
         serializer.serialize_str(auth_token)
     } else {
         Err(serde::ser::Error::custom(
