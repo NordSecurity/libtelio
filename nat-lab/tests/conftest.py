@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from config import DERP_PRIMARY, LAN_ADDR_MAP
 from contextlib import AsyncExitStack
-from helpers import SetupParameters
+from helpers import SetupParameters, setup_mesh_nodes
 from interderp_cli import InterDerpClient
 from itertools import combinations
 from typing import Dict, List, Tuple
@@ -282,6 +282,23 @@ async def _copy_vm_binaries(tag: ConnectionTag):
         raise e
 
 
+async def _setup_windows_adapters():
+    async with AsyncExitStack() as exit_stack:
+        _ = await setup_mesh_nodes(
+            exit_stack,
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_WINDOWS_1,
+                    adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_WINDOWS_2,
+                    adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                ),
+            ],
+        )
+
+
 async def _copy_vm_binaries_if_needed(items):
     windows_bins_copied = False
     mac_bins_copied = False
@@ -297,6 +314,14 @@ async def _copy_vm_binaries_if_needed(items):
                 mac_bins_copied = True
 
             if windows_bins_copied and mac_bins_copied:
+                return
+
+
+async def _setup_windows_adapters_if_needed(items):
+    for item in items:
+        for mark in item.own_markers:
+            if mark.name == "windows":
+                await _setup_windows_adapters()
                 return
 
 
@@ -374,6 +399,7 @@ async def collect_kernel_logs(items, suffix):
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
         asyncio.run(_copy_vm_binaries_if_needed(session.items))
+        asyncio.run(_setup_windows_adapters_if_needed(session.items))
 
         if os.environ.get("NATLAB_SAVE_LOGS") is not None:
             asyncio.run(collect_kernel_logs(session.items, "before_tests"))
