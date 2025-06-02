@@ -375,8 +375,8 @@ async def set_secondary_ifc_state(
             await secondary_ifc.disable(connection)
         return secondary_ifc
 
-    # TODO: Create Interface class for Linux/Macos
-    raise NotImplementedError("Linux/MacOS are currently not supported")
+    # TODO: Create Interface class for Linux/Macos, until then secondary ifc ("eth1") is hardcoded
+    return None
 
 
 @asynccontextmanager
