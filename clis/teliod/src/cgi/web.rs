@@ -36,10 +36,6 @@ lazy_static! {
             ("/static/style.css", ("text/css", asset!("style.css"))),
             ("/static/output.css", ("text/css", asset!("output.css"))),
             (
-                "/static/tailwind.config.js",
-                ("text/javascript", asset!("tailwind.config.js")),
-            ),
-            (
                 "/static/fonts/inter-v18-latin-100.woff2",
                 ("font/ttf", asset!("fonts/inter-v18-latin-100.woff2")),
             ),
@@ -125,7 +121,6 @@ fn index(base_ref: String) -> Markup {
                 title { "Nord Security Meshnet" }
                 base href=(base_ref);
 
-                script src="static/tailwind.config.js" {}
                 link rel="stylesheet" href="static/output.css" {}
                 link rel="stylesheet" href="static/style.css" {}
                 script src="static/htmx.js" {}
