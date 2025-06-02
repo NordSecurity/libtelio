@@ -13,6 +13,7 @@ from utils.bindings import (
     TelioAdapterType,
 )
 from utils.connection import Connection, ConnectionTag
+from utils.connection_util import add_outgoing_packets_delay
 from utils.ping import ping
 
 WG_POLLING_PERIOD_S = 1
@@ -455,3 +456,59 @@ async def test_event_link_state_peer_doesnt_respond(
                     ],
                     timeout=resolve_idle_timeout(setup_params[0]),
                 )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS)
+async def test_event_link_state_delayed_packet(
+    setup_params: List[SetupParameters],
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        alpha, beta = env.nodes
+        client_alpha, client_beta = env.clients
+        connection_alpha, connection_beta = [
+            connmgr.connection for connmgr in env.connections
+        ]
+
+        await ping(connection_alpha, beta.ip_addresses[0])
+
+        delay_s = resolve_idle_timeout(setup_params[0])
+        await exit_stack.enter_async_context(
+            add_outgoing_packets_delay(connection_beta, f"{delay_s}s")
+        )
+
+        # Waiting for the finish of the previous ping polling interval.
+        await asyncio.sleep(WG_POLLING_PERIOD_S)
+
+        # alpha will only receive the ICMP reply 20s after and
+        # in the meantime beta's link state will go DOWN.
+        ping_instant = asyncio.get_event_loop().time()
+        with pytest.raises(asyncio.TimeoutError):
+            await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
+
+        await client_alpha.wait_for_link_state(
+            beta.public_key, LinkState.DOWN, resolve_idle_timeout(setup_params[0])
+        )
+
+        time_elapsed_since_ping = asyncio.get_event_loop().time() - ping_instant
+        time_left_for_icmp_arrival = max(0, delay_s - time_elapsed_since_ping)
+        await client_alpha.wait_for_link_state(
+            beta.public_key,
+            LinkState.UP,
+            time_left_for_icmp_arrival + resolve_idle_timeout(setup_params[0]),
+        )
+
+        assert client_alpha.get_link_state_events(beta.public_key) == [
+            LinkState.DOWN,
+            LinkState.UP,
+            LinkState.DOWN,
+            LinkState.UP,
+        ]
+        assert client_beta.get_link_state_events(alpha.public_key) == [
+            LinkState.DOWN,
+            LinkState.UP,
+        ]
+
+
+
