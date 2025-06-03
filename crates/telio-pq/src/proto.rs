@@ -164,10 +164,13 @@ pub async fn fetch_keys(
 pub async fn rekey(
     sock_pool: &telio_sockets::SocketPool,
     pq_secret: &Hidden<[u8; PQCLEAN_KYBER768_CLEAN_CRYPTO_SECRETKEYBYTES]>,
+    pq_shared: &telio_crypto::PresharedKey,
 ) -> super::Result<telio_crypto::PresharedKey> {
     telio_log_debug!("Rekeying");
     let mut pkgbuf = Vec::with_capacity(1024 * 4); // 4 KiB
     push_rekey_method_udp_payload(&mut pkgbuf);
+    let tag = compute_authentication_tag(pq_shared, &pkgbuf);
+    pkgbuf.extend_from_slice(&tag);
 
     let sock = sock_pool
         .new_internal_udp((Ipv4Addr::UNSPECIFIED, 0), None)
@@ -392,21 +395,24 @@ fn create_get_packet(
     let to_hash = &pkgbuf[IPV4_HEADER_LEN + UDP_HEADER_LEN..];
 
     let tag = {
-        type HmacSha256 = hmac::Hmac<sha2::Sha256>;
-
         let shared_secret = x25519_dalek::x25519(*wg_client_secret.as_bytes(), wg_server_public.0);
-
-        #[allow(clippy::expect_used)]
-        let mut hmac =
-            HmacSha256::new_from_slice(&shared_secret).expect("HMAC can take key of any size");
-        hmac.update(&blake2::Blake2s256::digest(to_hash));
-        hmac.finalize().into_bytes()
+        compute_authentication_tag(&shared_secret, to_hash)
     };
     pkgbuf.extend_from_slice(&tag);
 
     fill_get_packet_headers(pkgbuf.as_mut_slice(), local_port);
 
     pkgbuf
+}
+
+fn compute_authentication_tag(shared_secret: &[u8], data: &[u8]) -> [u8; 32] {
+    type HmacSha256 = hmac::Hmac<sha2::Sha256>;
+
+    #[allow(clippy::expect_used)]
+    let mut hmac =
+        HmacSha256::new_from_slice(&shared_secret).expect("HMAC can take key of any size");
+    hmac.update(&blake2::Blake2s256::digest(data));
+    hmac.finalize().into_bytes().into()
 }
 
 /// The GET payload looks as follows:
