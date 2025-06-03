@@ -15,6 +15,8 @@ pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
 [dependencies]
 cfg-if = "1.0.0"
 ffi_helpers = "0.3.0"
+# We need this specific version for libmoose
+zerofrom = "=0.1.5"
 
 anyhow.workspace = true
 async-trait.workspace = true
@@ -165,7 +167,7 @@ tracing-subscriber = { version = "0.3", features = ["local-time", "env-filter"] 
 tracing-appender = "0.2"
 uniffi = "0.28.3"
 url = "2.5"
-uuid = { version = "1.16", features = ["v4"] }
+uuid = { version = "1.17", features = ["v4"] }
 winapi = { version = "0.3", features = ["netioapi", "ws2def"] }
 windows = { version = "0.61", features = [
     "Win32_Networking_WinSock",
