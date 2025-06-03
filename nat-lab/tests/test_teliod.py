@@ -39,12 +39,19 @@ async def is_teliod_running(connection):
         return False
 
 
-async def wait_for_teliod(connection, timeout: float):
+WAIT_FOR_TELIOD_TIMEOUT = 3.0
+
+
+async def wait_for_teliod(connection):
     start_time = time.monotonic()
-    while not await is_teliod_running(connection):
-        if time.monotonic() - start_time > timeout:
-            raise TimeoutError("teliod did not start within timeout")
+    while time.monotonic() - start_time < WAIT_FOR_TELIOD_TIMEOUT:
+        try:
+            if await asyncio.wait_for(is_teliod_running(connection), 0.5):
+                return
+        except TimeoutError:
+            pass
         await asyncio.sleep(0.1)
+    raise TimeoutError("teliod did not start within timeout")
 
 
 @pytest.mark.parametrize(
@@ -64,7 +71,7 @@ async def test_teliod(start_daemon_params) -> None:
         )
 
         # Let the daemon start
-        await wait_for_teliod(connection, timeout=1)
+        await wait_for_teliod(connection)
 
         with pytest.raises(ProcessExecError) as err:
             await connection.create_process(start_daemon_params).execute()
@@ -113,7 +120,7 @@ async def test_teliod_quit(start_daemon_params) -> None:
         )
 
         # Let the daemon start
-        await wait_for_teliod(connection, timeout=1)
+        await wait_for_teliod(connection)
 
         # Run the is-alive command
         assert (
@@ -160,7 +167,7 @@ async def test_teliod_logs() -> None:
         )
 
         # Let the daemon start
-        await wait_for_teliod(connection, timeout=1)
+        await wait_for_teliod(connection)
 
         # Run the is-alive command
         assert (
