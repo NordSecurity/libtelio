@@ -29,10 +29,13 @@ MAX_RTT_ALLOWED_S = 1
 LINK_STATE_TIMEOUT_S = WG_PASSIVE_KEEPALIVE_S + MAX_RTT_ALLOWED_S
 POSSIBLE_DOWN_DELAY = 3
 # Enhanced detection (ED) issues a ping when there's the Up->PossibleDown link state transition,
-# if no ICMP reply is received for LINK_STATE_TIMEOUT_S the link state will transit to Down.
+# if no reply is received for LINK_STATE_TIMEOUT_S the link state will transit to Down.
 POSSIBLE_DOWN_DELAY_ED = LINK_STATE_TIMEOUT_S
-# The time by which we would expect to emit at least one link-state event, when tx_ts > rx_ts and none rx packet for the same period.
+# As observed, detection in practice took 20-50% beyond LINK_STATE_TIMEOUT_S, thus a 50% tolerance is enough
+# to detect down link state, with or without ED, whether on personal setup or on CI.
+# If the tests happen to be flaky, this value shouldn't be increased.
 TOLERANCE = 1.5
+# The time by which we would expect to emit at least one link-state event, when tx_ts > rx_ts and none rx packet for the same period.
 IDLE_TIMEOUT_S = round((LINK_STATE_TIMEOUT_S + POSSIBLE_DOWN_DELAY) * TOLERANCE)
 IDLE_TIMEOUT_ED_S = round((LINK_STATE_TIMEOUT_S + POSSIBLE_DOWN_DELAY_ED) * TOLERANCE)
 
@@ -323,7 +326,7 @@ async def test_event_link_state_peer_goes_offline(
 
         await client_beta.stop_device()
         # Stopping beta generates rx/tx traffic with alpha, so wait 1 second before the next ping to skip the current
-        # polling interval and therefore guarantee that only tx increases
+        # polling interval and therefore guarantee that only tx increases (relatively to alpha->beta link)
         await asyncio.sleep(WG_POLLING_PERIOD_S)
 
         # Expect the link to still be UP for the duration of WG Keepalive timeout + Max. RTT Allowed
@@ -429,14 +432,14 @@ async def test_event_link_state_peer_doesnt_respond(
             conn.connection for conn in env.connections
         ]
 
-        # After this ping beta will have ts_tx > ts_rx (ICMP reply)
+        # After this ping beta's wireguard drivers will have ts_tx > ts_rx (link state feature will probably have ts_tx == ts_rx)
         await ping(connection_alpha, beta.ip_addresses[0])
 
         async with ICMP_control(connection_beta):
             with pytest.raises(asyncio.TimeoutError):
                 await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
 
-            # If there was no connection, DOWN link state should be detected after 14-21s (ie: IDLE_TIMEOUT_S),
+            # If there was no connection, alpha->beta DOWN link state should be detected after 14-21s (ie: IDLE_TIMEOUT_S),
             # however beta is sending a keepalive after WG_PASSIVE_KEEPALIVE_S to let alpha knows that he's alive.
             with pytest.raises(asyncio.TimeoutError):
                 await wait_for_any_with_timeout(
@@ -479,8 +482,8 @@ async def test_event_link_state_delayed_packet(
         # Waiting for the finish of the previous ping polling interval.
         await asyncio.sleep(WG_POLLING_PERIOD_S)
 
-        # alpha will only receive the ICMP reply 20s after and
-        # in the meantime beta's link state will go DOWN.
+        # alpha will only receive the ICMP reply 20s after,
+        # in the meantime alpha->beta link state goes DOWN.
         ping_instant = asyncio.get_event_loop().time()
         with pytest.raises(asyncio.TimeoutError):
             await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
@@ -603,7 +606,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
         await client_alpha.notify_network_change()
         await client_alpha.wait_for_event_on_any_derp([RelayState.CONNECTED])
 
-        # We can think that after this ping beta node will have tx_ts > rx_ts (ICMP reply),
+        # We can think that after this ping beta->alpha will have tx_ts > rx_ts (ICMP reply),
         # however the counters have a granularity (ie: update rate) of 1s (=WG polling period) thus
         # tx_ts > rx_ts is not guaranteed and most of the times it'll be tx_ts == rx_ts.
         #
@@ -631,7 +634,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
             LinkState.UP,
             LinkState.DOWN,
         ]
-        # (*) At this stage, we cannot ensure the link state on Beta due to the counters update rate (1s == polling period).
+        # (*) At this stage, we cannot avail beta->alpha link state due to the counters update rate (polling period is 1s).
         # tx_ts > rx_ts can only be guaranteed after the keepalive timeout (10s) + rekey timeout (5s) when it triggers the handshake,
         # IDLE_TIMEOUT_S seconds after, the down link state should be detected.
         # Alternatively we could ping alpha after disabling its interface which will make tx_ts > rx_ts.
@@ -733,7 +736,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
             ),
         )
 
-        # We can think that after this ping beta node will have tx_ts > rx_ts (ICMP reply),
+        # We can think that after this ping beta->alpha will have tx_ts > rx_ts (ICMP reply),
         # however the counters have a granularity (ie: update rate) of 1s (=WG polling period) thus
         # tx_ts > rx_ts is not guaranteed and most of the times it'll be tx_ts == rx_ts.
         #
@@ -765,8 +768,9 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
             LinkState.UP,
             LinkState.DOWN,
         ]
-        # IT"S POSSIBLE THAT BETA HAS ALREADY DETECTED THE DOWN LINK STATE AT THIS INSTANT THROUGH THE SESSION KEEPER ICMP PACKET (5s == direct keepalive)
-        # (*) At this stage, we cannot ensure the link state on Beta due to the counters update rate (1s == polling period).
+        # It's possible that beta->alpha has already detected the DOWN link state at this point due to the session keeper keepalive (ie: direct keepalive->5s)
+        #
+        # (*) At this stage, we cannot avail beta->alpha link state due to the counters update rate (polling period is 1s).
         # tx_ts > rx_ts can only be guaranteed after the keepalive timeout (10s) + rekey timeout (5s) when it triggers the handshake,
         # IDLE_TIMEOUT_S seconds after, the down link state should be detected.
         # Alternatively we could ping alpha after disabling its interface which will make tx_ts > rx_ts.
@@ -882,7 +886,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_with_vpn(
         # not work. (LLT-5073)
         # However after 3xdirect keep alives the connection is downgraded and any eventual packets will be successfully sent
         # from the WireguardNT perspective, because the following hop is the proxy socket at localhost (relayed peer endpoint)
-        # before going to the disabled NIC.
+        # before going to the disabled interface.
         await client_alpha.wait_for_link_state(
             vpn_public_key, LinkState.DOWN, resolve_idle_timeout(alpha_setup_params[0])
         )
