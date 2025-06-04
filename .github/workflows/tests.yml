@@ -44,7 +44,20 @@ jobs:
       - run: cargo test --package=teliod -- --nocapture
         env:
           RUST_BACKTRACE: full
+
+  test-teliod-cgi:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - run: cargo test --package=teliod --features=cgi -- --nocapture
+        env:
+          RUST_BACKTRACE: full
+
+  test-teliod-qnap:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - run: cargo test --package=teliod --features=qnap -- --nocapture
         env:
           RUST_BACKTRACE: full
 
