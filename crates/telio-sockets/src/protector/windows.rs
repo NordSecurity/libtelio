@@ -71,12 +71,19 @@ impl Protector for NativeProtector {
         socks.tunnel_interface = Some(interface);
         socks.notify.notify_waiters();
     }
+
+    fn set_ext_if_filter(&self, list: Vec<String>) {
+        let mut socks = self.sockets.lock();
+        socks.filtered_nics = list;
+        socks.notify.notify_waiters();
+    }
 }
 
 struct Sockets {
     sockets: Vec<NativeSocket>,
     tunnel_interface: Option<u64>,
     default_interface: Option<Interface>,
+    filtered_nics: Vec<String>,
     notify: Arc<Notify>,
     last_default_interface_error: Option<io::Error>,
 }
@@ -100,7 +107,7 @@ impl Sockets {
         if self.sockets.is_empty() {
             return;
         }
-        let new_default_interface = match get_default_interface(tunnel_interface) {
+        let new_default_interface = match get_default_interface(tunnel_interface, filtered_nics) {
             Ok(def) => {
                 self.last_default_interface_error = None;
                 Some(def)
@@ -339,7 +346,10 @@ impl Drop for ChangeNotification {
 
 unsafe impl Send for ChangeNotification {}
 
-pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
+pub fn get_default_interface(
+    tunnel_interface: u64,
+    filtered_nics: Vec<String>,
+) -> Result<Interface> {
     let mut table: PMIB_IPFORWARD_TABLE2 = std::ptr::null_mut();
     if unsafe { GetIpForwardTable2(AF_INET as u16, &mut table) } != NO_ERROR {
         return Err(std::io::Error::last_os_error());
@@ -376,12 +386,17 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
         if unsafe { GetIfEntry2(&mut ifrow as PMIB_IF_ROW2) } != NO_ERROR {
             return Err(std::io::Error::last_os_error());
         }
+        teliog_log_debug!("Interface {}", ifrow.Alias, ifrow.Description);
         if ifrow.OperStatus != IfOperStatusUp {
             telio_log_debug!(
                 "Interface {} is not up (Status: {}) -> skip",
                 ifrow.InterfaceIndex,
                 ifrow.OperStatus
             );
+            continue;
+        }
+
+        if is_in_filtered_nics(filtered_nics, row.InterfaceLuid.Value)? {
             continue;
         }
 
@@ -490,6 +505,39 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
     telio_log_debug!("Default interface addr {:?}", default_interface.ip);
 
     Ok(default_interface)
+}
+
+fn is_in_filtered_nics(filtered_nics: Vec<String>, luid: u64) -> Result<bool> {
+    let mut name_buffer: Vec<u16> = vec![0; winapi::um::winnt::IF_MAX_STRING_SIZE as usize];
+
+    let luid = NET_LUID { Value: luid };
+
+    let result = unsafe {
+        ConvertInterfaceLuidToNameW(
+            &luid,
+            name_buffer.as_mut_ptr(),
+            name_buffer.len() as libc::size_t,
+        )
+    };
+
+    if result != NO_ERROR as i32 {
+        let err_str = format!(
+            "ConvertInterfaceLuidToNameW failed with error code: {}",
+            result
+        );
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, err_str));
+    }
+
+    let null_pos = name_buffer
+        .iter()
+        .position(|&c| c == 0)
+        .unwrap_or(name_buffer.len());
+    let name_slice = &name_buffer[..null_pos];
+    let interface_name = OsString::from_wide(name_slice)
+        .to_string_lossy()
+        .into_owned();
+
+    Some(filtered_nics.contains(&interface_name))
 }
 
 #[cfg(test)]
