@@ -34,6 +34,10 @@ lazy_static! {
         [
             ("/static/telio.js", ("text/javascript", asset!("telio.js"))),
             ("/static/style.css", ("text/css", asset!("style.css"))),
+            (
+                "/static/meshnet_icon.svg",
+                ("image/svg+xml", asset!("meshnet_icon.svg")),
+            ),
             ("/static/output.css", ("text/css", asset!("output.css"))),
             (
                 "/static/tailwind.config.js",
@@ -130,6 +134,7 @@ fn index(base_ref: String) -> Markup {
                 link rel="stylesheet" href="static/style.css" {}
                 script src="static/htmx.js" {}
                 script src="static/telio.js" {}
+                link rel="icon" type="image/svg+xml" href="static/meshnet_icon.svg" {}
             }
             body class="bg-neutral-100 dark:bg-neutral-1000  py-10 flex items-top justify-start justify-center min-h-screen gap-3" {
                 (view(&AppState::collect(), None))
