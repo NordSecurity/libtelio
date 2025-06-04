@@ -202,6 +202,7 @@ pub struct DeviceConfig {
     pub fwmark: Option<u32>,
     pub name: Option<String>,
     pub tun: Option<Arc<Tun>>,
+    pub ext_if_filter: Vec<String>,
 }
 
 pub struct Device {
@@ -635,6 +636,20 @@ impl Device {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
                 Ok(rt.set_private_key(&private_key).boxed().await)
+            })
+            .await?
+        })
+    }
+
+    /// Configure the private key of the WireGuard interface
+    ///
+    /// This methods sets the private key of the WireGuard interface. Note that it
+    /// is only valid to call this method only on device instance which is currently
+    /// not running. E.g. either before start()'ing or after stop()'ing it.
+    pub fn set_ext_if_filter(&self, ext_if_filter: Vec<String>) -> Result {
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| {
+                Ok(rt.set_ext_if_filter(ext_if_filter).boxed().await)
             })
             .await?
         })
@@ -1549,6 +1564,10 @@ impl Runtime {
         }
 
         Ok(())
+    }
+
+    async fn set_ext_if_filter(&mut self, ext_if_filter: Vec<String>) -> Result {
+    
     }
 
     async fn set_private_key(&mut self, private_key: &SecretKey) -> Result {
