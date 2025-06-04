@@ -120,6 +120,10 @@ impl SocketPool {
         self.protect.set_fwmark(fwmark);
     }
 
+    pub fn set_ext_if_filter(&self, list: &[String]) {
+        self.protect.set_ext_if_filter(list);
+    }
+
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos", windows))]
     pub fn set_tunnel_interface(&self, interface: u64) {
         self.protect.set_tunnel_interface(interface);

@@ -209,6 +209,7 @@ pub struct DeviceConfig {
     pub fwmark: Option<u32>,
     pub name: Option<String>,
     pub tun: Option<Tun>,
+    pub ext_if_filter: Option<Vec<String>>,
 }
 
 pub struct Device {
@@ -680,6 +681,20 @@ impl Device {
         })
     }
 
+    /// Configure the external interface list on adapter.
+    ///
+    /// This methods sets the private key of the WireGuard interface. Note that it
+    /// is only valid to call this method only on device instance which is currently
+    /// not running. E.g. either before start()'ing or after stop()'ing it.
+    pub fn set_ext_if_filter(&self, ext_if_filter: Vec<String>) -> Result {
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| {
+                Ok(rt.set_ext_if_filter(ext_if_filter).boxed().await)
+            })
+            .await?
+        })
+    }
+
     /// Retrieves currently configured private key for the interface
     pub fn get_private_key(&self) -> Result<SecretKey> {
         self.async_runtime()?.block_on(async {
@@ -1077,6 +1092,9 @@ impl Runtime {
                 )?)
             }
         });
+        if let Some(ext_if_filter) = &config.ext_if_filter {
+            socket_pool.set_ext_if_filter(ext_if_filter);
+        }
 
         let derp_events = McChan::default();
 
@@ -1607,6 +1625,12 @@ impl Runtime {
                 .await
                 .map_err(Error::DnsResolverError)?;
         }
+
+        Ok(())
+    }
+
+    async fn set_ext_if_filter(&mut self, ext_if_filter: Vec<String>) -> Result {
+        self.entities.socket_pool.set_ext_if_filter(&ext_if_filter);
 
         Ok(())
     }
@@ -3626,6 +3650,8 @@ mod tests {
         fn set_fwmark(&self, _: u32) {}
 
         fn set_tunnel_interface(&self, _interface: u64) {}
+
+        fn set_ext_if_filter(&self, _list: &[String]) {}
     }
 
     #[cfg(not(windows))]
