@@ -19,6 +19,7 @@ lazy_static.workspace = true
 libc.workspace = true
 tracing.workspace = true
 mockall = { workspace = true, optional = true }
+nix.workspace = true
 pnet_packet.workspace = true
 tokio = { workspace = true, features = ["rt", "net", "sync", "macros"] }
 

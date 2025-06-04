@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 use socket2::Type;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;

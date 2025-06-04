@@ -37,6 +37,7 @@ telio-task.workspace = true
 telio-utils.workspace = true
 telio-pinger.workspace = true
 itertools.workspace = true
+nix.workspace = true
 
 [dev-dependencies]
 mockall.workspace = true

@@ -95,7 +95,7 @@ impl InterfaceWatcher {
         }
     }
 
-    pub unsafe fn start_monitoring(&mut self) -> Result<(), NETIO_STATUS> {
+    pub fn start_monitoring(&mut self) -> Result<(), NETIO_STATUS> {
         /*
         TODO: implement a watchdog which will wait up to 1 min for our adapter to come up. Does not seem necessary.
         //
@@ -109,13 +109,15 @@ impl InterfaceWatcher {
 
         if let Ok(mut iface_cb_handle) = self.iface_cb_handle.clone().lock() {
             let mut cb_handle: HANDLE = NULL;
-            let result = winapi::shared::netioapi::NotifyIpInterfaceChange(
-                AF_UNSPEC as _,
-                Some(Self::interface_change_callback),
-                self as *mut Self as _,
-                false as _,
-                &mut cb_handle,
-            );
+            let result = unsafe {
+                winapi::shared::netioapi::NotifyIpInterfaceChange(
+                    AF_UNSPEC as _,
+                    Some(Self::interface_change_callback),
+                    self as *mut Self as _,
+                    false as _,
+                    &mut cb_handle,
+                )
+            };
             telio_log_trace!("--- InterfaceWatcher::start_monitoring {}", result);
             if NO_ERROR != result {
                 Err(result)
@@ -244,7 +246,7 @@ impl InterfaceWatcher {
             let arc_mtu_monitor =
                 Arc::new(Mutex::new(MtuMonitor::new(watched_adapter.luid, family)));
             if let Ok(mut mtu_monitor) = arc_mtu_monitor.lock() {
-                match unsafe { mtu_monitor.start_monitoring() } {
+                match mtu_monitor.start_monitoring() {
                     Ok(_) => {
                         watched_adapter.mtu_monitor.push(arc_mtu_monitor.clone());
                     }

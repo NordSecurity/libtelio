@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 #![deny(missing_docs)]
 //! Crate containing models of various components
 pub mod config;

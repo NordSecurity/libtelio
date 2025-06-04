@@ -1,3 +1,4 @@
+#![deny(unsafe_code)]
 #![deny(missing_docs)]
 //! Telio firewall module.
 //! Implements stateful firewall to keep track of

@@ -57,18 +57,20 @@ pub fn setup_network_monitor() {
         telio_log_info!("Path change notification sent");
     })
     .copy();
-    unsafe {
-        let monitor = nw_path_monitor_create();
-        if monitor.is_null() {
-            telio_log_warn!("Failed to start network path monitor");
-            return;
-        }
 
-        let queue = dispatch::ffi::dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
-        if queue.is_null() {
-            telio_log_warn!("Failed to get global background queue");
-            return;
-        }
+    let monitor = unsafe { nw_path_monitor_create() };
+    if monitor.is_null() {
+        telio_log_warn!("Failed to start network path monitor");
+        return;
+    }
+
+    let queue =
+        unsafe { dispatch::ffi::dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0) };
+    if queue.is_null() {
+        telio_log_warn!("Failed to get global background queue");
+        return;
+    }
+    unsafe {
         nw_path_monitor_set_queue(
             monitor,
             std::mem::transmute::<
