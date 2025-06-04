@@ -1125,6 +1125,8 @@ mod tests {
         fn set_fwmark(&self, _fwmark: u32) {}
 
         fn set_tunnel_interface(&self, _interface: u64) {}
+
+        fn set_ext_if_filter(&self, _list: &[String]) {}
     }
 
     struct State {
