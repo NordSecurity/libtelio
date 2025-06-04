@@ -1,9 +1,12 @@
 use libc::setsockopt;
 use parking_lot::Mutex;
-use std::io::{self, Result};
 use std::net::Ipv4Addr;
-use std::os::windows::io::RawSocket;
+use std::os::windows::{io::RawSocket, prelude::*};
 use std::sync::Arc;
+use std::{
+    ffi::OsString,
+    io::{self, Result},
+};
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 use tokio::sync::mpsc::{self, Sender};
 use tokio::sync::Notify;
@@ -71,12 +74,19 @@ impl Protector for NativeProtector {
         socks.tunnel_interface = Some(interface);
         socks.notify.notify_waiters();
     }
+
+    fn set_ext_if_filter(&self, list: &[String]) {
+        let mut socks = self.sockets.lock();
+        socks.filtered_nics = list.to_vec();
+        socks.notify.notify_waiters();
+    }
 }
 
 struct Sockets {
     sockets: Vec<NativeSocket>,
     tunnel_interface: Option<u64>,
     default_interface: Option<Interface>,
+    filtered_nics: Vec<String>,
     notify: Arc<Notify>,
     last_default_interface_error: Option<io::Error>,
 }
@@ -87,6 +97,7 @@ impl Sockets {
             sockets: Vec::new(),
             tunnel_interface: None,
             default_interface: None,
+            filtered_nics: Vec::new(),
             notify: Arc::new(Notify::new()),
             last_default_interface_error: None,
         }
@@ -100,26 +111,27 @@ impl Sockets {
         if self.sockets.is_empty() {
             return;
         }
-        let new_default_interface = match get_default_interface(tunnel_interface) {
-            Ok(def) => {
-                self.last_default_interface_error = None;
-                Some(def)
-            }
-            Err(e) => {
-                if self
-                    .last_default_interface_error
-                    .as_ref()
-                    .map(|old_err| old_err.kind() != e.kind())
-                    .unwrap_or(true)
-                {
-                    telio_log_warn!("Failed to get default interface: {}", e);
-                    self.last_default_interface_error = Some(e);
-                } else {
-                    telio_log_trace!("Failed to get default interface");
+        let new_default_interface =
+            match get_default_interface(tunnel_interface, &self.filtered_nics) {
+                Ok(def) => {
+                    self.last_default_interface_error = None;
+                    Some(def)
                 }
-                return;
-            }
-        };
+                Err(e) => {
+                    if self
+                        .last_default_interface_error
+                        .as_ref()
+                        .map(|old_err| old_err.kind() != e.kind())
+                        .unwrap_or(true)
+                    {
+                        telio_log_warn!("Failed to get default interface: {}", e);
+                        self.last_default_interface_error = Some(e);
+                    } else {
+                        telio_log_trace!("Failed to get default interface");
+                    }
+                    return;
+                }
+            };
         if !force && self.default_interface == new_default_interface {
             return;
         }
@@ -339,7 +351,7 @@ impl Drop for ChangeNotification {
 
 unsafe impl Send for ChangeNotification {}
 
-pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
+pub fn get_default_interface(tunnel_interface: u64, filtered_nics: &[String]) -> Result<Interface> {
     let mut table: PMIB_IPFORWARD_TABLE2 = std::ptr::null_mut();
     if unsafe { GetIpForwardTable2(AF_INET as u16, &mut table) } != NO_ERROR {
         return Err(std::io::Error::last_os_error());
@@ -371,12 +383,22 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
         if unsafe { GetIfEntry2(&mut ifrow as PMIB_IF_ROW2) } != NO_ERROR {
             return Err(std::io::Error::last_os_error());
         }
+        telio_log_debug!(
+            "Interface, alias: {:?}, description: {:?}, row metric: {:?}",
+            ifrow.Alias,
+            ifrow.Description,
+            row.Metric,
+        );
         if ifrow.OperStatus != IfOperStatusUp {
             telio_log_debug!(
                 "Interface {} is not up (Status: {}) -> skip",
                 ifrow.InterfaceIndex,
                 ifrow.OperStatus
             );
+            continue;
+        }
+
+        if is_in_filtered_nics(filtered_nics, row.InterfaceLuid.Value)? {
             continue;
         }
 
@@ -477,6 +499,53 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
     telio_log_debug!("Default interface addr {:?}", default_interface.ip);
 
     Ok(default_interface)
+}
+
+fn is_in_filtered_nics(filtered_nics: &[String], luid: u64) -> Result<bool> {
+    if filtered_nics.is_empty() {
+        return Ok(false);
+    }
+
+    let mut name_buffer: Vec<u16> = vec![0; winapi::shared::ifdef::IF_MAX_STRING_SIZE];
+
+    let luid = NET_LUID { Value: luid };
+
+    let result = unsafe {
+        ConvertInterfaceLuidToNameW(
+            &luid,
+            name_buffer.as_mut_ptr(),
+            name_buffer.len() as libc::size_t,
+        )
+    };
+
+    if result != NO_ERROR {
+        let err_str = format!(
+            "ConvertInterfaceLuidToNameW failed with error code: {}",
+            result
+        );
+        return Err(std::io::Error::other(err_str));
+    }
+
+    let null_pos = name_buffer
+        .iter()
+        .position(|&c| c == 0)
+        .unwrap_or(name_buffer.len());
+    let name_slice = match name_buffer.get(..null_pos) {
+        Some(x) => x,
+        None => {
+            return Err(std::io::Error::other("Couldn't get interface name!"));
+        }
+    };
+    let interface_name = OsString::from_wide(name_slice)
+        .to_string_lossy()
+        .into_owned();
+
+    if filtered_nics.contains(&interface_name) {
+        telio_log_debug!("Interface {} is not default!", interface_name);
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 #[cfg(test)]
