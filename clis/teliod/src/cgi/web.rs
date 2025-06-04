@@ -375,7 +375,7 @@ fn meshnet(app: &AppState) -> Markup {
     html! {
         div class="bg-neutral-0 dark:bg-[#1C1F2B] border border-secondary max-w-[768px] mx-auto w-full p-6 rounded-md flex flex-col gap-6"
             hx-get="meshnet"
-            hx-trigger="every 2s"
+            hx-trigger="every 10s"
             hx-swap="outerHTML"
             {
             div class="flex justify-between items-center" {
