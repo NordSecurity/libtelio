@@ -5189,7 +5189,6 @@ dependencies = [
  "rustls-native-certs 0.8.1",
  "serde",
  "serde_json",
- "serial_test",
  "signal-hook",
  "signal-hook-tokio",
  "smart-default",

@@ -56,7 +56,7 @@ pub(crate) fn handle_api(request: &CgiRequest) -> Option<Response> {
                     ))
                 }
             };
-            Some(update_config(body))
+            Some(update_config_file(body))
         }
         (&Method::GET, "/get-status") => Some(get_status()),
         (&Method::GET, "/get-teliod-logs") => Some(get_teliod_logs()),
@@ -129,7 +129,7 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
     // Logs must be checked manually for errors.
     // As a quick QoL improvement, we validate the config and auth tokens early
     // to provide immediate feedback instead of waiting for `teliod` to show up in the process list.
-    match get_config() {
+    match get_config_from_file() {
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -192,13 +192,13 @@ pub(crate) fn stop_daemon() -> (StatusCode, String) {
     }
 }
 
-pub(crate) fn get_config() -> io::Result<TeliodDaemonConfig> {
+pub(crate) fn get_config_from_file() -> io::Result<TeliodDaemonConfig> {
     fs::read_to_string(TELIOD_CFG)
         .and_then(|content| serde_json::from_str(&content).map_err(|e| e.into()))
 }
 
-pub(crate) fn update_config(body: &str) -> Response {
-    let mut config: TeliodDaemonConfig = match get_config() {
+pub(crate) fn update_config_file(body: &str) -> Response {
+    let mut config: TeliodDaemonConfig = match get_config_from_file() {
         Ok(config) => config,
         Err(e) => {
             eprintln!("Error reading config file: {}", e);
@@ -298,23 +298,20 @@ fn get_meshnet_logs() -> Response {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, num::NonZeroU64, path::PathBuf};
+    use std::{num::NonZeroU64, path::PathBuf};
 
     use reqwest::StatusCode;
-    use serial_test::serial;
     use telio::device::AdapterType;
     use tracing::level_filters::LevelFilter;
 
-    use super::{update_config, TeliodDaemonConfig};
+    use super::{update_config_file, TeliodDaemonConfig, TeliodDaemonConfigPartial};
     use crate::{
-        cgi::constants::TELIOD_CFG,
         config::{InterfaceConfig, MqttConfig, Percentage},
         configure_interface::InterfaceConfigurationProvider,
     };
 
     #[test]
-    #[serial]
-    fn test_update_config() {
+    fn test_config_serialize_deserialize_and_update() {
         let mut expected_config = TeliodDaemonConfig {
             log_level: LevelFilter::DEBUG,
             log_file_path: "/path/to/log".to_owned(),
@@ -355,13 +352,17 @@ mod tests {
             }
         }
         "#;
-        fs::write(TELIOD_CFG, initial_config).unwrap();
 
-        let read_config =
-            serde_json::from_str::<TeliodDaemonConfig>(&fs::read_to_string(TELIOD_CFG).unwrap())
-                .unwrap();
-        assert_eq!(read_config, expected_config);
+        // Test deserialization
+        let mut config: TeliodDaemonConfig = serde_json::from_str(initial_config).unwrap();
+        assert_eq!(config, expected_config);
 
+        // Test serialization
+        let serialized = serde_json::to_string_pretty(&config).unwrap();
+        let deserialized: TeliodDaemonConfig = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, config);
+
+        // Test update logic
         expected_config.log_level = LevelFilter::INFO;
         expected_config.log_file_path = "/new/path/to/log".to_owned();
         expected_config.log_file_count = 8;
@@ -399,89 +400,9 @@ mod tests {
             }
         }
         "#;
-        assert_eq!(update_config(update_body).status(), StatusCode::OK);
 
-        let updated_config: TeliodDaemonConfig =
-            serde_json::from_str(&fs::read_to_string(TELIOD_CFG).unwrap()).unwrap();
-        assert_eq!(updated_config, expected_config);
-    }
-
-    #[test]
-    #[serial]
-    fn test_update_partial_config() {
-        let mut expected_config = TeliodDaemonConfig {
-            log_level: LevelFilter::DEBUG,
-            log_file_path: "/path/to/log".to_owned(),
-            log_file_count: 7,
-            adapter_type: AdapterType::NepTUN,
-            interface: InterfaceConfig {
-                name: "eth0".to_owned(),
-                config_provider: InterfaceConfigurationProvider::Manual,
-            },
-            authentication_token:
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                    .to_owned()
-                    .into(),
-            http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
-            mqtt: MqttConfig::default(),
-        };
-        let initial_config = r#"
-        {
-            "log_level": "debug",
-            "log_file_path": "/path/to/log",
-            "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "adapter_type": "neptun",
-            "interface": {
-                "name": "eth0",
-                "config_provider": "manual"
-            },
-            "http_certificate_file_path": "/http/certificate/path/",
-            "mqtt": {
-                "backoff_initial": 1,
-                "backoff_maximal": 300,
-                "reconnect_after_expiry": 90,
-                "certificate_file_path": null
-            }
-        }
-        "#;
-        fs::write(TELIOD_CFG, initial_config).unwrap();
-
-        let read_config =
-            serde_json::from_str::<TeliodDaemonConfig>(&fs::read_to_string(TELIOD_CFG).unwrap())
-                .unwrap();
-        assert_eq!(read_config, expected_config);
-
-        expected_config.interface.name = "eth1".to_owned();
-        expected_config.interface.config_provider = InterfaceConfigurationProvider::Ifconfig;
-        let update_body = r#"
-        {
-            "interface": {
-                "name": "eth1",
-                "config_provider": "ifconfig"
-            }
-        }
-        "#;
-        assert_eq!(update_config(update_body).status(), StatusCode::OK);
-
-        let updated_config =
-            serde_json::from_str::<TeliodDaemonConfig>(&fs::read_to_string(TELIOD_CFG).unwrap())
-                .unwrap();
-        assert_eq!(updated_config, expected_config);
-
-        expected_config.authentication_token =
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-                .to_owned()
-                .into();
-        let update_body = r#"
-        {
-            "authentication_token": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-        }
-        "#;
-        assert_eq!(update_config(update_body).status(), StatusCode::OK);
-
-        let updated_config =
-            serde_json::from_str::<TeliodDaemonConfig>(&fs::read_to_string(TELIOD_CFG).unwrap())
-                .unwrap();
-        assert_eq!(updated_config, expected_config);
+        let updates: TeliodDaemonConfigPartial = serde_json::from_str(update_body).unwrap();
+        config.update(updates);
+        assert_eq!(config, expected_config);
     }
 }

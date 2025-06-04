@@ -2,9 +2,8 @@
 
 use tracing::error;
 
+use super::api::{get_config_from_file, get_status_report, is_teliod_running};
 use crate::{config::TeliodDaemonConfig, TelioStatusReport};
-
-use super::api::{get_config, get_status_report, is_teliod_running};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -25,7 +24,7 @@ impl AppState {
 }
 
 pub fn get_local_or_default_config() -> TeliodDaemonConfig {
-    match get_config() {
+    match get_config_from_file() {
         Ok(config) => config,
         Err(err) => {
             error!("Failed to get previous config err: {err}");

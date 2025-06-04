@@ -248,7 +248,7 @@ async fn client_main(cmd: Cmd) -> Result<(), TeliodError> {
             .await?;
 
             tokio::task::spawn_blocking(|| {
-                rust_cgi::handle(cgi::handle_request);
+                rust_cgi::handle(cgi::handle_request_env);
             })
             .await?;
             Ok(())

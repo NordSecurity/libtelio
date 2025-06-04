@@ -76,7 +76,7 @@ impl AuthorizationValidator for QnapUserAuthorization {
             .ok_or(Error::MissingAuthToken)
     }
 
-    async fn is_token_valid(sid: &str) -> Result<impl AuthorizationValidator, Error> {
+    async fn is_token_valid(sid: &str) -> Result<Self, Error> {
         let url = format!(
             "http://127.0.0.1:8080/cgi-bin/filemanager/utilRequest.cgi?func=check_sid&sid={}",
             sid
