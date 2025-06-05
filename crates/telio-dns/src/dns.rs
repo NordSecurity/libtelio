@@ -6,7 +6,6 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::{net::SocketAddr, sync::Arc};
 use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::uapi::Peer;
-use telio_wg::Tun;
 use tokio::net::UdpSocket;
 use tokio::sync::{Mutex, RwLock};
 use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
@@ -64,7 +63,8 @@ impl LocalDnsResolver {
     pub async fn new(
         public_key: &PublicKey,
         forward_ips: &[IpAddr],
-        tun: Option<&Arc<Tun>>,
+        #[cfg(not(target_os = "windows"))] tun: Option<impl std::os::fd::AsFd>,
+        #[cfg(target_os = "windows")] tun: Option<()>,
         exit_dns: Option<FeatureExitDns>,
     ) -> Result<Self, String> {
         let socket = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
@@ -207,14 +207,25 @@ impl DnsResolver for LocalDnsResolver {
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(not(target_os = "windows"))]
+    use std::os::fd::OwnedFd;
+    #[cfg(target_os = "windows")]
+    type OwnedFd = ();
+
     use super::*;
     use telio_crypto::SecretKey;
 
     #[tokio::test]
     async fn test_get_default_dns_allowed_ips() {
-        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), &[], None, None)
-            .await
-            .unwrap();
+        let resolver = LocalDnsResolver::new(
+            &SecretKey::gen().public(),
+            &[],
+            None as Option<OwnedFd>,
+            None,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             vec![
                 "100.64.0.2/32".parse::<IpNet>().unwrap(),
@@ -228,9 +239,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_exit_connected_dns_allowed_ips() {
-        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), &[], None, None)
-            .await
-            .unwrap();
+        let resolver = LocalDnsResolver::new(
+            &SecretKey::gen().public(),
+            &[],
+            None as Option<OwnedFd>,
+            None,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             vec![
                 "100.64.0.2/32".parse::<IpNet>().unwrap(),
@@ -242,9 +258,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_default_dns_servers() {
-        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), &[], None, None)
-            .await
-            .unwrap();
+        let resolver = LocalDnsResolver::new(
+            &SecretKey::gen().public(),
+            &[],
+            None as Option<OwnedFd>,
+            None,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             vec![
                 "100.64.0.3".parse::<IpAddr>().unwrap(),

@@ -4,7 +4,6 @@ use neptun::device::{tun::TunSocket, DeviceConfig, DeviceHandle};
 use slog::{o, Drain};
 use slog_stdlog::StdLog;
 use std::net::{IpAddr, Ipv4Addr};
-use std::os::fd::RawFd;
 use std::sync::Arc;
 use std::{io, ops::Deref};
 use telio_crypto::PublicKey;
@@ -30,15 +29,13 @@ impl NepTUN {
     #[cfg(not(any(test, feature = "test-adapter")))]
     pub fn start(
         name: &str,
-        tun: Option<RawFd>,
+        tun: Option<NativeTun>,
         socket_pool: Arc<SocketPool>,
         firewall_process_inbound_callback: FirewallInboundCb,
         firewall_process_outbound_callback: FirewallOutboundCb,
         firewall_reset_connections_callback: super::FirewallResetConnsCb,
         skt_buffer_size: Option<u32>,
     ) -> Result<Self, AdapterError> {
-        use std::os::fd::RawFd;
-
         let config = DeviceConfig {
             // Apple's NepTUN device runs most efficiently on a single perf-core
             n_threads: {
