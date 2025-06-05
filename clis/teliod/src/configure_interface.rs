@@ -1,24 +1,28 @@
 use crate::TeliodError;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::cell::{Cell, RefCell};
+use std::net::IpAddr;
 use std::process::Command;
-use std::{net::IpAddr, str::FromStr};
 use tracing::{debug, error, info};
 
 pub trait ConfigureInterface {
     /// Initialize the interface
-    fn initialize(&self, adapter_name: &str) -> Result<(), TeliodError>;
+    fn initialize(&mut self, adapter_name: &str) -> Result<(), TeliodError>;
     /// Configure the IP address and routes for a given interface
-    fn set_ip(&self, adapter_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError>;
+    fn set_ip(&mut self, adapter_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError>;
     /// Configure routes for exit routing
-    fn set_exit_routes(&self, adapter_name: &str, exit_node: &IpAddr) -> Result<(), TeliodError>;
+    fn set_exit_routes(
+        &mut self,
+        adapter_name: &str,
+        exit_node: &IpAddr,
+    ) -> Result<(), TeliodError>;
     /// Some of the configured routes are not cleared when the adapter is removed and must be removed manually
-    fn cleanup_exit_routes(&self) -> Result<(), TeliodError>;
+    fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError>;
 }
 
 /// Helper function to execute a system command
 fn execute(command: &mut Command) -> Result<(), TeliodError> {
+    debug!("Executing command '{command:?}'");
     let output = command
         .output()
         .map_err(|e| TeliodError::SystemCommandFailed(e.to_string()))?;
@@ -34,6 +38,7 @@ fn execute(command: &mut Command) -> Result<(), TeliodError> {
 
 /// Helper function to execute a system command with output
 fn execute_with_output(command: &mut Command) -> Result<String, TeliodError> {
+    debug!("Executing command with output '{command:?}'");
     let output = command
         .output()
         .map_err(|e| TeliodError::SystemCommandFailed(e.to_string()))?;
@@ -64,7 +69,7 @@ impl InterfaceConfigurationProvider {
         info!("Creating interface config provider for {:?}", self);
         match self {
             Self::Manual => Box::new(Manual),
-            Self::Ifconfig => Box::new(Ifconfig::new()),
+            Self::Ifconfig => Box::new(Ifconfig),
             Self::Iproute => Box::new(Iproute::new()),
         }
     }
@@ -75,72 +80,38 @@ impl InterfaceConfigurationProvider {
 pub struct Manual;
 
 impl ConfigureInterface for Manual {
-    fn initialize(&self, _adapter_name: &str) -> Result<(), TeliodError> {
+    fn initialize(&mut self, _adapter_name: &str) -> Result<(), TeliodError> {
         Ok(()) // No-op implementaiton
     }
 
-    fn set_ip(&self, _adapter_name: &str, _ip_address: &IpAddr) -> Result<(), TeliodError> {
+    fn set_ip(&mut self, _adapter_name: &str, _ip_address: &IpAddr) -> Result<(), TeliodError> {
         Ok(()) // No-op implementation
     }
 
-    fn set_exit_routes(&self, _adapter_name: &str, _exit_node: &IpAddr) -> Result<(), TeliodError> {
+    fn set_exit_routes(
+        &mut self,
+        _adapter_name: &str,
+        _exit_node: &IpAddr,
+    ) -> Result<(), TeliodError> {
         Ok(()) // No-op implementation
     }
 
-    fn cleanup_exit_routes(&self) -> Result<(), TeliodError> {
+    fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError> {
         Ok(()) // No-op implementation
     }
 }
 
 /// Implementation using `ifconfig`
 #[derive(Debug)]
-pub struct Ifconfig {
-    default_gateway_ipv4: Option<IpAddr>,
-    exit_route_ip: Cell<Option<IpAddr>>,
-    ipv6_disabler: Ipv6Disabler,
-}
-
-impl Ifconfig {
-    pub fn new() -> Self {
-        Self {
-            default_gateway_ipv4: Self::get_default_gateway("inet"),
-            exit_route_ip: Cell::new(None),
-            ipv6_disabler: Ipv6Disabler::default(),
-        }
-    }
-
-    #[allow(index_access_check)]
-    fn get_default_gateway(family: &str) -> Option<IpAddr> {
-        let stdout =
-            execute_with_output(Command::new("netstat").args(["-nr", "-f", family])).ok()?;
-        for line in stdout.lines() {
-            let fields: Vec<&str> = line.split_whitespace().collect();
-            if fields.len() < 2 {
-                continue;
-            }
-
-            let destination = fields[0];
-            let gateway = fields[1];
-
-            if (destination == "default" || destination == "0.0.0.0")
-                && !gateway.starts_with("link#")
-            {
-                debug!("default gateway for {}: {}", family, gateway);
-                return IpAddr::from_str(gateway).ok();
-            }
-        }
-
-        None
-    }
-}
+pub struct Ifconfig;
 
 impl ConfigureInterface for Ifconfig {
-    fn initialize(&self, adapter_name: &str) -> Result<(), TeliodError> {
+    fn initialize(&mut self, adapter_name: &str) -> Result<(), TeliodError> {
         execute(Command::new("ifconfig").args([adapter_name, "mtu", "1420"]))?;
         execute(Command::new("ifconfig").args([adapter_name, "up"]))
     }
 
-    fn set_ip(&self, adapter_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError> {
+    fn set_ip(&mut self, adapter_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError> {
         let ip_string = ip_address.to_string();
         let cidr_suffix = if ip_address.is_ipv4() { "/10" } else { "/64" };
         let cidr_string = format!("{}{}", ip_string, cidr_suffix);
@@ -190,109 +161,16 @@ impl ConfigureInterface for Ifconfig {
         Ok(())
     }
 
-    fn set_exit_routes(&self, adapter_name: &str, exit_node: &IpAddr) -> Result<(), TeliodError> {
-        if exit_node.is_ipv4() {
-            match std::env::consts::OS {
-                "macos" => {
-                    execute(Command::new("ifconfig").args([adapter_name, "add", "10.5.0.1/32"]))?;
-                    execute(Command::new("route").args([
-                        "-n",
-                        "add",
-                        "-inet",
-                        "0.0.0.0/1",
-                        adapter_name,
-                    ]))?;
-                    execute(Command::new("route").args([
-                        "-n",
-                        "add",
-                        "-inet",
-                        "128.0.0.0/1",
-                        adapter_name,
-                    ]))?;
-
-                    if let Some(gateway) = &self.default_gateway_ipv4 {
-                        execute(Command::new("route").args([
-                            "-n",
-                            "add",
-                            "-inet",
-                            exit_node.to_string().as_str(),
-                            "-gateway",
-                            gateway.to_string().as_str(),
-                        ]))?;
-                    }
-                    // We later disable IPv6 on all interfaces (except the tunnel interface)
-                    // but interfaces that get added later could still have IPv6 enabled.
-                    // As a backup solution we route all IPv6 packets into the tunnel
-                    execute(Command::new("route").args([
-                        "-n",
-                        "add",
-                        "-inet6",
-                        "default",
-                        "-interface",
-                        adapter_name,
-                    ]))?;
-                }
-                _ => {
-                    execute(Command::new("ifconfig").args([
-                        adapter_name,
-                        "inet",
-                        "10.5.0.1",
-                        "netmask",
-                        "255.255.255.255",
-                    ]))?;
-                    execute(Command::new("route").args(["delete", "default"]))?;
-                    execute(Command::new("route").args([
-                        "add",
-                        "default",
-                        "gw",
-                        "10.5.0.1",
-                        adapter_name,
-                    ]))?;
-                    if let Some(gateway) = &self.default_gateway_ipv4 {
-                        execute(Command::new("route").args([
-                            "-4",
-                            "add",
-                            exit_node.to_string().as_str(),
-                            "gw",
-                            gateway.to_string().as_str(),
-                        ]))?;
-                    }
-                    // We later disable IPv6 on all interfaces (except the tunnel interface)
-                    // but interfaces that get added later could still have IPv6 enabled.
-                    // As a backup solution we route all IPv6 packets into the tunnel
-                    execute(Command::new("route").args([
-                        "-6",
-                        "add",
-                        "::/128",
-                        "dev",
-                        adapter_name,
-                    ]))?;
-                }
-            }
-            self.exit_route_ip.set(Some(*exit_node));
-            self.ipv6_disabler.disable(adapter_name)?;
-        }
-        Ok(())
+    fn set_exit_routes(
+        &mut self,
+        _adapter_name: &str,
+        _exit_node: &IpAddr,
+    ) -> Result<(), TeliodError> {
+        Ok(()) // No-op implementation
     }
 
-    fn cleanup_exit_routes(&self) -> Result<(), TeliodError> {
-        if let Some(exit_node) = self.exit_route_ip.get() {
-            match std::env::consts::OS {
-                "macos" => {
-                    execute(Command::new("route").args([
-                        "delete",
-                        "-inet",
-                        exit_node.to_string().as_str(),
-                    ]))?;
-                }
-                _ => {
-                    execute(
-                        Command::new("route").args(["delete", exit_node.to_string().as_str()]),
-                    )?;
-                }
-            }
-        }
-        self.ipv6_disabler.reenable()
+    fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError> {
+        Ok(()) // No-op implementation
     }
 }
 
@@ -300,16 +178,16 @@ impl ConfigureInterface for Ifconfig {
 #[derive(Debug)]
 pub struct Iproute {
     default_gateway_ipv4: Option<String>,
-    exit_route_ip: Cell<Option<IpAddr>>,
-    ipv6_disabler: Ipv6Disabler,
+    exit_route_ip: Option<IpAddr>,
+    ipv6_support_manager: Ipv6SupportManager,
 }
 
 impl Iproute {
     pub fn new() -> Self {
         Self {
             default_gateway_ipv4: Self::get_default_gateway("-4"),
-            exit_route_ip: Cell::new(None),
-            ipv6_disabler: Ipv6Disabler::default(),
+            exit_route_ip: None,
+            ipv6_support_manager: Ipv6SupportManager::default(),
         }
     }
 
@@ -326,28 +204,39 @@ impl Iproute {
             .lines()
             .filter_map(|line| {
                 let metric = metric_pattern
-                    .find(line)
-                    .and_then(|m| m.as_str().split_whitespace().nth(1))
-                    .and_then(|m| m.parse::<u16>().ok())
+                    .captures(line)
+                    .and_then(|c| c.get(1))
+                    .and_then(|m| m.as_str().parse::<u16>().ok())
                     .unwrap_or(0);
                 let gateway = via_pattern
-                    .find(line)
-                    .or(dev_pattern.find(line))
-                    .and_then(|m| m.as_str().split_whitespace().nth(1));
+                    .captures(line)
+                    .or(dev_pattern.captures(line))
+                    .and_then(|c| c.get(1))
+                    .map(|m| m.as_str());
                 gateway.map(|gateway| (metric, gateway.to_owned()))
             })
             .min_by_key(|(m, _)| *m)
             .map(|(_, g)| g)
     }
+
+    // Some ip commands will return "RNETLINK answers: File exists" which means that the command was already executed and we can ignore the error
+    fn ignore_file_exists_error(res: Result<(), TeliodError>) -> Result<(), TeliodError> {
+        match res {
+            Err(TeliodError::SystemCommandFailed(message)) if message.contains("File exists") => {
+                Ok(())
+            }
+            _ => res,
+        }
+    }
 }
 
 impl ConfigureInterface for Iproute {
-    fn initialize(&self, adapter_name: &str) -> Result<(), TeliodError> {
+    fn initialize(&mut self, adapter_name: &str) -> Result<(), TeliodError> {
         execute(Command::new("ip").args(["link", "set", "dev", adapter_name, "mtu", "1420"]))?;
         execute(Command::new("ip").args(["link", "set", "dev", adapter_name, "up"]))
     }
 
-    fn set_ip(&self, adapter_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError> {
+    fn set_ip(&mut self, adapter_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError> {
         let cidr_suffix = if ip_address.is_ipv4() { "/10" } else { "/64" };
         let cidr_string = format!("{}{}", ip_address, cidr_suffix);
 
@@ -355,24 +244,40 @@ impl ConfigureInterface for Iproute {
             "Assigning IP address for {} to {}",
             adapter_name, cidr_string
         );
-        execute(Command::new("ip").args(["addr", "add", &cidr_string, "dev", adapter_name]))
+        Self::ignore_file_exists_error(execute(Command::new("ip").args([
+            "addr",
+            "add",
+            &cidr_string,
+            "dev",
+            adapter_name,
+        ])))
     }
 
-    fn set_exit_routes(&self, adapter_name: &str, exit_node: &IpAddr) -> Result<(), TeliodError> {
+    fn set_exit_routes(
+        &mut self,
+        adapter_name: &str,
+        exit_node: &IpAddr,
+    ) -> Result<(), TeliodError> {
         if exit_node.is_ipv4() {
-            execute(Command::new("ip").args(["addr", "add", "10.5.0.1", "dev", adapter_name]))?;
+            Self::ignore_file_exists_error(execute(Command::new("ip").args([
+                "addr",
+                "add",
+                "10.5.0.2",
+                "dev",
+                adapter_name,
+            ])))?;
             execute(Command::new("ip").args(["route", "add", "0.0.0.0/0", "dev", adapter_name]))?;
             if let Some(gateway) = &self.default_gateway_ipv4 {
-                execute(Command::new("ip").args([
+                Self::ignore_file_exists_error(execute(Command::new("ip").args([
                     "route",
                     "add",
                     exit_node.to_string().as_str(),
                     "via",
                     gateway.as_str(),
-                ]))?;
+                ])))?;
             }
-            self.exit_route_ip.set(Some(*exit_node));
-            self.ipv6_disabler.disable(adapter_name)?;
+            self.exit_route_ip = Some(*exit_node);
+            self.ipv6_support_manager.disable(adapter_name)?;
             // We have already disabled IPv6 on all interfaces (except the tunnel interface)
             // but interfaces that get added later could still have IPv6 enabled.
             // As a backup solution we route all IPv6 packets into the tunnel
@@ -388,8 +293,8 @@ impl ConfigureInterface for Iproute {
         Ok(())
     }
 
-    fn cleanup_exit_routes(&self) -> Result<(), TeliodError> {
-        if let Some(exit_node) = self.exit_route_ip.get() {
+    fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError> {
+        if let Some(exit_node) = self.exit_route_ip {
             if let Some(gateway) = &self.default_gateway_ipv4 {
                 execute(Command::new("ip").args([
                     "route",
@@ -400,23 +305,43 @@ impl ConfigureInterface for Iproute {
                 ]))?;
             }
         }
-        self.ipv6_disabler.reenable()
+        self.ipv6_support_manager.reenable()
     }
 }
 
+/// This hold the initial IPv6 state of the machine, so that we can accurately re-enable
+/// IPv6 support when disconnecting from VPN/exit node
+/// For macos it holds the names of the interfaces where IPv6 was enabled
+/// For linux we store the names of the interfaces along with if IPv6 was enabled. We need to store
+/// the initial state for each interface here because setting the all.disable_ipv6 option affects
+/// all interfaces and we need to know what value to set them to.
 #[derive(Debug)]
 enum InitialIpv6State {
     Macos { interfaces: Vec<String> },
     Linux { interfaces: Vec<(String, u8)> },
 }
 
+/// We don't have VPN servers that support IPv6 and IPv6 support in libtelio as a whole is not fully battle tested,
+/// so for now we need to disable IPv6 while connected to VPN/exit node to prevent leaks.
+///
+/// Disabling of IPv6 is done in two steps:
+/// 1. Disable IPv6 on all interfaces except the tunnel interface we create for libtelio.
+///    On linux this includes setting the all.disable_ipv6 and default.disable_ipv6 options.
+///    We leave IPv6 enabled on the tunnel interface so that we can do the next step.
+/// 2. Setting the tunnel interface as the default route for IPv6 traffic.
+///    Disabling IPv6 on all current interfaces doesn't help if a new interface is added with IPv6 enabled.
+///    To get around this, the tunnel interface is set as the default route for IPv6 so that any potential IPv6
+///    traffic goes into the tunnel and is then dropped there because we don't support it.
+///
+/// When disconnecting from VPN/exit node we need to restore IPv6 support to the state it was before.
+/// This struct handles both those tasks.
 #[derive(Debug, Default)]
-struct Ipv6Disabler {
-    initial_state: RefCell<Option<InitialIpv6State>>,
+struct Ipv6SupportManager {
+    initial_state: Option<InitialIpv6State>,
 }
 
-impl Ipv6Disabler {
-    fn disable(&self, skip_interface: &str) -> Result<(), TeliodError> {
+impl Ipv6SupportManager {
+    fn disable(&mut self, skip_interface: &str) -> Result<(), TeliodError> {
         let initial_state = match std::env::consts::OS {
             "macos" => {
                 let interfaces = execute_with_output(
@@ -451,7 +376,7 @@ impl Ipv6Disabler {
                 let sysctl_regex =
                     Regex::new("net\\.ipv6\\.conf\\.(\\S*)\\.disable_ipv6\\s*=\\s*(0|1)")
                         .expect("Failed to compile sysctl regex");
-                let mut interfaces = execute_with_output(Command::new("sysctl").arg("-a"))?
+                let mut interfaces = execute_with_output(Command::new("sysctl").arg("--all"))?
                     .lines()
                     .filter_map(|l| {
                         let vals = sysctl_regex.captures(l).map(|c| {
@@ -470,7 +395,7 @@ impl Ipv6Disabler {
                     .collect::<Vec<_>>();
 
                 let ipv6_default_status = execute_with_output(
-                    Command::new("sysctl").args(["-n", "net.ipv6.conf.default.disable_ipv6"]),
+                    Command::new("sysctl").args(["--values", "net.ipv6.conf.default.disable_ipv6"]),
                 )?;
                 let ipv6_default_status = ipv6_default_status.trim().parse::<u8>().unwrap_or(0);
                 interfaces.insert(0, ("default".to_owned(), ipv6_default_status));
@@ -482,18 +407,18 @@ impl Ipv6Disabler {
                         1
                     };
                     let cmd = format!("net.ipv6.conf.{interface}.disable_ipv6={val}");
-                    execute(Command::new("sysctl").args(["-w", &cmd]))?;
+                    execute(Command::new("sysctl").args(["--write", &cmd]))?;
                 }
 
                 InitialIpv6State::Linux { interfaces }
             }
         };
-        self.initial_state.replace(Some(initial_state));
+        self.initial_state = Some(initial_state);
         Ok(())
     }
 
-    fn reenable(&self) -> Result<(), TeliodError> {
-        let initial_state = self.initial_state.borrow_mut().take();
+    fn reenable(&mut self) -> Result<(), TeliodError> {
+        let initial_state = self.initial_state.take();
         match initial_state {
             Some(InitialIpv6State::Macos { interfaces }) => {
                 for interface in interfaces {
@@ -504,7 +429,7 @@ impl Ipv6Disabler {
             Some(InitialIpv6State::Linux { interfaces }) => {
                 for (interface, value) in interfaces {
                     let sysctl_cmd = format!("net.ipv6.conf.{interface}.disable_ipv6={value}");
-                    execute(Command::new("sysctl").args(["-w", &sysctl_cmd]))?;
+                    execute(Command::new("sysctl").args(["--write", &sysctl_cmd]))?;
                 }
             }
             _ => {}

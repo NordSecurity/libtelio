@@ -420,6 +420,7 @@ mod tests {
                     .to_owned()
                     .into(),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
+            device_identity_file_path: None,
             mqtt: MqttConfig {
                 backoff_initial: NonZeroU64::new(5).unwrap(),
                 backoff_maximal: NonZeroU64::new(600).unwrap(),
@@ -514,6 +515,7 @@ mod tests {
                     .to_owned()
                     .into(),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
+            device_identity_file_path: None,
             mqtt: MqttConfig::default(),
         };
         let initial_config = r#"

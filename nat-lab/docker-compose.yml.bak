@@ -90,6 +90,7 @@ services:
       - "derp-02:10.0.10.2"
       - "derp-03:10.0.10.3"
       - "derp-00:10.0.10.245"
+      - "pmtu-probe:10.0.80.84"
       - "mqtt.nordvpn.com:10.0.80.85"
       - "api.nordvpn.com:10.0.80.86"
     volumes:
@@ -641,6 +642,27 @@ services:
       test: "nslookup google.com localhost"
 
 
+  # A host which drop all packets with size larger than 1300
+  pmtu-probe:
+    hostname: pmtu-probe
+    image: nat-lab:base
+    entrypoint: /opt/bin/pmtu-probe
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      internet:
+        ipv4_address: 10.0.80.84
+        ipv6_address: 2001:db8:85a4::adda:edde:9
+    volumes:
+      - ../:/libtelio
+    healthcheck:
+      test: "ls /ready"
+
   mqtt-broker:
     hostname: mqtt-broker
     image: bytebeamio/rumqttd
@@ -655,11 +677,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
-    depends_on:
-      dns-server-1:
-        condition: service_healthy
-      dns-server-2:
-        condition: service_healthy
     volumes:
       - ./data/core_api/rumqttd.toml:/etc/mqtt/rumqttd.toml
       - ./data/core_api/test.pem:/etc/ssl/server_certificate/test.pem
@@ -721,7 +738,7 @@ networks:
   cone-net-03:
     driver: bridge
     driver_opts:
-        com.docker.network.bridge.gateway_mode_ipv4: 'nat'
+        com.docker.network.bridge.gateway_mode_ipv4: 'nat-unprotected'
     ipam:
       driver: default
       config:
@@ -729,7 +746,7 @@ networks:
   cone-net-04:
     driver: bridge
     driver_opts:
-      com.docker.network.bridge.gateway_mode_ipv4: 'nat'
+      com.docker.network.bridge.gateway_mode_ipv4: 'nat-unprotected'
     ipam:
       driver: default
       config:

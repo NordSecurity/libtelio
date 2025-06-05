@@ -246,3 +246,11 @@ CORE_API_URL = "https://api.nordvpn.com"
 MQTT_BROKER_HOST = "mqtt.nordvpn.com"
 MQTT_BROKER_IP = "10.0.80.85"
 CORE_API_CA_CERTIFICATE_PATH = "/etc/ssl/server_certificate/test.pem"
+CORE_API_CREDENTIALS = {
+    "username": "token",
+    "password": "48e9ef50178a68a716e38a9f9cd251e8be35e79a5c5f91464e92920425caa3d9",
+}
+
+CORE_API_BEARER_AUTHORIZATION_HEADER = (
+    f"Bearer {CORE_API_CREDENTIALS['username']}:{CORE_API_CREDENTIALS['password']}"
+)
