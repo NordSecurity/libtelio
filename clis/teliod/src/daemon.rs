@@ -85,7 +85,7 @@ fn telio_task(
         task_retrieve_meshmap(node_identity, auth_token, tx_channel.clone());
 
         while let Some(cmd) = rx_channel.blocking_recv() {
-            info!("Got command {:?}", cmd);
+            trace!("TelioTask got command {:?}", cmd);
             match cmd {
                 TelioTaskCmd::UpdateMeshmap(map) => {
                     let some_new_ip_address = map
@@ -175,7 +175,7 @@ fn start_telio(
         ..Default::default()
     })?;
 
-    debug!("started telio with {:?}...", adapter);
+    info!("started telio with {:?}...", adapter);
     Ok(())
 }
 
@@ -260,7 +260,7 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
             result = cmd_listener.handle_client_connection() => {
                 match result {
                     Ok(command) => {
-                        info!("Client command {:?} executed successfully", command);
+                        debug!("Client command {:?} executed successfully", command);
                         if command == ClientCmd::QuitDaemon {
                             break Ok(())
                         }
