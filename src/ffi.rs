@@ -145,6 +145,11 @@ pub fn deserialize_meshnet_config(cfg_str: String) -> FfiResult<Config> {
     }
 }
 
+/// Utility function to create a json-string from a Features instance
+pub fn serialize_feature_config(features: &Features) -> FfiResult<String> {
+    Ok(features.serialize()?)
+}
+
 #[cfg(target_os = "android")]
 #[no_mangle]
 /// Initialize OS certificate store, should be called only once. Without call to telio_init_cert_store

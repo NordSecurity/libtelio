@@ -450,7 +450,7 @@ impl StatefullFirewall {
             allow_ipv6: use_ipv6,
             record_whitelisted: feature.boringtun_reset_conns || feature.neptun_reset_conns,
             ip_addresses: RwLock::new(Vec::<StdIpAddr>::new()),
-            exclude_ip_range: feature.exclude_private_ip_range,
+            exclude_ip_range: feature.exclude_private_ip_range.map(Into::into),
             outgoing_tcp_blacklist: RwLock::new(
                 feature
                     .outgoing_blacklist
@@ -3364,7 +3364,9 @@ pub mod tests {
             true,
             &FeatureFirewall {
                 exclude_private_ip_range: Some(
-                    Ipv4Net::new(StdIpv4Addr::new(10, 0, 0, 0), 8).unwrap(),
+                    Ipv4Net::new(StdIpv4Addr::new(10, 0, 0, 0), 8)
+                        .unwrap()
+                        .into(),
                 ),
                 ..Default::default()
             },

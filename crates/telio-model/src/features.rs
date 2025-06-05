@@ -1,9 +1,8 @@
 //! Object descriptions of various
 //! telio configurable features via API
 
-use std::{collections::HashSet, fmt, net::IpAddr};
+use std::{collections::HashSet, fmt, net::IpAddr, str::FromStr};
 
-use ipnet::Ipv4Net;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
 use smart_default::SmartDefault;
@@ -13,7 +12,8 @@ use telio_utils::telio_log_warn;
 /// Type alias for UniFFI
 pub type EndpointProviders = HashSet<EndpointProvider>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 #[serde(default)]
 /// Encompasses all of the possible features that can be enabled
 pub struct Features {
@@ -63,9 +63,17 @@ pub struct Features {
     pub batching: Option<FeatureBatching>,
 }
 
+impl Features {
+    /// Serialize the features to a json string
+    pub fn serialize(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+}
+
 /// Configure keepalive batching
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureBatching {
     /// Direct connection threshold when batching (in seconds) [default 0s]
     /// Reused for Proxy, STUN, VPN peers as well
@@ -82,7 +90,8 @@ pub struct FeatureBatching {
 }
 
 /// Configurable features for Wireguard peers
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureWireguard {
     /// Configurable persistent keepalive periods for wireguard peers
     #[serde(default)]
@@ -109,8 +118,9 @@ impl FeatureWireguard {
 }
 
 /// Configurable persistent keepalive periods for different types of peers
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeaturePersistentKeepalive {
     /// Persistent keepalive period given for VPN peers (in seconds) [default 15s]
     #[default(Some(25))]
@@ -130,8 +140,9 @@ pub struct FeaturePersistentKeepalive {
 }
 
 /// Configurable Wireguard polling period
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeaturePolling {
     /// Wireguard state polling period (in milliseconds) [default 1000ms]
     #[default(1000)]
@@ -142,8 +153,9 @@ pub struct FeaturePolling {
 }
 
 /// Configurable features for Nurse module
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureNurse {
     /// Heartbeat interval in seconds. Default value is 3600.
     #[default(60 * 60)]
@@ -167,9 +179,10 @@ pub struct FeatureNurse {
     pub state_duration_cap: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
 /// QoS configuration options
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureQoS {
     /// How often to collect rtt data in seconds. Default value is 300.
     #[default(5 * 60)]
@@ -186,15 +199,17 @@ pub struct FeatureQoS {
 }
 
 /// Enum denoting ways to calculate RTT.
-#[derive(Eq, PartialEq, Debug, Clone, Deserialize)]
+#[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 #[repr(u32)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum RttType {
     /// Simple ping request.
     Ping,
 }
 
 /// Configurable features for Lana module
-#[derive(Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureLana {
     /// Path of the file where events will be stored. If such file does not exist, it will be created, otherwise reused
     pub event_path: String,
@@ -211,7 +226,8 @@ impl fmt::Debug for FeatureLana {
 }
 
 /// Enable wanted paths for telio
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeaturePaths {
     /// Enable paths in increasing priority: 0 is worse then 1 is worse then 2 ...
     /// [PathType::Relay] always assumed as -1
@@ -243,6 +259,7 @@ impl FeaturePaths {
 /// Mesh connection path type
 #[derive(Clone, Copy, Debug, Default, EnumCount, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum PathType {
     /// Nodes connected via a middle-man relay
     #[default]
@@ -252,8 +269,9 @@ pub enum PathType {
 }
 
 /// Enable meshent direct connection
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureDirect {
     /// Endpoint providers [default all]
     #[serde(deserialize_with = "deserialize_providers")]
@@ -311,6 +329,7 @@ where
 )]
 #[repr(u32)]
 #[serde(rename_all = "kebab-case")]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum EndpointProvider {
     /// Use local interface ips as possible endpoints
     Local = 1,
@@ -321,8 +340,9 @@ pub enum EndpointProvider {
 }
 
 /// Avoid sending periodic messages to peers with no traffic reported by wireguard
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureSkipUnresponsivePeers {
     /// Time after which peers is considered unresponsive if it didn't receive any packets
     #[default = 180]
@@ -330,8 +350,9 @@ pub struct FeatureSkipUnresponsivePeers {
 }
 
 /// Control which battery optimizations are turned on
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureEndpointProvidersOptimization {
     /// Controls whether Stun endpoint provider should be turned off when there are no proxying peers
     #[default = true]
@@ -342,7 +363,8 @@ pub struct FeatureEndpointProvidersOptimization {
 }
 
 /// Configure derp behaviour
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureDerp {
     /// Tcp keepalive set on derp server's side [default 15s]
     pub tcp_keepalive: Option<u32>,
@@ -360,8 +382,9 @@ pub struct FeatureDerp {
 }
 
 /// Whether to validate keys
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureValidateKeys(pub bool);
 
 impl Default for FeatureValidateKeys {
@@ -371,7 +394,8 @@ impl Default for FeatureValidateKeys {
 }
 
 /// Next layer protocol for IP packet
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum IpProtocol {
     /// UDP protocol
     UDP,
@@ -380,7 +404,8 @@ pub enum IpProtocol {
 }
 
 /// Tuple used to blacklist outgoing connections in Telio firewall
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FirewallBlacklistTuple {
     /// Protocol of the packet to be blacklisted
     pub protocol: IpProtocol,
@@ -390,8 +415,48 @@ pub struct FirewallBlacklistTuple {
     pub port: u16,
 }
 
+/// Ip v4 network representation
+#[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct Ipv4Net(#[cfg_attr(test, proptest(strategy = "ipv4_net_strategy()"))] ipnet::Ipv4Net);
+
+impl From<Ipv4Net> for ipnet::Ipv4Net {
+    fn from(value: Ipv4Net) -> Self {
+        value.0
+    }
+}
+
+impl From<ipnet::Ipv4Net> for Ipv4Net {
+    fn from(value: ipnet::Ipv4Net) -> Self {
+        Self(value)
+    }
+}
+
+impl FromStr for Ipv4Net {
+    type Err = ipnet::AddrParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse().map(Self)
+    }
+}
+
+impl fmt::Display for Ipv4Net {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[cfg(test)]
+fn ipv4_net_strategy() -> impl proptest::strategy::Strategy<Value = ipnet::Ipv4Net> {
+    use proptest::prelude::*;
+    let prefix = 0u8..=32; // This is a requirement checked in the Ipv4Net::new
+    let addr = any::<u32>();
+    (addr, prefix).prop_map(|(addr, prefix)| ipnet::Ipv4Net::new(addr.into(), prefix).unwrap())
+}
+
 /// Feature config for firewall
-#[derive(Default, Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Default, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureFirewall {
     /// Turns on connection resets upon VPN server change
     #[serde(default)]
@@ -408,8 +473,9 @@ pub struct FeatureFirewall {
 }
 
 /// Turns on post quantum VPN tunnel
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeaturePostQuantumVPN {
     /// Initial handshake retry interval in seconds
     #[default = 8]
@@ -421,8 +487,9 @@ pub struct FeaturePostQuantumVPN {
 }
 
 /// Turns on the no link detection mechanism
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureLinkDetection {
     /// Configurable rtt in seconds
     #[default = 15]
@@ -438,7 +505,8 @@ pub struct FeatureLinkDetection {
 }
 
 /// Feature configuration for DNS.
-#[derive(Default, Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Default, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureDns {
     /// TTL for SOA record and for A and AAAA records.
     #[serde(default)]
@@ -449,8 +517,9 @@ pub struct FeatureDns {
 }
 
 /// Newtype for TTL value to ensure that the default function returns the actual default value and not 0.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct TtlValue(pub u32);
 
 impl Default for TtlValue {
@@ -460,7 +529,8 @@ impl Default for TtlValue {
 }
 
 /// Configurable features for exit Dns
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureExitDns {
     /// Controls if it is allowed to reconfigure DNS peer when exit node is
     /// (dis)connected.
@@ -468,8 +538,9 @@ pub struct FeatureExitDns {
 }
 
 /// Configurable features for UPNP endpoint provider
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, SmartDefault)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureUpnp {
     /// The upnp lease_duration parameter, in seconds. A value of 0 is infinite. Default: 3600
     #[default = 3600]
@@ -594,7 +665,7 @@ mod tests {
             "firewall": {
                 "neptun_reset_conns": true,
                 "boringtun_reset_conns": true,
-                "exclude_private_ip_range": null,
+                "exclude_private_ip_range": "74.155.187.240/25",
                 "outgoing_blacklist": [{
                     "protocol": "UDP",
                     "ip": "8.8.4.4",
@@ -694,7 +765,9 @@ mod tests {
                     firewall: FeatureFirewall {
                         neptun_reset_conns: true,
                         boringtun_reset_conns: true,
-                        exclude_private_ip_range: None,
+                        exclude_private_ip_range: Some(Ipv4Net(
+                            "74.155.187.240/25".parse().unwrap()
+                        )),
                         outgoing_blacklist: vec![FirewallBlacklistTuple {
                             protocol: IpProtocol::UDP,
                             ip: IpAddr::from_str("8.8.4.4").unwrap(),
@@ -911,5 +984,14 @@ mod tests {
             .paths(),
             vec![PathType::Direct]
         );
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn prop_test_features_deserialization(features: super::Features) {
+            let s = features.serialize().unwrap();
+            let deserialized : Features = serde_json::from_str(&s).unwrap();
+            assert_eq!(features, deserialized);
+        }
     }
 }
