@@ -38,7 +38,7 @@ class Interface:
         ).execute()
 
         stdout = process.get_stdout()
-        log.debug("[%s]: %s", connection.tag.name, stdout)
+        log.debug("[%s]: %s", connection.tag, stdout)
 
         matches = re.finditer(
             r"^(.+[a][b][l][e][d])[\s]+[\w]+[\s]+[\w]+[\s]+(.*$)",
@@ -63,7 +63,7 @@ class Interface:
         ).execute()
 
         stdout = process.get_stdout()
-        log.debug("[%s]: %s", connection.tag.name, stdout)
+        log.debug("[%s]: %s", connection.tag, stdout)
 
         matches = re.finditer(
             r'Configuration for interface "([^"]+)"\s+(.*?)InterfaceMetric',
