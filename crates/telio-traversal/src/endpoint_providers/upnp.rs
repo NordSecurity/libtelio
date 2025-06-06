@@ -754,7 +754,7 @@ mod tests {
             async fn drop_connected_sockets(&self) -> Result1<()>;
             async fn time_since_last_rx(&self, public_key: PublicKey) -> Result1<Option<Duration>>;
             async fn stop(self);
-            async fn reset_existing_connections(&self, exit_pubkey: PublicKey, exit_ipv4: Ipv4Addr) -> Result1<()>;
+            async fn reset_existing_connections(&self, exit_pubkey: PublicKey) -> Result1<()>;
             async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result1<()>;
         }
     }
