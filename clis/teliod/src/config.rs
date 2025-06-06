@@ -182,13 +182,14 @@ impl Default for TeliodDaemonConfig {
                 Level::INFO
             }),
             log_file_path: {
+                // TODO: Should this path be different for CGI?
                 #[cfg(feature = "cgi")]
                 {
-                    crate::cgi::constants::TELIOD_LOG.to_string()
+                    crate::cgi::constants::TELIOD_LIB_LOG.to_string()
                 }
                 #[cfg(not(feature = "cgi"))]
                 {
-                    "./teliod.log".to_string()
+                    "/var/log/teliod_lib.log".to_string()
                 }
             },
             log_file_count: default_log_file_count(),

@@ -8,7 +8,7 @@ QPKG_ROOT=`/sbin/getcfg $QPKG_NAME Install_Path -f ${CONF}`
 export QNAP_QPKG=$QPKG_NAME
 
 TELIOD_CFG_FILE=${QPKG_ROOT}/teliod.cfg
-TELIOD_LOG_FILE="/var/log/teliod.log"
+TELIOD_INIT_LOG_FILE="/var/log/teliod_init.log"
 
 # Change the config file permissions. It contains the auth token so we should prohibit it being read by other users
 chmod 0660 $TELIOD_CFG_FILE
@@ -51,7 +51,7 @@ case "$1" in
         exit 0
     fi
 
-    ${QPKG_ROOT}/teliod start --no-detach $TELIOD_CFG_FILE > $TELIOD_LOG_FILE 2>&1 &
+    ${QPKG_ROOT}/teliod start $TELIOD_CFG_FILE > $TELIOD_INIT_LOG_FILE 2>&1
     system_log INFO "Teliod daemon started."
     ;;
 

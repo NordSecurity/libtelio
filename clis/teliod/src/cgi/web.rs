@@ -393,7 +393,7 @@ fn meshnet(app: &AppState) -> Markup {
             {
             div class="flex justify-between items-center" {
                 span class="text-primary body-md-medium" { ({meshnet_status_text}) }
-                a href="get-teliod-logs" class="body-xs-medium text-accent hover:text-blue-400 active:text-blue-700 dark:hover:text-blue-400 dark:active:text-blue-700" {"Logs"}
+                a href="get-logs" class="body-xs-medium text-accent hover:text-blue-400 active:text-blue-700 dark:hover:text-blue-400 dark:active:text-blue-700" {"Logs"}
             }
 
             div class="flex flex-col gap-4" {
