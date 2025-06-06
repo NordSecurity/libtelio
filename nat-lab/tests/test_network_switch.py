@@ -301,3 +301,263 @@ async def test_mesh_network_switch_direct(
         beta_client.allow_errors([
             "telio_traversal::endpoint_providers::stun.*Starting session failed.*A socket operation was attempted to an unreachable network"
         ])
+
+
+import pytest
+from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from dataclasses import dataclass
+import re
+from utils.connection import ConnectionTag
+from utils.network_switcher.network_switcher_windows import Interface
+from utils.process import ProcessExecError
+
+
+class TestInterfaceWindows:
+    @pytest.mark.asyncio
+    async def test_get_network_interfaces(self):
+        mock_connection = Mock()
+        mock_connection.tag = ConnectionTag.VM_WINDOWS_1
+
+        show_interface_output = """Admin State    State          Type             Interface Name
+-------------------------------------------------------------------------
+Disabled       Disconnected   Dedicated        Ethernet Instance 0
+Enabled        Connected      Dedicated        Ethernet Instance 0 2
+Enabled        Connected      Dedicated        Ethernet Instance 0 3"""
+        mock_show_interface_process = Mock()
+        mock_show_interface_process.get_stdout.return_value = show_interface_output
+        mock_show_interface_process.execute = AsyncMock(
+            return_value=mock_show_interface_process
+        )
+
+        show_addresses_output = """Configuration for interface "Ethernet Instance 0 2"
+    DHCP enabled:                         No
+    IP Address:                           10.66.0.13
+    Subnet Prefix:                        10.66.0.0/24 (mask 255.255.255.0)
+    InterfaceMetric:                      35
+
+Configuration for interface "Ethernet Instance 0 3"
+    DHCP enabled:                         No
+    IP Address:                           10.55.0.13
+    Subnet Prefix:                        10.55.0.0/24 (mask 255.255.255.0)
+    Default Gateway:                      10.55.0.1
+    Gateway Metric:                       256
+    InterfaceMetric:                      35
+
+Configuration for interface "Loopback Pseudo-Interface 1"
+    DHCP enabled:                         No
+    IP Address:                           127.0.0.1
+    Subnet Prefix:                        127.0.0.0/8 (mask 255.0.0.0)
+    InterfaceMetric:                      75"""
+        mock_show_address_process = Mock()
+        mock_show_address_process.get_stdout.return_value = show_addresses_output
+        mock_show_address_process.execute = AsyncMock(
+            return_value=mock_show_address_process
+        )
+
+        mock_connection.create_process.side_effect = [
+            mock_show_interface_process,
+            mock_show_address_process,
+        ]
+
+        interfaces = await Interface.get_network_interfaces(mock_connection)
+
+        assert len(interfaces) == 3
+        ifc = next(i for i in interfaces if i.name == "Ethernet Instance 0")
+        assert ifc.enabled is False
+        assert ifc.ipv4 is None
+        ifc = next(i for i in interfaces if i.name == "Ethernet Instance 0 2")
+        assert ifc.enabled is True
+        assert ifc.ipv4 == "10.66.0.13"
+        ifc = next(i for i in interfaces if i.name == "Ethernet Instance 0 3")
+        assert ifc.enabled is True
+        assert ifc.ipv4 == "10.55.0.13"
+
+    @pytest.mark.asyncio
+    async def test_delete_route_failed(self):
+        mock_connection = Mock()
+        mock_process = Mock()
+        mock_error = Mock()
+        mock_error.stdout = "Some unknown error"
+        mock_process.execute = AsyncMock(side_effect=mock_error)
+        mock_connection.create_process.return_value = mock_process
+
+        with pytest.raises(Exception):
+            await Interface("Ethernet Instance 0", True).delete_route(mock_connection)
+
+    @pytest.mark.asyncio
+    async def test_interface_enable_with_slow_startup(self):
+        mock_connection = Mock()
+        mock_connection.tag = ConnectionTag.VM_WINDOWS_1
+        mock_process = Mock()
+        mock_process.execute = AsyncMock(return_value=mock_process)
+        mock_connection.create_process.return_value = mock_process
+
+        attempt_count = 0
+
+        async def mock_get_interfaces(conn):
+            nonlocal attempt_count
+            attempt_count += 1
+            if attempt_count < 10:
+                return []
+            else:
+                return [Interface("Ethernet Instance 0", True, "10.55.0.13")]
+
+        with patch.object(
+            Interface, "get_network_interfaces", side_effect=mock_get_interfaces
+        ):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                ifc = Interface("Ethernet Instance 0", False)
+                await ifc.enable(mock_connection)
+                assert attempt_count == 10
+
+
+class TestNetworkSwitcherWindows:
+    @pytest.mark.asyncio
+    async def test_create_is_successful(self):
+        mock_connection = Mock()
+        test_interfaces = [
+            Interface("Management", True, "192.168.121.13"),
+            Interface("Primary", True, "10.55.0.13"),
+            Interface("Secondary", True, "10.66.0.13"),
+        ]
+
+        with patch.object(
+            Interface, "get_network_interfaces", return_value=test_interfaces
+        ):
+            nw_switcher = await NetworkSwitcherWindows.create(mock_connection)
+
+            assert nw_switcher._mgmt_interface == test_interfaces[0]
+            assert nw_switcher._primary_interface == test_interfaces[1]
+            assert nw_switcher._secondary_interface == test_interfaces[2]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "interfaces",
+        [
+            pytest.param(Interface("Primary", True, "10.55.0.10")),
+            pytest.param(Interface("Secondary", True, "10.66.0.13")),
+        ],
+    )
+    async def test_create_missing_interface(self, interfaces):
+        mock_connection = Mock()
+
+        with patch.object(Interface, "get_network_interfaces", return_value=interfaces):
+            with pytest.raises(AssertionError(LookupError)):
+                await NetworkSwitcherWindows.create(mock_connection)
+
+    @pytest.mark.asyncio
+    async def test_switch_to_primary_network(self):
+        mock_mgmt = Mock(spec=Interface)
+        mock_mgmt.disable = AsyncMock()
+
+        mock_primary = Mock(spec=Interface)
+        mock_primary.delete_route = AsyncMock()
+
+        mock_secondary = Mock(spec=Interface)
+        mock_secondary.delete_route = AsyncMock()
+
+        mock_process = Mock()
+        mock_process.execute = AsyncMock(return_value=mock_process)
+
+        mock_connection = Mock()
+        mock_connection.create_process.return_value = mock_process
+
+        with patch("network_switcher_windows.CommandGrepper") as mock_grepper:
+            mock_grepper_instance = Mock()
+            mock_grepper_instance.check_exists = AsyncMock(return_value=True)
+            mock_grepper.return_value = mock_grepper_instance
+
+            nw_switcher = NetworkSwitcherWindows(
+                mock_connection, mock_mgmt, mock_primary, mock_secondary
+            )
+            await nw_switcher.switch_to_primary_network()
+
+            mock_mgmt.disable.assert_called_once()
+            mock_primary.delete_route.assert_called_once()
+            mock_secondary.delete_route.assert_called_once()
+
+            mock_connection.create_process.assert_called_with([
+                "netsh",
+                "interface",
+                "ipv4",
+                "add",
+                "route",
+                "0.0.0.0/0",
+                mock_primary.name,
+                f"nexthop={config.PRIMARY_VM_NETWORK_PREFIX}.1",
+            ])
+
+    @pytest.mark.asyncio
+    async def test_switch_to_secondary_network(self):
+        mock_mgmt = Mock(spec=Interface)
+        mock_mgmt.disable = AsyncMock()
+
+        mock_primary = Mock(spec=Interface)
+        mock_primary.delete_route = AsyncMock()
+
+        mock_secondary = Mock(spec=Interface)
+        mock_secondary.delete_route = AsyncMock()
+
+        mock_process = Mock()
+        mock_process.execute = AsyncMock(return_value=mock_process)
+
+        mock_connection = Mock()
+        mock_connection.create_process.return_value = mock_process
+
+        with patch("network_switcher_windows.CommandGrepper") as mock_grepper:
+            mock_grepper_instance = Mock()
+            mock_grepper_instance.check_exists = AsyncMock(return_value=True)
+            mock_grepper.return_value = mock_grepper_instance
+
+            nw_switcher = NetworkSwitcherWindows(
+                mock_connection, mock_mgmt, mock_primary, mock_secondary
+            )
+            await nw_switcher.switch_to_secondary_network()
+
+            mock_mgmt.disable.assert_called_once()
+            mock_primary.delete_route.assert_called_once()
+            mock_secondary.delete_route.assert_called_once()
+
+            mock_connection.create_process.assert_called_with([
+                "netsh",
+                "interface",
+                "ipv4",
+                "add",
+                "route",
+                "0.0.0.0/0",
+                mock_secondary.name,
+                f"nexthop={config.SECONDARY_VM_NETWORK_PREFIX}.1",
+            ])
+
+    @pytest.mark.asyncio
+    async def test_switch_network_failure(self):
+        """Test network switch failure when route cannot be verified"""
+        mock_mgmt = Mock(spec=Interface)
+        mock_mgmt.disable = AsyncMock()
+
+        mock_primary = Mock(spec=Interface)
+        mock_primary.delete_route = AsyncMock()
+
+        mock_secondary = Mock(spec=Interface)
+        mock_secondary.delete_route = AsyncMock()
+
+        mock_process = Mock()
+        mock_process.execute = AsyncMock(return_value=mock_process)
+
+        mock_connection = Mock()
+        mock_connection.create_process.return_value = mock_process
+
+        with patch("network_switcher_windows.CommandGrepper") as mock_grepper:
+            mock_grepper_instance = Mock()
+            mock_grepper_instance.check_exists = AsyncMock(return_value=False)
+            mock_grepper.return_value = mock_grepper_instance
+
+            nw_switcher = NetworkSwitcherWindows(
+                mock_connection, mock_mgmt, mock_primary, mock_secondary
+            )
+
+            with pytest.raises(Exception, match="Failed to switch to primary network"):
+                await nw_switcher.switch_to_primary_network()
+
+            with pytest.raises(Exception, match="Failed to switch to primary network"):
+                await nw_switcher.switch_to_secondary_network()
