@@ -146,6 +146,16 @@ pub enum LibfwConnectionState {
     LibfwConnectionStateClosed,
 }
 
+///
+/// Packet verdict
+///
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LibfwVerdict {
+    LibfwVerdictAccept,
+    LibfwVerdictDrop,
+}
+
 #[derive(Clone, Debug)]
 pub struct UdpConnectionInfo {
     pub(crate) is_remote_initiated: bool,
