@@ -616,8 +616,8 @@ class Client:
         if isinstance(self.get_router(), LinuxRouter):
             await self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
 
-    async def create_tun(self, tun_name: str) -> int:
-        return await self.get_proxy().create_tun(tun_name)
+    async def create_tun(self, tun_id: int) -> int:
+        return await self.get_proxy().create_tun(tun_id)
 
     async def start_with_tun(self, tun: int, tun_name):
         await self.get_proxy().start_with_tun(
@@ -924,9 +924,12 @@ class Client:
 
         return False
 
-    async def restart_interface(self):
+    async def restart_interface(self, new_name=None):
         if self._interface_configured:
             await self.get_router().deconfigure_interface(self._node.ip_addresses)
+            self._interface_configured = False
+        if new_name:
+            self.get_router().set_interface_name(new_name)
             self._interface_configured = False
         await self._configure_interface()
 

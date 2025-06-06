@@ -254,7 +254,7 @@ class WindowsRouter(Router):
         ).check_exists("::/0", [self._interface_name]):
             raise Exception("Failed to create ipv6 vpn route")
 
-    async def delete_interface(self) -> None:
+    async def delete_interface(self, name=None) -> None:
         pass
 
     async def delete_vpn_route(self) -> None:

@@ -2627,12 +2627,13 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "0.6.0"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v2.0.0#8e44118105165d90b6bd149e2f8b93aed47951c8"
+source = "git+https://github.com/NordSecurity/neptun.git?tag=v2.0.1#2d43ec4c3f6e3573954095a09f1d874b4b7d474d"
 dependencies = [
  "aead",
  "base64 0.13.1",
  "blake2",
  "chacha20poly1305",
+ "crossbeam-channel",
  "dispatch",
  "hex",
  "hmac",
@@ -2640,6 +2641,7 @@ dependencies = [
  "ip_network_table",
  "libc",
  "nix 0.29.0",
+ "num_cpus",
  "parking_lot",
  "rand_core 0.6.4",
  "ring",
@@ -4610,7 +4612,7 @@ dependencies = [
 
 [[package]]
 name = "telio"
-version = "5.4.0"
+version = "6.0.0"
 dependencies = [
  "anyhow",
  "async-trait",

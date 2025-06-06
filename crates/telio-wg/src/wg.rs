@@ -323,6 +323,12 @@ impl DynamicWg {
             Err(Error::RestartFailed)
         }
     }
+
+    /// Set the (u)tun file descriptor to be used by the adapter
+    pub async fn set_tun(&self, tun: i32) -> Result<(), Error> {
+        task_exec!(&self.task, async move |rt| Ok(rt.set_tun(tun).await)).await??;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -958,6 +964,17 @@ impl State {
         Ok(success)
     }
 
+    pub async fn set_tun(&mut self, tun: i32) -> Result<(), Error> {
+        #[cfg(unix)]
+        {
+            self.cfg.tun = Some(tun);
+            self.cfg.name = None;
+        }
+
+        self.adapter.set_tun(tun).await?;
+        Ok(())
+    }
+
     /// This is like the normal '==' but ignores the time_since_last_rx field in peers
     fn is_same_interface(lhs: &Interface, rhs: &Interface) -> bool {
         if lhs.private_key != rhs.private_key
@@ -1148,6 +1165,10 @@ pub mod tests {
             task::block_in_place(|| {
                 Handle::current().block_on(async { self.lock().await.get_wg_socket(ipv6) })
             })
+        }
+
+        async fn set_tun(&self, _tun: i32) -> Result<(), Error> {
+            Err(Error::UnsupportedAdapter)
         }
     }
 

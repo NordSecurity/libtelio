@@ -4,7 +4,7 @@
 use crate::{local_interfaces::gather_local_interfaces, local_interfaces::GetIfAddrs};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use std::io;
+use std::{io, sync::Arc};
 use telio_utils::{telio_log_debug, telio_log_warn};
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 /// Sender to notify if there is a change in OS interface order
@@ -17,6 +17,12 @@ pub static LOCAL_ADDRS_CACHE: Mutex<Vec<if_addrs::Interface>> = Mutex::new(Vec::
 ))]
 static NW_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
 
+#[derive(Default, Debug)]
+struct PausedState {
+    is_paused: bool,
+    is_path_change_enqueued: bool,
+}
+
 #[derive(Debug)]
 /// Struct to monitor network
 pub struct NetworkMonitor {
@@ -27,6 +33,7 @@ pub struct NetworkMonitor {
     monitor_handle: Option<JoinHandle<io::Result<()>>>,
     #[cfg(target_os = "windows")]
     monitor_handle: crate::windows::SafeHandle,
+    paused_state: Arc<Mutex<PausedState>>,
 }
 
 fn save_local_interfaces<G: GetIfAddrs>(get_if_addr: &G) {
@@ -39,17 +46,57 @@ fn save_local_interfaces<G: GetIfAddrs>(get_if_addr: &G) {
     }
 }
 
+/// Guard that will unpause the network monitoring when dropped
+pub struct NetworkMonitorPausedGuard(Arc<Mutex<PausedState>>);
+
+impl NetworkMonitorPausedGuard {
+    fn new(paused_state: Arc<Mutex<PausedState>>) -> Self {
+        paused_state.lock().is_paused = true;
+        Self(paused_state)
+    }
+}
+
+impl Drop for NetworkMonitorPausedGuard {
+    fn drop(&mut self) {
+        let is_path_change_enqueued = {
+            let mut paused_state = self.0.lock();
+            let is_path_change_enqueued = paused_state.is_path_change_enqueued;
+            paused_state.is_path_change_enqueued = false;
+            paused_state.is_paused = false;
+            is_path_change_enqueued
+        };
+        if is_path_change_enqueued {
+            let _ = PATH_CHANGE_BROADCAST.send(());
+        }
+    }
+}
+
 impl NetworkMonitor {
     /// Sets up and spawns network monitor
     pub async fn new<G: GetIfAddrs>(get_if_addr: G) -> std::io::Result<NetworkMonitor> {
+        let paused_state = Arc::new(Mutex::new(PausedState::default()));
         save_local_interfaces(&get_if_addr);
 
+        let paused_state_copy = paused_state.clone();
         let if_cache_updater_handle = Some(tokio::spawn({
             let mut notify = PATH_CHANGE_BROADCAST.subscribe();
             async move {
                 loop {
                     match notify.recv().await {
-                        Ok(()) => save_local_interfaces(&get_if_addr),
+                        Ok(()) => {
+                            let is_paused = {
+                                let mut paused_state = paused_state_copy.lock();
+                                let is_paused = paused_state.is_paused;
+                                if is_paused {
+                                    paused_state.is_path_change_enqueued = true;
+                                }
+                                is_paused
+                            };
+
+                            if !is_paused {
+                                save_local_interfaces(&get_if_addr)
+                            }
+                        }
                         Err(e) => {
                             telio_log_warn!("Failed to receive new path for sockets ({e}): ");
                         }
@@ -75,7 +122,13 @@ impl NetworkMonitor {
             if_cache_updater_handle,
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             monitor_handle,
+            paused_state,
         })
+    }
+
+    /// Start the pause of the network monitoring
+    pub fn pause(&self) -> NetworkMonitorPausedGuard {
+        NetworkMonitorPausedGuard::new(self.paused_state.clone())
     }
 }
 

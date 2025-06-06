@@ -263,6 +263,14 @@ interface Telio {
     [Throws=TelioError]
     void set_secret_key([ByRef] SecretKey secret_key);
 
+    /// Sets the tunnel file descriptor
+    ///
+    /// # Parameters:
+    /// - `tun`: the file descriptor of the TUN interface
+    ///
+    [Throws=TelioError]
+    void set_tun(i32 tun);
+
 
     SecretKey get_secret_key();
 
