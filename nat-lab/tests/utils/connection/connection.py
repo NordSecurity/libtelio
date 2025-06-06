@@ -48,6 +48,9 @@ class ConnectionTag(Enum):
     DOCKER_DNS_SERVER_1 = auto()
     DOCKER_DNS_SERVER_2 = auto()
 
+    def __repr__(self):
+        return f"{self.name}"
+
 
 EPHEMERAL_SETUP_SET: Set[ConnectionTag] = set()
 
@@ -128,7 +131,7 @@ async def setup_ephemeral_ports(connection: Connection):
         return
 
     async def on_output(output: str) -> None:
-        log.debug("[%s]: %s", connection.tag.name, output)
+        log.debug("[%s]: %s", connection.tag, output)
 
     start_port = random.randint(15000, 55000)
     num_ports = random.randint(2000, 5000)
