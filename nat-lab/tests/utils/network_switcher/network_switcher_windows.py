@@ -65,7 +65,7 @@ class Interface:
             quiet=True,
         ).execute()
         stdout = process.get_stdout()
-        log.debug("[%s]: %s", connection.tag.name, stdout)
+        log.debug("[%s]: %s", connection.tag, stdout)
 
         matches = re.finditer(
             r'Configuration for interface "([^"]+)"\s+(.*?)InterfaceMetric',
