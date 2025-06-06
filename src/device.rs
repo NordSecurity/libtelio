@@ -1031,12 +1031,11 @@ impl Runtime {
         };
         let firewall_reset_connections = if features.firewall.neptun_reset_conns {
             let fw = firewall.clone();
-            let cb =
-                move |exit_pubkey: &PublicKey, exit_ipv4: Ipv4Addr, sink: &mut dyn io::Write| {
-                    if let Err(err) = fw.reset_connections(exit_pubkey, exit_ipv4, sink) {
-                        telio_log_warn!("Failed to reset all connections: {err:?}");
-                    }
-                };
+            let cb = move |exit_pubkey: &PublicKey, sink: &mut dyn io::Write| {
+                if let Err(err) = fw.reset_connections(exit_pubkey, sink) {
+                    telio_log_warn!("Failed to reset all connections: {err:?}");
+                }
+            };
             Some(Arc::new(cb) as Arc<_>)
         } else {
             None
@@ -2054,37 +2053,9 @@ impl Runtime {
             .as_ref()
             .or(self.requested_state.last_exit_node.as_ref())
         {
-            let ipv4 = if let Some(cfg) = self.requested_state.meshnet_config.as_ref() {
-                let find_ip = || {
-                    let peers = cfg.peers.as_deref()?;
-                    let peer = peers
-                        .iter()
-                        .find(|pr| pr.public_key == last_exit.public_key)?;
-
-                    peer.ip_addresses
-                        .as_deref()?
-                        .iter()
-                        .find_map(|ip| match ip {
-                            IpAddr::V4(ip) => Some(*ip),
-                            IpAddr::V6(_) => None,
-                        })
-                };
-
-                if let Some(ipv4) = find_ip() {
-                    // Exit node is a meshnet peer
-                    ipv4
-                } else {
-                    // The meshnet is ON
-                    Ipv4Addr::new(100, 64, 0, 1)
-                }
-            } else {
-                // The meshnet is OFF
-                Ipv4Addr::new(10, 5, 0, 1)
-            };
-
             self.entities
                 .wireguard_interface
-                .reset_existing_connections(last_exit.public_key, ipv4)
+                .reset_existing_connections(last_exit.public_key)
                 .await?;
         }
 

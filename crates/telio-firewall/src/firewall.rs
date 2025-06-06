@@ -8,10 +8,10 @@ use pnet_packet::{
     icmp::{
         destination_unreachable::IcmpCodes, IcmpPacket, IcmpType, IcmpTypes, MutableIcmpPacket,
     },
-    icmpv6::{Icmpv6Type, Icmpv6Types},
+    icmpv6::{Icmpv6Code, Icmpv6Type, Icmpv6Types, MutableIcmpv6Packet},
     ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
     ipv4::{Ipv4Flags, Ipv4Packet, MutableIpv4Packet},
-    ipv6::Ipv6Packet,
+    ipv6::{Ipv6Packet, MutableIpv6Packet},
     tcp::{MutableTcpPacket, TcpFlags, TcpPacket},
     udp::UdpPacket,
     Packet,
@@ -198,12 +198,7 @@ pub trait Firewall {
 
     /// Creates packets that are supposed to kill the existing connections.
     /// The end goal here is to fore the client app sockets to reconnect.
-    fn reset_connections(
-        &self,
-        pubkey: &PublicKey,
-        endpoint_ipv4: StdIpv4Addr,
-        sink: &mut dyn io::Write,
-    ) -> io::Result<()>;
+    fn reset_connections(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) -> io::Result<()>;
 
     /// Saves local node Ip address into firewall object
     fn set_ip_addresses(&self, ip_addrs: Vec<StdIpAddr>);
@@ -299,8 +294,11 @@ struct UdpConnectionInfo {
 
 impl UdpConnectionInfo {
     /// UDP packet header contains at least 8 bytes and IP packet header is
-    /// 20-60 bytes long, so we need to store up to 68 bytes of previus
-    /// packet
+    /// 20-60 bytes long, so we need to store up to 68 bytes of previous
+    /// packet.
+    /// For IPv6 the fixed header is 40 bytes long. There is no upper limit for
+    /// a header with extensions. Let's stick with the value for IPv4. In the worst
+    /// case we will not be able to reset IPv6 connections with unusually long header.
     const LAST_PKG_MAX_CHUNK_LEN: usize = 60 + 8;
 }
 
@@ -504,19 +502,11 @@ impl StatefullFirewall {
                         return false;
                     };
 
-                    match link.remote_addr {
-                        IpAddr::Ipv4(remote_addr) => {
-                            _ = self.send_v4_imcp_port_unreachable_packets(
-                                remote_addr.into(),
-                                std::iter::once((&link, first_chunk)),
-                                sink,
-                            );
-                        }
-                        IpAddr::Ipv6(_) => {
-                            telio_log_warn!("IPv6 blacklist not implemented");
-                            // TODO(LLT-6284)
-                        }
-                    }
+                    _ = self.send_icmp_port_unreachable_packets(
+                        std::iter::once((&link, first_chunk)),
+                        sink,
+                    );
+
                     return false;
                 }
             }
@@ -526,18 +516,10 @@ impl StatefullFirewall {
                     unwrap_option_or_return!(Self::build_conn_info(&ip, false), false);
                 let tcp_packet = unwrap_option_or_return!(tcp_packet, false);
                 if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
-                    match link.remote_addr {
-                        IpAddr::Ipv4(_) => {
-                            _ = self.send_v4_tcp_rst_packets(
-                                std::iter::once((&link, 0, Some(tcp_packet.get_sequence() + 1))),
-                                sink,
-                            );
-                        }
-                        IpAddr::Ipv6(_) => {
-                            telio_log_warn!("IPv6 blacklist not implemented");
-                            // TODO(LLT-6284)
-                        }
-                    }
+                    _ = self.send_tcp_rst_packets(
+                        std::iter::once((&link, 0, Some(tcp_packet.get_sequence() + 1))),
+                        sink,
+                    );
 
                     return false;
                 }
@@ -1218,10 +1200,10 @@ impl StatefullFirewall {
             }
         });
 
-        self.send_v4_tcp_rst_packets(iter, sink)
+        self.send_tcp_rst_packets(iter, sink)
     }
 
-    fn send_v4_tcp_rst_packets<'a, I>(
+    fn send_tcp_rst_packets<'a, I>(
         &self,
         connections: I,
         sink: &mut dyn io::Write,
@@ -1230,9 +1212,11 @@ impl StatefullFirewall {
         I: IntoIterator<Item = (&'a IpConnWithPort, u32, Option<u32>)>,
     {
         const IPV4_LEN: usize = 20;
+        const IPV6_LEN: usize = 40;
         const TCP_LEN: usize = 20;
 
         let mut ipv4buf = [0u8; IPV4_LEN];
+        let mut ipv6buf = [0u8; IPV6_LEN];
         let mut tcpbuf = [0u8; TCP_LEN];
 
         // Write most of the fields for TCP and IP packets upfront
@@ -1251,7 +1235,16 @@ impl StatefullFirewall {
         ipv4pkg.set_ttl(0xFF);
         ipv4pkg.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
 
+        #[allow(clippy::expect_used)]
+        let mut ipv6pkg =
+            MutableIpv6Packet::new(&mut ipv6buf).expect("IPv4 buffer should not be too small");
+        ipv6pkg.set_version(6);
+        ipv6pkg.set_payload_length(TCP_LEN as _);
+        ipv6pkg.set_next_header(IpNextHeaderProtocols::Tcp);
+        ipv6pkg.set_hop_limit(0xff);
+
         let mut ipv4pkgbuf = [0u8; IPV4_LEN + TCP_LEN];
+        let mut ipv6pkgbuf = [0u8; IPV6_LEN + TCP_LEN];
 
         for (key, next_seq, ack) in connections {
             tcppkg.set_source(key.remote_port);
@@ -1290,7 +1283,28 @@ impl StatefullFirewall {
                     ipv4pkgbuf[IPV4_LEN..].copy_from_slice(tcppkg.packet());
                     sink.write_all(&ipv4pkgbuf)?;
                 }
-                (IpAddr::Ipv6(_), IpAddr::Ipv6(_)) => (), // TODO(msz): implement this pice when IPv6 will be fully supported
+                (IpAddr::Ipv6(local_addr), IpAddr::Ipv6(remote_addr)) => {
+                    let src = remote_addr.into();
+                    let dst = local_addr.into();
+
+                    ipv6pkg.set_source(src);
+                    ipv6pkg.set_destination(dst);
+
+                    tcppkg.set_checksum(pnet_packet::tcp::ipv6_checksum(
+                        &tcppkg.to_immutable(),
+                        &src,
+                        &dst,
+                    ));
+
+                    telio_log_debug!("Injecting IPv4 TCP RST packet {key:#?}");
+
+                    #[allow(index_access_check)]
+                    ipv6pkgbuf[..IPV6_LEN].copy_from_slice(ipv6pkg.packet());
+
+                    #[allow(index_access_check)]
+                    ipv6pkgbuf[IPV6_LEN..].copy_from_slice(tcppkg.packet());
+                    sink.write_all(&ipv6pkgbuf)?;
+                }
                 _ => telio_log_warn!(
                     "Local and remote IP addrs version missmatch, this should never happen"
                 ),
@@ -1300,9 +1314,8 @@ impl StatefullFirewall {
         Ok(())
     }
 
-    fn send_v4_imcp_port_unreachable_packets<'a, I>(
+    fn send_icmp_port_unreachable_packets<'a, I>(
         &self,
-        source_ip: StdIpv4Addr,
         connections: I,
         sink: &mut dyn io::Write,
     ) -> io::Result<()>
@@ -1310,10 +1323,12 @@ impl StatefullFirewall {
         I: IntoIterator<Item = (&'a IpConnWithPort, &'a [u8])>,
     {
         const IPV4_HEADER_LEN: usize = 20;
+        const IPV6_HEADER_LEN: usize = 40;
         const ICMP_HEADER_LEN: usize = 8;
         const ICMP_MAX_DATA_LEN: usize = UdpConnectionInfo::LAST_PKG_MAX_CHUNK_LEN;
 
         let mut ipv4pkgbuf = [0u8; IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_MAX_DATA_LEN];
+        let mut ipv6pkgbuf = [0u8; IPV6_HEADER_LEN + ICMP_HEADER_LEN + ICMP_MAX_DATA_LEN];
 
         // Write most of the fields for ICMP and IP packets upfront
         #[allow(clippy::expect_used)]
@@ -1322,12 +1337,17 @@ impl StatefullFirewall {
             .expect("IPv4 buffer should not be too small");
         ipv4pkg.set_version(4);
         ipv4pkg.set_header_length(5);
-        ipv4pkg.set_total_length((IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_MAX_DATA_LEN) as _);
         ipv4pkg.set_flags(Ipv4Flags::DontFragment);
         ipv4pkg.set_ttl(0xFF);
         ipv4pkg.set_next_level_protocol(IpNextHeaderProtocols::Icmp);
-        ipv4pkg.set_source(source_ip);
-        drop(ipv4pkg);
+
+        #[allow(clippy::expect_used)]
+        #[allow(index_access_check)]
+        let mut ipv6pkg = MutableIpv6Packet::new(&mut ipv6pkgbuf[..IPV6_HEADER_LEN])
+            .expect("IPv6 buffer should not be too small");
+        ipv6pkg.set_version(6);
+        ipv6pkg.set_next_header(IpNextHeaderProtocols::Icmpv6);
+        ipv6pkg.set_hop_limit(0xff);
 
         #[allow(clippy::expect_used)]
         #[allow(index_access_check)]
@@ -1337,18 +1357,28 @@ impl StatefullFirewall {
         .expect("ICMP buffer should not be too small");
         icmppkg.set_icmp_type(IcmpTypes::DestinationUnreachable);
         icmppkg.set_icmp_code(IcmpCodes::DestinationPortUnreachable);
-        drop(icmppkg);
+
+        #[allow(clippy::expect_used)]
+        #[allow(index_access_check)]
+        let mut icmpv6pkg = MutableIcmpv6Packet::new(
+            &mut ipv6pkgbuf[IPV6_HEADER_LEN..(IPV6_HEADER_LEN + ICMP_HEADER_LEN)],
+        )
+        .expect("ICMP buffer should not be too small");
+        icmpv6pkg.set_icmpv6_type(Icmpv6Types::DestinationUnreachable);
+        let icmpv6_port_unreachable = 4;
+        icmpv6pkg.set_icmpv6_code(Icmpv6Code::new(icmpv6_port_unreachable));
 
         for (key, last_headers) in connections {
-            let end = IPV4_HEADER_LEN + ICMP_HEADER_LEN + last_headers.len();
-
-            #[allow(index_access_check)]
-            let ipv4pkgbuf = &mut ipv4pkgbuf[..end];
-            #[allow(index_access_check)]
-            ipv4pkgbuf[(IPV4_HEADER_LEN + ICMP_HEADER_LEN)..].copy_from_slice(last_headers);
-
             match (key.local_addr, key.remote_addr) {
-                (IpAddr::Ipv4(local_addr), IpAddr::Ipv4(_)) => {
+                (IpAddr::Ipv4(local_addr), IpAddr::Ipv4(remote_addr)) => {
+                    let end = IPV4_HEADER_LEN + ICMP_HEADER_LEN + last_headers.len();
+
+                    #[allow(index_access_check)]
+                    let ipv4pkgbuf = &mut ipv4pkgbuf[..end];
+                    #[allow(index_access_check)]
+                    ipv4pkgbuf[(IPV4_HEADER_LEN + ICMP_HEADER_LEN)..].copy_from_slice(last_headers);
+
+                    let src = remote_addr.into();
                     let dst = local_addr.into();
 
                     #[allow(clippy::expect_used)]
@@ -1363,6 +1393,7 @@ impl StatefullFirewall {
                     #[allow(index_access_check)]
                     let mut ipv4pkg = MutableIpv4Packet::new(&mut ipv4pkgbuf[..IPV4_HEADER_LEN])
                         .expect("IPv4 buffer should not be too small");
+                    ipv4pkg.set_source(src);
                     ipv4pkg.set_destination(dst);
                     ipv4pkg.set_total_length(
                         (IPV4_HEADER_LEN + ICMP_HEADER_LEN + last_headers.len()) as _,
@@ -1370,12 +1401,44 @@ impl StatefullFirewall {
 
                     ipv4pkg.set_checksum(0);
                     ipv4pkg.set_checksum(pnet_packet::ipv4::checksum(&ipv4pkg.to_immutable()));
-                    drop(ipv4pkg);
 
                     telio_log_debug!("Injecting IPv4 ICMP (for UDP) packet {key:#?}");
                     sink.write_all(ipv4pkgbuf)?;
                 }
-                (IpAddr::Ipv6(_), IpAddr::Ipv6(_)) => (), // TODO(msz): implement this piece when IPv6 will be fully supported
+                (IpAddr::Ipv6(local_addr), IpAddr::Ipv6(remote_addr)) => {
+                    let end = IPV6_HEADER_LEN + ICMP_HEADER_LEN + last_headers.len();
+
+                    #[allow(index_access_check)]
+                    let ipv6pkgbuf = &mut ipv6pkgbuf[..end];
+                    #[allow(index_access_check)]
+                    ipv6pkgbuf[(IPV6_HEADER_LEN + ICMP_HEADER_LEN)..].copy_from_slice(last_headers);
+
+                    let src = remote_addr.into();
+                    let dst = local_addr.into();
+
+                    #[allow(clippy::expect_used)]
+                    #[allow(index_access_check)]
+                    let mut icmpv6pkg =
+                        MutableIcmpv6Packet::new(&mut ipv6pkgbuf[IPV6_HEADER_LEN..])
+                            .expect("ICMPv6 buffer should not be too small");
+                    icmpv6pkg.set_checksum(0);
+                    icmpv6pkg.set_checksum(pnet_packet::icmpv6::checksum(
+                        &icmpv6pkg.to_immutable(),
+                        &src,
+                        &dst,
+                    ));
+
+                    #[allow(clippy::expect_used)]
+                    #[allow(index_access_check)]
+                    let mut ipv6pkg = MutableIpv6Packet::new(&mut ipv6pkgbuf[..IPV6_HEADER_LEN])
+                        .expect("IPv4 buffer should not be too small");
+                    ipv6pkg.set_source(src);
+                    ipv6pkg.set_destination(dst);
+                    ipv6pkg.set_payload_length((ICMP_HEADER_LEN + last_headers.len()) as _);
+
+                    telio_log_debug!("Injecting IPv6 ICMP (for UDP) packet {key:#?}");
+                    sink.write_all(ipv6pkgbuf)?;
+                }
                 _ => telio_log_warn!(
                     "Local and remote IP addrs version mismatch, this should never happen"
                 ),
@@ -1385,12 +1448,7 @@ impl StatefullFirewall {
         Ok(())
     }
 
-    fn reset_udp_conns(
-        &self,
-        pubkey: &PublicKey,
-        endpoint_ipv4: StdIpv4Addr,
-        sink: &mut dyn io::Write,
-    ) -> io::Result<()> {
+    fn reset_udp_conns(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) -> io::Result<()> {
         let Ok(mut udp_conn_cache) = self.udp.lock() else {
             telio_log_error!("UDP cache poisoned");
             return Ok(());
@@ -1412,7 +1470,7 @@ impl StatefullFirewall {
             Some((&k.link, last_headers))
         });
 
-        self.send_v4_imcp_port_unreachable_packets(endpoint_ipv4, iter, sink)
+        self.send_icmp_port_unreachable_packets(iter, sink)
     }
 
     fn is_private_address_except_local_interface(&self, ip: &StdIpAddr) -> bool {
@@ -1588,16 +1646,11 @@ impl Firewall for StatefullFirewall {
         }
     }
 
-    fn reset_connections(
-        &self,
-        pubkey: &PublicKey,
-        endpoint_ipv4: StdIpv4Addr,
-        sink: &mut dyn io::Write,
-    ) -> io::Result<()> {
+    fn reset_connections(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) -> io::Result<()> {
         telio_log_debug!("Constructing connetion reset packets");
 
         self.reset_tcp_conns(pubkey, sink)?;
-        self.reset_udp_conns(pubkey, endpoint_ipv4, sink)?;
+        self.reset_udp_conns(pubkey, sink)?;
 
         Ok(())
     }
@@ -1626,7 +1679,7 @@ pub mod tests {
             destination_unreachable::{self, DestinationUnreachablePacket},
             IcmpType, MutableIcmpPacket,
         },
-        icmpv6::{Icmpv6Type, MutableIcmpv6Packet},
+        icmpv6::{Icmpv6Packet, Icmpv6Type, MutableIcmpv6Packet},
         ip::IpNextHeaderProtocol,
         ipv4::MutableIpv4Packet,
         ipv6::MutableIpv6Packet,
@@ -3625,10 +3678,13 @@ pub mod tests {
         let fw = StatefullFirewall::new_custom(
             LRU_CAPACITY,
             LRU_TIMEOUT,
-            false,
+            true,
             &FeatureFirewall::default(),
         );
-        fw.set_ip_addresses(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1)))]);
+        fw.set_ip_addresses(vec![
+            StdIpv4Addr::LOCALHOST.into(),
+            StdIpv6Addr::LOCALHOST.into(),
+        ]);
         let peer = make_peer();
         fw.add_to_port_whitelist(PublicKey(peer), FILE_SEND_PORT);
 
@@ -3676,6 +3732,28 @@ pub mod tests {
                 TcpFlags::PSH
             ),
         ));
+        // Outbound IPv6 opened connection
+        assert!(fw.process_outbound_packet(
+            &peer,
+            &make_tcp6("[::1]:12345", "[1234::2]:54321", TcpFlags::SYN),
+        ));
+        assert!(fw.process_inbound_packet(
+            &peer,
+            &make_tcp6(
+                "[1234::2]:54321",
+                "[::1]:12345",
+                TcpFlags::SYN | TcpFlags::ACK
+            ),
+        ));
+        // Inbound IPv6 connection
+        assert!(fw.process_inbound_packet(
+            &peer,
+            &make_tcp6(
+                "[4321::2]:54321",
+                &format!("[::1]:{FILE_SEND_PORT}"),
+                TcpFlags::SYN
+            ),
+        ));
 
         #[derive(Default)]
         struct Sink {
@@ -3694,18 +3772,17 @@ pub mod tests {
         }
 
         let mut sink = Sink::default();
-        fw.reset_connections(&PublicKey(peer), StdIpv4Addr::new(10, 5, 0, 2), &mut sink); // We do not test IPv6 yet
+        fw.reset_connections(&PublicKey(peer), &mut sink);
 
-        assert_eq!(sink.pkgs.len(), 3); // 3 packets in random order (without the half opened outbound one)
+        // Connections are stored in LinkedHashMap which keeps insertion order
+        assert_eq!(sink.pkgs.len(), 5);
 
         let mut ippkgs: Vec<_> = sink
             .pkgs
             .iter()
+            .take(3)
             .map(|buf| Ipv4Packet::new(&buf).unwrap())
             .collect();
-
-        // Make it sorted by dest IP
-        ippkgs.sort_unstable_by_key(|ippkg| ippkg.get_source());
 
         let tcppkgs: Vec<_> = ippkgs
             .iter()
@@ -3725,26 +3802,71 @@ pub mod tests {
         }
 
         // Check specifics
-        assert_eq!(ippkgs[0].get_source(), Ipv4Addr::new(100, 100, 100, 100));
+        assert_eq!(ippkgs[0].get_source(), Ipv4Addr::new(103, 103, 103, 103));
         assert_eq!(ippkgs[0].get_destination(), Ipv4Addr::new(127, 0, 0, 1));
 
-        assert_eq!(tcppkgs[0].get_source(), 12345);
-        assert_eq!(tcppkgs[0].get_destination(), FILE_SEND_PORT);
+        assert_eq!(tcppkgs[0].get_source(), 54321);
+        assert_eq!(tcppkgs[0].get_destination(), 12345);
         assert_eq!(tcppkgs[0].get_sequence(), 1);
 
-        assert_eq!(ippkgs[1].get_source(), Ipv4Addr::new(102, 102, 102, 102));
+        assert_eq!(ippkgs[1].get_source(), Ipv4Addr::new(100, 100, 100, 100));
         assert_eq!(ippkgs[1].get_destination(), Ipv4Addr::new(127, 0, 0, 1));
 
         assert_eq!(tcppkgs[1].get_source(), 12345);
         assert_eq!(tcppkgs[1].get_destination(), FILE_SEND_PORT);
-        assert_eq!(tcppkgs[1].get_sequence(), 12);
+        assert_eq!(tcppkgs[1].get_sequence(), 1);
 
-        assert_eq!(ippkgs[2].get_source(), Ipv4Addr::new(103, 103, 103, 103));
+        assert_eq!(ippkgs[2].get_source(), Ipv4Addr::new(102, 102, 102, 102));
         assert_eq!(ippkgs[2].get_destination(), Ipv4Addr::new(127, 0, 0, 1));
 
-        assert_eq!(tcppkgs[2].get_source(), 54321);
-        assert_eq!(tcppkgs[2].get_destination(), 12345);
-        assert_eq!(tcppkgs[2].get_sequence(), 1);
+        assert_eq!(tcppkgs[2].get_source(), 12345);
+        assert_eq!(tcppkgs[2].get_destination(), FILE_SEND_PORT);
+        assert_eq!(tcppkgs[2].get_sequence(), 12);
+
+        let mut ip6pkgs: Vec<_> = sink
+            .pkgs
+            .iter()
+            .skip(3)
+            .take(2)
+            .map(|buf| Ipv6Packet::new(&buf).unwrap())
+            .collect();
+
+        let tcp6pkgs: Vec<_> = ip6pkgs
+            .iter()
+            .map(|ip| TcpPacket::new(ip.payload()).unwrap())
+            .collect();
+
+        // Check common conditions
+        for ip in &ip6pkgs {
+            assert_eq!(ip.get_version(), 6);
+            assert_eq!(ip.get_next_level_protocol(), IpNextHeaderProtocols::Tcp);
+        }
+
+        for tcp in &tcp6pkgs {
+            assert_eq!(tcp.get_flags(), TcpFlags::RST);
+            assert_eq!(tcp.get_data_offset(), 5);
+        }
+
+        // Check specifics
+        assert_eq!(
+            ip6pkgs[0].get_source(),
+            "1234::2".parse::<Ipv6Addr>().unwrap()
+        );
+        assert_eq!(ip6pkgs[0].get_destination(), Ipv6Addr::LOCALHOST);
+
+        assert_eq!(tcp6pkgs[0].get_source(), 54321);
+        assert_eq!(tcp6pkgs[0].get_destination(), 12345);
+        assert_eq!(tcp6pkgs[0].get_sequence(), 1);
+
+        assert_eq!(
+            ip6pkgs[1].get_source(),
+            "4321::2".parse::<Ipv6Addr>().unwrap()
+        );
+        assert_eq!(ip6pkgs[1].get_destination(), Ipv6Addr::LOCALHOST);
+
+        assert_eq!(tcp6pkgs[1].get_source(), 54321);
+        assert_eq!(tcp6pkgs[1].get_destination(), FILE_SEND_PORT);
+        assert_eq!(tcp6pkgs[1].get_sequence(), 1);
     }
 
     #[test]
@@ -3752,15 +3874,17 @@ pub mod tests {
         let fw = StatefullFirewall::new_custom(
             LRU_CAPACITY,
             LRU_TIMEOUT,
-            false,
+            true,
             &FeatureFirewall::default(),
         );
         let peer = make_peer();
         fw.add_to_port_whitelist(PublicKey(peer), FILE_SEND_PORT);
 
-        let test_udppkg = make_udp("127.0.0.2:12345", "127.0.0.1:54321");
-        // Outbound connection
+        let test_udppkg = make_udp("127.0.0.2:12345", "127.0.0.3:54321");
+        let test_udp6pkg = make_udp6("[::2]:12345", "[::3]:54321");
+        // Outbound connections
         assert!(fw.process_outbound_packet(&peer, &test_udppkg,));
+        assert!(fw.process_outbound_packet(&peer, &test_udp6pkg,));
 
         #[derive(Default)]
         struct Sink {
@@ -3779,32 +3903,36 @@ pub mod tests {
         }
 
         let mut sink = Sink::default();
-        fw.reset_connections(&PublicKey(peer), StdIpv4Addr::new(10, 5, 0, 2), &mut sink); // We do not test IPv6 yet
+        fw.reset_connections(&PublicKey(peer), &mut sink);
 
-        assert_eq!(sink.pkgs.len(), 1);
+        // Connections are stored in LinkedHashMap which keeps insertion order
+        assert_eq!(sink.pkgs.len(), 2);
 
         let ip = Ipv4Packet::new(&sink.pkgs[0]).unwrap();
-
-        // Check common conditions
         assert_eq!(ip.get_version(), 4);
         assert_eq!(ip.get_header_length(), 5);
         assert_eq!(ip.get_next_level_protocol(), IpNextHeaderProtocols::Icmp);
+        assert_eq!(ip.get_source(), Ipv4Addr::new(127, 0, 0, 3));
+        assert_eq!(ip.get_destination(), Ipv4Addr::new(127, 0, 0, 2));
 
         let icmp = IcmpPacket::new(ip.payload()).unwrap();
-
         assert_eq!(icmp.get_icmp_type(), IcmpTypes::DestinationUnreachable);
         assert_eq!(
             icmp.get_icmp_code(),
             destination_unreachable::IcmpCodes::DestinationPortUnreachable
         );
-
         let icmp = DestinationUnreachablePacket::new(ip.payload()).unwrap();
-
-        // Check specifics
-        assert_eq!(ip.get_source(), Ipv4Addr::new(10, 5, 0, 2));
-        assert_eq!(ip.get_destination(), Ipv4Addr::new(127, 0, 0, 2));
-
         assert_eq!(icmp.payload(), &test_udppkg);
+
+        let ip6 = Ipv6Packet::new(&sink.pkgs[1]).unwrap();
+        assert_eq!(ip6.get_version(), 6);
+        assert_eq!(ip6.get_next_level_protocol(), IpNextHeaderProtocols::Icmpv6);
+        assert_eq!(ip6.get_source(), Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 3));
+        assert_eq!(ip6.get_destination(), Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 2));
+
+        let icmp6 = Icmpv6Packet::new(ip6.payload()).unwrap();
+        assert_eq!(icmp6.get_icmpv6_type(), Icmpv6Types::DestinationUnreachable);
+        assert_eq!(icmp6.get_icmpv6_code(), Icmpv6Code::new(4)); // DestinationPortUnreachable
     }
 
     #[test]

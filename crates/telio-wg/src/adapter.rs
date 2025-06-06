@@ -36,8 +36,7 @@ pub type FirewallOutboundCb =
     Option<Arc<dyn Fn(&[u8; 32], &[u8], &mut dyn io::Write) -> bool + Send + Sync>>;
 
 /// Function pointer for reseting all the connections
-pub type FirewallResetConnsCb =
-    Option<Arc<dyn Fn(&PublicKey, Ipv4Addr, &mut dyn io::Write) + Send + Sync>>;
+pub type FirewallResetConnsCb = Option<Arc<dyn Fn(&PublicKey, &mut dyn io::Write) + Send + Sync>>;
 
 /// Tunnel file descriptor
 #[cfg(not(target_os = "windows"))]
@@ -87,7 +86,7 @@ pub trait Adapter: Send + Sync {
     async fn drop_connected_sockets(&self) {}
 
     /// Reset all the connections by injecting packets into the tunnel
-    async fn inject_reset_packets(&self, _exit_pubkey: &PublicKey, _exit_ipv4_addr: Ipv4Addr) {}
+    async fn inject_reset_packets(&self, _exit_pubkey: &PublicKey) {}
 
     /// Set the (u)tun file descriptor to be used by the adapter
     async fn set_tun(&self, tun: i32) -> Result<(), Error>;

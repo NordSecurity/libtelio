@@ -103,7 +103,7 @@ impl Adapter for NepTUN {
         self.device.write().await.wait();
     }
 
-    async fn inject_reset_packets(&self, exit_pubkey: &PublicKey, exit_ipv4: Ipv4Addr) {
+    async fn inject_reset_packets(&self, exit_pubkey: &PublicKey) {
         let Some(cb) = self.reset_conns_cb.as_ref() else {
             return;
         };
@@ -114,7 +114,7 @@ impl Adapter for NepTUN {
         let dev = dev.device.read();
         let mut tun = dev.iface();
 
-        cb(exit_pubkey, exit_ipv4, &mut tun);
+        cb(exit_pubkey, &mut tun);
     }
 
     async fn set_tun(&self, tun: i32) -> Result<(), AdapterError> {

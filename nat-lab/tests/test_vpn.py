@@ -315,15 +315,17 @@ async def test_vpn_reconnect(
                 ),
             )
         ),
-        # TODO(msz): IPv6 public server, it doesn't work with the current VPN implementation
-        # pytest.param(
-        #     SetupParameters(
-        #         connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
-        #         adapter_type_override=TelioAdapterType.NEP_TUN,
-        #         ip_stack=IPStack.IPv6,
-        #         features=default_features(enable_firewall_connection_reset=True),
-        #     )
-        # ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv6,
+                features=default_features(
+                    enable_firewall_connection_reset=True,
+                    enable_firewall_exclusion_range="10.0.0.0/8",
+                ),
+            )
+        ),
     ],
 )
 async def test_kill_external_tcp_conn_on_vpn_reconnect(
@@ -415,8 +417,15 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
 
 
 @pytest.mark.asyncio
-async def test_firewall_blacklist_tcp() -> None:
-    serv_ip = config.PHOTO_ALBUM_IP
+@pytest.mark.parametrize(
+    "ipv4",
+    [
+        pytest.param(True),
+        pytest.param(False),
+    ],
+)
+async def test_firewall_blacklist_tcp(ipv4: bool) -> None:
+    serv_ip = config.PHOTO_ALBUM_IP if ipv4 else config.PHOTO_ALBUM_IPV6
     serv_port = 80
     wg_server: dict = config.WG_SERVER
 
@@ -424,12 +433,12 @@ async def test_firewall_blacklist_tcp() -> None:
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
             adapter_type_override=TelioAdapterType.NEP_TUN,
-            ip_stack=IPStack.IPv4,
+            ip_stack=IPStack.IPv4 if ipv4 else IPStack.IPv6,
         ),
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
             adapter_type_override=TelioAdapterType.NEP_TUN,
-            ip_stack=IPStack.IPv4,
+            ip_stack=IPStack.IPv4 if ipv4 else IPStack.IPv6,
         ),
     ]
 
@@ -465,7 +474,7 @@ async def test_firewall_blacklist_tcp() -> None:
                 )
             ],
         ).run() as conntrack:
-
+            serv_ip = serv_ip if ipv4 else "[" + serv_ip + "]"
             await alpha_connection.create_process(["curl", serv_ip]).execute()
             await conntrack.wait()
 
@@ -487,8 +496,15 @@ async def test_firewall_blacklist_tcp() -> None:
 
 
 @pytest.mark.asyncio
-async def test_firewall_blacklist_udp() -> None:
-    serv_ip = config.UDP_SERVER_IP4
+@pytest.mark.parametrize(
+    "ipv4",
+    [
+        pytest.param(True),
+        pytest.param(False),
+    ],
+)
+async def test_firewall_blacklist_udp(ipv4: bool) -> None:
+    serv_ip = config.UDP_SERVER_IP4 if ipv4 else config.UDP_SERVER_IP6
     serv_port = 2000
     wg_server: dict = config.WG_SERVER
 
@@ -496,12 +512,12 @@ async def test_firewall_blacklist_udp() -> None:
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
             adapter_type_override=TelioAdapterType.NEP_TUN,
-            ip_stack=IPStack.IPv4,
+            ip_stack=IPStack.IPv4 if ipv4 else IPStack.IPv6,
         ),
         SetupParameters(
             connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
             adapter_type_override=TelioAdapterType.NEP_TUN,
-            ip_stack=IPStack.IPv4,
+            ip_stack=IPStack.IPv4 if ipv4 else IPStack.IPv6,
         ),
     ]
 
@@ -532,9 +548,12 @@ async def test_firewall_blacklist_udp() -> None:
             NetCatClient(
                 alpha_connection,
                 serv_ip,
-                2000,
+                serv_port,
                 udp=True,
-                source_ip=testing.unpack_optional(alpha.get_ip_address(IPProto.IPv4)),
+                source_ip=testing.unpack_optional(
+                    alpha.get_ip_address(IPProto.IPv4 if ipv4 else IPProto.IPv6)
+                ),
+                ipv6=not ipv4,
             ).run()
         )
         await alpha_nc_client.connection_succeeded()
@@ -543,9 +562,12 @@ async def test_firewall_blacklist_udp() -> None:
             await NetCatClient(
                 beta_connection,
                 serv_ip,
-                2000,
+                serv_port,
                 udp=True,
-                source_ip=testing.unpack_optional(beta.get_ip_address(IPProto.IPv4)),
+                source_ip=testing.unpack_optional(
+                    beta.get_ip_address(IPProto.IPv4 if ipv4 else IPProto.IPv6)
+                ),
+                ipv6=not ipv4,
             ).execute()
 
 
@@ -577,15 +599,14 @@ async def test_firewall_blacklist_udp() -> None:
             ),
             marks=pytest.mark.mac,
         ),
-        # TODO(msz): IPv6 public server, it doesn't work with the current VPN implementation
-        # pytest.param(
-        #     SetupParameters(
-        #         connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
-        #         adapter_type_override=TelioAdapterType.NEP_TUN,
-        #         ip_stack=IPStack.IPv6,
-        #         features=default_features(enable_firewall_connection_reset=True),
-        #     )
-        # ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv6,
+                features=default_features(enable_firewall_connection_reset=True),
+            )
+        ),
     ],
 )
 async def test_kill_external_udp_conn_on_vpn_reconnect(
