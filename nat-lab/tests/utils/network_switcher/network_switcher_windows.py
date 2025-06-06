@@ -41,7 +41,7 @@ class Interface:
         log.debug("[%s]: %s", connection.tag, stdout)
 
         matches = re.finditer(
-            r"^(.+[a][b][l][e][d])[\s]+[\w]+[\s]+[\w]+[\s]+(.*$)",
+            r"(Disabled|Enabled)(?:[\s]+[\w]+[\s]+){2}(.*$)",
             stdout,
             re.MULTILINE,
         )
@@ -86,6 +86,7 @@ class Interface:
                     raise ValueError("Disabled interface with assigned address?")
                 interface.ipv4 = ipv4_address
             else:
+                # I had scenarios where the interface didn't show up on show interface command
                 interfaces.append(Interface(name, enabled=True, ipv4=ipv4_address))
                 log.debug("Added interface: %s, %s", name, ipv4_address)
 
