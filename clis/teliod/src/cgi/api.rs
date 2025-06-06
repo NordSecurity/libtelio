@@ -124,6 +124,28 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
             )
         }
     };
+
+    // Teliod runs as a daemon and doesn't report errors to the caller.
+    // Logs must be checked manually for errors.
+    // As a quick QoL improvement, we validate the config and auth tokens early
+    // to provide immediate feedback instead of waiting for `teliod` to show up in the process list.
+    match get_config() {
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to read config file: {:?}", e),
+            );
+        }
+        Ok(cfg) => {
+            if cfg.authentication_token.is_empty() {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Authentication token not set".to_string(),
+                );
+            }
+        }
+    }
+
     match Command::new("setsid")
         .arg(TELIOD_BIN)
         .arg("start")

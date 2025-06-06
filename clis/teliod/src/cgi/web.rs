@@ -1,6 +1,7 @@
 //! Code for serving static web ui
 
 use std::{collections::HashMap, fs, str::FromStr};
+use telio::telio_utils::hidden::Hidden;
 
 use lazy_static::lazy_static;
 use maud::{html, Markup, Render};
@@ -9,9 +10,9 @@ use rust_cgi::{
     Response,
 };
 use telio::telio_model::mesh::{Node, NodeState};
-use telio::telio_utils::hidden::Hidden;
-use tracing::{info, level_filters::LevelFilter, warn, Level};
+use tracing::{error, info, level_filters::LevelFilter, Level};
 
+use crate::TeliodDaemonConfig;
 use crate::{
     cgi::constants::TELIOD_CFG,
     config::{InterfaceConfig, TeliodDaemonConfigPartial},
@@ -22,6 +23,7 @@ use super::{
     app::AppState,
     CgiRequest,
 };
+use anyhow::{anyhow, Result};
 
 macro_rules! asset {
     ($path:literal) => {
@@ -35,10 +37,6 @@ lazy_static! {
             ("/static/telio.js", ("text/javascript", asset!("telio.js"))),
             ("/static/style.css", ("text/css", asset!("style.css"))),
             ("/static/output.css", ("text/css", asset!("output.css"))),
-            (
-                "/static/tailwind.config.js",
-                ("text/javascript", asset!("tailwind.config.js")),
-            ),
             (
                 "/static/fonts/inter-v18-latin-100.woff2",
                 ("font/ttf", asset!("fonts/inter-v18-latin-100.woff2")),
@@ -86,15 +84,22 @@ pub fn handle_web_ui(request: &CgiRequest) -> Option<Response> {
             let mut err_msg: Option<String> = None;
 
             if !app.running {
-                // TODO: it makes more sense to update the config when starting
-                // meshnet. For the future improvement it makes sense to have separate
-                // idempotent POST and DELETE endpoints instead
-                update_config(&mut app, request);
+                // TODO: For the future improvement it makes sense to have separate
+                // endpoints - one for modifying config and another one for daemon control
+                let updated_config = update_config(&mut app, request);
 
-                let res = start_daemon();
-                info!("start: {} -> {}", res.0, res.1);
-                if !res.0.is_success() {
-                    err_msg = Some(res.1);
+                match updated_config {
+                    Err(e) => {
+                        error!("update config: {:?}", e);
+                        err_msg = Some(e.to_string())
+                    }
+                    Ok(_) => {
+                        let res = start_daemon();
+                        info!("start: {} -> {}", res.0, res.1);
+                        if !res.0.is_success() {
+                            err_msg = Some(res.1);
+                        }
+                    }
                 }
             } else {
                 let res = stop_daemon();
@@ -125,7 +130,6 @@ fn index(base_ref: String) -> Markup {
                 title { "Nord Security Meshnet" }
                 base href=(base_ref);
 
-                script src="static/tailwind.config.js" {}
                 link rel="stylesheet" href="static/output.css" {}
                 link rel="stylesheet" href="static/style.css" {}
                 script src="static/htmx.js" {}
@@ -153,28 +157,29 @@ const TUNNEL_NAME: &str = "interface-name";
 const LOG_LEVEL: &str = "log-level";
 
 /// Try to update persisted config
-fn update_config(app: &mut AppState, request: &CgiRequest) {
+fn update_config(app: &mut AppState, request: &CgiRequest) -> Result<TeliodDaemonConfig> {
     // TODO: should probably be Result, creating error report for a user in web
     let Some(ctype) = request
         .headers()
         .get("x-cgi-content-type")
         .and_then(|v| v.to_str().ok())
     else {
-        warn!("x-cgi-content-type header not found");
-        return;
+        return Err(anyhow!("x-cgi-content-type header not found"));
     };
 
     if ctype != "application/x-www-form-urlencoded" {
-        warn!("Expected to receive form data, got: {}", ctype);
-        return;
+        return Err(anyhow!("Expected to receive form data, got: {}", ctype));
     }
 
     let values: HashMap<_, _> = form_urlencoded::parse(request.body()).collect();
 
     let partial = TeliodDaemonConfigPartial {
-        authentication_token: values
-            .get(ACCESS_TOKEN)
-            .map(|n| Hidden(ToString::to_string(n))),
+        // Empty token submitted means we don't update it.
+        // this means we do not provide a way to clear it on this endpoint
+        authentication_token: match values.get(ACCESS_TOKEN) {
+            Some(token) if !token.to_string().trim().is_empty() => Some(Hidden(token.to_string())),
+            _ => None,
+        },
         log_level: values
             .get(LOG_LEVEL)
             .and_then(|v| LevelFilter::from_str(v).ok()),
@@ -185,7 +190,7 @@ fn update_config(app: &mut AppState, request: &CgiRequest) {
         ..Default::default()
     };
 
-    warn!("Got new values: {partial:#?}");
+    info!("Got new values: {partial:#?}");
 
     // Build a new temprorary config
     let mut new_config = app.config.clone();
@@ -194,19 +199,22 @@ fn update_config(app: &mut AppState, request: &CgiRequest) {
     let config = match serde_json::to_string_pretty(&new_config) {
         Ok(c) => c,
         Err(err) => {
-            warn!("Failed to serialize config, err: {err}");
-            return;
+            return Err(anyhow!("Failed to serialize config, err: {err}"));
         }
     };
 
     match fs::write(TELIOD_CFG, config) {
         Ok(_) => {
-            app.config = new_config;
+            app.config = new_config.clone();
         }
         Err(err) => {
-            warn!("Failed to persist a new config into {TELIOD_CFG}, err: {err}");
+            return Err(anyhow!(
+                "Failed to persist a new config into {TELIOD_CFG}, err: {err}"
+            ));
         }
     }
+
+    Ok(new_config)
 }
 
 fn config_view(app: &AppState, error: Option<String>) -> Markup {
@@ -261,9 +269,9 @@ fn config_view(app: &AppState, error: Option<String>) -> Markup {
                     div class="space-y-2" {
                         label class="block text-primary body-xs-medium" { "Access Token" }
                         (if is_running {
-                            html!{input disabled name=(ACCESS_TOKEN) type="password" class="text-disabled w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(*app.config.authentication_token) "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
+                            html!{input disabled name=(ACCESS_TOKEN) type="password" class="text-disabled w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
                         } else {
-                            html!{input name=(ACCESS_TOKEN) type="password" class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" value=(*app.config.authentication_token) "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
+                            html!{input name=(ACCESS_TOKEN) type="password" class="w-full px-4 py-3 bg-transparent text-primary border border-input rounded-sm focus-visible:outline-none focus-visible:shadow-focus" "hx-on:htmx:validation:validate"="telio.validateToken(this)";}
                         })
                     }
                     div class="flex flex-col gap-2" {
