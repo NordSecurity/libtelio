@@ -169,7 +169,7 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
 
             (
                 StatusCode::REQUEST_TIMEOUT,
-                "Failed to start the application, check logs.".to_string(),
+                "Failed to start the application. Please check the logs or visit https://support.nordvpn.com".to_string(),
             )
         }
         Err(error) => (

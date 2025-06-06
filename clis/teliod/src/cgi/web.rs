@@ -36,6 +36,10 @@ lazy_static! {
         [
             ("/static/telio.js", ("text/javascript", asset!("telio.js"))),
             ("/static/style.css", ("text/css", asset!("style.css"))),
+            (
+                "/static/meshnet_icon.svg",
+                ("image/svg+xml", asset!("meshnet_icon.svg")),
+            ),
             ("/static/output.css", ("text/css", asset!("output.css"))),
             (
                 "/static/fonts/inter-v18-latin-100.woff2",
@@ -134,6 +138,7 @@ fn index(base_ref: String) -> Markup {
                 link rel="stylesheet" href="static/style.css" {}
                 script src="static/htmx.js" {}
                 script src="static/telio.js" {}
+                link rel="icon" type="image/svg+xml" href="static/meshnet_icon.svg" {}
             }
             body class="bg-neutral-100 dark:bg-neutral-1000  py-10 flex items-top justify-start justify-center min-h-screen gap-3" {
                 (view(&AppState::collect(), None))
@@ -383,7 +388,7 @@ fn meshnet(app: &AppState) -> Markup {
     html! {
         div class="bg-neutral-0 dark:bg-[#1C1F2B] border border-secondary max-w-[768px] mx-auto w-full p-6 rounded-md flex flex-col gap-6"
             hx-get="meshnet"
-            hx-trigger="every 2s"
+            hx-trigger="every 10s"
             hx-swap="outerHTML"
             {
             div class="flex justify-between items-center" {
