@@ -189,7 +189,7 @@ async fn daemon_init(
     // This is to not look for tokens in a test environment right now as the values
     // are dummy and program will not run as it expects real tokens.
     let identity = Arc::new(if *config.authentication_token != EMPTY_TOKEN {
-        init_with_api(&config.authentication_token).await?
+        Box::pin(init_with_api(&config.authentication_token)).await?
     } else {
         DeviceIdentity::default()
     });
