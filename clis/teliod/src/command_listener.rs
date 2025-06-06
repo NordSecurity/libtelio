@@ -2,7 +2,7 @@ use crate::{daemon::TelioTaskCmd, ClientCmd, DaemonSocket, TelioStatusReport, Te
 use serde::{Deserialize, Serialize};
 use telio::telio_task::io::chan;
 use tokio::sync::oneshot;
-use tracing::{error, info};
+use tracing::{error, trace};
 
 /// Command response type used to communicate between `telio runner -> daemon -> client`
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -60,7 +60,7 @@ impl CommandListener {
     ) -> Result<CommandResponse, TeliodError> {
         match command {
             ClientCmd::GetStatus => {
-                info!("Reporting telio status");
+                trace!("Reporting telio status");
                 let (response_tx, response_rx) = oneshot::channel();
                 #[allow(mpsc_blocking_send)]
                 self.telio_task_tx
