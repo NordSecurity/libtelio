@@ -4688,6 +4688,7 @@ dependencies = [
  "hashlink",
  "if-addrs",
  "ipnet",
+ "libc",
  "mockall",
  "pnet_packet 0.35.0",
  "proptest",
