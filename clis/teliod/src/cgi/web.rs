@@ -253,7 +253,7 @@ fn config_view(app: &AppState, error: Option<String>) -> Markup {
                     }
                     span class="text-primary body-md-medium" { "Nord Security Meshnet" }
                 }
-                a href="https://meshnet.nordvpn.com" class="text-accent body-xs-medium hover:text-blue-400 active:text-blue-700 dark:hover:text-blue-400 dark:active:text-blue-700" {
+                a href="https://meshnet.nordvpn.com" target="_blank" class="text-accent body-xs-medium hover:text-blue-400 active:text-blue-700 dark:hover:text-blue-400 dark:active:text-blue-700" {
                     "Docs"
                     span class="ml-2 inline-block" { "›" }
                 }
@@ -393,7 +393,7 @@ fn meshnet(app: &AppState) -> Markup {
             {
             div class="flex justify-between items-center" {
                 span class="text-primary body-md-medium" { ({meshnet_status_text}) }
-                a href="get-logs" class="body-xs-medium text-accent hover:text-blue-400 active:text-blue-700 dark:hover:text-blue-400 dark:active:text-blue-700" {"Logs"}
+                a href="get-logs" target="_blank" class="body-xs-medium text-accent hover:text-blue-400 active:text-blue-700 dark:hover:text-blue-400 dark:active:text-blue-700" {"Logs"}
             }
 
             div class="flex flex-col gap-4" {
