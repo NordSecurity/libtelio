@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from config import DERP_PRIMARY, LAN_ADDR_MAP
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_mesh_nodes
+from helpers import SetupParameters, setup_environment
 from interderp_cli import InterDerpClient
 from itertools import combinations
 from typing import Dict, List, Tuple
@@ -284,19 +284,24 @@ async def _copy_vm_binaries(tag: ConnectionTag):
 
 async def _setup_windows_adapters():
     async with AsyncExitStack() as exit_stack:
-        _ = await setup_mesh_nodes(
-            exit_stack,
-            [
-                SetupParameters(
-                    connection_tag=ConnectionTag.VM_WINDOWS_1,
-                    adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                ),
-                SetupParameters(
-                    connection_tag=ConnectionTag.VM_WINDOWS_2,
-                    adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                ),
-            ],
-        )
+        try:
+            _ = await exit_stack.enter_async_context(
+                setup_environment(
+                    exit_stack,
+                    [
+                        SetupParameters(
+                            connection_tag=ConnectionTag.VM_WINDOWS_1,
+                            adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                        ),
+                        SetupParameters(
+                            connection_tag=ConnectionTag.VM_WINDOWS_2,
+                            adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                        ),
+                    ],
+                )
+            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            print(f"Failed to setup windows adapters: {e}")
 
 
 async def _copy_vm_binaries_if_needed(items):
