@@ -438,7 +438,7 @@ impl Telio {
         #[cfg(not(target_os = "windows"))]
         let tun = {
             use std::os::fd::{FromRawFd, OwnedFd};
-            Some(Arc::new(unsafe { OwnedFd::from_raw_fd(_tun) }))
+            Some(Arc::new(unsafe { OwnedFd::from_raw_fd(_tun).into() }))
         };
         #[cfg(target_os = "windows")]
         let tun = None;

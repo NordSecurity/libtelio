@@ -311,7 +311,7 @@ impl DynamicWg {
 
     #[cfg(not(any(test, feature = "test-adapter")))]
     async fn start_adapter(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
-        adapter::start(&cfg).await
+        adapter::start(cfg).await
     }
 
     #[cfg(any(test, feature = "test-adapter"))]
@@ -505,7 +505,7 @@ impl Config {
     fn try_clone(&self) -> Result<Self, io::Error> {
         #[cfg(unix)]
         let tun = match &self.tun {
-            Some(fd) => Some(Arc::new(fd.try_clone()?)),
+            Some(fd) => Some(Arc::new(nix::unistd::dup(fd)?.into())), //Some(Arc::new(fd.try_clone()?)),
             None => None,
         };
         #[cfg(windows)]

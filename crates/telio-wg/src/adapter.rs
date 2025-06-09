@@ -21,11 +21,13 @@ use serde::{Deserialize, Serialize};
 use std::{
     fmt, io,
     net::{IpAddr, Ipv4Addr},
+    os::fd::{AsRawFd, IntoRawFd},
     str::FromStr,
     sync::Arc,
 };
 use telio_crypto::PublicKey;
 use telio_sockets::{Protect, SocketPool};
+use telio_utils::telio_log_info;
 use thiserror::Error as TError;
 
 use crate::uapi::{self, Cmd, Response};
@@ -213,7 +215,7 @@ impl FromStr for AdapterType {
 }
 
 #[cfg(not(any(test, feature = "test-adapter")))]
-pub(crate) async fn start(cfg: &Config) -> Result<Box<dyn Adapter>, Error> {
+pub(crate) async fn start(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
     #![allow(unused_variables)]
 
     let name = cfg.name.clone().unwrap_or_else(|| DEFAULT_NAME.to_owned());
@@ -226,10 +228,16 @@ pub(crate) async fn start(cfg: &Config) -> Result<Box<dyn Adapter>, Error> {
             #[cfg(unix)]
             use std::os::fd::AsRawFd;
 
+            telio_log_info!(
+                "strong count: {:?}",
+                cfg.tun.as_ref().map(|t| Arc::strong_count(t))
+            );
+
             #[cfg(unix)]
             Ok(Box::new(neptun::NepTUN::start(
                 &name,
-                cfg.tun.as_ref().map(|tun| tun.as_raw_fd()),
+                cfg.tun
+                    .map(|tun| Arc::into_inner(tun).unwrap().into_raw_fd()),
                 cfg.socket_pool.clone(),
                 cfg.firewall_process_inbound_callback.clone(),
                 cfg.firewall_process_outbound_callback.clone(),
