@@ -554,6 +554,15 @@ async def test_pq_vpn_handshake_after_nonet(
 
             await client_alpha.wait_for_log("Restarting postquantum entity")
 
+        await client_alpha.wait_for_state_peer(
+            config.NLX_SERVER["public_key"],
+            [NodeState.CONNECTED],
+            list(PathType),
+            is_exit=True,
+            is_vpn=True,
+            timeout=10,
+        )
+
         await ping(client_conn, config.PHOTO_ALBUM_IP, timeout=10)
 
 
