@@ -443,3 +443,183 @@ fn meshnet(app: &AppState) -> Markup {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rust_cgi::http::Method;
+    use rust_cgi::Request;
+    use serial_test::serial;
+
+    fn make_cgi_request(method: Method, route: &str) -> CgiRequest {
+        let mut req = Request::default();
+        *req.method_mut() = method;
+
+        CgiRequest::new(req, route.to_string())
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_config_view_toggle_class() {
+        let mut app = AppState::collect();
+        app.running = false;
+        let html_off = config_view(&app, None).into_string();
+        assert!(!html_off.contains("peer-checked"));
+        app.running = true;
+        let html_on = config_view(&app, None).into_string();
+        assert!(html_on.contains("peer-checked"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_meshnet_render_all_node_states() {
+        use crate::cgi::web::{Node, NodeState};
+        use crate::TelioStatusReport;
+        use std::net::IpAddr;
+        let mut app = AppState::collect();
+        app.status = Some(TelioStatusReport {
+            telio_is_running: true,
+            meshnet_ip: Some("10.0.0.1".parse().unwrap()),
+            external_nodes: vec![
+                Node {
+                    nickname: Some("A".to_string()),
+                    hostname: Some("hostA".to_string()),
+                    ip_addresses: vec!["10.0.0.2".parse::<IpAddr>().unwrap()],
+                    state: NodeState::Disconnected,
+                    ..Default::default()
+                },
+                Node {
+                    nickname: Some("B".to_string()),
+                    hostname: Some("hostB".to_string()),
+                    ip_addresses: vec!["10.0.0.3".parse::<IpAddr>().unwrap()],
+                    state: NodeState::Connecting,
+                    ..Default::default()
+                },
+                Node {
+                    nickname: Some("C".to_string()),
+                    hostname: Some("hostC".to_string()),
+                    ip_addresses: vec!["10.0.0.4".parse::<IpAddr>().unwrap()],
+                    state: NodeState::Connected,
+                    ..Default::default()
+                },
+            ],
+        });
+        let html = meshnet(&app).into_string();
+        // Check for meshnet status with correct IP
+        assert!(
+            html.contains("Meshnet Status (10.0.0.1)"),
+            "Should show meshnet IP"
+        );
+        // Check for all node names and IPs
+        assert!(html.contains("A (hostA)"), "Should show node A name");
+        assert!(html.contains("10.0.0.2"), "Should show node A IP");
+        assert!(html.contains("B (hostB)"), "Should show node B name");
+        assert!(html.contains("10.0.0.3"), "Should show node B IP");
+        assert!(html.contains("C (hostC)"), "Should show node C name");
+        assert!(html.contains("10.0.0.4"), "Should show node C IP");
+        // Check for all node states
+        assert!(
+            html.contains(">Disconnected<"),
+            "Should show Disconnected status"
+        );
+        assert!(
+            html.contains(">Connecting...<"),
+            "Should show Connecting status"
+        );
+        assert!(html.contains(">Connected<"), "Should show Connected status");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_meshnet_empty_status() {
+        let mut app = AppState::collect();
+        app.status = None;
+        let markup = meshnet(&app);
+        let html = markup.into_string();
+        assert!(html.is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_config_view_error_message() {
+        let app = AppState::collect();
+        let markup = config_view(&app, Some("Test error".to_string()));
+        let html = markup.into_string();
+        assert!(html.contains("Test error"));
+    }
+
+    #[tokio::test]
+    async fn test_asset_serving() {
+        // Test that all static assets are served with correct content and MIME type
+        for (route, (mime, data)) in ASSETS.iter() {
+            let cgi_req = make_cgi_request(Method::GET, route);
+            let resp = handle_web_ui(&cgi_req).expect("Asset should be served");
+            assert_eq!(resp.status(), 200, "Status mismatch for asset: {route}");
+            assert_eq!(resp.body(), *data, "Body mismatch for asset: {route}");
+            assert_eq!(
+                resp.headers().get(CONTENT_TYPE).unwrap(),
+                mime,
+                "MIME mismatch for asset: {route}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_index_render() {
+        // Test that the index page renders the expected HTML and UI elements
+        let cgi_req = make_cgi_request(Method::GET, "/");
+        let resp = handle_web_ui(&cgi_req).expect("Index should be served");
+        let body = String::from_utf8(resp.body().to_vec()).unwrap();
+        // Check for the main title
+        assert!(
+            body.contains("Nord Security Meshnet"),
+            "Missing title in index"
+        );
+        // Check for the configuration section
+        assert!(
+            body.contains("Configuration"),
+            "Missing Configuration section"
+        );
+        // Check for the toggle switch (On/Off)
+        assert!(body.contains("toggleLabel"), "Missing toggle label");
+        // Check for the form
+        assert!(body.contains("form id=\"config\""), "Missing config form");
+        // Check for the log level select
+        assert!(body.contains("Log Level"), "Missing log level select");
+        // Check for the docs link
+        assert!(
+            body.contains("https://meshnet.nordvpn.com"),
+            "Missing docs link"
+        );
+        assert_eq!(resp.status(), 200, "Status mismatch for index");
+    }
+
+    #[tokio::test]
+    async fn test_invalid_path_returns_none() {
+        // Test that an invalid path returns None (no HTML response) for both GET and POST.
+        let invalid_paths = [
+            "/invalid",
+            "/notfound",
+            "/static/doesnotexist.js",
+            "/foo/bar",
+        ];
+        for path in invalid_paths.iter() {
+            // GET
+            let cgi_req = make_cgi_request(Method::GET, path);
+            let resp = handle_web_ui(&cgi_req);
+            assert!(
+                resp.is_none(),
+                "Expected None for invalid GET path: {}",
+                path
+            );
+            // POST
+            let cgi_req = make_cgi_request(Method::POST, path);
+            let resp = handle_web_ui(&cgi_req);
+            assert!(
+                resp.is_none(),
+                "Expected None for invalid POST path: {}",
+                path
+            );
+        }
+    }
+}
