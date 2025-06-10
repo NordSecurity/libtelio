@@ -1,5 +1,24 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v6.0.0-rc0
+### **Pink Soup**
+---
+* LLT-6095: skt_buffer_size parameter added in FeaturesWirguard to configure NepTUN socket buffer size
+* LLT-6249: Bump UniFFI generator to v0.28.3
+* LLT-6057: Change the way time is measured to include the time spent sleeping
+* LLT-6122: Add blacklist feature to libtelio firewall and reject blacklisted connections
+* Never report a link state UP before the first packet is received
+* LLT-6115: Update moose from v16.0.1 to v16.0.2
+* LLT-6168-serialize-features: Added a new function do serialize Feature to a json string
+* LLT-5790: Decrease wireguard-nt log spaming
+* LLT-6195-optional-thread-id-in-logs: Thread IDs are (by default) disabled in the logs
+* LLT-3424: Expose api to change TUN interface at runtime
+* LLT-6365: Update moose from v16.0.2 to v17.0.0
+* LLT-6229: Zeroize memory used to store sensitive data
+* NMACOS-8047: Improve socket rebinding on Apple platforms to fix no-net in some cases
+
+<br>
+
 ### v5.3.0-rc2
 ### **Tomato**
 ---
