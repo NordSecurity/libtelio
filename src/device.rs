@@ -201,7 +201,7 @@ pub struct DeviceConfig {
     pub adapter: AdapterType,
     pub fwmark: Option<u32>,
     pub name: Option<String>,
-    pub tun: Option<Tun>,
+    pub tun: Option<Arc<Tun>>,
 }
 
 pub struct Device {
@@ -413,7 +413,7 @@ pub struct DNS<D: DnsResolver = LocalDnsResolver> {
 
     // A file descriptor for virtual host hosting the DNS server within libtelio used for
     // configuring routing on some platforms
-    virtual_host_tun_fd: Option<Tun>,
+    virtual_host_tun_fd: Option<Arc<Tun>>,
 }
 
 struct Runtime {
@@ -1084,7 +1084,7 @@ impl Runtime {
                     wg::Config {
                         adapter: config.adapter,
                         name: config.name.clone(),
-                        tun: config.tun,
+                        tun: config.tun.clone(),
                         socket_pool: socket_pool.clone(),
                         firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
                         firewall_process_outbound_callback: Some(Arc::new(
@@ -1110,7 +1110,7 @@ impl Runtime {
                         wg::Config {
                             adapter: config.adapter,
                             name: config.name.clone(),
-                            tun: config.tun,
+                            tun: config.tun.clone(),
                             socket_pool: socket_pool.clone(),
                             firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
                             firewall_process_outbound_callback: Some(Arc::new(
@@ -1197,7 +1197,7 @@ impl Runtime {
         let dns = Arc::new(Mutex::new(DNS {
             resolver: None,
             #[cfg(unix)]
-            virtual_host_tun_fd: config.tun,
+            virtual_host_tun_fd: config.tun.clone(),
             #[cfg(windows)]
             virtual_host_tun_fd: None,
         }));
@@ -1714,12 +1714,7 @@ impl Runtime {
                 let dns = LocalDnsResolver::new(
                     &public_key,
                     upstream_dns_servers,
-                    #[cfg(not(target_os = "windows"))]
-                    dns_entity
-                        .virtual_host_tun_fd
-                        .map(|tun| unsafe { std::os::fd::BorrowedFd::borrow_raw(tun) }),
-                    #[cfg(target_os = "windows")]
-                    dns_entity.virtual_host_tun_fd,
+                    dns_entity.virtual_host_tun_fd.as_ref(),
                     self.features.dns.exit_dns.clone(),
                 )
                 .await
@@ -2568,9 +2563,10 @@ impl TaskRuntime for Runtime {
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
+    use std::os::fd::AsRawFd;
     let mut tunnel_if_index = None;
-    if let Some(tun) = config.tun {
-        match native::interface_index_from_tun(tun) {
+    if let Some(tun) = config.tun.as_ref() {
+        match native::interface_index_from_tun(tun.as_raw_fd()) {
             Ok(index) => tunnel_if_index = Some(index),
             Err(e) => {
                 telio_log_warn!(

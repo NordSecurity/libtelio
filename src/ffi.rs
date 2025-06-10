@@ -441,7 +441,10 @@ impl Telio {
         );
 
         #[cfg(not(target_os = "windows"))]
-        let tun = Some(_tun);
+        let tun = {
+            use std::os::fd::{FromRawFd, OwnedFd};
+            Some(Arc::new(unsafe { OwnedFd::from_raw_fd(_tun) }))
+        };
         #[cfg(target_os = "windows")]
         let tun = None;
         catch_ffi_panic(|| {
@@ -451,7 +454,7 @@ impl Telio {
                     adapter: adapter.into(),
                     fwmark: None,
                     name: None,
-                    tun,
+                    tun: tun.clone(),
                 })
                 .log_result("Telio::start_with_tun")
             })
