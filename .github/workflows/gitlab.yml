@@ -24,4 +24,4 @@ jobs:
     with:
       schedule: ${{ github.event_name == 'schedule' }}
       cancel-outdated-pipelines: ${{ github.ref_name != 'main' }}
-      triggered-ref: v0.0.0  # REMEMBER to also update in .gitlab-ci.yml
+      triggered-ref: LLT-6294-fix-check-update-failure-job  # REMEMBER to also update in .gitlab-ci.yml
