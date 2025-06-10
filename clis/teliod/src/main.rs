@@ -120,6 +120,8 @@ enum TeliodError {
     LogAppenderError(#[from] InitError),
     #[error(transparent)]
     DaemonizeError(#[from] daemonize::Error),
+    #[error("Invalid log path {0}")]
+    InvalidLogPath(String),
 }
 
 /// Libtelio and meshnet status report

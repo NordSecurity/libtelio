@@ -45,6 +45,7 @@ rust-cgi = { version = "0.7.2", optional = true }
 rand = "0.9.1"
 serial_test = "3.2.0"
 temp-dir = "0.1.16"
+temp-file = "0.1.9"
 
 [features]
 cgi = ["const_format", "rust-cgi", "lazy_static", "maud", "form_urlencoded"]
