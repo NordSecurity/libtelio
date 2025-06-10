@@ -29,6 +29,7 @@ use tokio::{
     self,
     sync::{broadcast::Sender, Notify},
     task::JoinHandle,
+    time::Duration,
 };
 
 use crate::native::{interface_index_from_name, NativeSocket};
@@ -284,6 +285,13 @@ impl Sockets {
         if let Some(&interface) = self.default_interface.as_ref() {
             for socket in &self.sockets {
                 Sockets::bind(interface as u32, socket);
+
+                // NMACOS-8047 Writing an empty packet to the socket unblocks the sockets when
+                // `includeAllNetworks` flag is enabled.
+                #[cfg(target_os = "macos")]
+                unsafe {
+                    _ = libc::write(*socket, std::ptr::null(), 0);
+                }
             }
         }
     }
@@ -345,16 +353,34 @@ fn spawn_monitors(
         let sockets = sockets.clone();
         let mut notify = PROTECTOR_PATH_CHANGE_BROADCAST.subscribe();
         async move {
+            // NMACOS-8047 When `includeAllNetworks` is set on the Apple platform, it happens that the user
+            // experiences no-net after rebinding the sockets. We have not foud a better way of dealing with
+            // that problem as to do delayed rebinding.
+            let mut apple_bug_aks_workaround_rebind = false;
+            let apple_bug_aks_workaround_delay = Duration::from_secs(5);
             loop {
-                match notify.recv().await {
-                    Ok(()) => {
-                        let mut sockets = sockets.lock();
-                        sockets.rebind_all();
+                tokio::select! {
+                    recv = notify.recv() => {
+                        match recv {
+                            Ok(()) => {
+                                let mut sockets = sockets.lock();
+                                sockets.rebind_all();
+                                apple_bug_aks_workaround_rebind = true;
+                            }
+                            Err(e) => {
+                                telio_log_warn!(
+                                    "Failed to receive new path for sockets ({sockets:?}): {e}"
+                                );
+                            }
+                        }
                     }
-                    Err(e) => {
-                        telio_log_warn!(
-                            "Failed to receive new path for sockets ({sockets:?}): {e}"
-                        );
+                    _ = tokio::time::sleep(apple_bug_aks_workaround_delay), if apple_bug_aks_workaround_rebind => {
+                        #[cfg(target_os = "macos")]
+                        {
+                            telio_log_info!("Apple AKS Bug workaround timer expired. Rebinding sockets on");
+                            sockets.lock().rebind_all();
+                            apple_bug_aks_workaround_rebind = false
+                        }
                     }
                 }
             }
@@ -439,6 +465,7 @@ fn get_primary_interface(tunnel_interface: u64) -> Option<u64> {
     None
 }
 
+#[allow(dead_code)]
 struct Context {
     sockets: Weak<Mutex<Sockets>>,
 }
@@ -447,15 +474,17 @@ struct Context {
 fn dynamic_store_callback(
     _store: SCDynamicStore,
     _changed_keys: CFArray<CFString>,
-    context: &mut Context,
+    _context: &mut Context,
 ) {
-    if let Some(sockets) = context.sockets.upgrade() {
-        // NMACOS-8047 The callback is executed when specified keys in the DynamicStore change.
-        // In such case we should force rebind the sockets to avoid no-net when `includeAllNetworks` is set.
-        telio_log_info!("Force rebinding the sockets because of DynamicStore key change");
-        telio_log_debug!("DynamicStore key changed: {:?}", _changed_keys);
+    // NMACOS-8047 The callback is executed when specified keys in the DynamicStore change.
+    // In such case we should force rebind the sockets to avoid no-net when `includeAllNetworks` is set.
+    telio_log_info!("Force rebinding the sockets because of DynamicStore key change");
+    telio_log_debug!("DynamicStore key changed: {:?}", _changed_keys);
 
-        sockets.lock().rebind_all();
+    if let Err(_e) = PROTECTOR_PATH_CHANGE_BROADCAST.send(()) {
+        telio_log_warn!("Failed to notify about Dynamic Store change");
+    } else {
+        telio_log_info!("Notify about DynamicStore key change");
     }
 }
 
