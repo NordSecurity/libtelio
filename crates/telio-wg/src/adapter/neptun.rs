@@ -4,7 +4,7 @@ use neptun::device::{tun::TunSocket, DeviceConfig, DeviceHandle};
 use slog::{o, Drain};
 use slog_stdlog::StdLog;
 use std::net::{IpAddr, Ipv4Addr};
-use std::os::fd::RawFd;
+use std::os::fd::{IntoRawFd, RawFd};
 use std::sync::Arc;
 use std::{io, ops::Deref};
 use telio_crypto::PublicKey;
@@ -120,8 +120,8 @@ impl Adapter for NepTUN {
         cb(exit_pubkey, exit_ipv4, &mut tun);
     }
 
-    async fn set_tun(&self, tun: i32) -> Result<(), AdapterError> {
-        let new_tun = TunSocket::new_from_fd(tun)?;
+    async fn set_tun(&self, tun: super::Tun) -> Result<(), AdapterError> {
+        let new_tun = TunSocket::new_from_fd(tun.into_raw_fd())?;
         self.device.write().await.set_iface(new_tun)?;
         Ok(())
     }

@@ -195,13 +195,13 @@ pub type Result<T = ()> = std::result::Result<T, Error>;
 pub trait EventCb: Fn(Box<Event>) + Send + 'static {}
 impl<T> EventCb for T where T: Fn(Box<Event>) + Send + 'static {}
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct DeviceConfig {
     pub private_key: SecretKey,
     pub adapter: AdapterType,
     pub fwmark: Option<u32>,
     pub name: Option<String>,
-    pub tun: Option<Arc<Tun>>,
+    pub tun: Option<Tun>,
 }
 
 pub struct Device {
@@ -213,9 +213,24 @@ pub struct Device {
 }
 
 #[derive(Default)]
+pub struct RequestedDeviceConfig {
+    pub private_key: SecretKey,
+    pub fwmark: Option<u32>,
+}
+
+impl RequestedDeviceConfig {
+    pub fn from(device_config: &DeviceConfig) -> Self {
+        Self {
+            private_key: device_config.private_key.clone(),
+            fwmark: device_config.fwmark,
+        }
+    }
+}
+
+#[derive(Default)]
 pub struct RequestedState {
     // WireGuard interface configuration
-    pub device_config: DeviceConfig,
+    pub device_config: RequestedDeviceConfig,
 
     // A configuration as requested by libtelio.set_config(...) call, no modifications
     pub meshnet_config: Option<Config>,
@@ -413,7 +428,7 @@ pub struct DNS<D: DnsResolver = LocalDnsResolver> {
 
     // A file descriptor for virtual host hosting the DNS server within libtelio used for
     // configuring routing on some platforms
-    virtual_host_tun_fd: Option<Arc<Tun>>,
+    virtual_host_tun_fd: Option<Tun>,
 }
 
 struct Runtime {
@@ -553,7 +568,7 @@ impl Device {
         })
     }
 
-    pub fn start(&mut self, config: &DeviceConfig) -> Result {
+    pub fn start(&mut self, config: DeviceConfig) -> Result {
         if self.is_running() {
             return Err(Error::AlreadyStarted);
         }
@@ -641,7 +656,7 @@ impl Device {
     }
 
     /// Set the (u)tun file descriptor to be used by the adapter
-    pub fn set_tun(&self, tun: i32) -> Result {
+    pub fn set_tun(&self, tun: Tun) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
                 let _guard = rt.entities.network_monitor.pause();
@@ -1013,7 +1028,7 @@ impl MeshnetEntities {
 impl Runtime {
     async fn start(
         libtelio_wide_event_publisher: Tx<Box<Event>>,
-        config: &DeviceConfig,
+        config: DeviceConfig,
         features: Features,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
@@ -1067,6 +1082,14 @@ impl Runtime {
             (None, None, None)
         };
 
+        #[cfg(unix)]
+        let virtual_host_tun_fd = config.tun.as_ref().map(|fd| fd.try_clone()).transpose()?;
+
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+        set_tunnel_interface(&socket_pool, config.tun.as_ref(), config.name.as_ref());
+
+        let requested_device_config = RequestedDeviceConfig::from(&config);
+
         // tests runtime use wg::MockedAdapter
         cfg_if! {
             if #[cfg(not(test))] {
@@ -1084,7 +1107,7 @@ impl Runtime {
                     wg::Config {
                         adapter: config.adapter,
                         name: config.name.clone(),
-                        tun: config.tun.clone(),
+                        tun: config.tun,
                         socket_pool: socket_pool.clone(),
                         firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
                         firewall_process_outbound_callback: Some(Arc::new(
@@ -1110,7 +1133,7 @@ impl Runtime {
                         wg::Config {
                             adapter: config.adapter,
                             name: config.name.clone(),
-                            tun: config.tun.clone(),
+                            tun: config.tun,
                             socket_pool: socket_pool.clone(),
                             firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
                             firewall_process_outbound_callback: Some(Arc::new(
@@ -1130,6 +1153,12 @@ impl Runtime {
             .set_secret_key(config.private_key.clone())
             .await?;
 
+        #[cfg(windows)]
+        {
+            let adapter_luid = wireguard_interface.get_adapter_luid().await?;
+            socket_pool.set_tunnel_interface(adapter_luid);
+        }
+
         #[cfg(test)]
         adapter.lock().await.checkpoint();
 
@@ -1144,14 +1173,6 @@ impl Runtime {
             wireguard_interface.clone(),
             config.private_key.public(),
         ));
-
-        #[cfg(windows)]
-        {
-            let adapter_luid = wireguard_interface.get_adapter_luid().await?;
-            socket_pool.set_tunnel_interface(adapter_luid);
-        }
-        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-        set_tunnel_interface(&socket_pool, config);
 
         let nurse = if telio_lana::is_lana_initialized() {
             if let Some(nurse_features) = &features.nurse {
@@ -1189,7 +1210,7 @@ impl Runtime {
         };
 
         let requested_state = RequestedState {
-            device_config: config.clone(),
+            device_config: requested_device_config,
             keepalive_periods: features.wireguard.persistent_keepalive.clone(),
             ..Default::default()
         };
@@ -1197,7 +1218,7 @@ impl Runtime {
         let dns = Arc::new(Mutex::new(DNS {
             resolver: None,
             #[cfg(unix)]
-            virtual_host_tun_fd: config.tun.clone(),
+            virtual_host_tun_fd,
             #[cfg(windows)]
             virtual_host_tun_fd: None,
         }));
@@ -1610,17 +1631,16 @@ impl Runtime {
         Ok(())
     }
 
-    async fn set_tun(&mut self, tun: i32) -> Result {
+    async fn set_tun(&mut self, tun: Tun) -> Result {
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
+        let raw_fd = {
+            use std::os::fd::AsRawFd;
+            tun.as_raw_fd()
+        };
         self.entities.wireguard_interface.set_tun(tun).await?;
 
-        self.requested_state.device_config.name = None;
-        #[cfg(not(target_os = "windows"))]
-        {
-            self.requested_state.device_config.tun = Some(tun);
-        }
-
         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-        if let Some(index) = fd_to_if_index(tun as std::os::fd::RawFd) {
+        if let Some(index) = fd_to_if_index(raw_fd) {
             self.entities.socket_pool.set_tunnel_interface(index);
         }
 
@@ -2562,10 +2582,13 @@ impl TaskRuntime for Runtime {
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
-    use std::os::fd::AsRawFd;
+fn set_tunnel_interface(
+    socket_pool: &Arc<SocketPool>,
+    tun: Option<&impl std::os::fd::AsRawFd>,
+    name: Option<&String>,
+) {
     let mut tunnel_if_index = None;
-    if let Some(tun) = config.tun.as_ref() {
+    if let Some(tun) = tun {
         match native::interface_index_from_tun(tun.as_raw_fd()) {
             Ok(index) => tunnel_if_index = Some(index),
             Err(e) => {
@@ -2577,7 +2600,7 @@ fn set_tunnel_interface(socket_pool: &Arc<SocketPool>, config: &DeviceConfig) {
         }
     }
     if tunnel_if_index.is_none() {
-        if let Some(name) = config.name.as_ref() {
+        if let Some(name) = name {
             match native::interface_index_from_name(name) {
                 Ok(index) => tunnel_if_index = Some(index),
                 Err(e) => {
@@ -2901,7 +2924,7 @@ mod tests {
 
         let rt = Runtime::start(
             sender,
-            &DeviceConfig {
+            DeviceConfig {
                 private_key: private_key.clone(),
                 ..Default::default()
             },
@@ -2946,7 +2969,7 @@ mod tests {
 
         let mut rt = Runtime::start(
             sender,
-            &DeviceConfig {
+            DeviceConfig {
                 private_key: private_key.clone(),
                 ..Default::default()
             },
@@ -3023,7 +3046,7 @@ mod tests {
 
         let mut rt = Runtime::start(
             sender,
-            &DeviceConfig {
+            DeviceConfig {
                 private_key: private_key.clone(),
                 ..Default::default()
             },
@@ -3111,7 +3134,7 @@ mod tests {
 
         let mut rt = Runtime::start(
             sender,
-            &DeviceConfig {
+            DeviceConfig {
                 private_key: private_key.clone(),
                 ..Default::default()
             },
@@ -3209,7 +3232,7 @@ mod tests {
 
         let mut rt = Runtime::start(
             sender,
-            &DeviceConfig {
+            DeviceConfig {
                 private_key: private_key.clone(),
                 ..Default::default()
             },
@@ -3289,7 +3312,7 @@ mod tests {
 
         let mut rt = Runtime::start(
             sender,
-            &DeviceConfig {
+            DeviceConfig {
                 private_key: private_key.clone(),
                 ..Default::default()
             },
@@ -3381,7 +3404,7 @@ mod tests {
 
         let mut rt = Runtime::start(
             sender,
-            &DeviceConfig {
+            DeviceConfig {
                 private_key: private_key.clone(),
                 ..Default::default()
             },
@@ -3454,7 +3477,7 @@ mod tests {
         let private_key = SecretKey::gen();
         let mut rt = Runtime::start(
             sender,
-            &DeviceConfig {
+            DeviceConfig {
                 private_key: private_key.clone(),
                 ..Default::default()
             },
@@ -3550,7 +3573,7 @@ mod tests {
         let private_key = SecretKey::gen();
         let mut rt = Runtime::start(
             sender,
-            &DeviceConfig {
+            DeviceConfig {
                 private_key: private_key.clone(),
                 ..Default::default()
             },
@@ -3610,7 +3633,7 @@ mod tests {
         let new_private_key = SecretKey::gen();
         let mut rt = Runtime::start(
             sender,
-            &DeviceConfig {
+            DeviceConfig {
                 private_key: old_private_key,
                 ..Default::default()
             },
@@ -3675,7 +3698,7 @@ mod tests {
         let pk = SecretKey::gen();
         let mut rt = Runtime::start(
             sender,
-            &DeviceConfig {
+            DeviceConfig {
                 private_key: pk.clone(),
                 ..Default::default()
             },
@@ -3720,7 +3743,7 @@ mod tests {
         let private_key = SecretKey::gen();
         let mut rt = Runtime::start(
             sender,
-            &DeviceConfig {
+            DeviceConfig {
                 private_key: private_key.clone(),
                 ..Default::default()
             },

@@ -100,7 +100,7 @@ pub struct Config {
     /// Name of network interface in readable string
     pub name: Option<String>,
     /// Tunnel file descriptor
-    pub tun: Option<Arc<Tun>>,
+    pub tun: Option<Tun>,
     /// Sockets to be protected, in order to avoid loopback
     pub socket_pool: Arc<SocketPool>,
     /// Callback of firewall to process incoming packets
@@ -222,7 +222,7 @@ impl DynamicWg {
     ///         Config {
     ///             adapter: AdapterType::default(),
     ///             name: Some("tun10".to_string()),
-    ///             tun: Some(Arc::new(unsafe { std::os::fd::OwnedFd::from_raw_fd(0) })),
+    ///             tun: Some(unsafe { std::os::fd::OwnedFd::from_raw_fd(0) }),
     ///             socket_pool: socket_pool,
     ///             firewall_process_inbound_callback:
     ///                 Some(Arc::new(firewall_filter_inbound_packets)),
@@ -311,7 +311,7 @@ impl DynamicWg {
 
     #[cfg(not(any(test, feature = "test-adapter")))]
     async fn start_adapter(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
-        adapter::start(&cfg).await
+        adapter::start(cfg).await
     }
 
     #[cfg(any(test, feature = "test-adapter"))]
@@ -326,7 +326,7 @@ impl DynamicWg {
     }
 
     /// Set the (u)tun file descriptor to be used by the adapter
-    pub async fn set_tun(&self, tun: i32) -> Result<(), Error> {
+    pub async fn set_tun(&self, tun: Tun) -> Result<(), Error> {
         task_exec!(&self.task, async move |rt| Ok(rt.set_tun(tun).await)).await??;
         Ok(())
     }
@@ -511,7 +511,7 @@ impl Config {
     fn try_clone(&self) -> Result<Self, io::Error> {
         #[cfg(unix)]
         let tun = match &self.tun {
-            Some(fd) => Some(Arc::new(fd.try_clone()?)),
+            Some(fd) => Some(fd.try_clone()?),
             None => None,
         };
         #[cfg(windows)]
@@ -959,10 +959,10 @@ impl State {
         Ok(success)
     }
 
-    pub async fn set_tun(&mut self, tun: i32) -> Result<(), Error> {
+    pub async fn set_tun(&mut self, tun: Tun) -> Result<(), Error> {
         #[cfg(unix)]
         {
-            self.cfg.tun = Some(tun);
+            self.cfg.tun = Some(tun.try_clone()?);
             self.cfg.name = None;
         }
 
@@ -1160,7 +1160,7 @@ pub mod tests {
             })
         }
 
-        async fn set_tun(&self, _tun: i32) -> Result<(), Error> {
+        async fn set_tun(&self, _tun: Tun) -> Result<(), Error> {
             Err(Error::UnsupportedAdapter)
         }
     }

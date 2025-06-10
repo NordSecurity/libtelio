@@ -25,7 +25,6 @@ mod darwin {
     use nix::{setsockopt_impl, sockopt_impl};
     use std::os::fd::AsFd;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
     use std::{io, sync::Mutex};
     use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
     use telio_wg::Tun;
@@ -42,7 +41,7 @@ mod darwin {
 
     static TUN_INDEX: Mutex<Option<u32>> = Mutex::new(None);
 
-    pub(crate) fn set_tun(tun: Option<&Arc<Tun>>) -> io::Result<()> {
+    pub(crate) fn set_tun(tun: Option<&Tun>) -> io::Result<()> {
         // For darwin bind socket to tun interface.
         if let Some(tun_fd) = tun {
             let name = getsockopt(&tun_fd, UtunIfname)?;

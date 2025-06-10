@@ -64,7 +64,7 @@ impl LocalDnsResolver {
     pub async fn new(
         public_key: &PublicKey,
         forward_ips: &[IpAddr],
-        tun: Option<&Arc<Tun>>,
+        tun: Option<&Tun>,
         exit_dns: Option<FeatureExitDns>,
     ) -> Result<Self, String> {
         let socket = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))

@@ -168,7 +168,7 @@ fn start_telio(
     interface_name: &str,
     adapter: AdapterType,
 ) -> Result<(), DeviceError> {
-    telio.start(&DeviceConfig {
+    telio.start(DeviceConfig {
         private_key,
         name: Some(interface_name.to_owned()),
         adapter,

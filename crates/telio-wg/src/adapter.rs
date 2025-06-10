@@ -93,7 +93,7 @@ pub trait Adapter: Send + Sync {
     async fn inject_reset_packets(&self, _exit_pubkey: &PublicKey, _exit_ipv4_addr: Ipv4Addr) {}
 
     /// Set the (u)tun file descriptor to be used by the adapter
-    async fn set_tun(&self, tun: i32) -> Result<(), Error>;
+    async fn set_tun(&self, tun: Tun) -> Result<(), Error>;
 }
 
 /// Enumeration of `Error` types for `Adapter` struct
@@ -216,7 +216,7 @@ impl FromStr for AdapterType {
 }
 
 #[cfg(not(any(test, feature = "test-adapter")))]
-pub(crate) async fn start(cfg: &Config) -> Result<Box<dyn Adapter>, Error> {
+pub(crate) async fn start(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
     #![allow(unused_variables)]
 
     let name = cfg.name.clone().unwrap_or_else(|| DEFAULT_NAME.to_owned());
@@ -227,12 +227,12 @@ pub(crate) async fn start(cfg: &Config) -> Result<Box<dyn Adapter>, Error> {
             return Err(Error::UnsupportedAdapter);
 
             #[cfg(unix)]
-            use std::os::fd::AsRawFd;
+            use std::os::fd::IntoRawFd;
 
             #[cfg(unix)]
             Ok(Box::new(neptun::NepTUN::start(
                 &name,
-                cfg.tun.as_ref().map(|tun| tun.as_raw_fd()),
+                cfg.tun.map(|tun| tun.into_raw_fd()),
                 cfg.socket_pool.clone(),
                 cfg.firewall_process_inbound_callback.clone(),
                 cfg.firewall_process_outbound_callback.clone(),
