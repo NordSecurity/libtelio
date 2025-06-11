@@ -1,4 +1,8 @@
-use std::{num::NonZeroU64, path::PathBuf, str::FromStr};
+use std::{
+    num::NonZeroU64,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use smart_default::SmartDefault;
@@ -155,7 +159,24 @@ impl TeliodDaemonConfig {
         // Validate log path
         let log_path = PathBuf::from(&config.log_file_path);
         if log_path.is_relative() {
-            config.log_file_path = log_path.canonicalize()?.to_string_lossy().to_string();
+            let file_name = log_path
+                .file_name()
+                .ok_or_else(|| TeliodError::InvalidLogPath(config.log_file_path.to_owned()))?;
+
+            // correct if path is not in ./file_name.log format but file_name.log
+            let dir = match log_path.parent() {
+                Some(parent) if !parent.as_os_str().is_empty() => parent,
+                _ => Path::new("."),
+            };
+
+            // converted relative to absolute path
+            let mut path_canonical = dir
+                .canonicalize()
+                .map_err(|_| TeliodError::InvalidLogPath(config.log_file_path.to_owned()))?;
+
+            // append the file name to the fixed absolute path
+            path_canonical.push(file_name);
+            config.log_file_path = path_canonical.to_string_lossy().to_string();
         }
         println!("Saving logs to: {}", config.log_file_path);
 
@@ -332,9 +353,33 @@ fn deserialize_partial_authentication_token<'de, D: Deserializer<'de>>(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::*;
+    use serial_test::serial;
+    use std::time::Duration;
+    use temp_file::TempFile;
+
+    fn temp_config(content: &str) -> TempFile {
+        TempFile::new()
+            .expect("Failed to create temp config file")
+            .with_contents(content.as_bytes())
+            .expect("Failed to write config file")
+    }
+
+    fn config_json_for_log(path: &str) -> String {
+        format!(
+            r#"{{
+                "log_level": "Info",
+                "log_file_path": "{}",
+                "adapter_type": "linux-native",
+                "interface": {{
+                    "name": "test",
+                    "config_provider": "manual"
+                }},
+                "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }}"#,
+            path
+        )
+    }
 
     #[test]
     fn percentage_times_duration() {
@@ -398,5 +443,65 @@ mod tests {
 
             assert_eq!(expected, serde_json::from_str(json).unwrap());
         }
+    }
+
+    #[test]
+    fn test_config_with_absolute_path() {
+        let log_path = std::env::current_dir().unwrap().join("absolute.log");
+        let config_json = config_json_for_log(log_path.to_str().unwrap());
+
+        let file = temp_config(&config_json);
+        let config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
+
+        assert_eq!(config.log_file_path, log_path.to_string_lossy());
+    }
+
+    #[test]
+    fn test_relative_log_path() {
+        let config_json = config_json_for_log("./relative.log");
+        let file = temp_config(&config_json);
+        let config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
+
+        let expected = std::env::current_dir().unwrap().join("relative.log");
+        assert_eq!(config.log_file_path, expected.to_string_lossy());
+    }
+
+    #[test]
+    fn test_invalid_log_path_error() {
+        let config_json = config_json_for_log("");
+
+        let file = temp_config(&config_json);
+        let err = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap_err();
+
+        matches!(err, TeliodError::InvalidLogPath(_));
+    }
+
+    #[test]
+    #[serial]
+    fn test_token_override_from_env() {
+        let config_json = config_json_for_log("test.log");
+        let file = temp_config(&config_json);
+
+        let valid_token = "b".repeat(64);
+        std::env::set_var("NORD_TOKEN", &valid_token);
+
+        let config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
+        assert_eq!(config.authentication_token.0, valid_token);
+
+        std::env::remove_var("NORD_TOKEN");
+    }
+
+    #[test]
+    #[serial]
+    fn test_invalid_env_token_ignored() {
+        let config_json = config_json_for_log("test.log");
+        let file = temp_config(&config_json);
+
+        std::env::set_var("NORD_TOKEN", "short");
+
+        let config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
+        assert_eq!(config.authentication_token.0, "a".repeat(64));
+
+        std::env::remove_var("NORD_TOKEN");
     }
 }
