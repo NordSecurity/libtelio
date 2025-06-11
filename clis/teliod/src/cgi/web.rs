@@ -3,6 +3,12 @@
 use std::{collections::HashMap, fs, str::FromStr};
 use telio::telio_utils::hidden::Hidden;
 
+use crate::cgi::constants::TELIOD_START_INTENT_FILE;
+use crate::TeliodDaemonConfig;
+use crate::{
+    cgi::constants::TELIOD_CFG,
+    config::{InterfaceConfig, TeliodDaemonConfigPartial},
+};
 use lazy_static::lazy_static;
 use maud::{html, Markup, Render};
 use rust_cgi::{
@@ -11,12 +17,6 @@ use rust_cgi::{
 };
 use telio::telio_model::mesh::{Node, NodeState};
 use tracing::{error, info, level_filters::LevelFilter, Level};
-
-use crate::TeliodDaemonConfig;
-use crate::{
-    cgi::constants::TELIOD_CFG,
-    config::{InterfaceConfig, TeliodDaemonConfigPartial},
-};
 
 use super::{
     api::{start_daemon, stop_daemon},
@@ -68,6 +68,24 @@ lazy_static! {
     };
 }
 
+fn save_user_intent(enable_meshnet: bool) {
+    if enable_meshnet {
+        if let Err(e) = std::fs::File::create(TELIOD_START_INTENT_FILE) {
+            eprintln!(
+                "Error creating intent file at '{}': {}. Not considered a failure",
+                TELIOD_START_INTENT_FILE, e
+            );
+        }
+    } else if let Err(e) = std::fs::remove_file(TELIOD_START_INTENT_FILE) {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            eprintln!(
+                "Error deleting intent file at '{}': {}. Not considered a failure",
+                TELIOD_START_INTENT_FILE, e
+            );
+        }
+    }
+}
+
 pub fn handle_web_ui(request: &CgiRequest) -> Option<Response> {
     let render = |markup: Markup| {
         let mut resp = Response::new(markup.render().into_string().into_bytes());
@@ -102,6 +120,8 @@ pub fn handle_web_ui(request: &CgiRequest) -> Option<Response> {
                         info!("start: {} -> {}", res.0, res.1);
                         if !res.0.is_success() {
                             err_msg = Some(res.1);
+                        } else {
+                            save_user_intent(true);
                         }
                     }
                 }
@@ -110,6 +130,8 @@ pub fn handle_web_ui(request: &CgiRequest) -> Option<Response> {
                 info!("stop: {} -> {}", res.0, res.1);
                 if !res.0.is_success() {
                     err_msg = Some(res.1);
+                } else {
+                    save_user_intent(false);
                 }
             };
 

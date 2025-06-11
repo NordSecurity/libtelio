@@ -21,3 +21,6 @@ pub const TELIOD_INIT_LOG: &str = "/var/log/teliod_init.log";
 
 #[cfg(debug_assertions)]
 pub const CGI_LOG: &str = concatcp!(APP_DIR, "/cgi.log");
+
+/// Path to the user intent file used to automatically turn meshnet on if found by NordSecurityMeshnet.sh
+pub const TELIOD_START_INTENT_FILE: &str = concatcp!(APP_DIR, "/.teliod_start_intent");

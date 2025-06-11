@@ -8,6 +8,7 @@ QPKG_ROOT=`/sbin/getcfg $QPKG_NAME Install_Path -f ${CONF}`
 export QNAP_QPKG=$QPKG_NAME
 
 TELIOD_CFG_FILE=${QPKG_ROOT}/teliod.cfg
+TELIOD_START_INTENT_FILE=${QPKG_ROOT}/.teliod_start_intent
 TELIOD_INIT_LOG_FILE="/var/log/teliod_init.log"
 
 # Change the config file permissions. It contains the auth token so we should prohibit it being read by other users
@@ -44,6 +45,11 @@ case "$1" in
     fi
 
     ln -fs ${QPKG_ROOT}/teliod.cgi /home/httpd/cgi-bin/qpkg/teliod.cgi
+
+    if [ ! -e "$TELIOD_START_INTENT_FILE" ]; then
+        system_log INFO "Intent file not present, skipping daemon start"
+        exit 0
+    fi
 
     SOCKET_PATH=$(get_ipc_socket_path)
     if [ -e "$SOCKET_PATH" ]; then
