@@ -10,7 +10,9 @@ repository = "https://github.com/NordSecurity/libtelio"
 crate-type = ["cdylib", "lib"]
 
 [features]
+default = ["vpn"]
 pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
+vpn = []
 
 [dependencies]
 cfg-if = "1.0.0"

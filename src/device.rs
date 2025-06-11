@@ -57,6 +57,7 @@ use tokio::{
 
 use telio_dns::{DnsResolver, LocalDnsResolver, Records};
 
+#[cfg(feature = "vpn")]
 use telio_dns::bind_tun;
 use wg::uapi::{self, PeerState};
 
@@ -671,7 +672,7 @@ impl Device {
         })
     }
 
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), feature = "vpn"))]
     async fn protect_from_vpn(&self, adapter: &impl WireGuard) -> Result {
         if let Some(protect) = self.protect.as_ref() {
             if let Some(fd) = adapter.get_wg_socket(false).await? {
@@ -729,6 +730,7 @@ impl Device {
     /// Exit node in this case may be the VPN server or another meshnet node. In the former case,
     /// new node is created and WireGuard tunnel is established to that node. In the latter case
     /// the specified (matched by public key) meshnet node is "promoted" to be the exit node
+    #[cfg(feature = "vpn")]
     pub fn connect_exit_node(&self, node: &ExitNode) -> Result {
         self.async_runtime()?.block_on(async {
             let node = node.clone();
@@ -752,6 +754,7 @@ impl Device {
     /// A new node is created and WireGuard post-quantum tunnel is established to that node.
     /// Meshnet is disallowed when forming a post-quantum tunnel and if it's enabled
     /// this call will error out.
+    #[cfg(feature = "vpn")]
     pub fn connect_vpn_post_quantum(&self, node: &ExitNode) -> Result {
         self.async_runtime()?.block_on(async {
             let node = node.clone();
@@ -772,6 +775,7 @@ impl Device {
     /// Disconnect from exit node
     ///
     /// Undoes the effects of calling device::connect_exit_node(), matching the node by public key
+    #[cfg(feature = "vpn")]
     pub fn disconnect_exit_node(&self, node_key: &PublicKey) -> Result {
         self.async_runtime()?.block_on(async {
             let node_key = *node_key;
@@ -783,7 +787,8 @@ impl Device {
     }
 
     /// Disconnects from any VPN and/or demotes any meshnet node to be a regular meshnet node
-    /// instead of exit node
+    /// instead of exit node    
+    #[cfg(feature = "vpn")]
     pub fn disconnect_exit_nodes(&self) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
@@ -1738,6 +1743,7 @@ impl Runtime {
         Ok(())
     }
 
+    #[cfg(feature = "vpn")]
     async fn reconfigure_dns_peer(&self, dns: &LocalDnsResolver, forward_ips: &[IpAddr]) -> Result {
         if dns.auto_switch_ips {
             telio_log_debug!("forwarding to dns {:?}", forward_ips);
@@ -1978,6 +1984,7 @@ impl Runtime {
     }
 
     /// Connect ot exit node with post-quantum tunnel
+    #[cfg(feature = "vpn")]
     async fn connect_exit_node_pq(&mut self, exit_node: &ExitNode) -> Result {
         if self.requested_state.meshnet_config.is_some() {
             // Meshnet is enabled and we're trying to set up the QP VPN connection
@@ -1998,11 +2005,13 @@ impl Runtime {
         res
     }
 
+    #[cfg(feature = "vpn")]
     async fn connect_exit_node(&mut self, exit_node: &ExitNode) -> Result {
         // Silence the nagger warning
         Box::pin(self.connect_exit_node_internal(exit_node, false)).await
     }
 
+    #[cfg(feature = "vpn")]
     async fn connect_exit_node_internal(
         &mut self,
         exit_node: &ExitNode,
@@ -2091,6 +2100,7 @@ impl Runtime {
         Ok(())
     }
 
+    #[cfg(feature = "vpn")]
     async fn disconnect_exit_node(&mut self, node_key: &PublicKey) -> Result {
         match self.requested_state.exit_node.as_ref() {
             Some(exit_node) if &exit_node.public_key == node_key => {
@@ -2101,6 +2111,7 @@ impl Runtime {
         }
     }
 
+    #[cfg(feature = "vpn")]
     async fn disconnect_exit_nodes(&mut self) -> Result {
         if let Some(exit_node) = self.requested_state.exit_node.take() {
             self.requested_state.last_exit_node = Some(exit_node);

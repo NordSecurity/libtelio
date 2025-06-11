@@ -11,6 +11,7 @@ use telio_wg::AdapterType;
 use tracing::{error, trace};
 
 use telio_sockets::protector::make_external_protector;
+#[cfg(feature = "vpn")]
 use uuid::Uuid;
 
 use std::{
@@ -24,6 +25,8 @@ use self::{
     logging::HIDE_THREAD_ID_IN_LOGS, logging::LOGGER_STOPPER, logging::TIMESTAMPS_IN_LOGS, types::*,
 };
 use crate::device::{Device, DeviceConfig, Result as DevResult};
+
+#[allow(unused_imports)]
 use telio_model::{
     config::{Config, ConfigParseError},
     event::*,
@@ -586,20 +589,30 @@ impl Telio {
     }
 
     /// Wrapper for `Telio::connect_to_exit_node_with_id` that doesn't take an identifier
+    #[allow(unused_variables)]
     pub fn connect_to_exit_node(
         &self,
         public_key: PublicKey,
         allowed_ips: Option<Vec<IpNet>>,
         endpoint: Option<SocketAddr>,
     ) -> FfiResult<()> {
-        telio_log_info!(
+        #[cfg(not(feature = "vpn"))]
+        {
+            telio_log_error!("VPN feature is disabled");
+            Ok(())
+        }
+
+        #[cfg(feature = "vpn")]
+        {
+            telio_log_info!(
             "Telio::connect_to_exit_node entry with instance id :{}. Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
             self.id,
             public_key,
             allowed_ips,
             endpoint,
         );
-        self.connect_to_exit_node_with_id(None, public_key, allowed_ips, endpoint)
+            self.connect_to_exit_node_with_id(None, public_key, allowed_ips, endpoint)
+        }
     }
 
     /// Connects to an exit node. (VPN if endpoint is not NULL, Peer if endpoint is NULL)
@@ -612,6 +625,7 @@ impl Telio {
     /// - `allowed_ips`: List of subnets which will be routed to the exit node.
     ///                  Can be None, same as "0.0.0.0/0".
     /// - `endpoint`: An endpoint to an exit node. Can be None, must contain a port.
+    #[allow(unused_variables)]
     pub fn connect_to_exit_node_with_id(
         &self,
         identifier: Option<String>,
@@ -619,7 +633,15 @@ impl Telio {
         allowed_ips: Option<Vec<IpNet>>,
         endpoint: Option<SocketAddr>,
     ) -> FfiResult<()> {
-        telio_log_info!(
+        #[cfg(not(feature = "vpn"))]
+        {
+            telio_log_error!("VPN feature is disabled");
+            Ok(())
+        }
+
+        #[cfg(feature = "vpn")]
+        {
+            telio_log_info!(
             "Telio::connect_to_exit_node_with_id entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
             self.id,
             identifier,
@@ -627,19 +649,20 @@ impl Telio {
             allowed_ips,
             endpoint,
         );
-        let identifier = identifier.unwrap_or_else(|| Uuid::new_v4().to_string());
-        let node = ExitNode {
-            identifier,
-            public_key,
-            allowed_ips,
-            endpoint,
-        };
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| {
-                dev.connect_exit_node(&node)
-                    .log_result("Telio::connect_to_exit_node")
+            let identifier = identifier.unwrap_or_else(|| Uuid::new_v4().to_string());
+            let node = ExitNode {
+                identifier,
+                public_key,
+                allowed_ips,
+                endpoint,
+            };
+            catch_ffi_panic(|| {
+                self.device_op(true, |dev| {
+                    dev.connect_exit_node(&node)
+                        .log_result("Telio::connect_to_exit_node")
+                })
             })
-        })
+        }
     }
 
     /// Connects to the VPN exit node with post quantum tunnel
@@ -652,6 +675,7 @@ impl Telio {
     /// - `allowed_ips`: List of subnets which will be routed to the exit node.
     ///                  Can be None, same as "0.0.0.0/0".
     /// - `endpoint`: An endpoint to an exit node. Must contain a port.
+    #[allow(unused_variables)]
     pub fn connect_to_exit_node_postquantum(
         &self,
         identifier: Option<String>,
@@ -659,7 +683,15 @@ impl Telio {
         allowed_ips: Option<Vec<IpNet>>,
         endpoint: SocketAddr,
     ) -> FfiResult<()> {
-        telio_log_info!(
+        #[cfg(not(feature = "vpn"))]
+        {
+            telio_log_error!("VPN feature is disabled");
+            Ok(())
+        }
+
+        #[cfg(feature = "vpn")]
+        {
+            telio_log_info!(
             "Telio::connect_to_exit_node_postquantum entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
             self.id,
             identifier,
@@ -667,19 +699,20 @@ impl Telio {
             allowed_ips,
             endpoint,
         );
-        let identifier = identifier.unwrap_or_else(|| Uuid::new_v4().to_string());
-        let node = ExitNode {
-            identifier,
-            public_key,
-            allowed_ips,
-            endpoint: Some(endpoint),
-        };
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| {
-                dev.connect_vpn_post_quantum(&node)
-                    .log_result("Telio::connect_vpn_post_quantum")
+            let identifier = identifier.unwrap_or_else(|| Uuid::new_v4().to_string());
+            let node = ExitNode {
+                identifier,
+                public_key,
+                allowed_ips,
+                endpoint: Some(endpoint),
+            };
+            catch_ffi_panic(|| {
+                self.device_op(true, |dev| {
+                    dev.connect_vpn_post_quantum(&node)
+                        .log_result("Telio::connect_vpn_post_quantum")
+                })
             })
-        })
+        }
     }
 
     /// Enables magic DNS if it was not enabled yet,
@@ -721,32 +754,52 @@ impl Telio {
     /// # Parameters
     /// - `public_key`: WireGuard public key for exit node.
     ///
+    #[allow(unused_variables)]
     pub fn disconnect_from_exit_node(&self, public_key: &PublicKey) -> FfiResult<()> {
-        telio_log_info!(
-            "Telio::disconnect_from_exit_node entry with instance id: {}. Public Key: {:?}",
-            self.id,
-            public_key
-        );
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| {
-                dev.disconnect_exit_node(public_key)
-                    .log_result("Telio::disconnect_from_exit_node")
+        #[cfg(not(feature = "vpn"))]
+        {
+            telio_log_error!("VPN feature is disabled");
+            Ok(())
+        }
+
+        #[cfg(feature = "vpn")]
+        {
+            telio_log_info!(
+                "Telio::disconnect_from_exit_node entry with instance id: {}. Public Key: {:?}",
+                self.id,
+                public_key
+            );
+            catch_ffi_panic(|| {
+                self.device_op(true, |dev| {
+                    dev.disconnect_exit_node(public_key)
+                        .log_result("Telio::disconnect_from_exit_node")
+                })
             })
-        })
+        }
     }
 
     /// Disconnects from all exit nodes with no parameters required.
+    #[allow(unused_variables)]
     pub fn disconnect_from_exit_nodes(&self) -> FfiResult<()> {
-        telio_log_info!(
-            "Telio::disconnect_from_exit_nodes entry with instance id: {}.",
-            self.id
-        );
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| {
-                dev.disconnect_exit_nodes()
-                    .log_result("Telio::disconnect_from_exit_nodes")
+        #[cfg(not(feature = "vpn"))]
+        {
+            telio_log_error!("VPN feature is disabled");
+            Ok(())
+        }
+
+        #[cfg(feature = "vpn")]
+        {
+            telio_log_info!(
+                "Telio::disconnect_from_exit_nodes entry with instance id: {}.",
+                self.id
+            );
+            catch_ffi_panic(|| {
+                self.device_op(true, |dev| {
+                    dev.disconnect_exit_nodes()
+                        .log_result("Telio::disconnect_from_exit_nodes")
+                })
             })
-        })
+        }
     }
 
     /// Enables meshnet if it is not enabled yet.
