@@ -220,7 +220,7 @@ fn update_config(app: &mut AppState, request: &CgiRequest) -> Result<TeliodDaemo
 
     // Build a new temprorary config
     let mut new_config = app.config.clone();
-    new_config.update(partial);
+    new_config.update(partial)?;
 
     let config = match serde_json::to_string_pretty(&new_config) {
         Ok(c) => c,

@@ -77,9 +77,9 @@ pub(crate) fn handle_api(request: &CgiRequest) -> Option<Response> {
 
             Some(get_logs(
                 days_count,
-                LOG_PATHS.stdout(),
-                LOG_PATHS.init_stdout(),
-                LOG_PATHS.lib_dir(),
+                LOG_PATHS.daemon_log(),
+                LOG_PATHS.daemon_init_log(),
+                LOG_PATHS.dir(),
             ))
         }
         (_, _) => Some(text_response(
@@ -117,7 +117,7 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
         .write(true)
         .read(true)
         .truncate(true)
-        .open(LOG_PATHS.init_stdout())
+        .open(LOG_PATHS.daemon_init_log())
     {
         Ok(file) => file,
         Err(err) => {
@@ -125,7 +125,7 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!(
                     "Failed to open teliod log file {:?}, err: {err}",
-                    LOG_PATHS.init_stdout()
+                    LOG_PATHS.daemon_init_log()
                 ),
             );
         }
@@ -341,7 +341,7 @@ fn get_logs(
                 p.is_file()
                     && p.file_name()
                         .and_then(|n| n.to_str())
-                        .map(|n| n.starts_with(LOG_PATHS.lib_logs_prefix()))
+                        .map(|n| n.starts_with(LOG_PATHS.prefix()))
                         .unwrap_or(false)
             })
             .collect(),
@@ -366,7 +366,7 @@ fn get_logs(
             &mut concatenated_logs,
             &format!(
                 "No teliod log files {} found in: {}",
-                LOG_PATHS.lib_logs_prefix(),
+                LOG_PATHS.prefix(),
                 logs_dir.to_string_lossy()
             ),
         );
@@ -406,9 +406,17 @@ mod tests {
     #[test]
     #[serial]
     fn test_update_config() {
+        let res = APP_PATHS.init();
+        if let Err(e) = res {
+            assert_eq!(
+                e.to_string(),
+                "Failed executing system command: \"AppPaths already initialized\""
+            );
+        }
+
         let mut expected_config = TeliodDaemonConfig {
             log_level: LevelFilter::DEBUG,
-            log_file_path: "/path/to/log".to_owned(),
+            log_file_path: APP_PATHS.join("test.log").to_string_lossy().into_owned(),
             log_file_count: 7,
             adapter_type: AdapterType::NepTUN,
             interface: InterfaceConfig {
@@ -430,25 +438,28 @@ mod tests {
                 certificate_file_path: Some(PathBuf::from("some/certificate/path/")),
             },
         };
-        let initial_config = r#"
-        {
-            "log_level": "debug",
-            "log_file_path": "/path/to/log",
-            "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "adapter_type": "neptun",
-            "interface": {
-                "name": "eth0",
-                "config_provider": "manual"
-            },
-            "http_certificate_file_path": "/http/certificate/path/",
-            "mqtt": {
-                "backoff_initial": 5,
-                "backoff_maximal": 600,
-                "reconnect_after_expiry": 100,
-                "certificate_file_path": "some/certificate/path"
-            }
-        }
-        "#;
+        let initial_config = format!(
+            r#"
+            {{
+                "log_level": "debug",
+                "log_file_path": "{}",
+                "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "adapter_type": "neptun",
+                "interface": {{
+                    "name": "eth0",
+                    "config_provider": "manual"
+                }},
+                "http_certificate_file_path": "/http/certificate/path/",
+                "mqtt": {{
+                    "backoff_initial": 5,
+                    "backoff_maximal": 600,
+                    "reconnect_after_expiry": 100,
+                    "certificate_file_path": "some/certificate/path"
+                }}
+            }}
+            "#,
+            APP_PATHS.join("test.log").to_string_lossy()
+        );
         fs::write(APP_PATHS.teliod_cfg(), initial_config).unwrap();
 
         let read_config = serde_json::from_str::<TeliodDaemonConfig>(
@@ -458,7 +469,7 @@ mod tests {
         assert_eq!(read_config, expected_config);
 
         expected_config.log_level = LevelFilter::INFO;
-        expected_config.log_file_path = "/new/path/to/log".to_owned();
+        expected_config.log_file_path = LOG_PATHS.log().to_string_lossy().into_owned();
         expected_config.log_file_count = 8;
         expected_config.authentication_token = Arc::new(
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -475,27 +486,30 @@ mod tests {
             certificate_file_path: Some(PathBuf::from("new/certificate/path/")),
             ..Default::default()
         };
-        let update_body = r#"
-        {
-            "log_level": "info",
-            "log_file_path": "/new/path/to/log",
-            "log_file_count": 8,
-            "authentication_token": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "adapter_type": "neptun",
-            "interface": {
-                "name": "eth1",
-                "config_provider": "ifconfig"
-            },
-            "http_certificate_file_path": "new/http/certificate/path/",
-            "mqtt": {
-                "backoff_initial": 1,
-                "backoff_maximal": 300,
-                "reconnect_after_expiry": 90,
-                "certificate_file_path": "new/certificate/path"
-            }
-        }
-        "#;
-        assert_eq!(update_config(update_body).status(), StatusCode::OK);
+        let update_body = format!(
+            r#"
+            {{
+                "log_level": "info",
+                "log_file_path": "{}",
+                "log_file_count": 8,
+                "authentication_token": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "adapter_type": "neptun",
+                "interface": {{
+                    "name": "eth1",
+                    "config_provider": "ifconfig"
+                }},
+                "http_certificate_file_path": "new/http/certificate/path/",
+                "mqtt": {{
+                    "backoff_initial": 1,
+                    "backoff_maximal": 300,
+                    "reconnect_after_expiry": 90,
+                    "certificate_file_path": "new/certificate/path"
+                }}
+            }}
+            "#,
+            LOG_PATHS.log().to_string_lossy()
+        );
+        assert_eq!(update_config(&update_body).status(), StatusCode::OK);
 
         let updated_config: TeliodDaemonConfig =
             serde_json::from_str(&fs::read_to_string(APP_PATHS.teliod_cfg()).unwrap()).unwrap();
@@ -505,9 +519,17 @@ mod tests {
     #[test]
     #[serial]
     fn test_update_partial_config() {
+        let res = APP_PATHS.init();
+        if let Err(e) = res {
+            assert_eq!(
+                e.to_string(),
+                "Failed executing system command: \"AppPaths already initialized\""
+            );
+        }
+
         let mut expected_config = TeliodDaemonConfig {
             log_level: LevelFilter::DEBUG,
-            log_file_path: "/path/to/log".to_owned(),
+            log_file_path: APP_PATHS.join("test.log").to_string_lossy().into_owned(),
             log_file_count: 7,
             adapter_type: AdapterType::NepTUN,
             interface: InterfaceConfig {
@@ -524,25 +546,27 @@ mod tests {
             device_identity_file_path: None,
             mqtt: MqttConfig::default(),
         };
-        let initial_config = r#"
-        {
-            "log_level": "debug",
-            "log_file_path": "/path/to/log",
-            "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "adapter_type": "neptun",
-            "interface": {
-                "name": "eth0",
-                "config_provider": "manual"
-            },
-            "http_certificate_file_path": "/http/certificate/path/",
-            "mqtt": {
-                "backoff_initial": 1,
-                "backoff_maximal": 300,
-                "reconnect_after_expiry": 90,
-                "certificate_file_path": null
-            }
-        }
-        "#;
+        let initial_config = format!(
+            r#"
+            {{
+                "log_level": "debug",
+                "log_file_path": "{}",
+                "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "adapter_type": "neptun",
+                "interface": {{
+                    "name": "eth0",
+                    "config_provider": "manual"
+                }},
+                "http_certificate_file_path": "/http/certificate/path/",
+                "mqtt": {{
+                    "backoff_initial": 1,
+                    "backoff_maximal": 300,
+                    "reconnect_after_expiry": 90,
+                    "certificate_file_path": null
+                }}
+            }}"#,
+            APP_PATHS.join("test.log").to_string_lossy()
+        );
         fs::write(APP_PATHS.teliod_cfg(), initial_config).unwrap();
 
         let read_config = serde_json::from_str::<TeliodDaemonConfig>(

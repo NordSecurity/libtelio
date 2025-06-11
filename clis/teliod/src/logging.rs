@@ -8,7 +8,6 @@ use tracing_appender::{
 
 use crate::TeliodError;
 
-/// Sets up
 pub async fn setup_logging<P: AsRef<Path>>(
     log_file_path: P,
     log_level: LevelFilter,
