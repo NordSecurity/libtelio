@@ -10,23 +10,38 @@ pub static LOG_PATHS: LazyLock<LogPaths> = LazyLock::new(LogPaths::new);
 /// Handles all teliod-relative paths
 #[derive(Debug, Clone)]
 pub struct AppPaths {
-    root: PathBuf,
+    root: Option<PathBuf>,
 }
 
 impl AppPaths {
     /// Creates a new AppPaths instance based on the current configuration
     fn new() -> Self {
         let root = if cfg!(feature = "qnap") {
-            PathBuf::from("/share/CACHEDEV1_DATA/.qpkg/NordSecurityMeshnet")
+            std::process::Command::new("getcfg")
+                .args([
+                    "NordSecurityMeshnet",
+                    "Install_Path",
+                    "-f",
+                    "/etc/config/qpkg.conf",
+                ])
+                .output()
+                .ok()
+                .filter(|output| output.status.success())
+                .and_then(|output| String::from_utf8(output.stdout).ok())
+                .map(|stdout| stdout.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
         } else {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../..")
-                .join("target")
-                .join(if cfg!(debug_assertions) {
-                    "debug"
-                } else {
-                    "release"
-                })
+            Some(
+                Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../..")
+                    .join("target")
+                    .join(if cfg!(debug_assertions) {
+                        "debug"
+                    } else {
+                        "release"
+                    }),
+            )
         };
 
         Self { root }
@@ -55,8 +70,11 @@ impl AppPaths {
     }
 
     /// Create a path relative to the root directory
-    pub fn join<P: AsRef<Path>>(&self, path: P) -> PathBuf {
-        self.root.join(path)
+    fn join(&self, path: &str) -> PathBuf {
+        self.root
+            .as_ref()
+            .map(|root| root.join(path))
+            .unwrap_or_else(|| PathBuf::from(path))
     }
 }
 
