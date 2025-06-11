@@ -385,7 +385,7 @@ fn get_logs(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "qnap")))]
 mod tests {
     use std::{fs, num::NonZeroU64, path::PathBuf};
 
