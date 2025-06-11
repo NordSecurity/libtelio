@@ -79,11 +79,7 @@ pub trait WireGuard: Send + Sync + 'static {
     async fn stop(self);
     /// Inject apropiate packets into the tunel to reset exising connections.
     /// Used for forcing external clients to reconnect to public servers.
-    async fn reset_existing_connections(
-        &self,
-        exit_pubkey: PublicKey,
-        exit_interface_ipv4: Ipv4Addr,
-    ) -> Result<(), Error>;
+    async fn reset_existing_connections(&self, exit_pubkey: PublicKey) -> Result<(), Error>;
     /// Set the ip stack for the adapter
     async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result<(), Error>;
 }
@@ -483,13 +479,9 @@ impl WireGuard for DynamicWg {
         let _ = self.task.stop().await.resume_unwind();
     }
 
-    async fn reset_existing_connections(
-        &self,
-        pubkey: PublicKey,
-        ipv4: Ipv4Addr,
-    ) -> Result<(), Error> {
+    async fn reset_existing_connections(&self, pubkey: PublicKey) -> Result<(), Error> {
         task_exec!(&self.task, async move |s| {
-            s.adapter.inject_reset_packets(&pubkey, ipv4).await;
+            s.adapter.inject_reset_packets(&pubkey).await;
             Ok(())
         })
         .await?;
