@@ -9,10 +9,6 @@ mod linux_native_wg;
 
 #[cfg(any(windows, doc))]
 #[cfg_attr(docsrs, doc(cfg(windows)))]
-mod wireguard_go;
-
-#[cfg(any(windows, doc))]
-#[cfg_attr(docsrs, doc(cfg(windows)))]
 mod windows_native_wg;
 
 use async_trait::async_trait;
@@ -104,12 +100,6 @@ pub enum Error {
     #[error("LinuxNativeWg adapter error {0}")]
     LinuxNativeWg(#[from] linux_native_wg::Error),
 
-    /// Error types from WireGuard Go implementation
-    #[cfg(any(windows, doc))]
-    #[cfg_attr(docsrs, doc(cfg(windows)))]
-    #[error("WireguardGo adapter error {0}")]
-    WireguardGo(#[from] wireguard_go::Error),
-
     /// Error types from Windows native implementation
     #[cfg(any(windows, doc))]
     #[cfg_attr(docsrs, doc(cfg(windows)))]
@@ -181,9 +171,6 @@ pub enum AdapterType {
     /// Linux Native
     #[serde(rename = "linux-native")]
     LinuxNativeWg,
-    /// Wireguard Go
-    #[serde(rename = "wireguard-go")]
-    WireguardGo,
     /// Windows Native
     #[serde(rename = "wireguard-nt")]
     WindowsNativeWg,
@@ -199,8 +186,7 @@ impl Default for AdapterType {
         )) {
             AdapterType::NepTUN
         } else {
-            // TODO: Use AdapterType::WindowsNativeWg on Windows
-            AdapterType::WireguardGo
+            AdapterType::WindowsNativeWg
         }
     }
 }
@@ -248,13 +234,6 @@ pub(crate) async fn start(cfg: &Config) -> Result<Box<dyn Adapter>, Error> {
             #[cfg(target_os = "linux")]
             Ok(Box::new(linux_native_wg::LinuxNativeWg::start(&name)?))
         }
-        AdapterType::WireguardGo => {
-            #[cfg(not(windows))]
-            return Err(Error::UnsupportedAdapter);
-
-            #[cfg(windows)]
-            Ok(Box::new(wireguard_go::WireguardGo::start(&name, cfg.tun)?))
-        }
         AdapterType::WindowsNativeWg => {
             #[cfg(not(windows))]
             return Err(Error::UnsupportedAdapter);
@@ -276,10 +255,9 @@ mod tests {
 
     #[test]
     fn test_from_str() {
-        let test_input: [&str; 4] = ["neptun", "wireguard-go", "linux-native", "wireguard-nt"];
-        let expected_result: [AdapterType; 4] = [
+        let test_input: [&str; 3] = ["neptun", "linux-native", "wireguard-nt"];
+        let expected_result: [AdapterType; 3] = [
             AdapterType::NepTUN,
-            AdapterType::WireguardGo,
             AdapterType::LinuxNativeWg,
             AdapterType::WindowsNativeWg,
         ];
@@ -297,12 +275,7 @@ mod tests {
 
     #[test]
     fn test_from_str_wrong() {
-        let test_input: [&str; 4] = [
-            "NepTUN",
-            "wireguard_go",
-            "linux-native-wg",
-            "whatever_completely_wrong",
-        ];
+        let test_input: [&str; 3] = ["NepTUN", "linux-native-wg", "whatever_completely_wrong"];
 
         for input in test_input {
             let err = AdapterType::from_str(input).unwrap_err();
