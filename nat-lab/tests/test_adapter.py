@@ -66,13 +66,6 @@ async def get_interface_state(client_conn, client):
             ),
             marks=[pytest.mark.windows],
         ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-            ),
-            marks=[pytest.mark.windows],
-        ),
     ],
 )
 async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
@@ -110,7 +103,6 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
 
         client.allow_errors([
             "neptun::device.*Fatal read error on tun interface",
-            "telio_wg::adapter::wireguard_go.*Failed to read packet from TUN device: Driver indicated EOF while reading from tunnel",
             "telio_wg::adapter::linux_native_wg.*LinuxNativeWg: \\[GET01\\] Unable to get interface from WireGuard. Make sure it exists and you have permissions to access it.",
         ])
 
@@ -122,13 +114,6 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
             SetupParameters(
                 connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-            ),
-            marks=[pytest.mark.windows],
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
             ),
             marks=[pytest.mark.windows],
         ),

@@ -56,17 +56,6 @@ from utils.connection_util import generate_connection_tracker_config
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_WINDOWS_1,
-                    derp_1_limits=(1, 1),
-                ),
-            ),
-            marks=pytest.mark.windows,
-        ),
-        pytest.param(
-            SetupParameters(
                 connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
@@ -117,7 +106,6 @@ async def test_node_state_flickering_relay(
 
 CFG = [
     (TelioAdapterType.WINDOWS_NATIVE_TUN, [pytest.mark.windows]),
-    (TelioAdapterType.WIREGUARD_GO_TUN, [pytest.mark.windows]),
     (TelioAdapterType.NEP_TUN, []),
     (TelioAdapterType.LINUX_NATIVE_TUN, []),
 ]
@@ -139,14 +127,12 @@ async def test_node_state_flickering_direct(
     async with AsyncExitStack() as exit_stack:
         alpha_conn_tag = (
             ConnectionTag.VM_WINDOWS_1
-            if alpha_adapter_type
-            in [TelioAdapterType.WINDOWS_NATIVE_TUN, TelioAdapterType.WIREGUARD_GO_TUN]
+            if alpha_adapter_type == TelioAdapterType.WINDOWS_NATIVE_TUN
             else ConnectionTag.DOCKER_CONE_CLIENT_1
         )
         beta_conn_tag = (
             ConnectionTag.VM_WINDOWS_2
-            if beta_adapter_type
-            in [TelioAdapterType.WINDOWS_NATIVE_TUN, TelioAdapterType.WIREGUARD_GO_TUN]
+            if beta_adapter_type == TelioAdapterType.WINDOWS_NATIVE_TUN
             else ConnectionTag.DOCKER_CONE_CLIENT_2
         )
 

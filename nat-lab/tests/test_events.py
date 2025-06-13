@@ -90,18 +90,6 @@ def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_WINDOWS_1,
-                    derp_1_limits=(1, 1),
-                ),
-            ),
-            marks=pytest.mark.windows,
-            id="a_wgo",
-        ),
-        pytest.param(
-            SetupParameters(
                 connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
@@ -273,23 +261,6 @@ async def test_event_content_meshnet(
         ),
         pytest.param(
             SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_WINDOWS_1,
-                    vpn_1_limits=(1, 1),
-                    stun_limits=(1, 2),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.7",
-            marks=[
-                pytest.mark.windows,
-            ],
-            id="a_wgo",
-        ),
-        pytest.param(
-            SetupParameters(
                 connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
@@ -422,18 +393,6 @@ async def test_event_content_vpn_connection(
             ),
             marks=pytest.mark.windows,
             id="a_wna",
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_WINDOWS_1,
-                    derp_1_limits=(1, 1),
-                ),
-            ),
-            marks=pytest.mark.windows,
-            id="a_wgo",
         ),
         pytest.param(
             SetupParameters(
@@ -581,20 +540,6 @@ async def test_event_content_exit_through_peer(
             "10.0.254.7",
             marks=pytest.mark.windows,
             id="a_wna",
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WIREGUARD_GO_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_WINDOWS_1,
-                    derp_1_limits=(1, 1),
-                ),
-                features=features_with_endpoint_providers([EndpointProvider.STUN]),
-            ),
-            "10.0.254.7",
-            marks=pytest.mark.windows,
-            id="a_wgo",
         ),
         pytest.param(
             SetupParameters(
