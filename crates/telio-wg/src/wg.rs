@@ -172,6 +172,7 @@ impl DynamicWg {
     ///
     /// # Example
     /// ```
+    /// use std::os::fd::FromRawFd;
     /// use std::{sync::Arc, io, time::Duration};
     /// use telio_firewall::firewall::{StatefullFirewall, Firewall};
     /// use telio_model::features::FeatureFirewall;
@@ -217,7 +218,7 @@ impl DynamicWg {
     ///         Config {
     ///             adapter: AdapterType::default(),
     ///             name: Some("tun10".to_string()),
-    ///             tun: Some(Tun::default()),
+    ///             tun: Some(unsafe { std::os::fd::OwnedFd::from_raw_fd(0) }),
     ///             socket_pool: socket_pool,
     ///             firewall_process_inbound_callback:
     ///                 Some(Arc::new(firewall_filter_inbound_packets)),
@@ -306,7 +307,7 @@ impl DynamicWg {
 
     #[cfg(not(any(test, feature = "test-adapter")))]
     async fn start_adapter(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
-        adapter::start(&cfg).await
+        adapter::start(cfg).await
     }
 
     #[cfg(any(test, feature = "test-adapter"))]
@@ -321,7 +322,7 @@ impl DynamicWg {
     }
 
     /// Set the (u)tun file descriptor to be used by the adapter
-    pub async fn set_tun(&self, tun: i32) -> Result<(), Error> {
+    pub async fn set_tun(&self, tun: Tun) -> Result<(), Error> {
         task_exec!(&self.task, async move |rt| Ok(rt.set_tun(tun).await)).await??;
         Ok(())
     }
@@ -501,14 +502,8 @@ impl WireGuard for DynamicWg {
 impl Config {
     fn try_clone(&self) -> Result<Self, io::Error> {
         #[cfg(unix)]
-        let tun = match self.tun {
-            Some(fd) => {
-                let dup_fd = unsafe { libc::dup(fd as libc::c_int) };
-                if dup_fd < 0 {
-                    return Err(io::Error::last_os_error());
-                }
-                Some(dup_fd)
-            }
+        let tun = match &self.tun {
+            Some(fd) => Some(fd.try_clone()?),
             None => None,
         };
         #[cfg(windows)]
@@ -956,10 +951,10 @@ impl State {
         Ok(success)
     }
 
-    pub async fn set_tun(&mut self, tun: i32) -> Result<(), Error> {
+    pub async fn set_tun(&mut self, tun: Tun) -> Result<(), Error> {
         #[cfg(unix)]
         {
-            self.cfg.tun = Some(tun);
+            self.cfg.tun = Some(tun.try_clone()?);
             self.cfg.name = None;
         }
 
@@ -1030,9 +1025,7 @@ impl Runtime for State {
         #[cfg(unix)]
         use std::os::fd::AsRawFd;
         #[cfg(unix)]
-        self.cfg
-            .tun
-            .map(|tun| unsafe { libc::close(tun as libc::c_int) });
+        self.cfg.tun.map(|tun| nix::unistd::close(tun.as_raw_fd()));
     }
 }
 
@@ -1159,7 +1152,7 @@ pub mod tests {
             })
         }
 
-        async fn set_tun(&self, _tun: i32) -> Result<(), Error> {
+        async fn set_tun(&self, _tun: Tun) -> Result<(), Error> {
             Err(Error::UnsupportedAdapter)
         }
     }

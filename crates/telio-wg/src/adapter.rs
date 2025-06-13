@@ -11,6 +11,9 @@ mod linux_native_wg;
 #[cfg_attr(docsrs, doc(cfg(windows)))]
 mod windows_native_wg;
 
+#[cfg(not(windows))]
+use std::os::fd::OwnedFd;
+
 use async_trait::async_trait;
 #[cfg(any(test, feature = "test-adapter"))]
 pub use mockall::automock;
@@ -41,7 +44,7 @@ pub type FirewallResetConnsCb = Option<Arc<dyn Fn(&PublicKey, &mut dyn io::Write
 /// Tunnel file descriptor
 #[cfg(not(target_os = "windows"))]
 #[cfg_attr(docsrs, doc(cfg(not(windows))))]
-pub type Tun = std::os::unix::io::RawFd;
+pub type Tun = OwnedFd;
 /// Tunnel file descriptor is unused on Windows, thus an empty type alias
 #[cfg(target_os = "windows")]
 #[cfg_attr(docsrs, doc(cfg(windows)))]
@@ -89,7 +92,7 @@ pub trait Adapter: Send + Sync {
     async fn inject_reset_packets(&self, _exit_pubkey: &PublicKey) {}
 
     /// Set the (u)tun file descriptor to be used by the adapter
-    async fn set_tun(&self, tun: i32) -> Result<(), Error>;
+    async fn set_tun(&self, tun: Tun) -> Result<(), Error>;
 }
 
 /// Enumeration of `Error` types for `Adapter` struct
@@ -212,7 +215,7 @@ impl FromStr for AdapterType {
 }
 
 #[cfg(not(any(test, feature = "test-adapter")))]
-pub(crate) async fn start(cfg: &Config) -> Result<Box<dyn Adapter>, Error> {
+pub(crate) async fn start(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
     #![allow(unused_variables)]
 
     let name = cfg.name.clone().unwrap_or_else(|| DEFAULT_NAME.to_owned());
@@ -223,9 +226,12 @@ pub(crate) async fn start(cfg: &Config) -> Result<Box<dyn Adapter>, Error> {
             return Err(Error::UnsupportedAdapter);
 
             #[cfg(unix)]
+            use std::os::fd::IntoRawFd;
+
+            #[cfg(unix)]
             Ok(Box::new(neptun::NepTUN::start(
                 &name,
-                cfg.tun,
+                cfg.tun.map(|tun| tun.into_raw_fd()),
                 cfg.socket_pool.clone(),
                 cfg.firewall_process_inbound_callback.clone(),
                 cfg.firewall_process_outbound_callback.clone(),

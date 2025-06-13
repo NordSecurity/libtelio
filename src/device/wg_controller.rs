@@ -1342,7 +1342,7 @@ fn peer_state(
 mod tests {
     use super::*;
 
-    use crate::device::{DeviceConfig, DNS};
+    use crate::device::{RequestedDeviceConfig, DNS};
     use mockall::predicate::{self, eq};
     use rstest::*;
     use telio_nurse::config::AggregatorConfig;
@@ -1399,7 +1399,7 @@ mod tests {
         pq_mock.expect_keys().returning(|| None);
 
         let requested_state = RequestedState {
-            device_config: DeviceConfig {
+            device_config: RequestedDeviceConfig {
                 private_key: secret_key_b,
                 ..Default::default()
             },
@@ -1431,7 +1431,7 @@ mod tests {
         pq_mock.expect_is_rotating_keys().returning(|| false);
 
         let requested_state = RequestedState {
-            device_config: DeviceConfig {
+            device_config: RequestedDeviceConfig {
                 private_key: secret_key_a,
                 ..Default::default()
             },
@@ -1463,7 +1463,7 @@ mod tests {
             .returning(|_| Ok(()));
 
         let requested_state = RequestedState {
-            device_config: DeviceConfig {
+            device_config: RequestedDeviceConfig {
                 fwmark: Some(new),
                 ..Default::default()
             },
@@ -1489,7 +1489,7 @@ mod tests {
         });
 
         let requested_state = RequestedState {
-            device_config: DeviceConfig {
+            device_config: RequestedDeviceConfig {
                 fwmark: Some(old),
                 ..Default::default()
             },

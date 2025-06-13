@@ -113,7 +113,7 @@ let config = telio::device::DeviceConfig {
     ..Default::default()
 };
 
-device.start(&config).unwrap();
+device.start(config).unwrap();
 ```
 
 To stop the device we can simply call the argumentless `Device::stop` method.
