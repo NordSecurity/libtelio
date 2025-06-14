@@ -1,5 +1,15 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.3.1
+### **Tomato**
+---
+* is_link_up_is_always_false_before_first_received_packet: Never report a link state UP before the first packet is received
+* LLT-6115: Update moose from v16.0.1 to v16.0.2
+* NMACOS-8047: Improve socket rebinding on Apple platforms to fix no-net in some cases
+* NMACOS-8047: AKS workaround
+
+<br>
+
 ### v5.3.0-rc2
 ### **Tomato**
 ---

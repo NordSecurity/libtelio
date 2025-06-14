@@ -1,1 +1,0 @@
-Improve socket rebinding on Apple platforms to fix no-net in some cases
