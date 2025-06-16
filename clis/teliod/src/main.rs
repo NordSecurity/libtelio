@@ -120,7 +120,7 @@ enum TeliodError {
     LogAppenderError(#[from] InitError),
     #[error(transparent)]
     DaemonizeError(#[from] daemonize::Error),
-    #[error("Invalid log path {0}")]
+    #[error("Invalid log path: {0}")]
     InvalidLogPath(String),
 }
 
@@ -243,7 +243,7 @@ async fn client_main(cmd: Cmd) -> Result<(), TeliodError> {
         Cmd::Cgi => {
             #[cfg(debug_assertions)]
             let _tracing_worker_guard = logging::setup_logging(
-                cgi::constants::CGI_LOG,
+                cgi::constants::APP_PATHS.cgi_log(),
                 tracing::level_filters::LevelFilter::TRACE,
                 7,
             )
