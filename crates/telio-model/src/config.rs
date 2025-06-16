@@ -4,7 +4,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_value, Error, Value};
 use smart_default::SmartDefault;
-use telio_utils::{telio_log_error, telio_log_warn, Hidden};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn, Hidden};
 use tokio::time::Instant;
 
 use std::{
@@ -274,8 +274,10 @@ impl Config {
             );
             return Err(ConfigParseError::TooLongString);
         }
-        let cfg: PartialConfig =
-            serde_json::from_str(value).map_err(|_| ConfigParseError::BadConfig)?;
+        let cfg: PartialConfig = serde_json::from_str(value).map_err(|err| {
+            telio_log_debug!("Failed to deserialize meshnet config with error: {err:?}");
+            ConfigParseError::BadConfig
+        })?;
         let (cfg, peer_deserialization_failures) = cfg.to_config();
         let res = (cfg, peer_deserialization_failures.len());
         for failure in peer_deserialization_failures {
