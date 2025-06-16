@@ -4694,6 +4694,7 @@ dependencies = [
  "proptest-derive",
  "rand 0.8.5",
  "rustc-hash",
+ "smallvec",
  "sn_fake_clock",
  "telio-crypto",
  "telio-model",
