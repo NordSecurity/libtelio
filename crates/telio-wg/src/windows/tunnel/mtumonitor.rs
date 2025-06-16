@@ -214,7 +214,7 @@ impl MtuMonitor {
             let own_luid = InterfaceLuid::new(self.own_luid);
             telio_log_trace!("+++ MtuMonitor::do_it: get_ip_interface");
             let mut own_iface = own_luid.get_ip_interface(self.family)?;
-            own_iface.NlMtu = mtu - 80;
+            own_iface.NlMtu = mtu.saturating_sub(80);
             if own_iface.NlMtu < self.min_mtu {
                 own_iface.NlMtu = self.min_mtu;
             }
