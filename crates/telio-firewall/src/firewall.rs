@@ -5,36 +5,30 @@ use core::fmt;
 use enum_map::{Enum, EnumMap};
 use ipnet::Ipv4Net;
 use pnet_packet::{
-    icmp::{
-        destination_unreachable::IcmpCodes, IcmpPacket, IcmpType, IcmpTypes, MutableIcmpPacket,
-    },
-    icmpv6::{Icmpv6Code, Icmpv6Type, Icmpv6Types, MutableIcmpv6Packet},
+    icmp::{IcmpPacket, IcmpType, IcmpTypes},
+    icmpv6::{Icmpv6Type, Icmpv6Types},
     ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
-    ipv4::{Ipv4Flags, Ipv4Packet, MutableIpv4Packet},
-    ipv6::{Ipv6Packet, MutableIpv6Packet},
-    tcp::{MutableTcpPacket, TcpFlags, TcpPacket},
-    udp::UdpPacket,
+    ipv4::Ipv4Packet,
+    ipv6::Ipv6Packet,
+    tcp::TcpFlags,
     Packet,
 };
 use std::{
-    convert::TryInto,
-    fmt::{Debug, Formatter},
+    fmt::Debug,
     io,
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr, SocketAddr},
-    sync::{Mutex, RwLock, RwLockReadGuard},
-    time::Duration,
+    sync::{RwLock, RwLockReadGuard},
 };
 
 use telio_model::features::{FeatureFirewall, IpProtocol};
 use telio_network_monitors::monitor::LOCAL_ADDRS_CACHE;
-use telio_utils::{
-    lru_cache::{Entry, LruCache},
-    telio_log_error,
-};
-use tracing::error;
 
 use telio_crypto::PublicKey;
-use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
+
+use crate::conntrack::{
+    unwrap_lock_or_return, unwrap_option_or_return, Conntracker, UdpConnectionInfo,
+};
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
 pub type HashSet<V> = rustc_hash::FxHashSet<V>;
@@ -44,7 +38,34 @@ pub type HashMap<K, V> = rustc_hash::FxHashMap<K, V>;
 const LRU_CAPACITY: usize = 4096; // Max entries to keep (sepatately for TCP, UDP, and others)
 const LRU_TIMEOUT: u64 = 120_000; // 2min (https://datatracker.ietf.org/doc/html/rfc4787#section-4.3)
 
-const TCP_FIRST_PKT_MASK: u8 = TcpFlags::SYN | TcpFlags::ACK;
+pub(crate) const TCP_FIRST_PKT_MASK: u8 = TcpFlags::SYN | TcpFlags::ACK;
+
+#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
+pub(crate) enum IpAddr {
+    Ipv4(u32),
+    Ipv6(u128),
+}
+
+impl From<StdIpv4Addr> for IpAddr {
+    fn from(ipv4_addr: StdIpv4Addr) -> IpAddr {
+        IpAddr::Ipv4(ipv4_addr.into())
+    }
+}
+
+impl From<StdIpv6Addr> for IpAddr {
+    fn from(ipv6_addr: StdIpv6Addr) -> IpAddr {
+        IpAddr::Ipv6(ipv6_addr.into())
+    }
+}
+
+impl From<IpAddr> for StdIpAddr {
+    fn from(ip_addr: IpAddr) -> Self {
+        match ip_addr {
+            IpAddr::Ipv4(ipv4) => StdIpAddr::V4(ipv4.into()),
+            IpAddr::Ipv6(ipv6) => StdIpAddr::V6(ipv6.into()),
+        }
+    }
+}
 
 const ICMP_BLOCKED_TYPES: [u8; 4] = [
     IcmpTypes::EchoRequest.0,
@@ -63,7 +84,7 @@ const ICMPV6_BLOCKED_TYPES: [u8; 4] = [
 /// File sending port
 pub const FILE_SEND_PORT: u16 = 49111;
 
-trait Icmp: Sized {
+pub(crate) trait Icmp: Sized {
     const BLOCKED_TYPES: [u8; 4];
 }
 
@@ -75,7 +96,7 @@ impl Icmp for Icmpv6Type {
     const BLOCKED_TYPES: [u8; 4] = ICMPV6_BLOCKED_TYPES;
 }
 
-trait IpPacket<'a>: Sized + Debug + Packet {
+pub(crate) trait IpPacket<'a>: Sized + Debug + Packet {
     type Addr: Into<IpAddr>;
     type Icmp: Icmp;
 
@@ -147,6 +168,7 @@ impl<'a> IpPacket<'a> for Ipv6Packet<'a> {
         Self::new(buffer)
     }
 }
+
 /// Firewall trait.
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 pub trait Firewall {
@@ -234,10 +256,20 @@ impl fmt::Display for Permissions {
     }
 }
 
-enum PacketAction {
+#[derive(Clone)]
+pub(crate) enum PacketAction {
     PassThrough,
     Drop,
     HandleLocally,
+}
+
+impl From<PacketAction> for bool {
+    fn from(value: PacketAction) -> Self {
+        match value {
+            PacketAction::PassThrough | PacketAction::HandleLocally => true,
+            PacketAction::Drop => false,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -263,12 +295,8 @@ impl Whitelist {
 
 /// Statefull packet-filter firewall.
 pub struct StatefullFirewall {
-    /// Recent udp connections
-    udp: Mutex<LruCache<Connection, UdpConnectionInfo>>,
-    /// Recent tcp connections
-    tcp: Mutex<LruCache<Connection, TcpConnectionInfo>>,
-    /// Recent icmp connections
-    icmp: Mutex<LruCache<IcmpConn, ()>>,
+    /// Connection tracking
+    conntracker: Conntracker,
     /// Whitelist of networks/peers allowed to connect
     whitelist: RwLock<Whitelist>,
     /// Indicates whether the firewall should use IPv6
@@ -286,143 +314,6 @@ pub struct StatefullFirewall {
     outgoing_udp_blacklist: RwLock<Vec<SocketAddr>>,
 }
 
-#[derive(Debug)]
-struct UdpConnectionInfo {
-    is_remote_initiated: bool,
-    last_out_pkg_chunk: Option<Vec<u8>>,
-}
-
-impl UdpConnectionInfo {
-    /// UDP packet header contains at least 8 bytes and IP packet header is
-    /// 20-60 bytes long, so we need to store up to 68 bytes of previous
-    /// packet.
-    /// For IPv6 the fixed header is 40 bytes long. There is no upper limit for
-    /// a header with extensions. Let's stick with the value for IPv4. In the worst
-    /// case we will not be able to reset IPv6 connections with unusually long header.
-    const LAST_PKG_MAX_CHUNK_LEN: usize = 60 + 8;
-}
-
-#[derive(PartialEq, Debug)]
-struct TcpConnectionInfo {
-    tx_alive: bool,
-    rx_alive: bool,
-    conn_remote_initiated: bool,
-    next_seq: Option<u32>,
-}
-
-#[derive(Clone, Copy, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
-enum IpAddr {
-    Ipv4(u32),
-    Ipv6(u128),
-}
-
-impl From<StdIpv4Addr> for IpAddr {
-    fn from(ipv4_addr: StdIpv4Addr) -> IpAddr {
-        IpAddr::Ipv4(ipv4_addr.into())
-    }
-}
-
-impl From<StdIpv6Addr> for IpAddr {
-    fn from(ipv6_addr: StdIpv6Addr) -> IpAddr {
-        IpAddr::Ipv6(ipv6_addr.into())
-    }
-}
-
-impl From<IpAddr> for StdIpAddr {
-    fn from(ip_addr: IpAddr) -> Self {
-        match ip_addr {
-            IpAddr::Ipv4(ipv4) => StdIpAddr::V4(ipv4.into()),
-            IpAddr::Ipv6(ipv6) => StdIpAddr::V6(ipv6.into()),
-        }
-    }
-}
-
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-struct IpConnWithPort {
-    remote_addr: IpAddr,
-    remote_port: u16,
-    local_addr: IpAddr,
-    local_port: u16,
-}
-
-impl Debug for IpConnWithPort {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("IpConnWithPort")
-            .field("remote_addr", &StdIpAddr::from(self.remote_addr))
-            .field("remote_port", &self.remote_port)
-            .field("local_addr", &StdIpAddr::from(self.local_addr))
-            .field("local_port", &self.local_port)
-            .finish()
-    }
-}
-
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-struct Connection {
-    link: IpConnWithPort,
-    // This public key refers to source peer for inbound connections and
-    // destination peer for outbound connections
-    pubkey: PublicKey,
-}
-
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-struct IcmpConn {
-    remote_addr: IpAddr,
-    local_addr: IpAddr,
-    response_type: u8,
-    identifier_sequence: u32,
-    // This public key refers to source peer for inbound connections and
-    // destination peer for outbound connections
-    pubkey: PublicKey,
-}
-
-type IcmpKey = Result<IcmpConn, IcmpErrorKey>;
-
-#[derive(Clone, Debug)]
-enum IcmpErrorKey {
-    Udp(Option<IpConnWithPort>),
-    Tcp(Option<IpConnWithPort>),
-    Icmp(Option<IcmpConn>),
-    None,
-}
-
-impl Debug for IcmpConn {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("IcmpConn")
-            .field("remote_addr", &StdIpAddr::from(self.remote_addr))
-            .field("local_addr", &StdIpAddr::from(self.local_addr))
-            .field("response_type", &self.response_type)
-            .field("identifier_sequence", &self.identifier_sequence)
-            .finish()
-    }
-}
-
-macro_rules! unwrap_option_or_return {
-    ( $option:expr, $retval:expr ) => {
-        match $option {
-            Some(x) => x,
-            None => return $retval,
-        }
-    };
-    ( $option:expr ) => {
-        unwrap_option_or_return!($option, ())
-    };
-}
-
-macro_rules! unwrap_lock_or_return {
-    ( $guard:expr, $retval:expr ) => {
-        match $guard {
-            Ok(x) => x,
-            Err(_poisoned) => {
-                error!("Poisoned lock");
-                return $retval;
-            }
-        }
-    };
-    ( $guard:expr ) => {
-        unwrap_lock_or_return!($guard, ())
-    };
-}
-
 impl StatefullFirewall {
     /// Constructs firewall with default timeout (2 mins) and capacity (4096 entries).
     pub fn new(use_ipv6: bool, feature: &FeatureFirewall) -> Self {
@@ -432,18 +323,13 @@ impl StatefullFirewall {
     #[cfg(feature = "test_utils")]
     /// Return the size of conntrack entries for tcp and udp (for testing only).
     pub fn get_state(&self) -> (usize, usize) {
-        let tcp = unwrap_lock_or_return!(self.tcp.lock(), (0, 0)).len();
-        let udp = unwrap_lock_or_return!(self.udp.lock(), (0, 0)).len();
-        (tcp, udp)
+        self.conntracker.get_state()
     }
 
     /// Constructs firewall with custom capacity and timeout in ms (for testing only).
     fn new_custom(capacity: usize, ttl: u64, use_ipv6: bool, feature: &FeatureFirewall) -> Self {
-        let ttl = Duration::from_millis(ttl);
         Self {
-            tcp: Mutex::new(LruCache::new(ttl, capacity)),
-            udp: Mutex::new(LruCache::new(ttl, capacity)),
-            icmp: Mutex::new(LruCache::new(ttl, capacity)),
+            conntracker: Conntracker::new(capacity, ttl),
             whitelist: RwLock::new(Whitelist::default()),
             allow_ipv6: use_ipv6,
             record_whitelisted: feature.boringtun_reset_conns || feature.neptun_reset_conns,
@@ -491,7 +377,8 @@ impl StatefullFirewall {
         match proto {
             IpNextHeaderProtocols::Udp => {
                 let blacklist = unwrap_lock_or_return!(self.outgoing_udp_blacklist.read(), false);
-                let link = unwrap_option_or_return!(Self::build_conn_info(&ip, false), false).0;
+                let link =
+                    unwrap_option_or_return!(Conntracker::build_conn_info(&ip, false), false).0;
                 if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
                     let Some(first_chunk) = ip
                         .packet()
@@ -502,7 +389,7 @@ impl StatefullFirewall {
                         return false;
                     };
 
-                    _ = self.send_icmp_port_unreachable_packets(
+                    _ = self.conntracker.send_icmp_port_unreachable_packets(
                         std::iter::once((&link, first_chunk)),
                         sink,
                     );
@@ -513,10 +400,10 @@ impl StatefullFirewall {
             IpNextHeaderProtocols::Tcp => {
                 let blacklist = unwrap_lock_or_return!(self.outgoing_tcp_blacklist.read(), false);
                 let (link, tcp_packet) =
-                    unwrap_option_or_return!(Self::build_conn_info(&ip, false), false);
+                    unwrap_option_or_return!(Conntracker::build_conn_info(&ip, false), false);
                 let tcp_packet = unwrap_option_or_return!(tcp_packet, false);
                 if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
-                    _ = self.send_tcp_rst_packets(
+                    _ = self.conntracker.send_tcp_rst_packets(
                         std::iter::once((&link, 0, Some(tcp_packet.get_sequence() + 1))),
                         sink,
                     );
@@ -542,10 +429,10 @@ impl StatefullFirewall {
                 // We still need to track the state of TCP and UDP connections
                 match proto {
                     IpNextHeaderProtocols::Udp => {
-                        self.handle_outbound_udp(peer, &ip);
+                        self.conntracker.handle_outbound_udp(peer, &ip);
                     }
                     IpNextHeaderProtocols::Tcp => {
-                        self.handle_outbound_tcp(peer, &ip);
+                        self.conntracker.handle_outbound_tcp(peer, &ip);
                     }
                     _ => (),
                 };
@@ -561,16 +448,16 @@ impl StatefullFirewall {
 
         match proto {
             IpNextHeaderProtocols::Udp => {
-                self.handle_outbound_udp(peer, &ip);
+                self.conntracker.handle_outbound_udp(peer, &ip);
             }
             IpNextHeaderProtocols::Tcp => {
-                self.handle_outbound_tcp(peer, &ip);
+                self.conntracker.handle_outbound_tcp(peer, &ip);
             }
             IpNextHeaderProtocols::Icmp => {
-                self.handle_outbound_icmp(peer, &ip);
+                self.conntracker.handle_outbound_icmp(peer, &ip);
             }
             IpNextHeaderProtocols::Icmpv6 => {
-                self.handle_outbound_icmp(peer, &ip);
+                self.conntracker.handle_outbound_icmp(peer, &ip);
             }
             _ => (),
         };
@@ -596,19 +483,20 @@ impl StatefullFirewall {
                 telio_log_trace!("Inbound IP packet is for vpn peer, forwarding: {:?}", ip);
                 // We still need to track the state of TCP and UDP connections
                 if self.record_whitelisted {
-                    let check_connection_policy = |_pubkey, _port| PacketAction::HandleLocally;
-
                     match proto {
                         IpNextHeaderProtocols::Udp => {
-                            self.handle_inbound_udp(check_connection_policy, &peer, &ip);
+                            self.conntracker.handle_inbound_udp(false, &peer, &ip);
                         }
                         IpNextHeaderProtocols::Tcp => {
-                            self.handle_inbound_tcp(check_connection_policy, &peer, &ip);
+                            self.conntracker.handle_inbound_tcp(
+                                PacketAction::HandleLocally,
+                                &peer,
+                                &ip,
+                            );
                         }
                         _ => (),
                     }
                 }
-
                 return true;
             }
         }
@@ -617,8 +505,6 @@ impl StatefullFirewall {
             telio_log_trace!("Inbound IP packet is not valid, dropping: {:?}", ip);
             return false;
         }
-
-        let check_connection_policy = |pubkey, port| self.decide_connection_handling(pubkey, port);
 
         // Check packet policy first
         match self.decide_packet_handling(
@@ -639,280 +525,83 @@ impl StatefullFirewall {
 
         match proto {
             IpNextHeaderProtocols::Udp => {
-                self.handle_inbound_udp(check_connection_policy, &peer, &ip)
+                let (link, _) =
+                    unwrap_option_or_return!(Conntracker::build_conn_info(&ip, true), false);
+                let local_port = link.local_port;
+                match self.decide_connection_handling(peer, local_port) {
+                    PacketAction::PassThrough => {
+                        telio_log_trace!("Accepting UDP packet {:?} {:?}", ip, peer);
+                        true
+                    }
+                    PacketAction::Drop => {
+                        if self.conntracker.is_udp_conn_locally_initiated(peer, &ip) {
+                            telio_log_trace!("Accepting UDP packet {:?} {:?}", ip, peer);
+                            true
+                        } else {
+                            telio_log_trace!("Dropping UDP packet {:?} {:?}", ip, peer);
+                            self.conntracker.handle_inbound_udp(true, &peer, &ip);
+                            false
+                        }
+                    }
+                    PacketAction::HandleLocally => {
+                        telio_log_trace!("Accepting UDP packet {:?} {:?}", ip, peer);
+                        self.conntracker.handle_inbound_udp(false, &peer, &ip);
+                        true
+                    }
+                }
             }
             IpNextHeaderProtocols::Tcp => {
-                self.handle_inbound_tcp(check_connection_policy, &peer, &ip)
+                let (link, packet) =
+                    unwrap_option_or_return!(Conntracker::build_conn_info(&ip, true), false);
+                let local_port = link.local_port;
+                let mut packet_action = self.decide_connection_handling(peer, local_port);
+                if let PacketAction::PassThrough = packet_action {
+                    telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, peer);
+                    return true;
+                }
+
+                let conn_info = self.conntracker.get_tcp_conn_info(peer, &ip);
+
+                // Packet actions sometimes needs to be adjusted based on the connection info
+                if let Some(conn_info) = conn_info {
+                    // Accepting packets for connections initiated locally
+                    if !conn_info.conn_remote_initiated {
+                        if let PacketAction::Drop = packet_action {
+                            packet_action = PacketAction::HandleLocally
+                        }
+                    }
+
+                    // Dropping most packets for dead, locally initiated connections
+                    if let Some(pkt) = packet {
+                        let flags = pkt.get_flags();
+                        if flags & (TcpFlags::RST | TcpFlags::FIN | TcpFlags::ACK) == 0
+                            && !conn_info.rx_alive
+                            && !conn_info.tx_alive
+                            && !conn_info.conn_remote_initiated
+                        {
+                            packet_action = PacketAction::Drop;
+                        }
+                    }
+                }
+
+                self.conntracker
+                    .handle_inbound_tcp(packet_action.clone(), &peer, &ip);
+
+                match packet_action {
+                    PacketAction::PassThrough | PacketAction::HandleLocally => {
+                        telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, peer);
+                        true
+                    }
+                    PacketAction::Drop => {
+                        telio_log_trace!("Dropping TCP packet {:?} {:?}", ip, peer);
+                        false
+                    }
+                }
             }
             IpNextHeaderProtocols::Icmp => self.handle_inbound_icmp(peer, &ip),
             IpNextHeaderProtocols::Icmpv6 if self.allow_ipv6 => self.handle_inbound_icmp(peer, &ip),
             _ => false,
         }
-    }
-
-    fn handle_outbound_udp<'a>(&self, pubkey: PublicKey, ip: &impl IpPacket<'a>) {
-        let link = unwrap_option_or_return!(Self::build_conn_info(ip, false)).0;
-        let key = Connection { link, pubkey };
-
-        let Some(pkg_chunk) = ip
-            .packet()
-            .chunks(UdpConnectionInfo::LAST_PKG_MAX_CHUNK_LEN)
-            .next()
-        else {
-            telio_log_warn!("Failed to extract headers of UDP packet for {key:?}");
-            return;
-        };
-
-        let mut udp_cache = unwrap_lock_or_return!(self.udp.lock());
-        // If key already exists, dont change the value, just update timer with entry
-        match udp_cache.entry(key, true) {
-            Entry::Vacant(e) => {
-                let mut last_chunk = Vec::with_capacity(UdpConnectionInfo::LAST_PKG_MAX_CHUNK_LEN);
-                last_chunk.extend_from_slice(pkg_chunk);
-
-                let conninfo = UdpConnectionInfo {
-                    is_remote_initiated: false,
-                    last_out_pkg_chunk: Some(last_chunk),
-                };
-                telio_log_trace!("Inserting new UDP conntrack entry {:?}", e.key());
-                e.insert(conninfo);
-            }
-            Entry::Occupied(mut o) => {
-                let value = o.get_mut();
-
-                // Take out the old one clear and copy data from new packet in
-                // order to avoid allocation
-                let mut last_chunk = value.last_out_pkg_chunk.take().unwrap_or_else(|| {
-                    Vec::with_capacity(UdpConnectionInfo::LAST_PKG_MAX_CHUNK_LEN)
-                });
-                last_chunk.clear();
-                last_chunk.extend_from_slice(pkg_chunk);
-
-                value.last_out_pkg_chunk = Some(last_chunk);
-            }
-        }
-    }
-
-    fn handle_outbound_tcp<'a>(&self, pubkey: PublicKey, ip: &impl IpPacket<'a>) {
-        let (link, packet) = unwrap_option_or_return!(Self::build_conn_info(ip, false));
-        let key = Connection { link, pubkey };
-        let flags = packet.map(|p| p.get_flags()).unwrap_or(0);
-        let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
-
-        if flags & TCP_FIRST_PKT_MASK == TcpFlags::SYN {
-            telio_log_trace!("Inserting TCP conntrack entry {:?}", key.link);
-            tcp_cache.insert(
-                key,
-                TcpConnectionInfo {
-                    tx_alive: true,
-                    rx_alive: true,
-                    conn_remote_initiated: false,
-                    next_seq: None,
-                },
-            );
-        } else if flags & TcpFlags::RST == TcpFlags::RST {
-            telio_log_trace!("Removing TCP conntrack entry {:?}", key);
-            tcp_cache.remove(&key);
-        } else if flags & TcpFlags::FIN == TcpFlags::FIN {
-            telio_log_trace!("Connection {:?} closing", key);
-            if let Entry::Occupied(mut e) = tcp_cache.entry(key, false) {
-                let TcpConnectionInfo { tx_alive, .. } = e.get_mut();
-                *tx_alive = false;
-            }
-        }
-    }
-
-    fn handle_outbound_icmp<'a>(&self, peer: PublicKey, ip: &impl IpPacket<'a>) {
-        let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock());
-        if let Ok(key) = Self::build_icmp_key(peer, ip, false) {
-            // If key already exists, dont change the value, just update timer with entry
-            if let Entry::Vacant(e) = icmp_cache.entry(key, true) {
-                telio_log_trace!("Inserting new ICMP conntrack entry {:?}", e.key());
-                e.insert(());
-            }
-        }
-    }
-
-    fn handle_inbound_udp<'a>(
-        &self,
-        decide_connection_handling: impl Fn(PublicKey, u16) -> PacketAction,
-        peer: &PublicKey,
-        ip: &impl IpPacket<'a>,
-    ) -> bool {
-        let (link, _) = unwrap_option_or_return!(Self::build_conn_info(ip, true), false);
-        let key = Connection {
-            link,
-            pubkey: *peer,
-        };
-        let local_port = key.link.local_port;
-
-        let mut udp_cache = unwrap_lock_or_return!(self.udp.lock(), false);
-
-        match udp_cache.entry(key, true) {
-            Entry::Occupied(mut occ) => {
-                let connection_info = occ.get();
-                let key = occ.key();
-
-                telio_log_trace!(
-                    "Matched UDP conntrack entry {:?} {:?}",
-                    key,
-                    connection_info
-                );
-
-                if connection_info.is_remote_initiated {
-                    match decide_connection_handling(*peer, local_port) {
-                        PacketAction::Drop => {
-                            telio_log_trace!("Removing UDP conntrack entry {:?}", key);
-                            occ.remove();
-                            return false;
-                        }
-                        PacketAction::PassThrough | PacketAction::HandleLocally => (),
-                    }
-                }
-            }
-            Entry::Vacant(vacc) => {
-                let key = vacc.key();
-
-                match decide_connection_handling(*peer, local_port) {
-                    PacketAction::PassThrough => {
-                        telio_log_trace!("Accepting UDP packet {:?} {:?}", key, peer);
-                        return true;
-                    }
-                    PacketAction::Drop => {
-                        telio_log_trace!("Dropping UDP packet {:?} {:?}", key, peer);
-                        return false;
-                    }
-                    PacketAction::HandleLocally => (),
-                }
-
-                telio_log_trace!("Updating UDP conntrack entry {:?} {:?}", key, peer,);
-                vacc.insert(UdpConnectionInfo {
-                    is_remote_initiated: true,
-                    last_out_pkg_chunk: None,
-                });
-            }
-        }
-
-        telio_log_trace!("Accepting UDP packet {:?} {:?}", ip, peer);
-        true
-    }
-
-    fn handle_inbound_tcp<'a>(
-        &self,
-        is_conn_policy_compliant: impl Fn(PublicKey, u16) -> PacketAction,
-        pubkey: &PublicKey,
-        ip: &impl IpPacket<'a>,
-    ) -> bool {
-        let (link, packet) = unwrap_option_or_return!(Self::build_conn_info(ip, true), false);
-        let key = Connection {
-            link,
-            pubkey: *pubkey,
-        };
-        let local_port = key.link.local_port;
-        telio_log_trace!("Processing TCP packet with {:?}", key);
-
-        let mut cache = unwrap_lock_or_return!(self.tcp.lock(), false);
-        // Dont update last access time in tcp, as it is handled by tcp flags
-        match cache.entry(key, false) {
-            Entry::Occupied(mut occ) => {
-                let connection_info = occ.get_mut();
-                telio_log_trace!("Matched conntrack entry {:?} {:?}", pubkey, connection_info);
-
-                if connection_info.conn_remote_initiated {
-                    match is_conn_policy_compliant(*pubkey, local_port) {
-                        PacketAction::Drop => {
-                            telio_log_trace!("Removing TCP conntrack entry {:?}", pubkey);
-                            occ.remove();
-                            return false;
-                        }
-                        PacketAction::PassThrough | PacketAction::HandleLocally => (),
-                    }
-                }
-
-                if let Some(pkt) = packet {
-                    let flags = pkt.get_flags();
-                    let mut is_conn_reset = false;
-                    if flags & TcpFlags::RST == TcpFlags::RST {
-                        telio_log_trace!(
-                            "Removing TCP conntrack entry with {:?} for {:?}",
-                            pubkey,
-                            local_port
-                        );
-                        is_conn_reset = true;
-                    } else if (flags & TcpFlags::FIN) == TcpFlags::FIN {
-                        telio_log_trace!(
-                            "Connection with {:?} for {:?} closing",
-                            pubkey,
-                            local_port
-                        );
-                        connection_info.rx_alive = false;
-                    } else if !connection_info.tx_alive
-                        && !connection_info.rx_alive
-                        && !connection_info.conn_remote_initiated
-                    {
-                        if (flags & TcpFlags::ACK) == TcpFlags::ACK {
-                            telio_log_trace!(
-                                "Removing TCP conntrack entry with {:?} for {:?}",
-                                pubkey,
-                                local_port
-                            );
-                            occ.remove();
-                            return true;
-                        }
-                        return false;
-                    }
-                    // restarts cache entry timeout
-                    let next_seq = if (flags & TcpFlags::SYN) == TcpFlags::SYN {
-                        pkt.get_sequence() + 1
-                    } else {
-                        pkt.get_sequence() + pkt.payload().len() as u32
-                    };
-
-                    connection_info.next_seq = Some(next_seq);
-                    if is_conn_reset {
-                        occ.remove();
-                    }
-                    telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, pubkey);
-                    return true;
-                }
-            }
-            Entry::Vacant(vacc) => {
-                let key = vacc.key();
-                match is_conn_policy_compliant(*pubkey, local_port) {
-                    PacketAction::PassThrough => {
-                        telio_log_trace!("Accepting UDP packet {:?} {:?}", ip, pubkey);
-                        return true;
-                    }
-                    PacketAction::Drop => {
-                        telio_log_trace!("Dropping UDP packet {:?} {:?}", key, pubkey);
-                        return false;
-                    }
-                    PacketAction::HandleLocally => (),
-                }
-
-                if let Some(pkt) = packet {
-                    let flags = pkt.get_flags();
-                    if flags & TCP_FIRST_PKT_MASK == TcpFlags::SYN {
-                        let conn_info = TcpConnectionInfo {
-                            tx_alive: true,
-                            rx_alive: true,
-                            conn_remote_initiated: true,
-                            next_seq: Some(pkt.get_sequence() + 1),
-                        };
-                        telio_log_trace!(
-                            "Updating TCP conntrack entry {:?} {:?} {:?}",
-                            key,
-                            pubkey,
-                            conn_info
-                        );
-                        vacc.insert(conn_info);
-                    }
-                }
-            }
-        }
-
-        telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, pubkey);
-        true
     }
 
     fn handle_inbound_icmp<'a, P: IpPacket<'a>>(&self, peer: PublicKey, ip: &P) -> bool {
@@ -928,549 +617,12 @@ impl StatefullFirewall {
             return false;
         }
 
-        match Self::build_icmp_key(peer, ip, true) {
-            Ok(key) => {
-                let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock(), false);
-                let is_in_cache = icmp_cache.get(&key).is_some();
-                if is_in_cache {
-                    telio_log_trace!("Matched ICMP conntrack entry {:?}", key,);
-                    telio_log_trace!("Removing ICMP conntrack entry {:?}", key);
-                    icmp_cache.remove(&key);
-                    telio_log_trace!("Accepting ICMP packet {:?} {:?}", ip, peer);
-                }
-                is_in_cache
-            }
-            Err(icmp_error_key) => {
-                telio_log_trace!("Encountered ICMP error packet, checking nested packet");
-                let should_accept = self.handle_icmp_error(peer, icmp_error_key);
-                if should_accept {
-                    telio_log_trace!("Accepting ICMP packet {:?} {:?}", ip, peer);
-                }
-                should_accept
-            }
+        // We accept exactly these packets for which there is some entry in the relevant cache
+        let should_accept = self.conntracker.handle_inbound_icmp(peer, ip);
+        if should_accept {
+            telio_log_trace!("Accepting ICMP packet {:?} {:?}", ip, peer);
         }
-    }
-
-    fn build_conn_info<'a, P: IpPacket<'a>>(
-        ip: &P,
-        inbound: bool,
-    ) -> Option<(IpConnWithPort, Option<TcpPacket>)> {
-        let proto = ip.get_next_level_protocol();
-        let (src, dest, tcp_packet) = match proto {
-            IpNextHeaderProtocols::Udp => match UdpPacket::new(ip.payload()) {
-                Some(packet) => (packet.get_source(), packet.get_destination(), None),
-                _ => {
-                    telio_log_trace!("Could not create UDP packet from IP packet {:?}", ip);
-                    return None;
-                }
-            },
-            IpNextHeaderProtocols::Tcp => match TcpPacket::new(ip.payload()) {
-                Some(packet) => (packet.get_source(), packet.get_destination(), Some(packet)),
-                _ => {
-                    telio_log_trace!("Could not create TCP packet from IP packet {:?}", ip);
-                    return None;
-                }
-            },
-            _ => return None,
-        };
-
-        let key = if inbound {
-            IpConnWithPort {
-                remote_addr: ip.get_source().into(),
-                remote_port: src,
-                local_addr: ip.get_destination().into(),
-                local_port: dest,
-            }
-        } else {
-            IpConnWithPort {
-                remote_addr: ip.get_destination().into(),
-                remote_port: dest,
-                local_addr: ip.get_source().into(),
-                local_port: src,
-            }
-        };
-
-        match proto {
-            IpNextHeaderProtocols::Udp => Some((key, None)),
-            IpNextHeaderProtocols::Tcp => Some((key, tcp_packet)),
-            _ => None,
-        }
-    }
-
-    fn build_icmp_key<'a, P: IpPacket<'a>>(pubkey: PublicKey, ip: &P, inbound: bool) -> IcmpKey {
-        let icmp_packet = match IcmpPacket::new(ip.payload()) {
-            Some(packet) => packet,
-            _ => {
-                telio_log_trace!("Could not create ICMP packet from IP packet {:?}", ip);
-                return Err(IcmpErrorKey::None);
-            }
-        };
-        let response_type = {
-            use IcmpTypes as v4;
-            use Icmpv6Types as v6;
-            let it = icmp_packet.get_icmp_type().0;
-            // Request messages get the icmp type of the corresponding reply message
-            // Reply messages get their own icmp type, to match that of its corresponding request
-            // We only create keys for outbound requests and inbound replies
-            if inbound {
-                if it == v4::EchoReply.0
-                    || it == v4::TimestampReply.0
-                    || it == v4::InformationReply.0
-                    || it == v4::AddressMaskReply.0
-                    || it == v6::EchoReply.0
-                {
-                    it
-                } else if (it == v4::DestinationUnreachable.0
-                    || it == v4::TimeExceeded.0
-                    || it == v4::ParameterProblem.0)
-                    && ip.get_next_level_protocol() == IpNextHeaderProtocols::Icmp
-                {
-                    return Self::build_icmp_error_key(pubkey, icmp_packet, true);
-                } else if (it == v6::DestinationUnreachable.0
-                    || it == v6::PacketTooBig.0
-                    || it == v6::ParameterProblem.0
-                    || it == v6::TimeExceeded.0)
-                    && ip.get_next_level_protocol() == IpNextHeaderProtocols::Icmpv6
-                {
-                    return Self::build_icmp_error_key(pubkey, icmp_packet, false);
-                } else {
-                    return Err(IcmpErrorKey::None);
-                }
-            } else if it == v4::EchoRequest.0 {
-                v4::EchoReply.0
-            } else if it == v4::Timestamp.0 {
-                v4::TimestampReply.0
-            } else if it == v4::InformationRequest.0 {
-                v4::InformationReply.0
-            } else if it == v4::AddressMaskRequest.0 {
-                v4::AddressMaskReply.0
-            } else if it == v6::EchoRequest.0 {
-                v6::EchoReply.0
-            } else {
-                return Err(IcmpErrorKey::None);
-            }
-        };
-
-        let identifier_sequence = {
-            let bytes = icmp_packet
-                .payload()
-                .get(0..4)
-                .and_then(|b| b.try_into().ok());
-            let bytes = unwrap_option_or_return!(bytes, Err(IcmpErrorKey::None));
-            u32::from_ne_bytes(bytes)
-        };
-        let (remote_addr, local_addr) = if inbound {
-            (ip.get_source().into(), ip.get_destination().into())
-        } else {
-            (ip.get_destination().into(), ip.get_source().into())
-        };
-        let key = IcmpConn {
-            remote_addr,
-            local_addr,
-            response_type,
-            identifier_sequence,
-            pubkey,
-        };
-
-        Ok(key)
-    }
-
-    fn build_icmp_error_key(pubkey: PublicKey, icmp_packet: IcmpPacket, is_v4: bool) -> IcmpKey {
-        let inner_packet = match icmp_packet.payload().get(4..) {
-            Some(bytes) => bytes,
-            None => {
-                telio_log_trace!("ICMP error body does not contain a nested packet");
-                return Err(IcmpErrorKey::None);
-            }
-        };
-        let icmp_error_key = if is_v4 {
-            let packet = match Ipv4Packet::try_from(inner_packet) {
-                Some(packet) => packet,
-                _ => {
-                    telio_log_trace!("ICMP error contains invalid IPv4 packet");
-                    return Err(IcmpErrorKey::None);
-                }
-            };
-            match packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Udp => {
-                    IcmpErrorKey::Udp(Self::build_conn_info(&packet, false).map(|(key, _)| key))
-                }
-                IpNextHeaderProtocols::Tcp => {
-                    IcmpErrorKey::Tcp(Self::build_conn_info(&packet, false).map(|(key, _)| key))
-                }
-                IpNextHeaderProtocols::Icmp => {
-                    IcmpErrorKey::Icmp(Self::build_icmp_key(pubkey, &packet, false).ok())
-                }
-                _ => IcmpErrorKey::None,
-            }
-        } else {
-            let packet = match Ipv6Packet::try_from(inner_packet) {
-                Some(packet) => packet,
-                _ => {
-                    telio_log_trace!("ICMP error contains invalid IPv6 packet");
-                    return Err(IcmpErrorKey::None);
-                }
-            };
-            match packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Udp => {
-                    IcmpErrorKey::Udp(Self::build_conn_info(&packet, false).map(|(key, _)| key))
-                }
-                IpNextHeaderProtocols::Tcp => {
-                    IcmpErrorKey::Tcp(Self::build_conn_info(&packet, false).map(|(key, _)| key))
-                }
-                IpNextHeaderProtocols::Icmpv6 => {
-                    IcmpErrorKey::Icmp(Self::build_icmp_key(pubkey, &packet, false).ok())
-                }
-                _ => IcmpErrorKey::None,
-            }
-        };
-        Err(icmp_error_key)
-    }
-
-    fn handle_icmp_error(&self, pubkey: PublicKey, error_key: IcmpErrorKey) -> bool {
-        match error_key {
-            IcmpErrorKey::Icmp(Some(icmp_key)) => {
-                let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock(), false);
-                let is_in_cache = icmp_cache.get(&icmp_key).is_some();
-                if is_in_cache {
-                    telio_log_trace!(
-                        "Nested packet in ICMP error packet matched ICMP conntrack entry {:?}",
-                        icmp_key,
-                    );
-                    telio_log_trace!("Removing ICMP conntrack entry {:?}", icmp_key);
-                    icmp_cache.remove(&icmp_key);
-                }
-                is_in_cache
-            }
-            IcmpErrorKey::Tcp(Some(link)) => {
-                let tcp_key = Connection { link, pubkey };
-
-                let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock(), false);
-
-                let is_in_cache = tcp_cache.get(&tcp_key).is_some();
-                if is_in_cache {
-                    telio_log_trace!(
-                        "Nested packet in ICMP error packet matched TCP conntrack entry {:?}",
-                        tcp_key,
-                    );
-                    telio_log_trace!("Removing TCP conntrack entry {:?}", tcp_key);
-                    tcp_cache.remove(&tcp_key);
-                }
-                is_in_cache
-            }
-            IcmpErrorKey::Udp(Some(link)) => {
-                let udp_key = Connection { link, pubkey };
-
-                let mut udp_cache = unwrap_lock_or_return!(self.udp.lock(), false);
-                let is_in_cache = udp_cache.get(&udp_key).is_some();
-                if is_in_cache {
-                    telio_log_trace!(
-                        "Nested packet in ICMP error packet matched UDP conntrack entry {:?}",
-                        udp_key,
-                    );
-                    telio_log_trace!("Removing UDP conntrack entry {:?}", udp_key);
-                    udp_cache.remove(&udp_key);
-                }
-                is_in_cache
-            }
-            _ => false,
-        }
-    }
-
-    fn reset_tcp_conns(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) -> io::Result<()> {
-        let Ok(mut tcp_conn_cache) = self.tcp.lock() else {
-            telio_log_error!("TCP cache poisoned");
-            return Ok(());
-        };
-
-        telio_log_debug!(
-            "Inspecting {} TCP connections for reset",
-            tcp_conn_cache.len()
-        );
-
-        let iter = tcp_conn_cache.iter().filter_map(|(k, v)| {
-            if k.pubkey == *pubkey {
-                // When we don't have the sequence number that means the
-                // connection is half open and we don't have a response
-                // from the remote peer yet. We need to skip this kind of
-                // connections
-                v.next_seq.map(|next_seq| (&k.link, next_seq, None))
-            } else {
-                None
-            }
-        });
-
-        self.send_tcp_rst_packets(iter, sink)
-    }
-
-    fn send_tcp_rst_packets<'a, I>(
-        &self,
-        connections: I,
-        sink: &mut dyn io::Write,
-    ) -> io::Result<()>
-    where
-        I: IntoIterator<Item = (&'a IpConnWithPort, u32, Option<u32>)>,
-    {
-        const IPV4_LEN: usize = 20;
-        const IPV6_LEN: usize = 40;
-        const TCP_LEN: usize = 20;
-
-        let mut ipv4buf = [0u8; IPV4_LEN];
-        let mut ipv6buf = [0u8; IPV6_LEN];
-        let mut tcpbuf = [0u8; TCP_LEN];
-
-        // Write most of the fields for TCP and IP packets upfront
-        #[allow(clippy::expect_used)]
-        let mut tcppkg =
-            MutableTcpPacket::new(&mut tcpbuf).expect("TCP buffer should not be too small");
-        tcppkg.set_data_offset(5);
-
-        #[allow(clippy::expect_used)]
-        let mut ipv4pkg =
-            MutableIpv4Packet::new(&mut ipv4buf).expect("IPv4 buffer should not be too small");
-        ipv4pkg.set_version(4);
-        ipv4pkg.set_header_length(5);
-        ipv4pkg.set_total_length((IPV4_LEN + TCP_LEN) as _);
-        ipv4pkg.set_flags(Ipv4Flags::DontFragment);
-        ipv4pkg.set_ttl(0xFF);
-        ipv4pkg.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
-
-        #[allow(clippy::expect_used)]
-        let mut ipv6pkg =
-            MutableIpv6Packet::new(&mut ipv6buf).expect("IPv4 buffer should not be too small");
-        ipv6pkg.set_version(6);
-        ipv6pkg.set_payload_length(TCP_LEN as _);
-        ipv6pkg.set_next_header(IpNextHeaderProtocols::Tcp);
-        ipv6pkg.set_hop_limit(0xff);
-
-        let mut ipv4pkgbuf = [0u8; IPV4_LEN + TCP_LEN];
-        let mut ipv6pkgbuf = [0u8; IPV6_LEN + TCP_LEN];
-
-        for (key, next_seq, ack) in connections {
-            tcppkg.set_source(key.remote_port);
-            tcppkg.set_destination(key.local_port);
-            tcppkg.set_sequence(next_seq);
-            if let Some(ack) = ack {
-                tcppkg.set_flags(TcpFlags::RST | TcpFlags::ACK);
-                tcppkg.set_acknowledgement(ack);
-            } else {
-                tcppkg.set_flags(TcpFlags::RST);
-            }
-
-            match (key.local_addr, key.remote_addr) {
-                (IpAddr::Ipv4(local_addr), IpAddr::Ipv4(remote_addr)) => {
-                    let src = remote_addr.into();
-                    let dst = local_addr.into();
-
-                    ipv4pkg.set_source(src);
-                    ipv4pkg.set_destination(dst);
-
-                    tcppkg.set_checksum(pnet_packet::tcp::ipv4_checksum(
-                        &tcppkg.to_immutable(),
-                        &src,
-                        &dst,
-                    ));
-
-                    ipv4pkg.set_checksum(0);
-                    ipv4pkg.set_checksum(pnet_packet::ipv4::checksum(&ipv4pkg.to_immutable()));
-
-                    telio_log_debug!("Injecting IPv4 TCP RST packet {key:#?}");
-
-                    #[allow(index_access_check)]
-                    ipv4pkgbuf[..IPV4_LEN].copy_from_slice(ipv4pkg.packet());
-
-                    #[allow(index_access_check)]
-                    ipv4pkgbuf[IPV4_LEN..].copy_from_slice(tcppkg.packet());
-                    sink.write_all(&ipv4pkgbuf)?;
-                }
-                (IpAddr::Ipv6(local_addr), IpAddr::Ipv6(remote_addr)) => {
-                    let src = remote_addr.into();
-                    let dst = local_addr.into();
-
-                    ipv6pkg.set_source(src);
-                    ipv6pkg.set_destination(dst);
-
-                    tcppkg.set_checksum(pnet_packet::tcp::ipv6_checksum(
-                        &tcppkg.to_immutable(),
-                        &src,
-                        &dst,
-                    ));
-
-                    telio_log_debug!("Injecting IPv4 TCP RST packet {key:#?}");
-
-                    #[allow(index_access_check)]
-                    ipv6pkgbuf[..IPV6_LEN].copy_from_slice(ipv6pkg.packet());
-
-                    #[allow(index_access_check)]
-                    ipv6pkgbuf[IPV6_LEN..].copy_from_slice(tcppkg.packet());
-                    sink.write_all(&ipv6pkgbuf)?;
-                }
-                _ => telio_log_warn!(
-                    "Local and remote IP addrs version missmatch, this should never happen"
-                ),
-            }
-        }
-
-        Ok(())
-    }
-
-    fn send_icmp_port_unreachable_packets<'a, I>(
-        &self,
-        connections: I,
-        sink: &mut dyn io::Write,
-    ) -> io::Result<()>
-    where
-        I: IntoIterator<Item = (&'a IpConnWithPort, &'a [u8])>,
-    {
-        const IPV4_HEADER_LEN: usize = 20;
-        const IPV6_HEADER_LEN: usize = 40;
-        const ICMP_HEADER_LEN: usize = 8;
-        const ICMP_MAX_DATA_LEN: usize = UdpConnectionInfo::LAST_PKG_MAX_CHUNK_LEN;
-
-        let mut ipv4pkgbuf = [0u8; IPV4_HEADER_LEN + ICMP_HEADER_LEN + ICMP_MAX_DATA_LEN];
-        let mut ipv6pkgbuf = [0u8; IPV6_HEADER_LEN + ICMP_HEADER_LEN + ICMP_MAX_DATA_LEN];
-
-        // Write most of the fields for ICMP and IP packets upfront
-        #[allow(clippy::expect_used)]
-        #[allow(index_access_check)]
-        let mut ipv4pkg = MutableIpv4Packet::new(&mut ipv4pkgbuf[..IPV4_HEADER_LEN])
-            .expect("IPv4 buffer should not be too small");
-        ipv4pkg.set_version(4);
-        ipv4pkg.set_header_length(5);
-        ipv4pkg.set_flags(Ipv4Flags::DontFragment);
-        ipv4pkg.set_ttl(0xFF);
-        ipv4pkg.set_next_level_protocol(IpNextHeaderProtocols::Icmp);
-
-        #[allow(clippy::expect_used)]
-        #[allow(index_access_check)]
-        let mut ipv6pkg = MutableIpv6Packet::new(&mut ipv6pkgbuf[..IPV6_HEADER_LEN])
-            .expect("IPv6 buffer should not be too small");
-        ipv6pkg.set_version(6);
-        ipv6pkg.set_next_header(IpNextHeaderProtocols::Icmpv6);
-        ipv6pkg.set_hop_limit(0xff);
-
-        #[allow(clippy::expect_used)]
-        #[allow(index_access_check)]
-        let mut icmppkg = MutableIcmpPacket::new(
-            &mut ipv4pkgbuf[IPV4_HEADER_LEN..(IPV4_HEADER_LEN + ICMP_HEADER_LEN)],
-        )
-        .expect("ICMP buffer should not be too small");
-        icmppkg.set_icmp_type(IcmpTypes::DestinationUnreachable);
-        icmppkg.set_icmp_code(IcmpCodes::DestinationPortUnreachable);
-
-        #[allow(clippy::expect_used)]
-        #[allow(index_access_check)]
-        let mut icmpv6pkg = MutableIcmpv6Packet::new(
-            &mut ipv6pkgbuf[IPV6_HEADER_LEN..(IPV6_HEADER_LEN + ICMP_HEADER_LEN)],
-        )
-        .expect("ICMP buffer should not be too small");
-        icmpv6pkg.set_icmpv6_type(Icmpv6Types::DestinationUnreachable);
-        let icmpv6_port_unreachable = 4;
-        icmpv6pkg.set_icmpv6_code(Icmpv6Code::new(icmpv6_port_unreachable));
-
-        for (key, last_headers) in connections {
-            match (key.local_addr, key.remote_addr) {
-                (IpAddr::Ipv4(local_addr), IpAddr::Ipv4(remote_addr)) => {
-                    let end = IPV4_HEADER_LEN + ICMP_HEADER_LEN + last_headers.len();
-
-                    #[allow(index_access_check)]
-                    let ipv4pkgbuf = &mut ipv4pkgbuf[..end];
-                    #[allow(index_access_check)]
-                    ipv4pkgbuf[(IPV4_HEADER_LEN + ICMP_HEADER_LEN)..].copy_from_slice(last_headers);
-
-                    let src = remote_addr.into();
-                    let dst = local_addr.into();
-
-                    #[allow(clippy::expect_used)]
-                    #[allow(index_access_check)]
-                    let mut icmppkg = MutableIcmpPacket::new(&mut ipv4pkgbuf[IPV4_HEADER_LEN..])
-                        .expect("ICMP buffer should not be too small");
-                    icmppkg.set_checksum(0);
-                    icmppkg.set_checksum(pnet_packet::icmp::checksum(&icmppkg.to_immutable()));
-                    drop(icmppkg);
-
-                    #[allow(clippy::expect_used)]
-                    #[allow(index_access_check)]
-                    let mut ipv4pkg = MutableIpv4Packet::new(&mut ipv4pkgbuf[..IPV4_HEADER_LEN])
-                        .expect("IPv4 buffer should not be too small");
-                    ipv4pkg.set_source(src);
-                    ipv4pkg.set_destination(dst);
-                    ipv4pkg.set_total_length(
-                        (IPV4_HEADER_LEN + ICMP_HEADER_LEN + last_headers.len()) as _,
-                    );
-
-                    ipv4pkg.set_checksum(0);
-                    ipv4pkg.set_checksum(pnet_packet::ipv4::checksum(&ipv4pkg.to_immutable()));
-
-                    telio_log_debug!("Injecting IPv4 ICMP (for UDP) packet {key:#?}");
-                    sink.write_all(ipv4pkgbuf)?;
-                }
-                (IpAddr::Ipv6(local_addr), IpAddr::Ipv6(remote_addr)) => {
-                    let end = IPV6_HEADER_LEN + ICMP_HEADER_LEN + last_headers.len();
-
-                    #[allow(index_access_check)]
-                    let ipv6pkgbuf = &mut ipv6pkgbuf[..end];
-                    #[allow(index_access_check)]
-                    ipv6pkgbuf[(IPV6_HEADER_LEN + ICMP_HEADER_LEN)..].copy_from_slice(last_headers);
-
-                    let src = remote_addr.into();
-                    let dst = local_addr.into();
-
-                    #[allow(clippy::expect_used)]
-                    #[allow(index_access_check)]
-                    let mut icmpv6pkg =
-                        MutableIcmpv6Packet::new(&mut ipv6pkgbuf[IPV6_HEADER_LEN..])
-                            .expect("ICMPv6 buffer should not be too small");
-                    icmpv6pkg.set_checksum(0);
-                    icmpv6pkg.set_checksum(pnet_packet::icmpv6::checksum(
-                        &icmpv6pkg.to_immutable(),
-                        &src,
-                        &dst,
-                    ));
-
-                    #[allow(clippy::expect_used)]
-                    #[allow(index_access_check)]
-                    let mut ipv6pkg = MutableIpv6Packet::new(&mut ipv6pkgbuf[..IPV6_HEADER_LEN])
-                        .expect("IPv4 buffer should not be too small");
-                    ipv6pkg.set_source(src);
-                    ipv6pkg.set_destination(dst);
-                    ipv6pkg.set_payload_length((ICMP_HEADER_LEN + last_headers.len()) as _);
-
-                    telio_log_debug!("Injecting IPv6 ICMP (for UDP) packet {key:#?}");
-                    sink.write_all(ipv6pkgbuf)?;
-                }
-                _ => telio_log_warn!(
-                    "Local and remote IP addrs version mismatch, this should never happen"
-                ),
-            }
-        }
-
-        Ok(())
-    }
-
-    fn reset_udp_conns(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) -> io::Result<()> {
-        let Ok(mut udp_conn_cache) = self.udp.lock() else {
-            telio_log_error!("UDP cache poisoned");
-            return Ok(());
-        };
-
-        telio_log_debug!(
-            "Inspecting {} UDP connections for reset",
-            udp_conn_cache.len()
-        );
-
-        let iter = udp_conn_cache.iter().filter_map(|(k, v)| {
-            // Skip connection without outbounded packages
-            let last_headers = v.last_out_pkg_chunk.as_deref()?;
-
-            if k.pubkey != *pubkey {
-                return None;
-            }
-
-            Some((&k.link, last_headers))
-        });
-
-        self.send_icmp_port_unreachable_packets(iter, sink)
+        should_accept
     }
 
     fn is_private_address_except_local_interface(&self, ip: &StdIpAddr) -> bool {
@@ -1649,8 +801,8 @@ impl Firewall for StatefullFirewall {
     fn reset_connections(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) -> io::Result<()> {
         telio_log_debug!("Constructing connetion reset packets");
 
-        self.reset_tcp_conns(pubkey, sink)?;
-        self.reset_udp_conns(pubkey, sink)?;
+        self.conntracker.reset_tcp_conns(pubkey, sink)?;
+        self.conntracker.reset_udp_conns(pubkey, sink)?;
 
         Ok(())
     }
@@ -1673,17 +825,19 @@ impl Default for StatefullFirewall {
 #[cfg(any(test, feature = "test_utils"))]
 #[allow(missing_docs, unused)]
 pub mod tests {
+    use crate::conntrack::{Connection, IpConnWithPort, TcpConnectionInfo};
+
     use super::*;
     use pnet_packet::{
         icmp::{
             destination_unreachable::{self, DestinationUnreachablePacket},
             IcmpType, MutableIcmpPacket,
         },
-        icmpv6::{Icmpv6Packet, Icmpv6Type, MutableIcmpv6Packet},
+        icmpv6::{Icmpv6Code, Icmpv6Packet, Icmpv6Type, MutableIcmpv6Packet},
         ip::IpNextHeaderProtocol,
         ipv4::MutableIpv4Packet,
         ipv6::MutableIpv6Packet,
-        tcp::MutableTcpPacket,
+        tcp::{MutableTcpPacket, TcpPacket},
         udp::MutableUdpPacket,
         MutablePacket,
     };
@@ -2124,19 +1278,19 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), false);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src3)), false);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src4)), false);
-            assert_eq!(fw.udp.lock().unwrap().len(), 0);
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), 0);
 
             // Should PASS (adds 1111..4444 and drops 2222)
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src1, dst1)), true);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src2, dst1)), true);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src1, dst1)), true);
-            assert_eq!(fw.udp.lock().unwrap().len(), 2);
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), 2);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src3, dst1)), true);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src1, dst1)), true);
-            assert_eq!(fw.udp.lock().unwrap().len(), 3);
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), 3);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src4, dst1)), true);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src1, dst1)), true);
-            assert_eq!(fw.udp.lock().unwrap().len(), 3);
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), 3);
 
             // Should PASS (matching outgoing connections exist in LRUCache)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src3)), true);
@@ -2193,19 +1347,19 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(dst1, src2, TcpFlags::SYN)), false);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(dst1, src3, TcpFlags::SYN)), false);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(dst1, src4, TcpFlags::SYN)), false);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 0);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 0);
 
             // Should PASS (adds 1111..4444 and drops 2222)
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(src1, dst1, TcpFlags::SYN)), true);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(src2, dst1, TcpFlags::SYN)), true);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(src1, dst1, TcpFlags::SYN)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 2);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 2);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(src3, dst1, TcpFlags::SYN)), true);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(src1, dst1, TcpFlags::SYN)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 3);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 3);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(src4, dst1, TcpFlags::SYN)), true);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(src1, dst1, TcpFlags::SYN)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 3);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 3);
 
             // Should PASS (matching outgoing connections exist in LRUCache)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(dst1, src4, TcpFlags::SYN)), true);
@@ -2264,19 +1418,19 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), false);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src3)), false);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src4)), false);
-            assert_eq!(fw.udp.lock().unwrap().len(), 0);
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), 0);
 
             // Should PASS (adds 1111..4444 and drops 2222)
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src1, dst1)), is_ipv4);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src2, dst1)), is_ipv4);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src1, dst1)), is_ipv4);
-            assert_eq!(fw.udp.lock().unwrap().len(), if is_ipv4 { 2 } else { 0 });
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), if is_ipv4 { 2 } else { 0 });
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src3, dst1)), is_ipv4);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src1, dst1)), is_ipv4);
-            assert_eq!(fw.udp.lock().unwrap().len(), if is_ipv4 { 3 } else { 0 });
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), if is_ipv4 { 3 } else { 0 });
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src4, dst1)), is_ipv4);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src1, dst1)), is_ipv4);
-            assert_eq!(fw.udp.lock().unwrap().len(), if is_ipv4 { 3 } else { 0 });
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), if is_ipv4 { 3 } else { 0 });
 
             // Should PASS (matching outgoing connections exist in LRUCache)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src3)), is_ipv4);
@@ -2334,28 +1488,28 @@ pub mod tests {
             };
             let tcp_key = Connection { link , pubkey: PublicKey(peer) };
 
-            assert_eq!(fw.tcp.lock().unwrap().get(&tcp_key), Some(&TcpConnectionInfo{
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&tcp_key), Some(&TcpConnectionInfo{
                 tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: Some(1)
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::RST)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN)), false);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 0);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 0);
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &outgoing_init_packet), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::ACK)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::PSH)), false);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::ACK)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 0);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 0);
         }
     }
 
@@ -2386,7 +1540,7 @@ pub mod tests {
 
             let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);
             assert_eq!(fw.process_outbound_packet(&peer, &outgoing_init_packet), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
             let link = IpConnWithPort {
                 remote_addr: test_input.them_ip(),
                 remote_port: test_input.them_port(),
@@ -2395,26 +1549,26 @@ pub mod tests {
             };
             let conn_key = Connection { link , pubkey: PublicKey(peer) };
 
-            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
                 tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
 
-            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
                 tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12)
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
 
-            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
                 tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12)
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::ACK)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 0);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 0);
         }
     }
 
@@ -2446,7 +1600,7 @@ pub mod tests {
 
             let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &outgoing_init_packet), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
             let link = IpConnWithPort {
                 remote_addr: test_input.them_ip(),
                 remote_port: test_input.them_port(),
@@ -2455,34 +1609,34 @@ pub mod tests {
             };
             let conn_key = Connection { link , pubkey: PublicKey(peer) };
 
-            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
                 tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
 
-            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
                 tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12)
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
 
             // update tcp cache entry timeout
-            assert_eq!(fw.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
                 tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12)
             }));
 
             // process inbound packet (should not update ttl, because not ACK, but entry should still exist)
             advance_time(Duration::from_millis(ttl / 2));
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::PSH)), false);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
 
             // process inbound packet (should not update ttl, because not ACK, and entry should be removed after timeout)
             advance_time(Duration::from_millis(ttl / 2 + 1));
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::PSH)), false);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 0);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 0);
         }
     }
 
@@ -3119,15 +2273,15 @@ pub mod tests {
 
             assert_eq!(fw.process_inbound_packet(&peer1.0, &make_udp(src1, dst1,)), false);
             assert_eq!(fw.process_inbound_packet(&peer2.0, &make_udp(src2, dst1,)), true);
-            assert_eq!(fw.udp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), 1);
 
 
             assert_eq!(fw.process_inbound_packet(&peer1.0, &make_tcp(src3, dst2, TcpFlags::SYN)), false);
             assert_eq!(fw.process_inbound_packet(&peer2.0, &make_tcp(src4, dst1, TcpFlags::SYN | TcpFlags::ACK)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 0);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 0);
             // only this one should be added to cache
             assert_eq!(fw.process_inbound_packet(&peer2.0, &make_tcp(src5, dst1, TcpFlags::SYN)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
 
             fw.add_to_peer_whitelist(peer2, Permissions::IncomingConnections);
             let src = src1.parse::<StdSocketAddr>().unwrap().ip().to_string();
@@ -3197,13 +2351,13 @@ pub mod tests {
             fw.add_to_port_whitelist(them_peer, 8888); // NOTE: this doesn't change anything about this test
             assert_eq!(fw.process_outbound_packet(&them_peer.0, &make_udp(us, them)), true);
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
-            assert_eq!(fw.udp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), 1);
 
             // Should PASS because we started the session
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
             fw.remove_from_port_whitelist(them_peer); // NOTE: also has no impact on this test
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
-            assert_eq!(fw.udp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), 1);
         }
     }
 
@@ -3224,13 +2378,13 @@ pub mod tests {
             fw.add_to_port_whitelist(them_peer,1111);
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
             assert_eq!(fw.process_outbound_packet(&them_peer.0, &make_udp(us, them)), true);
-            assert_eq!(fw.udp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), 1);
 
             // Should BLOCK because they started the session
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
             fw.remove_from_port_whitelist(them_peer);
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), false);
-            assert_eq!(fw.udp.lock().unwrap().len(), 0);
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), 0);
         }
     }
 
@@ -3250,9 +2404,9 @@ pub mod tests {
 
             fw.add_to_port_whitelist(them_peer, 8888); // NOTE: this doesn't change anything about the test
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), false);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 0);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 0);
             assert_eq!(fw.process_outbound_packet(&them_peer.0, &make_tcp(us, them, TcpFlags::SYN)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
 
 
@@ -3260,7 +2414,7 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
             fw.remove_from_port_whitelist(them_peer);
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
         }
 
     }
@@ -3283,15 +2437,15 @@ pub mod tests {
             fw.add_to_port_whitelist(them_peer, 1111);
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, TcpFlags::SYN)), true);
             assert_eq!(fw.process_outbound_packet(&them_peer.0, &make_tcp(us, them, TcpFlags::SYN | TcpFlags::ACK)), true);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
 
 
             // Should BLOCK because they started the session
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
             fw.remove_from_port_whitelist(them_peer);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), false);
-            assert_eq!(fw.tcp.lock().unwrap().len(), 0);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 0);
         }
 
     }
