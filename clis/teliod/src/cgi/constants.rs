@@ -70,6 +70,7 @@ impl AppPaths {
     }
 
     /// Create a path relative to the root directory
+    #[cfg_attr(test, visibility::make(pub))]
     fn join(&self, path: &str) -> PathBuf {
         self.root
             .as_ref()
