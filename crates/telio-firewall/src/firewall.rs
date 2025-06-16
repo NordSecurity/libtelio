@@ -27,7 +27,7 @@ use telio_crypto::PublicKey;
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 
 use crate::conntrack::{
-    unwrap_lock_or_return, unwrap_option_or_return, Conntracker, UdpConnectionInfo,
+    unwrap_lock_or_return, unwrap_option_or_return, Conntracker, LibfwVerdict, UdpConnectionInfo,
 };
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
@@ -391,7 +391,7 @@ impl StatefullFirewall {
 
                     _ = self.conntracker.send_icmp_port_unreachable_packets(
                         std::iter::once((&link, first_chunk)),
-                        sink,
+                        |packet: &[u8]| sink.write_all(packet),
                     );
 
                     return false;
@@ -405,7 +405,7 @@ impl StatefullFirewall {
                 if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
                     _ = self.conntracker.send_tcp_rst_packets(
                         std::iter::once((&link, 0, Some(tcp_packet.get_sequence() + 1))),
-                        sink,
+                        |packet: &[u8]| sink.write_all(packet),
                     );
 
                     return false;
@@ -429,10 +429,10 @@ impl StatefullFirewall {
                 // We still need to track the state of TCP and UDP connections
                 match proto {
                     IpNextHeaderProtocols::Udp => {
-                        self.conntracker.handle_outbound_udp(peer, &ip);
+                        self.conntracker.handle_outbound_udp(&ip, &peer);
                     }
                     IpNextHeaderProtocols::Tcp => {
-                        self.conntracker.handle_outbound_tcp(peer, &ip);
+                        self.conntracker.handle_outbound_tcp(&ip, &peer);
                     }
                     _ => (),
                 };
@@ -448,16 +448,16 @@ impl StatefullFirewall {
 
         match proto {
             IpNextHeaderProtocols::Udp => {
-                self.conntracker.handle_outbound_udp(peer, &ip);
+                self.conntracker.handle_outbound_udp(&ip, &peer);
             }
             IpNextHeaderProtocols::Tcp => {
-                self.conntracker.handle_outbound_tcp(peer, &ip);
+                self.conntracker.handle_outbound_tcp(&ip, &peer);
             }
             IpNextHeaderProtocols::Icmp => {
-                self.conntracker.handle_outbound_icmp(peer, &ip);
+                self.conntracker.handle_outbound_icmp(&ip, &peer);
             }
             IpNextHeaderProtocols::Icmpv6 => {
-                self.conntracker.handle_outbound_icmp(peer, &ip);
+                self.conntracker.handle_outbound_icmp(&ip, &peer);
             }
             _ => (),
         };
@@ -485,13 +485,17 @@ impl StatefullFirewall {
                 if self.record_whitelisted {
                     match proto {
                         IpNextHeaderProtocols::Udp => {
-                            self.conntracker.handle_inbound_udp(false, &peer, &ip);
+                            self.conntracker.handle_inbound_udp(
+                                &ip,
+                                &peer,
+                                LibfwVerdict::LibfwVerdictAccept,
+                            );
                         }
                         IpNextHeaderProtocols::Tcp => {
                             self.conntracker.handle_inbound_tcp(
-                                PacketAction::HandleLocally,
-                                &peer,
                                 &ip,
+                                &peer,
+                                LibfwVerdict::LibfwVerdictAccept,
                             );
                         }
                         _ => (),
@@ -534,18 +538,37 @@ impl StatefullFirewall {
                         true
                     }
                     PacketAction::Drop => {
-                        if self.conntracker.is_udp_conn_locally_initiated(peer, &ip) {
+                        if self
+                            .conntracker
+                            .get_udp_conn_info(&ip, &peer, true)
+                            .map(|conn_info| !conn_info.is_remote_initiated)
+                            .unwrap_or(false)
+                        {
+                            // Packets from connection initiated locally should pass
                             telio_log_trace!("Accepting UDP packet {:?} {:?}", ip, peer);
+                            self.conntracker.handle_inbound_udp(
+                                &ip,
+                                &peer,
+                                LibfwVerdict::LibfwVerdictAccept,
+                            );
                             true
                         } else {
                             telio_log_trace!("Dropping UDP packet {:?} {:?}", ip, peer);
-                            self.conntracker.handle_inbound_udp(true, &peer, &ip);
+                            self.conntracker.handle_inbound_udp(
+                                &ip,
+                                &peer,
+                                LibfwVerdict::LibfwVerdictDrop,
+                            );
                             false
                         }
                     }
                     PacketAction::HandleLocally => {
                         telio_log_trace!("Accepting UDP packet {:?} {:?}", ip, peer);
-                        self.conntracker.handle_inbound_udp(false, &peer, &ip);
+                        self.conntracker.handle_inbound_udp(
+                            &ip,
+                            &peer,
+                            LibfwVerdict::LibfwVerdictAccept,
+                        );
                         true
                     }
                 }
@@ -560,7 +583,7 @@ impl StatefullFirewall {
                     return true;
                 }
 
-                let conn_info = self.conntracker.get_tcp_conn_info(peer, &ip);
+                let conn_info = self.conntracker.get_tcp_conn_info(&ip, &peer, true);
 
                 // Packet actions sometimes needs to be adjusted based on the connection info
                 if let Some(conn_info) = conn_info {
@@ -584,8 +607,20 @@ impl StatefullFirewall {
                     }
                 }
 
-                self.conntracker
-                    .handle_inbound_tcp(packet_action.clone(), &peer, &ip);
+                // Passthrough packets are not interesting for conntracker at all
+                match packet_action {
+                    PacketAction::PassThrough => (),
+                    PacketAction::Drop => self.conntracker.handle_inbound_tcp(
+                        &ip,
+                        &peer,
+                        LibfwVerdict::LibfwVerdictDrop,
+                    ),
+                    PacketAction::HandleLocally => self.conntracker.handle_inbound_tcp(
+                        &ip,
+                        &peer,
+                        LibfwVerdict::LibfwVerdictAccept,
+                    ),
+                };
 
                 match packet_action {
                     PacketAction::PassThrough | PacketAction::HandleLocally => {
@@ -618,7 +653,7 @@ impl StatefullFirewall {
         }
 
         // We accept exactly these packets for which there is some entry in the relevant cache
-        let should_accept = self.conntracker.handle_inbound_icmp(peer, ip);
+        let should_accept = self.conntracker.handle_inbound_icmp(ip, &peer);
         if should_accept {
             telio_log_trace!("Accepting ICMP packet {:?} {:?}", ip, peer);
         }
@@ -801,8 +836,10 @@ impl Firewall for StatefullFirewall {
     fn reset_connections(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) -> io::Result<()> {
         telio_log_debug!("Constructing connetion reset packets");
 
-        self.conntracker.reset_tcp_conns(pubkey, sink)?;
-        self.conntracker.reset_udp_conns(pubkey, sink)?;
+        self.conntracker
+            .reset_tcp_conns(pubkey, |packet: &[u8]| sink.write_all(packet))?;
+        self.conntracker
+            .reset_udp_conns(pubkey, |packet: &[u8]| sink.write_all(packet))?;
 
         Ok(())
     }
@@ -825,7 +862,7 @@ impl Default for StatefullFirewall {
 #[cfg(any(test, feature = "test_utils"))]
 #[allow(missing_docs, unused)]
 pub mod tests {
-    use crate::conntrack::{Connection, IpConnWithPort, TcpConnectionInfo};
+    use crate::conntrack::{Connection, IpConnWithPort, LibfwConnectionState, TcpConnectionInfo};
 
     use super::*;
     use pnet_packet::{
@@ -841,6 +878,7 @@ pub mod tests {
         udp::MutableUdpPacket,
         MutablePacket,
     };
+    use smallvec::{SmallVec, ToSmallVec};
     use std::{
         convert::TryInto,
         net::{Ipv4Addr, SocketAddr as StdSocketAddr, SocketAddrV6},
@@ -1486,10 +1524,10 @@ pub mod tests {
                 local_addr: test_input.us_ip(),
                 local_port: test_input.us_port(),
             };
-            let tcp_key = Connection { link , pubkey: PublicKey(peer) };
+            let tcp_key = Connection { link , associated_data: peer.to_smallvec() };
 
             assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&tcp_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: Some(1)
+                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: Some(1), state: LibfwConnectionState::LibfwConnectionStateEstablished
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::RST)), true);
@@ -1547,24 +1585,24 @@ pub mod tests {
                 local_addr: test_input.us_ip(),
                 local_port: test_input.us_port(),
             };
-            let conn_key = Connection { link , pubkey: PublicKey(peer) };
+            let conn_key = Connection { link , associated_data: peer.to_smallvec() };
 
             assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None
+                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None, state: LibfwConnectionState::LibfwConnectionStateNew
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
             assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
 
             assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12)
+                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: LibfwConnectionState::LibfwConnectionStateEstablished
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
             assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
 
             assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12)
+                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: LibfwConnectionState::LibfwConnectionStateEstablished
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::ACK)), true);
@@ -1607,17 +1645,17 @@ pub mod tests {
                 local_addr: test_input.us_ip(),
                 local_port: test_input.us_port(),
             };
-            let conn_key = Connection { link , pubkey: PublicKey(peer) };
+            let conn_key = Connection { link , associated_data: peer.to_smallvec() };
 
             assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None
+                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None, state: LibfwConnectionState::LibfwConnectionStateNew
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
             assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
 
             assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12)
+                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: LibfwConnectionState::LibfwConnectionStateEstablished
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
@@ -1625,7 +1663,7 @@ pub mod tests {
 
             // update tcp cache entry timeout
             assert_eq!(fw.conntracker.tcp.lock().unwrap().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12)
+                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: LibfwConnectionState::LibfwConnectionStateEstablished
             }));
 
             // process inbound packet (should not update ttl, because not ACK, but entry should still exist)
