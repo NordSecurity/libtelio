@@ -3,12 +3,8 @@
 use std::{collections::HashMap, fs, str::FromStr};
 use telio::telio_utils::hidden::Hidden;
 
-use crate::cgi::constants::TELIOD_START_INTENT_FILE;
+use crate::config::{InterfaceConfig, TeliodDaemonConfigPartial};
 use crate::TeliodDaemonConfig;
-use crate::{
-    cgi::constants::TELIOD_CFG,
-    config::{InterfaceConfig, TeliodDaemonConfigPartial},
-};
 use lazy_static::lazy_static;
 use maud::{html, Markup, Render};
 use rust_cgi::{
@@ -18,6 +14,7 @@ use rust_cgi::{
 use telio::telio_model::mesh::{Node, NodeState};
 use tracing::{error, info, level_filters::LevelFilter, Level};
 
+use super::constants::APP_PATHS;
 use super::{
     api::{start_daemon, stop_daemon},
     app::AppState,
@@ -70,17 +67,19 @@ lazy_static! {
 
 fn save_user_intent(enable_meshnet: bool) {
     if enable_meshnet {
-        if let Err(e) = std::fs::File::create(TELIOD_START_INTENT_FILE) {
+        if let Err(e) = std::fs::File::create(APP_PATHS.start_intent()) {
             eprintln!(
-                "Error creating intent file at '{}': {}. Not considered a failure",
-                TELIOD_START_INTENT_FILE, e
+                "Error creating intent file at {:?}: {}. Not considered a failure",
+                APP_PATHS.start_intent(),
+                e
             );
         }
-    } else if let Err(e) = std::fs::remove_file(TELIOD_START_INTENT_FILE) {
+    } else if let Err(e) = std::fs::remove_file(APP_PATHS.start_intent()) {
         if e.kind() != std::io::ErrorKind::NotFound {
             eprintln!(
-                "Error deleting intent file at '{}': {}. Not considered a failure",
-                TELIOD_START_INTENT_FILE, e
+                "Error deleting intent file at {:?}: {}. Not considered a failure",
+                APP_PATHS.start_intent(),
+                e
             );
         }
     }
@@ -230,13 +229,14 @@ fn update_config(app: &mut AppState, request: &CgiRequest) -> Result<TeliodDaemo
         }
     };
 
-    match fs::write(TELIOD_CFG, config) {
+    match fs::write(APP_PATHS.teliod_cfg(), config) {
         Ok(_) => {
             app.config = new_config.clone();
         }
         Err(err) => {
             return Err(anyhow!(
-                "Failed to persist a new config into {TELIOD_CFG}, err: {err}"
+                "Failed to persist a new config into {:?}, err: {err}",
+                APP_PATHS.teliod_cfg()
             ));
         }
     }

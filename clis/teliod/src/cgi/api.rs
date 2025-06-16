@@ -19,10 +19,7 @@ use crate::{
 };
 
 use super::{
-    constants::{
-        TELIOD_BIN, TELIOD_CFG, TELIOD_INIT_LOG, TELIOD_LIB_LOG_DIR, TELIOD_LIB_LOG_PREFIX,
-        TELIOD_STDOUT_LOG,
-    },
+    constants::{APP_PATHS, LOG_PATHS},
     CgiRequest,
 };
 
@@ -80,9 +77,9 @@ pub(crate) fn handle_api(request: &CgiRequest) -> Option<Response> {
 
             Some(get_logs(
                 days_count,
-                Path::new(TELIOD_INIT_LOG),
-                Path::new(TELIOD_STDOUT_LOG),
-                Path::new(TELIOD_LIB_LOG_DIR),
+                LOG_PATHS.stdout(),
+                LOG_PATHS.init_stdout(),
+                LOG_PATHS.lib_dir(),
             ))
         }
         (_, _) => Some(text_response(
@@ -120,13 +117,16 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
         .write(true)
         .read(true)
         .truncate(true)
-        .open(TELIOD_INIT_LOG)
+        .open(LOG_PATHS.init_stdout())
     {
         Ok(file) => file,
         Err(err) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to open teliod log file {TELIOD_INIT_LOG}, err: {err}"),
+                format!(
+                    "Failed to open teliod log file {:?}, err: {err}",
+                    LOG_PATHS.init_stdout()
+                ),
             );
         }
     };
@@ -170,9 +170,9 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
         }
     }
 
-    match Command::new(TELIOD_BIN)
+    match Command::new(APP_PATHS.teliod_bin())
         .arg("start")
-        .arg(TELIOD_CFG)
+        .arg(APP_PATHS.teliod_cfg())
         .stdout(stdout)
         .stderr(stderr)
         .spawn()
@@ -215,7 +215,7 @@ pub(crate) fn stop_daemon() -> (StatusCode, String) {
 }
 
 pub(crate) fn get_config() -> io::Result<TeliodDaemonConfig> {
-    fs::read_to_string(TELIOD_CFG)
+    fs::read_to_string(APP_PATHS.teliod_cfg())
         .and_then(|content| serde_json::from_str(&content).map_err(|e| e.into()))
 }
 
@@ -243,7 +243,7 @@ pub(crate) fn update_config(body: &str) -> Response {
     config.update(updated_config);
 
     match fs::write(
-        TELIOD_CFG,
+        APP_PATHS.teliod_cfg(),
         serde_json::to_string_pretty(&config).unwrap_or_default(),
     ) {
         Ok(_) => text_response(StatusCode::OK, "Configuration updated successfully"),
@@ -341,7 +341,7 @@ fn get_logs(
                 p.is_file()
                     && p.file_name()
                         .and_then(|n| n.to_str())
-                        .map(|n| n.starts_with(TELIOD_LIB_LOG_PREFIX))
+                        .map(|n| n.starts_with(LOG_PATHS.lib_logs_prefix()))
                         .unwrap_or(false)
             })
             .collect(),
@@ -365,7 +365,8 @@ fn get_logs(
         append_log_error(
             &mut concatenated_logs,
             &format!(
-                "No teliod log files {TELIOD_LIB_LOG_PREFIX} found in: {}",
+                "No teliod log files {} found in: {}",
+                LOG_PATHS.lib_logs_prefix(),
                 logs_dir.to_string_lossy()
             ),
         );
@@ -398,7 +399,6 @@ mod tests {
     use super::*;
     use super::{update_config, TeliodDaemonConfig};
     use crate::{
-        cgi::constants::TELIOD_CFG,
         config::{InterfaceConfig, MqttConfig, Percentage},
         configure_interface::InterfaceConfigurationProvider,
     };
@@ -449,11 +449,12 @@ mod tests {
             }
         }
         "#;
-        fs::write(TELIOD_CFG, initial_config).unwrap();
+        fs::write(APP_PATHS.teliod_cfg(), initial_config).unwrap();
 
-        let read_config =
-            serde_json::from_str::<TeliodDaemonConfig>(&fs::read_to_string(TELIOD_CFG).unwrap())
-                .unwrap();
+        let read_config = serde_json::from_str::<TeliodDaemonConfig>(
+            &fs::read_to_string(APP_PATHS.teliod_cfg()).unwrap(),
+        )
+        .unwrap();
         assert_eq!(read_config, expected_config);
 
         expected_config.log_level = LevelFilter::INFO;
@@ -497,7 +498,7 @@ mod tests {
         assert_eq!(update_config(update_body).status(), StatusCode::OK);
 
         let updated_config: TeliodDaemonConfig =
-            serde_json::from_str(&fs::read_to_string(TELIOD_CFG).unwrap()).unwrap();
+            serde_json::from_str(&fs::read_to_string(APP_PATHS.teliod_cfg()).unwrap()).unwrap();
         assert_eq!(updated_config, expected_config);
     }
 
@@ -542,11 +543,12 @@ mod tests {
             }
         }
         "#;
-        fs::write(TELIOD_CFG, initial_config).unwrap();
+        fs::write(APP_PATHS.teliod_cfg(), initial_config).unwrap();
 
-        let read_config =
-            serde_json::from_str::<TeliodDaemonConfig>(&fs::read_to_string(TELIOD_CFG).unwrap())
-                .unwrap();
+        let read_config = serde_json::from_str::<TeliodDaemonConfig>(
+            &fs::read_to_string(APP_PATHS.teliod_cfg()).unwrap(),
+        )
+        .unwrap();
         assert_eq!(read_config, expected_config);
 
         expected_config.interface.name = "eth1".to_owned();
@@ -561,9 +563,10 @@ mod tests {
         "#;
         assert_eq!(update_config(update_body).status(), StatusCode::OK);
 
-        let updated_config =
-            serde_json::from_str::<TeliodDaemonConfig>(&fs::read_to_string(TELIOD_CFG).unwrap())
-                .unwrap();
+        let updated_config = serde_json::from_str::<TeliodDaemonConfig>(
+            &fs::read_to_string(APP_PATHS.teliod_cfg()).unwrap(),
+        )
+        .unwrap();
         assert_eq!(updated_config, expected_config);
 
         expected_config.authentication_token = Arc::new(
@@ -578,9 +581,10 @@ mod tests {
         "#;
         assert_eq!(update_config(update_body).status(), StatusCode::OK);
 
-        let updated_config =
-            serde_json::from_str::<TeliodDaemonConfig>(&fs::read_to_string(TELIOD_CFG).unwrap())
-                .unwrap();
+        let updated_config = serde_json::from_str::<TeliodDaemonConfig>(
+            &fs::read_to_string(APP_PATHS.teliod_cfg()).unwrap(),
+        )
+        .unwrap();
         assert_eq!(updated_config, expected_config);
     }
 

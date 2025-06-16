@@ -223,7 +223,10 @@ impl Default for TeliodDaemonConfig {
                 // TODO: Should this path be different for CGI?
                 #[cfg(feature = "cgi")]
                 {
-                    crate::cgi::constants::TELIOD_LIB_LOG.to_string()
+                    crate::cgi::constants::LOG_PATHS
+                        .lib_log_path()
+                        .to_string_lossy()
+                        .into_owned()
                 }
                 #[cfg(not(feature = "cgi"))]
                 {
