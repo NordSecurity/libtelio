@@ -120,8 +120,6 @@ enum TeliodError {
     LogAppenderError(#[from] InitError),
     #[error(transparent)]
     DaemonizeError(#[from] daemonize::Error),
-    #[error("Invalid log path: {0}")]
-    InvalidLogPath(String),
 }
 
 /// Libtelio and meshnet status report
@@ -147,6 +145,8 @@ fn main() -> Result<(), TeliodError> {
 
         // Parse config file
         let config = TeliodDaemonConfig::from_file(&opts.config_path)?;
+
+        println!("Saving logs to: {}", config.log_file_path);
         println!("Starting daemon");
 
         // Fork the process before starting Tokio runtime.

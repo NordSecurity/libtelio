@@ -121,7 +121,7 @@ pub struct TeliodDaemonConfig {
 }
 
 impl TeliodDaemonConfig {
-    #[allow(dead_code)]
+    #[cfg(feature = "cgi")]
     pub fn update(&mut self, update: TeliodDaemonConfigPartial) {
         if let Some(log_level) = update.log_level {
             self.log_level = log_level;
@@ -156,41 +156,71 @@ impl TeliodDaemonConfig {
         let file = fs::File::open(path)?;
         let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
 
-        // Validate log path
-        let log_path = PathBuf::from(&config.log_file_path);
-        if log_path.is_relative() {
-            let file_name = log_path
-                .file_name()
-                .ok_or_else(|| TeliodError::InvalidLogPath(config.log_file_path.to_owned()))?;
+        config.validate()?;
 
-            // correct if path is not in ./file_name.log format but file_name.log
-            let dir = match log_path.parent() {
+        Ok(config)
+    }
+
+    pub fn validate(&mut self) -> Result<(), TeliodError> {
+        self.log_file_path = self.resolve_log_path()?;
+        if let Ok(env_token) = self.resolve_env_token() {
+            self.authentication_token = env_token;
+        };
+
+        Ok(())
+    }
+
+    fn resolve_log_path(&self) -> Result<String, TeliodError> {
+        let path = PathBuf::from(&self.log_file_path);
+
+        let file_name = path.file_name().ok_or_else(|| {
+            TeliodError::InvalidConfigOption(
+                "log_file_path".to_owned(),
+                "must specify a file name".to_owned(),
+                path.to_string_lossy().into_owned(),
+            )
+        })?;
+
+        let final_path = if path.is_relative() {
+            let dir = match path.parent() {
                 Some(parent) if !parent.as_os_str().is_empty() => parent,
                 _ => Path::new("."),
             };
 
-            // converted relative to absolute path
-            let mut path_canonical = dir
-                .canonicalize()
-                .map_err(|_| TeliodError::InvalidLogPath(config.log_file_path.to_owned()))?;
+            let path_canonical = dir.canonicalize().map_err(|e| {
+                TeliodError::InvalidConfigOption(
+                    "log_file_path".to_owned(),
+                    format!("could not resolve log directory: {}", e),
+                    path.to_string_lossy().into_owned(),
+                )
+            })?;
+            path_canonical.join(file_name)
+        } else {
+            if let Some(parent) = path.parent() {
+                if !parent.is_dir() {
+                    return Err(TeliodError::InvalidConfigOption(
+                        "log_file_path".to_owned(),
+                        "parent directory does not exist".to_owned(),
+                        path.to_string_lossy().into_owned(),
+                    ));
+                }
+            }
+            path
+        };
 
-            // append the file name to the fixed absolute path
-            path_canonical.push(file_name);
-            config.log_file_path = path_canonical.to_string_lossy().to_string();
-        }
-        println!("Saving logs to: {}", config.log_file_path);
+        Ok(final_path.to_string_lossy().to_string())
+    }
 
-        // Validate token
+    fn resolve_env_token(&self) -> Result<Hidden<String>, ()> {
         if let Ok(token) = std::env::var("NORD_TOKEN") {
             println!("Overriding token from env");
             if token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) {
-                config.authentication_token = Hidden::<String>(token);
+                return Ok(Hidden::<String>(token));
             } else {
-                eprintln!("Token from env not valid")
+                eprintln!("Token from env not valid");
             }
         }
-
-        Ok(config)
+        Err(())
     }
 }
 
@@ -476,7 +506,7 @@ mod tests {
         let file = temp_config(&config_json);
         let err = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap_err();
 
-        matches!(err, TeliodError::InvalidLogPath(_));
+        matches!(err, TeliodError::InvalidConfigOption(..));
     }
 
     #[test]
