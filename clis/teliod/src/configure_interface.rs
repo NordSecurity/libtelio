@@ -2,11 +2,11 @@ use crate::TeliodError;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::process::Command;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 pub trait ConfigureInterface {
     /// Configure the IP address and routes for a given interface
-    fn set_ip(&self, _adapter_name: &str, _ip_address: &IpAddr) -> Result<(), TeliodError>;
+    fn set_ip(&self, _interface_name: &str, _ip_address: &IpAddr) -> Result<(), TeliodError>;
 }
 
 /// Helper function to execute a system command
@@ -31,6 +31,7 @@ pub enum InterfaceConfigurationProvider {
     Manual,
     Ifconfig,
     Iproute,
+    Uci,
 }
 
 // TODO(tomasz-grz): Try using enum_dispatch instead of dynamic dyspatch
@@ -42,6 +43,7 @@ impl InterfaceConfigurationProvider {
             Self::Manual => Box::new(Manual),
             Self::Ifconfig => Box::new(Ifconfig),
             Self::Iproute => Box::new(Iproute),
+            Self::Uci => Box::new(Uci),
         }
     }
 }
@@ -51,7 +53,7 @@ impl InterfaceConfigurationProvider {
 pub struct Manual;
 
 impl ConfigureInterface for Manual {
-    fn set_ip(&self, _adapter_name: &str, _ip_address: &IpAddr) -> Result<(), TeliodError> {
+    fn set_ip(&self, _interface_name: &str, _ip_address: &IpAddr) -> Result<(), TeliodError> {
         Ok(()) // No-op implementation
     }
 }
@@ -61,7 +63,7 @@ impl ConfigureInterface for Manual {
 pub struct Ifconfig;
 
 impl ConfigureInterface for Ifconfig {
-    fn set_ip(&self, adapter_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError> {
+    fn set_ip(&self, interface_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError> {
         let ip_string = ip_address.to_string();
         let cidr_suffix = if ip_address.is_ipv4() { "/10" } else { "/64" };
         let cidr_string = format!("{}{}", ip_string, cidr_suffix);
@@ -73,13 +75,13 @@ impl ConfigureInterface for Ifconfig {
 
         info!(
             "Assigning IP address for {} to {}",
-            adapter_name, cidr_string
+            interface_name, cidr_string
         );
 
         match std::env::consts::OS {
             "macos" => {
                 execute(Command::new("ifconfig").args([
-                    adapter_name,
+                    interface_name,
                     ip_type,
                     &cidr_string,
                     &ip_string,
@@ -97,12 +99,12 @@ impl ConfigureInterface for Ifconfig {
                 }
             }
             _ => {
-                execute(Command::new("ifconfig").args([adapter_name, ip_type, &cidr_string]))?;
+                execute(Command::new("ifconfig").args([interface_name, ip_type, &cidr_string]))?;
             }
         }
 
-        execute(Command::new("ifconfig").args([adapter_name, "mtu", "1420"]))?;
-        execute(Command::new("ifconfig").args([adapter_name, "up"]))
+        execute(Command::new("ifconfig").args([interface_name, "mtu", "1420"]))?;
+        execute(Command::new("ifconfig").args([interface_name, "up"]))
     }
 }
 
@@ -111,17 +113,57 @@ impl ConfigureInterface for Ifconfig {
 pub struct Iproute;
 
 impl ConfigureInterface for Iproute {
-    fn set_ip(&self, adapter_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError> {
+    fn set_ip(&self, interface_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError> {
         let cidr_suffix = if ip_address.is_ipv4() { "/10" } else { "/64" };
         let cidr_string = format!("{}{}", ip_address, cidr_suffix);
 
         info!(
             "Assigning IP address for {} to {}",
-            adapter_name, cidr_string
+            interface_name, cidr_string
         );
 
-        execute(Command::new("ip").args(["addr", "add", &cidr_string, "dev", adapter_name]))?;
-        execute(Command::new("ip").args(["link", "set", "dev", adapter_name, "mtu", "1420"]))?;
-        execute(Command::new("ip").args(["link", "set", "dev", adapter_name, "up"]))
+        execute(Command::new("ip").args(["addr", "add", &cidr_string, "dev", interface_name]))?;
+        execute(Command::new("ip").args(["link", "set", "dev", interface_name, "mtu", "1420"]))?;
+        execute(Command::new("ip").args(["link", "set", "dev", interface_name, "up"]))
+    }
+}
+
+/// Implementation using `uci` for OpenWRT
+#[derive(Debug, PartialEq, Eq)]
+pub struct Uci;
+
+impl ConfigureInterface for Uci {
+    fn set_ip(&self, interface_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError> {
+        info!(
+            "Assigning IP address for {} to {}",
+            interface_name, ip_address
+        );
+
+        // add new interface if not present
+        match execute(Command::new("uci").args(["get", "network.tun"])) {
+            Ok(()) => {
+                debug!("interface present");
+            }
+            Err(_) => {
+                debug!("adding new interface");
+                execute(Command::new("uci").args(["add", "network", "interface"]))?;
+                execute(Command::new("uci").args(["rename", "network.@interface[-1]=tun"]))?;
+            }
+        }
+
+        // set options
+        execute(
+            Command::new("uci").args(["set", &format!("network.tun.device={interface_name}")]),
+        )?;
+        execute(Command::new("uci").args(["set", "network.tun.proto=static"]))?;
+        execute(Command::new("uci").args(["set", &format!("network.tun.ipaddr={ip_address}")]))?;
+        execute(Command::new("uci").args(["set", "network.tun.netmask=255.192.0.0"]))?;
+        execute(Command::new("uci").args(["set", "network.tun.mtu=1420"]))?;
+
+        // save and apply
+        execute(Command::new("uci").args(["commit", "network"]))?;
+        execute(Command::new("/etc/init.d/network").args(["reload"]))?;
+
+        Ok(())
     }
 }
