@@ -56,6 +56,7 @@ pub enum InterfaceConfigurationProvider {
     Manual,
     Ifconfig,
     Iproute,
+    Uci,
 }
 
 // TODO(tomasz-grz): Try using enum_dispatch instead of dynamic dyspatch
@@ -67,6 +68,7 @@ impl InterfaceConfigurationProvider {
             Self::Manual => Box::new(Manual),
             Self::Ifconfig => Box::new(Ifconfig::new(adapter_name)),
             Self::Iproute => Box::new(Iproute::new(adapter_name)),
+            Self::Uci => Box::new(Uci::new(adapter_name)),
         }
     }
 }
@@ -306,6 +308,66 @@ impl ConfigureInterface for Iproute {
             }
         }
         self.ipv6_support_manager.reenable()
+    }
+}
+
+/// Implementation using `uci` for OpenWRT
+#[derive(Debug, PartialEq, Eq)]
+pub struct Uci {
+    adapter_name: String,
+}
+
+impl Uci {
+    fn new(adapter_name: String) -> Self {
+        Self { adapter_name }
+    }
+}
+
+impl ConfigureInterface for Uci {
+    fn initialize(&mut self) -> Result<(), TeliodError> {
+        // add new interface if not present
+        match execute(Command::new("uci").args(["get", "network.tun"])) {
+            Ok(()) => {
+                debug!("interface present");
+            }
+            Err(_) => {
+                debug!("adding new interface");
+                execute(Command::new("uci").args(["add", "network", "interface"]))?;
+                execute(Command::new("uci").args(["rename", "network.@interface[-1]=tun"]))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), TeliodError> {
+        info!(
+            "Assigning IP address for {} to {}",
+            self.adapter_name, ip_address
+        );
+
+        // set options
+        execute(
+            Command::new("uci").args(["set", &format!("network.tun.device={}", self.adapter_name)]),
+        )?;
+        execute(Command::new("uci").args(["set", "network.tun.proto=static"]))?;
+        execute(Command::new("uci").args(["set", &format!("network.tun.ipaddr={ip_address}")]))?;
+        execute(Command::new("uci").args(["set", "network.tun.netmask=255.192.0.0"]))?;
+        execute(Command::new("uci").args(["set", "network.tun.mtu=1420"]))?;
+
+        // save and apply
+        execute(Command::new("uci").args(["commit", "network"]))?;
+        execute(Command::new("/etc/init.d/network").args(["reload"]))?;
+
+        Ok(())
+    }
+
+    fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), TeliodError> {
+        Ok(()) // No-op implementation
+    }
+
+    fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError> {
+        Ok(()) // No-op implementation
     }
 }
 
