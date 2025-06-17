@@ -2,7 +2,7 @@ use crate::TeliodError;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::process::Command;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 pub trait ConfigureInterface {
     /// Configure the IP address and routes for a given interface
@@ -31,6 +31,7 @@ pub enum InterfaceConfigurationProvider {
     Manual,
     Ifconfig,
     Iproute,
+    Uci,
 }
 
 // TODO(tomasz-grz): Try using enum_dispatch instead of dynamic dyspatch
@@ -42,6 +43,7 @@ impl InterfaceConfigurationProvider {
             Self::Manual => Box::new(Manual),
             Self::Ifconfig => Box::new(Ifconfig),
             Self::Iproute => Box::new(Iproute),
+            Self::Uci => Box::new(Uci),
         }
     }
 }
@@ -123,5 +125,43 @@ impl ConfigureInterface for Iproute {
         execute(Command::new("ip").args(["addr", "add", &cidr_string, "dev", adapter_name]))?;
         execute(Command::new("ip").args(["link", "set", "dev", adapter_name, "mtu", "1420"]))?;
         execute(Command::new("ip").args(["link", "set", "dev", adapter_name, "up"]))
+    }
+}
+
+/// Implementation using `uci` for OpenWRT
+#[derive(Debug, PartialEq, Eq)]
+pub struct Uci;
+
+impl ConfigureInterface for Uci {
+    fn set_ip(&self, adapter_name: &str, ip_address: &IpAddr) -> Result<(), TeliodError> {
+        info!(
+            "Assigning IP address for {} to {}",
+            adapter_name, ip_address
+        );
+
+        // add new interface if not present
+        match execute(Command::new("uci").args(["get", "network.tun"])) {
+            Ok(()) => {
+                debug!("interface present");
+            }
+            Err(_) => {
+                debug!("adding new interface");
+                execute(Command::new("uci").args(["add", "network", "interface"]))?;
+                execute(Command::new("uci").args(["rename", "network.@interface[-1]=tun"]))?;
+            }
+        }
+
+        // set options
+        execute(Command::new("uci").args(["set", &format!("network.tun.device={adapter_name}")]))?;
+        execute(Command::new("uci").args(["set", "network.tun.proto=static"]))?;
+        execute(Command::new("uci").args(["set", &format!("network.tun.ipaddr={ip_address}")]))?;
+        execute(Command::new("uci").args(["set", "network.tun.netmask=255.192.0.0"]))?;
+        execute(Command::new("uci").args(["set", "network.tun.mtu=1420"]))?;
+
+        // save and apply
+        execute(Command::new("uci").args(["commit", "network"]))?;
+        execute(Command::new("/etc/init.d/network").args(["reload"]))?;
+
+        Ok(())
     }
 }

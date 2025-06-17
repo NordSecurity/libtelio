@@ -60,6 +60,7 @@ needs be absolute, otherwise will be relative to `working-directory` when daemon
     - `manual` - do not configure interfaces automatically
     - `ifconfig` - systems using ifconfig command
     - `iproute` - systems using iproute2 command
+    - `uci` - OpenWRT systems using uci command
 
 And following cli commands:
 
