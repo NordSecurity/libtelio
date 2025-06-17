@@ -4,6 +4,7 @@ use neptun::device::{tun::TunSocket, DeviceConfig, DeviceHandle};
 use slog::{o, Drain};
 use slog_stdlog::StdLog;
 use std::net::{IpAddr, Ipv4Addr};
+use std::os::fd::{IntoRawFd, RawFd};
 use std::sync::Arc;
 use std::{io, ops::Deref};
 use telio_crypto::PublicKey;
@@ -29,13 +30,15 @@ impl NepTUN {
     #[cfg(not(any(test, feature = "test-adapter")))]
     pub fn start(
         name: &str,
-        tun: Option<NativeTun>,
+        tun: Option<RawFd>,
         socket_pool: Arc<SocketPool>,
         firewall_process_inbound_callback: FirewallInboundCb,
         firewall_process_outbound_callback: FirewallOutboundCb,
         firewall_reset_connections_callback: super::FirewallResetConnsCb,
         skt_buffer_size: Option<u32>,
     ) -> Result<Self, AdapterError> {
+        use std::os::fd::RawFd;
+
         let config = DeviceConfig {
             // Apple's NepTUN device runs most efficiently on a single perf-core
             n_threads: {
@@ -117,8 +120,8 @@ impl Adapter for NepTUN {
         cb(exit_pubkey, &mut tun);
     }
 
-    async fn set_tun(&self, tun: i32) -> Result<(), AdapterError> {
-        let new_tun = TunSocket::new_from_fd(tun)?;
+    async fn set_tun(&self, tun: super::Tun) -> Result<(), AdapterError> {
+        let new_tun = TunSocket::new_from_fd(tun.into_raw_fd())?;
         self.device.write().await.set_iface(new_tun)?;
         Ok(())
     }

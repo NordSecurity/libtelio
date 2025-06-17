@@ -747,7 +747,7 @@ impl Cli {
                 ..Default::default()
             };
 
-            self.telio.start(&device_config)?;
+            self.telio.start(device_config)?;
 
             #[cfg(target_os = "linux")]
             self.telio.set_fwmark(FWMARK_VALUE)?;

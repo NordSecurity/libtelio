@@ -428,7 +428,7 @@ impl Adapter for WindowsNativeWg {
         self.cleanup();
     }
 
-    async fn set_tun(&self, _tun: i32) -> Result<(), AdapterError> {
+    async fn set_tun(&self, _tun: super::Tun) -> Result<(), AdapterError> {
         Err(AdapterError::UnsupportedAdapter)
     }
 }

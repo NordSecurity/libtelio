@@ -376,7 +376,7 @@ impl Telio {
         );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
-                dev.start(&DeviceConfig {
+                dev.start(DeviceConfig {
                     private_key: private_key.clone(),
                     adapter: adapter.into(),
                     fwmark: None,
@@ -406,7 +406,7 @@ impl Telio {
         );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
-                dev.start(&DeviceConfig {
+                dev.start(DeviceConfig {
                     private_key: private_key.clone(),
                     adapter: adapter.into(),
                     fwmark: None,
@@ -443,13 +443,16 @@ impl Telio {
             &adapter
         );
 
-        #[cfg(not(target_os = "windows"))]
-        let tun = Some(_tun);
-        #[cfg(target_os = "windows")]
-        let tun = None;
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
-                dev.start(&DeviceConfig {
+                #[cfg(not(target_os = "windows"))]
+                let tun = {
+                    use std::os::fd::{FromRawFd, OwnedFd};
+                    Some(unsafe { OwnedFd::from_raw_fd(_tun) })
+                };
+                #[cfg(target_os = "windows")]
+                let tun = None;
+                dev.start(DeviceConfig {
                     private_key: private_key.clone(),
                     adapter: adapter.into(),
                     fwmark: None,
@@ -512,9 +515,19 @@ impl Telio {
             "Telio::set_tun for instance id: {}, tun fd: {tun_fd}",
             self.id,
         );
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| dev.set_tun(tun_fd).map_err(TelioError::from))
-        })
+
+        #[cfg(not(target_os = "windows"))]
+        return catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                use std::os::fd::{FromRawFd, OwnedFd};
+                let owned_fd = unsafe { OwnedFd::from_raw_fd(tun_fd) };
+                dev.set_tun(owned_fd).map_err(TelioError::from)
+            })
+        });
+        #[cfg(target_os = "windows")]
+        return Err(TelioError::UnknownError {
+            inner: "set_tun is not supported on windows".to_owned(),
+        });
     }
 
     pub fn get_secret_key(&self) -> SecretKey {
