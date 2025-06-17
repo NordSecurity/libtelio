@@ -17,6 +17,7 @@ from utils.connection_tracker import (
     ConnectionTracker,
 )
 from utils.connection_util import generate_connection_tracker_config
+from utils.logger import log
 from utils.netcat import NetCatServer, NetCatClient
 from utils.ping import ping
 from utils.router import IPProto, IPStack
@@ -114,7 +115,6 @@ async def test_mesh_firewall_successful_passthrough(
             IPStack.IPv4,
             IPStack.IPv4v6,
         ]:
-
             with pytest.raises(asyncio.TimeoutError):
                 await ping(
                     connection_alpha,
@@ -137,7 +137,6 @@ async def test_mesh_firewall_successful_passthrough(
             IPStack.IPv6,
             IPStack.IPv4v6,
         ]:
-
             with pytest.raises(asyncio.TimeoutError):
                 await ping(
                     connection_alpha,
@@ -217,7 +216,6 @@ async def test_mesh_firewall_reject_packet(
             IPStack.IPv4,
             IPStack.IPv4v6,
         ]:
-
             with pytest.raises(asyncio.TimeoutError):
                 await ping(
                     connection_alpha,
@@ -236,7 +234,6 @@ async def test_mesh_firewall_reject_packet(
             IPStack.IPv6,
             IPStack.IPv4v6,
         ]:
-
             with pytest.raises(asyncio.TimeoutError):
                 await ping(
                     connection_alpha,
@@ -460,6 +457,7 @@ async def test_mesh_firewall_file_share_port(
             with pytest.raises(asyncio.TimeoutError):
                 await ping(connection_beta, CLIENT_ALPHA_IP, 15)
 
+        log.info("Start NetCat server")
         async with NetCatServer(
             connection_alpha,
             PORT,
@@ -468,8 +466,10 @@ async def test_mesh_firewall_file_share_port(
             bind_ip=CLIENT_ALPHA_IP,
         ).run() as listener:
             # wait for listening to start
+            log.info("Wait for listening to start")
             await listener.listening_started()
 
+            log.info("Start NetCat client")
             async with NetCatClient(
                 connection_beta,
                 CLIENT_ALPHA_IP,
@@ -480,14 +480,19 @@ async def test_mesh_firewall_file_share_port(
                 source_ip=CLIENT_BETA_IP,
             ).run() as client:
                 # wait for client to connect
+                log.info("Wait for client to connect")
                 await client.connection_succeeded()
 
                 # check for connection status according to parameter provided
                 if successful:
+                    log.info("Wait for connection received event")
                     await listener.connection_received()
                 else:
+                    log.info("Wait for connection received event to timeout")
                     with pytest.raises(asyncio.TimeoutError):
                         await asyncio.wait_for(listener.connection_received(), 5)
+            log.info("Teardown client")
+        log.info("Teardown server")
 
 
 @pytest.mark.asyncio
