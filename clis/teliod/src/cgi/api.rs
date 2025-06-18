@@ -393,7 +393,7 @@ fn get_logs(
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, num::NonZeroU64, path::PathBuf, sync::Arc};
+    use std::{fs, num::NonZeroU64, path::PathBuf};
 
     use reqwest::StatusCode;
     use serial_test::serial;
@@ -402,6 +402,8 @@ mod tests {
     use tracing::level_filters::LevelFilter;
 
     use super::*;
+    use super::{update_config, TeliodDaemonConfig};
+    use crate::config::NordToken;
     use crate::{
         config::{InterfaceConfig, MqttConfig, Percentage},
         configure_interface::InterfaceConfigurationProvider,
@@ -428,11 +430,10 @@ mod tests {
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
             vpn: None,
-            authentication_token: Arc::new(
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                    .to_owned()
-                    .into(),
-            ),
+            authentication_token: NordToken::new(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            )
+            .unwrap(),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
             device_identity_file_path: None,
             mqtt: MqttConfig {
@@ -475,11 +476,9 @@ mod tests {
         expected_config.log_level = LevelFilter::INFO;
         expected_config.log_file_path = LOG_PATHS.log().to_string_lossy().into_owned();
         expected_config.log_file_count = 8;
-        expected_config.authentication_token = Arc::new(
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-                .to_owned()
-                .into(),
-        );
+        expected_config.authentication_token =
+            NordToken::new("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+                .unwrap();
         expected_config.interface = InterfaceConfig {
             name: "eth1".to_owned(),
             config_provider: InterfaceConfigurationProvider::Ifconfig,
@@ -541,11 +540,10 @@ mod tests {
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
             vpn: None,
-            authentication_token: Arc::new(
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                    .to_owned()
-                    .into(),
-            ),
+            authentication_token: NordToken::new(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            )
+            .unwrap(),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
             device_identity_file_path: None,
             mqtt: MqttConfig::default(),
@@ -597,11 +595,9 @@ mod tests {
         .unwrap();
         assert_eq!(updated_config, expected_config);
 
-        expected_config.authentication_token = Arc::new(
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-                .to_owned()
-                .into(),
-        );
+        expected_config.authentication_token =
+            NordToken::new("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+                .unwrap();
         let update_body = r#"
         {
             "authentication_token": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
