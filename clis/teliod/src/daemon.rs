@@ -18,8 +18,8 @@ use crate::config::NordToken;
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
-    config::DeviceIdentity,
     config::{InterfaceConfig, TeliodDaemonConfig},
+    core_api::DeviceIdentity,
     core_api::{get_meshmap as get_meshmap_from_server, init_with_api},
     nc::NotificationCenter,
     ClientCmd, TelioStatusReport, TeliodError,
