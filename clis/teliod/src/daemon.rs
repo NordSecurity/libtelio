@@ -21,13 +21,11 @@ use telio::{
 use tokio::{sync::mpsc, sync::mpsc::Sender, sync::oneshot, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 
-use crate::comms::DaemonSocket;
-use crate::config::NordToken;
-use crate::config::VpnConfig;
 use crate::{
     command_listener::CommandListener,
-    config::DeviceIdentity,
-    config::TeliodDaemonConfig,
+    comms::DaemonSocket,
+    config::{NordToken, TeliodDaemonConfig, VpnConfig},
+    core_api::DeviceIdentity,
     core_api::{get_meshmap as get_meshmap_from_server, init_with_api},
     nc::NotificationCenter,
     ClientCmd, ExitNodeStatus, TelioStatusReport, TeliodError,

@@ -9,14 +9,10 @@ use std::{
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use smart_default::SmartDefault;
 use std::fs;
-use tracing::{debug, info, level_filters::LevelFilter, warn, Level};
+use tracing::{level_filters::LevelFilter, Level};
 use uuid::Uuid;
 
-use telio::telio_utils::Hidden;
-use telio::{
-    crypto::{PublicKey, SecretKey},
-    device::AdapterType,
-};
+use telio::{crypto::PublicKey, device::AdapterType, telio_utils::Hidden};
 
 use crate::{configure_interface::InterfaceConfigurationProvider, TeliodError};
 
@@ -66,38 +62,6 @@ fn backoff_maximal_default() -> NonZeroU64 {
 
 fn reconnect_after_expiry_default() -> Percentage {
     Percentage(90)
-}
-
-#[derive(Serialize, Deserialize, Debug, Default)]
-pub struct DeviceIdentity {
-    pub hw_identifier: Uuid,
-    pub private_key: SecretKey,
-    pub machine_identifier: String,
-}
-
-pub fn generate_hw_identifier() -> Uuid {
-    // Generate hw_identifier
-    debug!("Generating a new hw identifier");
-    Uuid::new_v4()
-}
-
-impl DeviceIdentity {
-    pub fn from_file(identity_path: &PathBuf) -> Option<DeviceIdentity> {
-        info!("Fetching identity config");
-
-        if let Ok(file) = fs::File::open(identity_path) {
-            debug!(
-                "Found existing identity config {}",
-                identity_path.to_string_lossy()
-            );
-            if let Ok(c) = serde_json::from_reader(file) {
-                return Some(c);
-            } else {
-                warn!("Reading identity config failed");
-            }
-        }
-        None
-    }
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
