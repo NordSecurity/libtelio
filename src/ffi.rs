@@ -123,7 +123,10 @@ pub fn deserialize_feature_config(fstr: String) -> FfiResult<Features> {
     if fstr.is_empty() {
         Ok(Features::default())
     } else {
-        serde_json::from_str(&fstr).map_err(|_| TelioError::InvalidString)
+        serde_json::from_str(&fstr).map_err(|err| {
+            telio_log_debug!("Failed to deserialize feature config with error: {err:?}");
+            TelioError::InvalidString
+        })
     }
 }
 
