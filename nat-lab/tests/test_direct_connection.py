@@ -232,17 +232,33 @@ async def test_direct_working_paths(
                 )
             )
 
+        log.info("Disable direct connection and wait for ping timeouts")
         async with _disable_direct_connection(env, reflexive_ips):
 
             async def ping_timeout(connection, node):
                 try:
+                    log.info(
+                        "From %s ping node: %s", connection.tag, node.ip_addresses[0]
+                    )
                     await ping(connection, node.ip_addresses[0], 10)
                 except asyncio.TimeoutError:
-                    pass
+                    log.info(
+                        "Pinging from %s to node: %s timeouted! All good here",
+                        connection.tag,
+                        node.ip_addresses[0],
+                    )
                 else:
                     # if no timeout exception happens, this means, that peers connected through relay
                     # faster than we expected, but if no relay event occurs, this means, that something
                     # else was wrong, so we assert
+                    log.info(
+                        (
+                            "Pinging from %s to node: %s went through! Relay must be"
+                            " connected"
+                        ),
+                        connection.tag,
+                        node.ip_addresses[0],
+                    )
                     await asyncio.wait_for(possible_relay_events[connection][node], 1)
 
             await asyncio.gather(*[
@@ -253,6 +269,7 @@ async def test_direct_working_paths(
                 if not client.is_node(node)
             ])
 
+        log.info("Re-enable direct connection and wait for pings")
         await ping_between_all_nodes(env)
 
 
@@ -360,7 +377,7 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
 
             direct_state_reported = telio_log_notifier.notify_output(
                 f'Direct peer state change for "{losing_key[:4]}...{losing_key[-4:]}" to Connected'
-                f" ({from_provider} -> {to_provider}) will be reported",
+                f" ({from_provider} -> {to_provider}) will be reported"
             )
 
         await asyncio.gather(
@@ -451,9 +468,13 @@ async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
         env = await setup_mesh_nodes(exit_stack, setup_params)
         api = env.api
         *_, delta, epsilon = env.nodes
-        alpha_client, beta_client, gamma_client, delta_client, epsilon_client = (
-            env.clients
-        )
+        (
+            alpha_client,
+            beta_client,
+            gamma_client,
+            delta_client,
+            epsilon_client,
+        ) = env.clients
 
         await ping_between_all_nodes(env)
 
@@ -462,7 +483,8 @@ async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
 
         await asyncio.gather(*[
             running_client.wait_for_log(
-                f"Skipping sending CMM to peer {stopped_node.public_key} (Unresponsive)"
+                "Skipping sending CMM to peer"
+                f" {stopped_node.public_key} (Unresponsive)"
             )
             for running_client, stopped_node in itertools.product(
                 [alpha_client, beta_client, gamma_client], [delta, epsilon]
@@ -580,11 +602,13 @@ async def test_direct_working_paths_with_pausing_upnp_and_stun() -> None:
         await asyncio.gather(*[
             (
                 client.wait_for_log(
-                    "Skipping getting endpoint via STUN endpoint provider(ModulePaused)"
+                    "Skipping getting endpoint via STUN endpoint"
+                    " provider(ModulePaused)"
                 )
                 if EndpointProvider.STUN in provider
                 else client.wait_for_log(
-                    "Skipping getting endpoint via UPNP endpoint provider(ModulePaused)"
+                    "Skipping getting endpoint via UPNP endpoint"
+                    " provider(ModulePaused)"
                 )
             )
             for client, provider in zip(env.clients, providers)
