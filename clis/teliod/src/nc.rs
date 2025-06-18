@@ -24,7 +24,7 @@ use tokio::{
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::config::MqttConfig;
+use crate::config::{MqttConfig, NordToken};
 
 use self::outgoing::{Acknowledgement, DeliveryConfirmation};
 
@@ -78,7 +78,7 @@ pub struct NotificationCenter {
 }
 
 struct NCConfig {
-    authentication_token: Hidden<String>,
+    authentication_token: NordToken,
     app_user_uid: Uuid,
     callbacks: Arc<Mutex<Vec<Callback>>>,
     http_certificate_file_path: Option<PathBuf>,
