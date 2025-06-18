@@ -95,6 +95,53 @@ impl DeviceIdentity {
 }
 
 #[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone)]
+pub struct NordToken(Hidden<String>);
+
+impl NordToken {
+    pub fn new(token: &str) -> Result<Self, TeliodError> {
+        if Self::validate(token) {
+            Ok(NordToken(token.to_owned().into()))
+        } else {
+            Err(TeliodError::InvalidConfigOption(
+                "authentication_token".to_owned(),
+                "Invalid authentication token format".to_owned(),
+                "".to_owned(),
+            ))
+        }
+    }
+
+    fn validate(token: &str) -> bool {
+        token.is_empty() || (token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()))
+    }
+}
+
+impl Default for NordToken {
+    fn default() -> Self {
+        NordToken(Hidden("".to_owned()))
+    }
+}
+
+impl std::fmt::Display for NordToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for NordToken {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for NordToken {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+#[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone)]
 pub struct TeliodDaemonConfig {
     #[serde(
         deserialize_with = "deserialize_log_level",
@@ -107,11 +154,8 @@ pub struct TeliodDaemonConfig {
     pub adapter_type: AdapterType,
     pub interface: InterfaceConfig,
 
-    #[serde(
-        deserialize_with = "deserialize_authentication_token",
-        serialize_with = "serialize_authentication_token"
-    )]
-    pub authentication_token: Hidden<String>,
+    #[serde(deserialize_with = "deserialize_nord_token")]
+    pub authentication_token: NordToken,
 
     /// Path to a http pem certificate to be used when connecting to CoreApi
     pub http_certificate_file_path: Option<PathBuf>,
@@ -183,11 +227,12 @@ impl TeliodDaemonConfig {
         // Validate token
         if let Ok(token) = std::env::var("NORD_TOKEN") {
             println!("Overriding token from env");
-            if token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) {
-                config.authentication_token = Hidden::<String>(token);
-            } else {
-                eprintln!("Token from env not valid")
-            }
+            match NordToken::new(&token) {
+                Ok(nordtoken) => config.authentication_token = nordtoken,
+                Err(e) => {
+                    eprintln!("Token from env not valid: {}", e);
+                }
+            };
         }
 
         Ok(config)
@@ -219,7 +264,7 @@ impl Default for TeliodDaemonConfig {
                 name: "nlx".to_string(),
                 config_provider: Default::default(),
             },
-            authentication_token: "".to_string().into(),
+            authentication_token: Default::default(),
             http_certificate_file_path: None,
             mqtt: MqttConfig::default(),
         }
@@ -264,31 +309,11 @@ where
     serializer.serialize_str(&log_level.to_string())
 }
 
-fn deserialize_authentication_token<'de, D: Deserializer<'de>>(
+fn deserialize_nord_token<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<Hidden<String>, D::Error> {
+) -> Result<NordToken, D::Error> {
     let raw_string: Hidden<String> = de::Deserialize::deserialize(deserializer)?;
-    let re = regex::Regex::new("[0-9a-f]{64}").map_err(de::Error::custom)?;
-    if raw_string.is_empty() || re.is_match(&raw_string) {
-        Ok(raw_string)
-    } else {
-        Err(de::Error::custom("Incorrect authentication token"))
-    }
-}
-
-fn serialize_authentication_token<S>(auth_token: &str, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    if auth_token.is_empty()
-        || (auth_token.len() == 64 && auth_token.chars().all(|c| c.is_ascii_hexdigit()))
-    {
-        serializer.serialize_str(auth_token)
-    } else {
-        Err(serde::ser::Error::custom(
-            "Invalid authentication token format",
-        ))
-    }
+    NordToken::new(&raw_string).map_err(de::Error::custom)
 }
 
 const fn default_log_file_count() -> usize {
@@ -311,8 +336,8 @@ pub struct TeliodDaemonConfigPartial {
     pub adapter_type: Option<AdapterType>,
     pub interface: Option<InterfaceConfig>,
     pub app_user_uid: Option<Uuid>,
-    #[serde(default, deserialize_with = "deserialize_partial_authentication_token")]
-    pub authentication_token: Option<Hidden<String>>,
+    #[serde(default, deserialize_with = "deserialize_partial_nord_token")]
+    pub authentication_token: Option<NordToken>,
     pub http_certificate_file_path: Option<Option<PathBuf>>,
     pub mqtt: Option<MqttConfig>,
 }
@@ -333,20 +358,14 @@ fn deserialize_partial_log_level<'de, D: Deserializer<'de>>(
     }
 }
 
-fn deserialize_partial_authentication_token<'de, D: Deserializer<'de>>(
+fn deserialize_partial_nord_token<'de, D: Deserializer<'de>>(
     deserializer: D,
-) -> Result<Option<Hidden<String>>, D::Error> {
-    let deserialized_auth_token: Option<Hidden<String>> = Option::deserialize(deserializer)?;
+) -> Result<Option<NordToken>, D::Error> {
+    let deserialized_auth_token: Option<Hidden<String>> =
+        de::Deserialize::deserialize(deserializer)?;
 
     match deserialized_auth_token {
-        Some(raw_auth_token) => {
-            let re = regex::Regex::new("[0-9a-f]{64}").map_err(de::Error::custom)?;
-            if re.is_match(&raw_auth_token) {
-                Ok(Some(raw_auth_token))
-            } else {
-                Err(de::Error::custom("Incorrect authentication token"))
-            }
-        }
+        Some(raw_auth_token) => Ok(NordToken::new(&raw_auth_token).ok()),
         None => Ok(None),
     }
 }
@@ -400,10 +419,10 @@ mod tests {
                 name: "utun10".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
-            authentication_token:
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                    .to_owned()
-                    .into(),
+            authentication_token: NordToken::new(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            )
+            .unwrap(),
             http_certificate_file_path: None,
             mqtt: MqttConfig {
                 backoff_initial: NonZeroU64::new(1).unwrap(),
@@ -486,7 +505,7 @@ mod tests {
         std::env::set_var("NORD_TOKEN", &valid_token);
 
         let config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
-        assert_eq!(config.authentication_token.0, valid_token);
+        assert_eq!(config.authentication_token.as_ref(), valid_token);
 
         std::env::remove_var("NORD_TOKEN");
     }
@@ -500,7 +519,7 @@ mod tests {
         std::env::set_var("NORD_TOKEN", "short");
 
         let config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
-        assert_eq!(config.authentication_token.0, "a".repeat(64));
+        assert_eq!(config.authentication_token.as_ref(), "a".repeat(64));
 
         std::env::remove_var("NORD_TOKEN");
     }
