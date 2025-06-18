@@ -1,9 +1,8 @@
 //! Code for serving static web ui
 
 use std::{collections::HashMap, fs, str::FromStr};
-use telio::telio_utils::hidden::Hidden;
 
-use crate::config::{InterfaceConfig, TeliodDaemonConfigPartial};
+use crate::config::{InterfaceConfig, NordToken, TeliodDaemonConfigPartial};
 use crate::TeliodDaemonConfig;
 use lazy_static::lazy_static;
 use maud::{html, Markup, Render};
@@ -203,7 +202,7 @@ fn update_config(app: &mut AppState, request: &CgiRequest) -> Result<TeliodDaemo
         // Empty token submitted means we don't update it.
         // this means we do not provide a way to clear it on this endpoint
         authentication_token: match values.get(ACCESS_TOKEN) {
-            Some(token) if !token.to_string().trim().is_empty() => Some(Hidden(token.to_string())),
+            Some(token) if !token.to_string().trim().is_empty() => NordToken::new(token).ok(),
             _ => None,
         },
         log_level: values

@@ -139,7 +139,7 @@ pub async fn init_with_api(config: &TeliodDaemonConfig) -> Result<DeviceIdentity
             let hw_identifier = generate_hw_identifier();
 
             let machine_identifier = match fetch_identifier_with_exp_backoff(
-                &config.authentication_token.0,
+                &config.authentication_token,
                 &config.http_certificate_file_path,
                 private_key.public(),
             )
@@ -152,7 +152,7 @@ pub async fn init_with_api(config: &TeliodDaemonConfig) -> Result<DeviceIdentity
                         Box::pin(register_machine_with_exp_backoff(
                             &hw_identifier.to_string(),
                             private_key.public(),
-                            &config.authentication_token.0,
+                            &config.authentication_token,
                             &config.http_certificate_file_path,
                         ))
                         .await?
@@ -170,7 +170,7 @@ pub async fn init_with_api(config: &TeliodDaemonConfig) -> Result<DeviceIdentity
     };
 
     if let Err(e) = update_machine_with_exp_backoff(
-        &config.authentication_token.0,
+        &config.authentication_token,
         &config.http_certificate_file_path,
         &device_identity,
     )
@@ -182,7 +182,7 @@ pub async fn init_with_api(config: &TeliodDaemonConfig) -> Result<DeviceIdentity
                 device_identity.machine_identifier = Box::pin(register_machine_with_exp_backoff(
                     &device_identity.hw_identifier.to_string(),
                     device_identity.private_key.public(),
-                    &config.authentication_token.0,
+                    &config.authentication_token,
                     &config.http_certificate_file_path,
                 ))
                 .await?;
