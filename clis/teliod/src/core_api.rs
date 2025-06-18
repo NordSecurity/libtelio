@@ -1,5 +1,3 @@
-use crate::config::{generate_hw_identifier, TeliodDaemonConfig};
-use crate::DeviceIdentity;
 use base64::{prelude::*, DecodeError};
 use reqwest::{header, Certificate, Client, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -14,6 +12,8 @@ use telio::telio_lana::telio_log_warn;
 use telio::telio_utils::exponential_backoff::{
     Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
 };
+
+use crate::config::TeliodDaemonConfig;
 
 use telio::{crypto::PublicKey, telio_model::config::Config as MeshMap};
 use thiserror::Error;
@@ -65,6 +65,70 @@ struct MeshConfig {
     os_version: String,
     device_type: String,
     traffic_routing_supported: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct DeviceIdentity {
+    pub hw_identifier: uuid::Uuid,
+    pub private_key: SecretKey,
+    pub machine_identifier: String,
+}
+
+impl DeviceIdentity {
+    /// Generate a new device identity.
+    /// A new key and hw id are generated, whereas the machine id is fetched from the
+    /// API with a [1,180]s exponential backoff.
+    pub async fn new(config: &TeliodDaemonConfig) -> Result<Self, Error> {
+        let private_key = SecretKey::gen();
+        let hw_identifier = uuid::Uuid::new_v4();
+
+        let machine_identifier = match fetch_identifier_with_exp_backoff(
+            &config.authentication_token,
+            &config.http_certificate_file_path,
+            private_key.public(),
+        )
+        .await
+        {
+            Ok(id) => id,
+            Err(e) => match e {
+                Error::DeviceNotFound => {
+                    info!("Unable to load identifier due to {e}. Registering ...");
+                    Box::pin(register_machine_with_exp_backoff(
+                        &hw_identifier.to_string(),
+                        private_key.public(),
+                        &config.authentication_token,
+                        &config.http_certificate_file_path,
+                    ))
+                    .await?
+                }
+                _ => return Err(e),
+            },
+        };
+
+        Ok(DeviceIdentity {
+            private_key,
+            hw_identifier,
+            machine_identifier,
+        })
+    }
+
+    /// Device identity is parsed from a given file.
+    pub fn from_file(identity_path: &std::path::PathBuf) -> Option<DeviceIdentity> {
+        info!("Fetching identity config");
+
+        if let Ok(file) = std::fs::File::open(identity_path) {
+            debug!(
+                "Found existing identity config {}",
+                identity_path.to_string_lossy()
+            );
+            if let Ok(c) = serde_json::from_reader(file) {
+                return Some(c);
+            } else {
+                warn!("Reading identity config failed");
+            }
+        }
+        None
+    }
 }
 
 fn build_backoff() -> Result<ExponentialBackoff, Error> {
@@ -134,39 +198,7 @@ pub async fn init_with_api(config: &TeliodDaemonConfig) -> Result<DeviceIdentity
 
     let mut device_identity = match DeviceIdentity::from_file(&identity_path) {
         Some(identity) => identity,
-        None => {
-            let private_key = SecretKey::gen();
-            let hw_identifier = generate_hw_identifier();
-
-            let machine_identifier = match fetch_identifier_with_exp_backoff(
-                &config.authentication_token,
-                &config.http_certificate_file_path,
-                private_key.public(),
-            )
-            .await
-            {
-                Ok(id) => id,
-                Err(e) => match e {
-                    Error::DeviceNotFound => {
-                        info!("Unable to load identifier due to {e}. Registering ...");
-                        Box::pin(register_machine_with_exp_backoff(
-                            &hw_identifier.to_string(),
-                            private_key.public(),
-                            &config.authentication_token,
-                            &config.http_certificate_file_path,
-                        ))
-                        .await?
-                    }
-                    _ => return Err(e),
-                },
-            };
-
-            DeviceIdentity {
-                private_key,
-                hw_identifier,
-                machine_identifier,
-            }
-        }
+        None => Box::pin(DeviceIdentity::new(config)).await?,
     };
 
     if let Err(e) = update_machine_with_exp_backoff(
@@ -187,7 +219,6 @@ pub async fn init_with_api(config: &TeliodDaemonConfig) -> Result<DeviceIdentity
                 ))
                 .await?;
             } else {
-                // exit daemon
                 return Err(Error::UpdateMachine(status));
             }
         } else {

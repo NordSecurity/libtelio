@@ -32,9 +32,7 @@ mod logging;
 mod nc;
 
 use crate::{
-    command_listener::CommandResponse,
-    comms::DaemonSocket,
-    config::{DeviceIdentity, TeliodDaemonConfig},
+    command_listener::CommandResponse, comms::DaemonSocket, config::TeliodDaemonConfig,
     core_api::Error as ApiError,
 };
 
