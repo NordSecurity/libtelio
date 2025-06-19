@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.4.2
+### **Tomato**
+---
+* LLT-6394: Emit debug log when deserializing meshnet or feature config fails
+
+<br>
+
 ### v5.4.1
 ### **Tomato**
 ---
