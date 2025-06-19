@@ -131,6 +131,8 @@ pub struct TelioStatusReport {
     pub telio_is_running: bool,
     /// Assigned mesnet IP address
     pub meshnet_ip: Option<IpAddr>,
+    /// Node identifier used in traffic routing, VPN server or meshnet peer
+    pub exit_node: Option<String>,
     /// List of meshnet peers
     pub external_nodes: Vec<Node>,
 }
