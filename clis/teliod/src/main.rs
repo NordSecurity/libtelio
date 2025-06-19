@@ -4,8 +4,15 @@ use clap::Parser;
 use daemonize::{Daemonize, Outcome};
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
-use std::{fs::OpenOptions, net::IpAddr};
-use telio::{device::Error as DeviceError, telio_model::mesh::Node};
+use std::{
+    fs::OpenOptions,
+    net::{IpAddr, SocketAddr},
+};
+use telio::{
+    crypto::PublicKey,
+    device::Error as DeviceError,
+    telio_model::mesh::{Node, NodeState},
+};
 use thiserror::Error as ThisError;
 use tokio::{
     task::JoinError,
@@ -133,8 +140,34 @@ pub struct TelioStatusReport {
     pub telio_is_running: bool,
     /// Assigned mesnet IP address
     pub meshnet_ip: Option<IpAddr>,
+    /// Node used in traffic routing, VPN server or meshnet peer
+    pub exit_node: Option<ExitNodeStatus>,
     /// List of meshnet peers
     pub external_nodes: Vec<Node>,
+}
+
+/// Description of the Exit Node
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExitNodeStatus {
+    /// An identifier for a node
+    pub identifier: String,
+    /// The public key of the exit node
+    pub public_key: PublicKey,
+    /// Socket address of the Exit Node
+    pub endpoint: Option<SocketAddr>,
+    /// State of the node (Connecting, connected, or disconnected)
+    pub state: NodeState,
+}
+
+impl From<&Node> for ExitNodeStatus {
+    fn from(value: &Node) -> Self {
+        Self {
+            identifier: value.identifier.to_owned(),
+            public_key: value.public_key,
+            state: value.state,
+            endpoint: value.endpoint,
+        }
+    }
 }
 
 fn main() -> Result<(), TeliodError> {
