@@ -9,6 +9,7 @@ use telio::{
     device::{Device, DeviceConfig, Error as DeviceError},
     ffi::defaults_builder::FeaturesDefaultsBuilder,
     telio_model::config::Config as MeshMap,
+    telio_model::mesh::ExitNode,
     telio_utils::select,
     telio_wg::AdapterType,
 };
@@ -42,6 +43,7 @@ const EMPTY_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 #[derive(Debug, Default)]
 pub struct TelioTaskStates {
     interface_ip_address: Option<IpAddr>,
+    exit_node: Option<ExitNode>,
 }
 
 // From async context Telio needs to be run in separate task
@@ -109,6 +111,7 @@ fn telio_task(
                     let status_report = TelioStatusReport {
                         telio_is_running: telio.is_running(),
                         meshnet_ip: state.interface_ip_address,
+                        exit_node: state.exit_node.to_owned(),
                         external_nodes: telio.external_nodes()?,
                     };
                     debug!("Telio status: {:#?}", status_report);

@@ -5,7 +5,10 @@ use daemonize::{Daemonize, Outcome};
 use serde::{Deserialize, Serialize};
 use serde_json::error::Error as SerdeJsonError;
 use std::{fs::OpenOptions, net::IpAddr};
-use telio::{device::Error as DeviceError, telio_model::mesh::Node};
+use telio::{
+    device::Error as DeviceError,
+    telio_model::mesh::{ExitNode, Node},
+};
 use thiserror::Error as ThisError;
 use tokio::{
     task::JoinError,
@@ -131,6 +134,8 @@ pub struct TelioStatusReport {
     pub telio_is_running: bool,
     /// Assigned mesnet IP address
     pub meshnet_ip: Option<IpAddr>,
+    /// Node used in traffic routing, VPN server or meshnet peer
+    pub exit_node: Option<ExitNode>,
     /// List of meshnet peers
     pub external_nodes: Vec<Node>,
 }
