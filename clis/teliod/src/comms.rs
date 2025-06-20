@@ -8,13 +8,15 @@ use std::{
 
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
+#[cfg(not(test))]
+use interprocess::os::unix::local_socket::ListenerOptionsExt;
 use interprocess::{
     local_socket::{
         tokio::{Listener as LocalSocketListener, Stream as LocalSocketStream},
         traits::tokio::{Listener, Stream},
         ListenerOptions, ToFsName,
     },
-    os::unix::local_socket::{FilesystemUdSocket, ListenerOptionsExt},
+    os::unix::local_socket::FilesystemUdSocket,
 };
 
 /// Struct for handling connections of the daemon's side of the IPC communication with the API.

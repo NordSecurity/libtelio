@@ -721,7 +721,7 @@ networks:
   cone-net-03:
     driver: bridge
     driver_opts:
-        com.docker.network.bridge.gateway_mode_ipv4: 'nat-unprotected'
+        com.docker.network.bridge.gateway_mode_ipv4: 'nat'
     ipam:
       driver: default
       config:
@@ -729,7 +729,7 @@ networks:
   cone-net-04:
     driver: bridge
     driver_opts:
-      com.docker.network.bridge.gateway_mode_ipv4: 'nat-unprotected'
+      com.docker.network.bridge.gateway_mode_ipv4: 'nat'
     ipam:
       driver: default
       config:

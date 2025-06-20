@@ -299,6 +299,10 @@ async fn request_nc_credentials(
         for cert in Certificate::from_pem_bundle(&cert)? {
             builder = builder.add_root_certificate(cert);
         }
+        // Due to a bug in reqwest, the rustls backend has to be specified
+        // Additionally, reqwest considers some self-signed certs, like the natlab one,
+        // as invalid and we therefore need to call the danger_accept_invalid_certs
+        builder = builder.use_rustls_tls().danger_accept_invalid_certs(true);
     }
     let client = builder.build()?;
 
@@ -308,7 +312,7 @@ async fn request_nc_credentials(
     };
     let resp = client
         .post(TOKENS_URL)
-        .basic_auth(USERNAME, Some(nc_config.authentication_token.clone()))
+        .basic_auth(USERNAME, Some(nc_config.authentication_token.0.clone()))
         .json(&data)
         .send()
         .await?;

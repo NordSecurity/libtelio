@@ -1,4 +1,5 @@
 use std::{
+    net::SocketAddr,
     num::NonZeroU64,
     path::{Path, PathBuf},
     str::FromStr,
@@ -10,7 +11,11 @@ use std::fs;
 use tracing::{debug, info, level_filters::LevelFilter, warn, Level};
 use uuid::Uuid;
 
-use telio::{crypto::SecretKey, device::AdapterType, telio_utils::Hidden};
+use telio::telio_utils::Hidden;
+use telio::{
+    crypto::{PublicKey, SecretKey},
+    device::AdapterType,
+};
 
 use crate::{configure_interface::InterfaceConfigurationProvider, TeliodError};
 
@@ -106,6 +111,7 @@ pub struct TeliodDaemonConfig {
     pub log_file_count: usize,
     pub adapter_type: AdapterType,
     pub interface: InterfaceConfig,
+    pub vpn: Option<VpnConfig>,
 
     #[serde(
         deserialize_with = "deserialize_authentication_token",
@@ -115,6 +121,9 @@ pub struct TeliodDaemonConfig {
 
     /// Path to a http pem certificate to be used when connecting to CoreApi
     pub http_certificate_file_path: Option<PathBuf>,
+
+    /// Path to a device identity file, should only be used for testing
+    pub device_identity_file_path: Option<PathBuf>,
 
     #[serde(default)]
     pub mqtt: MqttConfig,
@@ -141,8 +150,15 @@ impl TeliodDaemonConfig {
         if let Some(interface) = update.interface {
             self.interface = interface;
         }
+        if let Some(vpn) = update.vpn {
+            self.vpn = Some(vpn);
+        }
         if let Some(http_certificate_file_path) = update.http_certificate_file_path {
             self.http_certificate_file_path = http_certificate_file_path;
+        }
+
+        if let Some(device_identity_file_path) = update.device_identity_file_path {
+            self.device_identity_file_path = device_identity_file_path
         }
         if let Some(mqtt) = update.mqtt {
             self.mqtt = mqtt;
@@ -219,8 +235,10 @@ impl Default for TeliodDaemonConfig {
                 name: "nlx".to_string(),
                 config_provider: Default::default(),
             },
-            authentication_token: "".to_string().into(),
+            vpn: None,
+            authentication_token: Hidden("".to_string()),
             http_certificate_file_path: None,
+            device_identity_file_path: None,
             mqtt: MqttConfig::default(),
         }
     }
@@ -301,6 +319,12 @@ pub struct InterfaceConfig {
     pub config_provider: InterfaceConfigurationProvider,
 }
 
+#[derive(PartialEq, Eq, Deserialize, Serialize, Debug, Copy, Clone)]
+pub struct VpnConfig {
+    pub server_endpoint: SocketAddr,
+    pub server_pubkey: PublicKey,
+}
+
 #[allow(dead_code)]
 #[derive(Deserialize, Debug, Default)]
 pub struct TeliodDaemonConfigPartial {
@@ -310,10 +334,12 @@ pub struct TeliodDaemonConfigPartial {
     pub log_file_count: Option<usize>,
     pub adapter_type: Option<AdapterType>,
     pub interface: Option<InterfaceConfig>,
+    pub vpn: Option<VpnConfig>,
     pub app_user_uid: Option<Uuid>,
     #[serde(default, deserialize_with = "deserialize_partial_authentication_token")]
     pub authentication_token: Option<Hidden<String>>,
     pub http_certificate_file_path: Option<Option<PathBuf>>,
+    pub device_identity_file_path: Option<Option<PathBuf>>,
     pub mqtt: Option<MqttConfig>,
 }
 
@@ -400,11 +426,13 @@ mod tests {
                 name: "utun10".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
+            vpn: None,
             authentication_token:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_owned()
                     .into(),
             http_certificate_file_path: None,
+            device_identity_file_path: None,
             mqtt: MqttConfig {
                 backoff_initial: NonZeroU64::new(1).unwrap(),
                 backoff_maximal: NonZeroU64::new(300).unwrap(),

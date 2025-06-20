@@ -415,11 +415,13 @@ mod tests {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
+            vpn: None,
             authentication_token:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_owned()
                     .into(),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
+            device_identity_file_path: None,
             mqtt: MqttConfig {
                 backoff_initial: NonZeroU64::new(5).unwrap(),
                 backoff_maximal: NonZeroU64::new(600).unwrap(),
@@ -509,11 +511,13 @@ mod tests {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
+            vpn: None,
             authentication_token:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_owned()
                     .into(),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
+            device_identity_file_path: None,
             mqtt: MqttConfig::default(),
         };
         let initial_config = r#"
