@@ -4829,6 +4829,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "blake2",
+ "blake3",
  "hmac",
  "mockall",
  "neptun",
@@ -4837,6 +4838,7 @@ dependencies = [
  "pqcrypto-internals",
  "pqcrypto-kyber",
  "pqcrypto-traits",
+ "proptest",
  "rand 0.8.5",
  "sha2",
  "telio-crypto",
