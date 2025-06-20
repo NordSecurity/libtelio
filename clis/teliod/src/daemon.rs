@@ -1,6 +1,7 @@
 use futures::stream::StreamExt;
 use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use nix::sys::signal::Signal;
+use reqwest::StatusCode;
 use signal_hook_tokio::Signals;
 use std::{net::IpAddr, sync::Arc};
 use telio::{
@@ -19,8 +20,10 @@ use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
     config::{InterfaceConfig, TeliodDaemonConfig},
-    core_api::DeviceIdentity,
-    core_api::{get_meshmap as get_meshmap_from_server, init_with_api},
+    core_api::{
+        get_meshmap as get_meshmap_from_server, init_with_api, DeviceIdentity,
+        Error as CoreApiError,
+    },
     nc::NotificationCenter,
     ClientCmd, TelioStatusReport, TeliodError,
 };
@@ -189,7 +192,16 @@ async fn daemon_init(
     // This is to not look for tokens in a test environment right now as the values
     // are dummy and program will not run as it expects real tokens.
     let identity = Arc::new(if *config.authentication_token != *EMPTY_TOKEN {
-        Box::pin(init_with_api(&config.authentication_token)).await?
+        match Box::pin(init_with_api(&config.authentication_token)).await {
+            Err(CoreApiError::UpdateMachine(StatusCode::NOT_FOUND)) => {
+                debug!("Machine not found, removing cached identity file and trying again..");
+                DeviceIdentity::remove_file();
+
+                init_with_api(&config.authentication_token).await?
+            }
+            Ok(identity) => identity,
+            Err(e) => return Err(e.into()),
+        }
     } else {
         DeviceIdentity::default()
     });
