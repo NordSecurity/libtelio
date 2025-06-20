@@ -77,9 +77,9 @@ pub(crate) fn handle_api(request: &CgiRequest) -> Option<Response> {
 
             Some(get_logs(
                 days_count,
-                LOG_PATHS.stdout(),
-                LOG_PATHS.init_stdout(),
-                LOG_PATHS.lib_dir(),
+                LOG_PATHS.daemon_log(),
+                LOG_PATHS.daemon_init_log(),
+                LOG_PATHS.dir(),
             ))
         }
         (_, _) => Some(text_response(
@@ -117,7 +117,7 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
         .write(true)
         .read(true)
         .truncate(true)
-        .open(LOG_PATHS.init_stdout())
+        .open(LOG_PATHS.daemon_init_log())
     {
         Ok(file) => file,
         Err(err) => {
@@ -125,7 +125,7 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!(
                     "Failed to open teliod log file {:?}, err: {err}",
-                    LOG_PATHS.init_stdout()
+                    LOG_PATHS.daemon_init_log()
                 ),
             );
         }
@@ -347,7 +347,7 @@ fn get_logs(
                 p.is_file()
                     && p.file_name()
                         .and_then(|n| n.to_str())
-                        .map(|n| n.starts_with(LOG_PATHS.lib_logs_prefix()))
+                        .map(|n| n.starts_with(LOG_PATHS.prefix()))
                         .unwrap_or(false)
             })
             .collect(),
@@ -372,7 +372,7 @@ fn get_logs(
             &mut concatenated_logs,
             &format!(
                 "No teliod log files {} found in: {}",
-                LOG_PATHS.lib_logs_prefix(),
+                LOG_PATHS.prefix(),
                 logs_dir.to_string_lossy()
             ),
         );
@@ -464,7 +464,7 @@ mod tests {
         assert_eq!(read_config, expected_config);
 
         expected_config.log_level = LevelFilter::INFO;
-        expected_config.log_file_path = LOG_PATHS.lib_log_path().to_string_lossy().into_owned();
+        expected_config.log_file_path = LOG_PATHS.lib_log().to_string_lossy().into_owned();
         expected_config.log_file_count = 8;
         expected_config.authentication_token =
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -501,7 +501,7 @@ mod tests {
                 }}
             }}
             "#,
-            LOG_PATHS.lib_log_path().to_string_lossy()
+            LOG_PATHS.lib_log().to_string_lossy()
         );
         assert_eq!(update_config(&update_body).status(), StatusCode::OK);
 

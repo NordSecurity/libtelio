@@ -237,7 +237,7 @@ impl Default for TeliodDaemonConfig {
                 #[cfg(feature = "cgi")]
                 {
                     crate::cgi::constants::LOG_PATHS
-                        .lib_log_path()
+                        .lib_log()
                         .to_string_lossy()
                         .into_owned()
                 }
