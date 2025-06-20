@@ -12,16 +12,9 @@ use std::fs;
 use tracing::{level_filters::LevelFilter, Level};
 use uuid::Uuid;
 
-use telio::{
-    crypto::PublicKey,
-    device::AdapterType,
-    telio_utils::Hidden,
-};
+use telio::{crypto::PublicKey, device::AdapterType, telio_utils::Hidden};
 
-use crate::{
-    configure_interface::InterfaceConfigurationProvider,
-    TeliodError,
-};
+use crate::{configure_interface::InterfaceConfigurationProvider, TeliodError};
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
 #[repr(transparent)]
