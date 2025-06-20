@@ -319,7 +319,7 @@ async def test_teliod_vpn_connection_with_manual_interface_setup() -> None:
         await connection.create_process(
             ["killall", "-w", "-s", "SIGTERM", "teliod"]
         ).execute()
-        
+
         await router.delete_vpn_route()
         await router.delete_exit_node_route()
         await router.delete_interface()

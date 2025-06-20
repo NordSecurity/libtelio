@@ -415,6 +415,7 @@ mod tests {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
+            vpn: None,
             authentication_token:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_owned()
@@ -510,6 +511,7 @@ mod tests {
                 name: "eth0".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
+            vpn: None,
             authentication_token:
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                     .to_owned()

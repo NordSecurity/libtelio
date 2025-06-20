@@ -8,6 +8,7 @@ use std::{net::IpAddr, sync::Arc};
 use telio::crypto::PublicKey;
 use telio::telio_model::mesh::{ExitNode, NodeState};
 use telio::telio_utils::Hidden;
+use telio::telio_utils::LIBTELIO_FWMARK;
 use telio::{
     crypto::SecretKey,
     device::{Device, DeviceConfig, Error as DeviceError},
@@ -148,6 +149,10 @@ fn telio_task(
                     };
                     match telio.connect_exit_node(&node) {
                         Ok(_) => {
+                            // routing for VPN should only be setup once the VPN connection has been established
+                            // which could take some amount of time, yet we don't want to block the event loop
+                            // this task checks the connection status and if connected sets up routing information
+                            // otherwise it sleeps and tries again
                             task_maybe_setup_vpn_routes(tx_channel.clone(), ip.ip(), pubkey);
                         }
                         Err(e) => {
@@ -156,6 +161,7 @@ fn telio_task(
                     }
                 }
                 TelioTaskCmd::MaybeSetupVPNRoutes(ip, pubkey) => {
+                    // find connection status for VPN server
                     let is_connected = telio
                         .external_nodes()
                         .ok()
@@ -167,6 +173,7 @@ fn telio_task(
                         })
                         .unwrap_or(false);
                     if is_connected {
+                        // if we're connected, setup routing information
                         info!("Successfully connected to VPN");
                         _ = sys_config
                             .set_exit_routes(&interface_config.name, &ip)
@@ -174,6 +181,7 @@ fn telio_task(
                                 error!("Failed to set routes for exit routing with error '{e:?}'")
                             });
                     } else {
+                        // if not connected, call the task to sleep and then try again
                         task_maybe_setup_vpn_routes(tx_channel.clone(), ip, pubkey);
                     }
                 }
@@ -242,6 +250,9 @@ fn task_connect_to_exit_node(
     });
 }
 
+// The task cannot interact directly with the telio device so we have to send a command over the command channel
+// This will be a recursive-like story because if the connection with the VPN server has not been established,
+// this task will be started again
 fn task_maybe_setup_vpn_routes(
     tx_channel: mpsc::Sender<TelioTaskCmd>,
     server_ip: IpAddr,
@@ -268,7 +279,9 @@ fn start_telio(
         adapter,
         ..Default::default()
     })?;
-    telio.set_fwmark(11673110)?;
+
+    #[cfg(target_os = "linux")]
+    telio.set_fwmark(LIBTELIO_FWMARK)?;
 
     info!("started telio with {:?}...", adapter);
     Ok(())

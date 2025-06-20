@@ -85,7 +85,13 @@ class CoreServer(HTTPServer):
         self._id_counter = count(1)
 
     def finish_request(self, request, client_address):
-        """Override to ensure proper SSL shutdown"""
+        """
+        Override to ensure proper SSL shutdown
+
+        This is necessary because some HTTP clients, like reqwest, require the server to properly close connections
+        with close_notify when using TLS to prevent truncation attacks. HTTPServer doesn't send it by default, breaking
+        some clients. This method override will make sure the close_notify is sent.
+        """
         # Handle the request normally
         super().finish_request(request, client_address)
 
