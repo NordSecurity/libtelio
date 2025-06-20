@@ -114,8 +114,12 @@ enum TeliodError {
     CoreApiError(#[from] ApiError),
     #[error(transparent)]
     DeviceError(#[from] DeviceError),
-    #[error("Invalid config option {0}: {1} (value '{2}')")]
-    InvalidConfigOption(String, String, String),
+    #[error("Invalid config option {key}: {msg} (value '{value}')")]
+    InvalidConfigOption {
+        key: String,
+        msg: String,
+        value: String,
+    },
     #[error(transparent)]
     LogAppenderError(#[from] InitError),
     #[error(transparent)]

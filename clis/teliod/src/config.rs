@@ -168,13 +168,13 @@ impl TeliodDaemonConfig {
     fn resolve_log_path(log_file_path: &str) -> Result<String, TeliodError> {
         let path = PathBuf::from(log_file_path);
 
-        let file_name = path.file_name().ok_or_else(|| {
-            TeliodError::InvalidConfigOption(
-                "log_file_path".to_owned(),
-                "must specify a file name".to_owned(),
-                path.to_string_lossy().into_owned(),
-            )
-        })?;
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| TeliodError::InvalidConfigOption {
+                key: "log_file_path".to_owned(),
+                msg: "must specify a file name".to_owned(),
+                value: path.to_string_lossy().into_owned(),
+            })?;
 
         let final_path = if path.is_relative() {
             let dir = match path.parent() {
@@ -182,22 +182,22 @@ impl TeliodDaemonConfig {
                 _ => Path::new("."),
             };
 
-            let path_canonical = dir.canonicalize().map_err(|e| {
-                TeliodError::InvalidConfigOption(
-                    "log_file_path".to_owned(),
-                    format!("could not resolve log directory: {}", e),
-                    path.to_string_lossy().into_owned(),
-                )
-            })?;
+            let path_canonical =
+                dir.canonicalize()
+                    .map_err(|e| TeliodError::InvalidConfigOption {
+                        key: "log_file_path".to_owned(),
+                        msg: format!("could not resolve log directory: {}", e),
+                        value: path.to_string_lossy().into_owned(),
+                    })?;
             path_canonical.join(file_name)
         } else {
             if let Some(parent) = path.parent() {
                 if !parent.is_dir() {
-                    return Err(TeliodError::InvalidConfigOption(
-                        "log_file_path".to_owned(),
-                        "parent directory does not exist".to_owned(),
-                        path.to_string_lossy().into_owned(),
-                    ));
+                    return Err(TeliodError::InvalidConfigOption {
+                        key: "log_file_path".to_owned(),
+                        msg: "parent directory does not exist".to_owned(),
+                        value: path.to_string_lossy().into_owned(),
+                    });
                 }
             }
             path
@@ -503,7 +503,7 @@ mod tests {
         let file = temp_config(&config_json);
         let err = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap_err();
 
-        matches!(err, TeliodError::InvalidConfigOption(..));
+        matches!(err, TeliodError::InvalidConfigOption { .. });
     }
 
     #[test]
