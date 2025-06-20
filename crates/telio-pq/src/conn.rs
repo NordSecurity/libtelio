@@ -25,6 +25,7 @@ impl ConnKeyRotation {
 
         let rekey_interval = Duration::from_secs(features.rekey_interval_s as _);
         let request_retry = Duration::from_secs(features.handshake_retry_interval_s as _);
+        let pq_version = features.version;
 
         let task = async move {
             let mut retry_interval = telio_utils::interval(request_retry);
@@ -42,6 +43,7 @@ impl ConnKeyRotation {
                     addr,
                     &wg_secret,
                     &peer,
+                    pq_version,
                 ));
 
                 match tokio::time::timeout(request_retry, fetch_keys).await {
@@ -74,7 +76,7 @@ impl ConnKeyRotation {
 
                 // Dylint is unhappy about the `rekey` future size
                 // and asks for using `Box::pin` to move it on the heap
-                let rekey = Box::pin(super::proto::rekey(&socket_pool, &pq_secret));
+                let rekey = Box::pin(super::proto::rekey(&socket_pool, &pq_secret, pq_version));
 
                 match tokio::time::timeout(request_retry, rekey).await {
                     Ok(Ok(key)) => {
