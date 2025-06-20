@@ -91,6 +91,9 @@ impl DeviceIdentity {
         let private_key = SecretKey::gen();
         let hw_identifier = uuid::Uuid::new_v4();
 
+        // LLT-6406: There's likely a bug here since looking for a device with a private key that
+        // we just created is trivial and will never be found. Therefore an new device will always
+        // be registered.
         let machine_identifier =
             match fetch_identifier_with_exp_backoff(auth_token, private_key.public()).await {
                 Ok(id) => id,
