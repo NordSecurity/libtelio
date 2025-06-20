@@ -100,27 +100,27 @@ impl LogPaths {
     }
 
     /// Path to the redirected STDOUT/STDERR streams after daemonizing
-    pub fn stdout(&self) -> &Path {
+    pub fn daemon_log(&self) -> &Path {
         &self.stdout
     }
 
     /// Path to the redirected STDOUT/STDERR streams before daemonizing
-    pub fn init_stdout(&self) -> &Path {
+    pub fn daemon_init_log(&self) -> &Path {
         &self.init_stdout
     }
 
     /// Base directory for the rotating libtelio trace logs
-    pub fn lib_dir(&self) -> &Path {
+    pub fn dir(&self) -> &Path {
         &self.lib_dir
     }
 
     /// Filename prefix for the rotating libtelio trace logs
-    pub fn lib_logs_prefix(&self) -> &str {
+    pub fn prefix(&self) -> &str {
         &self.lib_prefix
     }
 
     /// Get path to the rotating log files (without suffix)
-    pub fn lib_log_path(&self) -> PathBuf {
+    pub fn lib_log(&self) -> PathBuf {
         self.lib_dir.join(&self.lib_prefix)
     }
 }
@@ -149,9 +149,9 @@ mod tests {
     #[test]
     fn test_log_paths() {
         let paths = LogPaths::new();
-        assert_eq!(paths.stdout(), Path::new("/var/log/teliod.log"));
+        assert_eq!(paths.daemon_log(), Path::new("/var/log/teliod.log"));
         assert_eq!(
-            paths.lib_log_path(),
+            paths.lib_log(),
             PathBuf::from("/var/log/teliod_lib.log")
         );
     }
