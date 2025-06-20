@@ -3,7 +3,11 @@
 use std::{net::IpAddr, ops::RangeInclusive};
 
 use ipnet::IpNet;
-use pnet_packet::{ip::IpNextHeaderProtocols, tcp::TcpPacket, udp::UdpPacket};
+use pnet_packet::{
+    ip::IpNextHeaderProtocols::{self, Icmp, Icmpv6, Tcp, Udp},
+    tcp::{TcpFlags, TcpPacket},
+    udp::UdpPacket,
+};
 
 use crate::{
     conntrack::{AssociatedData, Conntracker, LibfwConnectionState, LibfwDirection, LibfwVerdict},
@@ -11,7 +15,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
-struct NetworkFilterData {
+pub struct NetworkFilterData {
     pub network: IpNet,
     pub ports: RangeInclusive<u16>,
 }
@@ -19,6 +23,15 @@ struct NetworkFilterData {
 enum NetworkFilterType {
     Src,
     Dst,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum LibfwNextLevelProtocol {
+    Udp,
+    Tcp,
+    TcpFinishedAllowed,
+    Icmp,
+    Icmp6,
 }
 
 macro_rules! get_inner_packet_port {
@@ -61,13 +74,15 @@ impl NetworkFilterData {
     }
 }
 
-enum FilterData {
+#[derive(Clone, Debug)]
+pub(crate) enum FilterData {
     AssociatedData(AssociatedData),
     ConntrackState(LibfwConnectionState),
     #[allow(dead_code)]
     SrcNetwork(NetworkFilterData),
     DstNetwork(NetworkFilterData),
     Direction(LibfwDirection),
+    NextLevelProtocol(LibfwNextLevelProtocol),
 }
 
 impl FilterData {
@@ -91,13 +106,32 @@ impl FilterData {
                 network_filter.is_matching(packet, NetworkFilterType::Dst)
             }
             FilterData::Direction(direction) => direction == &packet_direction,
+            FilterData::NextLevelProtocol(next_level_protocol) => {
+                let proto = packet.get_next_level_protocol();
+                match next_level_protocol {
+                    LibfwNextLevelProtocol::Udp => proto == Udp,
+                    LibfwNextLevelProtocol::Tcp => proto == Tcp,
+                    LibfwNextLevelProtocol::Icmp => proto == Icmp,
+                    LibfwNextLevelProtocol::Icmp6 => proto == Icmpv6,
+                    LibfwNextLevelProtocol::TcpFinishedAllowed if proto == Tcp => {
+                        TcpPacket::new(packet.payload())
+                            .map(|pkt| {
+                                pkt.get_flags() & (TcpFlags::ACK | TcpFlags::FIN | TcpFlags::RST)
+                                    != 0
+                            })
+                            .unwrap_or_default()
+                    }
+                    LibfwNextLevelProtocol::TcpFinishedAllowed => false,
+                }
+            }
         }
     }
 }
 
-struct Filter {
-    filter_data: FilterData,
-    inverted: bool,
+#[derive(Clone, Debug)]
+pub struct Filter {
+    pub filter_data: FilterData,
+    pub inverted: bool,
 }
 
 impl Filter {
@@ -114,9 +148,10 @@ impl Filter {
     }
 }
 
-struct Rule {
-    filters: Vec<Filter>,
-    action: LibfwVerdict,
+#[derive(Debug)]
+pub struct Rule {
+    pub filters: Vec<Filter>,
+    pub action: LibfwVerdict,
 }
 
 impl Rule {
@@ -134,7 +169,7 @@ impl Rule {
 }
 
 pub(crate) struct Chain {
-    rules: Vec<Rule>,
+    pub rules: Vec<Rule>,
 }
 
 impl Chain {
@@ -149,7 +184,7 @@ impl Chain {
             .iter()
             .find(|rule| rule.is_matching(conntracker, packet, assoc_data, direction))
             .map(|rule| rule.action)
-            .unwrap_or_else(|| LibfwVerdict::LibfwVerdictAccept)
+            .unwrap_or_else(|| LibfwVerdict::LibfwVerdictDrop)
     }
 }
 
@@ -375,27 +410,15 @@ pub mod tests {
         let pk = make_random_peer();
         let ctk = Conntracker::new(10, 1000);
 
-        let conn_new_filter = Filter {
+        let conn_filter = Filter {
             filter_data: super::FilterData::ConntrackState(
-                LibfwConnectionState::LibfwConnectionStateNew,
+                LibfwConnectionState::LibfwConnectionStateLocallyInitiated,
             ),
             inverted: false,
         };
-        let conn_new_filter_inv = Filter {
+        let conn_filter_inv = Filter {
             filter_data: super::FilterData::ConntrackState(
-                LibfwConnectionState::LibfwConnectionStateNew,
-            ),
-            inverted: true,
-        };
-        let conn_established_filter = Filter {
-            filter_data: super::FilterData::ConntrackState(
-                LibfwConnectionState::LibfwConnectionStateEstablished,
-            ),
-            inverted: false,
-        };
-        let conn_established_filter_inv = Filter {
-            filter_data: super::FilterData::ConntrackState(
-                LibfwConnectionState::LibfwConnectionStateEstablished,
+                LibfwConnectionState::LibfwConnectionStateLocallyInitiated,
             ),
             inverted: true,
         };
@@ -406,74 +429,13 @@ pub mod tests {
         let pkt = make_udp("168.72.0.11:5678", "168.72.0.12:1234");
         let ip = unwrap_option_or_return!(Ipv4Packet::try_from(&pkt));
 
-        assert!(!conn_new_filter.is_matching(
-            &ctk,
-            &ip,
-            &pk,
-            LibfwDirection::LibfwDirectionInbound
-        ));
-        assert!(conn_new_filter_inv.is_matching(
-            &ctk,
-            &ip,
-            &pk,
-            LibfwDirection::LibfwDirectionInbound
-        ));
-        assert!(!conn_established_filter.is_matching(
-            &ctk,
-            &ip,
-            &pk,
-            LibfwDirection::LibfwDirectionInbound
-        ));
-        assert!(conn_established_filter_inv.is_matching(
-            &ctk,
-            &ip,
-            &pk,
-            LibfwDirection::LibfwDirectionInbound
-        ));
+        assert!(!conn_filter.is_matching(&ctk, &ip, &pk, LibfwDirection::LibfwDirectionInbound));
+        assert!(conn_filter_inv.is_matching(&ctk, &ip, &pk, LibfwDirection::LibfwDirectionInbound));
 
         ctk.handle_outbound_udp(&ip_out, &pk);
 
-        assert!(conn_new_filter.is_matching(&ctk, &ip, &pk, LibfwDirection::LibfwDirectionInbound));
-        assert!(!conn_new_filter_inv.is_matching(
-            &ctk,
-            &ip,
-            &pk,
-            LibfwDirection::LibfwDirectionInbound
-        ));
-        assert!(!conn_established_filter.is_matching(
-            &ctk,
-            &ip,
-            &pk,
-            LibfwDirection::LibfwDirectionInbound
-        ));
-        assert!(conn_established_filter_inv.is_matching(
-            &ctk,
-            &ip,
-            &pk,
-            LibfwDirection::LibfwDirectionInbound
-        ));
-
-        ctk.handle_inbound_udp(&ip, &pk, LibfwVerdict::LibfwVerdictAccept);
-
-        assert!(!conn_new_filter.is_matching(
-            &ctk,
-            &ip,
-            &pk,
-            LibfwDirection::LibfwDirectionInbound
-        ));
-        assert!(conn_new_filter_inv.is_matching(
-            &ctk,
-            &ip,
-            &pk,
-            LibfwDirection::LibfwDirectionInbound
-        ));
-        assert!(conn_established_filter.is_matching(
-            &ctk,
-            &ip,
-            &pk,
-            LibfwDirection::LibfwDirectionInbound
-        ));
-        assert!(!conn_established_filter_inv.is_matching(
+        assert!(conn_filter.is_matching(&ctk, &ip, &pk, LibfwDirection::LibfwDirectionInbound));
+        assert!(!conn_filter_inv.is_matching(
             &ctk,
             &ip,
             &pk,

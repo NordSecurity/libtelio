@@ -133,23 +133,32 @@ pub enum LibfwDirection {
 ///
 /// Connection state
 ///
+#[allow(clippy::enum_variant_names)]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LibfwConnectionState {
+    /// Connection locally initiated
+    LibfwConnectionStateLocallyInitiated,
     /// Connection established
     LibfwConnectionStateEstablished,
     /// Outgoing packets
     LibfwConnectionStateNew,
+    /// Finished connections
+    LibfwConnectionStateFinished,
 }
 
 ///
 /// Packet verdict
 ///
+#[allow(clippy::enum_variant_names)]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LibfwVerdict {
     LibfwVerdictAccept,
     LibfwVerdictDrop,
+    LibfwVerdictResetTCP,
+    LibfwVerdictResetUDP,
+    LibfwVerdictHandleLocally,
 }
 
 #[derive(Clone, Debug)]
@@ -293,21 +302,6 @@ impl Conntracker {
                 value.last_out_pkg_chunk = Some(last_chunk);
             }
         }
-    }
-
-    pub fn is_icmp_connection_tracked<'a>(
-        &self,
-        ip: &impl IpPacket<'a>,
-        associated_data: &[u8],
-        inbound: bool,
-    ) -> bool {
-        let key = unwrap_option_or_return!(
-            Self::build_icmp_key(ip, associated_data, inbound).ok(),
-            false
-        );
-        unwrap_lock_or_return!(self.icmp.lock(), false)
-            .peek(&key)
-            .is_some()
     }
 
     pub fn handle_outbound_tcp<'a>(&self, ip: &impl IpPacket<'a>, associated_data: &[u8]) {
@@ -1145,22 +1139,35 @@ impl Conntracker {
         match ip.get_next_level_protocol() {
             IpNextHeaderProtocols::Udp => {
                 if let Some(conn_info) = self.get_udp_conn_info(ip, associated_data, inbound) {
-                    return Some(conn_info.state);
+                    if !conn_info.is_remote_initiated {
+                        return Some(LibfwConnectionState::LibfwConnectionStateLocallyInitiated);
+                    } else {
+                        return Some(conn_info.state);
+                    }
                 }
             }
             IpNextHeaderProtocols::Tcp => {
                 if let Some(conn_info) = self.get_tcp_conn_info(ip, associated_data, inbound) {
-                    return Some(conn_info.state);
+                    if !conn_info.rx_alive
+                        && !conn_info.tx_alive
+                        && !conn_info.conn_remote_initiated
+                    {
+                        return Some(LibfwConnectionState::LibfwConnectionStateFinished);
+                    } else if !conn_info.conn_remote_initiated {
+                        return Some(LibfwConnectionState::LibfwConnectionStateLocallyInitiated);
+                    } else {
+                        return Some(conn_info.state);
+                    }
                 }
             }
             IpNextHeaderProtocols::Icmp => {
-                if self.is_icmp_connection_tracked(ip, associated_data, inbound) {
-                    return Some(LibfwConnectionState::LibfwConnectionStateNew);
+                if self.handle_inbound_icmp(ip, associated_data) {
+                    return Some(LibfwConnectionState::LibfwConnectionStateLocallyInitiated);
                 }
             }
             IpNextHeaderProtocols::Icmpv6 => {
-                if self.is_icmp_connection_tracked(ip, associated_data, inbound) {
-                    return Some(LibfwConnectionState::LibfwConnectionStateNew);
+                if self.handle_inbound_icmp(ip, associated_data) {
+                    return Some(LibfwConnectionState::LibfwConnectionStateLocallyInitiated);
                 }
             }
             _ => (),
