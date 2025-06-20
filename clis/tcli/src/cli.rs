@@ -9,6 +9,7 @@ use telio_model::config::{RelayState, Server};
 use telio_model::features::Features;
 use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
 use telio_proto::CodecError;
+#[cfg(target_os = "linux")]
 use telio_utils::LIBTELIO_FWMARK;
 use telio_wg::AdapterType;
 use thiserror::Error;

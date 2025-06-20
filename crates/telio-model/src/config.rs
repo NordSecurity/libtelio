@@ -39,10 +39,13 @@ pub struct Peer {
     pub base: PeerBase,
     /// The peer is local, when the flag is set
     pub is_local: bool,
+    #[serde(default)]
     /// Flag to control whether the peer allows incoming connections
     pub allow_incoming_connections: bool,
+    #[serde(default)]
     /// Flag to control whether the Node allows routing through
     pub allow_peer_traffic_routing: bool,
+    #[serde(default)]
     /// Flag to control whether the Node allows incoming local area access
     pub allow_peer_local_network_access: bool,
     #[serde(default)]

@@ -8,6 +8,7 @@ use std::{net::IpAddr, sync::Arc};
 use telio::crypto::PublicKey;
 use telio::telio_model::mesh::{ExitNode, NodeState};
 use telio::telio_utils::Hidden;
+#[cfg(target_os = "linux")]
 use telio::telio_utils::LIBTELIO_FWMARK;
 use telio::{
     crypto::SecretKey,
