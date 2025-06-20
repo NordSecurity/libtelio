@@ -5,8 +5,8 @@ use serde_json::Value;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::Read;
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock};
 use telio::crypto::SecretKey;
 use telio::telio_lana::telio_log_warn;
 use telio::telio_utils::exponential_backoff::{
@@ -28,6 +28,17 @@ const OS_NAME: &str = "linux";
 
 type MachineIdentifier = String;
 const MAX_RETRIES: usize = 10;
+
+static DEVICE_IDENTITY_FILE_PATH: LazyLock<Result<PathBuf, Error>> = LazyLock::new(|| {
+    dirs::data_local_dir()
+        .ok_or(Error::NoDataLocalDir)
+        .and_then(|mut path| {
+            path.push("teliod");
+            create_dir_all(&path)?;
+            path.push("data.json");
+            Ok(path)
+        })
+});
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -55,6 +66,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     BackoffBounds(#[from] BackoffError),
+    #[error("Failed to access device identity file")]
+    DeviceIdentityFileAccess,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -82,6 +95,8 @@ impl DeviceIdentity {
         let private_key = SecretKey::gen();
         let hw_identifier = uuid::Uuid::new_v4();
 
+        // LLT-6406: There's likely a bug here since looking for a device with a private key that
+        // we just created above is trivial and will fail. This will always register a new device.
         let machine_identifier = match fetch_identifier_with_exp_backoff(
             &config.authentication_token,
             &config.http_certificate_file_path,
@@ -113,21 +128,85 @@ impl DeviceIdentity {
     }
 
     /// Device identity is parsed from a given file.
-    pub fn from_file(identity_path: &std::path::PathBuf) -> Option<DeviceIdentity> {
+    /// Either the path is provided as parameter or hardcoded path
+    /// is used.
+    pub fn from_file(path: Option<&Path>) -> Result<DeviceIdentity, Error> {
         info!("Fetching identity config");
 
-        if let Ok(file) = std::fs::File::open(identity_path) {
-            debug!(
-                "Found existing identity config {}",
-                identity_path.to_string_lossy()
-            );
-            if let Ok(c) = serde_json::from_reader(file) {
-                return Some(c);
-            } else {
-                warn!("Reading identity config failed");
+        let path = path.unwrap_or(Self::device_identity_path()?);
+
+        match std::fs::File::open(path) {
+            Ok(file) => {
+                debug!("Found existing identity config {}", path.to_string_lossy());
+                serde_json::from_reader(file).map_err(Error::Deserialize)
+            }
+            Err(e) => {
+                warn!("Reading identity config failed: {e}");
+                Err(Error::Io(e))
             }
         }
-        None
+    }
+
+    // Write device identity to the corresponding file.
+    // File path is DEVICE_IDENTITY_FILE_PATH.
+    pub fn write(&self) -> Result<(), Error> {
+        // User has read/write but others have none
+        // Mode for identity file rw-------
+        let mut file = OpenOptions::new()
+            .mode(0o600)
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(Self::device_identity_path()?)?;
+        serde_json::to_writer(&mut file, &self)?;
+        Ok(())
+    }
+
+    pub fn remove_file() {
+        if let Ok(path) = Self::device_identity_path() {
+            match std::fs::remove_file(path) {
+                Ok(()) => {
+                    info!(
+                        "Successfully removed device identity file at {}",
+                        path.display()
+                    );
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    debug!(
+                        "Device identity file not found at {} - nothing to remove",
+                        path.display()
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to remove device identity file at {}: {}",
+                        path.display(),
+                        e
+                    );
+                }
+            };
+
+            if let Some(parent) = path.parent() {
+                match std::fs::remove_dir(parent) {
+                    Ok(()) => {
+                        debug!("Removed empty directory {}", parent.display());
+                    }
+                    Err(e) => {
+                        debug!("Could not remove directory {}: {}", parent.display(), e);
+                    }
+                };
+            };
+        }
+    }
+
+    fn device_identity_path() -> Result<&'static Path, Error> {
+        DEVICE_IDENTITY_FILE_PATH
+            .as_ref()
+            .map(|p| p.as_path())
+            .map_err(|e| {
+                warn!("Failed to access device identity file: {e}");
+                Error::DeviceIdentityFileAccess
+            })
     }
 }
 
@@ -183,55 +262,21 @@ fn http_client(cert_path: &Option<PathBuf>) -> Client {
 }
 
 pub async fn init_with_api(config: &TeliodDaemonConfig) -> Result<DeviceIdentity, Error> {
-    let identity_path = match &config.device_identity_file_path {
-        Some(path) => path.clone(),
-        None => {
-            let mut identity_path = dirs::data_local_dir().ok_or(Error::NoDataLocalDir)?;
-            identity_path.push("teliod");
-            if !identity_path.exists() {
-                let _ = create_dir_all(&identity_path);
-            }
-            identity_path.push("data.json");
-            identity_path
-        }
-    };
-
-    let mut device_identity = match DeviceIdentity::from_file(&identity_path) {
-        Some(identity) => identity,
-        None => Box::pin(DeviceIdentity::new(config)).await?,
-    };
-
-    if let Err(e) = update_machine_with_exp_backoff(
-        &config.authentication_token,
-        &config.http_certificate_file_path,
-        &device_identity,
-    )
-    .await
+    let device_identity = if let Ok(parsed_device_identity) =
+        DeviceIdentity::from_file(config.device_identity_file_path.as_deref())
     {
-        if let Error::UpdateMachine(status) = e {
-            if status == StatusCode::NOT_FOUND {
-                debug!("Unable to update. Registering machine ...");
-                device_identity.machine_identifier = Box::pin(register_machine_with_exp_backoff(
-                    &device_identity.hw_identifier.to_string(),
-                    device_identity.private_key.public(),
-                    &config.authentication_token,
-                    &config.http_certificate_file_path,
-                ))
-                .await?;
-            } else {
-                return Err(Error::UpdateMachine(status));
-            }
-        } else {
-            return Err(e);
-        }
-    }
+        update_machine_with_exp_backoff(
+            &config.authentication_token,
+            &config.http_certificate_file_path,
+            &parsed_device_identity,
+        )
+        .await?;
+        parsed_device_identity
+    } else {
+        Box::pin(DeviceIdentity::new(config)).await?
+    };
 
-    let mut options = OpenOptions::new();
-    // User has read/write but others have none
-    // Mode for identity file rw-------
-    options.mode(0o600);
-    let mut file = options.create(true).write(true).open(identity_path)?;
-    serde_json::to_writer(&mut file, &device_identity)?;
+    device_identity.write()?;
     Ok(device_identity)
 }
 
