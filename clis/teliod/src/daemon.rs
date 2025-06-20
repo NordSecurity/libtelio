@@ -258,6 +258,7 @@ fn task_maybe_setup_vpn_routes(
     server_ip: IpAddr,
     server_pubkey: PublicKey,
 ) {
+    #[allow(mpsc_blocking_send)]
     tokio::spawn(async move {
         std::thread::sleep(Duration::from_millis(100));
         _ = tx_channel
