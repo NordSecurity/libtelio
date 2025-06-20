@@ -122,12 +122,12 @@ pub struct TeliodDaemonConfig {
 
 impl TeliodDaemonConfig {
     #[cfg(feature = "cgi")]
-    pub fn update(&mut self, update: TeliodDaemonConfigPartial) {
+    pub fn update(&mut self, update: TeliodDaemonConfigPartial) -> Result<(), TeliodError> {
+        if let Some(log_file_path) = update.log_file_path {
+            self.log_file_path = Self::resolve_log_path(&log_file_path)?;
+        }
         if let Some(log_level) = update.log_level {
             self.log_level = log_level;
-        }
-        if let Some(log_file_path) = update.log_file_path {
-            self.log_file_path = log_file_path;
         }
         if let Some(log_file_count) = update.log_file_count {
             self.log_file_count = log_file_count;
@@ -147,6 +147,8 @@ impl TeliodDaemonConfig {
         if let Some(mqtt) = update.mqtt {
             self.mqtt = mqtt;
         }
+
+        Ok(())
     }
 
     /// Construct a TeliodDaemonConfig by deserializing a file at given path
@@ -156,19 +158,15 @@ impl TeliodDaemonConfig {
         let file = fs::File::open(path)?;
         let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
 
-        config.validate()?;
+        // Config file should only be written when valid, just in case it was
+        // manually modified we check again.
+        config.log_file_path = Self::resolve_log_path(&config.log_file_path)?;
 
         Ok(config)
     }
 
-    pub fn validate(&mut self) -> Result<(), TeliodError> {
-        self.log_file_path = self.resolve_log_path()?;
-
-        Ok(())
-    }
-
-    fn resolve_log_path(&self) -> Result<String, TeliodError> {
-        let path = PathBuf::from(&self.log_file_path);
+    fn resolve_log_path(log_file_path: &str) -> Result<String, TeliodError> {
+        let path = PathBuf::from(log_file_path);
 
         let file_name = path.file_name().ok_or_else(|| {
             TeliodError::InvalidConfigOption(
