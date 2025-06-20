@@ -43,6 +43,20 @@ pub enum PqProtoV1Status {
     NoData,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub enum PqProtoV2Status {
+    ServerError,
+    DeviceError,
+    PeerOrDeviceNotFound,
+    CouldNotReadTimestamp,
+    CouldNotReadVersion,
+    CouldNotReadMessageType,
+    Failure,
+    AuthenticationFailed,
+    UnhandledError,
+    NoData,
+}
+
 // Enums are copy-pasted from pq-upgrader
 impl From<u8> for PqProtoV1Status {
     fn from(c: u8) -> Self {
@@ -55,6 +69,22 @@ impl From<u8> for PqProtoV1Status {
             6 => PqProtoV1Status::CouldNotReadMessageType,
             7 => PqProtoV1Status::Failure,
             _ => PqProtoV1Status::UnhandledError,
+        }
+    }
+}
+
+impl From<u8> for PqProtoV2Status {
+    fn from(c: u8) -> Self {
+        match c {
+            1 => PqProtoV2Status::ServerError,
+            2 => PqProtoV2Status::DeviceError,
+            3 => PqProtoV2Status::PeerOrDeviceNotFound,
+            4 => PqProtoV2Status::CouldNotReadTimestamp,
+            5 => PqProtoV2Status::CouldNotReadVersion,
+            6 => PqProtoV2Status::CouldNotReadMessageType,
+            7 => PqProtoV2Status::Failure,
+            8 => PqProtoV2Status::AuthenticationFailed,
+            _ => PqProtoV2Status::UnhandledError,
         }
     }
 }
@@ -96,12 +126,19 @@ pub async fn fetch_keys(
     // Generate keys
     let wg_secret = telio_crypto::SecretKey::gen_with(&mut rng);
     let (pq_public, pq_secret) = kyber768::keypair();
-    let wg_public = telio_crypto::PublicKey::from(&wg_secret);
+    let wg_public = wg_secret.public();
 
     let local_port = random_port(&mut rng);
 
     // Send GET packet
-    let pkgbuf = create_get_packet(peers_pubkey, &wg_secret, &wg_public, &pq_public, local_port, pq_version); // 4 KiB
+    let pkgbuf = create_get_packet(
+        peers_pubkey,
+        &wg_secret,
+        &wg_public,
+        &pq_public,
+        local_port,
+        pq_version,
+    ); // 4 KiB
 
     let mut recvbuf = [0u8; 2048]; // 2 KiB buffer should suffice
     match tunn.encapsulate(&pkgbuf, &mut recvbuf) {
@@ -129,10 +166,12 @@ pub async fn fetch_keys(
             noise::TunnResult::Err(err) => {
                 return Err(format!("Failed to decapsulate PQ keys message: {err:?}").into())
             }
-            noise::TunnResult::WriteToTunnel(buf, _) => match parse_get_response(buf, local_port, pq_version) {
-                Ok(cipehrtext) => break cipehrtext,
-                Err(err) => telio_log_warn!("Invalid PQ keys response: {err:?}"),
-            },
+            noise::TunnResult::WriteToTunnel(buf, _) => {
+                match parse_get_response(buf, local_port, pq_version) {
+                    Ok(cipehrtext) => break cipehrtext,
+                    Err(err) => telio_log_warn!("Invalid PQ keys response: {err:?}"),
+                }
+            }
             _ => return Err("Unexpected WG tunnel output".into()),
         };
     };
@@ -165,10 +204,40 @@ pub async fn rekey(
     sock_pool: &telio_sockets::SocketPool,
     pq_secret: &Hidden<[u8; PQCLEAN_KYBER768_CLEAN_CRYPTO_SECRETKEYBYTES]>,
     pq_version: u32,
+    pre_shared_key: Option<telio_crypto::PresharedKey>,
+    wg_client_public: Option<telio_crypto::PublicKey>,
+    wg_server_public: Option<telio_crypto::PublicKey>,
 ) -> super::Result<telio_crypto::PresharedKey> {
-    telio_log_debug!("Rekeying");
+    telio_log_debug!("Rekeying with version {}", pq_version);
     let mut pkgbuf = Vec::with_capacity(1024 * 4); // 4 KiB
-    push_rekey_method_udp_payload(&mut pkgbuf, pq_version);
+
+    match pq_version {
+        1 => push_rekey_method_udp_payload_v1(&mut pkgbuf),
+        2 => {
+            let pre_shared_key = pre_shared_key.ok_or_else(|| {
+                super::Error::Generic("Pre-shared key required for version 2".to_string())
+            })?;
+            let wg_client_public = wg_client_public.ok_or_else(|| {
+                super::Error::Generic("Client public key required for version 2".to_string())
+            })?;
+            let wg_server_public = wg_server_public.ok_or_else(|| {
+                super::Error::Generic("Server public key required for version 2".to_string())
+            })?;
+
+            push_rekey_method_udp_payload_v2(
+                &mut pkgbuf,
+                &pre_shared_key,
+                &wg_client_public,
+                &wg_server_public,
+            );
+        }
+        _ => {
+            return Err(super::Error::Generic(format!(
+                "Unsupported PQ version: {}",
+                pq_version
+            )))
+        }
+    }
 
     let sock = sock_pool
         .new_internal_udp((Ipv4Addr::UNSPECIFIED, 0), None)
@@ -259,7 +328,11 @@ async fn handshake(
     Ok(TunnelSock { tunn, sock })
 }
 
-pub fn parse_get_response(pkgbuf: &[u8], local_port: u16, expected_version: u32) -> super::Result<kyber768::Ciphertext> {
+pub fn parse_get_response(
+    pkgbuf: &[u8],
+    local_port: u16,
+    expected_version: u32,
+) -> super::Result<kyber768::Ciphertext> {
     let ip = Ipv4Packet::new(pkgbuf).ok_or(io::Error::new(
         io::ErrorKind::InvalidData,
         "Invalid PQ keys IP packet received",
@@ -326,7 +399,10 @@ fn validate_get_response_udp(
 /// ---------------------------------
 ///  Ciphertext bytes  , [u8]
 /// ---------------------------------
-pub fn parse_response_payload(payload: &[u8], expected_version: u32) -> super::Result<kyber768::Ciphertext> {
+pub fn parse_response_payload(
+    payload: &[u8],
+    expected_version: u32,
+) -> super::Result<kyber768::Ciphertext> {
     let mut data = io::Cursor::new(payload);
 
     let mut version = [0u8; 4];
@@ -339,17 +415,46 @@ pub fn parse_response_payload(payload: &[u8], expected_version: u32) -> super::R
         )));
     }
 
-    if expected_version == 1 {
-        // v1 reports error as a single(5th) byte with no further payload.
-        #[allow(clippy::comparison_chain)]
-        if payload.len() < 5 {
-            return Err(super::Error::Server(PqProtoV1Status::NoData));
-        } else if payload.len() == 5 {
-            #[allow(index_access_check)]
-            let error_code = payload[4];
-            let status = PqProtoV1Status::from(error_code);
-            telio_log_error!("PQ upgrader responded with: {}: {:?}", error_code, status);
-            return Err(super::Error::Server(status));
+    match expected_version {
+        1 => {
+            // v1 reports error as a single(5th) byte with no further payload.
+            #[allow(clippy::comparison_chain)]
+            if payload.len() < 5 {
+                return Err(super::Error::ServerV1(PqProtoV1Status::NoData));
+            } else if payload.len() == 5 {
+                #[allow(index_access_check)]
+                let error_code = payload[4];
+                let status = PqProtoV1Status::from(error_code);
+                telio_log_error!(
+                    "PQ upgrader v1 responded with: {}: {:?}",
+                    error_code,
+                    status
+                );
+                return Err(super::Error::ServerV1(status));
+            }
+        }
+        2 => {
+            // v2 reports error as a single(5th) byte with no further payload.
+            #[allow(clippy::comparison_chain)]
+            if payload.len() < 5 {
+                return Err(super::Error::ServerV2(PqProtoV2Status::NoData));
+            } else if payload.len() == 5 {
+                #[allow(index_access_check)]
+                let error_code = payload[4];
+                let status = PqProtoV2Status::from(error_code);
+                telio_log_error!(
+                    "PQ upgrader v2 responded with: {}: {:?}",
+                    error_code,
+                    status
+                );
+                return Err(super::Error::ServerV2(status));
+            }
+        }
+        _ => {
+            return Err(super::Error::Io(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Unsupported PQ version: {}", expected_version),
+            )));
         }
     }
 
@@ -388,7 +493,12 @@ fn create_get_packet(
     let mut pkgbuf = Vec::with_capacity(1024 * 4); // 4 KiB
     pkgbuf.resize(IPV4_HEADER_LEN + UDP_HEADER_LEN, 0);
 
-    push_get_method_udp_payload_without_auth_tag(&mut pkgbuf, wg_client_public, pq_public, pq_version);
+    push_get_method_udp_payload_without_auth_tag(
+        &mut pkgbuf,
+        wg_client_public,
+        pq_public,
+        pq_version,
+    );
 
     #[allow(index_access_check)]
     let to_hash = &pkgbuf[IPV4_HEADER_LEN + UDP_HEADER_LEN..];
@@ -439,10 +549,7 @@ fn push_get_method_udp_payload_without_auth_tag(
     pq_version: u32,
 ) {
     let method = 0u32; // get
-    let timestamp: u64 = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let timestamp = timestamp();
 
     // UDP packet payload
     pkgbuf.extend_from_slice(&pq_version.to_le_bytes());
@@ -454,19 +561,85 @@ fn push_get_method_udp_payload_without_auth_tag(
     pkgbuf.extend_from_slice(pq_public.as_bytes());
 }
 
-/// The REKEY payload looks as follows:
+/// Derive authentication key for PQ protocol version 2
+/// key = derive_key(context: "pq-auth", key_material: pre-shared-key || wg_public_key_client || wg_public_key_server)
+fn derive_pq_auth_key(
+    pre_shared_key: &telio_crypto::PresharedKey,
+    wg_client_public: &telio_crypto::PublicKey,
+    wg_server_public: &telio_crypto::PublicKey,
+) -> [u8; 32] {
+    let mut key_material = Vec::with_capacity(32 + 32 + 32);
+    key_material.extend_from_slice(pre_shared_key.as_ref());
+    key_material.extend_from_slice(wg_client_public.as_ref());
+    key_material.extend_from_slice(wg_server_public.as_ref());
+
+    blake3::derive_key("pq-auth", &key_material)
+}
+
+/// Generate authentication tag for PQ protocol version 2
+/// auth_tag = keyed_hash(key: key, input: version || message_type || timestamp)
+fn generate_auth_tag(
+    auth_key: &[u8; 32],
+    version: u32,
+    message_type: u32,
+    timestamp: u64,
+) -> [u8; 32] {
+    let mut input = Vec::with_capacity(16);
+    input.extend_from_slice(&version.to_le_bytes());
+    input.extend_from_slice(&message_type.to_le_bytes());
+    input.extend_from_slice(&timestamp.to_le_bytes());
+
+    blake3::keyed_hash(auth_key, &input).into()
+}
+
+/// The REKEY payload (v1) looks as follows:
 ///
 /// --------------------------------
 ///  version           , u32le, = 1
 /// --------------------------------
 ///  method            , u32le, = 1
 /// ---------------------------------
-fn push_rekey_method_udp_payload(pkgbuf: &mut Vec<u8>, pq_version: u32) {
+fn push_rekey_method_udp_payload_v1(pkgbuf: &mut Vec<u8>) {
+    let version = 1u32;
     let method = 1u32; // rekey
 
     // UDP packet payload
-    pkgbuf.extend_from_slice(&pq_version.to_le_bytes());
+    pkgbuf.extend_from_slice(&version.to_le_bytes());
     pkgbuf.extend_from_slice(&method.to_le_bytes());
+}
+
+/// The REKEY payload (v2) looks as follows:
+///
+/// --------------------------------
+///  version           , u32le, = 2
+/// --------------------------------
+///  method            , u32le, = 1
+/// --------------------------------
+///  timestamp         , u64le
+/// --------------------------------
+///  auth_tag          , [u8; 32]
+/// ---------------------------------
+fn push_rekey_method_udp_payload_v2(
+    pkgbuf: &mut Vec<u8>,
+    pre_shared_key: &telio_crypto::PresharedKey,
+    wg_client_public: &telio_crypto::PublicKey,
+    wg_server_public: &telio_crypto::PublicKey,
+) {
+    let version = 2u32;
+    let method = 1u32; // rekey
+    let timestamp = timestamp();
+
+    // Derive authentication key
+    let auth_key = derive_pq_auth_key(pre_shared_key, wg_client_public, wg_server_public);
+
+    // Generate authentication tag
+    let auth_tag = generate_auth_tag(&auth_key, version, method, timestamp);
+
+    // UDP packet payload
+    pkgbuf.extend_from_slice(&version.to_le_bytes());
+    pkgbuf.extend_from_slice(&method.to_le_bytes());
+    pkgbuf.extend_from_slice(&timestamp.to_le_bytes());
+    pkgbuf.extend_from_slice(&auth_tag);
 }
 
 /// Sets up UDP and IP headers in the provided buffer
@@ -511,9 +684,19 @@ fn random_port(rng: &mut impl rand::Rng) -> u16 {
         .sample(rng)
 }
 
+fn timestamp() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::{proto::PqProtoV1Status, Error};
+    use crate::{
+        proto::{PqProtoV1Status, PqProtoV2Status},
+        Error,
+    };
     use base64::prelude::*;
     use pqcrypto_kyber::kyber768;
     use pqcrypto_traits::kem::{Ciphertext, SecretKey as _, SharedSecret};
@@ -571,51 +754,51 @@ mod tests {
     fn parse_response_error_v1() {
         assert!(matches!(
             super::parse_response_payload(b"\x01\x00\x00\x00\x01", 1),
-            Err(Error::Server(PqProtoV1Status::ServerError))
+            Err(Error::ServerV1(PqProtoV1Status::ServerError))
         ));
         assert!(matches!(
             super::parse_response_payload(b"\x01\x00\x00\x00\x02", 1),
-            Err(Error::Server(PqProtoV1Status::DeviceError))
+            Err(Error::ServerV1(PqProtoV1Status::DeviceError))
         ));
         assert!(matches!(
             super::parse_response_payload(b"\x01\x00\x00\x00\x03", 1),
-            Err(Error::Server(PqProtoV1Status::PeerOrDeviceNotFound))
+            Err(Error::ServerV1(PqProtoV1Status::PeerOrDeviceNotFound))
         ));
 
         assert!(matches!(
             super::parse_response_payload(b"\x01\x00\x00\x00\x04", 1),
-            Err(Error::Server(PqProtoV1Status::CouldNotReadTimestamp))
+            Err(Error::ServerV1(PqProtoV1Status::CouldNotReadTimestamp))
         ));
 
         assert!(matches!(
             super::parse_response_payload(b"\x01\x00\x00\x00\x05", 1),
-            Err(Error::Server(PqProtoV1Status::CouldNotReadVersion))
+            Err(Error::ServerV1(PqProtoV1Status::CouldNotReadVersion))
         ));
 
         assert!(matches!(
             super::parse_response_payload(b"\x01\x00\x00\x00\x06", 1),
-            Err(Error::Server(PqProtoV1Status::CouldNotReadMessageType))
+            Err(Error::ServerV1(PqProtoV1Status::CouldNotReadMessageType))
         ));
 
         assert!(matches!(
             super::parse_response_payload(b"\x01\x00\x00\x00\x07", 1),
-            Err(Error::Server(PqProtoV1Status::Failure))
+            Err(Error::ServerV1(PqProtoV1Status::Failure))
         ));
 
         // Pass unknown errors
         assert!(matches!(
             super::parse_response_payload(b"\x01\x00\x00\x00\x10", 1),
-            Err(Error::Server(PqProtoV1Status::UnhandledError))
+            Err(Error::ServerV1(PqProtoV1Status::UnhandledError))
         ));
 
         assert!(matches!(
             super::parse_response_payload(b"\x01\x00\x00\x00\x20", 1),
-            Err(Error::Server(PqProtoV1Status::UnhandledError))
+            Err(Error::ServerV1(PqProtoV1Status::UnhandledError))
         ));
 
         assert!(matches!(
             super::parse_response_payload(b"\x01\x00\x00\x00", 1),
-            Err(Error::Server(PqProtoV1Status::NoData))
+            Err(Error::ServerV1(PqProtoV1Status::NoData))
         ));
 
         // Pass another version and don't expect v1 status codes
@@ -630,6 +813,118 @@ mod tests {
         assert!(matches!(
             super::parse_response_payload(b"\x02\x00\x00\x00\x40", 1),
             Err(Error::Io(_))
+        ));
+    }
+
+    #[test]
+    fn test_derive_pq_auth_key() {
+        let pre_shared_key = telio_crypto::PresharedKey::new([1u8; 32]);
+        let wg_client_public = telio_crypto::PublicKey::from(&[2u8; 32]);
+        let wg_server_public = telio_crypto::PublicKey::from(&[3u8; 32]);
+
+        let auth_key =
+            super::derive_pq_auth_key(&pre_shared_key, &wg_client_public, &wg_server_public);
+
+        // Key should be deterministic for same inputs
+        let auth_key2 =
+            super::derive_pq_auth_key(&pre_shared_key, &wg_client_public, &wg_server_public);
+        assert_eq!(auth_key, auth_key2);
+
+        // Key should be different for different inputs
+        let different_pre_shared = telio_crypto::PresharedKey::new([4u8; 32]);
+        let auth_key3 =
+            super::derive_pq_auth_key(&different_pre_shared, &wg_client_public, &wg_server_public);
+        assert_ne!(auth_key, auth_key3);
+    }
+
+    #[test]
+    fn test_generate_auth_tag() {
+        let auth_key = [5u8; 32];
+        let version = 2u32;
+        let message_type = 1u32;
+        let timestamp = 1234567890u64;
+
+        let auth_tag = super::generate_auth_tag(&auth_key, version, message_type, timestamp);
+
+        // Tag should be deterministic for same inputs
+        let auth_tag2 = super::generate_auth_tag(&auth_key, version, message_type, timestamp);
+        assert_eq!(auth_tag, auth_tag2);
+
+        // Tag should be different for different inputs
+        let auth_tag3 = super::generate_auth_tag(&auth_key, version, message_type, timestamp + 1);
+        assert_ne!(auth_tag, auth_tag3);
+    }
+
+    #[test]
+    fn test_push_rekey_method_udp_payload_v2() {
+        let pre_shared_key = telio_crypto::PresharedKey::new([1u8; 32]);
+        let wg_client_public = telio_crypto::PublicKey::from(&[2u8; 32]);
+        let wg_server_public = telio_crypto::PublicKey::from(&[3u8; 32]);
+
+        let mut pkgbuf = Vec::new();
+        super::push_rekey_method_udp_payload_v2(
+            &mut pkgbuf,
+            &pre_shared_key,
+            &wg_client_public,
+            &wg_server_public,
+        );
+
+        // Check that the payload has the expected structure
+        assert!(pkgbuf.len() >= 4 + 4 + 8 + 32); // version + method + timestamp + auth_tag
+
+        // Check version field
+        let version = u32::from_le_bytes([pkgbuf[0], pkgbuf[1], pkgbuf[2], pkgbuf[3]]);
+        assert_eq!(version, 2);
+
+        // Check method field
+        let method = u32::from_le_bytes([pkgbuf[4], pkgbuf[5], pkgbuf[6], pkgbuf[7]]);
+        assert_eq!(method, 1);
+    }
+
+    #[test]
+    fn parse_response_error_v2() {
+        assert!(matches!(
+            super::parse_response_payload(b"\x02\x00\x00\x00\x01", 2),
+            Err(Error::ServerV2(PqProtoV2Status::ServerError))
+        ));
+        assert!(matches!(
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02", 2),
+            Err(Error::ServerV2(PqProtoV2Status::DeviceError))
+        ));
+        assert!(matches!(
+            super::parse_response_payload(b"\x02\x00\x00\x00\x03", 2),
+            Err(Error::ServerV2(PqProtoV2Status::PeerOrDeviceNotFound))
+        ));
+        assert!(matches!(
+            super::parse_response_payload(b"\x02\x00\x00\x00\x04", 2),
+            Err(Error::ServerV2(PqProtoV2Status::CouldNotReadTimestamp))
+        ));
+        assert!(matches!(
+            super::parse_response_payload(b"\x02\x00\x00\x00\x05", 2),
+            Err(Error::ServerV2(PqProtoV2Status::CouldNotReadVersion))
+        ));
+        assert!(matches!(
+            super::parse_response_payload(b"\x02\x00\x00\x00\x06", 2),
+            Err(Error::ServerV2(PqProtoV2Status::CouldNotReadMessageType))
+        ));
+        assert!(matches!(
+            super::parse_response_payload(b"\x02\x00\x00\x00\x07", 2),
+            Err(Error::ServerV2(PqProtoV2Status::Failure))
+        ));
+        assert!(matches!(
+            super::parse_response_payload(b"\x02\x00\x00\x00\x08", 2),
+            Err(Error::ServerV2(PqProtoV2Status::AuthenticationFailed))
+        ));
+
+        // Pass unknown errors
+        assert!(matches!(
+            super::parse_response_payload(b"\x02\x00\x00\x00\x10", 2),
+            Err(Error::ServerV2(PqProtoV2Status::UnhandledError))
+        ));
+
+        assert!(matches!(
+            super::parse_response_payload(b"\x02\x00\x00\x00", 2),
+            Err(Error::ServerV2(PqProtoV2Status::NoData))
         ));
     }
 }

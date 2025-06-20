@@ -76,7 +76,25 @@ impl ConnKeyRotation {
 
                 // Dylint is unhappy about the `rekey` future size
                 // and asks for using `Box::pin` to move it on the heap
-                let rekey = Box::pin(super::proto::rekey(&socket_pool, &pq_secret, pq_version));
+                let rekey = if pq_version == 2 {
+                    Box::pin(super::proto::rekey(
+                        &socket_pool,
+                        &pq_secret,
+                        pq_version,
+                        Some(wg_keys.pq_shared.clone()),
+                        Some(wg_keys.wg_secret.public()),
+                        Some(peer),
+                    ))
+                } else {
+                    Box::pin(super::proto::rekey(
+                        &socket_pool,
+                        &pq_secret,
+                        pq_version,
+                        None,
+                        None,
+                        None,
+                    ))
+                };
 
                 match tokio::time::timeout(request_retry, rekey).await {
                     Ok(Ok(key)) => {

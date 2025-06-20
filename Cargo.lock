@@ -4829,6 +4829,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "blake2",
+ "blake3",
  "hmac",
  "mockall",
  "neptun",
