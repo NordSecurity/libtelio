@@ -101,6 +101,7 @@ impl Debug for IcmpConn {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum Error {
     MalformedIpPacket,
     MalformedUdpPacket,
@@ -143,11 +144,13 @@ pub enum LibfwConnectionState {
 ///
 /// Packet verdict
 ///
+#[allow(clippy::enum_variant_names)]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LibfwVerdict {
     LibfwVerdictAccept,
     LibfwVerdictDrop,
+    LibfwVerdictReject,
 }
 
 #[derive(Clone, Debug)]
@@ -614,10 +617,10 @@ impl Conntracker {
                 Some(packet) => (packet.get_source(), packet.get_destination(), Some(packet)),
                 _ => {
                     telio_log_trace!("Could not create TCP packet from IP packet {:?}", ip);
-                    return Err(Error::MalformedUdpPacket);
+                    return Err(Error::MalformedTcpPacket);
                 }
             },
-            _ => return Err(Error::MalformedUdpPacket),
+            _ => return Err(Error::UnexpectedProtocol),
         };
 
         let key = if let LibfwDirection::LibfwDirectionInbound = direction {
@@ -1105,45 +1108,5 @@ impl Conntracker {
         });
 
         self.send_icmp_port_unreachable_packets(iter, inject_packet_cb)
-    }
-
-    pub(crate) fn handle_outbound_packet<'a>(
-        &self,
-        ip: &impl IpPacket<'a>,
-        associated_data: &[u8],
-    ) {
-        match ip.get_next_level_protocol() {
-            IpNextHeaderProtocols::Udp => {
-                self.handle_outbound_udp(ip, associated_data);
-            }
-            IpNextHeaderProtocols::Tcp => {
-                self.handle_outbound_tcp(ip, associated_data);
-            }
-            IpNextHeaderProtocols::Icmp => {
-                self.handle_outbound_icmp(ip, associated_data);
-            }
-            IpNextHeaderProtocols::Icmpv6 => {
-                self.handle_outbound_icmp(ip, associated_data);
-            }
-            _ => (),
-        };
-    }
-
-    pub(crate) fn handle_inbound_packet<'a>(&self, ip: &impl IpPacket<'a>, associated_data: &[u8]) {
-        match ip.get_next_level_protocol() {
-            IpNextHeaderProtocols::Udp => {
-                self.handle_inbound_udp(ip, associated_data);
-            }
-            IpNextHeaderProtocols::Tcp => {
-                self.handle_inbound_tcp(ip, associated_data);
-            }
-            IpNextHeaderProtocols::Icmp => {
-                self.handle_inbound_icmp(ip, associated_data);
-            }
-            IpNextHeaderProtocols::Icmpv6 => {
-                self.handle_inbound_icmp(ip, associated_data);
-            }
-            _ => (),
-        }
     }
 }
