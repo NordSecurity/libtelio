@@ -1,9 +1,9 @@
 use futures::stream::StreamExt;
 use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use nix::sys::signal::Signal;
+use reqwest::StatusCode;
 use signal_hook_tokio::Signals;
 use std::{net::IpAddr, sync::Arc};
-use telio::telio_utils::Hidden;
 use telio::{
     crypto::SecretKey,
     device::{Device, DeviceConfig, Error as DeviceError},
@@ -15,12 +15,15 @@ use telio::{
 use tokio::{sync::mpsc, sync::mpsc::Sender, sync::oneshot, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 
+use crate::config::NordToken;
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
-    config::DeviceIdentity,
     config::{InterfaceConfig, TeliodDaemonConfig},
-    core_api::{get_meshmap as get_meshmap_from_server, init_with_api},
+    core_api::{
+        get_meshmap as get_meshmap_from_server, init_with_api, DeviceIdentity,
+        Error as CoreApiError,
+    },
     nc::NotificationCenter,
     ClientCmd, TelioStatusReport, TeliodError,
 };
@@ -47,7 +50,7 @@ pub struct TelioTaskStates {
 // From async context Telio needs to be run in separate task
 fn telio_task(
     node_identity: Arc<DeviceIdentity>,
-    auth_token: Arc<Hidden<String>>,
+    auth_token: Arc<NordToken>,
     mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
     tx_channel: mpsc::Sender<TelioTaskCmd>,
     interface_config: &InterfaceConfig,
@@ -75,7 +78,7 @@ fn telio_task(
     // tests with core API. This is to not look for tokens in a test environment
     // right now as the values are dummy and program will not run as it expects
     // real tokens.
-    if !auth_token.as_str().is_empty() {
+    if !auth_token.is_empty() {
         start_telio(
             &mut telio,
             node_identity.private_key.clone(),
@@ -135,7 +138,7 @@ fn telio_task(
 
 fn task_retrieve_meshmap(
     device_identity: Arc<DeviceIdentity>,
-    auth_token: Arc<Hidden<String>>,
+    auth_token: Arc<NordToken>,
     tx: mpsc::Sender<TelioTaskCmd>,
 ) {
     tokio::spawn(async move {
@@ -182,14 +185,23 @@ fn start_telio(
 async fn daemon_init(
     config: TeliodDaemonConfig,
     telio_tx: Sender<TelioTaskCmd>,
-    token: Arc<Hidden<String>>,
+    token: Arc<NordToken>,
 ) -> Result<Arc<DeviceIdentity>, TeliodError> {
     // TODO: This if condition and ::default call is temporary to be removed later
     // on when we have proper integration tests with core API.
     // This is to not look for tokens in a test environment right now as the values
     // are dummy and program will not run as it expects real tokens.
-    let identity = Arc::new(if *config.authentication_token != EMPTY_TOKEN {
-        Box::pin(init_with_api(&config.authentication_token)).await?
+    let identity = Arc::new(if *config.authentication_token != *EMPTY_TOKEN {
+        match Box::pin(init_with_api(&config.authentication_token)).await {
+            Err(CoreApiError::UpdateMachine(StatusCode::NOT_FOUND)) => {
+                debug!("Machine not found, removing cached identity file and trying again..");
+                DeviceIdentity::remove_file();
+
+                init_with_api(&config.authentication_token).await?
+            }
+            Ok(identity) => identity,
+            Err(e) => return Err(e.into()),
+        }
     } else {
         DeviceIdentity::default()
     });
