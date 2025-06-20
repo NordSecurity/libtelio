@@ -199,14 +199,19 @@ pub async fn fetch_keys(
     })
 }
 
+/// Authentication parameters required for PQ protocol version 2
+pub struct RekeyV2Auth {
+    pub pre_shared_key: telio_crypto::PresharedKey,
+    pub wg_client_public: telio_crypto::PublicKey,
+    pub wg_server_public: telio_crypto::PublicKey,
+}
+
 /// Establsh new PQ preshared key with the VPN server
 pub async fn rekey(
     sock_pool: &telio_sockets::SocketPool,
     pq_secret: &Hidden<[u8; PQCLEAN_KYBER768_CLEAN_CRYPTO_SECRETKEYBYTES]>,
     pq_version: u32,
-    pre_shared_key: Option<telio_crypto::PresharedKey>,
-    wg_client_public: Option<telio_crypto::PublicKey>,
-    wg_server_public: Option<telio_crypto::PublicKey>,
+    v2_auth: Option<RekeyV2Auth>,
 ) -> super::Result<telio_crypto::PresharedKey> {
     telio_log_debug!("Rekeying with version {}", pq_version);
     let mut pkgbuf = Vec::with_capacity(1024 * 4); // 4 KiB
@@ -214,21 +219,15 @@ pub async fn rekey(
     match pq_version {
         1 => push_rekey_method_udp_payload_v1(&mut pkgbuf),
         2 => {
-            let pre_shared_key = pre_shared_key.ok_or_else(|| {
-                super::Error::Generic("Pre-shared key required for version 2".to_string())
-            })?;
-            let wg_client_public = wg_client_public.ok_or_else(|| {
-                super::Error::Generic("Client public key required for version 2".to_string())
-            })?;
-            let wg_server_public = wg_server_public.ok_or_else(|| {
-                super::Error::Generic("Server public key required for version 2".to_string())
+            let auth = v2_auth.ok_or_else(|| {
+                super::Error::Generic("Authentication parameters required for version 2".to_string())
             })?;
 
             push_rekey_method_udp_payload_v2(
                 &mut pkgbuf,
-                &pre_shared_key,
-                &wg_client_public,
-                &wg_server_public,
+                &auth.pre_shared_key,
+                &auth.wg_client_public,
+                &auth.wg_server_public,
             );
         }
         _ => {

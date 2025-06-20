@@ -81,17 +81,17 @@ impl ConnKeyRotation {
                         &socket_pool,
                         &pq_secret,
                         pq_version,
-                        Some(wg_keys.pq_shared.clone()),
-                        Some(wg_keys.wg_secret.public()),
-                        Some(peer),
+                        Some(super::proto::RekeyV2Auth {
+                            pre_shared_key: wg_keys.pq_shared.clone(),
+                            wg_client_public: wg_keys.wg_secret.public(),
+                            wg_server_public: peer,
+                        }),
                     ))
                 } else {
                     Box::pin(super::proto::rekey(
                         &socket_pool,
                         &pq_secret,
                         pq_version,
-                        None,
-                        None,
                         None,
                     ))
                 };
