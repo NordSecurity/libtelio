@@ -240,8 +240,7 @@ pub(crate) fn update_config(body: &str) -> Response {
         }
     };
 
-    config.update(updated_config);
-    if let Err(e) = config.validate() {
+    if let Err(e) = config.update(updated_config) {
         return text_response(
             StatusCode::BAD_REQUEST,
             format!("Invalid config value: {e}"),
