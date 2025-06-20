@@ -163,9 +163,6 @@ impl TeliodDaemonConfig {
 
     pub fn validate(&mut self) -> Result<(), TeliodError> {
         self.log_file_path = self.resolve_log_path()?;
-        if let Ok(env_token) = self.resolve_env_token() {
-            self.authentication_token = env_token;
-        };
 
         Ok(())
     }
@@ -211,16 +208,18 @@ impl TeliodDaemonConfig {
         Ok(final_path.to_string_lossy().to_string())
     }
 
-    fn resolve_env_token(&self) -> Result<Hidden<String>, ()> {
+    /// Checks if NORD_TOKEN env var is set and contains a valid token.
+    pub fn resolve_env_token(&mut self) -> bool {
         if let Ok(token) = std::env::var("NORD_TOKEN") {
             println!("Overriding token from env");
             if token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) {
-                return Ok(Hidden::<String>(token));
+                self.authentication_token = Hidden::<String>(token);
+                return true;
             } else {
                 eprintln!("Token from env not valid");
             }
         }
-        Err(())
+        false
     }
 }
 

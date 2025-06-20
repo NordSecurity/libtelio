@@ -150,9 +150,6 @@ mod tests {
     fn test_log_paths() {
         let paths = LogPaths::new();
         assert_eq!(paths.daemon_log(), Path::new("/var/log/teliod.log"));
-        assert_eq!(
-            paths.lib_log(),
-            PathBuf::from("/var/log/teliod_lib.log")
-        );
+        assert_eq!(paths.lib_log(), PathBuf::from("/var/log/teliod_lib.log"));
     }
 }

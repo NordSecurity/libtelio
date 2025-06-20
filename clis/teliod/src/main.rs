@@ -144,7 +144,8 @@ fn main() -> Result<(), TeliodError> {
         }
 
         // Parse config file
-        let config = TeliodDaemonConfig::from_file(&opts.config_path)?;
+        let mut config = TeliodDaemonConfig::from_file(&opts.config_path)?;
+        config.resolve_env_token();
 
         println!("Saving logs to: {}", config.log_file_path);
         println!("Starting daemon");
