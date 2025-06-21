@@ -4,6 +4,7 @@ import json
 import pytest
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
+from ipaddress import AddressValueError, IPv6Address
 from itertools import product, zip_longest
 from mesh_api import Node, API
 from telio import Client
@@ -507,3 +508,18 @@ def verify_uuid(uuid_to_test, version=4):
     except ValueError:
         assert False, "Not a valid UUID"
     assert str(uuid_obj) == uuid_to_test, "Not a valid UUID"
+
+
+def string_to_compressed_ipv6(ip_str_list: List[str]) -> List[str]:
+    """
+    Pick ipv6 address from a list and convert them to compressed form
+
+    """
+
+    def compress_ip(ip_str: str) -> str:
+        try:
+            return IPv6Address(ip_str).compressed
+        except AddressValueError:
+            return ip_str
+
+    return [compress_ip(ip_str) for ip_str in ip_str_list]

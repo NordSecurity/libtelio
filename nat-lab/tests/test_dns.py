@@ -7,7 +7,13 @@ import pytest
 import timeouts
 from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6, LAN_ADDR_MAP
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_api, setup_environment, setup_mesh_nodes
+from helpers import (
+    SetupParameters,
+    setup_api,
+    setup_environment,
+    setup_mesh_nodes,
+    string_to_compressed_ipv6,
+)
 from typing import List, Optional
 from utils.bindings import default_features, FeatureDns, TelioAdapterType
 from utils.connection import ConnectionTag
@@ -145,15 +151,24 @@ async def test_dns(
 
         # If the previous calls didn't fail, we can assume that the resolver is running so no need to wait for the timeout and test the validity of the response
         await query_dns(
-            connection_alpha, "beta.nord", beta.ip_addresses, dns_server_address_alpha
+            connection_alpha,
+            "beta.nord",
+            string_to_compressed_ipv6(beta.ip_addresses),
+            dns_server_address_alpha,
         )
         await query_dns(
-            connection_beta, "alpha.nord", alpha.ip_addresses, dns_server_address_beta
+            connection_beta,
+            "alpha.nord",
+            string_to_compressed_ipv6(alpha.ip_addresses),
+            dns_server_address_beta,
         )
 
         # Testing if instance can get the IP of self from DNS. See LLT-4246 for more details.
         await query_dns(
-            connection_alpha, "alpha.nord", alpha.ip_addresses, dns_server_address_alpha
+            connection_alpha,
+            "alpha.nord",
+            string_to_compressed_ipv6(alpha.ip_addresses),
+            dns_server_address_alpha,
         )
 
         # Now we disable magic dns
@@ -273,7 +288,7 @@ async def test_dns_port(
             "53",
             "beta.nord",
             dns_server_address_alpha,
-            beta.ip_addresses,
+            string_to_compressed_ipv6(beta.ip_addresses),
             extra_host_options=["A", "beta.nord", "AAAA"],
         )
 
@@ -444,7 +459,10 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
 
         # If the previous calls didn't fail, we can assume that the resolver is running so no need to wait for the timeout and test the validity of the response
         await query_dns(
-            connection_alpha, "beta.nord", beta.ip_addresses, dns_server_address
+            connection_alpha,
+            "beta.nord",
+            string_to_compressed_ipv6(beta.ip_addresses),
+            dns_server_address,
         )
 
         # Now we disable magic dns
@@ -520,10 +538,16 @@ async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
         await query_dns(connection_beta, "google.com", dns_server=dns_server_address)
 
         await query_dns(
-            connection_alpha, "beta.nord", beta.ip_addresses, dns_server_address
+            connection_alpha,
+            "beta.nord",
+            string_to_compressed_ipv6(beta.ip_addresses),
+            dns_server_address,
         )
         await query_dns(
-            connection_beta, "alpha.nord", alpha.ip_addresses, dns_server_address
+            connection_beta,
+            "alpha.nord",
+            string_to_compressed_ipv6(alpha.ip_addresses),
+            dns_server_address,
         )
 
         await asyncio.sleep(60 * 5)
@@ -532,10 +556,16 @@ async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
         await query_dns(connection_beta, "google.com", dns_server=dns_server_address)
 
         await query_dns(
-            connection_alpha, "beta.nord", beta.ip_addresses, dns_server_address
+            connection_alpha,
+            "beta.nord",
+            string_to_compressed_ipv6(beta.ip_addresses),
+            dns_server_address,
         )
         await query_dns(
-            connection_beta, "alpha.nord", alpha.ip_addresses, dns_server_address
+            connection_beta,
+            "alpha.nord",
+            string_to_compressed_ipv6(alpha.ip_addresses),
+            dns_server_address,
         )
 
 
@@ -600,7 +630,10 @@ async def test_set_meshnet_config_dns_update(
         )
 
         await query_dns(
-            connection_alpha, "beta.nord", [beta.ip_addresses[0]], dns_server_address
+            connection_alpha,
+            "beta.nord",
+            string_to_compressed_ipv6([beta.ip_addresses[0]]),
+            dns_server_address,
         )
 
 
@@ -753,7 +786,9 @@ async def test_dns_aaaa_records() -> None:
 
         await client_alpha.enable_magic_dns(["10.0.80.82"])
 
-        await query_dns(connection_alpha, "beta.nord", beta.ip_addresses)
+        await query_dns(
+            connection_alpha, "beta.nord", string_to_compressed_ipv6(beta.ip_addresses)
+        )
 
 
 @pytest.mark.asyncio
@@ -795,11 +830,23 @@ async def test_dns_nickname() -> None:
         await client_alpha.enable_magic_dns([])
         await client_beta.enable_magic_dns([])
 
-        await query_dns(connection_alpha, "yoko.nord", beta.ip_addresses)
-        await query_dns(connection_alpha, "johnny.nord", alpha.ip_addresses)
+        await query_dns(
+            connection_alpha, "yoko.nord", string_to_compressed_ipv6(beta.ip_addresses)
+        )
+        await query_dns(
+            connection_alpha,
+            "johnny.nord",
+            string_to_compressed_ipv6(alpha.ip_addresses),
+        )
 
-        await query_dns(connection_beta, "johnny.nord", alpha.ip_addresses)
-        await query_dns(connection_beta, "yOKo.nord", beta.ip_addresses)
+        await query_dns(
+            connection_beta,
+            "johnny.nord",
+            string_to_compressed_ipv6(alpha.ip_addresses),
+        )
+        await query_dns(
+            connection_beta, "yOKo.nord", string_to_compressed_ipv6(beta.ip_addresses)
+        )
 
 
 @pytest.mark.asyncio
@@ -859,11 +906,23 @@ async def test_dns_change_nickname() -> None:
         with pytest.raises(ProcessExecError):
             await query_dns(connection_beta, "johnny.nord")
 
-        await query_dns(connection_alpha, "ono.nord", beta.ip_addresses)
-        await query_dns(connection_alpha, "rotten.nord", alpha.ip_addresses)
+        await query_dns(
+            connection_alpha, "ono.nord", string_to_compressed_ipv6(beta.ip_addresses)
+        )
+        await query_dns(
+            connection_alpha,
+            "rotten.nord",
+            string_to_compressed_ipv6(alpha.ip_addresses),
+        )
 
-        await query_dns(connection_beta, "rotten.nord", alpha.ip_addresses)
-        await query_dns(connection_beta, "ono.nord", beta.ip_addresses)
+        await query_dns(
+            connection_beta,
+            "rotten.nord",
+            string_to_compressed_ipv6(alpha.ip_addresses),
+        )
+        await query_dns(
+            connection_beta, "ono.nord", string_to_compressed_ipv6(beta.ip_addresses)
+        )
 
         # Set new meshnet config removing nicknames
         api.reset_nickname(alpha.id)
@@ -926,13 +985,37 @@ async def test_dns_wildcarded_records() -> None:
         await client_alpha.enable_magic_dns([])
         await client_beta.enable_magic_dns([])
 
-        await query_dns(connection_alpha, "myserviceA.alpha.nord", alpha.ip_addresses)
-        await query_dns(connection_alpha, "myserviceB.johnny.nord", alpha.ip_addresses)
-        await query_dns(connection_alpha, "herservice.yoko.nord", beta.ip_addresses)
+        await query_dns(
+            connection_alpha,
+            "myserviceA.alpha.nord",
+            string_to_compressed_ipv6(alpha.ip_addresses),
+        )
+        await query_dns(
+            connection_alpha,
+            "myserviceB.johnny.nord",
+            string_to_compressed_ipv6(alpha.ip_addresses),
+        )
+        await query_dns(
+            connection_alpha,
+            "herservice.yoko.nord",
+            string_to_compressed_ipv6(beta.ip_addresses),
+        )
 
-        await query_dns(connection_beta, "myserviceC.beta.nord", beta.ip_addresses)
-        await query_dns(connection_beta, "myserviceD.yoko.nord", beta.ip_addresses)
-        await query_dns(connection_beta, "hisservice.johnny.nord", alpha.ip_addresses)
+        await query_dns(
+            connection_beta,
+            "myserviceC.beta.nord",
+            string_to_compressed_ipv6(beta.ip_addresses),
+        )
+        await query_dns(
+            connection_beta,
+            "myserviceD.yoko.nord",
+            string_to_compressed_ipv6(beta.ip_addresses),
+        )
+        await query_dns(
+            connection_beta,
+            "hisservice.johnny.nord",
+            string_to_compressed_ipv6(alpha.ip_addresses),
+        )
 
 
 @pytest.mark.asyncio
@@ -1015,7 +1098,11 @@ async def test_dns_nickname_in_any_case() -> None:
         await client_alpha.enable_magic_dns([])
 
         queries = [
-            query_dns(connection_alpha, f"{name}.nord", beta.ip_addresses)
+            query_dns(
+                connection_alpha,
+                f"{name}.nord",
+                string_to_compressed_ipv6(beta.ip_addresses),
+            )
             for name in all_cases("yoko")
         ]
 
