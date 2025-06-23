@@ -5,6 +5,12 @@ use std::net::IpAddr;
 use std::process::Command;
 use tracing::{debug, error, info};
 
+#[cfg(target_os = "linux")]
+use telio::telio_utils::LIBTELIO_FWMARK;
+
+// Copied from NordVPN Linux app
+const DEFAULT_ROUTING_TABLE_ID: u32 = 205;
+
 pub trait ConfigureInterface {
     /// Initialize the interface
     fn initialize(&mut self) -> Result<(), TeliodError>;
@@ -172,12 +178,84 @@ impl ConfigureInterface for Ifconfig {
     }
 }
 
+// When setting routing information on linux we set a default route on a custom routing table
+// and an IP rule to make sure that the correct packets go through that table.
+// This struct holds the necessary information to set that up
+#[derive(Debug, Clone)]
+struct VpnIpInfo {
+    table: String,
+    fw_rule_prio: String,
+}
+
+impl VpnIpInfo {
+    fn new() -> Result<Self, TeliodError> {
+        Ok(Self {
+            table: Self::find_available_table()?,
+            fw_rule_prio: Self::find_available_rule_priority()?,
+        })
+    }
+
+    // Based on the implementation from the NordVPN Linux app
+    #[allow(clippy::expect_used)]
+    fn find_available_table() -> Result<String, TeliodError> {
+        let table_pattern = Regex::new("table ([0-9]+)").expect("Failed to compile ip table regex");
+        let mut existing =
+            execute_with_output(Command::new("ip").args(["route", "show", "table", "all"]))?
+                .lines()
+                .filter_map(|line| {
+                    table_pattern
+                        .captures(line)
+                        .and_then(|c| c.get(1))
+                        .and_then(|m| m.as_str().parse::<u32>().ok())
+                })
+                .collect::<Vec<_>>();
+        existing.sort_unstable();
+        existing.dedup();
+        let mut new_table = DEFAULT_ROUTING_TABLE_ID;
+        loop {
+            if !existing.contains(&new_table) {
+                return Ok(new_table.to_string());
+            }
+            new_table += 1;
+            if new_table > 60_000 {
+                return Err(TeliodError::IpRoute);
+            }
+        }
+    }
+
+    // Based on the implementation from the NordVPN Linux app
+    fn find_available_rule_priority() -> Result<String, TeliodError> {
+        let mut fw_prio = 0;
+        let existing = execute_with_output(Command::new("ip").args(["rule", "list"]))?
+            .lines()
+            .filter_map(|line| {
+                let prio = line
+                    .split_once(':')
+                    .and_then(|(prio, _)| prio.parse::<u32>().ok());
+                if let Some(prio) = prio {
+                    if line.contains("from all lookup main") {
+                        fw_prio = prio;
+                    }
+                }
+                prio
+            })
+            .collect::<Vec<_>>();
+        loop {
+            fw_prio = fw_prio.saturating_sub(1);
+            if fw_prio == 0 {
+                return Err(TeliodError::IpRule);
+            } else if !existing.contains(&fw_prio) {
+                return Ok(fw_prio.to_string());
+            }
+        }
+    }
+}
+
 /// Implementation using `iproute2`
 #[derive(Debug)]
 pub struct Iproute {
     interface_name: String,
-    default_gateway_ipv4: Option<String>,
-    exit_route_ip: Option<IpAddr>,
+    vpn_ip_info: Option<VpnIpInfo>,
     ipv6_support_manager: Ipv6SupportManager,
 }
 
@@ -185,38 +263,9 @@ impl Iproute {
     pub fn new(interface_name: String) -> Self {
         Self {
             interface_name,
-            default_gateway_ipv4: Self::get_default_gateway("-4"),
-            exit_route_ip: None,
+            vpn_ip_info: None,
             ipv6_support_manager: Ipv6SupportManager::default(),
         }
-    }
-
-    #[allow(clippy::expect_used)]
-    fn get_default_gateway(family: &str) -> Option<String> {
-        let metric_pattern = Regex::new("metric ([0-9]+)").expect("Failed to compile metric regex");
-        let via_pattern = Regex::new("via ([0-9\\.\\/]+)").expect("Failed to compile via regex");
-        let dev_pattern = Regex::new("dev ([A-Za-z0-9]+)").expect("Failed to compile dev regex");
-
-        let stdout =
-            execute_with_output(Command::new("ip").args([family, "route", "show", "default"]))
-                .ok()?;
-        stdout
-            .lines()
-            .filter_map(|line| {
-                let metric = metric_pattern
-                    .captures(line)
-                    .and_then(|c| c.get(1))
-                    .and_then(|m| m.as_str().parse::<u16>().ok())
-                    .unwrap_or(0);
-                let gateway = via_pattern
-                    .captures(line)
-                    .or(dev_pattern.captures(line))
-                    .and_then(|c| c.get(1))
-                    .map(|m| m.as_str());
-                gateway.map(|gateway| (metric, gateway.to_owned()))
-            })
-            .min_by_key(|(m, _)| *m)
-            .map(|(_, g)| g)
     }
 
     // Some ip commands will return "RNETLINK answers: File exists" which means that the command was already executed and we can ignore the error
@@ -261,24 +310,33 @@ impl ConfigureInterface for Iproute {
     }
 
     fn set_exit_routes(&mut self, exit_node: &IpAddr) -> Result<(), TeliodError> {
+        #[cfg(target_os = "linux")]
         if exit_node.is_ipv4() {
+            let vpn_ip_info = VpnIpInfo::new()?;
             execute(Command::new("ip").args([
                 "route",
                 "add",
                 "0.0.0.0/0",
                 "dev",
                 &self.interface_name,
+                "table",
+                &vpn_ip_info.table,
             ]))?;
-            if let Some(gateway) = &self.default_gateway_ipv4 {
-                Self::ignore_file_exists_error(execute(Command::new("ip").args([
-                    "route",
-                    "add",
-                    exit_node.to_string().as_str(),
-                    "via",
-                    gateway.as_str(),
-                ])))?;
-            }
-            self.exit_route_ip = Some(*exit_node);
+            execute(Command::new("ip").args([
+                "rule",
+                "add",
+                "priority",
+                &vpn_ip_info.fw_rule_prio,
+                "not",
+                "from",
+                "all",
+                "fwmark",
+                &LIBTELIO_FWMARK.to_string(),
+                "lookup",
+                &vpn_ip_info.table,
+            ]))?;
+            self.vpn_ip_info = Some(vpn_ip_info);
+
             self.ipv6_support_manager.disable(&self.interface_name)?;
             // We have already disabled IPv6 on all interfaces (except the tunnel interface)
             // but interfaces that get added later could still have IPv6 enabled.
@@ -296,16 +354,14 @@ impl ConfigureInterface for Iproute {
     }
 
     fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError> {
-        if let Some(exit_node) = self.exit_route_ip {
-            if let Some(gateway) = &self.default_gateway_ipv4 {
-                execute(Command::new("ip").args([
-                    "route",
-                    "del",
-                    exit_node.to_string().as_str(),
-                    "via",
-                    gateway.as_str(),
-                ]))?;
-            }
+        if let Some(vpn_ip_info) = &self.vpn_ip_info {
+            execute(Command::new("ip").args([
+                "rule",
+                "del",
+                "priority",
+                &vpn_ip_info.fw_rule_prio,
+            ]))?;
+            execute(Command::new("ip").args(["route", "flush", "table", &vpn_ip_info.table]))?;
         }
         self.ipv6_support_manager.reenable()
     }
@@ -498,5 +554,18 @@ impl Ipv6SupportManager {
             _ => {}
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // This test exists as a way to catch any issues with the regex in VpnIpInfo::find_available_table
+    // Specifically, the test is not checking that the regex works as expected, just that it doesn't panic
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_find_available_table_doesnt_panic() {
+        let _ = VpnIpInfo::find_available_table();
     }
 }
