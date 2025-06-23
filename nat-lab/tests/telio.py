@@ -1240,6 +1240,14 @@ class Client:
                 ),
             )
 
+        if self._connection.target_os == TargetOS.Windows:
+            await self._connection.download(
+                "C:\\Windows\\INF\\setupapi.dev.log", log_dir
+            )
+            await self._connection.download(
+                "C:\\Windows\\INF\\setupapi.setup.log", log_dir
+            )
+
     async def save_moose_db(self) -> None:
         """
         Check if any the moose db files exists ("*-events.db"),
