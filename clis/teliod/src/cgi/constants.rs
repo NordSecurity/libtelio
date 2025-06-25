@@ -82,46 +82,46 @@ impl AppPaths {
 /// System-wide log paths configuration
 #[derive(Debug, Clone)]
 pub struct LogPaths {
-    stdout: PathBuf,
-    init_stdout: PathBuf,
-    lib_dir: PathBuf,
-    lib_prefix: String,
+    daemon_log: PathBuf,
+    daemon_init_log: PathBuf,
+    dir: PathBuf,
+    prefix: String,
 }
 
 impl LogPaths {
     /// Creates a new LogPaths instance
     fn new() -> Self {
         Self {
-            stdout: PathBuf::from("/var/log/teliod.log"),
-            init_stdout: PathBuf::from("/var/log/teliod_init.log"),
-            lib_dir: PathBuf::from("/var/log"),
-            lib_prefix: String::from("teliod_lib.log"),
+            daemon_log: PathBuf::from("/var/log/teliod.log"),
+            daemon_init_log: PathBuf::from("/var/log/teliod_init.log"),
+            dir: PathBuf::from("/var/log"),
+            prefix: String::from("teliod_lib.log"),
         }
     }
 
     /// Path to the redirected STDOUT/STDERR streams after daemonizing
     pub fn daemon_log(&self) -> &Path {
-        &self.stdout
+        &self.daemon_log
     }
 
     /// Path to the redirected STDOUT/STDERR streams before daemonizing
     pub fn daemon_init_log(&self) -> &Path {
-        &self.init_stdout
+        &self.daemon_init_log
     }
 
     /// Base directory for the rotating libtelio trace logs
     pub fn dir(&self) -> &Path {
-        &self.lib_dir
+        &self.dir
     }
 
     /// Filename prefix for the rotating libtelio trace logs
     pub fn prefix(&self) -> &str {
-        &self.lib_prefix
+        &self.prefix
     }
 
     /// Get path to the rotating log files (without suffix)
-    pub fn lib_log(&self) -> PathBuf {
-        self.lib_dir.join(&self.lib_prefix)
+    pub fn log(&self) -> PathBuf {
+        self.dir.join(&self.prefix)
     }
 }
 
@@ -150,6 +150,6 @@ mod tests {
     fn test_log_paths() {
         let paths = LogPaths::new();
         assert_eq!(paths.daemon_log(), Path::new("/var/log/teliod.log"));
-        assert_eq!(paths.lib_log(), PathBuf::from("/var/log/teliod_lib.log"));
+        assert_eq!(paths.log(), PathBuf::from("/var/log/teliod_lib.log"));
     }
 }

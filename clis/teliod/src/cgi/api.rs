@@ -463,7 +463,7 @@ mod tests {
         assert_eq!(read_config, expected_config);
 
         expected_config.log_level = LevelFilter::INFO;
-        expected_config.log_file_path = LOG_PATHS.lib_log().to_string_lossy().into_owned();
+        expected_config.log_file_path = LOG_PATHS.log().to_string_lossy().into_owned();
         expected_config.log_file_count = 8;
         expected_config.authentication_token =
             "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -500,7 +500,7 @@ mod tests {
                 }}
             }}
             "#,
-            LOG_PATHS.lib_log().to_string_lossy()
+            LOG_PATHS.log().to_string_lossy()
         );
         assert_eq!(update_config(&update_body).status(), StatusCode::OK);
 
