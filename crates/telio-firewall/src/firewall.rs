@@ -2301,6 +2301,69 @@ pub mod tests {
 
     #[rustfmt::skip]
     #[test]
+    fn firewall_vpn_peer() {
+        struct TestInput {
+            src1: &'static str,
+            src2: &'static str,
+            dst1: &'static str,
+            make_udp: MakeUdp,
+            make_tcp: MakeTcp,
+        }
+        let test_inputs = vec![
+            TestInput {
+                src1: "100.100.100.100:1234",
+                src2: "100.100.100.100:1000",
+                dst1: "127.0.0.1:1111",
+                make_udp: &make_udp,
+                make_tcp: &make_tcp,
+            },
+            TestInput {
+                src1: "[2001:4860:4860::8888]:1234",
+                src2: "[2001:4860:4860::8888]:1000",
+                dst1: "[::1]:1111",
+                make_udp: &make_udp6,
+                make_tcp: &make_tcp6,
+            }
+        ];
+        let synack : u8 = TcpFlags::SYN | TcpFlags::ACK;
+        let syn : u8 = TcpFlags::SYN;
+        let record_whitelisted = [(true, [(0,0), (1,1), (1,0)]), (false, [(0,0),(1,0), (1,0)])];
+        for (record_whitelisted, expected) in record_whitelisted {
+            for TestInput { src1, src2, dst1, make_udp, make_tcp } in &test_inputs {
+                let mut feature = FeatureFirewall::default();
+                feature.neptun_reset_conns = record_whitelisted;
+                let fw = StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, true, &feature);
+                fw.set_ip_addresses(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
+                let peer1 = make_random_peer();
+                let peer2 = make_random_peer();
+
+                assert_eq!(fw.process_inbound_packet(&peer1.0, &make_udp(src1, dst1,)), false);
+                assert_eq!(fw.process_inbound_packet(&peer2.0, &make_udp(src2, dst1,)), false);
+                assert_eq!(fw.process_inbound_packet(&peer1.0, &make_tcp(src1, dst1, synack)), false);
+                assert_eq!(fw.process_inbound_packet(&peer2.0, &make_tcp(src2, dst1, synack)), false);
+                assert_eq!(expected[0], fw.get_state(), "record: {}", record_whitelisted);
+
+                fw.add_vpn_peer(peer1);
+                assert_eq!(fw.process_inbound_packet(&peer1.0, &make_udp(src1, dst1,)), true);
+                assert_eq!(fw.process_inbound_packet(&peer2.0, &make_udp(src2, dst1,)), false);
+
+                assert_eq!(fw.process_inbound_packet(&peer1.0, &make_tcp(src1, dst1, synack)), true);
+                assert_eq!(fw.process_outbound_packet(&peer1.0, &make_tcp(dst1, src1, syn)), true);
+
+                assert_eq!(expected[1], fw.get_state(),"record: {}", record_whitelisted);
+
+                fw.remove_vpn_peer();
+                assert_eq!(fw.process_inbound_packet(&peer1.0, &make_udp(src1, dst1,)), false);
+                assert_eq!(fw.process_inbound_packet(&peer2.0, &make_udp(src2, dst1,)), false);
+                assert_eq!(fw.process_inbound_packet(&peer1.0, &make_tcp(src1, dst1, 0)), true);
+                assert_eq!(fw.process_inbound_packet(&peer2.0, &make_tcp(src2, dst1, 0)), false);
+                assert_eq!(expected[2], fw.get_state(),"record: {}", record_whitelisted);
+            }
+        }
+    }
+
+    #[rustfmt::skip]
+    #[test]
     fn firewall_whitelist_change_icmp() {
         struct TestInput {
             us: &'static str,
