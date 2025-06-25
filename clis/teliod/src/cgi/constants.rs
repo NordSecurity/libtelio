@@ -1,3 +1,5 @@
+use std::ffi::OsString;
+use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, OnceLock};
 
@@ -32,6 +34,7 @@ impl AppPathsHandle {
 impl std::ops::Deref for AppPathsHandle {
     type Target = AppPaths;
 
+    #[allow(clippy::expect_used)]
     fn deref(&self) -> &Self::Target {
         self.inner
             .get()
@@ -68,19 +71,15 @@ impl AppPaths {
                 )));
             }
 
-            let path = String::from_utf8(output.stdout)
-                .map_err(|e| {
-                    TeliodError::InvalidResponse(format!("Invalid UTF-8 in getcfg output: {}", e))
-                })?
-                .trim()
-                .to_string();
-            if path.is_empty() {
+            let path = OsString::from_vec(output.stdout);
+            let path_str = path.to_string_lossy();
+            if path_str.trim().is_empty() {
                 return Err(TeliodError::InvalidResponse(
-                    "getcfg returned empty path".to_owned(),
+                    "getcfg returned empty path".into(),
                 ));
             }
 
-            PathBuf::from(path)
+            PathBuf::from(path_str.trim())
         } else {
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../..")
