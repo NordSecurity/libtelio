@@ -596,7 +596,7 @@ impl StatefullFirewall {
                                     inverted: false,
                                 },
                             ],
-                            action: LibfwVerdict::LibfwVerdictAccept,
+                            action: LibfwVerdict::LibfwVerdictHandleLocally,
                         });
                     }
                     rules.push(Rule {
@@ -642,7 +642,7 @@ impl StatefullFirewall {
                                 inverted: false,
                             },
                         ],
-                        action: LibfwVerdict::LibfwVerdictAccept,
+                        action: LibfwVerdict::LibfwVerdictHandleLocally,
                     });
                 }
             }
@@ -668,7 +668,7 @@ impl StatefullFirewall {
                         inverted: false,
                     },
                 ],
-                action: LibfwVerdict::LibfwVerdictHandleLocally,
+                action: LibfwVerdict::LibfwVerdictAccept,
             });
 
             // Accept certain TCP packets for finished connections
@@ -698,7 +698,7 @@ impl StatefullFirewall {
                         inverted: false,
                     },
                 ],
-                action: LibfwVerdict::LibfwVerdictHandleLocally,
+                action: LibfwVerdict::LibfwVerdictAccept,
             });
 
             // Accept packets for whitelisted ports
@@ -728,7 +728,7 @@ impl StatefullFirewall {
                                 inverted: false,
                             },
                         ],
-                        action: LibfwVerdict::LibfwVerdictHandleLocally,
+                        action: LibfwVerdict::LibfwVerdictAccept,
                     });
                 }
             }
@@ -870,12 +870,19 @@ impl StatefullFirewall {
             public_key,
             LibfwDirection::LibfwDirectionInbound,
         ) {
-            LibfwVerdict::LibfwVerdictAccept => true,
-            LibfwVerdict::LibfwVerdictHandleLocally => {
+            LibfwVerdict::LibfwVerdictAccept => {
                 self.conntracker.handle_inbound_packet(
                     &ip,
                     public_key,
                     LibfwVerdict::LibfwVerdictAccept,
+                );
+                true
+            }
+            LibfwVerdict::LibfwVerdictHandleLocally => {
+                self.conntracker.handle_inbound_packet(
+                    &ip,
+                    public_key,
+                    LibfwVerdict::LibfwVerdictHandleLocally,
                 );
 
                 true
@@ -899,6 +906,11 @@ impl StatefullFirewall {
                 false
             }
         }
+    }
+
+    /// TTT
+    pub fn print_state(&self) {
+        self.conntracker.print_state();
     }
 }
 

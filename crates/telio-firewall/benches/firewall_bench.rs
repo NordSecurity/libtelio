@@ -65,7 +65,7 @@ struct Parameter {
 impl Display for Parameter {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let ip = if self.packet.src.is_ipv4() { 4 } else { 6 };
-        write!(f, "peers: {}, ip: v{ip}", self.peers)
+        write!(f, "peers_{}_ip_v{ip}", self.peers)
     }
 }
 
@@ -212,7 +212,8 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
     }
 
     {
-        let mut group = c.benchmark_group("process inbound tcp from vpn peer packet - accepted");
+        let mut group =
+            c.benchmark_group("process inbound tcp from vpn peer packet - accepted XXX");
         for packet in &packets {
             for peers in PEER_COUNTS[1..].iter().copied() {
                 group.throughput(criterion::Throughput::Elements(PACKET_COUNT));

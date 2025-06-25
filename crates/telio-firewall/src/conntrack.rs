@@ -1174,4 +1174,15 @@ impl Conntracker {
         }
         None
     }
+
+    /// TTT
+    pub(crate) fn print_state(&self) {
+        println!("Conntracker tcp state:");
+        {
+            let tcp = self.tcp.lock().unwrap();
+            for (k, v) in (&*tcp).iter() {
+                println!("{k:?}: {v:?}");
+            }
+        }
+    }
 }
