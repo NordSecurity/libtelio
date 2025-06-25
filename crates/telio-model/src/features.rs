@@ -484,6 +484,10 @@ pub struct FeaturePostQuantumVPN {
     /// Rekey interval in seconds
     #[default = 90]
     pub rekey_interval_s: u32,
+
+    /// Post-quantum protocol version, currently supported versions: 1, 2
+    #[default = 1]
+    pub version: u32,
 }
 
 /// Turns on the no link detection mechanism
@@ -675,7 +679,8 @@ mod tests {
             "flush_events_on_stop_timeout_seconds": 15,
             "post_quantum_vpn": {
                 "handshake_retry_interval_s": 15,
-                "rekey_interval_s": 16
+                "rekey_interval_s": 16,
+                "version": 1
             },
             "link_detection": {
                 "rtt_seconds": 17,
@@ -778,6 +783,7 @@ mod tests {
                     post_quantum_vpn: FeaturePostQuantumVPN {
                         handshake_retry_interval_s: 15,
                         rekey_interval_s: 16,
+                        version: 1,
                     },
                     link_detection: Some(FeatureLinkDetection {
                         rtt_seconds: 17,
@@ -898,6 +904,20 @@ mod tests {
                 FeaturePostQuantumVPN::default(),
                 post_quantum_vpn
             );
+        }
+
+        #[test]
+        fn test_post_quantum_vpn_version() {
+            assert_json!(
+                r#"{"post_quantum_vpn": {"version": 2}}"#,
+                2,
+                post_quantum_vpn.version
+            );
+        }
+
+        #[test]
+        fn test_post_quantum_vpn_version_default() {
+            assert_json!(r#"{"post_quantum_vpn": {}}"#, 1, post_quantum_vpn.version);
         }
 
         #[test]

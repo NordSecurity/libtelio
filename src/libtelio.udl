@@ -773,6 +773,8 @@ dictionary FeaturePostQuantumVPN {
     u32 handshake_retry_interval_s;
     /// Rekey interval in seconds
     u32 rekey_interval_s;
+    /// Post-quantum protocol version
+    u32 version;
 };
 
 /// Configurable features for UPNP endpoint provider
