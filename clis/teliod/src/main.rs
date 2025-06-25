@@ -138,6 +138,9 @@ pub struct TelioStatusReport {
 }
 
 fn main() -> Result<(), TeliodError> {
+    #[cfg(feature = "cgi")]
+    cgi::constants::APP_PATHS.init()?;
+
     let mut cmd = Cmd::parse();
 
     // Pre-daemonizing setup

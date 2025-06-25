@@ -1,23 +1,55 @@
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
+
+use crate::TeliodError;
 
 /// Application paths configuration
-pub static APP_PATHS: LazyLock<AppPaths> = LazyLock::new(AppPaths::new);
+pub static APP_PATHS: AppPathsHandle = AppPathsHandle::new();
 
 /// System-wide log paths configuration
 pub static LOG_PATHS: LazyLock<LogPaths> = LazyLock::new(LogPaths::new);
 
+pub struct AppPathsHandle {
+    inner: OnceLock<AppPaths>,
+}
+
+impl AppPathsHandle {
+    pub const fn new() -> Self {
+        Self {
+            inner: OnceLock::new(),
+        }
+    }
+
+    pub fn init(&self) -> Result<(), TeliodError> {
+        let paths = AppPaths::new()?;
+        self.inner.set(paths).map_err(|_| {
+            TeliodError::SystemCommandFailed("AppPaths already initialized".to_string())
+        })?;
+        Ok(())
+    }
+}
+
+impl std::ops::Deref for AppPathsHandle {
+    type Target = AppPaths;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner
+            .get()
+            .expect("AppPaths not initialized, initialize it first")
+    }
+}
+
 /// Handles all teliod-relative paths
 #[derive(Debug, Clone)]
 pub struct AppPaths {
-    root: Option<PathBuf>,
+    root: PathBuf,
 }
 
 impl AppPaths {
     /// Creates a new AppPaths instance based on the current configuration
-    fn new() -> Self {
+    fn new() -> Result<Self, TeliodError> {
         let root = if cfg!(feature = "qnap") {
-            std::process::Command::new("getcfg")
+            let output = std::process::Command::new("getcfg")
                 .args([
                     "NordSecurityMeshnet",
                     "Install_Path",
@@ -25,26 +57,42 @@ impl AppPaths {
                     "/etc/config/qpkg.conf",
                 ])
                 .output()
-                .ok()
-                .filter(|output| output.status.success())
-                .and_then(|output| String::from_utf8(output.stdout).ok())
-                .map(|stdout| stdout.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .map(PathBuf::from)
+                .map_err(|e| {
+                    TeliodError::SystemCommandFailed(format!("Failed to execute getcfg: {}", e))
+                })?;
+
+            if !output.status.success() {
+                return Err(TeliodError::SystemCommandFailed(format!(
+                    "getcfg failed with status: {}",
+                    output.status
+                )));
+            }
+
+            let path = String::from_utf8(output.stdout)
+                .map_err(|e| {
+                    TeliodError::InvalidResponse(format!("Invalid UTF-8 in getcfg output: {}", e))
+                })?
+                .trim()
+                .to_string();
+            if path.is_empty() {
+                return Err(TeliodError::InvalidResponse(
+                    "getcfg returned empty path".to_owned(),
+                ));
+            }
+
+            PathBuf::from(path)
         } else {
-            Some(
-                Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("../..")
-                    .join("target")
-                    .join(if cfg!(debug_assertions) {
-                        "debug"
-                    } else {
-                        "release"
-                    }),
-            )
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join("target")
+                .join(if cfg!(debug_assertions) {
+                    "debug"
+                } else {
+                    "release"
+                })
         };
 
-        Self { root }
+        Ok(Self { root })
     }
 
     /// Path to the teliod executable
@@ -72,10 +120,7 @@ impl AppPaths {
     /// Create a path relative to the root directory
     #[cfg_attr(test, visibility::make(pub))]
     fn join(&self, path: &str) -> PathBuf {
-        self.root
-            .as_ref()
-            .map(|root| root.join(path))
-            .unwrap_or_else(|| PathBuf::from(path))
+        self.root.join(path)
     }
 }
 
@@ -129,27 +174,89 @@ impl LogPaths {
 mod tests {
     use super::*;
 
+    fn get_expected_root() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("target")
+            .join("debug")
+    }
+
+    #[test]
+    fn test_app_paths_root() {
+        let handle = AppPathsHandle::new();
+        handle.init().unwrap();
+
+        assert_eq!(handle.join(""), get_expected_root());
+    }
+
     #[test]
     fn test_app_paths_init() {
-        let paths = AppPaths::new();
-        assert!(paths.teliod_bin().ends_with("teliod"));
-        assert!(paths.teliod_cfg().ends_with("teliod.cfg"));
+        let handle = AppPathsHandle::new();
+        handle.init().unwrap();
+
+        assert_eq!(handle.teliod_bin(), get_expected_root().join("teliod"));
+        assert_eq!(handle.teliod_cfg(), get_expected_root().join("teliod.cfg"));
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_uninit_app_paths_deref_fails() {
+        let handle = AppPathsHandle::new();
+
+        handle.teliod_bin();
+    }
+
+    #[test]
+    fn test_app_paths_double_init_fails() {
+        let handle = AppPathsHandle::new();
+
+        assert!(handle.init().is_ok());
+        assert!(handle.init().is_err());
     }
 
     #[test]
     fn test_app_paths_functionality() {
-        let paths = AppPaths::new();
-        let root = paths.join("");
-        let test_path = paths.join("some/mysterious/path");
+        let handle = AppPathsHandle::new();
+        handle.init().unwrap();
+
+        let root = handle.join("");
+        let test_path = handle.join("some/mysterious/path");
         let expected_path = Path::new(&root.as_os_str()).join("some/mysterious/path");
 
         assert_eq!(test_path, expected_path);
     }
 
     #[test]
+    fn test_app_paths_concurrency() {
+        use std::thread;
+
+        APP_PATHS.init().unwrap();
+
+        let mut handles = vec![];
+        for _ in 0..10 {
+            let thread_handle = thread::spawn(move || {
+                assert_eq!(APP_PATHS.teliod_bin(), get_expected_root().join("teliod"));
+                assert_eq!(
+                    APP_PATHS.teliod_cfg(),
+                    get_expected_root().join("teliod.cfg")
+                );
+                assert_eq!(APP_PATHS.cgi_log(), get_expected_root().join("cgi.log"));
+                assert_eq!(
+                    APP_PATHS.start_intent(),
+                    get_expected_root().join(".teliod_start_intent")
+                );
+            });
+            handles.push(thread_handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+    }
+
+    #[test]
     fn test_log_paths() {
-        let paths = LogPaths::new();
-        assert_eq!(paths.daemon_log(), Path::new("/var/log/teliod.log"));
-        assert_eq!(paths.log(), PathBuf::from("/var/log/teliod_lib.log"));
+        assert_eq!(LOG_PATHS.daemon_log(), Path::new("/var/log/teliod.log"));
+        assert_eq!(LOG_PATHS.log(), PathBuf::from("/var/log/teliod_lib.log"));
     }
 }
