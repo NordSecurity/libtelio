@@ -402,7 +402,6 @@ mod tests {
     use tracing::level_filters::LevelFilter;
 
     use super::*;
-    use super::{update_config, TeliodDaemonConfig};
     use crate::{
         config::{InterfaceConfig, MqttConfig, Percentage},
         configure_interface::InterfaceConfigurationProvider,
@@ -411,6 +410,11 @@ mod tests {
     #[test]
     #[serial]
     fn test_update_config() {
+        let res = APP_PATHS.init();
+        if res.is_err() {
+            assert!(matches!(res, Err(TeliodError::SystemCommandFailed(_))));
+        }
+
         let mut expected_config = TeliodDaemonConfig {
             log_level: LevelFilter::DEBUG,
             log_file_path: APP_PATHS.join("test.log").to_string_lossy().into_owned(),
@@ -512,6 +516,11 @@ mod tests {
     #[test]
     #[serial]
     fn test_update_partial_config() {
+        let res = APP_PATHS.init();
+        if res.is_err() {
+            assert!(matches!(res, Err(TeliodError::SystemCommandFailed(_))));
+        }
+
         let mut expected_config = TeliodDaemonConfig {
             log_level: LevelFilter::DEBUG,
             log_file_path: APP_PATHS.join("test.log").to_string_lossy().into_owned(),

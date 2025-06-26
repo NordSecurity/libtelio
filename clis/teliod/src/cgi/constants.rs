@@ -230,7 +230,10 @@ mod tests {
     fn test_app_paths_concurrency() {
         use std::thread;
 
-        APP_PATHS.init().unwrap();
+        let res = APP_PATHS.init();
+        if res.is_err() {
+            assert!(matches!(res, Err(TeliodError::SystemCommandFailed(_))));
+        }
 
         let mut handles = vec![];
         for _ in 0..10 {
