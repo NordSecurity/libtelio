@@ -24,6 +24,8 @@ def default_features(
     enable_multicast: bool = False,
     enable_dynamic_wg_nt_control: bool = False,
     custom_skt_buffer_size: Optional[int] = None,
+    custom_inter_thread_channel_size: Optional[int] = None,
+    custom_max_inter_thread_batched_pkts: Optional[int] = None,
 ) -> Features:
     features_builder = FeaturesDefaultsBuilder()
     if enable_lana is not None:
@@ -48,6 +50,14 @@ def default_features(
         features_builder = features_builder.enable_dynamic_wg_nt_control()
     if custom_skt_buffer_size:
         features_builder = features_builder.set_skt_buffer_size(custom_skt_buffer_size)
+    if custom_inter_thread_channel_size:
+        features_builder = features_builder.set_inter_thread_channel_size(
+            custom_inter_thread_channel_size
+        )
+    if custom_max_inter_thread_batched_pkts:
+        features_builder = features_builder.set_max_inter_thread_batched_pkts(
+            custom_max_inter_thread_batched_pkts
+        )
 
     features = features_builder.build()
     features.is_test_env = True
