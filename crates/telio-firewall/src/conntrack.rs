@@ -279,6 +279,7 @@ impl Conntracker {
         };
         let flags = packet.map(|p| p.get_flags()).unwrap_or(0);
         let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
+        let syn_ack = TcpFlags::SYN | TcpFlags::ACK;
 
         if flags & TCP_FIRST_PKT_MASK == TcpFlags::SYN {
             telio_log_trace!("Inserting TCP conntrack entry {:?}", key.link);
@@ -300,6 +301,10 @@ impl Conntracker {
             if let Entry::Occupied(mut e) = tcp_cache.entry(key, false) {
                 let TcpConnectionInfo { tx_alive, .. } = e.get_mut();
                 *tx_alive = false;
+            }
+        } else if flags & syn_ack == syn_ack {
+            if let Some(tcp_connection_info) = tcp_cache.get_mut(&key) {
+                tcp_connection_info.state = LibfwConnectionState::LibfwConnectionStateEstablished;
             }
         }
     }
