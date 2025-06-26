@@ -110,6 +110,10 @@ pub struct Config {
     pub enable_dynamic_wg_nt_control: bool,
     /// Configurable socket buffer size, if None doesn't modify default OS set values
     pub skt_buffer_size: Option<u32>,
+    /// Configurable socket buffer size, if None doesn't modify default OS set values
+    pub inter_thread_channel_size: Option<u32>,
+    /// Configurable socket buffer size, if None doesn't modify default OS set values
+    pub max_inter_thread_batched_pkts: Option<u32>,
 }
 
 /// Events and analytics transmission channels
@@ -226,7 +230,9 @@ impl DynamicWg {
     ///                 Some(Arc::new(firewall_filter_outbound_packets)),
     ///             firewall_reset_connections: None,
     ///             enable_dynamic_wg_nt_control: false,
-    ///             skt_buffer_size: None
+    ///             skt_buffer_size: None,
+    ///             inter_thread_channel_size: None,
+    ///             max_inter_thread_batched_pkts: None,
     ///         },
     ///         None,
     ///         true,
@@ -519,6 +525,8 @@ impl Config {
             firewall_reset_connections: self.firewall_reset_connections.clone(),
             enable_dynamic_wg_nt_control: self.enable_dynamic_wg_nt_control,
             skt_buffer_size: self.skt_buffer_size,
+            inter_thread_channel_size: self.inter_thread_channel_size,
+            max_inter_thread_batched_pkts: self.max_inter_thread_batched_pkts,
         })
     }
 }
@@ -1126,6 +1134,8 @@ pub mod tests {
                 firewall_reset_connections: None,
                 enable_dynamic_wg_nt_control: false,
                 skt_buffer_size: None,
+                inter_thread_channel_size: None,
+                max_inter_thread_batched_pkts: None,
             })
         }
     }
