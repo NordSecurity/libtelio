@@ -42,11 +42,8 @@ pub struct CgiRequest {
 }
 
 impl CgiRequest {
-    fn new(inner: Request) -> Self {
-        Self {
-            inner,
-            route: var("PATH_INFO").unwrap_or_default(),
-        }
+    fn new(inner: Request, route: String) -> Self {
+        Self { inner, route }
     }
 
     pub fn route(&self) -> &str {
@@ -85,7 +82,8 @@ pub trait AuthorizationValidator {
 }
 
 pub fn handle_request(request: Request) -> Response {
-    let request = CgiRequest::new(request);
+    let route = var("PATH_INFO").unwrap_or_default();
+    let request = CgiRequest::new(request, route);
 
     #[cfg(feature = "qnap")]
     if let Err(error) = authorize::<QnapUserAuthorization>(&request) {
