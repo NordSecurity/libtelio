@@ -515,7 +515,9 @@ mod tests {
         let valid_token = "b".repeat(64);
         std::env::set_var("NORD_TOKEN", &valid_token);
 
-        let config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
+        let mut config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
+        config.resolve_env_token();
+
         assert_eq!(config.authentication_token.0, valid_token);
 
         std::env::remove_var("NORD_TOKEN");
