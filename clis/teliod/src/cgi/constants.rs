@@ -81,6 +81,7 @@ impl AppPaths {
 
             PathBuf::from(path_str.trim())
         } else {
+            // TODO: LLT-6427
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../..")
                 .join("target")
