@@ -121,7 +121,7 @@ pub extern "C" fn libfw_init() -> *mut LibfwFirewall {
 /// This function dereferences pointer to firewall - user must ensure that this is
 /// the pointer returned by `libfw_init`.
 #[no_mangle]
-pub unsafe extern "C" fn libfw_configure_chain(
+pub unsafe extern "C" fn libfw_set_chain(
     firewall: *mut LibfwFirewall,
     chain: LibfwChain,
 ) -> LibfwError {
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn libfw_configure_chain(
 /// Retrieves currently configured chain of firewall rules.
 ///
 /// The returned chain should be used only as read-only and should be freed only using
-/// `libfw_cleanup_dumped_chain` - it might not be compatible with your allocator and thus
+/// `libfw_cleanup_chain` - it might not be compatible with your allocator and thus
 /// trying to deallocate it in any other way may lead to severe memory problems.
 ///
 /// @param fw - pointer to initialized firewall
@@ -150,7 +150,7 @@ pub unsafe extern "C" fn libfw_configure_chain(
 /// This function dereferences pointer to firewall - user must ensure that this is
 /// the pointer returned by `libfw_init`.
 #[no_mangle]
-pub unsafe extern "C" fn libfw_dump_chain(firewall: *mut LibfwFirewall) -> *const LibfwChain {
+pub unsafe extern "C" fn libfw_get_chain(firewall: *mut LibfwFirewall) -> *const LibfwChain {
     if firewall.is_null() {
         return null();
     }
@@ -163,18 +163,18 @@ pub unsafe extern "C" fn libfw_dump_chain(firewall: *mut LibfwFirewall) -> *cons
 }
 
 ///
-/// Frees chain dumped with `libfw_dump_chain` (it shouldn't be used on any other chain instances, though!)
+/// Frees chain got with `libfw_get_chain` (it shouldn't be used on any other chain instances, though!)
 ///
 /// @param chain - chain to be freed
 ///
 /// # Safety
 ///
 /// Dereferences a raw pointer to the chain, assuming that the provided chain is obtained with
-/// calling `libfw_dump_chain` function - calling it on user-allocated chain, or any other pointer
+/// calling `libfw_get_chain` function - calling it on user-allocated chain, or any other pointer
 /// causes undefined behavior.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn libfw_cleanup_dumped_chain(chain: *const LibfwChain) {
+pub unsafe extern "C" fn libfw_cleanup_chain(chain: *const LibfwChain) {
     if chain.is_null() {
         return;
     }
