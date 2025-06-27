@@ -156,13 +156,18 @@ pub unsafe extern "C" fn libfw_set_chain(
     firewall: *mut LibfwFirewall,
     chain: LibfwChain,
 ) -> LibfwError {
-    // TODO: Check if the chain is valid
-    match (&chain).try_into() {
-        Ok(chain) => {
-            (*firewall).chain = Some(chain);
-            LibfwError::LibfwSuccess
+    match firewall.as_mut() {
+        Some(firewall) => {
+            // TODO: Check if the chain is valid
+            match (&chain).try_into() {
+                Ok(chain) => {
+                    firewall.chain.replace(chain);
+                    LibfwError::LibfwSuccess
+                }
+                Err(err) => err,
+            }
         }
-        Err(err) => err,
+        None => LibfwError::LibfwErrorNullPointer,
     }
 }
 
@@ -182,14 +187,15 @@ pub unsafe extern "C" fn libfw_set_chain(
 /// the pointer returned by `libfw_init`.
 #[no_mangle]
 pub unsafe extern "C" fn libfw_get_chain(firewall: *mut LibfwFirewall) -> *const LibfwChain {
-    if firewall.is_null() {
-        return null();
-    }
-
-    if let Some(chain) = unsafe { &(*firewall).chain } {
-        Box::into_raw(Box::new(chain.into()))
-    } else {
-        null()
+    match firewall.as_ref() {
+        Some(firewall) => {
+            if let Some(chain) = &firewall.chain {
+                Box::into_raw(Box::new(chain.into()))
+            } else {
+                null()
+            }
+        }
+        None => null(),
     }
 }
 
@@ -205,12 +211,12 @@ pub unsafe extern "C" fn libfw_get_chain(firewall: *mut LibfwFirewall) -> *const
 /// causes undefined behavior.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn libfw_cleanup_chain(chain: *const LibfwChain) {
+pub unsafe extern "C" fn libfw_cleanup_chain(chain: *mut LibfwChain) {
     if chain.is_null() {
         return;
     }
 
-    let _ = Box::from_raw(chain as *mut LibfwChain);
+    drop(Box::from_raw(chain));
 }
 
 ///
@@ -239,26 +245,31 @@ pub unsafe extern "C" fn libfw_trigger_stale_connection_close(
     inject_packet_cb_data: *mut c_void,
     inject_packet_cb: LibfwInjectPacketCallback,
 ) -> LibfwError {
-    if let Some(callback) = inject_packet_cb {
-        if let LibfwIpVersion::LibfwIptypeIpv4 = associated_ip.ip_version {
-            let assoc_data = slice::from_raw_parts(associated_data, associated_data_len);
-            let conntrack = &(*firewall).conntracker;
-            if let Err(err) = conntrack.reset_tcp_conns(assoc_data, |packet| {
-                callback(inject_packet_cb_data, packet.as_ptr(), packet.len()).into()
-            }) {
-                return Err(err).into();
+    match firewall.as_mut() {
+        Some(firewall) => {
+            if let Some(callback) = inject_packet_cb {
+                if let LibfwIpVersion::LibfwIptypeIpv4 = associated_ip.ip_version {
+                    let assoc_data = slice::from_raw_parts(associated_data, associated_data_len);
+                    let conntrack = &firewall.conntracker;
+                    if let Err(err) = conntrack.reset_tcp_conns(assoc_data, |packet| {
+                        callback(inject_packet_cb_data, packet.as_ptr(), packet.len()).into()
+                    }) {
+                        return Err(err).into();
+                    }
+                    if let Err(err) = conntrack.reset_udp_conns(assoc_data, |packet| {
+                        callback(inject_packet_cb_data, packet.as_ptr(), packet.len()).into()
+                    }) {
+                        return Err(err).into();
+                    }
+                    LibfwError::LibfwSuccess
+                } else {
+                    LibfwError::LibfwErrorNotImplemented
+                }
+            } else {
+                LibfwError::LibfwErrorNullPointer
             }
-            if let Err(err) = conntrack.reset_udp_conns(assoc_data, |packet| {
-                callback(inject_packet_cb_data, packet.as_ptr(), packet.len()).into()
-            }) {
-                return Err(err).into();
-            }
-            LibfwError::LibfwSuccess
-        } else {
-            LibfwError::LibfwErrorNotImplemented
         }
-    } else {
-        LibfwError::LibfwErrorNullPointer
+        None => LibfwError::LibfwErrorNullPointer,
     }
 }
 
@@ -289,6 +300,10 @@ pub unsafe extern "C" fn libfw_process_inbound_packet(
     associated_data: *mut u8,
     associated_data_len: usize,
 ) -> LibfwVerdict {
+    if firewall.is_null() || packet.is_null() || associated_data.is_null() {
+        return LibfwVerdict::LibfwVerdictDrop;
+    }
+
     let packet_buffer = unsafe { slice::from_raw_parts(packet, packet_len) };
     let assoc_data = unsafe { slice::from_raw_parts(associated_data, associated_data_len) };
 
@@ -369,6 +384,10 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
     associated_data: *const u8,
     associated_data_len: usize,
 ) -> LibfwVerdict {
+    if firewall.is_null() || packet.is_null() || associated_data.is_null() {
+        return LibfwVerdict::LibfwVerdictDrop;
+    }
+
     let packet_buffer = slice::from_raw_parts(packet, packet_len);
     let assoc_data = slice::from_raw_parts(associated_data, associated_data_len);
 
@@ -429,8 +448,6 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
 #[no_mangle]
 pub unsafe extern "C" fn libfw_deinit(firewall: *mut LibfwFirewall) {
     if !firewall.is_null() {
-        unsafe {
-            let _ = Box::from_raw(firewall);
-        }
+        drop(Box::from_raw(firewall));
     }
 }
