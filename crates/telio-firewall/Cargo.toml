@@ -41,3 +41,7 @@ telio-utils = {workspace = true, features = ["sn_fake_clock"] }
 [[bench]]
 name = "firewall_bench"
 harness = false
+
+[build-dependencies]
+anyhow.workspace = true
+cbindgen = "0.29.0"
