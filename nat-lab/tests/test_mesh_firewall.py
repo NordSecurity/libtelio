@@ -593,7 +593,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
             # kill server and check what is happening in conntrack events
             # if everything is correct -> conntrack should show LAST_ACK -> TIME_WAIT
             # if something goes wrong, it will be stuck at LAST_ACK state
-            await conntrack.wait()
+            await conntrack.wait_for_no_violations()
 
 
 @pytest.mark.asyncio
@@ -695,4 +695,4 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                 # kill client and check what is happening in conntrack events
                 # if everything is correct -> conntrack should show LAST_ACK -> TIME_WAIT
                 # if something goes wrong, it will be stuck at LAST_ACK state
-                await conntrack.wait()
+                await conntrack.wait_for_no_violations()

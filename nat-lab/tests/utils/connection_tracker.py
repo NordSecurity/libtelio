@@ -11,6 +11,8 @@ from utils.logger import log
 from utils.ping import ping
 from utils.process import Process
 
+NEXT_CONNTRACKER_ID = 0
+
 
 @dataclass
 class FiveTuple:
@@ -158,6 +160,9 @@ class ConnectionCountLimit(ConnTrackerEventsValidator):
         self.max_limit = max_limit
         self.target = target
 
+    def __repr__(self):
+        return f"ConnectionCountLimit(key: {self.key}, min_limit: {self.min_limit}, max_limit: {self.max_limit}, target: {self.target})"
+
     def find_conntracker_violations(
         self, events: List[ConntrackerEvent]
     ) -> Optional[ConnTrackerViolation]:
@@ -207,6 +212,9 @@ class TCPStateSequence(ConnTrackerEventsValidator):
         self.key = key
         self.five_tuple = five_tuple
         self.sequence = sequence
+
+    def __repr__(self):
+        return f"TCPStateSequence(key: {self.key}, five_tuple: {self.five_tuple}, sequence: {self.sequence})"
 
     def find_conntracker_violations(
         self, events: List[ConntrackerEvent]
@@ -260,11 +268,18 @@ class TCPStateSequence(ConnTrackerEventsValidator):
         return merge_results(violations)
 
 
-def parse_input(input_string, container_name: Optional[str] = None) -> ConntrackerEvent:
+def parse_input(
+    input_string, contracker_id: int, container_name: Optional[str] = None
+) -> ConntrackerEvent:
     event = ConntrackerEvent()
 
     if container_name:
-        log.debug("[%s] Conntracker reported event: %s", container_name, input_string)
+        log.debug(
+            "[%s] Conntracker[%s] reported event: %s",
+            container_name,
+            contracker_id,
+            input_string,
+        )
     else:
         log.debug("Conntracker reported event: %s", input_string)
 
@@ -312,6 +327,14 @@ class ConnectionTracker:
         connection: Connection,
         validators: Optional[List[ConnTrackerEventsValidator]] = None,
     ):
+        global NEXT_CONNTRACKER_ID
+        self.id: int = NEXT_CONNTRACKER_ID + 1
+        NEXT_CONNTRACKER_ID += 1
+
+        log.debug(
+            "ConnectionTracker[%s] starting with validators: %s", self.id, validators
+        )
+
         args = ["conntrack", "-E"]
         self._process: Process = connection.create_process(args, quiet=True)
         self._connection: Connection = connection
@@ -329,7 +352,7 @@ class ConnectionTracker:
             return
 
         for line in stdout.splitlines():
-            event = parse_input(line, self._connection.tag.name)
+            event = parse_input(line, self.id, self._connection.tag.name)
             connection = event.five_tuple
             if connection is FiveTuple():
                 continue
@@ -367,7 +390,7 @@ class ConnectionTracker:
             [v.find_conntracker_violations(self._events) for v in self._validators]
         )
 
-    async def wait(self):
+    async def wait_for_no_violations(self):
         """Waits until there are no conntracker event violations. If unrecoverable event occures throws"""
         # The implementation is polling, which is probably not super efficient, but at least simple :)
         while True:
@@ -380,12 +403,17 @@ class ConnectionTracker:
 
             if not violation.recoverable:
                 raise Exception(violation)
+            log.debug(
+                "ConnectionTracker[%s] recoverable violation: %s",
+                self.id,
+                violation,
+            )
 
     async def _synchronize(self) -> None:
         if not self._validators:
             return None
 
-        log.debug("ConnectionTracker waiting for _sync_event")
+        log.debug("ConnectionTracker[%s] waiting for _sync_event", self.id)
         # wait to synchronize over a known event
         while not self._sync_event.is_set():
             # use ping helper, that returns after the first reply is received

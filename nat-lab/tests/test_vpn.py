@@ -413,7 +413,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             # under normal circumstances -> conntrack should show FIN_WAIT -> CLOSE_WAIT
             # But our connection killing mechanism will reset connection resulting in CLOSE output.
             # Wait for close on both clients
-            await conntrack.wait()
+            await conntrack.wait_for_no_violations()
 
 
 @pytest.mark.asyncio
@@ -476,7 +476,7 @@ async def test_firewall_blacklist_tcp(ipv4: bool) -> None:
         ).run() as conntrack:
             serv_ip = serv_ip if ipv4 else "[" + serv_ip + "]"
             await alpha_connection.create_process(["curl", serv_ip]).execute()
-            await conntrack.wait()
+            await conntrack.wait_for_no_violations()
 
         async with ConnectionTracker(
             beta_connection,
@@ -492,7 +492,7 @@ async def test_firewall_blacklist_tcp(ipv4: bool) -> None:
             with pytest.raises(ProcessExecError):
                 await beta_connection.create_process(["curl", serv_ip]).execute()
 
-            await conntrack.wait()
+            await conntrack.wait_for_no_violations()
 
 
 @pytest.mark.asyncio
