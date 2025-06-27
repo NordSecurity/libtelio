@@ -673,7 +673,7 @@ pub mod tests {
         };
 
         let pk = make_random_peer();
-        let ctk = Conntracker::new(10, 1000);
+        let ctk = Conntracker::new(10, 1000, crate::ffi::Logger::Rust);
 
         // Test UDP with proper source
         let pkt = make_udp("168.72.0.12:1234", "100.0.0.2:5678");
@@ -712,7 +712,7 @@ pub mod tests {
     fn assoc_data_filter() {
         let pk = make_random_peer();
         let another_pk = make_random_peer();
-        let ctk = Conntracker::new(10, 1000);
+        let ctk = Conntracker::new(10, 1000, crate::ffi::Logger::Rust);
 
         let data_filter = Filter {
             filter_data: super::FilterData::AssociatedData(pk.clone().to_vec()),
@@ -745,7 +745,7 @@ pub mod tests {
     #[test]
     fn direction_filter() {
         let pk = make_random_peer();
-        let ctk = Conntracker::new(10, 1000);
+        let ctk = Conntracker::new(10, 1000, crate::ffi::Logger::Rust);
 
         let direction_filter = Filter {
             filter_data: super::FilterData::Direction(LibfwDirection::LibfwDirectionInbound),
@@ -783,7 +783,7 @@ pub mod tests {
     #[test]
     fn conntrack_filter() {
         let pk = make_random_peer();
-        let ctk = Conntracker::new(10, 1000);
+        let ctk = Conntracker::new(10, 1000, crate::ffi::Logger::Rust);
 
         let conn_new_filter = Filter {
             filter_data: super::FilterData::ConntrackState(
