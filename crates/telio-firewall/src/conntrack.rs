@@ -3,7 +3,6 @@ use std::{
     fmt::{Debug, Formatter},
     io,
     net::IpAddr as StdIpAddr,
-    sync::Mutex,
     time::Duration,
 };
 
@@ -22,30 +21,11 @@ use telio_utils::{Entry, LruCache};
 
 use crate::{
     ffi::{
-        LibfwLogLevel::{
-            LibfwLogLevelDebug, LibfwLogLevelErr, LibfwLogLevelTrace, LibfwLogLevelWarn,
-        },
+        LibfwLogLevel::{LibfwLogLevelDebug, LibfwLogLevelTrace, LibfwLogLevelWarn},
         Logger,
     },
     firewall::{IpAddr, IpPacket, TCP_FIRST_PKT_MASK},
 };
-
-macro_rules! unwrap_lock_or_return {
-    ( $guard:expr, $retval:expr ) => {
-        match $guard {
-            Ok(x) => x,
-            Err(_poisoned) => {
-                // TODO: self.logger.log(LibfwLogLevelErr, format_args!("Poisoned lock"));
-                return $retval;
-            }
-        }
-    };
-    ( $guard:expr ) => {
-        unwrap_lock_or_return!($guard, ())
-    };
-}
-
-pub(crate) use unwrap_lock_or_return;
 
 macro_rules! unwrap_option_or_return {
     ( $option:expr, $retval:expr ) => {
@@ -184,11 +164,11 @@ pub(crate) struct TcpConnectionInfo {
 
 pub(crate) struct Conntracker {
     /// Recent udp connections
-    pub(crate) udp: Mutex<LruCache<Connection, UdpConnectionInfo>>,
+    pub(crate) udp: parking_lot::Mutex<LruCache<Connection, UdpConnectionInfo>>,
     /// Recent tcp connections
-    pub(crate) tcp: Mutex<LruCache<Connection, TcpConnectionInfo>>,
+    pub(crate) tcp: parking_lot::Mutex<LruCache<Connection, TcpConnectionInfo>>,
     /// Recent icmp connections
-    pub(crate) icmp: Mutex<LruCache<IcmpConn, ()>>,
+    pub(crate) icmp: parking_lot::Mutex<LruCache<IcmpConn, ()>>,
 
     pub(crate) logger: Logger,
 }
@@ -198,9 +178,9 @@ impl Conntracker {
     pub fn new(capacity: usize, ttl: u64, logger: Logger) -> Self {
         let ttl = Duration::from_millis(ttl);
         Self {
-            tcp: Mutex::new(LruCache::new(ttl, capacity)),
-            udp: Mutex::new(LruCache::new(ttl, capacity)),
-            icmp: Mutex::new(LruCache::new(ttl, capacity)),
+            tcp: parking_lot::Mutex::new(LruCache::new(ttl, capacity)),
+            udp: parking_lot::Mutex::new(LruCache::new(ttl, capacity)),
+            icmp: parking_lot::Mutex::new(LruCache::new(ttl, capacity)),
             logger,
         }
     }
@@ -208,8 +188,8 @@ impl Conntracker {
     #[cfg(feature = "test_utils")]
     /// Return the size of conntrack entries for tcp and udp (for testing only).
     pub fn get_state(&self) -> (usize, usize) {
-        let tcp = unwrap_lock_or_return!(self.tcp.lock(), (0, 0)).len();
-        let udp = unwrap_lock_or_return!(self.udp.lock(), (0, 0)).len();
+        let tcp = self.tcp.lock().len();
+        let udp = self.udp.lock().len();
         (tcp, udp)
     }
 
@@ -225,7 +205,7 @@ impl Conntracker {
             link,
             associated_data: associated_data.to_smallvec(),
         };
-        let mut udp_cache = unwrap_lock_or_return!(self.udp.lock(), None);
+        let mut udp_cache = self.udp.lock();
         match udp_cache.entry(key, false) {
             Entry::Occupied(occupied_entry) => Some(occupied_entry.get().clone()),
             Entry::Vacant(_) => None,
@@ -244,7 +224,7 @@ impl Conntracker {
             link,
             associated_data: associated_data.to_smallvec(),
         };
-        let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock(), None);
+        let mut tcp_cache = self.tcp.lock();
         match tcp_cache.entry(key, false) {
             Entry::Occupied(occupied_entry) => Some(occupied_entry.get().clone()),
             Entry::Vacant(_) => None,
@@ -270,7 +250,7 @@ impl Conntracker {
             return;
         };
 
-        let mut udp_cache = unwrap_lock_or_return!(self.udp.lock());
+        let mut udp_cache = self.udp.lock();
         // If key already exists, dont change the value, just update timer with entry
         match udp_cache.entry(key, true) {
             Entry::Vacant(e) => {
@@ -320,9 +300,7 @@ impl Conntracker {
             Self::build_icmp_key(&self.logger, ip, associated_data, inbound).ok(),
             false
         );
-        unwrap_lock_or_return!(self.icmp.lock(), false)
-            .peek(&key)
-            .is_some()
+        self.icmp.lock().peek(&key).is_some()
     }
 
     pub fn handle_outbound_tcp<'a>(&self, ip: &impl IpPacket<'a>, associated_data: &[u8]) {
@@ -333,7 +311,7 @@ impl Conntracker {
             associated_data: associated_data.to_smallvec(),
         };
         let flags = packet.map(|p| p.get_flags()).unwrap_or(0);
-        let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
+        let mut tcp_cache = self.tcp.lock();
         let syn_ack = TcpFlags::SYN | TcpFlags::ACK;
 
         if flags & TCP_FIRST_PKT_MASK == TcpFlags::SYN {
@@ -374,7 +352,7 @@ impl Conntracker {
     }
 
     pub fn handle_outbound_icmp<'a>(&self, ip: &impl IpPacket<'a>, associated_data: &[u8]) {
-        let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock());
+        let mut icmp_cache = self.icmp.lock();
         if let Ok(key) = Self::build_icmp_key(&self.logger, ip, associated_data, false) {
             // If key already exists, dont change the value, just update timer with entry
             if let Entry::Vacant(e) = icmp_cache.entry(key, true) {
@@ -399,7 +377,7 @@ impl Conntracker {
             associated_data: associated_data.to_smallvec(),
         };
 
-        let mut udp_cache = unwrap_lock_or_return!(self.udp.lock());
+        let mut udp_cache = self.udp.lock();
 
         match udp_cache.entry(key, true) {
             Entry::Occupied(mut occ) => {
@@ -462,7 +440,7 @@ impl Conntracker {
             format_args!("Processing TCP packet with {:?}", key),
         );
 
-        let mut cache = unwrap_lock_or_return!(self.tcp.lock());
+        let mut cache = self.tcp.lock();
         // Dont update last access time in tcp, as it is handled by tcp flags
         match cache.entry(key, false) {
             Entry::Occupied(mut occ) => {
@@ -574,7 +552,7 @@ impl Conntracker {
     ) -> bool {
         match Self::build_icmp_key(&self.logger, ip, associated_data, true) {
             Ok(key) => {
-                let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock(), false);
+                let mut icmp_cache = self.icmp.lock();
                 let is_in_cache = icmp_cache.get(&key).is_some();
                 if is_in_cache {
                     self.logger.log(
@@ -602,7 +580,7 @@ impl Conntracker {
     fn handle_icmp_error(&self, error_key: IcmpErrorKey, associated_data: &[u8]) -> bool {
         match error_key {
             IcmpErrorKey::Icmp(Some(icmp_key)) => {
-                let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock(), false);
+                let mut icmp_cache = self.icmp.lock();
                 let is_in_cache = icmp_cache.get(&icmp_key).is_some();
                 if is_in_cache {
                     self.logger.log(
@@ -626,7 +604,7 @@ impl Conntracker {
                     associated_data: associated_data.to_smallvec(),
                 };
 
-                let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock(), false);
+                let mut tcp_cache = self.tcp.lock();
 
                 let is_in_cache = tcp_cache.get(&tcp_key).is_some();
                 if is_in_cache {
@@ -651,7 +629,7 @@ impl Conntracker {
                     associated_data: associated_data.to_smallvec(),
                 };
 
-                let mut udp_cache = unwrap_lock_or_return!(self.udp.lock(), false);
+                let mut udp_cache = self.udp.lock();
                 let is_in_cache = udp_cache.get(&udp_key).is_some();
                 if is_in_cache {
                     self.logger.log(
@@ -890,11 +868,7 @@ impl Conntracker {
     where
         F: FnMut(&[u8]) -> io::Result<()>,
     {
-        let Ok(mut tcp_conn_cache) = self.tcp.lock() else {
-            self.logger
-                .log(LibfwLogLevelErr, format_args!("TCP cache poisoned"));
-            return Ok(());
-        };
+        let mut tcp_conn_cache = self.tcp.lock();
 
         self.logger.log(
             LibfwLogLevelDebug,
@@ -1193,11 +1167,7 @@ impl Conntracker {
     where
         F: FnMut(&[u8]) -> io::Result<()>,
     {
-        let Ok(mut udp_conn_cache) = self.udp.lock() else {
-            self.logger
-                .log(LibfwLogLevelErr, format_args!("UDP cache poisoned"));
-            return Ok(());
-        };
+        let mut udp_conn_cache = self.udp.lock();
 
         self.logger.log(
             LibfwLogLevelDebug,

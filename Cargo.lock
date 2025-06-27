@@ -4690,6 +4690,7 @@ dependencies = [
  "ipnet",
  "libc",
  "mockall",
+ "parking_lot",
  "pnet_packet 0.35.0",
  "proptest",
  "proptest-derive",
