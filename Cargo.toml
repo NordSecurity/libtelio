@@ -207,6 +207,13 @@ lto = true
 codegen-units = 1
 debug = "full"
 
+[profile.release-size-optimized]
+inherits = "release"
+opt-level = "z"      # Optimize for size.
+panic = "abort"      # Abort on panic
+strip = true         # Automatically strip symbols from the binary.
+debug = false        # No debug symbols
+
 [profile.dev]
 debug = 0
 strip = "debuginfo"
