@@ -74,13 +74,15 @@ impl Debug for IpConnWithPort {
     }
 }
 
+pub(crate) type AssociatedData = SmallVec<[u8; telio_crypto::KEY_SIZE]>;
+
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub(crate) struct Connection {
     pub(crate) link: IpConnWithPort,
     // Data associated with the packets, usually the public keys refering
     // to source peer for inbound connections and destination peer for outbound
     // connections, which may be used for tracking and filtering packets
-    pub(crate) associated_data: SmallVec<[u8; telio_crypto::KEY_SIZE]>,
+    pub(crate) associated_data: AssociatedData,
 }
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
@@ -92,7 +94,7 @@ pub(crate) struct IcmpConn {
     // Data associated with the packets, usually the public keys refering
     // to source peer for inbound connections and destination peer for outbound
     // connections, which may be used for tracking and filtering packets
-    associated_data: SmallVec<[u8; telio_crypto::KEY_SIZE]>,
+    associated_data: AssociatedData,
 }
 
 type IcmpKey = Result<IcmpConn, IcmpErrorKey>;
@@ -116,16 +118,47 @@ impl Debug for IcmpConn {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum LibfwConnectionState {
-    LibfwConnectionStateEstablished,
-    LibfwConnectionStateNew,
+///
+/// Packet direction
+///
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum LibfwDirection {
+    /// Outgoing packets
+    LibfwDirectionOutbound = 0,
+    /// Incoming packets
+    LibfwDirectionInbound = 1,
 }
 
+///
+/// Connection state
+///
+#[allow(clippy::enum_variant_names)]
+#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum LibfwVerdict {
+pub enum LibfwConnectionState {
+    /// Connection locally initiated
+    LibfwConnectionStateLocallyInitiated,
+    /// Connection established
+    LibfwConnectionStateEstablished,
+    /// Outgoing packets
+    LibfwConnectionStateNew,
+    /// Finished connections
+    LibfwConnectionStateFinished,
+}
+
+///
+/// Packet verdict
+///
+#[allow(clippy::enum_variant_names)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LibfwVerdict {
     LibfwVerdictAccept,
     LibfwVerdictDrop,
+    LibfwVerdictResetTCP,
+    LibfwVerdictResetUDP,
+    LibfwVerdictHandleLocally,
 }
 
 #[derive(Clone, Debug)]
@@ -1054,5 +1087,96 @@ impl Conntracker {
         });
 
         self.send_icmp_port_unreachable_packets(iter, inject_packet_cb)
+    }
+
+    pub(crate) fn handle_outbound_packet<'a>(
+        &self,
+        ip: &impl IpPacket<'a>,
+        associated_data: &[u8],
+    ) {
+        match ip.get_next_level_protocol() {
+            IpNextHeaderProtocols::Udp => {
+                self.handle_outbound_udp(ip, associated_data);
+            }
+            IpNextHeaderProtocols::Tcp => {
+                self.handle_outbound_tcp(ip, associated_data);
+            }
+            IpNextHeaderProtocols::Icmp => {
+                self.handle_outbound_icmp(ip, associated_data);
+            }
+            IpNextHeaderProtocols::Icmpv6 => {
+                self.handle_outbound_icmp(ip, associated_data);
+            }
+            _ => (),
+        };
+    }
+
+    pub(crate) fn handle_inbound_packet<'a>(
+        &self,
+        ip: &impl IpPacket<'a>,
+        associated_data: &[u8],
+        verdict: LibfwVerdict,
+    ) {
+        match ip.get_next_level_protocol() {
+            IpNextHeaderProtocols::Udp => {
+                self.handle_inbound_udp(ip, associated_data, verdict);
+            }
+            IpNextHeaderProtocols::Tcp => {
+                self.handle_inbound_tcp(ip, associated_data, verdict);
+            }
+            IpNextHeaderProtocols::Icmp => {
+                self.handle_inbound_icmp(ip, associated_data);
+            }
+            IpNextHeaderProtocols::Icmpv6 => {
+                self.handle_inbound_icmp(ip, associated_data);
+            }
+            _ => (),
+        }
+    }
+
+    pub(crate) fn get_connection_state<'a>(
+        &self,
+        ip: &impl IpPacket<'a>,
+        associated_data: &[u8],
+        direction: LibfwDirection,
+    ) -> Option<LibfwConnectionState> {
+        let inbound = matches!(direction, LibfwDirection::LibfwDirectionInbound);
+        match ip.get_next_level_protocol() {
+            IpNextHeaderProtocols::Udp => {
+                if let Some(conn_info) = self.get_udp_conn_info(ip, associated_data, inbound) {
+                    if !conn_info.is_remote_initiated {
+                        return Some(LibfwConnectionState::LibfwConnectionStateLocallyInitiated);
+                    } else {
+                        return Some(conn_info.state);
+                    }
+                }
+            }
+            IpNextHeaderProtocols::Tcp => {
+                if let Some(conn_info) = self.get_tcp_conn_info(ip, associated_data, inbound) {
+                    if !conn_info.rx_alive
+                        && !conn_info.tx_alive
+                        && !conn_info.conn_remote_initiated
+                    {
+                        return Some(LibfwConnectionState::LibfwConnectionStateFinished);
+                    } else if !conn_info.conn_remote_initiated {
+                        return Some(LibfwConnectionState::LibfwConnectionStateLocallyInitiated);
+                    } else {
+                        return Some(conn_info.state);
+                    }
+                }
+            }
+            IpNextHeaderProtocols::Icmp => {
+                if self.handle_inbound_icmp(ip, associated_data) {
+                    return Some(LibfwConnectionState::LibfwConnectionStateLocallyInitiated);
+                }
+            }
+            IpNextHeaderProtocols::Icmpv6 => {
+                if self.handle_inbound_icmp(ip, associated_data) {
+                    return Some(LibfwConnectionState::LibfwConnectionStateLocallyInitiated);
+                }
+            }
+            _ => (),
+        }
+        None
     }
 }
