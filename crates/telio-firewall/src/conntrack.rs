@@ -158,7 +158,7 @@ impl Conntracker {
         }
     }
 
-    #[cfg(feature = "test_utils")]
+    #[cfg(any(feature = "test_utils", test))]
     /// Return the size of conntrack entries for tcp and udp (for testing only).
     pub fn get_state(&self) -> (usize, usize) {
         let tcp = unwrap_lock_or_return!(self.tcp.lock(), (0, 0)).len();
