@@ -3,7 +3,7 @@
 use core::slice;
 use std::{
     convert::TryInto,
-    ffi::{c_char, c_void},
+    ffi::{c_char, c_void, CString},
     ptr::null,
 };
 
@@ -20,6 +20,41 @@ use crate::{
 const LRU_CAPACITY: usize = 4096; // Max entries to keep (sepatately for TCP, UDP, and others)
 const LRU_TIMEOUT: u64 = 120_000; // 2min (https://datatracker.ietf.org/doc/html/rfc4787#section-4.3)
 
+pub(crate) enum Logger {
+    C {
+        min_log_level: LibfwLogLevel,
+        log_cb: LibfwLogCallback,
+    },
+    Rust,
+}
+
+impl Logger {
+    pub(crate) fn log(&self, level: LibfwLogLevel, args: std::fmt::Arguments) {
+        match self {
+            Self::C {
+                min_log_level,
+                log_cb,
+            } => {
+                if let Some(log_cb) = log_cb {
+                    if level >= *min_log_level {
+                        if let Ok(cstring) = CString::new(std::fmt::format(args)) {
+                            log_cb(level, cstring.as_ptr());
+                        }
+                    }
+                }
+            }
+            Logger::Rust => match level {
+                // In rust case, all the level filternig is already done in the tracing/log crates
+                LibfwLogLevel::LibfwLogLevelTrace => telio_utils::telio_log_trace!("{}", args),
+                LibfwLogLevel::LibfwLogLevelDebug => telio_utils::telio_log_debug!("{}", args),
+                LibfwLogLevel::LibfwLogLevelInfo => telio_utils::telio_log_info!("{}", args),
+                LibfwLogLevel::LibfwLogLevelWarn => telio_utils::telio_log_warn!("{}", args),
+                LibfwLogLevel::LibfwLogLevelErr => telio_utils::telio_log_error!("{}", args),
+            },
+        }
+    }
+}
+
 ///
 /// Type for firewall instance
 ///
@@ -33,7 +68,7 @@ pub struct LibfwFirewall {
 /// Log levels used in LibfwLogCallback
 ///
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LibfwLogLevel {
     /// Trace level
     LibfwLogLevelTrace = 0,
@@ -75,33 +110,29 @@ pub type LibfwInjectPacketCallback =
     Option<extern "C" fn(data: *mut c_void, packet: *const u8, packet_len: usize) -> LibfwError>;
 
 ///
-/// Setup logging
-///
-/// Register a log callback which will receive
-/// and handle all logs from libfirewall
+/// A function used to initialize libfirewall instance
 ///
 /// @param min_log_level - minimum log level to produce logs. For debug builds
 ///                        LIBFW_TRACE is not available
 /// @param log_cb - callback for logs
 ///
-#[no_mangle]
-pub extern "C" fn libfw_set_log_callback(
-    _min_log_level: LibfwLogLevel,
-    _log_cb: LibfwLogCallback,
-) -> LibfwError {
-    LibfwError::LibfwErrorNotImplemented
-}
-
-///
-/// A function used to initialize libfirewall instance
-///
 /// @return pointer to initialized fw instance on success, NULL on failure
 ///
 #[no_mangle]
-pub extern "C" fn libfw_init() -> *mut LibfwFirewall {
+pub extern "C" fn libfw_init(
+    min_log_level: LibfwLogLevel,
+    log_cb: LibfwLogCallback,
+) -> *mut LibfwFirewall {
     Box::into_raw(Box::new(LibfwFirewall {
         chain: None,
-        conntracker: Conntracker::new(LRU_CAPACITY, LRU_TIMEOUT),
+        conntracker: Conntracker::new(
+            LRU_CAPACITY,
+            LRU_TIMEOUT,
+            Logger::C {
+                min_log_level,
+                log_cb,
+            },
+        ),
         alow_ipv6: false,
     }))
 }

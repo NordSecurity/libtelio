@@ -329,7 +329,7 @@ impl StatefullFirewall {
     /// Constructs firewall with custom capacity and timeout in ms (for testing only).
     fn new_custom(capacity: usize, ttl: u64, use_ipv6: bool, feature: &FeatureFirewall) -> Self {
         Self {
-            conntracker: Conntracker::new(capacity, ttl),
+            conntracker: Conntracker::new(capacity, ttl, crate::ffi::Logger::Rust),
             whitelist: RwLock::new(Whitelist::default()),
             allow_ipv6: use_ipv6,
             record_whitelisted: feature.boringtun_reset_conns || feature.neptun_reset_conns,
@@ -377,8 +377,11 @@ impl StatefullFirewall {
         match proto {
             IpNextHeaderProtocols::Udp => {
                 let blacklist = unwrap_lock_or_return!(self.outgoing_udp_blacklist.read(), false);
-                let link =
-                    unwrap_option_or_return!(Conntracker::build_conn_info(&ip, false), false).0;
+                let link = unwrap_option_or_return!(
+                    Conntracker::build_conn_info(&self.conntracker.logger, &ip, false),
+                    false
+                )
+                .0;
                 if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
                     let Some(first_chunk) = ip
                         .packet()
@@ -399,8 +402,10 @@ impl StatefullFirewall {
             }
             IpNextHeaderProtocols::Tcp => {
                 let blacklist = unwrap_lock_or_return!(self.outgoing_tcp_blacklist.read(), false);
-                let (link, tcp_packet) =
-                    unwrap_option_or_return!(Conntracker::build_conn_info(&ip, false), false);
+                let (link, tcp_packet) = unwrap_option_or_return!(
+                    Conntracker::build_conn_info(&self.conntracker.logger, &ip, false),
+                    false
+                );
                 let tcp_packet = unwrap_option_or_return!(tcp_packet, false);
                 if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
                     _ = self.conntracker.send_tcp_rst_packets(
@@ -529,8 +534,10 @@ impl StatefullFirewall {
 
         match proto {
             IpNextHeaderProtocols::Udp => {
-                let (link, _) =
-                    unwrap_option_or_return!(Conntracker::build_conn_info(&ip, true), false);
+                let (link, _) = unwrap_option_or_return!(
+                    Conntracker::build_conn_info(&self.conntracker.logger, &ip, true),
+                    false
+                );
                 let local_port = link.local_port;
                 match self.decide_connection_handling(peer, local_port) {
                     PacketAction::PassThrough => {
@@ -574,8 +581,10 @@ impl StatefullFirewall {
                 }
             }
             IpNextHeaderProtocols::Tcp => {
-                let (link, packet) =
-                    unwrap_option_or_return!(Conntracker::build_conn_info(&ip, true), false);
+                let (link, packet) = unwrap_option_or_return!(
+                    Conntracker::build_conn_info(&self.conntracker.logger, &ip, true),
+                    false
+                );
                 let local_port = link.local_port;
                 let mut packet_action = self.decide_connection_handling(peer, local_port);
                 if let PacketAction::PassThrough = packet_action {
