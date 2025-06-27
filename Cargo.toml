@@ -188,7 +188,6 @@ telio-nat-detect = { version = "0.1.0", path = "./crates/telio-nat-detect" }
 telio-network-monitors = { version = "0.1.0", path = "./crates/telio-network-monitors" }
 telio-nurse = { version = "0.1.0", path = "./crates/telio-nurse" }
 telio-proto = { version = "0.1.0", path = "./crates/telio-proto" }
-telio-batcher = { version = "0.1.0", path = "./crates/telio-batcher" }
 telio-proxy = { version = "0.1.0", path = "./crates/telio-proxy" }
 telio-relay = { version = "0.1.0", path = "./crates/telio-relay" }
 telio-sockets = { version = "0.1.0", path = "./crates/telio-sockets" }
@@ -206,6 +205,13 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 debug = "full"
+
+[profile.release-size-optimized]
+inherits = "release"
+opt-level = "z"      # Optimize for size.
+panic = "abort"      # Abort on panic
+strip = true         # Automatically strip symbols from the binary.
+debug = false        # No debug
 
 [profile.dev]
 debug = 0

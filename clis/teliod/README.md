@@ -5,16 +5,33 @@ and embedded environments.
 
 ## Building Teliod
 
-For typical Linux environment it might be built using simply:
+For typical Linux environments, Teliod can be built using the following commands:
 
-```cargo build```
+```sh
+# Debug build from teliod directory
+cargo build
 
-For OpenWRT you might need a bit more complex command, including your router architecture
-and the fact the OpenWRT is MUSLE-based, for example:
+# Release build
+cargo build --package=teliod --release 
+```
 
-```CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=rust-lld CC=/path/to/arm-linux-gnueabi-gcc cargo build --package teliod --target armv7-unknown-linux-musleabihf```
+For OpenWRT you might need to cross-compile, depending on the router architecture.
 
-You may need to download some sufficient MUSLE toolchains from `musle.cc`.
+OpenWRT does not ship with GNU libc and instead is MUSL based.
+And further needs to be compiled with MUSL tool-chains or statically linked.
+Which can be obtained from from [musle.cc](https://musl.cc/) or the `musl-dev` package
+
+```sh
+# Add MUSL target
+sudo apt install musl-dev
+rustup target add --toolchain <target_architecture>-linux-musl
+
+# Regular release build
+cargo build --package=teliod --target=<target_architecture>-linux-musl --release
+
+# Size optimized release build
+cargo build --package=teliod --target=<target_architecture>-linux-musl --profile=release-size-optimized
+```
 
 ## Using Teliod
 
