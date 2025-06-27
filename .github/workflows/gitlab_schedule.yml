@@ -1,0 +1,60 @@
+name: Scheduled GitLab CI Pipeline
+on:
+  schedule:
+    # Below cron definition only for testing purposes
+    # 1st run at 17:01
+    # 2nd run at 00:05
+    - cron: '01 17 * * *'
+    - cron: '5 0 * * *'
+permissions: {}
+
+jobs:
+  prepare-sha:
+    runs-on: ubuntu-22.04
+    outputs:
+      recorded_sha: ${{ steps.get-sha.outputs.recorded_sha }}
+    steps:
+      - name: Generate schedule date key
+        id: date-key
+        run: |
+          CURRENT_HOUR=$(date -u "+%H")
+          CURRENT_HOUR=$((10#$CURRENT_HOUR))
+          if [[ "$CURRENT_HOUR" -ge 17 ]]; then
+            DATESTAMP=$(date -u "+%Y-%m-%d")
+          else
+            DATESTAMP=$(date -u -d "yesterday" "+%Y-%m-%d")
+          fi
+          echo "datestamp=${DATESTAMP}" >> $GITHUB_OUTPUT
+
+      - name: Get cached SHA
+        id: sha-cache
+        uses: actions/cache@v3
+        with:
+          path: sha-${{ steps.date-key.outputs.datestamp }}.txt
+          key: sha-cache-key-${{ steps.date-key.outputs.datestamp }}
+
+      - name: Record SHA in cache file (first run only)
+        if: steps.sha-cache.outputs.cache-hit != 'true'
+        run: |
+          echo "${{ github.sha }}" > sha-${{ steps.date-key.outputs.datestamp }}.txt
+
+      - name: Read cached SHA file
+        id: get-sha
+        run: |
+          RECORDED_SHA=$(cat sha-${{ steps.date-key.outputs.datestamp }}.txt)
+          echo "RECORDED_SHA=$RECORDED_SHA" >> $GITHUB_OUTPUT
+          echo "::notice::Using commit SHA: $RECORDED_SHA"
+
+  trigger-gitlab-pipeline:
+    needs: prepare-sha
+    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@c131c1803f5de7c7727e71ceb4fb7be6b4036d1d
+    secrets:
+      ci-api-v4-url: ${{ secrets.CI_API_V4_URL }}
+      access-token: ${{ secrets.GITLAB_API_TOKEN }}
+      trigger-token: ${{ secrets.TOKEN }}
+      project-id: ${{ secrets.PROJECT_ID }}
+    with:
+      schedule: true
+      cancel-outdated-pipelines: false
+      triggered-ref: v2.11.4
+      github-sha-override: ${{ needs.prepare-sha.outputs.recorded_sha }}

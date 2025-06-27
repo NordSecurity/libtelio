@@ -15,7 +15,7 @@ permissions: {}
 
 jobs:
   trigger-gitlab-pipeline:
-    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@05827593c874bc6e81ed14158cefa7cb40a7bcc0
+    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@c131c1803f5de7c7727e71ceb4fb7be6b4036d1d
     secrets:
       ci-api-v4-url: ${{ secrets.CI_API_V4_URL }}
       access-token: ${{ secrets.GITLAB_API_TOKEN }}
