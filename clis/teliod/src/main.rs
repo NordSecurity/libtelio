@@ -114,14 +114,16 @@ enum TeliodError {
     CoreApiError(#[from] ApiError),
     #[error(transparent)]
     DeviceError(#[from] DeviceError),
-    #[error("Invalid config option {0}: {1} (value '{2}')")]
-    InvalidConfigOption(String, String, String),
+    #[error("Invalid config option {key}: {msg} (value '{value}')")]
+    InvalidConfigOption {
+        key: String,
+        msg: String,
+        value: String,
+    },
     #[error(transparent)]
     LogAppenderError(#[from] InitError),
     #[error(transparent)]
     DaemonizeError(#[from] daemonize::Error),
-    #[error("Invalid log path {0}")]
-    InvalidLogPath(String),
 }
 
 /// Libtelio and meshnet status report
@@ -136,6 +138,9 @@ pub struct TelioStatusReport {
 }
 
 fn main() -> Result<(), TeliodError> {
+    #[cfg(feature = "cgi")]
+    cgi::constants::APP_PATHS.init()?;
+
     let mut cmd = Cmd::parse();
 
     // Pre-daemonizing setup
@@ -146,7 +151,10 @@ fn main() -> Result<(), TeliodError> {
         }
 
         // Parse config file
-        let config = TeliodDaemonConfig::from_file(&opts.config_path)?;
+        let mut config = TeliodDaemonConfig::from_file(&opts.config_path)?;
+        config.resolve_env_token();
+
+        println!("Saving logs to: {}", config.log_file_path);
         println!("Starting daemon");
 
         // Fork the process before starting Tokio runtime.
@@ -243,7 +251,7 @@ async fn client_main(cmd: Cmd) -> Result<(), TeliodError> {
         Cmd::Cgi => {
             #[cfg(debug_assertions)]
             let _tracing_worker_guard = logging::setup_logging(
-                cgi::constants::CGI_LOG,
+                cgi::constants::APP_PATHS.cgi_log(),
                 tracing::level_filters::LevelFilter::TRACE,
                 7,
             )
