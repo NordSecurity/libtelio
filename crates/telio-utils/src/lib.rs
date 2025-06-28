@@ -68,3 +68,7 @@ pub use bytes_and_timestamps::*;
 /// suspend-aware replacement for {std,tokio}::time::Instant
 pub mod instant;
 pub use instant::*;
+
+#[cfg(target_os = "linux")]
+/// Default FWMARK value for libtelio on linux
+pub const LIBTELIO_FWMARK: u32 = 11673110;

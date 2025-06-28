@@ -78,7 +78,7 @@ pub struct NotificationCenter {
 }
 
 struct NCConfig {
-    authentication_token: Hidden<String>,
+    authentication_token: Arc<Hidden<String>>,
     app_user_uid: Uuid,
     callbacks: Arc<Mutex<Vec<Callback>>>,
     http_certificate_file_path: Option<PathBuf>,
@@ -299,6 +299,11 @@ async fn request_nc_credentials(
         for cert in Certificate::from_pem_bundle(&cert)? {
             builder = builder.add_root_certificate(cert);
         }
+        // Due to a bug in reqwest, the rustls backend has to be specified
+        // Additionally, reqwest considers some self-signed certs, like the natlab one,
+        // as invalid and we therefore need to call the danger_accept_invalid_certs
+        tracing::warn!("Using a self-signed certificate is unsafe and should generally be avoided");
+        builder = builder.use_rustls_tls().danger_accept_invalid_certs(true);
     }
     let client = builder.build()?;
 
@@ -308,7 +313,7 @@ async fn request_nc_credentials(
     };
     let resp = client
         .post(TOKENS_URL)
-        .basic_auth(USERNAME, Some(nc_config.authentication_token.clone()))
+        .basic_auth(USERNAME, Some(nc_config.authentication_token.0.clone()))
         .json(&data)
         .send()
         .await?;
