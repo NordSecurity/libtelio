@@ -51,6 +51,9 @@ impl Protector for NativeProtector {
 
     /// This is a no-op on linux.
     fn set_tunnel_interface(&self, _interface: u64) {}
+
+    /// This is a no-op on linux.
+    fn set_ext_if_filter(&self, _list: &[String]) {}
 }
 
 fn set_fwmark(fd: i32, fwmark: u32) -> io::Result<()> {
