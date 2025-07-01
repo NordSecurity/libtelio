@@ -122,12 +122,6 @@ pub(crate) enum LibfwConnectionState {
     LibfwConnectionStateNew,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum LibfwVerdict {
-    LibfwVerdictAccept,
-    LibfwVerdictDrop,
-}
-
 #[derive(Clone, Debug)]
 pub struct UdpConnectionInfo {
     pub(crate) is_remote_initiated: bool,
@@ -152,6 +146,7 @@ pub(crate) struct TcpConnectionInfo {
     pub(crate) conn_remote_initiated: bool,
     pub(crate) next_seq: Option<u32>,
     pub(crate) state: LibfwConnectionState,
+    pub(crate) to_delete: bool,
 }
 
 pub(crate) struct Conntracker {
@@ -160,7 +155,7 @@ pub(crate) struct Conntracker {
     /// Recent tcp connections
     pub(crate) tcp: Mutex<LruCache<Connection, TcpConnectionInfo>>,
     /// Recent icmp connections
-    pub(crate) icmp: Mutex<LruCache<IcmpConn, ()>>,
+    pub(crate) icmp: Mutex<LruCache<IcmpConn, bool>>,
 }
 
 impl Conntracker {
@@ -291,6 +286,7 @@ impl Conntracker {
                     conn_remote_initiated: false,
                     next_seq: None,
                     state: LibfwConnectionState::LibfwConnectionStateNew,
+                    to_delete: false,
                 },
             );
         } else if flags & TcpFlags::RST == TcpFlags::RST {
@@ -315,17 +311,27 @@ impl Conntracker {
             // If key already exists, dont change the value, just update timer with entry
             if let Entry::Vacant(e) = icmp_cache.entry(key, true) {
                 telio_log_trace!("Inserting new ICMP conntrack entry {:?}", e.key());
-                e.insert(());
+                e.insert(false);
             }
         }
     }
 
-    pub fn handle_inbound_udp<'a>(
+    pub(crate) fn cleanup_udp_conn_on_drop<'a, P: IpPacket<'a>>(
         &self,
-        ip: &impl IpPacket<'a>,
+        ip: P,
         associated_data: &[u8],
-        verdict: LibfwVerdict,
     ) {
+        let (link, _) = unwrap_option_or_return!(Self::build_conn_info(&ip, true));
+        let key = Connection {
+            link,
+            associated_data: associated_data.to_smallvec(),
+        };
+
+        let mut cache = unwrap_lock_or_return!(self.udp.lock());
+        cache.remove(&key);
+    }
+
+    pub fn handle_inbound_udp<'a>(&self, ip: &impl IpPacket<'a>, associated_data: &[u8]) {
         let (link, _) = unwrap_option_or_return!(Self::build_conn_info(ip, true));
         let key = Connection {
             link,
@@ -342,39 +348,49 @@ impl Conntracker {
                     occ.get()
                 );
 
-                if occ.get().is_remote_initiated && verdict == LibfwVerdict::LibfwVerdictDrop {
-                    telio_log_trace!("Removing UDP conntrack entry {:?}", occ.key());
-                    occ.remove();
-                } else if LibfwConnectionState::LibfwConnectionStateNew == occ.get().state {
+                if LibfwConnectionState::LibfwConnectionStateNew == occ.get().state {
                     occ.get_mut().state = LibfwConnectionState::LibfwConnectionStateEstablished;
                 }
             }
             Entry::Vacant(vacc) => {
                 let key = vacc.key();
 
-                if let LibfwVerdict::LibfwVerdictAccept = verdict {
-                    telio_log_trace!(
-                        "Updating UDP conntrack entry {:?} {:?}",
-                        key,
-                        associated_data
-                    );
-                    vacc.insert(UdpConnectionInfo {
-                        is_remote_initiated: true,
-                        last_out_pkg_chunk: None,
-                        state: LibfwConnectionState::LibfwConnectionStateNew,
-                    });
-                }
+                telio_log_trace!(
+                    "Updating UDP conntrack entry {:?} {:?}",
+                    key,
+                    associated_data
+                );
+                vacc.insert(UdpConnectionInfo {
+                    is_remote_initiated: true,
+                    last_out_pkg_chunk: None,
+                    state: LibfwConnectionState::LibfwConnectionStateNew,
+                });
+            }
+        }
+    }
+
+    pub(crate) fn cleanup_tcp_conn<'a, P: IpPacket<'a>>(
+        &self,
+        ip: P,
+        associated_data: &[u8],
+        accepted: bool,
+    ) {
+        let (link, _) = unwrap_option_or_return!(Self::build_conn_info(&ip, true));
+        let key = Connection {
+            link,
+            associated_data: associated_data.to_smallvec(),
+        };
+
+        let mut cache = unwrap_lock_or_return!(self.tcp.lock());
+        if let Entry::Occupied(mut occ) = cache.entry(key, false) {
+            if (!accepted && occ.get().conn_remote_initiated) || occ.get().to_delete {
+                occ.remove();
             }
         }
     }
 
     // Conntracker entries are ment for packets handled locally - so
-    pub fn handle_inbound_tcp<'a>(
-        &self,
-        ip: &impl IpPacket<'a>,
-        associated_data: &[u8],
-        verdict: LibfwVerdict,
-    ) {
+    pub fn handle_inbound_tcp<'a>(&self, ip: &impl IpPacket<'a>, associated_data: &[u8]) {
         let (link, packet) = unwrap_option_or_return!(Self::build_conn_info(ip, true));
         let key = Connection {
             link,
@@ -393,14 +409,6 @@ impl Conntracker {
                     associated_data,
                     connection_info
                 );
-
-                if let LibfwVerdict::LibfwVerdictDrop = verdict {
-                    if connection_info.conn_remote_initiated {
-                        telio_log_trace!("Removing TCP conntrack entry {:?}", associated_data);
-                        occ.remove();
-                        return;
-                    }
-                }
 
                 if let Some(pkt) = packet {
                     let flags = pkt.get_flags();
@@ -429,7 +437,7 @@ impl Conntracker {
                                 associated_data,
                                 local_port
                             );
-                            occ.remove();
+                            occ.get_mut().to_delete = true;
                         }
                         return;
                     }
@@ -443,7 +451,7 @@ impl Conntracker {
 
                     connection_info.next_seq = Some(next_seq);
                     if is_conn_reset {
-                        occ.remove();
+                        occ.get_mut().to_delete = true;
                     } else {
                         // Connection which is not removed and packets are going in both directions should be established
                         occ.get_mut().state = LibfwConnectionState::LibfwConnectionStateEstablished;
@@ -452,7 +460,7 @@ impl Conntracker {
             }
             Entry::Vacant(vacc) => {
                 // Accept and should handle locally
-                if let (LibfwVerdict::LibfwVerdictAccept, Some(pkt)) = (verdict, packet) {
+                if let Some(pkt) = packet {
                     let key = vacc.key();
                     let flags = pkt.get_flags();
                     if flags & TCP_FIRST_PKT_MASK == TcpFlags::SYN {
@@ -462,6 +470,7 @@ impl Conntracker {
                             conn_remote_initiated: true,
                             next_seq: Some(pkt.get_sequence() + 1),
                             state: LibfwConnectionState::LibfwConnectionStateNew,
+                            to_delete: false,
                         };
                         telio_log_trace!(
                             "Updating TCP conntrack entry {:?} {:?} {:?}",
@@ -476,43 +485,94 @@ impl Conntracker {
         }
     }
 
-    pub(crate) fn handle_inbound_icmp<'a, P: IpPacket<'a>>(
+    pub(crate) fn is_inbound_icmp_tracked<'a, P: IpPacket<'a>>(
         &self,
         ip: &P,
         associated_data: &[u8],
     ) -> bool {
         match Self::build_icmp_key(ip, associated_data, true) {
+            Ok(key) => unwrap_lock_or_return!(self.icmp.lock(), false)
+                .get(&key)
+                .is_some(),
+            Err(icmp_error_key) => self.is_icmp_error_tracked(icmp_error_key, associated_data),
+        }
+    }
+
+    pub(crate) fn inbound_icmp_cleanup<'a, P: IpPacket<'a>>(&self, ip: &P, associated_data: &[u8]) {
+        match Self::build_icmp_key(ip, associated_data, true) {
             Ok(key) => {
-                let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock(), false);
-                let is_in_cache = icmp_cache.get(&key).is_some();
-                if is_in_cache {
+                let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock());
+                if icmp_cache.get_mut(&key).is_some() {
                     telio_log_trace!("Matched ICMP conntrack entry {:?}", key,);
                     telio_log_trace!("Removing ICMP conntrack entry {:?}", key);
                     icmp_cache.remove(&key);
                 }
-                is_in_cache
             }
             Err(icmp_error_key) => {
                 telio_log_trace!("Encountered ICMP error packet, checking nested packet");
-                self.handle_icmp_error(icmp_error_key, associated_data)
+                self.icmp_error_cleanup(icmp_error_key, associated_data);
             }
         }
     }
 
-    fn handle_icmp_error(&self, error_key: IcmpErrorKey, associated_data: &[u8]) -> bool {
+    fn is_icmp_error_tracked(&self, error_key: IcmpErrorKey, associated_data: &[u8]) -> bool {
         match error_key {
             IcmpErrorKey::Icmp(Some(icmp_key)) => {
-                let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock(), false);
-                let is_in_cache = icmp_cache.get(&icmp_key).is_some();
-                if is_in_cache {
+                let result = unwrap_lock_or_return!(self.icmp.lock(), false)
+                    .get(&icmp_key)
+                    .is_some();
+                if result {
                     telio_log_trace!(
                         "Nested packet in ICMP error packet matched ICMP conntrack entry {:?}",
                         icmp_key,
                     );
+                }
+                result
+            }
+            IcmpErrorKey::Tcp(Some(link)) => {
+                let tcp_key = Connection {
+                    link,
+                    associated_data: associated_data.to_smallvec(),
+                };
+                let result = unwrap_lock_or_return!(self.tcp.lock(), false)
+                    .get(&tcp_key)
+                    .is_some();
+                if result {
+                    telio_log_trace!(
+                        "Nested packet in ICMP error packet matched TCP conntrack entry {:?}",
+                        tcp_key,
+                    );
+                }
+                result
+            }
+            IcmpErrorKey::Udp(Some(link)) => {
+                let udp_key = Connection {
+                    link,
+                    associated_data: associated_data.to_smallvec(),
+                };
+                let result = unwrap_lock_or_return!(self.udp.lock(), false)
+                    .get(&udp_key)
+                    .is_some();
+                if result {
+                    telio_log_trace!(
+                        "Nested packet in ICMP error packet matched UDP conntrack entry {:?}",
+                        udp_key,
+                    );
+                }
+                result
+            }
+            _ => false,
+        }
+    }
+
+    fn icmp_error_cleanup(&self, error_key: IcmpErrorKey, associated_data: &[u8]) {
+        match error_key {
+            IcmpErrorKey::Icmp(Some(icmp_key)) => {
+                let mut icmp_cache = unwrap_lock_or_return!(self.icmp.lock());
+                if icmp_cache.get(&icmp_key).is_some() {
                     telio_log_trace!("Removing ICMP conntrack entry {:?}", icmp_key);
                     icmp_cache.remove(&icmp_key);
                 }
-                is_in_cache
             }
             IcmpErrorKey::Tcp(Some(link)) => {
                 let tcp_key = Connection {
@@ -520,18 +580,12 @@ impl Conntracker {
                     associated_data: associated_data.to_smallvec(),
                 };
 
-                let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock(), false);
+                let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
 
-                let is_in_cache = tcp_cache.get(&tcp_key).is_some();
-                if is_in_cache {
-                    telio_log_trace!(
-                        "Nested packet in ICMP error packet matched TCP conntrack entry {:?}",
-                        tcp_key,
-                    );
+                if tcp_cache.get(&tcp_key).is_some() {
                     telio_log_trace!("Removing TCP conntrack entry {:?}", tcp_key);
                     tcp_cache.remove(&tcp_key);
                 }
-                is_in_cache
             }
             IcmpErrorKey::Udp(Some(link)) => {
                 let udp_key = Connection {
@@ -539,19 +593,13 @@ impl Conntracker {
                     associated_data: associated_data.to_smallvec(),
                 };
 
-                let mut udp_cache = unwrap_lock_or_return!(self.udp.lock(), false);
-                let is_in_cache = udp_cache.get(&udp_key).is_some();
-                if is_in_cache {
-                    telio_log_trace!(
-                        "Nested packet in ICMP error packet matched UDP conntrack entry {:?}",
-                        udp_key,
-                    );
+                let mut udp_cache = unwrap_lock_or_return!(self.udp.lock());
+                if udp_cache.get(&udp_key).is_some() {
                     telio_log_trace!("Removing UDP conntrack entry {:?}", udp_key);
                     udp_cache.remove(&udp_key);
                 }
-                is_in_cache
             }
-            _ => false,
+            _ => (),
         }
     }
 
