@@ -2,6 +2,7 @@
 import base64
 import json
 import paho.mqtt.client as mqtt  # type: ignore # pylint: disable=import-error
+import random
 import ssl
 from dataclasses import asdict, dataclass
 from enum import Enum
@@ -82,6 +83,23 @@ class CoreServer(HTTPServer):
         self._known_machines: Dict[str, Node] = {}
         self._mqttc = mqttc
         self._id_counter = count(1)
+
+    def finish_request(self, request, client_address):
+        """
+        Override to ensure proper SSL shutdown
+
+        This is necessary because some HTTP clients, like reqwest, require the server to properly close connections
+        with close_notify when using TLS to prevent truncation attacks. HTTPServer doesn't send it by default, breaking
+        some clients. This method override will make sure the close_notify is sent.
+        """
+        # Handle the request normally
+        super().finish_request(request, client_address)
+
+        # Ensure proper SSL shutdown
+        try:
+            request.unwrap()  # This sends close_notify
+        except:
+            pass  # Ignore errors during unwrap
 
     def _send_notification(self):
         message = {
@@ -275,7 +293,7 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         identifier, hostname, ip_addresses = (
             str(uuid4()),
             f"everest{uid}-someuser.nord",
-            [f"192.168.0.{uid}"],
+            [f"100.{random.randint(64, 127)}.{random.randint(0, 255)}.{8 + uid}"],
         )
         node = Node(
             identifier=identifier,
@@ -384,7 +402,7 @@ class CoreApiHandler(BaseHTTPRequestHandler):
             "password": MQTT_CREDENTIALS["password"],
             "expires_in": 60,
         }
-        self._write_response(response)
+        self._write_response(response, status_code=HTTPStatus.CREATED)
 
 
 def run(mqttc, port=443):

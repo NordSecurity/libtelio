@@ -9,6 +9,8 @@ use telio_model::config::{RelayState, Server};
 use telio_model::features::Features;
 use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
 use telio_proto::CodecError;
+#[cfg(target_os = "linux")]
+use telio_utils::LIBTELIO_FWMARK;
 use telio_wg::AdapterType;
 use thiserror::Error;
 use tracing::error;
@@ -27,9 +29,6 @@ use std::{
         Arc,
     },
 };
-
-#[cfg(target_os = "linux")]
-const FWMARK_VALUE: u32 = 11673110;
 
 #[cfg(windows)]
 const DEFAULT_TUNNEL_NAME: &str = "NordLynx";
@@ -750,7 +749,7 @@ impl Cli {
             self.telio.start(device_config)?;
 
             #[cfg(target_os = "linux")]
-            self.telio.set_fwmark(FWMARK_VALUE)?;
+            self.telio.set_fwmark(LIBTELIO_FWMARK)?;
 
             cli_res!(res; (i "started telio with {:?}:{:?}...", adapter_type, private_key));
         }

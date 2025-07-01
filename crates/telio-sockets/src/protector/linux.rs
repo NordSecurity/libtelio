@@ -79,7 +79,7 @@ mod tests {
     #[case(IpAddr::V6(Ipv6Addr::UNSPECIFIED))]
     fn test_make_external(#[case] ip_addr: IpAddr) {
         let protector = NativeProtector::new().unwrap();
-        protector.set_fwmark(11673110);
+        protector.set_fwmark(telio_utils::LIBTELIO_FWMARK);
         let addr = SocketAddr::new(ip_addr, 0);
 
         let socket = match UdpSocket::bind(addr) {
