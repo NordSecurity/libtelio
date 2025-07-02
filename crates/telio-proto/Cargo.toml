@@ -21,6 +21,7 @@ tonic = "0.13.1"
 prost = "0.13"
 async-trait.workspace = true
 tokio-stream = "0.1.17"
+tokio = { workspace = true, features = ["full"] }
 
 [build-dependencies]
 anyhow.workspace = true

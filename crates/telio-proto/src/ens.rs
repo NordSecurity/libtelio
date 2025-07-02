@@ -1,31 +1,105 @@
-use grpc::ens_client;
-use tonic::transport::Channel;
+use grpc::{ConnectionError, Empty};
+use telio_utils::{telio_log_debug, telio_log_warn};
+use tokio::{
+    select,
+    sync::{mpsc, watch},
+};
 
 pub(crate) mod grpc {
     tonic::include_proto!("ens");
 }
 
-struct EnsClient {}
+/// TODO
+pub struct ErrorNotificationService {
+    buffer_size: usize,
+    quit: Option<watch::Sender<bool>>,
+}
 
-async fn start(dst: &str) -> ens_client::EnsClient<Channel> {
-    // TODO: always use port 993
-    let client = grpc::ens_client::EnsClient::connect(dst.to_owned())
-        .await
-        .unwrap();
-    client
+impl Drop for ErrorNotificationService {
+    fn drop(&mut self) {
+        self.stop_old_monitor();
+    }
+}
+
+impl ErrorNotificationService {
+    /// TODO
+    pub fn new(buffer_size: usize) -> Self {
+        Self {
+            buffer_size,
+            quit: None,
+        }
+    }
+
+    /// TODO
+    pub async fn start_monitor(&mut self, vpn_server: &str) -> mpsc::Receiver<ConnectionError> {
+        self.stop_old_monitor();
+
+        let (quit_tx, mut quit_rx): (watch::Sender<bool>, watch::Receiver<bool>) =
+            watch::channel(false);
+        self.quit = Some(quit_tx);
+
+        let mut client = grpc::ens_client::EnsClient::connect(vpn_server.to_owned())
+            .await
+            .unwrap();
+        let mut stream = client
+            .connection_errors(tonic::Request::<Empty>::new(Empty::default()))
+            .await
+            .unwrap()
+            .into_inner();
+        let (tx, rx): (tokio::sync::mpsc::Sender<ConnectionError>, _) =
+            tokio::sync::mpsc::channel(self.buffer_size);
+
+        let vpn_server = vpn_server.to_owned();
+        tokio::spawn(async move {
+            loop {
+                select! {
+                    _ = quit_rx.wait_for(|b| *b)=> {
+                        telio_log_debug!("ENS monitor for '{vpn_server}' ends");
+                        break
+                    }
+                    error_notification = stream.message() => {
+                        telio_log_warn!("Received error notification for '{vpn_server}': {error_notification:?}");
+                        match error_notification {
+                            Ok(Some(error_notification)) =>{
+                                if let Err(e) = tx.try_send(error_notification) {
+                                    telio_log_warn!("Failed to publish newly received error notification: {e}");
+                                }
+                            }
+                            Ok(None) => {
+                                telio_log_debug!("'{vpn_server}' closed the grpc stream");
+                                break;
+                            }
+                            Err(_) => todo!(),
+                        }
+                    }
+                };
+            }
+            telio_log_debug!("ENS monitor for '{vpn_server}' terminates");
+        });
+
+        rx
+    }
+
+    fn stop_old_monitor(&mut self) {
+        if let Some(quit) = self.quit.take() {
+            if let Err(e) = quit.send(true) {
+                telio_log_warn!("Failed to stop previous ENS monitor: {e}");
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
 
-    use std::{sync::Arc, time::Duration};
+    use std::time::Duration;
 
     use grpc::{
         ens_server::{self, EnsServer},
         ConnectionError, Empty,
     };
     use tokio::sync::{mpsc, oneshot};
-    use tokio_stream::{wrappers::ReceiverStream, Stream};
+    use tokio_stream::wrappers::ReceiverStream;
     use tonic::transport::Server;
 
     use super::*;
@@ -37,7 +111,7 @@ mod tests {
         type ConnectionErrorsStream = ReceiverStream<Result<ConnectionError, tonic::Status>>;
         async fn connection_errors(
             &self,
-            request: tonic::Request<Empty>,
+            _request: tonic::Request<Empty>,
         ) -> std::result::Result<tonic::Response<Self::ConnectionErrorsStream>, tonic::Status>
         {
             println!("got request");
@@ -58,7 +132,7 @@ mod tests {
     #[test_log::test]
     async fn foo() {
         println!("foo start");
-        let srv = EnsServer::new(TestENSService(vec![
+        let errors_to_emit = vec![
             ConnectionError {
                 code: grpc::Error::Unknown as i32,
                 additional_info: None,
@@ -67,7 +141,8 @@ mod tests {
                 code: grpc::Error::ConnectionLimitReached as i32,
                 additional_info: Some("additional info".to_owned()),
             },
-        ]));
+        ];
+        let srv = EnsServer::new(TestENSService(errors_to_emit.clone()));
         println!("srv created");
         let (port_tx, port_rx) = oneshot::channel();
 
@@ -89,21 +164,20 @@ mod tests {
         });
 
         println!("serve done");
-        let addr = format!("http://127.0.0.0:{}", port_rx.await.unwrap());
+        let _addr = format!("http://127.0.0.0:{}", port_rx.await.unwrap());
         tokio::time::sleep(Duration::from_millis(100)).await;
         let addr = "http://127.0.0.1:4433";
         println!("addr: {addr:?}");
-        let mut client = start(&addr).await;
+        let mut ens = ErrorNotificationService::new(10);
+        let mut _old_rx = ens.start_monitor(addr).await;
+        let mut rx = ens.start_monitor(addr).await;
 
-        let mut stream = client
-            .connection_errors(tonic::Request::<Empty>::new(Empty::default()))
-            .await
-            .unwrap()
-            .into_inner();
-
-        println!("stream:");
-        while let Some(error) = stream.message().await.unwrap() {
+        let mut collected_errors = vec![];
+        while let Some(error) = rx.recv().await {
             println!("Received error: {error:?}");
+            collected_errors.push(error);
         }
+
+        assert_eq!(errors_to_emit, collected_errors);
     }
 }
