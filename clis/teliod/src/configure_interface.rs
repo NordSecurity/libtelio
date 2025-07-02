@@ -62,13 +62,13 @@ pub enum InterfaceConfigurationProvider {
 // TODO(tomasz-grz): Try using enum_dispatch instead of dynamic dyspatch
 impl InterfaceConfigurationProvider {
     /// Create a dynamic instance of a configuration provider
-    pub fn create(&self, adapter_name: String) -> Box<dyn ConfigureInterface> {
+    pub fn create(&self, interface_name: String) -> Box<dyn ConfigureInterface> {
         info!("Creating interface config provider for {:?}", self);
         match self {
             Self::Manual => Box::new(Manual),
-            Self::Ifconfig => Box::new(Ifconfig::new(adapter_name)),
-            Self::Iproute => Box::new(Iproute::new(adapter_name)),
-            Self::Uci => Box::new(Uci::new(adapter_name)),
+            Self::Ifconfig => Box::new(Ifconfig::new(interface_name)),
+            Self::Iproute => Box::new(Iproute::new(interface_name)),
+            Self::Uci => Box::new(Uci::new(interface_name)),
         }
     }
 }
@@ -98,19 +98,19 @@ impl ConfigureInterface for Manual {
 /// Implementation using `ifconfig`
 #[derive(Debug)]
 pub struct Ifconfig {
-    adapter_name: String,
+    interface_name: String,
 }
 
 impl Ifconfig {
-    fn new(adapter_name: String) -> Self {
-        Self { adapter_name }
+    fn new(interface_name: String) -> Self {
+        Self { interface_name }
     }
 }
 
 impl ConfigureInterface for Ifconfig {
     fn initialize(&mut self) -> Result<(), TeliodError> {
-        execute(Command::new("ifconfig").args([&self.adapter_name, "mtu", "1420"]))?;
-        execute(Command::new("ifconfig").args([&self.adapter_name, "up"]))
+        execute(Command::new("ifconfig").args([&self.interface_name, "mtu", "1420"]))?;
+        execute(Command::new("ifconfig").args([&self.interface_name, "up"]))
     }
 
     fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), TeliodError> {
@@ -125,13 +125,13 @@ impl ConfigureInterface for Ifconfig {
 
         info!(
             "Assigning IP address for {} to {}",
-            self.adapter_name, cidr_string
+            self.interface_name, cidr_string
         );
 
         match std::env::consts::OS {
             "macos" => {
                 execute(Command::new("ifconfig").args([
-                    &self.adapter_name,
+                    &self.interface_name,
                     ip_type,
                     &cidr_string,
                     &ip_string,
@@ -151,7 +151,7 @@ impl ConfigureInterface for Ifconfig {
             }
             _ => {
                 execute(Command::new("ifconfig").args([
-                    &self.adapter_name,
+                    &self.interface_name,
                     "inet",
                     "add",
                     ip_address.to_string().as_str(),
@@ -175,16 +175,16 @@ impl ConfigureInterface for Ifconfig {
 /// Implementation using `iproute2`
 #[derive(Debug)]
 pub struct Iproute {
-    adapter_name: String,
+    interface_name: String,
     default_gateway_ipv4: Option<String>,
     exit_route_ip: Option<IpAddr>,
     ipv6_support_manager: Ipv6SupportManager,
 }
 
 impl Iproute {
-    pub fn new(adapter_name: String) -> Self {
+    pub fn new(interface_name: String) -> Self {
         Self {
-            adapter_name,
+            interface_name,
             default_gateway_ipv4: Self::get_default_gateway("-4"),
             exit_route_ip: None,
             ipv6_support_manager: Ipv6SupportManager::default(),
@@ -236,11 +236,11 @@ impl ConfigureInterface for Iproute {
             "link",
             "set",
             "dev",
-            &self.adapter_name,
+            &self.interface_name,
             "mtu",
             "1420",
         ]))?;
-        execute(Command::new("ip").args(["link", "set", "dev", &self.adapter_name, "up"]))
+        execute(Command::new("ip").args(["link", "set", "dev", &self.interface_name, "up"]))
     }
 
     fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), TeliodError> {
@@ -249,14 +249,14 @@ impl ConfigureInterface for Iproute {
 
         info!(
             "Assigning IP address for {} to {}",
-            self.adapter_name, cidr_string
+            self.interface_name, cidr_string
         );
         Self::ignore_file_exists_error(execute(Command::new("ip").args([
             "addr",
             "add",
             &cidr_string,
             "dev",
-            &self.adapter_name,
+            &self.interface_name,
         ])))
     }
 
@@ -267,7 +267,7 @@ impl ConfigureInterface for Iproute {
                 "add",
                 "0.0.0.0/0",
                 "dev",
-                &self.adapter_name,
+                &self.interface_name,
             ]))?;
             if let Some(gateway) = &self.default_gateway_ipv4 {
                 Self::ignore_file_exists_error(execute(Command::new("ip").args([
@@ -279,7 +279,7 @@ impl ConfigureInterface for Iproute {
                 ])))?;
             }
             self.exit_route_ip = Some(*exit_node);
-            self.ipv6_support_manager.disable(&self.adapter_name)?;
+            self.ipv6_support_manager.disable(&self.interface_name)?;
             // We have already disabled IPv6 on all interfaces (except the tunnel interface)
             // but interfaces that get added later could still have IPv6 enabled.
             // As a backup solution we route all IPv6 packets into the tunnel
@@ -289,7 +289,7 @@ impl ConfigureInterface for Iproute {
                 "add",
                 "default",
                 "dev",
-                &self.adapter_name,
+                &self.interface_name,
             ]))?;
         }
         Ok(())
@@ -314,12 +314,12 @@ impl ConfigureInterface for Iproute {
 /// Implementation using `uci` for OpenWRT
 #[derive(Debug, PartialEq, Eq)]
 pub struct Uci {
-    adapter_name: String,
+    interface_name: String,
 }
 
 impl Uci {
-    fn new(adapter_name: String) -> Self {
-        Self { adapter_name }
+    fn new(interface_name: String) -> Self {
+        Self { interface_name }
     }
 }
 
@@ -343,13 +343,14 @@ impl ConfigureInterface for Uci {
     fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), TeliodError> {
         info!(
             "Assigning IP address for {} to {}",
-            self.adapter_name, ip_address
+            self.interface_name, ip_address
         );
 
         // set options
-        execute(
-            Command::new("uci").args(["set", &format!("network.tun.device={}", self.adapter_name)]),
-        )?;
+        execute(Command::new("uci").args([
+            "set",
+            &format!("network.tun.device={}", self.interface_name),
+        ]))?;
         execute(Command::new("uci").args(["set", "network.tun.proto=static"]))?;
         execute(Command::new("uci").args(["set", &format!("network.tun.ipaddr={ip_address}")]))?;
         execute(Command::new("uci").args(["set", "network.tun.netmask=255.192.0.0"]))?;
