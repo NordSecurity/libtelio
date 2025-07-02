@@ -1,5 +1,16 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v6.0.0
+### **Pink Soup**
+---
+* LLT-6394: Emit debug log when deserializing meshnet or feature config fails
+* LLT-6007: When the fetch keys fails with inner icmp, print it to logs
+* update_neptun_tag: Update Neptun to v2.1.0
+* LLT-6244: Implemented RFC LLT-0101: DoS prevention for the PQ rekey
+* LLT-6284-ipv6-firewall-blacklist: LLT-6284 Reject IPv6 connections from firewall's blacklist
+
+<br>
+
 ### v6.0.0-rc0
 ### **Pink Soup**
 ---
