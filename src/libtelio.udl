@@ -800,9 +800,9 @@ dictionary FeatureUpnp {
     u32 lease_duration_s;
 };
 
-/// TODO
+/// Configuration for the Error Notification Service
 dictionary FeatureErrorNotificationService {
-    /// TODO
+    /// Size of the internal queue of received and to-be-published vpn error notifications
     u32 buffer_size;
 };
 
@@ -927,7 +927,7 @@ dictionary TelioNode {
     boolean allow_multicast;
     /// Flag to control whether the Node allows multicast messages from us
     boolean peer_allows_multicast;
-    /// TODO
+    /// Configuration for the Error Notification Service
     VpnConnectionError? vpn_connection_error;
 };
 
@@ -973,16 +973,16 @@ enum ErrorCode {
     "Unknown"
 };
 
-/// TODO
+/// Possible VPN errors received from the Error Notification Service
 enum VpnConnectionError {
-    /// TODO
+    /// Unknown error
     "Unknown",
-    /// TODO
+    /// Connection limit reached
     "ConnectionLimitReached",
-    /// TODO
+    /// Server will undergo maintenance in the near future
     "ServerMaintenance",
-    /// TODO
+    /// Authentication failed
     "Unauthenticated",
-    /// TODO
+    /// There is a newer connection to this VPN server
     "Superseded"
 };

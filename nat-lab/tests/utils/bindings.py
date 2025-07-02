@@ -26,6 +26,7 @@ def default_features(
     custom_skt_buffer_size: Optional[int] = None,
     custom_inter_thread_channel_size: Optional[int] = None,
     custom_max_inter_thread_batched_pkts: Optional[int] = None,
+    enable_error_notification_service: bool = False,
 ) -> Features:
     features_builder = FeaturesDefaultsBuilder()
     if enable_lana is not None:
@@ -58,6 +59,8 @@ def default_features(
         features_builder = features_builder.set_max_inter_thread_batched_pkts(
             custom_max_inter_thread_batched_pkts
         )
+    if enable_error_notification_service:
+        features_builder = features_builder.enable_error_notification_service()
 
     features = features_builder.build()
     features.is_test_env = True
@@ -88,7 +91,7 @@ def telio_node(  # pylint: disable=dangerous-default-value
     link_state: Optional[LinkState] = None,
     allow_multicast: bool = True,
     peer_allows_multicast: bool = True,
-    vpn_connection_error = None,
+    vpn_connection_error=None,
 ) -> TelioNode:
     return TelioNode(
         identifier=identifier,

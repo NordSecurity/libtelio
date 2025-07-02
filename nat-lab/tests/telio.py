@@ -14,6 +14,7 @@ from datetime import datetime
 from itertools import groupby
 from mesh_api import Node
 from typing import AsyncIterator, List, Optional, Set, Tuple
+from uniffi import VpnConnectionError
 from uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
 from utils import asyncio_util
 from utils.bindings import (
@@ -124,6 +125,7 @@ class Runtime:
         is_exit: bool = False,
         is_vpn: bool = False,
         link_state: Optional[LinkState] = None,
+        vpn_connection_error: Optional[VpnConnectionError] = None,
     ) -> None:
         while True:
             peer = self.get_peer_info(public_key)
@@ -134,6 +136,10 @@ class Runtime:
                 and is_exit == peer.is_exit
                 and is_vpn == peer.is_vpn
                 and (link_state is None or peer.link_state == link_state)
+                and (
+                    vpn_connection_error is None
+                    or peer.vpn_connection_error == vpn_connection_error
+                )
             ):
                 return
             await asyncio.sleep(0.1)
@@ -320,10 +326,17 @@ class Events:
         is_vpn: bool = False,
         timeout: Optional[float] = None,
         link_state: Optional[LinkState] = None,
+        vpn_connection_error: Optional[VpnConnectionError] = None,
     ) -> None:
         await asyncio.wait_for(
             self._runtime.notify_peer_state(
-                public_key, state, paths, is_exit, is_vpn, link_state
+                public_key,
+                state,
+                paths,
+                is_exit,
+                is_vpn,
+                link_state,
+                vpn_connection_error,
             ),
             timeout,
         )
@@ -638,6 +651,7 @@ class Client:
         is_vpn: bool = False,
         timeout: Optional[float] = None,
         link_state: Optional[LinkState] = None,
+        vpn_connection_error: Optional[VpnConnectionError] = None,
     ) -> None:
         await self.get_events().wait_for_state_peer(
             public_key,
@@ -647,6 +661,7 @@ class Client:
             is_vpn,
             timeout,
             link_state,
+            vpn_connection_error,
         )
 
     async def wait_for_link_state(
