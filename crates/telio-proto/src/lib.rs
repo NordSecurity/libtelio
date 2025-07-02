@@ -12,7 +12,15 @@ mod codec;
 pub(crate) mod messages {
     include!(concat!(env!("OUT_DIR"), "/protos/mod.rs"));
 }
+
 mod packet;
+
+mod ens;
+
+pub use ens::{
+    grpc::{ConnectionError, Error as GrpcError},
+    Error, ErrorNotificationService,
+};
 
 pub use codec::{Codec, Error as CodecError, Result as CodecResult};
 pub use packet::*;
