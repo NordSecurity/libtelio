@@ -27,7 +27,8 @@ use telio_crypto::PublicKey;
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 
 use crate::conntrack::{
-    unwrap_lock_or_return, unwrap_option_or_return, Conntracker, UdpConnectionInfo,
+    unwrap_lock_or_return, unwrap_option_or_return, Conntracker, LibfwConnectionState,
+    TcpConnectionInfo, UdpConnectionInfo,
 };
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
@@ -391,21 +392,24 @@ impl StatefullFirewall {
         &self,
         public_key: &[u8; 32],
         buffer: &'a [u8],
-    ) {
-        let ip = unwrap_option_or_return!(P::try_from(buffer));
+    ) -> (LibfwConnectionState, Option<TcpConnectionInfo>) {
+        let ip = unwrap_option_or_return!(
+            P::try_from(buffer),
+            (LibfwConnectionState::LibfwConnectionStateNew, None)
+        );
         let peer: PublicKey = PublicKey(*public_key);
         let proto = ip.get_next_level_protocol();
 
         // Initially, we want to track the state of all of the connections
         match proto {
-            IpNextHeaderProtocols::Udp => {
-                self.conntracker.handle_inbound_udp(&ip, &peer);
+            IpNextHeaderProtocols::Udp => (self.conntracker.handle_inbound_udp(&ip, &peer), None),
+            IpNextHeaderProtocols::Tcp => self.conntracker.handle_inbound_tcp(&ip, &peer),
+            IpNextHeaderProtocols::Icmp => (self.conntracker.handle_inbound_icmp(&ip, &peer), None),
+            IpNextHeaderProtocols::Icmpv6 if self.allow_ipv6 => {
+                (self.conntracker.handle_inbound_icmp(&ip, &peer), None)
             }
-            IpNextHeaderProtocols::Tcp => {
-                self.conntracker.handle_inbound_tcp(&ip, &peer);
-            }
-            _ => (),
-        };
+            _ => (LibfwConnectionState::LibfwConnectionStateNew, None),
+        }
     }
 
     fn process_outbound_ip_packet<'a, P: IpPacket<'a>>(
@@ -485,6 +489,8 @@ impl StatefullFirewall {
         &self,
         public_key: &[u8; 32],
         buffer: &'a [u8],
+        conn_state: LibfwConnectionState,
+        tcp_conn_info: Option<TcpConnectionInfo>,
     ) -> bool {
         let ip = unwrap_option_or_return!(P::try_from(buffer), false);
         let peer = PublicKey(*public_key);
@@ -528,17 +534,12 @@ impl StatefullFirewall {
                 let (link, _) =
                     unwrap_option_or_return!(Conntracker::build_conn_info(&ip, true), false);
                 let local_port = link.local_port;
-                if let PacketAction::Drop = self.decide_connection_handling(peer, Some(local_port))
-                {
-                    if !self
-                        .conntracker
-                        .get_udp_conn_info(&ip, &peer, true)
-                        .map(|conn_info| !conn_info.is_remote_initiated)
-                        .unwrap_or(false)
-                    {
-                        telio_log_trace!("Dropping UDP packet {:?} {:?}", ip, peer);
-                        return false;
-                    }
+                if let (PacketAction::Drop, LibfwConnectionState::LibfwConnectionStateNew) = (
+                    self.decide_connection_handling(peer, Some(local_port)),
+                    conn_state,
+                ) {
+                    telio_log_trace!("Dropping UDP packet {:?} {:?}", ip, peer);
+                    return false;
                 }
                 telio_log_trace!("Accepting UDP packet {:?} {:?}", ip, peer);
                 true
@@ -553,10 +554,8 @@ impl StatefullFirewall {
                     return true;
                 }
 
-                let conn_info = self.conntracker.get_tcp_conn_info(&ip, &peer, true);
-
                 // Packet actions sometimes needs to be adjusted based on the connection info
-                if let Some(conn_info) = conn_info {
+                if let Some(conn_info) = tcp_conn_info {
                     // Accepting packets for connections initiated locally
                     if !conn_info.conn_remote_initiated {
                         if let PacketAction::Drop = packet_action {
@@ -595,7 +594,10 @@ impl StatefullFirewall {
                         telio_log_trace!("Dropping ICMP packet {:?} {:?}", ip, peer);
                         return false;
                     }
-                    return self.conntracker.is_inbound_icmp_tracked(&ip, &peer);
+                    return matches!(
+                        conn_state,
+                        LibfwConnectionState::LibfwConnectionStateEstablished
+                    );
                 }
                 true
             }
@@ -620,10 +622,6 @@ impl StatefullFirewall {
                 }
             }
             IpNextHeaderProtocols::Tcp => self.conntracker.cleanup_tcp_conn(ip, &peer, accepted),
-            IpNextHeaderProtocols::Icmp => self.conntracker.inbound_icmp_cleanup(&ip, &peer),
-            IpNextHeaderProtocols::Icmpv6 if self.allow_ipv6 => {
-                self.conntracker.inbound_icmp_cleanup(&ip, &peer)
-            }
             _ => (),
         }
     }
@@ -723,6 +721,7 @@ impl Firewall for StatefullFirewall {
         telio_log_debug!("Removing {peer:?} network from firewall port whitelist");
         let mut whitelist = unwrap_lock_or_return!(self.whitelist.write());
         whitelist.port_whitelist.remove(&peer);
+        self.conntracker.remove_inbound_conns_for_assoc_data(&peer);
     }
 
     fn get_port_whitelist(&self) -> HashMap<PublicKey, u16> {
@@ -751,6 +750,7 @@ impl Firewall for StatefullFirewall {
         unwrap_lock_or_return!(self.whitelist.write(), Default::default()).peer_whitelists
             [permissions]
             .remove(&peer);
+        self.conntracker.remove_inbound_conns_for_assoc_data(&peer);
     }
 
     #[allow(index_access_check)]
@@ -765,7 +765,13 @@ impl Firewall for StatefullFirewall {
     }
 
     fn remove_vpn_peer(&self) {
-        unwrap_lock_or_return!(self.whitelist.write()).vpn_peer = None;
+        if let Some(vpn_peer) = unwrap_lock_or_return!(self.whitelist.write())
+            .vpn_peer
+            .take()
+        {
+            self.conntracker
+                .remove_inbound_conns_for_assoc_data(&vpn_peer);
+        }
     }
 
     fn process_outbound_packet(
@@ -797,14 +803,26 @@ impl Firewall for StatefullFirewall {
     fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
         match unwrap_option_or_return!(buffer.first(), false) >> 4 {
             4 => {
-                self.track_inbound_ip_packet::<Ipv4Packet>(public_key, buffer);
-                let result = self.process_inbound_ip_packet::<Ipv4Packet>(public_key, buffer);
+                let (conn_state, tcp_conn_info) =
+                    self.track_inbound_ip_packet::<Ipv4Packet>(public_key, buffer);
+                let result = self.process_inbound_ip_packet::<Ipv4Packet>(
+                    public_key,
+                    buffer,
+                    conn_state,
+                    tcp_conn_info,
+                );
                 self.cleanup_conntrack_inbound::<Ipv4Packet>(public_key, buffer, result);
                 result
             }
             6 if self.allow_ipv6 => {
-                self.track_inbound_ip_packet::<Ipv6Packet>(public_key, buffer);
-                let result = self.process_inbound_ip_packet::<Ipv6Packet>(public_key, buffer);
+                let (conn_state, tcp_conn_info) =
+                    self.track_inbound_ip_packet::<Ipv6Packet>(public_key, buffer);
+                let result = self.process_inbound_ip_packet::<Ipv6Packet>(
+                    public_key,
+                    buffer,
+                    conn_state,
+                    tcp_conn_info,
+                );
                 self.cleanup_conntrack_inbound::<Ipv6Packet>(public_key, buffer, result);
                 result
             }
@@ -2535,7 +2553,8 @@ pub mod tests {
             // Should BLOCK because they started the session
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
             fw.remove_from_port_whitelist(them_peer);
-            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
+            // After removing peer from whitelist conntrack entries are removed as well
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 0);
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), false);
             assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 0);
         }
@@ -2803,7 +2822,8 @@ pub mod tests {
                     .len(),
                 0
             );
-            assert_eq!(expected[1], fw.get_state(),);
+            // Removal clears the conntracker entrys for the given peer
+            assert_eq!(expected[2], fw.get_state(),);
 
             fw.add_to_peer_whitelist((&make_peer()).into(), Permissions::RoutingConnections);
             assert_eq!(
@@ -2822,8 +2842,8 @@ pub mod tests {
                 &make_tcp(src1, external_dst, TcpFlags::PSH)
             ));
 
-            // We have a new connection entry, but the previous one is removed
-            assert_eq!(expected[1], fw.get_state(),);
+            // We have one new connection entry
+            assert_eq!(expected[0], fw.get_state(),);
             // Allow only routing
             fw.remove_from_peer_whitelist((&make_peer()).into(), Permissions::IncomingConnections);
             assert_eq!(
