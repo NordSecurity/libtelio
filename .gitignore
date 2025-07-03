@@ -45,3 +45,4 @@ events-moose.log
 qnap/**/teliod
 report.json
 /contrib/http_root/cgi-bin/builder
+*_pb2*.py
