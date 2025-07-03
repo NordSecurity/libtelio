@@ -1,8 +1,6 @@
 import config
 from .network_switcher import NetworkSwitcher
 from config import DERP_SERVERS, GW_ADDR_MAP, VPN_SERVER_SUBNET
-from contextlib import asynccontextmanager
-from typing import AsyncIterator
 from utils.connection import Connection
 
 
