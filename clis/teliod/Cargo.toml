@@ -47,6 +47,7 @@ rand = "0.9.1"
 serial_test = "3.2.0"
 temp-dir = "0.1.16"
 temp-file = "0.1.9"
+visibility = "0.1.1"
 
 [features]
 cgi = ["const_format", "rust-cgi", "lazy_static", "maud", "form_urlencoded"]

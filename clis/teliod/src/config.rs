@@ -131,13 +131,13 @@ pub struct TeliodDaemonConfig {
 }
 
 impl TeliodDaemonConfig {
-    #[allow(dead_code)]
-    pub fn update(&mut self, update: TeliodDaemonConfigPartial) {
+    #[cfg(feature = "cgi")]
+    pub fn update(&mut self, update: TeliodDaemonConfigPartial) -> Result<(), TeliodError> {
+        if let Some(log_file_path) = update.log_file_path {
+            self.log_file_path = Self::resolve_log_path(&log_file_path)?;
+        }
         if let Some(log_level) = update.log_level {
             self.log_level = log_level;
-        }
-        if let Some(log_file_path) = update.log_file_path {
-            self.log_file_path = log_file_path;
         }
         if let Some(log_file_count) = update.log_file_count {
             self.log_file_count = log_file_count;
@@ -164,6 +164,8 @@ impl TeliodDaemonConfig {
         if let Some(mqtt) = update.mqtt {
             self.mqtt = mqtt;
         }
+
+        Ok(())
     }
 
     /// Construct a TeliodDaemonConfig by deserializing a file at given path
@@ -173,41 +175,66 @@ impl TeliodDaemonConfig {
         let file = fs::File::open(path)?;
         let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
 
-        // Validate log path
-        let log_path = PathBuf::from(&config.log_file_path);
-        if log_path.is_relative() {
-            let file_name = log_path
-                .file_name()
-                .ok_or_else(|| TeliodError::InvalidLogPath(config.log_file_path.to_owned()))?;
+        // Config file should only be written when valid, just in case it was
+        // manually modified we check again.
+        config.log_file_path = Self::resolve_log_path(&config.log_file_path)?;
 
-            // correct if path is not in ./file_name.log format but file_name.log
-            let dir = match log_path.parent() {
+        Ok(config)
+    }
+
+    fn resolve_log_path(log_file_path: &str) -> Result<String, TeliodError> {
+        let path = PathBuf::from(log_file_path);
+
+        let file_name = path
+            .file_name()
+            .ok_or_else(|| TeliodError::InvalidConfigOption {
+                key: "log_file_path".to_owned(),
+                msg: "must specify a file name".to_owned(),
+                value: path.to_string_lossy().into_owned(),
+            })?;
+
+        let final_path = if path.is_relative() {
+            let dir = match path.parent() {
                 Some(parent) if !parent.as_os_str().is_empty() => parent,
                 _ => Path::new("."),
             };
 
-            // converted relative to absolute path
-            let mut path_canonical = dir
-                .canonicalize()
-                .map_err(|_| TeliodError::InvalidLogPath(config.log_file_path.to_owned()))?;
+            let path_canonical =
+                dir.canonicalize()
+                    .map_err(|e| TeliodError::InvalidConfigOption {
+                        key: "log_file_path".to_owned(),
+                        msg: format!("could not resolve log directory: {}", e),
+                        value: path.to_string_lossy().into_owned(),
+                    })?;
+            path_canonical.join(file_name)
+        } else {
+            if let Some(parent) = path.parent() {
+                if !parent.is_dir() {
+                    return Err(TeliodError::InvalidConfigOption {
+                        key: "log_file_path".to_owned(),
+                        msg: "parent directory does not exist".to_owned(),
+                        value: path.to_string_lossy().into_owned(),
+                    });
+                }
+            }
+            path
+        };
 
-            // append the file name to the fixed absolute path
-            path_canonical.push(file_name);
-            config.log_file_path = path_canonical.to_string_lossy().to_string();
-        }
-        println!("Saving logs to: {}", config.log_file_path);
+        Ok(final_path.to_string_lossy().to_string())
+    }
 
-        // Validate token
+    /// Checks if NORD_TOKEN env var is set and contains a valid token.
+    pub fn resolve_env_token(&mut self) -> bool {
         if let Ok(token) = std::env::var("NORD_TOKEN") {
             println!("Overriding token from env");
             if token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()) {
-                config.authentication_token = Arc::new(Hidden::<String>(token));
+                self.authentication_token = Arc::new(Hidden::<String>(token));
+                return true;
             } else {
-                eprintln!("Token from env not valid")
+                eprintln!("Token from env not valid");
             }
         }
-
-        Ok(config)
+        false
     }
 }
 
@@ -224,7 +251,7 @@ impl Default for TeliodDaemonConfig {
                 #[cfg(feature = "cgi")]
                 {
                     crate::cgi::constants::LOG_PATHS
-                        .lib_log_path()
+                        .log()
                         .to_string_lossy()
                         .into_owned()
                 }
@@ -506,7 +533,7 @@ mod tests {
         let file = temp_config(&config_json);
         let err = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap_err();
 
-        matches!(err, TeliodError::InvalidLogPath(_));
+        matches!(err, TeliodError::InvalidConfigOption { .. });
     }
 
     #[test]
@@ -518,7 +545,9 @@ mod tests {
         let valid_token = "b".repeat(64);
         std::env::set_var("NORD_TOKEN", &valid_token);
 
-        let config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
+        let mut config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
+        config.resolve_env_token();
+
         assert_eq!(config.authentication_token.0, valid_token);
 
         std::env::remove_var("NORD_TOKEN");

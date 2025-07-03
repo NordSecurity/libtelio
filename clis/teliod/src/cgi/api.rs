@@ -240,7 +240,12 @@ pub(crate) fn update_config(body: &str) -> Response {
         }
     };
 
-    config.update(updated_config);
+    if let Err(e) = config.update(updated_config) {
+        return text_response(
+            StatusCode::BAD_REQUEST,
+            format!("Invalid config value: {e}"),
+        );
+    };
 
     match fs::write(
         APP_PATHS.teliod_cfg(),
@@ -397,7 +402,6 @@ mod tests {
     use tracing::level_filters::LevelFilter;
 
     use super::*;
-    use super::{update_config, TeliodDaemonConfig};
     use crate::{
         config::{InterfaceConfig, MqttConfig, Percentage},
         configure_interface::InterfaceConfigurationProvider,
