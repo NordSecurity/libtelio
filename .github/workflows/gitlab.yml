@@ -3,6 +3,10 @@ on:
   pull_request_target:
     types: [labeled]
   push:
+    branches-ignore:
+      - 'gh-readonly-queue/**'
+    tags-ignore:
+      - '**'
   merge_group:
     types: [checks_requested]
   schedule:
