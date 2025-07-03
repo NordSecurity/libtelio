@@ -5,8 +5,7 @@ on:
   push:
     branches-ignore:
       - 'gh-readonly-queue/**'
-    tags-ignore:
-      - '**'
+      - 'main-[0-9]*-[a-zA-Z0-9]*'
   merge_group:
     types: [checks_requested]
 permissions: {}
