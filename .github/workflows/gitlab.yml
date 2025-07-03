@@ -20,4 +20,4 @@ jobs:
       project-id: ${{ secrets.PROJECT_ID }}
     with:
       cancel-outdated-pipelines: ${{ github.ref_name != 'main' }}
-      triggered-ref: v2.13.1  # REMEMBER to also update in .gitlab-ci.yml and .github/workflows/gitlab_schedule.yml
+      triggered-ref: v2.13.3  # REMEMBER to also update in .gitlab-ci.yml and .github/workflows/gitlab_schedule.yml

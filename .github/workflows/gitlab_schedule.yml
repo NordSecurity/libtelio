@@ -56,5 +56,5 @@ jobs:
     with:
       schedule: true
       cancel-outdated-pipelines: false
-      triggered-ref: v2.13.1  # REMEMBER to also update in .gitlab-ci.yml and .github/workflows/gitlab.yml
+      triggered-ref: v2.13.3  # REMEMBER to also update in .gitlab-ci.yml and .github/workflows/gitlab.yml
       github-sha-override: ${{ needs.prepare-sha.outputs.recorded_sha }}
