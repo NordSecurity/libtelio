@@ -20,6 +20,10 @@ pub trait ConfigureInterface {
     fn set_exit_routes(&mut self, exit_node: &IpAddr) -> Result<(), TeliodError>;
     /// Some of the configured routes are not cleared when the adapter is removed and must be removed manually
     fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError>;
+    /// Manually cleanup the interface before the adapter is removed
+    fn cleanup_interface(&mut self) -> Result<(), TeliodError> {
+        Ok(()) // No-op implementation
+    }
 }
 
 /// Helper function to execute a system command
@@ -183,21 +187,22 @@ impl ConfigureInterface for Ifconfig {
 // This struct holds the necessary information to set that up
 #[derive(Debug, Clone)]
 struct VpnIpInfo {
-    table: String,
-    fw_rule_prio: String,
+    table: u32,
+    fw_rule_prio: u32,
 }
 
 impl VpnIpInfo {
     fn new() -> Result<Self, TeliodError> {
+        let (main_prio, existing_prios) = Self::find_main_and_all_rule_priorities()?;
         Ok(Self {
             table: Self::find_available_table()?,
-            fw_rule_prio: Self::find_available_rule_priority()?,
+            fw_rule_prio: Self::find_available_lower_rule_priority(main_prio, &existing_prios)?,
         })
     }
 
     // Based on the implementation from the NordVPN Linux app
     #[allow(clippy::expect_used)]
-    fn find_available_table() -> Result<String, TeliodError> {
+    pub fn find_available_table() -> Result<u32, TeliodError> {
         let table_pattern = Regex::new("table ([0-9]+)").expect("Failed to compile ip table regex");
         let mut existing =
             execute_with_output(Command::new("ip").args(["route", "show", "table", "all"]))?
@@ -214,7 +219,7 @@ impl VpnIpInfo {
         let mut new_table = DEFAULT_ROUTING_TABLE_ID;
         loop {
             if !existing.contains(&new_table) {
-                return Ok(new_table.to_string());
+                return Ok(new_table);
             }
             new_table += 1;
             if new_table > 60_000 {
@@ -224,9 +229,10 @@ impl VpnIpInfo {
     }
 
     // Based on the implementation from the NordVPN Linux app
-    fn find_available_rule_priority() -> Result<String, TeliodError> {
-        let mut fw_prio = 0;
-        let existing = execute_with_output(Command::new("ip").args(["rule", "list"]))?
+    // Finds the main rule priority and the list of all priorities
+    pub fn find_main_and_all_rule_priorities() -> Result<(u32, Vec<u32>), TeliodError> {
+        let mut main_prio = 0;
+        let existing_prios = execute_with_output(Command::new("ip").args(["rule", "list"]))?
             .lines()
             .filter_map(|line| {
                 let prio = line
@@ -234,18 +240,27 @@ impl VpnIpInfo {
                     .and_then(|(prio, _)| prio.parse::<u32>().ok());
                 if let Some(prio) = prio {
                     if line.contains("from all lookup main") {
-                        fw_prio = prio;
+                        main_prio = prio;
                     }
                 }
                 prio
             })
             .collect::<Vec<_>>();
+        Ok((main_prio, existing_prios))
+    }
+
+    // Iterate over existing_prios until we find the next available lower priority
+    pub fn find_available_lower_rule_priority(
+        start_prio: u32,
+        existing_prios: &[u32],
+    ) -> Result<u32, TeliodError> {
+        let mut fw_prio = start_prio;
         loop {
             fw_prio = fw_prio.saturating_sub(1);
             if fw_prio == 0 {
                 return Err(TeliodError::IpRule);
-            } else if !existing.contains(&fw_prio) {
-                return Ok(fw_prio.to_string());
+            } else if !existing_prios.contains(&fw_prio) {
+                return Ok(fw_prio);
             }
         }
     }
@@ -320,20 +335,20 @@ impl ConfigureInterface for Iproute {
                 "dev",
                 &self.interface_name,
                 "table",
-                &vpn_ip_info.table,
+                &vpn_ip_info.table.to_string(),
             ]))?;
             execute(Command::new("ip").args([
                 "rule",
                 "add",
                 "priority",
-                &vpn_ip_info.fw_rule_prio,
+                &vpn_ip_info.fw_rule_prio.to_string(),
                 "not",
                 "from",
                 "all",
                 "fwmark",
                 &LIBTELIO_FWMARK.to_string(),
                 "lookup",
-                &vpn_ip_info.table,
+                &vpn_ip_info.table.to_string(),
             ]))?;
             self.vpn_ip_info = Some(vpn_ip_info);
 
@@ -359,23 +374,100 @@ impl ConfigureInterface for Iproute {
                 "rule",
                 "del",
                 "priority",
-                &vpn_ip_info.fw_rule_prio,
+                &vpn_ip_info.fw_rule_prio.to_string(),
             ]))?;
-            execute(Command::new("ip").args(["route", "flush", "table", &vpn_ip_info.table]))?;
+            execute(Command::new("ip").args([
+                "route",
+                "flush",
+                "table",
+                &vpn_ip_info.table.to_string(),
+            ]))?;
         }
         self.ipv6_support_manager.reenable()
     }
 }
 
-/// Implementation using `uci` for OpenWRT
-#[derive(Debug, PartialEq, Eq)]
+/// Implementation using `uci` for OpenWRT devices
+#[derive(Debug)]
 pub struct Uci {
     interface_name: String,
+    ipv6_enabled: Option<bool>,
+    wan6_disabled: Option<bool>,
 }
 
 impl Uci {
     fn new(interface_name: String) -> Self {
-        Self { interface_name }
+        let wan6_disabled = execute(Command::new("uci").args(["get", "network.wan6"]))
+            .ok()
+            .and_then(|_| {
+                execute_with_output(Command::new("uci").args(["get", "network.wan6.disabled"]))
+                    .map(|res| res.contains("1"))
+                    .ok()
+            });
+
+        let ipv6_enabled = execute(Command::new("uci").args(["get", "network.wan"]))
+            .ok()
+            .map(|_| {
+                execute_with_output(Command::new("uci").args(["get", "network.wan.ipv6"]))
+                    .map(|res| res.contains("1"))
+                    .unwrap_or(true) // Assume ipv6 enabled by default
+            });
+
+        Self {
+            interface_name,
+            ipv6_enabled,
+            wan6_disabled,
+        }
+    }
+
+    // Helper to disable IPv6
+    fn disable_ipv6(&self) -> Result<(), TeliodError> {
+        if self.wan6_disabled.is_some() {
+            execute(Command::new("uci").args(["set", "network.wan6.disabled=1"]))?;
+        }
+        if self.ipv6_enabled.is_some() {
+            execute(Command::new("uci").args(["set", "network.wan.ipv6=0"]))?;
+        }
+        Ok(())
+    }
+
+    // Helper to restore settings IPv6 to initial state
+    fn restore_ipv6(&self) -> Result<(), TeliodError> {
+        if let Err(e) = execute(Command::new("uci").args(["del", "network.teliod_route6"])) {
+            error!("Error removing route6: {e}");
+        }
+
+        if let Some(disabled) = self.wan6_disabled {
+            if !disabled {
+                if let Err(e) = execute(Command::new("uci").args(["del", "network.wan6.disabled"]))
+                {
+                    error!("Error removing wan6 disabled: {e}");
+                }
+            }
+        }
+        if let Some(enabled) = self.ipv6_enabled {
+            if enabled {
+                if let Err(e) = execute(Command::new("uci").args(["del", "network.wan.ipv6"])) {
+                    error!("Error removing wan ipv6: {e}");
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    // Helper to reload network service
+    fn reload_network(&self) -> Result<(), TeliodError> {
+        execute(Command::new("uci").args(["commit", "network"]))?;
+        execute(Command::new("/etc/init.d/network").args(["reload"]))?;
+        Ok(())
+    }
+
+    // Helper to reload firewall service
+    fn reload_firewall(&self) -> Result<(), TeliodError> {
+        execute(Command::new("uci").args(["commit", "firewall"]))?;
+        execute(Command::new("/etc/init.d/firewall").args(["reload"]))?;
+        Ok(())
     }
 }
 
@@ -392,6 +484,7 @@ impl ConfigureInterface for Uci {
                 execute(Command::new("uci").args(["rename", "network.@interface[-1]=tun"]))?;
             }
         }
+        execute(Command::new("uci").args(["set", "network.tun.mtu=1420"]))?;
 
         Ok(())
     }
@@ -410,21 +503,128 @@ impl ConfigureInterface for Uci {
         execute(Command::new("uci").args(["set", "network.tun.proto=static"]))?;
         execute(Command::new("uci").args(["set", &format!("network.tun.ipaddr={ip_address}")]))?;
         execute(Command::new("uci").args(["set", "network.tun.netmask=255.192.0.0"]))?;
-        execute(Command::new("uci").args(["set", "network.tun.mtu=1420"]))?;
 
         // save and apply
-        execute(Command::new("uci").args(["commit", "network"]))?;
-        execute(Command::new("/etc/init.d/network").args(["reload"]))?;
+        self.reload_network()?;
 
         Ok(())
     }
 
     fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), TeliodError> {
-        Ok(()) // No-op implementation
+        let (main_prio, existing_prios) = VpnIpInfo::find_main_and_all_rule_priorities()?;
+        let table = VpnIpInfo::find_available_table()?;
+        let vpn_rule_prio =
+            VpnIpInfo::find_available_lower_rule_priority(main_prio, &existing_prios)?;
+        let lan_rule_prio =
+            VpnIpInfo::find_available_lower_rule_priority(vpn_rule_prio, &existing_prios)?;
+
+        // Set route and rules for VPN
+        execute(Command::new("uci").args(["add", "network", "route"]))?;
+        execute(Command::new("uci").args(["rename", "network.@route[-1]=teliod_route"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_route.interface=tun"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_route.target=0.0.0.0/0"]))?;
+        execute(
+            Command::new("uci").args(["set", &format!("network.teliod_route.table={}", table)]),
+        )?;
+
+        execute(Command::new("uci").args(["add", "network", "route6"]))?;
+        execute(Command::new("uci").args(["rename", "network.@route6[-1]=teliod_route6"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_route6.interface=tun"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_route6.target=::/0"]))?;
+
+        execute(Command::new("uci").args(["add", "network", "rule"]))?;
+        execute(Command::new("uci").args(["rename", "network.@rule[-1]=teliod_vpn_rule"]))?;
+        execute(
+            Command::new("uci").args(["set", &format!("network.teliod_vpn_rule.lookup={}", table)]),
+        )?;
+        #[cfg(target_os = "linux")] // LIBTELIO_FWMARK is compile flagged
+        execute(Command::new("uci").args([
+            "set",
+            &format!("network.teliod_vpn_rule.mark={LIBTELIO_FWMARK}"),
+        ]))?;
+        execute(Command::new("uci").args([
+            "set",
+            &format!("network.teliod_vpn_rule.priority={}", vpn_rule_prio),
+        ]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_vpn_rule.invert=1"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_vpn_rule.src=0.0.0.0/0"]))?;
+
+        // Exception for LAN traffic accessing Gateway
+        execute(Command::new("uci").args(["add", "network", "rule"]))?;
+        execute(Command::new("uci").args(["rename", "network.@rule[-1]=teliod_lan_rule"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_lan_rule.src=0.0.0.0/0"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_lan_rule.lookup=main"]))?;
+        execute(
+            Command::new("uci").args(["set", "network.teliod_lan_rule.suppress_prefixlength=0"]),
+        )?;
+        execute(Command::new("uci").args([
+            "set",
+            &format!("network.teliod_lan_rule.priority={}", lan_rule_prio),
+        ]))?;
+
+        // Set firewall zones
+        execute(Command::new("uci").args(["add", "firewall", "zone"]))?;
+        execute(Command::new("uci").args(["rename", "firewall.@zone[-1]=teliod_vpn_zone"]))?;
+        execute(Command::new("uci").args(["set", "firewall.teliod_vpn_zone.name=vpn"]))?;
+        execute(Command::new("uci").args(["set", "firewall.teliod_vpn_zone.network=tun"]))?;
+        execute(Command::new("uci").args(["set", "firewall.teliod_vpn_zone.masq=1"]))?;
+
+        // Set firewall forwarding
+        execute(Command::new("uci").args(["add", "firewall", "forwarding"]))?;
+        execute(
+            Command::new("uci").args(["rename", "firewall.@forwarding[-1]=teliod_vpn_forwarding"]),
+        )?;
+        execute(Command::new("uci").args(["set", "firewall.teliod_vpn_forwarding.src=lan"]))?;
+        execute(Command::new("uci").args(["set", "firewall.teliod_vpn_forwarding.dest=vpn"]))?;
+
+        // Disable IPv6
+        self.disable_ipv6()?;
+
+        // Save and apply
+        self.reload_firewall()?;
+        self.reload_network()?;
+
+        Ok(())
     }
 
     fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError> {
-        Ok(()) // No-op implementation
+        debug!("Removing exit routes");
+        if let Err(e) = execute(Command::new("uci").args(["del", "network.teliod_route"])) {
+            error!("Error removing route: {e}");
+        }
+        if let Err(e) = execute(Command::new("uci").args(["del", "network.teliod_vpn_rule"])) {
+            error!("Error removing vpn rule: {e}");
+        }
+        if let Err(e) = execute(Command::new("uci").args(["del", "network.teliod_lan_rule"])) {
+            error!("Error removing lan rule: {e}");
+        }
+        if let Err(e) = execute(Command::new("uci").args(["del", "firewall.teliod_vpn_zone"])) {
+            error!("Error removing zone: {e}");
+        }
+        if let Err(e) = execute(Command::new("uci").args(["del", "firewall.teliod_vpn_forwarding"]))
+        {
+            error!("Error removing forwarding: {e}");
+        }
+
+        // Restore IPv6
+        self.restore_ipv6()?;
+
+        // Save and apply
+        self.reload_firewall()?;
+        self.reload_network()?;
+
+        Ok(())
+    }
+
+    fn cleanup_interface(&mut self) -> Result<(), TeliodError> {
+        debug!("Removing interface");
+        if let Err(e) = execute(Command::new("uci").args(["del", "network.tun"])) {
+            error!("Error removing interface: {e}");
+        }
+
+        // Save and apply
+        self.reload_network()?;
+        Ok(())
     }
 }
 
@@ -567,5 +767,12 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn test_find_available_table_doesnt_panic() {
         let _ = VpnIpInfo::find_available_table();
+    }
+
+    #[test]
+    fn test_find_available_lower_rule_priority_skip() {
+        let existing_prios = vec![98, 99, 100, 101];
+        let result = VpnIpInfo::find_available_lower_rule_priority(100, &existing_prios);
+        assert_eq!(result.unwrap(), 97);
     }
 }
