@@ -1,11 +1,11 @@
 name: Scheduled GitLab CI Pipeline
 on:
   schedule:
-    # Below cron definition only for testing purposes
-    # 1st run at 17:01
-    # 2nd run at 00:05
-    - cron: '01 17 * * *'
-    - cron: '5 0 * * *'
+    # Avoid running on 0 since a lot of other workflows on github start at that
+    # time and this can cause delays or even dropping of jobs:
+    # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
+    - cron: 18,48 17-23 * * *
+    - cron: 17,47 0-4 * * *
 permissions: {}
 
 jobs:
@@ -47,7 +47,7 @@ jobs:
 
   trigger-gitlab-pipeline:
     needs: prepare-sha
-    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@c131c1803f5de7c7727e71ceb4fb7be6b4036d1d
+    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@22c73479b495367b1c8e6ee40145c75a3b4b6706
     secrets:
       ci-api-v4-url: ${{ secrets.CI_API_V4_URL }}
       access-token: ${{ secrets.GITLAB_API_TOKEN }}
@@ -56,5 +56,5 @@ jobs:
     with:
       schedule: true
       cancel-outdated-pipelines: false
-      triggered-ref: v2.11.4
+      triggered-ref: v2.13.1  # REMEMBER to also update in .gitlab-ci.yml and .github/workflows/gitlab.yml
       github-sha-override: ${{ needs.prepare-sha.outputs.recorded_sha }}
