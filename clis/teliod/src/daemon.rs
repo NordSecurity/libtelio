@@ -29,7 +29,7 @@ use crate::{
     config::TeliodDaemonConfig,
     core_api::{get_meshmap as get_meshmap_from_server, init_with_api},
     nc::NotificationCenter,
-    ClientCmd, TelioStatusReport, TeliodError,
+    ClientCmd, ExitNodeStatus, TelioStatusReport, TeliodError,
 };
 
 #[derive(Debug)]
@@ -124,10 +124,18 @@ fn telio_task(
                     }
                 }
                 TelioTaskCmd::GetStatus(response_tx_channel) => {
+                    let external_nodes = telio.external_nodes()?;
+                    // Find the identifier of the exit node (VPN server or meshnet peer), if present.
+                    let exit_node = external_nodes
+                        .iter()
+                        .find(|node| node.is_exit)
+                        .map(ExitNodeStatus::from);
+
                     let status_report = TelioStatusReport {
                         telio_is_running: telio.is_running(),
                         meshnet_ip: state.interface_ip_address,
-                        external_nodes: telio.external_nodes()?,
+                        exit_node,
+                        external_nodes,
                     };
                     debug!("Telio status: {:#?}", status_report);
                     if response_tx_channel.send(status_report).is_err() {
