@@ -1,6 +1,5 @@
 import asyncssh
 import shlex
-import subprocess
 import utils.vm.mac_vm_util as utils_mac
 import utils.vm.windows_vm_util as utils_win
 from .connection import Connection, TargetOS, ConnectionTag, setup_ephemeral_ports
@@ -47,22 +46,12 @@ class SshConnection(Connection):
         tag: ConnectionTag,
         copy_binaries: bool = False,
     ) -> AsyncIterator["SshConnection"]:
-        subprocess.check_call(
-            ["sudo", "bash", "vm_nat.sh", "disable"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        subprocess.check_call(
-            ["sudo", "bash", "vm_nat.sh", "enable"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
         async with asyncssh.connect(
             ip,
-            username="root" if tag is ConnectionTag.VM_MAC else "vagrant",
-            password="vagrant",
+            username="root" if tag is ConnectionTag.VM_MAC else "bill",
+            password="jobs" if tag is ConnectionTag.VM_MAC else "gates",
             known_hosts=None,
+            agent_path=None,
         ) as ssh_connection:
             async with cls(ssh_connection, tag) as connection:
                 if copy_binaries:

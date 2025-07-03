@@ -47,6 +47,12 @@ class ConnectionTag(Enum):
     DOCKER_DERP_3 = auto()
     DOCKER_DNS_SERVER_1 = auto()
     DOCKER_DNS_SERVER_2 = auto()
+    DOCKER_WINDOWS_GW_1 = auto()
+    DOCKER_WINDOWS_GW_2 = auto()
+    DOCKER_WINDOWS_GW_3 = auto()
+    DOCKER_WINDOWS_GW_4 = auto()
+    DOCKER_MAC_GW_1 = auto()
+    DOCKER_MAC_GW_2 = auto()
 
 
 EPHEMERAL_SETUP_SET: Set[ConnectionTag] = set()

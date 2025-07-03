@@ -251,13 +251,13 @@ async def test_mesh_plus_vpn_both_peers(
         pytest.param(
             ConnectionTag.VM_WINDOWS_1,
             TelioAdapterType.WINDOWS_NATIVE_TUN,
-            "10.0.254.7",
+            "10.0.254.15",
             marks=pytest.mark.windows,
         ),
         pytest.param(
             ConnectionTag.VM_MAC,
             TelioAdapterType.NEP_TUN,
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
