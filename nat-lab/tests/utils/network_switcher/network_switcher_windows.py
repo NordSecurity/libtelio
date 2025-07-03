@@ -81,8 +81,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             connection, await ConfiguredInterfaces.create(connection)
         )
 
-    @asynccontextmanager
-    async def switch_to_primary_network(self) -> AsyncIterator:
+    async def switch_to_primary_network(self) -> None:
         await self._delete_existing_route()
         await self._connection.create_process([
             "netsh",
@@ -113,10 +112,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         ):
             raise Exception("Failed to switch to primary network")
 
-        yield
-
-    @asynccontextmanager
-    async def switch_to_secondary_network(self) -> AsyncIterator:
+    async def switch_to_secondary_network(self) -> None:
         await self._delete_existing_route()
 
         await self._connection.create_process([
@@ -147,8 +143,6 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             ],
         ):
             raise Exception("Failed to switch to secondary network")
-
-        yield
 
     async def _delete_existing_route(self) -> None:
         # Deleting routes by interface name instead of network destination (0.0.0.0/0) makes
