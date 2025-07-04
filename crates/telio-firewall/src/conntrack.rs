@@ -145,6 +145,15 @@ pub(crate) enum LibfwConnectionState {
     LibfwConnectionStateNew,
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum LibfwDirection {
+    /// Outgoing packets
+    LibfwDirectionOutbound = 0,
+    /// Incoming packets
+    LibfwDirectionInbound = 1,
+}
+
 #[derive(Clone, Debug)]
 pub struct UdpConnectionInfo {
     pub(crate) is_remote_initiated: bool,
@@ -205,7 +214,11 @@ impl Conntracker {
         ip: &impl IpPacket<'a>,
         associated_data: &[u8],
     ) -> io::Result<()> {
-        let link = unwrap_option_or_return_err!(Self::build_conn_info(ip, false)).0;
+        let link = unwrap_option_or_return_err!(Self::build_conn_info(
+            ip,
+            LibfwDirection::LibfwDirectionOutbound
+        ))
+        .0;
         let key = Connection {
             link,
             associated_data: associated_data.to_smallvec(),
@@ -264,7 +277,10 @@ impl Conntracker {
         ip: &impl IpPacket<'a>,
         associated_data: &[u8],
     ) -> io::Result<()> {
-        let (link, packet) = unwrap_option_or_return_err!(Self::build_conn_info(ip, false));
+        let (link, packet) = unwrap_option_or_return_err!(Self::build_conn_info(
+            ip,
+            LibfwDirection::LibfwDirectionOutbound
+        ));
         let key = Connection {
             link,
             associated_data: associated_data.to_smallvec(),
@@ -326,7 +342,10 @@ impl Conntracker {
         ip: P,
         associated_data: &[u8],
     ) -> io::Result<()> {
-        let (link, _) = unwrap_option_or_return_err!(Self::build_conn_info(&ip, true));
+        let (link, _) = unwrap_option_or_return_err!(Self::build_conn_info(
+            &ip,
+            LibfwDirection::LibfwDirectionInbound
+        ));
         let key = Connection {
             link,
             associated_data: associated_data.to_smallvec(),
@@ -343,7 +362,10 @@ impl Conntracker {
         ip: &impl IpPacket<'a>,
         associated_data: &[u8],
     ) -> io::Result<LibfwConnectionState> {
-        let (link, _) = unwrap_option_or_return_err!(Self::build_conn_info(ip, true));
+        let (link, _) = unwrap_option_or_return_err!(Self::build_conn_info(
+            ip,
+            LibfwDirection::LibfwDirectionInbound
+        ));
         let key = Connection {
             link,
             associated_data: associated_data.to_smallvec(),
@@ -390,7 +412,10 @@ impl Conntracker {
         associated_data: &[u8],
         accepted: bool,
     ) -> io::Result<()> {
-        let (link, _) = unwrap_option_or_return_err!(Self::build_conn_info(&ip, true));
+        let (link, _) = unwrap_option_or_return_err!(Self::build_conn_info(
+            &ip,
+            LibfwDirection::LibfwDirectionInbound
+        ));
         let key = Connection {
             link,
             associated_data: associated_data.to_smallvec(),
@@ -412,7 +437,10 @@ impl Conntracker {
         ip: &impl IpPacket<'a>,
         associated_data: &[u8],
     ) -> io::Result<(LibfwConnectionState, Option<TcpConnectionInfo>)> {
-        let (link, packet) = unwrap_option_or_return_err!(Self::build_conn_info(ip, true));
+        let (link, packet) = unwrap_option_or_return_err!(Self::build_conn_info(
+            ip,
+            LibfwDirection::LibfwDirectionInbound
+        ));
         let key = Connection {
             link,
             associated_data: associated_data.to_smallvec(),
@@ -583,7 +611,7 @@ impl Conntracker {
 
     pub fn build_conn_info<'a, P: IpPacket<'a>>(
         ip: &P,
-        inbound: bool,
+        direction: LibfwDirection,
     ) -> Option<(IpConnWithPort, Option<TcpPacket>)> {
         let proto = ip.get_next_level_protocol();
         let (src, dest, tcp_packet) = match proto {
@@ -604,7 +632,7 @@ impl Conntracker {
             _ => return None,
         };
 
-        let key = if inbound {
+        let key = if let LibfwDirection::LibfwDirectionInbound = direction {
             IpConnWithPort {
                 remote_addr: ip.get_source().into(),
                 remote_port: src,
@@ -730,12 +758,14 @@ impl Conntracker {
                 }
             };
             match packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Udp => {
-                    IcmpErrorKey::Udp(Self::build_conn_info(&packet, false).map(|(key, _)| key))
-                }
-                IpNextHeaderProtocols::Tcp => {
-                    IcmpErrorKey::Tcp(Self::build_conn_info(&packet, false).map(|(key, _)| key))
-                }
+                IpNextHeaderProtocols::Udp => IcmpErrorKey::Udp(
+                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)
+                        .map(|(key, _)| key),
+                ),
+                IpNextHeaderProtocols::Tcp => IcmpErrorKey::Tcp(
+                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)
+                        .map(|(key, _)| key),
+                ),
                 IpNextHeaderProtocols::Icmp => IcmpErrorKey::Icmp(
                     Self::build_icmp_key(&packet, associated_data, false)
                         .ok()
@@ -752,12 +782,14 @@ impl Conntracker {
                 }
             };
             match packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Udp => {
-                    IcmpErrorKey::Udp(Self::build_conn_info(&packet, false).map(|(key, _)| key))
-                }
-                IpNextHeaderProtocols::Tcp => {
-                    IcmpErrorKey::Tcp(Self::build_conn_info(&packet, false).map(|(key, _)| key))
-                }
+                IpNextHeaderProtocols::Udp => IcmpErrorKey::Udp(
+                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)
+                        .map(|(key, _)| key),
+                ),
+                IpNextHeaderProtocols::Tcp => IcmpErrorKey::Tcp(
+                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)
+                        .map(|(key, _)| key),
+                ),
                 IpNextHeaderProtocols::Icmpv6 => IcmpErrorKey::Icmp(
                     Self::build_icmp_key(&packet, associated_data, false)
                         .ok()

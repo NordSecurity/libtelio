@@ -28,7 +28,7 @@ use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_w
 
 use crate::conntrack::{
     unwrap_lock_or_return, unwrap_option_or_return, unwrap_option_or_return_err, Conntracker,
-    LibfwConnectionState, TcpConnectionInfo, UdpConnectionInfo,
+    LibfwConnectionState, LibfwDirection, TcpConnectionInfo, UdpConnectionInfo,
 };
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
@@ -405,8 +405,11 @@ impl StatefullFirewall {
         match proto {
             IpNextHeaderProtocols::Udp => {
                 let blacklist = unwrap_lock_or_return!(self.outgoing_udp_blacklist.read(), false);
-                let link =
-                    unwrap_option_or_return!(Conntracker::build_conn_info(&ip, false), false).0;
+                let link = unwrap_option_or_return!(
+                    Conntracker::build_conn_info(&ip, LibfwDirection::LibfwDirectionOutbound),
+                    false
+                )
+                .0;
                 if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
                     let Some(first_chunk) = ip
                         .packet()
@@ -427,8 +430,13 @@ impl StatefullFirewall {
             }
             IpNextHeaderProtocols::Tcp => {
                 let blacklist = unwrap_lock_or_return!(self.outgoing_tcp_blacklist.read(), false);
-                let (link, tcp_packet) =
-                    unwrap_option_or_return!(Conntracker::build_conn_info(&ip, false), false);
+                let (link, tcp_packet) = unwrap_option_or_return!(
+                    Conntracker::build_conn_info(
+                        &ip,
+                        crate::conntrack::LibfwDirection::LibfwDirectionOutbound
+                    ),
+                    false
+                );
                 let tcp_packet = unwrap_option_or_return!(tcp_packet, false);
                 if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
                     _ = self.conntracker.send_tcp_rst_packets(
@@ -513,8 +521,10 @@ impl StatefullFirewall {
         }
 
         let local_port = if let IpNextHeaderProtocols::Tcp | IpNextHeaderProtocols::Udp = proto {
-            let conn_info =
-                unwrap_option_or_return!(Conntracker::build_conn_info(&ip, true), false);
+            let conn_info = unwrap_option_or_return!(
+                Conntracker::build_conn_info(&ip, LibfwDirection::LibfwDirectionInbound),
+                false
+            );
             Some(conn_info.0.local_port)
         } else {
             None
@@ -534,8 +544,10 @@ impl StatefullFirewall {
                 true
             }
             IpNextHeaderProtocols::Tcp => {
-                let (_, packet) =
-                    unwrap_option_or_return!(Conntracker::build_conn_info(&ip, true), false);
+                let (_, packet) = unwrap_option_or_return!(
+                    Conntracker::build_conn_info(&ip, LibfwDirection::LibfwDirectionInbound),
+                    false
+                );
                 // For TCP we need to allow certain packets for finished connections
                 // to allow host to cleanly close them
                 if let Some(conn_info) = tcp_conn_info {
