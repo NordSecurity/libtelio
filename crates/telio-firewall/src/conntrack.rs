@@ -140,6 +140,15 @@ pub enum LibfwConnectionState {
     LibfwConnectionStateFinished,
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum LibfwDirection {
+    /// Outgoing packets
+    LibfwDirectionOutbound = 0,
+    /// Incoming packets
+    LibfwDirectionInbound = 1,
+}
+
 #[derive(Clone, Debug)]
 pub struct UdpConnectionInfo {
     pub(crate) is_remote_initiated: bool,
