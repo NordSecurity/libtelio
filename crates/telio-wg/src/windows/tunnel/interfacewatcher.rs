@@ -284,23 +284,23 @@ impl InterfaceWatcher {
         telio_log_trace!("--- InterfaceWatcher::setup");
     }
 
-    unsafe fn mib_add_instance(&mut self, iface: *const MIB_IPINTERFACE_ROW) {
+    fn mib_add_instance(&mut self, iface: *const MIB_IPINTERFACE_ROW) {
         telio_log_trace!("+++ InterfaceWatcher::mib_add_instance");
 
         if let Ok(mut watched_adapter) = self.watched_adapter.clone().lock() {
             if 0 == watched_adapter.luid {
                 watched_adapter.stored_events.push(InterfaceWatcherEvent {
-                    luid: (*iface).InterfaceLuid.Value,
-                    family: (*iface).Family,
+                    luid: unsafe { (*iface).InterfaceLuid.Value },
+                    family: unsafe { (*iface).Family },
                 });
                 telio_log_trace!("--- InterfaceWatcher::mib_add_instance 1");
                 return;
             }
-            if (*iface).InterfaceLuid.Value != watched_adapter.luid {
+            if unsafe { (*iface).InterfaceLuid.Value } != watched_adapter.luid {
                 telio_log_trace!("--- InterfaceWatcher::mib_add_instance 2");
                 return;
             }
-            Self::setup(&mut watched_adapter, (*iface).Family);
+            Self::setup(&mut watched_adapter, unsafe { (*iface).Family });
 
             #[allow(clippy::unwrap_used)]
             let adapter = watched_adapter.adapter.as_ref().unwrap();
