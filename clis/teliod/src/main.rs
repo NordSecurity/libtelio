@@ -131,6 +131,10 @@ enum TeliodError {
     LogAppenderError(#[from] InitError),
     #[error(transparent)]
     DaemonizeError(#[from] daemonize::Error),
+    #[error("Could not configure IP rules")]
+    IpRule,
+    #[error("Could not configure IP routing")]
+    IpRoute,
 }
 
 /// Libtelio and meshnet status report
