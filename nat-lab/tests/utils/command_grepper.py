@@ -51,7 +51,7 @@ class CommandGrepper:
 
         Returns True if string is found.
         Returns False if string is not found and TimeoutError is caught.
-        Raises a `PorcessExecError` if command returns non zero value.
+        Raises a `ProcessExecError` if command returns non zero value.
         Raises an `Exception` if something else wrong happens.
         """
         try:
@@ -84,7 +84,7 @@ class CommandGrepper:
 
         Returns True if string is not found.
         Returns False if string is found and TimeoutError is caught.
-        Raises a `PorcessExecError` if command returns non zero value.
+        Raises a `ProcessExecError` if command returns non zero value.
         Raises an `Exception` if something else wrong happens.
         """
         try:
