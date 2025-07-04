@@ -17,7 +17,7 @@ use std::{
     fmt::Debug,
     io,
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr, SocketAddr},
-    sync::{RwLock, RwLockReadGuard},
+    sync::RwLock,
 };
 
 use telio_model::features::{FeatureFirewall, IpProtocol};
@@ -257,22 +257,6 @@ impl fmt::Display for Permissions {
     }
 }
 
-#[derive(Copy, Clone)]
-pub(crate) enum PacketAction {
-    PassThrough,
-    Drop,
-    HandleLocally,
-}
-
-impl From<PacketAction> for bool {
-    fn from(value: PacketAction) -> Self {
-        match value {
-            PacketAction::PassThrough | PacketAction::HandleLocally => true,
-            PacketAction::Drop => false,
-        }
-    }
-}
-
 #[derive(Default)]
 struct Whitelist {
     /// List of whitelisted source peer and destination port pairs
@@ -498,7 +482,7 @@ impl StatefullFirewall {
 
         let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);
 
-        // Fasttrack, if peer is whitelisted - skip any conntrack and allow immediately
+        // Fasttrack, if peer is whitelisted - allow immediately
         if let Some(vpn_peer) = whitelist.vpn_peer {
             if vpn_peer == peer {
                 telio_log_trace!("Inbound IP packet is for vpn peer, forwarding: {:?}", ip);
@@ -512,58 +496,53 @@ impl StatefullFirewall {
             return false;
         }
 
-        // Check packet policy first
-        match self.decide_packet_handling(
-            peer,
-            From::<IpAddr>::from(ip.get_destination().into()),
-            whitelist,
-        ) {
-            PacketAction::Drop => {
+        let local_addr = From::<IpAddr>::from(ip.get_destination().into());
+        if self.is_private_address_except_local_interface(&local_addr) {
+            #[allow(index_access_check)]
+            return whitelist.peer_whitelists[Permissions::LocalAreaConnections].contains(&peer);
+        }
+
+        // For packets which are non local we can route them only when rounting for the particular peer is enabled
+        let local_ip = unwrap_lock_or_return!(self.ip_addresses.read(), false);
+        if !local_ip.contains(&local_addr) {
+            #[allow(index_access_check)]
+            if whitelist.peer_whitelists[Permissions::RoutingConnections].contains(&peer) {
+                telio_log_trace!("Forwarding due to Routing policy");
+                telio_log_trace!("Accepting packet {:?} {:?}", ip.get_source().into(), peer);
+                return true;
+            } else {
                 telio_log_trace!("Dropping packet {:?} {:?}", ip.get_source().into(), peer);
                 return false;
             }
-            PacketAction::HandleLocally => (),
-            PacketAction::PassThrough => {
-                telio_log_trace!("Accepting packet {:?} {:?}", ip.get_source().into(), peer);
-                return true;
-            }
+        }
+
+        let local_port = if let IpNextHeaderProtocols::Tcp | IpNextHeaderProtocols::Udp = proto {
+            let conn_info =
+                unwrap_option_or_return!(Conntracker::build_conn_info(&ip, true), false);
+            Some(conn_info.0.local_port)
+        } else {
+            None
+        };
+
+        let connection_allowed = self.decide_connection_handling(peer, local_port);
+        if let (false, LibfwConnectionState::LibfwConnectionStateNew) =
+            (connection_allowed, conn_state)
+        {
+            telio_log_trace!("Dropping UDP packet {:?} {:?}", ip, peer);
+            return false;
         }
 
         match proto {
             IpNextHeaderProtocols::Udp => {
-                let (link, _) =
-                    unwrap_option_or_return!(Conntracker::build_conn_info(&ip, true), false);
-                let local_port = link.local_port;
-                if let (PacketAction::Drop, LibfwConnectionState::LibfwConnectionStateNew) = (
-                    self.decide_connection_handling(peer, Some(local_port)),
-                    conn_state,
-                ) {
-                    telio_log_trace!("Dropping UDP packet {:?} {:?}", ip, peer);
-                    return false;
-                }
                 telio_log_trace!("Accepting UDP packet {:?} {:?}", ip, peer);
                 true
             }
             IpNextHeaderProtocols::Tcp => {
-                let (link, packet) =
+                let (_, packet) =
                     unwrap_option_or_return!(Conntracker::build_conn_info(&ip, true), false);
-                let local_port = link.local_port;
-                let packet_action = self.decide_connection_handling(peer, Some(local_port));
-                if let PacketAction::PassThrough = packet_action {
-                    telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, peer);
-                    return true;
-                }
-
-                if let (PacketAction::Drop, LibfwConnectionState::LibfwConnectionStateNew) =
-                    (packet_action, conn_state)
-                {
-                    telio_log_trace!("Dropping TCP packet {:?} {:?}", ip, peer);
-                    return false;
-                }
-
-                // Packet actions sometimes needs to be adjusted based on the connection info
+                // For TCP we need to allow certain packets for finished connections
+                // to allow host to cleanly close them
                 if let Some(conn_info) = tcp_conn_info {
-                    // Dropping most packets for dead, locally initiated connections
                     if let Some(pkt) = packet {
                         let flags = pkt.get_flags();
                         if flags & (TcpFlags::RST | TcpFlags::FIN | TcpFlags::ACK) == 0
@@ -582,15 +561,11 @@ impl StatefullFirewall {
             }
             IpNextHeaderProtocols::Icmp | IpNextHeaderProtocols::Icmpv6 => {
                 let icmp_packet = unwrap_option_or_return!(IcmpPacket::new(ip.payload()), false);
-                if let PacketAction::Drop = self.decide_connection_handling(peer, None) {
-                    if P::Icmp::BLOCKED_TYPES.contains(&icmp_packet.get_icmp_type().0) {
-                        telio_log_trace!("Dropping ICMP packet {:?} {:?}", ip, peer);
-                        return false;
-                    }
-                    return matches!(
-                        conn_state,
-                        LibfwConnectionState::LibfwConnectionStateEstablished
-                    );
+                if !connection_allowed
+                    && P::Icmp::BLOCKED_TYPES.contains(&icmp_packet.get_icmp_type().0)
+                {
+                    telio_log_trace!("Dropping ICMP packet {:?} {:?}", ip, peer);
+                    return false;
                 }
                 true
             }
@@ -646,54 +621,15 @@ impl StatefullFirewall {
         }
     }
 
-    fn decide_packet_handling(
-        &self,
-        pubkey: PublicKey,
-        local_addr: StdIpAddr,
-        whitelist: RwLockReadGuard<'_, Whitelist>,
-    ) -> PacketAction {
-        let local_ip = unwrap_lock_or_return!(self.ip_addresses.read(), PacketAction::Drop);
-        if self.is_private_address_except_local_interface(&local_addr) {
-            #[allow(index_access_check)]
-            if whitelist.peer_whitelists[Permissions::LocalAreaConnections].contains(&pubkey) {
-                return PacketAction::PassThrough;
-            } else {
-                telio_log_trace!("Local connection policy failed");
-                return PacketAction::Drop;
-            }
-        }
-
-        if local_ip.contains(&local_addr) {
-            return PacketAction::HandleLocally;
-        }
-
-        #[allow(index_access_check)]
-        if whitelist.peer_whitelists[Permissions::RoutingConnections].contains(&pubkey) {
-            telio_log_trace!("Forwarding due to Routing policy");
-            return PacketAction::PassThrough;
-        }
-
-        PacketAction::Drop
-    }
-
-    fn decide_connection_handling(
-        &self,
-        pubkey: PublicKey,
-        local_port: Option<u16>,
-    ) -> PacketAction {
-        let whitelist = unwrap_lock_or_return!(self.whitelist.read(), PacketAction::Drop);
+    fn decide_connection_handling(&self, pubkey: PublicKey, local_port: Option<u16>) -> bool {
+        let whitelist = unwrap_lock_or_return!(self.whitelist.read(), false);
         #[allow(index_access_check)]
         if whitelist.peer_whitelists[Permissions::IncomingConnections].contains(&pubkey) {
-            return PacketAction::HandleLocally;
-        }
-
-        if let Some(local_port) = local_port {
-            if whitelist.is_port_whitelisted(&pubkey, local_port) {
-                return PacketAction::HandleLocally;
-            }
-        }
-
-        PacketAction::Drop
+            return true;
+        };
+        local_port
+            .map(|port| whitelist.is_port_whitelisted(&pubkey, port))
+            .unwrap_or(false)
     }
 }
 
