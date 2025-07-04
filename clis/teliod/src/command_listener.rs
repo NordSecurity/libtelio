@@ -92,6 +92,35 @@ impl CommandListener {
         }
     }
 
+    pub async fn try_recv_quit(&mut self) -> Result<(), TeliodError> {
+        let mut connection = self.socket.accept().await?;
+        let command_str = connection.read_command().await?;
+
+        match serde_json::from_str::<ClientCmd>(&command_str) {
+            Ok(ClientCmd::QuitDaemon) => {
+                connection.respond(CommandResponse::Ok.serialize()).await?;
+                Ok(())
+            }
+            Ok(_) => {
+                connection
+                    .respond(
+                        CommandResponse::Err("Obtaining identity, ignoring".to_owned()).serialize(),
+                    )
+                    .await?;
+                Err(TeliodError::InvalidCommand(command_str))
+            }
+            Err(e) => {
+                connection
+                    .respond(
+                        CommandResponse::Err(format!("Invalid command: {}", command_str))
+                            .serialize(),
+                    )
+                    .await?;
+                Err(e.into())
+            }
+        }
+    }
+
     pub async fn handle_client_connection(&mut self) -> Result<ClientCmd, TeliodError> {
         let mut connection = self.socket.accept().await?;
         let command_str = connection.read_command().await?;
