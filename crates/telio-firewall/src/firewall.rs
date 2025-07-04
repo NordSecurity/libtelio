@@ -257,7 +257,7 @@ impl fmt::Display for Permissions {
     }
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub(crate) enum PacketAction {
     PassThrough,
     Drop,
@@ -548,21 +548,21 @@ impl StatefullFirewall {
                 let (link, packet) =
                     unwrap_option_or_return!(Conntracker::build_conn_info(&ip, true), false);
                 let local_port = link.local_port;
-                let mut packet_action = self.decide_connection_handling(peer, Some(local_port));
+                let packet_action = self.decide_connection_handling(peer, Some(local_port));
                 if let PacketAction::PassThrough = packet_action {
                     telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, peer);
                     return true;
                 }
 
+                if let (PacketAction::Drop, LibfwConnectionState::LibfwConnectionStateNew) =
+                    (packet_action, conn_state)
+                {
+                    telio_log_trace!("Dropping TCP packet {:?} {:?}", ip, peer);
+                    return false;
+                }
+
                 // Packet actions sometimes needs to be adjusted based on the connection info
                 if let Some(conn_info) = tcp_conn_info {
-                    // Accepting packets for connections initiated locally
-                    if !conn_info.conn_remote_initiated {
-                        if let PacketAction::Drop = packet_action {
-                            packet_action = PacketAction::HandleLocally
-                        }
-                    }
-
                     // Dropping most packets for dead, locally initiated connections
                     if let Some(pkt) = packet {
                         let flags = pkt.get_flags();
@@ -571,21 +571,14 @@ impl StatefullFirewall {
                             && !conn_info.tx_alive
                             && !conn_info.conn_remote_initiated
                         {
-                            packet_action = PacketAction::Drop;
+                            telio_log_trace!("Dropping TCP packet {:?} {:?}", ip, peer);
+                            return false;
                         }
                     }
                 }
 
-                match packet_action {
-                    PacketAction::PassThrough | PacketAction::HandleLocally => {
-                        telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, peer);
-                        true
-                    }
-                    PacketAction::Drop => {
-                        telio_log_trace!("Dropping TCP packet {:?} {:?}", ip, peer);
-                        false
-                    }
-                }
+                telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, peer);
+                true
             }
             IpNextHeaderProtocols::Icmp | IpNextHeaderProtocols::Icmpv6 => {
                 let icmp_packet = unwrap_option_or_return!(IcmpPacket::new(ip.payload()), false);
@@ -719,9 +712,9 @@ impl Firewall for StatefullFirewall {
 
     fn remove_from_port_whitelist(&self, peer: PublicKey) {
         telio_log_debug!("Removing {peer:?} network from firewall port whitelist");
-        let mut whitelist = unwrap_lock_or_return!(self.whitelist.write());
-        whitelist.port_whitelist.remove(&peer);
-        self.conntracker.remove_inbound_conns_for_assoc_data(&peer);
+        unwrap_lock_or_return!(self.whitelist.write())
+            .port_whitelist
+            .remove(&peer);
     }
 
     fn get_port_whitelist(&self) -> HashMap<PublicKey, u16> {
@@ -750,7 +743,6 @@ impl Firewall for StatefullFirewall {
         unwrap_lock_or_return!(self.whitelist.write(), Default::default()).peer_whitelists
             [permissions]
             .remove(&peer);
-        self.conntracker.remove_inbound_conns_for_assoc_data(&peer);
     }
 
     #[allow(index_access_check)]
@@ -765,13 +757,7 @@ impl Firewall for StatefullFirewall {
     }
 
     fn remove_vpn_peer(&self) {
-        if let Some(vpn_peer) = unwrap_lock_or_return!(self.whitelist.write())
-            .vpn_peer
-            .take()
-        {
-            self.conntracker
-                .remove_inbound_conns_for_assoc_data(&vpn_peer);
-        }
+        unwrap_lock_or_return!(self.whitelist.write()).vpn_peer = None;
     }
 
     fn process_outbound_packet(
@@ -2490,11 +2476,11 @@ pub mod tests {
             assert_eq!(fw.process_outbound_packet(&them_peer.0, &make_udp(us, them)), true);
             assert_eq!(fw.conntracker.udp.lock().unwrap().len(), 1);
 
-            // Should BLOCK because they started the session
+            // The already started connection should still work
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
             fw.remove_from_port_whitelist(them_peer);
-            assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), false);
-            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), 0);
+            assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_udp(them, us)), true);
+            assert_eq!(fw.conntracker.udp.lock().unwrap().len(), 1);
         }
     }
 
@@ -2550,13 +2536,12 @@ pub mod tests {
             assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
 
 
-            // Should BLOCK because they started the session
+            // Firewall allows already established connections
             assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
             fw.remove_from_port_whitelist(them_peer);
-            // After removing peer from whitelist conntrack entries are removed as well
-            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 0);
-            assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), false);
-            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 0);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
+            assert_eq!(fw.process_inbound_packet(&them_peer.0, &make_tcp(them, us, 0)), true);
+            assert_eq!(fw.conntracker.tcp.lock().unwrap().len(), 1);
         }
 
     }
@@ -2822,8 +2807,8 @@ pub mod tests {
                     .len(),
                 0
             );
-            // Removal clears the conntracker entrys for the given peer
-            assert_eq!(expected[2], fw.get_state(),);
+            // The old connections are still tracked
+            assert_eq!(expected[1], fw.get_state(),);
 
             fw.add_to_peer_whitelist((&make_peer()).into(), Permissions::RoutingConnections);
             assert_eq!(
@@ -2843,7 +2828,8 @@ pub mod tests {
             ));
 
             // We have one new connection entry
-            assert_eq!(expected[0], fw.get_state(),);
+            assert_eq!(expected[1], fw.get_state(),);
+
             // Allow only routing
             fw.remove_from_peer_whitelist((&make_peer()).into(), Permissions::IncomingConnections);
             assert_eq!(
