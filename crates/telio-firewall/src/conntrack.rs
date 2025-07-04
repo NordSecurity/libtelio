@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     convert::TryInto,
     fmt::{Debug, Formatter},
     io,
@@ -1060,33 +1059,5 @@ impl Conntracker {
         });
 
         self.send_icmp_port_unreachable_packets(iter, inject_packet_cb)
-    }
-
-    // That's the function for closing connection when a peer is no longer whitelisted
-    // Handles TCP and UDP conns as ICMP entries are tracker only when locally initiated
-    pub(crate) fn remove_inbound_conns_for_assoc_data(&self, associated_data: &[u8]) {
-        // Handle TCP conns
-        let mut tcp_cache = unwrap_lock_or_return!(self.tcp.lock());
-        let mut keys_to_remove = HashSet::new();
-        for (key, val) in tcp_cache.iter() {
-            if key.associated_data.as_slice() == associated_data && val.conn_remote_initiated {
-                keys_to_remove.insert(key.clone());
-            }
-        }
-        for key in keys_to_remove {
-            tcp_cache.remove(&key);
-        }
-
-        // Handle UDP conns
-        let mut udp_cache = unwrap_lock_or_return!(self.udp.lock());
-        let mut keys_to_remove = HashSet::new();
-        for (key, val) in udp_cache.iter() {
-            if key.associated_data.as_slice() == associated_data && val.is_remote_initiated {
-                keys_to_remove.insert(key.clone());
-            }
-        }
-        for key in keys_to_remove {
-            udp_cache.remove(&key);
-        }
     }
 }
