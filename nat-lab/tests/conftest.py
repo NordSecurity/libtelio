@@ -373,11 +373,11 @@ async def collect_kernel_logs(items, suffix):
 
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
-        if os.environ.get("NATLAB_SAVE_LOGS") is not None:
-            asyncio.run(collect_kernel_logs(session.items, "before_tests"))
-
         if not asyncio.run(perform_setup_checks()):
             pytest.exit("Setup checks failed, exiting ...")
+
+        if os.environ.get("NATLAB_SAVE_LOGS") is not None:
+            asyncio.run(collect_kernel_logs(session.items, "before_tests"))
 
         asyncio.run(_copy_vm_binaries_if_needed(session.items))
 
