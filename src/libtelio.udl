@@ -534,6 +534,9 @@ interface FeaturesDefaultsBuilder {
     /// Enable custom socket buffer sizes for NepTUN
     [Self=ByArc]
     FeaturesDefaultsBuilder set_skt_buffer_size(u32 skt_buffer_size);
+
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_error_notification_service();
 };
 
 
@@ -577,6 +580,8 @@ dictionary Features {
     boolean multicast;
     /// Batching
     FeatureBatching? batching;
+
+    FeatureErrorNotificationService? error_notification_service;
 };
 
 dictionary FeatureBatching {
@@ -783,6 +788,11 @@ dictionary FeatureUpnp {
     u32 lease_duration_s;
 };
 
+/// TODO
+dictionary FeatureErrorNotificationService {
+    /// TODO
+    u32 buffer_size;
+};
 
 /// Rust representation of [meshnet map]
 /// A network map of all the Peers and the servers
