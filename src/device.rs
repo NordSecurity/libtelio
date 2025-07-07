@@ -7,7 +7,7 @@ use telio_lana::init_lana;
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_network_monitors::{local_interfaces::SystemGetIfAddrs, monitor::NetworkMonitor};
 use telio_pq::PostQuantum;
-use telio_proto::HeartbeatMessage;
+use telio_proto::{ConnectionError, ErrorNotificationService, HeartbeatMessage};
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
 use telio_relay::{
     derp::Config as DerpConfig, multiplexer::Multiplexer, DerpKeepaliveConfig, DerpRelay,
@@ -334,6 +334,8 @@ pub struct Entities {
     postquantum_wg: telio_pq::Entity,
 
     network_monitor: NetworkMonitor,
+
+    error_notification_service: Option<ErrorNotificationService>,
 }
 
 impl Entities {
@@ -399,6 +401,7 @@ pub struct EventListeners {
     endpoint_upgrade_event_subscriber: chan::Rx<UpgradeRequestChangeEvent>,
     stun_server_subscriber: chan::Rx<Option<StunServer>>,
     post_quantum_subscriber: chan::Rx<telio_pq::Event>,
+    error_notification_service_subscriber: chan::Rx<ConnectionError>,
 }
 
 pub struct EventPublishers {
@@ -1240,6 +1243,15 @@ impl Runtime {
 
         let polling_interval = interval(Duration::from_secs(5));
 
+        let (error_notification_service, error_notification_service_subscriber) =
+            if let Some(error_notification_service) = features.error_notification_service {
+                let (ens, rx) =
+                    ErrorNotificationService::new(error_notification_service.buffer_size as usize);
+                (Some(ens), rx)
+            } else {
+                (None, Chan::new(1).rx)
+            };
+
         Ok(Runtime {
             features,
             requested_state,
@@ -1253,6 +1265,7 @@ impl Runtime {
                 aggregator: aggregator.clone(),
                 postquantum_wg,
                 network_monitor,
+                error_notification_service,
             },
             event_listeners: EventListeners {
                 wg_endpoint_publish_event_subscriber: wg_endpoint_publish_events.rx,
@@ -1261,6 +1274,7 @@ impl Runtime {
                 endpoint_upgrade_event_subscriber: wg_upgrade_sync.rx,
                 stun_server_subscriber: stun_server_events.rx,
                 post_quantum_subscriber: post_quantum.rx,
+                error_notification_service_subscriber,
             },
             event_publishers: EventPublishers {
                 libtelio_event_publisher: libtelio_wide_event_publisher,

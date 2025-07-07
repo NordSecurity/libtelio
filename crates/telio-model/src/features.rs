@@ -61,6 +61,8 @@ pub struct Features {
     pub multicast: bool,
     /// Batching feature configuration, disabled by default, used for batching keep-alives
     pub batching: Option<FeatureBatching>,
+    /// TODO
+    pub error_notification_service: Option<FeatureErrorNotificationService>,
 }
 
 impl Features {
@@ -557,6 +559,16 @@ pub struct FeatureUpnp {
     pub lease_duration_s: u32,
 }
 
+/// TODO
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
+#[serde(default)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct FeatureErrorNotificationService {
+    /// TODO
+    #[default = 5]
+    pub buffer_size: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -812,6 +824,7 @@ mod tests {
                         trigger_effective_duration: 10,
                         trigger_cooldown_duration: 60,
                     }),
+                    error_notification_service: None, // TODO
                 }
             );
         }
