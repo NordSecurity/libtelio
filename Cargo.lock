@@ -3042,7 +3042,7 @@ checksum = "6e918e4ff8c4549eb882f14b3a4bc8c8bc93de829416eacf579f1207a8fbf861"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.103",
+ "syn 2.0.101",
 ]
 
 [[package]]
@@ -3325,7 +3325,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6837b9e10d61f45f987d50808f83d1ee3d206c66acf650c3e4ae2e1f6ddedf55"
 dependencies = [
  "proc-macro2",
- "syn 2.0.103",
+ "syn 2.0.101",
 ]
 
 [[package]]
@@ -3439,7 +3439,7 @@ dependencies = [
  "prost",
  "prost-types",
  "regex",
- "syn 2.0.103",
+ "syn 2.0.101",
  "tempfile",
 ]
 
@@ -3453,7 +3453,7 @@ dependencies = [
  "itertools 0.14.0",
  "proc-macro2",
  "quote",
- "syn 2.0.103",
+ "syn 2.0.101",
 ]
 
 [[package]]
@@ -5039,6 +5039,7 @@ dependencies = [
  "strum",
  "telio-crypto",
  "telio-model",
+ "telio-task",
  "telio-utils",
  "test-log",
  "thiserror 2.0.12",
@@ -5687,7 +5688,7 @@ dependencies = [
  "prost-build",
  "prost-types",
  "quote",
- "syn 2.0.103",
+ "syn 2.0.101",
 ]
 
 [[package]]

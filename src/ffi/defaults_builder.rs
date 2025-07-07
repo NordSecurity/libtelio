@@ -32,6 +32,7 @@ impl FeaturesDefaultsBuilder {
             ipv6: false,
             nicknames: false,
             batching: None,
+            error_notification_service: None,
         };
 
         Self {
@@ -138,6 +139,12 @@ impl FeaturesDefaultsBuilder {
 
     pub fn set_skt_buffer_size(self: Arc<Self>, skt_buffer_size: u32) -> Arc<Self> {
         self.config.lock().wireguard.skt_buffer_size = Some(skt_buffer_size);
+        self
+    }
+
+    // TODO: should I add this here? Who is using this interface?
+    pub fn enable_error_notification_service(self: Arc<Self>) -> Arc<Self> {
+        self.config.lock().error_notification_service = Some(Default::default());
         self
     }
 }
