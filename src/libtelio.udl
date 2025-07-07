@@ -927,6 +927,8 @@ dictionary TelioNode {
     boolean allow_multicast;
     /// Flag to control whether the Node allows multicast messages from us
     boolean peer_allows_multicast;
+    /// TODO
+    VpnConnectionError? vpn_connection_error;
 };
 
 /// Main object of `Event`. See `Event::new()` for init options.
@@ -969,4 +971,18 @@ enum ErrorCode {
     "NoError",
     /// The error type is unknown
     "Unknown"
+};
+
+/// TODO
+enum VpnConnectionError {
+    /// TODO
+    "Unknown",
+    /// TODO
+    "ConnectionLimitReached",
+    /// TODO
+    "ServerMaintenance",
+    /// TODO
+    "Unauthenticated",
+    /// TODO
+    "Superseded"
 };
