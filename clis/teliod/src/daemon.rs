@@ -1,3 +1,4 @@
+use futures::pin_mut;
 use futures::stream::StreamExt;
 use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use nix::sys::signal::Signal;
@@ -339,11 +340,28 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
     let mut cmd_listener = CommandListener::new(socket, telio_tx.clone());
 
-    let identity_ptr = select! {
-        init_values = daemon_init(config.clone(), telio_tx.clone()) => init_values?,
-        _ = signals.next() => {
-            warn!("Interrupted while obtaining identity - stopping");
-            return Ok(());
+    let identity_ptr = {
+        let daemon_init_future = daemon_init(config.clone(), telio_tx.clone());
+        pin_mut!(daemon_init_future);
+        loop {
+            select! {
+                init_values = &mut daemon_init_future => break init_values?,
+                res = cmd_listener.try_recv_quit() => {
+                    match res {
+                        Ok(_) => {
+                            info!("Received quit command, exiting");
+                            return Ok(())
+                        },
+                        Err(e) => {
+                            debug!("Received command {:?} while obtaining identity, ignoring", e);
+                        },
+                    }
+                },
+                _ = signals.next() => {
+                    warn!("Interrupted while obtaining identity - stopping");
+                    return Ok(());
+                }
+            };
         }
     };
 
