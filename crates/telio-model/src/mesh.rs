@@ -52,6 +52,23 @@ pub struct Node {
     pub allow_multicast: bool,
     /// Flag to control whether the Node allows multicast messages from us
     pub peer_allows_multicast: bool,
+    /// Latest NordLynx VPN error received from the VPN's Error Notification Service
+    pub vpn_connection_error: Option<VpnConnectionError>,
+}
+
+/// Possible VPN errors received from the Error Notification Service
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VpnConnectionError {
+    /// Unknown error
+    Unknown,
+    /// Connection limit reached
+    ConnectionLimitReached,
+    /// Server will undergo maintenance in the near future
+    ServerMaintenance,
+    /// Authentication failed
+    Unauthenticated,
+    /// There is a newer connection to this VPN server
+    Superseded,
 }
 
 /// Description of the Exit Node

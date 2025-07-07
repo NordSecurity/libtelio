@@ -251,6 +251,7 @@ mod tests {
             path: crate::features::PathType::Relay,
             allow_multicast: false,
             peer_allows_multicast: false,
+            vpn_connection_error: None,
         };
 
         let server = Server {
@@ -302,7 +303,8 @@ mod tests {
             r#""allow_peer_send_files":false,"#,
             r#""path":"relay","#,
             r#""allow_multicast":false,"#,
-            r#""peer_allows_multicast":false"#,
+            r#""peer_allows_multicast":false,"#,
+            r#""vpn_connection_error":null"#,
             r#"}}"#
         ));
 
