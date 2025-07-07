@@ -78,6 +78,7 @@ def telio_node(  # pylint: disable=dangerous-default-value
     link_state: Optional[LinkState] = None,
     allow_multicast: bool = True,
     peer_allows_multicast: bool = True,
+    vpn_connection_error = None,
 ) -> TelioNode:
     return TelioNode(
         identifier=identifier,
@@ -98,4 +99,5 @@ def telio_node(  # pylint: disable=dangerous-default-value
         link_state=link_state,
         allow_multicast=allow_multicast,
         peer_allows_multicast=peer_allows_multicast,
+        vpn_connection_error=vpn_connection_error,
     )

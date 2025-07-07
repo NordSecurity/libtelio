@@ -58,6 +58,7 @@ use tokio::{
 use telio_dns::{DnsResolver, LocalDnsResolver, Records};
 
 use telio_dns::bind_tun;
+use tracing::instrument::WithSubscriber;
 use wg::uapi::{self, PeerState};
 
 use std::{
@@ -2072,6 +2073,12 @@ impl Runtime {
         } else if exit_node.endpoint.is_none() {
             return Err(Error::EndpointNotProvided);
         }
+        if let Some(endpoint) = exit_node.endpoint {
+            let vpn_ip = endpoint.ip();
+            if let Some(ens) = self.entities.error_notification_service.as_mut() {
+                ens.start_monitor(vpn_ip).await;
+            }
+        }
 
         let old_exit_node = self.requested_state.exit_node.replace(exit_node);
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
@@ -2221,6 +2228,7 @@ impl Runtime {
                     path: path_type,
                     allow_multicast: meshnet_peer.allow_multicast,
                     peer_allows_multicast: meshnet_peer.peer_allows_multicast,
+                    vpn_connection_error: None,
                 })
             }
             (None, Some(exit_node)) => {
@@ -2493,7 +2501,10 @@ impl TaskRuntime for Runtime {
 
                 Ok(())
             },
-
+            Some(connection_error) = self.event_listeners.error_notification_service_subscriber.recv() => {
+                telio_log_debug!("XXX, got: {connection_error:?}");
+                Ok(())
+            },
             _ = self.polling_interval.tick() => {
                 telio_log_debug!("WG consolidation triggered by tick event, total logs dropped: {}", logs_dropped_until_now());
                 let dropped = logs_dropped_since_last_checked();

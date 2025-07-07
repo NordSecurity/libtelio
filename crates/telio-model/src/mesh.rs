@@ -52,6 +52,23 @@ pub struct Node {
     pub allow_multicast: bool,
     /// Flag to control whether the Node allows multicast messages from us
     pub peer_allows_multicast: bool,
+    /// TODO
+    pub vpn_connection_error: Option<VpnConnectionError>,
+}
+
+/// TODO
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VpnConnectionError {
+    /// TODO
+    Unknown,
+    /// TODO
+    ConnectionLimitReached,
+    /// TODO
+    ServerMaintenance,
+    /// TODO
+    Unauthenticated,
+    /// TODO
+    Superseded,
 }
 
 /// Description of the Exit Node

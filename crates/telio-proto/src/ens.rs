@@ -1,3 +1,5 @@
+use std::net::IpAddr;
+
 use grpc::{ConnectionError, Empty};
 use telio_task::io::{
     chan::{Rx, Tx},
@@ -10,6 +12,8 @@ use tokio::{select, sync::watch};
 pub(crate) mod grpc {
     tonic::include_proto!("ens");
 }
+
+const ENS_PORT: u16 = 993;
 
 /// TODO
 pub struct ErrorNotificationService {
@@ -31,7 +35,11 @@ impl ErrorNotificationService {
     }
 
     /// TODO
-    pub async fn start_monitor(&mut self, vpn_server: &str) {
+    pub async fn start_monitor(&mut self, vpn_ip: IpAddr) {
+        self.start_monitor_on_port(vpn_ip, ENS_PORT).await
+    }
+
+    async fn start_monitor_on_port(&mut self, vpn_ip: IpAddr, ens_port: u16) {
         self.stop_old_monitor();
 
         let (quit_tx, mut quit_rx): (watch::Sender<bool>, watch::Receiver<bool>) =
@@ -39,7 +47,13 @@ impl ErrorNotificationService {
 
         self.quit = Some(quit_tx);
 
-        let mut client = grpc::ens_client::EnsClient::connect(vpn_server.to_owned())
+        let vpn_uri = tonic::transport::Uri::builder()
+            .scheme("http") //TODO
+            .authority(format!("{vpn_ip}:{ens_port}"))
+            .path_and_query("/")
+            .build()
+            .unwrap();
+        let mut client = grpc::ens_client::EnsClient::connect(vpn_uri.clone())
             .await
             .unwrap();
         let mut stream = client
@@ -50,17 +64,17 @@ impl ErrorNotificationService {
 
         let tx = self.tx.clone();
 
-        let vpn_server = vpn_server.to_owned();
+        let vpn_uri = vpn_uri.to_owned();
         tokio::spawn(async move {
             loop {
                 select! {
                     _ = quit_rx.wait_for(|b| *b)=> {
                         println!("got quit");
-                        telio_log_debug!("ENS monitor for '{vpn_server}' ends");
+                        telio_log_debug!("ENS monitor for '{vpn_uri}' ends");
                         break
                     }
                     error_notification = stream.message() => {
-                        telio_log_warn!("Received error notification for '{vpn_server}': {error_notification:?}");
+                        telio_log_warn!("Received error notification for '{vpn_uri}': {error_notification:?}");
                         match error_notification {
                             Ok(Some(error_notification)) =>{
                                 if let Err(e) = tx.try_send(error_notification) {
@@ -68,7 +82,7 @@ impl ErrorNotificationService {
                                 }
                             }
                             Ok(None) => {
-                                telio_log_debug!("'{vpn_server}' closed the grpc stream");
+                                telio_log_debug!("'{vpn_uri}' closed the grpc stream");
                                 break;
                             }
                             Err(_) => todo!(),
@@ -76,7 +90,7 @@ impl ErrorNotificationService {
                     }
                 };
             }
-            telio_log_debug!("ENS monitor for '{vpn_server}' terminates");
+            telio_log_debug!("ENS monitor for '{vpn_uri}' terminates");
         });
     }
 
@@ -97,7 +111,7 @@ impl ErrorNotificationService {
 #[cfg(test)]
 mod tests {
 
-    use std::time::Duration;
+    use std::{net::Ipv4Addr, time::Duration};
 
     use grpc::{
         ens_server::{self, EnsServer},
@@ -174,9 +188,11 @@ mod tests {
         let addr = "http://127.0.0.1:4433";
         println!("addr: {addr:?}");
         let (mut ens, mut rx) = ErrorNotificationService::new(10);
-        ens.start_monitor(addr).await;
+        ens.start_monitor_on_port(IpAddr::V4(Ipv4Addr::LOCALHOST), 4433)
+            .await;
         let _collected_errors = collect_errors(2, &mut rx).await;
-        ens.start_monitor(addr).await;
+        ens.start_monitor_on_port(IpAddr::V4(Ipv4Addr::LOCALHOST), 4433)
+            .await;
 
         let collected_errors = collect_errors(2, &mut rx).await;
 
