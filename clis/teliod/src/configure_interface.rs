@@ -381,11 +381,35 @@ impl ConfigureInterface for Uci {
     }
 
     fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), TeliodError> {
-        Ok(()) // No-op implementation
+        execute(Command::new("uci").args(["add", "network", "route"]))?;
+        execute(Command::new("uci").args(["rename", "network.@route[-1]=teliod_route"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_route.interface=tun"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_route.target=0.0.0.0/0"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_route.table=205"]))?;
+
+        execute(Command::new("uci").args(["add", "network", "rule"]))?;
+        execute(Command::new("uci").args(["rename", "network.@rule[-1]=teliod_rule"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_rule.lookup=205"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_rule.mark=11673110"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_rule.priority=32765"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_rule.invert=1"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_rule.src=0.0.0.0/0"]))?;
+
+        // save and apply
+        execute(Command::new("uci").args(["commit", "network"]))?;
+        execute(Command::new("/etc/init.d/network").args(["reload"]))?;
+        Ok(())
     }
 
     fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError> {
         debug!("Removing exit route");
+        execute(Command::new("uci").args(["del", "network.teliod_route"]))?;
+
+        execute(Command::new("uci").args(["del", "network.teliod_rule"]))?;
+
+        // save and apply
+        execute(Command::new("uci").args(["commit", "network"]))?;
+        execute(Command::new("/etc/init.d/network").args(["reload"]))?;
         Ok(())
     }
 
@@ -393,6 +417,7 @@ impl ConfigureInterface for Uci {
         debug!("Removing interface");
         execute(Command::new("uci").args(["del", "network.tun"]))?;
 
+        // save and apply
         execute(Command::new("uci").args(["commit", "network"]))?;
         execute(Command::new("/etc/init.d/network").args(["reload"]))?;
         Ok(())
