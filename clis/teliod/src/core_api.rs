@@ -56,8 +56,8 @@ pub enum Error {
     InvalidResponse,
     #[error("Unable to update machine due to Error: {0}")]
     UpdateMachine(StatusCode),
-    #[error("Max retries exceeded for connection: {0}")]
-    ExpBackoffTimeout(String),
+    #[error("Max retries exceeded for connection")]
+    ExpBackoffTimeout(),
     #[error("No local data directory found")]
     NoDataLocalDir,
     #[error("Device not registered with server")]
@@ -295,7 +295,11 @@ async fn update_machine_with_exp_backoff(
                 if let Error::UpdateMachine(_) = e {
                     return Err(e);
                 }
-                wait_with_backoff_delay(&mut backoff, &mut retries, "update machine", e).await?;
+                warn!(
+                    "Failed to update machine due to {e}, will wait for {:?} and retry",
+                    backoff.get_backoff()
+                );
+                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
             }
         }
     }
@@ -312,13 +316,13 @@ async fn fetch_identifier_with_exp_backoff(
     loop {
         match fetch_identifier_from_api(auth_token, cert_path, public_key).await {
             Ok(id) => return Ok(id),
-            Err(e) => match e {
-                Error::FetchingIdentifier(_) | Error::DeviceNotFound => return Err(e),
-                _ => {
-                    wait_with_backoff_delay(&mut backoff, &mut retries, "fetch identifier", e)
-                        .await?;
-                }
-            },
+            Err(e) => {
+                warn!(
+                    "Failed to fetch identifier due to {e:?}, will wait for {:?} and retry",
+                    backoff.get_backoff()
+                );
+                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
+            }
         }
     }
 }
@@ -338,8 +342,11 @@ async fn register_machine_with_exp_backoff(
             Err(e) => match e {
                 Error::PeerRegistering(_) => return Err(e),
                 _ => {
-                    wait_with_backoff_delay(&mut backoff, &mut retries, "register machine", e)
-                        .await?;
+                    warn!(
+                        "Failed to register machine due to {e}, will wait for {:?} and retry",
+                        backoff.get_backoff()
+                    );
+                    wait_with_backoff_delay(&mut backoff, &mut retries).await?;
                 }
             },
         }
@@ -349,16 +356,10 @@ async fn register_machine_with_exp_backoff(
 async fn wait_with_backoff_delay(
     backoff: &mut ExponentialBackoff,
     retries: &mut usize,
-    action: &str,
-    error: Error,
 ) -> Result<(), Error> {
-    warn!(
-        "Failed to {action} due to {error}, will wait for {:?} and retry",
-        backoff.get_backoff()
-    );
     tokio::time::sleep(backoff.get_backoff()).await;
     if *retries > MAX_RETRIES {
-        return Err(Error::ExpBackoffTimeout(action.to_string()));
+        return Err(Error::ExpBackoffTimeout());
     }
     backoff.next_backoff();
     *retries += 1;
