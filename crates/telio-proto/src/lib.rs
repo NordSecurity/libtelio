@@ -17,7 +17,10 @@ mod packet;
 
 mod ens;
 
-pub use ens::ErrorNotificationService;
+pub use ens::{
+    grpc::{ConnectionError, Error},
+    ErrorNotificationService,
+};
 
 pub use codec::{Codec, Error as CodecError, Result as CodecResult};
 pub use packet::*;

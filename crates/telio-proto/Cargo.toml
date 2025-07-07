@@ -22,6 +22,7 @@ prost = "0.13"
 async-trait.workspace = true
 tokio-stream = "0.1.17"
 tokio = { workspace = true, features = ["full"] }
+telio-task.workspace = true
 
 [build-dependencies]
 anyhow.workspace = true

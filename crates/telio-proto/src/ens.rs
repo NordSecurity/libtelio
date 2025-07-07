@@ -1,18 +1,20 @@
 use grpc::{ConnectionError, Empty};
-use telio_utils::{telio_log_debug, telio_log_warn};
-use tokio::{
-    select,
-    sync::{mpsc, watch},
+use telio_task::io::{
+    chan::{Rx, Tx},
+    Chan,
 };
+use telio_utils::{telio_log_debug, telio_log_warn};
+use tokio::{select, sync::watch};
 
+#[allow(missing_docs)]
 pub(crate) mod grpc {
     tonic::include_proto!("ens");
 }
 
 /// TODO
 pub struct ErrorNotificationService {
-    buffer_size: usize,
     quit: Option<watch::Sender<bool>>,
+    tx: Tx<ConnectionError>,
 }
 
 impl Drop for ErrorNotificationService {
@@ -23,19 +25,18 @@ impl Drop for ErrorNotificationService {
 
 impl ErrorNotificationService {
     /// TODO
-    pub fn new(buffer_size: usize) -> Self {
-        Self {
-            buffer_size,
-            quit: None,
-        }
+    pub fn new(buffer_size: usize) -> (Self, Rx<ConnectionError>) {
+        let Chan { rx, tx }: Chan<ConnectionError> = Chan::new(buffer_size);
+        (Self { quit: None, tx }, rx)
     }
 
     /// TODO
-    pub async fn start_monitor(&mut self, vpn_server: &str) -> mpsc::Receiver<ConnectionError> {
+    pub async fn start_monitor(&mut self, vpn_server: &str) {
         self.stop_old_monitor();
 
         let (quit_tx, mut quit_rx): (watch::Sender<bool>, watch::Receiver<bool>) =
             watch::channel(false);
+
         self.quit = Some(quit_tx);
 
         let mut client = grpc::ens_client::EnsClient::connect(vpn_server.to_owned())
@@ -46,14 +47,15 @@ impl ErrorNotificationService {
             .await
             .unwrap()
             .into_inner();
-        let (tx, rx): (tokio::sync::mpsc::Sender<ConnectionError>, _) =
-            tokio::sync::mpsc::channel(self.buffer_size);
+
+        let tx = self.tx.clone();
 
         let vpn_server = vpn_server.to_owned();
         tokio::spawn(async move {
             loop {
                 select! {
                     _ = quit_rx.wait_for(|b| *b)=> {
+                        println!("got quit");
                         telio_log_debug!("ENS monitor for '{vpn_server}' ends");
                         break
                     }
@@ -76,8 +78,11 @@ impl ErrorNotificationService {
             }
             telio_log_debug!("ENS monitor for '{vpn_server}' terminates");
         });
+    }
 
-        rx
+    /// TODO
+    pub async fn stop(mut self) {
+        self.stop_old_monitor();
     }
 
     fn stop_old_monitor(&mut self) {
@@ -168,16 +173,29 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(100)).await;
         let addr = "http://127.0.0.1:4433";
         println!("addr: {addr:?}");
-        let mut ens = ErrorNotificationService::new(10);
-        let mut _old_rx = ens.start_monitor(addr).await;
-        let mut rx = ens.start_monitor(addr).await;
+        let (mut ens, mut rx) = ErrorNotificationService::new(10);
+        ens.start_monitor(addr).await;
+        let _collected_errors = collect_errors(2, &mut rx).await;
+        ens.start_monitor(addr).await;
 
-        let mut collected_errors = vec![];
-        while let Some(error) = rx.recv().await {
-            println!("Received error: {error:?}");
-            collected_errors.push(error);
-        }
+        let collected_errors = collect_errors(2, &mut rx).await;
 
         assert_eq!(errors_to_emit, collected_errors);
+
+        ens.stop().await;
+
+        // Stopping, should eventually be processed by the running task, and it should
+        // drop last remaining instance of the Tx side.
+        while !rx.is_closed() {}
+    }
+
+    async fn collect_errors(n: usize, rx: &mut Rx<ConnectionError>) -> Vec<ConnectionError> {
+        let mut ret = vec![];
+        for i in 0..n {
+            let error = rx.recv().await.unwrap();
+            println!("Received error: {error:?}");
+            ret.push(error);
+        }
+        ret
     }
 }
