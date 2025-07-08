@@ -38,6 +38,8 @@ def run_command_with_output(command, hide_output=False):
 def start():
     check_docker_version_compatibility()
 
+    generate_grpc("../crates/telio-proto/protos/ens.proto")
+
     original_port_mapping = 'ports: ["58001"]'
     disabled_port_mapping = "ports: []"
     with open("docker-compose.yml", "r", encoding="utf-8") as file:
@@ -156,6 +158,20 @@ def get_docker_version():
         print("Error: Docker is not installed or not running.")
         sys.exit(1)
     return result.stdout.strip()
+
+
+def generate_grpc(path):
+    os.makedirs("bin/grpc_protobuf", exist_ok=True)
+    include = os.path.dirname(path)
+    run_command([
+        "python3",
+        "-m",
+        "grpc_tools.protoc",
+        f"-I{include}",
+        "--python_out=./bin/grpc_protobuf/",
+        "--grpc_python_out=./bin/grpc_protobuf",
+        path,
+    ])
 
 
 def main():
