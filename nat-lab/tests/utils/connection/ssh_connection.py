@@ -23,6 +23,8 @@ class SshConnection(Connection):
             target_os = TargetOS.Windows
         elif tag is ConnectionTag.VM_MAC:
             target_os = TargetOS.Mac
+        elif tag is ConnectionTag.VM_LINUX_NLX_1:
+            target_os = TargetOS.Linux
         else:
             assert False, format(
                 "Can't create ssh connection for the provided tag: %s", tag.name
@@ -46,10 +48,19 @@ class SshConnection(Connection):
         tag: ConnectionTag,
         copy_binaries: bool = False,
     ) -> AsyncIterator["SshConnection"]:
+        username = "root"
+        password = "root"
+        if tag is ConnectionTag.VM_MAC:
+            username = "root"
+            password = "jobs"
+        elif tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
+            username = "bill"
+            password = "gates"
+
         async with asyncssh.connect(
             ip,
-            username="root" if tag is ConnectionTag.VM_MAC else "bill",
-            password="jobs" if tag is ConnectionTag.VM_MAC else "gates",
+            username=username,
+            password=password,
             known_hosts=None,
             agent_path=None,
         ) as ssh_connection:

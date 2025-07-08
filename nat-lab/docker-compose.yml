@@ -11,33 +11,60 @@ services:
     profiles:
       - base
 
-  # Nordlynx servers
   nlx-01: &common-nlx
     hostname: nlx-01
     privileged: true
-    build:
-      context: .
-      args:
-        LIBTELIO_ENV_SEC_CONTAINER_REGISTRY: $LIBTELIO_ENV_SEC_CONTAINER_REGISTRY
-        LIBTELIO_ENV_NAT_LAB_DEPS_TAG: $LIBTELIO_ENV_NAT_LAB_DEPS_TAG
-    entrypoint: /opt/bin/nordlynx
+    # image: dockur_linux_installed:latest
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux:master
+    devices:
+      - "/dev/net/tun"
+      - "/dev/kvm"
+    cap_drop:
+      - ALL
     cap_add:
       - NET_RAW
       - NET_ADMIN
+      - NET_BIND_SERVICE
+      - SETUID
+      - SETGID
     sysctls:
       - net.ipv4.ip_forward=1
+      # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
+      # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
+      # seem to work. So for now disable return path filter outright.
+      - net.ipv4.conf.all.rp_filter=0
+      - net.ipv4.conf.default.rp_filter=0
+      # Enable IPv6, by default, docker has this set to '1'
       - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.default.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
+    security_opt:
+      - no-new-privileges:true
+    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
+    # When this comment was added, the only scenario where the port mapping is changed is CI running tests
+    ports: ["58001"]
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
+    volumes:
+      - ../:/shared
+    healthcheck:
+      test: "[ -f /ready ] || exit 1"
+      interval: 30s
+      retries: 20
+      start_period: 60s
+      timeout: 2s
+    environment:
+      USERNAME: "root"
+      PASSWORD: "root"
+      NETWORK: "bridge"
+      EXTRA_SCRIPT: "/shared/nat-lab/bin/nlx-vm"
+      CLIENT_GATEWAY_PRIMARY: none
     networks:
       internet:
         ipv4_address: 10.0.100.51
         priority: 1000
-    environment:
-      CLIENT_GATEWAY_PRIMARY: none
-    volumes:
-      - ./:/sync
-      - ../:/libtelio
-    healthcheck:
-      test: "ls /ready"
 
   ###########################################################
   #                         CLIENTS                         #
@@ -191,7 +218,7 @@ services:
 
   mac-client-01: &mac-client
     hostname: mac-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos:gytsto-fix-pyro-install
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos:master
     privileged: true
     devices:
       - "/dev/net/tun"

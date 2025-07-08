@@ -40,7 +40,7 @@ class ConnectionTag(Enum):
     DOCKER_UPNP_GW_2 = auto()
     DOCKER_VPN_1 = auto()
     DOCKER_VPN_2 = auto()
-    DOCKER_NLX_1 = auto()
+    VM_LINUX_NLX_1 = auto()
     DOCKER_INTERNAL_SYMMETRIC_GW = auto()
     DOCKER_DERP_1 = auto()
     DOCKER_DERP_2 = auto()

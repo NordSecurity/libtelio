@@ -303,13 +303,13 @@ async def setup_environment(
         connections = [
             await exit_stack.enter_async_context(new_connection_raw(conn_tag))
             for conn_tag in [
-                ConnectionTag.DOCKER_NLX_1,
+                ConnectionTag.VM_LINUX_NLX_1,
                 ConnectionTag.DOCKER_VPN_1,
                 ConnectionTag.DOCKER_VPN_2,
             ]
         ]
         await exit_stack.enter_async_context(make_tcpdump(connections))
-        api.prepare_all_vpn_servers()
+        await api.prepare_all_vpn_servers(connections)
 
     clients = await setup_clients(
         exit_stack,

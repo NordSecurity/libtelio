@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -eux
+set -eoux
 
 # This is a workaround for 6.x kernel bug, which can cause NULL-deref when
 # iptables are executed too early at boot.
@@ -10,8 +10,8 @@ sleep 5
 
 mkdir -p /etc/nordlynx
 ip link add dev nordlynx0 type nordlynx
-ip addr add 10.5.0.1/16 dev nordlynx0  # VPN
-ip addr add 100.64.0.1/10 dev nordlynx0  # meshnet
+ip addr add 10.5.0.1/16 dev nordlynx0
+ip addr add 100.64.0.1/10 dev nordlynx0
 ip link set mtu 1420 dev nordlynx0
 ip link set dev nordlynx0 up
 
@@ -30,8 +30,8 @@ sleep 2
 
 ip addr s > /var/log/ipaddr.show
 nlx > /var/log/nlx.log
-/usr/bin/fakefm/fakefm -s testing123 2>&1 > /var/log/fakefm.log &
-/opt/nlx-radius/nlx-radius 2>&1 > /var/log/nordlynx.log &
+/opt/fakefm/fakefm/main -s testing123 > /var/log/fakefm.log 2>&1 &
+/opt/nlx-radius/nlx-radius/target/release/nlx-radius > /var/log/nordlynx.log 2>&1 &
 
 # run PQ upgrader
 cat > config.yml << EOL
@@ -51,8 +51,8 @@ limits:
     burst: 5
 EOL
 
-/usr/bin/pq-upgrader &
+pushd /opt/pq-upgrader/pq-upgr/upgrader
+./upgrader > /var/log/upgrader.log 2>&1 &
+popd
 
 touch /ready
-
-sleep infinity

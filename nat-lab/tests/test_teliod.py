@@ -124,7 +124,7 @@ async def test_teliod_vpn_connection(config_type: IfcConfigType) -> None:
             IPStack.IPv4,
             response_data["ip_addresses"],
         )
-        api.prepare_all_vpn_servers()
+        await api.prepare_all_vpn_servers()
 
         return node
 
