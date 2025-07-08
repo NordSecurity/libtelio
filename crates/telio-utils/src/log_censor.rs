@@ -11,11 +11,15 @@ use std::{
 pub struct LogCensor {
     mask_seed: [u8; 32],
     regex: Regex,
+    hide_data_regex: Regex,
     is_enabled: AtomicBool,
 }
 
 impl Default for LogCensor {
     fn default() -> Self {
+        #[allow(clippy::expect_used)]
+        let hide_data_re = Regex::new(r#"(\\?['"])?hide_(user_data|thread_id)(\\?['"])?(\s)*:(\s)*(true|false)(\s)*,(\s)*"#)
+            .expect("Statically known String for filtering hide_user_data and hide_thread_id is a valid regex");
         #[allow(clippy::expect_used)]
         RegexBuilder::new(
             r"
@@ -61,6 +65,7 @@ impl Default for LogCensor {
         .map(|re| LogCensor {
             mask_seed: rand::thread_rng().gen::<[u8; 32]>(),
             regex: re,
+            hide_data_regex: hide_data_re,
             is_enabled: AtomicBool::new(true),
         })
         .expect("Statically known string for LogCensor is a valid regex")
@@ -80,6 +85,7 @@ impl LogCensor {
     }
 
     fn incorret_chars_on_bounds(input: &str, m: &Match) -> bool {
+        // wrapping_sub is used here to make the call to nth return None by giving it usize::MAX
         [m.start().wrapping_sub(1), m.end()]
             .iter()
             .flat_map(|pos| input.chars().nth(*pos))
@@ -99,38 +105,43 @@ impl LogCensor {
 
     /// Replace IPs and domains in `log` by their hash values
     pub fn censor_logs(&self, log: String) -> String {
-        if !self.should_censor() {
-            return log;
-        }
-
-        let replaced = self.regex.replace_all(&log, |captures: &Captures| {
-            let name = "IP4";
-            if let Some(m) = captures.name(name) {
-                if let Ok(ip) = Ipv4Addr::from_str(m.as_str()) {
-                    return self.hash(name, ip.octets().as_slice());
-                }
-            }
-            let name = "IP6";
-            if let Some(m) = captures.name(name) {
-                if let Ok(ip) = Ipv6Addr::from_str(m.as_str()) {
-                    if Self::incorret_chars_on_bounds(&log, &m) {
-                        return m.as_str().to_owned();
+        let hide_replaced = self.hide_data_regex.replace_all(&log, |_: &Captures| "");
+        let ips_replaced = if self.should_censor() {
+            self.regex
+                .replace_all(&hide_replaced, |captures: &Captures| {
+                    let name = "IP4";
+                    if let Some(m) = captures.name(name) {
+                        if let Ok(ip) = Ipv4Addr::from_str(m.as_str()) {
+                            return self.hash(name, ip.octets().as_slice());
+                        }
                     }
-                    return self.hash(name, ip.octets().as_slice());
-                }
-            }
-            let name = "DOMAIN";
-            if let Some(m) = captures.name(name) {
-                return self.hash(name, m.as_str().as_bytes());
-            }
-            captures.get(0).map(|s| s.as_str().to_owned()).unwrap_or(
-                "Regex crate guarantees this, too low priority to panic on its fail, though"
-                    .to_string(),
-            )
-        });
+                    let name = "IP6";
+                    if let Some(m) = captures.name(name) {
+                        if let Ok(ip) = Ipv6Addr::from_str(m.as_str()) {
+                            if Self::incorret_chars_on_bounds(&hide_replaced, &m) {
+                                return m.as_str().to_owned();
+                            }
+                            return self.hash(name, ip.octets().as_slice());
+                        }
+                    }
+                    let name = "DOMAIN";
+                    if let Some(m) = captures.name(name) {
+                        return self.hash(name, m.as_str().as_bytes());
+                    }
+                    captures.get(0).map(|s| s.as_str().to_owned()).unwrap_or(
+                    "Regex crate guarantees this, too low priority to panic on its fail, though"
+                        .to_string(),
+                )
+                })
+        } else {
+            std::borrow::Cow::Borrowed("")
+        };
 
-        match replaced {
-            std::borrow::Cow::Borrowed(_) => log,
+        match ips_replaced {
+            std::borrow::Cow::Borrowed(_) => match hide_replaced {
+                std::borrow::Cow::Borrowed(_) => log,
+                std::borrow::Cow::Owned(s) => s,
+            },
             std::borrow::Cow::Owned(s) => s,
         }
     }
@@ -138,8 +149,9 @@ impl LogCensor {
 #[cfg(test)]
 mod test {
     use super::*;
+    use rstest::*;
 
-    const EXAMPLES: [(&'static str, &'static str); 15] = [
+    const EXAMPLES: [(&str, &str); 15] = [
             (
                 "1999-09-09 [INFO] New endpoint (1.2.3.4:1234) created",
                 "1999-09-09 [INFO] New endpoint (IP4(959535cab4852bd4):1234) created",
@@ -204,10 +216,11 @@ mod test {
 
     #[test]
     fn test_log_censor() {
-        let mut censor = LogCensor::default();
-
-        // For the tests we need it repeatable and seed filled with zeros is good as any other
-        censor.mask_seed = [0; 32];
+        let censor = LogCensor {
+            // For the tests we need it repeatable and seed filled with zeros is good as any other
+            mask_seed: [0; 32],
+            ..Default::default()
+        };
 
         for (original_log, expected_censored_log) in EXAMPLES {
             assert_eq!(
@@ -245,5 +258,30 @@ mod test {
             let new_log_ptr = new_log.as_str().as_ptr();
             assert_eq!(original_log_ptr, new_log_ptr);
         }
+    }
+
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn test_hide_user_data_and_hide_thread_id_are_filtered_out_when_log_censor_is_enabled_and_disabled(
+        #[case] set_enabled: bool,
+    ) {
+        let original = r#"{hide_user_data:true, "hide_user_data": false, 'hide_user_data' :true,hide_thread_id:false,hide_the_cookies:false,something_else:None, 'some_domain': 'google.com.',IPv4:"255.255.255.255", "IPv6":"::cd"}"#.to_owned();
+        let expected = if set_enabled {
+            r#"{hide_the_cookies:false,something_else:None, 'some_domain': 'DOMAIN(c6f130761097acd8)',IPv4:"IP4(8be193f535e5b88f)", "IPv6":"IP6(c3d82cb949013623)"}"#
+        } else {
+            r#"{hide_the_cookies:false,something_else:None, 'some_domain': 'google.com.',IPv4:"255.255.255.255", "IPv6":"::cd"}"#
+        }
+        .to_owned();
+
+        let censor = LogCensor {
+            // For the tests we need it repeatable and seed filled with zeros is good as any other
+            mask_seed: [0; 32],
+            ..Default::default()
+        };
+        censor.set_enabled(set_enabled);
+        let actual = censor.censor_logs(original);
+
+        assert_eq!(actual, expected);
     }
 }
