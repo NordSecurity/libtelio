@@ -126,7 +126,7 @@ def main() -> int:
             raise
 
     if not args.notypecheck:
-        run_command(["mypy", "."])
+        run_command(["uv", "run", "mypy", "."])
 
     if not args.notests:
         pytest_cmd = [
