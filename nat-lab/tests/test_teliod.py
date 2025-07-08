@@ -31,7 +31,10 @@ else:
 
 TELIOD_EXEC_PATH = f"{LIBTELIO_BINARY_PATH_DOCKER}teliod"
 CONFIG_FILE_PATH = "/etc/teliod/config.json"
-CONFIG_FILE_PATH_WITH_VPN = "/etc/teliod/config_with_vpn.json"
+CONFIG_FILE_PATH_WITH_VPN_MANUAL_SETUP = "/etc/teliod/config_with_vpn_manual_setup.json"
+CONFIG_FILE_PATH_WITH_VPN_IPROUTE_SETUP = (
+    "/etc/teliod/config_with_vpn_iproute_setup.json"
+)
 SOCKET_FILE_PATH = "/run/teliod.sock"
 STDOUT_FILE_PATH = "/var/log/teliod.log"
 LOG_FILE_PATH = "/var/log/teliod_natlab.log"
@@ -53,6 +56,8 @@ TELIOD_STATUS_PARAMS = [TELIOD_EXEC_PATH, "get-status"]
 TELIOD_IS_ALIVE_PARAMS = [TELIOD_EXEC_PATH, "is-alive"]
 TELIOD_QUIT_DAEMON_PARAMS = [TELIOD_EXEC_PATH, "quit-daemon"]
 
+WAIT_FOR_TELIOD_TIMEOUT = 3.0
+
 
 async def is_teliod_running(connection):
     try:
@@ -62,10 +67,7 @@ async def is_teliod_running(connection):
         return False
 
 
-WAIT_FOR_TELIOD_TIMEOUT = 3.0
-
-
-async def wait_for_teliod(connection):
+async def wait_for_is_teliod_running(connection):
     start_time = time.monotonic()
     while time.monotonic() - start_time < WAIT_FOR_TELIOD_TIMEOUT:
         try:
@@ -75,6 +77,45 @@ async def wait_for_teliod(connection):
             pass
         await asyncio.sleep(0.1)
     raise TimeoutError("teliod did not start within timeout")
+
+
+async def wait_for_teliod(connection):
+    # Let the daemon start
+    await wait_for_is_teliod_running(connection)
+
+    # Run the is-alive command
+    assert (
+        "Command executed successfully"
+        in (
+            await connection.create_process(TELIOD_IS_ALIVE_PARAMS).execute()
+        ).get_stdout()
+    )
+
+    # Run the get-status command
+    assert (
+        "telio_is_running"
+        in (
+            await connection.create_process(TELIOD_STATUS_PARAMS).execute()
+        ).get_stdout()
+    )
+
+
+async def start_teliod(exit_stack, connection, params):
+    # Run teliod
+    await exit_stack.enter_async_context(connection.create_process(params).run())
+
+    # wait for teliod to start and be available
+    await wait_for_teliod(connection)
+
+
+async def wait_for_teliod_stop(connection):
+    # wait for teliod to stop
+    assert not await is_teliod_running(connection)
+
+    # send get-status command, expected to fail
+    with pytest.raises(ProcessExecError) as err:
+        await connection.create_process(TELIOD_STATUS_PARAMS).execute()
+    assert err.value.stderr == "Error: DaemonIsNotRunning"
 
 
 @pytest.mark.parametrize(
@@ -87,38 +128,14 @@ async def test_teliod(start_daemon_params) -> None:
         connection = (
             await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
         )[0].connection
-
-        # Run teliod
-        await exit_stack.enter_async_context(
-            connection.create_process(start_daemon_params).run()
-        )
-
-        # Let the daemon start
-        await wait_for_teliod(connection)
-
-        with pytest.raises(ProcessExecError) as err:
-            await connection.create_process(start_daemon_params).execute()
-        assert err.value.stderr == "Error: DaemonIsRunning"
-
-        # Run the get-status command
-        assert (
-            "telio_is_running"
-            in (
-                await connection.create_process(TELIOD_STATUS_PARAMS).execute()
-            ).get_stdout()
-        )
+        await start_teliod(exit_stack, connection, start_daemon_params)
 
         # Send SIGTERM to the daemon
         await connection.create_process(
             ["killall", "-w", "-s", "SIGTERM", "teliod"]
         ).execute()
 
-        assert not await is_teliod_running(connection)
-
-        # Run the get-status command again - this time it should fail
-        with pytest.raises(ProcessExecError) as err:
-            await connection.create_process(TELIOD_STATUS_PARAMS).execute()
-        assert err.value.stderr == "Error: DaemonIsNotRunning"
+        await wait_for_teliod_stop(connection)
 
 
 @pytest.mark.parametrize(
@@ -137,21 +154,7 @@ async def test_teliod_quit(start_daemon_params) -> None:
             await connection.create_process(TELIOD_QUIT_DAEMON_PARAMS).execute()
         assert err.value.stderr == "Error: DaemonIsNotRunning"
 
-        # Run teliod
-        await exit_stack.enter_async_context(
-            connection.create_process(start_daemon_params).run()
-        )
-
-        # Let the daemon start
-        await wait_for_teliod(connection)
-
-        # Run the is-alive command
-        assert (
-            "Command executed successfully"
-            in (
-                await connection.create_process(TELIOD_IS_ALIVE_PARAMS).execute()
-            ).get_stdout()
-        )
+        await start_teliod(exit_stack, connection, start_daemon_params)
 
         # Send quit-daemon command
         assert (
@@ -161,12 +164,7 @@ async def test_teliod_quit(start_daemon_params) -> None:
             ).get_stdout()
         )
 
-        assert not await is_teliod_running(connection)
-
-        # Run the is-alive command again - this time it should fail
-        with pytest.raises(ProcessExecError) as err:
-            await connection.create_process(TELIOD_IS_ALIVE_PARAMS).execute()
-        assert err.value.stderr == "Error: DaemonIsNotRunning"
+        await wait_for_teliod_stop(connection)
 
 
 async def test_teliod_logs() -> None:
@@ -184,21 +182,7 @@ async def test_teliod_logs() -> None:
         for path in [STDOUT_FILE_PATH, LOG_FILE_PATH]:
             await connection.create_process(["test", "!", "-f", path]).execute()
 
-        # Run teliod
-        await exit_stack.enter_async_context(
-            connection.create_process(TELIOD_START_PARAMS).run()
-        )
-
-        # Let the daemon start
-        await wait_for_teliod(connection)
-
-        # Run the is-alive command
-        assert (
-            "Command executed successfully"
-            in (
-                await connection.create_process(TELIOD_IS_ALIVE_PARAMS).execute()
-            ).get_stdout()
-        )
+        await start_teliod(exit_stack, connection, TELIOD_START_PARAMS)
 
         # Send quit-daemon command
         assert (
@@ -208,7 +192,7 @@ async def test_teliod_logs() -> None:
             ).get_stdout()
         )
 
-        assert not await is_teliod_running(connection)
+        await wait_for_teliod_stop(connection)
 
         # expected substrings for each log file
         expected_log_contents = {
@@ -225,7 +209,17 @@ async def test_teliod_logs() -> None:
 
 
 # TODO(LLT-6404): reduce boilerplate
-async def test_teliod_vpn_connection_with_manual_interface_setup() -> None:
+@pytest.mark.parametrize(
+    "use_manual_interface_setup",
+    [(True), (False)],
+    ids=["manual_interface_setup", "iproute_interface_setup"],
+)
+async def test_teliod_vpn_connection(use_manual_interface_setup: bool) -> None:
+    config_file_path = (
+        CONFIG_FILE_PATH_WITH_VPN_MANUAL_SETUP
+        if use_manual_interface_setup
+        else CONFIG_FILE_PATH_WITH_VPN_IPROUTE_SETUP
+    )
     async with AsyncExitStack() as exit_stack:
         connection = (
             await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
@@ -276,39 +270,36 @@ async def test_teliod_vpn_connection_with_manual_interface_setup() -> None:
             "sed",
             "-i",
             f's#"server_pubkey": .*#"server_pubkey": "{server_pubkey}"#g',
-            CONFIG_FILE_PATH_WITH_VPN,
+            config_file_path,
         ]).execute()
 
         # Run teliod
         start_params = [
             TELIOD_EXEC_PATH,
             "start",
-            CONFIG_FILE_PATH_WITH_VPN,
+            config_file_path,
         ]
-        await exit_stack.enter_async_context(
-            connection.create_process(start_params).run()
-        )
+        await start_teliod(exit_stack, connection, start_params)
 
-        # Let the daemon start
-        await wait_for_teliod(connection)
-
-        router = LinuxRouter(connection, IPStack.IPv4)
-        router.set_interface_name("teliod")
-        await router.setup_interface(response_data["ip_addresses"])
-        await router.create_meshnet_route()
-        await router.create_vpn_route()
-
-        with pytest.raises(ProcessExecError) as err:
-            await connection.create_process(TELIOD_START_PARAMS).execute()
-        assert err.value.stderr == "Error: DaemonIsRunning"
-
-        # Run the get-status command
-        assert (
-            "telio_is_running"
-            in (
+        # Check that we are connected to the VPN server
+        while True:
+            status = (
                 await connection.create_process(TELIOD_STATUS_PARAMS).execute()
             ).get_stdout()
-        )
+            status_dict = json.loads(status)
+            is_connected = False
+            for node in status_dict["external_nodes"]:
+                if node["is_vpn"] and node["state"] == "connected":
+                    is_connected = True
+            if is_connected:
+                break
+
+        router = LinuxRouter(connection, IPStack.IPv4)
+        if use_manual_interface_setup:
+            router.set_interface_name("teliod")
+            await router.setup_interface(response_data["ip_addresses"])
+            await router.create_meshnet_route()
+            await router.create_vpn_route()
 
         await ping(connection, PHOTO_ALBUM_IP)
         ip = await stun.get(connection, STUN_SERVER)
@@ -319,15 +310,16 @@ async def test_teliod_vpn_connection_with_manual_interface_setup() -> None:
             ["killall", "-w", "-s", "SIGTERM", "teliod"]
         ).execute()
 
-        await router.delete_vpn_route()
-        await router.delete_exit_node_route()
-        await router.delete_interface()
+        if use_manual_interface_setup:
+            await router.delete_vpn_route()
+            await router.delete_exit_node_route()
+            await router.delete_interface()
 
         await connection.create_process([
             "sed",
             "-i",
             's#"server_pubkey": .*#"server_pubkey": "public-key-placeholder"#g',
-            CONFIG_FILE_PATH_WITH_VPN,
+            config_file_path,
         ]).execute()
 
-        assert not await is_teliod_running(connection)
+        await wait_for_teliod_stop(connection)
