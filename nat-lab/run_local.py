@@ -125,6 +125,8 @@ def main() -> int:
             print("\u001b[0m")
             raise
 
+    generate_grpc()
+
     if not args.notypecheck:
         run_command(["mypy", "."])
 
@@ -147,7 +149,7 @@ def main() -> int:
 
         pytest_cmd += get_pytest_arguments(args)
 
-        run_command(pytest_cmd)
+        run_command(pytest_cmd, env={'PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION': 'python'})
 
     return 0
 
