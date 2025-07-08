@@ -69,7 +69,7 @@ dependencies = [
     "six==1.16.0",
     "tomli==2.0.2",
     "tomlkit==0.12.5",
-    "types-protobuf==3.19.21",
+    # "types-protobuf==6.30.2",
     "types-psutil==6.1.0.20241022",
     "types-pyyaml==6.0.12.20240917",
     "typing-extensions==4.12.2",
@@ -78,6 +78,7 @@ dependencies = [
     "virtualenv==20.26.2",
     "yarl==1.17.0",
     "pytest-shard>=0.1.2",
+    "types-protobuf==6.30.2.20250703",
 ]
 
 [tool.black]

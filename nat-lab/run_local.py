@@ -125,7 +125,7 @@ def main() -> int:
             print("\u001b[0m")
             raise
 
-    generate_grpc()
+    generate_grpc("../crates/telio-proto/protos/ens.proto")
 
     if not args.notypecheck:
         run_command(["mypy", "."])
@@ -266,6 +266,19 @@ def verify_setup_correctness():
             "################################################################################"
         )
         time.sleep(5)
+
+def generate_grpc(path):
+    include = os.path.dirname(path)
+    run_command([
+        "python3",
+        "-m",
+        "grpc_tools.protoc",
+        f"-I{include}",
+        "--python_out=./tests/protobuf/",
+        "--grpc_python_out=./tests/protobuf",
+        path
+    ])
+    
 
 
 if __name__ == "__main__":
