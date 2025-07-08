@@ -41,7 +41,6 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_UDP_BLOCK_GW_2: "udp-block-gw-02",
     ConnectionTag.DOCKER_UPNP_GW_1: "upnp-gw-01",
     ConnectionTag.DOCKER_UPNP_GW_2: "upnp-gw-02",
-    ConnectionTag.DOCKER_NLX_1: "nlx-01",
     ConnectionTag.DOCKER_VPN_1: "vpn-01",
     ConnectionTag.DOCKER_VPN_2: "vpn-02",
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "internal-symmetric-gw-01",

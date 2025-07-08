@@ -268,7 +268,7 @@ async def test_teliod_vpn_connection_with_manual_interface_setup() -> None:
             IPStack.IPv4,
             response_data["ip_addresses"],
         )
-        api.prepare_all_vpn_servers()
+        await api.prepare_all_vpn_servers()
 
         # we only know the key of the VPN server at runtime but need it to be in the config before starting teliod
         server_pubkey = WG_SERVER["public_key"]

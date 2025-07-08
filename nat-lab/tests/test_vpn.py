@@ -129,7 +129,7 @@ class VpnConfig:
             id="wg_server",
         ),
         pytest.param(
-            VpnConfig(config.NLX_SERVER, ConnectionTag.DOCKER_NLX_1, False),
+            VpnConfig(config.NLX_SERVER, ConnectionTag.VM_LINUX_NLX_1, False),
             id="nlx_server",
         ),
     ],
@@ -146,7 +146,7 @@ async def test_vpn_connection(
                 stun_limits=(1, 1),
                 nlx_1_limits=(
                     (1, 1)
-                    if vpn_conf.conn_tag == ConnectionTag.DOCKER_NLX_1
+                    if vpn_conf.conn_tag == ConnectionTag.VM_LINUX_NLX_1
                     else (0, 0)
                 ),
                 vpn_1_limits=(

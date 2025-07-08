@@ -331,7 +331,7 @@ def save_audit_log_from_host(suffix):
 
 
 async def save_fakefm_logs():
-    async with new_connection_raw(ConnectionTag.DOCKER_NLX_1) as conn:
+    async with new_connection_raw(ConnectionTag.VM_LINUX_NLX_1) as conn:
         try:
             source_path = "/var/log/fakefm.log"
             cat_proc = await conn.create_process(["cat", source_path]).execute()
