@@ -440,8 +440,6 @@ interface Telio {
     void trigger_qos_collection();
     [Throws=TelioError]
     string receive_ping();
-    [Throws=TelioError]
-    NatType get_nat(string ip, u16 port);
 
     /// For testing only.
     [Throws=TelioError]

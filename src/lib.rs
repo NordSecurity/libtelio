@@ -48,9 +48,6 @@ pub use telio_wg;
 pub use telio_model;
 
 /// cbindgen:ignore
-pub use telio_nat_detect;
-
-/// cbindgen:ignore
 pub use telio_utils;
 
 /// cbindgen:ignore
