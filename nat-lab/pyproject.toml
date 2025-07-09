@@ -152,7 +152,8 @@ disable = [
 asyncio_mode = "auto"
 addopts = [
     "--html=report.html",
-    "--self-contained-html"
+    "--self-contained-html",
+    "--junitxml=report.xml"
 ]
 filterwarnings = [
     "ignore::DeprecationWarning"
