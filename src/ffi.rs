@@ -531,8 +531,8 @@ impl Telio {
         #[cfg(target_os = "windows")]
         return Err(TelioError::UnknownError(anyhow::anyhow!(
             "set_tun is not supported on windows".to_owned(),
-        )))
-        .into();
+        ))
+        .into());
     }
 
     pub fn get_secret_key(&self) -> SecretKey {

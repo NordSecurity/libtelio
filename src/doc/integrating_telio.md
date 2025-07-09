@@ -16,6 +16,7 @@ In version 4.x and earlier, the log level and callback was set on the telio inst
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 
 #[derive(Debug)]
@@ -90,6 +91,7 @@ App can create and destroy Telio device.
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 use telio_model::event::Event;
 
@@ -145,6 +147,7 @@ App can deserialize JSON string with feature config before passing to telio.
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 use telio_model::{event::Event, features::FeatureLana};
 
@@ -239,6 +242,7 @@ If you receive an error event with critical level, you must restart libtelio by 
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 use telio_model::event::Event;
 
@@ -320,6 +324,7 @@ App starts and stops Telio device instance with default adapter.
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 use telio_model::event::Event;
 
@@ -428,7 +433,7 @@ App connects to/disconnects from VPN node.
 <multi-code>
 
 ```rust no_run
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 use ipnet::IpNet;
 use telio::{ffi::*, types::*};
 use telio_crypto::PublicKey;
@@ -580,6 +585,7 @@ App turns on and off meshnet by passing Meshnet Config.
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 use telio_model::event::Event;
 
@@ -726,6 +732,7 @@ App enables/disables Telio Magic DNS proxy, forwarding desired DNS servers.
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 use telio_model::event::Event;
 
@@ -858,7 +865,7 @@ App with enabled meshnet, connects to one of mesh map peer’s.
 <multi-code>
 
 ```rust no_run
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 use ipnet::IpNet;
 use telio::{ffi::*, types::*};
 use telio_crypto::PublicKey;
