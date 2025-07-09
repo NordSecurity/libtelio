@@ -172,8 +172,6 @@ pub struct FeatureNurse {
     /// QoS configuration for Nurse. Enabled by default.
     #[default(Some(Default::default()))]
     pub qos: Option<FeatureQoS>,
-    /// Enable/disable collecting nat type. Disabled by default.
-    pub enable_nat_type_collection: bool,
     /// Enable/disable Relay connection data. Enabled by default.
     #[default(true)]
     pub enable_relay_conn_data: bool,
@@ -634,7 +632,6 @@ mod tests {
                     "rtt_types": ["Ping"],
                     "buckets": 9
                 },
-                "enable_nat_type_collection": true,
                 "enable_relay_conn_data": false,
                 "enable_nat_traversal_conn_data": false,
                 "state_duration_cap": 10
@@ -735,7 +732,6 @@ mod tests {
                             rtt_types: vec![RttType::Ping],
                             buckets: 9,
                         }),
-                        enable_nat_type_collection: true,
                         enable_relay_conn_data: false,
                         enable_nat_traversal_conn_data: false,
                         state_duration_cap: 10,

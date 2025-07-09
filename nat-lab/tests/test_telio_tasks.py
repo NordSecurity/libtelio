@@ -33,7 +33,6 @@ async def test_telio_tasks_with_all_features() -> None:
             rtt_types=[RttType.PING],
             buckets=5,
         )
-        features.nurse.enable_nat_type_collection = True
         features.dns = FeatureDns(
             exit_dns=FeatureExitDns(auto_switch_dns_ips=True),
             ttl_value=60,

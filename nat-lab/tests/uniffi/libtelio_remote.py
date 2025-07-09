@@ -188,10 +188,6 @@ class LibtelioWrapper:
         return self._libtelio.receive_ping()
 
     @serialize_error
-    def get_nat(self, ip: str, port: int) -> libtelio.NatType:
-        return self._libtelio.get_nat(ip, port)
-
-    @serialize_error
     def flush_logs(self):
         self._logger_cb.logfile.flush()
 

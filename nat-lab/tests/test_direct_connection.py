@@ -291,7 +291,6 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
         for param in setup_params:
             assert param.features.nurse
             param.features.nurse.enable_nat_traversal_conn_data = True
-            param.features.nurse.enable_nat_type_collection = True
             param.features.lana = FeatureLana(prod=False, event_path="/event.db")
 
         env = await setup_mesh_nodes(exit_stack, setup_params)

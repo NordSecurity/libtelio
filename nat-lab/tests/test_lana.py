@@ -34,7 +34,6 @@ from utils.analytics.event_validator import (
     ExternalLinksValidator,
     EventValidator,
     FingerprintValidator,
-    MembersNatTypeValidator,
     MembersValidator,
     NameValidator,
     NatTraversalConnInfoValidator,
@@ -44,7 +43,6 @@ from utils.analytics.event_validator import (
     Rtt6LossValidator,
     Rtt6Validator,
     SentDataValidator,
-    SelfNatTypeValidator,
     ALPHA_FINGERPRINT,
     BETA_FINGERPRINT,
     GAMMA_FINGERPRINT,
@@ -93,7 +91,6 @@ DERP_SERVERS_STRS = [
 DEFAULT_WAITING_TIME = 5
 DEFAULT_CHECK_INTERVAL = 2
 DEFAULT_CHECK_TIMEOUT = 60
-COLLECT_NAT_TYPE = False
 RTT_INTERVAL = 3 * 60
 
 IP_STACK_TEST_CONFIGS = [
@@ -152,7 +149,6 @@ def build_telio_features(
         buckets=5,
         rtt_tries=1,
     )
-    features.nurse.enable_nat_type_collection = COLLECT_NAT_TYPE
     return features
 
 
@@ -705,25 +701,6 @@ async def test_lana_with_same_meshnet(
                 ),
             ])
         )
-        if COLLECT_NAT_TYPE:
-            alpha_validator.add_validator_list([
-                SelfNatTypeValidator("PortRestrictedCone"),
-                MembersNatTypeValidator(
-                    ["Symmetric", "PortRestrictedCone"],
-                ),
-            ])
-            beta_validator.add_validator_list([
-                SelfNatTypeValidator("PortRestrictedCone"),
-                MembersNatTypeValidator(
-                    ["PortRestrictedCone", "Symmetric"],
-                ),
-            ])
-            gamma_validator.add_validator_list([
-                SelfNatTypeValidator("Symmetric"),
-                MembersNatTypeValidator(
-                    ["PortRestrictedCone", "PortRestrictedCone"],
-                ),
-            ])
 
         res = alpha_validator.validate(alpha_events[0])
         assert res[0], res[1]
@@ -884,25 +861,6 @@ async def test_lana_with_external_node(
                 NatTraversalConnInfoValidator(gamma_pubkey, "", True),
             ])
         )
-        if COLLECT_NAT_TYPE:
-            alpha_validator.add_validator_list([
-                SelfNatTypeValidator("PortRestrictedCone"),
-                MembersNatTypeValidator(
-                    ["PortRestrictedCone", "Symmetric"],
-                ),
-            ])
-            beta_validator.add_validator_list([
-                SelfNatTypeValidator("PortRestrictedCone"),
-                MembersNatTypeValidator(
-                    ["PortRestrictedCone", "Symmetric"],
-                ),
-            ])
-            gamma_validator.add_validator_list([
-                SelfNatTypeValidator("Symmetric"),
-                MembersNatTypeValidator(
-                    ["PortRestrictedCone", "PortRestrictedCone"],
-                ),
-            ])
 
         res = alpha_validator.validate(alpha_events[0])
         assert res[0], res[1]
@@ -1063,25 +1021,6 @@ async def test_lana_all_external(
                 ),
             ])
         )
-        if COLLECT_NAT_TYPE:
-            alpha_validator.add_validator_list([
-                SelfNatTypeValidator("PortRestrictedCone"),
-                MembersNatTypeValidator(
-                    ["Symmetric", "PortRestrictedCone"],
-                ),
-            ])
-            beta_validator.add_validator_list([
-                SelfNatTypeValidator("PortRestrictedCone"),
-                MembersNatTypeValidator(
-                    ["PortRestrictedCone", "Symmetric"],
-                ),
-            ])
-            gamma_validator.add_validator_list([
-                SelfNatTypeValidator("Symmetric"),
-                MembersNatTypeValidator(
-                    ["PortRestrictedCone", "PortRestrictedCone"],
-                ),
-            ])
 
         res = alpha_validator.validate(alpha_events[0])
         assert res[0], res[1]
@@ -1257,25 +1196,6 @@ async def test_lana_with_vpn_connection(
                 ),
             ])
         )
-        if COLLECT_NAT_TYPE:
-            alpha_validator.add_validator_list([
-                SelfNatTypeValidator("Symmetric"),
-                MembersNatTypeValidator(
-                    ["Symmetric", "PortRestrictedCone"],
-                ),
-            ])
-            beta_validator.add_validator_list([
-                SelfNatTypeValidator("PortRestrictedCone"),
-                MembersNatTypeValidator(
-                    ["Symmetric", "Symmetric"],
-                ),
-            ])
-            gamma_validator.add_validator_list([
-                SelfNatTypeValidator("Symmetric"),
-                MembersNatTypeValidator(
-                    ["Symmetric", "PortRestrictedCone"],
-                ),
-            ])
 
         res = alpha_validator.validate(alpha_events[0])
         assert res[0], res[1]
@@ -1487,16 +1407,6 @@ async def test_lana_with_meshnet_exit_node(
                 ),
             ])
         )
-
-        if COLLECT_NAT_TYPE:
-            alpha_validator.add_validator_list([
-                SelfNatTypeValidator("PortRestrictedCone"),
-                MembersNatTypeValidator([]),
-            ])
-            beta_validator.add_validator_list([
-                SelfNatTypeValidator("PortRestrictedCone"),
-                MembersNatTypeValidator([]),
-            ])
 
         res = alpha_validator.validate(alpha_events[0])
         assert res[0], res[1]
@@ -1733,10 +1643,6 @@ async def test_lana_with_disconnected_node(
                 ),
             ])
         )
-
-        if COLLECT_NAT_TYPE:
-            alpha_validator.add_validator(SelfNatTypeValidator("PortRestrictedCone"))
-            beta_validator.add_validator(SelfNatTypeValidator("PortRestrictedCone"))
 
         res = alpha_validator.validate(alpha_events[0])
         assert res[0], res[1]
