@@ -291,7 +291,7 @@ impl Telio {
                 event_dispatcher,
                 protect.map(make_external_protector),
             )
-            .map_err(|err| TelioError::from(err))?;
+            .map_err(TelioError::from)?;
             Ok(Self {
                 inner: Mutex::new(Some(device)),
                 id: rand::thread_rng().gen::<usize>(),
@@ -529,9 +529,10 @@ impl Telio {
             })
         });
         #[cfg(target_os = "windows")]
-        return Err(TelioError::UnknownError {
-            inner: "set_tun is not supported on windows".to_owned(),
-        });
+        return Err(TelioError::UnknownError(anyhow::anyhow!(
+            "set_tun is not supported on windows".to_owned(),
+        )))
+        .into();
     }
 
     pub fn get_secret_key(&self) -> SecretKey {

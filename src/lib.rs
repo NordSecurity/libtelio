@@ -68,7 +68,6 @@ pub use uniffi_libtelio::*;
     clippy::empty_line_after_doc_comments
 )]
 mod uniffi_libtelio {
-    use std::convert::TryInto;
     use std::net::{IpAddr, SocketAddr};
     use std::sync::Arc;
 
