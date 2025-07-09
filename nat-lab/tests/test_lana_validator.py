@@ -18,8 +18,6 @@ TEST_EVENT = analytics.Event(
     sent_data="0:0:0:0:0",
     nat_traversal_conn_info="1:2:120:49:2000:4000",
     derp_conn_info="e086aa137fa19f67d27b39d0eca18610:120:257:101",
-    nat_type="PortRestrictedCone",
-    mem_nat_types="Symmetric,PortRestrictedCone",
 )
 
 DUMMY_EVENT = analytics.Event(
@@ -40,8 +38,6 @@ DUMMY_EVENT = analytics.Event(
     sent_data="",
     nat_traversal_conn_info="",
     derp_conn_info="",
-    nat_type="Symmetric",
-    mem_nat_types="PortRestrictedCone,PortRestrictedCone",
 )
 
 
@@ -264,12 +260,6 @@ def test_sent_data_validator() -> None:
     check_validator(analytics.SentDataValidator(), TEST_EVENT, DUMMY_EVENT)
 
 
-def test_nat_type_validator() -> None:
-    check_validator(
-        analytics.SelfNatTypeValidator("PortRestrictedCone"), TEST_EVENT, DUMMY_EVENT
-    )
-
-
 def test_nat_traversal_conn_info() -> None:
     check_validator(
         analytics.NatTraversalConnInfoValidator(
@@ -282,14 +272,6 @@ def test_nat_traversal_conn_info() -> None:
 
 def test_derp_conn_info() -> None:
     check_validator(analytics.DerpConnInfoValidator(), TEST_EVENT, DUMMY_EVENT)
-
-
-def test_mem_nat_type_validator() -> None:
-    check_validator(
-        analytics.MembersNatTypeValidator(["Symmetric", "PortRestrictedCone"]),
-        TEST_EVENT,
-        DUMMY_EVENT,
-    )
 
 
 def test_lana_event_validator() -> None:
@@ -305,12 +287,6 @@ def test_lana_event_validator() -> None:
             exists=True,
             contains=["gamma", "beta"],
             does_not_contain=["alpha"],
-        ),
-        analytics.SelfNatTypeValidator(
-            nat_type="PortRestrictedCone",
-        ),
-        analytics.MembersNatTypeValidator(
-            members_nat_type=["Symmetric", "PortRestrictedCone"],
         ),
         analytics.ExternalLinksValidator(
             exists=True,

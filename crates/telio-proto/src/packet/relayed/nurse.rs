@@ -38,14 +38,13 @@ impl HeartbeatMessage {
         meshnet_id: Vec<u8>,
         node_fingerprint: String,
         statuses: &[heartbeat::Status],
-        nat_type: heartbeat::NatType,
     ) -> Self {
         Self(Heartbeat {
             message_type: heartbeat::Type::RESPONSE.into(),
             statuses: statuses.into(),
             node_fingerprint,
             meshnet_id,
-            nat_type: nat_type.into(),
+            nat_type: HeartbeatNatType::Unknown.into(),
             ..Default::default()
         })
     }
@@ -154,12 +153,11 @@ mod tests {
             meshnet_id,
             "fingerprint".to_string(),
             &[HeartbeatStatus::new()],
-            HeartbeatNatType::UdpBlocked,
         );
 
         let bytes = &[
             0x2, 0x8, 0x1, 0x12, 0x1, 0x45, 0x1a, 0xb, 0x66, 0x69, 0x6e, 0x67, 0x65, 0x72, 0x70,
-            0x72, 0x69, 0x6e, 0x74, 0x22, 0x0,
+            0x72, 0x69, 0x6e, 0x74, 0x22, 0x0, 0x28, 0x8,
         ];
 
         assert_eq!(message.encode().unwrap(), bytes);

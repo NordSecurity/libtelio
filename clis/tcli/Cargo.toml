@@ -35,7 +35,6 @@ tokio = { workspace = true, features = ["full"] }
 telio = { path = "../.." }
 telio-crypto.workspace = true
 telio-model.workspace = true
-telio-nat-detect.workspace = true
 telio-proto.workspace = true
 telio-relay.workspace = true
 telio-sockets.workspace = true

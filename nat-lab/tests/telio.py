@@ -19,7 +19,6 @@ from utils import asyncio_util
 from utils.bindings import (
     default_features,
     Features,
-    NatType,
     Config,
     TelioNode,
     Server,
@@ -819,9 +818,6 @@ class Client:
             timeout,
         ).check_exists(f":{port} ", [protocol, process]):
             raise Exception("Listening socket could not be found")
-
-    async def get_nat(self, ip: str, port: int) -> NatType:
-        return await self.get_proxy().get_nat(ip, port)
 
     async def connect_to_vpn(
         self,
