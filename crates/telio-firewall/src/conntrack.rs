@@ -101,6 +101,7 @@ impl Debug for IcmpConn {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum Error {
     MalformedIpPacket,
     MalformedUdpPacket,
@@ -138,6 +139,18 @@ pub enum LibfwConnectionState {
     LibfwConnectionStateNew,
     /// Finished connections
     LibfwConnectionStateFinished,
+}
+
+///
+/// Packet verdict
+///
+#[allow(clippy::enum_variant_names)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LibfwVerdict {
+    LibfwVerdictAccept,
+    LibfwVerdictDrop,
+    LibfwVerdictReject,
 }
 
 #[derive(Clone, Debug)]
@@ -604,10 +617,10 @@ impl Conntracker {
                 Some(packet) => (packet.get_source(), packet.get_destination(), Some(packet)),
                 _ => {
                     telio_log_trace!("Could not create TCP packet from IP packet {:?}", ip);
-                    return Err(Error::MalformedUdpPacket);
+                    return Err(Error::MalformedTcpPacket);
                 }
             },
-            _ => return Err(Error::MalformedUdpPacket),
+            _ => return Err(Error::UnexpectedProtocol),
         };
 
         let key = if let LibfwDirection::LibfwDirectionInbound = direction {
