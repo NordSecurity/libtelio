@@ -534,6 +534,14 @@ interface FeaturesDefaultsBuilder {
     /// Enable custom socket buffer sizes for NepTUN
     [Self=ByArc]
     FeaturesDefaultsBuilder set_skt_buffer_size(u32 skt_buffer_size);
+
+    /// Enable custom socket buffer sizes for NepTUN
+    [Self=ByArc]
+    FeaturesDefaultsBuilder set_inter_thread_channel_size(u32 inter_thread_channel_size);
+
+    /// Enable custom socket buffer sizes for NepTUN
+    [Self=ByArc]
+    FeaturesDefaultsBuilder set_max_inter_thread_batched_pkts(u32 max_inter_thread_batched_pkts);
 };
 
 
@@ -600,6 +608,10 @@ dictionary FeatureWireguard {
     boolean enable_dynamic_wg_nt_control;
     /// Configurable socket buffer size for NepTUN
     u32? skt_buffer_size;
+    /// Configurable socket buffer size for NepTUN
+    u32? inter_thread_channel_size;
+    /// Configurable socket buffer size for NepTUN
+    u32? max_inter_thread_batched_pkts;
 };
 
 /// Configurable persistent keepalive periods for different types of peers

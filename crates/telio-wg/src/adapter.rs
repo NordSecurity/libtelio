@@ -237,6 +237,8 @@ pub(crate) async fn start(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
                 cfg.firewall_process_outbound_callback.clone(),
                 cfg.firewall_reset_connections.clone(),
                 cfg.skt_buffer_size,
+                cfg.inter_thread_channel_size,
+                cfg.max_inter_thread_batched_pkts,
             )?))
         }
         AdapterType::LinuxNativeWg => {

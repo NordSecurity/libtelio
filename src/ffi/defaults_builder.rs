@@ -140,6 +140,23 @@ impl FeaturesDefaultsBuilder {
         self.config.lock().wireguard.skt_buffer_size = Some(skt_buffer_size);
         self
     }
+
+    pub fn set_inter_thread_channel_size(
+        self: Arc<Self>,
+        inter_thread_channel_size: u32,
+    ) -> Arc<Self> {
+        self.config.lock().wireguard.inter_thread_channel_size = Some(inter_thread_channel_size);
+        self
+    }
+
+    pub fn set_max_inter_thread_batched_pkts(
+        self: Arc<Self>,
+        max_inter_thread_batched_pkts: u32,
+    ) -> Arc<Self> {
+        self.config.lock().wireguard.max_inter_thread_batched_pkts =
+            Some(max_inter_thread_batched_pkts);
+        self
+    }
 }
 
 impl Default for FeaturesDefaultsBuilder {
