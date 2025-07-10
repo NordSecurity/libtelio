@@ -289,27 +289,6 @@ class DerpConnInfoValidator(Validator):
         return True
 
 
-class SelfNatTypeValidator(Validator):
-    def __init__(self, nat_type: str):
-        self._validator = StringValidator(equals=nat_type)
-
-    def validate(self, value):
-        return self._validator.validate(value.nat_type)
-
-
-class MembersNatTypeValidator(Validator):
-    def __init__(self, members_nat_type: List[str]):
-        self._validators = []
-        for nat_type in members_nat_type:
-            self._validators.append(StringValidator(equals=nat_type))
-
-    def validate(self, value):
-        for v, e in zip(self._validators, value.mem_nat_types.split(",")):
-            if not v.validate(e):
-                return False
-        return True
-
-
 ##################################################################################
 #                              AGGREGATE VALIDATORS                              #
 ##################################################################################

@@ -165,8 +165,6 @@ enum Cmd {
     #[clap(subcommand)]
     Dns(DnsCmd),
     #[clap(subcommand)]
-    Nat(DetectCmd),
-    #[clap(subcommand)]
     Derp(DerpClientCmd),
     Quit,
 }
@@ -281,13 +279,6 @@ enum DnsCmd {
     On { forward_servers: Vec<String> },
     /// Turn off DNS module
     Off,
-}
-
-#[derive(Parser)]
-#[clap(about = "Detect NAT type using stun binding requests ( RFC 3489 )")]
-enum DetectCmd {
-    #[clap(about = "Usage: nat address <IpAddr> <port>")]
-    Address { stun_server: String, stun_port: u16 },
 }
 
 #[macro_export]
@@ -426,7 +417,6 @@ impl Cli {
             Cmd::Vpn(cmd) => cli_res!(res; (j self.exec_vpn(cmd))),
             Cmd::Mesh(cmd) => cli_res!(res; (j self.exec_mesh(cmd))),
             Cmd::Dns(cmd) => cli_res!(res; (j self.exec_dns(cmd))),
-            Cmd::Nat(cmd) => cli_res!(res; (j self.exec_nat_detect(cmd))),
             Cmd::Derp(cmd) => cli_res!(res; (j self.derp_client.exec_cmd(cmd))),
             Cmd::Quit => cli_res!(res; q),
         }
@@ -701,31 +691,6 @@ impl Cli {
             DnsCmd::Off => {
                 cli_try!(res; self.telio.disable_magic_dns());
             }
-        }
-
-        res
-    }
-
-    fn exec_nat_detect(&mut self, cmd: DetectCmd) -> Vec<Resp> {
-        let mut res = Vec::new();
-
-        match cmd {
-            DetectCmd::Address {
-                stun_server,
-                stun_port,
-            } => match self.telio.get_nat(SocketAddr::new(
-                stun_server.parse::<IpAddr>().expect("Invalid IPv4 address"),
-                stun_port,
-            )) {
-                Ok(data) => {
-                    cli_res!(res; (i "Public Address: {:?}", data.public_ip));
-                    cli_res!(res; (i "Nat Type: {:?}", data.nat_type));
-                }
-
-                Err(error) => {
-                    cli_res!(res; (i "problem: {}", error));
-                }
-            },
         }
 
         res

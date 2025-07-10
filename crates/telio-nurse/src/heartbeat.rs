@@ -6,7 +6,6 @@ use nat_detect::NatType;
 use smart_default::SmartDefault;
 use std::collections::BTreeSet;
 use std::fmt::Write;
-use std::net::{IpAddr, SocketAddr};
 use std::{
     collections::{HashMap, HashSet},
     convert::{TryFrom, TryInto},
@@ -18,7 +17,6 @@ use std::{
 };
 use telio_crypto::{meshnet_canonical_key_order, PublicKey, SecretKey};
 use telio_model::{config::Server, event::Event, mesh::NodeState};
-use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_proto::{HeartbeatMessage, HeartbeatNatType, HeartbeatStatus, HeartbeatType};
 use telio_task::{
     io::{chan, mc_chan, Chan},
@@ -281,10 +279,10 @@ impl Runtime for Analytics {
                 ),
 
             // Derp event, only in the `Monitoring` state
-            Ok(event) = derp_event_future, if self.state == RuntimeState::Monitoring =>
+            Ok(_) = derp_event_future, if self.state == RuntimeState::Monitoring =>
                 Self::guard(
                     async move {
-                        self.discover_current_nat_type(*event).await;
+                        self.discover_current_nat_type().await;
                         telio_log_trace!("tokio::select! self.io.derp_event_channel.recv() branch");
                         Ok(())
                     }
@@ -519,21 +517,11 @@ impl Analytics {
         }
     }
 
-    async fn discover_current_nat_type(&mut self, derp_event: Server) {
-        self.nat_type = if self.config.is_nat_type_collection_enabled {
-            retrieve_single_nat(SocketAddr::new(
-                IpAddr::V4(derp_event.ipv4),
-                derp_event.stun_port,
-            ))
-            .await
-            .unwrap_or(NatData {
-                public_ip: SocketAddr::from(([0, 0, 0, 0], 80)),
-                nat_type: NatType::Unknown,
-            })
-            .nat_type
-        } else {
-            NatType::Unknown
-        };
+    async fn discover_current_nat_type(&mut self) {
+        // Libtelio does not support fetching nat types.
+        // It needs to be removed from analysis team
+        // before moving on to removing from nurse
+        self.nat_type = NatType::Unknown;
     }
 
     async fn handle_config_update_event(&mut self, event: MeshConfigUpdateEvent) {
