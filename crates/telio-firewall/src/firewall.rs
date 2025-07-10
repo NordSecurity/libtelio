@@ -16,7 +16,7 @@ use pnet_packet::{
 };
 use std::{
     fmt::Debug,
-    io::{self, ErrorKind},
+    io::{self},
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr, SocketAddr},
 };
 
@@ -27,8 +27,8 @@ use telio_crypto::PublicKey;
 use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
 
 use crate::conntrack::{
-    unwrap_option_or_return, unwrap_option_or_return_err, Conntracker, LibfwConnectionState,
-    LibfwDirection, UdpConnectionInfo,
+    unwrap_option_or_return, Conntracker, Error, LibfwConnectionState, LibfwDirection, Result,
+    UdpConnectionInfo,
 };
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
@@ -349,8 +349,8 @@ impl StatefullFirewall {
         &self,
         public_key: &[u8; 32],
         buffer: &'a [u8],
-    ) -> io::Result<LibfwConnectionState> {
-        let ip = unwrap_option_or_return_err!(P::try_from(buffer));
+    ) -> Result<LibfwConnectionState> {
+        let ip = unwrap_option_or_return!(P::try_from(buffer), Err(Error::MalformedIpPacket));
         let peer: PublicKey = PublicKey(*public_key);
         let proto = ip.get_next_level_protocol();
 
@@ -360,7 +360,7 @@ impl StatefullFirewall {
             IpNextHeaderProtocols::Tcp => self.conntracker.handle_outbound_tcp(&ip, &peer),
             IpNextHeaderProtocols::Icmp => self.conntracker.handle_outbound_icmp(&ip, &peer),
             IpNextHeaderProtocols::Icmpv6 => self.conntracker.handle_outbound_icmp(&ip, &peer),
-            _ => Err(ErrorKind::InvalidData.into()),
+            _ => Err(Error::UnexpectedProtocol),
         }
     }
 
@@ -368,8 +368,8 @@ impl StatefullFirewall {
         &self,
         public_key: &[u8; 32],
         buffer: &'a [u8],
-    ) -> io::Result<LibfwConnectionState> {
-        let ip = unwrap_option_or_return_err!(P::try_from(buffer));
+    ) -> Result<LibfwConnectionState> {
+        let ip = unwrap_option_or_return!(P::try_from(buffer), Err(Error::MalformedIpPacket));
         let peer: PublicKey = PublicKey(*public_key);
         let proto = ip.get_next_level_protocol();
 
@@ -381,7 +381,7 @@ impl StatefullFirewall {
             IpNextHeaderProtocols::Icmpv6 if self.allow_ipv6 => {
                 self.conntracker.handle_inbound_icmp(&ip, &peer)
             }
-            _ => Err(ErrorKind::InvalidData.into()),
+            _ => Err(Error::UnexpectedProtocol),
         }
     }
 
@@ -390,19 +390,16 @@ impl StatefullFirewall {
         public_key: &[u8; 32],
         buffer: &'a [u8],
         sink: &mut dyn io::Write,
-    ) -> bool {
-        let ip = unwrap_option_or_return!(P::try_from(buffer), false);
+    ) -> Result<bool> {
+        let ip = unwrap_option_or_return!(P::try_from(buffer), Err(Error::MalformedIpPacket));
         let peer: PublicKey = PublicKey(*public_key);
         let proto = ip.get_next_level_protocol();
 
         match proto {
             IpNextHeaderProtocols::Udp => {
                 let blacklist = self.outgoing_udp_blacklist.read();
-                let link = unwrap_option_or_return!(
-                    Conntracker::build_conn_info(&ip, LibfwDirection::LibfwDirectionOutbound),
-                    false
-                )
-                .0;
+                let link =
+                    Conntracker::build_conn_info(&ip, LibfwDirection::LibfwDirectionOutbound)?.0;
                 if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
                     let Some(first_chunk) = ip
                         .packet()
@@ -410,7 +407,7 @@ impl StatefullFirewall {
                         .next()
                     else {
                         telio_log_warn!("Failed to extract headers of UDP packet for {peer:?}");
-                        return false;
+                        return Err(Error::MalformedUdpPacket);
                     };
 
                     _ = self.conntracker.send_icmp_port_unreachable_packets(
@@ -418,26 +415,24 @@ impl StatefullFirewall {
                         |packet: &[u8]| sink.write_all(packet),
                     );
 
-                    return false;
+                    return Ok(false);
                 }
             }
             IpNextHeaderProtocols::Tcp => {
                 let blacklist = self.outgoing_tcp_blacklist.read();
-                let (link, tcp_packet) = unwrap_option_or_return!(
-                    Conntracker::build_conn_info(
-                        &ip,
-                        crate::conntrack::LibfwDirection::LibfwDirectionOutbound
-                    ),
-                    false
-                );
-                let tcp_packet = unwrap_option_or_return!(tcp_packet, false);
+                let (link, tcp_packet) = Conntracker::build_conn_info(
+                    &ip,
+                    crate::conntrack::LibfwDirection::LibfwDirectionOutbound,
+                )?;
+                let tcp_packet =
+                    unwrap_option_or_return!(tcp_packet, Err(Error::MalformedTcpPacket));
                 if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
                     _ = self.conntracker.send_tcp_rst_packets(
                         std::iter::once((&link, 0, Some(tcp_packet.get_sequence() + 1))),
                         |packet: &[u8]| sink.write_all(packet),
                     );
 
-                    return false;
+                    return Ok(false);
                 }
             }
             _ => (),
@@ -454,16 +449,16 @@ impl StatefullFirewall {
                 ip
             );
 
-            return true;
+            return Ok(true);
         }
 
         if !ip.check_valid() {
             telio_log_trace!("Outbound IP packet is not valid, dropping: {:?}", ip);
-            return false;
+            return Ok(false);
         }
 
         telio_log_trace!("Accepting packet {:?} {:?}", ip, peer);
-        true
+        Ok(true)
     }
 
     fn process_inbound_ip_packet<'a, P: IpPacket<'a>>(
@@ -471,8 +466,8 @@ impl StatefullFirewall {
         public_key: &[u8; 32],
         buffer: &'a [u8],
         conn_state: LibfwConnectionState,
-    ) -> bool {
-        let ip = unwrap_option_or_return!(P::try_from(buffer), false);
+    ) -> Result<bool> {
+        let ip = unwrap_option_or_return!(P::try_from(buffer), Err(Error::MalformedIpPacket));
         let peer = PublicKey(*public_key);
         let proto = ip.get_next_level_protocol();
 
@@ -483,19 +478,19 @@ impl StatefullFirewall {
             if vpn_peer == peer {
                 telio_log_trace!("Inbound IP packet is for vpn peer, forwarding: {:?}", ip);
                 // We still need to track the state of TCP and UDP connections
-                return true;
+                return Ok(true);
             }
         }
 
         if !ip.check_valid() {
             telio_log_trace!("Inbound IP packet is not valid, dropping: {:?}", ip);
-            return false;
+            return Ok(false);
         }
 
         let local_addr = From::<IpAddr>::from(ip.get_destination().into());
         if self.is_private_address_except_local_interface(&local_addr) {
             #[allow(index_access_check)]
-            return whitelist.peer_whitelists[Permissions::LocalAreaConnections].contains(&peer);
+            return Ok(whitelist.peer_whitelists[Permissions::LocalAreaConnections].contains(&peer));
         }
 
         // For packets which are non local we can route them only when rounting for the particular peer is enabled
@@ -505,18 +500,16 @@ impl StatefullFirewall {
             if whitelist.peer_whitelists[Permissions::RoutingConnections].contains(&peer) {
                 telio_log_trace!("Forwarding due to Routing policy");
                 telio_log_trace!("Accepting packet {:?} {:?}", ip.get_source().into(), peer);
-                return true;
+                return Ok(true);
             } else {
                 telio_log_trace!("Dropping packet {:?} {:?}", ip.get_source().into(), peer);
-                return false;
+                return Ok(false);
             }
         }
 
         let local_port = if let IpNextHeaderProtocols::Tcp | IpNextHeaderProtocols::Udp = proto {
-            let conn_info = unwrap_option_or_return!(
-                Conntracker::build_conn_info(&ip, LibfwDirection::LibfwDirectionInbound),
-                false
-            );
+            let conn_info =
+                Conntracker::build_conn_info(&ip, LibfwDirection::LibfwDirectionInbound)?;
             Some(conn_info.0.local_port)
         } else {
             None
@@ -527,19 +520,17 @@ impl StatefullFirewall {
             (connection_allowed, conn_state)
         {
             telio_log_trace!("Dropping UDP packet {:?} {:?}", ip, peer);
-            return false;
+            return Ok(false);
         }
 
         match proto {
             IpNextHeaderProtocols::Udp => {
                 telio_log_trace!("Accepting UDP packet {:?} {:?}", ip, peer);
-                true
+                Ok(true)
             }
             IpNextHeaderProtocols::Tcp => {
-                let (_, packet) = unwrap_option_or_return!(
-                    Conntracker::build_conn_info(&ip, LibfwDirection::LibfwDirectionInbound),
-                    false
-                );
+                let (_, packet) =
+                    Conntracker::build_conn_info(&ip, LibfwDirection::LibfwDirectionInbound)?;
                 // For TCP we need to allow certain packets for finished connections
                 // to allow host to cleanly close them
                 if let LibfwConnectionState::LibfwConnectionStateFinished = conn_state {
@@ -547,25 +538,28 @@ impl StatefullFirewall {
                         let flags = pkt.get_flags();
                         if flags & (TcpFlags::RST | TcpFlags::FIN | TcpFlags::ACK) == 0 {
                             telio_log_trace!("Dropping TCP packet {:?} {:?}", ip, peer);
-                            return false;
+                            return Ok(false);
                         }
                     }
                 }
 
                 telio_log_trace!("Accepting TCP packet {:?} {:?}", ip, peer);
-                true
+                Ok(true)
             }
             IpNextHeaderProtocols::Icmp | IpNextHeaderProtocols::Icmpv6 => {
-                let icmp_packet = unwrap_option_or_return!(IcmpPacket::new(ip.payload()), false);
+                let icmp_packet = unwrap_option_or_return!(
+                    IcmpPacket::new(ip.payload()),
+                    Err(Error::MalformedIcmpPacket)
+                );
                 if !connection_allowed
                     && P::Icmp::BLOCKED_TYPES.contains(&icmp_packet.get_icmp_type().0)
                 {
                     telio_log_trace!("Dropping ICMP packet {:?} {:?}", ip, peer);
-                    return false;
+                    return Ok(false);
                 }
-                true
+                Ok(true)
             }
-            _ => false,
+            _ => Ok(false),
         }
     }
 
@@ -684,7 +678,7 @@ impl Firewall for StatefullFirewall {
 
     #[allow(index_access_check)]
     fn get_peer_whitelist(&self, permissions: Permissions) -> HashSet<PublicKey> {
-        self.whitelist.write().peer_whitelists[permissions].clone()
+        self.whitelist.read().peer_whitelists[permissions].clone()
     }
 
     fn add_vpn_peer(&self, vpn_peer: PublicKey) {
@@ -710,6 +704,7 @@ impl Firewall for StatefullFirewall {
                     telio_log_warn!("Conntrack failed for outbound IPv4 packet");
                 }
                 self.process_outbound_ip_packet::<Ipv4Packet>(public_key, buffer, sink)
+                    .unwrap_or(false)
             }
             6 if self.allow_ipv6 => {
                 if self
@@ -719,6 +714,7 @@ impl Firewall for StatefullFirewall {
                     telio_log_warn!("Conntrack failed for outbound IPv6 packet");
                 }
                 self.process_outbound_ip_packet::<Ipv6Packet>(public_key, buffer, sink)
+                    .unwrap_or(false)
             }
             version => {
                 telio_log_warn!("Unexpected IP version {version} for outbound packet");
@@ -739,8 +735,9 @@ impl Firewall for StatefullFirewall {
                     telio_log_warn!("Contrack failed to process the packet");
                     return false;
                 };
-                let result =
-                    self.process_inbound_ip_packet::<Ipv4Packet>(public_key, buffer, conn_state);
+                let result = self
+                    .process_inbound_ip_packet::<Ipv4Packet>(public_key, buffer, conn_state)
+                    .unwrap_or(false);
                 self.cleanup_conntrack_inbound::<Ipv4Packet>(public_key, buffer, result);
                 result
             }
@@ -750,8 +747,9 @@ impl Firewall for StatefullFirewall {
                     telio_log_warn!("Contrack failed to process the packet");
                     return false;
                 };
-                let result =
-                    self.process_inbound_ip_packet::<Ipv6Packet>(public_key, buffer, conn_state);
+                let result = self
+                    .process_inbound_ip_packet::<Ipv6Packet>(public_key, buffer, conn_state)
+                    .unwrap_or(false);
                 self.cleanup_conntrack_inbound::<Ipv6Packet>(public_key, buffer, result);
                 result
             }

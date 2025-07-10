@@ -4695,6 +4695,7 @@ dependencies = [
  "if-addrs",
  "ipnet",
  "mockall",
+ "parking_lot",
  "pnet_packet 0.35.0",
  "proptest",
  "proptest-derive",

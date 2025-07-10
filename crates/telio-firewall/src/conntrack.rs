@@ -1,7 +1,7 @@
 use std::{
     convert::TryInto,
     fmt::{Debug, Formatter},
-    io::{self, ErrorKind},
+    io::{self},
     net::IpAddr as StdIpAddr,
     time::Duration,
 };
@@ -35,17 +35,6 @@ macro_rules! unwrap_option_or_return {
 }
 
 pub(crate) use unwrap_option_or_return;
-
-macro_rules! unwrap_option_or_return_err {
-    ( $option:expr ) => {
-        match $option {
-            Some(x) => x,
-            None => return Err(io::Error::from(ErrorKind::NotFound)),
-        }
-    };
-}
-
-pub(crate) use unwrap_option_or_return_err;
 
 #[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 pub(crate) struct IpConnWithPort {
@@ -89,14 +78,16 @@ pub(crate) struct IcmpConn {
     associated_data: AssociatedData,
 }
 
-type IcmpKey = Result<IcmpConn, IcmpErrorKey>;
+enum IcmpKey {
+    Conn(IcmpConn),
+    Err(IcmpErrorKey),
+}
 
 #[derive(Clone, Debug)]
 pub enum IcmpErrorKey {
-    Udp(Option<IpConnWithPort>),
-    Tcp(Option<IpConnWithPort>),
-    Icmp(Option<Box<IcmpConn>>),
-    None,
+    Udp(IpConnWithPort),
+    Tcp(IpConnWithPort),
+    Icmp(Box<IcmpConn>),
 }
 
 impl Debug for IcmpConn {
@@ -109,6 +100,18 @@ impl Debug for IcmpConn {
             .finish()
     }
 }
+
+pub(crate) enum Error {
+    MalformedIpPacket,
+    MalformedUdpPacket,
+    MalformedTcpPacket,
+    MalformedIcmpPacket,
+    UnexpectedProtocol,
+    InvalidIcmpErrorPayload,
+    UnexpectedPacketType,
+}
+
+pub(crate) type Result<T> = std::result::Result<T, Error>;
 
 ///
 /// Packet direction
@@ -193,12 +196,8 @@ impl Conntracker {
         &self,
         ip: &impl IpPacket<'a>,
         associated_data: &[u8],
-    ) -> io::Result<LibfwConnectionState> {
-        let link = unwrap_option_or_return_err!(Self::build_conn_info(
-            ip,
-            LibfwDirection::LibfwDirectionOutbound
-        ))
-        .0;
+    ) -> Result<LibfwConnectionState> {
+        let link = Self::build_conn_info(ip, LibfwDirection::LibfwDirectionOutbound)?.0;
         let key = Connection {
             link,
             associated_data: associated_data.to_smallvec(),
@@ -210,7 +209,7 @@ impl Conntracker {
             .next()
         else {
             telio_log_warn!("Failed to extract headers of UDP packet for {key:?}");
-            return Err(ErrorKind::InvalidData.into());
+            return Err(Error::MalformedUdpPacket);
         };
 
         let mut udp_cache = self.udp.lock();
@@ -258,11 +257,8 @@ impl Conntracker {
         &self,
         ip: &impl IpPacket<'a>,
         associated_data: &[u8],
-    ) -> io::Result<LibfwConnectionState> {
-        let (link, packet) = unwrap_option_or_return_err!(Self::build_conn_info(
-            ip,
-            LibfwDirection::LibfwDirectionOutbound
-        ));
+    ) -> Result<LibfwConnectionState> {
+        let (link, packet) = Self::build_conn_info(ip, LibfwDirection::LibfwDirectionOutbound)?;
         let key = Connection {
             link,
             associated_data: associated_data.to_smallvec(),
@@ -311,9 +307,11 @@ impl Conntracker {
         &self,
         ip: &impl IpPacket<'a>,
         associated_data: &[u8],
-    ) -> io::Result<LibfwConnectionState> {
+    ) -> Result<LibfwConnectionState> {
         let mut icmp_cache = self.icmp.lock();
-        if let Ok(key) = Self::build_icmp_key(ip, associated_data, false) {
+        if let IcmpKey::Conn(key) =
+            Self::build_icmp_key(ip, associated_data, LibfwDirection::LibfwDirectionOutbound)?
+        {
             // If key already exists, dont change the value, just update timer with entry
             if let Entry::Vacant(e) = icmp_cache.entry(key, true) {
                 telio_log_trace!("Inserting new ICMP conntrack entry {:?}", e.key());
@@ -328,11 +326,8 @@ impl Conntracker {
         &self,
         ip: P,
         associated_data: &[u8],
-    ) -> io::Result<()> {
-        let (link, _) = unwrap_option_or_return_err!(Self::build_conn_info(
-            &ip,
-            LibfwDirection::LibfwDirectionInbound
-        ));
+    ) -> Result<()> {
+        let (link, _) = Self::build_conn_info(&ip, LibfwDirection::LibfwDirectionInbound)?;
         let key = Connection {
             link,
             associated_data: associated_data.to_smallvec(),
@@ -347,11 +342,8 @@ impl Conntracker {
         &self,
         ip: &impl IpPacket<'a>,
         associated_data: &[u8],
-    ) -> io::Result<LibfwConnectionState> {
-        let (link, _) = unwrap_option_or_return_err!(Self::build_conn_info(
-            ip,
-            LibfwDirection::LibfwDirectionInbound
-        ));
+    ) -> Result<LibfwConnectionState> {
+        let (link, _) = Self::build_conn_info(ip, LibfwDirection::LibfwDirectionInbound)?;
         let key = Connection {
             link,
             associated_data: associated_data.to_smallvec(),
@@ -397,11 +389,8 @@ impl Conntracker {
         ip: P,
         associated_data: &[u8],
         accepted: bool,
-    ) -> io::Result<()> {
-        let (link, _) = unwrap_option_or_return_err!(Self::build_conn_info(
-            &ip,
-            LibfwDirection::LibfwDirectionInbound
-        ));
+    ) -> Result<()> {
+        let (link, _) = Self::build_conn_info(&ip, LibfwDirection::LibfwDirectionInbound)?;
         let key = Connection {
             link,
             associated_data: associated_data.to_smallvec(),
@@ -422,11 +411,8 @@ impl Conntracker {
         &self,
         ip: &impl IpPacket<'a>,
         associated_data: &[u8],
-    ) -> io::Result<LibfwConnectionState> {
-        let (link, packet) = unwrap_option_or_return_err!(Self::build_conn_info(
-            ip,
-            LibfwDirection::LibfwDirectionInbound
-        ));
+    ) -> Result<LibfwConnectionState> {
+        let (link, packet) = Self::build_conn_info(ip, LibfwDirection::LibfwDirectionInbound)?;
         let key = Connection {
             link,
             associated_data: associated_data.to_smallvec(),
@@ -531,9 +517,9 @@ impl Conntracker {
         &self,
         ip: &P,
         associated_data: &[u8],
-    ) -> io::Result<LibfwConnectionState> {
-        match Self::build_icmp_key(ip, associated_data, true) {
-            Ok(key) => {
+    ) -> Result<LibfwConnectionState> {
+        match Self::build_icmp_key(ip, associated_data, LibfwDirection::LibfwDirectionInbound) {
+            Ok(IcmpKey::Conn(key)) => {
                 let mut icmp_cache = self.icmp.lock();
                 if icmp_cache.get_mut(&key).is_some() {
                     telio_log_trace!("Matched ICMP conntrack entry {:?}", key,);
@@ -544,10 +530,15 @@ impl Conntracker {
                     Ok(LibfwConnectionState::LibfwConnectionStateNew)
                 }
             }
-            Err(icmp_error_key) => {
+            Ok(IcmpKey::Err(icmp_error_key)) => {
                 telio_log_trace!("Encountered ICMP error packet, checking nested packet");
-                self.handle_inbound_icmp_error(icmp_error_key, associated_data)
+                Ok(self.handle_inbound_icmp_error(icmp_error_key, associated_data))
             }
+            Err(Error::UnexpectedPacketType) => {
+                telio_log_trace!("Encountered ICMP packet type not tracked in this direction");
+                Ok(LibfwConnectionState::LibfwConnectionStateNew)
+            }
+            Err(err) => Err(err),
         }
     }
 
@@ -555,17 +546,17 @@ impl Conntracker {
         &self,
         error_key: IcmpErrorKey,
         associated_data: &[u8],
-    ) -> io::Result<LibfwConnectionState> {
+    ) -> LibfwConnectionState {
         match error_key {
-            IcmpErrorKey::Icmp(Some(icmp_key)) => {
+            IcmpErrorKey::Icmp(icmp_key) => {
                 let mut icmp_cache = self.icmp.lock();
                 if icmp_cache.get(&icmp_key).is_some() {
                     telio_log_trace!("Removing ICMP conntrack entry {:?}", icmp_key);
                     icmp_cache.remove(&icmp_key);
-                    return Ok(LibfwConnectionState::LibfwConnectionStateEstablished);
+                    return LibfwConnectionState::LibfwConnectionStateEstablished;
                 }
             }
-            IcmpErrorKey::Tcp(Some(link)) => {
+            IcmpErrorKey::Tcp(link) => {
                 let tcp_key = Connection {
                     link,
                     associated_data: associated_data.to_smallvec(),
@@ -576,10 +567,10 @@ impl Conntracker {
                 if tcp_cache.get(&tcp_key).is_some() {
                     telio_log_trace!("Removing TCP conntrack entry {:?}", tcp_key);
                     tcp_cache.remove(&tcp_key);
-                    return Ok(LibfwConnectionState::LibfwConnectionStateEstablished);
+                    return LibfwConnectionState::LibfwConnectionStateEstablished;
                 }
             }
-            IcmpErrorKey::Udp(Some(link)) => {
+            IcmpErrorKey::Udp(link) => {
                 let udp_key = Connection {
                     link,
                     associated_data: associated_data.to_smallvec(),
@@ -589,35 +580,34 @@ impl Conntracker {
                 if udp_cache.get(&udp_key).is_some() {
                     telio_log_trace!("Removing UDP conntrack entry {:?}", udp_key);
                     udp_cache.remove(&udp_key);
-                    return Ok(LibfwConnectionState::LibfwConnectionStateEstablished);
+                    return LibfwConnectionState::LibfwConnectionStateEstablished;
                 }
             }
-            _ => (),
         }
-        Ok(LibfwConnectionState::LibfwConnectionStateNew)
+        LibfwConnectionState::LibfwConnectionStateNew
     }
 
     pub fn build_conn_info<'a, P: IpPacket<'a>>(
         ip: &P,
         direction: LibfwDirection,
-    ) -> Option<(IpConnWithPort, Option<TcpPacket>)> {
+    ) -> Result<(IpConnWithPort, Option<TcpPacket>)> {
         let proto = ip.get_next_level_protocol();
         let (src, dest, tcp_packet) = match proto {
             IpNextHeaderProtocols::Udp => match UdpPacket::new(ip.payload()) {
                 Some(packet) => (packet.get_source(), packet.get_destination(), None),
                 _ => {
                     telio_log_trace!("Could not create UDP packet from IP packet {:?}", ip);
-                    return None;
+                    return Err(Error::MalformedUdpPacket);
                 }
             },
             IpNextHeaderProtocols::Tcp => match TcpPacket::new(ip.payload()) {
                 Some(packet) => (packet.get_source(), packet.get_destination(), Some(packet)),
                 _ => {
                     telio_log_trace!("Could not create TCP packet from IP packet {:?}", ip);
-                    return None;
+                    return Err(Error::MalformedUdpPacket);
                 }
             },
-            _ => return None,
+            _ => return Err(Error::MalformedUdpPacket),
         };
 
         let key = if let LibfwDirection::LibfwDirectionInbound = direction {
@@ -637,22 +627,22 @@ impl Conntracker {
         };
 
         match proto {
-            IpNextHeaderProtocols::Udp => Some((key, None)),
-            IpNextHeaderProtocols::Tcp => Some((key, tcp_packet)),
-            _ => None,
+            IpNextHeaderProtocols::Udp => Ok((key, None)),
+            IpNextHeaderProtocols::Tcp => Ok((key, tcp_packet)),
+            _ => Err(Error::UnexpectedProtocol),
         }
     }
 
     fn build_icmp_key<'a, P: IpPacket<'a>>(
         ip: &P,
         associated_data: &[u8],
-        inbound: bool,
-    ) -> IcmpKey {
+        direction: LibfwDirection,
+    ) -> Result<IcmpKey> {
         let icmp_packet = match IcmpPacket::new(ip.payload()) {
             Some(packet) => packet,
             _ => {
                 telio_log_trace!("Could not create ICMP packet from IP packet {:?}", ip);
-                return Err(IcmpErrorKey::None);
+                return Err(Error::MalformedIcmpPacket);
             }
         };
         let response_type = {
@@ -662,7 +652,7 @@ impl Conntracker {
             // Request messages get the icmp type of the corresponding reply message
             // Reply messages get their own icmp type, to match that of its corresponding request
             // We only create keys for outbound requests and inbound replies
-            if inbound {
+            if let LibfwDirection::LibfwDirectionInbound = direction {
                 if it == v4::EchoReply.0
                     || it == v4::TimestampReply.0
                     || it == v4::InformationReply.0
@@ -684,7 +674,7 @@ impl Conntracker {
                 {
                     return Self::build_icmp_error_key(icmp_packet, associated_data, false);
                 } else {
-                    return Err(IcmpErrorKey::None);
+                    return Err(Error::UnexpectedPacketType);
                 }
             } else if it == v4::EchoRequest.0 {
                 v4::EchoReply.0
@@ -697,7 +687,7 @@ impl Conntracker {
             } else if it == v6::EchoRequest.0 {
                 v6::EchoReply.0
             } else {
-                return Err(IcmpErrorKey::None);
+                return Err(Error::UnexpectedPacketType);
             }
         };
 
@@ -706,10 +696,10 @@ impl Conntracker {
                 .payload()
                 .get(0..4)
                 .and_then(|b| b.try_into().ok());
-            let bytes = unwrap_option_or_return!(bytes, Err(IcmpErrorKey::None));
+            let bytes = unwrap_option_or_return!(bytes, Err(Error::MalformedIcmpPacket));
             u32::from_ne_bytes(bytes)
         };
-        let (remote_addr, local_addr) = if inbound {
+        let (remote_addr, local_addr) = if let LibfwDirection::LibfwDirectionInbound = direction {
             (ip.get_source().into(), ip.get_destination().into())
         } else {
             (ip.get_destination().into(), ip.get_source().into())
@@ -722,71 +712,82 @@ impl Conntracker {
             associated_data: associated_data.to_smallvec(),
         };
 
-        Ok(key)
+        Ok(IcmpKey::Conn(key))
     }
 
     fn build_icmp_error_key(
         icmp_packet: IcmpPacket,
         associated_data: &[u8],
         is_v4: bool,
-    ) -> IcmpKey {
+    ) -> Result<IcmpKey> {
         let inner_packet = match icmp_packet.payload().get(4..) {
             Some(bytes) => bytes,
             None => {
                 telio_log_trace!("ICMP error body does not contain a nested packet");
-                return Err(IcmpErrorKey::None);
+                return Err(Error::MalformedIcmpPacket);
             }
         };
-        let icmp_error_key = if is_v4 {
+        Ok(IcmpKey::Err(if is_v4 {
             let packet = match <Ipv4Packet<'_> as IpPacket>::try_from(inner_packet) {
                 Some(packet) => packet,
                 _ => {
                     telio_log_trace!("ICMP error contains invalid IPv4 packet");
-                    return Err(IcmpErrorKey::None);
+                    return Err(Error::InvalidIcmpErrorPayload);
                 }
             };
             match packet.get_next_level_protocol() {
                 IpNextHeaderProtocols::Udp => IcmpErrorKey::Udp(
-                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)
-                        .map(|(key, _)| key),
+                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)?.0,
                 ),
                 IpNextHeaderProtocols::Tcp => IcmpErrorKey::Tcp(
-                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)
-                        .map(|(key, _)| key),
+                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)?.0,
                 ),
-                IpNextHeaderProtocols::Icmp => IcmpErrorKey::Icmp(
-                    Self::build_icmp_key(&packet, associated_data, false)
-                        .ok()
-                        .map(Box::new),
-                ),
-                _ => IcmpErrorKey::None,
+                IpNextHeaderProtocols::Icmp => {
+                    if let IcmpKey::Conn(conn) = Self::build_icmp_key(
+                        &packet,
+                        associated_data,
+                        LibfwDirection::LibfwDirectionOutbound,
+                    )? {
+                        IcmpErrorKey::Icmp(Box::new(conn))
+                    } else {
+                        return Err(Error::MalformedIcmpPacket);
+                    }
+                }
+                _ => {
+                    return Err(Error::UnexpectedProtocol);
+                }
             }
         } else {
             let packet = match <Ipv6Packet<'_> as IpPacket>::try_from(inner_packet) {
                 Some(packet) => packet,
                 _ => {
                     telio_log_trace!("ICMP error contains invalid IPv6 packet");
-                    return Err(IcmpErrorKey::None);
+                    return Err(Error::InvalidIcmpErrorPayload);
                 }
             };
             match packet.get_next_level_protocol() {
                 IpNextHeaderProtocols::Udp => IcmpErrorKey::Udp(
-                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)
-                        .map(|(key, _)| key),
+                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)?.0,
                 ),
                 IpNextHeaderProtocols::Tcp => IcmpErrorKey::Tcp(
-                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)
-                        .map(|(key, _)| key),
+                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)?.0,
                 ),
-                IpNextHeaderProtocols::Icmpv6 => IcmpErrorKey::Icmp(
-                    Self::build_icmp_key(&packet, associated_data, false)
-                        .ok()
-                        .map(Box::new),
-                ),
-                _ => IcmpErrorKey::None,
+                IpNextHeaderProtocols::Icmpv6 => {
+                    if let IcmpKey::Conn(conn) = Self::build_icmp_key(
+                        &packet,
+                        associated_data,
+                        LibfwDirection::LibfwDirectionOutbound,
+                    )? {
+                        IcmpErrorKey::Icmp(Box::new(conn))
+                    } else {
+                        return Err(Error::MalformedIcmpPacket);
+                    }
+                }
+                _ => {
+                    return Err(Error::UnexpectedProtocol);
+                }
             }
-        };
-        Err(icmp_error_key)
+        }))
     }
 
     pub(crate) fn reset_tcp_conns<F>(
