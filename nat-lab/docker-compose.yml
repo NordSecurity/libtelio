@@ -15,7 +15,7 @@ services:
     hostname: nlx-01
     privileged: true
     # image: dockur_linux_installed:latest
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux:master
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux@sha256:f0c4618714c24d1cb9ed1df33e8ad14725e8f0ca68a562da09135e8ac95ce015
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
@@ -128,7 +128,7 @@ services:
 
   windows-client-01: &windows-client
     hostname: windows-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:master
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows@sha256:01b9916c2d10b91b2ec6c9a6493b1e58ad4029cc435d86b415036a60f2d2d5d5
     privileged: true
     devices:
       - "/dev/net/tun"
@@ -218,7 +218,7 @@ services:
 
   mac-client-01: &mac-client
     hostname: mac-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos:master
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos@sha256:329b35070ada10cbf04551383baac289af4fa9eef09e3b6f04e25e56553ace5c
     privileged: true
     devices:
       - "/dev/net/tun"
