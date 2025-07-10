@@ -339,4 +339,6 @@ def is_tag_valid_for_ssh_connection(tag: ConnectionTag) -> bool:
         ConnectionTag.VM_WINDOWS_2,
         ConnectionTag.VM_MAC,
         ConnectionTag.VM_LINUX_NLX_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_2,
     ]

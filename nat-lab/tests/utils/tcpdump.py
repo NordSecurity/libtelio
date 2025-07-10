@@ -71,7 +71,12 @@ class TcpDump:
             term_type=(
                 "xterm"
                 if self.connection.tag
-                in [ConnectionTag.VM_MAC, ConnectionTag.VM_LINUX_NLX_1]
+                in [
+                    ConnectionTag.VM_MAC,
+                    ConnectionTag.VM_LINUX_NLX_1,
+                    ConnectionTag.VM_LINUX_FULLCONE_GW_1,
+                    ConnectionTag.VM_LINUX_FULLCONE_GW_2,
+                ]
                 else None
             ),
             kill_id="DO_NOT_KILL" + secrets.token_hex(8).upper() if session else None,

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -ex
+set -eoux
 
 # This is a workaround for 6.x kernel bug, which can cause NULL-deref when
 # iptables are executed too early at boot.
@@ -8,8 +8,11 @@ set -ex
 # https://lore.kernel.org/netdev/20240731213046.6194-3-pablo@netfilter.org/T/#m597226ed32420a20bca5be58cf1c21073f06083b
 sleep 5
 
-pushd /opt/iptables
-make install
+pushd "/opt/3rd-party/netfilter-full-cone-nat"
+make
+modprobe nf_nat
+insmod xt_FULLCONENAT.ko
+lsmod | grep xt_FULLCONENAT
 popd
 
 public_itf=$(ip route show | awk '/10.0.0.0\/16.*dev [a-z0-0]+/ {print $3}')
@@ -32,5 +35,3 @@ iptables-save -f iptables_backup
 ip6tables-save -f ip6tables_backup
 
 touch /ready
-
-sleep infinity
