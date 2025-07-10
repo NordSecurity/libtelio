@@ -20,6 +20,10 @@ pub trait ConfigureInterface {
     fn set_exit_routes(&mut self, exit_node: &IpAddr) -> Result<(), TeliodError>;
     /// Some of the configured routes are not cleared when the adapter is removed and must be removed manually
     fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError>;
+    /// Manually cleanup the interface before the adapter is removed
+    fn cleanup_interface(&mut self) -> Result<(), TeliodError> {
+        Ok(()) // No-op implementation
+    }
 }
 
 /// Helper function to execute a system command
@@ -367,15 +371,28 @@ impl ConfigureInterface for Iproute {
     }
 }
 
-/// Implementation using `uci` for OpenWRT
+/// Implementation using `uci` for OpenWRT devices
 #[derive(Debug, PartialEq, Eq)]
 pub struct Uci {
     interface_name: String,
+    default_gateway_ipv4: Option<String>,
+    exit_route_ip: Option<IpAddr>,
 }
 
 impl Uci {
     fn new(interface_name: String) -> Self {
-        Self { interface_name }
+        Self {
+            interface_name,
+            default_gateway_ipv4: Self::get_default_gateway("-4"),
+            exit_route_ip: None,
+        }
+    }
+
+    fn get_default_gateway(family: &str) -> Option<String> {
+        // Check static routes for default route (target 0.0.0.0)
+        // Check WAN interface static gateway
+        // Check routing table for runtime default gateway
+        None
     }
 }
 
@@ -392,6 +409,7 @@ impl ConfigureInterface for Uci {
                 execute(Command::new("uci").args(["rename", "network.@interface[-1]=tun"]))?;
             }
         }
+        execute(Command::new("uci").args(["set", "network.tun.mtu=1420"]))?;
 
         Ok(())
     }
@@ -410,7 +428,6 @@ impl ConfigureInterface for Uci {
         execute(Command::new("uci").args(["set", "network.tun.proto=static"]))?;
         execute(Command::new("uci").args(["set", &format!("network.tun.ipaddr={ip_address}")]))?;
         execute(Command::new("uci").args(["set", "network.tun.netmask=255.192.0.0"]))?;
-        execute(Command::new("uci").args(["set", "network.tun.mtu=1420"]))?;
 
         // save and apply
         execute(Command::new("uci").args(["commit", "network"]))?;
@@ -420,11 +437,46 @@ impl ConfigureInterface for Uci {
     }
 
     fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), TeliodError> {
-        Ok(()) // No-op implementation
+        execute(Command::new("uci").args(["add", "network", "route"]))?;
+        execute(Command::new("uci").args(["rename", "network.@route[-1]=teliod_route"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_route.interface=tun"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_route.target=0.0.0.0/0"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_route.table=205"]))?;
+
+        execute(Command::new("uci").args(["add", "network", "rule"]))?;
+        execute(Command::new("uci").args(["rename", "network.@rule[-1]=teliod_rule"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_rule.lookup=205"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_rule.mark=11673110"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_rule.priority=32765"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_rule.invert=1"]))?;
+        execute(Command::new("uci").args(["set", "network.teliod_rule.src=0.0.0.0/0"]))?;
+
+        // save and apply
+        execute(Command::new("uci").args(["commit", "network"]))?;
+        execute(Command::new("/etc/init.d/network").args(["reload"]))?;
+        Ok(())
     }
 
     fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError> {
-        Ok(()) // No-op implementation
+        debug!("Removing exit route");
+        execute(Command::new("uci").args(["del", "network.teliod_route"]))?;
+
+        execute(Command::new("uci").args(["del", "network.teliod_rule"]))?;
+
+        // save and apply
+        execute(Command::new("uci").args(["commit", "network"]))?;
+        execute(Command::new("/etc/init.d/network").args(["reload"]))?;
+        Ok(())
+    }
+
+    fn cleanup_interface(&mut self) -> Result<(), TeliodError> {
+        debug!("Removing interface");
+        execute(Command::new("uci").args(["del", "network.tun"]))?;
+
+        // save and apply
+        execute(Command::new("uci").args(["commit", "network"]))?;
+        execute(Command::new("/etc/init.d/network").args(["reload"]))?;
+        Ok(())
     }
 }
 
