@@ -180,3 +180,6 @@ markers = [
     "batching: tests packet batching",
     "utils: tests the natlab utilities",
 ]
+
+[tool.pyright]
+exclude = ["**/.venv"]

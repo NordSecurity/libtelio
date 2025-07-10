@@ -23,7 +23,11 @@ class SshConnection(Connection):
             target_os = TargetOS.Windows
         elif tag is ConnectionTag.VM_MAC:
             target_os = TargetOS.Mac
-        elif tag is ConnectionTag.VM_LINUX_NLX_1:
+        elif tag in [
+            ConnectionTag.VM_LINUX_NLX_1,
+            ConnectionTag.VM_LINUX_FULLCONE_GW_1,
+            ConnectionTag.VM_LINUX_FULLCONE_GW_2,
+        ]:
             target_os = TargetOS.Linux
         else:
             assert False, format(
