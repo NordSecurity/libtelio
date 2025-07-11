@@ -15,7 +15,7 @@ services:
     hostname: nlx-01
     privileged: true
     # image: dockur_linux_installed:latest
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux@sha256:f0c4618714c24d1cb9ed1df33e8ad14725e8f0ca68a562da09135e8ac95ce015
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux@sha256:5bfe100bd86fac680d6046a1bc8a925781ec3a1a113db042d16f294284c8c68b
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
@@ -511,8 +511,8 @@ services:
   fullcone-gw-01: &common-fullcone-gw
     hostname: fullcone-gw-01
     privileged: true
-    # image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux@sha256:f0c4618714c24d1cb9ed1df33e8ad14725e8f0ca68a562da09135e8ac95ce015
-    image: dockur_linux_installed:latest
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux@sha256:5bfe100bd86fac680d6046a1bc8a925781ec3a1a113db042d16f294284c8c68b
+    # image: dockur_linux_installed:latest
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
