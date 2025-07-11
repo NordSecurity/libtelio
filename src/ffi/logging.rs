@@ -88,7 +88,7 @@ pub fn logs_dropped_since_last_checked() -> usize {
 /// Build a tracing subscriber for use in ffi
 pub fn build_subscriber(
     log_level: crate::TelioLogLevel,
-    logger: Box<dyn TelioLoggerCb>,
+    logger: Arc<dyn TelioLoggerCb>,
 ) -> impl Subscriber {
     let log_sender = start_async_logger(logger, LOG_BUFFER);
     LOGGER_STOPPER.set_sender(log_sender.clone());
@@ -257,7 +257,7 @@ enum LogMessage {
     Quit(Arc<Barrier>),
 }
 
-fn start_async_logger(cb: Box<dyn TelioLoggerCb>, buffer_size: usize) -> SyncSender<LogMessage> {
+fn start_async_logger(cb: Arc<dyn TelioLoggerCb>, buffer_size: usize) -> SyncSender<LogMessage> {
     let (sender, receiver) = sync_channel::<LogMessage>(buffer_size);
     let handle = Builder::new()
         .name("libtelio-logger".to_owned())
@@ -358,7 +358,7 @@ mod test {
             (TelioLogLevel::Debug, ASYNC_CHANNEL_CLOSED_MSG.to_owned()),
         ];
 
-        let subscriber = build_subscriber(TelioLogLevel::Debug, Box::new(log));
+        let subscriber = build_subscriber(TelioLogLevel::Debug, Arc::new(log));
 
         tracing::subscriber::with_default(subscriber, act);
 
@@ -411,7 +411,7 @@ mod test {
             (TelioLogLevel::Debug, ASYNC_CHANNEL_CLOSED_MSG.to_owned()),
         ];
 
-        let subscriber = build_subscriber(TelioLogLevel::Debug, Box::new(log));
+        let subscriber = build_subscriber(TelioLogLevel::Debug, Arc::new(log));
 
         tracing::subscriber::with_default(subscriber, act);
 
@@ -423,7 +423,7 @@ mod test {
     fn blocking_telio_cb_handling() {
         const LOGS_TO_DROP: usize = 5;
         let log = BlockedLog;
-        let subscriber = build_subscriber(TelioLogLevel::Debug, Box::new(log));
+        let subscriber = build_subscriber(TelioLogLevel::Debug, Arc::new(log));
 
         tracing::subscriber::with_default(subscriber, || {
             for i in 0..(LOG_BUFFER + LOGS_TO_DROP) {

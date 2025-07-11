@@ -1,0 +1,1 @@
+Use UniFFI interface instead of enum for TelioError

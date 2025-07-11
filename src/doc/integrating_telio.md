@@ -16,6 +16,7 @@ In version 4.x and earlier, the log level and callback was set on the telio inst
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 
 #[derive(Debug)]
@@ -27,7 +28,7 @@ impl TelioLoggerCb for Logger {
     }
 }
 // Global function
-set_global_logger(TelioLogLevel::Debug, Box::new(Logger));
+set_global_logger(TelioLogLevel::Debug, Arc::new(Logger));
 ```
 
 ```go
@@ -90,6 +91,7 @@ App can create and destroy Telio device.
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 use telio_model::event::Event;
 
@@ -101,7 +103,7 @@ impl TelioEventCb for EventHandler {
     }
 }
 
-let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+let telio = Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 telio.shutdown().unwrap();
 ```
 
@@ -145,6 +147,7 @@ App can deserialize JSON string with feature config before passing to telio.
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 use telio_model::{event::Event, features::FeatureLana};
 
@@ -161,7 +164,7 @@ impl TelioEventCb for EventHandler {
     }
 }
 
-let telio = Telio::new(feature_config, Box::new(EventHandler)).unwrap();
+let telio = Telio::new(feature_config, Arc::new(EventHandler)).unwrap();
 telio.shutdown().unwrap();
 ```
 
@@ -239,6 +242,7 @@ If you receive an error event with critical level, you must restart libtelio by 
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 use telio_model::event::Event;
 
@@ -251,7 +255,7 @@ impl TelioEventCb for EventHandler {
     }
 }
 
-Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 ```
 
 ```go
@@ -320,6 +324,7 @@ App starts and stops Telio device instance with default adapter.
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 use telio_model::event::Event;
 
@@ -334,7 +339,7 @@ impl TelioEventCb for EventHandler {
 let sk = generate_secret_key();
 let adapter = get_default_adapter();
 
-let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+let telio = Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 
 // There are three ways to start telio:
 // * start - telio does everything
@@ -428,7 +433,7 @@ App connects to/disconnects from VPN node.
 <multi-code>
 
 ```rust no_run
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 use ipnet::IpNet;
 use telio::{ffi::*, types::*};
 use telio_crypto::PublicKey;
@@ -445,7 +450,7 @@ impl TelioEventCb for EventHandler {
 let sk = generate_secret_key();
 let adapter = get_default_adapter();
 
-let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+let telio = Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 telio.start(sk, adapter).unwrap();
 
 let server_public = PublicKey::from_str("QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=").unwrap();
@@ -580,6 +585,7 @@ App turns on and off meshnet by passing Meshnet Config.
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 use telio_model::event::Event;
 
@@ -594,7 +600,7 @@ impl TelioEventCb for EventHandler {
 let sk = generate_secret_key();
 let adapter = get_default_adapter();
 
-let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+let telio = Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 telio.start(sk.clone(), adapter).unwrap();
 
 let mesh_pk = generate_public_key(sk.clone());
@@ -726,6 +732,7 @@ App enables/disables Telio Magic DNS proxy, forwarding desired DNS servers.
 <multi-code>
 
 ```rust no_run
+use std::{str::FromStr, sync::Arc};
 use telio::{ffi::*, types::*};
 use telio_model::event::Event;
 
@@ -740,7 +747,7 @@ impl TelioEventCb for EventHandler {
 let sk = generate_secret_key();
 let adapter = get_default_adapter();
 
-let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+let telio = Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 telio.start(sk, adapter).unwrap();
 
 telio.enable_magic_dns(&[]).unwrap();
@@ -858,7 +865,7 @@ App with enabled meshnet, connects to one of mesh map peer’s.
 <multi-code>
 
 ```rust no_run
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 use ipnet::IpNet;
 use telio::{ffi::*, types::*};
 use telio_crypto::PublicKey;
@@ -875,7 +882,7 @@ impl TelioEventCb for EventHandler {
 let sk = generate_secret_key();
 let adapter = get_default_adapter();
 
-let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+let telio = Telio::new(Default::default(), Arc::new(EventHandler)).unwrap();
 telio.start(sk, adapter).unwrap();
 
 let mesh_map_node_public_key = PublicKey::from_str("QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=").unwrap();
