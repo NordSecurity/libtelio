@@ -1,4 +1,15 @@
+prepare-trigger-env:
+  stage: .pre
+  script:
+    - export $(grep -v '^#' .env | xargs)
+    - echo "TRIGGERED_REF=${TRIGGERED_REF}" >> trigger.env
+  artifacts:
+    reports:
+      dotenv: trigger.env
+
 libtelio-build-pipeline:
+  needs:
+    - prepare-trigger-env
   variables:
     LIBTELIO_COMMIT_SHA: $CI_COMMIT_SHA
     LIBTELIO_COMMIT_TAG: $CI_COMMIT_TAG
@@ -15,4 +26,4 @@ libtelio-build-pipeline:
 
   trigger:
     project: $LIBTELIO_BUILD_PROJECT_PATH
-    branch: v2.13.4  # REMEMBER to also update in .github/workflows/gitlab.yml and .github/workflows/gitlab_schedule.yml
+    branch: $TRIGGERED_REF # defined in .env file

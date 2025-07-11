@@ -1,0 +1,35 @@
+name: Read key from dotenv
+
+on:
+  workflow_call:
+    inputs:
+      key:
+        description: "The key to load from the .env file"
+        required: true
+        type: string
+    outputs:
+      value:
+        description: "Value loaded from dotenv corresponding to the provided key"
+        value: ${{ jobs.read-dotenv-key.outputs.value }}
+
+jobs:
+  read-dotenv-key:
+    runs-on: ubuntu-22.04
+    outputs:
+      value: ${{ steps.read-dotenv-key.outputs.value }}
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29
+
+      - name: Read "${{ inputs.key }}" from .env file
+        id: read-dotenv-key
+        run: |
+          VALUE=$(grep -v '^#' .env | grep -E "^${{ inputs.key }}=" | cut -d '=' -f2-)
+          if [[ -z "$VALUE" ]]; then
+            echo "Key '${{ inputs.key }}' not found in .env"
+            exit 1
+          fi
+          echo "value=$VALUE" >> "$GITHUB_OUTPUT"
+
+      - name: Verify "${{ inputs.key }}" loaded correctly
+        run: |
+          echo "${{ inputs.key }} is ${{ steps.read-dotenv-key.outputs.value }}"
