@@ -2,4 +2,4 @@
 
 set -eoux
 
-python3 /run/qga.py /mnt/shared/nat-lab/bin/fullcone-gw
+python3 /run/qga.py --timeout 180 /mnt/shared/nat-lab/bin/fullcone-gw
