@@ -18,8 +18,8 @@ mod packet;
 mod ens;
 
 pub use ens::{
-    grpc::{ConnectionError, Error},
-    ErrorNotificationService,
+    grpc::{ConnectionError, Error as GrpcError},
+    Error, ErrorNotificationService,
 };
 
 pub use codec::{Codec, Error as CodecError, Result as CodecResult};

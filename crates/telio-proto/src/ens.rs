@@ -5,7 +5,7 @@ use telio_task::io::{
     chan::{Rx, Tx},
     Chan,
 };
-use telio_utils::{telio_log_debug, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
 use tokio::{select, sync::watch};
 
 #[allow(missing_docs)]
@@ -14,6 +14,20 @@ pub(crate) mod grpc {
 }
 
 const ENS_PORT: u16 = 993;
+
+/// TODO
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// TODO
+    #[error("Failed to parse the vpn server uri: {0}")]
+    MalformedVpnUri(#[from] http::Error),
+    /// TODO
+    #[error("ENS transpert error: {0}")]
+    TransportError(#[from] tonic::transport::Error),
+    /// TODO
+    #[error("ENS status error: {0}")]
+    StatusError(#[from] tonic::Status),
+}
 
 /// TODO
 pub struct ErrorNotificationService {
@@ -35,11 +49,11 @@ impl ErrorNotificationService {
     }
 
     /// TODO
-    pub async fn start_monitor(&mut self, vpn_ip: IpAddr) {
+    pub async fn start_monitor(&mut self, vpn_ip: IpAddr) -> Result<(), Error> {
         self.start_monitor_on_port(vpn_ip, ENS_PORT).await
     }
 
-    async fn start_monitor_on_port(&mut self, vpn_ip: IpAddr, ens_port: u16) {
+    async fn start_monitor_on_port(&mut self, vpn_ip: IpAddr, ens_port: u16) -> Result<(), Error> {
         self.stop_old_monitor();
 
         let (quit_tx, mut quit_rx): (watch::Sender<bool>, watch::Receiver<bool>) =
@@ -51,25 +65,28 @@ impl ErrorNotificationService {
             .scheme("http") //TODO
             .authority(format!("{vpn_ip}:{ens_port}"))
             .path_and_query("/")
-            .build()
-            .unwrap();
-        let mut client = grpc::ens_client::EnsClient::connect(vpn_uri.clone())
-            .await
-            .unwrap();
+            .build()?;
+
+        telio_log_info!("ens connect to {vpn_uri}");
+
+        let mut client = grpc::ens_client::EnsClient::connect(vpn_uri.clone()).await?;
+
+        telio_log_info!("ens connectio_errors");
+
         let mut stream = client
             .connection_errors(tonic::Request::<Empty>::new(Empty::default()))
-            .await
-            .unwrap()
+            .await?
             .into_inner();
 
         let tx = self.tx.clone();
 
         let vpn_uri = vpn_uri.to_owned();
+        telio_log_info!("ens spawning task");
         tokio::spawn(async move {
             loop {
                 select! {
                     _ = quit_rx.wait_for(|b| *b)=> {
-                        println!("got quit");
+                        telio_log_info!("got quit");
                         telio_log_debug!("ENS monitor for '{vpn_uri}' ends");
                         break
                     }
@@ -92,6 +109,8 @@ impl ErrorNotificationService {
             }
             telio_log_debug!("ENS monitor for '{vpn_uri}' terminates");
         });
+
+        Ok(())
     }
 
     /// TODO

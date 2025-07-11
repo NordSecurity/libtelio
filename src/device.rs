@@ -7,7 +7,7 @@ use telio_lana::init_lana;
 use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_network_monitors::{local_interfaces::SystemGetIfAddrs, monitor::NetworkMonitor};
 use telio_pq::PostQuantum;
-use telio_proto::{ConnectionError, ErrorNotificationService, HeartbeatMessage};
+use telio_proto::{ConnectionError, Error as EnsError, ErrorNotificationService, HeartbeatMessage};
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
 use telio_relay::{
     derp::Config as DerpConfig, multiplexer::Multiplexer, DerpKeepaliveConfig, DerpRelay,
@@ -189,6 +189,8 @@ pub enum Error {
     EventsProcessingThreadStartError(std::io::Error),
     #[error("Polling period cannot be zero")]
     PollingPeriodZero,
+    #[error("Ens failure: {0:?}")]
+    EnsFailure(#[from] EnsError),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -1242,6 +1244,7 @@ impl Runtime {
 
         let (error_notification_service, error_notification_service_subscriber) =
             if let Some(error_notification_service) = features.error_notification_service {
+                telio_log_info!("Will create ENS");
                 let (ens, rx) =
                     ErrorNotificationService::new(error_notification_service.buffer_size as usize);
                 (Some(ens), rx)
@@ -2076,7 +2079,8 @@ impl Runtime {
         if let Some(endpoint) = exit_node.endpoint {
             let vpn_ip = endpoint.ip();
             if let Some(ens) = self.entities.error_notification_service.as_mut() {
-                ens.start_monitor(vpn_ip).await;
+                telio_log_info!("Starting ENS monitoring");
+                ens.start_monitor(vpn_ip).await?;
             }
         }
 

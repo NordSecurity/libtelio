@@ -24,6 +24,7 @@ def default_features(
     enable_multicast: bool = False,
     enable_dynamic_wg_nt_control: bool = False,
     custom_skt_buffer_size: Optional[int] = None,
+    enable_error_notification_service: bool = False
 ) -> Features:
     features_builder = FeaturesDefaultsBuilder()
     if enable_lana is not None:
@@ -48,6 +49,8 @@ def default_features(
         features_builder = features_builder.enable_dynamic_wg_nt_control()
     if custom_skt_buffer_size:
         features_builder = features_builder.set_skt_buffer_size(custom_skt_buffer_size)
+    if enable_error_notification_service:
+        features_builder = features_builder.enable_error_notification_service()
 
     features = features_builder.build()
     features.is_test_env = True
