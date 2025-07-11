@@ -156,7 +156,7 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                                     .process_inbound_packet(&peers[which_peer], &param.packet));
                                 which_peer = (which_peer + 1) % peers.len();
                             }
-                            assert_eq!((0, 0), firewall.get_state());
+                            assert_eq!((peers.len(), 0), firewall.get_state());
                         });
                     },
                 );
@@ -239,7 +239,8 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                                     firewall.process_inbound_packet(&public_key.0, &param.packet)
                                 );
                             }
-                            assert_eq!((0, 0), firewall.get_state());
+                            // Any passing SYN will create a conntrack entry
+                            assert_eq!((1, 0), firewall.get_state());
                         });
                     },
                 );
@@ -470,7 +471,7 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                                     .process_inbound_packet(&peers[which_peer], &param.packet));
                                 which_peer = (which_peer + 1) % peers.len();
                             }
-                            assert_eq!((0, 0), firewall.get_state());
+                            assert_eq!((0, peers.len()), firewall.get_state());
                         });
                     },
                 );
@@ -553,7 +554,8 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                                     firewall.process_inbound_packet(&public_key.0, &param.packet)
                                 );
                             }
-                            assert_eq!((0, 0), firewall.get_state());
+                            // Any UDP packet will create a conntrack entry
+                            assert_eq!((0, 1), firewall.get_state());
                         });
                     },
                 );
