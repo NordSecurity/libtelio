@@ -23,7 +23,7 @@ dependencies = [
     "dill==0.3.8",
     "distlib==0.3.8",
     "exceptiongroup==1.2.2",
-    "grpcio-tools==1.73.1",
+    "grpcio-tools==1.72.0",
     "filelock==3.15.1",
     "flatten-json==0.1.14",
     "frozenlist==1.5.0",
@@ -44,7 +44,7 @@ dependencies = [
     "platformdirs==4.2.2",
     "pluggy==1.5.0",
     "propcache==0.2.0",
-    "protobuf==6.31.1",
+    "protobuf==6.30.2",
     "psutil==6.1.0",
     "py==1.11.0",
     "pycparser==2.22",
@@ -103,17 +103,22 @@ remove-duplicate-keys = true
 ignore-init-module-imports = true
 recursive = true
 in-place = true
-exclude = ["telio_bindings.py"]
+exclude = ["telio_bindings.py", "ens", "*pb2*"]
 
 [tool.mypy]
 check_untyped_defs = true
 enable_error_code = ['possibly-undefined', 'redundant-expr', 'unused-awaitable']
 extra_checks = true
 strict_equality = true
+
 exclude = [
     '^tests/protobuf',
     '^.*telio_bindings\.py',
+    '.*ens_pb2_grpc.py',
 ]
+[[tool.mypy.overrides]]
+module = "protobuf.*"
+ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = "uniffi.*"
