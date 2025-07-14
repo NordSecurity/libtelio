@@ -16,6 +16,10 @@ ip6tables -t nat -A POSTROUTING -s fd74:656c:696f::/48 ! -o wg0 -j MASQUERADE
 iptables-save -f iptables_backup
 ip6tables-save -f ip6tables_backup
 
+# Start the ENS stub
+source ~/.bashrc 
+uv run --with 'grpcio==1.73.1' --with 'protobuf==6.30.2' --offline --directory /opt/bin /opt/bin/ens &
+
 touch /ready
 
 sleep infinity

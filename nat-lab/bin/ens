@@ -1,0 +1,97 @@
+#!/bin/env python3
+
+import asyncio
+import json
+import sys
+from pathlib import Path
+from aiohttp import web
+
+# Add protobuf directory to path for all tests
+# See: https://github.com/grpc/grpc/issues/29459#issuecomment-1652447028
+protobuf_dir = Path(__file__).parent / "grpc_protobuf"
+sys.path.insert(0, str(protobuf_dir))
+
+import grpc  # type: ignore
+import grpc_protobuf.ens_pb2
+from grpc_protobuf.ens_pb2 import Challenge, ConnectionError
+from grpc_protobuf.ens_pb2_grpc import LoginServicer, ENSServicer, add_LoginServicer_to_server, add_ENSServicer_to_server
+
+# Synchronization between http controller api and grpc stub
+error_event = asyncio.Event()
+error_ready = None
+
+class LoginServicerStub(LoginServicer):
+    async def GetChallenge(self, request, context):
+        print("GetChallenge", request, context)
+        return Challenge(challenge="foo")
+
+class EnsServicerStub(ENSServicer):
+    async def ConnectionErrors(self, request, context):
+        print("ConnectionErrors", request, context)
+        
+        global error_event
+        global error_ready
+        
+        while True:
+            await error_event.wait()
+            print("Yielded")
+            if error_ready:
+                yield ConnectionError(code=error_ready["code"], additional_info=error_ready["additional_info"])
+            error_event.clear()
+
+async def handle_connection_error(request):
+    try:
+        data = await request.json()
+        print(f"got {data} on /api/connection_error")
+        
+        global error_event
+        global error_ready
+        error_ready = data
+        print("will set event")
+        error_event.set()
+        print("did set event")
+        
+        return web.json_response({})
+        
+    except json.JSONDecodeError:
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+
+async def start_http_server(host, port):
+    app = web.Application()
+    app.router.add_post('/api/connection_error', handle_connection_error)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host, port)
+    await site.start()
+    
+    print(f"HTTP server started at http://{host}:{port}")
+    return runner
+
+async def start_grpc_server():
+    server = grpc.aio.server()
+    add_LoginServicer_to_server(LoginServicerStub(), server)
+    add_ENSServicer_to_server(EnsServicerStub(), server)
+    server.add_insecure_port("[::]:993")
+    print("Will start the ENS grpc service")
+    await server.start()
+    return server
+
+async def main():
+    print("Starting test api")
+    http_runner = await start_http_server(host="0.0.0.0", port=8000)
+    
+    print("Starting ENS")
+    grpc_server = await start_grpc_server()
+    
+    try:
+        await grpc_server.wait_for_termination()
+    except KeyboardInterrupt:
+        print("Shutting down servers...")
+    finally:
+        await grpc_server.stop(5)
+        await http_runner.cleanup()
+        print("Servers terminated")
+
+if __name__ == "__main__":
+    asyncio.run(main())
