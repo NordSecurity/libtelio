@@ -141,7 +141,7 @@ impl MtuMonitor {
 
         let self_ptr = CallerContext as *mut MtuMonitor;
         assert!(!self_ptr.is_null());
-        if 0 == unsafe { *Row }.DestinationPrefix.PrefixLength {
+        if 0 == unsafe { (*Row).DestinationPrefix.PrefixLength } {
             // Result can be ignored
             match unsafe { (*self_ptr).do_it() } {
                 Ok(_) => {}
@@ -242,26 +242,25 @@ impl MtuMonitor {
             );
             return Err(result);
         }
-
         let mut lowest_metric: u32 = u32::MAX;
         let mut index: u32 = 0;
         let mut luid: u64 = 0;
 
         assert!(!p_table.is_null());
-        let num_entries = unsafe { *p_table }.NumEntries;
-        let x_table = unsafe { *p_table }.Table.as_ptr();
+        let num_entries = unsafe { (*p_table).NumEntries };
+        let x_table = unsafe { (*p_table).Table.as_ptr() };
         for i in 0..num_entries {
             let current_entry = unsafe { x_table.add(i as _) };
 
-            if 0 != unsafe { *current_entry }.DestinationPrefix.PrefixLength {
+            if 0 != unsafe { (*current_entry).DestinationPrefix.PrefixLength } {
                 continue;
             }
-            if unsafe { *current_entry }.InterfaceLuid.Value == self.own_luid {
+            if unsafe { (*current_entry).InterfaceLuid.Value } == self.own_luid {
                 continue;
             }
 
             let current_interface =
-                InterfaceLuid::new(unsafe { *current_entry }.InterfaceLuid.Value);
+                InterfaceLuid::new(unsafe { (*current_entry).InterfaceLuid.Value });
             match current_interface.get_interface() {
                 Ok(ifrow) => {
                     if IfOperStatusUp != ifrow.OperStatus {
@@ -274,11 +273,11 @@ impl MtuMonitor {
             }
             match current_interface.get_ip_interface(self.family) {
                 Ok(iface) => {
-                    let current_metric = unsafe { *current_entry }.Metric + iface.Metric;
+                    let current_metric = unsafe { (*current_entry).Metric + iface.Metric };
                     if current_metric < lowest_metric {
                         lowest_metric = current_metric;
-                        index = unsafe { *current_entry }.InterfaceIndex;
-                        luid = unsafe { *current_entry }.InterfaceLuid.Value;
+                        index = unsafe { (*current_entry).InterfaceIndex };
+                        luid = unsafe { (*current_entry).InterfaceLuid.Value };
                     }
                 }
                 Err(_) => {

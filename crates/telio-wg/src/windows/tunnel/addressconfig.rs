@@ -38,16 +38,16 @@ fn cleanup_addresses_on_disconnected_interfaces2(
 ) {
     let mut iface: PIP_ADAPTER_ADDRESSES = ptr_adapters;
     while !iface.is_null() {
-        let iface_friendly_name = u16_ptr_to_string(unsafe { *iface }.FriendlyName);
+        let iface_friendly_name = u16_ptr_to_string(unsafe { (*iface).FriendlyName });
 
-        if unsafe { *iface }.OperStatus != IfOperStatusUp {
-            let luid = InterfaceLuid::new(unsafe { *iface }.Luid.Value);
+        if unsafe { (*iface).OperStatus } != IfOperStatusUp {
+            let luid = InterfaceLuid::new(unsafe { (*iface).Luid.Value });
             // TODO: collect addresses, deduplicate as in the original code
 
-            let mut address = unsafe { *iface }.FirstUnicastAddress;
+            let mut address = unsafe { (*iface).FirstUnicastAddress };
             while !address.is_null() {
-                let sockaddr_raw = unsafe { *address }.Address.lpSockaddr;
-                match unsafe { *sockaddr_raw }.sa_family as i32 {
+                let sockaddr_raw = unsafe { (*address).Address.lpSockaddr };
+                match unsafe { (*sockaddr_raw).sa_family as i32 } {
                     AF_INET => {
                         let sockaddr_ipv4: *mut SOCKADDR_IN = sockaddr_raw as _;
                         let ipv4_addr = convert_sockaddr_to_ipv4addr(&unsafe { *sockaddr_ipv4 });
@@ -56,10 +56,9 @@ fn cleanup_addresses_on_disconnected_interfaces2(
                             ipv4_addr,
                             iface_friendly_name
                         );
-                        match luid.delete_ipv4_address2(
-                            sockaddr_ipv4,
-                            unsafe { *address }.OnLinkPrefixLength,
-                        ) {
+                        match luid.delete_ipv4_address2(sockaddr_ipv4, unsafe {
+                            (*address).OnLinkPrefixLength
+                        }) {
                             Ok(_) => {}
                             Err(_err) => {}
                         };
@@ -71,10 +70,9 @@ fn cleanup_addresses_on_disconnected_interfaces2(
                             unsafe { *(*sockaddr_ipv6).sin6_addr.u.Byte() },
                             iface_friendly_name
                         );
-                        match luid.delete_ipv6_address2(
-                            sockaddr_ipv6,
-                            unsafe { *address }.OnLinkPrefixLength,
-                        ) {
+                        match luid.delete_ipv6_address2(sockaddr_ipv6, unsafe {
+                            (*address).OnLinkPrefixLength
+                        }) {
                             Ok(_) => {}
                             Err(_err) => {}
                         };
@@ -82,11 +80,11 @@ fn cleanup_addresses_on_disconnected_interfaces2(
                     _ => {}
                 }
 
-                address = unsafe { *address }.Next;
+                address = unsafe { (*address).Next };
             }
         }
 
-        iface = unsafe { *iface }.Next;
+        iface = unsafe { (*iface).Next };
     }
 }
 
