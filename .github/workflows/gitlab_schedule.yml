@@ -9,6 +9,11 @@ on:
 permissions: {}
 
 jobs:
+  read-triggered-ref:
+    uses: ./.github/workflows/read_dotenv.yml
+    with:
+      key: TRIGGERED_REF
+
   prepare-sha:
     runs-on: ubuntu-22.04
     outputs:
@@ -46,7 +51,7 @@ jobs:
           echo "::notice::Using commit SHA: $RECORDED_SHA"
 
   trigger-gitlab-pipeline:
-    needs: prepare-sha
+    needs: [read-triggered-ref, prepare-sha]
     uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@22c73479b495367b1c8e6ee40145c75a3b4b6706
     secrets:
       ci-api-v4-url: ${{ secrets.CI_API_V4_URL }}
@@ -56,5 +61,5 @@ jobs:
     with:
       schedule: true
       cancel-outdated-pipelines: false
-      triggered-ref: v2.13.4  # REMEMBER to also update in .gitlab-ci.yml and .github/workflows/gitlab.yml
+      triggered-ref: ${{ needs.read-triggered-ref.outputs.value }} # defined in .env file
       github-sha-override: ${{ needs.prepare-sha.outputs.recorded_sha }}
