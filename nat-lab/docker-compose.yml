@@ -19,27 +19,19 @@ services:
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_RAW
-      - NET_ADMIN
-      - NET_BIND_SERVICE
-      - SETUID
-      - SETGID
-    sysctls:
-      - net.ipv4.ip_forward=1
-      # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
-      # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
-      # seem to work. So for now disable return path filter outright.
-      - net.ipv4.conf.all.rp_filter=0
-      - net.ipv4.conf.default.rp_filter=0
-      # Enable IPv6, by default, docker has this set to '1'
-      - net.ipv6.conf.all.disable_ipv6=0
-      - net.ipv6.conf.default.disable_ipv6=0
-      - net.ipv6.conf.all.forwarding=1
-    security_opt:
-      - no-new-privileges:true
+    # sysctls here are configured for docker holding VM, they are not applied to VM
+    # add them manually into entrypoint script, which is passed as `EXTRA_SCRIPT` in variables
+    # sysctls:
+    #   - net.ipv4.ip_forward=1
+    #   # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
+    #   # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
+    #   # seem to work. So for now disable return path filter outright.
+    #   - net.ipv4.conf.all.rp_filter=0
+    #   - net.ipv4.conf.default.rp_filter=0
+    #   # Enable IPv6, by default, docker has this set to '1'
+    #   - net.ipv6.conf.all.disable_ipv6=0
+    #   - net.ipv6.conf.default.disable_ipv6=0
+    #   - net.ipv6.conf.all.forwarding=1
     # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
     # When this comment was added, the only scenario where the port mapping is changed is CI running tests
     ports: ["58001"]
@@ -59,6 +51,8 @@ services:
       USERNAME: "root"
       PASSWORD: "root"
       NETWORK: "bridge"
+      RAM_SIZE: "1G"
+      CPU_CORES: "1"
       EXTRA_SCRIPT: "/shared/nat-lab/bin/nlx-vm"
       CLIENT_GATEWAY_PRIMARY: none
     networks:
@@ -133,26 +127,6 @@ services:
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_RAW
-      - NET_ADMIN
-      - NET_BIND_SERVICE
-      - SETUID
-      - SETGID
-    sysctls:
-      # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
-      # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
-      # seem to work. So for now disable return path filter outright.
-      - net.ipv4.conf.all.rp_filter=0
-      - net.ipv4.conf.default.rp_filter=0
-      # Enable IPv6, by default, docker has this set to '1'
-      - net.ipv6.conf.all.disable_ipv6=0
-      - net.ipv6.conf.default.disable_ipv6=0
-      - net.ipv6.conf.all.forwarding=1
-    security_opt:
-      - no-new-privileges:true
     # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
     # When this comment was added, the only scenario where the port mapping is changed is CI running tests
     ports: ["58001"]
@@ -182,6 +156,8 @@ services:
       USERNAME: "bill"
       PASSWORD: "gates"
       NETWORK: "bridge"
+      RAM_SIZE: "2G"
+      CPU_CORES: "1"
       EXTRA_SCRIPT: "/libtelio/nat-lab/bin/windows-client"
       CLIENT_GATEWAY_PRIMARY: 192.168.150.254
       CLIENT_GATEWAY_SECONDARY: 192.168.151.254
@@ -223,26 +199,6 @@ services:
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_RAW
-      - NET_ADMIN
-      - NET_BIND_SERVICE
-      - SETUID
-      - SETGID
-    sysctls:
-      # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
-      # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
-      # seem to work. So for now disable return path filter outright.
-      - net.ipv4.conf.all.rp_filter=0
-      - net.ipv4.conf.default.rp_filter=0
-      # Enable IPv6, by default, docker has this set to '1'
-      - net.ipv6.conf.all.disable_ipv6=0
-      - net.ipv6.conf.default.disable_ipv6=0
-      - net.ipv6.conf.all.forwarding=1
-    security_opt:
-      - no-new-privileges:true
     # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
     # When this comment was added, the only scenario where the port mapping is changed is CI running tests
     ports: ["58001"]
@@ -272,6 +228,8 @@ services:
       USERNAME: "steve"
       PASSWORD: "jobs"
       NETWORK: "bridge"
+      RAM_SIZE: "2G"
+      CPU_CORES: "1"
       EXTRA_SCRIPT: "/libtelio/nat-lab/bin/mac-client"
       CLIENT_GATEWAY_PRIMARY: 192.168.154.254
       CLIENT_GATEWAY_SECONDARY: 192.168.155.254
@@ -507,27 +465,19 @@ services:
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_RAW
-      - NET_ADMIN
-      - NET_BIND_SERVICE
-      - SETUID
-      - SETGID
-    sysctls:
-      - net.ipv4.ip_forward=1
-      # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
-      # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
-      # seem to work. So for now disable return path filter outright.
-      - net.ipv4.conf.all.rp_filter=0
-      - net.ipv4.conf.default.rp_filter=0
-      # Enable IPv6, by default, docker has this set to '1'
-      - net.ipv6.conf.all.disable_ipv6=0
-      - net.ipv6.conf.default.disable_ipv6=0
-      - net.ipv6.conf.all.forwarding=1
-    security_opt:
-      - no-new-privileges:true
+    # sysctls here are configured for docker holding VM, they are not applied to VM
+    # add them manually into entrypoint script, which is passed as `EXTRA_SCRIPT` in variables
+    # sysctls:
+    #   - net.ipv4.ip_forward=1
+    #   # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
+    #   # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
+    #   # seem to work. So for now disable return path filter outright.
+    #   - net.ipv4.conf.all.rp_filter=0
+    #   - net.ipv4.conf.default.rp_filter=0
+    #   # Enable IPv6, by default, docker has this set to '1'
+    #   - net.ipv6.conf.all.disable_ipv6=0
+    #   - net.ipv6.conf.default.disable_ipv6=0
+    #   - net.ipv6.conf.all.forwarding=1
     # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
     # When this comment was added, the only scenario where the port mapping is changed is CI running tests
     ports: ["58001"]
@@ -547,6 +497,8 @@ services:
       USERNAME: "root"
       PASSWORD: "root"
       NETWORK: "bridge"
+      RAM_SIZE: "1G"
+      CPU_CORES: "1"
       EXTRA_SCRIPT: "/shared/nat-lab/bin/fullcone-gw-vm"
       CLIENT_GATEWAY_PRIMARY: none
     networks:
