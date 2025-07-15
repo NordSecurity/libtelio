@@ -8,6 +8,13 @@ set -eoux
 # https://lore.kernel.org/netdev/20240731213046.6194-3-pablo@netfilter.org/T/#m597226ed32420a20bca5be58cf1c21073f06083b
 sleep 5
 
+sysctl net.ipv4.ip_forward=1
+sysctl net.ipv4.conf.all.rp_filter=0
+sysctl net.ipv4.conf.default.rp_filter=0
+sysctl net.ipv6.conf.all.disable_ipv6=0
+sysctl net.ipv6.conf.default.disable_ipv6=0
+sysctl net.ipv6.conf.all.forwarding=1
+
 mkdir -p /etc/nordlynx
 ip link add dev nordlynx0 type nordlynx
 ip addr add 10.5.0.1/16 dev nordlynx0
@@ -19,7 +26,7 @@ nlx set nordlynx0 listen-port 1023
 
 iptables -A FORWARD -i nordlynx0 -j ACCEPT;
 iptables -A FORWARD -o nordlynx0 -j ACCEPT;
-iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -o enp0s3 -j MASQUERADE
 
 # Backup IP tables
 iptables-save -f iptables_backup

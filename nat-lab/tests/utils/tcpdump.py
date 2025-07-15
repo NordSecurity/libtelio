@@ -272,10 +272,10 @@ async def make_tcpdump(
                 )
                 await conn.download(PCAP_FILE_PATH[conn.target_os], path)
 
-        if conn.target_os != TargetOS.Windows:
-            await conn.create_process(
-                ["rm", "-f", PCAP_FILE_PATH[conn.target_os]], quiet=True
-            ).execute()
-        # TODO(LLT-5942): temporary disable windows tcpdump
-        # else:
-        #     await conn.create_process(["del", PCAP_FILE_PATH[conn.target_os]]).execute()
+                if conn.target_os != TargetOS.Windows:
+                    await conn.create_process(
+                        ["rm", "-f", PCAP_FILE_PATH[conn.target_os]], quiet=True
+                    ).execute()
+                # TODO(LLT-5942): temporary disable windows tcpdump
+                # else:
+                #     await conn.create_process(["del", PCAP_FILE_PATH[conn.target_os]]).execute()
