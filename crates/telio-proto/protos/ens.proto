@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package ens;
+
+enum Error {
+    Unknown = 0;
+    ConnectionLimitReached = 1;
+    ServerMaintenance = 2;        // Only this error type can cause automatic recconection to a different server
+    Unauthenticated = 3;
+    Superseded = 4;
+}
+
+message ConnectionError {
+    Error code = 1;
+    optional string additional_info = 2;
+}
+
+message Empty {}
+
+message Challenge {
+    string challenge = 1;
+}
+
+service Login {
+    rpc GetChallenge(Empty) returns (Challenge);
+}
+
+service ENS {
+    rpc ConnectionErrors(Empty) returns (stream ConnectionError);
+}
