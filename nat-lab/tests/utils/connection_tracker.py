@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, List, Dict, AsyncIterator
 from utils.connection import Connection
+from utils.connection_util import ConnectionTag
 from utils.logger import log
 from utils.ping import ping
 from utils.process import Process
@@ -350,7 +351,21 @@ class ConnectionTracker:
         )
 
         args = ["conntrack", "-E"]
-        self._process: Process = connection.create_process(args, quiet=True)
+        self._process: Process = connection.create_process(
+            args,
+            term_type=(
+                "xterm"
+                if connection.tag
+                in [
+                    ConnectionTag.VM_MAC,
+                    ConnectionTag.VM_LINUX_NLX_1,
+                    ConnectionTag.VM_LINUX_FULLCONE_GW_1,
+                    ConnectionTag.VM_LINUX_FULLCONE_GW_2,
+                ]
+                else None
+            ),
+            quiet=True,
+        )
         self._connection: Connection = connection
         self._validators: Optional[List[ConnTrackerEventsValidator]] = validators
         self._events: List[ConntrackerEvent] = []

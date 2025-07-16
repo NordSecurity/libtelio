@@ -27,6 +27,7 @@ public_itf=$(ip route show | awk '/10.0.0.0\/16.*dev [a-z0-0]+/ {print $3}')
 # Configure standard FW
 iptables -t filter -A INPUT -i lo -j ACCEPT
 iptables -t filter -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+iptables -t filter -A INPUT -p tcp --dport 22 -j ACCEPT
 iptables -t filter -P INPUT DROP
 
 # Drop all out-of-tunnel meshnet traffic
