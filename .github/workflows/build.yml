@@ -85,6 +85,8 @@ jobs:
           matrix.target_os == 'android' && 'ghcr.io/nordsecurity/build-android-rust1.85.0:v0.0.1' ||
           'ghcr.io/nordsecurity/build-windows-rust1.85.0:v0.0.1' }}
     steps:
+      - run: sudo apt install -y protobuf-compiler
+        if: ${{ matrix.target_os == 'linux' }}
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         with:
           submodules: true
