@@ -7,6 +7,7 @@ jobs:
     runs-on: ubuntu-22.04
     container: ghcr.io/nordsecurity/nagger:v4.1.0
     steps:
+      - run: sudo apt install -y protobuf-compiler
       - name: Checkout
         uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 #v4.1.6
       - run: CARGO_CFG_CURVE25519_DALEK_BACKEND="serial" RUSTFLAGS="-Dwarnings" DYLINT_LIBRARY_PATH=${NAGGER_PATH} cargo dylint --workspace --all
