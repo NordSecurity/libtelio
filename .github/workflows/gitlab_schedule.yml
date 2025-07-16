@@ -52,7 +52,7 @@ jobs:
 
   trigger-gitlab-pipeline:
     needs: [read-triggered-ref, prepare-sha]
-    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@22c73479b495367b1c8e6ee40145c75a3b4b6706
+    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@94a5d4a0ac0d6353948f0493c894dbd44b179bde
     secrets:
       ci-api-v4-url: ${{ secrets.CI_API_V4_URL }}
       access-token: ${{ secrets.GITLAB_API_TOKEN }}
