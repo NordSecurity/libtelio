@@ -15,12 +15,12 @@ sys.path += [f"{PROJECT_ROOT}/ci"]
 from env import LIBTELIO_ENV_NAT_LAB_DEPS_TAG  # type: ignore # pylint: disable=import-error, wrong-import-position
 
 
-def run_command(command, env=None):
+def run_command(command, env=None, quiet=False):
     if env:
         env = {**os.environ.copy(), **env}
 
     print(f"|EXECUTE| {' '.join(command)}")
-    subprocess.check_call(command, env=env)
+    subprocess.check_call(command, stdout=subprocess.DEVNULL if quiet else None, stderr=subprocess.DEVNULL if quiet else None, env=env)
     print("")
 
 
@@ -56,11 +56,13 @@ def start():
             "DOCKER_BUILDKIT": "1",
             "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
         },
+        quiet=True
     )
     try:
         run_command(
             ["docker", "compose", "up", "-d", "--wait"],
             env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"},
+            quiet=True
         )
     except subprocess.CalledProcessError:
         check_containers()
