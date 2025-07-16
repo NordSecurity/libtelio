@@ -22,6 +22,7 @@ from utils.network_switcher import (
     NetworkSwitcherDocker,
     NetworkSwitcherMac,
     NetworkSwitcherWindows,
+    NetworkSwitcherLinux,
 )
 
 
@@ -87,6 +88,12 @@ async def create_network_switcher(
         return await NetworkSwitcherWindows.create(connection)
     if tag == ConnectionTag.VM_MAC:
         return NetworkSwitcherMac(connection)
+    if tag in [
+        ConnectionTag.VM_LINUX_NLX_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_2,
+    ]:
+        return NetworkSwitcherLinux(connection)
 
     assert False, f"tag {tag} not supported"
 

@@ -126,6 +126,18 @@ GW_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
         "primary": "192.168.154.254",
         "secondary": "192.168.155.254",
     },
+    ConnectionTag.VM_LINUX_NLX_1: {
+        "primary": "",
+        "secondary": "",
+    },
+    ConnectionTag.VM_LINUX_FULLCONE_GW_1: {
+        "primary": "",
+        "secondary": "",
+    },
+    ConnectionTag.VM_LINUX_FULLCONE_GW_2: {
+        "primary": "",
+        "secondary": "",
+    },
 }
 
 LAN_ADDR_MAP_V6: Dict[ConnectionTag, str] = {
