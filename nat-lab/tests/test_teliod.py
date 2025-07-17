@@ -15,6 +15,7 @@ from contextlib import AsyncExitStack
 from helpers import setup_connections, send_https_request
 from mesh_api import API, Node
 from teliod import Teliod, Config, IfcConfigType
+from test_core_api import clean_up_machines as clean_up_registered_machines_on_api
 from utils import stun
 from utils.connection import ConnectionTag
 from utils.logger import log
@@ -135,6 +136,7 @@ async def test_teliod_vpn_connection(config_type: IfcConfigType) -> None:
 
         teliod = Teliod(connection, exit_stack, config=Config(config_type))
 
+        await clean_up_registered_machines_on_api(connection, CORE_API_URL)
         node: Node = await register_new_device_on_api()
 
         # we only know the key of the VPN server at runtime and it needs to be in the config before starting teliod
