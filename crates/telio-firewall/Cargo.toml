@@ -11,6 +11,7 @@ test_utils = [] # For use in benchmarks to avoid duplication of the 'setup' code
 
 [dependencies]
 enum-map = "2.7.3"
+smallvec = "1.15.1"
 hashlink.workspace = true
 if-addrs.workspace = true
 ipnet.workspace = true
@@ -18,13 +19,12 @@ tracing.workspace = true
 mockall = { workspace = true, optional = true }
 pnet_packet.workspace = true
 rustc-hash.workspace = true
+parking_lot.workspace = true
 
 telio-crypto.workspace = true
 telio-utils.workspace = true
 telio-model.workspace = true
 telio-network-monitors.workspace = true
-smallvec = "1.15.1"
-parking_lot.workspace = true
 
 [dev-dependencies]
 criterion = "0.6.0"
