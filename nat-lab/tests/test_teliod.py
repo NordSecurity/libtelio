@@ -22,7 +22,6 @@ from utils.logger import log
 from utils.ping import ping
 from utils.process.process import ProcessExecError
 from utils.router import IPStack
-from utils.router.linux_router import LinuxRouter
 
 if platform.machine() != "x86_64":
     import pure_wg as Key
@@ -151,23 +150,16 @@ async def test_teliod_vpn_connection(config_type: IfcConfigType) -> None:
             log.debug("Teliod started, waiting for connected vpn state...")
             await teliod.wait_for_vpn_connected_state()
 
-            router = LinuxRouter(connection, IPStack.IPv4)
             if config_type == IfcConfigType.VPN_MANUAL:
-                router.set_interface_name("teliod")
-                await router.setup_interface(node.ip_addresses)
-                await router.create_meshnet_route()
-                await router.create_vpn_route()
+                await exit_stack.enter_async_context(
+                    teliod.setup_interface(node.ip_addresses, vpn_routes=True)
+                )
 
             await ping(connection, PHOTO_ALBUM_IP)
             ip = await stun.get(connection, STUN_SERVER)
             assert (
                 ip == WG_SERVER["ipv4"]
             ), f"wrong public IP when connected to VPN {ip}"
-
-            if config_type == ConfigType.VPN_MANUAL:
-                await router.delete_vpn_route()
-                await router.delete_exit_node_route()
-                await router.delete_interface()
 
             await connection.create_process([
                 "sed",

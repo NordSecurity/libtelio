@@ -8,10 +8,12 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import AsyncIterator
+from typing import AsyncIterator, List
 from utils.connection import Connection
 from utils.logger import log
 from utils.process import Process, ProcessExecError
+from utils.router import IPStack
+from utils.router.linux_router import LinuxRouter
 
 
 class TeliodObtainingIdentity(Exception):
@@ -267,7 +269,7 @@ class Teliod:
                     return
             except TimeoutError:
                 pass
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(self.SOCKET_CHECK_INTERVAL_S)
         raise TimeoutError("teliod did not start within timeout")
 
     async def wait_for_vpn_connected_state(self):
@@ -277,3 +279,28 @@ class Teliod:
                 if ext_node["is_vpn"] and ext_node["state"] == "connected":
                     return
             await asyncio.sleep(self.TELIOD_CMD_CHECK_INTERVAL_S)
+
+    @asynccontextmanager
+    async def setup_interface(
+        self, ip_addresses: List[str], vpn_routes: bool
+    ) -> AsyncIterator:
+        """
+        Setups interface addresses and routes manually.
+
+        This function should only be used when interface config provider
+        is set to 'manual' on the teliod config.
+        This is not checked by this function. (TODO: LLT-6476)
+        """
+        router = LinuxRouter(self._connection, IPStack.IPv4)
+        try:
+            router.set_interface_name("teliod")
+            await router.setup_interface(ip_addresses)
+            await router.create_meshnet_route()
+            if vpn_routes:
+                await router.create_vpn_route()
+            yield
+        finally:
+            if vpn_routes:
+                await router.delete_vpn_route()
+            await router.delete_exit_node_route()
+            await router.delete_interface()
