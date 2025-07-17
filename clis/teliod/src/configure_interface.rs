@@ -182,25 +182,38 @@ impl ConfigureInterface for Ifconfig {
     }
 }
 
-// When setting routing information on linux we set a default route on a custom routing table
-// and an IP rule to make sure that the correct packets go through that table.
-// This struct holds the necessary information to set that up
-#[derive(Debug, Clone)]
-struct VpnIpInfo {
-    table: u32,
-    fw_rule_prio: u32,
+/// Implementation using `iproute2`
+#[derive(Debug)]
+pub struct Iproute {
+    interface_name: String,
+    table: Option<u32>,
+    fw_rule_prio: Option<u32>,
+    ipv6_support_manager: Ipv6SupportManager,
 }
 
-impl VpnIpInfo {
-    fn new() -> Result<Self, TeliodError> {
-        let (main_prio, existing_prios) = Self::find_main_and_all_rule_priorities()?;
-        Ok(Self {
-            table: Self::find_available_table()?,
-            fw_rule_prio: Self::find_available_lower_rule_priority(main_prio, &existing_prios)?,
-        })
+impl Iproute {
+    pub fn new(interface_name: String) -> Self {
+        Self {
+            interface_name,
+            table: None,
+            fw_rule_prio: None,
+            ipv6_support_manager: Ipv6SupportManager::default(),
+        }
+    }
+
+    // Some ip commands will return "RNETLINK answers: File exists" which means that the command was already executed and we can ignore the error
+    fn ignore_file_exists_error(res: Result<(), TeliodError>) -> Result<(), TeliodError> {
+        match res {
+            Err(TeliodError::SystemCommandFailed(message)) if message.contains("File exists") => {
+                Ok(())
+            }
+            _ => res,
+        }
     }
 
     // Based on the implementation from the NordVPN Linux app
+    // When setting routing information on linux we set a default route on a custom routing table
+    // and an IP rule to make sure that the correct packets go through that table.
     #[allow(clippy::expect_used)]
     pub fn find_available_table() -> Result<u32, TeliodError> {
         let table_pattern = Regex::new("table ([0-9]+)").expect("Failed to compile ip table regex");
@@ -216,16 +229,14 @@ impl VpnIpInfo {
                 .collect::<Vec<_>>();
         existing.sort_unstable();
         existing.dedup();
-        let mut new_table = DEFAULT_ROUTING_TABLE_ID;
-        loop {
-            if !existing.contains(&new_table) {
-                return Ok(new_table);
-            }
-            new_table += 1;
-            if new_table > 60_000 {
-                return Err(TeliodError::IpRoute);
+
+        // Find first available table ID starting from default
+        for table_id in DEFAULT_ROUTING_TABLE_ID..=60_000 {
+            if !existing.contains(&table_id) {
+                return Ok(table_id);
             }
         }
+        Err(TeliodError::IpRoute)
     }
 
     // Based on the implementation from the NordVPN Linux app
@@ -254,43 +265,12 @@ impl VpnIpInfo {
         start_prio: u32,
         existing_prios: &[u32],
     ) -> Result<u32, TeliodError> {
-        let mut fw_prio = start_prio;
-        loop {
-            fw_prio = fw_prio.saturating_sub(1);
-            if fw_prio == 0 {
-                return Err(TeliodError::IpRule);
-            } else if !existing_prios.contains(&fw_prio) {
-                return Ok(fw_prio);
+        for prio in (1..start_prio).rev() {
+            if !existing_prios.contains(&prio) {
+                return Ok(prio);
             }
         }
-    }
-}
-
-/// Implementation using `iproute2`
-#[derive(Debug)]
-pub struct Iproute {
-    interface_name: String,
-    vpn_ip_info: Option<VpnIpInfo>,
-    ipv6_support_manager: Ipv6SupportManager,
-}
-
-impl Iproute {
-    pub fn new(interface_name: String) -> Self {
-        Self {
-            interface_name,
-            vpn_ip_info: None,
-            ipv6_support_manager: Ipv6SupportManager::default(),
-        }
-    }
-
-    // Some ip commands will return "RNETLINK answers: File exists" which means that the command was already executed and we can ignore the error
-    fn ignore_file_exists_error(res: Result<(), TeliodError>) -> Result<(), TeliodError> {
-        match res {
-            Err(TeliodError::SystemCommandFailed(message)) if message.contains("File exists") => {
-                Ok(())
-            }
-            _ => res,
-        }
+        Err(TeliodError::IpRule)
     }
 }
 
@@ -327,7 +307,11 @@ impl ConfigureInterface for Iproute {
     fn set_exit_routes(&mut self, exit_node: &IpAddr) -> Result<(), TeliodError> {
         #[cfg(target_os = "linux")]
         if exit_node.is_ipv4() {
-            let vpn_ip_info = VpnIpInfo::new()?;
+            let (main_prio, existing_prios) = Self::find_main_and_all_rule_priorities()?;
+            let table = Self::find_available_table()?;
+            let fw_rule_prio =
+                Self::find_available_lower_rule_priority(main_prio, &existing_prios)?;
+
             execute(Command::new("ip").args([
                 "route",
                 "add",
@@ -335,22 +319,23 @@ impl ConfigureInterface for Iproute {
                 "dev",
                 &self.interface_name,
                 "table",
-                &vpn_ip_info.table.to_string(),
+                &table.to_string(),
             ]))?;
             execute(Command::new("ip").args([
                 "rule",
                 "add",
                 "priority",
-                &vpn_ip_info.fw_rule_prio.to_string(),
+                &fw_rule_prio.to_string(),
                 "not",
                 "from",
                 "all",
                 "fwmark",
                 &LIBTELIO_FWMARK.to_string(),
                 "lookup",
-                &vpn_ip_info.table.to_string(),
+                &table.to_string(),
             ]))?;
-            self.vpn_ip_info = Some(vpn_ip_info);
+            self.table = Some(table);
+            self.fw_rule_prio = Some(fw_rule_prio);
 
             self.ipv6_support_manager.disable(&self.interface_name)?;
             // We have already disabled IPv6 on all interfaces (except the tunnel interface)
@@ -369,19 +354,16 @@ impl ConfigureInterface for Iproute {
     }
 
     fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError> {
-        if let Some(vpn_ip_info) = &self.vpn_ip_info {
+        if let Some(fw_rule_prio) = &self.fw_rule_prio {
             execute(Command::new("ip").args([
                 "rule",
                 "del",
                 "priority",
-                &vpn_ip_info.fw_rule_prio.to_string(),
+                &fw_rule_prio.to_string(),
             ]))?;
-            execute(Command::new("ip").args([
-                "route",
-                "flush",
-                "table",
-                &vpn_ip_info.table.to_string(),
-            ]))?;
+        }
+        if let Some(table) = &self.table {
+            execute(Command::new("ip").args(["route", "flush", "table", &table.to_string()]))?;
         }
         self.ipv6_support_manager.reenable()
     }
@@ -530,12 +512,12 @@ impl ConfigureInterface for Uci {
     }
 
     fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), TeliodError> {
-        let (main_prio, existing_prios) = VpnIpInfo::find_main_and_all_rule_priorities()?;
-        let table = VpnIpInfo::find_available_table()?;
+        let (main_prio, existing_prios) = Iproute::find_main_and_all_rule_priorities()?;
+        let table = Iproute::find_available_table()?;
         let vpn_rule_prio =
-            VpnIpInfo::find_available_lower_rule_priority(main_prio, &existing_prios)?;
+            Iproute::find_available_lower_rule_priority(main_prio, &existing_prios)?;
         let lan_rule_prio =
-            VpnIpInfo::find_available_lower_rule_priority(vpn_rule_prio, &existing_prios)?;
+            Iproute::find_available_lower_rule_priority(vpn_rule_prio, &existing_prios)?;
 
         // Set route and rules for VPN
         execute(Command::new("uci").args(["add", "network", "route"]))?;
@@ -788,13 +770,13 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn test_find_available_table_doesnt_panic() {
-        let _ = VpnIpInfo::find_available_table();
+        let _ = Iproute::find_available_table();
     }
 
     #[test]
-    fn test_find_available_lower_rule_priority_skip() {
+    fn test_find_available_lower_rule_priority() {
         let existing_prios = vec![98, 99, 100, 101];
-        let result = VpnIpInfo::find_available_lower_rule_priority(100, &existing_prios);
+        let result = Iproute::find_available_lower_rule_priority(100, &existing_prios);
         assert_eq!(result.unwrap(), 97);
     }
 }
