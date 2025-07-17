@@ -58,13 +58,11 @@ def start():
             "DOCKER_BUILDKIT": "1",
             "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
         },
-        quiet=True
     )
     try:
         run_command(
-            ["docker", "compose", "up", "-d", "--wait"],
+            ["docker", "compose", "up", "-d", "--wait", "--quiet-pull"],
             env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"},
-            quiet=True
         )
     except subprocess.CalledProcessError:
         check_containers()
