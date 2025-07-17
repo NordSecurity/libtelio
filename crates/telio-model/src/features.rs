@@ -105,6 +105,12 @@ pub struct FeatureWireguard {
     /// Configurable socket buffer size for NepTUN
     #[serde(default)]
     pub skt_buffer_size: Option<u32>,
+    /// Configurable socket buffer size for NepTUN
+    #[serde(default)]
+    pub inter_thread_channel_size: Option<u32>,
+    /// Configurable socket buffer size for NepTUN
+    #[serde(default)]
+    pub max_inter_thread_batched_pkts: Option<u32>,
 }
 
 impl FeatureWireguard {
@@ -614,7 +620,9 @@ mod tests {
                     "wireguard_polling_period_after_state_change": 50
                 },
                 "enable_dynamic_wg_nt_control": true,
-                "skt_buffer_size": 123456
+                "skt_buffer_size": 123456,
+                "inter_thread_channel_size": 123456,
+                "max_inter_thread_batched_pkts": 123456
             },
             "nurse": {
                 "fingerprint": "test_fingerprint",
@@ -715,6 +723,8 @@ mod tests {
                         },
                         enable_dynamic_wg_nt_control: true,
                         skt_buffer_size: Some(123456),
+                        inter_thread_channel_size: Some(123456),
+                        max_inter_thread_batched_pkts: Some(123456),
                     },
                     nurse: Some(FeatureNurse {
                         heartbeat_interval: 5,
