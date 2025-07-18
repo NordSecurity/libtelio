@@ -193,7 +193,7 @@ def unset_cargo_dependencies():
                 f"{PROJECT_ROOT}/crates/telio-lana/Cargo.toml", lana_cargo_contents
             )
         if "moose" in lana_cargo_contents:
-            empty_features = re.search(r"\[features\]\nmo", lana_cargo_contents)
+            empty_features = re.search(r"\[features\]\nmoose", lana_cargo_contents)
             if empty_features:
                 lana_cargo_contents = re.sub(
                     r"\n\[features\]\nmoose = \[\]\n", "", lana_cargo_contents
