@@ -168,3 +168,21 @@ async def test_teliod_vpn_connection(config_type: ConfigType) -> None:
                 's#"server_pubkey": .*#"server_pubkey": "public-key-placeholder"#g',
                 str(teliod.config.path()),
             ]).execute()
+
+
+async def test_teliod_identity_file() -> None:
+    async with AsyncExitStack() as exit_stack:
+        connection = (
+            await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
+        )[0].connection
+
+        teliod = Teliod(connection, exit_stack)
+
+        await clean_up_registered_machines_on_api(connection, CORE_API_URL)
+
+        async with teliod.start():
+            assert await teliod_client.is_alive()
+
+
+# TODO: write tests to the identity file mgmt. see: libtelio/clis/teliod/src/core_api.rs
+# TODO: identity file should be created if not found
