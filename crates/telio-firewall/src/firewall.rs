@@ -1292,9 +1292,9 @@ pub mod tests {
             assert_eq!(fw.conntrack.tcp.lock().len(), 3);
 
             // Should PASS (matching outgoing connections exist in LRUCache)
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(dst1, src4, TcpFlags::SYN)), true);
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(dst1, src3, TcpFlags::SYN)), true);
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(dst1, src1, TcpFlags::SYN)), true);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(dst1, src4, TcpFlags::SYN | TcpFlags::ACK)), true);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(dst1, src3, TcpFlags::SYN | TcpFlags::ACK)), true);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(dst1, src1, TcpFlags::SYN | TcpFlags::ACK)), true);
 
             // Should FAIL (was added but dropped from LRUCache)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(dst1, src2, TcpFlags::SYN)), false);
@@ -1483,6 +1483,7 @@ pub mod tests {
                 tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None, state: LibfwConnectionState::LibfwConnectionStateNew
             }));
 
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
             assert_eq!(fw.conntrack.tcp.lock().len(), 1);
 
@@ -1543,6 +1544,7 @@ pub mod tests {
                 tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None, state: LibfwConnectionState::LibfwConnectionStateNew
             }));
 
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
             assert_eq!(fw.conntrack.tcp.lock().len(), 1);
 
@@ -2274,8 +2276,8 @@ pub mod tests {
                 assert_eq!(fw.process_inbound_packet(&peer1.0, &make_udp(src1, dst1,)), true);
                 assert_eq!(fw.process_inbound_packet(&peer2.0, &make_udp(src2, dst1,)), false);
 
-                assert_eq!(fw.process_inbound_packet(&peer1.0, &make_tcp(src1, dst1, synack)), true);
-                assert_eq!(fw.process_outbound_packet(&peer1.0, &make_tcp(dst1, src1, syn)), true);
+                assert_eq!(fw.process_inbound_packet(&peer1.0, &make_tcp(src1, dst1, syn)), true);
+                assert_eq!(fw.process_outbound_packet(&peer1.0, &make_tcp(dst1, src1, synack)), true);
 
                 assert_eq!(expected[1], fw.get_state());
 
@@ -3118,7 +3120,7 @@ pub mod tests {
         let bad_peer = make_random_peer();
 
         let tcp_syn_outbound = make_tcp(src1, dst1, TcpFlags::SYN);
-        let tcp_ack_inbound = make_tcp(dst1, src1, TcpFlags::ACK);
+        let tcp_synack_inbound = make_tcp(dst1, src1, TcpFlags::SYN | TcpFlags::ACK);
 
         let udp_outbound = make_udp(src1, dst1);
         let udp_inbound = make_udp(dst1, src1);
@@ -3135,7 +3137,7 @@ pub mod tests {
         // inject error package from bad peer
         assert!(!fw.process_inbound_packet(&bad_peer.0, &icmp_tcp_error_inbound));
         // expect that connection continues normally
-        assert!(fw.process_inbound_packet(&good_peer.0, &tcp_ack_inbound));
+        assert!(fw.process_inbound_packet(&good_peer.0, &tcp_synack_inbound));
     }
 
     #[test]

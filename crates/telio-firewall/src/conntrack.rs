@@ -497,8 +497,9 @@ impl Conntrack {
                     };
 
                     connection_info.next_seq = Some(next_seq);
-                    if !connection_info.conn_remote_initiated {
-                        // Connection which is not removed and packets are going in both directions should be established
+                    if !connection_info.conn_remote_initiated
+                        && (flags & TCP_FIRST_PKT_MASK == TCP_FIRST_PKT_MASK)
+                    {
                         occ.get_mut().state = LibfwConnectionState::LibfwConnectionStateEstablished;
                     }
                 }
