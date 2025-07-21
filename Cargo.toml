@@ -1,6 +1,6 @@
 [package]
 name = "telio"
-version = "5.4.2"
+version = "5.4.3"
 authors = ["info@nordvpn.com"]
 edition = "2018"
 license = "GPL-3.0-only"
@@ -171,7 +171,7 @@ windows = { version = "0.60", features = [
     "Win32_NetworkManagement_IpHelper",
 ] }
 
-neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v1.0.7", features = ["device"] }
+neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v1.0.8", features = ["device"] }
 x25519-dalek = { version = "2.0.1", features = ["reusable_secrets", "static_secrets"] }
 
 
