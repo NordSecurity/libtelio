@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v5.4.3
+### ****
+---
+* LLT-6456_handle_panics: Bump neptun version to v1.0.8
+
+<br>
+
 ### v5.4.2
 ### **Tomato**
 ---

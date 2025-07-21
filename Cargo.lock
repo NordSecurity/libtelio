@@ -2642,8 +2642,8 @@ dependencies = [
 
 [[package]]
 name = "neptun"
-version = "0.6.0"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v1.0.7#da23f2b13468efe3754f7e49732c500dd4632e3a"
+version = "0.6.1"
+source = "git+https://github.com/NordSecurity/neptun.git?tag=v1.0.8#4d29336bf1815c0fd2cc8e3b09b2bc81d52a019d"
 dependencies = [
  "aead",
  "base64 0.13.1",
@@ -4535,7 +4535,7 @@ dependencies = [
 
 [[package]]
 name = "telio"
-version = "5.4.2"
+version = "5.4.3"
 dependencies = [
  "anyhow",
  "async-trait",
