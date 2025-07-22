@@ -1,5 +1,13 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v6.0.1
+### **Pink Soup**
+---
+* LLT-6456: Handle panics in NepTUN to prevent runtime crashes 
+* LLT-6382: Make new internal NepTUN channel sizes configurable
+
+<br>
+
 ### v6.0.0
 ### **Pink Soup**
 ---
