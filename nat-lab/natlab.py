@@ -20,7 +20,12 @@ def run_command(command, env=None, quiet=False):
         env = {**os.environ.copy(), **env}
 
     print(f"|EXECUTE| {' '.join(command)}")
-    subprocess.check_call(command, stdout=subprocess.DEVNULL if quiet else None, stderr=subprocess.DEVNULL if quiet else None, env=env)
+    subprocess.check_call(
+        command,
+        stdout=subprocess.DEVNULL if quiet else None,
+        stderr=subprocess.DEVNULL if quiet else None,
+        env=env,
+    )
     print("")
 
 
