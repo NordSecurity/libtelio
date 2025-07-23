@@ -23,6 +23,7 @@ from utils.connection_tracker import (
     ConnTrackerEventsValidator,
     FiveTuple,
     EventType as ConnTrackerEventType,
+    TcpState,
 )
 from utils.connection_util import generate_connection_tracker_config
 from utils.dns import query_dns, query_dns_port
@@ -716,7 +717,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
                 pass
 
             def find_conntracker_violations(
-                self, events: List[ConntrackerEvent]
+                self, events: List[ConntrackerEvent], _s: Optional[TcpState] = None
             ) -> Optional[ConnTrackerViolation]:
                 new_connection_events = list(
                     filter(lambda e: e.event_type == ConnTrackerEventType.NEW, events)

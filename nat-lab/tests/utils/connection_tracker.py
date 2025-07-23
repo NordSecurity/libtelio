@@ -126,7 +126,7 @@ class ConnTrackerEventsValidator:
     """
 
     def find_conntracker_violations(
-        self, _: List[ConntrackerEvent]
+        self, _: List[ConntrackerEvent], _s: Optional[TcpState]
     ) -> Optional[ConnTrackerViolation]:
         raise NotImplementedError("Not implemented error")
 
@@ -164,7 +164,7 @@ class ConnectionCountLimit(ConnTrackerEventsValidator):
         return f"ConnectionCountLimit(key: {self.key}, min_limit: {self.min_limit}, max_limit: {self.max_limit}, target: {self.target})"
 
     def find_conntracker_violations(
-        self, events: List[ConntrackerEvent]
+        self, events: List[ConntrackerEvent], _s: Optional[TcpState] = None
     ) -> Optional[ConnTrackerViolation]:
         # We would like to return all connections, which are out of limits
         # Instead of just first one which happens to be in the list.
@@ -217,7 +217,7 @@ class TCPStateSequence(ConnTrackerEventsValidator):
         return f"TCPStateSequence(key: {self.key}, five_tuple: {self.five_tuple}, sequence: {self.sequence})"
 
     def find_conntracker_violations(
-        self, events: List[ConntrackerEvent]
+        self, events: List[ConntrackerEvent], trailing_close: Optional[TcpState]
     ) -> Optional[ConnTrackerViolation]:
         # First we need to build a list of distinct connections matching FiveTuple
 
@@ -241,7 +241,6 @@ class TCPStateSequence(ConnTrackerEventsValidator):
                 connections[ft] = (
                     [[]] if ft not in connections else (connections[ft] + [[]])
                 )
-
             # append event
             connections[ft][-1].append(event)
 
@@ -250,14 +249,20 @@ class TCPStateSequence(ConnTrackerEventsValidator):
         sequences = [
             event for connection in connections.values() for event in connection
         ]
-
         # Verify whether all conections end up with expected sequence of TCP states
         violations: list[Optional[ConnTrackerViolation]] = []
         for connection in sequences:
             state_sequence = list(map(lambda c: c.tcp_state, connection))[
                 -len(self.sequence) :
             ]
+
             if state_sequence != self.sequence:
+                if trailing_close == TcpState.CLOSE:
+                    skip_close_state_sequence = list(
+                        map(lambda c: c.tcp_state, connection)
+                    )[-len(self.sequence) - 1 : -1]
+                    if skip_close_state_sequence == self.sequence:
+                        continue
                 violations.append(
                     ConnTrackerViolation(
                         recoverable=True,
@@ -378,7 +383,9 @@ class ConnectionTracker:
         """Register an Event to be notified when a specific TCP state is reported"""
         self._tcp_state_events[state].append(event)
 
-    async def find_conntracker_violations(self) -> Optional[ConnTrackerViolation]:
+    async def find_conntracker_violations(
+        self, allow_trailing_state: Optional[TcpState] = None
+    ) -> Optional[ConnTrackerViolation]:
         if platform.system() == "Darwin":
             return None
         if not self._validators:
@@ -386,18 +393,21 @@ class ConnectionTracker:
 
         await self._synchronize()
 
-        return merge_results(
-            [v.find_conntracker_violations(self._events) for v in self._validators]
-        )
+        return merge_results([
+            v.find_conntracker_violations(self._events, allow_trailing_state)
+            for v in self._validators
+        ])
 
-    async def wait_for_no_violations(self):
+    async def wait_for_no_violations(
+        self, allow_trailing_state: Optional[TcpState] = None
+    ):
         """Waits until there are no conntracker event violations. If unrecoverable event occures throws"""
         # The implementation is polling, which is probably not super efficient, but at least simple :)
         while True:
             await self._new_report_event.wait()
             self._new_report_event.clear()
 
-            violation = await self.find_conntracker_violations()
+            violation = await self.find_conntracker_violations(allow_trailing_state)
             if violation is None:
                 break
 
