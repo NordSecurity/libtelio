@@ -89,7 +89,7 @@ pub struct Manual;
 
 impl ConfigureInterface for Manual {
     fn initialize(&mut self) -> Result<(), TeliodError> {
-        Ok(()) // No-op implementaiton
+        Ok(()) // No-op implementation
     }
 
     fn set_ip(&mut self, _ip_address: &IpAddr) -> Result<(), TeliodError> {
@@ -376,69 +376,164 @@ impl ConfigureInterface for Iproute {
     }
 }
 
-/// Implementation using `uci` for OpenWRT devices
+/// UCI-based implementation for managing network configuration on OpenWRT devices.
 #[derive(Debug)]
 pub struct Uci {
     interface_name: String,
-    ipv6_enabled: Option<bool>,
-    wan6_disabled: Option<bool>,
+
+    /// Initial IPv6 setting on WAN interface
+    ///
+    /// This reflects the value of `network.wan.ipv6` at the time of loading.
+    /// If the option is unset, IPv6 is enabled by default.
+    wan_ipv6_initial_setting: Option<UciBoolOption>,
+
+    /// Initial enabled/disabled state of WAN6 interface, if it exists
+    ///
+    /// Reflects the value of `network.wan6.disabled`.
+    /// If the option is unset, the interface is enabled by default.
+    wan6_disabled_initial_setting: Option<UciBoolOption>,
+}
+
+/// Represents a boolean option in the UCI configuration system.
+///
+/// - `True` -> Option is set to `1`
+/// - `False` -> Option is set to `0`
+/// - `Default` -> Option is unset in UCI (default behavior applies)
+///
+/// When restoring configuration, `Default` implies the option should be deleted from UCI.
+#[derive(Debug)]
+enum UciBoolOption {
+    True,
+    False,
+    Default,
+}
+
+impl UciBoolOption {
+    /// Helper function to convert a result of a `uci get` command into a UciBoolOption.
+    ///
+    /// Returns:
+    /// - `True` for "1"
+    /// - `False` for "0"
+    /// - `Default` for anything else
+    fn from_str(str: &str) -> Self {
+        match str.trim() {
+            "1" => Self::True,
+            "0" => Self::False,
+            _ => Self::Default,
+        }
+    }
+
+    /// Returns true if the option is set to `1`.
+    fn is_true(&self) -> bool {
+        matches!(self, Self::True)
+    }
 }
 
 impl Uci {
     fn new(interface_name: String) -> Self {
-        let wan6_disabled = execute(Command::new("uci").args(["get", "network.wan6"]))
-            .ok()
-            .and_then(|_| {
-                execute_with_output(Command::new("uci").args(["get", "network.wan6.disabled"]))
-                    .map(|res| res.contains("1"))
-                    .ok()
-            });
+        // TODO: LLT-6485: Add support for multiple WANs
 
-        let ipv6_enabled = execute(Command::new("uci").args(["get", "network.wan"]))
-            .ok()
+        // In OpenWRT, each network interface is declared using UCI syntax like:
+        //     `network.wan=interface`
+        // Interfaces can optionally include an IPv6 setting:
+        //     `network.wan.ipv6=0` disables IPv6
+        //     `network.wan.ipv6=1` enables IPv6 (default if not set)
+        //
+        // In addition to primary interfaces (like WAN), OpenWRT may define separate
+        // IPv6-specific interfaces with names ending in "*6", such as:
+        //     `network.wan6=interface`
+        //     `network.wwan6=interface`
+        // These are typically handle IPv6 independently.
+        //
+        // To fully disable IPv6, we must:
+        // 1. Explicitly disable IPv6 on the primary interfaces:
+        //     `network.wan.ipv6=0`
+        // 2. Disable any IPv6-only interfaces entirely by setting:
+        //     `network.wan6.disabled=1`
+
+        // Check if IPv6 is enabled on the primary WAN interface.
+        // If `network.wan.ipv6` is not set, IPv6 is considered enabled by default.
+        //     `network.wan.ipv6=1` -> IPv6 enabled
+        //     `network.wan.ipv6=0` -> IPv6 disabled
+        let wan_ipv6_initial_setting = execute(Command::new("uci").args(["get", "network.wan"]))
             .map(|_| {
                 execute_with_output(Command::new("uci").args(["get", "network.wan.ipv6"]))
-                    .map(|res| res.contains("1"))
-                    .unwrap_or(true) // Assume ipv6 enabled by default
-            });
+                    .map(|res| UciBoolOption::from_str(&res))
+                    .unwrap_or(UciBoolOption::Default)
+            })
+            .ok();
+
+        // Check whether the WAN6 interface exists and whether it is disabled.
+        // If `network.wan6.disabled` is not set, the interface is enabled by default.
+        //     `network.wan6.disabled=0` -> enabled
+        //     `network.wan6.disabled=1` -> disabled
+        let wan6_disabled_initial_setting =
+            execute(Command::new("uci").args(["get", "network.wan6"]))
+                .map(|_| {
+                    execute_with_output(Command::new("uci").args(["get", "network.wan6.disabled"]))
+                        .map(|res| UciBoolOption::from_str(&res))
+                        .unwrap_or(UciBoolOption::Default)
+                })
+                .ok();
+
+        debug!("Initial network.wan.ipv6 state {wan_ipv6_initial_setting:?}");
+        debug!("Initial network.wan6.disabled state {wan6_disabled_initial_setting:?}");
 
         Self {
             interface_name,
-            ipv6_enabled,
-            wan6_disabled,
+            wan_ipv6_initial_setting,
+            wan6_disabled_initial_setting,
         }
     }
 
     // Helper to disable IPv6
     fn disable_ipv6(&self) -> Result<(), TeliodError> {
-        if self.wan6_disabled.is_some() {
-            execute(Command::new("uci").args(["set", "network.wan6.disabled=1"]))?;
-        }
-        if self.ipv6_enabled.is_some() {
+        if self.wan_ipv6_initial_setting.is_some() {
             execute(Command::new("uci").args(["set", "network.wan.ipv6=0"]))?;
+        }
+        if self.wan6_disabled_initial_setting.is_some() {
+            execute(Command::new("uci").args(["set", "network.wan6.disabled=1"]))?;
         }
         Ok(())
     }
 
     // Helper to restore settings IPv6 to initial state
     fn restore_ipv6(&self) -> Result<(), TeliodError> {
+        // Remove rule routing all IPv6 into the tunnel
         if let Err(e) = execute(Command::new("uci").args(["del", "network.teliod_route6"])) {
-            error!("Error removing route6: {e}");
+            error!("Error removing network.teliod_route6: {e}");
         }
 
-        if let Some(disabled) = self.wan6_disabled {
-            if !disabled {
-                if let Err(e) = execute(Command::new("uci").args(["del", "network.wan6.disabled"]))
-                {
-                    error!("Error removing wan6 disabled: {e}");
+        // Restore the IPv6 setting for WAN interface to it's original value.
+        // If network.wan.ipv6 was not present, delete it to restore to Default state
+        if let Some(enabled) = &self.wan_ipv6_initial_setting {
+            debug!("Removing network.wan.ipv6");
+            if matches!(enabled, UciBoolOption::Default) {
+                if let Err(e) = execute(Command::new("uci").args(["del", "network.wan.ipv6"])) {
+                    error!("Error removing network.wan.ipv6: {e}");
                 }
+            } else {
+                let state = if enabled.is_true() { "1" } else { "0" };
+                debug!("Restoring network.wan.ipv6 to {state}");
+                execute(Command::new("uci").args(["set", &format!("network.wan.ipv6={}", state)]))?;
             }
         }
-        if let Some(enabled) = self.ipv6_enabled {
-            if enabled {
-                if let Err(e) = execute(Command::new("uci").args(["del", "network.wan.ipv6"])) {
-                    error!("Error removing wan ipv6: {e}");
+
+        // Restore the disabled setting for WAN6 interface to it's original value.
+        // If network.wan6.disabled was not present, delete it to restore to Default state
+        if let Some(disabled) = &self.wan6_disabled_initial_setting {
+            debug!("Removing network.wan6.disabled");
+            if matches!(disabled, UciBoolOption::Default) {
+                if let Err(e) = execute(Command::new("uci").args(["del", "network.wan6.disabled"]))
+                {
+                    error!("Error removing network.wan6.disabled: {e}");
                 }
+            } else {
+                let state = if disabled.is_true() { "1" } else { "0" };
+                debug!("Restoring network.wan6.disabled to {state}");
+                execute(
+                    Command::new("uci").args(["set", &format!("network.wan6.disabled={}", state)]),
+                )?;
             }
         }
 
@@ -528,7 +623,7 @@ impl ConfigureInterface for Uci {
         execute(
             Command::new("uci").args(["set", &format!("network.teliod_vpn_rule.lookup={}", table)]),
         )?;
-        #[cfg(target_os = "linux")] // LIBTELIO_FWMARK is compile flagged
+        #[cfg(target_os = "linux")] // LIBTELIO_FWMARK is compile time flagged
         execute(Command::new("uci").args([
             "set",
             &format!("network.teliod_vpn_rule.mark={LIBTELIO_FWMARK}"),
@@ -559,6 +654,7 @@ impl ConfigureInterface for Uci {
         execute(Command::new("uci").args(["set", "firewall.teliod_vpn_zone.name=vpn"]))?;
         execute(Command::new("uci").args(["set", "firewall.teliod_vpn_zone.network=tun"]))?;
         execute(Command::new("uci").args(["set", "firewall.teliod_vpn_zone.masq=1"]))?;
+        execute(Command::new("uci").args(["set", "firewall.teliod_vpn_zone.mtu_fix=1"]))?;
 
         // Set firewall forwarding
         execute(Command::new("uci").args(["add", "firewall", "forwarding"]))?;
