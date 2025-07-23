@@ -471,6 +471,7 @@ async def test_firewall_blacklist_tcp(ipv4: bool) -> None:
                     "telio-kill-blacklisted-connection",
                     FiveTuple(protocol="tcp", dst_ip=serv_ip, dst_port=serv_port),
                     [TcpState.FIN_WAIT, TcpState.LAST_ACK, TcpState.TIME_WAIT],
+                    trailing_state=TcpState.CLOSE,
                 )
             ],
         ).run() as conntrack:
