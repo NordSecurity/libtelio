@@ -35,6 +35,8 @@ def long_persistent_keepalive_periods() -> FeatureWireguard:
         ),
         enable_dynamic_wg_nt_control=False,
         skt_buffer_size=None,
+        inter_thread_channel_size=None,
+        max_inter_thread_batched_pkts=None,
     )
 
 
