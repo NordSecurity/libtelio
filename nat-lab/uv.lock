@@ -378,6 +378,15 @@ wheels = [
 ]
 
 [[package]]
+name = "dacite"
+version = "1.9.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/55/a0/7ca79796e799a3e782045d29bf052b5cde7439a2bbb17f15ff44f7aacc63/dacite-1.9.2.tar.gz", hash = "sha256:6ccc3b299727c7aa17582f0021f6ae14d5de47c7227932c47fec4cdfefd26f09", size = 22420 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/94/35/386550fd60316d1e37eccdda609b074113298f23cef5bddb2049823fe666/dacite-1.9.2-py3-none-any.whl", hash = "sha256:053f7c3f5128ca2e9aceb66892b1a3c8936d02c686e707bee96e19deef4bc4a0", size = 16600 },
+]
+
+[[package]]
 name = "dataclasses-json"
 version = "0.6.7"
 source = { registry = "https://pypi.org/simple" }
@@ -873,6 +882,7 @@ dependencies = [
     { name = "charset-normalizer" },
     { name = "click" },
     { name = "cryptography" },
+    { name = "dacite" },
     { name = "dataclasses-json" },
     { name = "deepdiff" },
     { name = "dill" },
@@ -952,6 +962,7 @@ requires-dist = [
     { name = "charset-normalizer", specifier = "==3.4.0" },
     { name = "click", specifier = "==8.1.7" },
     { name = "cryptography", specifier = "==43.0.3" },
+    { name = "dacite", specifier = "==1.9.2" },
     { name = "dataclasses-json", specifier = "==0.6.7" },
     { name = "deepdiff", specifier = "==8.1.1" },
     { name = "dill", specifier = "==0.3.8" },

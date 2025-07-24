@@ -18,6 +18,7 @@ dependencies = [
     "charset-normalizer==3.4.0",
     "click==8.1.7",
     "cryptography==43.0.3",
+    "dacite==1.9.2",
     "dataclasses-json==0.6.7",
     "deepdiff==8.1.1",
     "dill==0.3.8",
