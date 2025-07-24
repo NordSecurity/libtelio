@@ -72,7 +72,15 @@ async def wait_for_is_teliod_running(connection):
     while time.monotonic() - start_time < WAIT_FOR_TELIOD_TIMEOUT:
         try:
             if await asyncio.wait_for(is_teliod_running(connection), 0.5):
-                return
+                if (
+                    "Command executed successfully"
+                    in (
+                        await connection.create_process(
+                            TELIOD_IS_ALIVE_PARAMS
+                        ).execute()
+                    ).get_stdout()
+                ):
+                    return
         except TimeoutError:
             pass
         await asyncio.sleep(0.1)
