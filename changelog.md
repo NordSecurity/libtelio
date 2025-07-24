@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v6.0.2
+### **Pink Soup**
+---
+* Fix `Access violation at 0x...` crash on Windows
+
+<br>
+
 ### v6.0.1
 ### **Pink Soup**
 ---

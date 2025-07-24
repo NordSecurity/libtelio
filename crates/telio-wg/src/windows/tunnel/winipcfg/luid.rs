@@ -365,8 +365,8 @@ impl InterfaceLuid {
         }
 
         assert!(!p_table.is_null());
-        let num_entries = unsafe { *p_table }.NumEntries;
-        let x_table = unsafe { *p_table }.Table.as_ptr();
+        let num_entries = unsafe { (*p_table).NumEntries };
+        let x_table = unsafe { (*p_table).Table.as_ptr() };
         for i in 0..num_entries {
             let current_entry = unsafe { x_table.add(i as _) };
             if unsafe { (*current_entry).InterfaceLuid.Value } == self.luid.Value {
@@ -642,8 +642,8 @@ impl InterfaceLuid {
         }
 
         assert!(!p_table.is_null());
-        let num_entries = unsafe { *p_table }.NumEntries;
-        let x_table = unsafe { *p_table }.Table.as_ptr();
+        let num_entries = unsafe { (*p_table).NumEntries };
+        let x_table = unsafe { (*p_table).Table.as_ptr() };
         for i in 0..num_entries {
             let current_entry = unsafe { x_table.add(i as _) };
             if unsafe { (*current_entry).InterfaceLuid.Value } == self.luid.Value {
