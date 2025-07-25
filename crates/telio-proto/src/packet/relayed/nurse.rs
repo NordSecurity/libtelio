@@ -38,14 +38,14 @@ impl HeartbeatMessage {
         meshnet_id: Vec<u8>,
         node_fingerprint: String,
         statuses: &[heartbeat::Status],
-        nat_type: heartbeat::NatType,
+        _nat_type: heartbeat::NatType, // To be removed when removed from analytics
     ) -> Self {
         Self(Heartbeat {
             message_type: heartbeat::Type::RESPONSE.into(),
             statuses: statuses.into(),
             node_fingerprint,
             meshnet_id,
-            nat_type: nat_type.into(),
+            nat_type: heartbeat::NatType::Unknown.into(),
             ..Default::default()
         })
     }

@@ -28,5 +28,5 @@ message Heartbeat {
         Unknown = 8;
     }
 
-    NatType nat_type = 8;
+    NatType nat_type = 5;
 }

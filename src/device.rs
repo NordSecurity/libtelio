@@ -1304,7 +1304,6 @@ impl Runtime {
                         .get_channel::<HeartbeatMessage>()
                         .await
                         .unwrap_or_default(),
-                    derp_event_channel: self.event_publishers.derp_events_publisher.clone(),
                 }))
                 .await;
         }
