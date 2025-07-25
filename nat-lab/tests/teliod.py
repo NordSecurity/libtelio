@@ -62,7 +62,7 @@ class Command(list):
     @classmethod
     def start(cls, config: "Config") -> "Command":
         cmd = [str(Paths.exec_path), "start"]
-        if not config.detach_mode:
+        if config.no_detach:
             cmd.append("--no-detach")
         cmd.append(str(config.path()))
         return cls(cmd)
@@ -176,7 +176,7 @@ class Teliod:
                         raise
                     break
 
-            if self.config.detach_mode:
+            if not self.config.no_detach:
                 stdout, stderr = await self.execute_command(Command.start(self.config))
                 await wait_for_teliod_start()
             else:

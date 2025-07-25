@@ -30,17 +30,17 @@ else:
 
 
 @pytest.mark.parametrize(
-    "daemonized_mode",
+    "no_detach",
     [True, False],
-    ids=["detach", "no_detach"],
+    ids=["no_detach", "detach"],
 )
-async def test_teliod_start(daemonized_mode) -> None:
+async def test_teliod_start(no_detach) -> None:
     async with AsyncExitStack() as exit_stack:
         connection = (
             await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
         )[0].connection
 
-        teliod = Teliod(connection, exit_stack, Config(detach=daemonized_mode))
+        teliod = Teliod(connection, exit_stack, Config(detach=not no_detach))
 
         with pytest.raises(ProcessExecError) as err:
             await teliod.quit()
