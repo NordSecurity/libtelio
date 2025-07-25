@@ -298,6 +298,8 @@ class LinuxRouter(Router):
             except ProcessExecError as exception:
                 if exception.stderr.find("No chain/target/match by that name") < 0:
                     raise exception
+                else:
+                    log.warn(exception.stderr)
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             try:
@@ -326,6 +328,8 @@ class LinuxRouter(Router):
                     < 0
                 ):
                     raise exception
+                else:
+                    log.warn(exception.stderr)
 
     @asynccontextmanager
     async def disable_path(self, address: str) -> AsyncIterator:
