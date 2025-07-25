@@ -61,7 +61,6 @@ async def test_teliod_logs() -> None:
         )[0].connection
 
         teliod = Teliod(connection, exit_stack)
-        await teliod.remove_logs()
 
         async with teliod.start():
             pass
