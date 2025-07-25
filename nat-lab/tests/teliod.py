@@ -98,7 +98,7 @@ class Config:
         try:
             assert (
                 "Starting daemon" in stdout
-            ), f"Expected daemon to print to the stdout 'Starting daemon', got instead: '{stdout}'"
+            ), f"Could not find 'Starting daemon' in: '{stdout}'"
 
             config_match = re.search(r"Reading config from:\s*(.+.json)", stdout)
             assert config_match, f"Could not find config path in: {stdout}"
@@ -115,13 +115,6 @@ class Config:
             ), f"Log path does not match: '{log_path}' != '{self.paths.lib_log}'"
 
         except AssertionError as e:
-            log.error("Expected output from the daemon:")
-            log.error("------")
-            log.error("Reading config from: %s", self.path())
-            log.error("Saving logs to: %s", self.paths.lib_log)
-            log.error("Starting daemon")
-            log.error("------")
-            log.error("Got instead: %s", stdout)
             raise e
 
         return config_path, log_path
