@@ -11,6 +11,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from itertools import count
 from typing import Dict, Optional
 from uuid import uuid4
+from mocked_core_api_servers_data import get_countries, get_servers
+from urllib.parse import urlparse, parse_qs
 
 DERP_SERVER = {
     "region_code": "nl",
@@ -46,6 +48,7 @@ class CoreApiErrorCode(Enum):
     INVALID_CREDENTIALS = 100104
     AUTHORIZATION_HEADER_NOT_PROVIDED = 100105
     AUTHORIZATION_HEADER_INVALID = 100106
+    RESOURCE_NOT_FOUND = 404
 
 
 @dataclass
@@ -140,6 +143,8 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         self.server: CoreServer
         self.machines_path = "/v1/meshnet/machines"
         self.notifications_path = "/v1/notifications/tokens"
+        self.recommended_servers_path = "/v1/servers/recommendations"
+        self.countries_path = "/v1/countries"
         super().__init__(request, client_address, server)
 
     def _set_headers(
@@ -242,6 +247,12 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         elif self.path.split("/")[-1] == "map":
             machine_id = self.path.split("/")[-2]
             self.handle_get_machine_map(machine_id)
+        elif self.path == self.countries_path:
+            self.handle_get_countries()
+        elif self.path.startswith(self.recommended_servers_path):
+            parsed_url = urlparse(self.path)
+            query_params = parse_qs(parsed_url.query)
+            self.handle_get_servers(query_params)
 
     def do_HEAD(self):
         self._set_headers()
@@ -403,6 +414,29 @@ class CoreApiHandler(BaseHTTPRequestHandler):
             "expires_in": 60,
         }
         self._write_response(response, status_code=HTTPStatus.CREATED)
+
+    @requires_bearer_token
+    def handle_get_countries(self):
+        countries = get_countries()
+        self._write_response(countries)
+
+    @requires_bearer_token
+    def handle_get_servers(self, query_params):
+        print(f"Passed params: {query_params}")
+        filters = {}
+        for key, values in query_params.items():
+            if key.startswith("filters[") and key.endswith("]"):
+                filter_key = key[len("filters["):-1]
+                filters[filter_key] = values[0]
+        servers = get_servers(filters)
+        if not servers:
+            self._send_error_response(
+                CoreApiErrorCode.RESOURCE_NOT_FOUND,
+                "No vpn servers found for provided filters",
+                HTTPStatus.NOT_FOUND,
+            )
+            return
+        self._write_response([asdict(server) for server in servers])
 
 
 def run(mqttc, port=443):
