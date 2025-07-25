@@ -38,9 +38,6 @@ pub struct HeartbeatConfig {
 
     /// The unique identifier of the device, used for meshnet ID
     pub fingerprint: String,
-
-    /// Control flag to collect nat type
-    pub is_nat_type_collection_enabled: bool,
 }
 
 impl HeartbeatConfig {
@@ -58,7 +55,6 @@ impl HeartbeatConfig {
             fingerprint,
             collect_interval: Duration::from_secs(features.heartbeat_interval),
             collect_answer_timeout: Duration::from_secs(10),
-            is_nat_type_collection_enabled: features.enable_nat_type_collection,
         }
     }
 }

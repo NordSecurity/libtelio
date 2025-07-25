@@ -440,8 +440,6 @@ interface Telio {
     void trigger_qos_collection();
     [Throws=TelioError]
     string receive_ping();
-    [Throws=TelioError]
-    NatType get_nat(string ip, u16 port);
 
     /// For testing only.
     [Throws=TelioError]
@@ -642,8 +640,6 @@ dictionary FeatureNurse {
     u64 initial_heartbeat_interval;
     /// QoS configuration for Nurse
     FeatureQoS? qos;
-    /// Enable/disable collecting nat type
-    boolean enable_nat_type_collection;
     /// Enable/disable Relay connection data
     boolean enable_relay_conn_data;
     /// Enable/disable NAT-traversal connections data

@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::init_lana;
-use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
 use telio_network_monitors::{local_interfaces::SystemGetIfAddrs, monitor::NetworkMonitor};
 use telio_pq::PostQuantum;
 use telio_proto::HeartbeatMessage;
@@ -64,7 +63,7 @@ use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     future::Future,
     io::{self, Error as IoError},
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::{IpAddr, Ipv4Addr},
     sync::Arc,
     time::Duration,
 };
@@ -859,13 +858,6 @@ impl Device {
         })
     }
 
-    pub fn get_nat(&self, skt: SocketAddr) -> Result<NatData> {
-        match self.async_runtime()?.block_on(retrieve_single_nat(skt)) {
-            Ok(data) => Ok(data),
-            Err(no_data) => Err(Error::FailedNatInfoRecover(no_data)),
-        }
-    }
-
     pub fn trigger_analytics_event(&self) -> Result<()> {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| Ok(rt
@@ -1312,7 +1304,6 @@ impl Runtime {
                         .get_channel::<HeartbeatMessage>()
                         .await
                         .unwrap_or_default(),
-                    derp_event_channel: self.event_publishers.derp_events_publisher.clone(),
                 }))
                 .await;
         }

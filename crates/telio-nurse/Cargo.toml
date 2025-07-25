@@ -31,7 +31,6 @@ uuid.workspace = true
 telio-crypto.workspace = true
 telio-lana.workspace = true
 telio-model.workspace = true
-telio-nat-detect.workspace = true
 telio-proto.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true

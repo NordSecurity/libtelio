@@ -167,7 +167,6 @@ impl State {
         // Heartbeat component
         let heartbeat_io = HeartbeatIo {
             chan: None,
-            derp_event_channel: None,
             wg_event_channel: io.wg_event_channel.subscribe(),
             config_update_channel: config_update_channel.subscribe(),
             analytics_channel: analytics_channel.tx.clone(),
