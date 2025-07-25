@@ -14,7 +14,7 @@ from config import (
 from contextlib import AsyncExitStack
 from helpers import setup_connections, send_https_request
 from mesh_api import API, Node
-from teliod import Teliod, Config, ConfigType
+from teliod import Teliod, Config, IfcConfigType
 from test_core_api import clean_up_machines as clean_up_registered_machines_on_api
 from utils import stun
 from utils.connection import ConnectionTag
@@ -81,9 +81,9 @@ async def test_teliod_logs() -> None:
 
 @pytest.mark.parametrize(
     "config_type",
-    [(ConfigType.VPN_MANUAL), (ConfigType.VPN_IPROUTE)],
+    [(IfcConfigType.VPN_MANUAL), (IfcConfigType.VPN_IPROUTE)],
 )
-async def test_teliod_vpn_connection(config_type: ConfigType) -> None:
+async def test_teliod_vpn_connection(config_type: IfcConfigType) -> None:
     async def register_new_device_on_api():
         (private_key, public_key) = Key.key_pair()
         hw_identifier = uuid.uuid4()
@@ -151,7 +151,7 @@ async def test_teliod_vpn_connection(config_type: ConfigType) -> None:
             log.debug("Teliod started, waiting for connected vpn state..")
             await teliod.wait_for_vpn_connected_state()
 
-            if config_type == ConfigType.VPN_MANUAL:
+            if config_type == IfcConfigType.VPN_MANUAL:
                 await exit_stack.enter_async_context(
                     teliod.setup_interface(node.ip_addresses, vpn_routes=True)
                 )

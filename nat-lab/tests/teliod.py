@@ -16,7 +16,7 @@ from utils.router import IPStack
 from utils.router.linux_router import LinuxRouter
 
 
-class ConfigType(Enum):
+class IfcConfigType(Enum):
     DEFAULT = "config.json"
     VPN_MANUAL = "config_with_vpn_manual_setup.json"
     VPN_IPROUTE = "config_with_vpn_iproute_setup.json"
@@ -48,7 +48,7 @@ class Paths:
     def lib_log(self) -> Path:
         return self.log_dir / "teliod_natlab.log"
 
-    def config_path(self, config_type: ConfigType = ConfigType.DEFAULT) -> Path:
+    def config_path(self, config_type: IfcConfigType = IfcConfigType.DEFAULT) -> Path:
         return self.config_dir / config_type.value
 
 
@@ -83,13 +83,13 @@ class Command(list):
 class Config:
     def __init__(
         self,
-        config_type: ConfigType = ConfigType.DEFAULT,
+        config_type: IfcConfigType = IfcConfigType.DEFAULT,
         detach: bool = True,
         paths=Paths(),
     ):
         self.paths: Paths = paths
-        self.config_type: ConfigType = config_type
-        self.detach_mode: bool = detach
+        self.config_type: IfcConfigType = config_type
+        self.no_detach: bool = not detach
 
     def path(self) -> Path:
         return self.paths.config_path(self.config_type)
