@@ -139,7 +139,6 @@ def post_copy_darwin_debug_symbols_to_distribution_dir(config, args):
                         dirs_exist_ok=True,
                     )
 
-
 def post_qnap_build_wrap_binary_on_qpkg(config, args):
     packages = LIBTELIO_CONFIG[config.target_os].get("packages", None)
     if packages:
@@ -341,6 +340,10 @@ LIBTELIO_CONFIG = {
         },
         "build_args": ("--features", "qnap"),
     },
+    # OpenWRT follows it's own building and package process so we only have 
+    # a placeholder here so it would be possible to produce the package via CLI
+    # but as of this moment it's offloaded to OpenWRT SDK
+    "openwrt": {},
     "macos": {
         "packages": {
             "tcli": {"tcli": "tcli"},
@@ -415,7 +418,7 @@ def main() -> None:
         target_os = "macos" if args.command == "lipo" else args.os
 
         packages = LIBTELIO_CONFIG[target_os].get("packages", None)
-        if args.debug and not args.tcli and "tcli" in packages:
+        if packages is not None and args.debug and not args.tcli and "tcli" in packages:
             LIBTELIO_CONFIG[target_os]["packages"].pop("tcli")
 
     if args.command == "build":
@@ -571,14 +574,35 @@ def exec_build(args):
             GLOBAL_CONFIG["windows"]["archs"][args.arch]["rust_target"] = (
                 args.arch + "-pc-windows-gnu"
             )
+    
+    if args.os == "openwrt":
+        # OpenWRT is being built from within the OpenWRT SDK so `cargo build` invocation happens there.
+        # TODO: we probably want to have a nordsecurity repository or even better yet - merge it into the official one and point it here
+        os.system(f"sed -i 's|^src-git packages .*|src-git packages https://github.com/LukasPukenis/openwrt-packages;LLT-6479_openwrt_feed |' /usr/local/openwrt_sdk_{args.arch}/feeds.conf.default")
 
-    config = rutils.CargoConfig(
-        args.os,
-        args.arch,
-        args.debug,
-    )
-    rutils.check_config(config)
-    call_build(config, args)
+        os.system(f"/usr/local/openwrt_sdk_{args.arch}/scripts/feeds update -a 2>&1 > /dev/null")
+        os.system(f"/usr/local/openwrt_sdk_{args.arch}/scripts/feeds install -a 2>&1 > /dev/null")
+
+        # Without a proper .config file present, OpenWRT will launch it's TUI which waits for user input
+        os.system(f"cd /usr/local/openwrt_sdk_{args.arch}/ && touch .config && make defconfig 2>&1 > /dev/null")
+
+        # Will be produced at /usr/local/openwrt_sdk_{args.arch}/bin/packages/{args.arch}/packages/nordvpn_{GIT_SHA}-r1_{args.arch}.ipk
+        os.system(f"cd /usr/local/openwrt_sdk_{args.arch} && make package/nordvpn/download V=s && make package/nordvpn/check V=s && make package/nordvpn/compile -j$(nproc) V=s 2>&1 > /dev/null")                
+        
+        f = os.popen(f"find /usr/local/openwrt_sdk_{args.arch} -type f -name 'nordvpn*.ipk' | head -1")
+        nordvpn_ipk_path = f.read().strip()
+        print("***** IPK -> ", nordvpn_ipk_path)
+
+        os.makedirs("dist", exist_ok=True)
+        shutil.move(nordvpn_ipk_path, "dist/")
+    else:
+        config = rutils.CargoConfig(
+            args.os,
+            args.arch,
+            args.debug,
+        )
+        rutils.check_config(config)
+        call_build(config, args)
 
 
 def call_build(config, args):
