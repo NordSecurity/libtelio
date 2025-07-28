@@ -245,10 +245,8 @@ pub mod tests {
         ip.set_version(4);
         ip.set_header_length((header_length / 4) as u8);
         ip.set_total_length(total_length.try_into().unwrap());
-        ip.set_flags(2);
+        ip.set_flags(2); // Don't fragment flag
         ip.set_ttl(64);
-        ip.set_source(Ipv4Addr::LOCALHOST);
-        ip.set_destination(Ipv4Addr::new(8, 8, 8, 8));
     }
 
     fn make_random_peer() -> PublicKey {
@@ -284,7 +282,7 @@ pub mod tests {
     }
 
     #[test]
-    fn network_filter() {
+    fn test_network_filter() {
         let net_filter = NetworkFilterData {
             network: ipnet::IpNet::V4(Ipv4Net::new(Ipv4Addr::new(168, 72, 0, 0), 16).unwrap()),
             ports: 1000..=9000,
@@ -415,7 +413,7 @@ pub mod tests {
     }
 
     #[test]
-    fn assoc_data_filter() {
+    fn test_assoc_data_filter() {
         let pk = make_random_peer();
         let another_pk = make_random_peer();
         let ctk = Conntrack::new(10, 1000);
@@ -459,7 +457,7 @@ pub mod tests {
     }
 
     #[test]
-    fn direction_filter() {
+    fn test_direction_filter() {
         let pk = make_random_peer();
         let ctk = Conntrack::new(10, 1000);
 
@@ -502,7 +500,7 @@ pub mod tests {
     }
 
     #[test]
-    fn conntrack_filter() {
+    fn test_conntrack_filter() {
         let pk = make_random_peer();
         let ctk = Conntrack::new(10, 1000);
         let pkt = make_udp("168.72.0.12:1234", "100.0.0.2:5678");

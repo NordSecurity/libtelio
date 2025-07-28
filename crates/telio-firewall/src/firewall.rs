@@ -2253,7 +2253,7 @@ pub mod tests {
             ]);
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_udp(src, dst)), false);
-            // assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(src, dst, 0)), false);
+            assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(src, dst, 0)), false);
         }
     }
 
