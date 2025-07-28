@@ -23,6 +23,7 @@ dependencies = [
     "dill==0.3.8",
     "distlib==0.3.8",
     "exceptiongroup==1.2.2",
+    "grpcio-tools==1.72.0",
     "filelock==3.15.1",
     "flatten-json==0.1.14",
     "frozenlist==1.5.0",
@@ -43,7 +44,7 @@ dependencies = [
     "platformdirs==4.2.2",
     "pluggy==1.5.0",
     "propcache==0.2.0",
-    "protobuf==3.20.3",
+    "protobuf==6.30.2",
     "psutil==6.1.0",
     "py==1.11.0",
     "pycparser==2.22",
@@ -68,7 +69,7 @@ dependencies = [
     "six==1.16.0",
     "tomli==2.0.2",
     "tomlkit==0.12.5",
-    "types-protobuf==3.19.21",
+    "types-protobuf==6.30.2.20250703",
     "types-psutil==6.1.0.20241022",
     "types-pyyaml==6.0.12.20240917",
     "typing-extensions==4.12.2",
@@ -81,7 +82,7 @@ dependencies = [
 
 [tool.black]
 preview = true
-extend-exclude = "tests/protobuf|tests/uniffi/telio_bindings.py"
+extend-exclude = "tests/protobuf|bin/grpc_protobuf|tests/uniffi/telio_bindings.py"
 
 [tool.isort]
 profile = "black"
@@ -93,7 +94,7 @@ combine_star = true
 remove_redundant_aliases = true
 combine_as_imports = true
 no_sections = true
-skip = [".venv", "tests/protobuf", "tests/uniffi/telio_bindings.py"]
+skip = [".venv", "tests/protobuf", "bin/grpc_protobuf", "bin/ens", "tests/uniffi/telio_bindings.py"]
 
 [tool.autoflake]
 remove-unused-variables = true
@@ -102,17 +103,22 @@ remove-duplicate-keys = true
 ignore-init-module-imports = true
 recursive = true
 in-place = true
-exclude = ["telio_bindings.py"]
+exclude = ["telio_bindings.py", "ens", "*pb2*"]
 
 [tool.mypy]
 check_untyped_defs = true
 enable_error_code = ['possibly-undefined', 'redundant-expr', 'unused-awaitable']
 extra_checks = true
 strict_equality = true
+
 exclude = [
     '^tests/protobuf',
     '^.*telio_bindings\.py',
+    '.*ens_pb2_grpc.py',
 ]
+[[tool.mypy.overrides]]
+module = "protobuf.*"
+ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = "uniffi.*"
@@ -120,7 +126,7 @@ check_untyped_defs = false
 
 [tool.pylint]
 max-line-length = 88
-ignore-paths = ".venv,tests/protobuf,tests/uniffi/telio_bindings.py"
+ignore-paths = ".venv,tests/protobuf,bin/grpc_protobuf,tests/uniffi/telio_bindings.py"
 
 [tool.pylint.'MESSAGES CONTROL']
 recursive = true

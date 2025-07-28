@@ -32,6 +32,7 @@ impl FeaturesDefaultsBuilder {
             ipv6: false,
             nicknames: false,
             batching: None,
+            error_notification_service: None,
         };
 
         Self {
@@ -155,6 +156,11 @@ impl FeaturesDefaultsBuilder {
     ) -> Arc<Self> {
         self.config.lock().wireguard.max_inter_thread_batched_pkts =
             Some(max_inter_thread_batched_pkts);
+        self
+    }
+
+    pub fn enable_error_notification_service(self: Arc<Self>) -> Arc<Self> {
+        self.config.lock().error_notification_service = Some(Default::default());
         self
     }
 }

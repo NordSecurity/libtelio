@@ -1,7 +1,7 @@
 [package]
 name = "telio-proto"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
@@ -17,7 +17,25 @@ thiserror.workspace = true
 telio-crypto.workspace = true
 telio-model.workspace = true
 telio-utils.workspace = true
+telio-sockets.workspace = true
+tonic = "0.13.1"
+prost = "0.13"
+async-trait.workspace = true
+tokio-stream = "0.1.17"
+tokio = { workspace = true, features = ["full"] }
+telio-task.workspace = true
+http = "1.3.1"
+hyper-util = "0.1.15"
+tower-service = "0.3.3"
+hyper = { version = "1.6.0", features = ["full"] }
+tower = "0.5.2"
+anyhow.workspace = true
 
 [build-dependencies]
 anyhow.workspace = true
 protobuf-codegen.workspace = true
+tonic-build = "0.13.1"
+
+[dev-dependencies]
+test-log = { version = "0.2.18", features = ["trace"] }
+tokio = { workspace = true, features = ["sync"] }
