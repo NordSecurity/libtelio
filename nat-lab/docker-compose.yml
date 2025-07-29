@@ -452,7 +452,7 @@ services:
         ipv4_address: 10.0.254.14
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth0'
-    entrypoint: /opt/bin/docker-entrypoint-openwrt
+    entrypoint: /opt/bin/openwrt_docker_entrypoint
     depends_on:
       core-api:
         condition: service_healthy
