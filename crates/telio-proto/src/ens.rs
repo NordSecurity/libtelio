@@ -10,7 +10,7 @@ use telio_task::io::{
     Chan,
 };
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
-use tokio::{select, sync::watch};
+use tokio::{select, sync::watch, task::JoinHandle};
 use tonic::transport::Endpoint;
 use tower::service_fn;
 
@@ -52,14 +52,14 @@ pub enum Error {
 
 /// ErrorNotificationService manages tasks started and stopped to consume the ENS grpc error streams
 pub struct ErrorNotificationService {
-    quit: Option<watch::Sender<bool>>,
+    quit: Option<(watch::Sender<bool>, JoinHandle<()>)>,
     tx: Tx<(ConnectionError, PublicKey)>,
     socket_pool: Arc<SocketPool>,
 }
 
 impl Drop for ErrorNotificationService {
     fn drop(&mut self) {
-        self.stop_old_monitor();
+        let _ = self.stop_old_monitor(); // Can't wait on the handle in the Drop
     }
 }
 
@@ -97,19 +97,17 @@ impl ErrorNotificationService {
         vpn_public_key: PublicKey,
     ) -> Result<(), Error> {
         telio_log_info!("Will start ENS monitoring on {vpn_ip}:{ens_port} ({vpn_public_key:?})");
-        self.stop_old_monitor();
+        self.stop().await;
 
         let (quit_tx, quit_rx): (watch::Sender<bool>, watch::Receiver<bool>) =
             watch::channel(false);
-
-        self.quit = Some(quit_tx);
 
         let vpn_uri = format!("http://{vpn_ip}:{ens_port}");
 
         let pool = self.socket_pool.clone();
         let tx = self.tx.clone();
 
-        tokio::spawn(async move {
+        let join_handle = tokio::spawn(async move {
             // This future is too big for keeping it on the stack
             if let Err(e) = Box::pin(task(
                 vpn_uri.clone(),
@@ -124,16 +122,35 @@ impl ErrorNotificationService {
             }
         });
 
+        self.quit = Some((quit_tx, join_handle));
         Ok(())
     }
 
-    fn stop_old_monitor(&mut self) {
-        if let Some(quit) = self.quit.take() {
-            telio_log_debug!("Previous ENS task will be stopped");
-            if let Err(e) = quit.send(true) {
-                telio_log_warn!("Failed to stop previous ENS monitor: {e}");
+    /// Stop ENS
+    pub async fn stop(&mut self) {
+        if let Some(join_handle) = self.stop_old_monitor() {
+            telio_log_debug!("Will wait for the old ENS task to end");
+            join_handle.abort(); // Since the task might be in the grpc connection establishment, it might not be able
+                                 // to receive and react to te quit signal. Which is why we need to cancel it here, so
+                                 // that we are not stuck for a long time in the await.
+            if let Err(e) = join_handle.await {
+                if !e.is_cancelled() {
+                    telio_log_warn!("Previous ENS task failed to stop: {e}");
+                }
             }
         }
+    }
+
+    fn stop_old_monitor(&mut self) -> Option<JoinHandle<()>> {
+        if let Some((quit_channel, join_handle)) = self.quit.take() {
+            telio_log_debug!("Previous ENS task will be stopped");
+            if let Err(e) = quit_channel.send(true) {
+                telio_log_warn!("Failed to send stop request to previous ENS monitor: {e}");
+            } else {
+                return Some(join_handle);
+            }
+        }
+        None
     }
 }
 
@@ -303,28 +320,21 @@ mod tests {
             )
             .unwrap(),
         ));
-        let (ens, mut rx) = ErrorNotificationService::new(10, socket_pool);
-        {
-            let mut ens = ens;
-            ens.start_monitor_on_port(IpAddr::V4(Ipv4Addr::LOCALHOST), port, pk)
-                .await
-                .unwrap();
-            let _collected_errors = collect_errors(2, &mut rx).await;
-            ens.start_monitor_on_port(IpAddr::V4(Ipv4Addr::LOCALHOST), port, pk)
-                .await
-                .unwrap();
+        let (mut ens, mut rx) = ErrorNotificationService::new(10, socket_pool);
 
-            let collected_errors = collect_errors(2, &mut rx).await;
+        ens.start_monitor_on_port(IpAddr::V4(Ipv4Addr::LOCALHOST), port, pk)
+            .await
+            .unwrap();
+        let _collected_errors = collect_errors(2, &mut rx).await;
+        ens.start_monitor_on_port(IpAddr::V4(Ipv4Addr::LOCALHOST), port, pk)
+            .await
+            .unwrap();
 
-            assert_eq!(errors_to_emit, collected_errors);
+        let collected_errors = collect_errors(2, &mut rx).await;
 
-            ens.stop_old_monitor();
-        }
-        // Stopping, should eventually be processed by the running task, and it should
-        // drop last remaining instance of the Tx side.
-        while !rx.is_closed() {
-            tokio::task::yield_now().await;
-        }
+        assert_eq!(errors_to_emit, collected_errors);
+
+        ens.stop().await;
     }
 
     async fn collect_errors(

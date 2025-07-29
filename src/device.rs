@@ -2597,6 +2597,10 @@ impl TaskRuntime for Runtime {
         drop(self.entities.aggregator);
         drop(self.entities.network_monitor);
 
+        if let Some(ens) = self.entities.error_notification_service.as_mut() {
+            ens.stop().await;
+        }
+
         stop_arc_entity!(self.entities.wireguard_interface, "WireguardInterface");
 
         self.requested_state = Default::default();
