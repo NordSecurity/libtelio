@@ -394,6 +394,7 @@ def pytest_sessionstart(session):
 
 # pylint: disable=unused-argument
 def pytest_sessionfinish(session, exitstatus):
+    print(">>>> pytest_sessionfinish")
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
 
@@ -506,6 +507,7 @@ def setup_logger(tmp_path, request):
     try:
         yield
     finally:
+        print(">>>> setup_logger finally")
         if file_handler:
             file_handler.flush()
             log.removeHandler(file_handler)
