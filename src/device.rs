@@ -2131,6 +2131,10 @@ impl Runtime {
                 self.reconfigure_dns_peer(dns, forward_dns).await?;
             }
 
+            if let Some(ens) = self.entities.error_notification_service.as_mut() {
+                ens.stop().await;
+            }
+
             wg_controller::consolidate_wg_state(
                 &self.requested_state,
                 &self.entities,
