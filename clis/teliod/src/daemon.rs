@@ -201,6 +201,9 @@ fn telio_task(
                     _ = sys_config.cleanup_exit_routes().inspect_err(|e| {
                         error!("Failed to cleanup routes for exit routing with error '{e:?}'")
                     });
+                    _ = sys_config
+                        .cleanup_interface()
+                        .inspect_err(|e| error!("Failed to cleanup interface with error '{e:?}'"));
                     break;
                 }
             }
