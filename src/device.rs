@@ -2516,16 +2516,23 @@ impl TaskRuntime for Runtime {
                 telio_log_debug!("Received (from vpn {vpn_pk}) connection error notification: {connection_error:?}");
                 if let Some(exit_node) = &self.requested_state.exit_node {
                     if exit_node.public_key == vpn_pk {
-                        if let Some(node) = self.last_transmitted_event.get(&exit_node.public_key) {
-                            let mut node = node.clone();
-                            node.vpn_connection_error = Some(connection_error.into());
+                        let mut node = match self.last_transmitted_event.get(&exit_node.public_key) {
+                            Some(node) => node.clone(),
+                            None => {
+                                Node {
+                                    state: PeerState::Connecting,
+                                    ..node_from_exit_node(exit_node)
+                                }
+                            }
+                        };
+
+                        node.vpn_connection_error = Some(connection_error.into());
+                        if !self.is_dublicated_event(&node) {
                             let _ = self.event_publishers.libtelio_event_publisher.send(
                                 Box::new(Event::Node {body: node.clone()})
                             );
                             telio_log_debug!("Published new event: {node:?}");
                             self.remember_last_transmitted_node_event(node);
-                        } else {
-                            telio_log_warn!("No last transmitted evnt for {}", exit_node.public_key);
                         }
                     } else {
                         telio_log_warn!("Differen public keys, exit: {} vs event: {vpn_pk}", exit_node.public_key);
