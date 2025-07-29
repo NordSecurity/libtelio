@@ -234,6 +234,15 @@ services:
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.111.254
 
+  openwrt-client-01:
+    hostname: openwrt-client-01
+    <<: *common-client
+    networks:
+      openwrt-net-01:
+        ipv4_address: 192.168.115.2
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.115.3
+
 
   ###########################################################
   #                        GATEWAYS                         #
@@ -437,22 +446,21 @@ services:
           com.docker.network.endpoint.ifname: 'eth1'
 
   openwrt-gw-01:
+    hostname: openwrt-gw-01
+    <<: *common-gw
     build:
       context: .
       dockerfile: openwrt.Dockerfile
-    hostname: openwrt-gw-01
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    sysctls:
-      - net.ipv4.ip_forward=1
-      - net.ipv6.conf.all.disable_ipv6=0
+    entrypoint: /opt/bin/openwrt_docker_entrypoint
     networks:
       internet:
         ipv4_address: 10.0.254.14
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth0'
-    entrypoint: /opt/bin/openwrt_docker_entrypoint
+      openwrt-net-01:
+        ipv4_address: 192.168.115.3
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
     depends_on:
       core-api:
         condition: service_healthy
@@ -829,3 +837,10 @@ networks:
       driver: default
       config:
         - subnet: 192.168.111.0/24
+
+  openwrt-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.115.0/24
