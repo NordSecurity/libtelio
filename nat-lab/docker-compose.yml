@@ -241,7 +241,7 @@ services:
       openwrt-net-01:
         ipv4_address: 192.168.115.2
     environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.115.3
+      CLIENT_GATEWAY_PRIMARY: 192.168.115.254
 
 
   ###########################################################
@@ -458,7 +458,7 @@ services:
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth0'
       openwrt-net-01:
-        ipv4_address: 192.168.115.3
+        ipv4_address: 192.168.115.254
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
     depends_on:
