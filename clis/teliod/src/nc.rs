@@ -160,7 +160,7 @@ async fn connect_to_nc_with_backoff(
     mut backoff: ExponentialBackoff,
 ) -> (AsyncClient, EventLoop, Instant) {
     loop {
-        match connect_to_nc(nc_config).await {
+        match Box::pin(connect_to_nc(nc_config)).await {
             Ok(mqtt) => return mqtt,
             Err(e) => {
                 warn!(
