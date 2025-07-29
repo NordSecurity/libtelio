@@ -4863,6 +4863,7 @@ dependencies = [
  "telio-utils",
  "thiserror 2.0.12",
  "tracing",
+ "x25519-dalek",
  "zeroize",
 ]
 
@@ -5063,6 +5064,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "base64 0.22.1",
+ "blake3",
  "bytes",
  "http",
  "hyper",
@@ -5086,6 +5089,7 @@ dependencies = [
  "tower",
  "tower-service",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
