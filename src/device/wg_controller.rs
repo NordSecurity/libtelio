@@ -1866,6 +1866,7 @@ mod tests {
                     },
                     multicast: false,
                     batching: None,
+                    error_notification_service: None,
                 },
                 post_quantum: MockPostQuantum::new(),
                 stun_ep_provider,

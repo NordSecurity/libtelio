@@ -28,5 +28,14 @@ fn main() -> Result<()> {
         ])
         .out_dir(out_dir)
         .run()?;
+
+    let mut config = tonic_build::Config::new();
+    config.protoc_arg("--experimental_allow_proto3_optional"); // This is needed for older protoc versions
+    tonic_build::configure().compile_protos_with_config(
+        config,
+        &["protos/ens.proto"],
+        &["protos"],
+    )?;
+
     Ok(())
 }

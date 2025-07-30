@@ -533,6 +533,41 @@ class LinuxRouter(Router):
             ).execute()
 
     @asynccontextmanager
+    async def block_tcp_port(self, port: int) -> AsyncIterator:
+        await self._connection.create_process(
+            [
+                "iptables",
+                "-A",
+                "OUTPUT",
+                "-p",
+                "tcp",
+                "--dport",
+                str(port),
+                "-j",
+                "DROP",
+            ],
+            quiet=True,
+        ).execute()
+
+        try:
+            yield
+        finally:
+            await self._connection.create_process(
+                [
+                    "iptables",
+                    "-D",
+                    "OUTPUT",
+                    "-p",
+                    "tcp",
+                    "--dport",
+                    str(port),
+                    "-j",
+                    "DROP",
+                ],
+                quiet=True,
+            ).execute()
+
+    @asynccontextmanager
     async def reset_upnpd(self) -> AsyncIterator:
         await self._connection.create_process(
             ["killall", "-w", "upnpd"], quiet=True

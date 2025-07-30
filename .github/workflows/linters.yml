@@ -19,6 +19,10 @@ jobs:
   check:
       runs-on: ubuntu-22.04
       steps:
+        - name: Install Protoc
+          uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+          with:
+            repo-token: ${{ secrets.GITHUB_TOKEN }}
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
           with:
@@ -27,6 +31,10 @@ jobs:
   clippy:
       runs-on: ubuntu-22.04
       steps:
+        - name: Install Protoc
+          uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+          with:
+            repo-token: ${{ secrets.GITHUB_TOKEN }}
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
@@ -35,6 +43,10 @@ jobs:
   clippy-win:
       runs-on: windows-2022
       steps:
+        - name: Install Protoc
+          uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+          with:
+            repo-token: ${{ secrets.GITHUB_TOKEN }}
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
@@ -43,6 +55,10 @@ jobs:
   clippy-mac:
       runs-on: macos-13
       steps:
+        - name: Install Protoc
+          uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+          with:
+            repo-token: ${{ secrets.GITHUB_TOKEN }}
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
@@ -51,6 +67,10 @@ jobs:
   clippy-teliod:
       runs-on: ubuntu-22.04
       steps:
+        - name: Install Protoc
+          uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+          with:
+            repo-token: ${{ secrets.GITHUB_TOKEN }}
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
@@ -69,6 +89,10 @@ jobs:
   udeps:
       runs-on: ubuntu-22.04
       steps:
+        - name: Install Protoc
+          uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+          with:
+            repo-token: ${{ secrets.GITHUB_TOKEN }}
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:

@@ -6,7 +6,7 @@ use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::init_lana;
 use telio_network_monitors::{local_interfaces::SystemGetIfAddrs, monitor::NetworkMonitor};
 use telio_pq::PostQuantum;
-use telio_proto::HeartbeatMessage;
+use telio_proto::{ConnectionError, Error as EnsError, ErrorNotificationService, HeartbeatMessage};
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
 use telio_relay::{
     derp::Config as DerpConfig, multiplexer::Multiplexer, DerpKeepaliveConfig, DerpRelay,
@@ -187,6 +187,8 @@ pub enum Error {
     EventsProcessingThreadStartError(std::io::Error),
     #[error("Polling period cannot be zero")]
     PollingPeriodZero,
+    #[error("Ens failure: {0:?}")]
+    EnsFailure(#[from] EnsError),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -333,6 +335,8 @@ pub struct Entities {
     postquantum_wg: telio_pq::Entity,
 
     network_monitor: NetworkMonitor,
+
+    error_notification_service: Option<ErrorNotificationService>,
 }
 
 impl Entities {
@@ -398,6 +402,7 @@ pub struct EventListeners {
     endpoint_upgrade_event_subscriber: chan::Rx<UpgradeRequestChangeEvent>,
     stun_server_subscriber: chan::Rx<Option<StunServer>>,
     post_quantum_subscriber: chan::Rx<telio_pq::Event>,
+    error_notification_service_subscriber: chan::Rx<(ConnectionError, PublicKey)>,
 }
 
 pub struct EventPublishers {
@@ -1232,6 +1237,18 @@ impl Runtime {
 
         let polling_interval = interval(Duration::from_secs(5));
 
+        let (error_notification_service, error_notification_service_subscriber) =
+            if let Some(error_notification_service) = features.error_notification_service {
+                telio_log_info!("Will create ENS");
+                let (ens, rx) = ErrorNotificationService::new(
+                    error_notification_service.buffer_size as usize,
+                    socket_pool.clone(),
+                );
+                (Some(ens), rx)
+            } else {
+                (None, Chan::new(1).rx)
+            };
+
         Ok(Runtime {
             features,
             requested_state,
@@ -1245,6 +1262,7 @@ impl Runtime {
                 aggregator: aggregator.clone(),
                 postquantum_wg,
                 network_monitor,
+                error_notification_service,
             },
             event_listeners: EventListeners {
                 wg_endpoint_publish_event_subscriber: wg_endpoint_publish_events.rx,
@@ -1253,6 +1271,7 @@ impl Runtime {
                 endpoint_upgrade_event_subscriber: wg_upgrade_sync.rx,
                 stun_server_subscriber: stun_server_events.rx,
                 post_quantum_subscriber: post_quantum.rx,
+                error_notification_service_subscriber,
             },
             event_publishers: EventPublishers {
                 libtelio_event_publisher: libtelio_wide_event_publisher,
@@ -2053,6 +2072,13 @@ impl Runtime {
         } else if exit_node.endpoint.is_none() {
             return Err(Error::EndpointNotProvided);
         }
+        if let Some(endpoint) = exit_node.endpoint {
+            let vpn_ip = endpoint.ip();
+            if let Some(ens) = self.entities.error_notification_service.as_mut() {
+                telio_log_info!("Starting ENS monitoring");
+                ens.start_monitor(vpn_ip, exit_node.public_key).await?;
+            }
+        }
 
         let old_exit_node = self.requested_state.exit_node.replace(exit_node);
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
@@ -2094,6 +2120,10 @@ impl Runtime {
                 &self.requested_state.upstream_servers,
             ) {
                 self.reconfigure_dns_peer(dns, forward_dns).await?;
+            }
+
+            if let Some(ens) = self.entities.error_notification_service.as_mut() {
+                ens.stop().await;
             }
 
             wg_controller::consolidate_wg_state(
@@ -2202,6 +2232,7 @@ impl Runtime {
                     path: path_type,
                     allow_multicast: meshnet_peer.allow_multicast,
                     peer_allows_multicast: meshnet_peer.peer_allows_multicast,
+                    vpn_connection_error: None,
                 })
             }
             (None, Some(exit_node)) => {
@@ -2472,7 +2503,36 @@ impl TaskRuntime for Runtime {
 
                 Ok(())
             },
+            Some((connection_error,vpn_pk)) = self.event_listeners.error_notification_service_subscriber.recv() => {
+                telio_log_debug!("Received (from vpn {vpn_pk}) connection error notification: {connection_error:?}");
+                if let Some(exit_node) = &self.requested_state.exit_node {
+                    if exit_node.public_key == vpn_pk {
+                        let mut node = match self.last_transmitted_event.get(&exit_node.public_key) {
+                            Some(node) => node.clone(),
+                            None => {
+                                Node {
+                                    state: PeerState::Connecting,
+                                    ..node_from_exit_node(exit_node)
+                                }
+                            }
+                        };
 
+                        node.vpn_connection_error = Some(connection_error.into());
+                        if !self.is_dublicated_event(&node) {
+                            let _ = self.event_publishers.libtelio_event_publisher.send(
+                                Box::new(Event::Node {body: node.clone()})
+                            );
+                            telio_log_debug!("Published new event: {node:?}");
+                            self.remember_last_transmitted_node_event(node);
+                        }
+                    } else {
+                        telio_log_warn!("Differen public keys, exit: {} vs event: {vpn_pk}", exit_node.public_key);
+                    }
+                } else {
+                    telio_log_warn!("No exit node");
+                }
+                Ok(())
+            },
             _ = self.polling_interval.tick() => {
                 telio_log_debug!("WG consolidation triggered by tick event, total logs dropped: {}", logs_dropped_until_now());
                 let dropped = logs_dropped_since_last_checked();
@@ -2538,6 +2598,10 @@ impl TaskRuntime for Runtime {
 
         drop(self.entities.aggregator);
         drop(self.entities.network_monitor);
+
+        if let Some(ens) = self.entities.error_notification_service.as_mut() {
+            ens.stop().await;
+        }
 
         stop_arc_entity!(self.entities.wireguard_interface, "WireguardInterface");
 

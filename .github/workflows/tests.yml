@@ -6,6 +6,10 @@ jobs:
   test-linux:
     runs-on: ubuntu-22.04
     steps:
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - run: cargo test --all -- --nocapture
         env:
@@ -17,6 +21,10 @@ jobs:
   test-windows:
     runs-on: windows-2022
     steps:
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - run: cargo test --all --lib -- --nocapture
         env:
@@ -25,6 +33,10 @@ jobs:
   test-mac:
     runs-on: macos-13
     steps:
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - run: cargo test --all --lib -- --nocapture
         env:
@@ -33,6 +45,10 @@ jobs:
   test-replacement-script:
     runs-on: ubuntu-22.04
     steps:
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - name: Test replacement script
         run: python3 ci/test_replace_string.py
@@ -40,6 +56,10 @@ jobs:
   test-teliod:
     runs-on: ubuntu-22.04
     steps:
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - run: cargo test --package=teliod -- --nocapture
         env:
@@ -75,6 +95,10 @@ jobs:
       - name: Setup MSVC
         uses: egor-tensin/vs-shell@9a932a62d05192eae18ca370155cf877eecc2202 # v2.1
         if: ${{ matrix.target_os == 'windows' }}
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: install python3-requests
         run: pip3 install requests==2.32.3
         if: ${{ matrix.runner != 'macos-14'}}
@@ -119,20 +143,26 @@ jobs:
     env:
         RUSTDOCFLAGS: "-Zunstable-options --enable-index-page -Aunknown_lints --html-in-header ./rustdoc/header.html --html-after-content ./rustdoc/multi-code.html --html-after-content ./rustdoc/footer.html"
     steps:
+    - name: Install Protoc
+      uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Checkout
       uses: actions/checkout@v4
-
     - name: Build Rust Docs
       uses: actions-rs/toolchain@v1
       with:
         toolchain: nightly-2024-04-17
         components: rust-docs
-
     - run: cargo +nightly-2025-03-26 doc --no-deps --workspace --document-private-items
 
   test-release:
     runs-on: ubuntu-22.04
     steps:
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - run: cargo test --release -- --ignored
         env:

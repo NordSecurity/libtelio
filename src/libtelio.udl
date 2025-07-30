@@ -540,6 +540,9 @@ interface FeaturesDefaultsBuilder {
     /// Enable custom socket buffer sizes for NepTUN
     [Self=ByArc]
     FeaturesDefaultsBuilder set_max_inter_thread_batched_pkts(u32 max_inter_thread_batched_pkts);
+
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_error_notification_service();
 };
 
 
@@ -583,6 +586,8 @@ dictionary Features {
     boolean multicast;
     /// Batching
     FeatureBatching? batching;
+
+    FeatureErrorNotificationService? error_notification_service;
 };
 
 dictionary FeatureBatching {
@@ -791,6 +796,11 @@ dictionary FeatureUpnp {
     u32 lease_duration_s;
 };
 
+/// Configuration for the Error Notification Service
+dictionary FeatureErrorNotificationService {
+    /// Size of the internal queue of received and to-be-published vpn error notifications
+    u32 buffer_size;
+};
 
 /// Rust representation of [meshnet map]
 /// A network map of all the Peers and the servers
@@ -913,6 +923,8 @@ dictionary TelioNode {
     boolean allow_multicast;
     /// Flag to control whether the Node allows multicast messages from us
     boolean peer_allows_multicast;
+    /// Configuration for the Error Notification Service
+    VpnConnectionError? vpn_connection_error;
 };
 
 /// Main object of `Event`. See `Event::new()` for init options.
@@ -955,4 +967,18 @@ enum ErrorCode {
     "NoError",
     /// The error type is unknown
     "Unknown"
+};
+
+/// Possible VPN errors received from the Error Notification Service
+enum VpnConnectionError {
+    /// Unknown error
+    "Unknown",
+    /// Connection limit reached
+    "ConnectionLimitReached",
+    /// Server will undergo maintenance in the near future
+    "ServerMaintenance",
+    /// Authentication failed
+    "Unauthenticated",
+    /// There is a newer connection to this VPN server
+    "Superseded"
 };

@@ -6,6 +6,10 @@ jobs:
   telio-proto-fuzzing:
       runs-on: ubuntu-22.04
       steps:
+        - name: Install Protoc
+          uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+          with:
+            repo-token: ${{ secrets.GITHUB_TOKEN }}
         - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
           with:
@@ -51,6 +55,10 @@ jobs:
   telio-starcast-fuzzing:
     runs-on: ubuntu-22.04
     steps:
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
       - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
         with:

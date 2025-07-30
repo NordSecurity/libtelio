@@ -149,12 +149,12 @@ pub async fn init_with_api(config: &TeliodDaemonConfig) -> Result<DeviceIdentity
                 Err(e) => match e {
                     Error::DeviceNotFound => {
                         info!("Unable to load identifier due to {e}. Registering ...");
-                        register_machine_with_exp_backoff(
+                        Box::pin(register_machine_with_exp_backoff(
                             &hw_identifier.to_string(),
                             private_key.public(),
                             &config.authentication_token.0,
                             &config.http_certificate_file_path,
-                        )
+                        ))
                         .await?
                     }
                     _ => return Err(e),
@@ -179,12 +179,12 @@ pub async fn init_with_api(config: &TeliodDaemonConfig) -> Result<DeviceIdentity
         if let Error::UpdateMachine(status) = e {
             if status == StatusCode::NOT_FOUND {
                 debug!("Unable to update. Registering machine ...");
-                device_identity.machine_identifier = register_machine_with_exp_backoff(
+                device_identity.machine_identifier = Box::pin(register_machine_with_exp_backoff(
                     &device_identity.hw_identifier.to_string(),
                     device_identity.private_key.public(),
                     &config.authentication_token.0,
                     &config.http_certificate_file_path,
-                )
+                ))
                 .await?;
             } else {
                 // exit daemon
