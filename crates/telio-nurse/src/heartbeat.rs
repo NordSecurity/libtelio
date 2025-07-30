@@ -6,7 +6,6 @@ use nat_detect::NatType;
 use smart_default::SmartDefault;
 use std::collections::BTreeSet;
 use std::fmt::Write;
-use std::net::{IpAddr, SocketAddr};
 use std::{
     collections::{HashMap, HashSet},
     convert::{TryFrom, TryInto},
@@ -17,8 +16,7 @@ use std::{
     sync::Arc,
 };
 use telio_crypto::{meshnet_canonical_key_order, PublicKey, SecretKey};
-use telio_model::{config::Server, event::Event, mesh::NodeState};
-use telio_nat_detect::nat_detection::{retrieve_single_nat, NatData};
+use telio_model::{event::Event, mesh::NodeState};
 use telio_proto::{HeartbeatMessage, HeartbeatNatType, HeartbeatStatus, HeartbeatType};
 use telio_task::{
     io::{chan, mc_chan, Chan},
@@ -87,8 +85,6 @@ struct MeshLink {
 pub struct Io {
     /// Channel sending and receiving heartbeat data
     pub chan: Option<Chan<(PublicKey, HeartbeatMessage)>>,
-    /// Event channel to gather derp events
-    pub derp_event_channel: Option<mc_chan::Rx<Box<Server>>>,
     /// Event channel to gather wg events
     pub wg_event_channel: mc_chan::Rx<Box<Event>>,
     /// Event channel to gather local nodes from mesh config updates
@@ -257,12 +253,6 @@ impl Runtime for Analytics {
     type Err = ();
 
     async fn wait(&mut self) -> WaitResponse<'_, Self::Err> {
-        let derp_event_future = if let Some(channel) = self.io.derp_event_channel.as_mut() {
-            channel.recv().left_future()
-        } else {
-            futures::future::pending().right_future()
-        };
-
         let multiplexer_future = if let Some(channel) = self.io.chan.as_mut() {
             channel.rx.recv().left_future()
         } else {
@@ -278,16 +268,6 @@ impl Runtime for Analytics {
                         telio_log_trace!("tokio::select! self.io.wg_event_channel.recv() branch");
                         Ok(())
                      }
-                ),
-
-            // Derp event, only in the `Monitoring` state
-            Ok(event) = derp_event_future, if self.state == RuntimeState::Monitoring =>
-                Self::guard(
-                    async move {
-                        self.discover_current_nat_type(*event).await;
-                        telio_log_trace!("tokio::select! self.io.derp_event_channel.recv() branch");
-                        Ok(())
-                    }
                 ),
 
             // MeshConfigUpdate event
@@ -349,9 +329,6 @@ impl Runtime for Analytics {
 pub struct MeshnetEntities {
     /// Multiplexer channel
     pub multiplexer_channel: Chan<(PublicKey, HeartbeatMessage)>,
-
-    /// Derp event channel
-    pub derp_event_channel: mc_chan::Tx<Box<Server>>,
 }
 
 struct HeartbeatMeshmapInfo {
@@ -412,7 +389,6 @@ impl Analytics {
     pub async fn configure_meshnet(&mut self, meshnet_entities: Option<MeshnetEntities>) {
         if let Some(MeshnetEntities {
             multiplexer_channel: multiplexer,
-            derp_event_channel,
         }) = meshnet_entities
         {
             reset_after(
@@ -421,12 +397,10 @@ impl Analytics {
             );
 
             self.io.chan = Some(multiplexer);
-            self.io.derp_event_channel = Some(derp_event_channel.subscribe());
 
             telio_log_debug!("Meshnet analytics enabled");
         } else {
             self.io.chan = None;
-            self.io.derp_event_channel = None;
 
             telio_log_debug!("Meshnet analytics disabled");
         }
@@ -517,23 +491,6 @@ impl Analytics {
                 *self.local_nodes.entry(node.public_key).or_default() = node_info;
             }
         }
-    }
-
-    async fn discover_current_nat_type(&mut self, derp_event: Server) {
-        self.nat_type = if self.config.is_nat_type_collection_enabled {
-            retrieve_single_nat(SocketAddr::new(
-                IpAddr::V4(derp_event.ipv4),
-                derp_event.stun_port,
-            ))
-            .await
-            .unwrap_or(NatData {
-                public_ip: SocketAddr::from(([0, 0, 0, 0], 80)),
-                nat_type: NatType::Unknown,
-            })
-            .nat_type
-        } else {
-            NatType::Unknown
-        };
     }
 
     async fn handle_config_update_event(&mut self, event: MeshConfigUpdateEvent) {
@@ -646,7 +603,6 @@ impl Analytics {
             self.meshnet_id.into_bytes().to_vec(),
             self.config.fingerprint.clone(),
             &links,
-            <telio_proto::HeartbeatNatType as crate::heartbeat::From<NatType>>::from(self.nat_type),
         );
 
         #[allow(mpsc_blocking_send)]
@@ -1150,7 +1106,6 @@ mod tests {
         let analytics_channel = Chan::new(1);
         let io = Io {
             chan: None,
-            derp_event_channel: None,
             wg_event_channel: McChan::new(1).rx,
             config_update_channel: McChan::new(1).rx,
             analytics_channel: analytics_channel.tx,
@@ -1228,7 +1183,6 @@ mod tests {
             meshnet_id.into_bytes().to_vec(),
             "fingerprint".to_owned(),
             &[HeartbeatStatus::new()],
-            HeartbeatNatType::Unknown,
         );
         analytics
             .message_handler((peer_sk.public(), heartbeat_response))

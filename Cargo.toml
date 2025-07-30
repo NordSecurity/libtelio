@@ -49,7 +49,6 @@ telio-network-monitors.workspace = true
 telio-firewall.workspace = true
 telio-lana.workspace = true
 telio-model.workspace = true
-telio-nat-detect.workspace = true
 telio-nurse.workspace = true
 telio-proto.workspace = true
 telio-proxy.workspace = true
@@ -184,7 +183,6 @@ telio-dns = { version = "0.1.0", path = "./crates/telio-dns" }
 telio-firewall = { version = "0.1.0", path = "./crates/telio-firewall" }
 telio-lana = { version = "0.1.0", path = "./crates/telio-lana" }
 telio-model = { version = "0.1.0", path = "./crates/telio-model" }
-telio-nat-detect = { version = "0.1.0", path = "./crates/telio-nat-detect" }
 telio-network-monitors = { version = "0.1.0", path = "./crates/telio-network-monitors" }
 telio-nurse = { version = "0.1.0", path = "./crates/telio-nurse" }
 telio-proto = { version = "0.1.0", path = "./crates/telio-proto" }

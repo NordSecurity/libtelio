@@ -53,16 +53,6 @@ class Event(DataClassJsonMixin):
     rtt6: str = field(metadata=json_config(field_name="body_rtt6"))
     rtt6_loss: str = field(metadata=json_config(field_name="body_rtt6_loss"))
     sent_data: str = field(metadata=json_config(field_name="body_sent_data"))
-    nat_type: str = field(
-        metadata=json_config(
-            field_name="context_application_libtelioapp_config_current_state_internal_meshnet_fp_nat"
-        )
-    )
-    mem_nat_types: str = field(
-        metadata=json_config(
-            field_name="context_application_libtelioapp_config_current_state_internal_meshnet_members_nat"
-        )
-    )
     nat_traversal_conn_info: str = field(
         default="", metadata=json_config(field_name="body_nat_monitoring")
     )

@@ -31,8 +31,6 @@ use telio_model::{
     mesh::{ExitNode, Node},
 };
 
-use nat_detect::NatType;
-
 // debug tools
 use telio_utils::{
     backtrace::log_current_backtrace, commit_sha, telio_log_debug, telio_log_error, telio_log_info,
@@ -842,22 +840,6 @@ impl Telio {
             self.device_op(true, |dev| match dev.receive_ping() {
                 Ok(res) => Ok(res),
                 Err(e) => Err(e.into()),
-            })
-        })
-    }
-
-    pub fn get_nat(&self, ip: String, port: u16) -> FfiResult<NatType> {
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| {
-                let ip: IpAddr = match ip.parse() {
-                    Ok(ip) => ip,
-                    Err(_) => return Err(TelioError::InvalidString),
-                };
-                let skt = SocketAddr::new(ip, port);
-                match dev.get_nat(skt) {
-                    Ok(res) => Ok(res.nat_type),
-                    Err(e) => Err(e.into()),
-                }
             })
         })
     }
