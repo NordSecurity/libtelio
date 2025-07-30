@@ -102,7 +102,7 @@ def check_containers() -> None:
     docker_status = run_command_with_output(
         ["docker", "ps", "--filter", "status=running"]
     )
-    openwrt_container_log = run_command_with_output(["docker", "compose", "logs", "nat-lab-openwrt-gw-01-1"])
+    openwrt_container_log = run_command_with_output(["docker", "compose", "logs", "openwrt-gw-01"])
     print(openwrt_container_log)
     docker_status = [line.strip() for line in docker_status.splitlines()]
 
