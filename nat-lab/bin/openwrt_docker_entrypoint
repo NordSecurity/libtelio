@@ -1,6 +1,10 @@
 #!/bin/sh
-
-echo "Directory tree:"
-find / -type d | sort
-
+set -e
+echo "[OpenWRT Gateway] Installing provided IPK packages..."
+if [ -d "/opt/bin" ] && ls /opt/bin/*.ipk 1> /dev/null 2>&1; then
+  opkg install /opt/bin/*.ipk
+else
+  echo "[OpenWRT Gateway] No IPKs found under /opt/bin, skipping installation"
+fi
+echo "[OpenWRT Gateway] Startup complete. Entering sleep."
 exec sleep infinity
