@@ -451,7 +451,7 @@ services:
     build:
       context: .
       dockerfile: openwrt.Dockerfile
-    entrypoint: /opt/bin/openwrt_docker_entrypoint
+    entrypoint: [ "/bin/sh", "/opt/bin/openwrt_docker_entrypoint" ]
     networks:
       internet:
         ipv4_address: 10.0.254.14
