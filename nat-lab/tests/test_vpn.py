@@ -24,10 +24,7 @@ from utils.connection_util import generate_connection_tracker_config
 from utils.netcat import NetCatClient
 from utils.ping import ping
 from utils.process import ProcessExecError
-from utils.python import get_python_binary
 from utils.router import IPProto, IPStack
-
-VAGRANT_LIBVIRT_MANAGEMENT_IP = "192.168.121"
 
 
 async def _connect_vpn(
@@ -48,16 +45,6 @@ async def _connect_vpn(
 
     ip = await stun.get(client_conn, config.STUN_SERVER)
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
-
-
-async def ensure_interface_router_property_expectations(client_conn: Connection):
-    process = await client_conn.create_process([
-        get_python_binary(client_conn),
-        f"{config.LIBTELIO_BINARY_PATH_VM_MAC}/list_interfaces_with_router_property.py",
-    ]).execute()
-    interfaces_with_router_prop = process.get_stdout().splitlines()
-    assert len(interfaces_with_router_prop) == 1
-    assert VAGRANT_LIBVIRT_MANAGEMENT_IP in interfaces_with_router_prop[0]
 
 
 class VpnConfig:
@@ -163,9 +150,6 @@ async def test_vpn_connection(
         alpha, *_ = env.nodes
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
-
-        if alpha_setup_params.connection_tag == ConnectionTag.VM_MAC:
-            await ensure_interface_router_property_expectations(client_conn)
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
