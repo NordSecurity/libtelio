@@ -3,6 +3,7 @@
 import getpass
 import os
 import sys
+import subprocess
 import moose_utils
 from fetch_artifacts import ArtifactsDownloader
 import shutil
@@ -576,23 +577,82 @@ def exec_build(args):
             )
     
     if args.os == "openwrt":
-        # OpenWRT is being built from within the OpenWRT SDK so `cargo build` invocation happens there.
-        # TODO: we probably want to have a nordsecurity repository or even better yet - merge it into the official one and point it here
-        os.system(f"sed -i 's|^src-git packages .*|src-git packages https://github.com/LukasPukenis/openwrt-packages;LLT-6479_openwrt_feed |' /usr/local/openwrt_sdk_{args.arch}/feeds.conf.default")
+        # We follow OpenWRT SDK to provide us with the build. Useful resources:
+        #   https://openwrt.org/docs/guide-developer/packages
+        #   https://openwrt.org/docs/guide-developer/toolchain/use-buildsystem
 
-        os.system(f"/usr/local/openwrt_sdk_{args.arch}/scripts/feeds update -a 2>&1 > /dev/null")
-        os.system(f"/usr/local/openwrt_sdk_{args.arch}/scripts/feeds install -a 2>&1 > /dev/null")
+        sdk = f"/usr/local/openwrt_sdk_{args.arch}"
 
-        # Without a proper .config file present, OpenWRT will launch it's TUI which waits for user input
-        os.system(f"cd /usr/local/openwrt_sdk_{args.arch}/ && touch .config && make defconfig 2>&1 > /dev/null")
+        def run(cmd, **kwargs):
+            print(f"{' '.join(cmd)}")
+            try:
+                subprocess.run(cmd, check=True, **kwargs)
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"Command failed [{e}]: {' '.join(cmd)}")
 
-        # Will be produced at /usr/local/openwrt_sdk_{args.arch}/bin/packages/{args.arch}/packages/nordvpn_{GIT_SHA}-r1_{args.arch}.ipk
-        os.system(f"cd /usr/local/openwrt_sdk_{args.arch} && make package/nordvpn/download V=s && make package/nordvpn/check V=s && make package/nordvpn/compile -j$(nproc) V=s 2>&1 > /dev/null")                
+        # Replace the default OpenWRT 'packages' feed with our fork to simulate the package being inlined and paths set up correctly.
+        # The goal for packages are not to live in separate feeds but rather be inlined in the main openwrt packages repo.
+        run([
+            "sed", "-i",
+            "s|^src-git packages .*|src-git packages https://github.com/NordSecurity/openwrt-packages;LLT-6479_openwrt_feed |",
+            f"{sdk}/feeds.conf.default"
+        ])
+
+        # Update feeds, plain OpenWRT has no information about any of the packages, for this an update must be issued
+        run([f"{sdk}/scripts/feeds", "update", "-a"], stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+
+        # At this point package information is collected but packages themselves are not present in proper paths, we need to install them
+        run([f"{sdk}/scripts/feeds", "install", "-a"], stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+
+        # If .config is missing, OpenWRT tries to open an interactive menu, which blocks the build.
+        # In CI/CD environments without a terminal, this causes an error instead.
+        run(["make", "defconfig"], cwd=sdk, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+
+        # Our "nordvpn" package information was checked out and the feed was successfully downloaded and installed
+        # into appropriate paths. OpenWRT is now aware of our package existence and can be commanded to build it.
+        # `make package/name/command` executes commands from within feed/Makefile
+
+        # Download the tagged sources from the feed/Makefile
+        run(["make", "package/nordvpn/download", "V=s"], cwd=sdk, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+
+        # Do checks like checksum on the downloaded package
+        run(["make", "package/nordvpn/check", "V=s"], cwd=sdk, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+
+        # Compile the source of the package (only print output if it fails)
+        compile_cmd = ["make", "package/nordvpn/compile", f"-j{os.cpu_count()}", "V=s"]
+        try:
+            subprocess.run(
+                compile_cmd,
+                cwd=sdk,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+            )
+        except subprocess.CalledProcessError as e:
+            # Re-run to capture and print output for debugging
+            result = subprocess.run(
+                compile_cmd,
+                cwd=sdk,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            print(result.stdout)
+            raise RuntimeError(f"Command failed: {' '.join(compile_cmd)}")
+
+
+        # Find the package file - ".ipk". We could hardcode the path but the final name includes the hash from the feed, so it's easier to just find it this way
+        # instead of parsing the feed/Makefile and constructing the full path that way
+        find_cmd = ["find", sdk, "-type", "f", "-name", "nordvpn*.ipk"]
+        try:
+            find_proc = subprocess.run(find_cmd, check=True, stdout=subprocess.PIPE, text=True)
+            nordvpn_ipk_path = find_proc.stdout.strip().splitlines()[0] if find_proc.stdout.strip() else ""
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Command failed: {' '.join(find_cmd)}")
+
+        print("IPK -> ", nordvpn_ipk_path)
         
-        f = os.popen(f"find /usr/local/openwrt_sdk_{args.arch} -type f -name 'nordvpn*.ipk' | head -1")
-        nordvpn_ipk_path = f.read().strip()
-        print("***** IPK -> ", nordvpn_ipk_path)
-
+        # Move the found IPK file to standard directory for artifact storage
         os.makedirs("dist", exist_ok=True)
         shutil.move(nordvpn_ipk_path, "dist/")
     else:
