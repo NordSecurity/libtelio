@@ -48,8 +48,8 @@ graph LR
         2001:db8:85a4::adda:edde:b")
   end
 
-  %% Network cone-net-05
-  subgraph cone-net-05[cone-net-05]
+  %% Network cone-net-03
+  subgraph cone-net-03[cone-net-03]
   direction LR
     shared-client-01("shared-client-01
         192.168.101.67

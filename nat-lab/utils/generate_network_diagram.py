@@ -114,10 +114,10 @@ def generate_diagram(networks):
 
     clients, gateways = extract_services(networks)
 
-    # re-arrange cone-05 network
-    cone_net5 = networks.pop("cone-net-05")
+    # re-arrange cone-03 network
+    cone_net3 = networks.pop("cone-net-03")
     networks_list = list(networks.items())
-    networks_list.insert(1, ("cone-net-05", cone_net5))
+    networks_list.insert(1, ("cone-net-03", cone_net3))
 
     # Networks
     diagram += "%% Networks"
