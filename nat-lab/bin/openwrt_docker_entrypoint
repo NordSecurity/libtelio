@@ -1,5 +1,7 @@
 #!/bin/sh
 set -e
+echo "Files:"
+ls -l
 echo "OPKG list:"
 opkg list
 echo "[OpenWRT Gateway] Startup complete. Entering sleep."
