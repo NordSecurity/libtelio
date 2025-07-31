@@ -154,14 +154,6 @@ def generate_diagram(networks):
             else:
                 diagram += f"  {client.name} -.- {gateway_name}\n"
 
-    # Add vagrant boxes
-    diagram += "\n  %% Vagrant boxes\n"
-    diagram += "  subgraph vagrant\n"
-    diagram += '    vm-boxes("vm-boxes\n        10.55.0.0/24 \n        10.66.0.0/24")\n'
-    diagram += "  end\n"
-    diagram += "  vm-boxes -.- cone-gw-03\n"
-    diagram += "  vm-boxes -.- cone-gw-04\n"
-
     return diagram
 
 

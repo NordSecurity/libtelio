@@ -28,8 +28,6 @@ class ConnectionTag(Enum):
     VM_MAC = auto()
     DOCKER_CONE_GW_1 = auto()
     DOCKER_CONE_GW_2 = auto()
-    DOCKER_CONE_GW_3 = auto()
-    DOCKER_CONE_GW_4 = auto()
     VM_LINUX_FULLCONE_GW_1 = auto()
     VM_LINUX_FULLCONE_GW_2 = auto()
     DOCKER_SYMMETRIC_GW_1 = auto()

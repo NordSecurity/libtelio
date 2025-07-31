@@ -77,8 +77,6 @@ LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
     ConnectionTag.VM_MAC: {"primary": "192.168.154.54", "secondary": "192.168.155.54"},
     ConnectionTag.DOCKER_CONE_GW_1: {"primary": "192.168.101.254", "secondary": ""},
     ConnectionTag.DOCKER_CONE_GW_2: {"primary": "192.168.102.254", "secondary": ""},
-    ConnectionTag.DOCKER_CONE_GW_3: {"primary": "192.168.107.254", "secondary": ""},
-    ConnectionTag.DOCKER_CONE_GW_4: {"primary": "192.168.108.254", "secondary": ""},
     ConnectionTag.VM_LINUX_FULLCONE_GW_1: {
         "primary": "192.168.109.254",
         "secondary": "10.0.254.9",
