@@ -2,6 +2,8 @@
 set -e
 echo "Files:"
 ls -l
+echo "Opt bin files:"
+ls -l /opt/bin/
 echo "OPKG list:"
 opkg list
 echo "[OpenWRT Gateway] Startup complete. Entering sleep."
