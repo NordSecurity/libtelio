@@ -1,5 +1,9 @@
 #!/bin/sh
 set -e
+mkdir -p /var/lock
+opkg update
+opkg install kmod-wireguard
+install kmod-tun
 echo "Files:"
 echo "Opt bin files:"
 ls -l /opt/bin/
