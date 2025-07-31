@@ -448,9 +448,7 @@ services:
   openwrt-gw-01:
     hostname: openwrt-gw-01
     <<: *common-gw
-    build:
-      context: .
-      dockerfile: openwrt.Dockerfile
+    image: openwrt/rootfs:x86-64-openwrt-24.10
     entrypoint: /opt/bin/openwrt_docker_entrypoint.sh
     networks:
       internet:
