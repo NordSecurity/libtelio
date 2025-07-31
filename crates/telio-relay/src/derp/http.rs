@@ -8,7 +8,7 @@ use futures::FutureExt;
 use httparse::Status;
 use std::{
     convert::TryFrom,
-    io::{Cursor, Error as IoError, ErrorKind},
+    io::{Cursor, Error as IoError},
     net::SocketAddr,
     sync::Arc,
     time::Duration,
@@ -108,7 +108,7 @@ async fn try_connect(
 ) -> Result<DerpConnection, Error> {
     let u = Url::parse(addr)?;
     let hostname = match u.host() {
-        None => return Err(IoError::new(ErrorKind::Other, "addr host is empty").into()),
+        None => return Err(IoError::other("addr host is empty").into()),
         Some(hostname) => match hostname {
             Host::Domain(hostname) => String::from(hostname),
             Host::Ipv4(hostname) => hostname.to_string(),
@@ -123,7 +123,7 @@ async fn try_connect(
         },
         Some(port) => port,
     };
-    let hostport = format!("{}:{}", hostname, port);
+    let hostport = format!("{hostname}:{port}");
 
     let use_tcp_keepalives = matches!(derp_version, DerpVersion::V1);
     let socket = socket_pool.new_external_tcp_v4(Some(build_tcp_parameters(use_tcp_keepalives)))?;
@@ -272,14 +272,12 @@ async fn connect_http<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     let mut headers = [httparse::EMPTY_HEADER; 16];
     let mut res = httparse::Response::new(&mut headers);
     let res_len = match res.parse(&data)? {
-        Status::Partial => {
-            return Err(IoError::new(ErrorKind::Other, "HTTP Response not full").into())
-        }
+        Status::Partial => return Err(IoError::other("HTTP Response not full").into()),
         Status::Complete(len) => len,
     };
     Ok(data
         .get(res_len..data_len)
-        .ok_or_else(|| IoError::new(ErrorKind::Other, "Out of bounds index for data buffer"))?
+        .ok_or_else(|| IoError::other("Out of bounds index for data buffer"))?
         .to_vec())
 }
 

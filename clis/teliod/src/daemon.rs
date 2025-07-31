@@ -316,7 +316,9 @@ async fn daemon_init(
         DeviceIdentity::default()
     });
 
-    let nc = NotificationCenter::new(&config, &identity.hw_identifier).await?;
+    let nc = NotificationCenter::new(&config, &identity.hw_identifier)
+        .await
+        .map_err(Box::new)?;
 
     let identity_clone = identity.clone();
     let cert_path = config.http_certificate_file_path.clone();

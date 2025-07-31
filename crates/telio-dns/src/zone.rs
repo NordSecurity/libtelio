@@ -45,7 +45,7 @@ impl AuthoritativeZone {
         // TODO: rewrite code so that this assert is not needed.
         for domain in records.keys() {
             if !domain.contains(name) {
-                return Err(format!("{} does not end with {}", domain, name));
+                return Err(format!("{domain} does not end with {name}"));
             }
         }
         let zone_name = Name::from_str(name)?;
