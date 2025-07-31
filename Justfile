@@ -17,7 +17,7 @@ alias d := deny
 alias p := prepush
 
 nightly := "nightly-2025-03-26"
-rust1_85 := "1.85.0"
+rust_stable := "1.89.0"
 
 # Run all rust tests
 test:
@@ -105,8 +105,8 @@ diagram:
 _udeps-install: _nightly-install
     cargo +{{ nightly }} install cargo-udeps@0.1.55 --locked
 
-_unused-install: _rust1_85-install _rust-from-toolchain-file-install
-    cargo +{{ rust1_85 }} install --version 0.2.0 cargo-unused-features --locked
+_unused-install: _rust_stable-install _rust-from-toolchain-file-install
+    cargo +{{ rust_stable }} install --version 0.2.0 cargo-unused-features --locked
 
 _deny-install:
     cargo install --locked cargo-deny@0.15.1
@@ -114,8 +114,8 @@ _deny-install:
 _nightly-install:
     rustup toolchain add {{ nightly }}
 
-_rust1_85-install:
-    rustup toolchain add {{ rust1_85}}
+_rust_stable-install:
+    rustup toolchain add {{ rust_stable }}
 
 _rust-from-toolchain-file-install:
     rustup toolchain install

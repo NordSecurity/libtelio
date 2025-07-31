@@ -64,7 +64,7 @@ macro_rules! telio_err_with_log {
 pub fn format_hex(bytes: &[u8]) -> String {
     bytes
         .iter()
-        .map(|b| format!("{:02X}", b))
+        .map(|b| format!("{b:02X}"))
         .collect::<Vec<_>>()
         .join(" ")
 }

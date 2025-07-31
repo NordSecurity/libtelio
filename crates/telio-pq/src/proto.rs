@@ -236,8 +236,7 @@ pub async fn rekey(
         }
         _ => {
             return Err(super::Error::Generic(format!(
-                "Unsupported PQ version: {}",
-                pq_version
+                "Unsupported PQ version: {pq_version}",
             )))
         }
     }
@@ -462,7 +461,7 @@ pub fn parse_response_payload(
         _ => {
             return Err(super::Error::Io(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Unsupported PQ version: {}", expected_version),
+                format!("Unsupported PQ version: {expected_version}"),
             )));
         }
     }

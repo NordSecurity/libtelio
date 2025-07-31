@@ -610,7 +610,7 @@ impl Conntrack {
     pub fn build_conn_info<'a, P: IpPacket<'a>>(
         ip: &P,
         direction: LibfwDirection,
-    ) -> Result<(IpConnWithPort, Option<TcpPacket>)> {
+    ) -> Result<(IpConnWithPort, Option<TcpPacket<'_>>)> {
         let proto = ip.get_next_level_protocol();
         let (src, dest, tcp_packet) = match proto {
             IpNextHeaderProtocols::Udp => match UdpPacket::new(ip.payload()) {

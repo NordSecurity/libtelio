@@ -114,7 +114,7 @@ impl DaemonSocket {
         let mut stream =
             LocalSocketStream::connect(addr.to_fs_name::<FilesystemUdSocket>()?).await?;
         let mut buffer = Vec::<u8>::new();
-        writeln!(buffer, "{}", cmd)?;
+        writeln!(buffer, "{cmd}")?;
         stream.write_all(&buffer).await?;
 
         let mut response_buffer = String::new();
