@@ -3,6 +3,7 @@ from .router import Router, IPStack, IPProto, get_ip_address_type
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, List
 from utils.connection import Connection
+from utils.logger import log
 from utils.process import ProcessExecError
 
 # An arbitrary routing table id. Must be unique on the system.
@@ -138,6 +139,7 @@ class LinuxRouter(Router):
                 except ProcessExecError as exception:
                     if exception.stderr.find("File exists") < 0:
                         raise exception
+                    log.warning(exception.stderr)
 
             await self._connection.create_process([
                 "ip",
@@ -176,6 +178,7 @@ class LinuxRouter(Router):
                 except ProcessExecError as exception:
                     if exception.stderr.find("File exists") < 0:
                         raise exception
+                    log.warning(exception.stderr)
 
             await self._connection.create_process([
                 "ip",
@@ -204,6 +207,7 @@ class LinuxRouter(Router):
         except ProcessExecError as exception:
             if exception.stderr.find("Cannot find device") < 0:
                 raise exception
+            log.warning(exception.stderr)
 
     async def delete_vpn_route(self):
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
@@ -220,6 +224,7 @@ class LinuxRouter(Router):
                     < 0
                 ):
                     raise exception
+                log.warning(exception.stderr)
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             try:
@@ -235,6 +240,7 @@ class LinuxRouter(Router):
                     < 0
                 ):
                     raise exception
+                log.warning(exception.stderr)
 
     async def create_exit_node_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
@@ -298,6 +304,7 @@ class LinuxRouter(Router):
             except ProcessExecError as exception:
                 if exception.stderr.find("No chain/target/match by that name") < 0:
                     raise exception
+                log.warning(exception.stderr)
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             try:
@@ -326,6 +333,7 @@ class LinuxRouter(Router):
                     < 0
                 ):
                     raise exception
+                log.warning(exception.stderr)
 
     @asynccontextmanager
     async def disable_path(self, address: str) -> AsyncIterator:
