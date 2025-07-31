@@ -31,8 +31,6 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: "internal-symmetric-client-01",
     ConnectionTag.DOCKER_CONE_GW_1: "cone-gw-01",
     ConnectionTag.DOCKER_CONE_GW_2: "cone-gw-02",
-    ConnectionTag.DOCKER_CONE_GW_3: "cone-gw-03",
-    ConnectionTag.DOCKER_CONE_GW_4: "cone-gw-04",
     ConnectionTag.DOCKER_SYMMETRIC_GW_1: "symmetric-gw-01",
     ConnectionTag.DOCKER_SYMMETRIC_GW_2: "symmetric-gw-02",
     ConnectionTag.DOCKER_UDP_BLOCK_GW_1: "udp-block-gw-01",

@@ -54,7 +54,7 @@ graph LR
     shared-client-01("shared-client-01
         192.168.101.67
         192.168.113.67")
-    cone-gw-05(["cone-gw-05
+    cone-gw-03(["cone-gw-03
         10.0.254.13
         192.168.113.254"])
   end
@@ -78,22 +78,6 @@ graph LR
     cone-gw-02(["cone-gw-02
         10.0.254.2
         192.168.102.254"])
-  end
-
-  %% Network cone-net-03
-  subgraph cone-net-03[cone-net-03]
-  direction LR
-    cone-gw-03(["cone-gw-03
-        10.0.254.7
-        192.168.107.254"])
-  end
-
-  %% Network cone-net-04
-  subgraph cone-net-04[cone-net-04]
-  direction LR
-    cone-gw-04(["cone-gw-04
-        10.0.254.8
-        192.168.108.254"])
   end
 
   %% Network hsymmetric-net-01
@@ -200,8 +184,6 @@ graph LR
   cone-gw-01 -..- internet
   cone-gw-02 -..- internet
   cone-gw-03 -..- internet
-  cone-gw-04 -..- internet
-  cone-gw-05 -..- internet
   symmetric-gw-01 -..- internet
   symmetric-gw-02 -..- internet
   fullcone-gw-01 -..- internet
@@ -213,7 +195,7 @@ graph LR
   openwrt-gw-01 -..- internet
   cone-client-01 -.- cone-gw-01
   shared-client-01 -.- cone-gw-01
-  shared-client-01 -.- cone-gw-05
+  shared-client-01 -.- cone-gw-03
   cone-client-02 -.- cone-gw-02
   symmetric-client-01 -.- symmetric-gw-01
   internal-symmetric-gw-01 -..- symmetric-gw-01
@@ -226,13 +208,4 @@ graph LR
   udp-block-client-01 -.- udp-block-gw-01
   udp-block-client-02 -.- udp-block-gw-02
   openwrt-client-01 -.- openwrt-gw-01
-
-  %% Vagrant boxes
-  subgraph vagrant
-    vm-boxes("vm-boxes
-        10.55.0.0/24 
-        10.66.0.0/24")
-  end
-  vm-boxes -.- cone-gw-03
-  vm-boxes -.- cone-gw-04
 ```

@@ -245,7 +245,7 @@ services:
         ipv4_address: 192.168.101.67
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth0'
-      cone-net-05:
+      cone-net-03:
         ipv4_address: 192.168.113.67
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
@@ -420,36 +420,9 @@ services:
         priority: 90
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
+
   cone-gw-03:
     hostname: cone-gw-03
-    <<: *common-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.7
-        priority: 1000
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth0'
-      cone-net-03:
-        ipv4_address: 192.168.107.254
-        priority: 900
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth1'
-  cone-gw-04:
-    hostname: cone-gw-04
-    <<: *common-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.8
-        priority: 1000
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth0'
-      cone-net-04:
-        ipv4_address: 192.168.108.254
-        priority: 900
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth1'
-  cone-gw-05:
-    hostname: cone-gw-05
     <<: *common-gw
     networks:
       internet:
@@ -986,22 +959,6 @@ networks:
       config:
         - subnet: 192.168.102.0/24
   cone-net-03:
-    driver: bridge
-    driver_opts:
-        com.docker.network.bridge.gateway_mode_ipv4: 'nat-unprotected'
-    ipam:
-      driver: default
-      config:
-        - subnet: 192.168.107.0/24
-  cone-net-04:
-    driver: bridge
-    driver_opts:
-      com.docker.network.bridge.gateway_mode_ipv4: 'nat-unprotected'
-    ipam:
-      driver: default
-      config:
-        - subnet: 192.168.108.0/24
-  cone-net-05:
     driver: bridge
     ipam:
       driver: default
