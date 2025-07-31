@@ -287,8 +287,7 @@ impl Authority for ForwardAuthority {
         _name: &LowerName,
         _lookup_options: LookupOptions,
     ) -> Result<Self::Lookup, LookupError> {
-        Err(LookupError::from(io::Error::new(
-            io::ErrorKind::Other,
+        Err(LookupError::from(io::Error::other(
             "Getting NSEC records is unimplemented for the forwarder",
         )))
     }

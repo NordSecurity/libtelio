@@ -116,7 +116,7 @@ enum TeliodError {
     #[error("Daemon is running")]
     DaemonIsRunning,
     #[error("NotificationCenter failure: {0}")]
-    NotificationCenter(#[from] nc::Error),
+    NotificationCenter(#[from] Box<nc::Error>),
     #[error(transparent)]
     CoreApiError(#[from] ApiError),
     #[error(transparent)]
@@ -225,11 +225,11 @@ fn main() -> Result<(), TeliodError> {
                 Outcome::Child(Ok(_)) => {}
                 // Errors
                 Outcome::Parent(Err(err)) => {
-                    eprintln!("Fork parent error: {}", err);
+                    eprintln!("Fork parent error: {err}");
                     return Err(err.into());
                 }
                 Outcome::Child(Err(err)) => {
-                    eprintln!("Child error {}", err);
+                    eprintln!("Child error {err}");
                     return Err(err.into());
                 }
             }
@@ -276,7 +276,7 @@ async fn client_main(cmd: Cmd) -> Result<(), TeliodError> {
                         Ok(())
                     }
                     CommandResponse::Err(e) => {
-                        println!("Command executed failed: {}", e);
+                        println!("Command executed failed: {e}");
                         Err(TeliodError::CommandFailed(cmd))
                     }
                 }
@@ -301,6 +301,6 @@ async fn client_main(cmd: Cmd) -> Result<(), TeliodError> {
             Ok(())
         }
         // Unexpected command, Cmd::Start should be handled by main
-        _ => Err(TeliodError::InvalidCommand(format!("{:?}", cmd))),
+        _ => Err(TeliodError::InvalidCommand(format!("{cmd:?}"))),
     }
 }

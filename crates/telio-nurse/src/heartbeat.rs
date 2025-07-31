@@ -847,7 +847,7 @@ impl Analytics {
     fn copy_nat_type(&self, nat_types: &mut Vec<String>, sorted_pk: BTreeSet<PublicKey>) {
         for pk in sorted_pk.iter() {
             if let Some(nat_type) = self.collection.nat_type_peers.get(pk) {
-                nat_types.push(format!("{:?}", nat_type));
+                nat_types.push(format!("{nat_type:?}"));
             };
         }
     }

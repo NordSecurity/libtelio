@@ -609,8 +609,8 @@ async fn consolidate_wg_peers<
 
 fn check_allowed_ips_correctness(peers: &BTreeMap<PublicKey, RequestedPeer>) -> Result {
     peers
-        .iter()
-        .map(|(_, p)| HashSet::from_iter(&p.peer.allowed_ips))
+        .values()
+        .map(|p| HashSet::from_iter(&p.peer.allowed_ips))
         .try_fold(HashSet::new(), |all_allowed_ips, peer_allowed_ips| {
             if all_allowed_ips.is_disjoint(&peer_allowed_ips) {
                 Some(HashSet::from_iter(
