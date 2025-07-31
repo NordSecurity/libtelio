@@ -421,7 +421,7 @@ services:
         priority: 1000
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth0'
-      cone-net-05:
+      cone-net-03:
         ipv4_address: 192.168.113.254
         priority: 900
         driver_opts:
