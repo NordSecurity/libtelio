@@ -72,7 +72,12 @@ cargo build -p tcli
 
 You will need a lightweight Linux docker image with the some networking utilities,
 which are missing from the basic Ubuntu image, so let's create a new one.
-Make a `docker` directory in `tcli-test` and put there the following simple Dockerfile:
+Make a `docker` directory in `tcli-test`:
+```shell
+mkdir -p tcli-test/docker
+cd tcli-test/docker
+```
+and put there the following simple Dockerfile:
 ```
 FROM ubuntu
 
