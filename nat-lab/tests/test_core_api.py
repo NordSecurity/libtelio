@@ -374,6 +374,9 @@ async def test_not_able_to_register_same_machine_twice():
         ("/v1/meshnet/machines/uid", "DELETE"),
         ("/v1/meshnet/machines/uid", "PATCH"),
         ("/v1/notifications/tokens", "POST"),
+        ("/v1/countries", "GET"),
+        ("/v1/servers/recommendations", "GET"),
+        ("/test/public-key", "POST"),
     ],
 )
 async def test_endpoints_requires_authorization_header(endpoint, method):
@@ -414,6 +417,9 @@ async def test_endpoints_requires_authorization_header(endpoint, method):
         ("/v1/meshnet/machines/uid/map", "GET"),
         ("/v1/meshnet/machines/uid", "DELETE"),
         ("/v1/meshnet/machines/uid", "PATCH"),
+        ("/v1/countries", "GET"),
+        ("/v1/servers/recommendations", "GET"),
+        ("/test/public-key", "POST"),
     ],
 )
 async def test_not_able_to_pass_authorization_with_invalid_bearer_token(
@@ -480,3 +486,138 @@ async def test_not_able_to_pass_authorization_with_invalid_basic_auth_credential
             == CoreApiErrorCode.INVALID_CREDENTIALS.value
         )
         assert response_data["errors"]["message"] == "Invalid credentials"
+
+
+@pytest.mark.asyncio
+async def test_get_countries():
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+
+        response_data = await send_https_request(
+            connection,
+            f"{CORE_API_URL}/v1/countries",
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
+        )
+
+        assert isinstance(response_data, list)
+        assert len(response_data) == 2
+        poland = response_data[0]
+        germany = response_data[1]
+        assert poland["name"] == "Poland"
+        assert poland["code"] == "PL"
+        assert germany["name"] == "Germany"
+        assert germany["code"] == "DE"
+
+
+@pytest.mark.asyncio
+async def test_get_servers_no_filters():
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+
+        payload = json.dumps({"public_key": linux_vm_public_key})
+
+        await send_https_request(
+            connection,
+            f"{CORE_API_URL}/test/public-key",
+            "POST",
+            CORE_API_CA_CERTIFICATE_PATH,
+            data=payload,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
+            expect_response=False,
+        )
+
+        response_data = await send_https_request(
+            connection,
+            f"{CORE_API_URL}/v1/servers/recommendations",
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
+        )
+
+        assert isinstance(response_data, list)
+        assert len(response_data) == 1
+        public_key = response_data[0]["technologies"][1]["metadata"][0]["value"]
+        assert public_key == linux_vm_public_key, (
+            f"Returned public key is {public_key}, " f"expected {linux_vm_public_key}"
+        )
+        server_name = response_data[0]["name"]
+        assert server_name == "Poland #128", (
+            f"Returned server name is {server_name}, " f"expected is Poland #128"
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_servers_with_filters():
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+
+        payload = json.dumps({"public_key": linux_vm_public_key, "country_id": 2})
+
+        await send_https_request(
+            connection,
+            f"{CORE_API_URL}/test/public-key",
+            "POST",
+            CORE_API_CA_CERTIFICATE_PATH,
+            data=payload,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
+            expect_response=False,
+        )
+
+        response_data = await send_https_request(
+            connection,
+            f"{CORE_API_URL}/v1/servers/recommendations?filters%5Bcountry_id%5D=2",
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
+        )
+
+        assert isinstance(response_data, list)
+        assert len(response_data) == 1
+        public_key = response_data[0]["technologies"][1]["metadata"][0]["value"]
+        assert public_key == linux_vm_public_key, (
+            f"Returned public key is {public_key}, " f"expected {linux_vm_public_key}"
+        )
+        server_name = response_data[0]["name"]
+        assert server_name == "Germany #1263", (
+            f"Returned server name is {server_name}, " f"expected is Germany #1263"
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_nonexisting_servers():
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+
+        payload = json.dumps({"public_key": linux_vm_public_key, "country_id": 5})
+
+        await send_https_request(
+            connection,
+            f"{CORE_API_URL}/test/public-key",
+            "POST",
+            CORE_API_CA_CERTIFICATE_PATH,
+            data=payload,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
+            expect_response=False,
+        )
+
+        response_data = await send_https_request(
+            connection,
+            f"{CORE_API_URL}/v1/servers/recommendations?filters%5Bcountry_id%5D=5",
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
+        )
+        assert (
+            response_data["errors"]["message"]
+            == "No vpn servers found for provided filters"
+        )
