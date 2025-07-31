@@ -33,7 +33,7 @@ fn event_log(
                 let mut it = args.iter().peekable();
                 while let Some(arg) = it.next() {
                     match it.peek() {
-                        Some(_) => buffer.push_str(format!("{}, ", arg).as_str()),
+                        Some(_) => buffer.push_str(format!("{arg}, ").as_str()),
                         None => buffer.push_str(arg),
                     }
                 }

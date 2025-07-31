@@ -232,7 +232,7 @@ impl LocalNameServer {
         zones
             .lookup(&dns_request, resolver.clone())
             .await
-            .map_err(|e| format!("Lookup failed {}", e))?;
+            .map_err(|e| format!("Lookup failed {e}"))?;
 
         let dns_response = resolver.0.lock().await;
         telio_log_debug!("Nameserver response: {:?}", &dns_response);

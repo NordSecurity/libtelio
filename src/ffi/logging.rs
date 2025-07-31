@@ -240,7 +240,7 @@ fn filter_log_message(msg: String) -> Option<String> {
 
     if log_status.counter > 0 && log_status.counter % 100 == 0 {
         log_status.counter += 1;
-        return Some(format!("[repeated 100 times!] {}", msg));
+        return Some(format!("[repeated 100 times!] {msg}"));
     }
 
     if log_status.counter < 10 {
