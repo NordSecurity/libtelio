@@ -10,7 +10,7 @@ use std::{
 fn main() -> Result<()> {
     let out_dir = format!(
         "{}/protos",
-        env::var("OUT_DIR").map_err(|err| Error::new(ErrorKind::Other, err.to_string()))?
+        env::var("OUT_DIR").map_err(|err| Error::other(err.to_string()))?
     );
     create_dir(Path::new(&out_dir)).or_else(|err| match err.kind() {
         ErrorKind::AlreadyExists => Ok(()),
