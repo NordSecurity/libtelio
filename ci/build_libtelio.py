@@ -578,7 +578,7 @@ def exec_build(args):
     if args.os == "openwrt":
         # OpenWRT is being built from within the OpenWRT SDK so `cargo build` invocation happens there.
         # TODO: we probably want to have a nordsecurity repository or even better yet - merge it into the official one and point it here
-        os.system(f"sed -i 's|^src-git packages .*|src-git packages https://github.com/LukasPukenis/openwrt-packages;LLT-6479_openwrt_feed |' /usr/local/openwrt_sdk_{args.arch}/feeds.conf.default")
+        os.system(f"sed -i 's|^src-git packages .*|src-git packages https://github.com/LukasPukenis/openwrt-packages;LLT-6488_embed_version |' /usr/local/openwrt_sdk_{args.arch}/feeds.conf.default")
 
         os.system(f"/usr/local/openwrt_sdk_{args.arch}/scripts/feeds update -a 2>&1 > /dev/null")
         os.system(f"/usr/local/openwrt_sdk_{args.arch}/scripts/feeds install -a 2>&1 > /dev/null")
@@ -587,7 +587,7 @@ def exec_build(args):
         os.system(f"cd /usr/local/openwrt_sdk_{args.arch}/ && touch .config && make defconfig 2>&1 > /dev/null")
 
         # Will be produced at /usr/local/openwrt_sdk_{args.arch}/bin/packages/{args.arch}/packages/nordvpn_{GIT_SHA}-r1_{args.arch}.ipk
-        os.system(f"cd /usr/local/openwrt_sdk_{args.arch} && make package/nordvpn/download V=s && make package/nordvpn/check V=s && make package/nordvpn/compile -j$(nproc) V=s 2>&1 > /dev/null")                
+        os.system(f"cd /usr/local/openwrt_sdk_{args.arch} && make package/nordvpn/download V=s && make package/nordvpn/check V=s && make package/nordvpn/compile -j$(nproc) V=s 2>&1 > /dev/null")
         
         f = os.popen(f"find /usr/local/openwrt_sdk_{args.arch} -type f -name 'nordvpn*.ipk' | head -1")
         nordvpn_ipk_path = f.read().strip()
