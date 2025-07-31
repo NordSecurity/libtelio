@@ -233,7 +233,7 @@ impl InterfaceWatcher {
         let family_str: String = match family as i32 {
             AF_INET => "IPv4".to_string(),
             AF_INET6 => "IPv6".to_string(),
-            _ => format!("unk {}", family),
+            _ => format!("unk {family}"),
         };
 
         // TODO: we have successfully started the adapter, now stop watchdog
