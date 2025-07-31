@@ -106,8 +106,7 @@ impl WindowsNativeWg {
                 if let Ok(mut watcher) = watcher.lock() {
                     if let Err(monitoring_err) = watcher.start_monitoring() {
                         return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                            "Failed to start watcher with err {}",
-                            monitoring_err
+                            "Failed to start watcher with err {monitoring_err}",
                         ))));
                     }
                 } else {
@@ -152,14 +151,12 @@ impl WindowsNativeWg {
                         }
                     }
                     Err((e, _)) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                        "Failed to create adapter: {:?}",
-                        e
+                        "Failed to create adapter: {e:?}",
                     )))),
                 }
             }
             Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                "Failed to load wireguard dll: {:?}",
-                e
+                "Failed to load wireguard dll: {e:?}",
             )))),
         }
     }
