@@ -9,8 +9,6 @@ class NetworkSwitcherMac(NetworkSwitcher):
         self._connection = connection
 
     async def switch_to_primary_network(self) -> None:
-        """Set default route via Linux VM @ $LINUX_VM_PRIMARY_GATEWAY"""
-
         await self._delete_existing_route()
         await self._connection.create_process(
             ["route", "add", "default", GW_ADDR_MAP[self._connection.tag]["primary"]]
@@ -34,8 +32,6 @@ class NetworkSwitcherMac(NetworkSwitcher):
             ).execute()
 
     async def switch_to_secondary_network(self) -> None:
-        """Set default route via Linux VM @ $LINUX_VM_SECONDARY_GATEWAY"""
-
         await self._delete_existing_route()
         await self._connection.create_process(
             ["route", "add", "default", GW_ADDR_MAP[self._connection.tag]["secondary"]]

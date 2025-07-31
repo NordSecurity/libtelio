@@ -222,7 +222,7 @@ services:
       start_period: 60s
       timeout: 2s
     environment:
-      USERNAME: "steve"
+      USERNAME: "root"
       PASSWORD: "jobs"
       NETWORK: "bridge"
       RAM_SIZE: "2G"

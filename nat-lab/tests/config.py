@@ -144,15 +144,6 @@ LAN_ADDR_MAP_V6: Dict[ConnectionTag, str] = {
     ),
 }
 
-LINUX_VM_PRIMARY_GATEWAY = "10.55.0.10"
-LINUX_VM_SECONDARY_GATEWAY = "10.66.0.10"
-
-PRIMARY_VM_NETWORK_PREFIX = "10.55.0"
-SECONDARY_VM_NETWORK_PREFIX = "10.66.0"
-
-# https://vagrant-libvirt.github.io/vagrant-libvirt/configuration.html#management-network
-LIBVIRT_MANAGEMENT_NETWORK_PREFIX = "192.168.121"
-
 # Same as defined in `libtelio/nat-lab/docker-compose.yml`, 10.0.0.0/16
 DOCKER_NETWORK_IP = "10.0.0.0"
 DOCKER_NETWORK_MASK = "255.255.0.0"
