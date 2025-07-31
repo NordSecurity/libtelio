@@ -1,14 +1,6 @@
 #!/bin/sh
 set -e
-echo "[DEBUG] PATH is: $PATH"
-ls -l /bin/opkg || echo "/bin/opkg does not exist"
-ls -l /usr/bin/opkg || echo "/usr/bin/opkg does not exist"
-env
-echo "[OpenWRT Gateway] Installing provided IPK packages..."
-if [ -d "/opt/bin" ] && ls /opt/bin/*.ipk 1> /dev/n ull 2>&1; then
-  opkg install /opt/bin/*.ipk
-else
-  echo "[OpenWRT Gateway] No IPKs found under /opt/bin, skipping installation"
-fi
+echo "OPKG list:"
+opkg list
 echo "[OpenWRT Gateway] Startup complete. Entering sleep."
 exec sleep infinity
