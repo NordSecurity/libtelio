@@ -348,13 +348,22 @@ impl StatefullFirewall {
         result
     }
 
+    fn dst_net_all_ports_filter(net: IpNet, inverted: bool) -> Filter {
+        Filter {
+            filter_data: FilterData::DstNetwork(NetworkFilterData {
+                network: net,
+                ports: 0..=65535,
+            }),
+            inverted,
+        }
+    }
+
     fn recreate_chain(&self) {
         let mut rules = vec![];
 
         // Drop packets from UDP blacklist
         let udp_blacklist = self.outgoing_udp_blacklist.read();
         for peer in udp_blacklist.iter() {
-            let prefix_len = if peer.is_ipv4() { 32 } else { 128 };
             rules.push(Rule {
                 filters: vec![
                     Filter {
@@ -365,24 +374,15 @@ impl StatefullFirewall {
                         filter_data: FilterData::NextLevelProtocol(LibfwNextLevelProtocol::Udp),
                         inverted: false,
                     },
-                    Filter {
-                        filter_data: FilterData::DstNetwork(NetworkFilterData {
-                            network: unwrap_option_or_return!(
-                                IpNet::new(peer.ip(), prefix_len).ok()
-                            ),
-                            ports: peer.port()..=peer.port(),
-                        }),
-                        inverted: false,
-                    },
+                    Self::dst_net_all_ports_filter(IpNet::from(peer.ip()), false),
                 ],
                 action: LibfwVerdict::LibfwVerdictReject,
             });
         }
 
-        // Drop packets from UDP blacklist
+        // Drop packets from TCP blacklist
         let tcp_blacklist = self.outgoing_tcp_blacklist.read();
         for peer in tcp_blacklist.iter() {
-            let prefix_len = if peer.is_ipv4() { 32 } else { 128 };
             rules.push(Rule {
                 filters: vec![
                     Filter {
@@ -393,15 +393,7 @@ impl StatefullFirewall {
                         filter_data: FilterData::NextLevelProtocol(LibfwNextLevelProtocol::Tcp),
                         inverted: false,
                     },
-                    Filter {
-                        filter_data: FilterData::DstNetwork(NetworkFilterData {
-                            network: unwrap_option_or_return!(
-                                IpNet::new(peer.ip(), prefix_len).ok()
-                            ),
-                            ports: peer.port()..=peer.port(),
-                        }),
-                        inverted: false,
-                    },
+                    Self::dst_net_all_ports_filter(IpNet::from(peer.ip()), false),
                 ],
                 action: LibfwVerdict::LibfwVerdictReject,
             });
@@ -434,75 +426,49 @@ impl StatefullFirewall {
         ];
 
         // Include packets which are going to local IPv4 networks
-        let mut ipv4_local_area_network_filters = ipv4_local_area_networks.map(|network| {
-            vec![Filter {
-                filter_data: FilterData::DstNetwork(NetworkFilterData {
-                    network: IpNet::V4(network),
-                    ports: 0..=65535,
-                }),
-                inverted: false,
-            }]
-        });
+        let mut ipv4_local_area_network_filters = ipv4_local_area_networks
+            .map(|network| vec![Self::dst_net_all_ports_filter(IpNet::V4(network), false)]);
 
         // Exclude packets from the exclude range
         if let Some(exclude_range) = self.exclude_ip_range {
             for local_net_filters in ipv4_local_area_network_filters.iter_mut() {
-                local_net_filters.push(Filter {
-                    filter_data: FilterData::DstNetwork(NetworkFilterData {
-                        network: IpNet::V4(exclude_range),
-                        ports: 0..=65535,
-                    }),
-                    inverted: true,
-                });
+                local_net_filters.push(Self::dst_net_all_ports_filter(
+                    IpNet::V4(exclude_range),
+                    true,
+                ));
             }
         }
 
         let mut ipv6_local_area_network_filters = vec![
             // Include packets which are going to local network
-            Filter {
-                filter_data: FilterData::DstNetwork(NetworkFilterData {
-                    network: IpNet::V6(Ipv6Net::new_assert(
-                        // TODO: Actually it Unique Local Address range should be (from what I found) fc00::/7,
-                        // but it seems that we assume (and our tests do) that it is fc00::/6
-                        StdIpv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0),
-                        6,
-                    )),
-                    ports: 0..=65535,
-                }),
-                inverted: false,
-            },
+            Self::dst_net_all_ports_filter(
+                IpNet::V6(Ipv6Net::new_assert(
+                    // TODO: Actually it Unique Local Address range should be (from what I found) fc00::/7,
+                    // but it seems that we assume (and our tests do) that it is fc00::/6
+                    StdIpv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0),
+                    6,
+                )),
+                false,
+            ),
             // Exclude packets which are going to local interfaces
-            Filter {
-                filter_data: FilterData::DstNetwork(NetworkFilterData {
-                    network: IpNet::V6(Ipv6Net::new_assert(
-                        StdIpv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 0),
-                        64,
-                    )),
-                    ports: 0..=65535,
-                }),
-                inverted: true,
-            },
+            Self::dst_net_all_ports_filter(
+                IpNet::V6(Ipv6Net::new_assert(
+                    StdIpv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 0),
+                    64,
+                )),
+                true,
+            ),
         ];
 
         for ip in LOCAL_ADDRS_CACHE.lock().iter().map(|peer| peer.ip()) {
             if ip.is_ipv4() {
                 for local_network_filters in ipv4_local_area_network_filters.iter_mut() {
-                    local_network_filters.push(Filter {
-                        filter_data: FilterData::DstNetwork(NetworkFilterData {
-                            network: IpNet::from(ip),
-                            ports: 0..=65535,
-                        }),
-                        inverted: true,
-                    });
+                    local_network_filters
+                        .push(Self::dst_net_all_ports_filter(IpNet::from(ip), true));
                 }
             } else {
-                ipv6_local_area_network_filters.push(Filter {
-                    filter_data: FilterData::DstNetwork(NetworkFilterData {
-                        network: IpNet::from(ip),
-                        ports: 0..=65535,
-                    }),
-                    inverted: true,
-                });
+                ipv6_local_area_network_filters
+                    .push(Self::dst_net_all_ports_filter(IpNet::from(ip), true));
             }
         }
 
@@ -557,13 +523,7 @@ impl StatefullFirewall {
                             filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
                             inverted: false,
                         },
-                        Filter {
-                            filter_data: FilterData::DstNetwork(NetworkFilterData {
-                                network: IpNet::from(*ip),
-                                ports: 0..=65535,
-                            }),
-                            inverted: false,
-                        },
+                        Self::dst_net_all_ports_filter(IpNet::from(*ip), false),
                     ],
                     action: LibfwVerdict::LibfwVerdictAccept,
                 });
@@ -578,13 +538,7 @@ impl StatefullFirewall {
                         ),
                         inverted: false,
                     },
-                    Filter {
-                        filter_data: FilterData::DstNetwork(NetworkFilterData {
-                            network: IpNet::from(*ip),
-                            ports: 0..=65535,
-                        }),
-                        inverted: false,
-                    },
+                    Self::dst_net_all_ports_filter(IpNet::from(*ip), false),
                 ],
                 action: LibfwVerdict::LibfwVerdictAccept,
             });
@@ -604,13 +558,7 @@ impl StatefullFirewall {
                         ),
                         inverted: false,
                     },
-                    Filter {
-                        filter_data: FilterData::DstNetwork(NetworkFilterData {
-                            network: IpNet::from(*ip),
-                            ports: 0..=65535,
-                        }),
-                        inverted: false,
-                    },
+                    Self::dst_net_all_ports_filter(IpNet::from(*ip), false),
                 ],
                 action: LibfwVerdict::LibfwVerdictAccept,
             });
@@ -643,13 +591,7 @@ impl StatefullFirewall {
 
             // Drop rest of the packets going to local interfaces
             rules.push(Rule {
-                filters: vec![Filter {
-                    filter_data: FilterData::DstNetwork(NetworkFilterData {
-                        network: IpNet::from(*ip),
-                        ports: 0..=65535,
-                    }),
-                    inverted: false,
-                }],
+                filters: vec![Self::dst_net_all_ports_filter(IpNet::from(*ip), false)],
                 action: LibfwVerdict::LibfwVerdictDrop,
             });
         }
