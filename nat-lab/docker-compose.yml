@@ -465,6 +465,8 @@ services:
     dns:
       - 10.0.80.82
       - 10.0.80.83
+    volumes:
+      - ./bin/openwrt_docker_entrypoint.sh:/opt/bin/openwrt_docker_entrypoint.sh
 
   # Gateways which block udp traffic
   udp-block-gw-01:
