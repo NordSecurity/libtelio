@@ -15,9 +15,9 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
-pub struct NetworkFilterData {
-    pub network: IpNet,
-    pub ports: RangeInclusive<u16>,
+pub(crate) struct NetworkFilterData {
+    pub(crate) network: IpNet,
+    pub(crate) ports: RangeInclusive<u16>,
 }
 
 enum NetworkFilterType {
@@ -27,7 +27,7 @@ enum NetworkFilterType {
 
 #[allow(dead_code)]
 #[derive(Copy, Clone, Debug)]
-pub enum LibfwNextLevelProtocol {
+pub(crate) enum LibfwNextLevelProtocol {
     Udp,
     Tcp,
     Icmp,
@@ -134,7 +134,7 @@ impl FilterData {
             FilterData::TcpFlags(flags) if packet.get_next_level_protocol() == Tcp => {
                 TcpPacket::new(packet.payload())
                     .map(|pkt| pkt.get_flags() & flags != 0)
-                    .unwrap_or_default()
+                    .unwrap_or(false)
             }
             FilterData::TcpFlags(_) => false,
         }
@@ -142,9 +142,9 @@ impl FilterData {
 }
 
 #[derive(Clone, Debug)]
-pub struct Filter {
-    pub filter_data: FilterData,
-    pub inverted: bool,
+pub(crate) struct Filter {
+    pub(crate) filter_data: FilterData,
+    pub(crate) inverted: bool,
 }
 
 impl Filter {
@@ -162,9 +162,9 @@ impl Filter {
 }
 
 #[derive(Debug)]
-pub struct Rule {
-    pub filters: Vec<Filter>,
-    pub action: LibfwVerdict,
+pub(crate) struct Rule {
+    pub(crate) filters: Vec<Filter>,
+    pub(crate) action: LibfwVerdict,
 }
 
 impl Rule {
@@ -182,7 +182,7 @@ impl Rule {
 }
 
 pub(crate) struct Chain {
-    pub rules: Vec<Rule>,
+    pub(crate) rules: Vec<Rule>,
 }
 
 impl Chain {
