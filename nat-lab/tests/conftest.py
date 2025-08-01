@@ -39,11 +39,13 @@ SESSION_SCOPE_EXIT_STACK = RUNNER.run(AsyncExitStack().__aenter__())
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
+    print(">>>> cancel_all_tasks")
     to_cancel = asyncio.tasks.all_tasks(loop)
     if not to_cancel:
         return
 
     for task in to_cancel:
+        print(">>>> cancel task: ", task.get_name())
         task.print_stack()
         task.cancel()
 
