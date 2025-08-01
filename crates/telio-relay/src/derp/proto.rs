@@ -333,7 +333,7 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
 
     let ciphertext = b
         .encrypt(&nonce, &plain_text[..])
-        .map_err(|err| -> Error { IoError::new(ErrorKind::Other, err.to_string()).into() })?;
+        .map_err(|err| -> Error { IoError::other(err.to_string()).into() })?;
 
     let mut buf = Vec::<u8>::new();
     buf.write_all(&public_key.0).await?;

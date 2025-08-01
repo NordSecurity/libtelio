@@ -28,7 +28,7 @@ pub fn flush_dns(family: ADDRESS_FAMILY, if_index: u32) -> Result<(), String> {
         .arg(proto_name)
         .arg("set")
         .arg("dnsservers")
-        .arg(format!("name={}", if_index))
+        .arg(format!("name={if_index}"))
         .arg("source=static")
         .arg("address=none")
         .arg("validate=no")
@@ -71,7 +71,7 @@ fn add_dns(family: ADDRESS_FAMILY, if_index: u32, dnses: &[String]) -> Result<()
         .arg(proto_name)
         .arg("add")
         .arg("dnsservers")
-        .arg(format!("name={}", if_index))
+        .arg(format!("name={if_index}"))
         .arg(format!(
             "address={}",
             dnses

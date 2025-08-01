@@ -298,11 +298,8 @@ async fn fetch_identifier_from_api(
     debug!("Fetching machine identifier");
     let client = http_client(cert_path);
     let response = client
-        .get(format!("{}/meshnet/machines", API_BASE))
-        .header(
-            header::AUTHORIZATION,
-            format!("Bearer token:{}", auth_token),
-        )
+        .get(format!("{API_BASE}/meshnet/machines"))
+        .header(header::AUTHORIZATION, format!("Bearer token:{auth_token}"))
         .header(header::ACCEPT, "application/json")
         .send()
         .await?;
@@ -349,10 +346,7 @@ async fn update_machine(
             "{}/meshnet/machines/{}",
             API_BASE, device_identity.machine_identifier
         ))
-        .header(
-            header::AUTHORIZATION,
-            format!("Bearer token:{}", auth_token),
-        )
+        .header(header::AUTHORIZATION, format!("Bearer token:{auth_token}"))
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::ACCEPT, "application/json")
         .json(&MeshConfig {
@@ -386,10 +380,7 @@ pub async fn get_meshmap(
                 "{}/meshnet/machines/{}/map",
                 API_BASE, device_identity.machine_identifier
             ))
-            .header(
-                header::AUTHORIZATION,
-                format!("Bearer token:{}", auth_token),
-            )
+            .header(header::AUTHORIZATION, format!("Bearer token:{auth_token}"))
             .header(header::ACCEPT, "application/json")
             .send()
             .await?
@@ -407,11 +398,8 @@ async fn register_machine(
     info!("Registering machine");
     let client = http_client(cert_path);
     let response = client
-        .post(format!("{}/meshnet/machines", API_BASE))
-        .header(
-            header::AUTHORIZATION,
-            format!("Bearer token:{}", auth_token),
-        )
+        .post(format!("{API_BASE}/meshnet/machines"))
+        .header(header::AUTHORIZATION, format!("Bearer token:{auth_token}"))
         .header(header::CONTENT_TYPE, "application/json")
         .header(header::ACCEPT, "application/json")
         .json(&MeshConfig {

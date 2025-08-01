@@ -71,20 +71,20 @@ impl LocalDnsResolver {
             .await
             .map_err(|e| {
                 telio_log_error!("Failed to bind dns socket: {:?}", e);
-                format!("Failed to bind dns socket: {:?}", e)
+                format!("Failed to bind dns socket: {e:?}")
             })?;
 
         let socket_port = socket
             .local_addr()
             .map_err(|e| {
                 telio_log_error!("Failed to get socket port: {:?}", e);
-                format!("Failed to get socket port: {:?}", e)
+                format!("Failed to get socket port: {e:?}",)
             })?
             .port();
 
         bind_tun::set_tun(tun).map_err(|e| {
             telio_log_debug!("Failing setting tun: {:?}", e);
-            format!("{}", e)
+            format!("{e}")
         })?;
 
         // DNS secret key

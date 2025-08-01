@@ -170,7 +170,7 @@ impl TeliodDaemonConfig {
 
     /// Construct a TeliodDaemonConfig by deserializing a file at given path
     pub fn from_file(path: &str) -> Result<Self, TeliodError> {
-        println!("Reading config from: {}", path);
+        println!("Reading config from: {path}");
 
         let file = fs::File::open(path)?;
         let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
@@ -203,7 +203,7 @@ impl TeliodDaemonConfig {
                 dir.canonicalize()
                     .map_err(|e| TeliodError::InvalidConfigOption {
                         key: "log_file_path".to_owned(),
-                        msg: format!("could not resolve log directory: {}", e),
+                        msg: format!("could not resolve log directory: {e}"),
                         value: path.to_string_lossy().into_owned(),
                     })?;
             path_canonical.join(file_name)
