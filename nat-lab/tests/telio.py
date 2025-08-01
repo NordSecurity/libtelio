@@ -1399,3 +1399,19 @@ async def get_log_without_flush(connection) -> str:
     )
     await process.execute()
     return process.get_stdout()
+
+
+async def download_log_without_flush(
+    connection: Connection, log_dir: str, filename: str
+) -> None:
+    """
+    Downloads the libtelio log file from the remote system (without flushing it),
+    saves it to the given directory.
+    """
+    remote_path = (
+        "tcli.log" if connection.target_os == TargetOS.Windows else "./tcli.log"
+    )
+    os.makedirs(log_dir, exist_ok=True)
+    local_path = os.path.join(log_dir, filename)
+
+    await connection.download(remote_path, local_path)
