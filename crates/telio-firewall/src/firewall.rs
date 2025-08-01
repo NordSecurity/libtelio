@@ -22,7 +22,7 @@ use std::{
 };
 
 use telio_model::features::{FeatureFirewall, IpProtocol};
-use telio_network_monitors::monitor::LOCAL_ADDRS_CACHE;
+use telio_network_monitors::monitor::{LocalInterfacesObserver, LOCAL_ADDRS_CACHE};
 
 use telio_crypto::PublicKey;
 use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
@@ -294,6 +294,12 @@ pub struct StatefullFirewall {
     outgoing_tcp_blacklist: RwLock<Vec<SocketAddr>>,
     /// Blacklist for outgoing UDP connections
     outgoing_udp_blacklist: RwLock<Vec<SocketAddr>>,
+}
+
+impl LocalInterfacesObserver for StatefullFirewall {
+    fn notify(&self) {
+        self.recreate_chain();
+    }
 }
 
 impl StatefullFirewall {
