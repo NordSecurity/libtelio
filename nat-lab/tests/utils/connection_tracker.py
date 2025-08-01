@@ -126,7 +126,8 @@ class ConnTrackerEventsValidator:
     """
 
     def find_conntracker_violations(
-        self, _: List[ConntrackerEvent]
+        self,
+        _: List[ConntrackerEvent]
     ) -> Optional[ConnTrackerViolation]:
         raise NotImplementedError("Not implemented error")
 
@@ -164,7 +165,8 @@ class ConnectionCountLimit(ConnTrackerEventsValidator):
         return f"ConnectionCountLimit(key: {self.key}, min_limit: {self.min_limit}, max_limit: {self.max_limit}, target: {self.target})"
 
     def find_conntracker_violations(
-        self, events: List[ConntrackerEvent]
+        self,
+        events: List[ConntrackerEvent]
     ) -> Optional[ConnTrackerViolation]:
         # We would like to return all connections, which are out of limits
         # Instead of just first one which happens to be in the list.
@@ -198,7 +200,13 @@ class TCPStateSequence(ConnTrackerEventsValidator):
     Note this validator allows for various TCP states on connections, but full sequence of states must *end* in specified sequence.
     """
 
-    def __init__(self, key: str, five_tuple: FiveTuple, sequence: List[TcpState]):
+    def __init__(
+        self,
+        key: str,
+        five_tuple: FiveTuple,
+        sequence: List[TcpState],
+        trailing_seq: Optional[TcpState] = None,
+    ):
         if five_tuple.protocol is None or five_tuple.protocol != "tcp":
             raise ValueError(
                 'TcpStateSequence validator is only available for "tcp" protocol five tuples'
@@ -212,12 +220,14 @@ class TCPStateSequence(ConnTrackerEventsValidator):
         self.key = key
         self.five_tuple = five_tuple
         self.sequence = sequence
+        self.trailing_seq = trailing_seq
 
     def __repr__(self):
         return f"TCPStateSequence(key: {self.key}, five_tuple: {self.five_tuple}, sequence: {self.sequence})"
 
     def find_conntracker_violations(
-        self, events: List[ConntrackerEvent]
+        self,
+        events: List[ConntrackerEvent]
     ) -> Optional[ConnTrackerViolation]:
         # First we need to build a list of distinct connections matching FiveTuple
 
@@ -257,7 +267,14 @@ class TCPStateSequence(ConnTrackerEventsValidator):
             state_sequence = list(map(lambda c: c.tcp_state, connection))[
                 -len(self.sequence) :
             ]
+
             if state_sequence != self.sequence:
+                if self.trailing_seq == state_sequence[-1]:
+                    skip_close_state_sequence = list(
+                        map(lambda c: c.tcp_state, connection)
+                    )[-len(self.sequence) - 1 : -1]
+                    if skip_close_state_sequence == self.sequence:
+                        continue
                 violations.append(
                     ConnTrackerViolation(
                         recoverable=True,
@@ -378,7 +395,9 @@ class ConnectionTracker:
         """Register an Event to be notified when a specific TCP state is reported"""
         self._tcp_state_events[state].append(event)
 
-    async def find_conntracker_violations(self) -> Optional[ConnTrackerViolation]:
+    async def find_conntracker_violations(
+        self,
+    ) -> Optional[ConnTrackerViolation]:
         if platform.system() == "Darwin":
             return None
         if not self._validators:
