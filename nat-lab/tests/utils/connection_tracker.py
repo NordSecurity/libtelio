@@ -269,7 +269,7 @@ class TCPStateSequence(ConnTrackerEventsValidator):
             ]
 
             if state_sequence != self.sequence:
-                if self.trailing_seq == TcpState.CLOSE:
+                if self.trailing_seq == state_sequence[-1]:
                     skip_close_state_sequence = list(
                         map(lambda c: c.tcp_state, connection)
                     )[-len(self.sequence) - 1 : -1]
