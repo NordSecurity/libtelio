@@ -4,7 +4,10 @@
 use crate::{local_interfaces::gather_local_interfaces, local_interfaces::GetIfAddrs};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use std::{io, sync::Arc};
+use std::{
+    io,
+    sync::{Arc, Weak},
+};
 use telio_utils::{telio_log_debug, telio_log_warn};
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 /// Sender to notify if there is a change in OS interface order
@@ -23,6 +26,12 @@ struct PausedState {
     is_path_change_enqueued: bool,
 }
 
+/// Trait which should be implemented to receive locall address change notifications
+pub trait LocalInterfacesObserver: Sync + Send {
+    /// Callback which allows to take certain actions when local interfaces changed
+    fn notify(&self);
+}
+
 #[derive(Debug)]
 /// Struct to monitor network
 pub struct NetworkMonitor {
@@ -34,15 +43,25 @@ pub struct NetworkMonitor {
     #[cfg(target_os = "windows")]
     monitor_handle: crate::windows::SafeHandle,
     paused_state: Arc<Mutex<PausedState>>,
+    local_interfaces_observers: Arc<Mutex<Vec<Weak<dyn LocalInterfacesObserver>>>>,
 }
 
-fn save_local_interfaces<G: GetIfAddrs>(get_if_addr: &G) {
+fn save_local_interfaces<G: GetIfAddrs>(get_if_addr: &G) -> bool {
     match gather_local_interfaces(get_if_addr) {
         Ok(v) => {
             telio_log_debug!("Updating local addr cache");
-            *(LOCAL_ADDRS_CACHE.lock()) = v;
+            let old_v = LOCAL_ADDRS_CACHE.lock().clone();
+            if old_v != v {
+                *(LOCAL_ADDRS_CACHE.lock()) = v;
+                true
+            } else {
+                false
+            }
         }
-        Err(e) => telio_log_warn!("Unable to get local interfaces {e}"),
+        Err(e) => {
+            telio_log_warn!("Unable to get local interfaces {e}");
+            false
+        }
     }
 }
 
@@ -77,6 +96,10 @@ impl NetworkMonitor {
         let paused_state = Arc::new(Mutex::new(PausedState::default()));
         save_local_interfaces(&get_if_addr);
 
+        let local_interfaces_observers =
+            Arc::new(Mutex::new(Vec::<Weak<dyn LocalInterfacesObserver>>::new()));
+        let observers_loop_copy = local_interfaces_observers.clone();
+
         let paused_state_copy = paused_state.clone();
         let if_cache_updater_handle = Some(tokio::spawn({
             let mut notify = PATH_CHANGE_BROADCAST.subscribe();
@@ -93,8 +116,12 @@ impl NetworkMonitor {
                                 is_paused
                             };
 
-                            if !is_paused {
-                                save_local_interfaces(&get_if_addr)
+                            if !is_paused && save_local_interfaces(&get_if_addr) {
+                                for observer in observers_loop_copy.lock().iter() {
+                                    if let Some(observer) = observer.upgrade() {
+                                        observer.notify();
+                                    }
+                                }
                             }
                         }
                         Err(e) => {
@@ -123,12 +150,18 @@ impl NetworkMonitor {
             #[cfg(any(target_os = "linux", target_os = "windows"))]
             monitor_handle,
             paused_state,
+            local_interfaces_observers,
         })
     }
 
     /// Start the pause of the network monitoring
     pub fn pause(&self) -> NetworkMonitorPausedGuard {
         NetworkMonitorPausedGuard::new(self.paused_state.clone())
+    }
+
+    /// Register a new listener of local addresses changes
+    pub fn register_local_interfaces_observer(&self, observer: Weak<dyn LocalInterfacesObserver>) {
+        self.local_interfaces_observers.lock().push(observer);
     }
 }
 

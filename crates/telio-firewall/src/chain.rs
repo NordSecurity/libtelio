@@ -299,7 +299,7 @@ pub mod tests {
         let pk = make_random_peer();
         let ctk = Conntrack::new(10, 1000);
 
-        // Test UDP with proper source
+        // Test UDP with matching source
         let pkt = make_udp("168.72.0.12:1234", "100.0.0.2:5678");
         let ip = unwrap_option_or_return!(Ipv4Packet::try_from(&pkt));
         assert!(src_filter.is_matching(
@@ -327,7 +327,7 @@ pub mod tests {
             LibfwDirection::LibfwDirectionOutbound
         ));
 
-        // Test UDP with proper destination
+        // Test UDP with matching destination
         let pkt = make_udp("100.0.0.2:5678", "168.72.0.12:1234");
         let ip = unwrap_option_or_return!(Ipv4Packet::try_from(&pkt));
         assert!(!src_filter.is_matching(
@@ -355,7 +355,7 @@ pub mod tests {
             LibfwDirection::LibfwDirectionOutbound
         ));
 
-        // Test UDP with proper source port
+        // Test UDP with matching source port
         let pkt = make_udp("168.72.0.12:1234", "168.72.0.12:10000");
         let ip = unwrap_option_or_return!(Ipv4Packet::try_from(&pkt));
         assert!(src_filter.is_matching(
@@ -383,7 +383,7 @@ pub mod tests {
             LibfwDirection::LibfwDirectionOutbound
         ));
 
-        // Test UDP with proper dst port
+        // Test UDP with matching dst port
         let pkt = make_udp("168.72.0.12:10000", "168.72.0.12:5678");
         let ip = unwrap_option_or_return!(Ipv4Packet::try_from(&pkt));
         assert!(!src_filter.is_matching(
