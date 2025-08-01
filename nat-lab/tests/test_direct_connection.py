@@ -175,7 +175,7 @@ async def _disable_direct_connection(env: Environment, reflexive_ips: List[str])
         for i, clients in enumerate(UHP_WORKING_PATHS_PARAMS)
     ],
 )
-@pytest.mark.timeout(timeouts.TEST_DIRECT_WORKING_PATHS_TIMEOUT)
+@pytest.mark.timeout(5)
 async def test_direct_working_paths(
     setup_params: List[SetupParameters], reflexive_ips: List[str]
 ) -> None:

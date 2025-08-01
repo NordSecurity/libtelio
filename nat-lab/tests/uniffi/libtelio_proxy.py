@@ -53,6 +53,7 @@ class LibtelioProxy:
 
     @move_to_async_thread
     def shutdown(self, container_or_vm_name: Optional[str] = None):
+        print(">>>> Proxy shutdown")
         try:
             with Proxy(self._uri) as remote:
                 remote.shutdown()

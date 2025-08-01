@@ -506,6 +506,9 @@ class Client:
         )
 
         async with AsyncExitStack() as exit_stack:
+            print(
+                ">>>> ", datetime.now(), " AsyncExitStack ", self._connection.tag
+            )
             await exit_stack.enter_async_context(make_tcpdump([self._connection]))
             if isinstance(self._connection, DockerConnection):
                 await self.clear_core_dumps()
@@ -556,6 +559,12 @@ class Client:
                         await self.set_meshnet_config(meshnet_config)
                     yield self
             finally:
+                print(
+                    ">>>> ",
+                    datetime.now(),
+                    " AsyncExitStack finally",
+                    self._connection.tag,
+                )
                 log.info(
                     "[%s] Test cleanup: Stopping tcpdump and collecting core dumps",
                     self._node.name,
