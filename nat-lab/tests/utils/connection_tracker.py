@@ -126,7 +126,8 @@ class ConnTrackerEventsValidator:
     """
 
     def find_conntracker_violations(
-        self, _: List[ConntrackerEvent],
+        self,
+        _: List[ConntrackerEvent]
     ) -> Optional[ConnTrackerViolation]:
         raise NotImplementedError("Not implemented error")
 
@@ -164,7 +165,8 @@ class ConnectionCountLimit(ConnTrackerEventsValidator):
         return f"ConnectionCountLimit(key: {self.key}, min_limit: {self.min_limit}, max_limit: {self.max_limit}, target: {self.target})"
 
     def find_conntracker_violations(
-        self, events: List[ConntrackerEvent],
+        self,
+        events: List[ConntrackerEvent]
     ) -> Optional[ConnTrackerViolation]:
         # We would like to return all connections, which are out of limits
         # Instead of just first one which happens to be in the list.
@@ -198,7 +200,13 @@ class TCPStateSequence(ConnTrackerEventsValidator):
     Note this validator allows for various TCP states on connections, but full sequence of states must *end* in specified sequence.
     """
 
-    def __init__(self, key: str, five_tuple: FiveTuple, sequence: List[TcpState], trailing_seq: Optional[TcpState] = None):
+    def __init__(
+        self,
+        key: str,
+        five_tuple: FiveTuple,
+        sequence: List[TcpState],
+        trailing_seq: Optional[TcpState] = None,
+    ):
         if five_tuple.protocol is None or five_tuple.protocol != "tcp":
             raise ValueError(
                 'TcpStateSequence validator is only available for "tcp" protocol five tuples'
@@ -218,7 +226,8 @@ class TCPStateSequence(ConnTrackerEventsValidator):
         return f"TCPStateSequence(key: {self.key}, five_tuple: {self.five_tuple}, sequence: {self.sequence})"
 
     def find_conntracker_violations(
-        self, events: List[ConntrackerEvent],
+        self,
+        events: List[ConntrackerEvent]
     ) -> Optional[ConnTrackerViolation]:
         # First we need to build a list of distinct connections matching FiveTuple
 
@@ -396,14 +405,11 @@ class ConnectionTracker:
 
         await self._synchronize()
 
-        return merge_results([
-            v.find_conntracker_violations(self._events)
-            for v in self._validators
-        ])
+        return merge_results(
+            [v.find_conntracker_violations(self._events) for v in self._validators]
+        )
 
-    async def wait_for_no_violations(
-        self,
-    ):
+    async def wait_for_no_violations(self):
         """Waits until there are no conntracker event violations. If unrecoverable event occures throws"""
         # The implementation is polling, which is probably not super efficient, but at least simple :)
         while True:
