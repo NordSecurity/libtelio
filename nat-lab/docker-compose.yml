@@ -447,11 +447,19 @@ services:
 
   openwrt-gw-01:
     hostname: openwrt-gw-01
-    <<: *common-gw
     build:
       context: .
       dockerfile: openwrt.Dockerfile
     entrypoint: /opt/bin/openwrt_docker_entrypoint.sh
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_forward=1
+    security_opt:
+      - no-new-privileges:true
     networks:
       internet:
         ipv4_address: 10.0.254.14
