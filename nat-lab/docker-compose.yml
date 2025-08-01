@@ -448,7 +448,9 @@ services:
   openwrt-gw-01:
     hostname: openwrt-gw-01
     <<: *common-gw
-    image: openwrt/rootfs:x86-64-openwrt-24.10
+    build:
+      context: .
+      dockerfile: openwrt.Dockerfile
     entrypoint: /opt/bin/openwrt_docker_entrypoint.sh
     networks:
       internet:
@@ -465,8 +467,6 @@ services:
     dns:
       - 10.0.80.82
       - 10.0.80.83
-    volumes:
-      - ./bin:/opt/bin/
 
   # Gateways which block udp traffic
   udp-block-gw-01:
