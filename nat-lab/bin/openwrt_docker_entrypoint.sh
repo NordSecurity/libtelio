@@ -10,7 +10,7 @@ mount | grep -E "/bin|/etc|/usr|/root"
 
 echo
 echo "==== Contents of /bin before OpenWrt init ===="
-ls -l /bin | head -20
+ls -L /bin | head -20
 
 echo "==== Opkg type ===="
 find / -type f -name 'opkg'
