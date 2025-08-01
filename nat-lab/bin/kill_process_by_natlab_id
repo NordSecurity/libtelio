@@ -7,6 +7,8 @@ fi
 
 NATLAB_ID=$1
 
+echo "Executing kill process by natlab id script"
+
 for pid in $(ps -e -o pid=); do
     if [[ -f "/proc/${pid}/environ" ]]; then
         if grep --null-data --text KILL_ID=${NATLAB_ID} /proc/${pid}/environ > /dev/null; then
