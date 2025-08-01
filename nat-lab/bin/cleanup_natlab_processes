@@ -4,11 +4,11 @@ echo "Executing natlab process cleanup script"
 
 for pid in $(ps -e -o pid=); do
     # Skip non-testing processes
-    if ! grep --null-data --text "KILL_ID" /proc/${pid}/environ; then
+    if ! grep --null-data --text "KILL_ID" /proc/${pid}/environ > /dev/null; then
         continue
     fi
 
-    if grep --null-data --text "DO_NOT_KILL" /proc/${pid}/environ; then
+    if grep --null-data --text "DO_NOT_KILL" /proc/${pid}/environ > /dev/null; then
         continue
     fi
 
