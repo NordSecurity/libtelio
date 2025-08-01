@@ -13,7 +13,7 @@ echo "==== Contents of /bin before OpenWrt init ===="
 ls -l /bin | head -20
 
 echo "==== Opkg type ===="
-find -type f -name 'opkg' && false
+find / -type f -name 'opkg'
 
 mkdir -p /var/lock
 
