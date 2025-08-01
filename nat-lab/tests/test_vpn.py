@@ -476,7 +476,7 @@ async def test_firewall_blacklist_tcp(ipv4: bool) -> None:
         ).run() as conntrack:
             serv_ip = serv_ip if ipv4 else "[" + serv_ip + "]"
             await alpha_connection.create_process(["curl", serv_ip]).execute()
-            await conntrack.wait_for_no_violations(TcpState.CLOSE)
+            await conntrack.wait_for_no_violations()
 
         async with ConnectionTracker(
             beta_connection,
