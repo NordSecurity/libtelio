@@ -53,6 +53,7 @@ class LibtelioProxy:
 
     @move_to_async_thread
     def shutdown(self, container_or_vm_name: Optional[str] = None):
+        print(">>>> Proxy shutdown")
         try:
             with Proxy(self._uri) as remote:
                 remote.shutdown()
@@ -61,7 +62,11 @@ class LibtelioProxy:
                 "Unknown" if container_or_vm_name is None else container_or_vm_name,
             )
 
-        except (Pyro5.errors.ConnectionClosedError, ConnectionRefusedError) as e:
+        except (
+            Pyro5.errors.ConnectionClosedError,
+            ConnectionRefusedError,
+            Pyro5.errors.CommunicationError,
+        ) as e:
             # Shutting down the server via client request is naturally racy,
             # as sending of response is racing against process shutdown (and
             # thus server-side socket being closed).

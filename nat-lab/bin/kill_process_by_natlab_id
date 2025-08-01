@@ -5,6 +5,8 @@ if [[ "$#" -ne 1 ]]; then
     exit 2
 fi
 
+echo "Executing kill process bu id script ID: ${NATLAB_ID}"
+
 NATLAB_ID=$1
 
 for pid in $(ps -e -o pid=); do
