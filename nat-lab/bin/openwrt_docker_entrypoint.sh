@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 
+echo "==== OS release ===="
+cat /etc/os-release
+
 echo "==== Mount table at container startup ===="
 mount
 
