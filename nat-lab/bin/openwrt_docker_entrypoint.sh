@@ -1,9 +1,14 @@
 #!/bin/sh
 set -e
 
-echo "==== OS release ===="
-cat /etc/os-release
+echo "IPK file debug info:"
+ls -lah /opt/bin/*.ipk
+file /opt/bin/*.ipk
+md5sum /opt/bin/*.ipk
+ar t /opt/bin/*.ipk || echo "ar extraction failed"
+head -c 256 /opt/bin/*.ipk | hexdump -C
 
-opkg install /opt/bin/nordvpn_*-r1_x86_64.ipk
+opkg --version
+uname -a
 
 exec sleep infinity
