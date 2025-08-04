@@ -14,6 +14,6 @@ head -c 256 /opt/bin/*.ipk | hexdump -C
 opkg --version
 uname -a
 
-opkg install /opt/bin/nordvpn_ee3967fc8f672aecf9ac6c3686964a62b0b70442-r1_x86_64.ipk -V4
+opkg install /opt/bin/nordvpn_ee3967fc8f672aecf9ac6c3686964a62b0b70442-r1_x86_64.ipk
 
 exec sleep infinity
