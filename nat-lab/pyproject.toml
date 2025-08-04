@@ -78,6 +78,7 @@ dependencies = [
     "virtualenv==20.26.2",
     "yarl==1.17.0",
     "pytest-shard>=0.1.2",
+    "aiofiles>=24.1.0",
 ]
 
 [tool.black]
