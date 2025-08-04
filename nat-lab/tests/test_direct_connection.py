@@ -180,6 +180,7 @@ async def test_direct_working_paths(
     setup_params: List[SetupParameters], reflexive_ips: List[str]
 ) -> None:
     async with AsyncExitStack() as exit_stack:
+        log.info("Setting up Mesh Nodes")
         env = await setup_mesh_nodes(exit_stack, setup_params)
 
         log.info("Test direct connection")
