@@ -180,13 +180,13 @@ async def test_direct_working_paths(
     setup_params: List[SetupParameters], reflexive_ips: List[str]
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        log.info("Setting up Mesh Nodes")
+        log.info("✅ Setting up Mesh Nodes")
         env = await setup_mesh_nodes(exit_stack, setup_params)
 
-        log.info("Test direct connection")
+        log.info("✅ Test direct connection")
         await _check_if_true_direct_connection(env)
         async with _disable_direct_connection(env, reflexive_ips):
-            log.info("Downgrade to relay connections")
+            log.info("✅ Downgrade to relay connections")
             await asyncio.gather(*[
                 await exit_stack.enter_async_context(
                     run_async_context(
@@ -200,7 +200,7 @@ async def test_direct_working_paths(
             ])
             await ping_between_all_nodes(env)
 
-        log.info("Reconnect to direct connections")
+        log.info("✅ Reconnect to direct connections")
         await asyncio.gather(*[
             await exit_stack.enter_async_context(
                 run_async_context(
@@ -213,10 +213,10 @@ async def test_direct_working_paths(
             if not client.is_node(node)
         ])
 
-        log.info("Test direct connection again")
+        log.info("✅ Test direct connection again")
         await _check_if_true_direct_connection(env)
 
-        log.info("Test direct connection on short connection loss")
+        log.info("✅ Test direct connection on short connection loss")
         possible_relay_events: Dict[Connection, Dict[Node, Any]] = defaultdict(dict)
         for (client, conn), node in itertools.product(
             zip(env.clients, env.connections), env.nodes
@@ -233,7 +233,7 @@ async def test_direct_working_paths(
                 )
             )
 
-        log.info("Disable direct connection and wait for ping timeouts")
+        log.info("✅ Disable direct connection and wait for ping timeouts")
         async with _disable_direct_connection(env, reflexive_ips):
 
             async def ping_timeout(connection, node):
@@ -270,7 +270,7 @@ async def test_direct_working_paths(
                 if not client.is_node(node)
             ])
 
-        log.info("Re-enable direct connection and wait for pings")
+        log.info("✅ Re-enable direct connection and wait for pings")
         await ping_between_all_nodes(env)
 
 

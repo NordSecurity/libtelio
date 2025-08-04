@@ -506,9 +506,7 @@ class Client:
         )
 
         async with AsyncExitStack() as exit_stack:
-            print(
-                ">>>> ", datetime.now(), " AsyncExitStack ", self._connection.tag
-            )
+            print(">>>> ", datetime.now(), " AsyncExitStack ", self._connection.tag)
             await exit_stack.enter_async_context(make_tcpdump([self._connection]))
             if isinstance(self._connection, DockerConnection):
                 await self.clear_core_dumps()
@@ -661,7 +659,7 @@ class Client:
         link_state: Optional[LinkState] = None,
         vpn_connection_error: Optional[VpnConnectionError] = None,
     ) -> None:
-        log.info(f"wait_for_state_peer {public_key}, {states}, {paths}")
+        log.debug("[%s]: wait for peer state %s %s %s", self._node.name, states, paths, link_state)
         await self.get_events().wait_for_state_peer(
             public_key,
             states,
@@ -680,7 +678,7 @@ class Client:
         timeout: Optional[float] = None,
     ) -> None:
         """Wait until a link_state event matching the `state` for `public_key` is available."""
-        log.info(f"wait_for_link_state {public_key}, {state}")
+        log.debug("[%s]: wait for link state %s",  self._node.name, state)
         await self.get_events().wait_for_link_state(
             public_key,
             state,

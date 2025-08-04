@@ -377,7 +377,7 @@ async def setup_mesh_nodes(
         setup_environment(exit_stack, instances, provided_api, prepare_vpn)
     )
 
-    log.info(" gather wait_for_state_on_any_derp")
+    log.debug("🧪 gather wait_for_state_on_any_derp")
     await asyncio.gather(*[
         client.wait_for_state_on_any_derp([RelayState.CONNECTED])
         for client, instance in zip_longest(env.clients, instances)
@@ -419,7 +419,7 @@ async def setup_mesh_nodes(
         if node != other_node and instance.features.link_detection is not None
     ])
 
-    log.info(" gather and peer state and link state")
+    log.debug("🧪 gather and peer state and link state")
     if is_timeout_expected:
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.gather(
@@ -432,7 +432,7 @@ async def setup_mesh_nodes(
             link_state_future,
         )
 
-    log.info(" gather and peer state and link state done")
+    log.debug("🧪 gather and peer state and link state done")
     return env
 
 
