@@ -192,14 +192,3 @@ def unset_cargo_dependencies():
             _write_file(
                 f"{PROJECT_ROOT}/crates/telio-lana/Cargo.toml", lana_cargo_contents
             )
-        if "moose" in lana_cargo_contents:
-            empty_features = re.search(r"\[features\]\nmo", lana_cargo_contents)
-            if empty_features:
-                lana_cargo_contents = re.sub(
-                    r"\n\[features\]\nmoose = \[\]\n", "", lana_cargo_contents
-                )
-            else:
-                lana_cargo_contents = re.sub(r"\nmoose.*\n", "\n", lana_cargo_contents)
-            _write_file(
-                f"{PROJECT_ROOT}/crates/telio-lana/Cargo.toml", lana_cargo_contents
-            )
