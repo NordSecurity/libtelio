@@ -3,7 +3,7 @@ set -e
 
 
 echo "Files in docker container:"
-RUN ls -l /opt/bin
+ls -l /opt/bin
 
 echo "IPK file debug info:"
 ls -lah /opt/bin/*.ipk
