@@ -1,10 +1,14 @@
 #!/bin/env python3
 
 import asyncio
+import blake3
+import base64
 import json
 import sys
+import uuid
 from pathlib import Path
 from aiohttp import web
+from cryptography.hazmat.primitives.asymmetric import x25519
 
 # Add protobuf directory to path for all tests
 # See: https://github.com/grpc/grpc/issues/29459#issuecomment-1652447028
@@ -20,12 +24,17 @@ from grpc_protobuf.ens_pb2_grpc import LoginServicer, ENSServicer, add_LoginServ
 error_event = asyncio.Event()
 error_ready = None
 
-class LoginServicerStub(LoginServicer):
-    async def GetChallenge(self, request, context):
-        print("GetChallenge", request, context)
-        return Challenge(challenge="foo")
+class GrpcStub(LoginServicer, ENSServicer):
+    def __init__(self):
+        self.challenges = set()
+        self.vpn_server_private_key = None
 
-class EnsServicerStub(ENSServicer):
+    async def GetChallenge(self, request, context):
+        challenge = uuid.uuid4()
+        print("GetChallenge", request, context, challenge)
+        self.challenges.add(challenge)
+        return Challenge(challenge=str(challenge))
+
     async def ConnectionErrors(self, request, context):
         print("ConnectionErrors", request, context)
         
@@ -38,6 +47,46 @@ class EnsServicerStub(ENSServicer):
             if error_ready:
                 yield ConnectionError(code=error_ready["code"], additional_info=error_ready["additional_info"])
             error_event.clear()
+
+class AuthenticationInterceptor(grpc.aio.ServerInterceptor):
+    def __init__(self, grpc_stub):
+        self.grpc_stub = grpc_stub
+
+    async def intercept_service(self, continuation, handler_call_details):
+        CONTEXT = "ens-auth"
+        def derive_key(context: bytes, secret: bytes) -> bytes:
+            return blake3.blake3(secret, derive_key_context=context).digest()
+
+        def keyed_hash(key: bytes, message: bytes) -> bytes:
+            return blake3.blake3(message, key=key).digest()
+
+        def authentication_tag(secret: bytes, message: bytes) -> bytes:
+            key = derive_key(CONTEXT, secret)
+            return keyed_hash(key, message)
+
+        if handler_call_details.method == "/ens.ENS/ConnectionErrors":
+            print("metadata: ", handler_call_details.invocation_metadata)
+            metadata = dict(handler_call_details.invocation_metadata)
+            auth_token = metadata.get('authentication')
+            assert auth_token
+
+            decoded_bytes = base64.b64decode(auth_token)
+            assert len(decoded_bytes) == 80
+            
+            client_public_key, challenge_uuid_bytes, received_authentication_tag = decoded_bytes[:32], decoded_bytes[32:48], decoded_bytes[48:]
+            challenge_uuid = uuid.UUID(bytes=challenge_uuid_bytes)
+            # This will rise KeyError when the key is not present:
+            self.grpc_stub.challenges.remove(challenge_uuid)
+            
+            client_public_key = x25519.X25519PublicKey.from_public_bytes(client_public_key)
+            global grpc_server
+            assert grpc_server.vpn_server_private_key
+            shared_secret = grpc_server.vpn_server_private_key.exchange(client_public_key)
+            authentication_tag = authentication_tag(shared_secret, decoded_bytes[:48])
+            assert authentication_tag == received_authentication_tag
+            
+        ret = await continuation(handler_call_details)
+        return ret
 
 async def handle_connection_error(request):
     try:
@@ -56,9 +105,20 @@ async def handle_connection_error(request):
     except json.JSONDecodeError:
         return web.json_response({"error": "Invalid JSON"}, status=400)
 
+async def handle_vpn_server_private_key(request):
+    data = await request.json()
+    print(f"got {data} on /api/vpn_server_private_key")
+    vpn_server_private_key = base64.b64decode(data["vpn_server_private_key"])
+    vpn_server_private_key = x25519.X25519PrivateKey.from_private_bytes(vpn_server_private_key)
+    global grpc_server
+    grpc_server.vpn_server_private_key = vpn_server_private_key
+    return web.json_response({})
+    
+
 async def start_http_server(host, port):
     app = web.Application()
     app.router.add_post('/api/connection_error', handle_connection_error)
+    app.router.add_post('/api/vpn_server_private_key', handle_vpn_server_private_key)
     
     runner = web.AppRunner(app)
     await runner.setup()
@@ -69,9 +129,12 @@ async def start_http_server(host, port):
     return runner
 
 async def start_grpc_server():
-    server = grpc.aio.server()
-    add_LoginServicer_to_server(LoginServicerStub(), server)
-    add_ENSServicer_to_server(EnsServicerStub(), server)
+    grpc_stub = GrpcStub()
+    auth_interceptor = AuthenticationInterceptor(grpc_stub)
+    server = grpc.aio.server(interceptors=[auth_interceptor])
+    
+    add_LoginServicer_to_server(grpc_stub, server)
+    add_ENSServicer_to_server(grpc_stub, server)
     server.add_insecure_port("[::]:993")
     print("Will start the ENS grpc service")
     await server.start()
@@ -82,6 +145,7 @@ async def main():
     http_runner = await start_http_server(host="0.0.0.0", port=8000)
     
     print("Starting ENS")
+    global grpc_server
     grpc_server = await start_grpc_server()
     
     try:
