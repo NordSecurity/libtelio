@@ -8,6 +8,7 @@ ls -l /opt/bin
 echo "IPK file debug info:"
 ls -lah /opt/bin/*.ipk
 md5sum /opt/bin/*.ipk
+sha256sum /opt/bin/*.ipk
 head -c 256 /opt/bin/*.ipk | hexdump -C
 
 opkg --version
