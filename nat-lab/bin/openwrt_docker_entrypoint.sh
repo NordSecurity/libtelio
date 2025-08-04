@@ -13,6 +13,6 @@ head -c 256 /opt/bin/*.ipk | hexdump -C
 opkg --version
 uname -a
 
-opkg install /opt/bin/rpcd-mod-wireguard_1_x86_64.ipk -V4
+opkg install /opt/bin/nordvpn_*_x86_64.ipk -V4
 
 exec sleep infinity
