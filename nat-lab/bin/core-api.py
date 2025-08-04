@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import base64
 import json
+import os
 import paho.mqtt.client as mqtt  # type: ignore # pylint: disable=import-error
 import random
 import ssl
@@ -9,7 +10,9 @@ from enum import Enum
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from itertools import count
+from mocked_core_api_servers_data import get_countries, get_servers
 from typing import Dict, Optional
+from urllib.parse import urlparse, parse_qs
 from uuid import uuid4
 
 DERP_SERVER = {
@@ -25,6 +28,7 @@ DERP_SERVER = {
 }
 
 CERTIFICATE_PATH = "/etc/ssl/server_certificate/test.pem"
+SERVER_PUBLIC_KEY_PATH = "/tmp/public_key_{country_id}.pub"
 
 MQTT_BROKER_HOST = "mqtt.nordvpn.com"
 MQTT_BROKER_PORT = 8883
@@ -46,6 +50,8 @@ class CoreApiErrorCode(Enum):
     INVALID_CREDENTIALS = 100104
     AUTHORIZATION_HEADER_NOT_PROVIDED = 100105
     AUTHORIZATION_HEADER_INVALID = 100106
+    RESOURCE_NOT_FOUND = 404
+    BAD_REQUEST = 400
 
 
 @dataclass
@@ -140,6 +146,9 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         self.server: CoreServer
         self.machines_path = "/v1/meshnet/machines"
         self.notifications_path = "/v1/notifications/tokens"
+        self.recommended_servers_path = "/v1/servers/recommendations"
+        self.countries_path = "/v1/countries"
+        self.public_key_path = "/test/public-key"
         super().__init__(request, client_address, server)
 
     def _set_headers(
@@ -242,6 +251,12 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         elif self.path.split("/")[-1] == "map":
             machine_id = self.path.split("/")[-2]
             self.handle_get_machine_map(machine_id)
+        elif self.path == self.countries_path:
+            self.handle_get_countries()
+        elif self.path.startswith(self.recommended_servers_path):
+            parsed_url = urlparse(self.path)
+            query_params = parse_qs(parsed_url.query)
+            self.handle_get_servers(query_params)
 
     def do_HEAD(self):
         self._set_headers()
@@ -257,6 +272,8 @@ class CoreApiHandler(BaseHTTPRequestHandler):
             self.handle_register_machine()
         elif self.path == self.notifications_path:
             self.handle_get_notifications_token()
+        elif self.path == self.public_key_path:
+            self.handle_public_key()
         else:
             print(f"unsupported endpoint '{self.path}'")
 
@@ -403,6 +420,69 @@ class CoreApiHandler(BaseHTTPRequestHandler):
             "expires_in": 60,
         }
         self._write_response(response, status_code=HTTPStatus.CREATED)
+
+    @requires_bearer_token
+    def handle_get_countries(self):
+        countries = get_countries()
+        self._write_response(countries)
+
+    @requires_bearer_token
+    def handle_get_servers(self, query_params):
+        print(f"Passed params: {query_params}")
+        filters = {}
+        for key, values in query_params.items():
+            if key.startswith("filters[") and key.endswith("]"):
+                filter_key = key[len("filters[") : -1]
+                assert (
+                    len(values) == 1
+                ), f"More than one value is passed for {filter_key}: {values}"
+                filters[filter_key] = values[0]
+        country_id = filters.get("country_id", 1)
+        if not os.path.isfile(SERVER_PUBLIC_KEY_PATH.format(country_id=country_id)):
+            self._send_error_response(
+                CoreApiErrorCode.RESOURCE_NOT_FOUND,
+                "There is no saved public key for server. "
+                "Use 'public-key' endpoint to save it first",
+                HTTPStatus.NOT_FOUND,
+            )
+            return
+        with open(
+            SERVER_PUBLIC_KEY_PATH.format(country_id=country_id), "r", encoding="utf-8"
+        ) as f:
+            public_key = f.read()
+        servers = get_servers(filters, public_key)
+        if not servers:
+            self._send_error_response(
+                CoreApiErrorCode.RESOURCE_NOT_FOUND,
+                "No vpn servers found for provided filters",
+                HTTPStatus.NOT_FOUND,
+            )
+            return
+        self._write_response([asdict(server) for server in servers])
+
+    @requires_bearer_token
+    def handle_public_key(self):
+        # That is a test endpoint to save server public key
+        # It is not a part of the official API
+        content_length = int(self.headers["Content-Length"])
+        post_data = self.rfile.read(content_length).decode("utf-8")
+        json_obj = json.loads(post_data)
+        pub_key = json_obj.get("public_key")
+        country_id = json_obj.get("country_id", 1)
+        if not pub_key:
+            self._send_error_response(
+                CoreApiErrorCode.BAD_REQUEST,
+                "Required field 'public_key' is missing",
+                HTTPStatus.BAD_REQUEST,
+            )
+            return
+        with open(
+            SERVER_PUBLIC_KEY_PATH.format(country_id=country_id), "w", encoding="utf-8"
+        ) as f:
+            f.write(pub_key)
+        self.send_response(HTTPStatus.CREATED)
+        self.end_headers()
+        self.wfile.write(b"Public key saved")
 
 
 def run(mqttc, port=443):
