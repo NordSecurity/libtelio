@@ -646,7 +646,7 @@ class Client:
         timeout: Optional[float] = None,
         link_state: Optional[LinkState] = None,
     ) -> None:
-        log.debug("[%s]: wait for peer state %s %s %s", self._node.name, states, paths, link_state)
+        log.debug("🔎 [%s]: wait for peer %s state %s %s %s", self._node.name, public_key, states, paths, link_state)
         await self.get_events().wait_for_state_peer(
             public_key,
             states,
@@ -664,7 +664,7 @@ class Client:
         timeout: Optional[float] = None,
     ) -> None:
         """Wait until a link_state event matching the `state` for `public_key` is available."""
-        log.debug("[%s]: wait for link state %s",  self._node.name, state)
+        log.debug("🔎 [%s]: wait for peer %s link state %s", self._node.name, public_key, state)
         await self.get_events().wait_for_link_state(
             public_key,
             state,
@@ -682,7 +682,7 @@ class Client:
     ) -> None:
         event_info = f"peer({public_key}) with states({states}), paths({paths}), is_exit={is_exit}, is_vpn={is_vpn}"
 
-        log.debug("[%s]: wait for peer event %s", self._node.name, event_info)
+        log.debug("🔎 [%s]: wait for peer event %s", self._node.name, event_info)
         await self.get_events().wait_for_event_peer(
             public_key,
             states,
