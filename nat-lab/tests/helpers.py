@@ -87,6 +87,10 @@ class Environment:
     connections: List[ConnectionManager]
     clients: List[Client]
 
+    def print_name_mapping(self):
+        for node, connection in zip(self.nodes, self.connections):
+            log.info("Node %s is running on %s", node.name, connection.connection.tag)
+
 
 def setup_api(node_params: List[Tuple[bool, IPStack]]) -> Tuple[API, List[Node]]:
     """Creates an API object with meshnet nodes according to a list of provided node parameters.
@@ -328,7 +332,9 @@ async def setup_environment(
         ),
     )
 
-    yield Environment(api, nodes, connection_managers, clients)
+    env = Environment(api, nodes, connection_managers, clients)
+    env.print_name_mapping()
+    yield env
 
     for conn_manager in connection_managers:
         if conn_manager.tracker:
