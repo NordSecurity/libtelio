@@ -661,7 +661,7 @@ class Client:
         link_state: Optional[LinkState] = None,
         vpn_connection_error: Optional[VpnConnectionError] = None,
     ) -> None:
-        log.info(" wait_for_state_peer", public_key, states, paths)
+        log.info(f"wait_for_state_peer {public_key}, {states}, {paths}")
         await self.get_events().wait_for_state_peer(
             public_key,
             states,
@@ -680,7 +680,7 @@ class Client:
         timeout: Optional[float] = None,
     ) -> None:
         """Wait until a link_state event matching the `state` for `public_key` is available."""
-        log.info(" wait_for_link_state", public_key, state)
+        log.info(f"wait_for_link_state {public_key}, {state}")
         await self.get_events().wait_for_link_state(
             public_key,
             state,
