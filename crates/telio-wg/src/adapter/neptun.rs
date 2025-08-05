@@ -70,9 +70,9 @@ impl NepTUN {
             protect: socket_pool,
             firewall_process_inbound_callback,
             firewall_process_outbound_callback,
-            skt_buffer_size: skt_buffer_size.map(|v| v as usize),
-            inter_thread_channel_size: inter_thread_channel_size.map(|v| v as usize),
-            max_inter_thread_batched_pkts: max_inter_thread_batched_pkts.map(|v| v as usize),
+            skt_buffer_size: skt_buffer_size.map(|v| v as u32),
+            // inter_thread_channel_size: inter_thread_channel_size.map(|v| v as usize),
+            // max_inter_thread_batched_pkts: max_inter_thread_batched_pkts.map(|v| v as usize),
         };
 
         let device = match tun {
