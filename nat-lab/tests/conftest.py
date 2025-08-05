@@ -37,8 +37,6 @@ RUNNER = asyncio.Runner()
 # pylint: disable=unnecessary-dunder-call
 SESSION_SCOPE_EXIT_STACK = RUNNER.run(AsyncExitStack().__aenter__())
 
-logging.basicConfig(level=logging.DEBUG)
-
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
     to_cancel = asyncio.tasks.all_tasks(loop)
