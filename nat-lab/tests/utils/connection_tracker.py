@@ -198,7 +198,13 @@ class TCPStateSequence(ConnTrackerEventsValidator):
     Note this validator allows for various TCP states on connections, but full sequence of states must *end* in specified sequence.
     """
 
-    def __init__(self, key: str, five_tuple: FiveTuple, sequence: List[TcpState]):
+    def __init__(
+        self,
+        key: str,
+        five_tuple: FiveTuple,
+        sequence: List[TcpState],
+        trailing_state: Optional[TcpState] = None,
+    ):
         if five_tuple.protocol is None or five_tuple.protocol != "tcp":
             raise ValueError(
                 'TcpStateSequence validator is only available for "tcp" protocol five tuples'
@@ -212,6 +218,7 @@ class TCPStateSequence(ConnTrackerEventsValidator):
         self.key = key
         self.five_tuple = five_tuple
         self.sequence = sequence
+        self.trailing_state = trailing_state
 
     def __repr__(self):
         return f"TCPStateSequence(key: {self.key}, five_tuple: {self.five_tuple}, sequence: {self.sequence})"
@@ -254,9 +261,16 @@ class TCPStateSequence(ConnTrackerEventsValidator):
         # Verify whether all conections end up with expected sequence of TCP states
         violations: list[Optional[ConnTrackerViolation]] = []
         for connection in sequences:
-            state_sequence = list(map(lambda c: c.tcp_state, connection))[
-                -len(self.sequence) :
-            ]
+            if self.trailing_state == connection[-1].tcp_state:
+                # Skip the trailing tcp state
+                state_sequence = list(map(lambda c: c.tcp_state, connection))[
+                    -len(self.sequence) - 1 : -1
+                ]
+            else:
+                state_sequence = list(map(lambda c: c.tcp_state, connection))[
+                    -len(self.sequence) :
+                ]
+
             if state_sequence != self.sequence:
                 violations.append(
                     ConnTrackerViolation(
