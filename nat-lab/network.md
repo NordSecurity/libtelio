@@ -190,10 +190,10 @@ graph LR
   subgraph openwrt-net-01[openwrt-net-01]
   direction LR
     openwrt-client-01("openwrt-client-01
-        192.168.115.2")
+        192.168.115.100")
     openwrt-gw-01(["openwrt-gw-01
         10.0.254.14
-        192.168.115.3"])
+        192.168.115.254"])
   end
 
   %% Node Connections
