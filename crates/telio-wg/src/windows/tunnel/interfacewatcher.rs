@@ -350,6 +350,10 @@ impl InterfaceWatcher {
             NotificationType
         );
 
+        if Row.is_null() {
+            return;
+        }
+
         let self_ptr = CallerContext as *mut InterfaceWatcher;
         if NotificationType == MibAddInstance {
             (*self_ptr).mib_add_instance(Row);
