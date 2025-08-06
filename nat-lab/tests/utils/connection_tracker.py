@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional, List, Dict, AsyncIterator
 from utils.connection import Connection
-from utils.connection_util import ConnectionTag
+from utils.connection.ssh_connection import SshConnection
 from utils.logger import log
 from utils.ping import ping
 from utils.process import Process
@@ -353,17 +353,7 @@ class ConnectionTracker:
         args = ["conntrack", "-E"]
         self._process: Process = connection.create_process(
             args,
-            term_type=(
-                "xterm"
-                if connection.tag
-                in [
-                    ConnectionTag.VM_MAC,
-                    ConnectionTag.VM_LINUX_NLX_1,
-                    ConnectionTag.VM_LINUX_FULLCONE_GW_1,
-                    ConnectionTag.VM_LINUX_FULLCONE_GW_2,
-                ]
-                else None
-            ),
+            term_type=("xterm" if isinstance(connection, SshConnection) else None),
             quiet=True,
         )
         self._connection: Connection = connection
