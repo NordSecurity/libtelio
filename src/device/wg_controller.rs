@@ -387,6 +387,7 @@ async fn consolidate_wg_peers<
     let actual_peers = wireguard_interface.get_interface().await?.peers;
     let mut is_any_peer_eligible_for_upgrade = false;
 
+    telio_log_debug!("⛔️ consolidate_wg_peers is_peer_proxying");
     for (_, peer) in actual_peers.iter() {
         if is_peer_proxying(peer, &proxy_endpoints) && peer.state() == NodeState::Connected {
             is_any_peer_eligible_for_upgrade = true;
@@ -435,6 +436,7 @@ async fn consolidate_wg_peers<
     let insert_keys = &requested_keys - &actual_keys;
     let update_keys = &requested_keys & &actual_keys;
 
+    telio_log_debug!("⛔️ consolidate_wg_peers delete_keys");
     for key in delete_keys {
         let actual_peer = actual_peers.get(key).ok_or(Error::PeerNotFound)?;
         telio_log_info!("Removing peer: {:?}", actual_peer);
@@ -457,6 +459,7 @@ async fn consolidate_wg_peers<
         }
     }
 
+    telio_log_debug!("⛔️ consolidate_wg_peers insert_keys");
     for key in insert_keys {
         telio_log_info!("Inserting peer: {:?}", requested_peers.get(key));
         let peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
@@ -489,6 +492,7 @@ async fn consolidate_wg_peers<
         }
     }
 
+    telio_log_debug!("⛔️ consolidate_wg_peers update_keys");
     for key in update_keys {
         let requested_peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
         let actual_peer = actual_peers.get(key).ok_or(Error::PeerNotFound)?;
