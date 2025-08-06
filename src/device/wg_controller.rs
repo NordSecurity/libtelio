@@ -74,6 +74,7 @@ pub async fn consolidate_wg_state(
     // implementations reporting time since last handshake differently) to
     // determine if the last handshake was done more than 180s ago (the time
     // after which wireguard abandons an inactive connection)
+    telio_log_debug!("⛔️ consolidate_wg_state");
     entities.postquantum_wg.maybe_restart().await;
 
     let remote_peer_states = if let Some(meshnet_entities) = entities.meshnet.left() {
@@ -90,7 +91,7 @@ pub async fn consolidate_wg_state(
     )
     .await?;
     consolidate_wg_fwmark(requested_state, &*entities.wireguard_interface).await?;
-    telio_log_debug!("⛔️consolidate_endpoint_invalidation");
+    telio_log_debug!("⛔️ consolidate_endpoint_invalidation 1");
     consolidate_endpoint_invalidation(
         &*entities.wireguard_interface,
         entities.meshnet.left().map(|m| &*m.proxy),
@@ -124,7 +125,7 @@ pub async fn consolidate_wg_state(
     )
     .boxed()
     .await?;
-    telio_log_debug!("⛔️ consolidate_endpoint_invalidation");
+    telio_log_debug!("⛔️ consolidate_endpoint_invalidation 2");
     consolidate_endpoint_invalidation(
         &*entities.wireguard_interface,
         entities.meshnet.left().map(|m| &*m.proxy),
@@ -154,6 +155,7 @@ pub async fn consolidate_wg_state(
         .as_ref()
         .map(|resolver| resolver.public_key());
 
+    telio_log_debug!("⛔️ consolidate_firewall");
     consolidate_firewall(
         requested_state,
         &*entities.firewall,
@@ -161,6 +163,8 @@ pub async fn consolidate_wg_state(
         dns_pubkey,
     )
     .await?;
+
+    telio_log_debug!("⛔️ consolidate_wg_state done");
     Ok(())
 }
 
@@ -266,7 +270,9 @@ async fn consolidate_endpoint_invalidation<W: WireGuard, P: Proxy, C: CrossPingC
     //        invalidation until the next consolidation cycle. This is undesirable,
     //        therefore endpoint invalidation checks should be run before *and*
     //        after WireGuard peer consolidation.
-
+    telio_log_debug!(
+            "⛔️consolidate_endpoint_invalidation ENTER"
+        );
     // Retreive some helper values
     let (proxy_endpoints, cpc, checked_endpoints) = match (proxy, cross_ping_check) {
         (Some(proxy), Some(cpc)) => (
@@ -339,7 +345,7 @@ async fn consolidate_endpoint_invalidation<W: WireGuard, P: Proxy, C: CrossPingC
     }
 
     telio_log_debug!(
-            "⛔️Considering endpoint invalidation DONE"
+            "⛔️consolidate_endpoint_invalidation DONE"
         );
 
     Ok(())
@@ -371,6 +377,7 @@ async fn consolidate_wg_peers<
     starcast_vpeer: Option<&Arc<StarcastPeer>>,
     features: &Features,
 ) -> Result {
+    telio_log_debug!("⛔️ consolidate_wg_peers ENTER");
     let proxy_endpoints = if let Some(p) = proxy {
         p.get_endpoint_map().await?
     } else {
@@ -611,6 +618,7 @@ async fn consolidate_wg_peers<
             actual_peer.time_since_last_handshake
         );
     }
+    telio_log_debug!("⛔️ consolidate_wg_peers DONE");
 
     Ok(())
 }
