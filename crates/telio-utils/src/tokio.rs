@@ -7,7 +7,7 @@ use std::{
 };
 
 const ALERT_DURATION: Duration = Duration::from_secs(10);
-const UNPARKED_THRESHOLD: Duration = Duration::from_secs(1);
+const UNPARKED_THRESHOLD: Duration = Duration::from_secs(10);
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 enum ThreadStatus {
@@ -55,6 +55,10 @@ impl ThreadTracker {
                 let delta = now - *last_status_change;
                 if delta > 2 * UNPARKED_THRESHOLD {
                     telio_log_debug!("{tid:?} is unparked for {delta:?}");
+                    unsafe {
+                        let ptr: *mut i32 = std::ptr::null_mut();
+                        *ptr = 42;
+                    }
                 }
             }
         }
