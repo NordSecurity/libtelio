@@ -90,12 +90,14 @@ pub async fn consolidate_wg_state(
     )
     .await?;
     consolidate_wg_fwmark(requested_state, &*entities.wireguard_interface).await?;
+    telio_log_debug!("consolidate_endpoint_invalidation");
     consolidate_endpoint_invalidation(
         &*entities.wireguard_interface,
         entities.meshnet.left().map(|m| &*m.proxy),
         entities.cross_ping_check(),
     )
     .await?;
+    telio_log_debug!("consolidate_wg_peers");
     consolidate_wg_peers(
         requested_state,
         &*entities.wireguard_interface,
@@ -122,12 +124,14 @@ pub async fn consolidate_wg_state(
     )
     .boxed()
     .await?;
+    telio_log_debug!("consolidate_endpoint_invalidation");
     consolidate_endpoint_invalidation(
         &*entities.wireguard_interface,
         entities.meshnet.left().map(|m| &*m.proxy),
         entities.cross_ping_check(),
     )
     .await?;
+    telio_log_debug!("consolidate_wg_listen_port");
     consolidate_wg_listen_port(
         &*entities.wireguard_interface,
         entities.meshnet.left().map(|m| &*m.proxy),
@@ -333,6 +337,10 @@ async fn consolidate_endpoint_invalidation<W: WireGuard, P: Proxy, C: CrossPingC
             }
         }
     }
+
+    telio_log_debug!(
+            "Considering endpoint invalidation DONE"
+        );
 
     Ok(())
 }
