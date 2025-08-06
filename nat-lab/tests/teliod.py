@@ -1,19 +1,36 @@
 import asyncio
+import base64
 import json
 import os
+import platform
 import re
 import time
-from config import LIBTELIO_BINARY_PATH_DOCKER
+import uuid
+from config import (
+    LIBTELIO_BINARY_PATH_DOCKER,
+    CORE_API_URL,
+    CORE_API_CA_CERTIFICATE_PATH,
+    CORE_API_BEARER_AUTHORIZATION_HEADER,
+    WG_SERVER,
+)
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum
+from helpers import send_https_request, setup_connections
+from mesh_api import API, Node
 from pathlib import Path
-from typing import AsyncIterator, List
-from utils.connection import Connection
+from test_core_api import clean_up_machines as clean_up_registered_machines_on_api
+from typing import AsyncIterator, Dict, List, Optional
+from utils.connection import Connection, ConnectionTag
 from utils.logger import log
 from utils.process import Process, ProcessExecError
 from utils.router import IPStack
 from utils.router.linux_router import LinuxRouter
+
+if platform.machine() != "x86_64":
+    import pure_wg as Key
+else:
+    from python_wireguard import Key  # type: ignore
 
 
 class TeliodObtainingIdentity(Exception):
@@ -30,6 +47,7 @@ class IfcConfigType(Enum):
 class Paths:
     exec_path: Path = Path(f"{LIBTELIO_BINARY_PATH_DOCKER}/teliod")
     config_dir: Path = Path("/etc/teliod")
+    local_data_dir: Path = Path("/root/.local/share")
     log_dir: Path = Path("/var/log")
     run_dir: Path = Path("/run")
 
@@ -52,8 +70,15 @@ class Paths:
     def lib_log(self) -> Path:
         return self.log_dir / "teliod_natlab.log"
 
+    @property
+    def teliod_local_data_dir(self) -> Path:
+        return self.local_data_dir / "teliod"
+
     def config_path(self, config_type: IfcConfigType = IfcConfigType.DEFAULT) -> Path:
         return self.config_dir / config_type.value
+
+    def device_identity_path(self) -> Path:
+        return self.teliod_local_data_dir / "data.json"
 
 
 class Command(list):
@@ -130,17 +155,42 @@ class Teliod:
         connection: Connection,
         exit_stack: AsyncExitStack,
         config: Config = Config(),
+        api: Optional[API] = None,
     ) -> None:
-        self._connection: Connection = connection
+        self._api: API = api if api is not None else API()
         self._exit_stack: AsyncExitStack = exit_stack
+        self.connection: Connection = connection
         self.config: Config = config
+
+    @classmethod
+    async def new(
+        cls, exit_stack: AsyncExitStack, config_type: IfcConfigType
+    ) -> "Teliod":
+        connection = (
+            await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
+        )[0].connection
+        await clean_up_registered_machines_on_api(connection, CORE_API_URL)
+
+        teliod = cls(connection, exit_stack, config=Config(config_type))
+
+        # VPN server keys are generated only at runtime.
+        if config_type in [
+            IfcConfigType.VPN_IPROUTE,
+            IfcConfigType.VPN_MANUAL,
+            IfcConfigType.VPN_IPROUTE_WITHOUT_ID,
+        ]:
+            await exit_stack.enter_async_context(
+                teliod.setup_vpn_public_key(str(WG_SERVER["public_key"]))
+            )
+
+        return teliod
 
     async def execute_command(
         self,
         cmd: Command,
     ) -> tuple[str, str]:
         try:
-            proc = await self._connection.create_process(cmd).execute()
+            proc = await self.connection.create_process(cmd).execute()
             stdout, stderr = proc.get_stdout(), proc.get_stderr()
             log.debug("'%s' stdout: '%s', stderr: '%s'", cmd, stdout, stderr)
             return stdout, stderr
@@ -153,7 +203,7 @@ class Teliod:
         cmd: Command,
     ) -> Process:
         proc = await self._exit_stack.enter_async_context(
-            self._connection.create_process(cmd).run()
+            self.connection.create_process(cmd).run()
         )
         return proc
 
@@ -196,6 +246,8 @@ class Teliod:
                     await self.remove_socket()
                 else:
                     log.info("Tried to quit but daemon is already not running")
+            finally:
+                await self.remove_identity_file()
 
     async def is_alive(self) -> bool:
         try:
@@ -229,7 +281,7 @@ class Teliod:
 
     async def kill(self) -> None:
         try:
-            await self._connection.create_process(
+            await self.connection.create_process(
                 ["killall", "-w", "-s", "SIGTERM", "teliod"]
             ).execute()
             assert (
@@ -241,14 +293,14 @@ class Teliod:
 
     async def remove_logs(self) -> None:
         for path in [self.config.paths.daemon_log, self.config.paths.lib_log]:
-            await self._connection.create_process(["rm", "-f", str(path)]).execute()
-            await self._connection.create_process(
+            await self.connection.create_process(["rm", "-f", str(path)]).execute()
+            await self.connection.create_process(
                 ["test", "!", "-f", str(path)]
             ).execute()
 
     async def socket_exists(self) -> bool:
         try:
-            await self._connection.create_process(
+            await self.connection.create_process(
                 ["test", "-e", str(self.config.paths.socket_file)]
             ).execute()
             return True
@@ -257,7 +309,7 @@ class Teliod:
             return False
 
     async def remove_socket(self):
-        await self._connection.create_process(
+        await self.connection.create_process(
             ["rm", "-f", str(self.config.paths.socket_file)]
         ).execute()
 
@@ -293,7 +345,7 @@ class Teliod:
         is set to 'manual' on the teliod config.
         This is not checked by this function. (TODO: LLT-6476)
         """
-        router = LinuxRouter(self._connection, IPStack.IPv4)
+        router = LinuxRouter(self.connection, IPStack.IPv4)
         try:
             router.set_interface_name("teliod")
             await router.setup_interface(ip_addresses)
@@ -306,3 +358,116 @@ class Teliod:
                 await router.delete_vpn_route()
             await router.delete_exit_node_route()
             await router.delete_interface()
+
+    @staticmethod
+    def generate_new_device_keys() -> Dict[str, str]:
+        (private_key, public_key) = Key.key_pair()
+        hw_identifier = uuid.uuid4()
+        return {
+            "private_key": str(private_key),
+            "public_key": str(public_key),
+            "hardware_identifier": str(hw_identifier),
+        }
+
+    async def register_device_on_core(
+        self, device_keys: Optional[Dict[str, str]] = None, dump_to_file=True
+    ) -> tuple[Node, Dict[str, str]]:
+        if device_keys is None:
+            device_keys = Teliod.generate_new_device_keys()
+
+        payload = {
+            "public_key": device_keys["public_key"],
+            "hardware_identifier": device_keys["hardware_identifier"],
+            "os": "linux",
+            "os_version": "teliod",
+        }
+        core_response = await send_https_request(
+            self.connection,
+            f"{CORE_API_URL}/v1/meshnet/machines",
+            "POST",
+            CORE_API_CA_CERTIFICATE_PATH,
+            data=str(payload).replace("'", '"'),
+            authorization_header=CORE_API_BEARER_AUTHORIZATION_HEADER,
+        )
+        assert core_response
+
+        device_id = {
+            "hw_identifier": device_keys["hardware_identifier"],
+            "private_key": list(base64.b64decode(device_keys["private_key"])),
+            "machine_identifier": core_response["identifier"],
+        }
+
+        device_id_json = json.dumps(device_id)
+        log.debug("Device ID: %s", device_id_json)
+
+        if dump_to_file:
+            await self.write_identity_file(device_id_json)
+
+        node: Node = self._api.register(
+            "teliod",
+            "teliod",
+            device_keys["private_key"],
+            device_keys["public_key"],
+            True,
+            IPStack.IPv4,
+            core_response["ip_addresses"],
+        )
+        self._api.prepare_all_vpn_servers()
+
+        return (node, device_id)
+
+    @asynccontextmanager
+    async def setup_vpn_public_key(self, key: str) -> AsyncIterator:
+        """
+        Because VPN server keys are generated only at runtime, this generator
+        function inserts them to the config file, reverting
+        back to 'public-key-placeholder' on _aexit_.
+        """
+        try:
+            await self.connection.create_process([
+                "sed",
+                "-i",
+                f's#"server_pubkey": .*#"server_pubkey": "{key}"#g',
+                str(self.config.path()),
+            ]).execute()
+            yield
+        finally:
+            await self.connection.create_process([
+                "sed",
+                "-i",
+                's#"server_pubkey": .*#"server_pubkey": "public-key-placeholder"#g',
+                str(self.config.path()),
+            ]).execute()
+
+    async def remove_identity_file(self):
+        try:
+            await self.connection.create_process([
+                "rm",
+                str(self.config.paths.device_identity_path()),
+            ]).execute()
+        except ProcessExecError as exc:
+            if "No such file or directory" in exc.stderr:
+                pass
+
+    async def write_identity_file(self, dev_identity_json: str) -> None:
+        # TODO: [LLT-6476] check if configurations need to provide a custom id file path.
+        # Otherwise just dump device_id_json directly on the default device identity path.
+        if self.config.config_type in [
+            IfcConfigType.VPN_IPROUTE,
+            IfcConfigType.VPN_MANUAL,
+        ]:
+            await self.connection.create_process(
+                ["mkdir", "-p", "/etc/teliod"]
+            ).execute()
+            await self.connection.create_process(
+                ["sh", "-c", f"echo '{dev_identity_json}' > /etc/teliod/data.json"]
+            ).execute()
+        else:
+            await self.connection.create_process(
+                ["mkdir", "-p", str(self.config.paths.teliod_local_data_dir)]
+            ).execute()
+            await self.connection.create_process([
+                "sh",
+                "-c",
+                f"echo '{dev_identity_json}' > {self.config.paths.device_identity_path()}",
+            ]).execute()
