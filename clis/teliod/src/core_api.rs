@@ -92,6 +92,7 @@ impl DeviceIdentity {
     /// A new key and hw id are generated, whereas the machine id is fetched from the
     /// API with a [1,180]s exponential backoff.
     pub async fn new(config: &TeliodDaemonConfig) -> Result<Self, Error> {
+        info!("Generating a new device identity..");
         let private_key = SecretKey::gen();
         let hw_identifier = uuid::Uuid::new_v4();
 
@@ -438,10 +439,11 @@ async fn update_machine(
         .await?
         .status();
 
-    if status == StatusCode::OK {
-        return Ok(());
+    if status.is_success() {
+        Ok(())
+    } else {
+        Err(Error::UpdateMachine(status))
     }
-    Err(Error::UpdateMachine(status))
 }
 
 pub async fn get_meshmap(
@@ -472,7 +474,6 @@ async fn register_machine(
     auth_token: &str,
     cert_path: &Option<PathBuf>,
 ) -> Result<MachineIdentifier, Error> {
-    info!("Registering machine");
     let client = http_client(cert_path);
     let response = client
         .post(format!("{API_BASE}/meshnet/machines"))
@@ -491,17 +492,20 @@ async fn register_machine(
         .await?;
 
     let status = response.status();
-    // Save the machine identifier received from API
-    if status == StatusCode::CREATED {
+    if status.is_success() {
         let response: Value = serde_json::from_str(&response.text().await?)?;
         if let Some(machine_identifier) = response.get("identifier").and_then(|i| i.as_str()) {
-            info!("Machine Registered!");
+            info!("Machine registered: {}", response);
             return Ok(machine_identifier.to_owned());
         } else {
             return Err(Error::InvalidResponse);
         }
     }
 
-    error!("Unable to register due to {:?}", response.text().await);
+    error!(
+        "Unable to register device, API returned: [{}] {:?}",
+        status,
+        response.text().await
+    );
     Err(Error::PeerRegistering(status))
 }
