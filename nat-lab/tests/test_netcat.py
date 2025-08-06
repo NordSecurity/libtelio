@@ -42,8 +42,8 @@ async def test_netcat(setup_params: list[SetupParameters], udp: bool) -> None:
         connection, client_connection, *_ = [
             conn.connection for conn in env.connections
         ]
-        server, _ = env.nodes
-        server_ip = server.ip_addresses[0]
+        server_node, _ = env.nodes
+        server_ip = server_node.ip_addresses[0]
 
         async with NetCatServer(
             connection, PORT, udp=udp, bind_ip=server_ip

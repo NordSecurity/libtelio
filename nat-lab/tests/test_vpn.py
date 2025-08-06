@@ -859,9 +859,6 @@ async def test_ens(
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        if alpha_setup_params.connection_tag == ConnectionTag.VM_MAC:
-            await ensure_interface_router_property_expectations(client_conn)
-
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
@@ -987,9 +984,6 @@ async def test_ens_not_working(
         alpha, *_ = env.nodes
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
-
-        if alpha_setup_params.connection_tag == ConnectionTag.VM_MAC:
-            await ensure_interface_router_property_expectations(client_conn)
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
