@@ -106,19 +106,17 @@ impl DeviceIdentity {
         .await
         {
             Ok(id) => id,
-            Err(e) => match e {
-                Error::DeviceNotFound => {
-                    info!("Unable to load identifier due to {e}. Registering ...");
-                    Box::pin(register_machine_with_exp_backoff(
-                        &hw_identifier.to_string(),
-                        private_key.public(),
-                        &config.authentication_token,
-                        &config.http_certificate_file_path,
-                    ))
-                    .await?
-                }
-                _ => return Err(e),
-            },
+            Err(Error::DeviceNotFound) => {
+                info!("Device not found, registering...");
+                Box::pin(register_machine_with_exp_backoff(
+                    &hw_identifier.to_string(),
+                    private_key.public(),
+                    &config.authentication_token,
+                    &config.http_certificate_file_path,
+                ))
+                .await?
+            }
+            Err(e) => return Err(e),
         };
 
         Ok(DeviceIdentity {
@@ -132,24 +130,21 @@ impl DeviceIdentity {
     /// Either the path is provided as parameter or hardcoded path
     /// is used.
     pub fn from_file(path: Option<&Path>) -> Result<DeviceIdentity, Error> {
-        info!("Fetching identity config");
-
         let path = path.unwrap_or(Self::device_identity_path()?);
 
         match std::fs::File::open(path) {
             Ok(file) => {
-                debug!("Found existing identity config {}", path.to_string_lossy());
+                info!("Found existing identity config {}", path.to_string_lossy());
                 serde_json::from_reader(file).map_err(Error::Deserialize)
             }
             Err(e) => {
-                warn!("Reading identity config failed: {e}");
+                info!("Reading identity config failed: {e}");
                 Err(Error::Io(e))
             }
         }
     }
 
-    // Write device identity to the corresponding file.
-    // File path is DEVICE_IDENTITY_FILE_PATH.
+    // Write device identity to file.
     pub fn write(&self) -> Result<(), Error> {
         // User has read/write but others have none
         // Mode for identity file rw-------
@@ -160,6 +155,10 @@ impl DeviceIdentity {
             .write(true)
             .open(Self::device_identity_path()?)?;
         serde_json::to_writer(&mut file, &self)?;
+        info!(
+            "Device identity written to {:?}",
+            Self::device_identity_path()?
+        );
         Ok(())
     }
 
@@ -318,10 +317,36 @@ async fn fetch_identifier_with_exp_backoff(
         match fetch_identifier_from_api(auth_token, cert_path, public_key).await {
             Ok(id) => return Ok(id),
             Err(e) => {
-                warn!(
-                    "Failed to fetch identifier due to {e:?}, will wait for {:?} and retry",
-                    backoff.get_backoff()
-                );
+                warn!("Failed to fetch identifier due to {e:?}.");
+                // More info on error handling: LLT-5553
+                match e {
+                    // Terminal errors
+                    Error::PeerRegistering(_)
+                    | Error::Decode(_)
+                    | Error::InvalidResponse
+                    | Error::UpdateMachine(_)
+                    | Error::ExpBackoffTimeout()
+                    | Error::NoDataLocalDir
+                    | Error::DeviceNotFound
+                    | Error::BackoffBounds(_)
+                    | Error::DeviceIdentityFileAccess => return Err(e),
+
+                    Error::FetchingIdentifier(status_code) => {
+                        if status_code == StatusCode::BAD_REQUEST
+                            || status_code == StatusCode::UNAUTHORIZED
+                            || status_code == StatusCode::FORBIDDEN
+                            || status_code == StatusCode::NOT_FOUND
+                        {
+                            return Err(e);
+                        }
+                        // Server errors (5xx) and other non-terminal errors
+                    }
+
+                    Error::Reqwest(_) | Error::Deserialize(_) | Error::Io(_) => {
+                        // Non-terminal errors
+                    }
+                }
+                warn!("Will wait for {:?} and retry", backoff.get_backoff());
                 wait_with_backoff_delay(&mut backoff, &mut retries).await?;
             }
         }
