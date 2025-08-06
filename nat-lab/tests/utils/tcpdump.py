@@ -272,7 +272,7 @@ async def make_tcpdump(
                 )
                 await conn.download(PCAP_FILE_PATH[conn.target_os], path)
 
-                if conn.target_os != TargetOS.Windows:
+                if conn.target_os in [TargetOS.Linux, TargetOS.Mac]:
                     await conn.create_process(
                         ["rm", "-f", PCAP_FILE_PATH[conn.target_os]], quiet=True
                     ).execute()
