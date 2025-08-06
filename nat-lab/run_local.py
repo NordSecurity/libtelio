@@ -188,7 +188,7 @@ def get_pytest_arguments(options) -> List[str]:
     if options.v:
         args.extend(["--capture=no"])
 
-    args.extend(["-k", "test_direct_working_paths[parameters_0"])
+    args.extend(["-k", "test_direct_working_paths[parameters_"])
     args.extend(["-x"])
 
     if options.m:
