@@ -1,4 +1,4 @@
-use crate::{telio_log_debug, telio_log_warn};
+use crate::{telio_log_debug, telio_log_warn, telio_log_error};
 use rustc_hash::FxHashMap;
 use std::{
     sync::Arc,
@@ -7,7 +7,7 @@ use std::{
 };
 
 const ALERT_DURATION: Duration = Duration::from_secs(10);
-const UNPARKED_THRESHOLD: Duration = Duration::from_secs(10);
+const UNPARKED_THRESHOLD: Duration = Duration::from_secs(1);
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 enum ThreadStatus {
@@ -55,10 +55,11 @@ impl ThreadTracker {
                 let delta = now - *last_status_change;
                 if delta > 2 * UNPARKED_THRESHOLD {
                     telio_log_debug!("{tid:?} is unparked for {delta:?}");
-                    unsafe {
-                        let ptr: *mut i32 = std::ptr::null_mut();
-                        *ptr = 42;
-                    }
+                    telio_log_error!("About to SEGFAULT");
+                    // unsafe {
+                    //     let ptr: *mut i32 = std::ptr::null_mut();
+                    //     *ptr = 42;
+                    // }
                 }
             }
         }
