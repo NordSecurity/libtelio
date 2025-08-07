@@ -28,6 +28,7 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ),
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "udp-block-client-01",
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "udp-block-client-02",
+    ConnectionTag.DOCKER_OPENWRT_CLIENT_1: "openwrt-client-01",
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: "internal-symmetric-client-01",
     ConnectionTag.DOCKER_CONE_GW_1: "cone-gw-01",
     ConnectionTag.DOCKER_CONE_GW_2: "cone-gw-02",
@@ -123,6 +124,11 @@ class DockerConnection(Connection):
             )
 
         await to_thread(aux)
+
+    async def upload_file(self, local_file_path: str, remote_file_path: str) -> None:
+        raise NotImplementedError(
+            "File upload is not implemented for Docker connection"
+        )
 
     def create_process(
         self, command: List[str], kill_id=None, term_type=None, quiet=False

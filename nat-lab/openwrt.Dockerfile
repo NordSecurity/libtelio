@@ -13,7 +13,6 @@ COPY data/core_api/test.pem /ipk-source/
 RUN mkdir -p /var/lib/qemu-image
 WORKDIR /var/lib/qemu-image
 
-
 RUN mkdir -p /var/lib/qemu && \
     gunzip -c openwrt-24.10.2-x86-64-generic-ext4-combined.img.gz > /var/lib/qemu/image.raw
 
@@ -24,7 +23,6 @@ RUN dd if=/dev/zero of=ipks.img bs=1M count=100 && \
 
 RUN mkdir -p /usr/local/share/vmconfig/container.d /usr/local/share/vmconfig/vm.d
 RUN mkdir -p /var/lib/vmconfig/container.d /var/lib/vmconfig/vm.d
-
 
 RUN ln -s /opt/bin/openwrt/10-usbmount-initsh.sh    /usr/local/share/vmconfig/vm.d/10-usbmount-initsh.sh && \
     ln -s /opt/bin/openwrt/20-firewall.sh           /usr/local/share/vmconfig/vm.d/20-firewall.sh && \
@@ -37,6 +35,9 @@ RUN ln -s /opt/bin/openwrt/10-usbmount-initsh.sh    /usr/local/share/vmconfig/vm
     ln -s /opt/bin/openwrt/run-vm.sh                /usr/local/bin/run-vm.sh && \
     ln -s /opt/bin/openwrt/entrypoint.sh            /usr/local/bin/entrypoint.sh && \
     ln -s /opt/bin/openwrt/container_net_setup.sh   /usr/local/bin/container_net_setup.sh
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD \
+ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=3 root@192.168.115.254 'exit' || exit 1
 
 WORKDIR /tmp
 
