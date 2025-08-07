@@ -673,7 +673,7 @@ async fn consolidate_firewall<F: Firewall>(
     dns_pubkey: Option<PublicKey>,
 ) -> Result {
     let from_keys_ports_whitelist: HashSet<PublicKey> =
-        firewall.get_port_whitelist().keys().copied().collect();
+        firewall.get_port_whitelist().into_keys().collect();
 
     // VPN peer must always be peer-whitelisted
     if let Some(exit_node) = &requested_state.exit_node {
