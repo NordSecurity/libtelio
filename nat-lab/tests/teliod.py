@@ -8,7 +8,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import AsyncIterator, List
+from typing import AsyncIterator, List, Optional
 from utils.connection import Connection
 from utils.logger import log
 from utils.process import Process, ProcessExecError
@@ -24,6 +24,7 @@ class IfcConfigType(Enum):
     DEFAULT = "config.json"
     VPN_MANUAL = "config_with_vpn_manual_setup.json"
     VPN_IPROUTE = "config_with_vpn_iproute_setup.json"
+    VPN_OPENWRT = "config_openwrt_setup.json"
 
 
 @dataclass(frozen=True)
@@ -65,23 +66,35 @@ class Command(list):
 
     @classmethod
     def start(cls, config: "Config") -> "Command":
-        cmd = [str(Paths.exec_path), "start"]
+        cmd = [str(config.paths.exec_path), "start"]
         if config.no_detach:
             cmd.append("--no-detach")
         cmd.append(str(config.path()))
         return cls(cmd)
 
     @classmethod
-    def is_alive(cls) -> "Command":
-        return cls([str(Paths.exec_path), "is-alive"])
+    def is_alive(cls, config: Optional["Config"] = None) -> "Command":
+        if config:
+            exec_path = str(config.paths.exec_path)
+        else:
+            exec_path = str(Paths.exec_path)
+        return cls([exec_path, "is-alive"])
 
     @classmethod
-    def get_status(cls) -> "Command":
-        return cls([str(Paths.exec_path), "get-status"])
+    def get_status(cls, config: Optional["Config"] = None) -> "Command":
+        if config:
+            exec_path = str(config.paths.exec_path)
+        else:
+            exec_path = str(Paths.exec_path)
+        return cls([exec_path, "get-status"])
 
     @classmethod
-    def quit_daemon(cls) -> "Command":
-        return cls([str(Paths.exec_path), "quit-daemon"])
+    def quit_daemon(cls, config: Optional["Config"] = None) -> "Command":
+        if config:
+            exec_path = str(config.paths.exec_path)
+        else:
+            exec_path = str(Paths.exec_path)
+        return cls([exec_path, "quit-daemon"])
 
 
 class Config:
