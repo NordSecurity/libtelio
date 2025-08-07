@@ -613,7 +613,7 @@ impl Firewall for StatefullFirewall {
     }
 
     fn get_port_whitelist(&self) -> HashMap<PublicKey, u16> {
-        self.whitelist.write().port_whitelist.clone()
+        self.whitelist.read().port_whitelist.clone()
     }
 
     fn clear_peer_whitelists(&self) {
