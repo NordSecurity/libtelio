@@ -692,6 +692,7 @@ async fn consolidate_firewall<F: Firewall>(
     starcast_vpeer_pubkey: Option<PublicKey>,
     dns_pubkey: Option<PublicKey>,
 ) -> Result {
+    telio_log_debug!("⛔️ consolidate_firewall ENTER");
     let from_keys_ports_whitelist: HashSet<PublicKey> =
         firewall.get_port_whitelist().keys().copied().collect();
 
@@ -712,6 +713,7 @@ async fn consolidate_firewall<F: Firewall>(
         .map(|p| p.public_key)
         .collect();
 
+    telio_log_debug!("⛔️ consolidate_firewall Permissions");
     // Upsert peer-whitelists
     for permission in Permissions::VALUES {
         upsert_peer_whitelist(requested_state, firewall, permission);
@@ -729,9 +731,11 @@ async fn consolidate_firewall<F: Firewall>(
     // Consolidate port-whitelist
     let delete_keys = &from_keys_ports_whitelist - &to_keys_ports_whitelist;
     let add_keys = &to_keys_ports_whitelist - &from_keys_ports_whitelist;
+    telio_log_debug!("⛔️ consolidate_firewall delete_keys");
     for key in delete_keys {
         firewall.remove_from_port_whitelist(key);
     }
+    telio_log_debug!("⛔️ consolidate_firewall add_keys");
     for key in add_keys {
         firewall.add_to_port_whitelist(key, FILE_SEND_PORT);
     }
@@ -742,6 +746,7 @@ async fn consolidate_firewall<F: Firewall>(
         // Save local node ip addresses
         firewall.set_ip_addresses(config.this.ip_addresses.clone().ok_or(Error::IpNotSet)?);
     }
+    telio_log_debug!("⛔️ consolidate_firewall DONE");
     Ok(())
 }
 
