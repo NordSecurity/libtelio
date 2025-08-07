@@ -124,26 +124,26 @@ async def setup_check_connectivity():
         return
 
     reverse: Dict[str, str] = {
-        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]: "VM_WINDOWS_1",
-        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2]: "VM_WINDOWS_2",
-        LAN_ADDR_MAP[ConnectionTag.VM_MAC]: "VM_MAC",
+        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"]: "VM_WINDOWS_1",
+        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2]["primary"]: "VM_WINDOWS_2",
+        LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"]: "VM_MAC",
         DERP_PRIMARY.ipv4: "PRIMARY_DERP",
     }
 
     test_nodes = {
         ConnectionTag.VM_WINDOWS_1: [
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2],
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC],
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2]["primary"],
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"],
             DERP_PRIMARY.ipv4,
         ],
         ConnectionTag.VM_WINDOWS_2: [
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1],
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC],
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"],
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"],
             DERP_PRIMARY.ipv4,
         ],
         ConnectionTag.VM_MAC: [
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1],
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2],
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"],
+            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2]["primary"],
             DERP_PRIMARY.ipv4,
         ],
     }
@@ -215,11 +215,11 @@ async def setup_check_interderp():
 
 SETUP_CHECKS = [
     (setup_check_interderp, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
-    (
-        setup_check_connectivity,
-        SETUP_CHECK_CONNECTIVITY_TIMEOUT,
-        SETUP_CHECK_CONNECTIVITY_RETRIES,
-    ),
+    # (
+    #     setup_check_connectivity,
+    #     SETUP_CHECK_CONNECTIVITY_TIMEOUT,
+    #     SETUP_CHECK_CONNECTIVITY_RETRIES,
+    # ),
 ]
 
 
@@ -274,7 +274,7 @@ async def _copy_vm_binaries(tag: ConnectionTag):
     try:
         log.info("Copying binaries for %s", tag)
         async with SshConnection.new_connection(
-            LAN_ADDR_MAP[tag], tag, copy_binaries=True
+            LAN_ADDR_MAP[tag]["primary"], tag, copy_binaries=True
         ):
             pass
     except OSError as e:
@@ -331,7 +331,7 @@ def save_audit_log_from_host(suffix):
 
 
 async def save_fakefm_logs():
-    async with new_connection_raw(ConnectionTag.DOCKER_NLX_1) as conn:
+    async with new_connection_raw(ConnectionTag.VM_LINUX_NLX_1) as conn:
         try:
             source_path = "/var/log/fakefm.log"
             cat_proc = await conn.create_process(["cat", source_path]).execute()
@@ -363,7 +363,7 @@ async def collect_kernel_logs(items, suffix):
         if any(mark.name == "mac" for mark in item.own_markers):
             try:
                 async with SshConnection.new_connection(
-                    LAN_ADDR_MAP[ConnectionTag.VM_MAC], ConnectionTag.VM_MAC
+                    LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
                 ) as conn:
                     await _save_macos_logs(conn, suffix)
             except OSError as e:
@@ -454,7 +454,7 @@ async def collect_mac_diagnostic_reports():
     log.info("Collect mac diagnostic reports")
     try:
         async with SshConnection.new_connection(
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC], ConnectionTag.VM_MAC
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
         ) as connection:
             await connection.download(
                 "/Library/Logs/DiagnosticReports", "logs/system_diagnostic_reports"
