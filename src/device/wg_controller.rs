@@ -696,6 +696,7 @@ async fn consolidate_firewall<F: Firewall>(
     let from_keys_ports_whitelist: HashSet<PublicKey> =
         firewall.get_port_whitelist().keys().copied().collect();
 
+    telio_log_debug!("⛔️ consolidate_firewall is_vpn_exit_node");
     // VPN peer must always be peer-whitelisted
     if let Some(exit_node) = &requested_state.exit_node {
         let is_vpn_exit_node =
@@ -706,6 +707,7 @@ async fn consolidate_firewall<F: Firewall>(
         }
     }
 
+    telio_log_debug!("⛔️ consolidate_firewall allow_peer_send_files");
     // Build a list of peers expected to be port-whitelisted according
     // to allow_peer_send_files permission
     let to_keys_ports_whitelist: HashSet<PublicKey> = iter_peers(requested_state)
@@ -719,11 +721,13 @@ async fn consolidate_firewall<F: Firewall>(
         upsert_peer_whitelist(requested_state, firewall, permission);
     }
 
+    telio_log_debug!("⛔️ consolidate_firewall starcast_vpeer_pubkey");
     if let Some(key) = starcast_vpeer_pubkey {
         firewall.add_to_peer_whitelist(key, Permissions::RoutingConnections);
         firewall.add_to_peer_whitelist(key, Permissions::IncomingConnections);
     }
 
+    telio_log_debug!("⛔️ consolidate_firewall dns_pubkey");
     if let Some(key) = dns_pubkey {
         firewall.add_to_peer_whitelist(key, Permissions::RoutingConnections);
     }
@@ -742,6 +746,7 @@ async fn consolidate_firewall<F: Firewall>(
 
     // Meshnet config can be None in the beginning when this method
     // is called.
+    telio_log_debug!("⛔️ consolidate_firewall meshnet_config");
     if let Some(config) = &requested_state.meshnet_config {
         // Save local node ip addresses
         firewall.set_ip_addresses(config.this.ip_addresses.clone().ok_or(Error::IpNotSet)?);
