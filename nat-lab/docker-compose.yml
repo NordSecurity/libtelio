@@ -617,17 +617,6 @@ services:
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
-  windows-gw-01: &windows-gw
-    hostname: windows-gw-01
-    <<: *common-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.15
-        priority: 1000
-      windows-net-01:
-        ipv4_address: 192.168.150.254
-        priority: 900
-
   openwrt-gw-01:
     hostname: openwrt-gw-01
     build:
@@ -658,6 +647,16 @@ services:
     dns:
       - 10.0.80.82
       - 10.0.80.83
+  windows-gw-01: &windows-gw
+    hostname: windows-gw-01
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.15
+        priority: 1000
+      windows-net-01:
+        ipv4_address: 192.168.150.254
+        priority: 900
   windows-gw-02:
     hostname: windows-gw-02
     <<: *common-gw
