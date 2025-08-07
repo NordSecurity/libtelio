@@ -303,7 +303,7 @@ class CoreApiHandler(BaseHTTPRequestHandler):
 
         req = MachineCreateRequest(**json_obj)
         node = self.add_node(req)
-        self._write_response(asdict(node))
+        self._write_response(asdict(node), HTTPStatus.CREATED)
 
     def add_node(self, req):
         uid = self.server.next_id()
