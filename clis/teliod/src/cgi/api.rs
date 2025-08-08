@@ -617,6 +617,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_get_logs_valid_files() {
         let dir = TempDir::new().unwrap();
         let log_dir_path = dir.path().to_path_buf();
@@ -644,6 +645,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_get_logs_missing_files() {
         let dir = TempDir::new().unwrap();
         let log_dir_path = dir.path().to_path_buf();
@@ -661,6 +663,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_get_logs_no_files() {
         let dir = TempDir::new().unwrap();
         let log_dir_path = dir.path().to_path_buf();
@@ -688,6 +691,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_missing_init_log() {
         let dir = TempDir::new().unwrap();
         let log_dir_path = dir.path().to_path_buf();
@@ -704,6 +708,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_missing_log_dir() {
         let dir = TempDir::new().unwrap();
         let log_dir_path = dir.path().to_path_buf();
@@ -723,6 +728,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_missing_all_logs() {
         let fake_init_log = Path::new("/made/up/init");
         let fake_stdout_log = Path::new("/made/up/stdout");
