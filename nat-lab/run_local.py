@@ -134,7 +134,7 @@ def main() -> int:
             "-vv",
             "--durations=0",
             f"--reruns={args.reruns}",
-            f"--count={args.count}",
+            "--count=40",
         ]
 
         pytest_cmd += [
@@ -188,11 +188,8 @@ def get_pytest_arguments(options) -> List[str]:
     if options.v:
         args.extend(["--capture=no"])
 
-    if options.k:
-        args.extend(["-k", options.k])
-
-    if options.x:
-        args.extend(["-x"])
+    args.extend(["-k", "test_direct_working_paths[parameters_"])
+    args.extend(["-x"])
 
     if options.m:
         args.extend(["-m", options.m])

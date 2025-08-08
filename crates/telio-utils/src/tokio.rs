@@ -1,4 +1,4 @@
-use crate::{telio_log_debug, telio_log_warn};
+use crate::{telio_log_debug, telio_log_warn, telio_log_error};
 use rustc_hash::FxHashMap;
 use std::{
     sync::Arc,
@@ -55,6 +55,11 @@ impl ThreadTracker {
                 let delta = now - *last_status_change;
                 if delta > 2 * UNPARKED_THRESHOLD {
                     telio_log_debug!("{tid:?} is unparked for {delta:?}");
+                    telio_log_error!("About to SEGFAULT");
+                    // unsafe {
+                    //     let ptr: *mut i32 = std::ptr::null_mut();
+                    //     *ptr = 42;
+                    // }
                 }
             }
         }

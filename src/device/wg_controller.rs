@@ -74,6 +74,7 @@ pub async fn consolidate_wg_state(
     // implementations reporting time since last handshake differently) to
     // determine if the last handshake was done more than 180s ago (the time
     // after which wireguard abandons an inactive connection)
+    telio_log_debug!("⛔️ consolidate_wg_state");
     entities.postquantum_wg.maybe_restart().await;
 
     let remote_peer_states = if let Some(meshnet_entities) = entities.meshnet.left() {
@@ -90,12 +91,14 @@ pub async fn consolidate_wg_state(
     )
     .await?;
     consolidate_wg_fwmark(requested_state, &*entities.wireguard_interface).await?;
+    telio_log_debug!("⛔️ consolidate_endpoint_invalidation 1");
     consolidate_endpoint_invalidation(
         &*entities.wireguard_interface,
         entities.meshnet.left().map(|m| &*m.proxy),
         entities.cross_ping_check(),
     )
     .await?;
+    telio_log_debug!("⛔️ consolidate_wg_peers");
     consolidate_wg_peers(
         requested_state,
         &*entities.wireguard_interface,
@@ -122,12 +125,14 @@ pub async fn consolidate_wg_state(
     )
     .boxed()
     .await?;
+    telio_log_debug!("⛔️ consolidate_endpoint_invalidation 2");
     consolidate_endpoint_invalidation(
         &*entities.wireguard_interface,
         entities.meshnet.left().map(|m| &*m.proxy),
         entities.cross_ping_check(),
     )
     .await?;
+    telio_log_debug!("⛔️ consolidate_wg_listen_port");
     consolidate_wg_listen_port(
         &*entities.wireguard_interface,
         entities.meshnet.left().map(|m| &*m.proxy),
@@ -150,6 +155,7 @@ pub async fn consolidate_wg_state(
         .as_ref()
         .map(|resolver| resolver.public_key());
 
+    telio_log_debug!("⛔️ consolidate_firewall");
     consolidate_firewall(
         requested_state,
         &*entities.firewall,
@@ -157,6 +163,8 @@ pub async fn consolidate_wg_state(
         dns_pubkey,
     )
     .await?;
+
+    telio_log_debug!("⛔️ consolidate_wg_state done");
     Ok(())
 }
 
@@ -262,7 +270,9 @@ async fn consolidate_endpoint_invalidation<W: WireGuard, P: Proxy, C: CrossPingC
     //        invalidation until the next consolidation cycle. This is undesirable,
     //        therefore endpoint invalidation checks should be run before *and*
     //        after WireGuard peer consolidation.
-
+    telio_log_debug!(
+            "⛔️consolidate_endpoint_invalidation ENTER"
+        );
     // Retreive some helper values
     let (proxy_endpoints, cpc, checked_endpoints) = match (proxy, cross_ping_check) {
         (Some(proxy), Some(cpc)) => (
@@ -334,6 +344,10 @@ async fn consolidate_endpoint_invalidation<W: WireGuard, P: Proxy, C: CrossPingC
         }
     }
 
+    telio_log_debug!(
+            "⛔️consolidate_endpoint_invalidation DONE"
+        );
+
     Ok(())
 }
 
@@ -363,6 +377,7 @@ async fn consolidate_wg_peers<
     starcast_vpeer: Option<&Arc<StarcastPeer>>,
     features: &Features,
 ) -> Result {
+    telio_log_debug!("⛔️ consolidate_wg_peers ENTER");
     let proxy_endpoints = if let Some(p) = proxy {
         p.get_endpoint_map().await?
     } else {
@@ -372,6 +387,7 @@ async fn consolidate_wg_peers<
     let actual_peers = wireguard_interface.get_interface().await?.peers;
     let mut is_any_peer_eligible_for_upgrade = false;
 
+    telio_log_debug!("⛔️ consolidate_wg_peers is_peer_proxying");
     for (_, peer) in actual_peers.iter() {
         if is_peer_proxying(peer, &proxy_endpoints) && peer.state() == NodeState::Connected {
             is_any_peer_eligible_for_upgrade = true;
@@ -420,6 +436,7 @@ async fn consolidate_wg_peers<
     let insert_keys = &requested_keys - &actual_keys;
     let update_keys = &requested_keys & &actual_keys;
 
+    telio_log_debug!("⛔️ consolidate_wg_peers delete_keys");
     for key in delete_keys {
         let actual_peer = actual_peers.get(key).ok_or(Error::PeerNotFound)?;
         telio_log_info!("Removing peer: {:?}", actual_peer);
@@ -442,6 +459,7 @@ async fn consolidate_wg_peers<
         }
     }
 
+    telio_log_debug!("⛔️ consolidate_wg_peers insert_keys");
     for key in insert_keys {
         telio_log_info!("Inserting peer: {:?}", requested_peers.get(key));
         let peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
@@ -474,6 +492,7 @@ async fn consolidate_wg_peers<
         }
     }
 
+    telio_log_debug!("⛔️ consolidate_wg_peers update_keys");
     for key in update_keys {
         let requested_peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
         let actual_peer = actual_peers.get(key).ok_or(Error::PeerNotFound)?;
@@ -603,6 +622,7 @@ async fn consolidate_wg_peers<
             actual_peer.time_since_last_handshake
         );
     }
+    telio_log_debug!("⛔️ consolidate_wg_peers DONE");
 
     Ok(())
 }
@@ -672,9 +692,11 @@ async fn consolidate_firewall<F: Firewall>(
     starcast_vpeer_pubkey: Option<PublicKey>,
     dns_pubkey: Option<PublicKey>,
 ) -> Result {
+    telio_log_debug!("⛔️ consolidate_firewall ENTER");
     let from_keys_ports_whitelist: HashSet<PublicKey> =
         firewall.get_port_whitelist().keys().copied().collect();
 
+    telio_log_debug!("⛔️ consolidate_firewall is_vpn_exit_node");
     // VPN peer must always be peer-whitelisted
     if let Some(exit_node) = &requested_state.exit_node {
         let is_vpn_exit_node =
@@ -685,6 +707,7 @@ async fn consolidate_firewall<F: Firewall>(
         }
     }
 
+    telio_log_debug!("⛔️ consolidate_firewall allow_peer_send_files");
     // Build a list of peers expected to be port-whitelisted according
     // to allow_peer_send_files permission
     let to_keys_ports_whitelist: HashSet<PublicKey> = iter_peers(requested_state)
@@ -692,16 +715,19 @@ async fn consolidate_firewall<F: Firewall>(
         .map(|p| p.public_key)
         .collect();
 
+    telio_log_debug!("⛔️ consolidate_firewall Permissions");
     // Upsert peer-whitelists
     for permission in Permissions::VALUES {
         upsert_peer_whitelist(requested_state, firewall, permission);
     }
 
+    telio_log_debug!("⛔️ consolidate_firewall starcast_vpeer_pubkey");
     if let Some(key) = starcast_vpeer_pubkey {
         firewall.add_to_peer_whitelist(key, Permissions::RoutingConnections);
         firewall.add_to_peer_whitelist(key, Permissions::IncomingConnections);
     }
 
+    telio_log_debug!("⛔️ consolidate_firewall dns_pubkey");
     if let Some(key) = dns_pubkey {
         firewall.add_to_peer_whitelist(key, Permissions::RoutingConnections);
     }
@@ -709,19 +735,23 @@ async fn consolidate_firewall<F: Firewall>(
     // Consolidate port-whitelist
     let delete_keys = &from_keys_ports_whitelist - &to_keys_ports_whitelist;
     let add_keys = &to_keys_ports_whitelist - &from_keys_ports_whitelist;
+    telio_log_debug!("⛔️ consolidate_firewall delete_keys");
     for key in delete_keys {
         firewall.remove_from_port_whitelist(key);
     }
+    telio_log_debug!("⛔️ consolidate_firewall add_keys");
     for key in add_keys {
         firewall.add_to_port_whitelist(key, FILE_SEND_PORT);
     }
 
     // Meshnet config can be None in the beginning when this method
     // is called.
+    telio_log_debug!("⛔️ consolidate_firewall meshnet_config");
     if let Some(config) = &requested_state.meshnet_config {
         // Save local node ip addresses
         firewall.set_ip_addresses(config.this.ip_addresses.clone().ok_or(Error::IpNotSet)?);
     }
+    telio_log_debug!("⛔️ consolidate_firewall DONE");
     Ok(())
 }
 

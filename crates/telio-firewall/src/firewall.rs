@@ -613,6 +613,7 @@ impl Firewall for StatefullFirewall {
     }
 
     fn get_port_whitelist(&self) -> HashMap<PublicKey, u16> {
+        telio_log_debug!("⛔️ get_port_whitelist");
         self.whitelist.write().port_whitelist.clone()
     }
 
