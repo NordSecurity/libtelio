@@ -10,4 +10,8 @@ opkg install /opt/bin/nordvpn_*_x86_64.ipk
 iptables-save -f iptables_backup
 ip6tables-save -f ip6tables_backup
 
+mkdir /var/run
+mkdir /var/log
+mkdir /run
+
 exec sleep infinity

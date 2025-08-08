@@ -35,7 +35,7 @@ class Paths:
     run_dir: Path = Path("/run")
 
     def __post_init__(self):
-        if os.environ.get("PYTEST_CURRENT_TEST"):
+        if os.environ.get("PYTEST_CURRENT_TEST") and "teliod" in self.exec_path.parts:
             if not self.exec_path.exists():
                 raise FileNotFoundError(
                     f"Teliod executable not found: {self.exec_path}"
@@ -212,7 +212,7 @@ class Teliod:
 
     async def is_alive(self) -> bool:
         try:
-            stdout, _ = await self.execute_command(Command.is_alive())
+            stdout, _ = await self.execute_command(Command.is_alive(self.config))
             return "Command executed successfully" in stdout
         except ProcessExecError as exc:
             if "Obtaining identity, ignoring" in exc.stdout:
@@ -226,7 +226,7 @@ class Teliod:
         return status
 
     async def quit(self) -> None:
-        stdout, stderr = await self.execute_command(Command.quit_daemon())
+        stdout, stderr = await self.execute_command(Command.quit_daemon(self.config))
         assert (
             "Command executed successfully" in stdout
         ), f"Failed to execute quit-daemon command: {stderr}"

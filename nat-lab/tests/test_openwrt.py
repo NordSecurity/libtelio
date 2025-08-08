@@ -5,7 +5,6 @@ from config import (
     PHOTO_ALBUM_IP,
     STUN_SERVER,
     CORE_API_URL,
-    CORE_API_CA_CERTIFICATE_PATH,
     CORE_API_BEARER_AUTHORIZATION_HEADER,
     LAN_ADDR_MAP,
 )
@@ -56,7 +55,7 @@ async def test_openwrt_vpn_connection() -> None:
             "-i",
             f's#"server_pubkey": .*#"server_pubkey": "{WG_SERVER["public_key"]}"#g',
             str(teliod.config.path()),
-        ]).execute()
+        ]).execute(privileged=True)
 
         # upload vpn public key to Core-Api server to be used in mocked data
         payload = json.dumps({"public_key": WG_SERVER["public_key"]})
@@ -64,9 +63,10 @@ async def test_openwrt_vpn_connection() -> None:
             gateway_connection,
             f"{CORE_API_URL}/test/public-key",
             "POST",
-            CORE_API_CA_CERTIFICATE_PATH,
+            "/etc/ssl/certs/test.pem",
             data=payload,
             authorization_header=CORE_API_BEARER_AUTHORIZATION_HEADER,
+            expect_response=False,
         )
 
         async with teliod.start():
@@ -98,4 +98,4 @@ async def test_openwrt_vpn_connection() -> None:
                 "-i",
                 's#"server_pubkey": .*#"server_pubkey": "public-key-placeholder"#g',
                 str(teliod.config.path()),
-            ]).execute()
+            ]).execute(privileged=True)
