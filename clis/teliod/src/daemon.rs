@@ -27,7 +27,7 @@ use crate::{
     comms::DaemonSocket,
     config::{NordToken, TeliodDaemonConfig, VpnConfig},
     core_api::{
-        get_meshmap as get_meshmap_from_server, init_with_api, DeviceIdentity,
+        get_meshmap, init_with_api, DeviceIdentity,
         Error as CoreApiError,
     },
     nc::NotificationCenter,
@@ -220,7 +220,7 @@ fn task_retrieve_meshmap(
     tx: mpsc::Sender<TelioTaskCmd>,
 ) {
     tokio::spawn(async move {
-        let result = get_meshmap_from_server(device_identity, &auth_token, &cert_path).await;
+        let result = get_meshmap(device_identity, &auth_token, &cert_path).await;
         match result {
             Ok(meshmap) => {
                 trace!("Meshmap {:#?}", meshmap);
@@ -355,12 +355,12 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
     let mut cmd_listener = CommandListener::new(socket, telio_tx.clone());
 
-    let identity_ptr = {
+    let identity = {
         let daemon_init_future = daemon_init(config.clone(), telio_tx.clone());
         pin_mut!(daemon_init_future);
         loop {
             select! {
-                init_values = &mut daemon_init_future => break init_values?,
+                device_identity = &mut daemon_init_future => break device_identity?,
                 res = cmd_listener.try_recv_quit() => {
                     match res {
                         Ok(_) => {
@@ -382,7 +382,7 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
 
     let tx_clone = telio_tx.clone();
     let mut telio_task_handle =
-        tokio::task::spawn_blocking(move || telio_task(identity_ptr, telio_rx, tx_clone, config));
+        tokio::task::spawn_blocking(move || telio_task(identity, telio_rx, tx_clone, config));
 
     info!("Entering event loop");
     loop {
