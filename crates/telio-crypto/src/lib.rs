@@ -31,6 +31,7 @@ use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 use telio_utils::Hidden;
+use x25519_dalek::x25519;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Secret, Public and Wireguard Preshared key size in bytes
@@ -51,6 +52,22 @@ pub const KEY_SIZE: usize = 32;
     ZeroizeOnDrop,
 )]
 pub struct SecretKey(Hidden<[u8; KEY_SIZE]>);
+
+/// ECDH shared secret
+#[derive(
+    Default,
+    Debug,
+    PartialOrd,
+    Ord,
+    PartialEq,
+    Eq,
+    Hash,
+    Clone,
+    Serialize,
+    Deserialize,
+    ZeroizeOnDrop,
+)]
+pub struct SharedSecret(Hidden<[u8; KEY_SIZE]>);
 
 /// Public key type
 #[derive(
@@ -193,12 +210,26 @@ impl SecretKey {
     pub fn into_bytes(self) -> [u8; 32] {
         self.0 .0
     }
+
+    /// Perform ECDH between self and other
+    pub fn ecdh(&self, other: &PublicKey) -> SharedSecret {
+        SharedSecret(Hidden(x25519(self.0 .0, other.0)))
+    }
 }
 
 impl PublicKey {
     /// Create new key from bytes
     pub const fn new(bytes: [u8; 32]) -> Self {
         Self(bytes)
+    }
+}
+
+impl SharedSecret {
+    /// Create new key from bytes
+    pub fn new(mut bytes: [u8; 32]) -> Self {
+        let ret = Self(Hidden(bytes));
+        bytes.zeroize();
+        ret
     }
 }
 
@@ -335,7 +366,7 @@ macro_rules! gen_common {
         gen_common!($($tt),+);
     };
 }
-gen_common!(SecretKey, PublicKey, PresharedKey);
+gen_common!(SecretKey, PublicKey, PresharedKey, SharedSecret);
 
 #[cfg(test)]
 mod tests {

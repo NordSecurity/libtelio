@@ -23,6 +23,7 @@ serde.workspace = true
 thiserror.workspace = true
 
 telio-utils.workspace = true
+x25519-dalek.workspace = true
 
 [dev-dependencies]
 bstr = "1.12"

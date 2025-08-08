@@ -2074,9 +2074,11 @@ impl Runtime {
         }
         if let Some(endpoint) = exit_node.endpoint {
             let vpn_ip = endpoint.ip();
+            let client_pk = self.get_private_key().await?;
             if let Some(ens) = self.entities.error_notification_service.as_mut() {
                 telio_log_info!("Starting ENS monitoring");
-                ens.start_monitor(vpn_ip, exit_node.public_key).await?;
+                ens.start_monitor(vpn_ip, exit_node.public_key, client_pk)
+                    .await?;
             }
         }
 

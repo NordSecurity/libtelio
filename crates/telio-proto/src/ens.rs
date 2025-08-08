@@ -1,8 +1,11 @@
-use std::{net::IpAddr, sync::Arc};
+use std::{net::IpAddr, str::FromStr, sync::Arc};
 
+use base64::prelude::{Engine, BASE64_STANDARD};
+use blake3::{derive_key, keyed_hash};
 use grpc::{ConnectionError, Empty};
 use http::Uri;
 use hyper_util::rt::TokioIo;
+use telio_crypto::{SecretKey, SharedSecret};
 use telio_model::PublicKey;
 use telio_sockets::SocketPool;
 use telio_task::io::{
@@ -11,8 +14,13 @@ use telio_task::io::{
 };
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
 use tokio::{select, sync::watch, task::JoinHandle};
-use tonic::transport::Endpoint;
+use tonic::{
+    metadata::AsciiMetadataValue,
+    transport::{Channel, Endpoint},
+    Request, Status,
+};
 use tower::service_fn;
+use uuid::Uuid;
 
 #[allow(missing_docs)]
 pub(crate) mod grpc {
@@ -34,7 +42,9 @@ pub(crate) mod grpc {
     }
 }
 
+const CONTEXT: &str = "ens-auth";
 const ENS_PORT: u16 = 993;
+const AUTHENTICATION_KEY: &str = "authentication";
 
 /// ENS errors
 #[derive(Debug, thiserror::Error)]
@@ -84,9 +94,10 @@ impl ErrorNotificationService {
     pub async fn start_monitor(
         &mut self,
         vpn_ip: IpAddr,
-        public_key: PublicKey,
+        vpn_public_key: PublicKey,
+        local_private_key: SecretKey,
     ) -> Result<(), Error> {
-        self.start_monitor_on_port(vpn_ip, ENS_PORT, public_key)
+        self.start_monitor_on_port(vpn_ip, ENS_PORT, vpn_public_key, local_private_key)
             .await
     }
 
@@ -95,6 +106,7 @@ impl ErrorNotificationService {
         vpn_ip: IpAddr,
         ens_port: u16,
         vpn_public_key: PublicKey,
+        local_private_key: SecretKey,
     ) -> Result<(), Error> {
         telio_log_info!("Will start ENS monitoring on {vpn_ip}:{ens_port} ({vpn_public_key:?})");
         self.stop().await;
@@ -112,6 +124,7 @@ impl ErrorNotificationService {
             if let Err(e) = Box::pin(task(
                 vpn_uri.clone(),
                 vpn_public_key,
+                local_private_key,
                 pool.clone(),
                 tx,
                 quit_rx,
@@ -157,51 +170,28 @@ impl ErrorNotificationService {
 async fn task(
     vpn_uri: String,
     vpn_public_key: PublicKey,
+    local_private_key: SecretKey,
     pool: Arc<SocketPool>,
     tx: Tx<(ConnectionError, PublicKey)>,
     mut quit_rx: watch::Receiver<bool>,
 ) -> anyhow::Result<()> {
     'outer: loop {
         let pool = pool.clone();
-        let channel = Endpoint::try_from(vpn_uri.clone())?
-            .connect_with_connector(service_fn(move |u: Uri| {
-                let pool = pool.clone();
-                async move {
-                    let socket = pool.new_external_tcp_v4(None)?;
-                    let h = match u.host() {
-                        Some(host) => host,
-                        None => {
-                            return Err(std::io::Error::new(
-                                std::io::ErrorKind::InvalidInput,
-                                "missing host in vpn uri",
-                            ))
-                        }
-                    };
-                    let p = match u.port_u16() {
-                        Some(port) => port,
-                        None => {
-                            return Err(std::io::Error::new(
-                                std::io::ErrorKind::InvalidInput,
-                                "missing port in vpn uri",
-                            ))
-                        }
-                    };
-                    Ok::<_, std::io::Error>(TokioIo::new(
-                        socket
-                            .connect(format!("{h}:{p}").parse().map_err(|e| {
-                                std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
-                            })?)
-                            .await?,
-                    ))
-                }
-            }))
-            .await?;
+        let external_channel = Box::pin(create_external_channel(&vpn_uri, pool)).await?;
 
-        let mut client = grpc::ens_client::EnsClient::new(channel);
+        let authenticated_challenge = get_login_challenge(
+            external_channel.clone(),
+            vpn_public_key,
+            local_private_key.clone(),
+        )
+        .await?;
 
-        let connection = client
-            .connection_errors(tonic::Request::<Empty>::new(Empty::default()))
-            .await?;
+        let mut client = grpc::ens_client::EnsClient::with_interceptor(
+            external_channel,
+            authentication_interceptor(authenticated_challenge),
+        );
+
+        let connection = client.connection_errors(Empty::default()).await?;
         let mut stream = connection.into_inner();
         loop {
             select! {
@@ -235,27 +225,115 @@ async fn task(
     Ok(())
 }
 
+async fn get_login_challenge(
+    external_channel: Channel,
+    vpn_public_key: PublicKey,
+    local_private_key: SecretKey,
+) -> anyhow::Result<AsciiMetadataValue> {
+    let mut login_client = grpc::login_client::LoginClient::new(external_channel);
+
+    let challenge_response = login_client.get_challenge(Empty::default()).await?;
+    let challenge = &challenge_response.get_ref().challenge;
+    let challenge = Uuid::from_str(challenge)?;
+    let shared_secret = local_private_key.ecdh(&vpn_public_key);
+
+    let mut authentication = vec![];
+    authentication.extend_from_slice(&local_private_key.public());
+    authentication.extend_from_slice(&challenge.into_bytes());
+    let authentication_tag = authentication_tag(shared_secret, &authentication);
+    authentication.extend_from_slice(&authentication_tag);
+    let authentication = BASE64_STANDARD.encode(&authentication);
+
+    Ok(AsciiMetadataValue::try_from(authentication)?)
+}
+
+fn authentication_interceptor(
+    authentication_value: AsciiMetadataValue,
+) -> impl FnMut(Request<()>) -> Result<Request<()>, Status> {
+    move |mut req: Request<()>| {
+        req.metadata_mut()
+            .insert(AUTHENTICATION_KEY, authentication_value.clone());
+        Ok(req)
+    }
+}
+
+async fn create_external_channel(vpn_uri: &str, pool: Arc<SocketPool>) -> anyhow::Result<Channel> {
+    Ok(Endpoint::try_from(vpn_uri.to_owned())?
+        .connect_with_connector(service_fn(move |u: Uri| {
+            let pool = pool.clone();
+            async move {
+                let socket = pool.new_external_tcp_v4(None)?;
+                let h = match u.host() {
+                    Some(host) => host,
+                    None => {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "missing host in vpn uri",
+                        ))
+                    }
+                };
+                let p = match u.port_u16() {
+                    Some(port) => port,
+                    None => {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "missing port in vpn uri",
+                        ))
+                    }
+                };
+                Ok::<_, std::io::Error>(TokioIo::new(
+                    socket
+                        .connect(format!("{h}:{p}").parse().map_err(|e| {
+                            std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
+                        })?)
+                        .await?,
+                ))
+            }
+        }))
+        .await?)
+}
+
+fn authentication_tag(secret: SharedSecret, message: &[u8]) -> [u8; 32] {
+    let key = derive_key(CONTEXT, &secret);
+    *keyed_hash(&key, message).as_bytes()
+}
+
 #[cfg(test)]
 mod tests {
 
-    use std::net::Ipv4Addr;
+    use std::{collections::HashSet, net::Ipv4Addr, sync::Mutex};
 
     use grpc::{
         ens_server::{self, EnsServer},
-        ConnectionError, Empty,
+        login_server::{self, LoginServer},
+        Challenge, ConnectionError, Empty,
     };
     use telio_crypto::SecretKey;
     use telio_sockets::NativeProtector;
     use tokio::sync::{mpsc, oneshot};
     use tokio_stream::wrappers::ReceiverStream;
-    use tonic::transport::Server;
+    use tonic::{service::Interceptor, transport::Server};
 
     use super::*;
 
-    struct TestENSService(Vec<ConnectionError>);
+    struct GrpcStub {
+        errors: Vec<ConnectionError>,
+        challenges: Mutex<HashSet<Uuid>>,
+        vpn_server_private_key: SecretKey,
+    }
+
+    impl GrpcStub {
+        fn new(errors: &[ConnectionError], vpn_server_private_key: SecretKey) -> Self {
+            Self {
+                errors: errors.to_vec(),
+                challenges: Mutex::new(HashSet::default()),
+                vpn_server_private_key,
+            }
+        }
+    }
 
     #[tonic::async_trait]
-    impl ens_server::Ens for TestENSService {
+    impl ens_server::Ens for Arc<GrpcStub> {
         type ConnectionErrorsStream = ReceiverStream<Result<ConnectionError, tonic::Status>>;
         async fn connection_errors(
             &self,
@@ -263,7 +341,7 @@ mod tests {
         ) -> std::result::Result<tonic::Response<Self::ConnectionErrorsStream>, tonic::Status>
         {
             let (tx, rx) = mpsc::channel(1);
-            let errors = self.0.clone();
+            let errors = self.errors.clone();
             tokio::spawn(async move {
                 for error in errors {
                     tx.send(Ok(error)).await.unwrap();
@@ -274,29 +352,88 @@ mod tests {
         }
     }
 
+    #[tonic::async_trait]
+    impl login_server::Login for Arc<GrpcStub> {
+        async fn get_challenge(
+            &self,
+            _request: tonic::Request<Empty>,
+        ) -> std::result::Result<tonic::Response<Challenge>, tonic::Status> {
+            let challenge = Uuid::new_v4();
+            self.challenges.lock().unwrap().insert(challenge);
+            Ok(tonic::Response::new(Challenge {
+                challenge: challenge.to_string(),
+            }))
+        }
+    }
+
+    #[derive(Clone)]
+    struct CheckAuthenticationInterceptor(Arc<GrpcStub>);
+
+    impl Interceptor for CheckAuthenticationInterceptor {
+        fn call(&mut self, req: Request<()>) -> Result<Request<()>, Status> {
+            match req.metadata().get(AUTHENTICATION_KEY) {
+                Some(t) => {
+                    let decoded = BASE64_STANDARD.decode(&t).unwrap();
+                    let (client_public_key, challenge_uuid, received_authentication_code) = (
+                        PublicKey::new(decoded[..32].try_into().unwrap()),
+                        Uuid::from_slice(&decoded[32..48]).unwrap(),
+                        &decoded[48..],
+                    );
+
+                    if let Some(_) = self.0.challenges.lock().unwrap().take(&challenge_uuid) {
+                        let secret = self.0.vpn_server_private_key.ecdh(&client_public_key);
+                        if received_authentication_code
+                            == authentication_tag(secret, &decoded[..48])
+                        {
+                            Ok(req)
+                        } else {
+                            Err(Status::unauthenticated("Challenge not authenticated"))
+                        }
+                    } else {
+                        Err(Status::unauthenticated("Unknown auth token"))
+                    }
+                }
+                _ => Err(Status::unauthenticated("No valid auth token")),
+            }
+        }
+    }
+
     #[tokio::test]
     #[test_log::test]
     async fn test_ens() {
-        let pk = SecretKey::gen().public();
+        let server_private_key = SecretKey::gen();
+        let server_public_key = server_private_key.public();
+        let client_private_key = SecretKey::gen();
+
         let errors_to_emit = vec![
             (
                 ConnectionError {
                     code: grpc::Error::Unknown as i32,
                     additional_info: None,
                 },
-                pk,
+                server_public_key,
             ),
             (
                 ConnectionError {
                     code: grpc::Error::ConnectionLimitReached as i32,
                     additional_info: Some("additional info".to_owned()),
                 },
-                pk,
+                server_public_key,
             ),
         ];
-        let srv = EnsServer::new(TestENSService(
-            errors_to_emit.iter().map(|(c, _)| c.clone()).collect(),
+        let grpc_stub = Arc::new(GrpcStub::new(
+            &errors_to_emit
+                .iter()
+                .map(|(c, _)| c.clone())
+                .collect::<Vec<_>>(),
+            server_private_key,
         ));
+        let ens_srv = EnsServer::with_interceptor(
+            grpc_stub.clone(),
+            CheckAuthenticationInterceptor(grpc_stub.clone()),
+        );
+        let login_srv = LoginServer::new(grpc_stub.clone());
+
         let (port_tx, port_rx) = oneshot::channel();
 
         tokio::spawn(async move {
@@ -305,7 +442,8 @@ mod tests {
             port_tx.send(actual_addr.port()).unwrap();
 
             Server::builder()
-                .add_service(srv)
+                .add_service(ens_srv)
+                .add_service(login_srv)
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
                 .await
                 .unwrap();
@@ -322,13 +460,23 @@ mod tests {
         ));
         let (mut ens, mut rx) = ErrorNotificationService::new(10, socket_pool);
 
-        ens.start_monitor_on_port(IpAddr::V4(Ipv4Addr::LOCALHOST), port, pk)
-            .await
-            .unwrap();
+        ens.start_monitor_on_port(
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            port,
+            server_public_key,
+            client_private_key.clone(),
+        )
+        .await
+        .unwrap();
         let _collected_errors = collect_errors(2, &mut rx).await;
-        ens.start_monitor_on_port(IpAddr::V4(Ipv4Addr::LOCALHOST), port, pk)
-            .await
-            .unwrap();
+        ens.start_monitor_on_port(
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            port,
+            server_public_key,
+            client_private_key,
+        )
+        .await
+        .unwrap();
 
         let collected_errors = collect_errors(2, &mut rx).await;
 
