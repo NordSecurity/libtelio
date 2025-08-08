@@ -16,7 +16,7 @@ from contextlib import AsyncExitStack
 from helpers import connectivity_stack
 from mesh_api import API, Node
 from pathlib import Path
-from telio import Client, copy_file, get_log_without_flush, find_files
+from telio import Client, copy_file, download_log_without_flush, find_files
 from typing import List, Optional
 from utils import testing, stun
 from utils.analytics import (
@@ -1958,12 +1958,8 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
 
             api.remove(beta.id)
         if os.environ.get("NATLAB_SAVE_LOGS") is not None:
-            log_content = await get_log_without_flush(connection_beta)
             log_dir = get_current_test_log_path()
-            os.makedirs(log_dir, exist_ok=True)
-            path = os.path.join(log_dir, "beta_before_restart.log")
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(log_content)
+            await download_log_without_flush(connection_beta, log_dir, "beta_before_restart.log")
             events_path = os.path.join(log_dir, "beta_before_restart.db")
             await get_moose_db_file(
                 connection_beta,

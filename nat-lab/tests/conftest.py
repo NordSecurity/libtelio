@@ -334,9 +334,8 @@ async def save_fakefm_logs():
     async with new_connection_raw(ConnectionTag.DOCKER_NLX_1) as conn:
         try:
             source_path = "/var/log/fakefm.log"
-            cat_proc = await conn.create_process(["cat", source_path]).execute()
-            with open(os.path.join("logs", "fakefm.log"), "w", encoding="utf-8") as f:
-                f.write(cat_proc.get_stdout())
+            local_path = os.path.join("logs", "fakefm.log")
+            await conn.download(source_path, local_path)
         except Exception as e:  # pylint: disable=broad-exception-caught
             print(f"An error occurred when processing fakefm log: {e}")
 
