@@ -43,7 +43,7 @@ impl ThreadTracker {
         {
             let delta = now - thread_last_status_change;
             if status == ThreadStatus::Parked && delta > UNPARKED_THRESHOLD {
-                telio_log_debug!("Thread {tid:?} was unparked for too long: {delta:?}");
+                telio_log_debug!("Thread {tid:?} was parked for too long: {delta:?}");
             }
         }
     }
