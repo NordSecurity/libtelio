@@ -60,6 +60,17 @@ Import-Module "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\Com
 Enter-VsDevShell -VsInstallPath "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community" -SkipAutomaticLocation
 ```
 
+#### Protocol buffers compiler
+1. Verify that protoc (Protocol buffers compiler has been installed in correct version (at least `3.21.12`):
+```shell
+protoc --version
+```
+Otherwise, run the following command to install it (or other appropriate for your system):
+```shell
+sudo apt update
+sudo apt install protobuf-compiler-grpc
+```
+
 ### Setting up Meshnet with tcli
 
 `tcli` is a simple shell created to test and discover the `libtelio` library capabilities.
