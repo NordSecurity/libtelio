@@ -509,6 +509,8 @@ services:
       - 10.0.80.83
     volumes:
       - ./data/core_api/test.pem:/etc/ssl/certs/test.pem
+    healthcheck:
+      test: "ls /ready"
 
   ###########################################################
   #                       MISC SERVERS                      #
