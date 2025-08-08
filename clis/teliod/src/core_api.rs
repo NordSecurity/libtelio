@@ -8,7 +8,6 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 use telio::crypto::SecretKey;
-use telio::telio_lana::telio_log_warn;
 use telio::telio_utils::exponential_backoff::{
     Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
 };
@@ -124,8 +123,8 @@ pub struct DeviceIdentity {
 
 impl DeviceIdentity {
     /// Generate a new device identity.
-    /// A new key and hw id are generated, whereas the machine id is fetched from the
-    /// API with a [1,180]s exponential backoff.
+    /// A new key and hw id are generated, whereas the machine id is got upon
+    /// registering the device from on the API with a [1,180]s exponential backoff.
     pub async fn new(config: &TeliodDaemonConfig) -> Result<Self, Error> {
         info!("Generating a new device identity..");
         let private_key = SecretKey::gen();
@@ -179,7 +178,7 @@ impl DeviceIdentity {
         }
     }
 
-    // Write device identity to file.
+    /// Write device identity to file.
     pub fn write(&self) -> Result<(), Error> {
         // User has read/write but others have none
         // Mode for identity file rw-------
@@ -197,6 +196,7 @@ impl DeviceIdentity {
         Ok(())
     }
 
+    /// Remove device identity file.
     pub fn remove_file() {
         if let Ok(path) = Self::device_identity_path() {
             match std::fs::remove_file(path) {
@@ -208,7 +208,7 @@ impl DeviceIdentity {
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                     debug!(
-                        "Device identity file not found at {} - nothing to remove",
+                        "Device identity file not found at {}, nothing to remove",
                         path.display()
                     );
                 }
@@ -234,6 +234,7 @@ impl DeviceIdentity {
         }
     }
 
+    /// Returns default device identity path based user's local data directory.
     fn device_identity_path() -> Result<&'static Path, Error> {
         DEVICE_IDENTITY_FILE_PATH
             .as_ref()
@@ -243,57 +244,6 @@ impl DeviceIdentity {
                 Error::DeviceIdentityFileAccess
             })
     }
-}
-
-fn build_backoff() -> Result<ExponentialBackoff, Error> {
-    let backoff_bounds = ExponentialBackoffBounds {
-        initial: Duration::from_secs(1),
-        maximal: Some(Duration::from_secs(180)),
-    };
-    Ok(ExponentialBackoff::new(backoff_bounds)?)
-}
-
-fn http_client(cert_path: &Option<PathBuf>) -> Client {
-    cert_path
-        .as_ref()
-        .and_then(|cert_path| {
-            File::open(cert_path)
-                .inspect_err(|err| {
-                    telio_log_warn!("Custom certificate file could not be opened: {err:?}")
-                })
-                .ok()
-        })
-        .and_then(|mut cert_file| {
-            let mut buf = Vec::new();
-            cert_file
-                .read_to_end(&mut buf)
-                .inspect_err(|err| {
-                    telio_log_warn!("Custom certificate file could not be read: {err:?}")
-                })
-                .ok()
-                .and_then(|_| {
-                    Certificate::from_pem(&buf)
-                        .inspect_err(|err| {
-                            telio_log_warn!("Custom certificate file could not be parsed: {err:?}")
-                        })
-                        .ok()
-                })
-        })
-        .and_then(|cert| {
-            telio_log_warn!(
-                "Using a self-signed certificate is unsafe and should generally be avoided"
-            );
-            Client::builder()
-                .add_root_certificate(cert)
-                .use_rustls_tls()
-                .danger_accept_invalid_certs(true)
-                .build()
-                .inspect_err(|err| {
-                    telio_log_warn!("Could not build http client with custom certificate: {err:?}")
-                })
-                .ok()
-        })
-        .unwrap_or_default()
 }
 
 pub async fn init_with_api(config: &TeliodDaemonConfig) -> Result<DeviceIdentity, Error> {
@@ -320,6 +270,10 @@ async fn update_machine_with_exp_backoff(
     cert_path: &Option<PathBuf>,
     device_identity: &DeviceIdentity,
 ) -> Result<(), Error> {
+    info!(
+        "Updating existing machine: {}",
+        device_identity.machine_identifier
+    );
     let mut backoff = build_backoff()?;
     let mut retries = 0;
 
@@ -341,6 +295,7 @@ async fn fetch_identifier_with_exp_backoff(
     cert_path: &Option<PathBuf>,
     public_key: PublicKey,
 ) -> Result<MachineIdentifier, Error> {
+    info!("Fetching machine identifier..");
     let mut backoff = build_backoff()?;
     let mut retries = 0;
 
@@ -363,6 +318,7 @@ async fn register_machine_with_exp_backoff(
     auth_token: &str,
     cert_path: &Option<PathBuf>,
 ) -> Result<MachineIdentifier, Error> {
+    info!("Registering machine..");
     let mut backoff = build_backoff()?;
     let mut retries = 0;
 
@@ -379,26 +335,11 @@ async fn register_machine_with_exp_backoff(
     }
 }
 
-async fn wait_with_backoff_delay(
-    backoff: &mut ExponentialBackoff,
-    retries: &mut usize,
-) -> Result<(), Error> {
-    tokio::time::sleep(backoff.get_backoff()).await;
-    if *retries > MAX_RETRIES {
-        return Err(Error::ExpBackoffTimeout());
-    }
-    backoff.next_backoff();
-    *retries += 1;
-
-    Ok(())
-}
-
 async fn fetch_identifier_from_api(
     auth_token: &str,
     cert_path: &Option<PathBuf>,
     public_key: PublicKey,
 ) -> Result<MachineIdentifier, Error> {
-    debug!("Fetching machine identifier");
     let client = http_client(cert_path);
     let response = client
         .get(format!("{API_BASE}/meshnet/machines"))
@@ -421,7 +362,6 @@ async fn fetch_identifier_from_api(
                     .is_eq()
                 {
                     if let Some(identifier) = node.get("identifier").and_then(|i| i.as_str()) {
-                        info!("Match found! Identifier: {}", identifier);
                         return Ok(identifier.to_owned());
                     }
                 }
@@ -430,8 +370,9 @@ async fn fetch_identifier_from_api(
         return Err(Error::DeviceNotFound);
     }
 
-    error!(
-        "Unable to fetch identifier due to {:?}",
+    debug!(
+        "Unable to fetch device identifier, API returned: [{}] {:?}",
+        status,
         response.text().await
     );
     Err(Error::FetchingIdentifier(status))
@@ -442,7 +383,6 @@ async fn update_machine(
     auth_token: &str,
     cert_path: &Option<PathBuf>,
 ) -> Result<(), Error> {
-    debug!("Updating machine");
     let client = http_client(cert_path);
     let response = client
         .patch(format!(
@@ -467,30 +407,13 @@ async fn update_machine(
     if status.is_success() {
         Ok(())
     } else {
+        debug!(
+            "Unable to update device, API returned: [{}] {:?}",
+            status,
+            response.text().await
+        );
         Err(Error::UpdateMachine(status))
     }
-}
-
-pub async fn get_meshmap(
-    device_identity: Arc<DeviceIdentity>,
-    auth_token: &str,
-    cert_path: &Option<PathBuf>,
-) -> Result<MeshMap, Error> {
-    debug!("Getting meshmap");
-    let client = http_client(cert_path);
-    Ok(serde_json::from_str(
-        &(client
-            .get(format!(
-                "{}/meshnet/machines/{}/map",
-                API_BASE, device_identity.machine_identifier
-            ))
-            .header(header::AUTHORIZATION, format!("Bearer token:{auth_token}"))
-            .header(header::ACCEPT, "application/json")
-            .send()
-            .await?
-            .text()
-            .await)?,
-    )?)
 }
 
 async fn register_machine(
@@ -527,10 +450,94 @@ async fn register_machine(
         }
     }
 
-    error!(
+    debug!(
         "Unable to register device, API returned: [{}] {:?}",
         status,
         response.text().await
     );
     Err(Error::PeerRegistering(status))
+}
+
+pub async fn get_meshmap(
+    device_identity: Arc<DeviceIdentity>,
+    auth_token: &str,
+    cert_path: &Option<PathBuf>,
+) -> Result<MeshMap, Error> {
+    debug!("Getting meshmap");
+    let client = http_client(cert_path);
+    Ok(serde_json::from_str(
+        &(client
+            .get(format!(
+                "{}/meshnet/machines/{}/map",
+                API_BASE, device_identity.machine_identifier
+            ))
+            .header(
+                header::AUTHORIZATION,
+                format!("Bearer token:{}", auth_token),
+            )
+            .header(header::ACCEPT, "application/json")
+            .send()
+            .await?
+            .text()
+            .await)?,
+    )?)
+}
+
+fn build_backoff() -> Result<ExponentialBackoff, Error> {
+    let backoff_bounds = ExponentialBackoffBounds {
+        initial: Duration::from_secs(1),
+        maximal: Some(Duration::from_secs(180)),
+    };
+    Ok(ExponentialBackoff::new(backoff_bounds)?)
+}
+
+async fn wait_with_backoff_delay(
+    backoff: &mut ExponentialBackoff,
+    retries: &mut usize,
+) -> Result<(), Error> {
+    tokio::time::sleep(backoff.get_backoff()).await;
+    if *retries > MAX_RETRIES {
+        return Err(Error::ExpBackoffTimeout());
+    }
+    backoff.next_backoff();
+    *retries += 1;
+
+    Ok(())
+}
+
+fn http_client(cert_path: &Option<PathBuf>) -> Client {
+    cert_path
+        .as_ref()
+        .and_then(|cert_path| {
+            File::open(cert_path)
+                .inspect_err(|err| warn!("Custom certificate file could not be opened: {err:?}"))
+                .ok()
+        })
+        .and_then(|mut cert_file| {
+            let mut buf = Vec::new();
+            cert_file
+                .read_to_end(&mut buf)
+                .inspect_err(|err| warn!("Custom certificate file could not be read: {err:?}"))
+                .ok()
+                .and_then(|_| {
+                    Certificate::from_pem(&buf)
+                        .inspect_err(|err| {
+                            warn!("Custom certificate file could not be parsed: {err:?}")
+                        })
+                        .ok()
+                })
+        })
+        .and_then(|cert| {
+            warn!("Using a self-signed certificate is unsafe and should generally be avoided");
+            Client::builder()
+                .add_root_certificate(cert)
+                .use_rustls_tls()
+                .danger_accept_invalid_certs(true)
+                .build()
+                .inspect_err(|err| {
+                    warn!("Could not build http client with custom certificate: {err:?}")
+                })
+                .ok()
+        })
+        .unwrap_or_default()
 }
