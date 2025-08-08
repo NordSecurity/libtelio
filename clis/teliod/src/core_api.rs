@@ -70,6 +70,41 @@ pub enum Error {
     DeviceIdentityFileAccess,
 }
 
+/// API error classification for retry logic: LLT-5553
+macro_rules! handle_api_error {
+    ($error:expr) => {
+        match $error {
+            // Terminal errors
+            Error::PeerRegistering(_)
+            | Error::Decode(_)
+            | Error::InvalidResponse
+            | Error::UpdateMachine(_)
+            | Error::ExpBackoffTimeout()
+            | Error::NoDataLocalDir
+            | Error::DeviceNotFound
+            | Error::BackoffBounds(_)
+            | Error::DeviceIdentityFileAccess => Err($error),
+
+            // Terminal HTTP status codes
+            Error::FetchingIdentifier(status_code) => {
+                if status_code == StatusCode::BAD_REQUEST
+                    || status_code == StatusCode::UNAUTHORIZED
+                    || status_code == StatusCode::FORBIDDEN
+                    || status_code == StatusCode::NOT_FOUND
+                {
+                    Err($error)
+                } else {
+                    // Server errors (5xx) and other non-terminal errors
+                    Ok(())
+                }
+            }
+
+            // Non-terminal errors
+            Error::Reqwest(_) | Error::Deserialize(_) | Error::Io(_) => Ok(()),
+        }
+    };
+}
+
 #[derive(Default, Serialize, Deserialize)]
 struct MeshConfig {
     public_key: PublicKey,
@@ -292,13 +327,9 @@ async fn update_machine_with_exp_backoff(
         match update_machine(device_identity, auth_token, cert_path).await {
             Ok(_) => return Ok(()),
             Err(e) => {
-                if let Error::UpdateMachine(_) = e {
-                    return Err(e);
-                }
-                warn!(
-                    "Failed to update machine due to {e}, will wait for {:?} and retry",
-                    backoff.get_backoff()
-                );
+                warn!("Failed to update machine due to {e:?}");
+                handle_api_error!(e)?;
+                warn!("Will wait for {:?} and retry", backoff.get_backoff());
                 wait_with_backoff_delay(&mut backoff, &mut retries).await?;
             }
         }
@@ -317,35 +348,8 @@ async fn fetch_identifier_with_exp_backoff(
         match fetch_identifier_from_api(auth_token, cert_path, public_key).await {
             Ok(id) => return Ok(id),
             Err(e) => {
-                warn!("Failed to fetch identifier due to {e:?}.");
-                // More info on error handling: LLT-5553
-                match e {
-                    // Terminal errors
-                    Error::PeerRegistering(_)
-                    | Error::Decode(_)
-                    | Error::InvalidResponse
-                    | Error::UpdateMachine(_)
-                    | Error::ExpBackoffTimeout()
-                    | Error::NoDataLocalDir
-                    | Error::DeviceNotFound
-                    | Error::BackoffBounds(_)
-                    | Error::DeviceIdentityFileAccess => return Err(e),
-
-                    Error::FetchingIdentifier(status_code) => {
-                        if status_code == StatusCode::BAD_REQUEST
-                            || status_code == StatusCode::UNAUTHORIZED
-                            || status_code == StatusCode::FORBIDDEN
-                            || status_code == StatusCode::NOT_FOUND
-                        {
-                            return Err(e);
-                        }
-                        // Server errors (5xx) and other non-terminal errors
-                    }
-
-                    Error::Reqwest(_) | Error::Deserialize(_) | Error::Io(_) => {
-                        // Non-terminal errors
-                    }
-                }
+                warn!("Failed to fetch identifier due to {e:?}");
+                handle_api_error!(e)?;
                 warn!("Will wait for {:?} and retry", backoff.get_backoff());
                 wait_with_backoff_delay(&mut backoff, &mut retries).await?;
             }
@@ -365,16 +369,12 @@ async fn register_machine_with_exp_backoff(
     loop {
         match register_machine(hw_identifier, public_key, auth_token, cert_path).await {
             Ok(id) => return Ok(id),
-            Err(e) => match e {
-                Error::PeerRegistering(_) => return Err(e),
-                _ => {
-                    warn!(
-                        "Failed to register machine due to {e}, will wait for {:?} and retry",
-                        backoff.get_backoff()
-                    );
-                    wait_with_backoff_delay(&mut backoff, &mut retries).await?;
-                }
-            },
+            Err(e) => {
+                warn!("Failed to register machine due to {e:?}");
+                handle_api_error!(e)?;
+                warn!("Will wait for {:?} and retry", backoff.get_backoff());
+                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
+            }
         }
     }
 }
@@ -408,7 +408,7 @@ async fn fetch_identifier_from_api(
         .await?;
 
     let status = response.status();
-    if status == StatusCode::OK {
+    if status.is_success() {
         let json_data: Value = serde_json::from_str(&response.text().await?)?;
 
         for node in json_data.as_array().ok_or(Error::InvalidResponse)? {
@@ -444,7 +444,7 @@ async fn update_machine(
 ) -> Result<(), Error> {
     debug!("Updating machine");
     let client = http_client(cert_path);
-    let status = client
+    let response = client
         .patch(format!(
             "{}/meshnet/machines/{}",
             API_BASE, device_identity.machine_identifier
@@ -461,9 +461,9 @@ async fn update_machine(
             traffic_routing_supported: true,
         })
         .send()
-        .await?
-        .status();
+        .await?;
 
+    let status = response.status();
     if status.is_success() {
         Ok(())
     } else {
