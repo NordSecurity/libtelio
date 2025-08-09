@@ -78,8 +78,7 @@ impl AuthorizationValidator for QnapUserAuthorization {
 
     async fn is_token_valid(sid: &str) -> Result<impl AuthorizationValidator, Error> {
         let url = format!(
-            "http://127.0.0.1:8080/cgi-bin/filemanager/utilRequest.cgi?func=check_sid&sid={}",
-            sid
+            "http://127.0.0.1:8080/cgi-bin/filemanager/utilRequest.cgi?func=check_sid&sid={sid}"
         );
         Ok(reqwest::get(&url).await?.json::<Self>().await?)
     }

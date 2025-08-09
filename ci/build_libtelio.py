@@ -44,7 +44,7 @@ QNAP_MAP = {
 }
 
 PROJECT_CONFIG = rutils.Project(
-    rust_version="1.85.0",
+    rust_version="1.89.0",
     root_dir=PROJECT_ROOT,
     working_dir=WORKING_DIR,
 )

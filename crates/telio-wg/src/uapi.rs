@@ -480,7 +480,7 @@ impl Display for Cmd {
             Cmd::Get => writeln!(f, "get=1"),
             Cmd::Set(interface) => {
                 writeln!(f, "set=1")?;
-                writeln!(f, "{}", interface)
+                writeln!(f, "{interface}")
             }
         }
     }
@@ -490,7 +490,7 @@ impl Display for Response {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self.errno {
             e if e != 0 => {
-                writeln!(f, "error={}", e)?;
+                writeln!(f, "error={e}")?;
             }
             _ => (),
         }

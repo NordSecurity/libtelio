@@ -126,7 +126,7 @@ impl ConfigureInterface for Ifconfig {
     fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), TeliodError> {
         let ip_string = ip_address.to_string();
         let cidr_suffix = if ip_address.is_ipv4() { "/10" } else { "/64" };
-        let cidr_string = format!("{}{}", ip_string, cidr_suffix);
+        let cidr_string = format!("{ip_address}{cidr_suffix}");
         let ip_type = if ip_address.is_ipv4() {
             "inet"
         } else {
@@ -303,7 +303,7 @@ impl ConfigureInterface for Iproute {
 
     fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), TeliodError> {
         let cidr_suffix = if ip_address.is_ipv4() { "/10" } else { "/64" };
-        let cidr_string = format!("{}{}", ip_address, cidr_suffix);
+        let cidr_string = format!("{ip_address}{cidr_suffix}");
 
         info!(
             "Assigning IP address for {} to {}",
@@ -515,7 +515,7 @@ impl Uci {
             } else {
                 let state = if enabled.is_true() { "1" } else { "0" };
                 debug!("Restoring network.wan.ipv6 to {state}");
-                execute(Command::new("uci").args(["set", &format!("network.wan.ipv6={}", state)]))?;
+                execute(Command::new("uci").args(["set", &format!("network.wan.ipv6={state}")]))?;
             }
         }
 
@@ -532,7 +532,7 @@ impl Uci {
                 let state = if disabled.is_true() { "1" } else { "0" };
                 debug!("Restoring network.wan6.disabled to {state}");
                 execute(
-                    Command::new("uci").args(["set", &format!("network.wan6.disabled={}", state)]),
+                    Command::new("uci").args(["set", &format!("network.wan6.disabled={state}")]),
                 )?;
             }
         }
@@ -609,9 +609,7 @@ impl ConfigureInterface for Uci {
         execute(Command::new("uci").args(["rename", "network.@route[-1]=teliod_route"]))?;
         execute(Command::new("uci").args(["set", "network.teliod_route.interface=tun"]))?;
         execute(Command::new("uci").args(["set", "network.teliod_route.target=0.0.0.0/0"]))?;
-        execute(
-            Command::new("uci").args(["set", &format!("network.teliod_route.table={}", table)]),
-        )?;
+        execute(Command::new("uci").args(["set", &format!("network.teliod_route.table={table}")]))?;
 
         execute(Command::new("uci").args(["add", "network", "route6"]))?;
         execute(Command::new("uci").args(["rename", "network.@route6[-1]=teliod_route6"]))?;
@@ -621,7 +619,7 @@ impl ConfigureInterface for Uci {
         execute(Command::new("uci").args(["add", "network", "rule"]))?;
         execute(Command::new("uci").args(["rename", "network.@rule[-1]=teliod_vpn_rule"]))?;
         execute(
-            Command::new("uci").args(["set", &format!("network.teliod_vpn_rule.lookup={}", table)]),
+            Command::new("uci").args(["set", &format!("network.teliod_vpn_rule.lookup={table}")]),
         )?;
         #[cfg(target_os = "linux")] // LIBTELIO_FWMARK is compile time flagged
         execute(Command::new("uci").args([
@@ -630,7 +628,7 @@ impl ConfigureInterface for Uci {
         ]))?;
         execute(Command::new("uci").args([
             "set",
-            &format!("network.teliod_vpn_rule.priority={}", vpn_rule_prio),
+            &format!("network.teliod_vpn_rule.priority={vpn_rule_prio}"),
         ]))?;
         execute(Command::new("uci").args(["set", "network.teliod_vpn_rule.invert=1"]))?;
         execute(Command::new("uci").args(["set", "network.teliod_vpn_rule.src=0.0.0.0/0"]))?;
@@ -645,7 +643,7 @@ impl ConfigureInterface for Uci {
         )?;
         execute(Command::new("uci").args([
             "set",
-            &format!("network.teliod_lan_rule.priority={}", lan_rule_prio),
+            &format!("network.teliod_lan_rule.priority={lan_rule_prio}"),
         ]))?;
 
         // Set firewall zones

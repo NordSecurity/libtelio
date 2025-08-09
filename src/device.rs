@@ -188,7 +188,7 @@ pub enum Error {
     #[error("Polling period cannot be zero")]
     PollingPeriodZero,
     #[error("Ens failure: {0:?}")]
-    EnsFailure(#[from] EnsError),
+    EnsFailure(#[from] Box<EnsError>),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -1584,7 +1584,7 @@ impl Runtime {
             // Insert wildcard for subdomains
             let wildcarded_peers: Records = peers
                 .iter()
-                .map(|(name, ip)| (format!("*.{}", name), ip.clone()))
+                .map(|(name, ip)| (format!("*.{name}"), ip.clone()))
                 .collect();
             peers.extend(wildcarded_peers);
 
@@ -2078,7 +2078,8 @@ impl Runtime {
             if let Some(ens) = self.entities.error_notification_service.as_mut() {
                 telio_log_info!("Starting ENS monitoring");
                 ens.start_monitor(vpn_ip, exit_node.public_key, client_pk)
-                    .await?;
+                    .await
+                    .map_err(Box::new)?;
             }
         }
 

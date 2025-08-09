@@ -743,14 +743,13 @@ impl Analytics {
                 }
 
                 // And if this state differs from the default state of the matrix, we add this to the final output
-                write!(
+                let _ = write!(
                     connectivity_matrix,
                     "{}:{}:{},",
                     i.1,
                     j.1,
                     min.connection_state.bits()
-                )
-                .expect("no");
+                );
             }
         }
         // Shave off the uneeded comma
@@ -847,7 +846,7 @@ impl Analytics {
     fn copy_nat_type(&self, nat_types: &mut Vec<String>, sorted_pk: BTreeSet<PublicKey>) {
         for pk in sorted_pk.iter() {
             if let Some(nat_type) = self.collection.nat_type_peers.get(pk) {
-                nat_types.push(format!("{:?}", nat_type));
+                nat_types.push(format!("{nat_type:?}"));
             };
         }
     }

@@ -52,7 +52,7 @@ mod darwin {
 
             let mut tun = TUN_INDEX
                 .lock()
-                .map_err(|_| io::Error::new(io::ErrorKind::Other, "TUN_INDEX lock failed"))?;
+                .map_err(|_| io::Error::other("TUN_INDEX lock failed"))?;
             *tun = Some(index);
         } else {
             telio_log_warn!("Tunnel file descriptor was not provided.");
@@ -69,7 +69,7 @@ mod darwin {
 
         let tun = TUN_INDEX
             .lock()
-            .map_err(|_| io::Error::new(io::ErrorKind::Other, "TUN_INDEX lock failed"))?;
+            .map_err(|_| io::Error::other("TUN_INDEX lock failed"))?;
         if let Some(index) = tun.as_ref() {
             setsockopt(sock, BindDeviceByIndex, index)?;
         } else {

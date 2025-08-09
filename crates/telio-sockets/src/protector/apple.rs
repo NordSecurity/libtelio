@@ -95,12 +95,7 @@ pub(crate) fn bind(interface_index: u32, native_socket: NativeSocket) -> io::Res
     let socket = socket2::SockRef::from(&socket);
     let interface_index: NonZeroU32 = match NonZeroU32::new(interface_index) {
         Some(index) => index,
-        None => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Invalid interface index",
-            ))
-        }
+        None => return Err(std::io::Error::other("Invalid interface index")),
     };
 
     if let Some(sock_addr) = getsockname::<SockaddrStorage>(native_socket)?.family() {
@@ -111,12 +106,7 @@ pub(crate) fn bind(interface_index: u32, native_socket: NativeSocket) -> io::Res
             AddressFamily::Inet6 => {
                 socket.bind_device_by_index_v6(Some(interface_index))?;
             }
-            _ => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Invalid IP family type",
-                ))
-            }
+            _ => return Err(std::io::Error::other("Invalid IP family type")),
         }
     }
 
@@ -427,7 +417,7 @@ fn get_primary_interface_names() -> Vec<String> {
     if let Some(service_order) = get_service_order(&store) {
         for service in service_order {
             let primary_service_dictionary = store
-                .get(format!("State:/Network/Service/{}/IPv4", service).as_str())
+                .get(format!("State:/Network/Service/{service}/IPv4").as_str())
                 .and_then(CFPropertyList::downcast_into::<CFDictionary>);
 
             if let Some(primary_service_dictionary) = primary_service_dictionary {

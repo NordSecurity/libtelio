@@ -19,7 +19,7 @@ impl CommandResponse {
 
     pub fn deserialize(input: &str) -> Result<CommandResponse, TeliodError> {
         serde_json::from_str::<CommandResponse>(input)
-            .map_err(|e| TeliodError::InvalidResponse(format!("{}", e)))
+            .map_err(|e| TeliodError::InvalidResponse(format!("{e}")))
     }
 }
 
@@ -112,8 +112,7 @@ impl CommandListener {
             Err(e) => {
                 connection
                     .respond(
-                        CommandResponse::Err(format!("Invalid command: {}", command_str))
-                            .serialize(),
+                        CommandResponse::Err(format!("Invalid command: {command_str}")).serialize(),
                     )
                     .await?;
                 Err(e.into())
@@ -132,7 +131,7 @@ impl CommandListener {
         } else {
             connection
                 .respond(
-                    CommandResponse::Err(format!("Invalid command: {}", command_str)).serialize(),
+                    CommandResponse::Err(format!("Invalid command: {command_str}")).serialize(),
                 )
                 .await?;
             Err(TeliodError::InvalidCommand(command_str))

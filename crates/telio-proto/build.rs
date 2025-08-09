@@ -10,7 +10,7 @@ use std::{
 fn main() -> Result<()> {
     let out_dir = format!(
         "{}/protos",
-        env::var("OUT_DIR").map_err(|err| Error::new(ErrorKind::Other, err.to_string()))?
+        env::var("OUT_DIR").map_err(|err| Error::other(err.to_string()))?
     );
     create_dir(Path::new(&out_dir)).or_else(|err| match err.kind() {
         ErrorKind::AlreadyExists => Ok(()),
@@ -29,13 +29,7 @@ fn main() -> Result<()> {
         .out_dir(out_dir)
         .run()?;
 
-    let mut config = tonic_build::Config::new();
-    config.protoc_arg("--experimental_allow_proto3_optional"); // This is needed for older protoc versions
-    tonic_build::configure().compile_protos_with_config(
-        config,
-        &["protos/ens.proto"],
-        &["protos"],
-    )?;
+    tonic_prost_build::configure().compile_protos(&["protos/ens.proto"], &["protos"])?;
 
     Ok(())
 }
