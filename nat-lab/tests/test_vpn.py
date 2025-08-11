@@ -857,6 +857,12 @@ async def test_ens(
 ) -> None:
     vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
     async with AsyncExitStack() as exit_stack:
+
+        await set_vpn_server_private_key(
+            vpn_conf.server_conf["ipv4"],
+            vpn_conf.server_conf["private_key"],
+        )
+
         alpha_setup_params.connection_tracker_config = (
             generate_connection_tracker_config(
                 alpha_setup_params.connection_tag,
@@ -905,24 +911,29 @@ async def test_ens(
 
 
 async def trigger_connection_error(vpn_ip, error_code, additional_info):
-
-    async def make_request(url, data):
-        def blocking_request():
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(data).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req) as response:
-                return json.loads(response.read().decode("utf-8"))
-
-        return await asyncio.to_thread(blocking_request)
-
     data = {"code": error_code, "additional_info": additional_info}
-
     url = f"http://{vpn_ip}:8000/api/connection_error"
     await make_request(url, data)
+
+
+async def set_vpn_server_private_key(vpn_ip, vpn_server_private_key):
+    data = {"vpn_server_private_key": vpn_server_private_key}
+    url = f"http://{vpn_ip}:8000/api/vpn_server_private_key"
+    await make_request(url, data)
+
+
+async def make_request(url, data):
+    def blocking_request():
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(data).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    return await asyncio.to_thread(blocking_request)
 
 
 @pytest.mark.parametrize(
@@ -985,6 +996,11 @@ async def test_ens_not_working(
 ) -> None:
     vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
     async with AsyncExitStack() as exit_stack:
+        await set_vpn_server_private_key(
+            vpn_conf.server_conf["ipv4"],
+            vpn_conf.server_conf["private_key"],
+        )
+
         alpha_setup_params.connection_tracker_config = (
             generate_connection_tracker_config(
                 alpha_setup_params.connection_tag,
