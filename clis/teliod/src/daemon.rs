@@ -46,8 +46,6 @@ pub enum TelioTaskCmd {
     Quit,
 }
 
-const EMPTY_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-
 #[derive(Debug, Default)]
 pub struct TelioTaskStates {
     interface_ip_address: Option<IpAddr>,
@@ -81,131 +79,126 @@ fn telio_task(
         .config_provider
         .create(config.interface.name.clone());
 
-    // TODO: This is temporary to be removed later on when we have proper integration
-    // tests with core API. This is to not look for tokens in a test environment
-    // right now as the values are dummy and program will not run as it expects
-    // real tokens.
-    if !config.authentication_token.is_empty() {
-        start_telio(
-            &mut telio,
-            node_identity.private_key.clone(),
-            &config.interface.name,
-            config.adapter_type.to_owned(),
-        )?;
-        sys_config.initialize()?;
-        task_retrieve_meshmap(
-            node_identity,
-            config.http_certificate_file_path.clone(),
-            config.authentication_token.clone(),
-            tx_channel.clone(),
-        );
+    start_telio(
+        &mut telio,
+        node_identity.private_key.clone(),
+        &config.interface.name,
+        config.adapter_type.to_owned(),
+    )?;
+    sys_config.initialize()?;
+    task_retrieve_meshmap(
+        node_identity,
+        config.http_certificate_file_path.clone(),
+        config.authentication_token.clone(),
+        tx_channel.clone(),
+    );
 
-        while let Some(cmd) = rx_channel.blocking_recv() {
-            trace!("TelioTask got command {:?}", cmd);
-            match cmd {
-                TelioTaskCmd::UpdateMeshmap(map) => {
-                    let some_new_ip_address = map
-                        .ip_addresses
-                        .as_deref()
-                        .and_then(|addresses| addresses.first().cloned());
-                    match telio.set_config(&Some(map)) {
-                        Ok(_) => {
-                            debug!("meshnet map set successfully");
-                            // configure the interface ip address
-                            if let Some(new_ip_address) = some_new_ip_address {
-                                task_set_ip(new_ip_address, tx_channel.clone());
-                            }
-                        }
-                        Err(e) => {
-                            error!("Unable to set meshmap due to {e}");
+    while let Some(cmd) = rx_channel.blocking_recv() {
+        trace!("TelioTask got command {:?}", cmd);
+        match cmd {
+            TelioTaskCmd::UpdateMeshmap(map) => {
+                let some_new_ip_address = map
+                    .ip_addresses
+                    .as_deref()
+                    .and_then(|addresses| addresses.first().cloned());
+                match telio.set_config(&Some(map)) {
+                    Ok(_) => {
+                        debug!("meshnet map set successfully");
+                        // configure the interface ip address
+                        if let Some(new_ip_address) = some_new_ip_address {
+                            task_set_ip(new_ip_address, tx_channel.clone());
                         }
                     }
+                    Err(e) => {
+                        error!("Unable to set meshmap due to {e}");
+                    }
                 }
-                TelioTaskCmd::GetStatus(response_tx_channel) => {
-                    let external_nodes = telio.external_nodes()?;
-                    // Find the identifier of the exit node (VPN server or meshnet peer), if present.
-                    let exit_node = external_nodes
-                        .iter()
-                        .find(|node| node.is_exit)
-                        .map(ExitNodeStatus::from);
+            }
+            TelioTaskCmd::GetStatus(response_tx_channel) => {
+                let external_nodes = telio.external_nodes()?;
+                // Find the identifier of the exit node (VPN server or meshnet peer), if present.
+                let exit_node = external_nodes
+                    .iter()
+                    .find(|node| node.is_exit)
+                    .map(ExitNodeStatus::from);
 
-                    let status_report = TelioStatusReport {
-                        telio_is_running: telio.is_running(),
-                        meshnet_ip: state.interface_ip_address,
-                        exit_node,
-                        external_nodes,
-                    };
-                    debug!("Telio status: {:#?}", status_report);
-                    if response_tx_channel.send(status_report).is_err() {
-                        error!("Telio task failed sending status report")
-                    }
+                let status_report = TelioStatusReport {
+                    telio_is_running: telio.is_running(),
+                    meshnet_ip: state.interface_ip_address,
+                    exit_node,
+                    external_nodes,
+                };
+                debug!("Telio status: {:#?}", status_report);
+                if response_tx_channel.send(status_report).is_err() {
+                    error!("Telio task failed sending status report")
                 }
-                TelioTaskCmd::SetIp(new_ip_address) => {
-                    // update the interface only if the address is new
-                    if state.interface_ip_address != Some(new_ip_address) {
-                        state.interface_ip_address = Some(new_ip_address);
-                        _ = sys_config
-                            .set_ip(&new_ip_address)
-                            .inspect_err(|e| error!("Failed to set IP with error '{e:?}'"));
-                        task_connect_to_exit_node(config.vpn, tx_channel.clone());
-                    }
-                }
-                TelioTaskCmd::ConnectToExitNode(ip, pubkey) => {
-                    let node = ExitNode {
-                        identifier: uuid::Uuid::new_v4().to_string(),
-                        public_key: pubkey,
-                        allowed_ips: None,
-                        endpoint: Some(ip),
-                    };
-                    match telio.connect_exit_node(&node) {
-                        Ok(_) => {
-                            // routing for VPN should only be setup once the VPN connection has been established
-                            // which could take some amount of time, yet we don't want to block the event loop
-                            // this task checks the connection status and if connected sets up routing information
-                            // otherwise it sleeps and tries again
-                            task_maybe_setup_vpn_routes(tx_channel.clone(), ip.ip(), pubkey);
-                        }
-                        Err(e) => {
-                            error!("Failed to connect to VPN with error: {e:?}");
-                        }
-                    }
-                }
-                TelioTaskCmd::MaybeSetupVPNRoutes(ip, pubkey) => {
-                    // find connection status for VPN server
-                    let is_connected = telio
-                        .external_nodes()
-                        .ok()
-                        .and_then(|nodes| {
-                            nodes
-                                .iter()
-                                .find(|n| n.public_key == pubkey)
-                                .map(|n| n.state == NodeState::Connected)
-                        })
-                        .unwrap_or(false);
-                    if is_connected {
-                        // if we're connected, setup routing information
-                        info!("Successfully connected to VPN");
-                        _ = sys_config.set_exit_routes(&ip).inspect_err(|e| {
-                            error!("Failed to set routes for exit routing with error '{e:?}'")
-                        });
-                    } else {
-                        // if not connected, call the task to sleep and then try again
-                        task_maybe_setup_vpn_routes(tx_channel.clone(), ip, pubkey);
-                    }
-                }
-                TelioTaskCmd::Quit => {
-                    telio.stop();
-                    _ = sys_config.cleanup_exit_routes().inspect_err(|e| {
-                        error!("Failed to cleanup routes for exit routing with error '{e:?}'")
-                    });
+            }
+            TelioTaskCmd::SetIp(new_ip_address) => {
+                // update the interface only if the address is new
+                if state.interface_ip_address != Some(new_ip_address) {
+                    state.interface_ip_address = Some(new_ip_address);
                     _ = sys_config
-                        .cleanup_interface()
-                        .inspect_err(|e| error!("Failed to cleanup interface with error '{e:?}'"));
-                    break;
+                        .set_ip(&new_ip_address)
+                        .inspect_err(|e| error!("Failed to set IP with error '{e:?}'"));
+                    task_connect_to_exit_node(config.vpn, tx_channel.clone());
                 }
+            }
+            TelioTaskCmd::ConnectToExitNode(ip, pubkey) => {
+                let node = ExitNode {
+                    identifier: uuid::Uuid::new_v4().to_string(),
+                    public_key: pubkey,
+                    allowed_ips: None,
+                    endpoint: Some(ip),
+                };
+                match telio.connect_exit_node(&node) {
+                    Ok(_) => {
+                        // routing for VPN should only be setup once the VPN connection has been established
+                        // which could take some amount of time, yet we don't want to block the event loop
+                        // this task checks the connection status and if connected sets up routing information
+                        // otherwise it sleeps and tries again
+                        task_maybe_setup_vpn_routes(tx_channel.clone(), ip.ip(), pubkey);
+                    }
+                    Err(e) => {
+                        error!("Failed to connect to VPN with error: {e:?}");
+                    }
+                }
+            }
+            TelioTaskCmd::MaybeSetupVPNRoutes(ip, pubkey) => {
+                // find connection status for VPN server
+                let is_connected = telio
+                    .external_nodes()
+                    .ok()
+                    .and_then(|nodes| {
+                        nodes
+                            .iter()
+                            .find(|n| n.public_key == pubkey)
+                            .map(|n| n.state == NodeState::Connected)
+                    })
+                    .unwrap_or(false);
+                if is_connected {
+                    // if we're connected, setup routing information
+                    info!("Successfully connected to VPN");
+                    _ = sys_config.set_exit_routes(&ip).inspect_err(|e| {
+                        error!("Failed to set routes for exit routing with error '{e:?}'")
+                    });
+                } else {
+                    // if not connected, call the task to sleep and then try again
+                    task_maybe_setup_vpn_routes(tx_channel.clone(), ip, pubkey);
+                }
+            }
+            TelioTaskCmd::Quit => {
+                telio.stop();
+                _ = sys_config.cleanup_exit_routes().inspect_err(|e| {
+                    error!("Failed to cleanup routes for exit routing with error '{e:?}'")
+                });
+                _ = sys_config
+                    .cleanup_interface()
+                    .inspect_err(|e| error!("Failed to cleanup interface with error '{e:?}'"));
+                break;
             }
         }
     }
+
     Ok(())
 }
 
@@ -303,18 +296,10 @@ async fn daemon_init(
     config: TeliodDaemonConfig,
     telio_tx: Sender<TelioTaskCmd>,
 ) -> Result<Arc<DeviceIdentity>, TeliodError> {
-    // TODO: This if condition and ::default call is temporary to be removed later
-    // on when we have proper integration tests with core API.
-    // This is to not look for tokens in a test environment right now as the values
-    // are dummy and program will not run as it expects real tokens.
-    let identity = Arc::new(if *config.authentication_token != *EMPTY_TOKEN {
-        match Box::pin(sync_device_identity(&config)).await {
-            Ok(identity) => identity,
-            Err(e) => return Err(e.into()),
-        }
-    } else {
-        DeviceIdentity::default()
-    });
+    let identity = match Box::pin(sync_device_identity(&config)).await {
+        Ok(identity) => Arc::new(identity),
+        Err(e) => return Err(e.into()),
+    };
 
     let nc = NotificationCenter::new(&config, &identity.hw_identifier)
         .await
