@@ -1,3 +1,4 @@
+import json
 import pytest
 from config import PHOTO_ALBUM_IP, STUN_SERVER, WG_SERVER
 from contextlib import AsyncExitStack
@@ -66,7 +67,7 @@ async def test_teliod_logs() -> None:
 async def test_teliod_vpn_connection(config_type: IfcConfigType) -> None:
     async with AsyncExitStack() as exit_stack:
         teliod = await Teliod.new(exit_stack, config_type)
-        node, _ = await teliod.register_device_on_core()
+        node, device_identity = await teliod.register_device_on_core()
 
         async with teliod.start():
             log.debug("Teliod started, waiting for connected vpn state...")
@@ -82,3 +83,90 @@ async def test_teliod_vpn_connection(config_type: IfcConfigType) -> None:
             assert (
                 ip == WG_SERVER["ipv4"]
             ), f"wrong public IP when connected to VPN {ip}"
+
+            assert device_identity == await teliod.read_identity_file()
+
+
+async def test_teliod_device_identity_registration() -> None:
+    async with AsyncExitStack() as exit_stack:
+        teliod = await Teliod.new(exit_stack, IfcConfigType.VPN_IPROUTE_WITHOUT_ID)
+        # Device wasn't preregistered on core API like in the previous tests
+        # therefore teliod will have to register it.
+        async with teliod.start():
+            status = await teliod.wait_for_meshnet_ip_on_meshmap()
+            device_identity = await teliod.read_identity_file()
+            await teliod.whitelist_device_on_the_vpn_servers(
+                device_identity, [status["meshnet_ip"]]
+            )
+            await teliod.wait_for_vpn_connected_state()
+
+
+async def test_teliod_device_identity_update_when_machine_id_is_missing() -> None:
+    async with AsyncExitStack() as exit_stack:
+        teliod = await Teliod.new(exit_stack, IfcConfigType.VPN_IPROUTE_WITHOUT_ID)
+        _, old_dev_identity = await teliod.register_device_on_core(dump_to_file=False)
+        old_machine_id = old_dev_identity.pop("machine_identifier")
+        await teliod.write_identity_file(json.dumps(old_dev_identity))
+
+        async with teliod.start():
+            status = await teliod.wait_for_meshnet_ip_on_meshmap()
+            new_device_identity = await teliod.read_identity_file()
+
+            assert (
+                old_dev_identity["hw_identifier"]
+                == new_device_identity["hw_identifier"]
+            )
+            assert old_dev_identity["private_key"] == new_device_identity["private_key"]
+            assert old_machine_id == new_device_identity["machine_identifier"]
+
+            await teliod.whitelist_device_on_the_vpn_servers(
+                new_device_identity, [status["meshnet_ip"]]
+            )
+            await teliod.wait_for_vpn_connected_state()
+
+
+async def test_teliod_device_identity_update_when_keys_are_missing() -> None:
+    async with AsyncExitStack() as exit_stack:
+        teliod = await Teliod.new(exit_stack, IfcConfigType.VPN_IPROUTE_WITHOUT_ID)
+        _, old_dev_identity = await teliod.register_device_on_core(dump_to_file=False)
+        old_private_key = old_dev_identity.pop("private_key")
+        await teliod.write_identity_file(json.dumps(old_dev_identity))
+
+        async with teliod.start():
+            status = await teliod.wait_for_meshnet_ip_on_meshmap()
+            new_device_identity = await teliod.read_identity_file()
+
+            assert (
+                old_dev_identity["hw_identifier"]
+                == new_device_identity["hw_identifier"]
+            )
+            assert (
+                old_dev_identity["machine_identifier"]
+                == new_device_identity["machine_identifier"]
+            )
+            assert old_private_key != new_device_identity["private_key"]
+
+            await teliod.whitelist_device_on_the_vpn_servers(
+                new_device_identity, [status["meshnet_ip"]]
+            )
+            await teliod.wait_for_vpn_connected_state()
+
+
+async def test_teliod_device_identity_update_when_hw_id_is_missing() -> None:
+    async with AsyncExitStack() as exit_stack:
+        teliod = await Teliod.new(exit_stack, IfcConfigType.VPN_IPROUTE_WITHOUT_ID)
+        _, old_dev_identity = await teliod.register_device_on_core(dump_to_file=False)
+        old_hw_identifier = old_dev_identity.pop("hw_identifier")
+        await teliod.write_identity_file(json.dumps(old_dev_identity))
+
+        async with teliod.start():
+            new_device_identity = await teliod.read_identity_file()
+
+            assert (
+                old_dev_identity["machine_identifier"]
+                == new_device_identity["machine_identifier"]
+            )
+            assert old_dev_identity["private_key"] == new_device_identity["private_key"]
+            assert old_hw_identifier != new_device_identity["hw_identifier"]
+
+            await teliod.wait_for_vpn_connected_state()

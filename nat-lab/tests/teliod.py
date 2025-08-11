@@ -20,7 +20,8 @@ from helpers import send_https_request, setup_connections
 from mesh_api import API, Node
 from pathlib import Path
 from test_core_api import clean_up_machines as clean_up_registered_machines_on_api
-from typing import AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
+from uniffi.telio_bindings import generate_public_key
 from utils.connection import Connection, ConnectionTag
 from utils.logger import log
 from utils.process import Process, ProcessExecError
@@ -41,6 +42,7 @@ class IfcConfigType(Enum):
     DEFAULT = "config.json"
     VPN_MANUAL = "config_with_vpn_manual_setup.json"
     VPN_IPROUTE = "config_with_vpn_iproute_setup.json"
+    VPN_IPROUTE_WITHOUT_ID = "config_with_vpn_iproute_without_id_file.json"
 
 
 @dataclass(frozen=True)
@@ -334,6 +336,13 @@ class Teliod:
                     return
             await asyncio.sleep(self.TELIOD_CMD_CHECK_INTERVAL_S)
 
+    async def wait_for_meshnet_ip_on_meshmap(self) -> Any:
+        while True:
+            status = json.loads(await self.get_status())
+            if status["meshnet_ip"]:
+                return status
+            await asyncio.sleep(self.TELIOD_CMD_CHECK_INTERVAL_S)
+
     @asynccontextmanager
     async def setup_interface(
         self, ip_addresses: List[str], vpn_routes: bool
@@ -449,6 +458,16 @@ class Teliod:
             if "No such file or directory" in exc.stderr:
                 pass
 
+    async def read_identity_file(self) -> Dict[str, Any]:
+        proc = await self.connection.create_process([
+            "cat",
+            str(self.config.paths.device_identity_path()),
+        ]).execute()
+        device_id = json.loads(proc.get_stdout())
+        log.debug("Device identity file read: %s", device_id)
+
+        return device_id
+
     async def write_identity_file(self, dev_identity_json: str) -> None:
         # TODO: [LLT-6476] check if configurations need to provide a custom id file path.
         # Otherwise just dump device_id_json directly on the default device identity path.
@@ -471,3 +490,25 @@ class Teliod:
                 "-c",
                 f"echo '{dev_identity_json}' > {self.config.paths.device_identity_path()}",
             ]).execute()
+
+    async def whitelist_device_on_the_vpn_servers(
+        self, device_identity: Dict[str, Any], ipv4_addresses: List[str]
+    ):
+        """
+        We reregister the device on the local API just with the sole goal of whitelisting it
+        on the vpn servers.
+        """
+        try:
+            self._api.remove("teliod")
+        except:
+            pass
+        private_key = base64.b64encode(bytes(device_identity["private_key"])).decode()
+        public_key = generate_public_key(private_key)
+        _ = self._api.register(
+            "teliod",
+            "teliod",
+            private_key,
+            public_key,
+            ip_addresses=ipv4_addresses,
+        )
+        self._api.prepare_all_vpn_servers()
