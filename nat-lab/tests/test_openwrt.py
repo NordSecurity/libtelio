@@ -87,10 +87,10 @@ async def test_openwrt_vpn_connection() -> None:
             )
 
             # check openwrt panel is accessible from client device
-            await gateway_connection.create_process([
+            await client_connection.create_process([
                 "curl",
                 "-I",
-                f"http://{LAN_ADDR_MAP[ConnectionTag.DOCKER_OPENWRT_CLIENT_1]}",
+                f"http://{LAN_ADDR_MAP[ConnectionTag.DOCKER_OPENWRT_GW_1]}",
             ]).execute()
 
             await gateway_connection.create_process([
