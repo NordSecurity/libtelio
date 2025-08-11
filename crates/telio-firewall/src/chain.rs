@@ -14,20 +14,31 @@ use crate::{
     firewall::IpPacket,
 };
 
+///
+/// Necessary data for network filter:
+///  * network - range of matching IP addresses
+///  * ports - range of matching ports (usually it is either a single port or full range)
+///
 #[derive(Clone, Debug)]
 pub(crate) struct NetworkFilterData {
     pub(crate) network: IpNet,
     pub(crate) ports: RangeInclusive<u16>,
 }
 
+///
+/// Determines whether network filter data should be checked for source or destination packet data
+///
 enum NetworkFilterType {
     Src,
     Dst,
 }
 
+///
+/// Next level protocol (L4)
+///
 #[allow(dead_code)]
 #[derive(Copy, Clone, Debug)]
-pub(crate) enum LibfwNextLevelProtocol {
+pub enum LibfwNextLevelProtocol {
     Udp,
     Tcp,
     Icmp,
@@ -35,7 +46,13 @@ pub(crate) enum LibfwNextLevelProtocol {
 }
 
 ///
-/// Packet verdict
+/// Possible verdicts for packets.
+///
+/// Note: From the libfw integrators perspective, LibfwVerdictReject is the same as
+/// packet injection + drop. Reject is here just for informational purposes, therefore
+/// anytime libfw returns LibfwVerdictReject - relevant packet should be dropped in the
+/// same manner as LibfwVerdictDrop. But differentiating these two may be useful for
+/// logging or metrics or similar kind of purposes.
 ///
 #[allow(clippy::enum_variant_names)]
 #[repr(C)]
@@ -61,6 +78,14 @@ macro_rules! get_inner_packet_port {
 }
 
 impl NetworkFilterData {
+    ///
+    /// Checks whether the packet matches the network filter.
+    ///
+    /// @param packet       Assumed packet
+    /// @param filter_type  Which packet endpoint should be checked - source or destination
+    ///
+    /// @return             Boolean value, true if packet matches the filter, false otherwise
+    ///
     fn is_matching<'a>(&self, packet: &impl IpPacket<'a>, filter_type: NetworkFilterType) -> bool {
         let packet_addr: crate::firewall::IpAddr = if let NetworkFilterType::Src = filter_type {
             packet.get_source().into()
@@ -77,15 +102,26 @@ impl NetworkFilterData {
         match packet.get_next_level_protocol() {
             IpNextHeaderProtocols::Udp => get_inner_packet_port!(UdpPacket, packet, filter_type)
                 .map(|port| self.ports.contains(&port))
-                .unwrap_or_default(),
+                .unwrap_or(false),
             IpNextHeaderProtocols::Tcp => get_inner_packet_port!(TcpPacket, packet, filter_type)
                 .map(|port| self.ports.contains(&port))
-                .unwrap_or_default(),
+                .unwrap_or(false),
             _ => true,
         }
     }
 }
 
+///
+/// Defines a type of filter to match the packets against and the necessary data.
+/// There are a few possible filter types:
+/// * AssociatedData - matches packets based on their associated data.
+///   This Normally means public key for NordLynx
+/// * ConntrackState - matches connection tracking table state.
+/// * (Src|Dst)Network - matches against either source or destination network
+/// * Direction - matches either inbound or outbound packet direction.
+/// * NextLevelProtocol - matches the next layer protocol, currently tcp, udp, icmp or icmpv6
+/// * TcpFlags - checks whether the packets has any flag from the given set.
+///
 #[derive(Clone, Debug)]
 pub(crate) enum FilterData {
     AssociatedData(AssociatedData),
@@ -99,6 +135,16 @@ pub(crate) enum FilterData {
 }
 
 impl FilterData {
+    ///
+    /// Checks whether the packet matches the given filter data.
+    ///
+    /// @param packet_conn_state   State of the matching connection returned by Conntracker
+    /// @param packet              Packet itself
+    /// @param packet_assoc_data   Data associated with the packet, usually pubkey of the appropriate node
+    /// @param packet_direction    Whether the packet is inbound or outbound
+    ///
+    /// @return                    Boolean, whether the packet matches filter or not (without filter inversion)
+    ///
     fn is_matching<'a>(
         &self,
         packet_conn_state: LibfwConnectionState,
@@ -141,6 +187,10 @@ impl FilterData {
     }
 }
 
+///
+/// Firewall filter type - in practice it is FilterData extended with
+/// possibility of inverting fiters with `inverted` flag.
+///
 #[derive(Clone, Debug)]
 pub(crate) struct Filter {
     pub(crate) filter_data: FilterData,
@@ -148,6 +198,17 @@ pub(crate) struct Filter {
 }
 
 impl Filter {
+    ///
+    /// Checks whether the packet matches the given filter. Just applies filter inversion to
+    /// the result of `FiltrData::is_matching`
+    ///
+    /// @param packet_conn_state   State of the matching connection returned by Conntracker
+    /// @param packet              Packet itself
+    /// @param packet_assoc_data   Data associated with the packet, usually pubkey of the appropriate node
+    /// @param packet_direction    Whether the packet is inbound or outbound
+    ///
+    /// @return                    Boolean, whether the packet matches filter or not (without filter inversion)
+    ///
     fn is_matching<'a>(
         &self,
         conn_state: LibfwConnectionState,
@@ -161,6 +222,10 @@ impl Filter {
     }
 }
 
+///
+/// A definition of firewall rule it consists of filters which determine whether rule applies to packet
+/// being processed and action, which determins what to do with the rule.
+///
 #[derive(Debug)]
 pub(crate) struct Rule {
     pub(crate) filters: Vec<Filter>,
@@ -168,6 +233,16 @@ pub(crate) struct Rule {
 }
 
 impl Rule {
+    ///
+    /// Checks whether the given packet matches all of the rule's filters.
+    ///
+    /// @param conn_state   State of the matching connection returned by Conntracker
+    /// @param packet       Packet itself
+    /// @param assoc_data   Data associated with the packet, usually pubkey of the appropriate node
+    /// @param direction    Whether the packet is inbound or outbound
+    ///
+    /// @return             Boolean value, true if packet matched all of the filters, false otherwise
+    ///
     fn is_matching<'a>(
         &self,
         conn_state: LibfwConnectionState,
@@ -181,11 +256,26 @@ impl Rule {
     }
 }
 
+///
+/// Rust representation of the firewall chain.
+/// Decides packets destiny with `process_packet` method.
+///
 pub(crate) struct Chain {
     pub(crate) rules: Vec<Rule>,
 }
 
 impl Chain {
+    ///
+    /// Function for processing packets which iterates over the rules and returns the action of the first matching rule.
+    /// When there is no rule matching, returns Drop.
+    ///
+    /// @param conn_state   State of the matching connection returned by Conntracker
+    /// @param packet       Packet itself
+    /// @param assoc_data   Data associated with the packet, usually pubkey of the appropriate node
+    /// @param direction    Whether the packet is inbound or outbound
+    ///
+    /// @return             Verdict for the packet: Accept, Drop or Reject
+    ///
     pub(crate) fn process_packet<'a>(
         &self,
         conn_state: LibfwConnectionState,
@@ -197,7 +287,7 @@ impl Chain {
             .iter()
             .find(|rule| rule.is_matching(conn_state, packet, assoc_data, direction))
             .map(|rule| rule.action)
-            .unwrap_or_else(|| LibfwVerdict::LibfwVerdictDrop)
+            .unwrap_or(LibfwVerdict::LibfwVerdictDrop)
     }
 }
 
