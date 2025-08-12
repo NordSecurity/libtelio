@@ -729,13 +729,17 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
                 allowed_five_tuples = [
                     FiveTuple(
                         protocol="udp",
-                        src_ip=LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1],
+                        src_ip=LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1][
+                            "primary"
+                        ],
                         dst_ip=FIRST_DNS_SERVER,
                         dst_port=53,
                     ),
                     FiveTuple(
                         protocol="udp",
-                        src_ip=LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1],
+                        src_ip=LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1][
+                            "primary"
+                        ],
                         dst_ip=SECOND_DNS_SERVER,
                         dst_port=53,
                     ),
