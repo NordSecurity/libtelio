@@ -61,9 +61,11 @@ def start():
         },
     )
     try:
+        command = ["docker", "compose", "up", "-d", "--wait"]
+        if "GITLAB_CI" in os.environ:
+            command.append("--quiet-pull")
         run_command(
-            ["docker", "compose", "up", "-d", "--wait"],
-            env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"},
+            command, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
         )
     except subprocess.CalledProcessError:
         check_containers()
