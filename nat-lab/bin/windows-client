@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+set -e
+
+/libtelio/nat-lab/bin/configure_route.sh primary windows
