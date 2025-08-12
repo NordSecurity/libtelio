@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager, AsyncExitStack
 from datetime import datetime
 from typing import AsyncIterator, Optional
 from utils.connection import TargetOS, Connection
+from utils.connection_util import ConnectionTag
 from utils.logger import log
 from utils.output_notifier import OutputNotifier
 from utils.process import Process
@@ -64,10 +65,20 @@ class TcpDump:
 
         self.process = self.connection.create_process(
             self.command,
-            # xterm type is needed here, because Mac on default term type doesn't
+            # xterm type is needed here, because Mac and Linux VM on default term type doesn't
             # handle signals properly while `tcpdump -w file` is running, without writing
             # to file, everything works fine
-            term_type="xterm" if self.connection.target_os == TargetOS.Mac else None,
+            term_type=(
+                "xterm"
+                if self.connection.tag
+                in [
+                    ConnectionTag.VM_MAC,
+                    ConnectionTag.VM_LINUX_NLX_1,
+                    ConnectionTag.VM_LINUX_FULLCONE_GW_1,
+                    ConnectionTag.VM_LINUX_FULLCONE_GW_2,
+                ]
+                else None
+            ),
             kill_id="DO_NOT_KILL" + secrets.token_hex(8).upper() if session else None,
             quiet=True,
         )
@@ -261,10 +272,10 @@ async def make_tcpdump(
                 )
                 await conn.download(PCAP_FILE_PATH[conn.target_os], path)
 
-        if conn.target_os != TargetOS.Windows:
-            await conn.create_process(
-                ["rm", "-f", PCAP_FILE_PATH[conn.target_os]], quiet=True
-            ).execute()
-        # TODO(LLT-5942): temporary disable windows tcpdump
-        # else:
-        #     await conn.create_process(["del", PCAP_FILE_PATH[conn.target_os]]).execute()
+                if conn.target_os in [TargetOS.Linux, TargetOS.Mac]:
+                    await conn.create_process(
+                        ["rm", "-f", PCAP_FILE_PATH[conn.target_os]], quiet=True
+                    ).execute()
+                # TODO(LLT-5942): temporary disable windows tcpdump
+                # else:
+                #     await conn.create_process(["del", PCAP_FILE_PATH[conn.target_os]]).execute()
