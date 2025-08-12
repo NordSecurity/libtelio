@@ -350,12 +350,7 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
 
     let table = match unsafe { table.as_ref() } {
         Some(table) => table,
-        None => {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Table entry doesnt exist!",
-            ))
-        }
+        None => return Err(std::io::Error::other("Table entry doesnt exist!")),
     };
 
     let mut interface_found = false;
@@ -414,10 +409,7 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
     }
 
     if !interface_found {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Couldn't find default interface!",
-        ));
+        return Err(std::io::Error::other("Couldn't find default interface!"));
     }
 
     telio_log_debug!("Default interface index {}", index);
@@ -462,14 +454,10 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
             default_interface.ip = std::str::from_utf8(unsafe {
                 &*((&address.IpAddress.String) as *const [i8] as *const [u8])
             })
-            .map_err(|_| {
-                std::io::Error::new(std::io::ErrorKind::Other, "Couldn't parse the address")
-            })?
+            .map_err(|_| std::io::Error::other("Couldn't parse the address"))?
             .trim_matches(char::from(0))
             .parse::<Ipv4Addr>()
-            .map_err(|_| {
-                std::io::Error::new(std::io::ErrorKind::Other, "Couldn't parse the address")
-            })?;
+            .map_err(|_| std::io::Error::other("Couldn't parse the address"))?;
 
             interface_found = true;
             break;
@@ -481,8 +469,7 @@ pub fn get_default_interface(tunnel_interface: u64) -> Result<Interface> {
     }
 
     if !interface_found {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        return Err(std::io::Error::other(
             "Couldn't find default interface ip address!",
         ));
     }

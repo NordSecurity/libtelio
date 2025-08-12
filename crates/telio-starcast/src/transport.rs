@@ -242,10 +242,7 @@ impl State {
         ))
         .await
         .into_iter()
-        .filter_map(|res| match res {
-            Ok(_) => None,
-            Err(pk) => Some(pk),
-        })
+        .filter_map(|res| res.err())
         .collect::<Vec<_>>();
 
         if failed_peers.is_empty() {

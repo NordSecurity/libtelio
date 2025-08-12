@@ -53,7 +53,7 @@ pub(crate) fn handle_api(request: &CgiRequest) -> Option<Response> {
                 Err(error) => {
                     return Some(text_response(
                         StatusCode::BAD_REQUEST,
-                        format!("Invalid UTF-8 in request body: {}", error),
+                        format!("Invalid UTF-8 in request body: {error}"),
                     ))
                 }
             };
@@ -157,7 +157,7 @@ pub(crate) fn start_daemon() -> (StatusCode, String) {
         Err(e) => {
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to read config file: {:?}", e),
+                format!("Failed to read config file: {e:?}"),
             );
         }
         Ok(cfg) => {
@@ -223,7 +223,7 @@ pub(crate) fn update_config(body: &str) -> Response {
     let mut config: TeliodDaemonConfig = match get_config() {
         Ok(config) => config,
         Err(e) => {
-            eprintln!("Error reading config file: {}", e);
+            eprintln!("Error reading config file: {e}");
             return text_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to read existing config",
@@ -289,16 +289,16 @@ fn get_status() -> Response {
             ),
             Err(error) => text_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to retrieve status: {}", error),
+                format!("Failed to retrieve status: {error}"),
             ),
         },
         Ok(Err(error)) => text_response(
             StatusCode::GONE,
-            format!("Failed to communicate with the daemon: {}", error),
+            format!("Failed to communicate with the daemon: {error}"),
         ),
         Err(error) => text_response(
             StatusCode::GATEWAY_TIMEOUT,
-            format!("Failed to communicate with the daemon: {}", error),
+            format!("Failed to communicate with the daemon: {error}"),
         ),
     }
 }
@@ -313,14 +313,14 @@ fn get_logs(
 
     // Helper to append an error
     let append_log_error = |logs: &mut String, content: &str| {
-        logs.push_str(&format!("--- Logs Error ---\n{}\n", content))
+        logs.push_str(&format!("--- Logs Error ---\n{content}\n"))
     };
 
     // Helper to append a section
     let append_log_section =
         |logs: &mut String, label: &str, path: &Path| match fs::read_to_string(path) {
             Ok(content) => {
-                logs.push_str(&format!("--- {} ---\n\n{}\n", label, content));
+                logs.push_str(&format!("--- {label} ---\n\n{content}\n"));
             }
             Err(err) => {
                 append_log_error(

@@ -48,11 +48,11 @@ pub enum Error {
     #[error("Mqtt broker rejected connection: {0:?}")]
     MqttConnectionRejected(ConnectReturnCode),
     #[error("Unexpected mqtt event before connection established: {0:?}")]
-    MqttUnexpectedEventBeforeConnection(Event),
+    MqttUnexpectedEventBeforeConnection(Box<Event>),
     #[error("Mqtt connection timeout")]
     MqttConnectionTimeout,
     #[error("Mqtt connection error: {0}")]
-    MqttConnection(rumqttc::ConnectionError),
+    MqttConnection(Box<rumqttc::ConnectionError>),
     #[error(transparent)]
     InvalidBackoff(#[from] BackoffError),
     #[error(transparent)]
@@ -336,11 +336,11 @@ async fn wait_for_connection(mut event_loop: EventLoop, t: Duration) -> Result<E
                 Err(Error::MqttConnectionRejected(code))
             }
         }
-        Ok(Ok(unexpected_event)) => {
-            Err(Error::MqttUnexpectedEventBeforeConnection(unexpected_event))
-        }
+        Ok(Ok(unexpected_event)) => Err(Error::MqttUnexpectedEventBeforeConnection(Box::new(
+            unexpected_event,
+        ))),
         Err(Elapsed { .. }) => Err(Error::MqttConnectionTimeout),
-        Ok(Err(err)) => Err(Error::MqttConnection(err)),
+        Ok(Err(err)) => Err(Error::MqttConnection(Box::new(err))),
     }
 }
 

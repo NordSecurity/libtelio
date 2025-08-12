@@ -188,7 +188,7 @@ impl Telio {
     /// - `events`:     Events callback
     /// - `features`:   JSON string of enabled features
     pub fn new(features: Features, events: Box<dyn TelioEventCb>) -> FfiResult<Self> {
-        let serialized_event_fn = format!("{:?}", events);
+        let serialized_event_fn = format!("{events:?}");
         let ret = Self::new_common(&features, events, None);
         Self::log_entry(features, serialized_event_fn, &ret);
         ret
@@ -204,7 +204,7 @@ impl Telio {
         events: Box<dyn TelioEventCb>,
         protect: Box<dyn TelioProtectCb>,
     ) -> FfiResult<Self> {
-        let serialized_event_fn = format!("{:?}", events);
+        let serialized_event_fn = format!("{events:?}");
         let ret = Self::new_common(&features, events, Some(protect));
         Self::log_entry(features, serialized_event_fn, &ret);
         ret
@@ -253,7 +253,7 @@ impl Telio {
                 let e = Event::builder::<Error>()
                     .set(ErrorCode::Unknown)
                     .set(ErrorLevel::Critical)
-                    .set(format!("{}", info))
+                    .set(format!("{info}"))
                     .build();
 
                 if let Some(e) = e {
@@ -563,7 +563,7 @@ impl Telio {
     ///
     /// # Parameters
     /// - `network_info`: Json-encoded network state info.
-    ///                   Format to be decided, pass empty string for now.
+    ///   Format to be decided, pass empty string for now.
     pub fn notify_network_change(&self, network_info: String) -> FfiResult<()> {
         #![allow(unused_variables)]
 
@@ -624,7 +624,7 @@ impl Telio {
     /// - `identifier`: String that identifies the exit node, will be generated if null is passed.
     /// - `public_key`: WireGuard public key for an exit node.
     /// - `allowed_ips`: List of subnets which will be routed to the exit node.
-    ///                  Can be None, same as "0.0.0.0/0".
+    ///   Can be None, same as "0.0.0.0/0".
     /// - `endpoint`: An endpoint to an exit node. Can be None, must contain a port.
     pub fn connect_to_exit_node_with_id(
         &self,
@@ -664,7 +664,7 @@ impl Telio {
     /// - `identifier`: String that identifies the exit node, will be generated if null is passed.
     /// - `public_key`: WireGuard public key for an exit node.
     /// - `allowed_ips`: List of subnets which will be routed to the exit node.
-    ///                  Can be None, same as "0.0.0.0/0".
+    ///   Can be None, same as "0.0.0.0/0".
     /// - `endpoint`: An endpoint to an exit node. Must contain a port.
     pub fn connect_to_exit_node_postquantum(
         &self,

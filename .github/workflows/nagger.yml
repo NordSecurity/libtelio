@@ -5,7 +5,7 @@ permissions: {}
 jobs:
   nagger:
     runs-on: ubuntu-22.04
-    container: ghcr.io/nordsecurity/nagger:v4.1.0
+    container: ghcr.io/nordsecurity/nagger:v6.0.0
     steps:
       - name: Install Protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
