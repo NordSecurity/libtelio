@@ -251,13 +251,13 @@ async def test_mesh_plus_vpn_both_peers(
         pytest.param(
             ConnectionTag.VM_WINDOWS_1,
             TelioAdapterType.WINDOWS_NATIVE_TUN,
-            "10.0.254.7",
+            "10.0.254.15",
             marks=pytest.mark.windows,
         ),
         pytest.param(
             ConnectionTag.VM_MAC,
             TelioAdapterType.NEP_TUN,
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -292,7 +292,7 @@ async def test_vpn_plus_mesh(
             )
         )
 
-        api.prepare_all_vpn_servers()
+        await api.prepare_all_vpn_servers()
 
         ip = await stun.get(connection_alpha, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"

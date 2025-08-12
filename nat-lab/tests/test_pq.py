@@ -93,7 +93,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -109,7 +109,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -176,7 +176,7 @@ async def test_pq_vpn_connection(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -192,7 +192,7 @@ async def test_pq_vpn_connection(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -221,7 +221,7 @@ async def test_pq_vpn_rekey(
         )
 
         nlx_conn = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_NLX_1)
+            new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1)
         )
 
         preshared_before = inspect_preshared_key(nlx_conn)
@@ -440,7 +440,7 @@ async def test_pq_vpn_upgrade_from_non_pq(
         client, *_ = env.clients
 
         nlx_conn = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_NLX_1)
+            new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1)
         )
 
         wg_server = config.NLX_SERVER
@@ -510,7 +510,7 @@ async def test_pq_vpn_upgrade_from_non_pq(
         #         ),
         #         is_meshnet=False,
         #     ),
-        #     "10.0.254.7",
+        #     "10.0.254.15",
         #     marks=pytest.mark.windows,
         # ),
     ],
