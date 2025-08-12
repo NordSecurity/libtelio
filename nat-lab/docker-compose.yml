@@ -1,5 +1,3 @@
-version: '3.2'
-
 services:
   base:
     image: nat-lab:base
@@ -11,33 +9,53 @@ services:
     profiles:
       - base
 
-  # Nordlynx servers
   nlx-01: &common-nlx
     hostname: nlx-01
     privileged: true
-    build:
-      context: .
-      args:
-        LIBTELIO_ENV_SEC_CONTAINER_REGISTRY: $LIBTELIO_ENV_SEC_CONTAINER_REGISTRY
-        LIBTELIO_ENV_NAT_LAB_DEPS_TAG: $LIBTELIO_ENV_NAT_LAB_DEPS_TAG
-    entrypoint: /opt/bin/nordlynx
-    cap_add:
-      - NET_RAW
-      - NET_ADMIN
-    sysctls:
-      - net.ipv4.ip_forward=1
-      - net.ipv6.conf.all.disable_ipv6=0
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
+    devices:
+      - "/dev/net/tun"
+      - "/dev/kvm"
+    # sysctls here are configured for docker holding VM, they are not applied to VM
+    # add them manually into entrypoint script, which is passed as `EXTRA_SCRIPT` in variables
+    # sysctls:
+    #   - net.ipv4.ip_forward=1
+    #   # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
+    #   # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
+    #   # seem to work. So for now disable return path filter outright.
+    #   - net.ipv4.conf.all.rp_filter=0
+    #   - net.ipv4.conf.default.rp_filter=0
+    #   # Enable IPv6, by default, docker has this set to '1'
+    #   - net.ipv6.conf.all.disable_ipv6=0
+    #   - net.ipv6.conf.default.disable_ipv6=0
+    #   - net.ipv6.conf.all.forwarding=1
+    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
+    # When this comment was added, the only scenario where the port mapping is changed is CI running tests
+    ports: ["58001"]
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
+    volumes:
+      - ../:/shared
+    healthcheck:
+      test: "[ -f /ready ] || exit 1"
+      interval: 30s
+      retries: 20
+      start_period: 60s
+      timeout: 2s
+    environment:
+      USERNAME: "root"
+      PASSWORD: "root"
+      NETWORK: "bridge"
+      RAM_SIZE: "1G"
+      CPU_CORES: "1"
+      EXTRA_SCRIPT: "/shared/nat-lab/bin/nlx-vm"
+      CLIENT_GATEWAY_PRIMARY: none
     networks:
       internet:
         ipv4_address: 10.0.100.51
         priority: 1000
-    environment:
-      CLIENT_GATEWAY_PRIMARY: none
-    volumes:
-      - ./:/sync
-      - ../:/libtelio
-    healthcheck:
-      test: "ls /ready"
 
   ###########################################################
   #                         CLIENTS                         #
@@ -98,6 +116,70 @@ services:
       - ./data/core_api/test.pem:/etc/ssl/server_certificate/test.pem
     healthcheck:
       test: "ls /ready"
+
+  windows-client-01: &windows-client
+    hostname: windows-client-01
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:${LIBTELIO_ENV_NAT_LAB_WINDOWS_VM_TAG}
+    privileged: true
+    devices:
+      - "/dev/net/tun"
+      - "/dev/kvm"
+    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
+    # When this comment was added, the only scenario where the port mapping is changed is CI running tests
+    ports: ["58001"]
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+      - "pmtu-probe:10.0.80.84"
+      - "mqtt.nordvpn.com:10.0.80.85"
+      - "api.nordvpn.com:10.0.80.86"
+    volumes:
+      - ../:/libtelio
+    healthcheck:
+      test: "[ -f /local/ready ] || exit 1"
+      interval: 30s
+      retries: 20
+      start_period: 60s
+      timeout: 2s
+    environment:
+      USERNAME: "bill"
+      PASSWORD: "gates"
+      NETWORK: "bridge"
+      RAM_SIZE: "2G"
+      CPU_CORES: "1"
+      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/windows-client"
+      CLIENT_GATEWAY_PRIMARY: 192.168.150.254
+      CLIENT_GATEWAY_SECONDARY: 192.168.151.254
+    networks:
+      windows-net-01:
+        ipv4_address: 192.168.150.54
+      windows-net-02:
+        ipv4_address: 192.168.151.54
+
+  windows-client-02:
+    hostname: windows-client-02
+    <<: *windows-client
+    networks:
+      windows-net-03:
+        ipv4_address: 192.168.152.54
+      windows-net-04:
+        ipv4_address: 192.168.153.54
+    environment:
+      USERNAME: "bill"
+      PASSWORD: "gates"
+      NETWORK: "bridge"
+      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/windows-client"
+      CLIENT_GATEWAY_PRIMARY: 192.168.152.254
+      CLIENT_GATEWAY_SECONDARY: 192.168.153.254
+
   cone-client-02:
     hostname: cone-client-02
     <<: *common-client
@@ -106,6 +188,54 @@ services:
         ipv4_address: 192.168.102.54
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.102.254
+
+  mac-client-01: &mac-client
+    hostname: mac-client-01
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos:${LIBTELIO_ENV_NAT_LAB_MACOS_VM_TAG}
+    privileged: true
+    devices:
+      - "/dev/net/tun"
+      - "/dev/kvm"
+    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
+    # When this comment was added, the only scenario where the port mapping is changed is CI running tests
+    ports: ["58001"]
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+      - "pmtu-probe:10.0.80.84"
+      - "mqtt.nordvpn.com:10.0.80.85"
+      - "api.nordvpn.com:10.0.80.86"
+    volumes:
+      - ../:/libtelio
+    healthcheck:
+      test: "ls /ready"
+      interval: 30s
+      retries: 20
+      start_period: 60s
+      timeout: 2s
+    environment:
+      USERNAME: "root"
+      PASSWORD: "jobs"
+      NETWORK: "bridge"
+      RAM_SIZE: "2G"
+      CPU_CORES: "1"
+      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/mac-client"
+      CLIENT_GATEWAY_PRIMARY: 192.168.154.254
+      CLIENT_GATEWAY_SECONDARY: 192.168.155.254
+    networks:
+      mac-net-01:
+        ipv4_address: 192.168.154.54
+      mac-net-02:
+        ipv4_address: 192.168.155.54
+
   # Client that shares two cone networks on different interfaces
   shared-client-01:
     hostname: shared-client-01
@@ -115,7 +245,7 @@ services:
         ipv4_address: 192.168.101.67
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth0'
-      cone-net-05:
+      cone-net-03:
         ipv4_address: 192.168.113.67
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
@@ -290,36 +420,9 @@ services:
         priority: 90
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
+
   cone-gw-03:
     hostname: cone-gw-03
-    <<: *common-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.7
-        priority: 1000
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth0'
-      cone-net-03:
-        ipv4_address: 192.168.107.254
-        priority: 900
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth1'
-  cone-gw-04:
-    hostname: cone-gw-04
-    <<: *common-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.8
-        priority: 1000
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth0'
-      cone-net-04:
-        ipv4_address: 192.168.108.254
-        priority: 900
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth1'
-  cone-gw-05:
-    hostname: cone-gw-05
     <<: *common-gw
     networks:
       internet:
@@ -327,16 +430,55 @@ services:
         priority: 1000
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth0'
-      cone-net-05:
+      cone-net-03:
         ipv4_address: 192.168.113.254
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
 
-  fullcone-gw-01:
+  fullcone-gw-01: &common-fullcone-gw
     hostname: fullcone-gw-01
-    <<: *common-gw
-    entrypoint: /opt/bin/fullcone-gw
+    privileged: true
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
+    devices:
+      - "/dev/net/tun"
+      - "/dev/kvm"
+    # sysctls here are configured for docker holding VM, they are not applied to VM
+    # add them manually into entrypoint script, which is passed as `EXTRA_SCRIPT` in variables
+    # sysctls:
+    #   - net.ipv4.ip_forward=1
+    #   # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
+    #   # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
+    #   # seem to work. So for now disable return path filter outright.
+    #   - net.ipv4.conf.all.rp_filter=0
+    #   - net.ipv4.conf.default.rp_filter=0
+    #   # Enable IPv6, by default, docker has this set to '1'
+    #   - net.ipv6.conf.all.disable_ipv6=0
+    #   - net.ipv6.conf.default.disable_ipv6=0
+    #   - net.ipv6.conf.all.forwarding=1
+    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
+    # When this comment was added, the only scenario where the port mapping is changed is CI running tests
+    ports: ["58001"]
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
+    volumes:
+      - ../:/shared
+    healthcheck:
+      test: "[ -f /ready ] || exit 1"
+      interval: 30s
+      retries: 20
+      start_period: 60s
+      timeout: 2s
+    environment:
+      USERNAME: "root"
+      PASSWORD: "root"
+      NETWORK: "bridge"
+      RAM_SIZE: "1G"
+      CPU_CORES: "1"
+      EXTRA_SCRIPT: "/shared/nat-lab/bin/fullcone-gw-vm"
+      CLIENT_GATEWAY_PRIMARY: none
     networks:
       internet:
         ipv4_address: 10.0.254.9
@@ -350,8 +492,7 @@ services:
           com.docker.network.endpoint.ifname: 'eth1'
   fullcone-gw-02:
     hostname: fullcone-gw-02
-    <<: *common-gw
-    entrypoint: /opt/bin/fullcone-gw
+    <<: *common-fullcone-gw
     networks:
       internet:
         ipv4_address: 10.0.254.6
@@ -518,6 +659,66 @@ services:
       start_period: 45s
       retries: 5
 
+  windows-gw-01: &windows-gw
+    hostname: windows-gw-01
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.15
+        priority: 1000
+      windows-net-01:
+        ipv4_address: 192.168.150.254
+        priority: 900
+  windows-gw-02:
+    hostname: windows-gw-02
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.16
+        priority: 1000
+      windows-net-02:
+        ipv4_address: 192.168.151.254
+        priority: 900
+  windows-gw-03:
+    hostname: windows-gw-03
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.17
+        priority: 1000
+      windows-net-03:
+        ipv4_address: 192.168.152.254
+        priority: 900
+  windows-gw-04:
+    hostname: windows-gw-04
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.18
+        priority: 1000
+      windows-net-04:
+        ipv4_address: 192.168.153.254
+        priority: 900
+  mac-gw-01:
+    hostname: mac-gw-01
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.19
+        priority: 1000
+      mac-net-01:
+        ipv4_address: 192.168.154.254
+        priority: 900
+  mac-gw-02:
+    hostname: mac-gw-02
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.20
+        priority: 1000
+      mac-net-02:
+        ipv4_address: 192.168.155.254
+        priority: 900
   ###########################################################
   #                       MISC SERVERS                      #
   ###########################################################
@@ -776,22 +977,6 @@ networks:
         - subnet: 192.168.102.0/24
   cone-net-03:
     driver: bridge
-    driver_opts:
-        com.docker.network.bridge.gateway_mode_ipv4: 'nat-unprotected'
-    ipam:
-      driver: default
-      config:
-        - subnet: 192.168.107.0/24
-  cone-net-04:
-    driver: bridge
-    driver_opts:
-      com.docker.network.bridge.gateway_mode_ipv4: 'nat-unprotected'
-    ipam:
-      driver: default
-      config:
-        - subnet: 192.168.108.0/24
-  cone-net-05:
-    driver: bridge
     ipam:
       driver: default
       config:
@@ -861,9 +1046,51 @@ networks:
       config:
         - subnet: 192.168.111.0/24
 
-  openwrt-net-01:
+ openwrt-net-01:
+   driver: bridge
+   ipam:
+     driver: default
+     config:
+       - subnet: 192.168.115.0/24
+
+  windows-net-01:
     driver: bridge
     ipam:
       driver: default
       config:
-        - subnet: 192.168.115.0/24
+        - subnet: 192.168.150.0/24
+
+  windows-net-02:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.151.0/24
+
+  windows-net-03:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.152.0/24
+
+  windows-net-04:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.153.0/24
+
+  mac-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.154.0/24
+
+  mac-net-02:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.155.0/24

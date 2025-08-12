@@ -34,7 +34,6 @@ target/
 /target-windows/
 /windows-local-dev-out/
 /nat-lab/*.log
-/nat-lab/.vagrant
 __pycache__
 event.db
 alpha-events.db
