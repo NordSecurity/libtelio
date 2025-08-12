@@ -6,7 +6,6 @@ from helpers import SetupParameters, setup_environment, setup_connections
 from helpers_vpn import (
     connect_vpn,
     VpnConfig,
-    ensure_interface_router_property_expectations,
 )
 from uniffi import FirewallBlacklistTuple, IpProtocol
 from utils import testing, stun
@@ -28,6 +27,45 @@ from utils.netcat import NetCatClient
 from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPProto, IPStack
+
+
+async def _connect_vpn(
+    client_conn: Connection,
+    vpn_connection: Optional[Connection],
+    client: Client,
+    client_meshnet_ip: str,
+    wg_server: dict,
+) -> None:
+    await client.connect_to_vpn(
+        wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+    )
+
+    await ping(client_conn, config.PHOTO_ALBUM_IP)
+
+    if vpn_connection is not None:
+        await ping(vpn_connection, client_meshnet_ip)
+
+    ip = await stun.get(client_conn, config.STUN_SERVER)
+    assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
+
+
+class VpnConfig:
+    # pinging the client is not a requirement and requires routing setup which might not be present
+    def __init__(
+        self,
+        server_conf,
+        conn_tag: ConnectionTag,
+        should_ping_client: bool,
+    ):
+        self.server_conf = server_conf
+        self.conn_tag = conn_tag
+        self.should_ping_client = should_ping_client
+
+    def __repr__(self) -> str:
+        return (
+            f"VpnConfig(server_conf={self.server_conf}, conn_tag={self.conn_tag},"
+            f" should_ping_client={self.should_ping_client})"
+        )
 
 
 @pytest.mark.parametrize(
@@ -56,7 +94,7 @@ from utils.router import IPProto, IPStack
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -67,7 +105,7 @@ from utils.router import IPProto, IPStack
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -80,7 +118,7 @@ from utils.router import IPProto, IPStack
             id="wg_server",
         ),
         pytest.param(
-            VpnConfig(config.NLX_SERVER, ConnectionTag.DOCKER_NLX_1, False),
+            VpnConfig(config.NLX_SERVER, ConnectionTag.VM_LINUX_NLX_1, False),
             id="nlx_server",
         ),
     ],
@@ -97,7 +135,7 @@ async def test_vpn_connection(
                 stun_limits=(1, 1),
                 nlx_1_limits=(
                     (1, 1)
-                    if vpn_conf.conn_tag == ConnectionTag.DOCKER_NLX_1
+                    if vpn_conf.conn_tag == ConnectionTag.VM_LINUX_NLX_1
                     else (0, 0)
                 ),
                 vpn_1_limits=(
@@ -114,9 +152,6 @@ async def test_vpn_connection(
         alpha, *_ = env.nodes
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
-
-        if alpha_setup_params.connection_tag == ConnectionTag.VM_MAC:
-            await ensure_interface_router_property_expectations(client_conn)
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
@@ -187,7 +222,7 @@ async def test_vpn_connection(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -204,7 +239,7 @@ async def test_vpn_connection(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -660,7 +695,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -676,7 +711,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -727,3 +762,256 @@ async def test_vpn_connection_private_key_change(
         assert (
             ip == config.WG_SERVER["ipv4"]
         ), f"wrong public IP when connected to VPN {ip}"
+
+
+@pytest.mark.parametrize(
+    "alpha_setup_params, public_ip",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.1",
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.1",
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.15",
+            marks=[
+                pytest.mark.windows,
+            ],
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_MAC,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.19",
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "error_code",
+    [
+        (0, VpnConnectionError.UNKNOWN),
+        (1, VpnConnectionError.CONNECTION_LIMIT_REACHED),
+        (2, VpnConnectionError.SERVER_MAINTENANCE),
+        (3, VpnConnectionError.UNAUTHENTICATED),
+        (4, VpnConnectionError.SUPERSEDED),
+        (5, VpnConnectionError.UNKNOWN),
+    ],
+)
+async def test_ens(
+    alpha_setup_params: SetupParameters,
+    public_ip: str,
+    error_code: Tuple[int, VpnConnectionError],
+) -> None:
+    vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
+    async with AsyncExitStack() as exit_stack:
+
+        await set_vpn_server_private_key(
+            vpn_conf.server_conf["ipv4"],
+            vpn_conf.server_conf["private_key"],
+        )
+
+        alpha_setup_params.connection_tracker_config = (
+            generate_connection_tracker_config(
+                alpha_setup_params.connection_tag,
+                stun_limits=(1, 1),
+                vpn_1_limits=(
+                    (1, 1)
+                    if vpn_conf.conn_tag == ConnectionTag.DOCKER_VPN_1
+                    else (0, 0)
+                ),
+            )
+        )
+        assert alpha_setup_params.features.error_notification_service
+        alpha_setup_params.features.error_notification_service.allow_only_pq = False
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+        )
+
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+
+        ip = await stun.get(client_conn, config.STUN_SERVER)
+        assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
+
+        await setup_connections(exit_stack, [vpn_conf.conn_tag])
+
+        await client_alpha.connect_to_vpn(
+            vpn_conf.server_conf["ipv4"],
+            vpn_conf.server_conf["port"],
+            vpn_conf.server_conf["public_key"],
+        )
+
+        additional_info = "some additional info"
+        await trigger_connection_error(
+            vpn_conf.server_conf["ipv4"], error_code[0], additional_info
+        )
+        await client_alpha.wait_for_state_peer(
+            vpn_conf.server_conf["public_key"],
+            [NodeState.CONNECTED],
+            [PathType.DIRECT],
+            True,
+            True,
+            vpn_connection_error=error_code[1],
+        )
+        await client_alpha.wait_for_log(additional_info)
+
+
+async def trigger_connection_error(vpn_ip, error_code, additional_info):
+    data = {"code": error_code, "additional_info": additional_info}
+    url = f"http://{vpn_ip}:8000/api/connection_error"
+    await make_request(url, data)
+
+
+async def set_vpn_server_private_key(vpn_ip, vpn_server_private_key):
+    data = {"vpn_server_private_key": vpn_server_private_key}
+    url = f"http://{vpn_ip}:8000/api/vpn_server_private_key"
+    await make_request(url, data)
+
+
+async def make_request(url, data):
+    def blocking_request():
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(data).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    return await asyncio.to_thread(blocking_request)
+
+
+@pytest.mark.parametrize(
+    "alpha_setup_params, public_ip",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.1",
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.1",
+            marks=pytest.mark.linux_native,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.15",
+            marks=[
+                pytest.mark.windows,
+            ],
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_MAC,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.19",
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
+async def test_ens_not_working(
+    alpha_setup_params: SetupParameters,
+    public_ip: str,
+) -> None:
+    vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
+    async with AsyncExitStack() as exit_stack:
+        await set_vpn_server_private_key(
+            vpn_conf.server_conf["ipv4"],
+            vpn_conf.server_conf["private_key"],
+        )
+
+        alpha_setup_params.connection_tracker_config = (
+            generate_connection_tracker_config(
+                alpha_setup_params.connection_tag,
+                stun_limits=(1, 1),
+                vpn_1_limits=(
+                    (1, 1)
+                    if vpn_conf.conn_tag == ConnectionTag.DOCKER_VPN_1
+                    else (0, 0)
+                ),
+            )
+        )
+        assert alpha_setup_params.features.error_notification_service
+        alpha_setup_params.features.error_notification_service.allow_only_pq = False
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+        )
+
+        alpha, *_ = env.nodes
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+
+        ip = await stun.get(client_conn, config.STUN_SERVER)
+        assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
+
+        vpn_connection, *_ = await setup_connections(exit_stack, [vpn_conf.conn_tag])
+        await exit_stack.enter_async_context(
+            client_alpha.get_router().block_tcp_port(993)
+        )
+
+        await _connect_vpn(
+            client_conn,
+            vpn_connection.connection,
+            client_alpha,
+            alpha.ip_addresses[0],
+            vpn_conf.server_conf,
+        )

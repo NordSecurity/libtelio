@@ -4,25 +4,25 @@ import logging
 import os
 import Pyro5  # type: ignore
 import pytest
+import re
 import shutil
 import ssl
 import subprocess
 import urllib.error
 import urllib.request
-from config import DERP_PRIMARY, LAN_ADDR_MAP, CORE_API_IP, CORE_API_CREDENTIALS
+from collections import defaultdict
+from config import LAN_ADDR_MAP, CORE_API_IP, CORE_API_CREDENTIALS
 from contextlib import AsyncExitStack
 from helpers import SetupParameters
 from http import HTTPStatus
 from interderp_cli import InterDerpClient
 from itertools import combinations
-from typing import Dict, List, Tuple
 from utils.bindings import TelioAdapterType
-from utils.connection import ConnectionTag, clear_ephemeral_setups_set
+from utils.connection import ConnectionTag, clear_ephemeral_setups_set, TargetOS
 from utils.connection.docker_connection import DockerConnection
 from utils.connection.ssh_connection import SshConnection
-from utils.connection_util import new_connection_raw, new_connection_with_conn_tracker
+from utils.connection_util import new_connection_raw
 from utils.logger import log
-from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPStack
 from utils.tcpdump import make_tcpdump, make_local_tcpdump
@@ -127,67 +127,6 @@ def pytest_make_parametrize_id(config, val):
     return param_id
 
 
-async def setup_check_connectivity():
-    if "GITLAB_CI" not in os.environ:
-        return
-
-    reverse: Dict[str, str] = {
-        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]: "VM_WINDOWS_1",
-        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2]: "VM_WINDOWS_2",
-        LAN_ADDR_MAP[ConnectionTag.VM_MAC]: "VM_MAC",
-        DERP_PRIMARY.ipv4: "PRIMARY_DERP",
-    }
-
-    test_nodes = {
-        ConnectionTag.VM_WINDOWS_1: [
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2],
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC],
-            DERP_PRIMARY.ipv4,
-        ],
-        ConnectionTag.VM_WINDOWS_2: [
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1],
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC],
-            DERP_PRIMARY.ipv4,
-        ],
-        ConnectionTag.VM_MAC: [
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1],
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2],
-            DERP_PRIMARY.ipv4,
-        ],
-    }
-    results: Dict[ConnectionTag, List[Tuple[str, bool]]] = {
-        key: [] for key in test_nodes
-    }
-    for source, destinations in test_nodes.items():
-        for dest_ip in destinations:
-            try:
-                async with new_connection_with_conn_tracker(source, None) as (
-                    connection,
-                    _,
-                ):
-                    await ping(connection, dest_ip, 5)
-                    results[source].append((reverse[dest_ip], True))
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                log.error(
-                    "Failed to connect from %s to %s: %s",
-                    source,
-                    reverse[dest_ip],
-                    repr(e),
-                )
-                log.error("Exception type: %s", e.__class__.__name__)
-                log.error("Exception args: %s", e.args)
-                log.error("Exception attributes: %s", dir(e))
-                results[source].append((reverse[dest_ip], False))
-
-    log.info("Connectivity between VMs (and docker):")
-    for k, v in results.items():
-        log.info("%s: %s", k, v)
-
-    for k, v in results.items():
-        for dest_ip, status in v:
-            assert status, f"Failed to connect from {k} to {dest_ip}"
-
-
 async def setup_check_interderp():
     async with AsyncExitStack() as exit_stack:
         connections = [
@@ -221,13 +160,50 @@ async def setup_check_interderp():
                 await derp_test.save_logs()
 
 
+async def setup_check_duplicate_mac_addresses():
+    mac_re = re.compile(r"(?:[0-9a-f]{2}[:\-]){5}[0-9a-f]{2}", re.IGNORECASE)
+    seen = defaultdict(set)  # mac -> set of ConnectionTag
+
+    ignore_macs = {
+        "00:00:00:00:00:00",
+        "ff:ff:ff:ff:ff:ff",
+    }
+
+    async with AsyncExitStack() as exit_stack:
+        for conn_tag in ConnectionTag:
+            conn = await exit_stack.enter_async_context(new_connection_raw(conn_tag))
+
+            if conn.target_os == TargetOS.Linux:
+                cmd = ["bash", "-c", "ip link show | awk '/link\\/ether/ {print $2}'"]
+            elif conn.target_os == TargetOS.Mac:
+                cmd = ["bash", "-c", "ifconfig | awk '/ether/ {print $2}'"]
+            elif conn.target_os == TargetOS.Windows:
+                cmd = ["getmac", "/v", "/fo", "list"]
+            else:
+                raise Exception("unknown target os")
+
+            proc = await conn.create_process(cmd).execute()
+            output = proc.get_stdout()
+
+            # extract MACs (handles both ":" and "-" formats)
+            for m in mac_re.finditer(output):
+                normalized = m.group(0).lower().replace("-", ":")
+                if normalized in ignore_macs:
+                    continue
+                seen[normalized].add(conn_tag)
+
+    duplicates = {
+        mac: sorted(map(str, tags)) for mac, tags in seen.items() if len(tags) > 1
+    }
+    if duplicates:
+        for mac, tags in duplicates.items():
+            print(f"{mac} -> {', '.join(tags)}")
+        raise Exception(f"Found duplicate MACs: {duplicates}")
+
+
 SETUP_CHECKS = [
     (setup_check_interderp, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
-    (
-        setup_check_connectivity,
-        SETUP_CHECK_CONNECTIVITY_TIMEOUT,
-        SETUP_CHECK_CONNECTIVITY_RETRIES,
-    ),
+    (setup_check_duplicate_mac_addresses, 300, 2),
 ]
 
 
@@ -346,7 +322,7 @@ async def _copy_vm_binaries(tag: ConnectionTag):
     try:
         log.info("Copying binaries for %s", tag)
         async with SshConnection.new_connection(
-            LAN_ADDR_MAP[tag], tag, copy_binaries=True
+            LAN_ADDR_MAP[tag]["primary"], tag, copy_binaries=True
         ):
             pass
     except OSError as e:
@@ -406,7 +382,7 @@ def save_audit_log_from_host(suffix):
 
 
 async def save_fakefm_logs():
-    async with new_connection_raw(ConnectionTag.DOCKER_NLX_1) as conn:
+    async with new_connection_raw(ConnectionTag.VM_LINUX_NLX_1) as conn:
         try:
             source_path = "/var/log/fakefm.log"
             cat_proc = await conn.create_process(["cat", source_path]).execute()
@@ -438,7 +414,7 @@ async def collect_kernel_logs(items, suffix):
         if any(mark.name == "mac" for mark in item.own_markers):
             try:
                 async with SshConnection.new_connection(
-                    LAN_ADDR_MAP[ConnectionTag.VM_MAC], ConnectionTag.VM_MAC
+                    LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
                 ) as conn:
                     await _save_macos_logs(conn, suffix)
             except OSError as e:
@@ -532,7 +508,7 @@ async def collect_mac_diagnostic_reports():
     log.info("Collect mac diagnostic reports")
     try:
         async with SshConnection.new_connection(
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC], ConnectionTag.VM_MAC
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
         ) as connection:
             await connection.download(
                 "/Library/Logs/DiagnosticReports", "logs/system_diagnostic_reports"
