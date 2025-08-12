@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+set -e
+
+/libtelio/nat-lab/bin/configure_route.sh primary mac
+
+commands=(
+    'osascript -e "tell application \"System Preferences\" to quit"'
+    'softwareupdate --schedule off'
+    'defaults write /Library/Preferences/com.apple.SoftwareUpdate.plist AutomaticCheckEnabled -bool NO'
+    'defaults write /Library/Preferences/com.apple.SoftwareUpdate.plist AutomaticDownload -bool NO'
+    'defaults write /Library/Preferences/com.apple.SoftwareUpdate.plist ConfigDataInstall -bool NO'
+    'defaults write /Library/Preferences/com.apple.SoftwareUpdate.plist CriticalUpdateInstall -bool NO'
+    'defaults write /Library/Preferences/com.apple.commerce.plist AutoUpdateRestartRequired -bool NO'
+    'defaults write /Library/Preferences/com.apple.commerce.plist AutoUpdate -bool NO'
+)
+
+for cmd in "${commands[@]}"; do
+    python3 /run/qga.py --sh "$cmd"
+done
