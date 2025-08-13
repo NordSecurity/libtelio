@@ -10,21 +10,23 @@ enum Error {
     Superseded = 4;
 }
 
+message ConnectionErrorRequest {}
+
 message ConnectionError {
     Error code = 1;
     optional string additional_info = 2;
 }
 
-message Empty {}
+message ChallengeRequest {}
 
 message Challenge {
     string challenge = 1;
 }
 
 service Login {
-    rpc GetChallenge(Empty) returns (Challenge);
+    rpc GetChallenge(ChallengeRequest) returns (Challenge);
 }
 
 service ENS {
-    rpc ConnectionErrors(Empty) returns (stream ConnectionError);
+    rpc ConnectionErrors(ConnectionErrorRequest) returns (stream ConnectionError);
 }
