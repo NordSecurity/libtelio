@@ -2,7 +2,7 @@ use std::{net::IpAddr, str::FromStr, sync::Arc};
 
 use base64::prelude::{Engine, BASE64_STANDARD};
 use blake3::{derive_key, keyed_hash};
-use grpc::{ConnectionError, Empty};
+use grpc::ConnectionError;
 use http::Uri;
 use hyper_util::rt::TokioIo;
 use telio_crypto::{SecretKey, SharedSecret};
@@ -21,6 +21,8 @@ use tonic::{
 };
 use tower::service_fn;
 use uuid::Uuid;
+
+use crate::ens::grpc::{ChallengeRequest, ConnectionErrorRequest};
 
 #[allow(missing_docs)]
 pub(crate) mod grpc {
@@ -191,7 +193,9 @@ async fn task(
             authentication_interceptor(authenticated_challenge),
         );
 
-        let connection = client.connection_errors(Empty::default()).await?;
+        let connection = client
+            .connection_errors(ConnectionErrorRequest::default())
+            .await?;
         let mut stream = connection.into_inner();
         loop {
             select! {
@@ -232,7 +236,9 @@ async fn get_login_challenge(
 ) -> anyhow::Result<AsciiMetadataValue> {
     let mut login_client = grpc::login_client::LoginClient::new(external_channel);
 
-    let challenge_response = login_client.get_challenge(Empty::default()).await?;
+    let challenge_response = login_client
+        .get_challenge(ChallengeRequest::default())
+        .await?;
     let challenge = &challenge_response.get_ref().challenge;
     let challenge = Uuid::from_str(challenge)?;
     let shared_secret = local_private_key.ecdh(&vpn_public_key);
@@ -306,7 +312,7 @@ mod tests {
     use grpc::{
         ens_server::{self, EnsServer},
         login_server::{self, LoginServer},
-        Challenge, ConnectionError, Empty,
+        Challenge, ConnectionError,
     };
     use telio_crypto::SecretKey;
     use telio_sockets::NativeProtector;
@@ -337,7 +343,7 @@ mod tests {
         type ConnectionErrorsStream = ReceiverStream<Result<ConnectionError, tonic::Status>>;
         async fn connection_errors(
             &self,
-            _request: tonic::Request<Empty>,
+            _request: tonic::Request<ConnectionErrorRequest>,
         ) -> std::result::Result<tonic::Response<Self::ConnectionErrorsStream>, tonic::Status>
         {
             let (tx, rx) = mpsc::channel(1);
@@ -356,7 +362,7 @@ mod tests {
     impl login_server::Login for Arc<GrpcStub> {
         async fn get_challenge(
             &self,
-            _request: tonic::Request<Empty>,
+            _request: tonic::Request<ChallengeRequest>,
         ) -> std::result::Result<tonic::Response<Challenge>, tonic::Status> {
             let challenge = Uuid::new_v4();
             self.challenges.lock().unwrap().insert(challenge);
