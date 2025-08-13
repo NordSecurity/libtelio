@@ -59,7 +59,7 @@ impl AppPaths {
                 ])
                 .output()
                 .map_err(|e| {
-                    TeliodError::SystemCommandFailed(format!("Failed to execute getcfg: {}", e))
+                    TeliodError::SystemCommandFailed(format!("Failed to execute getcfg: {e}"))
                 })?;
 
             if !output.status.success() {
@@ -70,7 +70,7 @@ impl AppPaths {
             }
 
             let path = String::from_utf8(output.stdout).map_err(|e| {
-                TeliodError::InvalidResponse(format!("Invalid UTF-8 in getcfg output: {}", e))
+                TeliodError::InvalidResponse(format!("Invalid UTF-8 in getcfg output: {e}"))
             })?;
             if path.trim().is_empty() {
                 return Err(TeliodError::InvalidResponse(

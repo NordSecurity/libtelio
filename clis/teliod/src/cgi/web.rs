@@ -402,7 +402,7 @@ fn meshnet(app: &AppState) -> Markup {
             "Meshnet Status ({})",
             status
                 .meshnet_ip
-                .map(|ip| format!("{}", ip))
+                .map(|ip| format!("{ip}"))
                 .unwrap_or_default()
         )
     };

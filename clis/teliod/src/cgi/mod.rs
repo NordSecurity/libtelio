@@ -89,7 +89,7 @@ pub fn handle_request(request: Request) -> Response {
 
     #[cfg(feature = "qnap")]
     if let Err(error) = authorize::<QnapUserAuthorization>(&request) {
-        return text_response(StatusCode::UNAUTHORIZED, format!("Unauthorized: {}", error));
+        return text_response(StatusCode::UNAUTHORIZED, format!("Unauthorized: {error}"));
     }
 
     if let Some(response) = web::handle_web_ui(&request) {
