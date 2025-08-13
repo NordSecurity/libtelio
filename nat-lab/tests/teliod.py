@@ -206,6 +206,8 @@ class Teliod:
                 raise TeliodObtainingIdentity() from exc
             if "Error: DaemonIsNotRunning" in exc.stderr:
                 return False
+            if "Connection reset by peer" in exc.stderr:
+                return False
             raise exc
 
     async def get_status(self) -> str:
