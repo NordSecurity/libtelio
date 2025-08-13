@@ -2,13 +2,13 @@ use futures::pin_mut;
 use futures::stream::StreamExt;
 use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use nix::sys::signal::Signal;
+use reqwest::StatusCode;
 use signal_hook_tokio::Signals;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::{net::IpAddr, sync::Arc};
 use telio::crypto::PublicKey;
 use telio::telio_model::mesh::{ExitNode, NodeState};
-use telio::telio_utils::Hidden;
 #[cfg(target_os = "linux")]
 use telio::telio_utils::LIBTELIO_FWMARK;
 use telio::{
@@ -22,13 +22,14 @@ use telio::{
 use tokio::{sync::mpsc, sync::mpsc::Sender, sync::oneshot, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 
-use crate::comms::DaemonSocket;
-use crate::config::VpnConfig;
 use crate::{
     command_listener::CommandListener,
-    config::DeviceIdentity,
-    config::TeliodDaemonConfig,
-    core_api::{get_meshmap as get_meshmap_from_server, init_with_api},
+    comms::DaemonSocket,
+    config::{NordToken, TeliodDaemonConfig, VpnConfig},
+    core_api::{
+        get_meshmap as get_meshmap_from_server, init_with_api, DeviceIdentity,
+        Error as CoreApiError,
+    },
     nc::NotificationCenter,
     ClientCmd, ExitNodeStatus, TelioStatusReport, TeliodError,
 };
@@ -88,7 +89,7 @@ fn telio_task(
     // tests with core API. This is to not look for tokens in a test environment
     // right now as the values are dummy and program will not run as it expects
     // real tokens.
-    if !config.authentication_token.as_str().is_empty() {
+    if !config.authentication_token.is_empty() {
         start_telio(
             &mut telio,
             node_identity.private_key.clone(),
@@ -98,8 +99,8 @@ fn telio_task(
         sys_config.initialize()?;
         task_retrieve_meshmap(
             node_identity,
-            config.authentication_token.clone(),
             config.http_certificate_file_path.clone(),
+            config.authentication_token.clone(),
             tx_channel.clone(),
         );
 
@@ -214,8 +215,8 @@ fn telio_task(
 
 fn task_retrieve_meshmap(
     device_identity: Arc<DeviceIdentity>,
-    auth_token: Arc<Hidden<String>>,
     cert_path: Option<PathBuf>,
+    auth_token: NordToken,
     tx: mpsc::Sender<TelioTaskCmd>,
 ) {
     tokio::spawn(async move {
@@ -310,8 +311,17 @@ async fn daemon_init(
     // on when we have proper integration tests with core API.
     // This is to not look for tokens in a test environment right now as the values
     // are dummy and program will not run as it expects real tokens.
-    let identity = Arc::new(if **config.authentication_token != EMPTY_TOKEN {
-        Box::pin(init_with_api(&config)).await?
+    let identity = Arc::new(if *config.authentication_token != *EMPTY_TOKEN {
+        match Box::pin(init_with_api(&config)).await {
+            Err(CoreApiError::UpdateMachine(StatusCode::NOT_FOUND)) => {
+                debug!("Machine not found, removing cached identity file and trying again..");
+                DeviceIdentity::remove_file();
+
+                Box::pin(init_with_api(&config)).await?
+            }
+            Ok(identity) => identity,
+            Err(e) => return Err(e.into()),
+        }
     } else {
         DeviceIdentity::default()
     });
@@ -325,8 +335,8 @@ async fn daemon_init(
     nc.add_callback(Arc::new(move |_am| {
         task_retrieve_meshmap(
             identity_clone.clone(),
-            config.authentication_token.clone(),
             cert_path.clone(),
+            config.authentication_token.clone(),
             telio_tx.clone(),
         );
     }))

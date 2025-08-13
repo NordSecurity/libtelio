@@ -1,5 +1,3 @@
-use crate::config::{generate_hw_identifier, TeliodDaemonConfig};
-use crate::DeviceIdentity;
 use base64::{prelude::*, DecodeError};
 use reqwest::{header, Certificate, Client, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -7,13 +5,15 @@ use serde_json::Value;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::Read;
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock};
 use telio::crypto::SecretKey;
 use telio::telio_lana::telio_log_warn;
 use telio::telio_utils::exponential_backoff::{
     Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
 };
+
+use crate::config::TeliodDaemonConfig;
 
 use telio::{crypto::PublicKey, telio_model::config::Config as MeshMap};
 use thiserror::Error;
@@ -28,6 +28,17 @@ const OS_NAME: &str = "linux";
 
 type MachineIdentifier = String;
 const MAX_RETRIES: usize = 10;
+
+static DEVICE_IDENTITY_FILE_PATH: LazyLock<Result<PathBuf, Error>> = LazyLock::new(|| {
+    dirs::data_local_dir()
+        .ok_or(Error::NoDataLocalDir)
+        .and_then(|mut path| {
+            path.push("teliod");
+            create_dir_all(&path)?;
+            path.push("data.json");
+            Ok(path)
+        })
+});
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -45,8 +56,8 @@ pub enum Error {
     InvalidResponse,
     #[error("Unable to update machine due to Error: {0}")]
     UpdateMachine(StatusCode),
-    #[error("Max retries exceeded for connection: {0}")]
-    ExpBackoffTimeout(String),
+    #[error("Max retries exceeded for connection")]
+    ExpBackoffTimeout(),
     #[error("No local data directory found")]
     NoDataLocalDir,
     #[error("Device not registered with server")]
@@ -55,6 +66,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     BackoffBounds(#[from] BackoffError),
+    #[error("Failed to access device identity file")]
+    DeviceIdentityFileAccess,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -65,6 +78,136 @@ struct MeshConfig {
     os_version: String,
     device_type: String,
     traffic_routing_supported: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub struct DeviceIdentity {
+    pub hw_identifier: uuid::Uuid,
+    pub private_key: SecretKey,
+    pub machine_identifier: String,
+}
+
+impl DeviceIdentity {
+    /// Generate a new device identity.
+    /// A new key and hw id are generated, whereas the machine id is fetched from the
+    /// API with a [1,180]s exponential backoff.
+    pub async fn new(config: &TeliodDaemonConfig) -> Result<Self, Error> {
+        let private_key = SecretKey::gen();
+        let hw_identifier = uuid::Uuid::new_v4();
+
+        // LLT-6406: There's likely a bug here since looking for a device with a private key that
+        // we just created above is trivial and will fail. This will always register a new device.
+        let machine_identifier = match fetch_identifier_with_exp_backoff(
+            &config.authentication_token,
+            &config.http_certificate_file_path,
+            private_key.public(),
+        )
+        .await
+        {
+            Ok(id) => id,
+            Err(e) => match e {
+                Error::DeviceNotFound => {
+                    info!("Unable to load identifier due to {e}. Registering ...");
+                    Box::pin(register_machine_with_exp_backoff(
+                        &hw_identifier.to_string(),
+                        private_key.public(),
+                        &config.authentication_token,
+                        &config.http_certificate_file_path,
+                    ))
+                    .await?
+                }
+                _ => return Err(e),
+            },
+        };
+
+        Ok(DeviceIdentity {
+            private_key,
+            hw_identifier,
+            machine_identifier,
+        })
+    }
+
+    /// Device identity is parsed from a given file.
+    /// Either the path is provided as parameter or hardcoded path
+    /// is used.
+    pub fn from_file(path: Option<&Path>) -> Result<DeviceIdentity, Error> {
+        info!("Fetching identity config");
+
+        let path = path.unwrap_or(Self::device_identity_path()?);
+
+        match std::fs::File::open(path) {
+            Ok(file) => {
+                debug!("Found existing identity config {}", path.to_string_lossy());
+                serde_json::from_reader(file).map_err(Error::Deserialize)
+            }
+            Err(e) => {
+                warn!("Reading identity config failed: {e}");
+                Err(Error::Io(e))
+            }
+        }
+    }
+
+    // Write device identity to the corresponding file.
+    // File path is DEVICE_IDENTITY_FILE_PATH.
+    pub fn write(&self) -> Result<(), Error> {
+        // User has read/write but others have none
+        // Mode for identity file rw-------
+        let mut file = OpenOptions::new()
+            .mode(0o600)
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(Self::device_identity_path()?)?;
+        serde_json::to_writer(&mut file, &self)?;
+        Ok(())
+    }
+
+    pub fn remove_file() {
+        if let Ok(path) = Self::device_identity_path() {
+            match std::fs::remove_file(path) {
+                Ok(()) => {
+                    info!(
+                        "Successfully removed device identity file at {}",
+                        path.display()
+                    );
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    debug!(
+                        "Device identity file not found at {} - nothing to remove",
+                        path.display()
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to remove device identity file at {}: {}",
+                        path.display(),
+                        e
+                    );
+                }
+            };
+
+            if let Some(parent) = path.parent() {
+                match std::fs::remove_dir(parent) {
+                    Ok(()) => {
+                        debug!("Removed empty directory {}", parent.display());
+                    }
+                    Err(e) => {
+                        debug!("Could not remove directory {}: {}", parent.display(), e);
+                    }
+                };
+            };
+        }
+    }
+
+    fn device_identity_path() -> Result<&'static Path, Error> {
+        DEVICE_IDENTITY_FILE_PATH
+            .as_ref()
+            .map(|p| p.as_path())
+            .map_err(|e| {
+                warn!("Failed to access device identity file: {e}");
+                Error::DeviceIdentityFileAccess
+            })
+    }
 }
 
 fn build_backoff() -> Result<ExponentialBackoff, Error> {
@@ -119,88 +262,21 @@ fn http_client(cert_path: &Option<PathBuf>) -> Client {
 }
 
 pub async fn init_with_api(config: &TeliodDaemonConfig) -> Result<DeviceIdentity, Error> {
-    let identity_path = match &config.device_identity_file_path {
-        Some(path) => path.clone(),
-        None => {
-            let mut identity_path = dirs::data_local_dir().ok_or(Error::NoDataLocalDir)?;
-            identity_path.push("teliod");
-            if !identity_path.exists() {
-                let _ = create_dir_all(&identity_path);
-            }
-            identity_path.push("data.json");
-            identity_path
-        }
-    };
-
-    let mut device_identity = match DeviceIdentity::from_file(&identity_path) {
-        Some(identity) => identity,
-        None => {
-            let private_key = SecretKey::gen();
-            let hw_identifier = generate_hw_identifier();
-
-            let machine_identifier = match fetch_identifier_with_exp_backoff(
-                &config.authentication_token.0,
-                &config.http_certificate_file_path,
-                private_key.public(),
-            )
-            .await
-            {
-                Ok(id) => id,
-                Err(e) => match e {
-                    Error::DeviceNotFound => {
-                        info!("Unable to load identifier due to {e}. Registering ...");
-                        Box::pin(register_machine_with_exp_backoff(
-                            &hw_identifier.to_string(),
-                            private_key.public(),
-                            &config.authentication_token.0,
-                            &config.http_certificate_file_path,
-                        ))
-                        .await?
-                    }
-                    _ => return Err(e),
-                },
-            };
-
-            DeviceIdentity {
-                private_key,
-                hw_identifier,
-                machine_identifier,
-            }
-        }
-    };
-
-    if let Err(e) = update_machine_with_exp_backoff(
-        &config.authentication_token.0,
-        &config.http_certificate_file_path,
-        &device_identity,
-    )
-    .await
+    let device_identity = if let Ok(parsed_device_identity) =
+        DeviceIdentity::from_file(config.device_identity_file_path.as_deref())
     {
-        if let Error::UpdateMachine(status) = e {
-            if status == StatusCode::NOT_FOUND {
-                debug!("Unable to update. Registering machine ...");
-                device_identity.machine_identifier = Box::pin(register_machine_with_exp_backoff(
-                    &device_identity.hw_identifier.to_string(),
-                    device_identity.private_key.public(),
-                    &config.authentication_token.0,
-                    &config.http_certificate_file_path,
-                ))
-                .await?;
-            } else {
-                // exit daemon
-                return Err(Error::UpdateMachine(status));
-            }
-        } else {
-            return Err(e);
-        }
-    }
+        update_machine_with_exp_backoff(
+            &config.authentication_token,
+            &config.http_certificate_file_path,
+            &parsed_device_identity,
+        )
+        .await?;
+        parsed_device_identity
+    } else {
+        Box::pin(DeviceIdentity::new(config)).await?
+    };
 
-    let mut options = OpenOptions::new();
-    // User has read/write but others have none
-    // Mode for identity file rw-------
-    options.mode(0o600);
-    let mut file = options.create(true).write(true).open(identity_path)?;
-    serde_json::to_writer(&mut file, &device_identity)?;
+    device_identity.write()?;
     Ok(device_identity)
 }
 
@@ -219,7 +295,11 @@ async fn update_machine_with_exp_backoff(
                 if let Error::UpdateMachine(_) = e {
                     return Err(e);
                 }
-                wait_with_backoff_delay(&mut backoff, &mut retries, "update machine", e).await?;
+                warn!(
+                    "Failed to update machine due to {e}, will wait for {:?} and retry",
+                    backoff.get_backoff()
+                );
+                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
             }
         }
     }
@@ -236,13 +316,13 @@ async fn fetch_identifier_with_exp_backoff(
     loop {
         match fetch_identifier_from_api(auth_token, cert_path, public_key).await {
             Ok(id) => return Ok(id),
-            Err(e) => match e {
-                Error::FetchingIdentifier(_) | Error::DeviceNotFound => return Err(e),
-                _ => {
-                    wait_with_backoff_delay(&mut backoff, &mut retries, "fetch identifier", e)
-                        .await?;
-                }
-            },
+            Err(e) => {
+                warn!(
+                    "Failed to fetch identifier due to {e:?}, will wait for {:?} and retry",
+                    backoff.get_backoff()
+                );
+                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
+            }
         }
     }
 }
@@ -262,8 +342,11 @@ async fn register_machine_with_exp_backoff(
             Err(e) => match e {
                 Error::PeerRegistering(_) => return Err(e),
                 _ => {
-                    wait_with_backoff_delay(&mut backoff, &mut retries, "register machine", e)
-                        .await?;
+                    warn!(
+                        "Failed to register machine due to {e}, will wait for {:?} and retry",
+                        backoff.get_backoff()
+                    );
+                    wait_with_backoff_delay(&mut backoff, &mut retries).await?;
                 }
             },
         }
@@ -273,16 +356,10 @@ async fn register_machine_with_exp_backoff(
 async fn wait_with_backoff_delay(
     backoff: &mut ExponentialBackoff,
     retries: &mut usize,
-    action: &str,
-    error: Error,
 ) -> Result<(), Error> {
-    warn!(
-        "Failed to {action} due to {error}, will wait for {:?} and retry",
-        backoff.get_backoff()
-    );
     tokio::time::sleep(backoff.get_backoff()).await;
     if *retries > MAX_RETRIES {
-        return Err(Error::ExpBackoffTimeout(action.to_string()));
+        return Err(Error::ExpBackoffTimeout());
     }
     backoff.next_backoff();
     *retries += 1;

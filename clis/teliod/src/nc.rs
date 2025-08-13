@@ -24,7 +24,7 @@ use tokio::{
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use crate::config::MqttConfig;
+use crate::config::{MqttConfig, NordToken};
 
 use self::outgoing::{Acknowledgement, DeliveryConfirmation};
 
@@ -78,7 +78,7 @@ pub struct NotificationCenter {
 }
 
 struct NCConfig {
-    authentication_token: Arc<Hidden<String>>,
+    authentication_token: NordToken,
     app_user_uid: Uuid,
     callbacks: Arc<Mutex<Vec<Callback>>>,
     http_certificate_file_path: Option<PathBuf>,
@@ -313,7 +313,7 @@ async fn request_nc_credentials(
     };
     let resp = client
         .post(TOKENS_URL)
-        .basic_auth(USERNAME, Some(nc_config.authentication_token.0.clone()))
+        .basic_auth(USERNAME, Some(nc_config.authentication_token.clone()))
         .json(&data)
         .send()
         .await?;
