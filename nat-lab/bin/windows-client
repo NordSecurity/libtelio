@@ -3,3 +3,25 @@
 set -e
 
 /libtelio/nat-lab/bin/configure_route.sh primary windows
+
+# Wait up to 60 seconds for OpenSSH SSH Server (sshd) to be running
+timeout_secs=60
+interval_secs=2
+end=$((SECONDS + timeout_secs))
+last_rc=1
+
+while [ $SECONDS -lt $end ]; do
+    if output=$(python3 /run/qga.py powershell -Command '$svc = Get-Service -Name "sshd" -ErrorAction SilentlyContinue; if ($null -eq $svc) { Write-Output "OpenSSH SSH Server (sshd) service not found"; exit 3 } elseif ($svc.Status -eq "Running") { Write-Output "OpenSSH SSH Server is running"; exit 0 } else { Write-Output ("OpenSSH SSH Server status: " + $svc.Status); exit 2 }'); then
+        echo "$output"
+        exit 0
+    else
+        last_rc=$?
+        # Print whatever the remote reported
+        echo "$output"
+        echo "OpenSSH SSH Server not running yet (rc=$last_rc). Retrying in ${interval_secs}s..."
+        sleep "$interval_secs"
+    fi
+done
+
+echo "Timed out waiting for OpenSSH SSH Server to start within ${timeout_secs}s"
+exit "$last_rc"
