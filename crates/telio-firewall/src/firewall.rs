@@ -364,6 +364,66 @@ impl StatefullFirewall {
         }
     }
 
+    fn get_local_area_networks_filters(&self) -> Vec<Vec<Filter>> {
+        // Create rules for peers with LocalAreaConnection permissions
+        let ipv4_local_area_networks = [
+            Ipv4Net::new_assert(StdIpv4Addr::new(10, 0, 0, 0), 8),
+            Ipv4Net::new_assert(StdIpv4Addr::new(172, 16, 0, 0), 12),
+            Ipv4Net::new_assert(StdIpv4Addr::new(192, 168, 0, 0), 16),
+        ];
+
+        // Include packets which are going to local IPv4 networks
+        let mut ipv4_local_area_network_filters = ipv4_local_area_networks
+            .map(|network| vec![Self::dst_net_all_ports_filter(IpNet::V4(network), false)]);
+
+        // Exclude packets from the exclude range
+        if let Some(exclude_range) = self.exclude_ip_range {
+            for local_net_filters in ipv4_local_area_network_filters.iter_mut() {
+                local_net_filters.push(Self::dst_net_all_ports_filter(
+                    IpNet::V4(exclude_range),
+                    true,
+                ));
+            }
+        }
+
+        let mut ipv6_local_area_network_filters = vec![
+            // Include packets which are going to local network
+            Self::dst_net_all_ports_filter(
+                IpNet::V6(Ipv6Net::new_assert(
+                    // TODO: Actually it Unique Local Address range should be (from what I found) fc00::/7,
+                    // but it seems that we assume (and our tests do) that it is fc00::/6
+                    StdIpv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0),
+                    6,
+                )),
+                false,
+            ),
+            // Exclude packets which are going to local interfaces
+            Self::dst_net_all_ports_filter(
+                IpNet::V6(Ipv6Net::new_assert(
+                    StdIpv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 0),
+                    64,
+                )),
+                true,
+            ),
+        ];
+
+        for ip in LOCAL_ADDRS_CACHE.lock().iter().map(|peer| peer.ip()) {
+            if ip.is_ipv4() {
+                for local_network_filters in ipv4_local_area_network_filters.iter_mut() {
+                    local_network_filters
+                        .push(Self::dst_net_all_ports_filter(IpNet::from(ip), true));
+                }
+            } else {
+                ipv6_local_area_network_filters
+                    .push(Self::dst_net_all_ports_filter(IpNet::from(ip), true));
+            }
+        }
+
+        let mut result = Vec::from(ipv4_local_area_network_filters);
+        result.push(ipv6_local_area_network_filters);
+        result
+    }
+
     fn recreate_chain(&self) {
         let mut rules = vec![];
 
@@ -424,105 +484,40 @@ impl StatefullFirewall {
             });
         }
 
-        // Create rules for peers with LocalAreaConnection permissions
-        let ipv4_local_area_networks = [
-            Ipv4Net::new_assert(StdIpv4Addr::new(10, 0, 0, 0), 8),
-            Ipv4Net::new_assert(StdIpv4Addr::new(172, 16, 0, 0), 12),
-            Ipv4Net::new_assert(StdIpv4Addr::new(192, 168, 0, 0), 16),
-        ];
-
-        // Include packets which are going to local IPv4 networks
-        let mut ipv4_local_area_network_filters = ipv4_local_area_networks
-            .map(|network| vec![Self::dst_net_all_ports_filter(IpNet::V4(network), false)]);
-
-        // Exclude packets from the exclude range
-        if let Some(exclude_range) = self.exclude_ip_range {
-            for local_net_filters in ipv4_local_area_network_filters.iter_mut() {
-                local_net_filters.push(Self::dst_net_all_ports_filter(
-                    IpNet::V4(exclude_range),
-                    true,
-                ));
-            }
-        }
-
-        let mut ipv6_local_area_network_filters = vec![
-            // Include packets which are going to local network
-            Self::dst_net_all_ports_filter(
-                IpNet::V6(Ipv6Net::new_assert(
-                    // TODO: Actually it Unique Local Address range should be (from what I found) fc00::/7,
-                    // but it seems that we assume (and our tests do) that it is fc00::/6
-                    StdIpv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0),
-                    6,
-                )),
-                false,
-            ),
-            // Exclude packets which are going to local interfaces
-            Self::dst_net_all_ports_filter(
-                IpNet::V6(Ipv6Net::new_assert(
-                    StdIpv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 0),
-                    64,
-                )),
-                true,
-            ),
-        ];
-
-        for ip in LOCAL_ADDRS_CACHE.lock().iter().map(|peer| peer.ip()) {
-            if ip.is_ipv4() {
-                for local_network_filters in ipv4_local_area_network_filters.iter_mut() {
-                    local_network_filters
-                        .push(Self::dst_net_all_ports_filter(IpNet::from(ip), true));
-                }
-            } else {
-                ipv6_local_area_network_filters
-                    .push(Self::dst_net_all_ports_filter(IpNet::from(ip), true));
-            }
-        }
-
-        let whitelist = self.whitelist.read();
+        let local_network_filters = self.get_local_area_networks_filters();
 
         #[allow(index_access_check)]
-        for peer in whitelist.peer_whitelists[Permissions::LocalAreaConnections].iter() {
-            let mut initial_filter_vec = vec![Filter {
-                filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
-                inverted: false,
-            }];
-            for local_net in ipv4_local_area_network_filters.iter() {
-                let mut filters = initial_filter_vec.clone();
+        for peer in self.whitelist.read().peer_whitelists[Permissions::LocalAreaConnections].iter()
+        {
+            for local_net in local_network_filters.iter() {
+                let mut filters = vec![Filter {
+                    filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
+                    inverted: false,
+                }];
                 filters.extend_from_slice(local_net);
                 rules.push(Rule {
                     filters,
                     action: LibfwVerdict::LibfwVerdictAccept,
                 });
             }
-            initial_filter_vec.extend_from_slice(&ipv6_local_area_network_filters);
-            rules.push(Rule {
-                filters: initial_filter_vec,
-                action: LibfwVerdict::LibfwVerdictAccept,
-            });
         }
 
         // For nodes not included in the whitelist this packet should be dropped
-        let mut initial_filter_vec = vec![];
-        for local_net in ipv4_local_area_network_filters.iter() {
-            let mut filters = vec![];
-            filters.extend_from_slice(local_net);
+        for filters in local_network_filters {
             rules.push(Rule {
                 filters,
                 action: LibfwVerdict::LibfwVerdictDrop,
             });
         }
-        initial_filter_vec.extend_from_slice(&ipv6_local_area_network_filters);
-        rules.push(Rule {
-            filters: initial_filter_vec,
-            action: LibfwVerdict::LibfwVerdictDrop,
-        });
 
         // Rules for incoming connections
         let local_ip = self.ip_addresses.read();
         for ip in local_ip.iter() {
             // Accept packets for whitelisted peers
             #[allow(index_access_check)]
-            for peer in whitelist.peer_whitelists[Permissions::IncomingConnections].iter() {
+            for peer in
+                self.whitelist.read().peer_whitelists[Permissions::IncomingConnections].iter()
+            {
                 rules.push(Rule {
                     filters: vec![
                         Filter {
@@ -571,7 +566,7 @@ impl StatefullFirewall {
 
             // Accept packets for whitelisted ports
             for proto in [LibfwNextLevelProtocol::Tcp, LibfwNextLevelProtocol::Udp] {
-                for (peer, &port) in whitelist.port_whitelist.iter() {
+                for (peer, &port) in self.whitelist.read().port_whitelist.iter() {
                     rules.push(Rule {
                         filters: vec![
                             Filter {
@@ -603,7 +598,7 @@ impl StatefullFirewall {
         }
 
         #[allow(index_access_check)]
-        for peer in whitelist.peer_whitelists[Permissions::RoutingConnections].iter() {
+        for peer in self.whitelist.read().peer_whitelists[Permissions::RoutingConnections].iter() {
             rules.push(Rule {
                 filters: vec![Filter {
                     filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
@@ -621,6 +616,7 @@ impl StatefullFirewall {
         public_key: &[u8; 32],
         buffer: &'a [u8],
         sink: &mut dyn io::Write,
+        conn_state: LibfwConnectionState,
     ) -> Result<bool> {
         let ip = unwrap_option_or_return!(P::try_from(buffer), Err(Error::MalformedIpPacket));
         let peer: PublicKey = PublicKey(*public_key);
@@ -631,7 +627,7 @@ impl StatefullFirewall {
         }
 
         let verdict = self.chain.read().process_packet(
-            LibfwConnectionState::LibfwConnectionStateNew,
+            conn_state,
             &ip,
             Some(public_key),
             LibfwDirection::LibfwDirectionOutbound,
@@ -803,25 +799,26 @@ impl Firewall for StatefullFirewall {
     ) -> bool {
         match unwrap_option_or_return!(buffer.first(), false) >> 4 {
             4 => {
-                if self
+                let conn_state = self
                     .conntrack
                     .track_outbound_ip_packet::<Ipv4Packet>(Some(public_key), buffer)
-                    .is_err()
-                {
-                    telio_log_warn!("Conntrack failed for outbound IPv4 packet");
-                }
-                self.process_outbound_ip_packet::<Ipv4Packet>(public_key, buffer, sink)
+                    .unwrap_or_else(|_| {
+                        telio_log_warn!("Conntrack failed for outbound IPv4 packet");
+                        LibfwConnectionState::LibfwConnectionStateNew
+                    });
+                self.process_outbound_ip_packet::<Ipv4Packet>(public_key, buffer, sink, conn_state)
                     .unwrap_or(false)
             }
             6 if self.allow_ipv6 => {
-                if self
+                let conn_state = self
                     .conntrack
                     .track_outbound_ip_packet::<Ipv6Packet>(Some(public_key), buffer)
-                    .is_err()
-                {
-                    telio_log_warn!("Conntrack failed for outbound IPv6 packet");
-                }
-                self.process_outbound_ip_packet::<Ipv6Packet>(public_key, buffer, sink)
+                    .unwrap_or_else(|_| {
+                        telio_log_warn!("Conntrack failed for outbound IPv4 packet");
+                        // Some packets are unexpected, but we still let them through, like outbound ICMP reply
+                        LibfwConnectionState::LibfwConnectionStateNew
+                    });
+                self.process_outbound_ip_packet::<Ipv6Packet>(public_key, buffer, sink, conn_state)
                     .unwrap_or(false)
             }
             version => {
@@ -1857,6 +1854,7 @@ pub mod tests {
                     if request_type == reply_type {
                         continue;
                     }
+
                     let fw = StatefullFirewall::new_custom(
                         LRU_CAPACITY,
                         LRU_TIMEOUT,
