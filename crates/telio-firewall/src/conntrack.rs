@@ -328,10 +328,10 @@ impl Conntrack {
         ip: &impl IpPacket<'a>,
         associated_data: Option<&[u8]>,
     ) -> Result<LibfwConnectionState> {
-        let mut icmp_cache = self.icmp.lock();
         if let IcmpKey::Conn(key) =
             Self::build_icmp_key(ip, associated_data, LibfwDirection::LibfwDirectionOutbound)?
         {
+            let mut icmp_cache = self.icmp.lock();
             // If key already exists, dont change the value, just update timer with entry
             if let Entry::Vacant(e) = icmp_cache.entry(key, true) {
                 telio_log_trace!("Inserting new ICMP conntrack entry {:?}", e.key());
