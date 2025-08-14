@@ -40,15 +40,15 @@ services:
       - ../:/shared
     healthcheck:
       test: "[ -f /ready ] || exit 1"
-      interval: 30s
-      retries: 20
+      interval: 2s
+      retries: 120
       start_period: 60s
       timeout: 2s
     environment:
       USERNAME: "root"
       PASSWORD: "root"
       NETWORK: "bridge"
-      RAM_SIZE: "1G"
+      RAM_SIZE: "512M"
       CPU_CORES: "1"
       EXTRA_SCRIPT: "/shared/nat-lab/bin/nlx-vm"
       CLIENT_GATEWAY_PRIMARY: none
@@ -145,8 +145,8 @@ services:
       - ../:/libtelio
     healthcheck:
       test: "[ -f /local/ready ] || exit 1"
-      interval: 30s
-      retries: 20
+      interval: 2s
+      retries: 120
       start_period: 60s
       timeout: 2s
     environment:
@@ -176,6 +176,8 @@ services:
       USERNAME: "bill"
       PASSWORD: "gates"
       NETWORK: "bridge"
+      RAM_SIZE: "2G"
+      CPU_CORES: "1"
       EXTRA_SCRIPT: "/libtelio/nat-lab/bin/windows-client"
       CLIENT_GATEWAY_PRIMARY: 192.168.152.254
       CLIENT_GATEWAY_SECONDARY: 192.168.153.254
@@ -217,8 +219,8 @@ services:
       - ../:/libtelio
     healthcheck:
       test: "ls /ready"
-      interval: 30s
-      retries: 20
+      interval: 2s
+      retries: 120
       start_period: 60s
       timeout: 2s
     environment:
@@ -467,15 +469,15 @@ services:
       - ../:/shared
     healthcheck:
       test: "[ -f /ready ] || exit 1"
-      interval: 30s
-      retries: 20
+      interval: 2s
+      retries: 120
       start_period: 60s
       timeout: 2s
     environment:
       USERNAME: "root"
       PASSWORD: "root"
       NETWORK: "bridge"
-      RAM_SIZE: "1G"
+      RAM_SIZE: "512M"
       CPU_CORES: "1"
       EXTRA_SCRIPT: "/shared/nat-lab/bin/fullcone-gw-vm"
       CLIENT_GATEWAY_PRIMARY: none
@@ -493,6 +495,14 @@ services:
   fullcone-gw-02:
     hostname: fullcone-gw-02
     <<: *common-fullcone-gw
+    environment:
+      USERNAME: "root"
+      PASSWORD: "root"
+      NETWORK: "bridge"
+      RAM_SIZE: "512M"
+      CPU_CORES: "1"
+      EXTRA_SCRIPT: "/shared/nat-lab/bin/fullcone-gw-vm"
+      CLIENT_GATEWAY_PRIMARY: none
     networks:
       internet:
         ipv4_address: 10.0.254.6
