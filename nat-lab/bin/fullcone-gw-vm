@@ -2,4 +2,27 @@
 
 set -eoux
 
+# Wait up to 60 seconds for SSH service to be running on the Linux VM
+timeout_secs=60
+interval_secs=2
+end=$((SECONDS + timeout_secs))
+last_rc=1
+
+while [ $SECONDS -lt $end ]; do
+    if output=$(python3 /run/qga.py --sh 'if command -v systemctl >/dev/null 2>&1; then if systemctl is-active --quiet sshd || systemctl is-active --quiet ssh; then echo "SSH service is active"; exit 0; else echo "SSH service not active"; exit 2; fi; else if pgrep -x sshd >/dev/null 2>&1; then echo "sshd process running"; exit 0; else echo "sshd process not running"; exit 2; fi; fi'); then
+        echo "$output"
+        break
+    else
+        last_rc=$?
+        echo "$output"
+        echo "SSH service not ready yet (rc=$last_rc). Retrying in ${interval_secs}s..."
+        sleep "$interval_secs"
+    fi
+done
+
+if [ $SECONDS -ge $end ]; then
+    echo "Timed out waiting for SSH service to become active within ${timeout_secs}s"
+    exit "$last_rc"
+fi
+
 python3 /run/qga.py --timeout 180 /mnt/shared/nat-lab/bin/fullcone-gw
