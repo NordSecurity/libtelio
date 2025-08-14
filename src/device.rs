@@ -4,7 +4,10 @@ use async_trait::async_trait;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::init_lana;
-use telio_network_monitors::{local_interfaces::SystemGetIfAddrs, monitor::NetworkMonitor};
+use telio_network_monitors::{
+    local_interfaces::SystemGetIfAddrs,
+    monitor::{LocalInterfacesObserver, NetworkMonitor},
+};
 use telio_pq::PostQuantum;
 use telio_proto::{ConnectionError, Error as EnsError, ErrorNotificationService, HeartbeatMessage};
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
@@ -1054,6 +1057,9 @@ impl Runtime {
         };
 
         let network_monitor = NetworkMonitor::new(SystemGetIfAddrs).await?;
+        let firewall_observer_ptr: Arc<dyn LocalInterfacesObserver> = firewall.clone();
+        network_monitor.register_local_interfaces_observer(Arc::downgrade(&firewall_observer_ptr));
+
         let socket_pool = Arc::new({
             if let Some(protect) = protect.clone() {
                 SocketPool::new(protect)
