@@ -1,7 +1,17 @@
 # Teliod
 
-Teliod is small Meshnet and VPN application, designed to be used in standalone
-and embedded environments.
+**Teliod** is a lightweight, standalone VPN client built around
+the `libtelio` library.
+
+It is designed for embedded and edge environments, that are too resource
+constrained for the full NordVPN application.
+
+## Core functionality
+
+* Provides basic VPN and meshnet functionality.
+* Minimal user interaction, controlled via a single configuration file.
+* Automated network and routing configuration.
+* VPN servers fetched dynamically using NordVPN API.
 
 ## Building Teliod
 
