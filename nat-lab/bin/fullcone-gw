@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -ex
+set -eoux
 
 # This is a workaround for 6.x kernel bug, which can cause NULL-deref when
 # iptables are executed too early at boot.
@@ -8,8 +8,18 @@ set -ex
 # https://lore.kernel.org/netdev/20240731213046.6194-3-pablo@netfilter.org/T/#m597226ed32420a20bca5be58cf1c21073f06083b
 sleep 5
 
-pushd /opt/iptables
-make install
+sysctl net.ipv4.ip_forward=1
+sysctl net.ipv4.conf.all.rp_filter=0
+sysctl net.ipv4.conf.default.rp_filter=0
+sysctl net.ipv6.conf.all.disable_ipv6=0
+sysctl net.ipv6.conf.default.disable_ipv6=0
+sysctl net.ipv6.conf.all.forwarding=1
+
+pushd "/opt/3rd-party/netfilter-full-cone-nat"
+make
+modprobe nf_nat
+insmod xt_FULLCONENAT.ko
+lsmod | grep xt_FULLCONENAT
 popd
 
 public_itf=$(ip route show | awk '/10.0.0.0\/16.*dev [a-z0-0]+/ {print $3}')
@@ -23,6 +33,10 @@ iptables -t filter -P INPUT DROP
 iptables -t filter -A FORWARD -s 100.64.0.0/10 -j DROP
 iptables -t filter -A FORWARD -d 100.64.0.0/10 -j DROP
 
+iptables -t filter -A INPUT -p tcp --dport 22 -j ACCEPT
+iptables -t nat -A POSTROUTING -o $public_itf -p tcp --dport 22 -j RETURN
+iptables -t nat -A PREROUTING -i $public_itf -p tcp --sport 22 -j RETURN
+
 # Configure Full-cone NAT
 iptables -t nat -A POSTROUTING -o $public_itf -j FULLCONENAT
 iptables -t nat -A PREROUTING -i $public_itf -j FULLCONENAT
@@ -32,5 +46,3 @@ iptables-save -f iptables_backup
 ip6tables-save -f ip6tables_backup
 
 touch /ready
-
-sleep infinity

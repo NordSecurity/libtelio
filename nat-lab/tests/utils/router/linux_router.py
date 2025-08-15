@@ -1,4 +1,5 @@
 import config
+import secrets
 from .router import Router, IPStack, IPProto, get_ip_address_type
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, List
@@ -585,5 +586,7 @@ class LinuxRouter(Router):
             yield
         finally:
             await self._connection.create_process(
-                ["upnpd", "eth0", "eth1"], quiet=True
+                ["upnpd", "eth0", "eth1"],
+                quiet=True,
+                kill_id="DO_NOT_KILL" + secrets.token_hex(8).upper(),
             ).execute()

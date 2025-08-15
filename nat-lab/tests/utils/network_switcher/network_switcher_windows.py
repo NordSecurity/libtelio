@@ -1,4 +1,3 @@
-import asyncio
 import config
 import re
 from .network_switcher import NetworkSwitcher
@@ -44,8 +43,7 @@ class Interface:
 
 
 class ConfiguredInterfaces:
-    def __init__(self, default: Optional[str], primary: str, secondary: str) -> None:
-        self.default = default
+    def __init__(self, primary: str, secondary: str) -> None:
         self.primary = primary
         self.secondary = secondary
 
@@ -53,20 +51,19 @@ class ConfiguredInterfaces:
     async def create(connection: Connection) -> "ConfiguredInterfaces":
         interfaces = await Interface.get_network_interfaces(connection)
 
-        def find_interface(prefix: str) -> Optional[str]:
+        def find_interface(ip: str) -> Optional[str]:
             for interface in interfaces:
-                if interface.ipv4.startswith(prefix):
+                if interface.ipv4 == ip:
                     return interface.name
             return None
 
         # Allow management interface to be shut down
-        management_itf = find_interface((config.LIBVIRT_MANAGEMENT_NETWORK_PREFIX))
-        primary_itf = find_interface(config.PRIMARY_VM_NETWORK_PREFIX)
-        secondary_itf = find_interface(config.SECONDARY_VM_NETWORK_PREFIX)
+        primary_itf = find_interface(config.LAN_ADDR_MAP[connection.tag]["primary"])
+        secondary_itf = find_interface(config.LAN_ADDR_MAP[connection.tag]["secondary"])
         assert primary_itf is not None
         assert secondary_itf is not None
 
-        return ConfiguredInterfaces(management_itf, primary_itf, secondary_itf)
+        return ConfiguredInterfaces(primary_itf, secondary_itf)
 
 
 class NetworkSwitcherWindows(NetworkSwitcher):
@@ -85,8 +82,6 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         )
 
     async def switch_to_primary_network(self) -> None:
-        """Set default route via Linux VM @ $LINUX_VM_PRIMARY_GATEWAY"""
-
         await self._delete_existing_route()
         await self._connection.create_process([
             "netsh",
@@ -96,7 +91,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             "route",
             "0.0.0.0/0",
             self._interfaces.primary,
-            f"nexthop={config.LINUX_VM_PRIMARY_GATEWAY}",
+            f"nexthop={config.GW_ADDR_MAP[self._connection.tag]['primary']}",
         ]).execute()
 
         if not await CommandGrepper(
@@ -112,15 +107,14 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         ).check_exists(
             "0.0.0.0/0",
             [
-                config.LINUX_VM_PRIMARY_GATEWAY,
+                config.GW_ADDR_MAP[self._connection.tag]["primary"],
             ],
         ):
             raise Exception("Failed to switch to primary network")
 
     async def switch_to_secondary_network(self) -> None:
-        """Set default route via Linux VM @ $LINUX_VM_SECONDARY_GATEWAY"""
-
         await self._delete_existing_route()
+
         await self._connection.create_process([
             "netsh",
             "interface",
@@ -129,7 +123,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             "route",
             "0.0.0.0/0",
             self._interfaces.secondary,
-            f"nexthop={config.LINUX_VM_SECONDARY_GATEWAY}",
+            f"nexthop={config.GW_ADDR_MAP[self._connection.tag]['secondary']}",
         ]).execute()
 
         if not await CommandGrepper(
@@ -145,7 +139,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         ).check_exists(
             "0.0.0.0/0",
             [
-                config.LINUX_VM_SECONDARY_GATEWAY,
+                config.GW_ADDR_MAP[self._connection.tag]["secondary"],
             ],
         ):
             raise Exception("Failed to switch to secondary network")
@@ -154,8 +148,6 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         # Deleting routes by interface name instead of network destination (0.0.0.0/0) makes
         # it possible to have multiple default routes at the same time: first default route
         # for LAN network, and second default route for VPN network.
-
-        await self._disable_management_interface()
         await self._delete_route(self._interfaces.primary)
         await self._delete_route(self._interfaces.secondary)
 
@@ -200,61 +192,3 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             ],
         ):
             raise Exception("Failed to delete " + interface_name + " route")
-
-    async def _disable_management_interface(self) -> None:
-        if self._interfaces.default is not None:
-            await self._connection.create_process(
-                [
-                    "netsh",
-                    "interface",
-                    "set",
-                    "interface",
-                    self._interfaces.default,
-                    "disable",
-                ],
-                quiet=True,
-            ).execute()
-
-            if not await CommandGrepper(
-                self._connection,
-                [
-                    "netsh",
-                    "interface",
-                    "ipv4",
-                    "show",
-                    "addresses",
-                    self._interfaces.default,
-                ],
-                timeout=self._status_check_timeout_s,
-            ).check_not_exists(self._interfaces.default, None):
-                raise Exception("Failed to disable management interface")
-
-    async def _enable_management_interface(self) -> None:
-        if self._interfaces.default is not None:
-            await self._connection.create_process(
-                [
-                    "netsh",
-                    "interface",
-                    "set",
-                    "interface",
-                    self._interfaces.default,
-                    "enable",
-                ],
-                quiet=True,
-            ).execute()
-
-            # wait for interface to appear in the list
-            while not bool([
-                iface
-                for iface in await Interface.get_network_interfaces(self._connection)
-                if self._interfaces.default == iface.name
-            ]):
-                await asyncio.sleep(0.1)
-
-            # wait for interface's ip to be assigned
-            while bool([
-                iface
-                for iface in await Interface.get_network_interfaces(self._connection)
-                if Interface(self._interfaces.default, "").ipv4 == iface.ipv4
-            ]):
-                await asyncio.sleep(0.1)
