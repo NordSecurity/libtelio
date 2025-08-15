@@ -36,7 +36,10 @@ def run_command_with_output(command, hide_output=False):
     return result
 
 
-def start():
+def start(skip_keywords=None):
+    if skip_keywords is None:
+        skip_keywords = []
+
     check_docker_version_compatibility()
 
     generate_grpc("../crates/telio-proto/protos/ens.proto")
@@ -60,17 +63,38 @@ def start():
             "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
         },
     )
+
+    exclude_services = set()
     try:
-        command = ["docker", "compose", "up", "-d", "--wait"]
+        all_services = run_command_with_output(
+            ["docker", "compose", "config", "--services"], hide_output=True
+        )
+        all_services = [service.strip() for service in all_services.splitlines()]
+
+        exclude_services = set(
+            filter(
+                lambda service: any(keyword in service for keyword in skip_keywords),
+                all_services,
+            )
+        )
+
+        services_to_start = [
+            service for service in all_services if service not in exclude_services
+        ]
+
+        if exclude_services:
+            print(f"Skipping services: {sorted(exclude_services)}")
+
+        command = ["docker", "compose", "up", "-d", "--wait"] + services_to_start
         if "GITLAB_CI" in os.environ:
             command.append("--quiet-pull")
         run_command(
             command, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
         )
     except subprocess.CalledProcessError:
-        check_containers()
+        check_containers(exclude_services)
     else:
-        check_containers()
+        check_containers(exclude_services)
 
 
 def stop():
@@ -100,9 +124,18 @@ def quick_restart_container(names: List[str], env=None):
             subprocess.run(["docker", "restart", container, "-t", "0"], env=env)
 
 
-def check_containers() -> None:
-    services = run_command_with_output(["docker", "compose", "config", "--services"])
+def check_containers(exclude_containers=None) -> None:
+    if exclude_containers is None:
+        exclude_containers = []
+
+    services = run_command_with_output(
+        ["docker", "compose", "config", "--services"], hide_output=True
+    )
     services = [service.strip() for service in services.splitlines()]
+
+    services_to_check = [
+        service for service in services if service not in exclude_containers
+    ]
 
     docker_status = run_command_with_output(
         ["docker", "ps", "--filter", "status=running"]
@@ -111,7 +144,7 @@ def check_containers() -> None:
 
     missing_services: List[str] = []
 
-    for service in services:
+    for service in services_to_check:
         if not find_container(service, docker_status):
             run_command(["docker", "compose", "logs", service])
             missing_services.append(service)
@@ -206,34 +239,85 @@ def generate_grpc(path):
     ])
 
 
+def restart():
+    """Restart existing containers (only restarts running containers)"""
+    run_command(["docker", "compose", "restart"])
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--start", action="store_true", help="Build and start the environment"
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    start_parser = subparsers.add_parser(
+        "start",
+        help="Build and start the environment [--skip-fullcone] [--skip-windows] [--skip-windows-client-02] [--skip-mac] [--skip-nlx] [--lite-mode]",
     )
-    parser.add_argument("--stop", action="store_true", help="Stop the environment")
-    parser.add_argument("--kill", action="store_true", help="Kill the environment")
-    parser.add_argument(
-        "--restart", action="store_true", help="Kill and start the environment"
-    )
-    parser.add_argument(
-        "--check-containers",
+    start_parser.add_argument(
+        "--skip-fullcone",
         action="store_true",
-        help="Check if all containers are running",
+        help="Skip starting fullcone related containers (fullcone-client-*, fullcone-gw-*)",
+    )
+    start_parser.add_argument(
+        "--skip-windows",
+        action="store_true",
+        help="Skip starting all windows related containers (windows-client-*, windows-gw-*)",
+    )
+    start_parser.add_argument(
+        "--skip-windows-client-02",
+        action="store_true",
+        help="Skip starting windows-client-02 container and related gateways",
+    )
+    start_parser.add_argument(
+        "--skip-mac",
+        action="store_true",
+        help="Skip starting mac-client-01 container and related gateways",
+    )
+    start_parser.add_argument(
+        "--skip-nlx", action="store_true", help="Skip starting nlx-01 container"
+    )
+    start_parser.add_argument(
+        "--lite-mode",
+        action="store_true",
+        help="Skip all heavy containers (windows, mac, fullcone and nlx)",
+    )
+
+    subparsers.add_parser("restart", help="Restart (already existing) containers")
+    subparsers.add_parser("stop", help="Stop the environment")
+    subparsers.add_parser("kill", help="Kill the environment")
+    subparsers.add_parser(
+        "check-containers", help="Check if all containers are running"
     )
 
     args = parser.parse_args()
+    if not args.command:
+        parser.print_help()
+        return
 
-    if args.start:
-        start()
-    elif args.stop:
+    if args.command == "start":
+        skip_keywords = set()
+        if args.lite_mode:
+            skip_keywords.update(["fullcone", "windows", "mac", "nlx"])
+        else:
+            if args.skip_fullcone:
+                skip_keywords.add("fullcone")
+            if args.skip_windows:
+                skip_keywords.add("windows")
+            elif args.skip_windows_client_02:
+                skip_keywords.update(
+                    ["windows-client-02", "windows-gw-03", "windows-gw-04"]
+                )
+            if args.skip_mac:
+                skip_keywords.add("mac")
+            if args.skip_nlx:
+                skip_keywords.add("nlx")
+        start(skip_keywords)
+    elif args.command == "restart":
+        restart()
+    elif args.command == "stop":
         stop()
-    elif args.kill:
+    elif args.command == "kill":
         kill()
-    elif args.restart:
-        kill()
-        start()
-    elif args.check_containers:
+    elif args.command == "check-containers":
         check_containers()
 
 
