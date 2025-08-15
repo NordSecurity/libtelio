@@ -918,8 +918,8 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "netstat -tlnp | grep 8883 | grep LISTEN"]
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout: 2s
+      retries: 10
       start_period: 5s
     depends_on:
       dns-server-1:
