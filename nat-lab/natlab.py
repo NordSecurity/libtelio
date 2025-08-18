@@ -244,6 +244,18 @@ def restart():
     run_command(["docker", "compose", "restart"])
 
 
+def recreate():
+    """Recreate existing containers (only recreates running containers)"""
+    running_services = run_command_with_output(
+        ["docker", "compose", "ps", "--services"], True
+    ).splitlines()
+    all_services = run_command_with_output(
+        ["docker", "compose", "config", "--services"], True
+    ).splitlines()
+    exclude_services = set(all_services) - set(running_services)
+    start(exclude_services)
+
+
 def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -263,7 +275,12 @@ def main():
         help="Skip starting all windows related containers (windows-client-*, windows-gw-*)",
     )
     start_parser.add_argument(
-        "--skip-windows-client-02",
+        "--skip-windows-1",
+        action="store_true",
+        help="Skip starting windows-client-01 container and related gateways",
+    )
+    start_parser.add_argument(
+        "--skip-windows-2",
         action="store_true",
         help="Skip starting windows-client-02 container and related gateways",
     )
@@ -282,6 +299,7 @@ def main():
     )
 
     subparsers.add_parser("restart", help="Restart (already existing) containers")
+    subparsers.add_parser("recreate", help="Recreate (already existing) containers")
     subparsers.add_parser("stop", help="Stop the environment")
     subparsers.add_parser("kill", help="Kill the environment")
     subparsers.add_parser(
@@ -302,7 +320,11 @@ def main():
                 skip_keywords.add("fullcone")
             if args.skip_windows:
                 skip_keywords.add("windows")
-            elif args.skip_windows_client_02:
+            if args.skip_windows_1:
+                skip_keywords.update(
+                    ["windows-client-01", "windows-gw-01", "windows-gw-02"]
+                )
+            if args.skip_windows_2:
                 skip_keywords.update(
                     ["windows-client-02", "windows-gw-03", "windows-gw-04"]
                 )
@@ -313,6 +335,8 @@ def main():
         start(skip_keywords)
     elif args.command == "restart":
         restart()
+    elif args.command == "recreate":
+        recreate()
     elif args.command == "stop":
         stop()
     elif args.command == "kill":
