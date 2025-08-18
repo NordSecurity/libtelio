@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -eoux
+set -euxo pipefail
 
 # This is a workaround for 6.x kernel bug, which can cause NULL-deref when
 # iptables are executed too early at boot.
