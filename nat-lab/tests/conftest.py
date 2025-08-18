@@ -35,6 +35,8 @@ DERP_SERVER_2_SECRET_KEY = "2NgALOCSKJcDxwr8MtA+6lYbf7b98KSdAROGoUwZ1V0="
 
 SETUP_CHECK_TIMEOUT_S = 30
 SETUP_CHECK_RETRIES = 5
+SETUP_CHECK_MAC_COLLISION_TIMEOUT_S = 300
+SETUP_CHECK_MAC_COLLISION_RETRIES = 2
 
 RUNNER = asyncio.Runner()
 # pylint: disable=unnecessary-dunder-call
@@ -198,7 +200,11 @@ async def setup_check_duplicate_mac_addresses():
 
 SETUP_CHECKS = [
     (setup_check_interderp, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
-    (setup_check_duplicate_mac_addresses, 300, 2),
+    (
+        setup_check_duplicate_mac_addresses,
+        SETUP_CHECK_MAC_COLLISION_TIMEOUT_S,
+        SETUP_CHECK_MAC_COLLISION_RETRIES,
+    ),
 ]
 
 
