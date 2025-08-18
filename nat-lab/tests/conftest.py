@@ -161,6 +161,8 @@ async def setup_check_duplicate_mac_addresses():
         "ff:ff:ff:ff:ff:ff",
     }
 
+    await clear_arp_cache()
+
     async with AsyncExitStack() as exit_stack:
         for conn_tag in ConnectionTag:
             conn = await exit_stack.enter_async_context(new_connection_raw(conn_tag))
@@ -242,7 +244,13 @@ async def kill_natlab_processes():
     subprocess.run(["sudo", cleanup_script_path]).check_returncode()
 
 
-PRETEST_CLEANUPS = [kill_natlab_processes, clear_ephemeral_setups_set]
+async def clear_arp_cache():
+    if not "GITLAB_CI" in os.environ:
+        return
+    subprocess.run(["sudo", "ip", "-s", "-s", "neigh", "flush", "all"])
+
+
+PRETEST_CLEANUPS = [kill_natlab_processes, clear_ephemeral_setups_set, clear_arp_cache]
 
 
 async def perform_pretest_cleanups():
