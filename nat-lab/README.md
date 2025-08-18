@@ -38,9 +38,9 @@ uv sync
 3) Start the Nat-Lab infrastructure
 From [nat-lab dir](libtelio/nat-lab):
 ```
-python3 natlab.py --start
+python3 natlab.py start
 # or via uv to isolate env:
-uv run python3 natlab.py --start
+uv run python3 natlab.py start
 ```
 This builds and brings up the Docker-compose environment and generates gRPC stubs for ENS. See [python.start()](natlab.py) and [python.generate_grpc()](natlab.py).
 
@@ -66,28 +66,48 @@ The environment lifecycle is managed by [natlab.py](natlab.py).
 
 - Start
 ```
-uv run python3 natlab.py --start
+uv run python3 natlab.py start
 ```
 - Stop
 ```
-uv run python3 natlab.py --stop
+uv run python3 natlab.py stop
 ```
 - Kill (SIGKILL containers) and Stop
 ```
-uv run python3 natlab.py --kill
+uv run python3 natlab.py kill
 ```
 - Restart (kill then start)
 ```
-uv run python3 natlab.py --restart
+uv run python3 natlab.py restart
+```
+- Recreate running containers (recreate only currently running services)
+```
+uv run python3 natlab.py recreate
 ```
 - Check that all containers are running
 ```
-uv run python3 natlab.py --check-containers
+uv run python3 natlab.py check-containers
+```
+Start modifiers (skip heavy services):
+- Lightweight bring-up (skips Windows, macOS, fullcone, NLX):
+```
+uv run python3 natlab.py start --lite-mode
+```
+- Skip specific groups:
+```
+uv run python3 natlab.py start --skip-windows --skip-mac --skip-nlx --skip-fullcone
+```
+- Skip an individual Windows VM:
+```
+uv run python3 natlab.py start --skip-windows-1
+uv run python3 natlab.py start --skip-windows-2
 ```
 If a service is missing, the script prints compose logs for that service and fails. See [python.check_containers()](natlab.py).
 
 Running tests locally
 Use [run_local.py](run_local.py) to build and run the test-suite. Common flags:
+- -o OS                Host OS for building binaries [linux|darwin]; default: linux
+- --restart            Restart build container before building
 - -k "expr"            Pytest -k expression
 - -m "markexpr"        Pytest mark expression
 - -x                   Stop on first failure
@@ -97,11 +117,13 @@ Use [run_local.py](run_local.py) to build and run the test-suite. Common flags:
 - --windows            Include “windows” mark
 - --mac                Include “mac” mark
 - --linux-native       Include “linux_native” mark
+- --utils              Include “utils” mark
 - --moose              Build with moose features
 - --nobuild            Skip building libtelio
 - --notests            Skip running tests
 - --notypecheck        Skip mypy
 - --telio-debug        Use debug binaries (sets TELIO_BIN_PROFILE=debug)
+- --no-verify-setup-correctness  Disable verification of setup correctness
 
 Examples
 - Run default selection (excludes nat, windows, mac, linux_native, long, moose):
@@ -219,7 +241,7 @@ Troubleshooting
 - Containers failed to start
   - Use:
 ```
-uv run python3 natlab.py --check-containers
+uv run python3 natlab.py check-containers
 docker compose ps
 docker compose logs <service>
 ```
@@ -260,7 +282,11 @@ uv run python3 run_local.py -k test_pinging -m "ipv4 or ipv6"
 ```
 - Bring env down:
 ```
-uv run python3 natlab.py --stop
+uv run python3 natlab.py stop
+```
+- Recreate currently running containers:
+```
+uv run python3 natlab.py recreate
 ```
 
 
