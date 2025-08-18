@@ -9,6 +9,8 @@ services:
     profiles:
       - base
 
+  # sysctls here are configured for docker holding VM, they are not applied to VM
+  # add them manually into entrypoint script, which is passed as `EXTRA_SCRIPT` in variables
   nlx-01: &common-nlx
     hostname: nlx-01
     privileged: true
@@ -16,22 +18,6 @@ services:
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
-    # sysctls here are configured for docker holding VM, they are not applied to VM
-    # add them manually into entrypoint script, which is passed as `EXTRA_SCRIPT` in variables
-    # sysctls:
-    #   - net.ipv4.ip_forward=1
-    #   # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
-    #   # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
-    #   # seem to work. So for now disable return path filter outright.
-    #   - net.ipv4.conf.all.rp_filter=0
-    #   - net.ipv4.conf.default.rp_filter=0
-    #   # Enable IPv6, by default, docker has this set to '1'
-    #   - net.ipv6.conf.all.disable_ipv6=0
-    #   - net.ipv6.conf.default.disable_ipv6=0
-    #   - net.ipv6.conf.all.forwarding=1
-    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
-    # When this comment was added, the only scenario where the port mapping is changed is CI running tests
-    ports: ["58001"]
     ulimits:
       core:
         soft: -1
@@ -56,7 +42,6 @@ services:
       internet:
         ipv4_address: 10.0.100.51
         priority: 1000
-
   ###########################################################
   #                         CLIENTS                         #
   ###########################################################
@@ -124,9 +109,6 @@ services:
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
-    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
-    # When this comment was added, the only scenario where the port mapping is changed is CI running tests
-    ports: ["58001"]
     ulimits:
       core:
         soft: -1
@@ -198,9 +180,6 @@ services:
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
-    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
-    # When this comment was added, the only scenario where the port mapping is changed is CI running tests
-    ports: ["58001"]
     ulimits:
       core:
         soft: -1
@@ -272,6 +251,7 @@ services:
         ipv4_address: 10.0.11.3
     environment:
       CLIENT_GATEWAY_PRIMARY: none
+
   # Open internet client used on ipv6 tests
   open-internet-client-dual-stack:
     hostname: open-client-dual-stack
@@ -297,6 +277,7 @@ services:
         ipv4_address: 192.168.109.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.109.254
+
   fullcone-client-02:
     hostname: fullcone-client-02
     <<: *common-client
@@ -314,6 +295,7 @@ services:
         ipv4_address: 192.168.105.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.105.254
+
   upnp-client-02:
     hostname: upnp-client-02
     <<: *common-client
@@ -331,6 +313,7 @@ services:
         ipv4_address: 192.168.103.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.103.254
+
   symmetric-client-02:
     hostname: symmetric-client-02
     <<: *common-client
@@ -339,6 +322,7 @@ services:
         ipv4_address: 192.168.104.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.104.254
+
   internal-symmetric-client-01:
     hostname: internal-symmetric-client-01
     <<: *common-client
@@ -357,6 +341,7 @@ services:
         ipv4_address: 192.168.110.100
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.110.254
+
   udp-block-client-02:
     hostname: udp-block-client-02
     <<: *common-client
@@ -374,7 +359,6 @@ services:
         ipv4_address: 192.168.115.100
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.115.254
-
 
   ###########################################################
   #                        GATEWAYS                         #
@@ -408,6 +392,7 @@ services:
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
+
   cone-gw-02:
     hostname: cone-gw-02
     <<: *common-gw
@@ -422,7 +407,6 @@ services:
         priority: 90
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
-
   cone-gw-03:
     hostname: cone-gw-03
     <<: *common-gw
@@ -438,6 +422,8 @@ services:
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
 
+  # sysctls here are configured for docker holding VM, they are not applied to VM
+  # add them manually into entrypoint script, which is passed as `EXTRA_SCRIPT` in variables
   fullcone-gw-01: &common-fullcone-gw
     hostname: fullcone-gw-01
     privileged: true
@@ -445,22 +431,6 @@ services:
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
-    # sysctls here are configured for docker holding VM, they are not applied to VM
-    # add them manually into entrypoint script, which is passed as `EXTRA_SCRIPT` in variables
-    # sysctls:
-    #   - net.ipv4.ip_forward=1
-    #   # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
-    #   # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
-    #   # seem to work. So for now disable return path filter outright.
-    #   - net.ipv4.conf.all.rp_filter=0
-    #   - net.ipv4.conf.default.rp_filter=0
-    #   # Enable IPv6, by default, docker has this set to '1'
-    #   - net.ipv6.conf.all.disable_ipv6=0
-    #   - net.ipv6.conf.default.disable_ipv6=0
-    #   - net.ipv6.conf.all.forwarding=1
-    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
-    # When this comment was added, the only scenario where the port mapping is changed is CI running tests
-    ports: ["58001"]
     ulimits:
       core:
         soft: -1
@@ -492,6 +462,7 @@ services:
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
+
   fullcone-gw-02:
     hostname: fullcone-gw-02
     <<: *common-fullcone-gw
@@ -530,6 +501,7 @@ services:
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
+
   symmetric-gw-02:
     hostname: symmetric-gw-02
     <<: *common-gw
@@ -545,6 +517,7 @@ services:
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
+
   internal-symmetric-gw-01:
     hostname: internal-symmetric-gw-01
     <<: *common-gw
@@ -580,6 +553,7 @@ services:
           com.docker.network.endpoint.ifname: 'eth1'
     volumes:
       - ./data/upnpd/upnpd.conf:/etc/upnpd.conf
+
   upnp-gw-02:
     hostname: upnp-gw-02
     <<: *common-gw
@@ -612,6 +586,7 @@ services:
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
+
   udp-block-gw-02:
     hostname: udp-block-gw-02
     <<: *common-gw
@@ -679,6 +654,7 @@ services:
       windows-net-01:
         ipv4_address: 192.168.150.254
         priority: 900
+
   windows-gw-02:
     hostname: windows-gw-02
     <<: *common-gw
@@ -689,6 +665,7 @@ services:
       windows-net-02:
         ipv4_address: 192.168.151.254
         priority: 900
+
   windows-gw-03:
     hostname: windows-gw-03
     <<: *common-gw
@@ -699,6 +676,7 @@ services:
       windows-net-03:
         ipv4_address: 192.168.152.254
         priority: 900
+
   windows-gw-04:
     hostname: windows-gw-04
     <<: *common-gw
@@ -709,6 +687,7 @@ services:
       windows-net-04:
         ipv4_address: 192.168.153.254
         priority: 900
+
   mac-gw-01:
     hostname: mac-gw-01
     <<: *common-gw
@@ -719,6 +698,7 @@ services:
       mac-net-01:
         ipv4_address: 192.168.154.254
         priority: 900
+
   mac-gw-02:
     hostname: mac-gw-02
     <<: *common-gw
@@ -729,6 +709,7 @@ services:
       mac-net-02:
         ipv4_address: 192.168.155.254
         priority: 900
+
   ###########################################################
   #                       MISC SERVERS                      #
   ###########################################################
@@ -755,6 +736,7 @@ services:
     working_dir: /etc/nordderper
     healthcheck:
       test: "curl http://localhost:8765" # Here the port comes from nat-lab/data/nordderper/config*.yml
+
   derp-02:
     hostname: derp-02
     <<: *common-derp
@@ -763,6 +745,7 @@ services:
         ipv4_address: 10.0.10.2
     volumes:
       - ./data/nordderper/config2.yml:/etc/nordderper/config.yml
+
   derp-03:
     hostname: derp-03
     <<: *common-derp
@@ -822,6 +805,7 @@ services:
       PYTHONUNBUFFERED: 1
     volumes:
       - ../:/libtelio
+
   vpn-02:
     hostname: vpn-02
     <<: *common-vpn
@@ -889,6 +873,7 @@ services:
         ipv6_address: 2001:db8:85a4::adda:edde:7
     healthcheck:
       test: "nslookup google.com localhost"
+
   dns-server-2:
     hostname: dns-server-2
     image: nat-lab:base
@@ -906,7 +891,6 @@ services:
     healthcheck:
       test: "nslookup google.com localhost"
 
-
   mqtt-broker:
     hostname: mqtt-broker
     image: bytebeamio/rumqttd
@@ -916,7 +900,7 @@ services:
         ipv4_address: 10.0.80.85
         ipv6_address: 2001:db8:85a4::adda:edde:a
     healthcheck:
-      test: ["CMD-SHELL", "netstat -tlnp | grep 8883 | grep LISTEN"]
+      test: [ "CMD-SHELL", "netstat -tlnp | grep 8883 | grep LISTEN" ]
       interval: 10s
       timeout: 2s
       retries: 10
@@ -979,12 +963,14 @@ networks:
       driver: default
       config:
         - subnet: 192.168.101.0/24
+
   cone-net-02:
     driver: bridge
     ipam:
       driver: default
       config:
         - subnet: 192.168.102.0/24
+
   cone-net-03:
     driver: bridge
     ipam:
@@ -1002,12 +988,14 @@ networks:
       driver: default
       config:
         - subnet: 192.168.103.0/24
+
   hsymmetric-net-02:
     driver: bridge
     ipam:
       driver: default
       config:
         - subnet: 192.168.104.0/24
+
   hsymmetric-internal-net-01:
     driver: bridge
     ipam:
@@ -1023,6 +1011,7 @@ networks:
       driver: default
       config:
         - subnet: 192.168.109.0/24
+
   fullcone-net-02:
     driver: bridge
     ipam:
@@ -1036,6 +1025,7 @@ networks:
       driver: default
       config:
         - subnet: 192.168.105.0/24
+
   upnp-net-02:
     driver: bridge
     ipam:
@@ -1049,6 +1039,7 @@ networks:
       driver: default
       config:
         - subnet: 192.168.110.0/24
+
   udp-block-net-02:
     driver: bridge
     ipam:
