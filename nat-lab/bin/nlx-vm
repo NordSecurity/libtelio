@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -eoux
+set -euxo pipefail
 
 # Wait up to 60 seconds for SSH service to be running on the Linux VM
 timeout_secs=60
