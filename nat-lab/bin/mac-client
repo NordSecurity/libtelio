@@ -37,6 +37,7 @@ commands=(
     'defaults write /Library/Preferences/com.apple.SoftwareUpdate.plist CriticalUpdateInstall -bool NO'
     'defaults write /Library/Preferences/com.apple.commerce.plist AutoUpdateRestartRequired -bool NO'
     'defaults write /Library/Preferences/com.apple.commerce.plist AutoUpdate -bool NO'
+    'launchctl bootout system /System/Library/LaunchDaemons/com.apple.PerfPowerServices.plist'
 )
 
 for cmd in "${commands[@]}"; do
