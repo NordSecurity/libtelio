@@ -64,7 +64,7 @@ fn reconnect_after_expiry_default() -> Percentage {
     Percentage(90)
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
+#[derive(Default, PartialEq, Eq, Debug, Clone)]
 pub struct NordToken(Arc<Hidden<String>>);
 
 impl NordToken {
@@ -81,13 +81,7 @@ impl NordToken {
     }
 
     fn validate(token: &str) -> bool {
-        token.is_empty() || (token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()))
-    }
-}
-
-impl Default for NordToken {
-    fn default() -> Self {
-        NordToken(Arc::new(Hidden("".to_owned())))
+        token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit())
     }
 }
 
