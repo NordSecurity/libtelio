@@ -39,11 +39,13 @@ SESSION_SCOPE_EXIT_STACK = RUNNER.run(AsyncExitStack().__aenter__())
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
+    print(">>>> cancel_all_tasks")
     to_cancel = asyncio.tasks.all_tasks(loop)
     if not to_cancel:
         return
 
     for task in to_cancel:
+        print(">>>> cancel task: ", task.get_name())
         task.print_stack()
         task.cancel()
 
@@ -394,6 +396,7 @@ def pytest_sessionstart(session):
 
 # pylint: disable=unused-argument
 def pytest_sessionfinish(session, exitstatus):
+    print(">>>> pytest_sessionfinish")
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
 
@@ -506,6 +509,7 @@ def setup_logger(tmp_path, request):
     try:
         yield
     finally:
+        print(">>>> setup_logger finally")
         if file_handler:
             file_handler.flush()
             log.removeHandler(file_handler)
