@@ -9,12 +9,16 @@ pub fn commit_sha() -> &'static str {
 #[inline(never)]
 #[allow(index_access_check)]
 pub fn version_tag() -> &'static str {
-    const VER: [u8;129] = *b"VERSION_PLACEHOLDER@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\0";
-    match VER.iter().position(|v| *v == 0) {
-        Some(i) => match std::str::from_utf8(&VER[..i]) {
-            Ok(s) => s,
-            Err(_) => "not_a_utf8_string",
-        },
-        None => "incorrect_version_string",
+    if let Some(ver) = option_env!("LIBTELIO_VERSION") {
+        ver
+    } else {
+        const VER: [u8;129] = *b"VERSION_PLACEHOLDER@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\0";
+        match VER.iter().position(|v| *v == 0) {
+            Some(i) => match std::str::from_utf8(&VER[..i]) {
+                Ok(s) => s,
+                Err(_) => "not_a_utf8_string",
+            },
+            None => "incorrect_version_string",
+        }
     }
 }
