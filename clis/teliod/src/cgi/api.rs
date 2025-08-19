@@ -430,6 +430,7 @@ mod tests {
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
             vpn: None,
+            override_vpn_endpoint_port: None,
             authentication_token: NordToken::new(
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             )
@@ -540,6 +541,7 @@ mod tests {
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
             vpn: None,
+            override_vpn_endpoint_port: None,
             authentication_token: NordToken::new(
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             )
