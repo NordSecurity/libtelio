@@ -351,10 +351,19 @@ pub struct InterfaceConfig {
     pub config_provider: InterfaceConfigurationProvider,
 }
 
-#[derive(PartialEq, Eq, Deserialize, Serialize, Debug, Copy, Clone)]
-pub struct VpnConfig {
-    pub server_endpoint: SocketAddr,
-    pub server_pubkey: PublicKey,
+/// VPN server endpoint configuration
+#[derive(PartialEq, Eq, Deserialize, Serialize, Copy, Clone, Debug)]
+pub struct VpnServer {
+    /// IP and port of VPN server
+    pub endpoint: SocketAddr,
+    /// Publc key of VPN server
+    pub public_key: PublicKey,
+}
+
+#[derive(PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
+pub enum VpnConfig {
+    Server(VpnServer),
+    Country(String),
 }
 
 #[allow(dead_code)]
@@ -497,6 +506,67 @@ mod tests {
 
             assert_eq!(expected, serde_json::from_str(json).unwrap());
         }
+    }
+
+    #[test]
+    fn test_config_example() {
+        let _ = TeliodDaemonConfig::from_file("example_teliod_config.json").unwrap();
+    }
+
+    #[test]
+    fn test_config_vpn_country() {
+        let expected_config = TeliodDaemonConfig {
+            vpn: Some(VpnConfig::Country("de".to_string())),
+            ..TeliodDaemonConfig::default()
+        };
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/teliod_lib.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "vpn": {
+                "Country": "de"
+            },
+            "authentication_token": ""
+            }"#;
+
+        assert_eq!(expected_config, serde_json::from_str(json).unwrap());
+    }
+
+    #[test]
+    fn test_config_vpn_endpoint() {
+        let expected_config = TeliodDaemonConfig {
+            vpn: Some(VpnConfig::Server(VpnServer {
+                endpoint: "127.0.0.1:51820".parse().unwrap(),
+                public_key: "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
+                    .parse()
+                    .unwrap(),
+            })),
+            ..TeliodDaemonConfig::default()
+        };
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/teliod_lib.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "vpn": {
+                "Server": {
+                    "endpoint": "127.0.0.1:51820",
+                    "public_key": "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
+                }
+            },
+            "authentication_token": ""
+            }"#;
+
+        assert_eq!(expected_config, serde_json::from_str(json).unwrap());
     }
 
     #[test]

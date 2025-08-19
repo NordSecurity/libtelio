@@ -4,7 +4,6 @@ use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use nix::sys::signal::Signal;
 use reqwest::StatusCode;
 use signal_hook_tokio::Signals;
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::{net::IpAddr, sync::Arc};
 use telio::crypto::PublicKey;
@@ -25,7 +24,7 @@ use tracing::{debug, error, info, trace, warn};
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
-    config::{NordToken, TeliodDaemonConfig, VpnConfig},
+    config::{NordToken, TeliodDaemonConfig, VpnConfig, VpnServer},
     core_api::{
         get_meshmap as get_meshmap_from_server, init_with_api, DeviceIdentity,
         Error as CoreApiError,
@@ -36,14 +35,14 @@ use crate::{
 
 #[derive(Debug)]
 pub enum TelioTaskCmd {
-    // Command to set the downloaded meshmap to telio instance
+    /// Command to set the downloaded meshmap to telio instance
     UpdateMeshmap(MeshMap),
-    // Get telio status
+    /// Get telio status
     GetStatus(oneshot::Sender<TelioStatusReport>),
-    // Configure the system interface
+    /// Configure the system interface
     SetIp(IpAddr),
-    // Connect to exit node with IP and public key
-    ConnectToExitNode(SocketAddr, PublicKey),
+    /// Connect to exit node with IP and public key
+    ConnectToExitNode(VpnServer),
     /// Check if connected to VPN server and if so, setup device routing
     MaybeSetupVPNRoutes(IpAddr, PublicKey),
     // Break the receive loop to quit the daemon and exit gracefully
@@ -55,6 +54,7 @@ const EMPTY_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 #[derive(Debug, Default)]
 pub struct TelioTaskStates {
     interface_ip_address: Option<IpAddr>,
+    vpn_endpoint: Option<VpnServer>,
 }
 
 // From async context Telio needs to be run in separate task
@@ -85,10 +85,11 @@ fn telio_task(
         .config_provider
         .create(config.interface.name.clone());
 
-    // TODO: This is temporary to be removed later on when we have proper integration
-    // tests with core API. This is to not look for tokens in a test environment
-    // right now as the values are dummy and program will not run as it expects
-    // real tokens.
+    // Fill in pre-configured endpoint
+    if let Some(VpnConfig::Server(server)) = config.vpn {
+        state.vpn_endpoint = Some(server)
+    }
+
     if !config.authentication_token.is_empty() {
         start_telio(
             &mut telio,
@@ -151,15 +152,17 @@ fn telio_task(
                         _ = sys_config
                             .set_ip(&new_ip_address)
                             .inspect_err(|e| error!("Failed to set IP with error '{e:?}'"));
-                        task_connect_to_exit_node(config.vpn, tx_channel.clone());
+                        if let Some(vpn_server) = state.vpn_endpoint {
+                            task_connect_to_exit_node(vpn_server, tx_channel.clone());
+                        }
                     }
                 }
-                TelioTaskCmd::ConnectToExitNode(ip, pubkey) => {
+                TelioTaskCmd::ConnectToExitNode(server) => {
                     let node = ExitNode {
                         identifier: uuid::Uuid::new_v4().to_string(),
-                        public_key: pubkey,
+                        public_key: server.public_key,
                         allowed_ips: None,
-                        endpoint: Some(ip),
+                        endpoint: Some(server.endpoint),
                     };
                     match telio.connect_exit_node(&node) {
                         Ok(_) => {
@@ -167,7 +170,11 @@ fn telio_task(
                             // which could take some amount of time, yet we don't want to block the event loop
                             // this task checks the connection status and if connected sets up routing information
                             // otherwise it sleeps and tries again
-                            task_maybe_setup_vpn_routes(tx_channel.clone(), ip.ip(), pubkey);
+                            task_maybe_setup_vpn_routes(
+                                tx_channel.clone(),
+                                server.endpoint.ip(),
+                                server.public_key,
+                            );
                         }
                         Err(e) => {
                             error!("Failed to connect to VPN with error: {e:?}");
@@ -243,25 +250,13 @@ fn task_set_ip(address: IpAddr, tx: mpsc::Sender<TelioTaskCmd>) {
     });
 }
 
-fn task_connect_to_exit_node(
-    vpn_config: Option<VpnConfig>,
-    tx_channel: mpsc::Sender<TelioTaskCmd>,
-) {
+fn task_connect_to_exit_node(server: VpnServer, tx_channel: mpsc::Sender<TelioTaskCmd>) {
+    #[allow(mpsc_blocking_send)]
     tokio::spawn(async move {
-        #[allow(mpsc_blocking_send)]
-        if let Some(VpnConfig {
-            server_endpoint,
-            server_pubkey,
-        }) = vpn_config
-        {
-            _ = tx_channel
-                .send(TelioTaskCmd::ConnectToExitNode(
-                    server_endpoint,
-                    server_pubkey,
-                ))
-                .await
-                .inspect_err(|e| error!("Failed to send connect to exit node event: {e:?}"));
-        }
+        _ = tx_channel
+            .send(TelioTaskCmd::ConnectToExitNode(server))
+            .await
+            .inspect_err(|e| error!("Failed to send connect to exit node event: {e:?}"));
     });
 }
 
