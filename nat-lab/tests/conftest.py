@@ -1,4 +1,5 @@
 import asyncio
+import asyncssh
 import json
 import logging
 import os
@@ -36,9 +37,8 @@ SETUP_CHECK_MAC_COLLISION_RETRIES = 1
 SETUP_CHECK_ARP_CACHE_TIMEOUT_S = 300
 SETUP_CHECK_ARP_CACHE_RETRIES = 1
 
-RUNNER = asyncio.Runner()
-# pylint: disable=unnecessary-dunder-call
-SESSION_SCOPE_EXIT_STACK = RUNNER.run(AsyncExitStack().__aenter__())
+RUNNER: asyncio.Runner | None = None
+SESSION_SCOPE_EXIT_STACK: AsyncExitStack | None = None
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -206,7 +206,11 @@ async def setup_check_arp_cache():
         return
 
     def warm_arp(ip: str) -> None:
-        subprocess.call(["ping", "-c", "1", "-W", "1", ip])
+        subprocess.call(
+            ["ping", "-c", "1", "-W", "1", ip],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     def read_arp_entries() -> list[dict]:
         return json.loads(
@@ -225,17 +229,20 @@ async def setup_check_arp_cache():
             last_arp_entries: list[dict] = []
             if ip == "":
                 continue
-            for _ in range(10):
+            while True:
                 if success:
                     break
                 warm_arp(ip)
                 last_arp_entries = read_arp_entries()
                 for e in last_arp_entries:
-                    if e["dst"] != ip:
+                    dst_ip = e.get("dst")
+                    lladdr = e.get("lladdr")
+                    state = e.get("state")
+                    if dst_ip is None or dst_ip != ip:
                         continue
-                    if not e["lladdr"]:
+                    if lladdr is None:
                         continue
-                    if e["state"][0] not in acceptable_states:
+                    if state is None or state[0] not in acceptable_states:
                         continue
                     success = True
                     break
@@ -432,9 +439,15 @@ def pytest_runtest_setup():
     asyncio.run(perform_pretest_cleanups())
 
 
+# Session-long AsyncExitStack is created at session start and closed at session finish.
+
+
 # pylint: disable=unused-argument
 def pytest_sessionstart(session):
+    global RUNNER, SESSION_SCOPE_EXIT_STACK
     if os.environ.get("NATLAB_SAVE_LOGS"):
+        RUNNER = asyncio.Runner()
+        SESSION_SCOPE_EXIT_STACK = AsyncExitStack()
         RUNNER.run(start_tcpdump_processes())
 
 
@@ -444,7 +457,13 @@ def pytest_sessionfinish(session, exitstatus):
         return
 
     if not session.config.option.collectonly:
-        RUNNER.close()
+        if RUNNER is not None and SESSION_SCOPE_EXIT_STACK is not None:
+            try:
+                RUNNER.run(SESSION_SCOPE_EXIT_STACK.aclose())
+            finally:
+                RUNNER.close()
+        elif RUNNER is not None:
+            RUNNER.close()
         collect_nordderper_logs()
         collect_dns_server_logs()
         asyncio.run(collect_kernel_logs(session.items, "after_tests"))
@@ -515,6 +534,8 @@ async def collect_mac_diagnostic_reports():
 
 
 async def start_tcpdump_processes():
+    if SESSION_SCOPE_EXIT_STACK is None:
+        raise RuntimeError("SESSION_SCOPE_EXIT_STACK is not initialized")
     connections = [
         await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(gw_tag))
         for gw_tag in ConnectionTag
