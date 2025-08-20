@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::Read;
+use std::net::{IpAddr, SocketAddr};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
@@ -13,7 +14,7 @@ use telio::telio_utils::exponential_backoff::{
     Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
 };
 
-use crate::config::TeliodDaemonConfig;
+use crate::config::{DirectEndpointConfig, TeliodDaemonConfig};
 
 use telio::{crypto::PublicKey, telio_model::config::Config as MeshMap};
 use thiserror::Error;
@@ -25,6 +26,8 @@ const API_BASE: &str = "https://api.nordvpn.com/v1";
 const OS_NAME: &str = "macos";
 #[cfg(target_os = "linux")]
 const OS_NAME: &str = "linux";
+const WIREGUARD_ID: u64 = 35;
+const WIREGUARD_PORT: u16 = 51820;
 
 type MachineIdentifier = String;
 const MAX_RETRIES: usize = 10;
@@ -52,7 +55,7 @@ pub enum Error {
     PeerRegistering(StatusCode),
     #[error(transparent)]
     Decode(#[from] DecodeError),
-    #[error("Invalid response recieved from server")]
+    #[error("Invalid response received from server")]
     InvalidResponse,
     #[error("Unable to update machine due to Error: {0}")]
     UpdateMachine(StatusCode),
@@ -68,6 +71,106 @@ pub enum Error {
     BackoffBounds(#[from] BackoffError),
     #[error("Failed to access device identity file")]
     DeviceIdentityFileAccess,
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub struct Country {
+    pub id: u64,
+    pub name: String,
+    pub code: String,
+}
+
+impl Country {
+    /// Check if country name or code matches the target
+    pub fn matches(&self, target: &str) -> bool {
+        let target = target.trim().to_lowercase();
+        self.name.trim().to_lowercase() == target || self.code.trim().to_lowercase() == target
+    }
+}
+
+#[derive(Debug, Deserialize)]
+/// VPN Server description returned by the API
+pub struct Server {
+    station: IpAddr,
+    hostname: Option<String>,
+    technologies: Vec<Tech>,
+}
+
+#[derive(Debug, Deserialize)]
+/// VPN Server technologies stack
+struct Tech {
+    id: u64,
+    metadata: Vec<Meta>,
+}
+
+#[derive(Debug, Deserialize)]
+/// VPN Server technologies stack metadata
+struct Meta {
+    name: String,
+    value: String,
+}
+
+impl Server {
+    /// Get address and port endpoint of wireguard service
+    pub fn wg_endpoint(&self) -> SocketAddr {
+        (self.station, WIREGUARD_PORT).into()
+    }
+
+    /// Get hostname of VPN server
+    pub fn hostname(&self) -> Option<String> {
+        self.hostname.to_owned()
+    }
+
+    /// Get public_key of wireguard service
+    pub fn wg_public_key(&self) -> Option<String> {
+        self.technologies.iter().find_map(|t| {
+            if t.id == WIREGUARD_ID {
+                t.metadata.iter().find_map(|m| {
+                    if m.name == "public_key" {
+                        Some(m.value.to_owned())
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                None
+            }
+        })
+    }
+}
+
+#[derive(PartialEq, Eq, Deserialize, Serialize, Clone, Debug)]
+/// VPN endpoint configuration used for connection
+pub struct VpnServer {
+    /// IP and port of VPN server
+    pub endpoint: SocketAddr,
+    /// Public key of VPN server
+    pub public_key: PublicKey,
+    /// Hostname of VPN server
+    pub hostname: Option<String>,
+}
+
+/// Convert Server from API response to VPN endpoint configuration
+impl TryFrom<&Server> for VpnServer {
+    type Error = ();
+    fn try_from(s: &Server) -> Result<Self, Self::Error> {
+        Ok(Self {
+            endpoint: s.wg_endpoint(),
+            public_key: s.wg_public_key().and_then(|s| s.parse().ok()).ok_or(())?,
+            hostname: s.hostname(),
+        })
+    }
+}
+
+/// Convert DirectEndpointConfig specified manually to VPN endpoint configuration
+impl From<DirectEndpointConfig> for VpnServer {
+    fn from(s: DirectEndpointConfig) -> Self {
+        Self {
+            endpoint: s.endpoint,
+            public_key: s.public_key,
+            hostname: None,
+        }
+    }
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -466,6 +569,72 @@ pub async fn get_meshmap(
     )?)
 }
 
+/// This endpoint returns countries list used to find the country ID for filtering VPN servers
+pub async fn get_countries(
+    auth_token: &str,
+    cert_path: &Option<PathBuf>,
+) -> Result<Vec<Country>, Error> {
+    debug!("Getting countries list");
+    let client = http_client(cert_path);
+    Ok(serde_json::from_str(
+        &(client
+            .get(format!("{}/countries", API_BASE))
+            .header(header::AUTHORIZATION, format!("Bearer token:{auth_token}"))
+            .header(header::ACCEPT, "application/json")
+            .send()
+            .await?
+            .text()
+            .await)?,
+    )?)
+}
+
+/// This endpoint returns countries list used to find the country ID for filtering VPN servers
+pub async fn get_recommended_servers(
+    country_id_filter: Option<u64>,
+    limit_filter: Option<u64>,
+    auth_token: &str,
+    cert_path: &Option<PathBuf>,
+) -> Result<Vec<Server>, Error> {
+    debug!(
+        "Getting server recommendations list: country_id:{:?}, limit:{:?}",
+        country_id_filter, limit_filter
+    );
+
+    let mut filter: Vec<(String, String)> = vec![
+        (
+            "filters[servers_technologies][id]".into(),
+            WIREGUARD_ID.to_string(),
+        ),
+        (
+            "filters[servers_technologies][pivot][status]".into(),
+            "online".into(),
+        ),
+    ];
+
+    // add a filter for limit
+    if let Some(limit) = limit_filter {
+        filter.push(("limit".into(), limit.to_string()));
+    };
+
+    // add a filter for country id
+    if let Some(country_id) = country_id_filter {
+        filter.push(("filters[country_id]".into(), country_id.to_string()));
+    };
+
+    let client = http_client(cert_path);
+    Ok(serde_json::from_str(
+        &(client
+            .get(format!("{}/servers/recommendations", API_BASE))
+            .header(header::AUTHORIZATION, format!("Bearer token:{auth_token}"))
+            .header(header::ACCEPT, "application/json")
+            .query(&filter)
+            .send()
+            .await?
+            .text()
+            .await)?,
+    )?)
+}
+
 async fn register_machine(
     hw_identifier: &str,
     public_key: PublicKey,
@@ -504,4 +673,95 @@ async fn register_machine(
 
     error!("Unable to register due to {:?}", response.text().await);
     Err(Error::PeerRegistering(status))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_country() {
+        let json = r#"
+            [
+                {"id":1,"name":"Afghanistan","code":"AF"},
+                {"id":2,"name":"Albania","code":"AL"},
+                {"id":3,"name":"Algeria","code":"DZ"}
+            ]
+        "#;
+
+        let countries: Vec<Country> = serde_json::from_str(json).unwrap();
+        assert_eq!(countries.len(), 3);
+        assert_eq!(countries[0].code, "AF".to_string());
+    }
+
+    #[test]
+    fn test_parse_servers() {
+        let json = r#"
+            [
+            {
+                "id": 123456,
+                "name": "Test #100",
+                "station": "127.0.0.1",
+                "ipv6_station": "",
+                "hostname": "test100.domain.com",
+                "load": 10,
+                "status": "online",
+                "locations": [
+                {
+                    "id": 133,
+                    "created_at": "2017-06-15 14:06:47",
+                    "updated_at": "2017-06-15 14:06:47",
+                    "latitude": 50.116667,
+                    "longitude": 8.683333,
+                    "country": {
+                    "id": 81,
+                    "name": "Germany",
+                    "code": "DE",
+                    "city": {
+                        "id": 2215709,
+                        "name": "Frankfurt",
+                        "latitude": 50.116667,
+                        "longitude": 8.683333,
+                        "dns_name": "frankfurt",
+                        "hub_score": 0
+                    }
+                    }
+                }
+                ],
+                "technologies": [
+                {
+                    "id": 35,
+                    "name": "Wireguard",
+                    "identifier": "wireguard_udp",
+                    "created_at": "2019-02-14 14:08:43",
+                    "updated_at": "2019-02-14 14:08:43",
+                    "metadata": [
+                    {
+                        "name": "public_key",
+                        "value": "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
+                    }
+                    ],
+                    "pivot": {
+                    "technology_id": 35,
+                    "server_id": 123456,
+                    "status": "online"
+                    }
+                }
+                ]
+            }
+            ]
+        "#;
+
+        let servers: Vec<Server> = serde_json::from_str(json).unwrap();
+        assert_eq!(servers.len(), 1);
+
+        let server: VpnServer = servers.first().and_then(|f| f.try_into().ok()).unwrap();
+        assert_eq!(server.endpoint, "127.0.0.1:51820".parse().unwrap());
+        assert_eq!(
+            server.public_key,
+            "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
+                .parse()
+                .unwrap()
+        );
+    }
 }

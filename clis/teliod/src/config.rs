@@ -12,9 +12,8 @@ use std::fs;
 use tracing::{level_filters::LevelFilter, Level};
 use uuid::Uuid;
 
-use telio::{crypto::PublicKey, device::AdapterType, telio_utils::Hidden};
-
 use crate::{configure_interface::InterfaceConfigurationProvider, TeliodError};
+use telio::{crypto::PublicKey, device::AdapterType, telio_utils::Hidden};
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
 #[repr(transparent)]
@@ -351,18 +350,22 @@ pub struct InterfaceConfig {
     pub config_provider: InterfaceConfigurationProvider,
 }
 
-/// VPN server endpoint configuration
-#[derive(PartialEq, Eq, Deserialize, Serialize, Copy, Clone, Debug)]
-pub struct VpnServer {
+#[derive(PartialEq, Eq, Deserialize, Serialize, Clone, Debug)]
+/// Direct VPN server endpoint configuration
+pub struct DirectEndpointConfig {
     /// IP and port of VPN server
     pub endpoint: SocketAddr,
-    /// Publc key of VPN server
+    /// Public key of VPN server
     pub public_key: PublicKey,
 }
 
 #[derive(PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+/// Type of VPN server connection, automatic by country, or specified server endpoint
 pub enum VpnConfig {
-    Server(VpnServer),
+    /// Direct endpoint and public key of VPN server
+    Server(DirectEndpointConfig),
+    /// Country name or ISO code of VPN server location
     Country(String),
 }
 
@@ -529,7 +532,7 @@ mod tests {
                 "config_provider": "manual"
             },
             "vpn": {
-                "Country": "de"
+                "country": "de"
             },
             "authentication_token": ""
             }"#;
@@ -540,7 +543,7 @@ mod tests {
     #[test]
     fn test_config_vpn_endpoint() {
         let expected_config = TeliodDaemonConfig {
-            vpn: Some(VpnConfig::Server(VpnServer {
+            vpn: Some(VpnConfig::Server(DirectEndpointConfig {
                 endpoint: "127.0.0.1:51820".parse().unwrap(),
                 public_key: "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
                     .parse()
@@ -558,7 +561,7 @@ mod tests {
                 "config_provider": "manual"
             },
             "vpn": {
-                "Server": {
+                "server": {
                     "endpoint": "127.0.0.1:51820",
                     "public_key": "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
                 }
