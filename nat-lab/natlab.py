@@ -231,6 +231,11 @@ def recreate():
     start(exclude_services, True)
 
 
+def recreate_all():
+    """Recreate all containers"""
+    start(None, True)
+
+
 def main():
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -275,6 +280,7 @@ def main():
 
     subparsers.add_parser("restart", help="Restart (already existing) containers")
     subparsers.add_parser("recreate", help="Recreate (already existing) containers")
+    subparsers.add_parser("recreate-all", help="Recreate all containers")
     subparsers.add_parser("stop", help="Stop the environment")
     subparsers.add_parser("kill", help="Kill the environment")
     subparsers.add_parser(
@@ -312,6 +318,8 @@ def main():
         restart()
     elif args.command == "recreate":
         recreate()
+    elif args.command == "recreate-all":
+        recreate_all()
     elif args.command == "stop":
         stop()
     elif args.command == "kill":
