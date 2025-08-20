@@ -785,6 +785,8 @@ services:
     hostname: vpn-01
     image: nat-lab:base
     entrypoint: /opt/bin/vpn-server
+    healthcheck:
+      test: "ls /ready"
     cap_drop:
       - ALL
     cap_add:

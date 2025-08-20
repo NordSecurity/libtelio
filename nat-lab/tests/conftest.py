@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import json
 import logging
 import os
 import Pyro5  # type: ignore
@@ -18,14 +19,14 @@ from http import HTTPStatus
 from interderp_cli import InterDerpClient
 from itertools import combinations
 from utils.bindings import TelioAdapterType
-from utils.connection import ConnectionTag, clear_ephemeral_setups_set, TargetOS
+from utils.connection import ConnectionTag, TargetOS, clear_ephemeral_setups_set
 from utils.connection.docker_connection import DockerConnection
 from utils.connection.ssh_connection import SshConnection
 from utils.connection_util import new_connection_raw
 from utils.logger import log
 from utils.process import ProcessExecError
 from utils.router import IPStack
-from utils.tcpdump import make_tcpdump, make_local_tcpdump
+from utils.tcpdump import make_local_tcpdump, make_tcpdump
 from utils.testing import get_current_test_log_path
 
 DERP_SERVER_1_ADDR = "http://10.0.10.1:8765"
@@ -41,7 +42,9 @@ SETUP_CHECK_CONNECTIVITY_RETRIES = 1
 GW_CHECK_CONNECTIVITY_TIMEOUT = 30
 GW_CHECK_CONNECTIVITY_RETRIES = 2
 SETUP_CHECK_MAC_COLLISION_TIMEOUT_S = 300
-SETUP_CHECK_MAC_COLLISION_RETRIES = 2
+SETUP_CHECK_MAC_COLLISION_RETRIES = 1
+SETUP_CHECK_ARP_CACHE_TIMEOUT_S = 300
+SETUP_CHECK_ARP_CACHE_RETRIES = 1
 
 RUNNER = asyncio.Runner()
 # pylint: disable=unnecessary-dunder-call
@@ -171,8 +174,6 @@ async def setup_check_duplicate_mac_addresses():
         "ff:ff:ff:ff:ff:ff",
     }
 
-    await clear_arp_cache()
-
     async with AsyncExitStack() as exit_stack:
         for conn_tag in ConnectionTag:
             conn = await exit_stack.enter_async_context(new_connection_raw(conn_tag))
@@ -205,8 +206,71 @@ async def setup_check_duplicate_mac_addresses():
         raise Exception(f"Found duplicate MACs: {duplicates}")
 
 
+async def setup_check_arp_cache():
+    """
+    Ensure all VM LAN_ADDR_MAP IPv4 addresses are present in the host ARP cache
+    and are in a usable state.
+    """
+    if TargetOS.local() != TargetOS.Linux:
+        print("setup_check: skipping ARP cache validation on non-Linux host")
+        return
+
+    def warm_arp(ip: str) -> None:
+        subprocess.call(["ping", "-c", "1", "-W", "1", ip])
+
+    def read_arp_entries() -> list[dict]:
+        return json.loads(
+            subprocess.check_output(["ip", "-j", "neigh", "show"], text=True).strip()
+        )
+
+    subprocess.call(["sudo", "ip", "-s", "-s", "neigh", "flush", "all"])
+
+    acceptable_states = {"REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT"}
+    failures: list[str] = []
+
+    vm_tags = [tag for tag in ConnectionTag if tag.name.startswith("VM_")]
+    for tag in vm_tags:
+        for ip in LAN_ADDR_MAP[tag].values():
+            success = False
+            last_arp_entries: list[dict] = []
+            if ip == "":
+                continue
+            for _ in range(10):
+                if success:
+                    break
+                warm_arp(ip)
+                last_arp_entries = read_arp_entries()
+                for e in last_arp_entries:
+                    if e["dst"] != ip:
+                        continue
+                    if not e["lladdr"]:
+                        continue
+                    if e["state"][0] not in acceptable_states:
+                        continue
+                    success = True
+                    break
+            if not success:
+                state = next(
+                    (
+                        e.get("state", "missing")
+                        for e in last_arp_entries
+                        if e.get("dst") == ip
+                    ),
+                    "missing",
+                )
+                failures.append(f"{tag.name}:{ip} state={state}")
+
+    if failures:
+        raise Exception("ARP cache not ready for VMs: " + ", ".join(failures))
+
+
 SETUP_CHECKS = [
     (setup_check_interderp, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
+    (
+        setup_check_arp_cache,
+        SETUP_CHECK_ARP_CACHE_TIMEOUT_S,
+        SETUP_CHECK_ARP_CACHE_RETRIES,
+    ),
     (
         setup_check_duplicate_mac_addresses,
         SETUP_CHECK_MAC_COLLISION_TIMEOUT_S,
@@ -314,17 +378,10 @@ async def reset_service_credentials_cache():
         raise
 
 
-async def clear_arp_cache():
-    if not "GITLAB_CI" in os.environ:
-        return
-    subprocess.run(["sudo", "ip", "-s", "-s", "neigh", "flush", "all"])
-
-
 PRETEST_CLEANUPS = [
     kill_natlab_processes,
     clear_ephemeral_setups_set,
     reset_service_credentials_cache,
-    clear_arp_cache,
 ]
 
 

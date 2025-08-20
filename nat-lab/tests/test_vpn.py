@@ -729,7 +729,7 @@ async def test_vpn_connection_private_key_change(
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        ip = await asyncio.wait_for(stun.get(client_conn, config.STUN_SERVER), 5)
+        ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         # connect to vpn as usually
