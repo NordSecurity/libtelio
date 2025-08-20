@@ -3,10 +3,7 @@ import config
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
-from helpers_vpn import (
-    connect_vpn,
-    VpnConfig,
-)
+from helpers_vpn import connect_vpn, VpnConfig
 from uniffi import FirewallBlacklistTuple, IpProtocol
 from utils import testing, stun
 from utils.bindings import (
@@ -27,45 +24,6 @@ from utils.netcat import NetCatClient
 from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPProto, IPStack
-
-
-async def _connect_vpn(
-    client_conn: Connection,
-    vpn_connection: Optional[Connection],
-    client: Client,
-    client_meshnet_ip: str,
-    wg_server: dict,
-) -> None:
-    await client.connect_to_vpn(
-        wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-    )
-
-    await ping(client_conn, config.PHOTO_ALBUM_IP)
-
-    if vpn_connection is not None:
-        await ping(vpn_connection, client_meshnet_ip)
-
-    ip = await stun.get(client_conn, config.STUN_SERVER)
-    assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
-
-
-class VpnConfig:
-    # pinging the client is not a requirement and requires routing setup which might not be present
-    def __init__(
-        self,
-        server_conf,
-        conn_tag: ConnectionTag,
-        should_ping_client: bool,
-    ):
-        self.server_conf = server_conf
-        self.conn_tag = conn_tag
-        self.should_ping_client = should_ping_client
-
-    def __repr__(self) -> str:
-        return (
-            f"VpnConfig(server_conf={self.server_conf}, conn_tag={self.conn_tag},"
-            f" should_ping_client={self.should_ping_client})"
-        )
 
 
 @pytest.mark.parametrize(
