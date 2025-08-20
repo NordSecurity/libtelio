@@ -35,7 +35,7 @@ def run_command_with_output(command, hide_output=False):
     return result
 
 
-def start(skip_keywords=None):
+def start(skip_keywords=None, force_recreate=False):
     if skip_keywords is None:
         skip_keywords = []
 
@@ -84,7 +84,12 @@ def start(skip_keywords=None):
         if exclude_services:
             print(f"Skipping services: {sorted(exclude_services)}")
 
-        command = ["docker", "compose", "up", "-d", "--wait"] + services_to_start
+        command = ["docker", "compose", "up", "-d", "--wait"]
+        if force_recreate:
+            command += ["--force-recreate"]
+
+        command += services_to_start
+
         if "GITLAB_CI" in os.environ:
             command.append("--quiet-pull")
         run_command(
@@ -217,13 +222,13 @@ def restart():
 def recreate():
     """Recreate existing containers (only recreates running containers)"""
     running_services = run_command_with_output(
-        ["docker", "compose", "ps", "--services"], True
+        ["docker", "compose", "ps", "-a", "--services"], True
     ).splitlines()
     all_services = run_command_with_output(
         ["docker", "compose", "config", "--services"], True
     ).splitlines()
     exclude_services = set(all_services) - set(running_services)
-    start(exclude_services)
+    start(exclude_services, True)
 
 
 def main():
