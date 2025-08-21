@@ -234,14 +234,15 @@ services:
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.111.254
 
-  openwrt-client-01:
-    hostname: openwrt-client-01
-    <<: *common-client
-    networks:
-      openwrt-net-01:
-        ipv4_address: 192.168.115.100
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.115.254
+# Temporary disabled until we moved to QEMU based approach
+#  openwrt-client-01:
+#    hostname: openwrt-client-01
+#    <<: *common-client
+#    networks:
+#      openwrt-net-01:
+#        ipv4_address: 192.168.115.100
+#    environment:
+#      CLIENT_GATEWAY_PRIMARY: 192.168.115.254
 
 
   ###########################################################
@@ -477,38 +478,39 @@ services:
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
 
-  openwrt-gw-01:
-    hostname: openwrt-gw-01
-    build:
-      context: .
-      dockerfile: openwrt.Dockerfile
-    entrypoint: /opt/bin/openwrt_docker_entrypoint.sh
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    sysctls:
-      - net.ipv4.ip_forward=1
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      internet:
-        ipv4_address: 10.0.254.14
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth0'
-      openwrt-net-01:
-        ipv4_address: 192.168.115.254
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth1'
-    depends_on:
-      core-api:
-        condition: service_healthy
-    dns:
-      - 10.0.80.82
-      - 10.0.80.83
-    volumes:
-      - ./data/core_api/test.pem:/etc/ssl/certs/test.pem
+# Temporary disabled until we moved to QEMU based approach
+#  openwrt-gw-01:
+#    hostname: openwrt-gw-01
+#    build:
+#      context: .
+#      dockerfile: openwrt.Dockerfile
+#    entrypoint: /opt/bin/openwrt_docker_entrypoint.sh
+#    cap_drop:
+#      - ALL
+#    cap_add:
+#      - NET_ADMIN
+#      - NET_RAW
+#    sysctls:
+#      - net.ipv4.ip_forward=1
+#    security_opt:
+#      - no-new-privileges:true
+#    networks:
+#      internet:
+#        ipv4_address: 10.0.254.14
+#        driver_opts:
+#          com.docker.network.endpoint.ifname: 'eth0'
+#      openwrt-net-01:
+#        ipv4_address: 192.168.115.254
+#        driver_opts:
+#          com.docker.network.endpoint.ifname: 'eth1'
+#    depends_on:
+#      core-api:
+#        condition: service_healthy
+#    dns:
+#      - 10.0.80.82
+#      - 10.0.80.83
+#    volumes:
+#      - ./data/core_api/test.pem:/etc/ssl/certs/test.pem
 
   ###########################################################
   #                       MISC SERVERS                      #
@@ -847,9 +849,10 @@ networks:
       config:
         - subnet: 192.168.111.0/24
 
-  openwrt-net-01:
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 192.168.115.0/24
+# Temporary disabled until we moved to QEMU based approach
+#  openwrt-net-01:
+#    driver: bridge
+#    ipam:
+#      driver: default
+#      config:
+#        - subnet: 192.168.115.0/24

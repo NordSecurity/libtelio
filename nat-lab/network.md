@@ -186,16 +186,6 @@ graph LR
         192.168.111.254"])
   end
 
-  %% Network openwrt-net-01
-  subgraph openwrt-net-01[openwrt-net-01]
-  direction LR
-    openwrt-client-01("openwrt-client-01
-        192.168.115.100")
-    openwrt-gw-01(["openwrt-gw-01
-        10.0.254.14
-        192.168.115.254"])
-  end
-
   %% Node Connections
   cone-gw-01 -..- internet
   cone-gw-02 -..- internet
@@ -210,7 +200,6 @@ graph LR
   upnp-gw-02 -..- internet
   udp-block-gw-01 -..- internet
   udp-block-gw-02 -..- internet
-  openwrt-gw-01 -..- internet
   cone-client-01 -.- cone-gw-01
   shared-client-01 -.- cone-gw-01
   shared-client-01 -.- cone-gw-05
@@ -225,7 +214,6 @@ graph LR
   upnp-client-02 -.- upnp-gw-02
   udp-block-client-01 -.- udp-block-gw-01
   udp-block-client-02 -.- udp-block-gw-02
-  openwrt-client-01 -.- openwrt-gw-01
 
   %% Vagrant boxes
   subgraph vagrant
