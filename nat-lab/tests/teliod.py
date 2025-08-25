@@ -16,7 +16,7 @@ from utils.router import IPStack
 from utils.router.linux_router import LinuxRouter
 
 
-class TeliodObtainingIdentity(Exception):
+class IgnoreableError(Exception):
     pass
 
 
@@ -171,7 +171,7 @@ class Teliod:
                                 "socket exists but daemon's not running."
                             )
                         break
-                    except TeliodObtainingIdentity:
+                    except IgnoreableError:
                         await asyncio.sleep(self.TELIOD_CMD_CHECK_INTERVAL_S)
                         continue
 
@@ -203,11 +203,11 @@ class Teliod:
             return "Command executed successfully" in stdout
         except ProcessExecError as exc:
             if "Obtaining identity, ignoring" in exc.stdout:
-                raise TeliodObtainingIdentity() from exc
+                raise IgnoreableError() from exc
             if "Error: DaemonIsNotRunning" in exc.stderr:
                 return False
             if "Connection reset by peer" in exc.stderr:
-                return False
+                raise IgnoreableError() from exc
             raise exc
 
     async def get_status(self) -> str:
