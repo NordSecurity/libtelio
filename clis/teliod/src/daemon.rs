@@ -124,10 +124,25 @@ fn telio_task(
                 TelioTaskCmd::GetStatus(response_tx_channel) => {
                     let external_nodes = telio.external_nodes()?;
                     // Find the identifier of the exit node (VPN server or meshnet peer), if present.
-                    let exit_node = external_nodes
+                    let mut exit_node = external_nodes
                         .iter()
                         .find(|node| node.is_exit)
                         .map(ExitNodeStatus::from);
+                    // VPN servers don't have the full node information, so we can
+                    // fill it with the information fetched from the API
+                    if let (Some(exit_node), Some(connected_server)) =
+                        (&mut exit_node, &state.maybe_connected_vpn_server)
+                    {
+                        // make sure it's the same node by comparing keys
+                        if exit_node.public_key == connected_server.public_key {
+                            // if the hostname is missing, fill it in
+                            if let (None, Some(hostname)) =
+                                (&exit_node.hostname, &connected_server.hostname)
+                            {
+                                exit_node.hostname = Some(hostname.to_owned());
+                            }
+                        }
+                    }
 
                     let status_report = TelioStatusReport {
                         telio_is_running: telio.is_running(),
