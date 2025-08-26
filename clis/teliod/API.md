@@ -1,15 +1,3 @@
-# QNAP Build
-
-To build Teliod package for QNAP devices there are two alternatives:
-
-- Run cargo build directly:
-```cargo build --verbose --target x86_64-unknown-linux-musl --package teliod --features qnap``` 
-
-- Run build script [Recommended]:
-```../../ci/build_libtelio.py build qnap x86_64 [--debug]```
-
-The build script has an additional stage at the end of the build where it creates the QNAP package.
-
 ## REST API
 
 This REST API allows interaction with the Teliod daemon. It provides endpoints for managing the daemon, updating its configuration, and retrieving logs and status information.

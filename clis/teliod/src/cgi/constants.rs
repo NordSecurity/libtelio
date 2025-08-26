@@ -49,49 +49,16 @@ pub struct AppPaths {
 impl AppPaths {
     /// Creates a new AppPaths instance based on the current configuration
     fn new() -> Result<Self, TeliodError> {
-        let root = if cfg!(feature = "qnap") {
-            let output = std::process::Command::new("getcfg")
-                .args([
-                    "NordSecurityMeshnet",
-                    "Install_Path",
-                    "-f",
-                    "/etc/config/qpkg.conf",
-                ])
-                .output()
-                .map_err(|e| {
-                    TeliodError::SystemCommandFailed(format!("Failed to execute getcfg: {e}"))
-                })?;
-
-            if !output.status.success() {
-                return Err(TeliodError::SystemCommandFailed(format!(
-                    "getcfg failed with status: {}",
-                    output.status
-                )));
-            }
-
-            let path = String::from_utf8(output.stdout).map_err(|e| {
-                TeliodError::InvalidResponse(format!("Invalid UTF-8 in getcfg output: {e}"))
-            })?;
-            if path.trim().is_empty() {
-                return Err(TeliodError::InvalidResponse(
-                    "getcfg returned empty path".into(),
-                ));
-            }
-
-            PathBuf::from(path.trim())
-        } else {
-            // TODO: LLT-6427
-            Path::new(env!("CARGO_MANIFEST_DIR"))
+        Ok(Self {
+            root: Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../..")
                 .join("target")
                 .join(if cfg!(debug_assertions) {
                     "debug"
                 } else {
                     "release"
-                })
-        };
-
-        Ok(Self { root })
+                }),
+        })
     }
 
     /// Path to the teliod executable

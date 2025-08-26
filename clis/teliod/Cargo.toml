@@ -51,5 +51,3 @@ visibility = "0.1.1"
 
 [features]
 cgi = ["const_format", "rust-cgi", "lazy_static", "maud", "form_urlencoded"]
-qnap = ["cgi"]
-

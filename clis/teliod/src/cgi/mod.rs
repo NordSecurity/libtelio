@@ -6,16 +6,11 @@ use crate::TIMEOUT_SEC;
 use telio::telio_utils::Hidden;
 use tracing::trace;
 
-#[cfg(feature = "qnap")]
-use qnap::QnapUserAuthorization;
-
 mod api;
 mod app;
 mod web;
 
 pub(crate) mod constants;
-#[cfg(feature = "qnap")]
-mod qnap;
 
 #[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
@@ -86,11 +81,6 @@ pub trait AuthorizationValidator {
 
 pub fn handle_request(request: Request) -> Response {
     let request = CgiRequest::new(request);
-
-    #[cfg(feature = "qnap")]
-    if let Err(error) = authorize::<QnapUserAuthorization>(&request) {
-        return text_response(StatusCode::UNAUTHORIZED, format!("Unauthorized: {error}"));
-    }
 
     if let Some(response) = web::handle_web_ui(&request) {
         trace!(
