@@ -5,7 +5,9 @@ import os
 import paho.mqtt.client as mqtt  # type: ignore # pylint: disable=import-error
 import random
 import ssl
+import string
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from enum import Enum
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -43,6 +45,9 @@ MQTT_CREDENTIALS = {
     "password": "9-A'.:vUM3FPTCABorsK}J4mM}/3898_",
 }
 
+# Cache for service credentials to ensure consistency within a test run
+_SERVICE_CREDENTIALS_CACHE = {}
+
 
 class CoreApiErrorCode(Enum):
     MACHINE_ALREADY_EXISTS = 101117
@@ -52,6 +57,7 @@ class CoreApiErrorCode(Enum):
     AUTHORIZATION_HEADER_INVALID = 100106
     RESOURCE_NOT_FOUND = 404
     BAD_REQUEST = 400
+    UNAUTHORIZED = 401
 
 
 @dataclass
@@ -149,6 +155,8 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         self.recommended_servers_path = "/v1/servers/recommendations"
         self.countries_path = "/v1/countries"
         self.public_key_path = "/test/public-key"
+        self.service_credentials_path = "/v1/users/services/credentials"
+        self.reset_credentials_path = "/test/reset-credentials"
         super().__init__(request, client_address, server)
 
     def _set_headers(
@@ -257,6 +265,8 @@ class CoreApiHandler(BaseHTTPRequestHandler):
             parsed_url = urlparse(self.path)
             query_params = parse_qs(parsed_url.query)
             self.handle_get_servers(query_params)
+        elif self.path == self.service_credentials_path:
+            self.handle_service_credentials()
 
     def do_HEAD(self):
         self._set_headers()
@@ -274,6 +284,8 @@ class CoreApiHandler(BaseHTTPRequestHandler):
             self.handle_get_notifications_token()
         elif self.path == self.public_key_path:
             self.handle_public_key()
+        elif self.path == self.reset_credentials_path:
+            self.handle_reset_credentials()
         else:
             print(f"unsupported endpoint '{self.path}'")
 
@@ -483,6 +495,40 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.CREATED)
         self.end_headers()
         self.wfile.write(b"Public key saved")
+
+    @requires_basic_authentication
+    def handle_service_credentials(self):
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        if "credentials" not in _SERVICE_CREDENTIALS_CACHE:
+            _SERVICE_CREDENTIALS_CACHE["credentials"] = {
+                "created_at": current_time,
+                "updated_at": current_time,
+                "username": "".join(
+                    random.choices(string.ascii_letters + string.digits, k=24)
+                ),
+                "password": "".join(
+                    random.choices(string.ascii_letters + string.digits, k=24)
+                ),
+                "nordlynx_key": base64.b64encode(random.randbytes(32)).decode("utf-8"),
+                "id": random.randint(1, 10000),
+            }
+
+        cached = _SERVICE_CREDENTIALS_CACHE["credentials"]
+        response = {
+            "id": cached["id"],
+            "created_at": cached["created_at"],
+            "updated_at": cached["updated_at"],
+            "username": cached["username"],
+            "password": cached["password"],
+            "nordlynx_private_key": cached["nordlynx_key"],
+        }
+        self._write_response(response, HTTPStatus.OK)
+
+    def handle_reset_credentials(self):
+        _SERVICE_CREDENTIALS_CACHE.clear()
+        self._set_headers(status_code=HTTPStatus.OK)
+        self.wfile.write(b"Credentials cache cleared")
 
 
 def run(mqttc, port=443):
