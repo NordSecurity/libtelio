@@ -26,7 +26,7 @@ struct PausedState {
     is_path_change_enqueued: bool,
 }
 
-/// Trait which should be implemented to receive locall address change notifications
+/// Trait which should be implemented to receive local address change notifications
 pub trait LocalInterfacesObserver: Sync + Send {
     /// Callback which allows to take certain actions when local interfaces changed
     fn notify(&self);

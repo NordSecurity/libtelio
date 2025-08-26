@@ -105,7 +105,7 @@ impl Icmp for Icmpv6Type {
 }
 
 pub(crate) trait IpPacket<'a>: Sized + Debug + Packet {
-    type Addr: Into<IpAddr>;
+    type Addr: Into<IpAddr> + Into<std::net::IpAddr>;
     type Icmp: Icmp;
 
     fn check_valid(&self) -> bool;
@@ -428,8 +428,7 @@ impl StatefullFirewall {
         let mut rules = vec![];
 
         // Drop packets from UDP blacklist
-        let udp_blacklist = self.outgoing_udp_blacklist.read();
-        for peer in udp_blacklist.iter() {
+        for peer in self.outgoing_udp_blacklist.read().iter() {
             rules.push(Rule {
                 filters: vec![
                     Filter {
@@ -447,8 +446,7 @@ impl StatefullFirewall {
         }
 
         // Drop packets from TCP blacklist
-        let tcp_blacklist = self.outgoing_tcp_blacklist.read();
-        for peer in tcp_blacklist.iter() {
+        for peer in self.outgoing_tcp_blacklist.read().iter() {
             rules.push(Rule {
                 filters: vec![
                     Filter {

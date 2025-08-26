@@ -65,15 +65,10 @@ pub enum LibfwVerdict {
 
 macro_rules! get_inner_packet_port {
     ($kind: ty, $packet: expr, $filter_type: expr) => {
-        if let Some(p) = <$kind>::new($packet.payload()) {
-            if let NetworkFilterType::Src = $filter_type {
-                Some(p.get_source())
-            } else {
-                Some(p.get_destination())
-            }
-        } else {
-            None
-        }
+        <$kind>::new($packet.payload()).map(|p| match $filter_type {
+            NetworkFilterType::Src => p.get_source(),
+            NetworkFilterType::Dst => p.get_destination(),
+        })
     };
 }
 
@@ -87,15 +82,13 @@ impl NetworkFilterData {
     /// @return             Boolean value, true if packet matches the filter, false otherwise
     ///
     fn is_matching<'a>(&self, packet: &impl IpPacket<'a>, filter_type: NetworkFilterType) -> bool {
-        let packet_addr: crate::firewall::IpAddr = if let NetworkFilterType::Src = filter_type {
-            packet.get_source().into()
-        } else {
-            packet.get_destination().into()
-        };
+        let packet_addr: IpAddr = match filter_type {
+            NetworkFilterType::Src => packet.get_source(),
+            NetworkFilterType::Dst => packet.get_destination(),
+        }
+        .into();
 
-        let std_ip_addr: IpAddr = packet_addr.into();
-
-        if !self.network.contains(&std_ip_addr) {
+        if !self.network.contains(&packet_addr) {
             return false;
         }
 
@@ -224,7 +217,7 @@ impl Filter {
 
 ///
 /// A definition of firewall rule it consists of filters which determine whether rule applies to packet
-/// being processed and action, which determins what to do with the rule.
+/// being processed and action, which determines what to do with the rule.
 ///
 #[derive(Debug)]
 pub(crate) struct Rule {
