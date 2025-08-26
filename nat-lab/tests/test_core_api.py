@@ -1,5 +1,7 @@
+import base64
 import json
 import pytest
+import re
 from config import CORE_API_CA_CERTIFICATE_PATH, CORE_API_URL
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
@@ -22,6 +24,7 @@ class CoreApiErrorCode(Enum):
     MACHINE_ALREADY_EXISTS = 101117
     AUTHORIZATION_HEADER_NOT_PROVIDED = 100105
     INVALID_CREDENTIALS = 100104
+    UNAUTHORIZED = 101301
 
 
 peer_structure = {
@@ -617,7 +620,94 @@ async def test_get_nonexisting_servers():
             CORE_API_CA_CERTIFICATE_PATH,
             authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
+
         assert (
             response_data["errors"]["message"]
             == "No vpn servers found for provided filters"
         )
+
+
+@pytest.mark.asyncio
+async def test_service_credentials_success():
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+
+        credentials = (
+            f"{CORE_API_CREDENTIALS['username']}:{CORE_API_CREDENTIALS['password']}"
+        )
+        encoded_credentials = base64.b64encode(credentials.encode("utf-8")).decode(
+            "utf-8"
+        )
+        basic_auth_header = f"Basic {encoded_credentials}"
+
+        response_data = await send_https_request(
+            connection,
+            f"{CORE_API_URL}/v1/users/services/credentials",
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
+            authorization_header=basic_auth_header,
+        )
+
+        assert isinstance(response_data["id"], int)
+        assert isinstance(response_data["username"], str)
+        assert isinstance(response_data["password"], str)
+        assert isinstance(response_data["nordlynx_private_key"], str)
+
+        assert len(response_data["username"]) == 24
+        assert len(response_data["password"]) == 24
+        assert len(response_data["nordlynx_private_key"]) == 44
+
+        timestamp_pattern = r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$"
+        assert re.match(timestamp_pattern, response_data["created_at"])
+        assert re.match(timestamp_pattern, response_data["updated_at"])
+
+
+@pytest.mark.asyncio
+async def test_service_credentials_no_auth_header():
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+
+        response_data = await send_https_request(
+            connection,
+            f"{CORE_API_URL}/v1/users/services/credentials",
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
+        )
+
+        assert (
+            response_data["errors"]["code"]
+            == CoreApiErrorCode.AUTHORIZATION_HEADER_NOT_PROVIDED.value
+        )
+        assert response_data["errors"]["message"] == "Authorization header not provided"
+
+
+@pytest.mark.asyncio
+async def test_service_credentials_invalid_credentials():
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+
+        invalid_credentials = "invalid_user:invalid_token"
+        encoded_credentials = base64.b64encode(
+            invalid_credentials.encode("utf-8")
+        ).decode("utf-8")
+        basic_auth_header = f"Basic {encoded_credentials}"
+
+        response_data = await send_https_request(
+            connection,
+            f"{CORE_API_URL}/v1/users/services/credentials",
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
+            authorization_header=basic_auth_header,
+        )
+
+        assert (
+            response_data["errors"]["code"]
+            == CoreApiErrorCode.INVALID_CREDENTIALS.value
+        )
+        assert response_data["errors"]["message"] == "Invalid credentials"

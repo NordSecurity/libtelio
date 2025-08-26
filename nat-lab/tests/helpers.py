@@ -471,14 +471,19 @@ async def ping_between_all_nodes(env: Environment) -> None:
 
 
 async def send_https_request(
-    connection,
+    connection: Connection,
     endpoint,
     method,
     ca_cert_path,
     data=None,
     authorization_header=None,
+    extra_headers: Optional[List[str]] = None,
     expect_response=True,
+    basic_auth: Optional[Tuple[str, str]] = None,
 ):
+    if extra_headers is None:
+        extra_headers = ["Content-Type: application/json"]
+
     curl_command = [
         "curl",
         "--cacert",
@@ -486,9 +491,10 @@ async def send_https_request(
         "-X",
         method,
         endpoint,
-        "-H",
-        "Content-Type: application/json",
     ]
+
+    for header in extra_headers:
+        curl_command.extend(["-H", header])
 
     if data:
         curl_command.extend(["-d", data])
@@ -496,13 +502,17 @@ async def send_https_request(
     if authorization_header:
         curl_command.extend(["-H", f"Authorization: {authorization_header}"])
 
-    log.info("Curl command: %s", curl_command)
+    if basic_auth:
+        username, password = basic_auth
+        curl_command.extend(["-u", f"{username}:{password}"])
 
-    process = await connection.create_process(curl_command, quiet=True).execute()
+    process = await connection.create_process(curl_command, quiet=False).execute()
     response = process.get_stdout()
     if expect_response:
         try:
-            return json.loads(response)
+            response = json.loads(response)
+            log.debug("[%s] %s %s: %s", connection.tag.name, method, endpoint, response)
+            return response
         except json.JSONDecodeError:
             assert False, f"Expected JSON response but got: {response}"
     return None
