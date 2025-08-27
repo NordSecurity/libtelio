@@ -89,14 +89,7 @@ impl From<&serde_json::Error> for TelioError {
 
 impl From<DevError> for TelioError {
     fn from(err: DevError) -> Self {
-        // TODO: Map more error types.
-        match err {
-            DevError::AlreadyStarted => Self::AlreadyStarted,
-            DevError::BadPublicKey => Self::InvalidKey,
-            _ => Self::UnknownError {
-                inner: format!("{err:?}"),
-            },
-        }
+        (&err).into()
     }
 }
 
@@ -106,6 +99,8 @@ impl From<&DevError> for TelioError {
         match err {
             DevError::AlreadyStarted => Self::AlreadyStarted,
             DevError::BadPublicKey => Self::InvalidKey,
+            DevError::BadPrivateKey => Self::InvalidKey,
+            DevError::NotStarted => Self::NotStarted,
             _ => Self::UnknownError {
                 inner: format!("{err:?}"),
             },

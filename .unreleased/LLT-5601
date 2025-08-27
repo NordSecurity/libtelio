@@ -1,0 +1,1 @@
+Some internal libtelio errors are now better mapped to error type exposed over FFI
