@@ -257,7 +257,7 @@ impl Pinger {
                 }
             }
         } else {
-            telio_log_error!("No target to ping");
+            telio_log_warn!("No target to ping");
         }
 
         telio_log_debug!("{:?}, no_of_tries: {}", dpresults, self.no_of_tries);

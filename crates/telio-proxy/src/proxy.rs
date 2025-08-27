@@ -369,7 +369,7 @@ impl StateEgress {
 
         match self.conn_state {
             Ok(()) => telio_log_error!("Unable to send. {}", err),
-            Err(e) if e != err.kind() => telio_log_error!("Unable to send. {}", err),
+            Err(e) if e != err.kind() => telio_log_warn!("Unable to send. {}", err),
             Err(_) => (),
         }
         self.conn_state = Err(err.kind());
