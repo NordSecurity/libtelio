@@ -368,7 +368,7 @@ impl StateEgress {
         telio_log_warn!("StateEgress: handling error {err:?} for {pk:?}");
 
         match self.conn_state {
-            Ok(()) => telio_log_error!("Unable to send. {}", err),
+            Ok(()) => telio_log_warn!("Unable to send. {}", err),
             Err(e) if e != err.kind() => telio_log_warn!("Unable to send. {}", err),
             Err(_) => (),
         }
@@ -377,6 +377,7 @@ impl StateEgress {
         match ErrorType::from(err) {
             ErrorType::RecoverableError => (),
             ErrorType::UnrecoverableError => {
+                telio_log_error!("Unrecoverable error");
                 Self::sleep_forever().await;
             }
             ErrorType::SocketIOError => {
