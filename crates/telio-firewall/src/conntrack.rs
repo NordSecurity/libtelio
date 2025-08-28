@@ -198,7 +198,7 @@ impl Conntrack {
         (self.tcp.lock().len(), self.udp.lock().len())
     }
 
-    fn handle_outbound_udp<'a>(
+    pub(crate) fn handle_outbound_udp<'a>(
         &self,
         ip: &impl IpPacket<'a>,
         associated_data: Option<&[u8]>,
@@ -624,10 +624,10 @@ impl Conntrack {
                 Some(packet) => (packet.get_source(), packet.get_destination(), Some(packet)),
                 _ => {
                     telio_log_trace!("Could not create TCP packet from IP packet {:?}", ip);
-                    return Err(Error::MalformedUdpPacket);
+                    return Err(Error::MalformedTcpPacket);
                 }
             },
-            _ => return Err(Error::MalformedUdpPacket),
+            _ => return Err(Error::UnexpectedProtocol),
         };
 
         let key = if let LibfwDirection::LibfwDirectionInbound = direction {
