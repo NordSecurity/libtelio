@@ -5,7 +5,9 @@ import os
 import paho.mqtt.client as mqtt  # type: ignore # pylint: disable=import-error
 import random
 import ssl
+import string
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from enum import Enum
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -52,6 +54,7 @@ class CoreApiErrorCode(Enum):
     AUTHORIZATION_HEADER_INVALID = 100106
     RESOURCE_NOT_FOUND = 404
     BAD_REQUEST = 400
+    UNAUTHORIZED = 401
 
 
 @dataclass
@@ -149,6 +152,7 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         self.recommended_servers_path = "/v1/servers/recommendations"
         self.countries_path = "/v1/countries"
         self.public_key_path = "/test/public-key"
+        self.service_credentials_path = "/v1/users/services/credentials"
         super().__init__(request, client_address, server)
 
     def _set_headers(
@@ -257,6 +261,8 @@ class CoreApiHandler(BaseHTTPRequestHandler):
             parsed_url = urlparse(self.path)
             query_params = parse_qs(parsed_url.query)
             self.handle_get_servers(query_params)
+        elif self.path == self.service_credentials_path:
+            self.handle_service_credentials()
 
     def do_HEAD(self):
         self._set_headers()
@@ -483,6 +489,23 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.CREATED)
         self.end_headers()
         self.wfile.write(b"Public key saved")
+
+    @requires_basic_authentication
+    def handle_service_credentials(self):
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        username = "".join(random.choices(string.ascii_letters + string.digits, k=24))
+        password = "".join(random.choices(string.ascii_letters + string.digits, k=24))
+        nordlynx_key = base64.b64encode(random.randbytes(32)).decode("utf-8")
+
+        response = {
+            "id": random.randint(1, 10000),
+            "created_at": current_time,
+            "updated_at": current_time,
+            "username": username,
+            "password": password,
+            "nordlynx_private_key": nordlynx_key,
+        }
+        self._write_response(response, HTTPStatus.OK)
 
 
 def run(mqttc, port=443):
