@@ -11,9 +11,7 @@
     "config_provider": "iproute"
   },
   "vpn": {
-    "server": {
-      "endpoint": "10.0.100.1:1023",
-      "public_key": "public-key-placeholder"
-    }
-  }
+    "country": "pl"
+  },
+  "override_vpn_endpoint_port": 1023
 }
