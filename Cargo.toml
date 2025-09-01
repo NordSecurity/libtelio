@@ -15,6 +15,7 @@ pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
 [dependencies]
 cfg-if = "1.0.0"
 ffi_helpers = "0.3.0"
+aws-lc-rs = { version = "=1.13.3", features = ["bindgen"] }
 # We need this specific version for libmoose
 zerofrom = "=0.1.5"
 
@@ -148,7 +149,7 @@ rand = "0.8"
 regex = "1.11"
 rstest = "0.25.0"
 rustc-hash = "2"
-rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "aws_lc_rs"] }
 rustls-platform-verifier = "0.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -162,6 +163,7 @@ surge-ping = { version = "0.8" }
 thiserror = "2"
 time = { version = "0.3", features = ["formatting"] }
 tokio = ">=1.22"
+tokio-rustls = { version = "0.26.2", features = ["tls12", "aws-lc-rs"] }
 tracing-subscriber = { version = "0.3", features = ["local-time", "env-filter"] }
 tracing-appender = "0.2"
 uniffi = "0.28.3"

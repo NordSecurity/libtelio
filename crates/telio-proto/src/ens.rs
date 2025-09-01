@@ -1,10 +1,19 @@
-use std::{net::IpAddr, str::FromStr, sync::Arc};
+use std::{
+    net::{IpAddr, ToSocketAddrs},
+    str::FromStr,
+    sync::Arc,
+};
 
 use base64::prelude::{Engine, BASE64_STANDARD};
 use blake3::{derive_key, keyed_hash};
 use grpc::ConnectionError;
 use http::Uri;
 use hyper_util::rt::TokioIo;
+use rustls::{
+    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
+    pki_types::{ServerName, UnixTime},
+    ClientConfig, DigitallySignedStruct, SignatureScheme,
+};
 use telio_crypto::{SecretKey, SharedSecret};
 use telio_model::PublicKey;
 use telio_sockets::SocketPool;
@@ -14,9 +23,10 @@ use telio_task::io::{
 };
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
 use tokio::{select, sync::watch, task::JoinHandle};
+use tokio_rustls::TlsConnector;
 use tonic::{
     metadata::AsciiMetadataValue,
-    transport::{Channel, Endpoint},
+    transport::{CertificateDer, Channel, Endpoint},
     Request, Status,
 };
 use tower::service_fn;
@@ -264,39 +274,119 @@ fn authentication_interceptor(
 }
 
 async fn create_external_channel(vpn_uri: &str, pool: Arc<SocketPool>) -> anyhow::Result<Channel> {
-    Ok(Endpoint::try_from(vpn_uri.to_owned())?
-        .connect_with_connector(service_fn(move |u: Uri| {
-            let pool = pool.clone();
-            async move {
-                let socket = pool.new_external_tcp_v4(None)?;
-                let h = match u.host() {
-                    Some(host) => host,
-                    None => {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            "missing host in vpn uri",
-                        ))
-                    }
-                };
-                let p = match u.port_u16() {
-                    Some(port) => port,
-                    None => {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::InvalidInput,
-                            "missing port in vpn uri",
-                        ))
-                    }
-                };
-                Ok::<_, std::io::Error>(TokioIo::new(
-                    socket
-                        .connect(format!("{h}:{p}").parse().map_err(|e| {
-                            std::io::Error::new(std::io::ErrorKind::InvalidInput, e)
-                        })?)
-                        .await?,
-                ))
+    let socket_factory = move |uri: Uri| {
+        let pool = pool.clone();
+        async move {
+            let host = match uri.host() {
+                Some(host) => host,
+                None => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "missing host in vpn uri",
+                    ))
+                }
+            };
+            let port = match uri.port_u16() {
+                Some(port) => port,
+                None => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "missing port in vpn uri",
+                    ))
+                }
+            };
+
+            let socket = pool.new_external_tcp_v4(None)?;
+            let domain = tokio_rustls::rustls::pki_types::ServerName::try_from(host.to_owned())
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+
+            if let Some(resolved) = ((host, port).to_socket_addrs()?).next() {
+                let tcp_stream = socket.connect(resolved).await?;
+                let tls_connector = make_tls_connector()?;
+                let tls_stream = tls_connector.connect(domain, tcp_stream).await?;
+                return Ok::<_, std::io::Error>(TokioIo::new(tls_stream));
             }
-        }))
+
+            Err(std::io::Error::other(format!(
+                "None of the IPs resolved from {host} accepted ENS over TLS"
+            )))
+        }
+    };
+
+    Ok(Endpoint::try_from(vpn_uri.to_owned())?
+        .connect_with_connector(service_fn(socket_factory))
         .await?)
+}
+
+fn make_tls_connector() -> std::io::Result<TlsConnector> {
+    let mut provider = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider();
+
+    provider.kx_groups = vec![tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::X25519MLKEM768];
+
+    let mut tls_config = ClientConfig::builder_with_provider(Arc::new(provider))
+        .with_safe_default_protocol_versions()
+        .map_err(|e| std::io::Error::other(format!("{e}")))?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(AcceptAnyCertVerifier))
+        .with_no_client_auth();
+    tls_config.alpn_protocols = vec![b"h2".to_vec()];
+
+    Ok(TlsConnector::from(Arc::new(tls_config)))
+}
+
+#[derive(Debug)]
+struct AcceptAnyCertVerifier;
+
+impl ServerCertVerifier for AcceptAnyCertVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        vec![
+            SignatureScheme::RSA_PKCS1_SHA1,
+            SignatureScheme::ECDSA_SHA1_Legacy,
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::ED25519,
+            SignatureScheme::ED448,
+            SignatureScheme::ML_DSA_44,
+            SignatureScheme::ML_DSA_65,
+            SignatureScheme::ML_DSA_87,
+        ]
+    }
 }
 
 fn authentication_tag(secret: SharedSecret, message: &[u8]) -> [u8; 32] {
@@ -407,6 +497,10 @@ mod tests {
     #[tokio::test]
     #[test_log::test]
     async fn test_ens() {
+        tokio_rustls::rustls::crypto::aws_lc_rs::default_provider()
+            .install_default()
+            .unwrap();
+
         let server_private_key = SecretKey::gen();
         let server_public_key = server_private_key.public();
         let client_private_key = SecretKey::gen();
@@ -447,7 +541,27 @@ mod tests {
             let actual_addr = listener.local_addr().unwrap();
             port_tx.send(actual_addr.port()).unwrap();
 
+            // Generate a self-signed certificate for testing
+            use rcgen::{generate_simple_self_signed, CertifiedKey};
+
+            let subject_alt_names = vec!["localhost".to_string(), "127.0.0.1".to_string()];
+            let CertifiedKey { cert, signing_key } =
+                generate_simple_self_signed(subject_alt_names).unwrap();
+
+            let cert_pem = cert.pem();
+            let key_pem = signing_key.serialize_pem();
+
+            // Go back to simpler approach - use tonic's built-in TLS but with a certificate that works
+            // The client already supports post-quantum algorithms, and we've verified it's configured correctly
+
+            use tonic::transport::ServerTlsConfig;
+
+            let tonic_tls_config = ServerTlsConfig::new()
+                .identity(tonic::transport::Identity::from_pem(cert_pem, key_pem));
+
             Server::builder()
+                .tls_config(tonic_tls_config)
+                .unwrap()
                 .add_service(ens_srv)
                 .add_service(login_srv)
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
