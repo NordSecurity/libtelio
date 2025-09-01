@@ -824,7 +824,8 @@ mod tests {
                         trigger_cooldown_duration: 60,
                     }),
                     error_notification_service: Some(FeatureErrorNotificationService {
-                        buffer_size: 42
+                        buffer_size: 42,
+                        allow_only_pq: true,
                     })
                 }
             );
