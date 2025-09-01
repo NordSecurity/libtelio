@@ -46,6 +46,7 @@ pub fn convert_ipv4addr_to_inaddr(ip: &Ipv4Addr) -> winapi::shared::inaddr::in_a
 pub fn convert_ipv6addr_to_inaddr(ip: &Ipv6Addr) -> winapi::shared::in6addr::in6_addr {
     let mut winaddr = winapi::shared::in6addr::in6_addr::default();
 
+    #[allow(clippy::indexing_slicing)]
     for i in 0..7 {
         unsafe { winaddr.u.Word_mut()[i] = ip.segments()[i] };
     }

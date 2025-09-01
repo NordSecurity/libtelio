@@ -147,7 +147,7 @@ pub enum KeyDecodeError {
 impl SecretKey {
     /// Create new key from bytes
     /// This ensures bytes are properly clamped
-    #[allow(index_access_check)]
+    #[allow(clippy::indexing_slicing)]
     pub fn new(mut bytes: [u8; KEY_SIZE]) -> Self {
         bytes[0] &= 248;
         bytes[31] &= 127;

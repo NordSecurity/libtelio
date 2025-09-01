@@ -159,7 +159,7 @@ pub async fn fetch_keys(
     // Receive response
     let ciphertext = loop {
         let len = sock.recv(&mut recvbuf).await?;
-        #[allow(index_access_check)]
+        #[allow(clippy::indexing_slicing)]
         let pkg = &recvbuf[..len];
 
         telio_log_debug!("Received packet of size {}", pkg.len());
@@ -252,12 +252,12 @@ pub async fn rekey(
     let mut recvbuf = [0u8; 2048];
 
     let len = sock.recv(&mut recvbuf).await?;
-    #[allow(index_access_check)]
+    #[allow(clippy::indexing_slicing)]
     let pkg = &recvbuf[..len];
 
     telio_log_debug!("Received packet of size {}", pkg.len());
 
-    #[allow(index_access_check)]
+    #[allow(clippy::indexing_slicing)]
     let ciphertext = parse_response_payload(pkg, pq_version)?;
 
     // Extract the shared secret
@@ -309,14 +309,14 @@ async fn handshake(
 
     // The response should be 92, so the buffer is sufficient
     let len = sock.recv(&mut pkgbuf).await?;
-    #[allow(index_access_check)]
+    #[allow(clippy::indexing_slicing)]
     let pkg = &pkgbuf[..len];
 
     telio_log_debug!("Handshake response received");
 
     let mut msgbuf = [0u8; 2048];
 
-    #[allow(index_access_check)]
+    #[allow(clippy::indexing_slicing)]
     match tunn.decapsulate(None, pkg, &mut msgbuf) {
         noise::TunnResult::Err(err) => {
             return Err(format!("Failed to decapsulate handshake message: {err:?}").into())
@@ -430,7 +430,7 @@ pub fn parse_response_payload(
             if payload.len() < 5 {
                 return Err(super::Error::ServerV1(PqProtoV1Status::NoData));
             } else if payload.len() == 5 {
-                #[allow(index_access_check)]
+                #[allow(clippy::indexing_slicing)]
                 let error_code = payload[4];
                 let status = PqProtoV1Status::from(error_code);
                 telio_log_error!(
@@ -447,7 +447,7 @@ pub fn parse_response_payload(
             if payload.len() < 5 {
                 return Err(super::Error::ServerV2(PqProtoV2Status::NoData));
             } else if payload.len() == 5 {
-                #[allow(index_access_check)]
+                #[allow(clippy::indexing_slicing)]
                 let error_code = payload[4];
                 let status = PqProtoV2Status::from(error_code);
                 telio_log_error!(
@@ -508,7 +508,7 @@ fn create_get_packet(
         pq_version,
     );
 
-    #[allow(index_access_check)]
+    #[allow(clippy::indexing_slicing)]
     let to_hash = &pkgbuf[IPV4_HEADER_LEN + UDP_HEADER_LEN..];
 
     let tag = {
@@ -577,7 +577,7 @@ fn derive_pq_auth_key(
     wg_server_public: &telio_crypto::PublicKey,
 ) -> [u8; 32] {
     let mut key_material = [0u8; 32 + 32 + 32];
-    #[allow(index_access_check)]
+    #[allow(clippy::indexing_slicing)]
     {
         key_material[0..32].copy_from_slice(pre_shared_key);
         key_material[32..64].copy_from_slice(wg_client_public);
@@ -659,7 +659,7 @@ fn fill_get_packet_headers(pkgbuf: &mut [u8], local_port: u16) {
     let pkg_len = pkgbuf.len();
 
     #[allow(clippy::expect_used)]
-    #[allow(index_access_check)]
+    #[allow(clippy::indexing_slicing)]
     let mut udppkg = MutableUdpPacket::new(&mut pkgbuf[IPV4_HEADER_LEN..])
         .expect("UDP buffer should not be too small");
     udppkg.set_source(local_port);
@@ -673,7 +673,7 @@ fn fill_get_packet_headers(pkgbuf: &mut [u8], local_port: u16) {
     drop(udppkg);
 
     #[allow(clippy::expect_used)]
-    #[allow(index_access_check)]
+    #[allow(clippy::indexing_slicing)]
     let mut ippkg = MutableIpv4Packet::new(&mut pkgbuf[..IPV4_HEADER_LEN])
         .expect("IPv4 buffer should not be too small");
     ippkg.set_version(4);

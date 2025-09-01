@@ -81,7 +81,10 @@ impl WindowsNativeWg {
         hasher.update(name);
         let hash = hasher.finalize();
         let mut guid_bytes: [u8; 16] = [0u8; 16];
-        guid_bytes[..16].copy_from_slice(&hash[..16]);
+        #[allow(clippy::indexing_slicing)]
+        {
+            guid_bytes[..16].copy_from_slice(&hash[..16]);
+        }
         let guid: u128 = u128::from_ne_bytes(guid_bytes);
         guid
     }

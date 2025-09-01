@@ -659,7 +659,7 @@ mod tests {
         ts.stop().await;
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    #[allow(unwrap_check)]
+    #[allow(clippy::unwrap_used)]
     async fn test_error_handling() {
         let mut ts = TestSystem::start().await;
 

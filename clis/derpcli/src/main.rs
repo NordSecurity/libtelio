@@ -61,7 +61,7 @@
 //! ```
 
 #![allow(unknown_lints)]
-#![allow(unwrap_check)]
+#![allow(clippy::unwrap_used)]
 
 mod conf;
 mod metrics;
@@ -439,7 +439,7 @@ async fn run_without_clients_config(config: conf::Config) -> Result<()> {
     Ok(())
 }
 
-#[allow(index_access_check)]
+#[allow(clippy::indexing_slicing)]
 fn create_buffer(size: usize, counter: i32) -> String {
     let mut buf = format!("{}B", size);
     let middle_point = buf.len();
