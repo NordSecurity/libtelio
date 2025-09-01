@@ -680,7 +680,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
         }
     }
 
-    #[allow(unwrap_check)]
+    #[allow(clippy::unwrap_used)]
     async fn start(&self, peer: Arc<Mutex<Tunn>>, socket: Arc<UdpSocket>) {
         let nameserver = self.clone();
         self.write().await.task_handle = Some(tokio::spawn(LocalNameServer::dns_service(

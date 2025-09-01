@@ -484,7 +484,7 @@ impl StatefullFirewall {
 
         let local_network_filters = self.get_local_area_networks_filters();
 
-        #[allow(index_access_check)]
+        #[allow(clippy::indexing_slicing)]
         for peer in self.whitelist.read().peer_whitelists[Permissions::LocalAreaConnections].iter()
         {
             for local_net in local_network_filters.iter() {
@@ -512,7 +512,7 @@ impl StatefullFirewall {
         let local_ip = self.ip_addresses.read();
         for ip in local_ip.iter() {
             // Accept packets for whitelisted peers
-            #[allow(index_access_check)]
+            #[allow(clippy::indexing_slicing)]
             for peer in
                 self.whitelist.read().peer_whitelists[Permissions::IncomingConnections].iter()
             {
@@ -595,7 +595,7 @@ impl StatefullFirewall {
             });
         }
 
-        #[allow(index_access_check)]
+        #[allow(clippy::indexing_slicing)]
         for peer in self.whitelist.read().peer_whitelists[Permissions::RoutingConnections].iter() {
             rules.push(Rule {
                 filters: vec![Filter {
@@ -762,19 +762,19 @@ impl Firewall for StatefullFirewall {
         self.recreate_chain();
     }
 
-    #[allow(index_access_check)]
+    #[allow(clippy::indexing_slicing)]
     fn add_to_peer_whitelist(&self, peer: PublicKey, permissions: Permissions) {
         self.whitelist.write().peer_whitelists[permissions].insert(peer);
         self.recreate_chain();
     }
 
-    #[allow(index_access_check)]
+    #[allow(clippy::indexing_slicing)]
     fn remove_from_peer_whitelist(&self, peer: PublicKey, permissions: Permissions) {
         self.whitelist.write().peer_whitelists[permissions].remove(&peer);
         self.recreate_chain();
     }
 
-    #[allow(index_access_check)]
+    #[allow(clippy::indexing_slicing)]
     fn get_peer_whitelist(&self, permissions: Permissions) -> HashSet<PublicKey> {
         self.whitelist.read().peer_whitelists[permissions].clone()
     }

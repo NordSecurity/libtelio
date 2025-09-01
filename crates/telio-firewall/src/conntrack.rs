@@ -916,10 +916,10 @@ impl Conntrack {
 
                     telio_log_debug!("Injecting IPv4 TCP RST packet {key:#?}");
 
-                    #[allow(index_access_check)]
+                    #[allow(clippy::indexing_slicing)]
                     ipv4pkgbuf[..IPV4_LEN].copy_from_slice(ipv4pkg.packet());
 
-                    #[allow(index_access_check)]
+                    #[allow(clippy::indexing_slicing)]
                     ipv4pkgbuf[IPV4_LEN..].copy_from_slice(tcppkg.packet());
 
                     inject_packet_cb(&ipv4pkgbuf)?;
@@ -939,10 +939,10 @@ impl Conntrack {
 
                     telio_log_debug!("Injecting IPv4 TCP RST packet {key:#?}");
 
-                    #[allow(index_access_check)]
+                    #[allow(clippy::indexing_slicing)]
                     ipv6pkgbuf[..IPV6_LEN].copy_from_slice(ipv6pkg.packet());
 
-                    #[allow(index_access_check)]
+                    #[allow(clippy::indexing_slicing)]
                     ipv6pkgbuf[IPV6_LEN..].copy_from_slice(tcppkg.packet());
                     inject_packet_cb(&ipv6pkgbuf)?;
                 }
@@ -974,7 +974,7 @@ impl Conntrack {
 
         // Write most of the fields for ICMP and IP packets upfront
         #[allow(clippy::expect_used)]
-        #[allow(index_access_check)]
+        #[allow(clippy::indexing_slicing)]
         let mut ipv4pkg = MutableIpv4Packet::new(&mut ipv4pkgbuf[..IPV4_HEADER_LEN])
             .expect("IPv4 buffer should not be too small");
         ipv4pkg.set_version(4);
@@ -984,7 +984,7 @@ impl Conntrack {
         ipv4pkg.set_next_level_protocol(IpNextHeaderProtocols::Icmp);
 
         #[allow(clippy::expect_used)]
-        #[allow(index_access_check)]
+        #[allow(clippy::indexing_slicing)]
         let mut ipv6pkg = MutableIpv6Packet::new(&mut ipv6pkgbuf[..IPV6_HEADER_LEN])
             .expect("IPv6 buffer should not be too small");
         ipv6pkg.set_version(6);
@@ -992,7 +992,7 @@ impl Conntrack {
         ipv6pkg.set_hop_limit(0xff);
 
         #[allow(clippy::expect_used)]
-        #[allow(index_access_check)]
+        #[allow(clippy::indexing_slicing)]
         let mut icmppkg = MutableIcmpPacket::new(
             &mut ipv4pkgbuf[IPV4_HEADER_LEN..(IPV4_HEADER_LEN + ICMP_HEADER_LEN)],
         )
@@ -1001,7 +1001,7 @@ impl Conntrack {
         icmppkg.set_icmp_code(IcmpCodes::DestinationPortUnreachable);
 
         #[allow(clippy::expect_used)]
-        #[allow(index_access_check)]
+        #[allow(clippy::indexing_slicing)]
         let mut icmpv6pkg = MutableIcmpv6Packet::new(
             &mut ipv6pkgbuf[IPV6_HEADER_LEN..(IPV6_HEADER_LEN + ICMP_HEADER_LEN)],
         )
@@ -1015,16 +1015,16 @@ impl Conntrack {
                 (IpAddr::Ipv4(local_addr), IpAddr::Ipv4(remote_addr)) => {
                     let end = IPV4_HEADER_LEN + ICMP_HEADER_LEN + last_headers.len();
 
-                    #[allow(index_access_check)]
+                    #[allow(clippy::indexing_slicing)]
                     let ipv4pkgbuf = &mut ipv4pkgbuf[..end];
-                    #[allow(index_access_check)]
+                    #[allow(clippy::indexing_slicing)]
                     ipv4pkgbuf[(IPV4_HEADER_LEN + ICMP_HEADER_LEN)..].copy_from_slice(last_headers);
 
                     let src = remote_addr.into();
                     let dst = local_addr.into();
 
                     #[allow(clippy::expect_used)]
-                    #[allow(index_access_check)]
+                    #[allow(clippy::indexing_slicing)]
                     let mut icmppkg = MutableIcmpPacket::new(&mut ipv4pkgbuf[IPV4_HEADER_LEN..])
                         .expect("ICMP buffer should not be too small");
                     icmppkg.set_checksum(0);
@@ -1032,7 +1032,7 @@ impl Conntrack {
                     drop(icmppkg);
 
                     #[allow(clippy::expect_used)]
-                    #[allow(index_access_check)]
+                    #[allow(clippy::indexing_slicing)]
                     let mut ipv4pkg = MutableIpv4Packet::new(&mut ipv4pkgbuf[..IPV4_HEADER_LEN])
                         .expect("IPv4 buffer should not be too small");
                     ipv4pkg.set_source(src);
@@ -1050,16 +1050,16 @@ impl Conntrack {
                 (IpAddr::Ipv6(local_addr), IpAddr::Ipv6(remote_addr)) => {
                     let end = IPV6_HEADER_LEN + ICMP_HEADER_LEN + last_headers.len();
 
-                    #[allow(index_access_check)]
+                    #[allow(clippy::indexing_slicing)]
                     let ipv6pkgbuf = &mut ipv6pkgbuf[..end];
-                    #[allow(index_access_check)]
+                    #[allow(clippy::indexing_slicing)]
                     ipv6pkgbuf[(IPV6_HEADER_LEN + ICMP_HEADER_LEN)..].copy_from_slice(last_headers);
 
                     let src = remote_addr.into();
                     let dst = local_addr.into();
 
                     #[allow(clippy::expect_used)]
-                    #[allow(index_access_check)]
+                    #[allow(clippy::indexing_slicing)]
                     let mut icmpv6pkg =
                         MutableIcmpv6Packet::new(&mut ipv6pkgbuf[IPV6_HEADER_LEN..])
                             .expect("ICMPv6 buffer should not be too small");
@@ -1071,7 +1071,7 @@ impl Conntrack {
                     ));
 
                     #[allow(clippy::expect_used)]
-                    #[allow(index_access_check)]
+                    #[allow(clippy::indexing_slicing)]
                     let mut ipv6pkg = MutableIpv6Packet::new(&mut ipv6pkgbuf[..IPV6_HEADER_LEN])
                         .expect("IPv4 buffer should not be too small");
                     ipv6pkg.set_source(src);
