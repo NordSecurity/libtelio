@@ -229,6 +229,16 @@ async fn task(
     Ok(())
 }
 
+use rustls::crypto::aws_lc_rs;
+use rustls::crypto::CryptoProvider;
+
+// Create a custom crypto provider that only supports X25519MLKEM768
+fn create_x25519mlkem768_only_provider() -> CryptoProvider {
+    let mut provider: CryptoProvider = aws_lc_rs::default_provider();
+    provider.kx_groups = vec![aws_lc_rs::kx_group::X25519MLKEM768];
+    provider
+}
+
 async fn get_login_challenge(
     external_channel: Channel,
     vpn_public_key: PublicKey,
@@ -265,6 +275,7 @@ fn authentication_interceptor(
 
 async fn create_external_channel(vpn_uri: &str, pool: Arc<SocketPool>) -> anyhow::Result<Channel> {
     Ok(Endpoint::try_from(vpn_uri.to_owned())?
+        .tls_config(todo!())?
         .connect_with_connector(service_fn(move |u: Uri| {
             let pool = pool.clone();
             async move {

@@ -14,7 +14,7 @@ hyper = { version = "1.6.0", features = ["full"] }
 prost = "0.14.1"
 protobuf = "3.7.2"
 tokio-stream = "0.1.17"
-tonic = "0.14.0"
+tonic = { version = "0.14.0", features = ["tls-aws-lc"] }
 tonic-prost = "0.14"
 tower = "0.5.2"
 tower-service = "0.3.3"
@@ -34,6 +34,7 @@ telio-model.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
+rustls.workspace = true
 
 [build-dependencies]
 anyhow.workspace = true
