@@ -89,9 +89,9 @@ def post_check_for_windows_static_runtime(config, args):
                     config.rust_target, dll_bin, config.debug
                 )
                 if os.path.isfile(dll_bin_path):
-                    should_link_statically = (
-                        WINDOWS_RUNTIME_LINKING[WindowsLinkingMethod.STATIC]
-                        in GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"]
+                    should_link_statically = any(
+                        WINDOWS_RUNTIME_LINKING[WindowsLinkingMethod.STATIC] in s
+                        for s in GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"]
                     )
                     msvc_context = None
                     if not msvc.is_msvc_active():
@@ -513,13 +513,18 @@ def exec_build(args):
             if not "env" in GLOBAL_CONFIG["windows"]:
                 GLOBAL_CONFIG["windows"]["env"] = {"RUSTFLAGS": ()}
 
-            if not "RUSTFLAGS" in GLOBAL_CONFIG["windows"]["env"]:
-                GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"] = ()
+            if not GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"]:
+                GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"] = (
+                    WINDOWS_RUNTIME_LINKING[WindowsLinkingMethod.STATIC],
+                    "set",
+                )
+            else:
+                current_flags = GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"][0]
+                new_flags = (
+                    current_flags + WINDOWS_RUNTIME_LINKING[WindowsLinkingMethod.STATIC]
+                )
+                GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"] = (new_flags, "set")
 
-            GLOBAL_CONFIG["windows"]["env"]["RUSTFLAGS"] += (
-                WINDOWS_RUNTIME_LINKING[WindowsLinkingMethod.STATIC],
-                "set",
-            )
             if args.moose:
                 moose_utils.create_msvc_import_library(args.arch)
         else:
