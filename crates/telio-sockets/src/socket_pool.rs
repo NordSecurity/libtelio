@@ -39,6 +39,12 @@ pub struct External<T: AsNativeSocket> {
     guard: SocketGuard,
 }
 
+impl hyper_util::client::legacy::connect::Connection for External<telio_utils::net::TcpStream> {
+    fn connected(&self) -> hyper_util::client::legacy::connect::Connected {
+        hyper_util::client::legacy::connect::Connected::new()
+    }
+}
+
 #[derive(Clone)]
 pub struct SocketPool {
     protect: ArcProtector,

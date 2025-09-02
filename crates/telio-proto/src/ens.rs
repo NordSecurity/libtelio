@@ -19,7 +19,7 @@ use tonic::{
     transport::{Channel, Endpoint},
     Request, Status,
 };
-use tower::service_fn;
+use tower::{service_fn, util::ServiceFn};
 use uuid::Uuid;
 
 use crate::ens::grpc::{ChallengeRequest, ConnectionErrorRequest};
@@ -116,7 +116,7 @@ impl ErrorNotificationService {
         let (quit_tx, quit_rx): (watch::Sender<bool>, watch::Receiver<bool>) =
             watch::channel(false);
 
-        let vpn_uri = format!("http://{vpn_ip}:{ens_port}");
+        let vpn_uri = format!("https://{vpn_ip}:{ens_port}");
 
         let pool = self.socket_pool.clone();
         let tx = self.tx.clone();
@@ -229,15 +229,15 @@ async fn task(
     Ok(())
 }
 
-use rustls::crypto::aws_lc_rs;
-use rustls::crypto::CryptoProvider;
+// use rustls::crypto::aws_lc_rs;
+// use rustls::crypto::CryptoProvider;
 
-// Create a custom crypto provider that only supports X25519MLKEM768
-fn create_x25519mlkem768_only_provider() -> CryptoProvider {
-    let mut provider: CryptoProvider = aws_lc_rs::default_provider();
-    provider.kx_groups = vec![aws_lc_rs::kx_group::X25519MLKEM768];
-    provider
-}
+// // Create a custom crypto provider that only supports X25519MLKEM768
+// fn create_x25519mlkem768_only_provider() -> CryptoProvider {
+//     let mut provider: CryptoProvider = aws_lc_rs::default_provider();
+//     provider.kx_groups = vec![aws_lc_rs::kx_group::X25519MLKEM768];
+//     provider
+// }
 
 async fn get_login_challenge(
     external_channel: Channel,
@@ -274,9 +274,45 @@ fn authentication_interceptor(
 }
 
 async fn create_external_channel(vpn_uri: &str, pool: Arc<SocketPool>) -> anyhow::Result<Channel> {
-    Ok(Endpoint::try_from(vpn_uri.to_owned())?
-        .tls_config(todo!())?
-        .connect_with_connector(service_fn(move |u: Uri| {
+    use tonic::transport::channel::ClientTlsConfig;
+
+    let tls_config = ClientTlsConfig::new();
+
+    use rustls::{ClientConfig, RootCertStore};
+
+    fn pq_rustls_config() -> ClientConfig {
+        // Use AWS-LC provider to get hybrid KEM groups
+        // let provider = rustls_aws_lc_rs::default_provider();
+        let mut provider = rustls::crypto::aws_lc_rs::default_provider();
+        provider.kx_groups = vec![rustls::crypto::aws_lc_rs::kx_group::X25519MLKEM768];
+
+        // Root store (use system roots or pin your CA)
+        let mut roots = RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+        let cfg = ClientConfig::builder_with_provider(provider.into())
+            .with_safe_default_protocol_versions()
+            .expect("protocol versions")
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+
+        // Enforce TLS 1.3 (hybrid groups require TLS 1.3)
+        // cfg.versions = vec![TLS13]; // TODO
+
+        // Offer only the PQ-hybrid key exchange group.
+        // Use the constant your rustls exposes:
+        //   rustls::kx_group::X25519MLKEM768          (newer)
+        //   rustls::kx_group::X25519Kyber768          (older)
+        //   rustls::kx_group::X25519Kyber768Draft00   (very old draft)
+
+        // gRPC requires HTTP/2
+        // cfg.alpn_protocols = vec![b"h2".to_vec()];
+
+        cfg
+    }
+
+    let tcp: ServiceFn<_> =
+        service_fn(move |u: Uri| {
             let pool = pool.clone();
             async move {
                 let socket = pool.new_external_tcp_v4(None)?;
@@ -306,7 +342,18 @@ async fn create_external_channel(vpn_uri: &str, pool: Arc<SocketPool>) -> anyhow
                         .await?,
                 ))
             }
-        }))
+        });
+
+    let https = hyper_rustls::HttpsConnectorBuilder::new()
+        .with_tls_config(pq_rustls_config())
+        .https_only() // refuse cleartext
+        .enable_http2() // gRPC needs h2
+        .wrap_connector(tcp);
+
+    Ok(Endpoint::try_from(vpn_uri.to_owned())?
+        .tls_config(tls_config)?
+        .connect_with_connector(https)
+        // .connect_with_connector(tcp)
         .await?)
 }
 
@@ -453,11 +500,39 @@ mod tests {
 
         let (port_tx, port_rx) = oneshot::channel();
 
+        // use rcgen::{
+        //     BasicConstraints, Certificate, CertificateParams, ExtendedKeyUsagePurpose, IsCa,
+        //     KeyUsagePurpose, SanType,
+        // };
+        // use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+
         tokio::spawn(async move {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let actual_addr = listener.local_addr().unwrap();
             port_tx.send(actual_addr.port()).unwrap();
 
+            /*
+            // 1) Create a test CA
+            let mut ca_params = CertificateParams::default();
+            ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+            ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
+            let ca = Certificate::from_params(ca_params).unwrap();
+            let ca_der = ca.serialize_der().unwrap(); // used for the client trust store
+
+            // 2) Create a server cert signed by the CA for localhost and 127.0.0.1
+            let mut srv_params = CertificateParams::new(vec!["localhost".into()]).unwrap();
+            srv_params.subject_alt_names.extend([
+                // SanType::DnsName("localhost".into()),
+                SanType::IpAddress(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+            ]);
+            srv_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+            let srv_cert = Certificate::from_params(srv_params).unwrap();
+            let srv_cert_der = srv_cert.serialize_der_with_signer(&ca).unwrap();
+            let srv_key_der = srv_cert.key_pair().serialize_der();
+
+            let cert_chain: Vec<CertificateDer<'static>> = vec![CertificateDer::from(srv_cert_der)];
+            let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(srv_key_der));
+            */
             Server::builder()
                 .add_service(ens_srv)
                 .add_service(login_srv)

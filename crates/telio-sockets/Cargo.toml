@@ -20,6 +20,7 @@ nix.workspace = true
 
 telio-utils.workspace = true
 once_cell.workspace = true
+hyper-util = "0.1.16"
 
 [dev-dependencies]
 mockall.workspace = true
