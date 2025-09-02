@@ -5,6 +5,13 @@ use blake3::{derive_key, keyed_hash};
 use grpc::ConnectionError;
 use http::Uri;
 use hyper_util::rt::TokioIo;
+use rustls::{
+    client::danger::{
+        DangerousClientConfig, HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier,
+    },
+    pki_types::{ServerName, UnixTime},
+    DigitallySignedStruct, KeyLogFile, SignatureScheme,
+};
 use telio_crypto::{SecretKey, SharedSecret};
 use telio_model::PublicKey;
 use telio_sockets::SocketPool;
@@ -16,7 +23,7 @@ use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_wa
 use tokio::{select, sync::watch, task::JoinHandle};
 use tonic::{
     metadata::AsciiMetadataValue,
-    transport::{Channel, Endpoint},
+    transport::{CertificateDer, Channel, Endpoint},
     Request, Status,
 };
 use tower::{service_fn, util::ServiceFn};
@@ -290,11 +297,70 @@ async fn create_external_channel(vpn_uri: &str, pool: Arc<SocketPool>) -> anyhow
         let mut roots = RootCertStore::empty();
         roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
-        let cfg = ClientConfig::builder_with_provider(provider.into())
+        #[derive(Debug)]
+        struct AcceptAnyCertVerifier;
+
+        impl ServerCertVerifier for AcceptAnyCertVerifier {
+            fn verify_server_cert(
+                &self,
+                _end_entity: &CertificateDer<'_>,
+                _intermediates: &[CertificateDer<'_>],
+                _server_name: &ServerName<'_>,
+                _ocsp_response: &[u8],
+                _now: UnixTime,
+            ) -> Result<ServerCertVerified, rustls::Error> {
+                telio_log_debug!("verify_server_cert called");
+                Ok(ServerCertVerified::assertion())
+            }
+
+            fn verify_tls12_signature(
+                &self,
+                _message: &[u8],
+                _cert: &CertificateDer<'_>,
+                _dss: &DigitallySignedStruct,
+            ) -> Result<HandshakeSignatureValid, rustls::Error> {
+                Ok(HandshakeSignatureValid::assertion())
+            }
+
+            fn verify_tls13_signature(
+                &self,
+                _message: &[u8],
+                _cert: &CertificateDer<'_>,
+                _dss: &DigitallySignedStruct,
+            ) -> Result<HandshakeSignatureValid, rustls::Error> {
+                Ok(HandshakeSignatureValid::assertion())
+            }
+
+            fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+                vec![
+                    SignatureScheme::RSA_PKCS1_SHA1,
+                    SignatureScheme::ECDSA_SHA1_Legacy,
+                    SignatureScheme::RSA_PKCS1_SHA256,
+                    SignatureScheme::ECDSA_NISTP256_SHA256,
+                    SignatureScheme::RSA_PKCS1_SHA384,
+                    SignatureScheme::ECDSA_NISTP384_SHA384,
+                    SignatureScheme::RSA_PKCS1_SHA512,
+                    SignatureScheme::ECDSA_NISTP521_SHA512,
+                    SignatureScheme::RSA_PSS_SHA256,
+                    SignatureScheme::RSA_PSS_SHA384,
+                    SignatureScheme::RSA_PSS_SHA512,
+                    SignatureScheme::ED25519,
+                    SignatureScheme::ED448,
+                ]
+            }
+        }
+
+        let mut cfg = ClientConfig::builder_with_provider(provider.into())
             .with_safe_default_protocol_versions()
             .expect("protocol versions")
+            // .with_custom_certificate_verifier(Arc::new(AcceptAnyCertVerifier))
             .with_root_certificates(roots)
             .with_no_client_auth();
+
+        cfg.key_log = Arc::new(KeyLogFile::new());
+
+        let mut cfg_tmp = DangerousClientConfig { cfg: &mut cfg };
+        cfg_tmp.set_certificate_verifier(Arc::new(AcceptAnyCertVerifier));
 
         // Enforce TLS 1.3 (hybrid groups require TLS 1.3)
         // cfg.versions = vec![TLS13]; // TODO
