@@ -48,3 +48,5 @@ tonic-prost-build = "0.14.0"
 rcgen = "0.14.3"
 test-log = { version = "0.2.18", features = ["trace"] }
 tokio = { workspace = true, features = ["sync"] }
+pem = "3.0"
+tokio-rustls = "0.25"

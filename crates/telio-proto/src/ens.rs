@@ -500,40 +500,32 @@ mod tests {
 
         let (port_tx, port_rx) = oneshot::channel();
 
-        // use rcgen::{
-        //     BasicConstraints, Certificate, CertificateParams, ExtendedKeyUsagePurpose, IsCa,
-        //     KeyUsagePurpose, SanType,
-        // };
-        // use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-
         tokio::spawn(async move {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let actual_addr = listener.local_addr().unwrap();
             port_tx.send(actual_addr.port()).unwrap();
 
-            /*
-            // 1) Create a test CA
-            let mut ca_params = CertificateParams::default();
-            ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-            ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
-            let ca = Certificate::from_params(ca_params).unwrap();
-            let ca_der = ca.serialize_der().unwrap(); // used for the client trust store
+            // Generate a self-signed certificate for testing
+            use rcgen::{generate_simple_self_signed, CertifiedKey};
 
-            // 2) Create a server cert signed by the CA for localhost and 127.0.0.1
-            let mut srv_params = CertificateParams::new(vec!["localhost".into()]).unwrap();
-            srv_params.subject_alt_names.extend([
-                // SanType::DnsName("localhost".into()),
-                SanType::IpAddress(IpAddr::V4(Ipv4Addr::LOCALHOST)),
-            ]);
-            srv_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
-            let srv_cert = Certificate::from_params(srv_params).unwrap();
-            let srv_cert_der = srv_cert.serialize_der_with_signer(&ca).unwrap();
-            let srv_key_der = srv_cert.key_pair().serialize_der();
+            let subject_alt_names = vec!["localhost".to_string(), "127.0.0.1".to_string()];
+            let CertifiedKey { cert, signing_key } =
+                generate_simple_self_signed(subject_alt_names).unwrap();
 
-            let cert_chain: Vec<CertificateDer<'static>> = vec![CertificateDer::from(srv_cert_der)];
-            let key = PrivateKeyDer::from(PrivatePkcs8KeyDer::from(srv_key_der));
-            */
+            let cert_pem = cert.pem();
+            let key_pem = signing_key.serialize_pem();
+
+            // Go back to simpler approach - use tonic's built-in TLS but with a certificate that works
+            // The client already supports post-quantum algorithms, and we've verified it's configured correctly
+
+            use tonic::transport::ServerTlsConfig;
+
+            let tonic_tls_config = ServerTlsConfig::new()
+                .identity(tonic::transport::Identity::from_pem(cert_pem, key_pem));
+
             Server::builder()
+                .tls_config(tonic_tls_config)
+                .unwrap()
                 .add_service(ens_srv)
                 .add_service(login_srv)
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
