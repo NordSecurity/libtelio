@@ -24,6 +24,8 @@ class IfcConfigType(Enum):
     DEFAULT = "config.json"
     VPN_MANUAL = "config_with_vpn_manual_setup.json"
     VPN_IPROUTE = "config_with_vpn_iproute_setup.json"
+    VPN_COUNTRY_PL = "config_with_vpn_country_pl.json"
+    VPN_COUNTRY_DE = "config_with_vpn_country_de.json"
 
 
 @dataclass(frozen=True)
