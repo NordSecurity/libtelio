@@ -58,6 +58,10 @@ const DEFAULT_WIREGUARD_PORT: u16 = 51820;
 #[derive(Debug, Default)]
 pub struct TelioTaskStates {
     interface_ip_address: Option<IpAddr>,
+    /// Cached response from Core API of the intended server connection,
+    /// But we are not actually connected until MaybeSetupVPNRoutes is successfully completed
+    /// It used mainly to display `hostname` in [TelioStatusReport]
+    maybe_connected_vpn_server: Option<ExitNodeConfig>,
 }
 
 /// Endpoint configuration used for connection
@@ -67,6 +71,8 @@ pub struct ExitNodeConfig {
     pub address: IpAddr,
     /// Public key of ExitNode
     pub public_key: PublicKey,
+    /// Hostname of ExitNode for cosmetic use
+    pub hostname: Option<String>,
 }
 
 impl ExitNodeConfig {
@@ -78,6 +84,7 @@ impl ExitNodeConfig {
                 .wg_public_key()
                 .and_then(|key| key.parse().ok())
                 .ok_or(TeliodError::EndpointNoPublicKey)?,
+            hostname: server.hostname(),
         })
     }
 }
@@ -88,6 +95,8 @@ impl From<DirectEndpointConfig> for ExitNodeConfig {
         Self {
             address: server.address,
             public_key: server.public_key,
+            // server hostnames are only known if fetched from the Core API
+            hostname: None,
         }
     }
 }
@@ -158,11 +167,25 @@ fn telio_task(
                 }
                 TelioTaskCmd::GetStatus(response_tx_channel) => {
                     let external_nodes = telio.external_nodes()?;
-                    // Find the identifier of the exit node (VPN server or meshnet peer), if present.
-                    let exit_node = external_nodes
-                        .iter()
-                        .find(|node| node.is_exit)
-                        .map(ExitNodeStatus::from);
+
+                    // Find the current exit node (VPN server or meshnet peer), if present.
+                    let exit_node = external_nodes.iter().find(|node| node.is_exit).map(|node| {
+                        let mut exit_node = ExitNodeStatus::from(node);
+
+                        // VPN servers read from libtelio.external_nodes() don't have the full Node information,
+                        // so we have patch the hostname information fetched from the core API
+                        if let Some(maybe_connected_server) = &state.maybe_connected_vpn_server {
+                            // Make sure it's the same node by comparing keys
+                            if exit_node.public_key == maybe_connected_server.public_key
+                                && exit_node.hostname.is_none()
+                                && maybe_connected_server.hostname.is_some()
+                            {
+                                exit_node.hostname = maybe_connected_server.hostname.clone();
+                            }
+                        }
+
+                        exit_node
+                    });
 
                     let status_report = TelioStatusReport {
                         telio_is_running: telio.is_running(),
@@ -218,6 +241,10 @@ fn telio_task(
                                 server.address,
                                 server.public_key,
                             );
+
+                            // store the possibly connected vpn server
+                            // to be used later for status reports
+                            state.maybe_connected_vpn_server = Some(server);
                         }
                         Err(e) => {
                             error!("Failed to connect to VPN with error: {e:?}");

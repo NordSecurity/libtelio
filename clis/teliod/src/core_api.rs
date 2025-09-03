@@ -128,6 +128,7 @@ impl Country {
 #[derive(Debug, PartialEq, Deserialize)]
 pub struct Server {
     station: IpAddr,
+    hostname: Option<String>,
     technologies: Vec<Technology>,
 }
 
@@ -149,6 +150,11 @@ impl Server {
     /// Get IP address of server
     pub fn address(&self) -> IpAddr {
         self.station
+    }
+
+    /// Get hostname of VPN server
+    pub fn hostname(&self) -> Option<String> {
+        self.hostname.to_owned()
     }
 
     /// Get public_key of wireguard service
@@ -878,5 +884,6 @@ mod tests {
                 .parse()
                 .unwrap()
         );
+        assert_eq!(exit_node.hostname, Some("test100.domain.com".to_string()));
     }
 }
