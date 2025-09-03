@@ -175,7 +175,7 @@ services:
 
   mac-client-01: &mac-client
     hostname: mac-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos:${LIBTELIO_ENV_NAT_LAB_MACOS_VM_TAG}
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos@sha256:c3b34edf14e9ce1324726f0fab6eb2d47b129f703e2ee323579bce44aa1e78cb
     privileged: true
     devices:
       - "/dev/net/tun"
