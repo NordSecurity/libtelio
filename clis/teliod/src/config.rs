@@ -1,5 +1,5 @@
 use std::{
-    net::SocketAddr,
+    net::{Ipv4Addr, SocketAddr},
     num::NonZeroU64,
     path::{Path, PathBuf},
     str::FromStr,
@@ -14,7 +14,9 @@ use uuid::Uuid;
 
 use telio::{crypto::PublicKey, device::AdapterType, telio_utils::Hidden};
 
-use crate::{configure_interface::InterfaceConfigurationProvider, TeliodError};
+use crate::{interface::InterfaceConfig, TeliodError};
+
+pub(crate) const LOCAL_IP: Ipv4Addr = Ipv4Addr::new(10, 5, 0, 2);
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
 #[repr(transparent)]
@@ -128,9 +130,6 @@ pub struct TeliodDaemonConfig {
     /// Path to a http pem certificate to be used when connecting to CoreApi
     pub http_certificate_file_path: Option<PathBuf>,
 
-    /// Path to a device identity file, should only be used for testing
-    pub device_identity_file_path: Option<PathBuf>,
-
     #[serde(default)]
     pub mqtt: MqttConfig,
 }
@@ -161,10 +160,6 @@ impl TeliodDaemonConfig {
         }
         if let Some(http_certificate_file_path) = update.http_certificate_file_path {
             self.http_certificate_file_path = http_certificate_file_path;
-        }
-
-        if let Some(device_identity_file_path) = update.device_identity_file_path {
-            self.device_identity_file_path = device_identity_file_path
         }
         if let Some(mqtt) = update.mqtt {
             self.mqtt = mqtt;
@@ -272,12 +267,11 @@ impl Default for TeliodDaemonConfig {
             adapter_type: AdapterType::default(),
             interface: InterfaceConfig {
                 name: "nlx".to_string(),
-                config_provider: Default::default(),
+                configurator: Default::default(),
             },
             vpn: None,
             authentication_token: Default::default(),
             http_certificate_file_path: None,
-            device_identity_file_path: None,
             mqtt: MqttConfig::default(),
         }
     }
@@ -339,12 +333,6 @@ const fn default_log_file_count() -> usize {
     7
 }
 
-#[derive(Default, PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
-pub struct InterfaceConfig {
-    pub name: String,
-    pub config_provider: InterfaceConfigurationProvider,
-}
-
 #[derive(PartialEq, Eq, Deserialize, Serialize, Debug, Copy, Clone)]
 pub struct VpnConfig {
     pub server_endpoint: SocketAddr,
@@ -365,7 +353,6 @@ pub struct TeliodDaemonConfigPartial {
     #[serde(default, deserialize_with = "deserialize_partial_nord_token")]
     pub authentication_token: Option<NordToken>,
     pub http_certificate_file_path: Option<Option<PathBuf>>,
-    pub device_identity_file_path: Option<Option<PathBuf>>,
     pub mqtt: Option<MqttConfig>,
 }
 
@@ -399,6 +386,8 @@ fn deserialize_partial_nord_token<'de, D: Deserializer<'de>>(
 
 #[cfg(test)]
 mod tests {
+    use crate::interface::InterfaceConfigurationProvider;
+
     use super::*;
     use serial_test::serial;
     use std::time::Duration;
@@ -419,7 +408,7 @@ mod tests {
                 "adapter_type": "linux-native",
                 "interface": {{
                     "name": "test",
-                    "config_provider": "manual"
+                    "configurator": "manual"
                 }},
                 "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             }}"#,
@@ -444,7 +433,7 @@ mod tests {
             adapter_type: AdapterType::LinuxNativeWg,
             interface: InterfaceConfig {
                 name: "utun10".to_owned(),
-                config_provider: InterfaceConfigurationProvider::Manual,
+                configurator: InterfaceConfigurationProvider::Manual,
             },
             vpn: None,
             authentication_token: NordToken::new(
@@ -452,7 +441,6 @@ mod tests {
             )
             .unwrap(),
             http_certificate_file_path: None,
-            device_identity_file_path: None,
             mqtt: MqttConfig {
                 backoff_initial: NonZeroU64::new(1).unwrap(),
                 backoff_maximal: NonZeroU64::new(300).unwrap(),
@@ -468,7 +456,7 @@ mod tests {
             "adapter_type": "linux-native",
             "interface": {
                 "name": "utun10",
-                "config_provider": "manual"
+                "configurator": "manual"
             },
             "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             }"#;
@@ -483,7 +471,7 @@ mod tests {
                 "adapter_type": "linux-native",
                 "interface": {
                     "name": "utun10",
-                    "config_provider": "manual"
+                    "configurator": "manual"
                 },
                 "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "mqtt": {}

@@ -2,7 +2,8 @@
 
 use std::{collections::HashMap, fs, str::FromStr};
 
-use crate::config::{InterfaceConfig, NordToken, TeliodDaemonConfigPartial};
+use crate::config::{NordToken, TeliodDaemonConfigPartial};
+use crate::interface::InterfaceConfig;
 use crate::TeliodDaemonConfig;
 use lazy_static::lazy_static;
 use maud::{html, Markup, Render};
@@ -210,7 +211,7 @@ fn update_config(app: &mut AppState, request: &CgiRequest) -> Result<TeliodDaemo
             .and_then(|v| LevelFilter::from_str(v).ok()),
         interface: values.get(TUNNEL_NAME).map(|name| InterfaceConfig {
             name: name.to_string(),
-            config_provider: app.config.interface.config_provider.clone(),
+            configurator: app.config.interface.configurator.clone(),
         }),
         ..Default::default()
     };
@@ -394,16 +395,14 @@ fn meshnet(app: &AppState) -> Markup {
         }
     };
 
-    let meshnet_status_text = if status.meshnet_ip.is_none() {
-        "Connecting..."
+    let meshnet_status_text = if let Some(exit_node) = &status.exit_node {
+        match exit_node.state {
+            NodeState::Connected => "Connected",
+            NodeState::Connecting => "Connecting..",
+            NodeState::Disconnected => "Disconnected",
+        }
     } else {
-        &format!(
-            "Meshnet Status ({})",
-            status
-                .meshnet_ip
-                .map(|ip| format!("{ip}"))
-                .unwrap_or_default()
-        )
+        "Disconnected (no exit node)"
     };
 
     html! {

@@ -405,8 +405,8 @@ mod tests {
     use super::{update_config, TeliodDaemonConfig};
     use crate::config::NordToken;
     use crate::{
-        config::{InterfaceConfig, MqttConfig, Percentage},
-        configure_interface::InterfaceConfigurationProvider,
+        config::{MqttConfig, Percentage},
+        interface::{InterfaceConfig, InterfaceConfigurationProvider},
     };
 
     #[test]
@@ -427,7 +427,7 @@ mod tests {
             adapter_type: AdapterType::NepTUN,
             interface: InterfaceConfig {
                 name: "eth0".to_owned(),
-                config_provider: InterfaceConfigurationProvider::Manual,
+                configurator: InterfaceConfigurationProvider::Manual,
             },
             vpn: None,
             authentication_token: NordToken::new(
@@ -435,7 +435,6 @@ mod tests {
             )
             .unwrap(),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
-            device_identity_file_path: None,
             mqtt: MqttConfig {
                 backoff_initial: NonZeroU64::new(5).unwrap(),
                 backoff_maximal: NonZeroU64::new(600).unwrap(),
@@ -452,7 +451,7 @@ mod tests {
                 "adapter_type": "neptun",
                 "interface": {{
                     "name": "eth0",
-                    "config_provider": "manual"
+                    "configurator": "manual"
                 }},
                 "http_certificate_file_path": "/http/certificate/path/",
                 "mqtt": {{
@@ -481,7 +480,7 @@ mod tests {
                 .unwrap();
         expected_config.interface = InterfaceConfig {
             name: "eth1".to_owned(),
-            config_provider: InterfaceConfigurationProvider::Ifconfig,
+            configurator: InterfaceConfigurationProvider::Ifconfig,
         };
         expected_config.http_certificate_file_path =
             Some(PathBuf::from("new/http/certificate/path/"));
@@ -499,7 +498,7 @@ mod tests {
                 "adapter_type": "neptun",
                 "interface": {{
                     "name": "eth1",
-                    "config_provider": "ifconfig"
+                    "configurator": "ifconfig"
                 }},
                 "http_certificate_file_path": "new/http/certificate/path/",
                 "mqtt": {{
@@ -537,7 +536,7 @@ mod tests {
             adapter_type: AdapterType::NepTUN,
             interface: InterfaceConfig {
                 name: "eth0".to_owned(),
-                config_provider: InterfaceConfigurationProvider::Manual,
+                configurator: InterfaceConfigurationProvider::Manual,
             },
             vpn: None,
             authentication_token: NordToken::new(
@@ -545,7 +544,6 @@ mod tests {
             )
             .unwrap(),
             http_certificate_file_path: Some(PathBuf::from("/http/certificate/path/")),
-            device_identity_file_path: None,
             mqtt: MqttConfig::default(),
         };
         let initial_config = format!(
@@ -557,7 +555,7 @@ mod tests {
                 "adapter_type": "neptun",
                 "interface": {{
                     "name": "eth0",
-                    "config_provider": "manual"
+                    "configurator": "manual"
                 }},
                 "http_certificate_file_path": "/http/certificate/path/",
                 "mqtt": {{
@@ -578,12 +576,12 @@ mod tests {
         assert_eq!(read_config, expected_config);
 
         expected_config.interface.name = "eth1".to_owned();
-        expected_config.interface.config_provider = InterfaceConfigurationProvider::Ifconfig;
+        expected_config.interface.configurator = InterfaceConfigurationProvider::Ifconfig;
         let update_body = r#"
         {
             "interface": {
                 "name": "eth1",
-                "config_provider": "ifconfig"
+                "configurator": "ifconfig"
             }
         }
         "#;

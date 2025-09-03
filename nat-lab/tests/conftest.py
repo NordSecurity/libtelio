@@ -428,7 +428,7 @@ def pytest_sessionfinish(session, exitstatus):
         collect_dns_server_logs()
         asyncio.run(collect_kernel_logs(session.items, "after_tests"))
         asyncio.run(collect_mac_diagnostic_reports())
-        asyncio.run(save_fakefm_logs())
+        # asyncio.run(save_fakefm_logs())
 
 
 def collect_nordderper_logs():
@@ -497,7 +497,7 @@ async def start_tcpdump_processes():
     connections = [
         await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(gw_tag))
         for gw_tag in ConnectionTag
-        if "_GW" in gw_tag.name
+        if "DOCKER_CONE_GW" in gw_tag.name
     ]
     connections += [
         await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(conn_tag))
