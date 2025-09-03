@@ -178,6 +178,8 @@ graph LR
     openwrt-gw-01(["openwrt-gw-01
         10.0.254.14
         192.168.115.254"])
+  end
+
   %% Network windows-net-01
   subgraph windows-net-01[windows-net-01]
   direction LR

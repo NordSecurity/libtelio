@@ -14,7 +14,7 @@ services:
   nlx-01: &common-nlx
     hostname: nlx-01
     privileged: true
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux@sha256:5819b89161f7e159b75ed2e9843c31a37b126b5b60b16941af3787284824f99e
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
@@ -104,7 +104,7 @@ services:
 
   windows-client-01: &windows-client
     hostname: windows-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:${LIBTELIO_ENV_NAT_LAB_WINDOWS_VM_TAG}
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows@sha256:c948ac26c02944016e756722c88bc08f1795dd618c40f317d196393c4114a256
     privileged: true
     devices:
       - "/dev/net/tun"
@@ -128,7 +128,7 @@ services:
     healthcheck:
       test: "[ -f /local/ready ] || exit 1"
       interval: 2s
-      retries: 120
+      retries: 270
       start_period: 60s
       timeout: 2s
     environment:
@@ -175,7 +175,7 @@ services:
 
   mac-client-01: &mac-client
     hostname: mac-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos:${LIBTELIO_ENV_NAT_LAB_MACOS_VM_TAG}
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos@sha256:4afabd0dff0e03506f7aacadf4d06a908b9132a91a03b1af178cfb35d19e5280
     privileged: true
     devices:
       - "/dev/net/tun"
@@ -427,7 +427,7 @@ services:
   fullcone-gw-01: &common-fullcone-gw
     hostname: fullcone-gw-01
     privileged: true
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux@sha256:5819b89161f7e159b75ed2e9843c31a37b126b5b60b16941af3787284824f99e
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"

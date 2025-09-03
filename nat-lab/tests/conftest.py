@@ -40,6 +40,8 @@ SETUP_CHECK_MAC_COLLISION_TIMEOUT_S = 300
 SETUP_CHECK_MAC_COLLISION_RETRIES = 1
 SETUP_CHECK_ARP_CACHE_TIMEOUT_S = 300
 SETUP_CHECK_ARP_CACHE_RETRIES = 1
+SETUP_CHECK_DUPLICATE_IP_TIMEOUT_S = 60
+SETUP_CHECK_DUPLICATE_IP_RETRIES = 1
 
 RUNNER: asyncio.Runner | None = None
 SESSION_SCOPE_EXIT_STACK: AsyncExitStack | None = None
@@ -159,6 +161,90 @@ async def setup_check_interderp():
                 await derp_test.save_logs()
 
 
+async def setup_check_duplicate_ip_addresses():
+    """
+    Enumerate all running Docker containers, gather their IPv4 addresses (excluding 127.0.0.1),
+    and fail if any IPv4 address is used by more than one container.
+    Converted from nat-lab/check_ip.sh.
+    """
+    try:
+        containers_out = subprocess.check_output(
+            ["docker", "ps", "-q"], text=True
+        ).strip()
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        print(
+            f"setup_check: cannot execute 'docker ps -q': {e}; skipping duplicate IP check"
+        )
+        return
+
+    if not containers_out:
+        print("setup_check: No running containers found.")
+        return
+
+    containers = [c for c in containers_out.splitlines() if c.strip()]
+
+    ip_owner: dict[str, str] = {}
+    duplicates: dict[str, set[str]] = defaultdict(set)
+
+    for cid in containers:
+        try:
+            name = subprocess.check_output(
+                ["docker", "inspect", "--format={{.Name}}", cid],
+                text=True,
+            ).strip()
+            name = re.sub(r"^/+", "", name)
+        except subprocess.CalledProcessError:
+            name = cid
+
+        # Extract IPv4 addresses inside the container without relying on grep -P.
+        # Use: ip -4 -o addr show -> "... IFACE ... A.B.C.D/XX ..."
+        # Then project the CIDR column and strip mask.
+        try:
+            ips_out = subprocess.check_output(
+                [
+                    "docker",
+                    "exec",
+                    cid,
+                    "sh",
+                    "-c",
+                    "ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1",
+                ],
+                text=True,
+            )
+        except subprocess.CalledProcessError:
+            ips_out = ""
+
+        ips = [
+            ip.strip()
+            for ip in ips_out.split()
+            if ip.strip() and not ip.startswith("127.")
+        ]
+
+        # Print container name and IPs (for debugging parity with the original script)
+        print(f"========== {name} ({cid}) ==========")
+        if not ips:
+            print("No IPs found")
+        else:
+            for ip in ips:
+                print(f"IP: {ip}")
+        print()
+
+        # Detect duplicates
+        for ip in ips:
+            if ip in ip_owner and ip_owner[ip] != name:
+                duplicates[ip].update({ip_owner[ip], name})
+            else:
+                ip_owner[ip] = name
+
+    if duplicates:
+        for ip, owners in sorted(duplicates.items()):
+            print(
+                f"  -> Duplicate IP {ip} found! Used by containers: {', '.join(sorted(owners))}"
+            )
+        details = {ip: sorted(list(owners)) for ip, owners in duplicates.items()}
+        raise Exception(f"Found duplicate container IPv4 addresses: {details}")
+
+
 async def setup_check_duplicate_mac_addresses():
     mac_re = re.compile(r"(?:[0-9a-f]{2}[:\-]){5}[0-9a-f]{2}", re.IGNORECASE)
     seen = defaultdict(set)  # mac -> set of ConnectionTag
@@ -266,7 +352,11 @@ async def setup_check_arp_cache():
 
 
 SETUP_CHECKS = [
-    (setup_check_interderp, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
+    (
+        setup_check_duplicate_ip_addresses,
+        SETUP_CHECK_DUPLICATE_IP_TIMEOUT_S,
+        SETUP_CHECK_DUPLICATE_IP_RETRIES,
+    ),
     (
         setup_check_arp_cache,
         SETUP_CHECK_ARP_CACHE_TIMEOUT_S,
@@ -277,6 +367,7 @@ SETUP_CHECKS = [
         SETUP_CHECK_MAC_COLLISION_TIMEOUT_S,
         SETUP_CHECK_MAC_COLLISION_RETRIES,
     ),
+    (setup_check_interderp, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
 ]
 
 
