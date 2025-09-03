@@ -3,13 +3,25 @@ import json
 import os
 import re
 import time
-from config import LIBTELIO_BINARY_PATH_DOCKER
+from config import (
+    CORE_API_CREDENTIALS,
+    LIBTELIO_BINARY_PATH_DOCKER,
+    LIBTELIO_LOCAL_IP,
+    CORE_API_URL,
+    CORE_API_CA_CERTIFICATE_PATH,
+    WG_SERVER,
+    WG_SERVERS,
+)
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum
+from helpers import send_https_request, setup_connections
+from mesh_api import API, Node
 from pathlib import Path
-from typing import AsyncIterator, List
-from utils.connection import Connection
+from test_core_api import register_vpn_server_key
+from typing import AsyncIterator, Optional
+from uniffi.telio_bindings import generate_public_key
+from utils.connection import Connection, ConnectionTag
 from utils.logger import log
 from utils.process import Process, ProcessExecError
 from utils.router import IPStack
@@ -21,11 +33,14 @@ class IgnoreableError(Exception):
 
 
 class IfcConfigType(Enum):
-    DEFAULT = "config.json"
-    VPN_MANUAL = "config_with_vpn_manual_setup.json"
-    VPN_IPROUTE = "config_with_vpn_iproute_setup.json"
+    MANUAL = "config_with_manual_setup.json"
+    IPROUTE = "config_with_iproute_setup.json"
     VPN_COUNTRY_PL = "config_with_vpn_country_pl.json"
     VPN_COUNTRY_DE = "config_with_vpn_country_de.json"
+
+    @classmethod
+    def _missing_(cls, value):
+        return cls.MANUAL
 
 
 @dataclass(frozen=True)
@@ -54,7 +69,7 @@ class Paths:
     def lib_log(self) -> Path:
         return self.log_dir / "teliod_natlab.log"
 
-    def config_path(self, config_type: IfcConfigType = IfcConfigType.DEFAULT) -> Path:
+    def config_path(self, config_type) -> Path:
         return self.config_dir / config_type.value
 
 
@@ -89,7 +104,7 @@ class Command(list):
 class Config:
     def __init__(
         self,
-        config_type: IfcConfigType = IfcConfigType.DEFAULT,
+        config_type: IfcConfigType = IfcConfigType(None),
         no_detach: bool = False,
         paths=Paths(),
     ):
@@ -132,17 +147,42 @@ class Teliod:
         connection: Connection,
         exit_stack: AsyncExitStack,
         config: Config = Config(),
+        api: Optional[API] = None,
     ) -> None:
-        self._connection: Connection = connection
+        self._api: API = api if api is not None else API()
         self._exit_stack: AsyncExitStack = exit_stack
+        self.connection: Connection = connection
         self.config: Config = config
+        self._node: Node = Node()
+
+    @classmethod
+    async def new(
+        cls,
+        exit_stack: AsyncExitStack,
+        config_type: IfcConfigType = IfcConfigType(None),
+        no_detach: bool = False,
+        connection_tag: ConnectionTag = ConnectionTag.DOCKER_CONE_CLIENT_1,
+        connection: Optional[Connection] = None,
+        vpn_public_key: Optional[str] = str(WG_SERVER["public_key"]),
+    ) -> "Teliod":
+        if not connection:
+            connection = (await setup_connections(exit_stack, [connection_tag]))[
+                0
+            ].connection
+        teliod = cls(connection, exit_stack, config=Config(config_type, no_detach))
+        if vpn_public_key:
+            await exit_stack.enter_async_context(
+                teliod.setup_vpn_public_key(vpn_public_key)
+            )
+
+        return teliod
 
     async def execute_command(
         self,
         cmd: Command,
     ) -> tuple[str, str]:
         try:
-            proc = await self._connection.create_process(cmd).execute()
+            proc = await self.connection.create_process(cmd).execute()
             stdout, stderr = proc.get_stdout(), proc.get_stderr()
             log.debug("'%s' stdout: '%s', stderr: '%s'", cmd, stdout, stderr)
             return stdout, stderr
@@ -155,7 +195,7 @@ class Teliod:
         cmd: Command,
     ) -> Process:
         proc = await self._exit_stack.enter_async_context(
-            self._connection.create_process(cmd).run()
+            self.connection.create_process(cmd).run()
         )
         return proc
 
@@ -204,7 +244,7 @@ class Teliod:
             stdout, _ = await self.execute_command(Command.is_alive())
             return "Command executed successfully" in stdout
         except ProcessExecError as exc:
-            if "Obtaining identity, ignoring" in exc.stdout:
+            if "Obtaining nordlynx key, ignoring" in exc.stdout:
                 raise IgnoreableError() from exc
             if "Error: DaemonIsNotRunning" in exc.stderr:
                 return False
@@ -231,7 +271,7 @@ class Teliod:
 
     async def kill(self) -> None:
         try:
-            await self._connection.create_process(
+            await self.connection.create_process(
                 ["killall", "-w", "-s", "SIGTERM", "teliod"]
             ).execute()
             assert (
@@ -243,14 +283,14 @@ class Teliod:
 
     async def remove_logs(self) -> None:
         for path in [self.config.paths.daemon_log, self.config.paths.lib_log]:
-            await self._connection.create_process(["rm", "-f", str(path)]).execute()
-            await self._connection.create_process(
+            await self.connection.create_process(["rm", "-f", str(path)]).execute()
+            await self.connection.create_process(
                 ["test", "!", "-f", str(path)]
             ).execute()
 
     async def socket_exists(self) -> bool:
         try:
-            await self._connection.create_process(
+            await self.connection.create_process(
                 ["test", "-e", str(self.config.paths.socket_file)]
             ).execute()
             return True
@@ -259,7 +299,7 @@ class Teliod:
             return False
 
     async def remove_socket(self):
-        await self._connection.create_process(
+        await self.connection.create_process(
             ["rm", "-f", str(self.config.paths.socket_file)]
         ).execute()
 
@@ -279,15 +319,13 @@ class Teliod:
     async def wait_for_vpn_connected_state(self):
         while True:
             status = json.loads(await self.get_status())
-            for ext_node in status["external_nodes"]:
-                if ext_node["is_vpn"] and ext_node["state"] == "connected":
+            if status["exit_node"]:
+                if status["exit_node"]["state"] == "connected":
                     return
             await asyncio.sleep(self.TELIOD_CMD_CHECK_INTERVAL_S)
 
     @asynccontextmanager
-    async def setup_interface(
-        self, ip_addresses: List[str], vpn_routes: bool
-    ) -> AsyncIterator:
+    async def setup_interface(self, vpn_routes: bool) -> AsyncIterator:
         """
         Setups interface addresses and routes manually.
 
@@ -295,11 +333,10 @@ class Teliod:
         is set to 'manual' on the teliod config.
         This is not checked by this function. (TODO: LLT-6476)
         """
-        router = LinuxRouter(self._connection, IPStack.IPv4)
+        router = LinuxRouter(self.connection, IPStack.IPv4)
         try:
             router.set_interface_name("teliod")
-            await router.setup_interface(ip_addresses)
-            await router.create_meshnet_route()
+            await router.setup_interface(self._node.ip_addresses)
             if vpn_routes:
                 await router.create_vpn_route()
             yield
@@ -308,3 +345,67 @@ class Teliod:
                 await router.delete_vpn_route()
             await router.delete_exit_node_route()
             await router.delete_interface()
+
+    async def request_credentials_from_core(self) -> None:
+        core_response = await send_https_request(
+            self.connection,
+            f"{CORE_API_URL}/v1/users/services/credentials",
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
+            basic_auth=(
+                CORE_API_CREDENTIALS["username"],
+                CORE_API_CREDENTIALS["password"],
+            ),
+        )
+        assert core_response
+
+        node: Node = self._api.register(
+            "teliod",
+            "teliod",
+            core_response["nordlynx_private_key"],
+            generate_public_key(core_response["nordlynx_private_key"]),
+            True,
+            IPStack.IPv4,
+            [LIBTELIO_LOCAL_IP],
+        )
+        self._node = node
+
+        self._api.prepare_all_vpn_servers()
+        for country_id, server_config in enumerate(WG_SERVERS, start=1):
+            await register_vpn_server_key(
+                self.connection, str(server_config["public_key"]), country_id
+            )
+
+    @asynccontextmanager
+    async def setup_vpn_public_key(self, pubkey: str) -> AsyncIterator:
+        """
+        Because VPN server keys are generated only at runtime, this generator
+        function inserts them to the config file, reverting
+        back to 'public-key-placeholder' on _aexit_.
+        """
+        config_path = f"data/teliod/{self.config.config_type.value}"
+        with open(config_path, "r", encoding="UTF-8") as f:
+            original_cfg = f.read()
+
+        def update_public_key_in_json(content: str, new_key: str) -> str:
+            try:
+                config_data = json.loads(content)
+                config_data["vpn"]["server"]["public_key"] = new_key
+                return json.dumps(config_data, indent=2)
+            except json.JSONDecodeError as e:
+                raise RuntimeError(
+                    f"Failed to parse config file as JSON: {config_path}\nError: {e}"
+                ) from e
+
+        try:
+            updated_cfg = update_public_key_in_json(original_cfg, pubkey)
+            with open(config_path, "w", encoding="UTF-8") as f:
+                f.write(updated_cfg)
+
+            yield
+        finally:
+            clean_cfg = update_public_key_in_json(
+                original_cfg, "public-key-placeholder"
+            )
+            with open(config_path, "w", encoding="UTF-8") as f:
+                f.write(clean_cfg)

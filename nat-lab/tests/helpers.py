@@ -8,7 +8,7 @@ from ipaddress import AddressValueError, IPv6Address
 from itertools import product, zip_longest
 from mesh_api import Node, API
 from telio import Client
-from typing import AsyncIterator, List, Tuple, Optional, Union
+from typing import Any, AsyncIterator, List, Tuple, Optional, Union
 from utils.bindings import (
     default_features,
     Features,
@@ -472,13 +472,13 @@ async def ping_between_all_nodes(env: Environment) -> None:
 
 async def send_https_request(
     connection: Connection,
-    endpoint,
-    method,
-    ca_cert_path,
-    data=None,
-    authorization_header=None,
+    endpoint: str,
+    method: str,
+    ca_cert_path: str,
+    data: Optional[Any] = None,
+    authorization_header: Optional[str] = None,
     extra_headers: Optional[List[str]] = None,
-    expect_response=True,
+    expect_response: bool = True,
     basic_auth: Optional[Tuple[str, str]] = None,
 ):
     if extra_headers is None:

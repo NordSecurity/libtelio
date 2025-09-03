@@ -104,7 +104,8 @@ impl CommandListener {
             Ok(_) => {
                 connection
                     .respond(
-                        CommandResponse::Err("Obtaining identity, ignoring".to_owned()).serialize(),
+                        CommandResponse::Err("Obtaining nordlynx key, ignoring".to_owned())
+                            .serialize(),
                     )
                     .await?;
                 Err(TeliodError::InvalidCommand(command_str))

@@ -1,12 +1,17 @@
 import asyncio
+import base64
 import logging
 import os
 import pytest
 import shutil
+import ssl
 import subprocess
-from config import DERP_PRIMARY, LAN_ADDR_MAP, CORE_API_URL
+import urllib.error
+import urllib.request
+from config import DERP_PRIMARY, LAN_ADDR_MAP, CORE_API_URL, CORE_API_CREDENTIALS
 from contextlib import AsyncExitStack
 from helpers import SetupParameters
+from http import HTTPStatus
 from interderp_cli import InterDerpClient
 from itertools import combinations
 from typing import Dict, List, Tuple
@@ -263,24 +268,35 @@ async def kill_natlab_processes():
 
 
 async def reset_service_credentials_cache():
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+
+    credentials = (
+        f"{CORE_API_CREDENTIALS['username']}:{CORE_API_CREDENTIALS['password']}"
+    )
+    encoded_credentials = base64.b64encode(credentials.encode()).decode()
+    headers = {"Authorization": f"Basic {encoded_credentials}"}
+
+    request = urllib.request.Request(
+        f"{CORE_API_URL}/test/reset-credentials", method="POST", headers=headers
+    )
+
     try:
-        result = subprocess.run(
-            [
-                "curl",
-                "-X",
-                "POST",
-                "--insecure",
-                f"{CORE_API_URL}/test/reset-credentials",
-            ],
-            capture_output=True,
-            text=True,
+        with urllib.request.urlopen(request, context=ssl_context) as response:
+            if response.status == HTTPStatus.OK:
+                log.debug("Service credentials cache reset successfully")
+            else:
+                log.warning(
+                    "Failed to reset service credentials cache: HTTP %s",
+                    response.status,
+                )
+    except urllib.error.HTTPError as e:
+        log.warning(
+            "Failed to reset service credentials cache: HTTP %s - %s", e.code, e.reason
         )
-        if result.returncode == 0:
-            log.debug("Service credentials cache reset successfully")
-        else:
-            log.warning("Failed to reset service credentials cache: %s", result.stderr)
-    except subprocess.SubprocessError as e:
-        log.error("Error resetting service credentials cache: %s", e)
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        log.warning("Error resetting service credentials cache: %s", e)
 
 
 PRETEST_CLEANUPS = [
