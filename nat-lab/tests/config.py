@@ -119,6 +119,8 @@ LIBTELIO_BINARY_PATH_VM_MAC = "/var/root/workspace/binaries/"
 UNIFFI_PATH_WINDOWS_VM = "C:/workspace/uniffi/".replace("/", "\\")
 UNIFFI_PATH_VM_MAC = "/var/root/workspace/uniffi/"
 
+LIBTELIO_LOCAL_IP = "10.5.0.2"
+
 LIBTELIO_IPV6_WG_SUBNET = "fd74:656c:696f"
 LIBTELIO_IPV6_WAN_SUBNET = "2001:db8:85a4"
 LIBTELIO_IPV6_WAN_SUBNET_SZ = "48"

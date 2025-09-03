@@ -118,7 +118,7 @@ async def clean_up_machines(connection: Connection):
 
 
 async def register_vpn_server_key(
-    connection: Connection, public_key: str, country_id: Optional[int]
+    connection: Connection, public_key: str, country_id: Optional[int] = None
 ):
     """Register a VPN server public_key for given country_id with the mocked core API"""
     payload: dict[str, str | int] = {"public_key": public_key}

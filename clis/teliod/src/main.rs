@@ -23,11 +23,10 @@ use tracing_appender::rolling::InitError;
 mod command_listener;
 mod comms;
 mod config;
-mod configure_interface;
 mod core_api;
 mod daemon;
+mod interface;
 mod logging;
-mod nc;
 
 use crate::{
     command_listener::CommandResponse, comms::DaemonSocket, config::TeliodDaemonConfig,
@@ -42,7 +41,7 @@ const DEFAULT_UMASK: u32 = 0o113;
 #[derive(Parser, Debug, PartialEq)]
 #[clap()]
 #[derive(Serialize, Deserialize)]
-enum ClientCmd {
+pub enum ClientCmd {
     #[clap(about = "Retrieve the status report")]
     GetStatus,
     #[clap(about = "Query if daemon is running")]
@@ -85,7 +84,7 @@ struct DaemonOpts {
 }
 
 #[derive(Debug, ThisError)]
-enum TeliodError {
+pub enum TeliodError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("Invalid command received: {0}")]
@@ -108,8 +107,6 @@ enum TeliodError {
     DaemonIsNotRunning,
     #[error("Daemon is running")]
     DaemonIsRunning,
-    #[error("NotificationCenter failure: {0}")]
-    NotificationCenter(#[from] Box<nc::Error>),
     #[error(transparent)]
     CoreApiError(#[from] ApiError),
     #[error(transparent)]
@@ -132,20 +129,18 @@ enum TeliodError {
     EndpointNoPublicKey,
 }
 
-/// Libtelio and meshnet status report
+/// Libtelio and VPN status report
 #[derive(Debug, Serialize, Deserialize, PartialEq, Default, Clone)]
 pub struct TelioStatusReport {
     /// State of telio runner
     pub telio_is_running: bool,
-    /// Assigned mesnet IP address
-    pub meshnet_ip: Option<IpAddr>,
-    /// Node used in traffic routing, VPN server or meshnet peer
+    /// Assigned IP address
+    pub ip_address: Option<IpAddr>,
+    /// VPN server node
     pub exit_node: Option<ExitNodeStatus>,
-    /// List of meshnet peers
-    pub external_nodes: Vec<Node>,
 }
 
-/// Description of the Exit Node
+/// Description of the exit Node
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExitNodeStatus {
     /// An identifier for a node
@@ -156,18 +151,18 @@ pub struct ExitNodeStatus {
     pub hostname: Option<String>,
     /// Socket address of the Exit Node
     pub endpoint: Option<SocketAddr>,
-    /// State of the node (Connecting, connected, or disconnected)
+    /// State of the node (connecting, connected, or disconnected)
     pub state: NodeState,
 }
 
-impl From<&Node> for ExitNodeStatus {
-    fn from(value: &Node) -> Self {
+impl ExitNodeStatus {
+    fn from_node(value: &Node, hostname: Option<String>) -> Self {
         Self {
             identifier: value.identifier.to_owned(),
             public_key: value.public_key,
             state: value.state,
             endpoint: value.endpoint,
-            hostname: value.hostname.to_owned(),
+            hostname: hostname.or(value.hostname.to_owned()),
         }
     }
 }

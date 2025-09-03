@@ -13,7 +13,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from itertools import count
 from mocked_core_api_servers_data import get_countries, get_servers
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse, parse_qs
 from uuid import uuid4
 
@@ -46,7 +46,7 @@ MQTT_CREDENTIALS = {
 }
 
 # Cache for service credentials to ensure consistency within a test run
-_SERVICE_CREDENTIALS_CACHE = {}
+_SERVICE_CREDENTIALS_CACHE: dict[str, Any] = {}
 
 
 class CoreApiErrorCode(Enum):
@@ -498,10 +498,10 @@ class CoreApiHandler(BaseHTTPRequestHandler):
 
     @requires_basic_authentication
     def handle_service_credentials(self):
+        global _SERVICE_CREDENTIALS_CACHE
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        if "credentials" not in _SERVICE_CREDENTIALS_CACHE:
-            _SERVICE_CREDENTIALS_CACHE["credentials"] = {
+        if not _SERVICE_CREDENTIALS_CACHE:
+            _SERVICE_CREDENTIALS_CACHE = {
                 "created_at": current_time,
                 "updated_at": current_time,
                 "username": "".join(
@@ -514,19 +514,20 @@ class CoreApiHandler(BaseHTTPRequestHandler):
                 "id": random.randint(1, 10000),
             }
 
-        cached = _SERVICE_CREDENTIALS_CACHE["credentials"]
         response = {
-            "id": cached["id"],
-            "created_at": cached["created_at"],
-            "updated_at": cached["updated_at"],
-            "username": cached["username"],
-            "password": cached["password"],
-            "nordlynx_private_key": cached["nordlynx_key"],
+            "id": _SERVICE_CREDENTIALS_CACHE["id"],
+            "created_at": _SERVICE_CREDENTIALS_CACHE["created_at"],
+            "updated_at": _SERVICE_CREDENTIALS_CACHE["updated_at"],
+            "username": _SERVICE_CREDENTIALS_CACHE["username"],
+            "password": _SERVICE_CREDENTIALS_CACHE["password"],
+            "nordlynx_private_key": _SERVICE_CREDENTIALS_CACHE["nordlynx_key"],
         }
         self._write_response(response, HTTPStatus.OK)
 
+    @requires_basic_authentication
     def handle_reset_credentials(self):
-        _SERVICE_CREDENTIALS_CACHE.clear()
+        global _SERVICE_CREDENTIALS_CACHE
+        _SERVICE_CREDENTIALS_CACHE = {}
         self._set_headers(status_code=HTTPStatus.OK)
         self.wfile.write(b"Credentials cache cleared")
 
