@@ -11,7 +11,10 @@
     "config_provider": "iproute"
   },
   "vpn": {
-    "server_endpoint": "10.0.100.1:1023",
-    "server_pubkey": "public-key-placeholder"
-  }
+    "server": {
+      "address": "10.0.100.1",
+      "public_key": "public-key-placeholder"
+    }
+  },
+  "override_default_wg_port": 1023
 }

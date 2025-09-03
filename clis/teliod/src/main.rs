@@ -133,6 +133,8 @@ enum TeliodError {
     IpRule,
     #[error("Could not configure IP routing")]
     IpRoute,
+    #[error("Endpoint has no PublicKey")]
+    EndpointNoPublicKey,
 }
 
 /// Libtelio and meshnet status report

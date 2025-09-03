@@ -2,8 +2,10 @@ use base64::{prelude::*, DecodeError};
 use reqwest::{header, Certificate, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt::Display;
 use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::Read;
+use std::net::IpAddr;
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
@@ -25,9 +27,11 @@ const API_BASE: &str = "https://api.nordvpn.com/v1";
 const OS_NAME: &str = "macos";
 #[cfg(target_os = "linux")]
 const OS_NAME: &str = "linux";
+const WIREGUARD_ID: u64 = 35;
 
 type MachineIdentifier = String;
 const MAX_RETRIES: usize = 10;
+const REQUEST_TIMEOUT_SECONDS: u64 = 30;
 
 static DEVICE_IDENTITY_FILE_PATH: LazyLock<Result<PathBuf, Error>> = LazyLock::new(|| {
     dirs::data_local_dir()
@@ -52,7 +56,7 @@ pub enum Error {
     PeerRegistering(StatusCode),
     #[error(transparent)]
     Decode(#[from] DecodeError),
-    #[error("Invalid response recieved from server")]
+    #[error("Invalid response received from server")]
     InvalidResponse,
     #[error("Unable to update machine due to Error: {0}")]
     UpdateMachine(StatusCode),
@@ -68,6 +72,95 @@ pub enum Error {
     BackoffBounds(#[from] BackoffError),
     #[error("Failed to access device identity file")]
     DeviceIdentityFileAccess,
+    #[error("API responded with error: {0}")]
+    ApiErrorResponse(ErrorDetail),
+}
+
+/// Error response returned by the Core API in case of bad requests
+///
+/// For example:
+/// ```json
+/// {
+///  "errors": {
+///    "code": 101101,
+///    "message": "Invalid form data: {...}"
+///  }
+/// }
+/// ```
+#[derive(Debug, Deserialize)]
+struct ErrorResponse {
+    pub errors: ErrorDetail,
+}
+
+/// Error details
+#[derive(Debug, Deserialize)]
+pub struct ErrorDetail {
+    pub code: u32,
+    pub message: String,
+}
+
+impl Display for ErrorDetail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.code, self.message)
+    }
+}
+
+/// Country description returned by the Core API
+#[derive(Debug, PartialEq, Deserialize)]
+pub struct Country {
+    /// Internal country ID
+    pub id: u64,
+    /// Full country name
+    pub name: String,
+    /// Country ISO A2 code
+    pub code: String,
+}
+
+impl Country {
+    /// Check if the given &str is either full name or ISO code of the country
+    pub fn matches(&self, target: &str) -> bool {
+        let target = target.trim().to_lowercase();
+        self.name.trim().to_lowercase() == target || self.code.trim().to_lowercase() == target
+    }
+}
+
+/// VPN Server description returned by the Core API
+#[derive(Debug, PartialEq, Deserialize)]
+pub struct Server {
+    station: IpAddr,
+    technologies: Vec<Technology>,
+}
+
+/// VPN Server technology stack
+#[derive(Debug, PartialEq, Deserialize)]
+struct Technology {
+    id: u64,
+    metadata: Vec<Metadata>,
+}
+
+/// VPN Server technology stack metadata
+#[derive(Debug, PartialEq, Deserialize)]
+struct Metadata {
+    name: String,
+    value: String,
+}
+
+impl Server {
+    /// Get IP address of server
+    pub fn address(&self) -> IpAddr {
+        self.station
+    }
+
+    /// Get public_key of wireguard service
+    pub fn wg_public_key(&self) -> Option<String> {
+        self.technologies
+            .iter()
+            .filter(|t| t.id == WIREGUARD_ID)
+            .flat_map(|t| &t.metadata)
+            .filter(|m| m.name == "public_key")
+            .map(|m| m.value.to_owned())
+            .next()
+    }
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -466,6 +559,146 @@ pub async fn get_meshmap(
     )?)
 }
 
+/// Get list of all known countries from core API
+/// Will retry [MAX_RETRIES] times if request timed out.
+pub async fn get_countries_with_exp_backoff(
+    auth_token: &str,
+    cert_path: &Option<PathBuf>,
+) -> Result<Vec<Country>, Error> {
+    let mut backoff = build_backoff()?;
+    let mut retries = 0;
+
+    loop {
+        match get_countries(auth_token, cert_path).await {
+            Ok(countries) => return Ok(countries),
+            Err(Error::Reqwest(ref e)) if e.is_timeout() => {
+                warn!(
+                    "Failed to fetch countries due to {e}, will wait for {:?} and retry",
+                    backoff.get_backoff()
+                );
+                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
+            }
+            Err(e) => {
+                // other error, return immedately
+                return Err(e);
+            }
+        }
+    }
+}
+
+/// Get list of all known countries from core API
+/// used to find the internal country ID for filtering VPN servers
+async fn get_countries(
+    auth_token: &str,
+    cert_path: &Option<PathBuf>,
+) -> Result<Vec<Country>, Error> {
+    debug!("Getting countries list");
+    let client = http_client(cert_path);
+    let response = client
+        .get(format!("{}/countries", API_BASE))
+        .header(header::AUTHORIZATION, format!("Bearer token:{auth_token}"))
+        .header(header::ACCEPT, "application/json")
+        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS))
+        .send()
+        .await?;
+    let status = response.status();
+    if status == StatusCode::OK {
+        Ok(serde_json::from_str(&(response.text().await)?)?)
+    } else {
+        if let Ok(error_detail) = serde_json::from_str::<ErrorResponse>(&(response.text().await)?) {
+            return Err(Error::ApiErrorResponse(error_detail.errors));
+        }
+        error!("Unable to get countries list: {:?}", status);
+        Err(Error::InvalidResponse)
+    }
+}
+
+/// Get recommended server list from core API with exponential backoff
+/// Will retry [MAX_RETRIES] times if request timed out.
+pub async fn get_recommended_servers_with_exp_backoff(
+    country_id_filter: Option<u64>,
+    limit_filter: Option<u64>,
+    auth_token: &str,
+    cert_path: &Option<PathBuf>,
+) -> Result<Vec<Server>, Error> {
+    let mut backoff = build_backoff()?;
+    let mut retries = 0;
+
+    loop {
+        match get_recommended_servers(country_id_filter, limit_filter, auth_token, cert_path).await
+        {
+            Ok(servers) => return Ok(servers),
+            Err(Error::Reqwest(ref e)) if e.is_timeout() => {
+                warn!(
+                    "Failed to fetch recommended servers due to {e}, will wait for {:?} and retry",
+                    backoff.get_backoff()
+                );
+                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
+            }
+            Err(e) => {
+                // other error, return immedately
+                return Err(e);
+            }
+        }
+    }
+}
+
+/// Get recommended server list from core API
+/// optionally filtered by country ID and result limit
+async fn get_recommended_servers(
+    country_id_filter: Option<u64>,
+    limit_filter: Option<u64>,
+    auth_token: &str,
+    cert_path: &Option<PathBuf>,
+) -> Result<Vec<Server>, Error> {
+    debug!(
+        "Getting server recommendations list: country_id:{:?}, limit:{:?}",
+        country_id_filter, limit_filter
+    );
+
+    let mut filter: Vec<(String, String)> = vec![
+        (
+            "filters[servers_technologies][id]".into(),
+            WIREGUARD_ID.to_string(),
+        ),
+        (
+            "filters[servers_technologies][pivot][status]".into(),
+            "online".into(),
+        ),
+    ];
+
+    // add a filter for limit
+    if let Some(limit) = limit_filter {
+        filter.push(("limit".into(), limit.to_string()));
+    };
+
+    // add a filter for country id
+    if let Some(country_id) = country_id_filter {
+        filter.push(("filters[country_id]".into(), country_id.to_string()));
+    };
+
+    let client = http_client(cert_path);
+    let response = client
+        .get(format!("{}/servers/recommendations", API_BASE))
+        .header(header::AUTHORIZATION, format!("Bearer token:{auth_token}"))
+        .header(header::ACCEPT, "application/json")
+        .query(&filter)
+        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS))
+        .send()
+        .await?;
+
+    let status = response.status();
+    if status == StatusCode::OK {
+        Ok(serde_json::from_str(&(response.text().await)?)?)
+    } else {
+        if let Ok(error_detail) = serde_json::from_str::<ErrorResponse>(&(response.text().await)?) {
+            return Err(Error::ApiErrorResponse(error_detail.errors));
+        }
+        error!("Unable to get server recommendations: {:?}", status);
+        Err(Error::InvalidResponse)
+    }
+}
+
 async fn register_machine(
     hw_identifier: &str,
     public_key: PublicKey,
@@ -504,4 +737,146 @@ async fn register_machine(
 
     error!("Unable to register due to {:?}", response.text().await);
     Err(Error::PeerRegistering(status))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::daemon::ExitNodeConfig;
+
+    #[test]
+    fn test_parse_country() {
+        let json = r#"
+            [
+                {"id":1,"name":"Afghanistan","code":"AF"},
+                {"id":2,"name":"Albania","code":"AL"},
+                {"id":3,"name":"Algeria","code":"DZ"}
+            ]
+        "#;
+
+        let countries: Vec<Country> = serde_json::from_str(json).unwrap();
+        assert_eq!(countries.len(), 3);
+        assert_eq!(
+            countries,
+            [
+                Country {
+                    id: 1,
+                    name: "Afghanistan".to_string(),
+                    code: "AF".to_string()
+                },
+                Country {
+                    id: 2,
+                    name: "Albania".to_string(),
+                    code: "AL".to_string()
+                },
+                Country {
+                    id: 3,
+                    name: "Algeria".to_string(),
+                    code: "DZ".to_string()
+                }
+            ]
+        );
+
+        // check we can search for a country by both it's full name and ISO code
+        assert!(countries[0].matches("af"));
+        assert!(countries[0].matches("afghanistan"));
+        assert_eq!(countries[0].id, 1);
+
+        // check the rest of the countries
+        assert!(countries[1].matches("al"));
+        assert_eq!(countries[1].id, 2);
+        assert!(countries[2].matches("dz"));
+        assert_eq!(countries[2].id, 3);
+
+        // not equal
+        assert!(!countries[0].matches("france"));
+    }
+
+    #[test]
+    fn test_parse_servers() {
+        let json = r#"
+            [
+            {
+                "id": 123456,
+                "name": "Test #100",
+                "station": "127.0.0.1",
+                "ipv6_station": "",
+                "hostname": "test100.domain.com",
+                "load": 10,
+                "status": "online",
+                "locations": [
+                {
+                    "id": 133,
+                    "created_at": "2017-06-15 14:06:47",
+                    "updated_at": "2017-06-15 14:06:47",
+                    "latitude": 50.116667,
+                    "longitude": 8.683333,
+                    "country": {
+                    "id": 81,
+                    "name": "Germany",
+                    "code": "DE",
+                    "city": {
+                        "id": 2215709,
+                        "name": "Frankfurt",
+                        "latitude": 50.116667,
+                        "longitude": 8.683333,
+                        "dns_name": "frankfurt",
+                        "hub_score": 0
+                    }
+                    }
+                }
+                ],
+                "technologies": [
+                {
+                    "id": 35,
+                    "name": "Wireguard",
+                    "identifier": "wireguard_udp",
+                    "created_at": "2019-02-14 14:08:43",
+                    "updated_at": "2019-02-14 14:08:43",
+                    "metadata": [
+                    {
+                        "name": "public_key",
+                        "value": "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
+                    }
+                    ],
+                    "pivot": {
+                    "technology_id": 35,
+                    "server_id": 123456,
+                    "status": "online"
+                    }
+                }
+                ]
+            }
+            ]
+        "#;
+
+        let servers: Vec<Server> = serde_json::from_str(json).unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(
+            servers,
+            [Server {
+                station: "127.0.0.1".parse().unwrap(),
+                hostname: Some("test100.domain.com".to_string()),
+                technologies: vec![Technology {
+                    id: WIREGUARD_ID,
+                    metadata: vec![Metadata {
+                        name: "public_key".to_string(),
+                        value: "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro=".to_string()
+                    }]
+                }]
+            }]
+        );
+
+        let exit_node = servers
+            .first()
+            .and_then(|server| ExitNodeConfig::from_api(server).ok())
+            .unwrap();
+        assert_eq!(exit_node.address, "127.0.0.1".parse::<IpAddr>().unwrap());
+        assert_eq!(
+            exit_node.public_key,
+            "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
+                .parse()
+                .unwrap()
+        );
+    }
 }
