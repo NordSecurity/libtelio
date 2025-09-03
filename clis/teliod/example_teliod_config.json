@@ -6,6 +6,6 @@
     "adapter_type": "neptun",
     "interface": {
       "name": "utun10",
-      "config_provider": "manual"
+      "configurator": "manual"
     }
 }

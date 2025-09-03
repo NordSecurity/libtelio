@@ -25,11 +25,10 @@ mod cgi;
 mod command_listener;
 mod comms;
 mod config;
-mod configure_interface;
 mod core_api;
 mod daemon;
+mod interface;
 mod logging;
-mod nc;
 
 use crate::{
     command_listener::CommandResponse, comms::DaemonSocket, config::TeliodDaemonConfig,
@@ -113,8 +112,6 @@ enum TeliodError {
     DaemonIsNotRunning,
     #[error("Daemon is running")]
     DaemonIsRunning,
-    #[error("NotificationCenter failure: {0}")]
-    NotificationCenter(#[from] Box<nc::Error>),
     #[error(transparent)]
     CoreApiError(#[from] ApiError),
     #[error(transparent)]
@@ -140,8 +137,8 @@ enum TeliodError {
 pub struct TelioStatusReport {
     /// State of telio runner
     pub telio_is_running: bool,
-    /// Assigned mesnet IP address
-    pub meshnet_ip: Option<IpAddr>,
+    /// Assigned IP address
+    pub ip_address: Option<IpAddr>,
     /// Node used in traffic routing, VPN server or meshnet peer
     pub exit_node: Option<ExitNodeStatus>,
     /// List of meshnet peers

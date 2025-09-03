@@ -4,7 +4,7 @@ import os
 import pytest
 import shutil
 import subprocess
-from config import DERP_PRIMARY, LAN_ADDR_MAP
+from config import DERP_PRIMARY, LAN_ADDR_MAP, CORE_API_URL
 from contextlib import AsyncExitStack
 from helpers import SetupParameters
 from interderp_cli import InterDerpClient
@@ -262,7 +262,32 @@ async def kill_natlab_processes():
     subprocess.run(["sudo", cleanup_script_path]).check_returncode()
 
 
-PRETEST_CLEANUPS = [kill_natlab_processes, clear_ephemeral_setups_set]
+async def reset_service_credentials_cache():
+    try:
+        result = subprocess.run(
+            [
+                "curl",
+                "-X",
+                "POST",
+                "--insecure",
+                f"{CORE_API_URL}/test/reset-credentials",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            log.debug("Service credentials cache reset successfully")
+        else:
+            log.warning("Failed to reset service credentials cache: %s", result.stderr)
+    except subprocess.SubprocessError as e:
+        log.error("Error resetting service credentials cache: %s", e)
+
+
+PRETEST_CLEANUPS = [
+    kill_natlab_processes,
+    clear_ephemeral_setups_set,
+    reset_service_credentials_cache,
+]
 
 
 async def perform_pretest_cleanups():
@@ -403,7 +428,7 @@ def pytest_sessionfinish(session, exitstatus):
         collect_dns_server_logs()
         asyncio.run(collect_kernel_logs(session.items, "after_tests"))
         asyncio.run(collect_mac_diagnostic_reports())
-        asyncio.run(save_fakefm_logs())
+        # asyncio.run(save_fakefm_logs())
 
 
 def collect_nordderper_logs():
@@ -472,7 +497,7 @@ async def start_tcpdump_processes():
     connections = [
         await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(gw_tag))
         for gw_tag in ConnectionTag
-        if "_GW" in gw_tag.name
+        if "DOCKER_CONE_GW" in gw_tag.name
     ]
     connections += [
         await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(conn_tag))

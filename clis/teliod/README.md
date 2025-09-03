@@ -65,7 +65,7 @@ needs be absolute, otherwise will be relative to `working-directory` when daemon
 - `interface`
   - `name` - Name of tunnel interface to connect to. Note that for macOS
   the name has to be in form `tun#` where `#` can be any integer number
-  - `config_provider` - Provider for configuring the interface address,
+  - `configurator` - Provider for configuring the interface address,
   possible options:
     - `manual` - do not configure interfaces automatically
     - `ifconfig` - systems using ifconfig command
