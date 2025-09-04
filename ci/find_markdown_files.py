@@ -1,4 +1,7 @@
-#!/usr/bin/env python3
+# This is a helper script for formatting markdown files
+# The used formatter, mdformat, can only exclude files if python 3.13 or later is used
+# To get around that limitation for now, an additional script is used to get the files that should be formatted
+
 import os
 import re
 import sys

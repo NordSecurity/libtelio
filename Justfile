@@ -103,6 +103,8 @@ format_markdown fix="false":
     #!/usr/bin/env bash
     set -euo pipefail
     
+    # mdformat can only exclude files if python 3.13 or later is used
+    # To get around that limitation for now, an additional script is used to get the files that should be formatted
     excludes="--exclude 'changelog.md' --exclude '.*3rd-party/.*' --exclude '.*venv/.*' --exclude '.*pytest_cache/.*'"
     md_files=$(eval "python3 ci/find_markdown_files.py '{{justfile_directory()}}' $excludes")
     
