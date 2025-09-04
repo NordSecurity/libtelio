@@ -322,7 +322,7 @@ impl InterfaceWatcher {
                         .is_some_and(|c| !c.config.peers.is_empty());
                     if self.enable_dynamic_wg_nt_control && !has_peers {
                         telio_log_info!("Skipping adatper.up() due to empty peer list");
-                    } else if !adapter.up() {
+                    } else if adapter.up().is_err() {
                         telio_log_error!("Adapter could not be set to online state");
                     }
                 }

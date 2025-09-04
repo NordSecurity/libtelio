@@ -61,7 +61,7 @@ winapi = { workspace = true, features = ["nldef"] }
 winreg.workspace = true
 uuid.workspace = true
 
-wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", tag = "v1.1.0" }
+wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", tag = "v1.2.0" }
 
 windows = { workspace = true, features = [
     "Win32_Security",
