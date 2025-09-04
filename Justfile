@@ -52,7 +52,7 @@ deny: _deny-install
     cargo deny check
 
 # Run rust pre-push checks
-prepush: test clippy udeps unused deny python_checks
+prepush: test clippy udeps unused deny python_checks format_markdown
 
 python_checks: black pylint isort mypy autoflake
 
@@ -98,6 +98,19 @@ mypy:
 [working-directory: 'nat-lab']
 autoflake:
     uv run --isolated autoflake --quiet --check .
+
+format_markdown fix="false":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    
+    excludes="--exclude 'changelog.md' --exclude '.*3rd-party/.*' --exclude '.*venv/.*' --exclude '.*pytest_cache/.*'"
+    md_files=$(eval "python3 ci/find_markdown_files.py '{{justfile_directory()}}' $excludes")
+    
+    if [[ {{fix}} == "true" ]]; then
+        uv run mdformat --number --extensions gfm $md_files
+    else
+        uv run mdformat --check --number --extensions gfm $md_files
+    fi
 
 diagram:
     uv run --isolated --with pyyaml==6.0.2 nat-lab/utils/generate_network_diagram.py nat-lab/docker-compose.yml nat-lab/network.md
