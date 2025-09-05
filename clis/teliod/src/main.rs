@@ -20,8 +20,6 @@ use tokio::{
 };
 use tracing_appender::rolling::InitError;
 
-#[cfg(feature = "cgi")]
-mod cgi;
 mod command_listener;
 mod comms;
 mod config;
@@ -60,9 +58,6 @@ enum Cmd {
     Start(DaemonOpts),
     #[clap(flatten)]
     Client(ClientCmd),
-    #[cfg(feature = "cgi")]
-    #[clap(about = "Receive and parse http requests")]
-    Cgi,
 }
 
 #[derive(Parser, Debug)]
@@ -178,9 +173,6 @@ impl From<&Node> for ExitNodeStatus {
 }
 
 fn main() -> Result<(), TeliodError> {
-    #[cfg(feature = "cgi")]
-    cgi::constants::APP_PATHS.init()?;
-
     let mut cmd = Cmd::parse();
 
     // Pre-daemonizing setup
@@ -287,22 +279,7 @@ async fn client_main(cmd: Cmd) -> Result<(), TeliodError> {
                 Err(TeliodError::DaemonIsNotRunning)
             }
         }
-        #[cfg(feature = "cgi")]
-        Cmd::Cgi => {
-            #[cfg(debug_assertions)]
-            let _tracing_worker_guard = logging::setup_logging(
-                cgi::constants::APP_PATHS.cgi_log(),
-                tracing::level_filters::LevelFilter::TRACE,
-                7,
-            )
-            .await?;
 
-            tokio::task::spawn_blocking(|| {
-                rust_cgi::handle(cgi::handle_request);
-            })
-            .await?;
-            Ok(())
-        }
         // Unexpected command, Cmd::Start should be handled by main
         _ => Err(TeliodError::InvalidCommand(format!("{cmd:?}"))),
     }
