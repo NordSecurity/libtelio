@@ -3,6 +3,7 @@
 ## 1. Use the body to explain why this commit exists and on a high level what was done
 
 Good
+
 ```
 Fix buffer overflow
 
@@ -12,6 +13,7 @@ destination string buffer does not.
 ```
 
 Bad
+
 ```
 Fix buffer overflow
 
@@ -24,6 +26,7 @@ to the destination string buffer.
 Note: subject line is mandatory, body is optional
 
 Good
+
 ```
 Fix buffer overflow
 
@@ -33,6 +36,7 @@ destination string buffer does not.
 ```
 
 Bad
+
 ```
 Fix buffer overflow
 The buffer overflow was caused by off-by-one error when copying strings.
@@ -43,11 +47,13 @@ destination string buffer does not.
 ## 3. Limit the subject line to 50 characters
 
 Good
+
 ```
 Fix buffer overflow
 ```
 
 Bad
+
 ```
 Fix buffer overflow that was caused by off-by-one error when copying strings
 ```
@@ -55,11 +61,13 @@ Fix buffer overflow that was caused by off-by-one error when copying strings
 ## 4. Capitalize the subject line
 
 Good
+
 ```
 Fix buffer overflow
 ```
 
 Bad
+
 ```
 fix buffer overflow
 ```
@@ -67,11 +75,13 @@ fix buffer overflow
 ## 5. Do not end the subject line with a period
 
 Good
+
 ```
 Fix buffer overflow
 ```
 
 Bad
+
 ```
 Fix buffer overflow.
 ```
@@ -79,11 +89,13 @@ Fix buffer overflow.
 ## 6. Use the imperative mood in the subject line
 
 Good
+
 ```
 Fix buffer overflow
 ```
 
 Bad
+
 ```
 Fixed buffer overflow
 
@@ -95,6 +107,7 @@ Buffer overflow fixed
 ## 7. Wrap the body at 72 characters
 
 Good
+
 ```
 Fix buffer overflow
 
@@ -104,6 +117,7 @@ destination string buffer does not.
 ```
 
 Bad
+
 ```
 Fix buffer overflow
 

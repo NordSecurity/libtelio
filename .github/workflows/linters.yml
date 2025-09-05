@@ -195,3 +195,16 @@ jobs:
         with:
           just-version: '1.38.0'
       - run: just unused
+  format-markdown:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
+        with:
+          just-version: '1.38.0'
+      - name: Install uv
+        uses: astral-sh/setup-uv@4db96194c378173c656ce18a155ffc14a9fc4355 # v5.2.2
+        with:
+          # Install a specific version of uv.
+          version: "0.5.11"
+      - run: just format_markdown

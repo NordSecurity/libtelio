@@ -7,6 +7,7 @@ This file documents the release process of libtelio.
 To prepare a release, there's a helper script `release.py`. This script will tag the commit and change versions in all relevant places.
 
 The common usage is:
+
 ```
 release.py --changelog --push --tag=v4.0.5
 ```
@@ -32,9 +33,8 @@ python3 ci/generate_changelog.py --out_version "v1.2.3" --out-series_name "Šalt
 
 If you're not sure about running the script and want to check the output before writing or deleting any files, you can use `generate_changelog.py --dry-run`
 
->NOTE: In case there are entries in the changelog file that need to be converted into unreleased change files, you can use this one liner:
+> NOTE: In case there are entries in the changelog file that need to be converted into unreleased change files, you can use this one liner:
 
 ```
 tail -n +4 ../changelog.md | head -n <number_of_entries_to_extract + 1> | sed -E 's/\* (LLT-[0-9][0-9][0-9][0-9]): (.*)/\1 \"\2\"/' | xargs -n2 sh -c 'echo "$2" >> $1' sh
 ```
-

@@ -8,21 +8,21 @@ constrained for the full NordVPN application.
 
 ## Core functionality
 
-* Provides basic VPN and meshnet functionality.
-* Minimal user interaction, controlled via a single configuration file.
-* Automated network and routing configuration.
-* VPN servers fetched dynamically using NordVPN API.
+- Provides basic VPN and meshnet functionality.
+- Minimal user interaction, controlled via a single configuration file.
+- Automated network and routing configuration.
+- VPN servers fetched dynamically using NordVPN API.
 
 ## Building Teliod
 
 For typical Linux environment it might be built using simply:
 
-```cargo build```
+`cargo build`
 
 For OpenWRT you might need a bit more complex command, including your router architecture
 and the fact the OpenWRT is MUSLE-based, for example:
 
-```CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=rust-lld CC=/path/to/arm-linux-gnueabi-gcc cargo build --package teliod --target armv7-unknown-linux-musleabihf```
+`CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=rust-lld CC=/path/to/arm-linux-gnueabi-gcc cargo build --package teliod --target armv7-unknown-linux-musleabihf`
 
 You may need to download some sufficient MUSLE toolchains from `musle.cc`.
 
@@ -35,12 +35,12 @@ There is a command for running the daemon:
 
 - `teliod start <path_to_config_file>` - starts the daemon.
   - `--no-detach` - run the teliod in the foreground as a regular process,
-  without detaching from the terminal.
+    without detaching from the terminal.
   - `--stdout-path` - Redirect daemon standard output to the specified file,
-  Defaults to `/var/log/teliod.log`, ignored when used with `--no-detach`
-  Some early logs may still be printed to stdout before redirection.
+    Defaults to `/var/log/teliod.log`, ignored when used with `--no-detach`
+    Some early logs may still be printed to stdout before redirection.
   - `--working-directory` - Specifies the daemons working directory,
-  Defaults to `/`, ignored when used with `--no-detach`
+    Defaults to `/`, ignored when used with `--no-detach`
 
 The config file should be provided in a JSON format
 (see `example_teliod_config.json` file).
@@ -55,7 +55,7 @@ Currently supported configuration variables:
   - `trace`
   - `off`
 - `log_file_path` - a path to store the daemon's logs,
-needs be absolute, otherwise will be relative to `working-directory` when daemonized
+  needs be absolute, otherwise will be relative to `working-directory` when daemonized
 - `log_file_count` - number of recent log files (log files are rotated daily)
 - `authentication_token` - Token from Nord VPN account to authenticate API calls
 - `app_user_uid` - A unique number for each user of the application
@@ -64,9 +64,9 @@ needs be absolute, otherwise will be relative to `working-directory` when daemon
   - `linux-native` - Linux native implementation
 - `interface`
   - `name` - Name of tunnel interface to connect to. Note that for macOS
-  the name has to be in form `tun#` where `#` can be any integer number
+    the name has to be in form `tun#` where `#` can be any integer number
   - `config_provider` - Provider for configuring the interface address,
-  possible options:
+    possible options:
     - `manual` - do not configure interfaces automatically
     - `ifconfig` - systems using ifconfig command
     - `iproute` - systems using iproute2 command

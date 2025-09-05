@@ -33,7 +33,9 @@ OPTIONS:
 ## Derpcli for large scale testing
 
 ### Providing config file
-**Example**  
+
+**Example**
+
 ```
 derpcli --config config.json -C ca.pem -vv
 ```
@@ -70,9 +72,9 @@ The following config will assign pair clients to the same DERP.
 }
 ```
 
-  ### Output
+### Output
 
-  ```
+```
 [2023-02-24 13:28:05]  Clients: 0, GOAL: 4
 * Adding 2 client pairs
 * Resolving derp-a:8765
@@ -119,4 +121,4 @@ DERPS resolved: [[10.0.10.1:8765], [10.0.10.2:8765]]
 * Avg. RTT via [derp-a]: 92.00 ms
 * Avg. RTT via [derp-b]: 148.00 ms
 
-  ```
+```
