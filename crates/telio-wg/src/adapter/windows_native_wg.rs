@@ -36,7 +36,7 @@ pub struct WindowsNativeWg {
     // Indicates whether the network configuration was cleaned up regularly
     // during Adapter::stop(), or needs to be done in drop()
     cleaned_up: Arc<Mutex<bool>>,
-    watcher: Arc<Mutex<InterfaceWatcher>>,
+    // watcher: Arc<Mutex<InterfaceWatcher>>,
 
     /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
     enable_dynamic_wg_nt_control: bool,
@@ -63,14 +63,14 @@ impl WindowsNativeWg {
     pub fn new(
         adapter: &Arc<wireguard_nt::Adapter>,
         luid: u64,
-        watcher: &Arc<Mutex<InterfaceWatcher>>,
+        // watcher: &Arc<Mutex<InterfaceWatcher>>,
         enable_dynamic_wg_nt_control: bool,
     ) -> Self {
         Self {
             adapter: adapter.clone(),
             luid,
             cleaned_up: Arc::new(Mutex::new(false)),
-            watcher: watcher.clone(),
+            // watcher: watcher.clone(),
             enable_dynamic_wg_nt_control,
         }
     }
@@ -99,21 +99,21 @@ impl WindowsNativeWg {
         // try to load dll
         match unsafe { wireguard_nt::load_from_path(path) } {
             Ok(wg_dll) => {
-                // Someone to watch over me while I sleep
-                let watcher = Arc::new(Mutex::new(InterfaceWatcher::new(
-                    enable_dynamic_wg_nt_control,
-                )));
-                if let Ok(mut watcher) = watcher.lock() {
-                    if let Err(monitoring_err) = watcher.start_monitoring() {
-                        return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                            "Failed to start watcher with err {monitoring_err}",
-                        ))));
-                    }
-                } else {
-                    return Err(AdapterError::WindowsNativeWg(Error::Fail(
-                        "error obtaining lock".into(),
-                    )));
-                }
+                // // Someone to watch over me while I sleep
+                // let watcher = Arc::new(Mutex::new(InterfaceWatcher::new(
+                //     enable_dynamic_wg_nt_control,
+                // )));
+                // if let Ok(mut watcher) = watcher.lock() {
+                //     if let Err(monitoring_err) = watcher.start_monitoring() {
+                //         return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                //             "Failed to start watcher with err {monitoring_err}",
+                //         ))));
+                //     }
+                // } else {
+                //     return Err(AdapterError::WindowsNativeWg(Error::Fail(
+                //         "error obtaining lock".into(),
+                //     )));
+                // }
 
                 // Try to create a new adapter
                 let adapter_guid = Self::get_adapter_guid_from_name_hash(name);
@@ -138,17 +138,18 @@ impl WindowsNativeWg {
                         let wgnt = WindowsNativeWg::new(
                             &adapter,
                             luid,
-                            &watcher,
+                            // &watcher,
                             enable_dynamic_wg_nt_control,
                         );
-                        if let Ok(mut watcher) = watcher.lock() {
-                            watcher.configure(wgnt.adapter.clone(), luid);
-                            Ok(wgnt)
-                        } else {
-                            Err(AdapterError::WindowsNativeWg(Error::Fail(
-                                "error obtaining lock".into(),
-                            )))
-                        }
+                        // if let Ok(mut watcher) = watcher.lock() {
+                        //     watcher.configure(wgnt.adapter.clone(), luid);
+                        //     Ok(wgnt)
+                        // } else {
+                        //     Err(AdapterError::WindowsNativeWg(Error::Fail(
+                        //         "error obtaining lock".into(),
+                        //     )))
+                        // }
+                        Ok(wgnt)
                     }
                     Err((e, _)) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
                         "Failed to create adapter: {e:?}",
@@ -381,11 +382,11 @@ impl Adapter for WindowsNativeWg {
                 let (resp, peer_cnt) = match self.adapter.set_config_uapi(set_cfg) {
                     Ok(()) => {
                         // Remember last successfully set configuration
-                        if let Ok(mut interface_watcher) =
-                            (self as &WindowsNativeWg).watcher.clone().lock()
-                        {
-                            interface_watcher.set_last_known_configuration(set_cfg);
-                        }
+                        // if let Ok(mut interface_watcher) =
+                        //     (self as &WindowsNativeWg).watcher.clone().lock()
+                        // {
+                        //     interface_watcher.set_last_known_configuration(set_cfg);
+                        // }
 
                         let resp = self.get_config_uapi();
                         let peer_cnt = resp.interface.as_ref().map(|i| i.peers.len());
@@ -417,10 +418,10 @@ impl Adapter for WindowsNativeWg {
     async fn stop(&self) {
         telio_log_info!("wg-nt: stopping adapter");
         // Clear last known configuration and stop watcher
-        if let Ok(mut interface_watcher) = self.watcher.clone().lock() {
-            interface_watcher.clear_last_known_configuration();
-            interface_watcher.stop();
-        }
+        // if let Ok(mut interface_watcher) = self.watcher.clone().lock() {
+        //     interface_watcher.clear_last_known_configuration();
+        //     interface_watcher.stop();
+        // }
         self.adapter.down();
         self.cleanup();
     }
