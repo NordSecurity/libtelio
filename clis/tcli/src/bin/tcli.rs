@@ -1,4 +1,4 @@
-#![allow(unwrap_check)]
+#![allow(clippy::unwrap_used)]
 
 use std::{fs, io::Write, sync::Arc, time::SystemTime};
 

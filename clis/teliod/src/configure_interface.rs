@@ -600,7 +600,7 @@ impl ConfigureInterface for Uci {
             let priorities = Iproute::find_available_lower_rule_priorities(2)?;
             // this is ok because find_available_lower_rule_priorities()
             // returns an error on wrong size
-            #[allow(index_access_check)]
+            #[allow(clippy::indexing_slicing)]
             (priorities[0], priorities[1])
         };
 

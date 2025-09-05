@@ -7,7 +7,7 @@ pub fn commit_sha() -> &'static str {
 /// Get the version placeholder (half of the maximum length of git tag)
 /// Will be replaced during build promotions
 #[inline(never)]
-#[allow(index_access_check)]
+#[allow(clippy::indexing_slicing)]
 pub fn version_tag() -> &'static str {
     const VER: [u8;129] = *b"VERSION_PLACEHOLDER@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\0";
     match VER.iter().position(|v| *v == 0) {

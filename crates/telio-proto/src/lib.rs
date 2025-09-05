@@ -7,7 +7,6 @@
 //! Defines all possible packets to be send. And how they are encoded / decoded.
 
 mod codec;
-#[allow(unwrap_check)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 pub(crate) mod messages {
     include!(concat!(env!("OUT_DIR"), "/protos/mod.rs"));

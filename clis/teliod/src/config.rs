@@ -50,12 +50,12 @@ pub struct MqttConfig {
 }
 
 fn backoff_initial_default() -> NonZeroU64 {
-    #[allow(clippy::unwrap_used, unwrap_check)]
+    #[allow(clippy::unwrap_used)]
     NonZeroU64::new(1).unwrap()
 }
 
 fn backoff_maximal_default() -> NonZeroU64 {
-    #[allow(clippy::unwrap_used, unwrap_check)]
+    #[allow(clippy::unwrap_used)]
     NonZeroU64::new(300).unwrap()
 }
 
