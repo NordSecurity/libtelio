@@ -133,6 +133,8 @@ enum TeliodError {
     IpRule,
     #[error("Could not configure IP routing")]
     IpRoute,
+    #[error("Endpoint has no PublicKey")]
+    EndpointNoPublicKey,
 }
 
 /// Libtelio and meshnet status report
@@ -155,6 +157,8 @@ pub struct ExitNodeStatus {
     pub identifier: String,
     /// The public key of the exit node
     pub public_key: PublicKey,
+    /// Hostname of the node
+    pub hostname: Option<String>,
     /// Socket address of the Exit Node
     pub endpoint: Option<SocketAddr>,
     /// State of the node (Connecting, connected, or disconnected)
@@ -168,6 +172,7 @@ impl From<&Node> for ExitNodeStatus {
             public_key: value.public_key,
             state: value.state,
             endpoint: value.endpoint,
+            hostname: value.hostname.to_owned(),
         }
     }
 }

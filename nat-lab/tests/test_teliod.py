@@ -5,19 +5,24 @@ import pytest
 import uuid
 from config import (
     WG_SERVER,
+    WG_SERVER_2,
     PHOTO_ALBUM_IP,
     STUN_SERVER,
     CORE_API_URL,
     CORE_API_CA_CERTIFICATE_PATH,
     CORE_API_BEARER_AUTHORIZATION_HEADER,
+    WG_SERVERS,
 )
 from contextlib import AsyncExitStack
 from helpers import setup_connections, send_https_request
 from mesh_api import API, Node
 from teliod import Teliod, Config, IfcConfigType
-from test_core_api import clean_up_machines as clean_up_registered_machines_on_api
+from test_core_api import (
+    clean_up_machines as clean_up_registered_machines_on_api,
+    register_vpn_server_key as register_vpn_server_key_on_api,
+)
 from utils import stun
-from utils.connection import ConnectionTag
+from utils.connection import ConnectionTag, Connection
 from utils.logger import log
 from utils.ping import ping
 from utils.process.process import ProcessExecError
@@ -27,6 +32,64 @@ if platform.machine() != "x86_64":
     import pure_wg as Key
 else:
     from python_wireguard import Key  # type: ignore
+
+
+async def register_new_device_on_api(
+    api: API,
+    connection: Connection,
+):
+    (private_key, public_key) = Key.key_pair()
+    hw_identifier = uuid.uuid4()
+    payload = {
+        "public_key": str(public_key),
+        "hardware_identifier": str(hw_identifier),
+        "os": "linux",
+        "os_version": "teliod",
+    }
+    response_data = await send_https_request(
+        connection,
+        f"{CORE_API_URL}/v1/meshnet/machines",
+        "POST",
+        CORE_API_CA_CERTIFICATE_PATH,
+        data=str(payload).replace("'", '"'),
+        authorization_header=CORE_API_BEARER_AUTHORIZATION_HEADER,
+    )
+    device_id = {
+        "hw_identifier": str(hw_identifier),
+        "private_key": list(base64.b64decode(str(private_key))),
+        "machine_identifier": response_data["identifier"],
+    }
+
+    device_id_json = json.dumps(device_id)
+    log.debug("Device ID: %s", device_id_json)
+
+    await connection.create_process(["mkdir", "-p", "/etc/teliod"]).execute()
+    await connection.create_process(
+        ["sh", "-c", f"echo '{device_id_json}' > /etc/teliod/data.json"]
+    ).execute()
+
+    node: Node = api.register(
+        "teliod",
+        "teliod",
+        str(private_key),
+        str(public_key),
+        True,
+        IPStack.IPv4,
+        response_data["ip_addresses"],
+    )
+
+    return node
+
+
+async def prepare_vpn_servers(
+    api: API,
+    connection: Connection,
+):
+    api.prepare_all_vpn_servers()
+    for country_id, server_config in enumerate(WG_SERVERS, start=1):
+        if isinstance(server_config["public_key"], str):
+            public_key = server_config["public_key"]
+            await register_vpn_server_key_on_api(connection, public_key, country_id)
 
 
 @pytest.mark.parametrize(
@@ -83,51 +146,6 @@ async def test_teliod_logs() -> None:
     [(IfcConfigType.VPN_MANUAL), (IfcConfigType.VPN_IPROUTE)],
 )
 async def test_teliod_vpn_connection(config_type: IfcConfigType) -> None:
-    async def register_new_device_on_api():
-        (private_key, public_key) = Key.key_pair()
-        hw_identifier = uuid.uuid4()
-        payload = {
-            "public_key": str(public_key),
-            "hardware_identifier": str(hw_identifier),
-            "os": "linux",
-            "os_version": "teliod",
-        }
-        response_data = await send_https_request(
-            connection,
-            f"{CORE_API_URL}/v1/meshnet/machines",
-            "POST",
-            CORE_API_CA_CERTIFICATE_PATH,
-            data=str(payload).replace("'", '"'),
-            authorization_header=CORE_API_BEARER_AUTHORIZATION_HEADER,
-        )
-        device_id = {
-            "hw_identifier": str(hw_identifier),
-            "private_key": list(base64.b64decode(str(private_key))),
-            "machine_identifier": response_data["identifier"],
-        }
-
-        device_id_json = json.dumps(device_id)
-        log.debug("Device ID: %s", device_id_json)
-
-        await connection.create_process(["mkdir", "-p", "/etc/teliod"]).execute()
-        await connection.create_process(
-            ["sh", "-c", f"echo '{device_id_json}' > /etc/teliod/data.json"]
-        ).execute()
-
-        api = API()
-        node: Node = api.register(
-            "teliod",
-            "teliod",
-            str(private_key),
-            str(public_key),
-            True,
-            IPStack.IPv4,
-            response_data["ip_addresses"],
-        )
-        api.prepare_all_vpn_servers()
-
-        return node
-
     async with AsyncExitStack() as exit_stack:
         connection = (
             await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
@@ -135,14 +153,16 @@ async def test_teliod_vpn_connection(config_type: IfcConfigType) -> None:
 
         teliod = Teliod(connection, exit_stack, config=Config(config_type))
 
-        await clean_up_registered_machines_on_api(connection, CORE_API_URL)
-        node: Node = await register_new_device_on_api()
+        await clean_up_registered_machines_on_api(connection)
+        api = API()
+        node: Node = await register_new_device_on_api(api, connection)
+        await prepare_vpn_servers(api, connection)
 
         # we only know the key of the VPN server at runtime and it needs to be in the config before starting teliod
         await connection.create_process([
             "sed",
             "-i",
-            f's#"server_pubkey": .*#"server_pubkey": "{WG_SERVER["public_key"]}"#g',
+            f's#"public_key": .*#"public_key": "{WG_SERVER["public_key"]}"#g',
             str(teliod.config.path()),
         ]).execute()
 
@@ -164,6 +184,43 @@ async def test_teliod_vpn_connection(config_type: IfcConfigType) -> None:
             await connection.create_process([
                 "sed",
                 "-i",
-                's#"server_pubkey": .*#"server_pubkey": "public-key-placeholder"#g',
+                's#"public_key": .*#"public_key": "public-key-placeholder"#g',
                 str(teliod.config.path()),
             ]).execute()
+
+
+@pytest.mark.parametrize(
+    "country",
+    [(IfcConfigType.VPN_COUNTRY_PL), (IfcConfigType.VPN_COUNTRY_DE)],
+)
+async def test_teliod_vpn_country_connection(country: IfcConfigType) -> None:
+    async with AsyncExitStack() as exit_stack:
+        connection = (
+            await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
+        )[0].connection
+
+        teliod = Teliod(connection, exit_stack, config=Config(country))
+
+        await clean_up_registered_machines_on_api(connection)
+        api = API()
+        _ = await register_new_device_on_api(api, connection)
+        await prepare_vpn_servers(api, connection)
+
+        async with teliod.start():
+            log.debug("Teliod started, waiting for connected vpn state...")
+            await teliod.wait_for_vpn_connected_state()
+
+            expected_server_ip, expected_hostname = (
+                (WG_SERVER["ipv4"], "pl128.nordvpn.com")
+                if country == IfcConfigType.VPN_COUNTRY_PL
+                else (WG_SERVER_2["ipv4"], "de1263.nordvpn.com")
+            )
+
+            await ping(connection, PHOTO_ALBUM_IP)
+            ip = await stun.get(connection, STUN_SERVER)
+            assert (
+                ip == expected_server_ip
+            ), f"wrong public IP when connected to VPN {ip}"
+
+            report = await teliod.get_status()
+            assert expected_hostname in report
