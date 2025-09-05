@@ -800,6 +800,9 @@ dictionary FeatureUpnp {
 dictionary FeatureErrorNotificationService {
     /// Size of the internal queue of received and to-be-published vpn error notifications
     u32 buffer_size;
+
+    /// Allow only post-quantum safe key exchange algorithm for the ENS HTTPS connection
+    boolean allow_only_pq;
 };
 
 /// Rust representation of [meshnet map]

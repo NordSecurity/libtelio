@@ -77,6 +77,7 @@ pub struct ErrorNotificationService {
     quit: Option<(watch::Sender<bool>, JoinHandle<()>)>,
     tx: Tx<(ConnectionError, PublicKey)>,
     socket_pool: Arc<SocketPool>,
+    allow_only_mlkem: bool,
 }
 
 impl Drop for ErrorNotificationService {
@@ -90,6 +91,7 @@ impl ErrorNotificationService {
     pub fn new(
         buffer_size: usize,
         socket_pool: Arc<SocketPool>,
+        allow_only_mlkem: bool,
     ) -> (Self, Rx<(ConnectionError, PublicKey)>) {
         let Chan { rx, tx }: Chan<(ConnectionError, PublicKey)> = Chan::new(buffer_size);
         (
@@ -97,6 +99,7 @@ impl ErrorNotificationService {
                 quit: None,
                 tx,
                 socket_pool,
+                allow_only_mlkem,
             },
             rx,
         )
@@ -126,10 +129,13 @@ impl ErrorNotificationService {
         let (quit_tx, quit_rx): (watch::Sender<bool>, watch::Receiver<bool>) =
             watch::channel(false);
 
+        // Needs to be http and not https, otherwise grpc will add another layer of https
+        // on top of our own custom one
         let vpn_uri = format!("http://{vpn_ip}:{ens_port}");
 
         let pool = self.socket_pool.clone();
         let tx = self.tx.clone();
+        let allow_only_mlkem = self.allow_only_mlkem;
 
         let join_handle = tokio::spawn(async move {
             // This future is too big for keeping it on the stack
@@ -140,6 +146,7 @@ impl ErrorNotificationService {
                 pool.clone(),
                 tx,
                 quit_rx,
+                allow_only_mlkem,
             ))
             .await
             {
@@ -186,10 +193,12 @@ async fn task(
     pool: Arc<SocketPool>,
     tx: Tx<(ConnectionError, PublicKey)>,
     mut quit_rx: watch::Receiver<bool>,
+    allow_only_mlkem: bool,
 ) -> anyhow::Result<()> {
     'outer: loop {
         let pool = pool.clone();
-        let external_channel = Box::pin(create_external_channel(&vpn_uri, pool)).await?;
+        let external_channel =
+            Box::pin(create_external_channel(&vpn_uri, pool, allow_only_mlkem)).await?;
 
         let authenticated_challenge = get_login_challenge(
             external_channel.clone(),
@@ -273,12 +282,18 @@ fn authentication_interceptor(
     }
 }
 
-async fn create_external_channel(vpn_uri: &str, pool: Arc<SocketPool>) -> anyhow::Result<Channel> {
+async fn create_external_channel(
+    vpn_uri: &str,
+    pool: Arc<SocketPool>,
+    allow_only_mlkem: bool,
+) -> anyhow::Result<Channel> {
     let tls_connector = {
         let mut provider = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider();
 
-        provider.kx_groups =
-            vec![tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::X25519MLKEM768];
+        if allow_only_mlkem {
+            provider.kx_groups =
+                vec![tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::X25519MLKEM768];
+        }
 
         let mut tls_config = ClientConfig::builder_with_provider(Arc::new(provider))
             .with_safe_default_protocol_versions()?
@@ -576,7 +591,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let (mut ens, mut rx) = ErrorNotificationService::new(10, socket_pool);
+        let (mut ens, mut rx) = ErrorNotificationService::new(10, socket_pool, true);
 
         ens.start_monitor_on_port(
             IpAddr::V4(Ipv4Addr::LOCALHOST),

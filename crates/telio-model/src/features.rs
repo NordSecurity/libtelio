@@ -565,6 +565,10 @@ pub struct FeatureErrorNotificationService {
     /// Size of the internal queue of received and to-be-published vpn error notifications
     #[default = 5]
     pub buffer_size: u32,
+
+    /// Allow only post-quantum safe key exchange algorithm for the ENS HTTPS connection
+    #[default = true]
+    pub allow_only_pq: bool,
 }
 
 #[cfg(test)]
