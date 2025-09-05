@@ -855,12 +855,14 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn test_find_available_lower_rule_priority() {
         let result = Iproute::find_available_lower_rule_priority();
         assert!(result.is_ok());
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn test_find_available_lower_rule_priorities() {
         let result = Iproute::find_available_lower_rule_priorities(2);
         assert_eq!(result.unwrap().len(), 2);
