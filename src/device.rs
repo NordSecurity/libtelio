@@ -1249,6 +1249,7 @@ impl Runtime {
                 let (ens, rx) = ErrorNotificationService::new(
                     error_notification_service.buffer_size as usize,
                     socket_pool.clone(),
+                    error_notification_service.allow_only_pq,
                 );
                 (Some(ens), rx)
             } else {
