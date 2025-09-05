@@ -874,6 +874,8 @@ async def test_ens(
                 ),
             )
         )
+        assert alpha_setup_params.features.error_notification_service
+        alpha_setup_params.features.error_notification_service.allow_only_pq = False
         env = await exit_stack.enter_async_context(
             setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
@@ -1012,6 +1014,8 @@ async def test_ens_not_working(
                 ),
             )
         )
+        assert alpha_setup_params.features.error_notification_service
+        alpha_setup_params.features.error_notification_service.allow_only_pq = False
         env = await exit_stack.enter_async_context(
             setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
