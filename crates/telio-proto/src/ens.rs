@@ -77,6 +77,7 @@ pub struct ErrorNotificationService {
     quit: Option<(watch::Sender<bool>, JoinHandle<()>)>,
     tx: Tx<(ConnectionError, PublicKey)>,
     socket_pool: Arc<SocketPool>,
+    allow_only_mlkem: bool,
 }
 
 impl Drop for ErrorNotificationService {
@@ -90,6 +91,7 @@ impl ErrorNotificationService {
     pub fn new(
         buffer_size: usize,
         socket_pool: Arc<SocketPool>,
+        allow_only_mlkem: bool,
     ) -> (Self, Rx<(ConnectionError, PublicKey)>) {
         let Chan { rx, tx }: Chan<(ConnectionError, PublicKey)> = Chan::new(buffer_size);
         (
@@ -97,6 +99,7 @@ impl ErrorNotificationService {
                 quit: None,
                 tx,
                 socket_pool,
+                allow_only_mlkem,
             },
             rx,
         )
@@ -126,10 +129,13 @@ impl ErrorNotificationService {
         let (quit_tx, quit_rx): (watch::Sender<bool>, watch::Receiver<bool>) =
             watch::channel(false);
 
+        // Needs to be http and not https, otherwise grpc will add another layer of https
+        // on top of our own custom one
         let vpn_uri = format!("http://{vpn_ip}:{ens_port}");
 
         let pool = self.socket_pool.clone();
         let tx = self.tx.clone();
+        let allow_only_mlkem = self.allow_only_mlkem;
 
         let join_handle = tokio::spawn(async move {
             // This future is too big for keeping it on the stack
@@ -140,6 +146,7 @@ impl ErrorNotificationService {
                 pool.clone(),
                 tx,
                 quit_rx,
+                allow_only_mlkem,
             ))
             .await
             {
@@ -186,10 +193,12 @@ async fn task(
     pool: Arc<SocketPool>,
     tx: Tx<(ConnectionError, PublicKey)>,
     mut quit_rx: watch::Receiver<bool>,
+    allow_only_mlkem: bool,
 ) -> anyhow::Result<()> {
     'outer: loop {
         let pool = pool.clone();
-        let external_channel = Box::pin(create_external_channel(&vpn_uri, pool)).await?;
+        let external_channel =
+            Box::pin(create_external_channel(&vpn_uri, pool, allow_only_mlkem)).await?;
 
         let authenticated_challenge = get_login_challenge(
             external_channel.clone(),
@@ -273,7 +282,11 @@ fn authentication_interceptor(
     }
 }
 
-async fn create_external_channel(vpn_uri: &str, pool: Arc<SocketPool>) -> anyhow::Result<Channel> {
+async fn create_external_channel(
+    vpn_uri: &str,
+    pool: Arc<SocketPool>,
+    allow_only_mlkem: bool,
+) -> anyhow::Result<Channel> {
     let socket_factory = move |uri: Uri| {
         let pool = pool.clone();
         async move {
@@ -302,7 +315,7 @@ async fn create_external_channel(vpn_uri: &str, pool: Arc<SocketPool>) -> anyhow
 
             if let Some(resolved) = ((host, port).to_socket_addrs()?).next() {
                 let tcp_stream = socket.connect(resolved).await?;
-                let tls_connector = make_tls_connector()?;
+                let tls_connector = make_tls_connector(allow_only_mlkem)?;
                 let tls_stream = tls_connector.connect(domain, tcp_stream).await?;
                 return Ok::<_, std::io::Error>(TokioIo::new(tls_stream));
             }
@@ -318,10 +331,68 @@ async fn create_external_channel(vpn_uri: &str, pool: Arc<SocketPool>) -> anyhow
         .await?)
 }
 
-fn make_tls_connector() -> std::io::Result<TlsConnector> {
+fn make_tls_connector(allow_only_mlkem: bool) -> std::io::Result<TlsConnector> {
+    #[derive(Debug)]
+    struct AcceptAnyCertVerifier;
+
+    impl ServerCertVerifier for AcceptAnyCertVerifier {
+        fn verify_server_cert(
+            &self,
+            _end_entity: &CertificateDer<'_>,
+            _intermediates: &[CertificateDer<'_>],
+            _server_name: &ServerName<'_>,
+            _ocsp_response: &[u8],
+            _now: UnixTime,
+        ) -> Result<ServerCertVerified, rustls::Error> {
+            Ok(ServerCertVerified::assertion())
+        }
+
+        fn verify_tls12_signature(
+            &self,
+            _message: &[u8],
+            _cert: &CertificateDer<'_>,
+            _dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, rustls::Error> {
+            Ok(HandshakeSignatureValid::assertion())
+        }
+
+        fn verify_tls13_signature(
+            &self,
+            _message: &[u8],
+            _cert: &CertificateDer<'_>,
+            _dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, rustls::Error> {
+            Ok(HandshakeSignatureValid::assertion())
+        }
+
+        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+            vec![
+                SignatureScheme::RSA_PKCS1_SHA1,
+                SignatureScheme::ECDSA_SHA1_Legacy,
+                SignatureScheme::RSA_PKCS1_SHA256,
+                SignatureScheme::ECDSA_NISTP256_SHA256,
+                SignatureScheme::RSA_PKCS1_SHA384,
+                SignatureScheme::ECDSA_NISTP384_SHA384,
+                SignatureScheme::RSA_PKCS1_SHA512,
+                SignatureScheme::ECDSA_NISTP521_SHA512,
+                SignatureScheme::RSA_PSS_SHA256,
+                SignatureScheme::RSA_PSS_SHA384,
+                SignatureScheme::RSA_PSS_SHA512,
+                SignatureScheme::ED25519,
+                SignatureScheme::ED448,
+                SignatureScheme::ML_DSA_44,
+                SignatureScheme::ML_DSA_65,
+                SignatureScheme::ML_DSA_87,
+            ]
+        }
+    }
+
     let mut provider = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider();
 
-    provider.kx_groups = vec![tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::X25519MLKEM768];
+    if allow_only_mlkem {
+        provider.kx_groups =
+            vec![tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::X25519MLKEM768];
+    }
 
     let mut tls_config = ClientConfig::builder_with_provider(Arc::new(provider))
         .with_safe_default_protocol_versions()
@@ -332,61 +403,6 @@ fn make_tls_connector() -> std::io::Result<TlsConnector> {
     tls_config.alpn_protocols = vec![b"h2".to_vec()];
 
     Ok(TlsConnector::from(Arc::new(tls_config)))
-}
-
-#[derive(Debug)]
-struct AcceptAnyCertVerifier;
-
-impl ServerCertVerifier for AcceptAnyCertVerifier {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: UnixTime,
-    ) -> Result<ServerCertVerified, rustls::Error> {
-        Ok(ServerCertVerified::assertion())
-    }
-
-    fn verify_tls12_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn verify_tls13_signature(
-        &self,
-        _message: &[u8],
-        _cert: &CertificateDer<'_>,
-        _dss: &DigitallySignedStruct,
-    ) -> Result<HandshakeSignatureValid, rustls::Error> {
-        Ok(HandshakeSignatureValid::assertion())
-    }
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        vec![
-            SignatureScheme::RSA_PKCS1_SHA1,
-            SignatureScheme::ECDSA_SHA1_Legacy,
-            SignatureScheme::RSA_PKCS1_SHA256,
-            SignatureScheme::ECDSA_NISTP256_SHA256,
-            SignatureScheme::RSA_PKCS1_SHA384,
-            SignatureScheme::ECDSA_NISTP384_SHA384,
-            SignatureScheme::RSA_PKCS1_SHA512,
-            SignatureScheme::ECDSA_NISTP521_SHA512,
-            SignatureScheme::RSA_PSS_SHA256,
-            SignatureScheme::RSA_PSS_SHA384,
-            SignatureScheme::RSA_PSS_SHA512,
-            SignatureScheme::ED25519,
-            SignatureScheme::ED448,
-            SignatureScheme::ML_DSA_44,
-            SignatureScheme::ML_DSA_65,
-            SignatureScheme::ML_DSA_87,
-        ]
-    }
 }
 
 fn authentication_tag(secret: SharedSecret, message: &[u8]) -> [u8; 32] {
@@ -578,7 +594,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let (mut ens, mut rx) = ErrorNotificationService::new(10, socket_pool);
+        let (mut ens, mut rx) = ErrorNotificationService::new(10, socket_pool, true);
 
         ens.start_monitor_on_port(
             IpAddr::V4(Ipv4Addr::LOCALHOST),
