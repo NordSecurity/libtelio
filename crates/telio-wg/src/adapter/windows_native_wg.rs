@@ -21,7 +21,9 @@ use uuid::Uuid;
 #[cfg(windows)]
 use winreg::{enums::*, RegKey, HKEY};
 #[cfg(windows)]
-use wireguard_nt::{self, set_logger, SetInterface, SetPeer, WIREGUARD_STATE_UP};
+use wireguard_nt::{
+    self, set_logger, Error as WireGuardNTError, SetInterface, SetPeer, WIREGUARD_STATE_UP,
+};
 use wireguard_uapi::xplatform;
 
 /// Telio wrapper around wireguard-nt
@@ -131,7 +133,7 @@ impl WindowsNativeWg {
                 // This replicates the behavior of Wireguard-Go adapter which relies on WinTun.sys.
                 // If the pool name does not match the passed adapter name, then netsh in the nat-lab
                 // tests won't be able to find this adapter and the tests will fail.
-                match wireguard_nt::Adapter::create(wg_dll, name, name, Some(adapter_guid)) {
+                match wireguard_nt::Adapter::create(&wg_dll, name, name, Some(adapter_guid)) {
                     Ok(raw_adapter) => {
                         let adapter = Arc::new(raw_adapter);
                         let luid = adapter.get_luid();
@@ -150,7 +152,7 @@ impl WindowsNativeWg {
                             )))
                         }
                     }
-                    Err((e, _)) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                    Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
                         "Failed to create adapter: {e:?}",
                     )))),
                 }
@@ -218,10 +220,20 @@ impl WindowsNativeWg {
                 errno: 0,
                 interface: Some(Interface::from(device)),
             },
-            Err(win32_error) => Response {
-                errno: win32_error as i32,
-                interface: None,
-            },
+            Err(win32_error) => {
+                // get_config_uapi returns os errors so this should be okay
+                let errno = match win32_error {
+                    WireGuardNTError::Driver(e) => e.raw_os_error().unwrap_or_else(|| {
+                        telio_log_warn!("Failed to get raw OS error, using default -1");
+                        -1
+                    }),
+                    _ => -1,
+                };
+                Response {
+                    errno,
+                    interface: None,
+                }
+            }
         }
     }
 
@@ -281,7 +293,7 @@ impl WindowsNativeWg {
             };
 
             // Terminate if we succeeded
-            if success {
+            if success.is_ok() {
                 return Ok(());
             }
 
@@ -421,7 +433,9 @@ impl Adapter for WindowsNativeWg {
             interface_watcher.clear_last_known_configuration();
             interface_watcher.stop();
         }
-        self.adapter.down();
+        if let Err(e) = self.adapter.down() {
+            telio_log_warn!("Failure to turn off adapter {e}");
+        }
         self.cleanup();
     }
 
