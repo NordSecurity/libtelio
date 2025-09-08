@@ -1,0 +1,6 @@
+globs:
+- "**/*.md"
+ignores:
+- "**/3rd-party/**"
+- "**/.venv/**"
+- "changelog.md"

@@ -1,0 +1,18 @@
+# MD013/line-length : Line length : https://github.com/DavidAnson/markdownlint/blob/v0.32.1/doc/md013.md
+MD013:
+  # Number of characters
+  line_length: 1000
+  # Number of characters for headings
+  heading_line_length: 1000
+  # Number of characters for code blocks
+  code_block_line_length: 1000
+  # Include code blocks
+  code_blocks: true
+  # Include tables
+  tables: true
+  # Include headings
+  headings: true
+  # Strict length checking
+  strict: false
+  # Stern length checking
+  stern: false

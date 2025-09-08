@@ -2,7 +2,7 @@
 
 ## Derpcli interface
 
-```
+```bash
 run derpcli -h for usage help
 
 DERP cli
@@ -33,8 +33,10 @@ OPTIONS:
 ## Derpcli for large scale testing
 
 ### Providing config file
+
 **Example**  
-```
+
+``` shell
 derpcli --config config.json -C ca.pem -vv
 ```
 
@@ -51,7 +53,7 @@ client.
 
 The following config will assign pair clients to the same DERP.
 
-```
+``` json
 {
   "client_count": 4,
   "interval_min": 1000,
@@ -70,9 +72,9 @@ The following config will assign pair clients to the same DERP.
 }
 ```
 
-  ### Output
+### Output
 
-  ```
+  ```log
 [2023-02-24 13:28:05]  Clients: 0, GOAL: 4
 * Adding 2 client pairs
 * Resolving derp-a:8765

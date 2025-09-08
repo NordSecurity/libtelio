@@ -3,7 +3,8 @@
 ## 1. Use the body to explain why this commit exists and on a high level what was done
 
 Good
-```
+
+```plaintext
 Fix buffer overflow
 
 The buffer overflow was caused by off-by-one error when copying strings.
@@ -12,7 +13,8 @@ destination string buffer does not.
 ```
 
 Bad
-```
+
+```plaintext
 Fix buffer overflow
 
 Add -1 to the length of bytes being copied from the source string buffer
@@ -24,7 +26,8 @@ to the destination string buffer.
 Note: subject line is mandatory, body is optional
 
 Good
-```
+
+```plaintext
 Fix buffer overflow
 
 The buffer overflow was caused by off-by-one error when copying strings.
@@ -33,7 +36,8 @@ destination string buffer does not.
 ```
 
 Bad
-```
+
+```plaintext
 Fix buffer overflow
 The buffer overflow was caused by off-by-one error when copying strings.
 The source string buffer includes the null terminator, while the
@@ -43,48 +47,56 @@ destination string buffer does not.
 ## 3. Limit the subject line to 50 characters
 
 Good
-```
+
+```plaintext
 Fix buffer overflow
 ```
 
 Bad
-```
+
+```plaintext
 Fix buffer overflow that was caused by off-by-one error when copying strings
 ```
 
 ## 4. Capitalize the subject line
 
 Good
-```
+
+```plaintext
 Fix buffer overflow
 ```
 
 Bad
-```
+
+```plaintext
 fix buffer overflow
 ```
 
 ## 5. Do not end the subject line with a period
 
 Good
-```
+
+```plaintext
 Fix buffer overflow
 ```
 
 Bad
-```
+
+```plaintext
 Fix buffer overflow.
 ```
 
 ## 6. Use the imperative mood in the subject line
 
 Good
-```
+
+```plaintext
 Fix buffer overflow
 ```
 
 Bad
-```
+
+```plaintext
 Fixed buffer overflow
 
 Fixing buffer overflow
@@ -95,7 +107,8 @@ Buffer overflow fixed
 ## 7. Wrap the body at 72 characters
 
 Good
-```
+
+```plaintext
 Fix buffer overflow
 
 The buffer overflow was caused by off-by-one error when copying strings.
@@ -104,7 +117,8 @@ destination string buffer does not.
 ```
 
 Bad
-```
+
+```plaintext
 Fix buffer overflow
 
 The buffer overflow was caused by off-by-one error when copying strings. The source string buffer includes the null terminator, while the destination string buffer does not.
