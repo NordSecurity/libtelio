@@ -413,13 +413,19 @@ fn authentication_tag(secret: SharedSecret, message: &[u8]) -> [u8; 32] {
 #[cfg(test)]
 mod tests {
 
-    use std::{collections::HashSet, net::Ipv4Addr, sync::Mutex};
+    use std::{
+        collections::HashSet,
+        net::Ipv4Addr,
+        sync::{atomic::AtomicUsize, LazyLock, Mutex},
+        time::Duration,
+    };
 
     use grpc::{
         ens_server::{self, EnsServer},
         login_server::{self, LoginServer},
         Challenge, ConnectionError,
     };
+    use rcgen::{generate_simple_self_signed, CertifiedKey};
     use telio_crypto::SecretKey;
     use telio_sockets::NativeProtector;
     use tokio::sync::{mpsc, oneshot};
@@ -427,6 +433,9 @@ mod tests {
     use tonic::{service::Interceptor, transport::Server};
 
     use super::*;
+
+    const SUBJECT_ALT_NAMES: LazyLock<Vec<String>> =
+        LazyLock::new(|| vec!["localhost".to_string(), "127.0.0.1".to_string()]);
 
     struct GrpcStub {
         errors: Vec<ConnectionError>,
@@ -557,18 +566,11 @@ mod tests {
             let actual_addr = listener.local_addr().unwrap();
             port_tx.send(actual_addr.port()).unwrap();
 
-            // Generate a self-signed certificate for testing
-            use rcgen::{generate_simple_self_signed, CertifiedKey};
-
-            let subject_alt_names = vec!["localhost".to_string(), "127.0.0.1".to_string()];
             let CertifiedKey { cert, signing_key } =
-                generate_simple_self_signed(subject_alt_names).unwrap();
+                generate_simple_self_signed(SUBJECT_ALT_NAMES.clone()).unwrap();
 
             let cert_pem = cert.pem();
             let key_pem = signing_key.serialize_pem();
-
-            // Go back to simpler approach - use tonic's built-in TLS but with a certificate that works
-            // The client already supports post-quantum algorithms, and we've verified it's configured correctly
 
             use tonic::transport::ServerTlsConfig;
 
@@ -585,17 +587,11 @@ mod tests {
                 .unwrap();
         });
 
+        let socket_pool = make_socket_pool();
+        let allow_only_mlkem = true;
+        let (mut ens, mut rx) = ErrorNotificationService::new(10, socket_pool, allow_only_mlkem);
+
         let port = port_rx.await.unwrap();
-
-        let socket_pool = Arc::new(SocketPool::new(
-            NativeProtector::new(
-                #[cfg(target_os = "macos")]
-                false,
-            )
-            .unwrap(),
-        ));
-        let (mut ens, mut rx) = ErrorNotificationService::new(10, socket_pool, true);
-
         ens.start_monitor_on_port(
             IpAddr::V4(Ipv4Addr::LOCALHOST),
             port,
@@ -630,5 +626,118 @@ mod tests {
             ret.push(rx.recv().await.unwrap());
         }
         ret
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn test_ens_fails_without_x25519mlkem768_support() {
+        let server_private_key = SecretKey::gen();
+        let server_public_key = server_private_key.public();
+        let client_private_key = SecretKey::gen();
+
+        let (port_tx, port_rx) = oneshot::channel();
+        let expected_errors = Arc::new(AtomicUsize::new(0));
+
+        let expected_errors_clone = expected_errors.clone();
+        tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let actual_addr = listener.local_addr().unwrap();
+            port_tx.send(actual_addr.port()).unwrap();
+
+            let CertifiedKey { cert, signing_key } =
+                generate_simple_self_signed(SUBJECT_ALT_NAMES.clone()).unwrap();
+
+            let _cert_pem = cert.pem();
+            let _key_pem = signing_key.serialize_pem();
+
+            // Create a TLS server that explicitly does NOT support X25519MLKEM768
+            // by using a provider that only supports traditional key exchange algorithms
+            let mut provider = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider();
+            provider.kx_groups = vec![
+                tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::SECP256R1,
+                tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::SECP384R1,
+                tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::X25519,
+            ];
+
+            let server_config =
+                tokio_rustls::rustls::ServerConfig::builder_with_provider(Arc::new(provider))
+                    .with_safe_default_protocol_versions()
+                    .unwrap()
+                    .with_no_client_auth()
+                    .with_single_cert(
+                        vec![tokio_rustls::rustls::pki_types::CertificateDer::from(
+                            cert.der().to_vec(),
+                        )],
+                        tokio_rustls::rustls::pki_types::PrivateKeyDer::try_from(
+                            signing_key.serialize_der(),
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap();
+
+            let tls_acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
+
+            while let Ok((stream, _)) = listener.accept().await {
+                let acceptor = tls_acceptor.clone();
+                let expected_errors = expected_errors_clone.clone();
+                tokio::spawn(async move {
+                    let err = acceptor.accept(stream).await.unwrap_err();
+                    let rustls_err = err
+                        .get_ref()
+                        .unwrap()
+                        .downcast_ref::<rustls::Error>()
+                        .unwrap();
+                    assert_eq!(
+                        *rustls_err,
+                        rustls::Error::PeerIncompatible(
+                            rustls::PeerIncompatible::NoKxGroupsInCommon
+                        )
+                    );
+                    // Making sure that we reach this point, tokio::spawn can 'swallow' panics
+                    expected_errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                });
+            }
+        });
+
+        let socket_pool = make_socket_pool();
+        let allow_only_mlkem = true;
+        let (mut ens, mut rx) = ErrorNotificationService::new(10, socket_pool, allow_only_mlkem);
+
+        let port = port_rx.await.unwrap();
+        let result = ens
+            .start_monitor_on_port(
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                port,
+                server_public_key,
+                client_private_key,
+            )
+            .await;
+
+        assert!(result.is_ok());
+
+        // Wait a bit for the background task to attempt TLS handshake and fail
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Try to receive from the error channel - this should timeout
+        // because the connection should fail during TLS handshake before any errors are sent
+        let timeout_result = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await;
+
+        // We expect a timeout because the connection should fail during TLS handshake
+        // and never reach the point where it can send error notifications
+        assert!(timeout_result.is_err());
+
+        ens.stop().await;
+
+        assert_eq!(expected_errors.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    fn make_socket_pool() -> Arc<SocketPool> {
+        Arc::new(SocketPool::new(
+            NativeProtector::new(
+                #[cfg(target_os = "macos")]
+                false,
+            )
+            .unwrap(),
+        ))
     }
 }
