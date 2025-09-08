@@ -34,12 +34,6 @@ smart-default = "0.7.1"
 base64 = "0.22.1"
 dirs = "6.0.0"
 daemonize = "0.5.0"
-
-form_urlencoded = { version = "1.2.1", optional = true }
-maud = { version = "0.27.0", optional = true }
-lazy_static = { workspace = true, optional = true}
-const_format = { version = "0.2.34", optional = true }
-rust-cgi = { version = "0.7.2", optional = true }
 cfg-if = "1.0.1"
 
 [dev-dependencies]
@@ -48,8 +42,3 @@ serial_test = "3.2.0"
 temp-dir = "0.1.16"
 temp-file = "0.1.9"
 visibility = "0.1.1"
-
-[features]
-cgi = ["const_format", "rust-cgi", "lazy_static", "maud", "form_urlencoded"]
-qnap = ["cgi"]
-

@@ -146,43 +146,6 @@ pub struct TeliodDaemonConfig {
 }
 
 impl TeliodDaemonConfig {
-    #[cfg(feature = "cgi")]
-    pub fn update(&mut self, update: TeliodDaemonConfigPartial) -> Result<(), TeliodError> {
-        if let Some(log_file_path) = update.log_file_path {
-            self.log_file_path = Self::resolve_log_path(&log_file_path)?;
-        }
-        if let Some(log_level) = update.log_level {
-            self.log_level = log_level;
-        }
-        if let Some(log_file_count) = update.log_file_count {
-            self.log_file_count = log_file_count;
-        }
-        if let Some(authentication_token) = update.authentication_token {
-            self.authentication_token = authentication_token;
-        }
-        if let Some(adapter) = update.adapter_type {
-            self.adapter_type = adapter;
-        }
-        if let Some(interface) = update.interface {
-            self.interface = interface;
-        }
-        if let Some(vpn) = update.vpn {
-            self.vpn = Some(vpn);
-        }
-        if let Some(http_certificate_file_path) = update.http_certificate_file_path {
-            self.http_certificate_file_path = http_certificate_file_path;
-        }
-
-        if let Some(device_identity_file_path) = update.device_identity_file_path {
-            self.device_identity_file_path = device_identity_file_path
-        }
-        if let Some(mqtt) = update.mqtt {
-            self.mqtt = mqtt;
-        }
-
-        Ok(())
-    }
-
     /// Construct a TeliodDaemonConfig by deserializing a file at given path
     pub fn from_file(path: &str) -> Result<Self, TeliodError> {
         println!("Reading config from: {path}");
@@ -264,20 +227,7 @@ impl Default for TeliodDaemonConfig {
             } else {
                 Level::INFO
             }),
-            log_file_path: {
-                // TODO: Should this path be different for CGI?
-                #[cfg(feature = "cgi")]
-                {
-                    crate::cgi::constants::LOG_PATHS
-                        .log()
-                        .to_string_lossy()
-                        .into_owned()
-                }
-                #[cfg(not(feature = "cgi"))]
-                {
-                    "/var/log/teliod_lib.log".to_string()
-                }
-            },
+            log_file_path: "/var/log/teliod_lib.log".to_string(),
             log_file_count: default_log_file_count(),
             adapter_type: AdapterType::default(),
             interface: InterfaceConfig {

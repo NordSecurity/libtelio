@@ -38,11 +38,6 @@ MOOSE_MAP = {
     "armv7hf": "armv7_eabihf",
 }
 
-QNAP_MAP = {
-    "x86_64": "x86_64",
-    "aarch64": "arm_64",
-}
-
 PROJECT_CONFIG = rutils.Project(
     rust_version="1.89.0",
     root_dir=PROJECT_ROOT,
@@ -138,37 +133,6 @@ def post_copy_darwin_debug_symbols_to_distribution_dir(config, args):
                         dst_path,
                         dirs_exist_ok=True,
                     )
-
-
-def post_qnap_build_wrap_binary_on_qpkg(config, args):
-    packages = LIBTELIO_CONFIG[config.target_os].get("packages", None)
-    if packages:
-        for _, bins in packages.items():
-            for _, bin in bins.items():
-                src_path = os.path.join(
-                    PROJECT_CONFIG.get_distribution_path(
-                        config.target_os, config.arch, "", config.debug
-                    ),
-                    bin,
-                )
-                dst_path = os.path.join(
-                    PROJECT_CONFIG.get_root_dir(),
-                    f"qnap/{QNAP_MAP[config.arch]}",
-                )
-                os.makedirs(dst_path, exist_ok=True)
-                if os.path.isfile(src_path):
-                    shutil.copy2(src_path, dst_path)
-        rutils.run_command_with_output(
-            [
-                "qbuild",
-                "--root",
-                os.path.join(PROJECT_CONFIG.get_root_dir(), "qnap/"),
-                "--build-dir",
-                PROJECT_CONFIG.get_distribution_path(
-                    config.target_os, config.arch, "", config.debug
-                ),
-            ]
-        )
 
 
 """
@@ -333,13 +297,6 @@ LIBTELIO_CONFIG = {
             "teliod": {"teliod": "teliod"},
             NAME: {f"lib{NAME}": f"lib{NAME}.so"},
         },
-    },
-    "qnap": {
-        "post_build": [post_qnap_build_wrap_binary_on_qpkg],
-        "packages": {
-            "teliod": {"teliod": "teliod"},
-        },
-        "build_args": ("--features", "qnap"),
     },
     "macos": {
         "packages": {
@@ -542,7 +499,6 @@ def exec_build(args):
         return
 
     if args.moose:
-        # Currently, moose is not supported on qnap
         if args.os in ["linux", "windows", "android"]:
             sys.path.append(f"{PROJECT_ROOT}/ci")
             moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP[args.arch])

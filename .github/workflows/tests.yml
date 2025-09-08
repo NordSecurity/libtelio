@@ -64,9 +64,6 @@ jobs:
       - run: cargo test --package=teliod -- --nocapture
         env:
           RUST_BACKTRACE: full
-      - run: cargo test --package=teliod --features=cgi -- --nocapture
-        env:
-          RUST_BACKTRACE: full
 
   test-build-version-replacement:
     strategy:
