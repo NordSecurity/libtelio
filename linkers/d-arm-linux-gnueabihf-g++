@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+AR=$(basename $0)
+AR=${AR#"d-"}
+ARGS=$@
+
+exec $AR $ARGS
