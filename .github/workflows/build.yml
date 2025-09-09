@@ -85,7 +85,7 @@ jobs:
             target_os: windows
     runs-on: ubuntu-22.04
     container: |-
-      ${{ matrix.target_os == 'linux' && 'ghcr.io/nordsecurity/build-linux-rust1.89.0:v6.3.0' ||
+      ${{ matrix.target_os == 'linux' && 'ghcr.io/nordsecurity/build-linux-rust1.89.0:v7.2.0' ||
           matrix.target_os == 'android' && 'ghcr.io/nordsecurity/build-android-rust1.89.0:v6.3.0' ||
           'ghcr.io/nordsecurity/build-windows-rust1.89.0:v6.3.0' }}
     steps:
