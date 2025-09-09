@@ -1,0 +1,1 @@
+Bump uniffi-generators to v0.28.3-4 to fix windows issue where GC might relocate callbacks, causing segfaults
