@@ -15,7 +15,7 @@ pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
 [dependencies]
 cfg-if = "1.0.0"
 ffi_helpers = "0.3.0"
-aws-lc-rs = { version = "1", features = ["bindgen"] }
+aws-lc-rs = { version = "=1.12.6", features = ["bindgen"] }
 # We need this specific version for libmoose
 zerofrom = "=0.1.5"
 
