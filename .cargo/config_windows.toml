@@ -1,0 +1,1 @@
+aws-lc-rs = { version = "=1.12.6", features = ["bindgen"] }

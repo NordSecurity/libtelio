@@ -6,12 +6,6 @@ rustdocflags = [
   "--html-after-content", "./rustdoc/footer.html",
 ]
 
-[target.x86_64-pc-windows-msvc.patch.crates-io]
-aws-lc-rs = { version = "=1.12.6", features = ["bindgen"] }
-
-[target.aarch64-pc-windows-msvc.patch.crates-io]
-aws-lc-rs = { version = "=1.12.6", features = ["bindgen"] }
-
 [target.'cfg(unix)']
 runner = './test_runner.sh'
 
