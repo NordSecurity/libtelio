@@ -104,6 +104,9 @@ fn main() -> Result<()> {
 
     verify_llt_secrets();
 
+    // Force static CRT for aws-lc-sys
+    println!("cargo:rustc-env=CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded");
+
     let target_os = env::var("CARGO_CFG_TARGET_OS")?;
 
     if target_os == "android" {
