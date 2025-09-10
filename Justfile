@@ -25,7 +25,7 @@ test:
 
 # Run clippy
 clippy package="" features="": _clippy-install
-    cargo clippy {{ if package == "" {"--lib"} else {"--package=" + package} }} {{ if features == "" {""} else {"--features=" + features} }} -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used
+    cargo clippy {{ if package == "" {"--lib"} else {"--package=" + package} }} {{ if features == "" {""} else {"--features=" + features} }} -- --deny warnings --allow unknown-lints -W clippy::expect_used -W clippy::panic -W clippy::unwrap_used -W clippy::indexing_slicing -W clippy::await_holding_lock -W clippy::large_futures
 
 # Run udeps
 udeps: _udeps-install

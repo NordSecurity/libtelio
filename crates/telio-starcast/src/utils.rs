@@ -163,7 +163,7 @@ pub(crate) mod checksum {
         const OK: () = assert!(N % 2 == 0, "N must be even");
     }
 
-    #[allow(unwrap_check, index_access_check, clippy::unwrap_used)]
+    #[allow(clippy::indexing_slicing, clippy::unwrap_used)]
     fn op_on_u16s<const N: usize>(mut sum: u32, data: [u8; N], oper: fn(u32, u16) -> u32) -> u32 {
         let () = AssertEven::<N>::OK;
         for i in 0..N / 2 {

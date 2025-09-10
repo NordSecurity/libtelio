@@ -345,7 +345,6 @@ impl Cli {
             features,
             {
                 let sender = sender.clone();
-                #[allow(unwrap_check)]
                 #[allow(clippy::unwrap_used)]
                 move |event: Box<DevEvent>| {
                     let ts = SystemTime::now();
@@ -570,7 +569,7 @@ impl Cli {
         res
     }
 
-    #[allow(index_access_check)]
+    #[allow(clippy::indexing_slicing)]
     fn exec_mesh(&mut self, cmd: MeshCmd) -> Vec<Resp> {
         let mut res = Vec::new();
         use MeshCmd::*;

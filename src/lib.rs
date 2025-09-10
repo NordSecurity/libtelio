@@ -61,7 +61,6 @@ pub use uniffi_libtelio::*;
     clippy::panic,
     clippy::unwrap_used,
     clippy::expect_used,
-    unwrap_check,
     clippy::empty_line_after_doc_comments
 )]
 mod uniffi_libtelio {

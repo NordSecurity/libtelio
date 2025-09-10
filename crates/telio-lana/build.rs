@@ -1,5 +1,5 @@
 use anyhow::Result;
-#[allow(unwrap_check)]
+#[allow(clippy::unwrap_used)]
 fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=build.rs");
     let target_os = std::env::var("CARGO_CFG_TARGET_OS")?;

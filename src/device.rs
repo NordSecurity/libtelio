@@ -487,7 +487,7 @@ struct Runtime {
 
 impl Device {
     // Incoming changes should fix
-    #[allow(unwrap_check)]
+    #[allow(clippy::unwrap_used)]
     pub fn new<F: EventCb>(
         features: Features,
         event_cb: F,

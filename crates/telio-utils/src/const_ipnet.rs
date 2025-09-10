@@ -27,7 +27,7 @@ impl ConstIpv4Net {
 impl From<ConstIpv4Net> for Ipv4Net {
     fn from(value: ConstIpv4Net) -> Self {
         // Allow unwrap since ConstIpv4Net is guaranteed to have the correct prefix_len
-        #[allow(clippy::unwrap_used, unwrap_check)]
+        #[allow(clippy::unwrap_used)]
         Ipv4Net::new(value.ip, value.prefix_len).unwrap()
     }
 }
@@ -35,7 +35,7 @@ impl From<ConstIpv4Net> for Ipv4Net {
 impl From<ConstIpv4Net> for IpNet {
     fn from(value: ConstIpv4Net) -> Self {
         // Allow unwrap since ConstIpv4Net is guaranteed to have the correct prefix_len
-        #[allow(clippy::unwrap_used, unwrap_check)]
+        #[allow(clippy::unwrap_used)]
         IpNet::V4(Ipv4Net::new(value.ip, value.prefix_len).unwrap())
     }
 }
@@ -63,7 +63,7 @@ impl ConstIpv6Net {
 impl From<ConstIpv6Net> for Ipv6Net {
     fn from(value: ConstIpv6Net) -> Self {
         // Allow unwrap since ConstIpv4Net is guaranteed to have the correct prefix_len
-        #[allow(clippy::unwrap_used, unwrap_check)]
+        #[allow(clippy::unwrap_used)]
         Ipv6Net::new(value.ip, value.prefix_len).unwrap()
     }
 }
@@ -71,7 +71,7 @@ impl From<ConstIpv6Net> for Ipv6Net {
 impl From<ConstIpv6Net> for IpNet {
     fn from(value: ConstIpv6Net) -> Self {
         // Allow unwrap since ConstIpv4Net is guaranteed to have the correct prefix_len
-        #[allow(clippy::unwrap_used, unwrap_check)]
+        #[allow(clippy::unwrap_used)]
         IpNet::V6(Ipv6Net::new(value.ip, value.prefix_len).unwrap())
     }
 }
