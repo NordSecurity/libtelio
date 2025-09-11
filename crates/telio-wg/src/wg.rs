@@ -855,6 +855,7 @@ impl State {
                         let new_rx = peer.rx_bytes.unwrap_or_default();
                         let new_tx = peer.tx_bytes.unwrap_or_default();
 
+                        telio_log_debug!("Updating time {:?} {}", peer.public_key, &new_rx);
                         s.update(new_rx, new_tx, now);
                     }
                     Err(e) => {
@@ -873,6 +874,11 @@ impl State {
                 }
             }
             peer.time_since_last_rx = self.time_since_last_rx(*pk);
+            telio_log_debug!(
+                "Time since last rx peer {}. time {:?}",
+                peer.public_key,
+                peer.time_since_last_rx
+            );
         }
         self.stats.retain(|pk, _| to.peers.contains_key(pk));
 
