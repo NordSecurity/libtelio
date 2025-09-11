@@ -20,8 +20,8 @@ nightly := "nightly-2025-03-26"
 rust_stable := "1.89.0"
 
 # Run all rust tests
-test:
-    cargo test --all --quiet
+test: _nextest-install
+    cargo nextest run --all --cargo-quiet
 
 # Run clippy
 clippy package="" features="": _clippy-install
@@ -93,7 +93,7 @@ format_markdown fix="false":
     if [[ {{fix}} == "true" ]]; then
         docker run -v $PWD:/workdir davidanson/markdownlint-cli2:v0.18.1 --fix
     else
-        docker run -v $PWD:/workdir davidanson/markdownlint-cli2:v0.18.1 
+        docker run -v $PWD:/workdir davidanson/markdownlint-cli2:v0.18.1
     fi
 
 diagram:
@@ -119,3 +119,6 @@ _rust-from-toolchain-file-install:
 
 _clippy-install:
     rustup component add clippy
+
+_nextest-install:
+    cargo install cargo-nextest
