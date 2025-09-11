@@ -18,6 +18,27 @@ jobs:
         env:
           RUST_BACKTRACE: full
 
+  test-linux-nextest:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install Protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
+      - name: Install latest nextest release
+        uses: taiki-e/install-action@nextest
+      - name: Test with latest nextest release
+        uses: actions-rs/cargo@v1
+        with:
+          command: nextest
+          args: run --all -- --nocapture
+      - name: Test with latest nextest release pretend_to_be_macos
+        uses: actions-rs/cargo@v1
+        with:
+          command: nextest
+          args: run --all --features pretend_to_be_macos -- --nocapture
+
   test-windows:
     runs-on: windows-2022
     steps:
