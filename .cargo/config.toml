@@ -19,7 +19,7 @@ linker = "linkers/d-ld"
 linker = "linkers/d-aarch64-linux-gnu-gcc"
 
 [target.armv7-unknown-linux-gnueabihf]
-linker = "linkers/d-arm-linux-gnueabihf-gcc"
+linker = "linkers/d-arm-linux-gnueabi-gcc"
 
 [target.arm-unknown-linux-gnueabi]
 linker = "linkers/d-arm-linux-gnueabi-gcc"
