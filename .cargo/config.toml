@@ -12,26 +12,17 @@ runner = './test_runner.sh'
 [net]
 git-fetch-with-cli = true
 
-[target.x86_64-unknown-linux-gnu]
-linker = "linkers/d-x86_64-linux-gnu-gcc"
-
 [target.aarch64-unknown-linux-gnu]
-linker = "linkers/d-aarch64-linux-gnu-gcc"
+linker = "linkers/d-ld"
 
 [target.aarch64-unknown-linux-musl]
 linker = "linkers/d-aarch64-linux-gnu-gcc"
 
 [target.armv7-unknown-linux-gnueabihf]
-linker = "linkers/d-arm-linux-gnueabihf-gcc"
+linker = "linkers/d-arm-linux-gnueabi-gcc"
 
 [target.arm-unknown-linux-gnueabi]
 linker = "linkers/d-arm-linux-gnueabi-gcc"
-
-[target.x86_64-pc-windows-gnu]
-linker = "x86_64-w64-mingw32-gcc"
-
-[target.i686-pc-windows-gnu]
-linker = "i686-w64-mingw32-gcc"
 
 [target.aarch64-linux-android]
 linker = "linkers/d-aarch64-linux-android21-clang"
