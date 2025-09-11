@@ -51,6 +51,7 @@ impl BytesAndTimestamps {
             self.rx_bytes = new_rx;
             self.rx_ts = Some(now);
             self.first_tx_after_rx = None;
+            telio_log_debug!("Time updated. New time {}", self.rx_bytes);
         }
 
         if new_tx > self.tx_bytes {
