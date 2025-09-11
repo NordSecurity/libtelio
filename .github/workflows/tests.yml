@@ -32,12 +32,12 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: nextest
-          args: run --all -- --nocapture
+          args: run --all --nocapture
       - name: Test with latest nextest release pretend_to_be_macos
         uses: actions-rs/cargo@v1
         with:
           command: nextest
-          args: run --all --features pretend_to_be_macos -- --nocapture
+          args: run --all --features pretend_to_be_macos --nocapture
 
   test-windows:
     runs-on: windows-2022
