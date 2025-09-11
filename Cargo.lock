@@ -2805,7 +2805,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "2.2.3"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v2.2.3#c362264f78d5fa5635fc318cc7bbb49740239e10"
+source = "git+https://github.com/NordSecurity/neptun.git?tag=v2.2.4#41c6bfc088ffd45623abf9642aa90e96cb839bcf"
 dependencies = [
  "aead",
  "base64 0.13.1",
@@ -2823,7 +2823,7 @@ dependencies = [
  "parking_lot",
  "rand_core 0.6.4",
  "ring",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "thiserror 1.0.69",
  "tracing",
  "untrusted 0.9.0",
