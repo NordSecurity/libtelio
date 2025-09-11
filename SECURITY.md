@@ -2,11 +2,11 @@
 
 ## Reporting a security vulnerability
 
-See https://hackerone.com/nordsecurity?type=team for how to report a vulnerability.
+See <https://hackerone.com/nordsecurity?type=team> for how to report a vulnerability.
 Findings apply only to the Nord Security owned repositories.
 Forks are not included.
 
-# Secrets stored in the repo
+## Secrets stored in the repo
 
 All the keys/passwords stored in this repo are used only for transient vms or docker
 containers created a fresh only for the purpose of using them in tests. None of

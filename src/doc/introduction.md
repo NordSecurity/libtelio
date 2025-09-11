@@ -10,10 +10,12 @@ It supports a number of features, including:
 
 ## Quick Links
 
+<!-- markdownlint-disable-next-line MD052 -->
 - Telio integration [documentation][_telio_integration_documentation]
 
 ## Using the libtelio API
 
+<!-- markdownlint-disable-next-line MD052 -->
 See [this documentation module][_telio_integration_documentation] for notes on how to integrate Libtelio into an application using one of the different supported languages.
 
 ### Initializing the telio device

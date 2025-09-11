@@ -1,12 +1,15 @@
+<!-- markdownlint-disable MD033 -->
+
 # Documentation For Integrating Telio Into Other Languages
 
 This document is mainly intended for NordVPN's app developers.
 
 ## Integration feature list
 
-Note: the examples here are not using proper error handling for the sake of brevity. 
+Note: the examples here are not using proper error handling for the sake of brevity.
 
 ### Log Callback
+
 App sets a global logger with log level and log callback. Reports logs to needed systems.
 
 In version 4.x and earlier, the log level and callback was set on the telio instance, but since version 5.0, it's a separate call.
@@ -79,7 +82,6 @@ setGlobalLogger(TelioLogLevel.Debug, Logger)
 ```
 
 </multi-code>
- 
 
 ### Create / Destroy
 
@@ -134,7 +136,6 @@ telio.shutdown()!!
 ```
 
 </multi-code>
-
 
 ### Feature config
 
@@ -226,8 +227,8 @@ telio.shutdown()!!
 
 </multi-code>
 
-
 ### Event Callback
+
 App passes event callback. Events can be one of three types, `relay`, `node`, and `error` that contain `Server`, `TelioNode` and `Error`, respectively. For more information about the fields they contain, have a look at the strcuts/classes in your bindings. For rust code, those structs are [`Server`](telio_model::config::Server), [`Node`](telio_model::mesh::Node) and [`Error`](telio_model::event::Error).
 
 Relay events are reported every time the relay configuration changes or we start connecting to a different relay server, node events are reported by any change to any property of the node (be it a VPN node or a mesh node), and error events are reported when a panic occurs inside libtelio.
@@ -306,13 +307,13 @@ new Telio(..., eventHandler)!!
 ```
 
 </multi-code>
- 
 
 ### Critical Recovery
+
 If critical error event is received, Telio device should be destroyed with `telio.shutdown_hard` and recreated with `Telio::new`.
 
-
 ### Start / Stop Default Adapter
+
 App starts and stops Telio device instance with default adapter.
 
 <multi-code-select></multi-code-select>
@@ -421,6 +422,7 @@ telio.shutdown()!!
 </multi-code>
 
 ### VPN Client
+
 App connects to/disconnects from VPN node.
 
 <multi-code-select></multi-code-select>
@@ -571,8 +573,8 @@ Exclude server_endpoint from tunnel interface, bind it to default interface, or 
 
 DNS servers set to Nord DNS servers or CyberSec servers (if needed via Telio Magic DNS forwarding).
 
-
 ### Meshnet Client
+
 App turns on and off meshnet by passing Meshnet Config.
 
 <multi-code-select></multi-code-select>
@@ -713,12 +715,11 @@ DNS servers set to system defaults ( if needed via Telio Magic DNS forwarding).
 
 Exclude all `derp_server.ipv4` from tunnel interface, bind it to default interface or use system protection methods.
 
-
 ### Magic DNS
 
 Windows and Linux: App modifies native system.
 
-Apple and Android: 
+Apple and Android:
 App enables/disables Telio Magic DNS proxy, forwarding desired DNS servers.
 
 <multi-code-select></multi-code-select>
@@ -831,10 +832,10 @@ System network configuration:
 
 Set real DNS server to `100.64.0.2`
 
-If VPN node is enabled, force forward DNS servers (e.g. `1.1.1.1`) to go through tunnel. (Otherwise Nord DNS and CyberSec servers will not work!!!) 
-
+If VPN node is enabled, force forward DNS servers (e.g. `1.1.1.1`) to go through tunnel. (Otherwise Nord DNS and CyberSec servers will not work!!!)
 
 ### Meshnet + VPN
+
 App enables meshnet, and connects to VPN Node.
 
 System network configuration:
@@ -849,8 +850,8 @@ Exclude all derp_server.ipv4 from tunnel interface, bind it to default interface
 
 DNS servers set to Nord DNS servers or CyberSec servers (if needed via Telio Magic DNS forwarding).
 
-
 ### Meshnet + Exit Node
+
 App with enabled meshnet, connects to one of mesh map peer’s.
 
 <multi-code-select></multi-code-select>
@@ -969,6 +970,6 @@ Exclude all derp_server.ipv4 from tunnel interface, bind it to default interface
 
 DNS servers set to default OS servers (if needed via Telio Magic DNS forwarding).
 
-
 ### Error handling
+
 In an event, when telio crashes, and no event with panic message arrive, there’s a call `telio.get_last_error()` which returns last error message, that happened inside telio.

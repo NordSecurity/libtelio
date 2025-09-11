@@ -52,7 +52,7 @@ deny: _deny-install
     cargo deny check
 
 # Run rust pre-push checks
-prepush: test clippy udeps unused deny python_checks
+prepush: test clippy udeps unused deny python_checks format_markdown
 
 python_checks: black pylint isort mypy autoflake
 
@@ -86,6 +86,15 @@ mypy:
 [working-directory: 'nat-lab']
 autoflake:
     uv run --isolated autoflake --quiet --check .
+
+format_markdown fix="false":
+    #!/usr/bin/env bash
+    set -euxo pipefail
+    if [[ {{fix}} == "true" ]]; then
+        docker run -v $PWD:/workdir davidanson/markdownlint-cli2:v0.18.1 --fix
+    else
+        docker run -v $PWD:/workdir davidanson/markdownlint-cli2:v0.18.1 
+    fi
 
 diagram:
     uv run --isolated --with pyyaml==6.0.2 nat-lab/utils/generate_network_diagram.py nat-lab/docker-compose.yml nat-lab/network.md

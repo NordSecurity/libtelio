@@ -4,12 +4,14 @@
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/NordSecurity/libtelio/badge)](https://securityscorecards.dev/viewer/?uri=github.com/NordSecurity/libtelio)
 
 ## Overview
+
 Libtelio (pronounced 'lɪbtælɪɔ') is a client-side library for creating encrypted networks (called Meshnet) on the user's nodes.
 It supports a number of features, including:
- - adapting different Wireguard implementations to secure the connections,
- - exit nodes which might be either VPN servers or some nodes in the Meshnet,
- - "DNS" which allows name resolution in Meshnets for devices which does not support lookup tables,
- - adjustable firewall.
+
+- adapting different Wireguard implementations to secure the connections,
+- exit nodes which might be either VPN servers or some nodes in the Meshnet,
+- "DNS" which allows name resolution in Meshnets for devices which does not support lookup tables,
+- adjustable firewall.
 
 ## Getting started
 
@@ -23,17 +25,22 @@ To go through the short TCLI tutorial you need also [docker](https://docs.docker
 ### Build
 
 You can build the `libtelio` library using standard `cargo build` command. Ensure to set the `BYPASS_LLT_SECRETS` environment variable to skip the LLT scan:
-```shell
+
+```bash
 BYPASS_LLT_SECRETS=1 cargo build
 ```
 
 #### Linux toolchain
+
 1. Verify that GCC (GNU Compiler Collection) has been installed:
-```shell
+
+```bash
 gcc --version
 ```
+
 Otherwise run following command to install it:
-```shell
+
+```bash
 sudo apt update
 sudo apt install gcc
 ```
@@ -41,32 +48,42 @@ sudo apt install gcc
 #### Windows msvc toolchain
 
 To build `libtelio` on Windows with `x86_64-pc-windows-msvc` toolchain you need to install:
+
 1. Visual Studio 2019/2022
 2. Additional Visual Studio components:
 a. Desktop development with C++
 b. Python 3 64-bit
 c. C++ Clang tools for Windows
-3. TDM-GCC 64-bit (https://jmeubank.github.io/tdm-gcc/download/)
+3. TDM-GCC 64-bit (<https://jmeubank.github.io/tdm-gcc/download/>)
 4. Go 1.19
 
 Before running `cargo build` you need to set msvc environment. Examples for cmd and powershell in case of Visual Studio 2019 Community:
+
 1. In cmd.exe run:
-```shell
+
+```bash
 call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat" x64
 ```
+
+<!-- markdownlint-disable-next-line MD029 -->
 2. In powershell run:
-```shell
+
+```bash
 Import-Module "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
 Enter-VsDevShell -VsInstallPath "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community" -SkipAutomaticLocation
 ```
 
 #### Protocol buffers compiler
+
 1. Verify that protoc (Protocol buffers compiler has been installed in correct version (at least `3.21.12`):
-```shell
+
+```bash
 protoc --version
 ```
+
 Otherwise, run the following command to install it (or other appropriate for your system):
-```shell
+
+```bash
 sudo apt update
 sudo apt install protobuf-compiler-grpc
 ```
@@ -77,19 +94,23 @@ sudo apt install protobuf-compiler-grpc
 Let's see how to use it to create a simple mesh connection between two docker containers.
 
 First of all, build `tcli` utility:
-```
+
+```bash
 cargo build -p tcli
 ```
 
 You will need a lightweight Linux docker image with the some networking utilities,
 which are missing from the basic Ubuntu image, so let's create a new one.
 Make a `docker` directory in `tcli-test`:
-```shell
+
+```bash
 mkdir -p tcli-test/docker
 cd tcli-test/docker
 ```
+
 and put there the following simple Dockerfile:
-```
+
+```Dockerfile
 FROM ubuntu
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
@@ -97,25 +118,33 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
 ```
 
 Then build it and tag it as `tcli-test`, running the following command from the `docker` directory:
-```
+
+```bash
 docker build -t tcli-test .
 ```
+
 When the image is built, you need to run two copies of it, one for `t1`:
-```
+
+```bash
 docker run -itd -v <path to libtelio top-level-directory>:/hostfs --name=t1 --hostname=t1 --privileged tcli-test bash
 ```
+
 and a second one for `t2`:
-```
+
+```bash
 docker run -itd -v <path to libtelio top-level-directory>:/hostfs --name=t2 --hostname=t2 --privileged tcli-test bash
 ```
 
 You need to prepare four terminals. In two of them (we will refer to them as `T1a` and `T1b`)
 run the following command to connect to the container `t1`:
-```
+
+```bash
 docker exec -it t1 bash
 ```
+
 and then run an analogous command for `t2` in another two (`T2a` and `T2b`):
-```
+
+```bash
 docker exec -it t2 bash
 ```
 
@@ -124,34 +153,41 @@ In the following steps, you will need a token for your NordVPN account
 which you can generate from `https://my.nordaccount.com/dashboard/nordvpn/`.
 
 In terminals `T1a` and `T2a` run `tcli`:
-```
+
+```bash
 hostfs/target/debug/tcli
 ```
+
 and in both of the opened `tcli`s:
-```
+
+```bash
 login token <NORDVPN_TOKEN>
 mesh on <NAME>
 ```
+
 where `<NORDVPN_TOKEN>` is the token generated for your NordVPN account and
 `<NAME>` is `t1` for `T1a` and `t2` for `T2a`.
 
 There will be a large JSON config printed - the IP address can be found in
 the list `"ip_addresses"`:
-<pre>
+
+```bash
 >>> mesh on t1
 - registered new device.
 - got config:
 {"identifier":"...","public_key":"...","hostname":"...","os":"linux","os_version":"linux tcli",<span style="color:red">"ip_addresses":["..."]</span>,"traffic_routing_supported":false,"endpoints":["..."],...
-</pre>
+```
 
 When you find it set it in your bash terminals
 (set the one found in config in `T1a` in `T1b` and the one from `T2a` in `T2b`):
-```
+
+```bash
 ip addr add <IP_ADDRESS>/10 dev <NAME>
 ip -6 addr add <IPv6_ADDRESS>/64 dev <NAME>
 ip link set up dev <NAME>
 ip link set dev <NAME> mtu 1420
 ```
+
 Note: for meshnet to work, you do not need both IPv4 and IPv6 addresses to be set. Only one of them should be enough.
 
 Currently, there is one more issue to overcome: because node `t1` was connected
@@ -161,17 +197,19 @@ Run `mesh on t1` in `T1a` to fix it.
 The containers should be now connected by the mesh, so to try the connection,
 run `ping` in `T1b` and `tcpdump` in `T2b` and see how the packages are flowing.
 
-##### Running meshnet on macOS
+#### Running meshnet on macOS
 
 To run tcli client on native macOS use utun name for interface name instead of t1/t2.
 Use unique index for utun since there might be some already present.
-```sh
+
+```bash
 >>> login token <NORDVPN_TOKEN>
 >>> mesh on utun10
 ```
 
 Find meshnet ip address from "ip_addresses" field the same as in linux case. Then
-```sh
+
+```bash
 ifconfig utun10 add <IP_ADDRESS>/10 <IP_ADDRESS>
 ifconfig inet6 utun10 add <IPv6_ADDRESS> prefixlen 64
 ifconfig utun10 mtu 1420
@@ -180,7 +218,8 @@ route add -inet6 fd74:656c:696f::/64 <IPv6_ADDRESS>
 ```
 
 Or simply run:
-```sh
+
+```bash
 >>> mesh set-ip
 ```
 
@@ -193,24 +232,25 @@ Let's go through the most important ones.
 
 The first of them is the expected function `::new`.
 It takes three arguments, let's describe them briefly:
- - `features` - tells Libtelio which of the additional features should be enabled - the
+
+- `features` - tells Libtelio which of the additional features should be enabled - the
  description of them is out of the scope of this README
- - `event_cb` - event handler, takes a `Box<Event>`, which will be called by Libtelio to handle
+- `event_cb` - event handler, takes a `Box<Event>`, which will be called by Libtelio to handle
  events of three types:
-   - `Error` - an error occurs, especially urgent are Critical error events, which means
+  - `Error` - an error occurs, especially urgent are Critical error events, which means
    that the library is unable to continue running and it requires a call to `hard_reset` method
-   - `Relay` - when the relay (i.e. Derp) server configuration is changed, contains
+  - `Relay` - when the relay (i.e. Derp) server configuration is changed, contains
    a JSON with a new one
-   - `Node` - appears when the Meshnet node's configuration is changed, it contains
+  - `Node` - appears when the Meshnet node's configuration is changed, it contains
    a JSON with a new one
- - `protect` - callback for excluding connections from VPN tunnel (currently used only for android).
+- `protect` - callback for excluding connections from VPN tunnel (currently used only for android).
 
 `telio::Device` implements `Drop` trait, so we don't need to worry
 about deinitialization in the end.
 Let's look at an example initialization of `telio::Device` with no additional
 features, handling only `Node` events and not using `protect` callback:
 
-```
+```rust
 let (sender, receiver) = mpsc::channel::<Box<Event>>();
 
 let mut device = telio::device::Device::new(
@@ -242,7 +282,8 @@ loop {
 Once the device is initialized we can start it, so it will create a new network
 interface in your OS. This might be done using `start` method.
 We need to provide an instance of the `DeviceConfig` structure:
-```
+
+```rust
 pub struct DeviceConfig {
     pub private_key: SecretKey,
     pub adapter: AdapterType,
@@ -252,14 +293,16 @@ pub struct DeviceConfig {
 ```
 
 Let's discuss its fields shortly:
- - `private_key` a `telio::crypto::SecretKey` instance containing a 256-bit key,
- - `adapter` indicating which Wireguard implementation we want to use,
- - `name` is the name of the network interface, when omitted, Telio uses the default one,
- - `tun` a file descriptor of the already opened tunnel, if it's not provided Telio will open a new one.
+
+- `private_key` a `telio::crypto::SecretKey` instance containing a 256-bit key,
+- `adapter` indicating which Wireguard implementation we want to use,
+- `name` is the name of the network interface, when omitted, Telio uses the default one,
+- `tun` a file descriptor of the already opened tunnel, if it's not provided Telio will open a new one.
 
 The API provides a default config which is almost sufficient for simple cases,
 the only need that needs to be done is the generation of a private key:
-```
+
+```rust
 let config = DeviceConfig {
     private_key: SecretKey::gen(),
     ..Default::default()
@@ -288,7 +331,8 @@ using the same bearer token.
 
 After the device is started and the JSON config downloaded, we can
 deserialize it and finally call `set_config`:
-```
+
+```rust
 let config: Config = serde_json::from_str(&serialized_config).unwrap();
 self.telio.set_config(&Some(config)).unwrap();
 ```
@@ -310,7 +354,7 @@ you can extract the `telio::tcli::nord::find_server` method and simplify
 it a bit to just return a pair of `public_key` and `endpoint`.
 When you have it, setting up the VPN connection is fairly simple:
 
-```
+```rust
 let (public_key, endpoint) = find_server();
 let exit_node = ExitNode {
     identifier: "fa5bbe9b-338b-4bd2-8c97-166ceee65790".to_owned(),
@@ -331,7 +375,8 @@ For now, unit tests and integration tests are supported on Linux. All tests run 
 merge request. Code can't be merged unless builds and tests pass.
 
 Unit tests ensure internal components are working fine. Unit tests *probably* also pass on MacOS.
-```
+
+```bash
 cargo test
 ```
 

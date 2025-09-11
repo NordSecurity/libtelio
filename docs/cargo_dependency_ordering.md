@@ -23,7 +23,7 @@ In each of the sections mentioned in the previous part, the dependencies should 
 
 Each group of dependencies after following the above points should have its dependencies ordered in alphabetical order.
 
-# Example
+## Example
 
 ```toml
 [features]
