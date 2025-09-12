@@ -96,8 +96,8 @@ class AuthenticationInterceptor(grpc.aio.ServerInterceptor):
 
 def generate_self_signed_cert(
     common_name: str,
-    dns_names: List[str],
-    ip_addrs: List[str],
+    dns_names: list[str],
+    ip_addrs: list[str],
 ):
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=1024)
 
