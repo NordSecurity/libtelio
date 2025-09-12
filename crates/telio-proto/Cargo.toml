@@ -7,7 +7,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [features]
-enable_ens = ["rustls/aws_lc_rs"]#["tokio-rustls/"]
+enable_ens = ["rustls/aws_lc_rs", "dep:aws-lc-rs"]#["tokio-rustls/"]
 
 [dependencies]
 blake3 = "1.8.2"
@@ -17,6 +17,7 @@ hyper = { version = "1.6.0", features = ["full"] }
 prost = "0.14.1"
 protobuf = "3.7.2"
 rustls = { version = "0.23", default-features = false, features = ["std"] }
+aws-lc-rs = { version = "=1.13.3", features = ["bindgen"], optional = true }
 tokio-stream = "0.1.17"
 tokio-rustls = { version = "0.26.2", default-features = false }
 tonic = { version = "0.14.0" }
