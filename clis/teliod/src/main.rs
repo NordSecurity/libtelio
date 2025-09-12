@@ -2,23 +2,8 @@
 
 use clap::Parser;
 use daemonize::{Daemonize, Outcome};
-use serde::{Deserialize, Serialize};
-use serde_json::error::Error as SerdeJsonError;
-use std::{
-    fs::OpenOptions,
-    net::{IpAddr, SocketAddr},
-};
-use telio::{
-    crypto::PublicKey,
-    device::Error as DeviceError,
-    telio_model::mesh::{Node, NodeState},
-};
-use thiserror::Error as ThisError;
-use tokio::{
-    task::JoinError,
-    time::{timeout, Duration},
-};
-use tracing_appender::rolling::InitError;
+use std::fs::OpenOptions;
+use tokio::time::{timeout, Duration};
 
 mod command_listener;
 mod comms;
@@ -29,143 +14,14 @@ mod interface;
 mod logging;
 
 use crate::{
-    command_listener::CommandResponse, comms::DaemonSocket, config::TeliodDaemonConfig,
-    core_api::Error as ApiError,
+    command_listener::{Cmd, CommandResponse, TIMEOUT_SEC},
+    comms::DaemonSocket,
+    config::TeliodDaemonConfig,
+    daemon::TeliodError,
 };
-
-const TIMEOUT_SEC: u64 = 1;
 
 /// Umask allows only rw-rw-r--
 const DEFAULT_UMASK: u32 = 0o113;
-
-#[derive(Parser, Debug, PartialEq)]
-#[clap()]
-#[derive(Serialize, Deserialize)]
-pub enum ClientCmd {
-    #[clap(about = "Retrieve the status report")]
-    GetStatus,
-    #[clap(about = "Query if daemon is running")]
-    IsAlive,
-    #[clap(about = "Stop daemon execution")]
-    QuitDaemon,
-}
-
-#[derive(Parser, Debug)]
-#[clap()]
-enum Cmd {
-    #[clap(about = "Runs the teliod event loop")]
-    Start(DaemonOpts),
-    #[clap(flatten)]
-    Client(ClientCmd),
-}
-
-#[derive(Parser, Debug)]
-struct DaemonOpts {
-    /// Path to the config file
-    config_path: String,
-
-    /// Do not detach the teliod process from the terminal
-    #[clap(long = "no-detach")]
-    no_detach: bool,
-
-    /// Specifies the daemons working directory.
-    ///
-    /// Defaults to "/".
-    /// Ignored with no_detach flag.
-    #[clap(long = "working-directory", default_value = "/")]
-    working_directory: String,
-
-    /// Redirect standard output to the specified file
-    ///
-    /// Defaults to "/var/log/teliod.log".
-    /// Ignored with no-detach flag.
-    #[clap(long = "stdout-path", default_value = "/var/log/teliod.log")]
-    stdout_path: String,
-}
-
-#[derive(Debug, ThisError)]
-pub enum TeliodError {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error("Invalid command received: {0}")]
-    InvalidCommand(String),
-    #[error("Invalid response received: {0}")]
-    InvalidResponse(String),
-    #[error("Client failed to receive response in {TIMEOUT_SEC}s")]
-    ClientTimeoutError,
-    #[error("Broken signal stream")]
-    BrokenSignalStream,
-    #[error(transparent)]
-    TelioTaskError(#[from] JoinError),
-    #[error(transparent)]
-    ParsingError(#[from] SerdeJsonError),
-    #[error("Command failed to execute: {0:?}")]
-    CommandFailed(ClientCmd),
-    #[error("Failed executing system command: {0:?}")]
-    SystemCommandFailed(String),
-    #[error("Daemon is not running")]
-    DaemonIsNotRunning,
-    #[error("Daemon is running")]
-    DaemonIsRunning,
-    #[error(transparent)]
-    CoreApiError(#[from] ApiError),
-    #[error(transparent)]
-    DeviceError(#[from] DeviceError),
-    #[error("Invalid config option {key}: {msg} (value '{value}')")]
-    InvalidConfigOption {
-        key: String,
-        msg: String,
-        value: String,
-    },
-    #[error(transparent)]
-    LogAppenderError(#[from] InitError),
-    #[error(transparent)]
-    DaemonizeError(#[from] daemonize::Error),
-    #[error("Could not configure IP rules")]
-    IpRule,
-    #[error("Could not configure IP routing")]
-    IpRoute,
-    #[error("Endpoint has no PublicKey")]
-    EndpointNoPublicKey,
-}
-
-/// Libtelio and VPN status report
-#[derive(Debug, Serialize, Deserialize, PartialEq, Default, Clone)]
-pub struct TelioStatusReport {
-    /// State of telio runner
-    pub telio_is_running: bool,
-    /// Assigned IP address
-    pub ip_address: Option<IpAddr>,
-    /// VPN server node
-    pub exit_node: Option<ExitNodeStatus>,
-}
-
-/// Description of the exit Node
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ExitNodeStatus {
-    /// An identifier for a node
-    pub identifier: String,
-    /// The public key of the exit node
-    pub public_key: PublicKey,
-    /// Hostname of the node
-    pub hostname: Option<String>,
-    /// Socket address of the Exit Node
-    pub endpoint: Option<SocketAddr>,
-    /// State of the node (connecting, connected, or disconnected)
-    pub state: NodeState,
-}
-
-impl ExitNodeStatus {
-    fn from_node(value: &Node, hostname: Option<String>) -> Self {
-        Self {
-            identifier: value.identifier.to_owned(),
-            public_key: value.public_key,
-            state: value.state,
-            endpoint: value.endpoint,
-            hostname: hostname.or(value.hostname.to_owned()),
-        }
-    }
-}
 
 fn main() -> Result<(), TeliodError> {
     let mut cmd = Cmd::parse();
