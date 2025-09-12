@@ -12,8 +12,6 @@ test_utils = [] # For use in benchmarks to avoid duplication of the 'setup' code
 [dependencies]
 enum-map = "2.7.3"
 smallvec = "1.15.1"
-hashlink.workspace = true
-if-addrs.workspace = true
 ipnet.workspace = true
 tracing.workspace = true
 mockall = { workspace = true, optional = true }
@@ -30,9 +28,6 @@ telio-network-monitors.workspace = true
 criterion = "0.6.0"
 
 mockall.workspace = true
-proptest.workspace = true
-proptest-derive.workspace = true
-rand.workspace = true
 sn_fake_clock.workspace = true
 
 telio-utils = {workspace = true, features = ["sn_fake_clock"] }
