@@ -4762,7 +4762,6 @@ version = "6.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "aws-lc-rs",
  "base64 0.22.1",
  "cfg-if",
  "crypto_box",
@@ -5043,6 +5042,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "aws-lc-rs",
  "base64 0.22.1",
  "blake3",
  "bytes",
