@@ -5,8 +5,10 @@ exec /usr/bin/qemu-system-x86_64 \
     -display none \
     -m 256M \
     -smp 2 \
-    -nic "user,model=virtio,restrict=on,ipv6=off,net=192.168.1.0/24,host=192.168.1.2" \
-    -nic "user,model=virtio,net=172.16.0.0/24,hostfwd=tcp::30022-:22,hostfwd=tcp::30080-:80,hostfwd=tcp::30443-:443" \
+    -netdev tap,id=hostnet0,ifname=qemu1,script=no,downscript=no \
+    -netdev tap,id=hostnet1,ifname=qemu0,script=no,downscript=no \
+    -device virtio-net-pci,romfile=,netdev=hostnet0,mac=52:54:9B:96:1F:00,id=net0 \
+    -device virtio-net-pci,romfile=,netdev=hostnet1,mac=52:54:9B:96:1F:01,id=net1 \
     -chardev socket,id=chr0,path=/tmp/qemu-console.sock,mux=on,signal=off,server=on,wait=off \
     -serial chardev:chr0 \
     -monitor unix:/tmp/qemu-monitor.sock,server,nowait \

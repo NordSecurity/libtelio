@@ -30,14 +30,13 @@ RUN ln -s /opt/bin/openwrt/10-usbmount-initsh.sh    /usr/local/share/vmconfig/vm
     ln -s /opt/bin/openwrt/20-firewall.sh           /usr/local/share/vmconfig/vm.d/20-firewall.sh && \
     ln -s /opt/bin/openwrt/30-wait-for-network.sh   /usr/local/share/vmconfig/vm.d/30-wait-for-network.sh && \
     ln -s /opt/bin/openwrt/40-dns.sh                /usr/local/share/vmconfig/vm.d/40-dns.sh && \
+    ln -s /opt/bin/openwrt/50-set-ips.sh            /usr/local/share/vmconfig/vm.d/50-set-ips.sh && \
     ln -s /opt/bin/openwrt/99-install-ipks.sh       /usr/local/share/vmconfig/vm.d/99-install-ipks.sh && \
     ln -s /opt/bin/openwrt/serialize-vm-config.sh   /usr/local/bin/serialize-vm-config.sh && \
     ln -s /opt/bin/openwrt/send-config-to-vm.sh     /usr/local/bin/send-config-to-vm.sh && \
     ln -s /opt/bin/openwrt/run-vm.sh                /usr/local/bin/run-vm.sh && \
-    ln -s /opt/bin/openwrt/entrypoint.sh            /usr/local/bin/entrypoint.sh
-
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD \
-  ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=3 -p 30022 root@127.0.0.1 'exit' || exit 1
+    ln -s /opt/bin/openwrt/entrypoint.sh            /usr/local/bin/entrypoint.sh && \
+    ln -s /opt/bin/openwrt/container_net_setup.sh   /usr/local/bin/container_net_setup.sh
 
 WORKDIR /tmp
 
