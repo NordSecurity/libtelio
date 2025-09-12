@@ -8,7 +8,7 @@ import ssl
 import subprocess
 import urllib.error
 import urllib.request
-from config import DERP_PRIMARY, LAN_ADDR_MAP, CORE_API_URL, CORE_API_CREDENTIALS
+from config import DERP_PRIMARY, LAN_ADDR_MAP, CORE_API_IP, CORE_API_CREDENTIALS
 from contextlib import AsyncExitStack
 from helpers import SetupParameters
 from http import HTTPStatus
@@ -271,17 +271,21 @@ async def reset_service_credentials_cache():
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
-
     credentials = (
         f"{CORE_API_CREDENTIALS['username']}:{CORE_API_CREDENTIALS['password']}"
     )
     encoded_credentials = base64.b64encode(credentials.encode()).decode()
-    headers = {"Authorization": f"Basic {encoded_credentials}"}
-
+    headers = {
+        "Authorization": f"Basic {encoded_credentials}",
+        "Content-Type": "application/json",
+        "Content-Length": "0",
+    }
     request = urllib.request.Request(
-        f"{CORE_API_URL}/test/reset-credentials", method="POST", headers=headers
+        f"https://{CORE_API_IP}/test/reset-credentials",
+        data=b"",
+        method="POST",
+        headers=headers,
     )
-
     try:
         with urllib.request.urlopen(request, context=ssl_context) as response:
             if response.status == HTTPStatus.OK:
@@ -295,8 +299,10 @@ async def reset_service_credentials_cache():
         log.warning(
             "Failed to reset service credentials cache: HTTP %s - %s", e.code, e.reason
         )
+        raise
     except Exception as e:  # pylint: disable=broad-exception-caught
         log.warning("Error resetting service credentials cache: %s", e)
+        raise
 
 
 PRETEST_CLEANUPS = [
