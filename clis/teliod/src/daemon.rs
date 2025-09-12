@@ -2,12 +2,18 @@ use futures::pin_mut;
 use futures::stream::StreamExt;
 use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use nix::sys::signal::Signal;
+use serde::{Deserialize, Serialize};
+use serde_json::error::Error as SerdeJsonError;
 use signal_hook_tokio::Signals;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use telio::telio_model::mesh::ExitNode;
-use tokio::{sync::mpsc, sync::oneshot, time::Duration};
+use telio::crypto::PublicKey;
+use telio::telio_model::mesh::{ExitNode, Node};
+use thiserror::Error as ThisError;
+use tokio::task::JoinError;
+use tokio::{sync::mpsc, time::Duration};
 use tracing::{debug, error, info, trace, warn};
+use tracing_appender::rolling::InitError;
 
 use telio::telio_utils::select;
 #[cfg(target_os = "linux")]
@@ -20,27 +26,100 @@ use telio::{
     telio_model::mesh::NodeState,
 };
 
+use crate::command_listener::{ClientCmd, TelioTaskCmd, TIMEOUT_SEC};
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
     config::{Endpoint, TeliodDaemonConfig, VpnConfig, LOCAL_IP},
     core_api::{
-        DEFAULT_WIREGUARD_PORT,
         get_countries_with_exp_backoff, get_recommended_servers_with_exp_backoff,
-        request_nordlynx_key,
+        request_nordlynx_key, Error as ApiError, DEFAULT_WIREGUARD_PORT,
     },
     interface::ConfigureInterface,
-    ClientCmd, ExitNodeStatus, TelioStatusReport, TeliodError,
 };
 
-#[derive(Debug)]
-pub enum TelioTaskCmd {
-    // Get telio status
-    GetStatus(oneshot::Sender<TelioStatusReport>),
-    // Connect to exit node with endpoint and optional hostname
-    ConnectToExitNode(Endpoint),
-    // Break the receive loop to quit the daemon and exit gracefully
-    Quit,
+#[derive(Debug, ThisError)]
+pub enum TeliodError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("Invalid command received: {0}")]
+    InvalidCommand(String),
+    #[error("Invalid response received: {0}")]
+    InvalidResponse(String),
+    #[error("Client failed to receive response in {TIMEOUT_SEC}s")]
+    ClientTimeoutError,
+    #[error("Broken signal stream")]
+    BrokenSignalStream,
+    #[error(transparent)]
+    TelioTaskError(#[from] JoinError),
+    #[error(transparent)]
+    ParsingError(#[from] SerdeJsonError),
+    #[error("Command failed to execute: {0:?}")]
+    CommandFailed(ClientCmd),
+    #[error("Failed executing system command: {0:?}")]
+    SystemCommandFailed(String),
+    #[error("Daemon is not running")]
+    DaemonIsNotRunning,
+    #[error("Daemon is running")]
+    DaemonIsRunning,
+    #[error(transparent)]
+    CoreApiError(#[from] ApiError),
+    #[error(transparent)]
+    DeviceError(#[from] DeviceError),
+    #[error("Invalid config option {key}: {msg} (value '{value}')")]
+    InvalidConfigOption {
+        key: String,
+        msg: String,
+        value: String,
+    },
+    #[error(transparent)]
+    LogAppenderError(#[from] InitError),
+    #[error(transparent)]
+    DaemonizeError(#[from] daemonize::Error),
+    #[error("Could not configure IP rules")]
+    IpRule,
+    #[error("Could not configure IP routing")]
+    IpRoute,
+    #[error("Endpoint has no PublicKey")]
+    EndpointNoPublicKey,
+}
+
+/// Libtelio and VPN status report
+#[derive(Debug, Serialize, Deserialize, PartialEq, Default, Clone)]
+pub struct TelioStatusReport {
+    /// State of telio runner
+    pub telio_is_running: bool,
+    /// Assigned IP address
+    pub ip_address: Option<IpAddr>,
+    /// VPN server node
+    pub exit_node: Option<ExitNodeStatus>,
+}
+
+/// Description of the exit Node
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ExitNodeStatus {
+    /// An identifier for a node
+    pub identifier: String,
+    /// The public key of the exit node
+    pub public_key: PublicKey,
+    /// Hostname of the node
+    pub hostname: Option<String>,
+    /// Socket address of the Exit Node
+    pub endpoint: Option<SocketAddr>,
+    /// State of the node (connecting, connected, or disconnected)
+    pub state: NodeState,
+}
+
+impl ExitNodeStatus {
+    fn from_node(value: &Node, hostname: Option<String>) -> Self {
+        Self {
+            identifier: value.identifier.to_owned(),
+            public_key: value.public_key,
+            state: value.state,
+            endpoint: value.endpoint,
+            hostname: hostname.or(value.hostname.to_owned()),
+        }
+    }
 }
 
 /// Outcome of executing a TelioTaskCmd, indicating whether TelioTask should keep listening
@@ -227,7 +306,7 @@ impl TelioTaskCmd {
 
 /// Handles establishing a connection to a VPN exit node based on the given configuration.
 ///
-/// If the config contains a specific server, it uses that directly, otherwise if 
+/// If the config contains a specific server, it uses that directly, otherwise if
 /// a country is provided, it queries the API to find a recommended server.
 /// Sends a `ConnectToExitNode` command via the provided channel on success.
 async fn handle_exit_node_connection(config: &TeliodDaemonConfig, tx: mpsc::Sender<TelioTaskCmd>) {
@@ -296,6 +375,7 @@ async fn handle_exit_node_connection(config: &TeliodDaemonConfig, tx: mpsc::Send
     debug!("Selected exit node: {:#?}", endpoint);
     if let Some(endpoint) = endpoint {
         // Send the command to initiate the VPN connection
+        #[allow(mpsc_blocking_send)]
         if let Err(e) = tx.send(TelioTaskCmd::ConnectToExitNode(endpoint)).await {
             error!("Failed to send connect to exit node command: {e}");
         }
