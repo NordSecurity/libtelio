@@ -7,7 +7,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-rand_core = { version = "0.6.4", default-features = false }
+rand_core = { workspace = true, default-features = false }
 tokio-rustls = { version = "0.26.2", default-features = false }
 tokio-util = "0.7.15"
 tokio-stream = { default-features = false, version = "0.1.17" }
@@ -17,13 +17,10 @@ bytes.workspace = true
 crypto_box.workspace = true
 futures.workspace = true
 httparse.workspace = true
-libc.workspace = true
 mockall_double.workspace = true
 num_enum.workspace = true
 rand.workspace = true
 rustls-platform-verifier.workspace = true
-serde.workspace = true
-strum.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "sync"] }
 tracing.workspace = true
