@@ -37,21 +37,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "android-tzdata"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e999941b234f3131b00bc13c22d06e8c5ff726d1b6318ac7eb276997bbb4fef0"
-
-[[package]]
-name = "android_system_properties"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "819e7219dbd41043ac279b19830f2efc897156490d7fd6ea916720117ee66311"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "anes"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -734,20 +719,6 @@ dependencies = [
  "cipher",
  "poly1305",
  "zeroize",
-]
-
-[[package]]
-name = "chrono"
-version = "0.4.41"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
-dependencies = [
- "android-tzdata",
- "iana-time-zone",
- "js-sys",
- "num-traits",
- "wasm-bindgen",
- "windows-link",
 ]
 
 [[package]]
@@ -1882,7 +1853,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 [[package]]
 name = "hickory-proto"
 version = "0.24.0"
-source = "git+https://github.com/NordSecurity/trust-dns.git?rev=cc95506ae1a63785d472a9a0a654191fc73aff0b#cc95506ae1a63785d472a9a0a654191fc73aff0b"
+source = "git+https://github.com/NordSecurity/trust-dns.git?tag=v3.0.1#88204024fd3ecdadccf4574eb7976167e7c52001"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -1906,7 +1877,7 @@ dependencies = [
 [[package]]
 name = "hickory-resolver"
 version = "0.24.0"
-source = "git+https://github.com/NordSecurity/trust-dns.git?rev=cc95506ae1a63785d472a9a0a654191fc73aff0b#cc95506ae1a63785d472a9a0a654191fc73aff0b"
+source = "git+https://github.com/NordSecurity/trust-dns.git?tag=v3.0.1#88204024fd3ecdadccf4574eb7976167e7c52001"
 dependencies = [
  "cfg-if",
  "futures-util",
@@ -1927,7 +1898,7 @@ dependencies = [
 [[package]]
 name = "hickory-server"
 version = "0.24.0"
-source = "git+https://github.com/NordSecurity/trust-dns.git?rev=cc95506ae1a63785d472a9a0a654191fc73aff0b#cc95506ae1a63785d472a9a0a654191fc73aff0b"
+source = "git+https://github.com/NordSecurity/trust-dns.git?tag=v3.0.1#88204024fd3ecdadccf4574eb7976167e7c52001"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2098,30 +2069,6 @@ dependencies = [
  "tokio",
  "tower-service",
  "tracing",
-]
-
-[[package]]
-name = "iana-time-zone"
-version = "0.1.63"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0c919e5debc312ad217002b8048a17b7d83f80703865bbfcfebb0458b0b27d8"
-dependencies = [
- "android_system_properties",
- "core-foundation-sys 0.8.7",
- "iana-time-zone-haiku",
- "js-sys",
- "log",
- "wasm-bindgen",
- "windows-core",
-]
-
-[[package]]
-name = "iana-time-zone-haiku"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
-dependencies = [
- "cc",
 ]
 
 [[package]]
@@ -2387,17 +2334,6 @@ checksum = "dbc5ebe9c3a1a7a5127f920a418f7585e9e758e911d0466ed004f393b0e380b2"
 dependencies = [
  "memchr",
  "serde",
-]
-
-[[package]]
-name = "is-terminal"
-version = "0.4.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e04d7f318608d35d4b61ddd75cbdaee86b023ebe2bd5a66ee0915f0bf93095a9"
-dependencies = [
- "hermit-abi 0.5.2",
- "libc",
- "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4452,18 +4388,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8347046d4ebd943127157b94d63abb990fcf729dc4e9978927fdf4ac3c998d06"
 
 [[package]]
-name = "slog-async"
-version = "2.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72c8038f898a2c79507940990f05386455b3a317d8f18d4caea7cbc3d5096b84"
-dependencies = [
- "crossbeam-channel",
- "slog",
- "take_mut",
- "thread_local",
-]
-
-[[package]]
 name = "slog-scope"
 version = "4.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4483,20 +4407,6 @@ dependencies = [
  "log",
  "slog",
  "slog-scope",
-]
-
-[[package]]
-name = "slog-term"
-version = "2.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cb1fc680b38eed6fad4c02b3871c09d2c81db8c96aa4e9c0a34904c830f09b5"
-dependencies = [
- "chrono",
- "is-terminal",
- "slog",
- "term",
- "thread_local",
- "time",
 ]
 
 [[package]]
@@ -4712,25 +4622,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4e17d8598067a8c134af59cd33c1c263470e089924a11ab61cf61690919fe3b"
 
 [[package]]
-name = "take_mut"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f764005d11ee5f36500a149ace24e00e3da98b0158b3e2d53a7495660d3f4d60"
-
-[[package]]
 name = "tcli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
  "clap 4.5.46",
- "crypto_box",
  "dirs",
- "futures",
  "hex",
  "ipnet",
  "parking_lot",
- "rand 0.8.5",
  "regex",
  "reqwest",
  "rustyline",
@@ -4745,7 +4646,6 @@ dependencies = [
  "telio-relay",
  "telio-sockets",
  "telio-task",
- "telio-traversal",
  "telio-utils",
  "telio-wg",
  "thiserror 2.0.16",
@@ -4764,34 +4664,21 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "cfg-if",
- "crypto_box",
  "ffi_helpers",
  "futures",
- "if-addrs",
  "ipnet",
  "jni",
  "lazy_static",
- "libc",
  "maplit",
  "mockall",
- "modifier",
  "nat-detect",
- "nix 0.30.1",
- "ntest",
  "num_cpus",
  "once_cell",
  "parking_lot",
- "pretty_assertions",
  "rand 0.8.5",
- "regex",
  "rstest",
- "rustls",
  "rustls-platform-verifier",
- "serde",
  "serde_json",
- "slog-async",
- "slog-term",
- "smart-default",
  "telio-crypto",
  "telio-dns",
  "telio-firewall",
@@ -4799,7 +4686,6 @@ dependencies = [
  "telio-model",
  "telio-network-monitors",
  "telio-nurse",
- "telio-pinger",
  "telio-pq",
  "telio-proto",
  "telio-proxy",
@@ -4807,7 +4693,6 @@ dependencies = [
  "telio-sockets",
  "telio-starcast",
  "telio-task",
- "telio-test",
  "telio-traversal",
  "telio-utils",
  "telio-wg",
@@ -4820,7 +4705,6 @@ dependencies = [
  "uuid",
  "winapi",
  "winres",
- "zerofrom",
 ]
 
 [[package]]
@@ -4850,11 +4734,9 @@ name = "telio-dns"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
  "dns-parser",
  "hickory-server",
  "ipnet",
- "lazy_static",
  "libc",
  "mockall",
  "neptun",
@@ -4876,15 +4758,10 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "enum-map",
- "hashlink",
- "if-addrs",
  "ipnet",
  "mockall",
  "parking_lot",
  "pnet_packet 0.35.0",
- "proptest",
- "proptest-derive",
- "rand 0.8.5",
  "rustc-hash 2.1.1",
  "smallvec",
  "sn_fake_clock",
@@ -4901,7 +4778,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "serde",
- "serde_json",
  "serial_test",
  "telio-utils",
  "thiserror 2.0.16",
@@ -4928,8 +4804,6 @@ dependencies = [
  "strum_macros",
  "telio-crypto",
  "telio-utils",
- "thiserror 2.0.16",
- "tokio",
  "tracing",
 ]
 
@@ -4962,7 +4836,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bitflags 2.9.4",
- "crypto_box",
  "csv",
  "futures",
  "histogram",
@@ -4970,12 +4843,8 @@ dependencies = [
  "mockall",
  "mockall_double",
  "nat-detect",
- "once_cell",
  "protobuf-codegen",
- "rand 0.8.5",
  "serde",
- "serde_json",
- "slog",
  "smart-default",
  "telio-crypto",
  "telio-lana",
@@ -5041,13 +4910,11 @@ name = "telio-proto"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "aws-lc-rs",
  "base64 0.22.1",
  "blake3",
  "bytes",
  "http",
- "hyper",
  "hyper-util",
  "prost",
  "protobuf",
@@ -5069,7 +4936,6 @@ dependencies = [
  "tonic-prost",
  "tonic-prost-build",
  "tower",
- "tower-service",
  "tracing",
  "uuid",
 ]
@@ -5080,7 +4946,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "crypto_box",
  "futures",
  "mockall",
  "rand 0.8.5",
@@ -5111,7 +4976,6 @@ dependencies = [
  "httparse",
  "hyper",
  "hyper-util",
- "libc",
  "mockall_double",
  "ntest",
  "num_enum",
@@ -5119,10 +4983,8 @@ dependencies = [
  "rand_core 0.6.4",
  "rstest",
  "rustls-platform-verifier",
- "serde",
  "smart-default",
  "static_assertions",
- "strum",
  "telio-crypto",
  "telio-model",
  "telio-nurse",
@@ -5148,7 +5010,6 @@ dependencies = [
  "block",
  "debug_panic",
  "dispatch",
- "futures",
  "libc",
  "mockall",
  "neptun",
@@ -5175,7 +5036,6 @@ name = "telio-starcast"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
  "futures",
  "ipnet",
  "neptun",
@@ -5218,25 +5078,20 @@ name = "telio-traversal"
 version = "0.1.0"
 dependencies = [
  "async-trait",
- "base64 0.22.1",
  "bytecodec 0.5.0",
  "enum-map",
  "env_logger",
  "futures",
- "httparse",
  "if-addrs",
  "igd",
  "ipnet",
  "lazy_static",
  "maplit",
  "mockall",
- "neptun",
  "ntest",
  "parking_lot",
  "rand 0.8.5",
  "rstest",
- "socket2 0.5.10",
- "strum",
  "stun_codec",
  "surge-ping",
  "telio-crypto",
@@ -5336,7 +5191,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "cfg-if",
  "clap 4.5.46",
  "daemonize",
  "futures",
@@ -5350,7 +5204,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
- "signal-hook",
  "signal-hook-tokio",
  "smart-default",
  "telio",
@@ -5387,15 +5240,6 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.0.8",
- "windows-sys 0.60.2",
-]
-
-[[package]]
-name = "term"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a43bddab41f8626c7bdaab872bbba75f8df5847b516d77c569c746e2ae5eb746"
-dependencies = [
  "windows-sys 0.60.2",
 ]
 
@@ -5696,9 +5540,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-prost"
-version = "0.14.1"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9c511b9a96d40cb12b7d5d00464446acf3b9105fd3ce25437cfe41c92b1c87d"
+checksum = "66bd50ad6ce1252d87ef024b3d64fe4c3cf54a86fb9ef4c631fdd0ded7aeaa67"
 dependencies = [
  "bytes",
  "prost",

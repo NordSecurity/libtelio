@@ -13,16 +13,12 @@ md5 = { default-features = false, version = "0.7.0" }
 csv = "1.3"
 
 async-trait.workspace = true
-crypto_box.workspace = true
 futures.workspace = true
 mockall = { workspace = true, optional = true }
 mockall_double.workspace = true
 nat-detect.workspace = true
-rand.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 smart-default.workspace = true
-slog.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["net", "sync"] }
 tracing.workspace = true
@@ -37,7 +33,6 @@ telio-utils.workspace = true
 telio-wg.workspace = true
 telio-pinger.workspace = true
 telio-sockets.workspace = true
-once_cell.workspace = true
 
 [dev-dependencies]
 telio-sockets = { workspace = true, features = ["mockall"] }

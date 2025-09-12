@@ -19,24 +19,15 @@ enable_ens = ["telio-proto/enable_ens"]
 cfg-if = "1.0.0"
 ffi_helpers = "0.3.0"
 # We need this specific version for libmoose
-zerofrom = "=0.1.5"
 
 anyhow.workspace = true
 async-trait.workspace = true
 base64.workspace = true
-crypto_box.workspace = true
 futures.workspace = true
 ipnet.workspace = true
-if-addrs.workspace = true
 lazy_static.workspace = true
-libc.workspace = true
-nix.workspace = true
-modifier.workspace = true
 num_cpus.workspace = true
 parking_lot.workspace = true
-regex.workspace = true
-rustls.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 rand.workspace = true
 thiserror.workspace = true
@@ -63,10 +54,8 @@ telio-task.workspace = true
 telio-traversal.workspace = true
 telio-utils.workspace = true
 telio-wg.workspace = true
-telio-pinger.workspace = true
 once_cell.workspace = true
 nat-detect.workspace = true
-smart-default.workspace = true
 time.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
@@ -79,12 +68,8 @@ winapi = { workspace = true, features = ["ntdef", "winerror"] }
 
 [dev-dependencies]
 maplit.workspace = true
-slog-async = "2.8"
-slog-term = "2.9"
 
 mockall.workspace = true
-ntest.workspace = true
-pretty_assertions.workspace = true
 rstest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
@@ -93,7 +78,6 @@ telio-firewall = { workspace = true, features = ["mockall"] }
 telio-nurse = { workspace = true, features = ["mockall"] }
 telio-proxy = { workspace = true, features = ["mockall"] }
 telio-pq = { workspace = true, features = ["mockall"] }
-telio-test.workspace = true
 telio-traversal = { workspace = true, features = ["mockall"] }
 telio-utils.workspace = true
 telio-wg = { workspace = true, features = ["mockall", "test-adapter"] }
@@ -215,3 +199,6 @@ strip = "debuginfo"
 #TODO: remove this when anyone starts using telio-starcast
 [workspace.metadata.cargo-udeps.ignore]
 normal = ["telio-starcast"]
+
+[workspace.metadata.cargo-machete]
+ignored = ["tracing"]
