@@ -7,7 +7,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-rand_core = { version = "0.6.4", default-features = false }
+rand_core = { workspace = true, default-features = false }
 tokio-rustls = { version = "0.26.2", default-features = false }
 tokio-util = "0.7.15"
 tokio-stream = { default-features = false, version = "0.1.17" }

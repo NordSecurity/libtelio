@@ -9,7 +9,7 @@ default-run = "tcli"
 [dependencies]
 dirs = "6.0.0"
 reqwest = { version = "0.12.19", default-features = false, features = ["json", "blocking", "rustls-tls"] }
-rustyline = "15.0.0"
+rustyline = "17.0"
 shellwords = "1.1.0"
 
 anyhow.workspace = true
