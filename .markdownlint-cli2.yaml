@@ -4,3 +4,6 @@ ignores:
 - "**/3rd-party/**"
 - "**/.venv/**"
 - "changelog.md"
+- ".gitlab/merge_request_templates/Default.md"
+- "PULL_REQUEST_TEMPLATE.md"
+- "nat-lab/network.md"
