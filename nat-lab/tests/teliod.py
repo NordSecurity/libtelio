@@ -201,6 +201,7 @@ class Teliod:
 
     @asynccontextmanager
     async def start(self) -> AsyncIterator["Teliod"]:
+        log.info("Teliod starting..")
         try:
             await self.remove_logs()
 
@@ -235,9 +236,11 @@ class Teliod:
                 if "Error: DaemonIsNotRunning" not in exc.stderr:
                     log.error(exc)
                     await self.kill()
-                    await self.remove_socket()
                 else:
                     log.info("Tried to quit but daemon is already not running")
+                if await self.socket_exists():
+                    log.debug("Dangling socket found, removing it..")
+                    await self.remove_socket()
 
     async def is_alive(self) -> bool:
         try:
@@ -314,7 +317,9 @@ class Teliod:
             except TimeoutError:
                 pass
             await asyncio.sleep(self.SOCKET_CHECK_INTERVAL_S)
-        raise TimeoutError("teliod did not start within timeout")
+        exc = TimeoutError("teliod did not start within timeout")
+        log.error(exc)
+        raise exc
 
     async def wait_for_vpn_connected_state(self):
         while True:
