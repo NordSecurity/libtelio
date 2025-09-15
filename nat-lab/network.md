@@ -1,5 +1,3 @@
-# Natlab network topology
-
 ```mermaid
 graph LR
 %% AUTO GENERATED DIAGRAM. To update run `./utils/generate_network_diagram.py docker-compose.yml network.md`
