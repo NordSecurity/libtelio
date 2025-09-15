@@ -431,7 +431,7 @@ mod tests {
     use grpc::{
         ens_server::{self, EnsServer},
         login_server::{self, LoginServer},
-        Challenge, ConnectionError,
+        ChallengeResponse, ConnectionError,
     };
     use rcgen::{generate_simple_self_signed, CertifiedKey};
     use telio_crypto::SecretKey;
@@ -486,10 +486,10 @@ mod tests {
         async fn get_challenge(
             &self,
             _request: tonic::Request<ChallengeRequest>,
-        ) -> std::result::Result<tonic::Response<Challenge>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<ChallengeResponse>, tonic::Status> {
             let challenge = Uuid::new_v4();
             self.challenges.lock().unwrap().insert(challenge);
-            Ok(tonic::Response::new(Challenge {
+            Ok(tonic::Response::new(ChallengeResponse {
                 challenge: challenge.to_string(),
             }))
         }
