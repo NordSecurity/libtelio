@@ -27,14 +27,12 @@ use telio::{
 };
 
 use crate::command_listener::{ClientCmd, TelioTaskCmd, TIMEOUT_SEC};
+use crate::core_api::get_server_endpoint;
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
-    config::{Endpoint, TeliodDaemonConfig, VpnConfig, LOCAL_IP},
-    core_api::{
-        get_countries_with_exp_backoff, get_recommended_servers_with_exp_backoff,
-        request_nordlynx_key, Error as ApiError, DEFAULT_WIREGUARD_PORT,
-    },
+    config::{TeliodDaemonConfig, LOCAL_IP},
+    core_api::{request_nordlynx_key, Error as ApiError, DEFAULT_WIREGUARD_PORT},
     interface::ConfigureInterface,
 };
 
@@ -310,77 +308,18 @@ impl TelioTaskCmd {
 /// a country is provided, it queries the API to find a recommended server.
 /// Sends a `ConnectToExitNode` command via the provided channel on success.
 async fn handle_exit_node_connection(config: &TeliodDaemonConfig, tx: mpsc::Sender<TelioTaskCmd>) {
-    let endpoint = match &config.vpn {
-        // Use the endpoint directly if provided in the config
-        VpnConfig::Server(endpoint) => Some(endpoint.clone()),
-        // Find VPN exit node based on country
-        VpnConfig::Country(target_country) => {
-            // Fetch the list of countries to find the matching country ID
-            let country_id = match get_countries_with_exp_backoff(
-                &config.authentication_token,
-                config.http_certificate_file_path.as_deref(),
-            )
-            .await
-            {
-                Ok(countries_list) => countries_list.iter().find_map(|country| {
-                    if country.matches(target_country) {
-                        Some(country.id)
-                    } else {
-                        None
-                    }
-                }),
-                Err(e) => {
-                    error!("Getting countries failed due to: {e}");
-                    None
-                }
-            };
-            if country_id.is_none() {
-                warn!("country_id not found for: {target_country}");
-            }
-
-            // Fetch the list of recommended server from the API
-            // if no country_id is found, as a fallback the API will still return a
-            // recommended server based on other metrics
-            match get_recommended_servers_with_exp_backoff(
-                country_id,
-                Some(1),
-                &config.authentication_token,
-                config.http_certificate_file_path.as_deref(),
-            )
-            .await
-            {
-                Ok(servers) => {
-                    // TODO: LLT-6460 - We can store the recommended server list, just in case
-                    // one server fails to connect, try the next one.
-                    trace!("Servers {:#?}", servers);
-                    servers.first().and_then(|server| {
-                        // Convert Server to Endpoint
-                        server.wg_public_key().and_then(|pk| {
-                            pk.parse().ok().map(|public_key| Endpoint {
-                                address: server.address(),
-                                public_key,
-                                hostname: server.hostname(),
-                            })
-                        })
-                    })
-                }
-                Err(e) => {
-                    error!("Getting recommended servers failed due to: {e}");
-                    None
-                }
+    match get_server_endpoint(config).await {
+        Ok(endpoint) => {
+            debug!("Selected exit node: {:#?}", endpoint);
+            // Send the command to initiate the VPN connection
+            #[allow(mpsc_blocking_send)]
+            if let Err(e) = tx.send(TelioTaskCmd::ConnectToExitNode(endpoint)).await {
+                error!("Failed to send connect command to telio task: {e}");
             }
         }
-    };
-
-    debug!("Selected exit node: {:#?}", endpoint);
-    if let Some(endpoint) = endpoint {
-        // Send the command to initiate the VPN connection
-        #[allow(mpsc_blocking_send)]
-        if let Err(e) = tx.send(TelioTaskCmd::ConnectToExitNode(endpoint)).await {
-            error!("Failed to send connect to exit node command: {e}");
+        Err(e) => {
+            error!("Getting exit node endpoint failed: {e}");
         }
-    } else {
-        warn!("No endpoint found");
     }
 }
 

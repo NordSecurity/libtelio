@@ -144,6 +144,7 @@ pub struct TeliodDaemonConfig {
     pub log_file_count: usize,
     pub adapter_type: AdapterType,
     pub interface: InterfaceConfig,
+    #[serde(default)]
     pub vpn: VpnConfig,
 
     /// Overrides the default WireGuard endpoint port, should be used only for testing.
@@ -326,19 +327,16 @@ pub struct Endpoint {
 }
 
 /// Type of VPN server connection, automatic by country, or specified server endpoint
-#[derive(PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
+#[derive(Default, PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum VpnConfig {
     /// Direct endpoint and public key of VPN server
     Server(Endpoint),
     /// Country name or ISO code of VPN server location
     Country(String),
-}
-
-impl Default for VpnConfig {
-    fn default() -> Self {
-        VpnConfig::Country("lt".to_string())
-    }
+    /// Any server from the recommendations list
+    #[default]
+    Recommended,
 }
 
 #[allow(dead_code)]
@@ -451,7 +449,6 @@ mod tests {
                 certificate_file_path: None,
             },
         };
-
         {
             let json = r#"{
             "log_level": "Info",
@@ -461,9 +458,7 @@ mod tests {
                 "name": "utun10",
                 "config_provider": "manual"
             },
-            "vpn": {
-                "country": "lt"
-            },
+            "vpn": "recommended",
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
@@ -478,9 +473,6 @@ mod tests {
                 "interface": {
                     "name": "utun10",
                     "config_provider": "manual"
-                },
-                "vpn": {
-                    "country": "lt"
                 },
                 "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                 "mqtt": {}
@@ -509,9 +501,7 @@ mod tests {
                 "name": "nlx",
                 "config_provider": "manual"
             },
-            "vpn": {
-                "country": "lt"
-            },
+            "vpn": "recommended",
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
