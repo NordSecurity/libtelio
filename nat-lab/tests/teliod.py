@@ -26,6 +26,7 @@ from utils.logger import log
 from utils.process import Process, ProcessExecError
 from utils.router import IPStack
 from utils.router.linux_router import LinuxRouter
+from utils.testing import get_current_test_log_path
 
 
 class IgnoreableError(Exception):
@@ -230,6 +231,7 @@ class Teliod:
             await self.config.assert_match_daemon_start(stdout)
             yield self
         finally:
+            log.info("Teliod cleanup: exiting and removing socket (if exists)")
             try:
                 await self.quit()
             except ProcessExecError as exc:
@@ -241,6 +243,9 @@ class Teliod:
                 if await self.socket_exists():
                     log.debug("Dangling socket found, removing it..")
                     await self.remove_socket()
+            finally:
+                log.info("Teliod cleanup: saving logs")
+                await self._save_logs()
 
     async def is_alive(self) -> bool:
         try:
@@ -414,3 +419,43 @@ class Teliod:
             )
             with open(config_path, "w", encoding="UTF-8") as f:
                 f.write(clean_cfg)
+
+    async def _save_logs(self) -> None:
+        if os.environ.get("NATLAB_SAVE_LOGS") is None:
+            return
+
+        log_dir = get_current_test_log_path()
+        os.makedirs(log_dir, exist_ok=True)
+
+        log_files = [
+            (self.config.paths.daemon_log, "teliod.log"),
+            (self.config.paths.lib_log, "teliod_natlab.log"),
+        ]
+
+        for log_path, log_name in log_files:
+            try:
+                process = await self.connection.create_process(
+                    ["cat", str(log_path)], quiet=True
+                ).execute()
+                log_content = process.get_stdout()
+
+                filename = f"{self.connection.tag.name.lower()}_{log_name}"
+
+                if len(filename.encode("utf-8")) > 256:
+                    filename = f"{filename[:251]}.log"
+                    i = 0
+                    while os.path.exists(os.path.join(log_dir, filename)):
+                        filename = f"{filename[:249]}_{i}.log"
+                        i += 1
+
+                with open(
+                    os.path.join(log_dir, filename),
+                    "w",
+                    encoding="utf-8",
+                ) as f:
+                    f.write(log_content)
+
+                log.info("Saved %s to %s", log_name, filename)
+
+            except ProcessExecError as err:
+                log.warning("Failed to save %s: %s", log_name, err)
