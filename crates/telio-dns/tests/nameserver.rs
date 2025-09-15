@@ -39,7 +39,7 @@ const MAX_PACKET: usize = 2048;
 
 struct WGClient {
     client_socket: tokio::net::UdpSocket,
-    client_address: SocketAddr,
+    _client_address: SocketAddr,
     server_address: SocketAddr,
     tunnel: Arc<Mutex<Tunn>>,
 }
@@ -58,22 +58,15 @@ impl WGClient {
             .local_addr()
             .expect("Failed to get client local address")
             .port();
-        let client_address = ([127, 0, 0, 1], client_port).into();
+        let _client_address = ([127, 0, 0, 1], client_port).into();
         let client_private_key = client_secret_key;
         WGClient {
             client_socket,
-            client_address,
+            _client_address,
             server_address,
             tunnel: Arc::new(Mutex::new(
-                Tunn::new(
-                    client_private_key,
-                    server_public_key.clone(),
-                    None,
-                    None,
-                    0,
-                    None,
-                )
-                .expect("Failed to create client tunnel"),
+                Tunn::new(client_private_key, server_public_key, None, None, 0, None)
+                    .expect("Failed to create client tunnel"),
             )),
         }
     }
@@ -157,10 +150,8 @@ impl WGClient {
             } else {
                 panic!("Didn't receive a response from the server");
             }
-        } else {
-            if !test_type.is_correct() {
-                panic!("Received a response when shouldn't");
-            }
+        } else if !test_type.is_correct() {
+            panic!("Received a response when shouldn't");
         }
 
         let bytes_read = result.unwrap().expect("Failed to recv from server");
@@ -391,8 +382,8 @@ impl WGClient {
         buffer
     }
 
-    fn client_address(&self) -> SocketAddr {
-        self.client_address
+    fn _client_address(&self) -> SocketAddr {
+        self._client_address
     }
 }
 
@@ -425,7 +416,7 @@ impl DnsTestType {
         )
     }
 
-    fn is_ipv6(&self) -> bool {
+    fn _is_ipv6(&self) -> bool {
         matches!(
             self,
             DnsTestType::CorrectIpv6
