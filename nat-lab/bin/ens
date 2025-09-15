@@ -23,7 +23,7 @@ sys.path.insert(0, str(protobuf_dir))
 
 import grpc  # type: ignore
 import grpc_protobuf.ens_pb2
-from grpc_protobuf.ens_pb2 import Challenge, ConnectionError
+from grpc_protobuf.ens_pb2 import ChallengeResponse, ConnectionError
 from grpc_protobuf.ens_pb2_grpc import LoginServicer, ENSServicer, add_LoginServicer_to_server, add_ENSServicer_to_server
 
 # Synchronization between http controller api and grpc stub
@@ -39,7 +39,7 @@ class GrpcStub(LoginServicer, ENSServicer):
         challenge = uuid.uuid4()
         print("GetChallenge", request, context, challenge)
         self.challenges.add(challenge)
-        return Challenge(challenge=str(challenge))
+        return ChallengeResponse(challenge=str(challenge))
 
     async def ConnectionErrors(self, request, context):
         print("ConnectionErrors", request, context)

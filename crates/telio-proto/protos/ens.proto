@@ -19,12 +19,12 @@ message ConnectionError {
 
 message ChallengeRequest {}
 
-message Challenge {
+message ChallengeResponse {
     string challenge = 1;
 }
 
 service Login {
-    rpc GetChallenge(ChallengeRequest) returns (Challenge);
+    rpc GetChallenge(ChallengeRequest) returns (ChallengeResponse);
 }
 
 service ENS {
