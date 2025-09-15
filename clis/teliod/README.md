@@ -8,7 +8,7 @@ constrained for the full NordVPN application.
 
 ## Core functionality
 
-* Provides basic VPN and meshnet functionality.
+* Provides VPN related functionalities.
 * Minimal user interaction, controlled via a single configuration file.
 * Automated network and routing configuration.
 * VPN servers fetched dynamically using NordVPN API.
@@ -79,6 +79,6 @@ needs be absolute, otherwise will be relative to `working-directory` when daemon
 
 And following cli commands:
 
-* `teliod get-status` - returns the status of teliod and the meshnet peer list
+* `teliod get-status` - returns the status of teliod and VPN connection
 * `teliod is-alive` - query if the daemon is running
 * `teliod quit-daemon` - stop daemon execution

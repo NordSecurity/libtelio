@@ -1,8 +1,71 @@
-use crate::{daemon::TelioTaskCmd, ClientCmd, DaemonSocket, TelioStatusReport, TeliodError};
+use clap::Parser;
 use serde::{Deserialize, Serialize};
 use telio::telio_task::io::chan;
 use tokio::sync::oneshot;
 use tracing::{error, trace};
+
+use crate::{
+    comms::DaemonSocket,
+    config::Endpoint,
+    daemon::{TelioStatusReport, TeliodError},
+};
+
+pub(crate) const TIMEOUT_SEC: u64 = 1;
+
+#[derive(Parser, Debug, PartialEq)]
+#[clap()]
+#[derive(Serialize, Deserialize)]
+pub enum ClientCmd {
+    #[clap(about = "Retrieve the status report")]
+    GetStatus,
+    #[clap(about = "Query if daemon is running")]
+    IsAlive,
+    #[clap(about = "Stop daemon execution")]
+    QuitDaemon,
+}
+
+#[derive(Debug)]
+pub enum TelioTaskCmd {
+    // Get telio status
+    GetStatus(oneshot::Sender<TelioStatusReport>),
+    // Connect to exit node with endpoint and optional hostname
+    ConnectToExitNode(Endpoint),
+    // Break the receive loop to quit the daemon and exit gracefully
+    Quit,
+}
+
+#[derive(Parser, Debug)]
+pub(crate) struct DaemonOpts {
+    /// Path to the config file
+    pub config_path: String,
+
+    /// Do not detach the teliod process from the terminal
+    #[clap(long = "no-detach")]
+    pub no_detach: bool,
+
+    /// Specifies the daemons working directory.
+    ///
+    /// Defaults to "/".
+    /// Ignored with no_detach flag.
+    #[clap(long = "working-directory", default_value = "/")]
+    pub working_directory: String,
+
+    /// Redirect standard output to the specified file
+    ///
+    /// Defaults to "/var/log/teliod.log".
+    /// Ignored with no-detach flag.
+    #[clap(long = "stdout-path", default_value = "/var/log/teliod.log")]
+    pub stdout_path: String,
+}
+
+#[derive(Parser, Debug)]
+#[clap()]
+pub enum Cmd {
+    #[clap(about = "Runs the teliod event loop")]
+    Start(DaemonOpts),
+    #[clap(flatten)]
+    Client(ClientCmd),
+}
 
 /// Command response type used to communicate between `telio runner -> daemon -> client`
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -104,7 +167,8 @@ impl CommandListener {
             Ok(_) => {
                 connection
                     .respond(
-                        CommandResponse::Err("Obtaining identity, ignoring".to_owned()).serialize(),
+                        CommandResponse::Err("Obtaining nordlynx key, ignoring".to_owned())
+                            .serialize(),
                     )
                     .await?;
                 Err(TeliodError::InvalidCommand(command_str))
@@ -142,7 +206,7 @@ impl CommandListener {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ClientCmd, CommandResponse, DaemonSocket};
+    use crate::{CommandResponse, DaemonSocket};
     use rand::Rng;
     use std::path::Path;
     use tokio::{

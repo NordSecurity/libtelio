@@ -1,5 +1,5 @@
 use std::{
-    net::IpAddr,
+    net::Ipv4Addr,
     num::NonZeroU64,
     path::{Path, PathBuf},
     str::FromStr,
@@ -12,8 +12,13 @@ use std::fs;
 use tracing::{level_filters::LevelFilter, Level};
 use uuid::Uuid;
 
-use crate::{configure_interface::InterfaceConfigurationProvider, TeliodError};
-use telio::{crypto::PublicKey, device::AdapterType, telio_utils::Hidden};
+use telio::{crypto::SecretKey, device::AdapterType, telio_utils::Hidden};
+
+use crate::{interface::InterfaceConfig, TeliodError};
+use std::net::IpAddr;
+use telio::crypto::PublicKey;
+
+pub(crate) const LOCAL_IP: Ipv4Addr = Ipv4Addr::new(10, 5, 0, 2);
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
 #[repr(transparent)]
@@ -80,13 +85,17 @@ impl NordToken {
     }
 
     fn validate(token: &str) -> bool {
-        token.is_empty() || (token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit()))
+        token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit())
     }
 }
 
 impl Default for NordToken {
     fn default() -> Self {
-        NordToken(Arc::new(Hidden("".to_owned())))
+        NordToken(Arc::new(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_owned()
+                .into(),
+        ))
     }
 }
 
@@ -110,6 +119,19 @@ impl std::ops::Deref for NordToken {
     }
 }
 
+#[derive(Deserialize)]
+pub struct NordlynxKeyResponse {
+    pub nordlynx_private_key: String,
+}
+
+impl NordlynxKeyResponse {
+    pub fn into_secret_key(self) -> Result<SecretKey, TeliodError> {
+        self.nordlynx_private_key.parse::<SecretKey>().map_err(|_| {
+            TeliodError::InvalidResponse("Failed to parse nordlynx private key".to_owned())
+        })
+    }
+}
+
 #[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone)]
 pub struct TeliodDaemonConfig {
     #[serde(
@@ -122,7 +144,7 @@ pub struct TeliodDaemonConfig {
     pub log_file_count: usize,
     pub adapter_type: AdapterType,
     pub interface: InterfaceConfig,
-    pub vpn: Option<VpnConfig>,
+    pub vpn: VpnConfig,
 
     /// Overrides the default WireGuard endpoint port, should be used only for testing.
     /// The Core API does not include the WireGuard port in its response, and in environments like
@@ -137,9 +159,6 @@ pub struct TeliodDaemonConfig {
 
     /// Path to a http pem certificate to be used when connecting to CoreApi
     pub http_certificate_file_path: Option<PathBuf>,
-
-    /// Path to a device identity file, should only be used for testing
-    pub device_identity_file_path: Option<PathBuf>,
 
     #[serde(default)]
     pub mqtt: MqttConfig,
@@ -234,11 +253,10 @@ impl Default for TeliodDaemonConfig {
                 name: "nlx".to_string(),
                 config_provider: Default::default(),
             },
-            vpn: None,
+            vpn: Default::default(),
             override_default_wg_port: None,
             authentication_token: Default::default(),
             http_certificate_file_path: None,
-            device_identity_file_path: None,
             mqtt: MqttConfig::default(),
         }
     }
@@ -300,19 +318,11 @@ const fn default_log_file_count() -> usize {
     7
 }
 
-#[derive(Default, PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
-pub struct InterfaceConfig {
-    pub name: String,
-    pub config_provider: InterfaceConfigurationProvider,
-}
-
-/// Direct VPN server endpoint configuration
-#[derive(PartialEq, Eq, Deserialize, Serialize, Clone, Debug)]
-pub struct DirectEndpointConfig {
-    /// IP of VPN server
+#[derive(PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
+pub struct Endpoint {
     pub address: IpAddr,
-    /// Public key of VPN server
     pub public_key: PublicKey,
+    pub hostname: Option<String>,
 }
 
 /// Type of VPN server connection, automatic by country, or specified server endpoint
@@ -320,9 +330,15 @@ pub struct DirectEndpointConfig {
 #[serde(rename_all = "snake_case")]
 pub enum VpnConfig {
     /// Direct endpoint and public key of VPN server
-    Server(DirectEndpointConfig),
+    Server(Endpoint),
     /// Country name or ISO code of VPN server location
     Country(String),
+}
+
+impl Default for VpnConfig {
+    fn default() -> Self {
+        VpnConfig::Country("lt".to_string())
+    }
 }
 
 #[allow(dead_code)]
@@ -334,12 +350,11 @@ pub struct TeliodDaemonConfigPartial {
     pub log_file_count: Option<usize>,
     pub adapter_type: Option<AdapterType>,
     pub interface: Option<InterfaceConfig>,
-    pub vpn: Option<VpnConfig>,
+    pub vpn: VpnConfig,
     pub app_user_uid: Option<Uuid>,
     #[serde(default, deserialize_with = "deserialize_partial_nord_token")]
     pub authentication_token: Option<NordToken>,
     pub http_certificate_file_path: Option<Option<PathBuf>>,
-    pub device_identity_file_path: Option<Option<PathBuf>>,
     pub mqtt: Option<MqttConfig>,
 }
 
@@ -373,6 +388,8 @@ fn deserialize_partial_nord_token<'de, D: Deserializer<'de>>(
 
 #[cfg(test)]
 mod tests {
+    use crate::interface::InterfaceConfigurationProvider;
+
     use super::*;
     use serial_test::serial;
     use std::time::Duration;
@@ -395,7 +412,10 @@ mod tests {
                     "name": "test",
                     "config_provider": "manual"
                 }},
-                "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                "vpn": {{
+                    "country": "lt"
+                }},
+                "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }}"#,
             path
         )
@@ -420,14 +440,10 @@ mod tests {
                 name: "utun10".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
-            vpn: None,
+            vpn: Default::default(),
             override_default_wg_port: None,
-            authentication_token: NordToken::new(
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            )
-            .unwrap(),
+            authentication_token: Default::default(),
             http_certificate_file_path: None,
-            device_identity_file_path: None,
             mqtt: MqttConfig {
                 backoff_initial: NonZeroU64::new(1).unwrap(),
                 backoff_maximal: NonZeroU64::new(300).unwrap(),
@@ -445,7 +461,10 @@ mod tests {
                 "name": "utun10",
                 "config_provider": "manual"
             },
-            "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            "vpn": {
+                "country": "lt"
+            },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
             assert_eq!(expected, serde_json::from_str(json).unwrap());
@@ -460,7 +479,10 @@ mod tests {
                     "name": "utun10",
                     "config_provider": "manual"
                 },
-                "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "vpn": {
+                    "country": "lt"
+                },
+                "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                 "mqtt": {}
             }"#;
 
@@ -477,10 +499,7 @@ mod tests {
 
     #[test]
     fn test_config_vpn_country() {
-        let expected_config = TeliodDaemonConfig {
-            vpn: Some(VpnConfig::Country("de".to_string())),
-            ..TeliodDaemonConfig::default()
-        };
+        let expected_config = TeliodDaemonConfig::default();
 
         let json = r#"{
             "log_level": "Trace",
@@ -491,9 +510,9 @@ mod tests {
                 "config_provider": "manual"
             },
             "vpn": {
-                "country": "de"
+                "country": "lt"
             },
-            "authentication_token": ""
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
         assert_eq!(expected_config, serde_json::from_str(json).unwrap());
@@ -502,12 +521,13 @@ mod tests {
     #[test]
     fn test_config_vpn_endpoint() {
         let expected_config = TeliodDaemonConfig {
-            vpn: Some(VpnConfig::Server(DirectEndpointConfig {
+            vpn: VpnConfig::Server(Endpoint {
                 address: "127.0.0.1".parse().unwrap(),
                 public_key: "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
                     .parse()
                     .unwrap(),
-            })),
+                hostname: None,
+            }),
             ..TeliodDaemonConfig::default()
         };
 
@@ -525,7 +545,7 @@ mod tests {
                     "public_key": "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
                 }
             },
-            "authentication_token": ""
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
         assert_eq!(expected_config, serde_json::from_str(json).unwrap());
@@ -545,9 +565,8 @@ mod tests {
                 "country": "de",
                 "country": "pl",
             },
-            "authentication_token": ""
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
-
         assert!(serde_json::from_str::<TeliodDaemonConfig>(json).is_err());
 
         let json = r#"{
@@ -564,7 +583,7 @@ mod tests {
             "vpn": {
                 "country": "pl",
             },
-            "authentication_token": ""
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
         assert!(serde_json::from_str::<TeliodDaemonConfig>(json).is_err());
@@ -586,7 +605,7 @@ mod tests {
                     "public_key": "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
                 }
             },
-            "authentication_token": ""
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
         assert!(serde_json::from_str::<TeliodDaemonConfig>(json).is_err());
@@ -606,7 +625,7 @@ mod tests {
                     "public_key": "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
                 }
             },
-            "authentication_token": ""
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
         assert!(serde_json::from_str::<TeliodDaemonConfig>(json).is_err());
@@ -668,7 +687,10 @@ mod tests {
         std::env::set_var("NORD_TOKEN", "short");
 
         let config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
-        assert_eq!(config.authentication_token.as_ref(), "a".repeat(64));
+        assert_eq!(
+            config.authentication_token.as_ref(),
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
 
         std::env::remove_var("NORD_TOKEN");
     }

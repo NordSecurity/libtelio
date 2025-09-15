@@ -1,4 +1,5 @@
 use crate::TeliodError;
+use ipnet::IpNet;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
@@ -16,6 +17,8 @@ pub trait ConfigureInterface {
     fn initialize(&mut self) -> Result<(), TeliodError>;
     /// Configure the IP address and routes for a given interface
     fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), TeliodError>;
+    /// Get the configured IP address for the interface
+    fn get_ip(&self) -> Option<IpAddr>;
     /// Configure routes for exit routing
     fn set_exit_routes(&mut self, exit_node: &IpAddr) -> Result<(), TeliodError>;
     /// Some of the configured routes are not cleared when the adapter is removed and must be removed manually
@@ -69,16 +72,28 @@ pub enum InterfaceConfigurationProvider {
     Uci,
 }
 
-// TODO(tomasz-grz): Try using enum_dispatch instead of dynamic dyspatch
-impl InterfaceConfigurationProvider {
-    /// Create a dynamic instance of a configuration provider
-    pub fn create(&self, interface_name: String) -> Box<dyn ConfigureInterface> {
-        info!("Creating interface config provider for {:?}", self);
-        match self {
-            Self::Manual => Box::new(Manual),
-            Self::Ifconfig => Box::new(Ifconfig::new(interface_name)),
-            Self::Iproute => Box::new(Iproute::new(interface_name)),
-            Self::Uci => Box::new(Uci::new(interface_name)),
+#[derive(Default, PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
+pub struct InterfaceConfig {
+    pub name: String,
+    pub config_provider: InterfaceConfigurationProvider,
+}
+
+impl InterfaceConfig {
+    pub fn get_config_provider(&self) -> Box<dyn ConfigureInterface> {
+        info!(
+            "Creating interface config provider for {:?} on interface {}",
+            self.config_provider, self.name
+        );
+        match &self.config_provider {
+            InterfaceConfigurationProvider::Manual => Box::new(Manual),
+            InterfaceConfigurationProvider::Ifconfig => Box::new(Ifconfig {
+                interface_name: self.name.clone(),
+            }),
+            InterfaceConfigurationProvider::Iproute => Box::new(Iproute {
+                interface_name: self.name.clone(),
+                ..Default::default()
+            }),
+            InterfaceConfigurationProvider::Uci => Box::new(Uci::new(&self.name)),
         }
     }
 }
@@ -95,6 +110,11 @@ impl ConfigureInterface for Manual {
     fn set_ip(&mut self, _ip_address: &IpAddr) -> Result<(), TeliodError> {
         Ok(()) // No-op implementation
     }
+    /// For manual configuration, we still use ifconfig to query the interface
+    /// This is a fallback for when the interface is configured manually
+    fn get_ip(&self) -> Option<IpAddr> {
+        None
+    }
 
     fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), TeliodError> {
         Ok(()) // No-op implementation
@@ -109,12 +129,6 @@ impl ConfigureInterface for Manual {
 #[derive(Debug)]
 pub struct Ifconfig {
     interface_name: String,
-}
-
-impl Ifconfig {
-    fn new(interface_name: String) -> Self {
-        Self { interface_name }
-    }
 }
 
 impl ConfigureInterface for Ifconfig {
@@ -173,6 +187,26 @@ impl ConfigureInterface for Ifconfig {
         Ok(())
     }
 
+    fn get_ip(&self) -> Option<IpAddr> {
+        let output =
+            execute_with_output(Command::new("ifconfig").arg(&self.interface_name)).ok()?;
+
+        for line in output.lines() {
+            let line = line.trim();
+            if line.contains("inet ") && !line.contains("inet6") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(ip_idx) = parts.iter().position(|&s| s == "inet") {
+                    if let Some(ip_str) = parts.get(ip_idx + 1) {
+                        if let Ok(ip) = ip_str.parse::<IpAddr>() {
+                            return Some(ip);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), TeliodError> {
         Ok(()) // No-op implementation
     }
@@ -183,7 +217,7 @@ impl ConfigureInterface for Ifconfig {
 }
 
 /// Implementation using `iproute2`
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Iproute {
     interface_name: String,
     table: Option<String>,
@@ -192,15 +226,6 @@ pub struct Iproute {
 }
 
 impl Iproute {
-    pub fn new(interface_name: String) -> Self {
-        Self {
-            interface_name,
-            table: None,
-            fw_rule_prio: None,
-            ipv6_support_manager: Ipv6SupportManager::default(),
-        }
-    }
-
     // Some ip commands will return "RNETLINK answers: File exists" which means that the command was already executed and we can ignore the error
     fn ignore_file_exists_error(res: Result<(), TeliodError>) -> Result<(), TeliodError> {
         match res {
@@ -318,6 +343,32 @@ impl ConfigureInterface for Iproute {
         ])))
     }
 
+    fn get_ip(&self) -> Option<IpAddr> {
+        let output = execute_with_output(Command::new("ip").args([
+            "-4",
+            "addr",
+            "show",
+            "dev",
+            &self.interface_name,
+        ]))
+        .ok()?;
+
+        for line in output.lines() {
+            let line = line.trim();
+            if line.contains("inet ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if let Some(ip_idx) = parts.iter().position(|&s| s == "inet") {
+                    if let Some(ip_cidr) = parts.get(ip_idx + 1) {
+                        if let Ok(net) = ip_cidr.parse::<IpNet>() {
+                            return Some(net.addr());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     fn set_exit_routes(&mut self, exit_node: &IpAddr) -> Result<(), TeliodError> {
         #[cfg(target_os = "linux")]
         if exit_node.is_ipv4() {
@@ -430,7 +481,7 @@ impl UciBoolOption {
 }
 
 impl Uci {
-    fn new(interface_name: String) -> Self {
+    fn new(interface_name: &str) -> Self {
         // TODO: LLT-6485: Add support for multiple WANs
 
         // In OpenWRT, each network interface is declared using UCI syntax like:
@@ -480,7 +531,7 @@ impl Uci {
         debug!("Initial network.wan6.disabled state {wan6_disabled_initial_setting:?}");
 
         Self {
-            interface_name,
+            interface_name: interface_name.to_string(),
             wan_ipv6_initial_setting,
             wan6_disabled_initial_setting,
         }
@@ -582,7 +633,7 @@ impl ConfigureInterface for Uci {
         // set options
         execute(Command::new("uci").args([
             "set",
-            &format!("network.tun.device={}", self.interface_name),
+            &format!("network.tun.device={}", &self.interface_name),
         ]))?;
         execute(Command::new("uci").args(["set", "network.tun.proto=static"]))?;
         execute(Command::new("uci").args(["set", &format!("network.tun.ipaddr={ip_address}")]))?;
@@ -592,6 +643,13 @@ impl ConfigureInterface for Uci {
         self.reload_network()?;
 
         Ok(())
+    }
+
+    fn get_ip(&self) -> Option<IpAddr> {
+        let output =
+            execute_with_output(Command::new("uci").args(["get", "network.tun.ipaddr"])).ok()?;
+
+        output.trim().parse::<IpAddr>().ok()
     }
 
     fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), TeliodError> {
