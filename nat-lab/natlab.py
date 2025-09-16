@@ -104,6 +104,9 @@ def check_containers() -> None:
     docker_status = run_command_with_output(
         ["docker", "ps", "--filter", "status=running"]
     )
+    run_command_with_output(
+        ["docker", "compose", "logs", "openwrt-gw-01"]
+    )
     docker_status = [line.strip() for line in docker_status.splitlines()]
 
     missing_services: List[str] = []
