@@ -323,10 +323,11 @@ LIBTELIO_CONFIG = {
 
 def main() -> None:
     parser = rutils.create_cli_parser()
-    (build_parser, bindings_parser, lipo_parser) = (
+    (build_parser, bindings_parser, lipo_parser, fetch_artifacts_parser) = (
         parser._subparsers._group_actions[0].choices["build"],
         parser._subparsers._group_actions[0].choices["bindings"],
         parser._subparsers._group_actions[0].choices["lipo"],
+        parser._subparsers._group_actions[0].choices["fetch-artifacts"],
     )
     build_parser.add_argument("--moose", action="store_true", help="Use libmoose")
     build_parser.add_argument(
@@ -353,7 +354,7 @@ def main() -> None:
         help="Include tcli package",
     )
 
-    for parsers in [build_parser, bindings_parser]:
+    for parsers in [build_parser, bindings_parser, fetch_artifacts_parser]:
         parsers.add_argument(
             "--try-fetch-from-pipeline",
             choices=["main", "nightly", "staging"],
@@ -383,6 +384,14 @@ def main() -> None:
         exec_bindings(args)
     elif args.command == "lipo":
         exec_lipo(args)
+    elif args.command == "fetch-artifacts":
+        try_download_artifacts(
+            args.try_fetch_from_pipeline,
+            PROJECT_ROOT,
+            PROJECT_ROOT,
+            None,
+            args.job_name,
+        )
     elif args.command == "aar":
         abu.generate_aar(PROJECT_CONFIG, args)
     elif args.command == "xcframework":
