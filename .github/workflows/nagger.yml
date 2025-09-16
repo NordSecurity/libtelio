@@ -11,6 +11,7 @@ jobs:
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: apt update && apt -y install cmake libclang-dev
       - name: Checkout
         uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 #v4.1.6
       - run: CARGO_CFG_CURVE25519_DALEK_BACKEND="serial" RUSTFLAGS="-Dwarnings" DYLINT_LIBRARY_PATH=${NAGGER_PATH} cargo dylint --workspace --all
