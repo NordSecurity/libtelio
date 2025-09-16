@@ -9,6 +9,7 @@ use blake3::{derive_key, keyed_hash};
 use grpc::ConnectionError;
 use http::Uri;
 use hyper_util::rt::TokioIo;
+#[cfg(feature = "enable_ens")]
 use rustls::{
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
     pki_types::{CertificateDer, ServerName, UnixTime},
@@ -332,7 +333,7 @@ async fn create_external_channel(
 }
 
 #[cfg(not(feature = "enable_ens"))]
-fn make_tls_connector(allow_only_mlkem: bool) -> std::io::Result<TlsConnector> {
+fn make_tls_connector(_allow_only_mlkem: bool) -> std::io::Result<TlsConnector> {
     telio_log_warn!("An attempt was made to enable ENS when it is disabled at compile time");
     Err(std::io::Error::other("ENS is disabled"))
 }
