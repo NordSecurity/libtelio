@@ -6,6 +6,7 @@ import requests
 import zipfile
 from datetime import datetime
 from utils import run_with_retry
+from typing import List, Dict
 
 
 # This script is used to download the latest tagged build artifacts from the GitLab CI pipeline.
@@ -144,39 +145,49 @@ class ArtifactsDownloader:
         with zipfile.ZipFile(full_path, "r") as zip_ref:
             zip_ref.extractall(self.path_to_save)
 
-    def _get_pipeline_build_artifacts(self, tag_msg):
+    def _get_pipeline_build_artifacts(self, tag_msg: str) -> None:
         tag_data = json.loads(tag_msg)
         pipeline_id = tag_data["pipeline_id"]
 
-        job_found = False
-
-        for job in json.loads(
+        jobs: List[Dict] = json.loads(
             self._get_api(
-                (
-                    f"/pipelines/{pipeline_id}/jobs?per_page=100&include_retried=true&scope=success"
-                )
+                f"/pipelines/{pipeline_id}/jobs?per_page=100&include_retried=true&scope=success"
             )
-        ):
-            # Uniffi bindings
-            if (
-                job["stage"] == "build"
-                and self.target_os == "uniffi"
-                and job["name"] == "uniffi-bindings"
-            ):
-                self._get_artifacts(job)
-                job_found = True
+        )
 
-            # Binary builds
-            if (
-                job["stage"] == "build"
-                and self.target_os in job["name"]
-                and self.target_arch is not None
-                and self.target_arch in job["name"]
-            ):
-                self._get_artifacts(job)
-                job_found = True
+        matched = [job for job in jobs if self._is_relevant_job(job)]
 
-        if not job_found:
+        for job in matched:
+            self._get_artifacts(job)
+
+        if not matched:
             raise Exception(
                 f"No matching job found for {self.target_os} {self.target_arch} download"
             )
+
+    def _is_relevant_job(self, job: Dict) -> bool:
+        stage = job.get("stage")
+        name = job.get("name", "")
+
+        # Uniffi bindings
+        if (
+            stage == "build"
+            and self.target_os == "uniffi"
+            and name == "uniffi-bindings"
+        ):
+            return True
+
+        # Binary builds
+        if (
+            stage == "build"
+            and self.target_os in name
+            and self.target_arch is not None
+            and self.target_arch in name
+        ):
+            return True
+
+        # Generic artifacts jobs
+        if stage == "artifacts" and self.target_os == name:
+            return True
+
+        return False
