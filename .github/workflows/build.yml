@@ -85,9 +85,9 @@ jobs:
             target_os: windows
     runs-on: ubuntu-22.04
     container: |-
-      ${{ matrix.target_os == 'linux' && 'ghcr.io/nordsecurity/build-linux-rust1.89.0:v7.2.1' ||
-          matrix.target_os == 'android' && 'ghcr.io/nordsecurity/build-android-rust1.89.0:v7.2.1' ||
-          'ghcr.io/nordsecurity/build-windows-rust1.89.0:v7.2.1' }}
+      ${{ matrix.target_os == 'linux' && 'ghcr.io/nordsecurity/build-linux-rust:debug-492b68ce2a8bdff3f94366bcfb2728da259c8c39' ||
+          matrix.target_os == 'android' && 'ghcr.io/nordsecurity/build-android-rust:debug-492b68ce2a8bdff3f94366bcfb2728da259c8c39' ||
+          'ghcr.io/nordsecurity/build-windows-rust:debug-492b68ce2a8bdff3f94366bcfb2728da259c8c39' }}
     steps:
       - name: Install Protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
