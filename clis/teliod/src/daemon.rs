@@ -31,13 +31,13 @@ use crate::core_api::get_server_endpoints_list;
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
-    config::{TeliodDaemonConfig, LOCAL_IP},
+    config::{NordVpnLiteConfig, LOCAL_IP},
     core_api::{request_nordlynx_key, Error as ApiError, DEFAULT_WIREGUARD_PORT},
     interface::ConfigureInterface,
 };
 
 #[derive(Debug, ThisError)]
-pub enum TeliodError {
+pub enum NordVpnLiteError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("Invalid command received: {0}")]
@@ -131,18 +131,18 @@ pub enum TelioTaskOutcome {
 struct TelioContext {
     telio: Device,
     interface_config_provider: Box<dyn ConfigureInterface>,
-    config: TeliodDaemonConfig,
+    config: NordVpnLiteConfig,
     exit_node: Option<ExitNodeStatus>,
 }
 
 impl TelioContext {
     fn new(
-        config: TeliodDaemonConfig,
+        config: NordVpnLiteConfig,
         nordlynx_private_key: SecretKey,
-    ) -> Result<Self, TeliodError> {
+    ) -> Result<Self, NordVpnLiteError> {
         debug!("Initializing telio device");
 
-        // TODO: Make telio features configurable from teliod config: LLT-6587
+        // TODO: Make telio features configurable from nordvpnlite config: LLT-6587
         // Create default features with direct connections enabled
         let features = Arc::new(FeaturesDefaultsBuilder::new())
             .enable_direct()
@@ -168,7 +168,7 @@ impl TelioContext {
     fn start_listening_commands(
         &mut self,
         mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
-    ) -> Result<(), TeliodError> {
+    ) -> Result<(), NordVpnLiteError> {
         while let Some(cmd) = rx_channel.blocking_recv() {
             trace!("TelioTask got command {:?}", cmd);
             match cmd.execute(self)? {
@@ -181,7 +181,7 @@ impl TelioContext {
 
     fn start_telio(
         telio: &mut Device,
-        config: &TeliodDaemonConfig,
+        config: &NordVpnLiteConfig,
         nordlynx_private_key: SecretKey,
     ) -> Result<(), DeviceError> {
         telio.start(DeviceConfig {
@@ -217,7 +217,7 @@ impl TelioContext {
         }
     }
 
-    fn fetch_exit_node(&mut self) -> Result<(), TeliodError> {
+    fn fetch_exit_node(&mut self) -> Result<(), NordVpnLiteError> {
         let external_nodes = self.telio.external_nodes()?;
         let exit_node = external_nodes
             .iter()
@@ -231,7 +231,7 @@ impl TelioContext {
 }
 
 impl TelioTaskCmd {
-    fn execute(self, ctx: &mut TelioContext) -> Result<TelioTaskOutcome, TeliodError> {
+    fn execute(self, ctx: &mut TelioContext) -> Result<TelioTaskOutcome, NordVpnLiteError> {
         match self {
             TelioTaskCmd::GetStatus(response_tx_channel) => {
                 ctx.fetch_exit_node()?;
@@ -307,7 +307,7 @@ impl TelioTaskCmd {
 /// If the config contains a specific server, it uses that directly, otherwise if
 /// a country is provided, it queries the API to find a recommended server.
 /// Sends a `ConnectToExitNode` command via the provided channel on success.
-async fn handle_exit_node_connection(config: &TeliodDaemonConfig, tx: mpsc::Sender<TelioTaskCmd>) {
+async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sender<TelioTaskCmd>) {
     match get_server_endpoints_list(config).await {
         Ok(endpoints) => {
             // TODO: LLT-6460 - We can store the recommended server list, just in case
@@ -332,7 +332,7 @@ async fn handle_exit_node_connection(config: &TeliodDaemonConfig, tx: mpsc::Send
     }
 }
 
-pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError> {
+pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnLiteError> {
     debug!("started with config: {config:?}");
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
@@ -377,7 +377,7 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
     });
 
     // Spawn the async task for exit node connection
-    // TODO: This can be triggered through teliod command to allow the user to stop/restart.
+    // TODO: This can be triggered through nordvpnlite command to allow the user to stop/restart.
     let config_clone = config.clone();
     let tx_clone = telio_tx.clone();
     tokio::spawn(async move {
@@ -432,7 +432,7 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
                         info!("Received unexpected signal {s:?}, ignoring");
                     }
                     None => {
-                        break Err(TeliodError::BrokenSignalStream);
+                        break Err(NordVpnLiteError::BrokenSignalStream);
                     }
                 }
             }
