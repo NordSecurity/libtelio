@@ -1,6 +1,6 @@
-# Teliod
+# NordVPN Lite
 
-**Teliod** is a lightweight, standalone VPN client built around
+**NordVPN Lite** is a lightweight, standalone VPN client built around
 the `libtelio` library.
 
 It is designed for embedded and edge environments, that are too resource
@@ -13,7 +13,7 @@ constrained for the full NordVPN application.
 * Automated network and routing configuration.
 * VPN servers fetched dynamically using NordVPN API.
 
-## Building Teliod
+## Building NordVPN Lite
 
 For typical Linux environment it might be built using simply:
 
@@ -22,28 +22,28 @@ For typical Linux environment it might be built using simply:
 For OpenWRT you might need a bit more complex command, including your router architecture
 and the fact the OpenWRT is MUSLE-based, for example:
 
-```CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=rust-lld CC=/path/to/arm-linux-gnueabi-gcc cargo build --package teliod --target armv7-unknown-linux-musleabihf```
+```CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=rust-lld CC=/path/to/arm-linux-gnueabi-gcc cargo build --package nordvpnlite --target armv7-unknown-linux-musleabihf```
 
 You may need to download some sufficient MUSLE toolchains from `musle.cc`.
 
-## Using Teliod
+## Using NordVPN Lite
 
-Teliod runs Telio library in the background and provides a simple CLI tool to
+NordVPN Lite runs Telio library in the background and provides a simple CLI tool to
 manage it.
 
 There is a command for running the daemon:
 
-* `teliod start <path_to_config_file>` - starts the daemon.
-  * `--no-detach` - run the teliod in the foreground as a regular process,
+* `nordvpnlite start <path_to_config_file>` - starts the daemon.
+  * `--no-detach` - run the nordvpnlite in the foreground as a regular process,
   without detaching from the terminal.
   * `--stdout-path` - Redirect daemon standard output to the specified file,
-  Defaults to `/var/log/teliod.log`, ignored when used with `--no-detach`
+  Defaults to `/var/log/nordvpnlite.log`, ignored when used with `--no-detach`
   Some early logs may still be printed to stdout before redirection.
   * `--working-directory` - Specifies the daemons working directory,
   Defaults to `/`, ignored when used with `--no-detach`
 
 The config file should be provided in a JSON format
-(see `example_teliod_config.json` file).
+(see `example_nordvpnlite_config.json` file).
 
 Currently supported configuration variables:
 
@@ -80,6 +80,6 @@ needs be absolute, otherwise will be relative to `working-directory` when daemon
 
 And following cli commands:
 
-* `teliod get-status` - returns the status of teliod and VPN connection
-* `teliod is-alive` - query if the daemon is running
-* `teliod quit-daemon` - stop daemon execution
+* `nordvpnlite get-status` - returns the status of nordvpnlite and the VPN connection
+* `nordvpnlite is-alive` - query if the daemon is running
+* `nordvpnlite quit-daemon` - stop daemon execution

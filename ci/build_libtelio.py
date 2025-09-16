@@ -184,7 +184,7 @@ LIBTELIO_CONFIG = {
             "aarch64": {},
         },
         "packages": {
-            "teliod": {"teliod": "teliod"},
+            "nordvpnlite": {"nordvpnlite": "nordvpnlite"},
         },
     },
     "windows": {
@@ -304,14 +304,14 @@ LIBTELIO_CONFIG = {
             "tcli": {"tcli": "tcli"},
             "derpcli": {"derpcli": "derpcli"},
             "interderpcli": {"interderpcli": "interderpcli"},
-            "teliod": {"teliod": "teliod"},
+            "nordvpnlite": {"nordvpnlite": "nordvpnlite"},
             NAME: {f"lib{NAME}": f"lib{NAME}.so"},
         },
     },
     "macos": {
         "packages": {
             "tcli": {"tcli": "tcli"},
-            "teliod": {"teliod": "teliod"},
+            "nordvpnlite": {"nordvpnlite": "nordvpnlite"},
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
         "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
@@ -557,12 +557,12 @@ def call_build(config, args):
 
     packages = LIBTELIO_CONFIG[config.target_os].get("packages")
     if os.environ.get("NATLAB_REDUCE_PARALLEL_LINKERS", None) == "1":
-        teliod_package = {}
+        nordvpnlite_package = {}
 
-        if "teliod" in packages:
-            teliod_package["teliod"] = packages["teliod"]
+        if "nordvpnlite" in packages:
+            nordvpnlite_package["nordvpnlite"] = packages["nordvpnlite"]
 
-        rest_packages = {k: v for k, v in packages.items() if k != "teliod"}
+        rest_packages = {k: v for k, v in packages.items() if k != "nordvpnlite"}
 
         rutils.cargo_build(
             PROJECT_CONFIG,
@@ -573,7 +573,7 @@ def call_build(config, args):
         rutils.cargo_build(
             PROJECT_CONFIG,
             config,
-            teliod_package,
+            nordvpnlite_package,
             LIBTELIO_CONFIG[config.target_os].get("build_args", None),
         )
     else:

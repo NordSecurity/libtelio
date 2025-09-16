@@ -1,4 +1,4 @@
-use crate::TeliodError;
+use crate::NordVpnLiteError;
 use ipnet::IpNet;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -14,51 +14,51 @@ const DEFAULT_ROUTING_TABLE_ID: u32 = 205;
 
 pub trait ConfigureInterface {
     /// Initialize the interface
-    fn initialize(&mut self) -> Result<(), TeliodError>;
+    fn initialize(&mut self) -> Result<(), NordVpnLiteError>;
     /// Configure the IP address and routes for a given interface
-    fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), TeliodError>;
+    fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), NordVpnLiteError>;
     /// Get the configured IP address for the interface
     fn get_ip(&self) -> Option<IpAddr>;
     /// Configure routes for exit routing
-    fn set_exit_routes(&mut self, exit_node: &IpAddr) -> Result<(), TeliodError>;
+    fn set_exit_routes(&mut self, exit_node: &IpAddr) -> Result<(), NordVpnLiteError>;
     /// Some of the configured routes are not cleared when the adapter is removed and must be removed manually
-    fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError>;
+    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError>;
     /// Manually cleanup the interface before the adapter is removed
-    fn cleanup_interface(&mut self) -> Result<(), TeliodError> {
+    fn cleanup_interface(&mut self) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
 }
 
 /// Helper function to execute a system command
-fn execute(command: &mut Command) -> Result<(), TeliodError> {
+fn execute(command: &mut Command) -> Result<(), NordVpnLiteError> {
     debug!("Executing command '{command:?}'");
     let output = command
         .output()
-        .map_err(|e| TeliodError::SystemCommandFailed(e.to_string()))?;
+        .map_err(|e| NordVpnLiteError::SystemCommandFailed(e.to_string()))?;
 
     if output.status.success() {
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         error!("Error executing command {:?}: {:?}", command, stderr);
-        Err(TeliodError::SystemCommandFailed(stderr.into()))
+        Err(NordVpnLiteError::SystemCommandFailed(stderr.into()))
     }
 }
 
 /// Helper function to execute a system command with output
-fn execute_with_output(command: &mut Command) -> Result<String, TeliodError> {
+fn execute_with_output(command: &mut Command) -> Result<String, NordVpnLiteError> {
     debug!("Executing command with output '{command:?}'");
     let output = command
         .output()
-        .map_err(|e| TeliodError::SystemCommandFailed(e.to_string()))?;
+        .map_err(|e| NordVpnLiteError::SystemCommandFailed(e.to_string()))?;
 
     if output.status.success() {
         String::from_utf8(output.stdout)
-            .map_err(|e| TeliodError::SystemCommandFailed(e.to_string()))
+            .map_err(|e| NordVpnLiteError::SystemCommandFailed(e.to_string()))
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
         error!("Error executing command {:?}: {:?}", command, stderr);
-        Err(TeliodError::SystemCommandFailed(stderr.into()))
+        Err(NordVpnLiteError::SystemCommandFailed(stderr.into()))
     }
 }
 
@@ -103,11 +103,11 @@ impl InterfaceConfig {
 pub struct Manual;
 
 impl ConfigureInterface for Manual {
-    fn initialize(&mut self) -> Result<(), TeliodError> {
+    fn initialize(&mut self) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
 
-    fn set_ip(&mut self, _ip_address: &IpAddr) -> Result<(), TeliodError> {
+    fn set_ip(&mut self, _ip_address: &IpAddr) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
     /// For manual configuration, we still use ifconfig to query the interface
@@ -116,11 +116,11 @@ impl ConfigureInterface for Manual {
         None
     }
 
-    fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), TeliodError> {
+    fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
 
-    fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError> {
+    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
 }
@@ -132,12 +132,12 @@ pub struct Ifconfig {
 }
 
 impl ConfigureInterface for Ifconfig {
-    fn initialize(&mut self) -> Result<(), TeliodError> {
+    fn initialize(&mut self) -> Result<(), NordVpnLiteError> {
         execute(Command::new("ifconfig").args([&self.interface_name, "mtu", "1420"]))?;
         execute(Command::new("ifconfig").args([&self.interface_name, "up"]))
     }
 
-    fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), TeliodError> {
+    fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), NordVpnLiteError> {
         let ip_string = ip_address.to_string();
         let cidr_suffix = if ip_address.is_ipv4() { "/10" } else { "/64" };
         let cidr_string = format!("{ip_address}{cidr_suffix}");
@@ -207,11 +207,11 @@ impl ConfigureInterface for Ifconfig {
         None
     }
 
-    fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), TeliodError> {
+    fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
 
-    fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError> {
+    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
 }
@@ -227,9 +227,11 @@ pub struct Iproute {
 
 impl Iproute {
     // Some ip commands will return "RNETLINK answers: File exists" which means that the command was already executed and we can ignore the error
-    fn ignore_file_exists_error(res: Result<(), TeliodError>) -> Result<(), TeliodError> {
+    fn ignore_file_exists_error(res: Result<(), NordVpnLiteError>) -> Result<(), NordVpnLiteError> {
         match res {
-            Err(TeliodError::SystemCommandFailed(message)) if message.contains("File exists") => {
+            Err(NordVpnLiteError::SystemCommandFailed(message))
+                if message.contains("File exists") =>
+            {
                 Ok(())
             }
             _ => res,
@@ -240,7 +242,7 @@ impl Iproute {
     // When setting routing information on linux we set a default route on a custom routing table
     // and an IP rule to make sure that the correct packets go through that table.
     #[allow(clippy::expect_used)]
-    pub fn find_available_table() -> Result<u32, TeliodError> {
+    pub fn find_available_table() -> Result<u32, NordVpnLiteError> {
         let table_pattern = Regex::new("table ([0-9]+)").expect("Failed to compile ip table regex");
         let mut existing =
             execute_with_output(Command::new("ip").args(["route", "show", "table", "all"]))?
@@ -261,12 +263,12 @@ impl Iproute {
                 return Ok(table_id);
             }
         }
-        Err(TeliodError::IpRoute)
+        Err(NordVpnLiteError::IpRoute)
     }
 
     // Based on the implementation from the NordVPN Linux app
     // Finds the main rule priority and the list of assigned priorities
-    fn find_main_and_assigned_rule_priorities() -> Result<(u32, Vec<u32>), TeliodError> {
+    fn find_main_and_assigned_rule_priorities() -> Result<(u32, Vec<u32>), NordVpnLiteError> {
         let mut main_prio = 0;
         let existing_prios = execute_with_output(Command::new("ip").args(["rule", "list"]))?
             .lines()
@@ -286,18 +288,20 @@ impl Iproute {
     }
 
     // Iterate over existing_prios until we find the next available lower priority
-    fn find_available_lower_rule_priority() -> Result<u32, TeliodError> {
+    fn find_available_lower_rule_priority() -> Result<u32, NordVpnLiteError> {
         let (start_prio, existing_prios) = Self::find_main_and_assigned_rule_priorities()?;
         for prio in (1..start_prio).rev() {
             if !existing_prios.contains(&prio) {
                 return Ok(prio);
             }
         }
-        Err(TeliodError::IpRule)
+        Err(NordVpnLiteError::IpRule)
     }
 
     // Iterate over existing_prios until we find the number of available lower priorities
-    pub fn find_available_lower_rule_priorities(count: usize) -> Result<Vec<u32>, TeliodError> {
+    pub fn find_available_lower_rule_priorities(
+        count: usize,
+    ) -> Result<Vec<u32>, NordVpnLiteError> {
         let (start_prio, existing_prios) = Self::find_main_and_assigned_rule_priorities()?;
         let available_prios: Vec<u32> = (1..start_prio)
             .rev()
@@ -308,13 +312,13 @@ impl Iproute {
         if available_prios.len() == count {
             Ok(available_prios)
         } else {
-            Err(TeliodError::IpRule)
+            Err(NordVpnLiteError::IpRule)
         }
     }
 }
 
 impl ConfigureInterface for Iproute {
-    fn initialize(&mut self) -> Result<(), TeliodError> {
+    fn initialize(&mut self) -> Result<(), NordVpnLiteError> {
         execute(Command::new("ip").args([
             "link",
             "set",
@@ -326,7 +330,7 @@ impl ConfigureInterface for Iproute {
         execute(Command::new("ip").args(["link", "set", "dev", &self.interface_name, "up"]))
     }
 
-    fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), TeliodError> {
+    fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), NordVpnLiteError> {
         let cidr_suffix = if ip_address.is_ipv4() { "/10" } else { "/64" };
         let cidr_string = format!("{ip_address}{cidr_suffix}");
 
@@ -369,7 +373,7 @@ impl ConfigureInterface for Iproute {
         None
     }
 
-    fn set_exit_routes(&mut self, exit_node: &IpAddr) -> Result<(), TeliodError> {
+    fn set_exit_routes(&mut self, exit_node: &IpAddr) -> Result<(), NordVpnLiteError> {
         #[cfg(target_os = "linux")]
         if exit_node.is_ipv4() {
             let table = Self::find_available_table()?.to_string();
@@ -416,7 +420,7 @@ impl ConfigureInterface for Iproute {
         Ok(())
     }
 
-    fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError> {
+    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError> {
         if let Some(fw_rule_prio) = &self.fw_rule_prio {
             execute(Command::new("ip").args(["rule", "del", "priority", fw_rule_prio]))?;
         }
@@ -538,7 +542,7 @@ impl Uci {
     }
 
     // Helper to disable IPv6
-    fn disable_ipv6(&self) -> Result<(), TeliodError> {
+    fn disable_ipv6(&self) -> Result<(), NordVpnLiteError> {
         if self.wan_ipv6_initial_setting.is_some() {
             execute(Command::new("uci").args(["set", "network.wan.ipv6=0"]))?;
         }
@@ -549,10 +553,10 @@ impl Uci {
     }
 
     // Helper to restore settings IPv6 to initial state
-    fn restore_ipv6(&self) -> Result<(), TeliodError> {
+    fn restore_ipv6(&self) -> Result<(), NordVpnLiteError> {
         // Remove rule routing all IPv6 into the tunnel
-        if let Err(e) = execute(Command::new("uci").args(["del", "network.teliod_route6"])) {
-            error!("Error removing network.teliod_route6: {e}");
+        if let Err(e) = execute(Command::new("uci").args(["del", "network.nordvpnlite_route6"])) {
+            error!("Error removing network.nordvpnlite_route6: {e}");
         }
 
         // Restore the IPv6 setting for WAN interface to it's original value.
@@ -592,14 +596,14 @@ impl Uci {
     }
 
     // Helper to reload network service
-    fn reload_network(&self) -> Result<(), TeliodError> {
+    fn reload_network(&self) -> Result<(), NordVpnLiteError> {
         execute(Command::new("uci").args(["commit", "network"]))?;
         execute(Command::new("/etc/init.d/network").args(["reload"]))?;
         Ok(())
     }
 
     // Helper to reload firewall service
-    fn reload_firewall(&self) -> Result<(), TeliodError> {
+    fn reload_firewall(&self) -> Result<(), NordVpnLiteError> {
         execute(Command::new("uci").args(["commit", "firewall"]))?;
         execute(Command::new("/etc/init.d/firewall").args(["reload"]))?;
         Ok(())
@@ -607,7 +611,7 @@ impl Uci {
 }
 
 impl ConfigureInterface for Uci {
-    fn initialize(&mut self) -> Result<(), TeliodError> {
+    fn initialize(&mut self) -> Result<(), NordVpnLiteError> {
         // add new interface if not present
         match execute(Command::new("uci").args(["get", "network.tun"])) {
             Ok(()) => {
@@ -624,7 +628,7 @@ impl ConfigureInterface for Uci {
         Ok(())
     }
 
-    fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), TeliodError> {
+    fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), NordVpnLiteError> {
         info!(
             "Assigning IP address for {} to {}",
             self.interface_name, ip_address
@@ -652,7 +656,7 @@ impl ConfigureInterface for Uci {
         output.trim().parse::<IpAddr>().ok()
     }
 
-    fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), TeliodError> {
+    fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), NordVpnLiteError> {
         let table = Iproute::find_available_table()?;
         let (vpn_rule_prio, lan_rule_prio) = {
             let priorities = Iproute::find_available_lower_rule_priorities(2)?;
@@ -664,61 +668,66 @@ impl ConfigureInterface for Uci {
 
         // Set route and rules for VPN
         execute(Command::new("uci").args(["add", "network", "route"]))?;
-        execute(Command::new("uci").args(["rename", "network.@route[-1]=teliod_route"]))?;
-        execute(Command::new("uci").args(["set", "network.teliod_route.interface=tun"]))?;
-        execute(Command::new("uci").args(["set", "network.teliod_route.target=0.0.0.0/0"]))?;
-        execute(Command::new("uci").args(["set", &format!("network.teliod_route.table={table}")]))?;
+        execute(Command::new("uci").args(["rename", "network.@route[-1]=nordvpnlite_route"]))?;
+        execute(Command::new("uci").args(["set", "network.nordvpnlite_route.interface=tun"]))?;
+        execute(Command::new("uci").args(["set", "network.nordvpnlite_route.target=0.0.0.0/0"]))?;
+        execute(
+            Command::new("uci").args(["set", &format!("network.nordvpnlite_route.table={table}")]),
+        )?;
 
         execute(Command::new("uci").args(["add", "network", "route6"]))?;
-        execute(Command::new("uci").args(["rename", "network.@route6[-1]=teliod_route6"]))?;
-        execute(Command::new("uci").args(["set", "network.teliod_route6.interface=tun"]))?;
-        execute(Command::new("uci").args(["set", "network.teliod_route6.target=::/0"]))?;
+        execute(Command::new("uci").args(["rename", "network.@route6[-1]=nordvpnlite_route6"]))?;
+        execute(Command::new("uci").args(["set", "network.nordvpnlite_route6.interface=tun"]))?;
+        execute(Command::new("uci").args(["set", "network.nordvpnlite_route6.target=::/0"]))?;
 
         execute(Command::new("uci").args(["add", "network", "rule"]))?;
-        execute(Command::new("uci").args(["rename", "network.@rule[-1]=teliod_vpn_rule"]))?;
-        execute(
-            Command::new("uci").args(["set", &format!("network.teliod_vpn_rule.lookup={table}")]),
-        )?;
+        execute(Command::new("uci").args(["rename", "network.@rule[-1]=nordvpnlite_vpn_rule"]))?;
+        execute(Command::new("uci").args([
+            "set",
+            &format!("network.nordvpnlite_vpn_rule.lookup={table}"),
+        ]))?;
         #[cfg(target_os = "linux")] // LIBTELIO_FWMARK is compile time flagged
         execute(Command::new("uci").args([
             "set",
-            &format!("network.teliod_vpn_rule.mark={LIBTELIO_FWMARK}"),
+            &format!("network.nordvpnlite_vpn_rule.mark={LIBTELIO_FWMARK}"),
         ]))?;
         execute(Command::new("uci").args([
             "set",
-            &format!("network.teliod_vpn_rule.priority={vpn_rule_prio}"),
+            &format!("network.nordvpnlite_vpn_rule.priority={vpn_rule_prio}"),
         ]))?;
-        execute(Command::new("uci").args(["set", "network.teliod_vpn_rule.invert=1"]))?;
-        execute(Command::new("uci").args(["set", "network.teliod_vpn_rule.src=0.0.0.0/0"]))?;
+        execute(Command::new("uci").args(["set", "network.nordvpnlite_vpn_rule.invert=1"]))?;
+        execute(Command::new("uci").args(["set", "network.nordvpnlite_vpn_rule.src=0.0.0.0/0"]))?;
 
         // Exception for LAN traffic accessing Gateway
         execute(Command::new("uci").args(["add", "network", "rule"]))?;
-        execute(Command::new("uci").args(["rename", "network.@rule[-1]=teliod_lan_rule"]))?;
-        execute(Command::new("uci").args(["set", "network.teliod_lan_rule.src=0.0.0.0/0"]))?;
-        execute(Command::new("uci").args(["set", "network.teliod_lan_rule.lookup=main"]))?;
-        execute(
-            Command::new("uci").args(["set", "network.teliod_lan_rule.suppress_prefixlength=0"]),
-        )?;
+        execute(Command::new("uci").args(["rename", "network.@rule[-1]=nordvpnlite_lan_rule"]))?;
+        execute(Command::new("uci").args(["set", "network.nordvpnlite_lan_rule.src=0.0.0.0/0"]))?;
+        execute(Command::new("uci").args(["set", "network.nordvpnlite_lan_rule.lookup=main"]))?;
         execute(Command::new("uci").args([
             "set",
-            &format!("network.teliod_lan_rule.priority={lan_rule_prio}"),
+            "network.nordvpnlite_lan_rule.suppress_prefixlength=0",
+        ]))?;
+        execute(Command::new("uci").args([
+            "set",
+            &format!("network.nordvpnlite_lan_rule.priority={lan_rule_prio}"),
         ]))?;
 
         // Set firewall zones
         execute(Command::new("uci").args(["add", "firewall", "zone"]))?;
-        execute(Command::new("uci").args(["rename", "firewall.@zone[-1]=teliod_vpn_zone"]))?;
-        execute(Command::new("uci").args(["set", "firewall.teliod_vpn_zone.name=vpn"]))?;
-        execute(Command::new("uci").args(["set", "firewall.teliod_vpn_zone.network=tun"]))?;
-        execute(Command::new("uci").args(["set", "firewall.teliod_vpn_zone.masq=1"]))?;
-        execute(Command::new("uci").args(["set", "firewall.teliod_vpn_zone.mtu_fix=1"]))?;
+        execute(Command::new("uci").args(["rename", "firewall.@zone[-1]=nordvpnlite_vpn_zone"]))?;
+        execute(Command::new("uci").args(["set", "firewall.nordvpnlite_vpn_zone.name=vpn"]))?;
+        execute(Command::new("uci").args(["set", "firewall.nordvpnlite_vpn_zone.network=tun"]))?;
+        execute(Command::new("uci").args(["set", "firewall.nordvpnlite_vpn_zone.masq=1"]))?;
+        execute(Command::new("uci").args(["set", "firewall.nordvpnlite_vpn_zone.mtu_fix=1"]))?;
 
         // Set firewall forwarding
         execute(Command::new("uci").args(["add", "firewall", "forwarding"]))?;
-        execute(
-            Command::new("uci").args(["rename", "firewall.@forwarding[-1]=teliod_vpn_forwarding"]),
-        )?;
-        execute(Command::new("uci").args(["set", "firewall.teliod_vpn_forwarding.src=lan"]))?;
-        execute(Command::new("uci").args(["set", "firewall.teliod_vpn_forwarding.dest=vpn"]))?;
+        execute(Command::new("uci").args([
+            "rename",
+            "firewall.@forwarding[-1]=nordvpnlite_vpn_forwarding",
+        ]))?;
+        execute(Command::new("uci").args(["set", "firewall.nordvpnlite_vpn_forwarding.src=lan"]))?;
+        execute(Command::new("uci").args(["set", "firewall.nordvpnlite_vpn_forwarding.dest=vpn"]))?;
 
         // Disable IPv6
         self.disable_ipv6()?;
@@ -730,21 +739,23 @@ impl ConfigureInterface for Uci {
         Ok(())
     }
 
-    fn cleanup_exit_routes(&mut self) -> Result<(), TeliodError> {
+    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError> {
         debug!("Removing exit routes");
-        if let Err(e) = execute(Command::new("uci").args(["del", "network.teliod_route"])) {
+        if let Err(e) = execute(Command::new("uci").args(["del", "network.nordvpnlite_route"])) {
             error!("Error removing route: {e}");
         }
-        if let Err(e) = execute(Command::new("uci").args(["del", "network.teliod_vpn_rule"])) {
+        if let Err(e) = execute(Command::new("uci").args(["del", "network.nordvpnlite_vpn_rule"])) {
             error!("Error removing vpn rule: {e}");
         }
-        if let Err(e) = execute(Command::new("uci").args(["del", "network.teliod_lan_rule"])) {
+        if let Err(e) = execute(Command::new("uci").args(["del", "network.nordvpnlite_lan_rule"])) {
             error!("Error removing lan rule: {e}");
         }
-        if let Err(e) = execute(Command::new("uci").args(["del", "firewall.teliod_vpn_zone"])) {
+        if let Err(e) = execute(Command::new("uci").args(["del", "firewall.nordvpnlite_vpn_zone"]))
+        {
             error!("Error removing zone: {e}");
         }
-        if let Err(e) = execute(Command::new("uci").args(["del", "firewall.teliod_vpn_forwarding"]))
+        if let Err(e) =
+            execute(Command::new("uci").args(["del", "firewall.nordvpnlite_vpn_forwarding"]))
         {
             error!("Error removing forwarding: {e}");
         }
@@ -759,7 +770,7 @@ impl ConfigureInterface for Uci {
         Ok(())
     }
 
-    fn cleanup_interface(&mut self) -> Result<(), TeliodError> {
+    fn cleanup_interface(&mut self) -> Result<(), NordVpnLiteError> {
         debug!("Removing interface");
         if let Err(e) = execute(Command::new("uci").args(["del", "network.tun"])) {
             error!("Error removing interface: {e}");
@@ -803,7 +814,7 @@ struct Ipv6SupportManager {
 }
 
 impl Ipv6SupportManager {
-    fn disable(&mut self, skip_interface: &str) -> Result<(), TeliodError> {
+    fn disable(&mut self, skip_interface: &str) -> Result<(), NordVpnLiteError> {
         let initial_state = match std::env::consts::OS {
             "macos" => {
                 let interfaces = execute_with_output(
@@ -879,7 +890,7 @@ impl Ipv6SupportManager {
         Ok(())
     }
 
-    fn reenable(&mut self) -> Result<(), TeliodError> {
+    fn reenable(&mut self) -> Result<(), NordVpnLiteError> {
         let initial_state = self.initial_state.take();
         match initial_state {
             Some(InitialIpv6State::Macos { interfaces }) => {

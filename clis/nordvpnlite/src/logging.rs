@@ -6,20 +6,20 @@ use tracing_appender::{
     rolling::{Builder, Rotation},
 };
 
-use crate::TeliodError;
+use crate::NordVpnLiteError;
 
 pub async fn setup_logging<P: AsRef<Path>>(
     log_file_path: P,
     log_level: LevelFilter,
     log_file_count: usize,
-) -> Result<WorkerGuard, TeliodError> {
+) -> Result<WorkerGuard, NordVpnLiteError> {
     let log_appender = Builder::new()
         .filename_prefix(
             log_file_path
                 .as_ref()
                 .file_name()
                 .and_then(|f| f.to_str())
-                .ok_or_else(|| TeliodError::InvalidConfigOption {
+                .ok_or_else(|| NordVpnLiteError::InvalidConfigOption {
                     key: "log_file_path".to_owned(),
                     msg: "is not valid UTF-8".to_owned(),
                     value: log_file_path.as_ref().to_string_lossy().into_owned(),
@@ -32,7 +32,7 @@ pub async fn setup_logging<P: AsRef<Path>>(
         })
         .max_log_files(log_file_count)
         .build(log_file_path.as_ref().parent().ok_or_else(|| {
-            TeliodError::InvalidConfigOption {
+            NordVpnLiteError::InvalidConfigOption {
                 key: "log_file_path".to_owned(),
                 msg: "needs to contain both directory and file name".to_owned(),
                 value: log_file_path.as_ref().to_string_lossy().into_owned(),

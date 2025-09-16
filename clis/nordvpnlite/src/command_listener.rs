@@ -7,7 +7,7 @@ use tracing::{error, trace};
 use crate::{
     comms::DaemonSocket,
     config::Endpoint,
-    daemon::{TelioStatusReport, TeliodError},
+    daemon::{NordVpnLiteError, TelioStatusReport},
 };
 
 pub(crate) const TIMEOUT_SEC: u64 = 1;
@@ -39,7 +39,7 @@ pub(crate) struct DaemonOpts {
     /// Path to the config file
     pub config_path: String,
 
-    /// Do not detach the teliod process from the terminal
+    /// Do not detach the nordvpnlite process from the terminal
     #[clap(long = "no-detach")]
     pub no_detach: bool,
 
@@ -52,16 +52,19 @@ pub(crate) struct DaemonOpts {
 
     /// Redirect standard output to the specified file
     ///
-    /// Defaults to "/var/log/teliod.log".
+    /// Defaults to "/var/log/nordvpnlite.log".
     /// Ignored with no-detach flag.
-    #[clap(long = "stdout-path", default_value = "/var/log/teliod.log")]
+    #[clap(long = "stdout-path", default_value = "/var/log/nordvpnlite.log")]
     pub stdout_path: String,
 }
 
+/// NordVPN Lite is a lightweight, standalone VPN client built around
+/// the libtelio library. It is designed for embedded and edge environments,
+/// that are too resource constrained for the full NordVPN application.
 #[derive(Parser, Debug)]
 #[clap()]
 pub enum Cmd {
-    #[clap(about = "Runs the teliod event loop")]
+    #[clap(about = "Runs the nordvpnlite event loop")]
     Start(DaemonOpts),
     #[clap(flatten)]
     Client(ClientCmd),
@@ -80,9 +83,9 @@ impl CommandResponse {
         serde_json::to_string(self).unwrap_or("Err serializing".to_string())
     }
 
-    pub fn deserialize(input: &str) -> Result<CommandResponse, TeliodError> {
+    pub fn deserialize(input: &str) -> Result<CommandResponse, NordVpnLiteError> {
         serde_json::from_str::<CommandResponse>(input)
-            .map_err(|e| TeliodError::InvalidResponse(format!("{e}")))
+            .map_err(|e| NordVpnLiteError::InvalidResponse(format!("{e}")))
     }
 }
 
@@ -90,15 +93,15 @@ impl CommandResponse {
 async fn handle_response<F, T>(
     response_rx: oneshot::Receiver<T>,
     process_response: F,
-) -> Result<CommandResponse, TeliodError>
+) -> Result<CommandResponse, NordVpnLiteError>
 where
-    F: FnOnce(T) -> Result<CommandResponse, TeliodError>,
+    F: FnOnce(T) -> Result<CommandResponse, NordVpnLiteError>,
 {
     match response_rx.await {
         Ok(response) => process_response(response),
         Err(e) => {
             error!("Error receiving response: {}", e);
-            Err(TeliodError::InvalidResponse(e.to_string()))
+            Err(NordVpnLiteError::InvalidResponse(e.to_string()))
         }
     }
 }
@@ -120,7 +123,7 @@ impl CommandListener {
     async fn process_command(
         &mut self,
         command: &ClientCmd,
-    ) -> Result<CommandResponse, TeliodError> {
+    ) -> Result<CommandResponse, NordVpnLiteError> {
         match command {
             ClientCmd::GetStatus => {
                 trace!("Reporting telio status");
@@ -131,7 +134,7 @@ impl CommandListener {
                     .await
                     .map_err(|e| {
                         error!("Error sending command: {}", e);
-                        TeliodError::CommandFailed(ClientCmd::GetStatus)
+                        NordVpnLiteError::CommandFailed(ClientCmd::GetStatus)
                     })?;
                 // wait for a response from telio runner
                 handle_response(response_rx, |report| {
@@ -148,14 +151,14 @@ impl CommandListener {
                     .map(|_| CommandResponse::Ok)
                     .map_err(|e| {
                         error!("Error sending command: {}", e);
-                        TeliodError::CommandFailed(ClientCmd::QuitDaemon)
+                        NordVpnLiteError::CommandFailed(ClientCmd::QuitDaemon)
                     })
             }
             ClientCmd::IsAlive => Ok(CommandResponse::Ok),
         }
     }
 
-    pub async fn try_recv_quit(&mut self) -> Result<(), TeliodError> {
+    pub async fn try_recv_quit(&mut self) -> Result<(), NordVpnLiteError> {
         let mut connection = self.socket.accept().await?;
         let command_str = connection.read_command().await?;
 
@@ -171,7 +174,7 @@ impl CommandListener {
                             .serialize(),
                     )
                     .await?;
-                Err(TeliodError::InvalidCommand(command_str))
+                Err(NordVpnLiteError::InvalidCommand(command_str))
             }
             Err(e) => {
                 connection
@@ -184,7 +187,7 @@ impl CommandListener {
         }
     }
 
-    pub async fn handle_client_connection(&mut self) -> Result<ClientCmd, TeliodError> {
+    pub async fn handle_client_connection(&mut self) -> Result<ClientCmd, NordVpnLiteError> {
         let mut connection = self.socket.accept().await?;
         let command_str = connection.read_command().await?;
 
@@ -198,7 +201,7 @@ impl CommandListener {
                     CommandResponse::Err(format!("Invalid command: {command_str}")).serialize(),
                 )
                 .await?;
-            Err(TeliodError::InvalidCommand(command_str))
+            Err(NordVpnLiteError::InvalidCommand(command_str))
         }
     }
 }
@@ -301,7 +304,7 @@ mod tests {
             client_send_command(&path, command)
         );
 
-        assert!(matches!(cmd, Err(TeliodError::InvalidCommand(_))));
+        assert!(matches!(cmd, Err(NordVpnLiteError::InvalidCommand(_))));
     }
 
     #[tokio::test]
@@ -315,6 +318,6 @@ mod tests {
             broken_client_send_command(&path, command)
         );
 
-        assert!(matches!(cmd, Err(TeliodError::Io(_))));
+        assert!(matches!(cmd, Err(NordVpnLiteError::Io(_))));
     }
 }
