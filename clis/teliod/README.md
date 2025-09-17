@@ -71,11 +71,12 @@ needs be absolute, otherwise will be relative to `working-directory` when daemon
     * `ifconfig` - systems using ifconfig command
     * `iproute` - systems using iproute2 command
     * `uci` - OpenWRT systems using uci command
-* `vpn` - VPN config type. If omitted, a VPN connection will not be established, please select only one. Possible options:
+* `vpn` - VPN config type. If omitted, 'recommended' type is chosen. Possible options:
   * `server` - manually specified endpoint:
     * `address` - The IP address of the server/endpoint to connect to
     * `public_key` - The public key of the server/peer to connect to
   * `country` - Full country name or ISO A2 code, of the desired VPN server location.
+  * `recommended` - First server from the API recommendation list will be selected.
 
 And following cli commands:
 

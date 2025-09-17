@@ -9,14 +9,14 @@ use std::path::Path;
 use telio::telio_model::mesh::ExitNode;
 use thiserror::Error;
 use tokio::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use telio::crypto::SecretKey;
 use telio::telio_utils::exponential_backoff::{
     Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
 };
 
-use crate::config::{NordToken, NordlynxKeyResponse};
+use crate::config::{Endpoint, NordToken, NordlynxKeyResponse, TeliodDaemonConfig, VpnConfig};
 use crate::TeliodError;
 
 const API_BASE: &str = "https://api.nordvpn.com/v1";
@@ -116,6 +116,21 @@ struct Metadata {
     value: String,
 }
 
+impl TryFrom<&Server> for Endpoint {
+    type Error = Error;
+
+    fn try_from(server: &Server) -> Result<Self, Self::Error> {
+        Ok(Self {
+            address: server.address(),
+            public_key: server
+                .wg_public_key()
+                .and_then(|key| key.parse().ok())
+                .ok_or(Error::InvalidResponse)?,
+            hostname: server.hostname(),
+        })
+    }
+}
+
 impl TryFrom<&Server> for ExitNode {
     type Error = TeliodError;
 
@@ -184,7 +199,7 @@ macro_rules! handle_api_error {
     };
 }
 
-/// Request the Nordlynx private key to the API using an exp. backoff on failure.
+/// Request the Nordlynx private key from the API.
 pub(crate) async fn request_nordlynx_key(
     auth_token: &NordToken,
     cert_path: Option<&Path>,
@@ -294,8 +309,7 @@ fn http_client(cert_path: Option<&Path>) -> Client {
         .unwrap_or_default()
 }
 
-/// Get list of all known countries from core API
-/// Will retry [MAX_RETRIES] times if request timed out.
+/// Get list of all known countries from core API.
 pub async fn get_countries_with_exp_backoff(
     auth_token: &NordToken,
     cert_path: Option<&Path>,
@@ -314,15 +328,13 @@ pub async fn get_countries_with_exp_backoff(
                 wait_with_backoff_delay(&mut backoff, &mut retries).await?;
             }
             Err(e) => {
-                // other error, return immedately
                 return Err(e);
             }
         }
     }
 }
 
-/// Get list of all known countries from core API
-/// used to find the internal country ID for filtering VPN servers
+/// Get list of all known countries from core API.
 async fn get_countries(
     auth_token: &NordToken,
     cert_path: Option<&Path>,
@@ -352,8 +364,11 @@ async fn get_countries(
     }
 }
 
-/// Get recommended server list from core API with exponential backoff
-/// Will retry [MAX_RETRIES] times if request timed out.
+/// Get recommended server list from the API,
+/// (optionally) Filtered by country ID and result list size limit.
+/// If no country_id is found, it will still return a
+/// recommended server based on other metrics.
+/// (see API docs)
 pub async fn get_recommended_servers_with_exp_backoff(
     country_id_filter: Option<u64>,
     limit_filter: Option<u64>,
@@ -375,15 +390,13 @@ pub async fn get_recommended_servers_with_exp_backoff(
                 wait_with_backoff_delay(&mut backoff, &mut retries).await?;
             }
             Err(e) => {
-                // other error, return immedately
                 return Err(e);
             }
         }
     }
 }
 
-/// Get recommended server list from core API
-/// optionally filtered by country ID and result limit
+/// Get recommended server list from core API.
 async fn get_recommended_servers(
     country_id_filter: Option<u64>,
     limit_filter: Option<u64>,
@@ -405,13 +418,9 @@ async fn get_recommended_servers(
             "online".into(),
         ),
     ];
-
-    // add a filter for limit
     if let Some(limit) = limit_filter {
         filter.push(("limit".into(), limit.to_string()));
     };
-
-    // add a filter for country id
     if let Some(country_id) = country_id_filter {
         filter.push(("filters[country_id]".into(), country_id.to_string()));
     };
@@ -440,6 +449,64 @@ async fn get_recommended_servers(
         error!("Unable to get server recommendations: {:?}", status);
         Err(Error::InvalidResponse)
     }
+}
+
+pub async fn get_server_endpoints_list(
+    config: &TeliodDaemonConfig,
+) -> Result<Vec<Endpoint>, Error> {
+    let country_id: Option<u64> = match &config.vpn {
+        // Use the endpoint directly if provided in the config
+        VpnConfig::Server(endpoint) => return Ok(vec![endpoint.clone()]),
+        // Find VPN exit node based on country
+        VpnConfig::Country(target_country) => {
+            if !target_country.chars().all(|c| c.is_ascii_alphabetic()) {
+                warn!(
+                    "Invalid ISO country code format: '{target_country}', expected 2-letter code"
+                );
+                None
+            } else {
+                match get_countries_with_exp_backoff(
+                    &config.authentication_token,
+                    config.http_certificate_file_path.as_deref(),
+                )
+                .await
+                {
+                    Ok(countries_list) => countries_list.iter().find_map(|country| {
+                        if country.matches(target_country) {
+                            Some(country.id)
+                        } else {
+                            warn!("Servers not found for '{target_country}' country code.");
+                            None
+                        }
+                    }),
+                    Err(e) => {
+                        error!("Getting countries failed due to: {e}");
+                        None
+                    }
+                }
+            }
+        }
+        VpnConfig::Recommended => None,
+    };
+
+    if country_id.is_none() {
+        info!("Using a recommended server");
+    };
+
+    // Fetch the list of recommended server from the API
+    let servers = get_recommended_servers_with_exp_backoff(
+        country_id,
+        Some(1),
+        &config.authentication_token,
+        config.http_certificate_file_path.as_deref(),
+    )
+    .await?
+    .iter()
+    .map(Endpoint::try_from)
+    .collect();
+
+    trace!("Servers {:#?}", servers);
+    servers
 }
 
 #[cfg(test)]

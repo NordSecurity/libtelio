@@ -81,7 +81,11 @@ async def test_teliod_vpn_connection(config_type: IfcConfigType) -> None:
 
 @pytest.mark.parametrize(
     "country",
-    [(IfcConfigType.VPN_COUNTRY_PL), (IfcConfigType.VPN_COUNTRY_DE)],
+    [
+        (IfcConfigType.VPN_COUNTRY_PL),
+        (IfcConfigType.VPN_COUNTRY_DE),
+        (IfcConfigType.VPN_COUNTRY_EMPTY),
+    ],
 )
 async def test_teliod_vpn_country_connection(country: IfcConfigType) -> None:
     async with AsyncExitStack() as exit_stack:
@@ -92,17 +96,28 @@ async def test_teliod_vpn_country_connection(country: IfcConfigType) -> None:
             log.debug("Teliod started, waiting for connected vpn state...")
             await teliod.wait_for_vpn_connected_state()
 
-            expected_server_ip, expected_hostname = (
-                (WG_SERVER["ipv4"], "pl128.nordvpn.com")
-                if country == IfcConfigType.VPN_COUNTRY_PL
-                else (WG_SERVER_2["ipv4"], "de1263.nordvpn.com")
-            )
-
             await ping(teliod.connection, PHOTO_ALBUM_IP)
             ip = await stun.get(teliod.connection, STUN_SERVER)
-            assert (
-                ip == expected_server_ip
-            ), f"wrong public IP when connected to VPN {ip}"
 
             report = await teliod.get_status()
-            assert expected_hostname in report, report
+
+            if country is not IfcConfigType.VPN_COUNTRY_EMPTY:
+                expected_server_ip, expected_hostname = (
+                    (WG_SERVER["ipv4"], "pl128.nordvpn.com")
+                    if country == IfcConfigType.VPN_COUNTRY_PL
+                    else (WG_SERVER_2["ipv4"], "de1263.nordvpn.com")
+                )
+
+                assert (
+                    ip == expected_server_ip
+                ), f"wrong public IP when connected to VPN {ip}"
+                assert expected_hostname in report, report
+            else:
+                assert ip in [
+                    WG_SERVER["ipv4"],
+                    WG_SERVER_2["ipv4"],
+                ], f"wrong public IP when connected to VPN {ip}"
+                assert any(
+                    hostname in report
+                    for hostname in ["pl128.nordvpn.com", "de1263.nordvpn.com"]
+                ), report
