@@ -116,6 +116,21 @@ struct Metadata {
     value: String,
 }
 
+impl TryFrom<&Server> for Endpoint {
+    type Error = Error;
+
+    fn try_from(server: &Server) -> Result<Self, Self::Error> {
+        Ok(Self {
+            address: server.address(),
+            public_key: server
+                .wg_public_key()
+                .and_then(|key| key.parse().ok())
+                .ok_or(Error::InvalidResponse)?,
+            hostname: server.hostname(),
+        })
+    }
+}
+
 impl TryFrom<&Server> for ExitNode {
     type Error = TeliodError;
 
@@ -436,15 +451,15 @@ async fn get_recommended_servers(
     }
 }
 
-pub async fn get_server_endpoint(config: &TeliodDaemonConfig) -> Result<Endpoint, Error> {
+pub async fn get_server_endpoints_list(
+    config: &TeliodDaemonConfig,
+) -> Result<Vec<Endpoint>, Error> {
     let country_id: Option<u64> = match &config.vpn {
         // Use the endpoint directly if provided in the config
-        VpnConfig::Server(endpoint) => return Ok(endpoint.clone()),
+        VpnConfig::Server(endpoint) => return Ok(vec![endpoint.clone()]),
         // Find VPN exit node based on country
         VpnConfig::Country(target_country) => {
-            if !(target_country.len() == 2
-                && target_country.chars().all(|c| c.is_ascii_alphabetic()))
-            {
+            if !target_country.chars().all(|c| c.is_ascii_alphabetic()) {
                 warn!(
                     "Invalid ISO country code format: '{target_country}', expected 2-letter code"
                 );
@@ -475,38 +490,23 @@ pub async fn get_server_endpoint(config: &TeliodDaemonConfig) -> Result<Endpoint
     };
 
     if country_id.is_none() {
-        warn!("Using a recommended server");
+        info!("Using a recommended server");
     };
 
     // Fetch the list of recommended server from the API
-    match get_recommended_servers_with_exp_backoff(
+    let servers = get_recommended_servers_with_exp_backoff(
         country_id,
         Some(1),
         &config.authentication_token,
         config.http_certificate_file_path.as_deref(),
     )
-    .await
-    {
-        Ok(servers) => {
-            // TODO: LLT-6460 - We can store the recommended server list, just in case
-            // one server fails to connect, try the next one.
-            trace!("Servers {:#?}", servers);
-            servers
-                .first()
-                .and_then(|server| {
-                    // Convert Server to Endpoint
-                    server.wg_public_key().and_then(|pk| {
-                        pk.parse().ok().map(|public_key| Endpoint {
-                            address: server.address(),
-                            public_key,
-                            hostname: server.hostname(),
-                        })
-                    })
-                })
-                .ok_or(Error::InvalidResponse)
-        }
-        Err(e) => Err(e),
-    }
+    .await?
+    .iter()
+    .map(Endpoint::try_from)
+    .collect();
+
+    trace!("Servers {:#?}", servers);
+    servers
 }
 
 #[cfg(test)]

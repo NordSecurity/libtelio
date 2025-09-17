@@ -27,7 +27,7 @@ use telio::{
 };
 
 use crate::command_listener::{ClientCmd, TelioTaskCmd, TIMEOUT_SEC};
-use crate::core_api::get_server_endpoint;
+use crate::core_api::get_server_endpoints_list;
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
@@ -308,13 +308,22 @@ impl TelioTaskCmd {
 /// a country is provided, it queries the API to find a recommended server.
 /// Sends a `ConnectToExitNode` command via the provided channel on success.
 async fn handle_exit_node_connection(config: &TeliodDaemonConfig, tx: mpsc::Sender<TelioTaskCmd>) {
-    match get_server_endpoint(config).await {
-        Ok(endpoint) => {
-            debug!("Selected exit node: {:#?}", endpoint);
-            // Send the command to initiate the VPN connection
-            #[allow(mpsc_blocking_send)]
-            if let Err(e) = tx.send(TelioTaskCmd::ConnectToExitNode(endpoint)).await {
-                error!("Failed to send connect command to telio task: {e}");
+    match get_server_endpoints_list(config).await {
+        Ok(endpoints) => {
+            // TODO: LLT-6460 - We can store the recommended server list, just in case
+            // one server fails to connect, try the next one.
+            if let Some(endpoint) = endpoints.first() {
+                debug!("Selected exit node: {:#?}", endpoint);
+                // Send the command to initiate the VPN connection
+                #[allow(mpsc_blocking_send)]
+                if let Err(e) = tx
+                    .send(TelioTaskCmd::ConnectToExitNode(endpoint.to_owned()))
+                    .await
+                {
+                    error!("Failed to send connect command to telio task: {e}");
+                }
+            } else {
+                error!("Getting exit node endpoint failed: empty list");
             }
         }
         Err(e) => {
