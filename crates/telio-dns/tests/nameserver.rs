@@ -39,7 +39,6 @@ const MAX_PACKET: usize = 2048;
 
 struct WGClient {
     client_socket: tokio::net::UdpSocket,
-    _client_address: SocketAddr,
     server_address: SocketAddr,
     tunnel: Arc<Mutex<Tunn>>,
 }
@@ -54,15 +53,9 @@ impl WGClient {
             tokio::net::UdpSocket::bind(SocketAddr::from_str("127.0.0.1:0").unwrap())
                 .await
                 .expect("Failed to bind client socket");
-        let client_port = client_socket
-            .local_addr()
-            .expect("Failed to get client local address")
-            .port();
-        let _client_address = ([127, 0, 0, 1], client_port).into();
         let client_private_key = client_secret_key;
         WGClient {
             client_socket,
-            _client_address,
             server_address,
             tunnel: Arc::new(Mutex::new(
                 Tunn::new(client_private_key, server_public_key, None, None, 0, None)
@@ -88,7 +81,7 @@ impl WGClient {
                     .expect("Failed to send handshake message");
             }
             TunnResult::Err(e) => panic!("Encapsulate error: {:?}", e),
-            _ => println!("Unexpected TunnResult during handshake phase"),
+            _ => panic!("Unexpected TunnResult during handshake phase"),
         }
 
         let bytes_read = self
@@ -133,7 +126,7 @@ impl WGClient {
                     .expect("Failed to send the dns request");
             }
             TunnResult::Err(e) => panic!("Encapsulate error: {:?}", e),
-            _ => println!("Unexpected TunnResult while sending the dns request"),
+            _ => panic!("Unexpected TunnResult while sending the dns request"),
         }
 
         let result = timeout(
@@ -381,10 +374,6 @@ impl WGClient {
         buffer.truncate(total_length);
         buffer
     }
-
-    fn _client_address(&self) -> SocketAddr {
-        self._client_address
-    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -469,16 +458,16 @@ async fn dns_test_with_server(
     nameserver: Arc<RwLock<LocalNameServer>>,
     ttl_value: TtlValue,
 ) {
-    let client = init_client(local_records, nameserver, ttl_value).await;
+    let (client, _) = init_client_and_server(local_records, nameserver, ttl_value).await;
     client.do_handshake().await;
     client.send_dns_request(query, test_type).await;
 }
 
-async fn init_client(
+async fn init_client_and_server(
     local_records: Option<(String, Records)>,
     nameserver: Arc<RwLock<LocalNameServer>>,
     ttl_value: TtlValue,
-) -> WGClient {
+) -> (WGClient, Arc<Mutex<Tunn>>) {
     if let Some((zone, records)) = local_records {
         nameserver
             .upsert(&zone, &records, ttl_value)
@@ -509,11 +498,9 @@ async fn init_client(
 
     let client = WGClient::new(client_secret_key, server_public_key, server_address).await;
 
-    nameserver
-        .start(server_peer.clone(), server_socket.clone())
-        .await;
+    nameserver.start(server_peer.clone(), server_socket).await;
 
-    client
+    (client, server_peer)
 }
 
 #[tokio::test]
@@ -742,8 +729,54 @@ async fn test_tcp_rst() {
     let nameserver = LocalNameServer::new(&[])
         .await
         .expect("Failed to create a LocalNameServer");
-    init_client(None, nameserver, TtlValue(60)).await;
+    init_client_and_server(None, nameserver, TtlValue(60)).await;
 
     let error_kind = TcpStream::connect("127.0.0.1:53").await.unwrap_err().kind();
     assert_eq!(error_kind, ErrorKind::ConnectionRefused);
+}
+
+#[tokio::test]
+async fn test_timers_updated() {
+    let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
+        .await
+        .expect("Failed to create a LocalNameServer");
+    let (client, server_peer) = init_client_and_server(None, nameserver, TtlValue(1)).await;
+    client.do_handshake().await;
+
+    // Send a first DNS request
+    client
+        .send_dns_request("google.com", DnsTestType::CorrectIpv4)
+        .await;
+
+    // Enabling keepalives sooner or before handshake, shomehow breaks the handshake process
+    server_peer.lock().await.set_persistent_keepalive(1);
+
+    // Expect a keepalive packets to arrive at our client socket within a 10 second window.
+    let mut buf = [0u8; MAX_PACKET];
+    let mut count = 0;
+    const KEEPALIVE_WINDOW: Duration = Duration::from_secs(10);
+    const TARGET_COUNT: usize = 4;
+
+    while count < TARGET_COUNT {
+        let n = tokio::time::timeout(KEEPALIVE_WINDOW, client.client_socket.recv(&mut buf))
+            .await
+            .unwrap_or_else(|_| panic!("No WG packets received within {:?}", KEEPALIVE_WINDOW))
+            .expect("recv failed");
+        assert_eq!(n, 32, "Expected 32 bytes for WG keepalives, received {n}");
+        assert_eq!(
+            buf[0],
+            0x04,
+            "Expected TansportData type for keepalives, received {:02X?}",
+            &buf[..n]
+        );
+        count += 1;
+    }
+    assert_eq!(
+        count, TARGET_COUNT,
+        "Received only {count} out of {TARGET_COUNT} packets"
+    );
+    assert!(
+        !client.tunnel.lock().await.is_expired(),
+        "Client should not expire due to keepalives"
+    );
 }
