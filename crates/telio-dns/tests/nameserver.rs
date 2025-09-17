@@ -747,3 +747,70 @@ async fn test_tcp_rst() {
     let error_kind = TcpStream::connect("127.0.0.1:53").await.unwrap_err().kind();
     assert_eq!(error_kind, ErrorKind::ConnectionRefused);
 }
+
+#[tokio::test]
+async fn test_timers_updated() {
+    let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
+        .await
+        .expect("Failed to create a LocalNameServer");
+
+    let server_socket = tokio::net::UdpSocket::bind(SocketAddr::from_str("127.0.0.1:0").unwrap())
+        .await
+        .expect("Failed to bind server socket");
+    let server_port = server_socket
+        .local_addr()
+        .expect("Failed to get server local address")
+        .port();
+
+    let server_address: SocketAddr = ([127, 0, 0, 1], server_port).into();
+    let server_socket = Arc::<tokio::net::UdpSocket>::from(server_socket);
+
+    let server_private_key = StaticSecret::random_from_rng(OsRng);
+    let server_public_key = PublicKey::from(&server_private_key);
+
+    let client_secret_key = StaticSecret::random_from_rng(OsRng);
+    let client_public_key = PublicKey::from(&client_secret_key);
+
+    let server_peer = Arc::new(Mutex::new(
+        Tunn::new(server_private_key, client_public_key, None, None, 0, None)
+            .expect("Failed to create server tunnel"),
+    ));
+
+    let client = WGClient::new(client_secret_key, server_public_key, server_address).await;
+
+    nameserver
+        .start(server_peer.clone(), server_socket.clone())
+        .await;
+    client.do_handshake().await;
+
+    // Send a first DNS request to register last_sender
+    client
+        .send_dns_request("google.com", DnsTestType::CorrectIpv4)
+        .await;
+
+    // Enable keepalives
+    server_peer.lock().await.set_persistent_keepalive(1);
+
+    // Expect a keepalive packet to arrive at our client socket within a 4 second window.
+    let mut buf = [0u8; MAX_PACKET];
+    let mut count = 0;
+    const KEEPALIVE_WINDOW: Duration = Duration::from_secs(4);
+    const TARGET_COUNT: usize = 5;
+
+    while count < TARGET_COUNT {
+        let n = tokio::time::timeout(KEEPALIVE_WINDOW, client.client_socket.recv(&mut buf))
+            .await
+            .unwrap_or_else(|_| panic!("No WG packets received within {:?}", KEEPALIVE_WINDOW))
+            .expect("recv failed");
+        assert!(n > 0, "Expected some WG bytes");
+        count += 1;
+    }
+    assert_eq!(
+        count, TARGET_COUNT,
+        "Received only {count} out of {TARGET_COUNT} packets"
+    );
+    assert!(
+        !client.tunnel.lock().await.is_expired(),
+        "Client should not expire due to keepalives"
+    );
+}
