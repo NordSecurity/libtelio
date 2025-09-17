@@ -76,7 +76,7 @@ use futures::FutureExt;
 
 use telio_utils::{
     commit_sha,
-    exponential_backoff::ExponentialBackoffBounds,
+    exponential_backoff::{self, ExponentialBackoff, ExponentialBackoffBounds},
     get_ip_stack, interval, telio_log_debug, telio_log_error, telio_log_info, telio_log_warn,
     tokio::{Monitor, ThreadTracker},
     version_tag, Instant,
@@ -192,6 +192,8 @@ pub enum Error {
     PollingPeriodZero,
     #[error("Ens failure: {0:?}")]
     EnsFailure(#[from] Box<EnsError>),
+    #[error("Exponential backoff error {0}")]
+    ExponentialBackoffError(#[from] exponential_backoff::Error),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -2084,9 +2086,19 @@ impl Runtime {
             let client_pk = self.get_private_key().await?;
             if let Some(ens) = self.entities.error_notification_service.as_mut() {
                 telio_log_info!("Starting ENS monitoring");
-                ens.start_monitor(vpn_ip, exit_node.public_key, client_pk)
-                    .await
-                    .map_err(Box::new)?;
+                let backoff: ExponentialBackoffBounds = self
+                    .features
+                    .error_notification_service
+                    .map(|ens| ens.backoff.into())
+                    .unwrap_or_default();
+                ens.start_monitor(
+                    vpn_ip,
+                    exit_node.public_key,
+                    client_pk,
+                    ExponentialBackoff::new(backoff)?,
+                )
+                .await
+                .map_err(Box::new)?;
             }
         }
 

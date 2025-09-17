@@ -1,13 +1,13 @@
 //! Object descriptions of various
 //! telio configurable features via API
 
-use std::{collections::HashSet, fmt, net::IpAddr, str::FromStr};
+use std::{collections::HashSet, fmt, net::IpAddr, str::FromStr, time::Duration};
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
 use smart_default::SmartDefault;
 use strum_macros::EnumCount;
-use telio_utils::telio_log_warn;
+use telio_utils::{exponential_backoff::ExponentialBackoffBounds, telio_log_warn};
 
 /// Type alias for UniFFI
 pub type EndpointProviders = HashSet<EndpointProvider>;
@@ -569,6 +569,43 @@ pub struct FeatureErrorNotificationService {
     /// Allow only post-quantum safe key exchange algorithm for the ENS HTTPS connection
     #[default = true]
     pub allow_only_pq: bool,
+
+    /// Configuration of the backoff algorithm used by ENS
+    #[serde(default)]
+    pub backoff: Backoff,
+}
+
+/// Exponential backoff bounds
+///
+/// A pair of bounds for the exponential backoffs
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct Backoff {
+    /// Initial bound
+    ///
+    /// Used as the first backoff value after ExponentialBackoff creation or reset
+    #[default(2)]
+    pub initial_s: u32,
+    /// Maximal bound
+    ///
+    /// A maximal backoff value which might be achieved during exponential backoff
+    /// - if set to None there will be no upper bound for the penalty duration
+    #[default(Some(120))]
+    #[serde(default = "default_maximal_s")]
+    pub maximal_s: Option<u32>,
+}
+
+fn default_maximal_s() -> Option<u32> {
+    Some(120)
+}
+
+impl From<Backoff> for ExponentialBackoffBounds {
+    fn from(value: Backoff) -> Self {
+        Self {
+            initial: Duration::from_secs(value.initial_s as u64),
+            maximal: value.maximal_s.map(|m| Duration::from_secs(m as u64)),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -830,6 +867,7 @@ mod tests {
                     error_notification_service: Some(FeatureErrorNotificationService {
                         buffer_size: 42,
                         allow_only_pq: true,
+                        backoff: Default::default(),
                     })
                 }
             );
@@ -1009,6 +1047,86 @@ mod tests {
         #[test]
         fn test_ens_is_turned_off_by_default() {
             assert_json!(r#"{}"#, None, error_notification_service);
+        }
+
+        #[test]
+        fn test_ens_backoff() {
+            assert_json!(
+                r#"{"error_notification_service": {}}"#,
+                Some(FeatureErrorNotificationService {
+                    buffer_size: 5,
+                    allow_only_pq: true,
+                    backoff: Backoff {
+                        initial_s: 2,
+                        maximal_s: Some(120),
+                    }
+                }),
+                error_notification_service
+            );
+            assert_json!(
+                r#"{"error_notification_service": {
+                    "backoff": {
+                        "initial_s": 2,
+                        "maximal_s": 120
+                    }
+                }}"#,
+                Some(FeatureErrorNotificationService {
+                    buffer_size: 5,
+                    allow_only_pq: true,
+                    backoff: Default::default(),
+                }),
+                error_notification_service
+            );
+            assert_json!(
+                r#"{"error_notification_service": {
+                    "backoff": {
+                        "initial_s": 42
+                    }
+                }}"#,
+                Some(FeatureErrorNotificationService {
+                    buffer_size: 5,
+                    allow_only_pq: true,
+                    backoff: Backoff {
+                        initial_s: 42,
+                        maximal_s: Some(120),
+                    }
+                }),
+                error_notification_service
+            );
+            assert_json!(
+                r#"{"error_notification_service": {
+                    "backoff": {
+                        "initial_s": 42,
+                        "maximal_s": null
+                    }
+                }}"#,
+                Some(FeatureErrorNotificationService {
+                    buffer_size: 5,
+                    allow_only_pq: true,
+                    backoff: Backoff {
+                        initial_s: 42,
+                        maximal_s: None
+                    }
+                }),
+                error_notification_service
+            );
+            assert_json!(
+                r#"{"error_notification_service": {
+                    "backoff": {
+                        "initial_s": 12345,
+                        "maximal_s": 67890
+                    }
+                }}"#,
+                Some(FeatureErrorNotificationService {
+                    buffer_size: 5,
+                    allow_only_pq: true,
+                    backoff: Backoff {
+                        initial_s: 12345,
+                        maximal_s: Some(67890)
+                    }
+                }),
+                error_notification_service
+            );
         }
     }
 
