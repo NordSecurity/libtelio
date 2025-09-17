@@ -548,46 +548,20 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    #[test_log::test]
-    async fn test_ens() {
+    async fn spawn_server(errors_to_emit: &[ConnectionError]) -> (u16, PublicKey) {
         install_default_crypto_provider();
-
         let server_private_key = SecretKey::gen();
-        let server_public_key = server_private_key.public();
-        let client_private_key = SecretKey::gen();
 
-        let errors_to_emit = vec![
-            (
-                ConnectionError {
-                    code: grpc::Error::Unknown as i32,
-                    additional_info: None,
-                },
-                server_public_key,
-            ),
-            (
-                ConnectionError {
-                    code: grpc::Error::ConnectionLimitReached as i32,
-                    additional_info: Some("additional info".to_owned()),
-                },
-                server_public_key,
-            ),
-        ];
         let grpc_stub = Arc::new(GrpcStub::new(
-            &errors_to_emit
-                .iter()
-                .map(|(c, _)| c.clone())
-                .collect::<Vec<_>>(),
-            server_private_key,
+            &errors_to_emit.iter().cloned().collect::<Vec<_>>(),
+            server_private_key.clone(),
         ));
         let ens_srv = EnsServer::with_interceptor(
             grpc_stub.clone(),
             CheckAuthenticationInterceptor(grpc_stub.clone()),
         );
         let login_srv = LoginServer::new(grpc_stub.clone());
-
         let (port_tx, port_rx) = oneshot::channel();
-
         tokio::spawn(async move {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let actual_addr = listener.local_addr().unwrap();
@@ -613,12 +587,35 @@ mod tests {
                 .await
                 .unwrap();
         });
+        (port_rx.await.unwrap(), server_private_key.public())
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn test_ens() {
+        tokio_rustls::rustls::crypto::aws_lc_rs::default_provider()
+            .install_default()
+            .unwrap();
+
+        let client_private_key = SecretKey::gen();
+
+        let errors_to_emit = [
+            ConnectionError {
+                code: grpc::Error::Unknown as i32,
+                additional_info: None,
+            },
+            ConnectionError {
+                code: grpc::Error::ConnectionLimitReached as i32,
+                additional_info: Some("additional info".to_owned()),
+            },
+        ];
+
+        let (port, server_public_key) = spawn_server(&errors_to_emit).await;
 
         let socket_pool = make_socket_pool();
         let allow_only_mlkem = true;
         let (mut ens, mut rx) = ErrorNotificationService::new(10, socket_pool, allow_only_mlkem);
 
-        let port = port_rx.await.unwrap();
         ens.start_monitor_on_port(
             IpAddr::V4(Ipv4Addr::LOCALHOST),
             port,
@@ -639,7 +636,13 @@ mod tests {
 
         let collected_errors = collect_errors(2, &mut rx).await;
 
-        assert_eq!(errors_to_emit, collected_errors);
+        assert_eq!(
+            errors_to_emit
+                .into_iter()
+                .map(|e| (e, server_public_key.clone()))
+                .collect::<Vec<_>>(),
+            collected_errors
+        );
 
         ens.stop().await;
     }
