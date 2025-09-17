@@ -139,7 +139,7 @@ impl ConfigureInterface for Ifconfig {
 
     fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), NordVpnLiteError> {
         let ip_string = ip_address.to_string();
-        let cidr_suffix = if ip_address.is_ipv4() { "/10" } else { "/64" };
+        let cidr_suffix = if ip_address.is_ipv4() { "/30" } else { "/64" };
         let cidr_string = format!("{ip_address}{cidr_suffix}");
         let ip_type = if ip_address.is_ipv4() {
             "inet"
@@ -162,7 +162,7 @@ impl ConfigureInterface for Ifconfig {
                 ]))?;
 
                 if ip_address.is_ipv4() {
-                    execute(Command::new("route").args(["-n", "add", "100.64/10", &ip_string]))?;
+                    execute(Command::new("route").args(["-n", "add", "10.5.0.0/30", &ip_string]))?;
                 } else {
                     execute(Command::new("route").args([
                         "add",
@@ -180,7 +180,7 @@ impl ConfigureInterface for Ifconfig {
                     "add",
                     ip_address.to_string().as_str(),
                     "netmask",
-                    "255.192.0.0",
+                    "255.255.255.252",
                 ]))?;
             }
         }
@@ -331,7 +331,7 @@ impl ConfigureInterface for Iproute {
     }
 
     fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), NordVpnLiteError> {
-        let cidr_suffix = if ip_address.is_ipv4() { "/10" } else { "/64" };
+        let cidr_suffix = if ip_address.is_ipv4() { "/30" } else { "/64" };
         let cidr_string = format!("{ip_address}{cidr_suffix}");
 
         info!(
@@ -641,7 +641,7 @@ impl ConfigureInterface for Uci {
         ]))?;
         execute(Command::new("uci").args(["set", "network.tun.proto=static"]))?;
         execute(Command::new("uci").args(["set", &format!("network.tun.ipaddr={ip_address}")]))?;
-        execute(Command::new("uci").args(["set", "network.tun.netmask=255.192.0.0"]))?;
+        execute(Command::new("uci").args(["set", "network.tun.netmask=255.255.255.252"]))?;
 
         // save and apply
         self.reload_network()?;
