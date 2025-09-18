@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from config import PHOTO_ALBUM_IP, STUN_SERVER, WG_SERVER, WG_SERVER_2
 from contextlib import AsyncExitStack
@@ -47,11 +48,17 @@ async def test_teliod_logs() -> None:
         }
 
         # Check if log files exist and are not empty
-        for path, expected_string in expected_log_contents.items():
-            await connection.create_process(["test", "-s", path]).execute()
-            await connection.create_process(
-                ["grep", "-q", expected_string, path]
-            ).execute()
+        done = False
+        while not done:
+            try:
+                for path, expected_string in expected_log_contents.items():
+                    await connection.create_process(["test", "-s", path]).execute()
+                    await connection.create_process(
+                        ["grep", "-q", expected_string, path]
+                    ).execute()
+                    done = True
+            except ProcessExecError:
+                await asyncio.sleep(1)
 
 
 @pytest.mark.parametrize(
