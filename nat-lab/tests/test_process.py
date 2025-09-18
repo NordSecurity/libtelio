@@ -113,8 +113,8 @@ async def test_process_run_fail(connection_tag: ConnectionTag, command: list[str
             new_connection_by_tag(connection_tag)
         )
         with pytest.raises(ProcessExecError) as e:
-            async with connection.create_process(command).run():
-                await asyncio.sleep(1)
+            async with connection.create_process(command).run() as process:
+                await process.is_done()
         assert e.value.cmd == command
         assert e.value.returncode == 77
         assert " ".join(command) not in await _get_running_process_list(connection)
