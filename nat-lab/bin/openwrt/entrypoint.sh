@@ -1,5 +1,6 @@
 #!/bin/sh
 set -ex
+bash container_net_setup.sh
 if [ ! -f /var/lib/qemu/initialized ]; then
     timeout -s SIGINT "$QEMU_CONFIG_TIMEOUT" send-config-to-vm.sh || (echo "VM config error or time out."; exit 1)
     touch /var/lib/qemu/initialized
