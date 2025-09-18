@@ -18,7 +18,7 @@ jobs:
     outputs:
       value: ${{ steps.read-dotenv-key.outputs.value }}
     steps:
-      - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8
 
       - name: Read "${{ inputs.key }}" from .env file
         id: read-dotenv-key
