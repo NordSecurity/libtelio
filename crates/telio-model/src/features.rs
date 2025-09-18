@@ -565,6 +565,10 @@ pub struct FeatureErrorNotificationService {
     /// Size of the internal queue of received and to-be-published vpn error notifications
     #[default = 5]
     pub buffer_size: u32,
+
+    /// Allow only post-quantum safe key exchange algorithm for the ENS HTTPS connection
+    #[default = true]
+    pub allow_only_pq: bool,
 }
 
 #[cfg(test)]
@@ -824,7 +828,8 @@ mod tests {
                         trigger_cooldown_duration: 60,
                     }),
                     error_notification_service: Some(FeatureErrorNotificationService {
-                        buffer_size: 42
+                        buffer_size: 42,
+                        allow_only_pq: true,
                     })
                 }
             );
@@ -999,6 +1004,11 @@ mod tests {
             assert_json!(r#"{"hide_ips": true}"#, true, hide_user_data);
             assert_json!(r#"{"hide_user_data": false}"#, false, hide_user_data);
             assert_json!(r#"{"hide_user_data": true}"#, true, hide_user_data);
+        }
+
+        #[test]
+        fn test_ens_is_turned_off_by_default() {
+            assert_json!(r#"{}"#, None, error_notification_service);
         }
     }
 

@@ -10,7 +10,10 @@ repository = "https://github.com/NordSecurity/libtelio"
 crate-type = ["cdylib", "lib"]
 
 [features]
+default = ["enable_ens"]
 pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
+disable_ens = []
+enable_ens = ["telio-proto/enable_ens"]
 
 [dependencies]
 cfg-if = "1.0.0"

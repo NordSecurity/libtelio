@@ -73,9 +73,42 @@ Import-Module "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\Com
 Enter-VsDevShell -VsInstallPath "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community" -SkipAutomaticLocation
 ```
 
-#### Protocol buffers compiler
+#### Dependencies
 
-1. Verify that protoc (Protocol buffers compiler has been installed in correct version (at least `3.21.12`):
+##### Cmake
+
+Verify that you have `cmake` installed and visible in the path, for example:
+
+```bash
+cmake --version
+cmake version 3.22.1
+```
+
+Otherwise, run the following command to install it (or other appropriate for your system):
+
+```bash
+sudo apt update
+sudo apt install cmake
+```
+
+##### libclang
+
+Verify that you have a libclang installed on your system:
+
+```bash
+find /usr/lib -name "libclang*\.so"
+```
+
+Otherwise, run the following command to install it (or other appropriate for your system):
+
+```bash
+sudo apt update
+sudo apt install libclang-dev
+```
+
+##### Protocol buffers compiler
+
+Verify that protoc (Protocol buffers compiler has been installed in correct version (at least `3.21.12`):
 
 ```bash
 protoc --version
