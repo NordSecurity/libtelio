@@ -41,7 +41,7 @@ class Interface:
         log.debug("[%s]: %s", connection.tag, stdout)
 
         matches = re.finditer(
-            r"^(.+[a][b][l][e][d])[\s]+[\w]+[\s]+[\w]+[\s]+(.*$)",
+            r"(Disabled|Enabled)(?:[\s]+[\w]+[\s]+){2}(.*$)",
             stdout,
             re.MULTILINE,
         )
@@ -86,6 +86,7 @@ class Interface:
                     raise ValueError("Disabled interface with assigned address?")
                 interface.ipv4 = ipv4_address
             else:
+                # Sometimes the interface doesn't show up already on show interface command
                 interfaces.append(Interface(name, enabled=True, ipv4=ipv4_address))
                 log.debug("Added interface: %s, %s", name, ipv4_address)
 
@@ -217,12 +218,12 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         management_itf = find_interface((config.LIBVIRT_MANAGEMENT_NETWORK_PREFIX))
         primary_itf = find_interface(config.PRIMARY_VM_NETWORK_PREFIX)
         secondary_itf = find_interface(config.SECONDARY_VM_NETWORK_PREFIX)
-        assert primary_itf, LookupError(
-            "Couldn't find primary VM interface (10.55/16), is it enabled?"
-        )
-        assert secondary_itf, LookupError(
-            "Couldn't find secondary VM interface (10.66/16), is it enabled?"
-        )
+        assert (
+            primary_itf
+        ), "Couldn't find primary VM interface (10.55/16), is it enabled?"
+        assert (
+            secondary_itf
+        ), "Couldn't find secondary VM interface (10.66/16), is it enabled?"
 
         return NetworkSwitcherWindows(
             connection,
