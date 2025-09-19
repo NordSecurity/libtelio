@@ -5041,6 +5041,7 @@ name = "telio-proto"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-channel 2.5.0",
  "async-trait",
  "aws-lc-rs",
  "base64 0.22.1",
