@@ -158,6 +158,7 @@ class Runtime:
         paths: List[PathType],
         is_exit: bool = False,
         is_vpn: bool = False,
+        link_state: Optional[LinkState] = None,
     ) -> None:
         def _get_events() -> List[TelioNode]:
             return [
@@ -169,6 +170,7 @@ class Runtime:
                 and peer.state in states
                 and is_exit == peer.is_exit
                 and is_vpn == peer.is_vpn
+                and (link_state is None or peer.link_state == link_state)
             ]
 
         old_events = _get_events()
@@ -359,9 +361,12 @@ class Events:
         is_exit: bool = False,
         is_vpn: bool = False,
         timeout: Optional[float] = None,
+        link_state: Optional[LinkState] = None,
     ) -> None:
         await asyncio.wait_for(
-            self._runtime.notify_peer_event(public_key, states, paths, is_exit, is_vpn),
+            self._runtime.notify_peer_event(
+                public_key, states, paths, is_exit, is_vpn, link_state
+            ),
             timeout,
         )
 
@@ -684,8 +689,9 @@ class Client:
         is_exit: bool = False,
         is_vpn: bool = False,
         timeout: Optional[float] = None,
+        link_state: Optional[LinkState] = None,
     ) -> None:
-        event_info = f"peer({public_key}) with states({states}), paths({paths}), is_exit={is_exit}, is_vpn={is_vpn}"
+        event_info = f"peer({public_key}) with states({states}), paths({paths}), link_state({link_state}), is_exit={is_exit}, is_vpn={is_vpn}"
 
         log.debug("[%s]: wait for peer event %s", self._node.name, event_info)
         await self.get_events().wait_for_event_peer(
@@ -695,6 +701,7 @@ class Client:
             is_exit,
             is_vpn,
             timeout,
+            link_state,
         )
         log.debug("[%s]: got peer event %s", self._node.name, event_info)
 
@@ -841,6 +848,7 @@ class Client:
         public_key: str,
         timeout: Optional[float] = None,
         pq: bool = False,
+        link_state_enabled: bool = False,
     ) -> None:
         await self._configure_interface()
         await self.get_router().create_vpn_route()
@@ -852,6 +860,7 @@ class Client:
                 is_exit=True,
                 is_vpn=True,
                 timeout=timeout,
+                link_state=LinkState.UP if link_state_enabled else None,
             )
         ) as event:
             self.get_runtime().allowed_pub_keys.add(public_key)
