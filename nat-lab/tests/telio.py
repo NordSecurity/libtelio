@@ -36,7 +36,7 @@ from utils.connection import Connection, TargetOS
 from utils.connection.docker_connection import DockerConnection, container_id
 from utils.connection_util import get_uniffi_path
 from utils.logger import log
-from utils.moose import MOOSE_LOGS_DIR
+from utils.moose import MOOSE_DB_TIMEOUT_MS, MOOSE_LOGS_DIR
 from utils.output_notifier import OutputNotifier
 from utils.process import Process, ProcessExecError
 from utils.python import get_python_binary
@@ -1045,19 +1045,35 @@ class Client:
         if self._fingerprint is not None:
             await self.wait_for_log("[Moose] Init callback success")
             database, fingerprint = self._fingerprint
-            await self._connection.create_process(
-                [
-                    "sqlite3",
-                    database,
-                    "--cmd",
-                    "PRAGMA busy_timeout = 30000;",
-                    (
-                        "INSERT OR REPLACE INTO shared_context (key, val, is_essential) VALUES"
-                        f" ('device.fp._string', '\"{fingerprint}\"', 1)"
-                    ),
-                ],
-                quiet=True,
-            ).execute()
+            max_retries = MOOSE_DB_TIMEOUT_MS / 1000
+            max_timeout = MOOSE_DB_TIMEOUT_MS / 30
+
+            while max_retries:
+                try:
+                    await self._connection.create_process(
+                        [
+                            "sqlite3",
+                            database,
+                            "--cmd",
+                            f"PRAGMA busy_timeout = {max_timeout};",
+                            (
+                                "INSERT OR REPLACE INTO shared_context (key, val, is_essential) VALUES"
+                                f" ('device.fp._string', '\"{fingerprint}\"', 1)"
+                            ),
+                        ],
+                        quiet=True,
+                    ).execute()
+                    return
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    print(
+                        f"maybe_write_device_fingerprint_to_moose_db error: {e}, retrying ..."
+                    )
+                    max_retries -= 1
+                    await asyncio.sleep(0.1)
+            if not max_retries:
+                raise Exception(
+                    "Retries exhausted, while trying to write fingerprint to db"
+                )
 
     async def trigger_event_collection(self) -> None:
         await self.get_proxy().trigger_analytics_event()

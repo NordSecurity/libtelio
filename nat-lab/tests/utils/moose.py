@@ -1,1 +1,2 @@
 MOOSE_LOGS_DIR = "/moose_logs"
+MOOSE_DB_TIMEOUT_MS = 30000
