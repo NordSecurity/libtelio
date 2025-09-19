@@ -418,6 +418,27 @@ fn authentication_tag(secret: SharedSecret, message: &[u8]) -> [u8; 32] {
     *keyed_hash(&key, message).as_bytes()
 }
 
+/// Install the default crypto provider for rustls
+///
+/// In case there are two providers present (ring and aws-lc-rs) rustls requires the user
+/// to explicitly configure the one which should be used by default.
+#[cfg(feature = "enable_ens")]
+pub fn install_default_crypto_provider() {
+    if let Err(e) = rustls::crypto::aws_lc_rs::default_provider().install_default() {
+        telio_log_warn!("Failed to install default crypto provider for rustls: {e:?}");
+    }
+}
+
+/// When ENS is disabled, we should only have ring provider and there should be no need
+/// to explicitly configure the default crypto provider. But just to be on the safe side,
+/// (and handle a case where there 3rd crypto provider) we will configure ring either way.
+#[cfg(not(feature = "enable_ens"))]
+pub fn install_default_crypto_provider() {
+    if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
+        telio_log_warn!("Failed to install default crypto provider for rustls: {e:?}");
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -530,9 +551,7 @@ mod tests {
     #[tokio::test]
     #[test_log::test]
     async fn test_ens() {
-        tokio_rustls::rustls::crypto::aws_lc_rs::default_provider()
-            .install_default()
-            .unwrap();
+        install_default_crypto_provider();
 
         let server_private_key = SecretKey::gen();
         let server_public_key = server_private_key.public();

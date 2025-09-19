@@ -18,7 +18,7 @@ mod ens;
 
 pub use ens::{
     grpc::{ConnectionError, Error as GrpcError},
-    Error, ErrorNotificationService,
+    install_default_crypto_provider, Error, ErrorNotificationService,
 };
 
 pub use codec::{Codec, Error as CodecError, Result as CodecResult};
