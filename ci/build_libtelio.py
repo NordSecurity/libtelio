@@ -354,6 +354,8 @@ def main() -> None:
         help="Include tcli package",
     )
 
+    fetch_artifacts_parser.add_argument("--moose", action="store_true", help="Use libmoose")
+
     for parsers in [build_parser, bindings_parser, fetch_artifacts_parser]:
         parsers.add_argument(
             "--try-fetch-from-pipeline",
