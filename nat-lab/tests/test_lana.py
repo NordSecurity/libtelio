@@ -67,7 +67,7 @@ from utils.connection_util import (
     add_outgoing_packets_delay,
 )
 from utils.logger import log
-from utils.moose import MOOSE_LOGS_DIR
+from utils.moose import MOOSE_DB_TIMEOUT_MS, MOOSE_LOGS_DIR
 from utils.ping import ping
 from utils.router import IPStack, IPProto
 from utils.telio_log_notifier import TelioLogNotifier
@@ -171,19 +171,30 @@ async def get_moose_db_file(
     local_path: str,
 ) -> None:
     Path(local_path).unlink(missing_ok=True)
+    max_retries = MOOSE_DB_TIMEOUT_MS / 1000
+    max_timeout = MOOSE_DB_TIMEOUT_MS / 30
 
-    await connection.create_process(
-        [
-            "sqlite3",
-            container_path,
-            "--cmd",
-            "PRAGMA busy_timeout = 30000;",
-            f".backup {container_backup_path}",
-        ],
-        quiet=True,
-    ).execute(privileged=True)
+    while max_retries:
+        try:
+            await connection.create_process(
+                [
+                    "sqlite3",
+                    container_path,
+                    "--cmd",
+                    f"PRAGMA busy_timeout = {max_timeout};",
+                    f".backup {container_backup_path}",
+                ],
+                quiet=True,
+            ).execute(privileged=True)
 
-    await connection.download(container_backup_path, local_path)
+            await connection.download(container_backup_path, local_path)
+            return
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            print(f"get_moose_db_file error: {e}, retrying ...")
+            max_retries -= 1
+            await asyncio.sleep(0.1)
+    if not max_retries:
+        raise Exception("Retries exhausted, while trying to fetch moose db file")
 
 
 async def wait_for_event_dump(
