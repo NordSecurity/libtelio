@@ -13,5 +13,5 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: apt update && apt -y install cmake libclang-dev
       - name: Checkout
-        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 #v4.1.6
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - run: CARGO_CFG_CURVE25519_DALEK_BACKEND="serial" RUSTFLAGS="-Dwarnings" DYLINT_LIBRARY_PATH=${NAGGER_PATH} cargo dylint --workspace --all
