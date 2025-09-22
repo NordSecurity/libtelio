@@ -2,10 +2,10 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use telio::telio_task::io::chan;
 use tokio::sync::oneshot;
-use tracing::{error, trace};
+use tracing::{error, trace, warn};
 
 use crate::{
-    comms::DaemonSocket,
+    comms::{DaemonConnection, DaemonSocket},
     config::Endpoint,
     daemon::{TelioStatusReport, TeliodError},
 };
@@ -155,50 +155,66 @@ impl CommandListener {
         }
     }
 
-    pub async fn try_recv_quit(&mut self) -> Result<(), TeliodError> {
-        let mut connection = self.socket.accept().await?;
-        let command_str = connection.read_command().await?;
-
-        match serde_json::from_str::<ClientCmd>(&command_str) {
-            Ok(ClientCmd::QuitDaemon) => {
-                connection.respond(CommandResponse::Ok.serialize()).await?;
-                Ok(())
-            }
-            Ok(_) => {
-                connection
-                    .respond(
-                        CommandResponse::Err("Obtaining nordlynx key, ignoring".to_owned())
-                            .serialize(),
-                    )
-                    .await?;
-                Err(TeliodError::InvalidCommand(command_str))
-            }
-            Err(e) => {
-                connection
-                    .respond(
-                        CommandResponse::Err(format!("Invalid command: {command_str}")).serialize(),
-                    )
-                    .await?;
-                Err(e.into())
-            }
-        }
-    }
-
-    pub async fn handle_client_connection(&mut self) -> Result<ClientCmd, TeliodError> {
+    pub async fn handle_client_connection(
+        &mut self,
+        daemon_ready: bool,
+    ) -> Result<ClientCmd, TeliodError> {
         let mut connection = self.socket.accept().await?;
         let command_str = connection.read_command().await?;
 
         if let Ok(command) = serde_json::from_str::<ClientCmd>(&command_str) {
-            let response = self.process_command(&command).await?;
-            connection.respond(response.serialize()).await?;
-            Ok(command)
+            // daemon is not ready, only QuitDaemon is allowed
+            if !daemon_ready {
+                return self.handle_early_command(&mut connection, command).await;
+            }
+
+            match self.process_command(&command).await {
+                Ok(response) => {
+                    connection.respond(response.serialize()).await?;
+                    Ok(command)
+                }
+                Err(err) => {
+                    error!("Error processing command: {:?}", err);
+                    self.respond_err(
+                        &mut connection,
+                        format!("Failed to process command: {command_str}"),
+                    )
+                    .await?;
+                    Err(err)
+                }
+            }
         } else {
-            connection
-                .respond(
-                    CommandResponse::Err(format!("Invalid command: {command_str}")).serialize(),
-                )
+            self.respond_err(&mut connection, format!("Invalid command: {command_str}"))
                 .await?;
             Err(TeliodError::InvalidCommand(command_str))
+        }
+    }
+
+    async fn respond_err(
+        &self,
+        connection: &mut DaemonConnection,
+        msg: String,
+    ) -> Result<(), TeliodError> {
+        Ok(connection
+            .respond(CommandResponse::Err(msg).serialize())
+            .await?)
+    }
+
+    async fn handle_early_command(
+        &self,
+        connection: &mut DaemonConnection,
+        command: ClientCmd,
+    ) -> Result<ClientCmd, TeliodError> {
+        if command == ClientCmd::QuitDaemon {
+            connection.respond(CommandResponse::Ok.serialize()).await?;
+            Ok(command)
+        } else {
+            warn!("Daemon is not ready, ignoring: {command:?}");
+            self.respond_err(connection, "Daemon is not ready, ignoring".to_owned())
+                .await?;
+            Err(TeliodError::InvalidCommand(
+                "Daemon is not ready, ignoring".to_owned(),
+            ))
         }
     }
 }
@@ -280,7 +296,7 @@ mod tests {
 
         let command = serde_json::to_string(&ClientCmd::GetStatus).unwrap();
         let (cmd, response) = tokio::join!(
-            listener.handle_client_connection(),
+            listener.handle_client_connection(true),
             client_send_command(&path, &command)
         );
         assert_eq!(cmd.unwrap(), ClientCmd::GetStatus);
@@ -297,7 +313,7 @@ mod tests {
 
         let command = "garbage";
         let (cmd, _) = tokio::join!(
-            listener.handle_client_connection(),
+            listener.handle_client_connection(true),
             client_send_command(&path, command)
         );
 
@@ -311,10 +327,40 @@ mod tests {
 
         let command = "garbage";
         let (cmd, _) = tokio::join!(
-            listener.handle_client_connection(),
+            listener.handle_client_connection(true),
             broken_client_send_command(&path, command)
         );
 
         assert!(matches!(cmd, Err(TeliodError::Io(_))));
+    }
+
+    #[tokio::test]
+    async fn test_command_early_quit() {
+        let path = make_socket_path();
+        let mut listener = make_command_listener(&path);
+
+        let command = serde_json::to_string(&ClientCmd::QuitDaemon).unwrap();
+        let (cmd, response) = tokio::join!(
+            listener.handle_client_connection(false),
+            client_send_command(&path, &command)
+        );
+
+        assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
+        assert_eq!(response.unwrap(), CommandResponse::Ok);
+    }
+
+    #[tokio::test]
+    async fn test_command_early_status() {
+        let path = make_socket_path();
+        let mut listener = make_command_listener(&path);
+
+        let command = serde_json::to_string(&ClientCmd::GetStatus).unwrap();
+        let (cmd, response) = tokio::join!(
+            listener.handle_client_connection(false),
+            client_send_command(&path, &command)
+        );
+
+        assert!(matches!(cmd, Err(TeliodError::InvalidCommand(_))));
+        assert!(matches!(response, Ok(CommandResponse::Err(_))));
     }
 }

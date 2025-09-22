@@ -253,7 +253,7 @@ class Teliod:
             stdout, _ = await self.execute_command(Command.is_alive())
             return "Command executed successfully" in stdout
         except ProcessExecError as exc:
-            if "Obtaining nordlynx key, ignoring" in exc.stdout:
+            if "Daemon is not ready, ignoring" in exc.stdout:
                 raise IgnoreableError() from exc
             if "Error: DaemonIsNotRunning" in exc.stderr:
                 return False

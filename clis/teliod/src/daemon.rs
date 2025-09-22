@@ -1,4 +1,3 @@
-use futures::pin_mut;
 use futures::stream::StreamExt;
 use nix::libc::{SIGHUP, SIGINT, SIGQUIT, SIGTERM};
 use nix::sys::signal::Signal;
@@ -10,7 +9,7 @@ use std::sync::Arc;
 use telio::crypto::PublicKey;
 use telio::telio_model::mesh::{ExitNode, Node};
 use thiserror::Error as ThisError;
-use tokio::task::JoinError;
+use tokio::task::{JoinError, JoinHandle};
 use tokio::{sync::mpsc, time::Duration};
 use tracing::{debug, error, info, trace, warn};
 use tracing_appender::rolling::InitError;
@@ -80,6 +79,8 @@ pub enum TeliodError {
     IpRoute,
     #[error("Endpoint has no PublicKey")]
     EndpointNoPublicKey,
+    #[error("Event loop error: {0}")]
+    EventLoopError(String),
 }
 
 /// Libtelio and VPN status report
@@ -338,58 +339,82 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
 
     let (telio_tx, telio_rx) = mpsc::channel(10);
+    // Wrap in option to move the rx only once in the event loop
+    let mut telio_rx = Some(telio_rx);
+
+    // Kick off fetching nordlynx_key
+    let auth_token = Arc::new(config.authentication_token.clone());
+    let cert_path = config
+        .http_certificate_file_path
+        .as_ref()
+        .map(|s| Arc::from(s.as_path()));
+    let mut fetch_key_task = Some(Box::pin(request_nordlynx_key(auth_token, cert_path)));
+
+    // Only created after completed fetching the nordlynx_key
+    let mut telio_task_handle: Option<JoinHandle<Result<(), TeliodError>>> = None;
+    // Indicates daemon has started and is ready to process events normally
+    let mut daemon_ready = false;
 
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
     let mut cmd_listener = CommandListener::new(socket, telio_tx.clone());
 
-    let nordlynx_private_key = {
-        let api_request_future = request_nordlynx_key(
-            &config.authentication_token,
-            config.http_certificate_file_path.as_deref(),
-        );
-        pin_mut!(api_request_future);
-        loop {
-            select! {
-                nordlynx_private_key = &mut api_request_future => break nordlynx_private_key?,
-                res = cmd_listener.try_recv_quit() => {
-                    match res {
-                        Ok(_) => {
-                            info!("Received quit command, exiting");
-                            return Ok(())
-                        },
-                        Err(e) => {
-                            debug!("Received command {:?} while obtaining service credentials, ignoring", e);
-                        },
-                    }
-                },
-                _ = signals.next() => {
-                    warn!("Interrupted while obtaining service credentials - stopping");
-                    return Ok(());
-                }
-            };
-        }
-    };
-
-    let config_clone = config.clone();
-    let mut telio_task_handle = tokio::task::spawn_blocking(move || {
-        let mut context = TelioContext::new(config_clone, nordlynx_private_key)?;
-        context.start_listening_commands(telio_rx)
-    });
-
-    // Spawn the async task for exit node connection
-    // TODO: This can be triggered through teliod command to allow the user to stop/restart.
-    let config_clone = config.clone();
-    let tx_clone = telio_tx.clone();
-    tokio::spawn(async move {
-        handle_exit_node_connection(&config_clone, tx_clone).await;
-        debug!("Exit node connection task completed");
-    });
-
     info!("Entering event loop");
     loop {
         select! {
-            // Check if telio_task completes and exit if it fails
-            join_result = &mut telio_task_handle => {
+            // Handle nordlynx_key retrieval task first
+            // If the task exists, await it and return the key.
+            // after completion it is set to None
+            Some(key_result) = async {
+                match &mut fetch_key_task {
+                    Some(fut) => Some(fut.as_mut().await),
+                    None => None,
+                }
+            }, if !daemon_ready => {
+                match key_result {
+                Ok(nordlynx_key) => {
+                    info!("Nordlynx key obtained, starting telio task");
+
+                    if let Some(rx) = telio_rx.take(){
+                        let config_clone = config.clone();
+                        let tx_clone = telio_tx.clone();
+                        let key_clone = nordlynx_key.clone();
+
+                        // Spawn telio main task
+                        telio_task_handle = Some(tokio::task::spawn_blocking(move || {
+                            let mut context = TelioContext::new(config_clone, key_clone)?;
+                            context.start_listening_commands(rx)
+                        }));
+
+                        // Spawn exit node connection task
+                        let config_clone = config.clone();
+                        tokio::spawn(async move {
+                            handle_exit_node_connection(&config_clone, tx_clone).await;
+                            debug!("Exit node connection task completed");
+                        });
+
+                        fetch_key_task = None;
+                        daemon_ready = true;
+                        debug!("Daemon is initialized and ready");
+                    } else {
+                        error!("telio_rx already taken");
+                        break Err(TeliodError::EventLoopError("telio_rx missing".into()));
+                    }
+                },
+                Err(err) => {
+                    error!("Failed to obtain nordlynx key: {:?}", err);
+                    break Err(err.into());
+                    }
+                }
+            }
+            // Poll the telio_task for completion
+            // Uses an async block to await on the optional telio_task handle,
+            // that is created after fetch_key_task is completed
+            Some(join_result) = async {
+                match &mut telio_task_handle {
+                    Some(handle) => Some(handle.await),
+                    None => None,
+                }
+            }, if daemon_ready => {
                 match join_result {
                     Ok(Ok(_)) => {
                         info!("Telio task thread completed normally");
@@ -405,7 +430,7 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
                 }
             },
             // Handle commands from the client side
-            result = cmd_listener.handle_client_connection() => {
+            result = cmd_listener.handle_client_connection(daemon_ready) => {
                 match result {
                     Ok(command) => {
                         debug!("Client command {:?} executed successfully", command);

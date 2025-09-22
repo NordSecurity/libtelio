@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::Read;
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
+use std::sync::Arc;
 use telio::telio_model::mesh::ExitNode;
 use thiserror::Error;
 use tokio::time::Duration;
@@ -201,15 +202,15 @@ macro_rules! handle_api_error {
 
 /// Request the Nordlynx private key from the API.
 pub(crate) async fn request_nordlynx_key(
-    auth_token: &NordToken,
-    cert_path: Option<&Path>,
+    auth_token: Arc<NordToken>,
+    cert_path: Option<Arc<Path>>,
 ) -> Result<SecretKey, Error> {
     info!("Requesting Nordlynx secret..");
     let mut backoff = build_backoff()?;
     let mut retries = 0;
 
     loop {
-        match send_request_nordlynx_key(auth_token, cert_path).await {
+        match send_request_nordlynx_key(auth_token.clone(), cert_path.clone()).await {
             Ok(id) => return Ok(id),
             Err(e) => {
                 warn!("Failed to request Nordlynx secret due to {e:?}");
@@ -222,13 +223,13 @@ pub(crate) async fn request_nordlynx_key(
 }
 
 async fn send_request_nordlynx_key(
-    auth_token: &NordToken,
-    cert_path: Option<&Path>,
+    auth_token: Arc<NordToken>,
+    cert_path: Option<Arc<Path>>,
 ) -> Result<SecretKey, Error> {
-    let client = http_client(cert_path);
+    let client = http_client(cert_path.as_deref());
     let response = client
         .get(format!("{API_BASE}/users/services/credentials"))
-        .basic_auth("token", Some(auth_token as &str))
+        .basic_auth("token", Some(auth_token.as_ref() as &str))
         .send()
         .await?;
 
