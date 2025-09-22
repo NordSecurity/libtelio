@@ -11,7 +11,7 @@ sn_fake_clock = ["dep:sn_fake_clock"]
 
 [dependencies]
 backtrace = "0.3.75"
-blake3 = "1.8.2"
+blake3.workspace = true
 boot-time = { git = "https://github.com/NordSecurity/boot_time.git", rev = "14f9a90d43a601ae50e69044894538c1398120a7" }
 futures.workspace = true
 hashlink.workspace = true
@@ -19,6 +19,7 @@ ipnet.workspace = true
 mockall = { workspace = true, optional = true }
 parking_lot.workspace = true
 rand.workspace = true
+rand_core.workspace = true
 regex.workspace = true
 rustc-hash.workspace = true
 serde.workspace = true
@@ -36,7 +37,6 @@ maplit.workspace = true
 mockall.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
-rand.workspace = true
 rstest.workspace = true
 sn_fake_clock = { workspace = true }
 tokio = { workspace = true, features = ["time", "rt", "macros", "test-util"] }
