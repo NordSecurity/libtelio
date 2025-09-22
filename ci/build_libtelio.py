@@ -177,6 +177,16 @@ you can have both arch specific and OS specific variables at the same time
 """
 
 LIBTELIO_CONFIG = {
+    "openwrt": {
+        "archs": {
+            "x86_64": {},
+            "mipsel": {},
+            "aarch64": {},
+        },
+        "packages": {
+            "teliod": {"teliod": "teliod"},
+        },
+    },
     "windows": {
         "archs": {
             "x86_64": {
