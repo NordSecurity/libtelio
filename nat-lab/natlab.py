@@ -40,13 +40,13 @@ def start():
 
     generate_grpc("../crates/telio-proto/protos/ens.proto")
 
-    original_port_mapping = 'ports: ["58001"]'
-    disabled_port_mapping = "ports: []"
-    with open("docker-compose.yml", "r", encoding="utf-8") as file:
-        filedata = file.read()
-    if original_port_mapping not in filedata:
-        raise RuntimeError("Cannot find expected port mapping compose file")
     if "GITLAB_CI" in os.environ:
+        with open("docker-compose.yml", "r", encoding="utf-8") as file:
+            filedata = file.read()
+        original_port_mapping = 'ports: ["58001"]'
+        disabled_port_mapping = "ports: []"
+        if original_port_mapping not in filedata:
+            raise RuntimeError("Cannot find expected port mapping compose file")
         filedata = filedata.replace(original_port_mapping, disabled_port_mapping)
         with open("docker-compose.yml", "w", encoding="utf-8") as file:
             file.write(filedata)
