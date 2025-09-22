@@ -2855,7 +2855,6 @@ dependencies = [
  "rand 0.9.2",
  "regex",
  "reqwest",
- "rustls-native-certs",
  "serde",
  "serde_json",
  "serial_test",
