@@ -1,6 +1,3 @@
-[package.metadata.cargo-udeps.ignore]
-normal = ["serde_json"]
-
 [package]
 name = "telio-lana"
 version = "0.1.0"
@@ -15,7 +12,6 @@ moose = []
 [dependencies]
 tracing.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 thiserror.workspace = true
 time.workspace = true
 
