@@ -478,6 +478,16 @@ pub struct FeatureFirewall {
     pub outgoing_blacklist: Vec<FirewallBlacklistTuple>,
 }
 
+impl FeatureFirewall {
+    /// For legacy reasons, this struct has two fields that have to coexist even though they mean the same thing
+    /// This function gives you the relevant value of those fields without having to check both
+    ///
+    /// Note: Use this function instead of direct field access
+    pub fn neptun_reset_conns(&self) -> bool {
+        self.neptun_reset_conns || self.boringtun_reset_conns
+    }
+}
+
 /// Turns on post quantum VPN tunnel
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
