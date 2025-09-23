@@ -102,8 +102,8 @@ async def test_openwrt_vpn_reconnect() -> None:
             ["mkdir", "-p", "/etc/teliod"]
         ).execute()
         await gateway_connection.upload_file(
-            "data/teliod/config_openwrt_setup.json",
-            "/etc/teliod/config_openwrt_setup.json",
+            "data/teliod/config_openwrt_uci_pl_setup.json",
+            "/etc/teliod/config_openwrt_uci_pl_setup.json",
         )
 
         config_path = Paths(exec_path=Path("nordvpn"))
