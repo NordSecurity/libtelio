@@ -32,7 +32,7 @@ BYPASS_LLT_SECRETS=1 cargo build
 
 #### Linux toolchain
 
-1. Verify that GCC (GNU Compiler Collection) has been installed:
+Verify that GCC (GNU Compiler Collection) has been installed:
 
 ```bash
 gcc --version

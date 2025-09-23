@@ -161,7 +161,7 @@ def check_containers(exclude_containers=None) -> None:
 
 def find_container(service: str, docker_status: List[str]) -> bool:
     for line in docker_status:
-        if line.find(service) >= 0:
+        if (service in line) and ("unhealthy" not in line):
             return True
 
     return False
