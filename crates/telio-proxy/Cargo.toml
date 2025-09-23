@@ -8,7 +8,6 @@ publish = false
 
 [dependencies]
 async-trait.workspace = true
-crypto_box.workspace = true
 futures.workspace = true
 tracing.workspace = true
 mockall = { workspace = true, optional = true }
