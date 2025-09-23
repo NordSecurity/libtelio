@@ -13,7 +13,6 @@ test-util = []
 
 [dependencies]
 async-trait.workspace = true
-base64.workspace = true
 neptun.workspace = true
 futures.workspace = true
 ipnet.workspace = true
