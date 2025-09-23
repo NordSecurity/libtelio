@@ -2,6 +2,7 @@ import asyncio
 import config
 import pytest
 from contextlib import AsyncExitStack
+from datetime import datetime, timedelta
 from helpers import SetupParameters, setup_environment
 from telio import Client
 from utils import stun
@@ -17,10 +18,11 @@ from utils.ping import ping
 EMPTY_PRESHARED_KEY_SLOT = "(none)"
 
 
+# Returns the time at which the connection to the VPN server was established
 async def _connect_vpn_pq(
     client_conn: Connection,
     client: Client,
-) -> None:
+) -> datetime:
     wg_server = config.NLX_SERVER
 
     await client.connect_to_vpn(
@@ -31,10 +33,14 @@ async def _connect_vpn_pq(
         timeout=10,
     )
 
+    connected = datetime.now()
+
     await ping(client_conn, config.PHOTO_ALBUM_IP)
 
     ip = await stun.get(client_conn, config.STUN_SERVER)
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
+
+    return connected
 
 
 async def read_preshared_key_slot(nlx_conn: Connection) -> str:
@@ -534,15 +540,17 @@ async def test_pq_vpn_handshake_after_nonet(
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
-        await _connect_vpn_pq(
+        pq_connected = await _connect_vpn_pq(
             client_conn,
             client_alpha,
         )
+        just_before_pq_restart = pq_connected + timedelta(seconds=179)
 
         async with client_alpha.get_router().break_udp_conn_to_host(
             str(config.NLX_SERVER["ipv4"])
         ):
-            await asyncio.sleep(179)
+            sleep_secs = (just_before_pq_restart - datetime.now()).total_seconds()
+            await asyncio.sleep(sleep_secs)
 
             client_log = (await client_alpha.get_log()).lower()
             log_line = "Restarting postquantum entity".lower()
