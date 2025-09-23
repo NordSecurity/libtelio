@@ -40,6 +40,8 @@ telio-model.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
+hex.workspace = true
+sha2.workspace = true
 
 [build-dependencies]
 anyhow.workspace = true

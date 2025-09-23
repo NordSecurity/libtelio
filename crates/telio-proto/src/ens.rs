@@ -15,6 +15,7 @@ use rustls::{
     pki_types::{CertificateDer, ServerName, UnixTime},
     ClientConfig, DigitallySignedStruct, SignatureScheme,
 };
+use sha2::{Digest, Sha256};
 use telio_crypto::{SecretKey, SharedSecret};
 use telio_model::PublicKey;
 use telio_sockets::SocketPool;
@@ -346,12 +347,17 @@ fn make_tls_connector(allow_only_mlkem: bool) -> std::io::Result<TlsConnector> {
     impl ServerCertVerifier for AcceptAnyCertVerifier {
         fn verify_server_cert(
             &self,
-            _end_entity: &CertificateDer<'_>,
+            end_entity: &CertificateDer<'_>,
             _intermediates: &[CertificateDer<'_>],
-            _server_name: &ServerName<'_>,
+            server_name: &ServerName<'_>,
             _ocsp_response: &[u8],
             _now: UnixTime,
         ) -> Result<ServerCertVerified, rustls::Error> {
+            let hash: [u8; 32] = Sha256::digest(&*end_entity).into();
+            telio_log_info!(
+                "Remote gRPC server ({server_name:?}) sha256 fingerprint: {}",
+                hex::encode(hash)
+            );
             Ok(ServerCertVerified::assertion())
         }
 
