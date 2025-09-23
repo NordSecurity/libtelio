@@ -39,7 +39,7 @@ class IfcConfigType(Enum):
     VPN_COUNTRY_PL = "config_with_vpn_country_pl.json"
     VPN_COUNTRY_DE = "config_with_vpn_country_de.json"
     VPN_COUNTRY_EMPTY = "config_with_vpn_country_empty.json"
-    VPN_OPENWRT = "config_openwrt_setup.json"
+    VPN_OPENWRT_UCI_PL = "config_openwrt_uci_pl_setup.json"
 
     @classmethod
     def _missing_(cls, value):

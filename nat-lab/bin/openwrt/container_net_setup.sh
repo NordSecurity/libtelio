@@ -6,74 +6,12 @@ ADD_ERR="Please add the following setting to your container:"
 
 tuntap="TUN device is missing. $ADD_ERR --device /dev/net/tun"
 WAN_IP="10.0.254.14/16"
-LAN_IP="192.168.115.254"
-LAN_IP_MASK="24"
+LAN_IP="192.168.115.254/24"
+NEW_BRIDGE_IP="192.168.115.253/24"
 
 if [ ! -c /dev/net/tun ]; then
   error "$tuntap" && return 1
 fi
-
-find_free_ip() {
-  local current_ip="$1"
-  local prefix="$2" # CIDR prefix length (e.g., 24)
-
-  # Parse current IP to integer
-  IFS='.' read -r a b c d <<<"$current_ip"
-  local ip_int=$((((a << 24) + (b << 16) + (c << 8) + d)))
-
-  # Validate/fallback prefix
-  if [[ -z "${prefix:-}" ]] || ! [[ "$prefix" =~ ^[0-9]+$ ]] || ((prefix < 1 || prefix > 30)); then
-    prefix=$(ip -o -f inet addr show | awk -v ip="$current_ip" '$4 ~ ip"/" {print $4}' | cut -d/ -f2 | head -n1 || true)
-    [[ -z "${prefix:-}" ]] && prefix=24
-  fi
-
-  # Compute network and broadcast as integers
-  local mask_int=$((((0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF)))
-  local net_int=$((ip_int & mask_int))
-  local bcast_int=$((net_int | (~mask_int & 0xFFFFFFFF)))
-
-  # Usable range: reserve net+1 as gateway, start from net+2
-  local start=$((net_int + 2))
-  local end=$((bcast_int - 1))
-  if ((end <= start)); then
-    echo "No free IP found"
-    return
-  fi
-
-  # Deterministic starting point to avoid races between parallel containers
-  local ident="${HOSTNAME:-$(hostname)}:${APP:-}:${ETH_COUNT:-1}"
-  local h=$(echo -n "$ident" | md5sum | cut -c1-8)
-  local span=$((end - start + 1))
-  local offset=$((0x$h % span))
-  local candidate=$((start + offset))
-
-  # Avoid picking the current_ip
-  if ((candidate == ip_int)); then
-    candidate=$((candidate + 1))
-    ((candidate > end)) && candidate=$start
-  fi
-
-  # Try up to span probes, wrap around if needed
-  local tries=0
-  while ((tries < span)); do
-    local i1=$(((candidate >> 24) & 0xFF))
-    local i2=$(((candidate >> 16) & 0xFF))
-    local i3=$(((candidate >> 8) & 0xFF))
-    local i4=$((candidate & 0xFF))
-    local new_ip="$i1.$i2.$i3.$i4"
-
-    if [[ "$new_ip" != "$current_ip" ]] && ! ping -c 1 -W 1 "$new_ip" &>/dev/null; then
-      echo "$new_ip"
-      return
-    fi
-
-    candidate=$((candidate + 1))
-    ((candidate > end)) && candidate=$start
-    tries=$((tries + 1))
-  done
-
-  echo "No free IP found"
-}
 
 for ((i = 0; i < ETH_COUNT; i++)); do
   DOCKER_BRIDGE="dockerbridge$i"
@@ -130,10 +68,9 @@ done
 # deleting ips from the bridge to avoid ip conflicts
 # same ips will be assigned to VM interfaces
 ip addr del "$WAN_IP" dev dockerbridge0
-ip addr del "$LAN_IP/$LAN_IP_MASK" dev dockerbridge1
+ip addr del "$LAN_IP" dev dockerbridge1
 
-NEW_BRIDGE_IP=$(find_free_ip "$LAN_IP" "$LAN_IP_MASK")
-ip addr add "$NEW_BRIDGE_IP/$LAN_IP_MASK" dev dockerbridge1
+ip addr add "$NEW_BRIDGE_IP" dev dockerbridge1
 
 ip link set dockerbridge0 down
 ip link set dockerbridge0 up
