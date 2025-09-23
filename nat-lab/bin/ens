@@ -3,10 +3,12 @@
 import asyncio
 import blake3
 import base64
+import hashlib
 import ipaddress
 import json
 import sys
 import uuid
+
 
 from aiohttp import web
 from datetime import datetime, timedelta
@@ -26,6 +28,7 @@ import grpc_protobuf.ens_pb2
 from grpc_protobuf.ens_pb2 import ChallengeResponse, ConnectionError
 from grpc_protobuf.ens_pb2_grpc import LoginServicer, ENSServicer, add_LoginServicer_to_server, add_ENSServicer_to_server
 
+grpc_tls_fingerprint = None
 # Synchronization between http controller api and grpc stub
 error_event = asyncio.Event()
 error_ready = None
@@ -130,6 +133,12 @@ def generate_self_signed_cert(
         .sign(private_key, hashes.SHA256())
     )
 
+    cert_der = cert.public_bytes(serialization.Encoding.DER)
+    fingerprint = hashlib.sha256(cert_der).hexdigest()
+    print(f"cert fingerprint: {fingerprint}")
+    global grpc_tls_fingerprint
+    grpc_tls_fingerprint = fingerprint
+
     cert_pem = cert.public_bytes(serialization.Encoding.PEM)
     key_pem = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
@@ -165,10 +174,15 @@ async def handle_vpn_server_private_key(request):
     return web.json_response({})
     
 
+async def handle_grpc_tls_fingerprint(request):
+    global grpc_tls_fingerprint
+    return web.json_response({"fingerprint": grpc_tls_fingerprint})
+
 async def start_http_server(host, port):
     app = web.Application()
     app.router.add_post('/api/connection_error', handle_connection_error)
     app.router.add_post('/api/vpn_server_private_key', handle_vpn_server_private_key)
+    app.router.add_get('/api/grpc_tls_fingerprint', handle_grpc_tls_fingerprint)
     
     runner = web.AppRunner(app)
     await runner.setup()
@@ -178,12 +192,7 @@ async def start_http_server(host, port):
     print(f"HTTP server started at http://{host}:{port}")
     return runner
 
-async def start_grpc_server():
-    cert_pem, key_pem = generate_self_signed_cert(
-        common_name="localhost",
-        dns_names=["localhost"],
-        ip_addrs=["127.0.0.1"],
-    )
+async def start_grpc_server(cert_pem, key_pem):
     server_creds = grpc.ssl_server_credentials(
         private_key_certificate_chain_pairs=[(key_pem, cert_pem)],
         root_certificates=None,
@@ -201,12 +210,18 @@ async def start_grpc_server():
     return server
 
 async def main():
+    cert_pem, key_pem = generate_self_signed_cert(
+        common_name="localhost",
+        dns_names=["localhost"],
+        ip_addrs=["127.0.0.1"],
+    )
+
     print("Starting test api")
     http_runner = await start_http_server(host="0.0.0.0", port=8000)
     
     print("Starting ENS")
     global grpc_server
-    grpc_server = await start_grpc_server()
+    grpc_server = await start_grpc_server(cert_pem, key_pem)
     
     try:
         await grpc_server.wait_for_termination()
