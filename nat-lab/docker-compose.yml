@@ -14,7 +14,7 @@ services:
   nlx-01: &common-nlx
     hostname: nlx-01
     privileged: true
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux@sha256:5819b89161f7e159b75ed2e9843c31a37b126b5b60b16941af3787284824f99e
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
@@ -104,7 +104,7 @@ services:
 
   windows-client-01: &windows-client
     hostname: windows-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:${LIBTELIO_ENV_NAT_LAB_WINDOWS_VM_TAG}
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows@sha256:c84db68298ef22fb74d079a4644f9133451dd8d6c6fc2f88e43c159fa2c383dd
     privileged: true
     devices:
       - "/dev/net/tun"
@@ -175,7 +175,7 @@ services:
 
   mac-client-01: &mac-client
     hostname: mac-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos@sha256:c3b34edf14e9ce1324726f0fab6eb2d47b129f703e2ee323579bce44aa1e78cb
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos@sha256:4afabd0dff0e03506f7aacadf4d06a908b9132a91a03b1af178cfb35d19e5280
     privileged: true
     devices:
       - "/dev/net/tun"
@@ -427,7 +427,7 @@ services:
   fullcone-gw-01: &common-fullcone-gw
     hostname: fullcone-gw-01
     privileged: true
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux@sha256:5819b89161f7e159b75ed2e9843c31a37b126b5b60b16941af3787284824f99e
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
@@ -1039,12 +1039,12 @@ networks:
       config:
         - subnet: 192.168.111.0/24
 
- openwrt-net-01:
-   driver: bridge
-   ipam:
-     driver: default
-     config:
-       - subnet: 192.168.115.0/24
+  openwrt-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.115.0/24
 
   windows-net-01:
     driver: bridge
