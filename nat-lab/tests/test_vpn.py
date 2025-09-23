@@ -1,5 +1,6 @@
 # pylint: disable=too-many-lines
 
+import aiohttp
 import asyncio
 import config
 import json
@@ -856,6 +857,8 @@ async def test_ens(
     error_code: Tuple[int, VpnConnectionError],
 ) -> None:
     vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
+    fingerprint = await get_grpc_tls_fingerprint(vpn_conf.server_conf["ipv4"])
+
     async with AsyncExitStack() as exit_stack:
 
         await set_vpn_server_private_key(
@@ -910,21 +913,22 @@ async def test_ens(
             vpn_connection_error=error_code[1],
         )
         await client_alpha.wait_for_log(additional_info)
+        await client_alpha.wait_for_log(fingerprint)
 
 
 async def trigger_connection_error(vpn_ip, error_code, additional_info):
     data = {"code": error_code, "additional_info": additional_info}
     url = f"http://{vpn_ip}:8000/api/connection_error"
-    await make_request(url, data)
+    await make_post(url, data)
 
 
 async def set_vpn_server_private_key(vpn_ip, vpn_server_private_key):
     data = {"vpn_server_private_key": vpn_server_private_key}
     url = f"http://{vpn_ip}:8000/api/vpn_server_private_key"
-    await make_request(url, data)
+    await make_post(url, data)
 
 
-async def make_request(url, data):
+async def make_post(url, data):
     def blocking_request():
         req = urllib.request.Request(
             url,
@@ -936,6 +940,22 @@ async def make_request(url, data):
             return json.loads(response.read().decode("utf-8"))
 
     return await asyncio.to_thread(blocking_request)
+
+
+async def get_grpc_tls_fingerprint(vpn_ip):
+    url = f"http://{vpn_ip}:8000/api/grpc_tls_fingerprint"
+    json = await make_get_json(url)
+    return json["fingerprint"]
+
+
+async def make_get_json(url):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status == 200:
+                json = await response.json()
+                return json
+            print(f"Error fetching {url}: Status {response.status}")
+            return None
 
 
 @pytest.mark.parametrize(
