@@ -170,7 +170,7 @@ impl TelioContext {
         mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
     ) -> Result<(), TeliodError> {
         while let Some(cmd) = rx_channel.blocking_recv() {
-            trace!("TelioTask got command {:?}", cmd);
+            debug!("⭐ telioTask got command {:?}", cmd);
             match cmd.execute(self)? {
                 TelioTaskOutcome::Exit => break,
                 TelioTaskOutcome::Continue => continue,
@@ -232,15 +232,18 @@ impl TelioContext {
 
 impl TelioTaskCmd {
     fn execute(self, ctx: &mut TelioContext) -> Result<TelioTaskOutcome, TeliodError> {
+        debug!("⭐ TelioTaskCmd execute {self:?}");
         match self {
             TelioTaskCmd::GetStatus(response_tx_channel) => {
+                debug!("⭐ fetching exit_node");
                 ctx.fetch_exit_node()?;
+                debug!("⭐ fetched exit_node");
                 let status_report = TelioStatusReport {
                     telio_is_running: ctx.telio.is_running(),
                     ip_address: ctx.interface_config_provider.get_ip(),
                     exit_node: ctx.exit_node.clone(),
                 };
-                debug!("Telio status: {:#?}", status_report);
+                debug!("⭐ telio status: {:#?}", status_report);
                 if response_tx_channel.send(status_report).is_err() {
                     error!("Telio task failed sending status report: receiver dropped")
                 }
@@ -333,6 +336,10 @@ async fn handle_exit_node_connection(config: &TeliodDaemonConfig, tx: mpsc::Send
 }
 
 pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError> {
+    info!("🪵 info log");
+    debug!("🪵 debug log");
+    trace!("🪵 trace log");
+
     debug!("started with config: {config:?}");
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
