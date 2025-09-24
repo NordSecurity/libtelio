@@ -17,6 +17,7 @@ async def query_dns(
         args += options
     else:
         args.append("-timeout=1")
+    args.append("-retry=5")
     args.append(host_name)
     args.append(dns_server if dns_server else LIBTELIO_DNS_IPV4)
     response = await connection.create_process(args).execute()

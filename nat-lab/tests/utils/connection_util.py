@@ -22,6 +22,7 @@ from utils.network_switcher import (
     NetworkSwitcherDocker,
     NetworkSwitcherMac,
     NetworkSwitcherWindows,
+    NetworkSwitcherLinux,
 )
 
 
@@ -69,7 +70,7 @@ async def new_connection_raw(
                     yield connection
         elif is_tag_valid_for_ssh_connection(tag):
             async with SshConnection.new_connection(
-                LAN_ADDR_MAP[tag], tag
+                LAN_ADDR_MAP[tag]["primary"], tag
             ) as connection:
                 yield connection
         else:
@@ -87,6 +88,12 @@ async def create_network_switcher(
         return await NetworkSwitcherWindows.create(connection)
     if tag == ConnectionTag.VM_MAC:
         return NetworkSwitcherMac(connection)
+    if tag in [
+        ConnectionTag.VM_LINUX_NLX_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_2,
+    ]:
+        return NetworkSwitcherLinux(connection)
 
     assert False, f"tag {tag} not supported"
 
@@ -182,7 +189,7 @@ def generate_connection_tracker_config(
     derp_2_limits: tuple[Optional[int], Optional[int]] = (0, 0),
     derp_3_limits: tuple[Optional[int], Optional[int]] = (0, 0),
 ) -> List[ConnTrackerEventsValidator]:
-    lan_addr = LAN_ADDR_MAP[connection_tag]
+    lan_addr = LAN_ADDR_MAP[connection_tag]["primary"]
     ctc_list = [
         ConnectionCountLimit.create_with_tuple(
             "nlx_1",
@@ -338,4 +345,7 @@ def is_tag_valid_for_ssh_connection(tag: ConnectionTag) -> bool:
         ConnectionTag.VM_WINDOWS_1,
         ConnectionTag.VM_WINDOWS_2,
         ConnectionTag.VM_MAC,
+        ConnectionTag.VM_LINUX_NLX_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_2,
     ]

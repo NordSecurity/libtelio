@@ -9,6 +9,7 @@ from config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
 from ipaddress import ip_address
 from typing import Dict, Any, List, Tuple, Optional
 from utils.bindings import Config, Server, Peer, PeerBase
+from utils.connection import Connection, ConnectionTag
 from utils.logger import log
 from utils.router import IPStack, IPProto, get_ip_address_type
 
@@ -374,7 +375,12 @@ class API:
         ]
 
     @classmethod
-    def setup_vpn_servers(cls, node_list: List[Node], server_config: Dict[str, Any]):
+    async def setup_vpn_servers(
+        cls,
+        node_list: List[Node],
+        server_config: Dict[str, Any],
+        connections: Optional[List[Connection]] = None,
+    ):
         def generate_peer_config(node: Node, allowed_ips: str) -> str:
             return (
                 f"[Peer]\nPublicKey = {node.public_key}\nAllowedIPs = {allowed_ips}\n\n"
@@ -387,26 +393,27 @@ class API:
 
         for node in node_list:
             if "type" in server_config and server_config["type"] == "nordlynx":
-                priv_key = server_config["private_key"]
-                commands = [
-                    f"echo {priv_key} > /etc/nordlynx/private.key",
-                    f"nlx set nordlynx0 private-key /etc/nordlynx/private.key && nlx set nordlynx0 listen-port {server_config['port']}",
-                ]
+                if connections:
+                    for conn in connections:
+                        if conn.tag != ConnectionTag.VM_LINUX_NLX_1:
+                            continue
+                        priv_key = server_config["private_key"]
+                        commands = [
+                            f"echo {priv_key} > /etc/nordlynx/private.key",
+                            f"nlx set nordlynx0 private-key /etc/nordlynx/private.key && nlx set nordlynx0 listen-port {server_config['port']}",
+                        ]
 
-                for cmd in commands:
-                    full_cmd = f"docker exec --privileged {server_config['container']} bash -c '{cmd}'"
-                    ret = subprocess.run(
-                        full_cmd,
-                        shell=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    log.debug(
-                        "Executing %s on %s with result %s",
-                        full_cmd,
-                        server_config["container"],
-                        ret,
-                    )
+                        for cmd in commands:
+                            proc = await conn.create_process(
+                                ["bash", "-c", cmd]
+                            ).execute()
+                            log.debug(
+                                "Executing %s on %s with result stdout: %s / stderr: %s",
+                                cmd,
+                                server_config["container"],
+                                proc.get_stdout(),
+                                proc.get_stderr(),
+                            )
 
             else:
                 wg_conf += generate_peer_config(
@@ -456,6 +463,10 @@ class API:
 
         return tuple(list(self.nodes.values())[current_node_list_len:])
 
-    def prepare_all_vpn_servers(self):
+    async def prepare_all_vpn_servers(
+        self, connections: Optional[List[Connection]] = None
+    ):
         for wg_server in WG_SERVERS:
-            self.setup_vpn_servers(list(self.nodes.values()), wg_server)
+            await self.setup_vpn_servers(
+                list(self.nodes.values()), wg_server, connections
+            )
