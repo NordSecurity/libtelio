@@ -2,7 +2,7 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use telio::telio_task::io::chan;
 use tokio::sync::oneshot;
-use tracing::{error, trace};
+use tracing::{debug, error};
 
 use crate::{
     comms::DaemonSocket,
@@ -94,6 +94,7 @@ async fn handle_response<F, T>(
 where
     F: FnOnce(T) -> Result<CommandResponse, TeliodError>,
 {
+    debug!("⭐ response_rx.await");
     match response_rx.await {
         Ok(response) => process_response(response),
         Err(e) => {
@@ -123,7 +124,7 @@ impl CommandListener {
     ) -> Result<CommandResponse, TeliodError> {
         match command {
             ClientCmd::GetStatus => {
-                trace!("Reporting telio status");
+                debug!("⭐ Reporting telio status");
                 let (response_tx, response_rx) = oneshot::channel();
                 #[allow(mpsc_blocking_send)]
                 self.telio_task_tx
@@ -133,8 +134,10 @@ impl CommandListener {
                         error!("Error sending command: {}", e);
                         TeliodError::CommandFailed(ClientCmd::GetStatus)
                     })?;
+                debug!("⭐ telio_task_tx sent");
                 // wait for a response from telio runner
                 handle_response(response_rx, |report| {
+                    debug!("⭐ response_rx received");
                     Ok(CommandResponse::StatusReport(report))
                 })
                 .await
@@ -189,8 +192,11 @@ impl CommandListener {
         let command_str = connection.read_command().await?;
 
         if let Ok(command) = serde_json::from_str::<ClientCmd>(&command_str) {
+            debug!("⭐ handle_conenction {command:?}");
             let response = self.process_command(&command).await?;
+            debug!("⭐ handle_conenction processed command");
             connection.respond(response.serialize()).await?;
+            debug!("⭐ handle_conenction sent response");
             Ok(command)
         } else {
             connection
