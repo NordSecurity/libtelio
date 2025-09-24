@@ -336,11 +336,13 @@ async fn handle_exit_node_connection(config: &TeliodDaemonConfig, tx: mpsc::Send
 }
 
 pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodError> {
+    debug!("started with config: {config:?}");
+
     info!("🪵 info log");
+    warn!("🪵 warn log");
     debug!("🪵 debug log");
     trace!("🪵 trace log");
-
-    debug!("started with config: {config:?}");
+    error!("🪵 error log");
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
 
