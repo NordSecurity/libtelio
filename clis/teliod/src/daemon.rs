@@ -337,7 +337,7 @@ pub async fn daemon_event_loop(config: TeliodDaemonConfig) -> Result<(), TeliodE
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
 
-    let (telio_tx, telio_rx) = mpsc::channel(100);
+    let (telio_tx, telio_rx) = mpsc::channel(10);
 
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
     let mut cmd_listener = CommandListener::new(socket, telio_tx.clone());

@@ -10,7 +10,7 @@ use crate::{
     daemon::{TelioStatusReport, TeliodError},
 };
 
-pub(crate) const TIMEOUT_SEC: u64 = 2;
+pub(crate) const TIMEOUT_SEC: u64 = 1;
 
 #[derive(Parser, Debug, PartialEq)]
 #[clap()]
