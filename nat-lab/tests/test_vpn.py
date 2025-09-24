@@ -3,9 +3,7 @@
 import aiohttp
 import asyncio
 import config
-import json
 import pytest
-import urllib
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
 from telio import Client
@@ -929,17 +927,13 @@ async def set_vpn_server_private_key(vpn_ip, vpn_server_private_key):
 
 
 async def make_post(url, data):
-    def blocking_request():
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(data).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req) as response:
-            return json.loads(response.read().decode("utf-8"))
-
-    return await asyncio.to_thread(blocking_request)
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=data) as response:
+            if response.status == 200:
+                json = await response.json()
+                return json
+            print(f"Error fetching {url}: Status {response.status}")
+            return None
 
 
 async def get_grpc_tls_fingerprint(vpn_ip):
