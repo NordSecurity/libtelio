@@ -107,6 +107,7 @@ class Connection(ABC):
     async def download(self, remote_path: str, local_path: str) -> None:
         pass
 
+    @abstractmethod
     async def upload_file(self, local_file_path: str, remote_file_path: str) -> None:
         pass
 

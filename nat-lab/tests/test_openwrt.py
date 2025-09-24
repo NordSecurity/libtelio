@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 from config import WG_SERVER, PHOTO_ALBUM_IP, STUN_SERVER
 from contextlib import AsyncExitStack
 from helpers import setup_connections
@@ -55,6 +56,7 @@ async def test_openwrt_vpn_connection(openwrt_config: IfcConfigType) -> None:
 
         async with teliod.start():
             log.debug("Teliod started, waiting for connected vpn state...")
+            await asyncio.sleep(2)
             await teliod.wait_for_vpn_connected_state()
             await ping(gateway_connection, PHOTO_ALBUM_IP)
             gw_ip = await stun.get(gateway_connection, STUN_SERVER)
@@ -116,6 +118,7 @@ async def test_openwrt_vpn_reconnect() -> None:
 
         async with teliod.start():
             log.debug("Teliod started, waiting for connected vpn state...")
+            await asyncio.sleep(2)
             await teliod.wait_for_vpn_connected_state()
             await ping(gateway_connection, PHOTO_ALBUM_IP)
             gw_ip = await stun.get(gateway_connection, STUN_SERVER)
@@ -146,6 +149,7 @@ async def test_openwrt_vpn_reconnect() -> None:
         )
         async with teliod.start():
             log.debug("Reconnect to VPN...")
+            await asyncio.sleep(2)
             await teliod.wait_for_vpn_connected_state()
             await ping(gateway_connection, PHOTO_ALBUM_IP)
             gw_ip_after_reconnect = await stun.get(gateway_connection, STUN_SERVER)
