@@ -170,6 +170,12 @@ impl TelioContext {
         mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
     ) -> Result<(), TeliodError> {
         while let Some(cmd) = rx_channel.blocking_recv() {
+            info!("🪵 info log");
+            warn!("🪵 warn log");
+            debug!("🪵 debug log");
+            trace!("🪵 trace log");
+            error!("🪵 error log");
+
             debug!("⭐ telioTask got command {:?}", cmd);
             match cmd.execute(self)? {
                 TelioTaskOutcome::Exit => break,

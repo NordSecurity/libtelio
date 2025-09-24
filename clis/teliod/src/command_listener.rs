@@ -2,7 +2,7 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use telio::telio_task::io::chan;
 use tokio::sync::oneshot;
-use tracing::{debug, error};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
     comms::DaemonSocket,
@@ -112,6 +112,12 @@ pub struct CommandListener {
 
 impl CommandListener {
     pub fn new(socket: DaemonSocket, telio_task_tx: chan::Tx<TelioTaskCmd>) -> CommandListener {
+        info!("🪵 info log");
+        warn!("🪵 warn log");
+        debug!("🪵 debug log");
+        trace!("🪵 trace log");
+        error!("🪵 error log");
+
         CommandListener {
             socket,
             telio_task_tx,
@@ -192,6 +198,12 @@ impl CommandListener {
         let command_str = connection.read_command().await?;
 
         if let Ok(command) = serde_json::from_str::<ClientCmd>(&command_str) {
+            info!("🪵 info log");
+            warn!("🪵 warn log");
+            debug!("🪵 debug log");
+            trace!("🪵 trace log");
+            error!("🪵 error log");
+
             debug!("⭐ handle_conenction {command:?}");
             let response = self.process_command(&command).await?;
             debug!("⭐ handle_conenction processed command");
