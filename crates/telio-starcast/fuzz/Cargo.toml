@@ -11,6 +11,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 telio-starcast = {path = ".."}
 
 # Prevent this from interfering with workspaces
