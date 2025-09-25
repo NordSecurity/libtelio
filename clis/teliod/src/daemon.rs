@@ -170,13 +170,7 @@ impl TelioContext {
         mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
     ) -> Result<(), TeliodError> {
         while let Some(cmd) = rx_channel.blocking_recv() {
-            info!("🪵 info log");
-            warn!("🪵 warn log");
-            debug!("🪵 debug log");
-            trace!("🪵 trace log");
-            error!("🪵 error log");
-
-            debug!("⭐ telioTask got command {:?}", cmd);
+            debug!("⭐ TelioTask got command {:?}", cmd);
             match cmd.execute(self)? {
                 TelioTaskOutcome::Exit => break,
                 TelioTaskOutcome::Continue => continue,
@@ -256,6 +250,7 @@ impl TelioTaskCmd {
                 Ok(TelioTaskOutcome::Continue)
             }
             TelioTaskCmd::ConnectToExitNode(endpoint) => {
+                debug!("🙂 ConnectToExitNode");
                 ctx.interface_config_provider
                     .set_exit_routes(&endpoint.address)
                     .inspect_err(|e| {
@@ -272,6 +267,7 @@ impl TelioTaskCmd {
                             .unwrap_or(DEFAULT_WIREGUARD_PORT),
                     )),
                 };
+                debug!("🙂 telio.connect_exit_node");
                 match ctx.telio.connect_exit_node(&node) {
                     Ok(_) => {
                         info!(
@@ -291,6 +287,7 @@ impl TelioTaskCmd {
                         error!("Failed to connect to VPN with error: {e:?}");
                     }
                 }
+                debug!("🙂 ConnectToExitNode done");
                 Ok(TelioTaskOutcome::Continue)
             }
             TelioTaskCmd::Quit => {
