@@ -803,6 +803,23 @@ dictionary FeatureErrorNotificationService {
 
     /// Allow only post-quantum safe key exchange algorithm for the ENS HTTPS connection
     boolean allow_only_pq;
+
+    /// Configuration of the backoff algorithm used by ENS
+    Backoff backoff;
+};
+
+/// Exponential backoff bounds
+dictionary Backoff {
+    /// Initial bound
+    ///
+    /// Used as the first backoff value after ExponentialBackoff creation or reset [default 2s]
+    u32 initial_s = 2;
+
+    /// Maximal bound
+    ///
+    /// A maximal backoff value which might be achieved during exponential backoff
+    /// - if set to None/null there will be no upper bound for the penalty duration [default 120s]
+    u32? maximal_s;
 };
 
 /// Rust representation of [meshnet map]
