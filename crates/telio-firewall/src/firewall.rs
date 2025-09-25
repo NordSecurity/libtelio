@@ -28,13 +28,12 @@ use telio_crypto::PublicKey;
 use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
 
 use crate::{
-    chain::{
-        Chain, Filter, FilterData, LibfwNextLevelProtocol, LibfwVerdict, NetworkFilterData, Rule,
-    },
+    chain::{Chain as InternalChain, Filter, FilterData, NetworkFilter, NextLevelProtocol, Rule},
     conntrack::{
-        unwrap_option_or_return, Conntrack, Error, LibfwConnectionState, LibfwDirection, Result,
+        unwrap_option_or_return, ConnectionState, Conntrack, Direction, Error, Result,
         UdpConnectionInfo,
     },
+    ffi_chain::LibfwVerdict,
 };
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
@@ -281,7 +280,7 @@ pub struct StatefullFirewall {
     /// Connection tracking
     conntrack: Conntrack,
     /// Firewall rule chain
-    chain: RwLock<Chain>,
+    chain: RwLock<InternalChain>,
     /// Whitelist of networks/peers allowed to connect
     whitelist: RwLock<Whitelist>,
     /// Indicates whether the firewall should use IPv6
@@ -318,7 +317,7 @@ impl StatefullFirewall {
     fn new_custom(capacity: usize, ttl: u64, use_ipv6: bool, feature: &FeatureFirewall) -> Self {
         let result = Self {
             conntrack: Conntrack::new(capacity, ttl),
-            chain: RwLock::new(Chain { rules: vec![] }),
+            chain: RwLock::new(InternalChain { rules: vec![] }),
             whitelist: RwLock::new(Whitelist::default()),
             allow_ipv6: use_ipv6,
             ip_addresses: RwLock::new(Vec::<StdIpAddr>::new()),
@@ -356,9 +355,9 @@ impl StatefullFirewall {
 
     fn dst_net_all_ports_filter(net: IpNet, inverted: bool) -> Filter {
         Filter {
-            filter_data: FilterData::DstNetwork(NetworkFilterData {
+            filter_data: FilterData::DstNetwork(NetworkFilter {
                 network: net,
-                ports: 0..=65535,
+                ports: (0, 65535),
             }),
             inverted,
         }
@@ -432,11 +431,11 @@ impl StatefullFirewall {
             rules.push(Rule {
                 filters: vec![
                     Filter {
-                        filter_data: FilterData::Direction(LibfwDirection::LibfwDirectionOutbound),
+                        filter_data: FilterData::Direction(Direction::Outbound),
                         inverted: false,
                     },
                     Filter {
-                        filter_data: FilterData::NextLevelProtocol(LibfwNextLevelProtocol::Udp),
+                        filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Udp),
                         inverted: false,
                     },
                     Self::dst_net_all_ports_filter(IpNet::from(peer.ip()), false),
@@ -450,11 +449,11 @@ impl StatefullFirewall {
             rules.push(Rule {
                 filters: vec![
                     Filter {
-                        filter_data: FilterData::Direction(LibfwDirection::LibfwDirectionOutbound),
+                        filter_data: FilterData::Direction(Direction::Outbound),
                         inverted: false,
                     },
                     Filter {
-                        filter_data: FilterData::NextLevelProtocol(LibfwNextLevelProtocol::Tcp),
+                        filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Tcp),
                         inverted: false,
                     },
                     Self::dst_net_all_ports_filter(IpNet::from(peer.ip()), false),
@@ -465,7 +464,7 @@ impl StatefullFirewall {
 
         rules.push(Rule {
             filters: vec![Filter {
-                filter_data: FilterData::Direction(LibfwDirection::LibfwDirectionOutbound),
+                filter_data: FilterData::Direction(Direction::Outbound),
                 inverted: false,
             }],
             action: LibfwVerdict::LibfwVerdictAccept,
@@ -532,9 +531,7 @@ impl StatefullFirewall {
             rules.push(Rule {
                 filters: vec![
                     Filter {
-                        filter_data: FilterData::ConntrackState(
-                            LibfwConnectionState::LibfwConnectionStateEstablished,
-                        ),
+                        filter_data: FilterData::ConntrackState(ConnectionState::Established),
                         inverted: false,
                     },
                     Self::dst_net_all_ports_filter(IpNet::from(*ip), false),
@@ -546,9 +543,7 @@ impl StatefullFirewall {
             rules.push(Rule {
                 filters: vec![
                     Filter {
-                        filter_data: FilterData::ConntrackState(
-                            LibfwConnectionState::LibfwConnectionStateClosed,
-                        ),
+                        filter_data: FilterData::ConntrackState(ConnectionState::Closed),
                         inverted: false,
                     },
                     Filter {
@@ -563,7 +558,7 @@ impl StatefullFirewall {
             });
 
             // Accept packets for whitelisted ports
-            for proto in [LibfwNextLevelProtocol::Tcp, LibfwNextLevelProtocol::Udp] {
+            for proto in [NextLevelProtocol::Tcp, NextLevelProtocol::Udp] {
                 for (peer, &port) in self.whitelist.read().port_whitelist.iter() {
                     rules.push(Rule {
                         filters: vec![
@@ -576,9 +571,9 @@ impl StatefullFirewall {
                                 inverted: false,
                             },
                             Filter {
-                                filter_data: FilterData::DstNetwork(NetworkFilterData {
+                                filter_data: FilterData::DstNetwork(NetworkFilter {
                                     network: IpNet::from(*ip),
-                                    ports: port..=port,
+                                    ports: (port, port),
                                 }),
                                 inverted: false,
                             },
@@ -606,7 +601,7 @@ impl StatefullFirewall {
             });
         }
 
-        *self.chain.write() = Chain { rules };
+        *self.chain.write() = InternalChain { rules };
     }
 
     fn process_outbound_ip_packet<'a, P: IpPacket<'a>>(
@@ -614,7 +609,7 @@ impl StatefullFirewall {
         public_key: &[u8; 32],
         buffer: &'a [u8],
         sink: &mut dyn io::Write,
-        conn_state: LibfwConnectionState,
+        conn_state: ConnectionState,
     ) -> Result<bool> {
         let ip = unwrap_option_or_return!(P::try_from(buffer), Err(Error::MalformedIpPacket));
         let peer: PublicKey = PublicKey(*public_key);
@@ -628,14 +623,13 @@ impl StatefullFirewall {
             conn_state,
             &ip,
             Some(public_key),
-            LibfwDirection::LibfwDirectionOutbound,
+            Direction::Outbound,
         );
 
         if let LibfwVerdict::LibfwVerdictReject = verdict {
             match ip.get_next_level_protocol() {
                 IpNextHeaderProtocols::Udp => {
-                    let link =
-                        Conntrack::build_conn_info(&ip, LibfwDirection::LibfwDirectionOutbound)?.0;
+                    let link = Conntrack::build_conn_info(&ip, Direction::Outbound)?.0;
                     let Some(first_chunk) = ip
                         .packet()
                         .chunks(UdpConnectionInfo::LAST_PKG_MAX_CHUNK_LEN)
@@ -653,8 +647,7 @@ impl StatefullFirewall {
                     return Ok(false);
                 }
                 IpNextHeaderProtocols::Tcp => {
-                    let (link, tcp_packet) =
-                        Conntrack::build_conn_info(&ip, LibfwDirection::LibfwDirectionOutbound)?;
+                    let (link, tcp_packet) = Conntrack::build_conn_info(&ip, Direction::Outbound)?;
                     let tcp_packet = unwrap_option_or_return!(tcp_packet, Ok(false));
                     _ = self.conntrack.send_tcp_rst_packets(
                         std::iter::once((&link, 0, Some(tcp_packet.get_sequence() + 1))),
@@ -677,7 +670,7 @@ impl StatefullFirewall {
         &self,
         public_key: &[u8; 32],
         buffer: &'a [u8],
-        conn_state: LibfwConnectionState,
+        conn_state: ConnectionState,
     ) -> Result<bool> {
         let ip = unwrap_option_or_return!(P::try_from(buffer), Err(Error::MalformedIpPacket));
 
@@ -686,12 +679,11 @@ impl StatefullFirewall {
             return Ok(false);
         }
 
-        Ok(self.chain.read().process_packet(
-            conn_state,
-            &ip,
-            Some(public_key),
-            LibfwDirection::LibfwDirectionInbound,
-        ) == LibfwVerdict::LibfwVerdictAccept)
+        Ok(self
+            .chain
+            .read()
+            .process_packet(conn_state, &ip, Some(public_key), Direction::Inbound)
+            == LibfwVerdict::LibfwVerdictAccept)
     }
 
     fn cleanup_conntrack_inbound<'a, P: IpPacket<'a>>(
@@ -802,7 +794,7 @@ impl Firewall for StatefullFirewall {
                     .track_outbound_ip_packet::<Ipv4Packet>(Some(public_key), buffer)
                     .unwrap_or_else(|_| {
                         telio_log_warn!("Conntrack failed for outbound IPv4 packet");
-                        LibfwConnectionState::LibfwConnectionStateNew
+                        ConnectionState::New
                     });
                 self.process_outbound_ip_packet::<Ipv4Packet>(public_key, buffer, sink, conn_state)
                     .unwrap_or(false)
@@ -814,7 +806,7 @@ impl Firewall for StatefullFirewall {
                     .unwrap_or_else(|_| {
                         telio_log_warn!("Conntrack failed for outbound IPv4 packet");
                         // Some packets are unexpected, but we still let them through, like outbound ICMP reply
-                        LibfwConnectionState::LibfwConnectionStateNew
+                        ConnectionState::New
                     });
                 self.process_outbound_ip_packet::<Ipv6Packet>(public_key, buffer, sink, conn_state)
                     .unwrap_or(false)
@@ -894,7 +886,7 @@ impl Default for StatefullFirewall {
 #[cfg(any(test, feature = "test_utils"))]
 #[allow(missing_docs, unused)]
 pub mod tests {
-    use crate::conntrack::{Connection, IpConnWithPort, LibfwConnectionState, TcpConnectionInfo};
+    use crate::conntrack::{Connection, ConnectionState, IpConnWithPort, TcpConnectionInfo};
 
     use super::*;
     use pnet_packet::{
@@ -1559,7 +1551,7 @@ pub mod tests {
             let tcp_key = Connection { link , associated_data: Some(peer.to_smallvec()) };
 
             assert_eq!(fw.conntrack.tcp.lock().get(&tcp_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: Some(1), state: LibfwConnectionState::LibfwConnectionStateEstablished
+                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: Some(1), state: ConnectionState::Established
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::RST)), true);
@@ -1620,7 +1612,7 @@ pub mod tests {
             let conn_key = Connection { link , associated_data: Some(peer.to_smallvec()) };
 
             assert_eq!(fw.conntrack.tcp.lock().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None, state: LibfwConnectionState::LibfwConnectionStateNew
+                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None, state: ConnectionState::New
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
@@ -1628,14 +1620,14 @@ pub mod tests {
             assert_eq!(fw.conntrack.tcp.lock().len(), 1);
 
             assert_eq!(fw.conntrack.tcp.lock().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: LibfwConnectionState::LibfwConnectionStateEstablished
+                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: ConnectionState::Established
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
             assert_eq!(fw.conntrack.tcp.lock().len(), 1);
 
             assert_eq!(fw.conntrack.tcp.lock().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: LibfwConnectionState::LibfwConnectionStateClosed
+                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: ConnectionState::Closed
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::ACK)), true);
@@ -1681,7 +1673,7 @@ pub mod tests {
             let conn_key = Connection { link , associated_data: Some(peer.to_smallvec()) };
 
             assert_eq!(fw.conntrack.tcp.lock().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None, state: LibfwConnectionState::LibfwConnectionStateNew
+                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None, state: ConnectionState::New
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
@@ -1689,7 +1681,7 @@ pub mod tests {
             assert_eq!(fw.conntrack.tcp.lock().len(), 1);
 
             assert_eq!(fw.conntrack.tcp.lock().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: LibfwConnectionState::LibfwConnectionStateEstablished
+                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: ConnectionState::Established
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
@@ -1697,7 +1689,7 @@ pub mod tests {
 
             // update tcp cache entry timeout
             assert_eq!(fw.conntrack.tcp.lock().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: LibfwConnectionState::LibfwConnectionStateClosed
+                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: ConnectionState::Closed
             }));
 
             // process inbound packet (should not update ttl, because not ACK, but entry should still exist)
@@ -3323,7 +3315,7 @@ pub mod tests {
             assert!(fw.process_inbound_packet(&peer, &make_tcp(dst, src, TcpFlags::SYN)));
             assert_eq!(
                 fw.conntrack.tcp.lock().get(&key).unwrap().state,
-                LibfwConnectionState::LibfwConnectionStateNew
+                ConnectionState::New
             );
             assert!(fw.process_outbound_packet(
                 &peer,
@@ -3332,7 +3324,7 @@ pub mod tests {
 
             assert_eq!(
                 fw.conntrack.tcp.lock().get(&key).unwrap().state,
-                LibfwConnectionState::LibfwConnectionStateEstablished
+                ConnectionState::Established
             );
         }
     }
@@ -3383,12 +3375,12 @@ pub mod tests {
                 assert!(fw.process_inbound_packet(&peer, &make_tcp(dst, src, TcpFlags::SYN)));
                 assert_eq!(
                     fw.conntrack.tcp.lock().get(&key).unwrap().state,
-                    LibfwConnectionState::LibfwConnectionStateNew
+                    ConnectionState::New
                 );
 
                 if fw.process_outbound_packet(&peer, &make_tcp(src, dst, outbound_flags)) {
                     if let Some(value) = fw.conntrack.tcp.lock().get(&key) {
-                        assert_eq!(value.state, LibfwConnectionState::LibfwConnectionStateNew);
+                        assert_eq!(value.state, ConnectionState::New);
                     }
                 }
             }
@@ -3439,14 +3431,14 @@ pub mod tests {
             assert!(fw.process_outbound_packet(&peer, &make_tcp(src, dst, TcpFlags::SYN)));
             assert_eq!(
                 fw.conntrack.tcp.lock().get(&key).unwrap().state,
-                LibfwConnectionState::LibfwConnectionStateNew
+                ConnectionState::New
             );
             assert!(fw
                 .process_inbound_packet(&peer, &make_tcp(dst, src, TcpFlags::SYN | TcpFlags::ACK)));
 
             assert_eq!(
                 fw.conntrack.tcp.lock().get(&key).unwrap().state,
-                LibfwConnectionState::LibfwConnectionStateEstablished
+                ConnectionState::Established
             );
         }
     }

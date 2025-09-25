@@ -4817,6 +4817,7 @@ dependencies = [
  "enum-map",
  "ipnet",
  "mockall",
+ "num_enum",
  "parking_lot",
  "pnet_packet 0.35.0",
  "rustc-hash 2.1.1",
