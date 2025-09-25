@@ -8,3 +8,4 @@ pub(crate) mod chain_helpers;
 pub(crate) mod conntrack;
 pub(crate) mod ffi_chain;
 pub mod firewall;
+pub(crate) mod packet;
