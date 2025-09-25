@@ -4848,6 +4848,7 @@ dependencies = [
 name = "telio-model"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "ipnet",
  "itertools 0.14.0",
  "modifier",
@@ -4982,6 +4983,7 @@ dependencies = [
  "protobuf-codegen",
  "rcgen",
  "rustls",
+ "rustls-webpki",
  "sha2",
  "strum",
  "telio-crypto",
