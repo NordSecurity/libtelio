@@ -8,8 +8,6 @@
     "name": "nordvpn",
     "config_provider": "uci"
   },
-  "vpn": {
-    "country": "recommended"
-  }
+  "vpn": "recommended"
 }
 
