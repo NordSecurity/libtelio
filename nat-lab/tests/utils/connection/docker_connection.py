@@ -126,7 +126,9 @@ class DockerConnection(Connection):
         await to_thread(aux)
 
     async def upload_file(self, local_file_path: str, remote_file_path: str) -> None:
-        raise NotImplementedError("File upload is not implemented for Docker connection")
+        raise NotImplementedError(
+            "File upload is not implemented for Docker connection"
+        )
 
     def create_process(
         self, command: List[str], kill_id=None, term_type=None, quiet=False
