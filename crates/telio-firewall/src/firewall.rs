@@ -431,6 +431,15 @@ impl StatefullFirewall {
     fn recreate_chain(&self) {
         let mut rules = vec![];
 
+        // Drop all IPv6 packets when we don't allow ipv6 traffic
+        const ALL_IP_V6_ADDRS: IpNet = IpNet::V6(Ipv6Net::new_assert(StdIpv6Addr::UNSPECIFIED, 0));
+        if !self.allow_ipv6 {
+            rules.push(Rule {
+                filters: vec![Self::dst_net_all_ports_filter(ALL_IP_V6_ADDRS, false)],
+                action: LibfwVerdict::LibfwVerdictDrop,
+            });
+        }
+
         // Drop packets from UDP blacklist
         for peer in self.outgoing_udp_blacklist.read().iter() {
             rules.push(Rule {

@@ -27,7 +27,7 @@ use crate::{
         LIBFW_CONTRACK_STATE_INVALID, LIBFW_CONTRACK_STATE_NEW, LIBFW_CONTRACK_STATE_RELATED,
         LIBFW_DIRECTION_INBOUND, LIBFW_DIRECTION_OUTBOUND,
     },
-    firewall::{IpAddr, IpPacket, TCP_FIRST_PKT_MASK},
+    packet::{IpAddr, IpPacket, TCP_FIRST_PKT_MASK},
 };
 
 #[allow(dead_code)]
