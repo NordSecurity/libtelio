@@ -53,7 +53,7 @@ jobs:
             just-version: '1.38.0'
         - run: just clippy
   clippy-mac:
-      runs-on: macos-13
+      runs-on: macos-15
       steps:
         - name: Install Protoc
           uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
