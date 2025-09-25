@@ -25,6 +25,7 @@ telio-crypto.workspace = true
 telio-utils.workspace = true
 telio-model.workspace = true
 telio-network-monitors.workspace = true
+num_enum.workspace = true
 
 [dev-dependencies]
 criterion = "0.6.0"

@@ -4880,6 +4880,7 @@ dependencies = [
  "if-addrs",
  "ipnet",
  "mockall",
+ "num_enum",
  "parking_lot",
  "pnet_packet 0.35.0",
  "proptest",

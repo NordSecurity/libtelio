@@ -242,7 +242,7 @@ pub struct LibfwRule {
     ///  - LIBFW_VERDICT_ACCEPT - packet matching the rule will be accepted
     ///  - LIBFW_VERDICT_DROP - packet matching the rule will be dropped
     ///  - LIBFW_VERDICT_REJECT - packet matching the rule should be dropped and reject
-    ///                           packet will be sent to the packet source
+    ///    packet will be sent to the packet source
     pub action: u8,
 }
 

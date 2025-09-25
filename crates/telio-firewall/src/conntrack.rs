@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use num_enum::TryFromPrimitive;
 use parking_lot::Mutex;
 use pnet_packet::{
     icmp::{destination_unreachable::IcmpCodes, IcmpPacket, IcmpTypes, MutableIcmpPacket},
@@ -20,7 +21,14 @@ use pnet_packet::{
 use smallvec::{SmallVec, ToSmallVec};
 use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn, Entry, LruCache};
 
-use crate::firewall::{IpAddr, IpPacket, TCP_FIRST_PKT_MASK};
+use crate::{
+    ffi_chain::{
+        LIBFW_CONTRACK_STATE_CLOSED, LIBFW_CONTRACK_STATE_ESTABLISHED,
+        LIBFW_CONTRACK_STATE_INVALID, LIBFW_CONTRACK_STATE_NEW, LIBFW_CONTRACK_STATE_RELATED,
+        LIBFW_DIRECTION_INBOUND, LIBFW_DIRECTION_OUTBOUND,
+    },
+    firewall::{IpAddr, IpPacket, TCP_FIRST_PKT_MASK},
+};
 
 #[allow(dead_code)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -34,6 +42,7 @@ pub(crate) enum Error {
     UnexpectedPacketType,
     NullPointer,
     NotImplemented,
+    InvalidChain,
 }
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;
@@ -122,35 +131,40 @@ impl Debug for IcmpConn {
 ///
 /// Packet direction
 ///
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum LibfwDirection {
+#[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromPrimitive)]
+#[repr(u8)]
+pub(crate) enum Direction {
     /// Outgoing packets
-    LibfwDirectionOutbound = 0,
+    Outbound = LIBFW_DIRECTION_OUTBOUND,
     /// Incoming packets
-    LibfwDirectionInbound = 1,
+    Inbound = LIBFW_DIRECTION_INBOUND,
 }
 
 ///
 /// Connection state
 ///
 #[allow(clippy::enum_variant_names)]
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum LibfwConnectionState {
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, TryFromPrimitive)]
+pub enum ConnectionState {
     /// Connection established
-    LibfwConnectionStateEstablished,
-    /// Outgoing packets
-    LibfwConnectionStateNew,
-    /// Finished connections
-    LibfwConnectionStateClosed,
+    Established = LIBFW_CONTRACK_STATE_ESTABLISHED,
+    /// One-direction connections
+    New = LIBFW_CONTRACK_STATE_NEW,
+    /// Malformed and unexpected packets
+    Invalid = LIBFW_CONTRACK_STATE_INVALID,
+    /// Packets related to a different connections
+    Related = LIBFW_CONTRACK_STATE_RELATED,
+    /// TODO(LLT-6590): We should get rid of this state or make it returnable only for TCP packets
+    /// Finished connections (TCP only!)
+    Closed = LIBFW_CONTRACK_STATE_CLOSED,
 }
 
 #[derive(Clone, Debug)]
 pub struct UdpConnectionInfo {
     pub(crate) is_remote_initiated: bool,
     pub(crate) last_out_pkg_chunk: Option<Vec<u8>>,
-    pub(crate) state: LibfwConnectionState,
+    pub(crate) state: ConnectionState,
 }
 
 impl UdpConnectionInfo {
@@ -169,7 +183,7 @@ pub(crate) struct TcpConnectionInfo {
     pub(crate) rx_alive: bool,
     pub(crate) conn_remote_initiated: bool,
     pub(crate) next_seq: Option<u32>,
-    pub(crate) state: LibfwConnectionState,
+    pub(crate) state: ConnectionState,
 }
 
 pub(crate) struct Conntrack {
@@ -202,8 +216,8 @@ impl Conntrack {
         &self,
         ip: &impl IpPacket<'a>,
         associated_data: Option<&[u8]>,
-    ) -> Result<LibfwConnectionState> {
-        let link = Self::build_conn_info(ip, LibfwDirection::LibfwDirectionOutbound)?.0;
+    ) -> Result<ConnectionState> {
+        let link = Self::build_conn_info(ip, Direction::Outbound)?.0;
         let key = Connection {
             link,
             associated_data: associated_data.map(|data| data.to_smallvec()),
@@ -228,12 +242,12 @@ impl Conntrack {
                 let conninfo = UdpConnectionInfo {
                     is_remote_initiated: false,
                     last_out_pkg_chunk: Some(last_chunk),
-                    state: LibfwConnectionState::LibfwConnectionStateNew,
+                    state: ConnectionState::New,
                 };
                 telio_log_trace!("Inserting new UDP conntrack entry {:?}", e.key());
                 e.insert(conninfo);
 
-                Ok(LibfwConnectionState::LibfwConnectionStateNew)
+                Ok(ConnectionState::New)
             }
             Entry::Occupied(mut o) => {
                 let value = o.get_mut();
@@ -246,10 +260,8 @@ impl Conntrack {
                 last_chunk.clear();
                 last_chunk.extend_from_slice(pkg_chunk);
 
-                if value.is_remote_initiated
-                    && value.state == LibfwConnectionState::LibfwConnectionStateNew
-                {
-                    value.state = LibfwConnectionState::LibfwConnectionStateEstablished
+                if value.is_remote_initiated && value.state == ConnectionState::New {
+                    value.state = ConnectionState::Established
                 }
 
                 value.last_out_pkg_chunk = Some(last_chunk);
@@ -263,8 +275,8 @@ impl Conntrack {
         &self,
         ip: &impl IpPacket<'a>,
         associated_data: Option<&[u8]>,
-    ) -> Result<LibfwConnectionState> {
-        let (link, packet) = Self::build_conn_info(ip, LibfwDirection::LibfwDirectionOutbound)?;
+    ) -> Result<ConnectionState> {
+        let (link, packet) = Self::build_conn_info(ip, Direction::Outbound)?;
         let key = Connection {
             link,
             associated_data: associated_data.map(|data| data.to_smallvec()),
@@ -281,16 +293,16 @@ impl Conntrack {
                     rx_alive: true,
                     conn_remote_initiated: false,
                     next_seq: None,
-                    state: LibfwConnectionState::LibfwConnectionStateNew,
+                    state: ConnectionState::New,
                 },
             );
-            return Ok(LibfwConnectionState::LibfwConnectionStateNew);
+            return Ok(ConnectionState::New);
         }
 
         if flags & TcpFlags::RST == TcpFlags::RST {
             telio_log_trace!("Removing TCP conntrack entry {:?}", key);
             tcp_cache.remove(&key);
-            return Ok(LibfwConnectionState::LibfwConnectionStateClosed);
+            return Ok(ConnectionState::Closed);
         }
 
         if flags & TcpFlags::FIN == TcpFlags::FIN {
@@ -305,7 +317,7 @@ impl Conntrack {
                 } = e.get_mut();
                 *tx_alive = false;
                 if !*rx_alive {
-                    *state = LibfwConnectionState::LibfwConnectionStateClosed
+                    *state = ConnectionState::Closed
                 }
                 return Ok(*state);
             }
@@ -315,11 +327,11 @@ impl Conntrack {
             if tcp_connection_info.conn_remote_initiated
                 && (flags & TCP_FIRST_PKT_MASK == TCP_FIRST_PKT_MASK)
             {
-                tcp_connection_info.state = LibfwConnectionState::LibfwConnectionStateEstablished;
+                tcp_connection_info.state = ConnectionState::Established;
             }
             Ok(tcp_connection_info.state)
         } else {
-            Ok(LibfwConnectionState::LibfwConnectionStateNew)
+            Ok(ConnectionState::New)
         }
     }
 
@@ -327,9 +339,8 @@ impl Conntrack {
         &self,
         ip: &impl IpPacket<'a>,
         associated_data: Option<&[u8]>,
-    ) -> Result<LibfwConnectionState> {
-        if let IcmpKey::Conn(key) =
-            Self::build_icmp_key(ip, associated_data, LibfwDirection::LibfwDirectionOutbound)?
+    ) -> Result<ConnectionState> {
+        if let IcmpKey::Conn(key) = Self::build_icmp_key(ip, associated_data, Direction::Outbound)?
         {
             let mut icmp_cache = self.icmp.lock();
             // If key already exists, dont change the value, just update timer with entry
@@ -339,7 +350,7 @@ impl Conntrack {
             }
         }
 
-        Ok(LibfwConnectionState::LibfwConnectionStateNew)
+        Ok(ConnectionState::New)
     }
 
     #[allow(dead_code)]
@@ -348,7 +359,7 @@ impl Conntrack {
         ip: P,
         associated_data: Option<&[u8]>,
     ) -> Result<()> {
-        let (link, _) = Self::build_conn_info(&ip, LibfwDirection::LibfwDirectionInbound)?;
+        let (link, _) = Self::build_conn_info(&ip, Direction::Inbound)?;
         let key = Connection {
             link,
             associated_data: associated_data.map(|data| data.to_smallvec()),
@@ -363,8 +374,8 @@ impl Conntrack {
         &self,
         ip: &impl IpPacket<'a>,
         associated_data: Option<&[u8]>,
-    ) -> Result<LibfwConnectionState> {
-        let (link, _) = Self::build_conn_info(ip, LibfwDirection::LibfwDirectionInbound)?;
+    ) -> Result<ConnectionState> {
+        let (link, _) = Self::build_conn_info(ip, Direction::Inbound)?;
         let key = Connection {
             link,
             associated_data: associated_data.map(|data| data.to_smallvec()),
@@ -380,10 +391,8 @@ impl Conntrack {
                     occ.get()
                 );
 
-                if LibfwConnectionState::LibfwConnectionStateNew == occ.get().state
-                    && !occ.get().is_remote_initiated
-                {
-                    occ.get_mut().state = LibfwConnectionState::LibfwConnectionStateEstablished;
+                if ConnectionState::New == occ.get().state && !occ.get().is_remote_initiated {
+                    occ.get_mut().state = ConnectionState::Established;
                 }
                 Ok(occ.get().state)
             }
@@ -398,9 +407,9 @@ impl Conntrack {
                 vacc.insert(UdpConnectionInfo {
                     is_remote_initiated: true,
                     last_out_pkg_chunk: None,
-                    state: LibfwConnectionState::LibfwConnectionStateNew,
+                    state: ConnectionState::New,
                 });
-                Ok(LibfwConnectionState::LibfwConnectionStateNew)
+                Ok(ConnectionState::New)
             }
         }
     }
@@ -412,7 +421,7 @@ impl Conntrack {
         associated_data: Option<&[u8]>,
         accepted: bool,
     ) -> Result<()> {
-        let (link, _) = Self::build_conn_info(&ip, LibfwDirection::LibfwDirectionInbound)?;
+        let (link, _) = Self::build_conn_info(&ip, Direction::Inbound)?;
         let key = Connection {
             link,
             associated_data: associated_data.map(|data| data.to_smallvec()),
@@ -433,8 +442,8 @@ impl Conntrack {
         &self,
         ip: &impl IpPacket<'a>,
         associated_data: Option<&[u8]>,
-    ) -> Result<LibfwConnectionState> {
-        let (link, packet) = Self::build_conn_info(ip, LibfwDirection::LibfwDirectionInbound)?;
+    ) -> Result<ConnectionState> {
+        let (link, packet) = Self::build_conn_info(ip, Direction::Inbound)?;
         let key = Connection {
             link,
             associated_data: associated_data.map(|data| data.to_smallvec()),
@@ -462,7 +471,7 @@ impl Conntrack {
                             local_port
                         );
                         occ.remove();
-                        return Ok(LibfwConnectionState::LibfwConnectionStateClosed);
+                        return Ok(ConnectionState::Closed);
                     }
 
                     if (flags & TcpFlags::FIN) == TcpFlags::FIN {
@@ -483,10 +492,10 @@ impl Conntrack {
                             );
                             occ.remove();
                         } else {
-                            occ.get_mut().state = LibfwConnectionState::LibfwConnectionStateClosed;
+                            occ.get_mut().state = ConnectionState::Closed;
                         }
 
-                        return Ok(LibfwConnectionState::LibfwConnectionStateClosed);
+                        return Ok(ConnectionState::Closed);
                     }
 
                     // restarts cache entry timeout
@@ -500,7 +509,7 @@ impl Conntrack {
                     if !connection_info.conn_remote_initiated
                         && (flags & TCP_FIRST_PKT_MASK == TCP_FIRST_PKT_MASK)
                     {
-                        occ.get_mut().state = LibfwConnectionState::LibfwConnectionStateEstablished;
+                        occ.get_mut().state = ConnectionState::Established;
                     }
                 }
 
@@ -517,7 +526,7 @@ impl Conntrack {
                             rx_alive: true,
                             conn_remote_initiated: true,
                             next_seq: Some(pkt.get_sequence() + 1),
-                            state: LibfwConnectionState::LibfwConnectionStateNew,
+                            state: ConnectionState::New,
                         };
                         telio_log_trace!(
                             "Updating TCP conntrack entry {:?} {:?} {:?}",
@@ -528,7 +537,7 @@ impl Conntrack {
                         vacc.insert(conn_info.clone());
                     }
                 }
-                Ok(LibfwConnectionState::LibfwConnectionStateNew)
+                Ok(ConnectionState::New)
             }
         }
     }
@@ -537,17 +546,17 @@ impl Conntrack {
         &self,
         ip: &P,
         associated_data: Option<&[u8]>,
-    ) -> Result<LibfwConnectionState> {
-        match Self::build_icmp_key(ip, associated_data, LibfwDirection::LibfwDirectionInbound) {
+    ) -> Result<ConnectionState> {
+        match Self::build_icmp_key(ip, associated_data, Direction::Inbound) {
             Ok(IcmpKey::Conn(key)) => {
                 let mut icmp_cache = self.icmp.lock();
                 if icmp_cache.get_mut(&key).is_some() {
                     telio_log_trace!("Matched ICMP conntrack entry {:?}", key);
                     telio_log_trace!("Removing ICMP conntrack entry {:?}", key);
                     icmp_cache.remove(&key);
-                    Ok(LibfwConnectionState::LibfwConnectionStateEstablished)
+                    Ok(ConnectionState::Established)
                 } else {
-                    Ok(LibfwConnectionState::LibfwConnectionStateNew)
+                    Ok(ConnectionState::New)
                 }
             }
             Ok(IcmpKey::Err(icmp_error_key)) => {
@@ -556,7 +565,7 @@ impl Conntrack {
             }
             Err(Error::UnexpectedPacketType) => {
                 telio_log_trace!("Encountered ICMP packet type not tracked in this direction");
-                Ok(LibfwConnectionState::LibfwConnectionStateNew)
+                Ok(ConnectionState::New)
             }
             Err(err) => Err(err),
         }
@@ -566,14 +575,14 @@ impl Conntrack {
         &self,
         error_key: IcmpErrorKey,
         associated_data: Option<&[u8]>,
-    ) -> LibfwConnectionState {
+    ) -> ConnectionState {
         match error_key {
             IcmpErrorKey::Icmp(icmp_key) => {
                 let mut icmp_cache = self.icmp.lock();
                 if icmp_cache.get(&icmp_key).is_some() {
                     telio_log_trace!("Removing ICMP conntrack entry {:?}", icmp_key);
                     icmp_cache.remove(&icmp_key);
-                    return LibfwConnectionState::LibfwConnectionStateEstablished;
+                    return ConnectionState::Established;
                 }
             }
             IcmpErrorKey::Tcp(link) => {
@@ -587,7 +596,7 @@ impl Conntrack {
                 if tcp_cache.get(&tcp_key).is_some() {
                     telio_log_trace!("Removing TCP conntrack entry {:?}", tcp_key);
                     tcp_cache.remove(&tcp_key);
-                    return LibfwConnectionState::LibfwConnectionStateEstablished;
+                    return ConnectionState::Established;
                 }
             }
             IcmpErrorKey::Udp(link) => {
@@ -600,16 +609,16 @@ impl Conntrack {
                 if udp_cache.get(&udp_key).is_some() {
                     telio_log_trace!("Removing UDP conntrack entry {:?}", udp_key);
                     udp_cache.remove(&udp_key);
-                    return LibfwConnectionState::LibfwConnectionStateEstablished;
+                    return ConnectionState::Established;
                 }
             }
         }
-        LibfwConnectionState::LibfwConnectionStateNew
+        ConnectionState::New
     }
 
     pub fn build_conn_info<'a, P: IpPacket<'a>>(
         ip: &P,
-        direction: LibfwDirection,
+        direction: Direction,
     ) -> Result<(IpConnWithPort, Option<TcpPacket<'_>>)> {
         let proto = ip.get_next_level_protocol();
         let (src, dest, tcp_packet) = match proto {
@@ -630,7 +639,7 @@ impl Conntrack {
             _ => return Err(Error::UnexpectedProtocol),
         };
 
-        let key = if let LibfwDirection::LibfwDirectionInbound = direction {
+        let key = if let Direction::Inbound = direction {
             IpConnWithPort {
                 remote_addr: ip.get_source().into(),
                 remote_port: src,
@@ -656,7 +665,7 @@ impl Conntrack {
     fn build_icmp_key<'a, P: IpPacket<'a>>(
         ip: &P,
         associated_data: Option<&[u8]>,
-        direction: LibfwDirection,
+        direction: Direction,
     ) -> Result<IcmpKey> {
         let icmp_packet = match IcmpPacket::new(ip.payload()) {
             Some(packet) => packet,
@@ -672,7 +681,7 @@ impl Conntrack {
             // Request messages get the icmp type of the corresponding reply message
             // Reply messages get their own icmp type, to match that of its corresponding request
             // We only create keys for outbound requests and inbound replies
-            if let LibfwDirection::LibfwDirectionInbound = direction {
+            if let Direction::Inbound = direction {
                 if it == v4::EchoReply.0
                     || it == v4::TimestampReply.0
                     || it == v4::InformationReply.0
@@ -719,7 +728,7 @@ impl Conntrack {
             let bytes = unwrap_option_or_return!(bytes, Err(Error::MalformedIcmpPacket));
             u32::from_ne_bytes(bytes)
         };
-        let (remote_addr, local_addr) = if let LibfwDirection::LibfwDirectionInbound = direction {
+        let (remote_addr, local_addr) = if let Direction::Inbound = direction {
             (ip.get_source().into(), ip.get_destination().into())
         } else {
             (ip.get_destination().into(), ip.get_source().into())
@@ -756,18 +765,16 @@ impl Conntrack {
                 }
             };
             match packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Udp => IcmpErrorKey::Udp(
-                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)?.0,
-                ),
-                IpNextHeaderProtocols::Tcp => IcmpErrorKey::Tcp(
-                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)?.0,
-                ),
+                IpNextHeaderProtocols::Udp => {
+                    IcmpErrorKey::Udp(Self::build_conn_info(&packet, Direction::Outbound)?.0)
+                }
+                IpNextHeaderProtocols::Tcp => {
+                    IcmpErrorKey::Tcp(Self::build_conn_info(&packet, Direction::Outbound)?.0)
+                }
                 IpNextHeaderProtocols::Icmp => {
-                    if let IcmpKey::Conn(conn) = Self::build_icmp_key(
-                        &packet,
-                        associated_data,
-                        LibfwDirection::LibfwDirectionOutbound,
-                    )? {
+                    if let IcmpKey::Conn(conn) =
+                        Self::build_icmp_key(&packet, associated_data, Direction::Outbound)?
+                    {
                         IcmpErrorKey::Icmp(Box::new(conn))
                     } else {
                         return Err(Error::MalformedIcmpPacket);
@@ -786,18 +793,16 @@ impl Conntrack {
                 }
             };
             match packet.get_next_level_protocol() {
-                IpNextHeaderProtocols::Udp => IcmpErrorKey::Udp(
-                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)?.0,
-                ),
-                IpNextHeaderProtocols::Tcp => IcmpErrorKey::Tcp(
-                    Self::build_conn_info(&packet, LibfwDirection::LibfwDirectionOutbound)?.0,
-                ),
+                IpNextHeaderProtocols::Udp => {
+                    IcmpErrorKey::Udp(Self::build_conn_info(&packet, Direction::Outbound)?.0)
+                }
+                IpNextHeaderProtocols::Tcp => {
+                    IcmpErrorKey::Tcp(Self::build_conn_info(&packet, Direction::Outbound)?.0)
+                }
                 IpNextHeaderProtocols::Icmpv6 => {
-                    if let IcmpKey::Conn(conn) = Self::build_icmp_key(
-                        &packet,
-                        associated_data,
-                        LibfwDirection::LibfwDirectionOutbound,
-                    )? {
+                    if let IcmpKey::Conn(conn) =
+                        Self::build_icmp_key(&packet, associated_data, Direction::Outbound)?
+                    {
                         IcmpErrorKey::Icmp(Box::new(conn))
                     } else {
                         return Err(Error::MalformedIcmpPacket);
@@ -1125,7 +1130,7 @@ impl Conntrack {
         &self,
         associated_data: Option<&[u8]>,
         buffer: &'a [u8],
-    ) -> Result<LibfwConnectionState> {
+    ) -> Result<ConnectionState> {
         let ip = unwrap_option_or_return!(P::try_from(buffer), Err(Error::MalformedIpPacket));
         let proto = ip.get_next_level_protocol();
 
@@ -1143,7 +1148,7 @@ impl Conntrack {
         &self,
         associated_data: Option<&[u8]>,
         buffer: &'a [u8],
-    ) -> Result<LibfwConnectionState> {
+    ) -> Result<ConnectionState> {
         let ip = unwrap_option_or_return!(P::try_from(buffer), Err(Error::MalformedIpPacket));
         let proto = ip.get_next_level_protocol();
 
@@ -1182,7 +1187,7 @@ mod tests {
     };
 
     use crate::{
-        conntrack::{Conntrack, Error, LibfwConnectionState},
+        conntrack::{ConnectionState, Conntrack, Error},
         firewall::IpPacket,
     };
 
@@ -1457,22 +1462,19 @@ mod tests {
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_udp_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // Another outbound packet
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_udp_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // Inbound packet should change conn state to established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_udp_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
     }
 
     #[test]
@@ -1489,22 +1491,19 @@ mod tests {
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_udp_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // Another outbound packet
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_udp_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // Inbound packet should change conn state to established
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_udp_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
     }
 
     #[test]
@@ -1524,52 +1523,43 @@ mod tests {
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_syn_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // Second oubound SYN packet shouldn't change conn state to established
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_syn_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // Outbound SYN-ACK packet shouldn't change the state to established
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // Inbound packet should change conn state to established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
 
         // First FIN packet should still get state Established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_fin_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
 
         // Second FIN from the same direction should also get Established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_fin_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
 
         // Inbound FIN should change connection state to closed
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_fin_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateClosed);
+        assert_eq!(conn_state, ConnectionState::Closed);
     }
 
     #[test]
@@ -1589,52 +1579,43 @@ mod tests {
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // Second inbound SYN packet shouldn't change conn state to established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // Inbound SYN-ACK packet shouldn't change the state to established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // Outbound packet should change conn state to established
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
 
         // First FIN packet should still get state Established
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_fin_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
 
         // Second FIN from the same direction should also get Established
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_fin_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
 
         // Inbound FIN should change connection state to closed
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_fin_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateClosed);
+        assert_eq!(conn_state, ConnectionState::Closed);
     }
 
     #[test]
@@ -1654,28 +1635,25 @@ mod tests {
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_icmp_req_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // Inbound request packet is just ignored - not considered to be a part of the outgoing connection
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &inbound_icmp_req_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // It should be established for the first reply
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_icmp_reply_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
 
         // After the first reply is processed, the ICMP connection entry is removed
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_icmp_reply_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
     }
 
     #[test]
@@ -1694,7 +1672,7 @@ mod tests {
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_icmp_req_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // So the connection for outbound response should be still new
         let error = conntrack
@@ -1729,31 +1707,25 @@ mod tests {
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_udp_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // First inbound packet should make it established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_udp_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
 
         // ICMP error message should also be treated as a part of established connection
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_icmp_resp_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
 
         // But after ICMP error message the connection should be removed
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_udp_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
     }
 
     #[test]
@@ -1772,26 +1744,23 @@ mod tests {
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_syn_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
 
         // Inbound RST packet - connection should be closed immediately
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_rst_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateClosed);
+        assert_eq!(conn_state, ConnectionState::Closed);
 
         // After that conntrack entry should be removed
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
     }
 
     #[test]
@@ -1806,7 +1775,7 @@ mod tests {
                     &make_tcp("127.0.0.1:12345", "104.104.104.104:54321", TcpFlags::SYN),
                 )
                 .expect("Unexpected error during packet tracking"),
-            LibfwConnectionState::LibfwConnectionStateNew
+            ConnectionState::New
         );
         // Outbound opened connection
         assert_eq!(
@@ -1816,7 +1785,7 @@ mod tests {
                     &make_tcp("127.0.0.1:12345", "103.103.103.103:54321", TcpFlags::SYN),
                 )
                 .expect("Unexpected error during packet tracking"),
-            LibfwConnectionState::LibfwConnectionStateNew
+            ConnectionState::New
         );
         assert_eq!(
             conntrack
@@ -1829,7 +1798,7 @@ mod tests {
                     ),
                 )
                 .expect("Unexpected error during packet tracking"),
-            LibfwConnectionState::LibfwConnectionStateEstablished
+            ConnectionState::Established
         );
         // Inbound connection
         assert_eq!(
@@ -1843,7 +1812,7 @@ mod tests {
                     ),
                 )
                 .expect("Unexpected error during packet tracking"),
-            LibfwConnectionState::LibfwConnectionStateNew
+            ConnectionState::New
         );
         // Inbound with data
         assert_eq!(
@@ -1857,7 +1826,7 @@ mod tests {
                     ),
                 )
                 .expect("Unexpected error during packet tracking"),
-            LibfwConnectionState::LibfwConnectionStateNew
+            ConnectionState::New
         );
         assert_eq!(
             conntrack
@@ -1870,7 +1839,7 @@ mod tests {
                     ),
                 )
                 .expect("Unexpected error during packet tracking"),
-            LibfwConnectionState::LibfwConnectionStateNew
+            ConnectionState::New
         );
 
         // Outbound IPv6 opened connection
@@ -1881,7 +1850,7 @@ mod tests {
                     &make_tcp6("[::1]:12345", "[1234::2]:54321", TcpFlags::SYN),
                 )
                 .expect("Unexpected error during packet tracking"),
-            LibfwConnectionState::LibfwConnectionStateNew
+            ConnectionState::New
         );
         assert_eq!(
             conntrack
@@ -1894,7 +1863,7 @@ mod tests {
                     ),
                 )
                 .expect("Unexpected error during packet tracking"),
-            LibfwConnectionState::LibfwConnectionStateEstablished
+            ConnectionState::Established
         );
         // Inbound IPv6 connection
         assert_eq!(
@@ -1908,7 +1877,7 @@ mod tests {
                     ),
                 )
                 .expect("Unexpected error during packet tracking"),
-            LibfwConnectionState::LibfwConnectionStateNew
+            ConnectionState::New
         );
 
         #[derive(Default)]
@@ -2042,13 +2011,13 @@ mod tests {
             conntrack
                 .track_outbound_ip_packet::<Ipv4Packet>(None, &test_udppkg,)
                 .expect("Conntrack tracking error"),
-            LibfwConnectionState::LibfwConnectionStateNew
+            ConnectionState::New
         );
         assert_eq!(
             conntrack
                 .track_outbound_ip_packet::<Ipv6Packet>(None, &test_udp6pkg,)
                 .expect("Conntrack tracking error"),
-            LibfwConnectionState::LibfwConnectionStateNew
+            ConnectionState::New
         );
 
         #[derive(Default)]
@@ -2113,10 +2082,10 @@ mod tests {
         let src = "127.0.0.1:1111";
         let dst = "8.8.8.8:8888";
 
-            assert_eq!(conntrack.track_outbound_ip_packet::<Ipv4Packet>(None, &make_udp(src, dst)).expect("Conntrack tracking error"), LibfwConnectionState::LibfwConnectionStateNew);
-            assert_eq!(conntrack.track_inbound_ip_packet::<Ipv4Packet>(None, &make_udp(dst, src)).expect("Conntrack tracking error"), LibfwConnectionState::LibfwConnectionStateEstablished);
+            assert_eq!(conntrack.track_outbound_ip_packet::<Ipv4Packet>(None, &make_udp(src, dst)).expect("Conntrack tracking error"), ConnectionState::New);
+            assert_eq!(conntrack.track_inbound_ip_packet::<Ipv4Packet>(None, &make_udp(dst, src)).expect("Conntrack tracking error"), ConnectionState::Established);
             advance_time(Duration::from_millis(200));
-            assert_eq!(conntrack.track_inbound_ip_packet::<Ipv4Packet>(None, &make_udp(dst, src)).expect("Conntrack tracking error"), LibfwConnectionState::LibfwConnectionStateNew);
+            assert_eq!(conntrack.track_inbound_ip_packet::<Ipv4Packet>(None, &make_udp(dst, src)).expect("Conntrack tracking error"), ConnectionState::New);
     }
 
     #[test]
@@ -2132,42 +2101,33 @@ mod tests {
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &make_udp(src, dst))
             .expect("Conntrack tracking error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
 
         // Connection should move to established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &make_udp(dst, src))
             .expect("Conntrack tracking error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
 
         // And flowing packets ...
         advance_time(Duration::from_millis(15));
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &make_udp(dst, src))
             .expect("Conntrack tracking error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
 
         // ... should keep it in established state
         advance_time(Duration::from_millis(15));
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &make_udp(dst, src))
             .expect("Conntrack tracking error");
-        assert_eq!(
-            conn_state,
-            LibfwConnectionState::LibfwConnectionStateEstablished
-        );
+        assert_eq!(conn_state, ConnectionState::Established);
 
         // After exceeding LRU TTL the connection entry should be removed
         advance_time(Duration::from_millis(30));
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &make_udp(dst, src))
             .expect("Conntrack tracking error");
-        assert_eq!(conn_state, LibfwConnectionState::LibfwConnectionStateNew);
+        assert_eq!(conn_state, ConnectionState::New);
     }
 }
