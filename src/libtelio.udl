@@ -803,6 +803,9 @@ dictionary FeatureErrorNotificationService {
 
     /// Allow only post-quantum safe key exchange algorithm for the ENS HTTPS connection
     boolean allow_only_pq;
+
+    /// TODO: der encoded root certificate to be used for verification of all TLS connections to gRPC ENS endpoint
+    bytes? root_certificate_override;
 };
 
 /// Rust representation of [meshnet map]

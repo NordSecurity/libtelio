@@ -35,6 +35,8 @@ use uuid::Uuid;
 
 use crate::ens::grpc::{ChallengeRequest, ConnectionErrorRequest};
 
+const DEFAULT_ROOT_CERTIFICATE: &[u8] = include_bytes!("../data/default_root_certificate.pem");
+
 #[allow(missing_docs)]
 pub(crate) mod grpc {
     use telio_model::mesh::VpnConnectionError;
@@ -79,6 +81,7 @@ pub struct ErrorNotificationService {
     tx: Tx<(ConnectionError, PublicKey)>,
     socket_pool: Arc<SocketPool>,
     allow_only_mlkem: bool,
+    root_certificate: Vec<u8>,
 }
 
 impl Drop for ErrorNotificationService {
@@ -93,6 +96,7 @@ impl ErrorNotificationService {
         buffer_size: usize,
         socket_pool: Arc<SocketPool>,
         allow_only_mlkem: bool,
+        root_certificate_override: Option<Vec<u8>>,
     ) -> (Self, Rx<(ConnectionError, PublicKey)>) {
         let Chan { rx, tx }: Chan<(ConnectionError, PublicKey)> = Chan::new(buffer_size);
         (
@@ -101,6 +105,8 @@ impl ErrorNotificationService {
                 tx,
                 socket_pool,
                 allow_only_mlkem,
+                root_certificate: root_certificate_override
+                    .unwrap_or_else(|| DEFAULT_ROOT_CERTIFICATE.to_vec()),
             },
             rx,
         )
@@ -137,6 +143,7 @@ impl ErrorNotificationService {
         let pool = self.socket_pool.clone();
         let tx = self.tx.clone();
         let allow_only_mlkem = self.allow_only_mlkem;
+        let root_certificate = self.root_certificate.clone();
 
         let join_handle = tokio::spawn(async move {
             // This future is too big for keeping it on the stack
@@ -148,6 +155,7 @@ impl ErrorNotificationService {
                 tx,
                 quit_rx,
                 allow_only_mlkem,
+                root_certificate,
             ))
             .await
             {
@@ -195,11 +203,17 @@ async fn task(
     tx: Tx<(ConnectionError, PublicKey)>,
     mut quit_rx: watch::Receiver<bool>,
     allow_only_mlkem: bool,
+    root_certificate: Vec<u8>,
 ) -> anyhow::Result<()> {
     'outer: loop {
         let pool = pool.clone();
-        let external_channel =
-            Box::pin(create_external_channel(&vpn_uri, pool, allow_only_mlkem)).await?;
+        let external_channel = Box::pin(create_external_channel(
+            &vpn_uri,
+            pool,
+            allow_only_mlkem,
+            root_certificate.clone(),
+        ))
+        .await?;
 
         let authenticated_challenge = get_login_challenge(
             external_channel.clone(),
@@ -287,9 +301,11 @@ async fn create_external_channel(
     vpn_uri: &str,
     pool: Arc<SocketPool>,
     allow_only_mlkem: bool,
+    root_certificate: Vec<u8>,
 ) -> anyhow::Result<Channel> {
     let socket_factory = move |uri: Uri| {
         let pool = pool.clone();
+        let root_certificate = root_certificate.clone();
         async move {
             let host = match uri.host() {
                 Some(host) => host,
@@ -316,7 +332,7 @@ async fn create_external_channel(
 
             if let Some(resolved) = ((host, port).to_socket_addrs()?).next() {
                 let tcp_stream = socket.connect(resolved).await?;
-                let tls_connector = make_tls_connector(allow_only_mlkem)?;
+                let tls_connector = make_tls_connector(allow_only_mlkem, &root_certificate)?;
                 let tls_stream = tls_connector.connect(domain, tcp_stream).await?;
                 return Ok::<_, std::io::Error>(TokioIo::new(tls_stream));
             }
@@ -339,7 +355,12 @@ fn make_tls_connector(_allow_only_mlkem: bool) -> std::io::Result<TlsConnector> 
 }
 
 #[cfg(feature = "enable_ens")]
-fn make_tls_connector(allow_only_mlkem: bool) -> std::io::Result<TlsConnector> {
+fn make_tls_connector(
+    allow_only_mlkem: bool,
+    root_certificate: &[u8],
+) -> std::io::Result<TlsConnector> {
+    use rustls::RootCertStore;
+
     #[derive(Debug)]
     struct AcceptAnyCertVerifier;
 
@@ -408,12 +429,15 @@ fn make_tls_connector(allow_only_mlkem: bool) -> std::io::Result<TlsConnector> {
             vec![tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::X25519MLKEM768];
     }
 
+    let mut root_store = RootCertStore::empty();
+    root_store.add_parsable_certificates([CertificateDer::from_slice(root_certificate)]);
+
     let mut tls_config = ClientConfig::builder_with_provider(Arc::new(provider))
         .with_safe_default_protocol_versions()
         .map_err(|e| std::io::Error::other(format!("{e}")))?
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(AcceptAnyCertVerifier))
+        .with_root_certificates(root_store)
         .with_no_client_auth();
+
     tls_config.alpn_protocols = vec![b"h2".to_vec()];
 
     Ok(TlsConnector::from(Arc::new(tls_config)))
@@ -622,7 +646,8 @@ mod tests {
 
         let socket_pool = make_socket_pool();
         let allow_only_mlkem = true;
-        let (mut ens, mut rx) = ErrorNotificationService::new(10, socket_pool, allow_only_mlkem);
+        let (mut ens, mut rx) =
+            ErrorNotificationService::new(10, socket_pool, allow_only_mlkem, None);
 
         let port = port_rx.await.unwrap();
         ens.start_monitor_on_port(
@@ -734,7 +759,8 @@ mod tests {
 
         let socket_pool = make_socket_pool();
         let allow_only_mlkem = true;
-        let (mut ens, mut rx) = ErrorNotificationService::new(10, socket_pool, allow_only_mlkem);
+        let (mut ens, mut rx) =
+            ErrorNotificationService::new(10, socket_pool, allow_only_mlkem, None);
 
         let port = port_rx.await.unwrap();
         let result = ens

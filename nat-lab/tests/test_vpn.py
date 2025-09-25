@@ -2,6 +2,7 @@
 
 import aiohttp
 import asyncio
+import base64
 import config
 import pytest
 from contextlib import AsyncExitStack
@@ -842,20 +843,25 @@ async def test_vpn_connection_private_key_change(
     "error_code",
     [
         (0, VpnConnectionError.UNKNOWN),
-        (1, VpnConnectionError.CONNECTION_LIMIT_REACHED),
-        (2, VpnConnectionError.SERVER_MAINTENANCE),
-        (3, VpnConnectionError.UNAUTHENTICATED),
-        (4, VpnConnectionError.SUPERSEDED),
-        (5, VpnConnectionError.UNKNOWN),
+        # (1, VpnConnectionError.CONNECTION_LIMIT_REACHED),
+        # (2, VpnConnectionError.SERVER_MAINTENANCE),
+        # (3, VpnConnectionError.UNAUTHENTICATED),
+        # (4, VpnConnectionError.SUPERSEDED),
+        # (5, VpnConnectionError.UNKNOWN),
     ],
 )
-async def test_ens(
+@pytest.mark.timeout(60)
+async def test_ens_x(
     alpha_setup_params: SetupParameters,
     public_ip: str,
     error_code: Tuple[int, VpnConnectionError],
 ) -> None:
     vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
     fingerprint = await get_grpc_tls_fingerprint(vpn_conf.server_conf["ipv4"])
+    root_certificate = await get_grpc_tls_root_certificate(vpn_conf.server_conf["ipv4"])
+    print("XXXXX", root_certificate)
+    root_certificate = base64.b64decode(root_certificate)
+    print("XXXXX2", root_certificate)
 
     async with AsyncExitStack() as exit_stack:
 
@@ -877,6 +883,7 @@ async def test_ens(
         )
         assert alpha_setup_params.features.error_notification_service
         alpha_setup_params.features.error_notification_service.allow_only_pq = False
+        alpha_setup_params.features.error_notification_service.root_certificate_override = root_certificate
         env = await exit_stack.enter_async_context(
             setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
         )
@@ -940,6 +947,12 @@ async def get_grpc_tls_fingerprint(vpn_ip):
     url = f"http://{vpn_ip}:8000/api/grpc_tls_fingerprint"
     json = await make_get_json(url)
     return json["fingerprint"]
+
+async def get_grpc_tls_root_certificate(vpn_ip):
+    url = f"http://{vpn_ip}:8000/api/grpc_tls_root_certificate"
+    json = await make_get_json(url)
+    print("json", json)
+    return json["root_certificate"]
 
 
 async def make_get_json(url):

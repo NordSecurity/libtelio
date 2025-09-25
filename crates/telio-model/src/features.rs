@@ -558,7 +558,7 @@ pub struct FeatureUpnp {
 }
 
 /// Configuration for the Error Notification Service
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureErrorNotificationService {
@@ -569,6 +569,9 @@ pub struct FeatureErrorNotificationService {
     /// Allow only post-quantum safe key exchange algorithm for the ENS HTTPS connection
     #[default = true]
     pub allow_only_pq: bool,
+
+    /// TODO: der encoded root certificate to be used for verification of all TLS connections to gRPC ENS endpoint
+    pub root_certificate_override: Option<Vec<u8>>,
 }
 
 #[cfg(test)]
@@ -830,6 +833,7 @@ mod tests {
                     error_notification_service: Some(FeatureErrorNotificationService {
                         buffer_size: 42,
                         allow_only_pq: true,
+                        root_certificate_override: None
                     })
                 }
             );

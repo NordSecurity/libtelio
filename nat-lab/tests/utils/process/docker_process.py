@@ -60,6 +60,7 @@ class DockerProcess(Process):
                     "MOOSE_LOG": "Trace",
                     "MOOSE_LOG_FILE": MOOSE_LOGS_DIR,
                     "RUST_BACKTRACE": "full",
+                    "RUST_LOG": "trace",
                     "KILL_ID": self._kill_id,
                 },
                 privileged=privileged,
