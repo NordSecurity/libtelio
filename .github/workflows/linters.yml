@@ -64,7 +64,7 @@ jobs:
           with:
             just-version: '1.38.0'
         - run: just clippy
-  clippy-teliod:
+  clippy-nordvpnlite:
       runs-on: ubuntu-22.04
       steps:
         - name: Install Protoc
@@ -75,7 +75,7 @@ jobs:
         - uses: extractions/setup-just@dd310ad5a97d8e7b41793f8ef055398d51ad4de6 # v2.0.0
           with:
             just-version: '1.38.0'
-        - run: just clippy teliod
+        - run: just clippy nordvpnlite
   deny:
       runs-on: ubuntu-22.04
       steps:

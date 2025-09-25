@@ -1,4 +1,4 @@
-//! Main and implementation of config and commands for Teliod - simple telio daemon for Linux and OpenWRT
+//! Main and implementation of config and commands for Nord VPN Lite - simple telio daemon for Linux and OpenWRT
 
 use clap::Parser;
 use daemonize::{Daemonize, Outcome};
@@ -16,25 +16,25 @@ mod logging;
 use crate::{
     command_listener::{Cmd, CommandResponse, TIMEOUT_SEC},
     comms::DaemonSocket,
-    config::TeliodDaemonConfig,
-    daemon::TeliodError,
+    config::NordVpnLiteConfig,
+    daemon::NordVpnLiteError,
 };
 
 /// Umask allows only rw-rw-r--
 const DEFAULT_UMASK: u32 = 0o113;
 
-fn main() -> Result<(), TeliodError> {
+fn main() -> Result<(), NordVpnLiteError> {
     let mut cmd = Cmd::parse();
 
     // Pre-daemonizing setup
     if let Cmd::Start(opts) = &mut cmd {
         // Check if daemon already is running before forking
         if DaemonSocket::get_ipc_socket_path()?.exists() {
-            return Err(TeliodError::DaemonIsRunning);
+            return Err(NordVpnLiteError::DaemonIsRunning);
         }
 
         // Parse config file
-        let mut config = TeliodDaemonConfig::from_file(&opts.config_path)?;
+        let mut config = NordVpnLiteConfig::from_file(&opts.config_path)?;
         config.resolve_env_token();
 
         println!("Saving logs to: {}", config.log_file_path);
@@ -46,7 +46,7 @@ fn main() -> Result<(), TeliodError> {
         // leaving tokio runtime in an undefined state and resulting in a panic.
         // https://github.com/tokio-rs/tokio/issues/4301
         if !opts.no_detach {
-            // Redirect stdout and stderr to a specified file or /var/log/teliod.log by default
+            // Redirect stdout and stderr to a specified file or /var/log/nordvpnlite.log by default
             let stdout_log_file = OpenOptions::new()
                 .create(true)
                 .write(true)
@@ -100,7 +100,7 @@ fn main() -> Result<(), TeliodError> {
 }
 
 #[tokio::main]
-async fn client_main(cmd: Cmd) -> Result<(), TeliodError> {
+async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
     match cmd {
         Cmd::Client(cmd) => {
             let socket_path = DaemonSocket::get_ipc_socket_path()?;
@@ -110,7 +110,7 @@ async fn client_main(cmd: Cmd) -> Result<(), TeliodError> {
                     DaemonSocket::send_command(&socket_path, &serde_json::to_string(&cmd)?),
                 )
                 .await
-                .map_err(|_| TeliodError::ClientTimeoutError)?;
+                .map_err(|_| NordVpnLiteError::ClientTimeoutError)?;
 
                 match CommandResponse::deserialize(&response?)? {
                     CommandResponse::Ok => {
@@ -123,15 +123,15 @@ async fn client_main(cmd: Cmd) -> Result<(), TeliodError> {
                     }
                     CommandResponse::Err(e) => {
                         println!("Command executed failed: {e}");
-                        Err(TeliodError::CommandFailed(cmd))
+                        Err(NordVpnLiteError::CommandFailed(cmd))
                     }
                 }
             } else {
-                Err(TeliodError::DaemonIsNotRunning)
+                Err(NordVpnLiteError::DaemonIsNotRunning)
             }
         }
 
         // Unexpected command, Cmd::Start should be handled by main
-        _ => Err(TeliodError::InvalidCommand(format!("{cmd:?}"))),
+        _ => Err(NordVpnLiteError::InvalidCommand(format!("{cmd:?}"))),
     }
 }

@@ -10,11 +10,10 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use smart_default::SmartDefault;
 use std::fs;
 use tracing::{level_filters::LevelFilter, Level};
-use uuid::Uuid;
 
 use telio::{crypto::SecretKey, device::AdapterType, telio_utils::Hidden};
 
-use crate::{interface::InterfaceConfig, TeliodError};
+use crate::{interface::InterfaceConfig, NordVpnLiteError};
 use std::net::IpAddr;
 use telio::crypto::PublicKey;
 
@@ -72,11 +71,11 @@ fn reconnect_after_expiry_default() -> Percentage {
 pub struct NordToken(Arc<Hidden<String>>);
 
 impl NordToken {
-    pub fn new(token: &str) -> Result<Self, TeliodError> {
+    pub fn new(token: &str) -> Result<Self, NordVpnLiteError> {
         if Self::validate(token) {
             Ok(NordToken(Arc::new(token.to_owned().into())))
         } else {
-            Err(TeliodError::InvalidConfigOption {
+            Err(NordVpnLiteError::InvalidConfigOption {
                 key: "authentication_token".to_owned(),
                 msg: "Invalid authentication token format".to_owned(),
                 value: "".to_owned(),
@@ -125,15 +124,15 @@ pub struct NordlynxKeyResponse {
 }
 
 impl NordlynxKeyResponse {
-    pub fn into_secret_key(self) -> Result<SecretKey, TeliodError> {
+    pub fn into_secret_key(self) -> Result<SecretKey, NordVpnLiteError> {
         self.nordlynx_private_key.parse::<SecretKey>().map_err(|_| {
-            TeliodError::InvalidResponse("Failed to parse nordlynx private key".to_owned())
+            NordVpnLiteError::InvalidResponse("Failed to parse nordlynx private key".to_owned())
         })
     }
 }
 
 #[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone)]
-pub struct TeliodDaemonConfig {
+pub struct NordVpnLiteConfig {
     #[serde(
         deserialize_with = "deserialize_log_level",
         serialize_with = "serialize_log_level"
@@ -165,13 +164,13 @@ pub struct TeliodDaemonConfig {
     pub mqtt: MqttConfig,
 }
 
-impl TeliodDaemonConfig {
-    /// Construct a TeliodDaemonConfig by deserializing a file at given path
-    pub fn from_file(path: &str) -> Result<Self, TeliodError> {
+impl NordVpnLiteConfig {
+    /// Construct a NordVpnLiteConfig by deserializing a file at given path
+    pub fn from_file(path: &str) -> Result<Self, NordVpnLiteError> {
         println!("Reading config from: {path}");
 
         let file = fs::File::open(path)?;
-        let mut config: TeliodDaemonConfig = serde_json::from_reader(file)?;
+        let mut config: NordVpnLiteConfig = serde_json::from_reader(file)?;
 
         // Config file should only be written when valid, just in case it was
         // manually modified we check again.
@@ -180,12 +179,12 @@ impl TeliodDaemonConfig {
         Ok(config)
     }
 
-    fn resolve_log_path(log_file_path: &str) -> Result<String, TeliodError> {
+    fn resolve_log_path(log_file_path: &str) -> Result<String, NordVpnLiteError> {
         let path = PathBuf::from(log_file_path);
 
         let file_name = path
             .file_name()
-            .ok_or_else(|| TeliodError::InvalidConfigOption {
+            .ok_or_else(|| NordVpnLiteError::InvalidConfigOption {
                 key: "log_file_path".to_owned(),
                 msg: "must specify a file name".to_owned(),
                 value: path.to_string_lossy().into_owned(),
@@ -199,7 +198,7 @@ impl TeliodDaemonConfig {
 
             let path_canonical =
                 dir.canonicalize()
-                    .map_err(|e| TeliodError::InvalidConfigOption {
+                    .map_err(|e| NordVpnLiteError::InvalidConfigOption {
                         key: "log_file_path".to_owned(),
                         msg: format!("could not resolve log directory: {e}"),
                         value: path.to_string_lossy().into_owned(),
@@ -208,7 +207,7 @@ impl TeliodDaemonConfig {
         } else {
             if let Some(parent) = path.parent() {
                 if !parent.is_dir() {
-                    return Err(TeliodError::InvalidConfigOption {
+                    return Err(NordVpnLiteError::InvalidConfigOption {
                         key: "log_file_path".to_owned(),
                         msg: "parent directory does not exist".to_owned(),
                         value: path.to_string_lossy().into_owned(),
@@ -239,15 +238,15 @@ impl TeliodDaemonConfig {
     }
 }
 
-impl Default for TeliodDaemonConfig {
+impl Default for NordVpnLiteConfig {
     fn default() -> Self {
-        TeliodDaemonConfig {
+        NordVpnLiteConfig {
             log_level: LevelFilter::from_level(if cfg!(debug_assertions) {
                 Level::TRACE
             } else {
                 Level::INFO
             }),
-            log_file_path: "/var/log/teliod_lib.log".to_string(),
+            log_file_path: "/var/log/nordvpnlite.log".to_string(),
             log_file_count: default_log_file_count(),
             adapter_type: AdapterType::default(),
             interface: InterfaceConfig {
@@ -339,51 +338,6 @@ pub enum VpnConfig {
     Recommended,
 }
 
-#[allow(dead_code)]
-#[derive(Deserialize, Debug, Default)]
-pub struct TeliodDaemonConfigPartial {
-    #[serde(default, deserialize_with = "deserialize_partial_log_level")]
-    pub log_level: Option<LevelFilter>,
-    pub log_file_path: Option<String>,
-    pub log_file_count: Option<usize>,
-    pub adapter_type: Option<AdapterType>,
-    pub interface: Option<InterfaceConfig>,
-    pub vpn: VpnConfig,
-    pub app_user_uid: Option<Uuid>,
-    #[serde(default, deserialize_with = "deserialize_partial_nord_token")]
-    pub authentication_token: Option<NordToken>,
-    pub http_certificate_file_path: Option<Option<PathBuf>>,
-    pub mqtt: Option<MqttConfig>,
-}
-
-fn deserialize_partial_log_level<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<LevelFilter>, D::Error> {
-    let deserialized_level_filter: Option<String> = Option::deserialize(deserializer)?;
-
-    match deserialized_level_filter {
-        Some(ref level_string) => LevelFilter::from_str(level_string).map(Some).map_err(|_| {
-            de::Error::unknown_variant(
-                level_string,
-                &["error", "warn", "info", "debug", "trace", "off"],
-            )
-        }),
-        _ => Ok(None),
-    }
-}
-
-fn deserialize_partial_nord_token<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<NordToken>, D::Error> {
-    let deserialized_auth_token: Option<Hidden<String>> =
-        de::Deserialize::deserialize(deserializer)?;
-
-    match deserialized_auth_token {
-        Some(raw_auth_token) => Ok(NordToken::new(&raw_auth_token).ok()),
-        None => Ok(None),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::interface::InterfaceConfigurationProvider;
@@ -428,8 +382,8 @@ mod tests {
     }
 
     #[test]
-    fn teliod_config_minimal_json() {
-        let expected = TeliodDaemonConfig {
+    fn nordvpnlite_config_minimal_json() {
+        let expected = NordVpnLiteConfig {
             log_level: LevelFilter::INFO,
             log_file_path: "test.log".to_owned(),
             log_file_count: 7,
@@ -484,18 +438,18 @@ mod tests {
 
     #[test]
     fn test_config_example() {
-        let example = TeliodDaemonConfig::from_file("example_teliod_config.json").unwrap();
+        let example = NordVpnLiteConfig::from_file("example_nordvpnlite_config.json").unwrap();
 
         assert_eq!(example.adapter_type, AdapterType::NepTUN);
     }
 
     #[test]
     fn test_config_vpn_country() {
-        let expected_config = TeliodDaemonConfig::default();
+        let expected_config = NordVpnLiteConfig::default();
 
         let json = r#"{
             "log_level": "Trace",
-            "log_file_path": "/var/log/teliod_lib.log",
+            "log_file_path": "/var/log/nordvpnlite.log",
             "adapter_type": "neptun",
             "interface": {
                 "name": "nlx",
@@ -510,7 +464,7 @@ mod tests {
 
     #[test]
     fn test_config_vpn_endpoint() {
-        let expected_config = TeliodDaemonConfig {
+        let expected_config = NordVpnLiteConfig {
             vpn: VpnConfig::Server(Endpoint {
                 address: "127.0.0.1".parse().unwrap(),
                 public_key: "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
@@ -518,12 +472,12 @@ mod tests {
                     .unwrap(),
                 hostname: None,
             }),
-            ..TeliodDaemonConfig::default()
+            ..NordVpnLiteConfig::default()
         };
 
         let json = r#"{
             "log_level": "Trace",
-            "log_file_path": "/var/log/teliod_lib.log",
+            "log_file_path": "/var/log/nordvpnlite.log",
             "adapter_type": "neptun",
             "interface": {
                 "name": "nlx",
@@ -545,7 +499,7 @@ mod tests {
     fn test_config_vpn_fails() {
         let json = r#"{
             "log_level": "Trace",
-            "log_file_path": "/var/log/teliod_lib.log",
+            "log_file_path": "/var/log/nordvpnlite.log",
             "adapter_type": "neptun",
             "interface": {
                 "name": "nlx",
@@ -557,11 +511,11 @@ mod tests {
             },
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
-        assert!(serde_json::from_str::<TeliodDaemonConfig>(json).is_err());
+        assert!(serde_json::from_str::<NordVpnLiteConfig>(json).is_err());
 
         let json = r#"{
             "log_level": "Trace",
-            "log_file_path": "/var/log/teliod_lib.log",
+            "log_file_path": "/var/log/nordvpnlite.log",
             "adapter_type": "neptun",
             "interface": {
                 "name": "nlx",
@@ -576,11 +530,11 @@ mod tests {
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
-        assert!(serde_json::from_str::<TeliodDaemonConfig>(json).is_err());
+        assert!(serde_json::from_str::<NordVpnLiteConfig>(json).is_err());
 
         let json = r#"{
             "log_level": "Trace",
-            "log_file_path": "/var/log/teliod_lib.log",
+            "log_file_path": "/var/log/nordvpnlite.log",
             "adapter_type": "neptun",
             "interface": {
                 "name": "nlx",
@@ -598,11 +552,11 @@ mod tests {
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
-        assert!(serde_json::from_str::<TeliodDaemonConfig>(json).is_err());
+        assert!(serde_json::from_str::<NordVpnLiteConfig>(json).is_err());
 
         let json = r#"{
             "log_level": "Trace",
-            "log_file_path": "/var/log/teliod_lib.log",
+            "log_file_path": "/var/log/nordvpnlite.log",
             "adapter_type": "neptun",
             "interface": {
                 "name": "nlx",
@@ -618,7 +572,7 @@ mod tests {
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
-        assert!(serde_json::from_str::<TeliodDaemonConfig>(json).is_err());
+        assert!(serde_json::from_str::<NordVpnLiteConfig>(json).is_err());
     }
 
     #[test]
@@ -627,7 +581,7 @@ mod tests {
         let config_json = config_json_for_log(log_path.to_str().unwrap());
 
         let file = temp_config(&config_json);
-        let config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
+        let config = NordVpnLiteConfig::from_file(file.path().to_str().unwrap()).unwrap();
 
         assert_eq!(config.log_file_path, log_path.to_string_lossy());
     }
@@ -636,7 +590,7 @@ mod tests {
     fn test_relative_log_path() {
         let config_json = config_json_for_log("./relative.log");
         let file = temp_config(&config_json);
-        let config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
+        let config = NordVpnLiteConfig::from_file(file.path().to_str().unwrap()).unwrap();
 
         let expected = std::env::current_dir().unwrap().join("relative.log");
         assert_eq!(config.log_file_path, expected.to_string_lossy());
@@ -647,9 +601,9 @@ mod tests {
         let config_json = config_json_for_log("");
 
         let file = temp_config(&config_json);
-        let err = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap_err();
+        let err = NordVpnLiteConfig::from_file(file.path().to_str().unwrap()).unwrap_err();
 
-        matches!(err, TeliodError::InvalidConfigOption { .. });
+        matches!(err, NordVpnLiteError::InvalidConfigOption { .. });
     }
 
     #[test]
@@ -661,7 +615,7 @@ mod tests {
         let valid_token = "b".repeat(64);
         std::env::set_var("NORD_TOKEN", &valid_token);
 
-        let mut config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
+        let mut config = NordVpnLiteConfig::from_file(file.path().to_str().unwrap()).unwrap();
         config.resolve_env_token();
         assert_eq!(config.authentication_token.as_ref(), valid_token);
 
@@ -676,7 +630,7 @@ mod tests {
 
         std::env::set_var("NORD_TOKEN", "short");
 
-        let config = TeliodDaemonConfig::from_file(file.path().to_str().unwrap()).unwrap();
+        let config = NordVpnLiteConfig::from_file(file.path().to_str().unwrap()).unwrap();
         assert_eq!(
             config.authentication_token.as_ref(),
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

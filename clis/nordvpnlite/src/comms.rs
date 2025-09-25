@@ -26,17 +26,17 @@ pub struct DaemonSocket {
 }
 
 impl DaemonSocket {
-    /// Returns the path to the Teliod socket, when available it uses `/run/`, then
+    /// Returns the path to the Nord VPN Lite socket, when available it uses `/run/`, then
     /// checks `/var/run` and if none of them is available it returns an error.
     ///
     /// # Returns
     ///
-    /// A path to the Teliod socket wrapped inside result
+    /// A path to the Nord VPN Lite socket wrapped inside result
     pub fn get_ipc_socket_path() -> Result<PathBuf> {
         if Path::new("/run").exists() {
-            Ok(PathBuf::from("/run/teliod.sock"))
+            Ok(PathBuf::from("/run/nordvpnlited.sock"))
         } else if Path::new("/var/run/").exists() {
-            Ok(PathBuf::from("/var/run/teliod.sock"))
+            Ok(PathBuf::from("/var/run/nordvpnlited.sock"))
         } else {
             Err(Error::new(
                 ErrorKind::NotFound,

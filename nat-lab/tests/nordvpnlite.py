@@ -47,8 +47,8 @@ class IfcConfigType(Enum):
 
 @dataclass(frozen=True)
 class Paths:
-    exec_path: Path = Path(f"{LIBTELIO_BINARY_PATH_DOCKER}/teliod")
-    config_dir: Path = Path("/etc/teliod")
+    exec_path: Path = Path(f"{LIBTELIO_BINARY_PATH_DOCKER}/nordvpnlite")
+    config_dir: Path = Path("/etc/nordvpnlite")
     log_dir: Path = Path("/var/log")
     run_dir: Path = Path("/run")
 
@@ -56,20 +56,20 @@ class Paths:
         if os.environ.get("PYTEST_CURRENT_TEST"):
             if not self.exec_path.exists():
                 raise FileNotFoundError(
-                    f"Teliod executable not found: {self.exec_path}"
+                    f"NordVPN Lite executable not found: {self.exec_path}"
                 )
 
     @property
     def socket_file(self) -> Path:
-        return self.run_dir / "teliod.sock"
+        return self.run_dir / "nordvpnlited.sock"
 
     @property
     def daemon_log(self) -> Path:
-        return self.log_dir / "teliod.log"
+        return self.log_dir / "nordvpnlite.log"
 
     @property
     def lib_log(self) -> Path:
-        return self.log_dir / "teliod_natlab.log"
+        return self.log_dir / "nordvpnlite_natlab.log"
 
     def config_path(self, config_type) -> Path:
         return self.config_dir / config_type.value
@@ -139,10 +139,10 @@ class Config:
         return config_path, log_path
 
 
-class Teliod:
+class NordVpnLite:
     START_TIMEOUT_S = 3
     SOCKET_CHECK_INTERVAL_S = 0.5
-    TELIOD_CMD_CHECK_INTERVAL_S = 1
+    NORDVPNLITE_CMD_CHECK_INTERVAL_S = 1
 
     def __init__(
         self,
@@ -166,18 +166,18 @@ class Teliod:
         connection_tag: ConnectionTag = ConnectionTag.DOCKER_CONE_CLIENT_1,
         connection: Optional[Connection] = None,
         vpn_public_key: Optional[str] = str(WG_SERVER["public_key"]),
-    ) -> "Teliod":
+    ) -> "NordVpnLite":
         if not connection:
             connection = (await setup_connections(exit_stack, [connection_tag]))[
                 0
             ].connection
-        teliod = cls(connection, exit_stack, config=Config(config_type, no_detach))
+        nordvpnlite = cls(connection, exit_stack, config=Config(config_type, no_detach))
         if vpn_public_key:
             await exit_stack.enter_async_context(
-                teliod.setup_vpn_public_key(vpn_public_key)
+                nordvpnlite.setup_vpn_public_key(vpn_public_key)
             )
 
-        return teliod
+        return nordvpnlite
 
     async def execute_command(
         self,
@@ -189,7 +189,7 @@ class Teliod:
             log.debug("'%s' stdout: '%s', stderr: '%s'", cmd, stdout, stderr)
             return stdout, stderr
         except ProcessExecError as exc:
-            log.debug("Exception occured while executing teliod command: %s", exc)
+            log.debug("Exception occured while executing nordvpnlite command: %s", exc)
             raise
 
     async def run_command(
@@ -202,13 +202,13 @@ class Teliod:
         return proc
 
     @asynccontextmanager
-    async def start(self) -> AsyncIterator["Teliod"]:
-        log.info("Teliod starting..")
+    async def start(self) -> AsyncIterator["NordVpnLite"]:
+        log.info("NordVPN Lite starting..")
         try:
             await self.remove_logs()
 
-            async def wait_for_teliod_start():
-                await self.wait_for_teliod_socket()
+            async def wait_for_nordvpnlite_start():
+                await self.wait_for_nordvpnlite_socket()
                 while True:
                     try:
                         if not await self.is_alive():
@@ -217,22 +217,22 @@ class Teliod:
                             )
                         break
                     except IgnoreableError:
-                        await asyncio.sleep(self.TELIOD_CMD_CHECK_INTERVAL_S)
+                        await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
                         continue
 
             if not self.config.no_detach:
                 stdout, stderr = await self.execute_command(Command.start(self.config))
-                await wait_for_teliod_start()
+                await wait_for_nordvpnlite_start()
             else:
                 proc = await self.run_command(Command.start(self.config))
-                await wait_for_teliod_start()
+                await wait_for_nordvpnlite_start()
                 stdout, stderr = proc.get_stdout(), proc.get_stderr()
 
             assert len(stderr) == 0, f"Stderr is not empty: {stderr}"
             await self.config.assert_match_daemon_start(stdout)
             yield self
         finally:
-            log.info("Teliod cleanup: exiting and removing socket (if exists)")
+            log.info("NordVPN Lite cleanup: exiting and removing socket (if exists)")
             try:
                 await self.quit()
             except ProcessExecError as exc:
@@ -245,7 +245,7 @@ class Teliod:
                     log.debug("Dangling socket found, removing it..")
                     await self.remove_socket()
             finally:
-                log.info("Teliod cleanup: saving logs")
+                log.info("NordVPN Lite cleanup: saving logs")
                 await self._save_logs()
 
     async def is_alive(self) -> bool:
@@ -281,13 +281,13 @@ class Teliod:
     async def kill(self) -> None:
         try:
             await self.connection.create_process(
-                ["killall", "-w", "-s", "SIGTERM", "teliod"]
+                ["killall", "-w", "-s", "SIGTERM", "nordvpnlite"]
             ).execute()
             assert (
                 not await self.is_alive()
             ), "SIGTERM was sent but daemon's still running"
         except ProcessExecError as exc:
-            if "teliod: no process found" not in exc.stderr:
+            if "nordvpnlite: no process found" not in exc.stderr:
                 raise
 
     async def remove_logs(self) -> None:
@@ -312,7 +312,7 @@ class Teliod:
             ["rm", "-f", str(self.config.paths.socket_file)]
         ).execute()
 
-    async def wait_for_teliod_socket(self):
+    async def wait_for_nordvpnlite_socket(self):
         start_time = time.monotonic()
         while time.monotonic() - start_time < self.START_TIMEOUT_S:
             try:
@@ -323,7 +323,7 @@ class Teliod:
             except TimeoutError:
                 pass
             await asyncio.sleep(self.SOCKET_CHECK_INTERVAL_S)
-        exc = TimeoutError("teliod did not start within timeout")
+        exc = TimeoutError("nordvpnlite did not start within timeout")
         log.error(exc)
         raise exc
 
@@ -333,7 +333,7 @@ class Teliod:
             if status["exit_node"]:
                 if status["exit_node"]["state"] == "connected":
                     return
-            await asyncio.sleep(self.TELIOD_CMD_CHECK_INTERVAL_S)
+            await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
 
     @asynccontextmanager
     async def setup_interface(self, vpn_routes: bool) -> AsyncIterator:
@@ -341,12 +341,12 @@ class Teliod:
         Setups interface addresses and routes manually.
 
         This function should only be used when interface config provider
-        is set to 'manual' on the teliod config.
+        is set to 'manual' on the nordvpnlite config.
         This is not checked by this function. (TODO: LLT-6476)
         """
         router = LinuxRouter(self.connection, IPStack.IPv4)
         try:
-            router.set_interface_name("teliod")
+            router.set_interface_name("nordvpnlite")
             await router.setup_interface(self._node.ip_addresses)
             if vpn_routes:
                 await router.create_vpn_route()
@@ -371,8 +371,8 @@ class Teliod:
         assert core_response
 
         node: Node = self._api.register(
-            "teliod",
-            "teliod",
+            "nordvpnlite",
+            "nordvpnlite",
             core_response["nordlynx_private_key"],
             generate_public_key(core_response["nordlynx_private_key"]),
             True,
@@ -394,7 +394,7 @@ class Teliod:
         function inserts them to the config file, reverting
         back to 'public-key-placeholder' on _aexit_.
         """
-        config_path = f"data/teliod/{self.config.config_type.value}"
+        config_path = f"data/nordvpnlite/{self.config.config_type.value}"
         with open(config_path, "r", encoding="UTF-8") as f:
             original_cfg = f.read()
 
@@ -429,8 +429,8 @@ class Teliod:
         os.makedirs(log_dir, exist_ok=True)
 
         log_files = [
-            (self.config.paths.daemon_log, "teliod.log"),
-            (self.config.paths.lib_log, "teliod_natlab.log"),
+            (self.config.paths.daemon_log, "nordvpnlite.log"),
+            (self.config.paths.lib_log, "nordvpnlite_natlab.log"),
         ]
 
         for log_path, log_name in log_files:

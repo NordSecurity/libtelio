@@ -25,7 +25,7 @@ define Build/Compile
 	# nothing to do
 endef
 
-define Package/nordvpn/install	
+define Package/nordvpn/install
 	@if [ -z "$(PKG_BINFILE)" ]; then \
 		echo "ERROR: PKG_BINFILE is empty!" >&2; \
 		exit 1; \
@@ -33,8 +33,8 @@ define Package/nordvpn/install
 		echo "ERROR: \"${PKG_BINFILE}\" pointed by PKG_BINFILE does not exist!" >&2; \
 		exit 1; \
 	fi
-	@echo "Using prebuilt teliod: ${PKG_BINFILE}"
-	
+	@echo "Using prebuilt nordvpnlite: ${PKG_BINFILE}"
+
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_BIN) ${PKG_BINFILE} $(1)/usr/sbin/nordvpn
 
