@@ -22,13 +22,13 @@ jobs:
         include:
           - arch: x86_64
             target_os: macos
-            runner: macos-13
+            runner: macos-15-intel
           - arch: aarch64
             target_os: macos
-            runner: macos-14
+            runner: macos-15
           - arch: aarch64
             target_os: ios
-            runner: macos-13
+            runner: macos-15
           - arch: x86_64
             target_os: windows
             runner: windows-2022

@@ -31,7 +31,7 @@ jobs:
           RUST_BACKTRACE: full
 
   test-mac:
-    runs-on: macos-13
+    runs-on: macos-15
     steps:
       - name: Install Protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
@@ -71,10 +71,10 @@ jobs:
         include:
           - arch: x86_64
             target_os: macos
-            runner: macos-13
+            runner: macos-15-intel
           - arch: aarch64
             target_os: macos
-            runner: macos-14
+            runner: macos-15
           - arch: x86_64
             target_os: linux
             runner: ubuntu-22.04
@@ -136,7 +136,7 @@ jobs:
           path: dist/
 
   build-docs-on-mac:
-    runs-on: macos-13
+    runs-on: macos-15
     env:
         RUSTDOCFLAGS: "-Zunstable-options --enable-index-page -Aunknown_lints --html-in-header ./rustdoc/header.html --html-after-content ./rustdoc/multi-code.html --html-after-content ./rustdoc/footer.html"
     steps:
@@ -164,7 +164,7 @@ jobs:
       - run: cargo test --release -- --ignored
         env:
           RUST_BACKTRACE: full
-      
+
   kani-proofs:
     runs-on: ubuntu-22.04
     steps:
