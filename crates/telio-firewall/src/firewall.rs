@@ -16,6 +16,7 @@ use pnet_packet::{
 };
 use smallvec::ToSmallVec;
 use std::{
+    convert::TryInto,
     fmt::Debug,
     io::{self},
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr, SocketAddr},
@@ -25,13 +26,17 @@ use telio_model::features::{FeatureFirewall, IpProtocol};
 use telio_network_monitors::monitor::{LocalInterfacesObserver, LOCAL_ADDRS_CACHE};
 
 use telio_crypto::PublicKey;
-use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 
 use crate::{
-    chain::{Chain as InternalChain, Filter, FilterData, NetworkFilter, NextLevelProtocol, Rule},
+    chain::Chain as InternalChain,
+    chain_helpers::{
+        ConnectionState, Direction, FfiChainGuard, Filter, FilterData, NetworkFilterData,
+        NextLevelProtocol, Rule,
+    },
     conntrack::{
-        unwrap_option_or_return, ConnectionState, Conntrack, Direction, Error, Result,
-        UdpConnectionInfo,
+        unwrap_option_or_return, ConnectionState as CtkConnectionState, Conntrack,
+        Direction as CtkDirection, Error, Result, UdpConnectionInfo,
     },
     ffi_chain::LibfwVerdict,
 };
@@ -355,9 +360,9 @@ impl StatefullFirewall {
 
     fn dst_net_all_ports_filter(net: IpNet, inverted: bool) -> Filter {
         Filter {
-            filter_data: FilterData::DstNetwork(NetworkFilter {
+            filter_data: FilterData::DstNetwork(NetworkFilterData {
                 network: net,
-                ports: (0, 65535),
+                port_range: (0, 65535),
             }),
             inverted,
         }
@@ -571,9 +576,9 @@ impl StatefullFirewall {
                                 inverted: false,
                             },
                             Filter {
-                                filter_data: FilterData::DstNetwork(NetworkFilter {
+                                filter_data: FilterData::DstNetwork(NetworkFilterData {
                                     network: IpNet::from(*ip),
-                                    ports: (port, port),
+                                    port_range: (port, port),
                                 }),
                                 inverted: false,
                             },
@@ -601,7 +606,12 @@ impl StatefullFirewall {
             });
         }
 
-        *self.chain.write() = InternalChain { rules };
+        let ffi_chain_guard: FfiChainGuard = (rules.as_slice()).into();
+        if let Ok(internal_chain) = (&ffi_chain_guard.ffi_chain).try_into() {
+            *self.chain.write() = internal_chain;
+        } else {
+            telio_log_error!("FFI chain we produced is malformed!");
+        }
     }
 
     fn process_outbound_ip_packet<'a, P: IpPacket<'a>>(
@@ -609,7 +619,7 @@ impl StatefullFirewall {
         public_key: &[u8; 32],
         buffer: &'a [u8],
         sink: &mut dyn io::Write,
-        conn_state: ConnectionState,
+        conn_state: CtkConnectionState,
     ) -> Result<bool> {
         let ip = unwrap_option_or_return!(P::try_from(buffer), Err(Error::MalformedIpPacket));
         let peer: PublicKey = PublicKey(*public_key);
@@ -623,13 +633,13 @@ impl StatefullFirewall {
             conn_state,
             &ip,
             Some(public_key),
-            Direction::Outbound,
+            CtkDirection::Outbound,
         );
 
         if let LibfwVerdict::LibfwVerdictReject = verdict {
             match ip.get_next_level_protocol() {
                 IpNextHeaderProtocols::Udp => {
-                    let link = Conntrack::build_conn_info(&ip, Direction::Outbound)?.0;
+                    let link = Conntrack::build_conn_info(&ip, CtkDirection::Outbound)?.0;
                     let Some(first_chunk) = ip
                         .packet()
                         .chunks(UdpConnectionInfo::LAST_PKG_MAX_CHUNK_LEN)
@@ -647,7 +657,8 @@ impl StatefullFirewall {
                     return Ok(false);
                 }
                 IpNextHeaderProtocols::Tcp => {
-                    let (link, tcp_packet) = Conntrack::build_conn_info(&ip, Direction::Outbound)?;
+                    let (link, tcp_packet) =
+                        Conntrack::build_conn_info(&ip, CtkDirection::Outbound)?;
                     let tcp_packet = unwrap_option_or_return!(tcp_packet, Ok(false));
                     _ = self.conntrack.send_tcp_rst_packets(
                         std::iter::once((&link, 0, Some(tcp_packet.get_sequence() + 1))),
@@ -670,7 +681,7 @@ impl StatefullFirewall {
         &self,
         public_key: &[u8; 32],
         buffer: &'a [u8],
-        conn_state: ConnectionState,
+        conn_state: CtkConnectionState,
     ) -> Result<bool> {
         let ip = unwrap_option_or_return!(P::try_from(buffer), Err(Error::MalformedIpPacket));
 
@@ -679,11 +690,12 @@ impl StatefullFirewall {
             return Ok(false);
         }
 
-        Ok(self
-            .chain
-            .read()
-            .process_packet(conn_state, &ip, Some(public_key), Direction::Inbound)
-            == LibfwVerdict::LibfwVerdictAccept)
+        Ok(self.chain.read().process_packet(
+            conn_state,
+            &ip,
+            Some(public_key),
+            CtkDirection::Inbound,
+        ) == LibfwVerdict::LibfwVerdictAccept)
     }
 
     fn cleanup_conntrack_inbound<'a, P: IpPacket<'a>>(
@@ -794,7 +806,7 @@ impl Firewall for StatefullFirewall {
                     .track_outbound_ip_packet::<Ipv4Packet>(Some(public_key), buffer)
                     .unwrap_or_else(|_| {
                         telio_log_warn!("Conntrack failed for outbound IPv4 packet");
-                        ConnectionState::New
+                        CtkConnectionState::New
                     });
                 self.process_outbound_ip_packet::<Ipv4Packet>(public_key, buffer, sink, conn_state)
                     .unwrap_or(false)
@@ -806,7 +818,7 @@ impl Firewall for StatefullFirewall {
                     .unwrap_or_else(|_| {
                         telio_log_warn!("Conntrack failed for outbound IPv4 packet");
                         // Some packets are unexpected, but we still let them through, like outbound ICMP reply
-                        ConnectionState::New
+                        CtkConnectionState::New
                     });
                 self.process_outbound_ip_packet::<Ipv6Packet>(public_key, buffer, sink, conn_state)
                     .unwrap_or(false)
@@ -1620,14 +1632,14 @@ pub mod tests {
             assert_eq!(fw.conntrack.tcp.lock().len(), 1);
 
             assert_eq!(fw.conntrack.tcp.lock().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: ConnectionState::Established
+                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: CtkConnectionState::Established
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
             assert_eq!(fw.conntrack.tcp.lock().len(), 1);
 
             assert_eq!(fw.conntrack.tcp.lock().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: ConnectionState::Closed
+                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: CtkConnectionState::Closed
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::ACK)), true);
@@ -1673,7 +1685,7 @@ pub mod tests {
             let conn_key = Connection { link , associated_data: Some(peer.to_smallvec()) };
 
             assert_eq!(fw.conntrack.tcp.lock().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None, state: ConnectionState::New
+                tx_alive: true, rx_alive: true, conn_remote_initiated: false, next_seq: None, state: CtkConnectionState::New
             }));
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
@@ -1681,7 +1693,7 @@ pub mod tests {
             assert_eq!(fw.conntrack.tcp.lock().len(), 1);
 
             assert_eq!(fw.conntrack.tcp.lock().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: ConnectionState::Established
+                tx_alive: true, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: CtkConnectionState::Established
             }));
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::FIN)), true);
@@ -1689,7 +1701,7 @@ pub mod tests {
 
             // update tcp cache entry timeout
             assert_eq!(fw.conntrack.tcp.lock().get(&conn_key), Some(&TcpConnectionInfo{
-                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: ConnectionState::Closed
+                tx_alive: false, rx_alive: false, conn_remote_initiated: false, next_seq: Some(12), state: CtkConnectionState::Closed
             }));
 
             // process inbound packet (should not update ttl, because not ACK, but entry should still exist)
@@ -3315,7 +3327,7 @@ pub mod tests {
             assert!(fw.process_inbound_packet(&peer, &make_tcp(dst, src, TcpFlags::SYN)));
             assert_eq!(
                 fw.conntrack.tcp.lock().get(&key).unwrap().state,
-                ConnectionState::New
+                CtkConnectionState::New
             );
             assert!(fw.process_outbound_packet(
                 &peer,
@@ -3324,7 +3336,7 @@ pub mod tests {
 
             assert_eq!(
                 fw.conntrack.tcp.lock().get(&key).unwrap().state,
-                ConnectionState::Established
+                CtkConnectionState::Established
             );
         }
     }
@@ -3375,12 +3387,12 @@ pub mod tests {
                 assert!(fw.process_inbound_packet(&peer, &make_tcp(dst, src, TcpFlags::SYN)));
                 assert_eq!(
                     fw.conntrack.tcp.lock().get(&key).unwrap().state,
-                    ConnectionState::New
+                    CtkConnectionState::New
                 );
 
                 if fw.process_outbound_packet(&peer, &make_tcp(src, dst, outbound_flags)) {
                     if let Some(value) = fw.conntrack.tcp.lock().get(&key) {
-                        assert_eq!(value.state, ConnectionState::New);
+                        assert_eq!(value.state, CtkConnectionState::New);
                     }
                 }
             }
@@ -3431,14 +3443,14 @@ pub mod tests {
             assert!(fw.process_outbound_packet(&peer, &make_tcp(src, dst, TcpFlags::SYN)));
             assert_eq!(
                 fw.conntrack.tcp.lock().get(&key).unwrap().state,
-                ConnectionState::New
+                CtkConnectionState::New
             );
             assert!(fw
                 .process_inbound_packet(&peer, &make_tcp(dst, src, TcpFlags::SYN | TcpFlags::ACK)));
 
             assert_eq!(
                 fw.conntrack.tcp.lock().get(&key).unwrap().state,
-                ConnectionState::Established
+                CtkConnectionState::Established
             );
         }
     }

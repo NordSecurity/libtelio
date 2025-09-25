@@ -110,7 +110,7 @@ impl TryFrom<&LibfwNetworkFilter> for NetworkFilter {
                     }
                     unexpected_ip_version => {
                         telio_log_warn!(
-                            "Malformed chain: Unexpeted IP version: {}",
+                            "Malformed chain: Unexpected IP version: {}",
                             unexpected_ip_version
                         );
                         return Err(Error::InvalidChain);
@@ -1282,7 +1282,7 @@ pub mod tests {
                 filter: LibfwFilterData {
                     associated_data_filter: ManuallyDrop::new(LibfwAssociatedData {
                         associated_data_len: assoc_data.len(),
-                        associated_data: assoc_data.leak().as_ptr(),
+                        associated_data: assoc_data.as_ptr(),
                     }),
                 },
             },
@@ -1298,24 +1298,24 @@ pub mod tests {
         let rules = vec![
             LibfwRule {
                 filter_count: filters1.len(),
-                filters: filters1.leak().as_ptr(),
+                filters: filters1.as_ptr(),
                 action: LIBFW_VERDICT_ACCEPT,
             },
             LibfwRule {
                 filter_count: filters2.len(),
-                filters: filters2.leak().as_ptr(),
+                filters: filters2.as_ptr(),
                 action: LIBFW_VERDICT_DROP,
             },
             LibfwRule {
                 filter_count: filters3.len(),
-                filters: filters3.leak().as_ptr(),
+                filters: filters3.as_ptr(),
                 action: LIBFW_VERDICT_REJECT,
             },
         ];
 
         let test_ffi_chain = LibfwChain {
             rule_count: rules.len(),
-            rules: rules.leak().as_ptr(),
+            rules: rules.as_ptr(),
         };
 
         // Compare converted LibfwChain to original Chain

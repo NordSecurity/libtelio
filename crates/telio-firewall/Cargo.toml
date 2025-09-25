@@ -18,12 +18,13 @@ mockall = { workspace = true, optional = true }
 pnet_packet.workspace = true
 rustc-hash.workspace = true
 parking_lot.workspace = true
+rand.workspace = true
+num_enum.workspace = true
 
 telio-crypto.workspace = true
 telio-utils.workspace = true
 telio-model.workspace = true
 telio-network-monitors.workspace = true
-num_enum.workspace = true
 
 [dev-dependencies]
 criterion = "0.7"
