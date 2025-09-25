@@ -16,8 +16,8 @@ use telio::telio_utils::exponential_backoff::{
     Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
 };
 
-use crate::config::{Endpoint, NordToken, NordlynxKeyResponse, TeliodDaemonConfig, VpnConfig};
-use crate::TeliodError;
+use crate::config::{Endpoint, NordToken, NordVpnLiteConfig, NordlynxKeyResponse, VpnConfig};
+use crate::NordVpnLiteError;
 
 const API_BASE: &str = "https://api.nordvpn.com/v1";
 const WIREGUARD_ID: u64 = 35;
@@ -132,7 +132,7 @@ impl TryFrom<&Server> for Endpoint {
 }
 
 impl TryFrom<&Server> for ExitNode {
-    type Error = TeliodError;
+    type Error = NordVpnLiteError;
 
     fn try_from(server: &Server) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -140,7 +140,7 @@ impl TryFrom<&Server> for ExitNode {
             public_key: server
                 .wg_public_key()
                 .and_then(|key| key.parse().ok())
-                .ok_or(TeliodError::EndpointNoPublicKey)?,
+                .ok_or(NordVpnLiteError::EndpointNoPublicKey)?,
             allowed_ips: None,
             endpoint: Some(SocketAddr::new(server.address(), DEFAULT_WIREGUARD_PORT)),
         })
@@ -451,9 +451,7 @@ async fn get_recommended_servers(
     }
 }
 
-pub async fn get_server_endpoints_list(
-    config: &TeliodDaemonConfig,
-) -> Result<Vec<Endpoint>, Error> {
+pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec<Endpoint>, Error> {
     let country_id: Option<u64> = match &config.vpn {
         // Use the endpoint directly if provided in the config
         VpnConfig::Server(endpoint) => return Ok(vec![endpoint.clone()]),
