@@ -298,9 +298,15 @@ class NordVpnLite:
 
     async def kill(self) -> None:
         try:
-            await self.connection.create_process(
-                ["killall", "-w", "-s", "SIGTERM", "nordvpnlite"]
-            ).execute()
+            # OpenWrt doesn't support killall -w
+            if "nordvpn" in self.config.paths.exec_path.parts:
+                await self.connection.create_process(
+                    ["killall", "-s", "SIGTERM", "nordvpn"]
+                ).execute()
+            else:
+                await self.connection.create_process(
+                    ["killall", "-w", "-s", "SIGTERM", "nordvpnlite"]
+                ).execute()
             assert (
                 not await self.is_alive()
             ), "SIGTERM was sent but daemon's still running"
