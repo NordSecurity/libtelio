@@ -950,6 +950,7 @@ async def get_grpc_tls_fingerprint(vpn_ip):
 
 async def get_grpc_tls_root_certificate(vpn_ip):
     url = f"http://{vpn_ip}:8000/api/grpc_tls_root_certificate"
+    # url = f"http://{vpn_ip}:8000/api/incorrect_root_certificate"
     json = await make_get_json(url)
     print("json", json)
     return json["root_certificate"]

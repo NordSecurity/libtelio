@@ -507,12 +507,59 @@ async def handle_grpc_tls_root_certificate(request):
     return web.json_response({"root_certificate": encoded })
 
 
+async def handle_incorrect_root_certificate(request):
+    
+    root_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    root_subject = x509.Name([
+        x509.NameAttribute(NameOID.COUNTRY_NAME, "LT"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "NordSec"),
+        x509.NameAttribute(NameOID.COMMON_NAME, "NordSec Root CA"),
+    ])
+    
+    root_cert = (
+        x509.CertificateBuilder()
+        .subject_name(root_subject)
+        .issuer_name(root_subject)  # Self-signed
+        .public_key(root_private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.utcnow() - timedelta(days=1))
+        .not_valid_after(datetime.utcnow() + timedelta(days=3650))  # 10 years
+        .add_extension(
+            x509.BasicConstraints(ca=True, path_length=2), critical=True
+        )
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=True,
+                crl_sign=True,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(root_private_key.public_key()),
+            critical=False,
+        )
+        .sign(root_private_key, hashes.SHA256())
+    )
+    root_certificate = root_cert.public_bytes(serialization.Encoding.DER)
+    encoded = base64.b64encode(root_certificate).decode('ascii')
+    print("encoded:", encoded)
+    return web.json_response({"root_certificate": encoded })
+
+
 async def start_http_server(host, port):
     app = web.Application()
     app.router.add_post('/api/connection_error', handle_connection_error)
     app.router.add_post('/api/vpn_server_private_key', handle_vpn_server_private_key)
     app.router.add_get('/api/grpc_tls_fingerprint', handle_grpc_tls_fingerprint)
     app.router.add_get('/api/grpc_tls_root_certificate', handle_grpc_tls_root_certificate)
+    app.router.add_get('/api/incorrect_root_certificate', handle_incorrect_root_certificate)
     
     runner = web.AppRunner(app)
     await runner.setup()
