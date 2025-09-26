@@ -1,26 +1,19 @@
 use core::slice;
-use std::{ffi::c_void, ptr::null_mut};
+use std::{convert::TryInto, ffi::c_void};
 
 use parking_lot::RwLock;
 use pnet_packet::{ipv4::Ipv4Packet, ipv6::Ipv6Packet};
 
 use crate::{
-    chain::{Chain, LibfwChain, LibfwVerdict},
-    conntrack::{unwrap_option_or_return, Conntrack},
+    chain::Chain,
+    conntrack::{self, unwrap_option_or_return, Conntrack},
     error::LibfwError,
+    ffi_chain::{LibfwChain, LibfwVerdict},
     log::{
         libfw_log_trace, libfw_log_warn, LibfwLogCallback, LibfwLogLevel, LOG_CALLBACK,
         MIN_LOG_LEVEL,
     },
 };
-
-mod chain;
-mod conntrack;
-mod error;
-mod instant;
-mod log;
-mod lru_cache;
-mod packet;
 
 ///
 /// Type for firewall instance
@@ -28,7 +21,6 @@ mod packet;
 pub struct LibfwFirewall {
     pub(crate) conntrack: Conntrack,
     pub(crate) chain: RwLock<Option<Chain>>,
-    pub(crate) ffi_chain_copy: Option<LibfwChain>,
 }
 
 ///
@@ -88,7 +80,6 @@ pub extern "C" fn libfw_init() -> *mut LibfwFirewall {
     Box::leak(Box::new(LibfwFirewall {
         conntrack: Conntrack::new(),
         chain: RwLock::new(None),
-        ffi_chain_copy: None,
     }))
 }
 
@@ -97,6 +88,12 @@ pub extern "C" fn libfw_init() -> *mut LibfwFirewall {
 ///
 /// @param fw - pointer returned by @ref libfw_init
 /// @param chain - chain of the firewall rules
+///
+/// # Safety
+///
+/// This function dereferences pointer to firewall - user must ensure that this is
+/// the pointer returned by `libfw_init` and also dereferences `ffi_chain` pointer
+/// which should point to a valid LibfwChain struct.
 ///
 #[no_mangle]
 pub unsafe extern "C" fn libfw_configure_chain(
@@ -107,30 +104,13 @@ pub unsafe extern "C" fn libfw_configure_chain(
         Some(ffi_chain) => match ffi_chain.try_into() {
             Ok(chain) => {
                 unsafe {
-                    (*fw).ffi_chain_copy = Some(ffi_chain.clone());
                     *(*fw).chain.write() = Some(chain);
                 }
                 LibfwError::LibfwSuccess
             }
-            Err(err) => err,
+            Err(err) => err.into(),
         },
         None => LibfwError::LibfwErrorNullPointer,
-    }
-}
-
-///
-/// Retrieves currently configured chain of firewall rules
-///
-/// @param fw - pointer to initialized firewall
-///
-/// @returns  - currenlty configured chain, NULL if no chain is confugured
-///
-#[no_mangle]
-pub unsafe extern "C" fn libfw_dump_chain(fw: *mut LibfwFirewall) -> *const LibfwChain {
-    if let Some(chain) = unsafe { (*fw).ffi_chain_copy.as_ref() } {
-        chain as *const LibfwChain
-    } else {
-        null_mut()
     }
 }
 
@@ -236,9 +216,9 @@ pub unsafe extern "C" fn libfw_trigger_stale_connection_close(
 #[no_mangle]
 pub unsafe extern "C" fn libfw_process_inbound_packet(
     firewall: *mut LibfwFirewall,
-    packet: *mut u8,
+    packet: *const u8,
     packet_len: usize,
-    associated_data: *mut u8,
+    associated_data: *const u8,
     associated_data_len: usize,
     _inject_packet_cb_data: *mut c_void,
     _inject_outbound_packet_cb: LibfwInjectPacketCallback,
@@ -256,6 +236,7 @@ pub unsafe extern "C" fn libfw_process_inbound_packet(
     };
 
     let Some(fw) = firewall.as_mut() else {
+        libfw_log_warn!("Dropping packet due to a NULL firewall pointer");
         return LibfwVerdict::LibfwVerdictDrop;
     };
 
@@ -266,7 +247,7 @@ pub unsafe extern "C" fn libfw_process_inbound_packet(
                 .track_inbound_ip_packet::<Ipv4Packet>(assoc_data, buffer)
                 .unwrap_or_else(|err| {
                     libfw_log_warn!("Conntrack failed to track an inbound packet {:?}", err);
-                    conntrack::LibfwConnectionState::LibfwConnectionStateInvalid
+                    conntrack::ConnectionState::Invalid
                 });
             if let Some(chain) = fw.chain.read().as_ref() {
                 Ipv4Packet::new(buffer)
@@ -275,7 +256,7 @@ pub unsafe extern "C" fn libfw_process_inbound_packet(
                             conn_state,
                             &ip_packet,
                             assoc_data,
-                            conntrack::LibfwDirection::LibfwDirectionInbound,
+                            conntrack::Direction::Inbound,
                         )
                     })
                     .unwrap_or(LibfwVerdict::LibfwVerdictDrop)
@@ -289,7 +270,7 @@ pub unsafe extern "C" fn libfw_process_inbound_packet(
                 .track_inbound_ip_packet::<Ipv6Packet>(assoc_data, buffer)
                 .unwrap_or_else(|err| {
                     libfw_log_warn!("Conntrack failed to track an inbound packet {:?}", err);
-                    conntrack::LibfwConnectionState::LibfwConnectionStateInvalid
+                    conntrack::ConnectionState::Invalid
                 });
             if let Some(chain) = fw.chain.read().as_ref() {
                 Ipv6Packet::new(buffer)
@@ -298,7 +279,7 @@ pub unsafe extern "C" fn libfw_process_inbound_packet(
                             conn_state,
                             &ip_packet,
                             assoc_data,
-                            conntrack::LibfwDirection::LibfwDirectionInbound,
+                            conntrack::Direction::Inbound,
                         )
                     })
                     .unwrap_or(LibfwVerdict::LibfwVerdictDrop)
@@ -359,6 +340,7 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
     };
 
     let Some(fw) = firewall.as_mut() else {
+        libfw_log_warn!("Dropping packet due to a NULL firewall pointer");
         return LibfwVerdict::LibfwVerdictDrop;
     };
 
@@ -369,7 +351,7 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
                 .track_outbound_ip_packet::<Ipv4Packet>(assoc_data, buffer)
                 .unwrap_or_else(|err| {
                     libfw_log_warn!("Conntrack failed to track an outbound packet {:?}", err);
-                    conntrack::LibfwConnectionState::LibfwConnectionStateInvalid
+                    conntrack::ConnectionState::Invalid
                 });
             if let Some(chain) = fw.chain.read().as_ref() {
                 Ipv4Packet::new(buffer)
@@ -378,7 +360,7 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
                             conn_state,
                             &ip_packet,
                             assoc_data,
-                            conntrack::LibfwDirection::LibfwDirectionOutbound,
+                            conntrack::Direction::Outbound,
                         )
                     })
                     .unwrap_or(LibfwVerdict::LibfwVerdictDrop)
@@ -392,7 +374,7 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
                 .track_outbound_ip_packet::<Ipv6Packet>(assoc_data, buffer)
                 .unwrap_or_else(|err| {
                     libfw_log_warn!("Conntrack failed to track an outbound packet {:?}", err);
-                    conntrack::LibfwConnectionState::LibfwConnectionStateInvalid
+                    conntrack::ConnectionState::Invalid
                 });
             if let Some(chain) = fw.chain.read().as_ref() {
                 Ipv6Packet::new(buffer)
@@ -401,7 +383,7 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
                             conn_state,
                             &ip_packet,
                             assoc_data,
-                            conntrack::LibfwDirection::LibfwDirectionOutbound,
+                            conntrack::Direction::Outbound,
                         )
                     })
                     .unwrap_or(LibfwVerdict::LibfwVerdictDrop)

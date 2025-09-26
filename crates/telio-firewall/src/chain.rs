@@ -18,7 +18,8 @@ use smallvec::ToSmallVec;
 use telio_utils::telio_log_warn;
 
 use crate::{
-    conntrack::{AssociatedData, ConnectionState, Direction, Error},
+    conntrack::{AssociatedData, ConnectionState, Direction},
+    error::Error,
     ffi_chain::{
         LibfwChain, LibfwFilter, LibfwNetworkFilter, LibfwRule, LibfwVerdict,
         LIBFW_FILTER_ASSOCIATED_DATA, LIBFW_FILTER_CONNTRACK_STATE, LIBFW_FILTER_DIRECTION,
@@ -533,7 +534,8 @@ pub mod tests {
             Chain, Filter, FilterData, IcmpType as OurIcmpType, LibfwChain, LibfwFilter,
             LibfwNetworkFilter, LibfwRule, LibfwVerdict, NetworkFilter, NextLevelProtocol, Rule,
         },
-        conntrack::{unwrap_option_or_return, ConnectionState, Conntrack, Direction, Error},
+        conntrack::{unwrap_option_or_return, ConnectionState, Conntrack, Direction},
+        error::Error,
         ffi_chain::{
             LibfwAssociatedData, LibfwFilterData, LibfwIpAddr, LibfwIpData,
             LIBFW_CONTRACK_STATE_ESTABLISHED, LIBFW_DIRECTION_INBOUND, LIBFW_DIRECTION_OUTBOUND,
