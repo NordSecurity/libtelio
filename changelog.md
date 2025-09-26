@@ -1,5 +1,14 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v6.1.1
+### ****
+---
+* LLT-6528: Add control flow guard for Windows
+* LLT-6598: Bump uniffi generators to fix segfault for Windows
+
+
+<br>
+
 ### v6.1.0
 ### ****
 ---
