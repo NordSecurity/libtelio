@@ -10,7 +10,8 @@ use crate::{
     daemon::{NordVpnLiteError, TelioStatusReport},
 };
 
-pub(crate) const TIMEOUT_SEC: u64 = 1;
+// TODO: reduce to 1 when investigating LLT-6693
+pub(crate) const TIMEOUT_SEC: u64 = 2;
 
 #[derive(Parser, Debug, PartialEq)]
 #[clap()]

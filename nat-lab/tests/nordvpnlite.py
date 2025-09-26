@@ -257,7 +257,11 @@ class NordVpnLite:
                 raise IgnoreableError() from exc
             if "Error: DaemonIsNotRunning" in exc.stderr:
                 return False
+            # TODO: remove after LLT-6694
             if "Connection reset by peer" in exc.stderr:
+                raise IgnoreableError() from exc
+            # TODO: remove after LLT-6694
+            if "Broken pipe" in exc.stderr:
                 raise IgnoreableError() from exc
             raise exc
 
@@ -328,6 +332,8 @@ class NordVpnLite:
         raise exc
 
     async def wait_for_vpn_connected_state(self):
+        # TODO: remove after LLT-6693
+        await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
         while True:
             status = json.loads(await self.get_status())
             if status["exit_node"]:
