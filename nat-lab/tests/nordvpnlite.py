@@ -39,6 +39,8 @@ class IfcConfigType(Enum):
     VPN_COUNTRY_PL = "config_with_vpn_country_pl.json"
     VPN_COUNTRY_DE = "config_with_vpn_country_de.json"
     VPN_COUNTRY_EMPTY = "config_with_vpn_country_empty.json"
+    VPN_OPENWRT_UCI_PL = "config_openwrt_uci_pl_setup.json"
+    VPN_OPENWRT_UCI_DE = "config_openwrt_uci_de_setup.json"
 
     @classmethod
     def _missing_(cls, value):
@@ -53,7 +55,10 @@ class Paths:
     run_dir: Path = Path("/run")
 
     def __post_init__(self):
-        if os.environ.get("PYTEST_CURRENT_TEST"):
+        if (
+            os.environ.get("PYTEST_CURRENT_TEST")
+            and "nordvpnlite" in self.exec_path.parts
+        ):
             if not self.exec_path.exists():
                 raise FileNotFoundError(
                     f"NordVPN Lite executable not found: {self.exec_path}"
@@ -82,25 +87,34 @@ class Command(list):
     def __repr__(self) -> str:
         return f"Command({super().__repr__()})"
 
+    @staticmethod
+    def get_exec_path(config: Optional["Config"] = None) -> str:
+        if config:
+            return str(config.paths.exec_path)
+        return str(Paths.exec_path)
+
     @classmethod
     def start(cls, config: "Config") -> "Command":
-        cmd = [str(Paths.exec_path), "start"]
+        cmd = [str(config.paths.exec_path), "start"]
         if config.no_detach:
             cmd.append("--no-detach")
         cmd.append(str(config.path()))
         return cls(cmd)
 
     @classmethod
-    def is_alive(cls) -> "Command":
-        return cls([str(Paths.exec_path), "is-alive"])
+    def is_alive(cls, config: Optional["Config"] = None) -> "Command":
+        exec_path = cls.get_exec_path(config)
+        return cls([exec_path, "is-alive"])
 
     @classmethod
-    def get_status(cls) -> "Command":
-        return cls([str(Paths.exec_path), "get-status"])
+    def get_status(cls, config: Optional["Config"] = None) -> "Command":
+        exec_path = cls.get_exec_path(config)
+        return cls([exec_path, "get-status"])
 
     @classmethod
-    def quit_daemon(cls) -> "Command":
-        return cls([str(Paths.exec_path), "quit-daemon"])
+    def quit_daemon(cls, config: Optional["Config"] = None) -> "Command":
+        exec_path = cls.get_exec_path(config)
+        return cls([exec_path, "quit-daemon"])
 
 
 class Config:
@@ -250,7 +264,7 @@ class NordVpnLite:
 
     async def is_alive(self) -> bool:
         try:
-            stdout, _ = await self.execute_command(Command.is_alive())
+            stdout, _ = await self.execute_command(Command.is_alive(self.config))
             return "Command executed successfully" in stdout
         except ProcessExecError as exc:
             if "Obtaining nordlynx key, ignoring" in exc.stdout:
@@ -266,11 +280,11 @@ class NordVpnLite:
             raise exc
 
     async def get_status(self) -> str:
-        status, _ = await self.execute_command(Command.get_status())
+        status, _ = await self.execute_command(Command.get_status(self.config))
         return status
 
     async def quit(self) -> None:
-        stdout, stderr = await self.execute_command(Command.quit_daemon())
+        stdout, stderr = await self.execute_command(Command.quit_daemon(self.config))
         assert (
             "Command executed successfully" in stdout
         ), f"Failed to execute quit-daemon command: {stderr}"
@@ -284,9 +298,15 @@ class NordVpnLite:
 
     async def kill(self) -> None:
         try:
-            await self.connection.create_process(
-                ["killall", "-w", "-s", "SIGTERM", "nordvpnlite"]
-            ).execute()
+            # OpenWrt doesn't support killall -w
+            if "nordvpn" in self.config.paths.exec_path.parts:
+                await self.connection.create_process(
+                    ["killall", "-s", "SIGTERM", "nordvpn"]
+                ).execute()
+            else:
+                await self.connection.create_process(
+                    ["killall", "-w", "-s", "SIGTERM", "nordvpnlite"]
+                ).execute()
             assert (
                 not await self.is_alive()
             ), "SIGTERM was sent but daemon's still running"
