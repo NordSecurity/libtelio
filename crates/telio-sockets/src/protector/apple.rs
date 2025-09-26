@@ -240,6 +240,9 @@ impl Protector for NativeProtector {
 
     /// This is a no-op on apple platforms.
     fn set_fwmark(&self, _fwmark: u32) {}
+
+    /// This is a no-op on apple platforms.
+    fn set_ext_if_filter(&self, _list: &[String]) {}
 }
 
 #[derive(Debug)]
