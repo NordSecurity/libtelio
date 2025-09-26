@@ -2,8 +2,8 @@ import pytest
 from config import WG_SERVER, PHOTO_ALBUM_IP, STUN_SERVER
 from contextlib import AsyncExitStack
 from helpers import setup_connections
+from nordvpnlite import NordVpnLite, Config, IfcConfigType, Paths
 from pathlib import Path
-from teliod import Teliod, Config, IfcConfigType, Paths
 from utils import stun
 from utils.connection import ConnectionTag
 from utils.logger import log
@@ -46,16 +46,16 @@ async def test_openwrt_vpn_connection(openwrt_config: IfcConfigType) -> None:
         )
 
         config_path = Paths(exec_path=Path("nordvpn"))
-        teliod = Teliod(
+        nordvpnlite = NordVpnLite(
             gateway_connection,
             exit_stack,
             config=Config(openwrt_config, paths=config_path),
         )
-        await teliod.request_credentials_from_core()
+        await nordvpnlite.request_credentials_from_core()
 
-        async with teliod.start():
+        async with nordvpnlite.start():
             log.debug("Teliod started, waiting for connected vpn state...")
-            await teliod.wait_for_vpn_connected_state()
+            await nordvpnlite.wait_for_vpn_connected_state()
             await ping(gateway_connection, PHOTO_ALBUM_IP)
             gw_ip = await stun.get(gateway_connection, STUN_SERVER)
             assert gw_ip == WG_SERVER["ipv4"], (

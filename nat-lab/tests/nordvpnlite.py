@@ -55,7 +55,10 @@ class Paths:
     run_dir: Path = Path("/run")
 
     def __post_init__(self):
-        if os.environ.get("PYTEST_CURRENT_TEST") and "teliod" in self.exec_path.parts:
+        if (
+            os.environ.get("PYTEST_CURRENT_TEST")
+            and "nordvpnlite" in self.exec_path.parts
+        ):
             if not self.exec_path.exists():
                 raise FileNotFoundError(
                     f"NordVPN Lite executable not found: {self.exec_path}"
@@ -88,8 +91,7 @@ class Command(list):
     def get_exec_path(config: Optional["Config"] = None) -> str:
         if config:
             return str(config.paths.exec_path)
-        else:
-            return str(Paths.exec_path)
+        return str(Paths.exec_path)
 
     @classmethod
     def start(cls, config: "Config") -> "Command":
