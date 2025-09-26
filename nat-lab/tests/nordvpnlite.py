@@ -84,6 +84,13 @@ class Command(list):
     def __repr__(self) -> str:
         return f"Command({super().__repr__()})"
 
+    @staticmethod
+    def get_exec_path(config: Optional["Config"] = None) -> str:
+        if config:
+            return str(config.paths.exec_path)
+        else:
+            return str(Paths.exec_path)
+
     @classmethod
     def start(cls, config: "Config") -> "Command":
         cmd = [str(config.paths.exec_path), "start"]
@@ -94,26 +101,17 @@ class Command(list):
 
     @classmethod
     def is_alive(cls, config: Optional["Config"] = None) -> "Command":
-        if config:
-            exec_path = str(config.paths.exec_path)
-        else:
-            exec_path = str(Paths.exec_path)
+        exec_path = cls.get_exec_path(config)
         return cls([exec_path, "is-alive"])
 
     @classmethod
     def get_status(cls, config: Optional["Config"] = None) -> "Command":
-        if config:
-            exec_path = str(config.paths.exec_path)
-        else:
-            exec_path = str(Paths.exec_path)
+        exec_path = cls.get_exec_path(config)
         return cls([exec_path, "get-status"])
 
     @classmethod
     def quit_daemon(cls, config: Optional["Config"] = None) -> "Command":
-        if config:
-            exec_path = str(config.paths.exec_path)
-        else:
-            exec_path = str(Paths.exec_path)
+        exec_path = cls.get_exec_path(config)
         return cls([exec_path, "quit-daemon"])
 
 

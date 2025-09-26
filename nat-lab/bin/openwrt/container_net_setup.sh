@@ -7,7 +7,7 @@ ADD_ERR="Please add the following setting to your container:"
 tuntap="TUN device is missing. $ADD_ERR --device /dev/net/tun"
 WAN_IP="10.0.254.14/16"
 LAN_IP="192.168.115.254/24"
-NEW_BRIDGE_IP="192.168.115.253/24"
+DOCKER_BRIDGE_IP="192.168.115.253/24"
 
 if [ ! -c /dev/net/tun ]; then
   error "$tuntap" && return 1
@@ -70,7 +70,7 @@ done
 ip addr del "$WAN_IP" dev dockerbridge0
 ip addr del "$LAN_IP" dev dockerbridge1
 
-ip addr add "$NEW_BRIDGE_IP" dev dockerbridge1
+ip addr add "$DOCKER_BRIDGE_IP" dev dockerbridge1
 
 ip link set dockerbridge0 down
 ip link set dockerbridge0 up

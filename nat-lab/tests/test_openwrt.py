@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 from config import WG_SERVER, PHOTO_ALBUM_IP, STUN_SERVER
 from contextlib import AsyncExitStack
@@ -56,10 +55,6 @@ async def test_openwrt_vpn_connection(openwrt_config: IfcConfigType) -> None:
 
         async with teliod.start():
             log.debug("Teliod started, waiting for connected vpn state...")
-            # Add temporary time sleep due to race condition
-            # ConnectToExitNode interrupts getStatus
-            # remove when properly fixed
-            await asyncio.sleep(2)
             await teliod.wait_for_vpn_connected_state()
             await ping(gateway_connection, PHOTO_ALBUM_IP)
             gw_ip = await stun.get(gateway_connection, STUN_SERVER)
