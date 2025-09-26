@@ -130,7 +130,7 @@ impl FeatureWireguard {
 #[serde(default)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeaturePersistentKeepalive {
-    /// Persistent keepalive period given for VPN peers (in seconds) [default 15s]
+    /// Persistent keepalive period given for VPN peers (in seconds) [default 25s]
     #[default(Some(25))]
     pub vpn: Option<u32>,
 

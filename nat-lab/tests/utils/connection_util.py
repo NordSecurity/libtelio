@@ -1,6 +1,6 @@
 import config
 from aiodocker import Docker
-from config import LAN_ADDR_MAP, LAN_ADDR_MAP_V6
+from config import LAN_ADDR_MAP, LAN_ADDR_MAP_V6, SECONDARY_VM_NETWORK_PREFIX
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator, Tuple, Optional, List, Union
@@ -18,6 +18,7 @@ from utils.connection_tracker import (
     FiveTuple,
 )
 from utils.network_switcher import (
+    Interface,
     NetworkSwitcher,
     NetworkSwitcherDocker,
     NetworkSwitcherMac,
@@ -339,3 +340,50 @@ def is_tag_valid_for_ssh_connection(tag: ConnectionTag) -> bool:
         ConnectionTag.VM_WINDOWS_2,
         ConnectionTag.VM_MAC,
     ]
+
+
+# This function stems from the fact that pytest connection with VMs and libtelio instances
+#  - through FFI (remote/proxy.py) - always rely on the primary interface so disabling it becomes non practical.
+async def set_secondary_ifc_state(
+    connection: Connection, enable: bool, secondary_ifc: Optional[Interface] = None
+) -> Optional[Interface]:
+    if connection.target_os == TargetOS.Linux:
+        await connection.create_process([
+            "ip",
+            "link",
+            "set",
+            "eth1",
+            "up" if enable else "down",
+        ]).execute()
+    elif connection.target_os == TargetOS.Mac:
+        await connection.create_process([
+            "ifconfig",
+            "eth1",
+            "up" if enable else "down",
+        ]).execute()
+    elif connection.target_os == TargetOS.Windows:
+        if not secondary_ifc:
+            interfaces = await Interface.get_enabled_network_interfaces(connection)
+            for interface in interfaces:
+                if interface.ipv4:
+                    if interface.ipv4.startswith(SECONDARY_VM_NETWORK_PREFIX):
+                        secondary_ifc = interface
+        assert secondary_ifc, LookupError("Couldn't find secondary interface")
+        if enable:
+            await secondary_ifc.enable(connection)
+        else:
+            await secondary_ifc.disable(connection)
+        return secondary_ifc
+
+    # TODO: Create Interface class for Linux/Macos
+    raise NotImplementedError("Linux/MacOS are currently not supported")
+
+
+@asynccontextmanager
+async def toggle_secondary_adapter(connection: Connection, enable: bool):
+    secondary_ifc = None
+    try:
+        secondary_ifc = await set_secondary_ifc_state(connection, enable)
+        yield
+    finally:
+        await set_secondary_ifc_state(connection, not enable, secondary_ifc)
