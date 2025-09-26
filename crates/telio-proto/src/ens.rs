@@ -99,6 +99,7 @@ impl ErrorNotificationService {
         root_certificate_override: Option<Vec<u8>>,
     ) -> (Self, Rx<(ConnectionError, PublicKey)>) {
         let Chan { rx, tx }: Chan<(ConnectionError, PublicKey)> = Chan::new(buffer_size);
+        telio_log_info!("Will use root certificate override: {root_certificate_override:?}");
         (
             Self {
                 quit: None,
@@ -305,7 +306,7 @@ async fn create_external_channel(
 ) -> anyhow::Result<Channel> {
     let socket_factory = move |uri: Uri| {
         let pool = pool.clone();
-        let root_certificate = root_certificate.clone();
+        let root_certificate_override = root_certificate.clone();
         async move {
             let host = match uri.host() {
                 Some(host) => host,
@@ -332,7 +333,8 @@ async fn create_external_channel(
 
             if let Some(resolved) = ((host, port).to_socket_addrs()?).next() {
                 let tcp_stream = socket.connect(resolved).await?;
-                let tls_connector = make_tls_connector(allow_only_mlkem, &root_certificate)?;
+                let tls_connector =
+                    make_tls_connector(allow_only_mlkem, &root_certificate_override)?;
                 let tls_stream = tls_connector.connect(domain, tcp_stream).await?;
                 return Ok::<_, std::io::Error>(TokioIo::new(tls_stream));
             }
@@ -362,24 +364,60 @@ fn make_tls_connector(
     use rustls::RootCertStore;
 
     #[derive(Debug)]
-    struct AcceptAnyCertVerifier;
+    struct AcceptAnyCertVerifier {
+        store: RootCertStore,
+    }
 
     impl ServerCertVerifier for AcceptAnyCertVerifier {
         fn verify_server_cert(
             &self,
             end_entity: &CertificateDer<'_>,
-            _intermediates: &[CertificateDer<'_>],
+            intermediates: &[CertificateDer<'_>],
             server_name: &ServerName<'_>,
             _ocsp_response: &[u8],
             _now: UnixTime,
         ) -> Result<ServerCertVerified, rustls::Error> {
+            use rustls::{
+                client::verify_server_cert_signed_by_trust_anchor,
+                pki_types::SignatureVerificationAlgorithm, server::ParsedCertificate,
+            };
             use sha2::{Digest, Sha256};
             let hash: [u8; 32] = Sha256::digest(end_entity).into();
             telio_log_info!(
                 "Remote gRPC server ({server_name:?}) sha256 fingerprint: {}",
                 hex::encode(hash)
             );
-            Ok(ServerCertVerified::assertion())
+
+            let end_entity: ParsedCertificate = end_entity.try_into().unwrap();
+
+            use webpki::aws_lc_rs::*;
+            let schemas: Vec<&dyn SignatureVerificationAlgorithm> = vec![
+                ECDSA_P256_SHA256,
+                ECDSA_P384_SHA384,
+                ECDSA_P521_SHA512,
+                ED25519,
+                RSA_PKCS1_2048_8192_SHA256,
+                RSA_PKCS1_2048_8192_SHA384,
+                RSA_PKCS1_2048_8192_SHA512,
+                RSA_PSS_2048_8192_SHA256_LEGACY_KEY,
+                RSA_PSS_2048_8192_SHA384_LEGACY_KEY,
+                RSA_PSS_2048_8192_SHA512_LEGACY_KEY,
+            ];
+
+            let verification = verify_server_cert_signed_by_trust_anchor(
+                &end_entity,
+                &self.store,
+                intermediates,
+                UnixTime::now(),
+                &schemas,
+            );
+
+            telio_log_info!("verification result: {verification:?}");
+            if verification.is_ok() {
+                Ok(ServerCertVerified::assertion())
+            } else {
+                Err(verification.unwrap_err())
+            }
         }
 
         fn verify_tls12_signature(
@@ -402,22 +440,17 @@ fn make_tls_connector(
 
         fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
             vec![
-                SignatureScheme::RSA_PKCS1_SHA1,
-                SignatureScheme::ECDSA_SHA1_Legacy,
-                SignatureScheme::RSA_PKCS1_SHA256,
                 SignatureScheme::ECDSA_NISTP256_SHA256,
-                SignatureScheme::RSA_PKCS1_SHA384,
                 SignatureScheme::ECDSA_NISTP384_SHA384,
-                SignatureScheme::RSA_PKCS1_SHA512,
                 SignatureScheme::ECDSA_NISTP521_SHA512,
+                SignatureScheme::ED25519,
+                SignatureScheme::ED448,
+                SignatureScheme::RSA_PKCS1_SHA256,
+                SignatureScheme::RSA_PKCS1_SHA384,
+                SignatureScheme::RSA_PKCS1_SHA512,
                 SignatureScheme::RSA_PSS_SHA256,
                 SignatureScheme::RSA_PSS_SHA384,
                 SignatureScheme::RSA_PSS_SHA512,
-                SignatureScheme::ED25519,
-                SignatureScheme::ED448,
-                SignatureScheme::ML_DSA_44,
-                SignatureScheme::ML_DSA_65,
-                SignatureScheme::ML_DSA_87,
             ]
         }
     }
@@ -430,12 +463,27 @@ fn make_tls_connector(
     }
 
     let mut root_store = RootCertStore::empty();
-    root_store.add_parsable_certificates([CertificateDer::from_slice(root_certificate)]);
+    let ret = root_store.add_parsable_certificates([CertificateDer::from_slice(root_certificate)]);
+    telio_log_debug!("add parsable certs result: {ret:?}");
+    telio_log_debug!(
+        "root store size: {}, subjects: {:?}",
+        root_store.len(),
+        root_store.subjects()
+    );
+    for s in root_store.subjects() {
+        use x509_parser::prelude::{oid_registry, FromDer};
+        let name = x509_parser::x509::X509Name::from_der(s.as_ref());
+        telio_log_debug!("subject: {name:?}");
+        let s = name.unwrap().1.to_string_with_registry(oid_registry());
+        telio_log_debug!("subject as string: {s:?}");
+    }
 
     let mut tls_config = ClientConfig::builder_with_provider(Arc::new(provider))
         .with_safe_default_protocol_versions()
         .map_err(|e| std::io::Error::other(format!("{e}")))?
-        .with_root_certificates(root_store)
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(AcceptAnyCertVerifier { store: root_store }))
+        // .with_root_certificates(root_store)
         .with_no_client_auth();
 
     tls_config.alpn_protocols = vec![b"h2".to_vec()];
