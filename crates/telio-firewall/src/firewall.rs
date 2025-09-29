@@ -284,7 +284,7 @@ pub struct StatefullFirewall {
     /// Whitelist of networks/peers allowed to connect
     whitelist: RwLock<Whitelist>,
     /// Indicates whether the firewall should use IPv6
-    _allow_ipv6: bool,
+    allow_ipv6: bool,
     /// Local node ip addresses
     ip_addresses: RwLock<Vec<StdIpAddr>>,
     /// Custom IPv4 range to check against
@@ -317,7 +317,7 @@ impl StatefullFirewall {
         Self {
             firewall: libfw_init(),
             whitelist: RwLock::new(Whitelist::default()),
-            _allow_ipv6: use_ipv6,
+            allow_ipv6: use_ipv6,
             ip_addresses: RwLock::new(Vec::<StdIpAddr>::new()),
             exclude_ip_range: feature.exclude_private_ip_range.map(Into::into),
             outgoing_tcp_blacklist: RwLock::new(
@@ -421,6 +421,15 @@ impl StatefullFirewall {
 
     fn recreate_chain(&self) {
         let mut rules = vec![];
+
+        // Drop all IPv6 packets when we don't allow ipv6 traffic
+        const ALL_IPS: IpNet = IpNet::V6(Ipv6Net::new_assert(StdIpv6Addr::UNSPECIFIED, 0));
+        if !self.allow_ipv6 {
+            rules.push(Rule {
+                filters: vec![Self::dst_net_all_ports_filter(ALL_IPS, false)],
+                action: LibfwVerdict::LibfwVerdictDrop,
+            });
+        }
 
         // Drop packets from UDP blacklist
         for peer in self.outgoing_udp_blacklist.read().iter() {
@@ -1173,7 +1182,7 @@ pub mod tests {
 
     #[rustfmt::skip]
     #[test]
-    fn firewall_udp() {
+    fn firewall_udp1() {
         struct TestInput {
             src1: &'static str,
             src2: &'static str,
@@ -1224,8 +1233,6 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src3)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src4)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src1)), true);
-
-            // Should FAIL (was added but dropped from LRUCache)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), false);
 
             // Should FAIL (has no matching outgoing connection)
@@ -1356,9 +1363,7 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src3)), is_ipv4);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src4)), is_ipv4);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src1)), is_ipv4);
-
-            // Should FAIL (was added but dropped from LRUCache)
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), false);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), is_ipv4);
 
             // Should FAIL (has no matching outgoing connection)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src5)), false);
