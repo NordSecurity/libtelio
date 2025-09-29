@@ -1,5 +1,14 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v6.0.4
+### **Pink Soup**
+---
+* LLT-6528: Add control flow guard for Windows
+* LLT-6598: Bump uniffi generators to fix segfault for Windows
+* Bump rust to 1.89
+
+<br>
+
 ### v6.0.3
 ### **Pink Soup**
 ---
