@@ -458,9 +458,7 @@ pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec
         // Find VPN exit node based on country
         VpnConfig::Country(target_country) => {
             if !target_country.chars().all(|c| c.is_ascii_alphabetic()) {
-                warn!(
-                    "Invalid ISO country code format: '{target_country}', expected 2-letter code"
-                );
+                warn!("Invalid country format: '{target_country}', non-ascii characters used");
                 None
             } else {
                 match get_countries_with_exp_backoff(
@@ -469,14 +467,20 @@ pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec
                 )
                 .await
                 {
-                    Ok(countries_list) => countries_list.iter().find_map(|country| {
-                        if country.matches(target_country) {
-                            Some(country.id)
-                        } else {
+                    Ok(countries_list) => countries_list
+                        .iter()
+                        .find_map(|country| {
+                            // search for country full name or iso code
+                            if country.matches(target_country) {
+                                Some(country.id)
+                            } else {
+                                None
+                            }
+                        })
+                        .or_else(|| {
                             warn!("Servers not found for '{target_country}' country code.");
                             None
-                        }
-                    }),
+                        }),
                     Err(e) => {
                         error!("Getting countries failed due to: {e}");
                         None
