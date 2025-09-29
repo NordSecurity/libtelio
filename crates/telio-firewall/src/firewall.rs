@@ -12,6 +12,7 @@ use pnet_packet::{
 };
 use smallvec::ToSmallVec;
 use std::{
+    ffi::c_void,
     fmt::Debug,
     io::{self},
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr, SocketAddr},
@@ -21,7 +22,7 @@ use telio_model::features::{FeatureFirewall, IpProtocol};
 use telio_network_monitors::monitor::{LocalInterfacesObserver, LOCAL_ADDRS_CACHE};
 
 use telio_crypto::PublicKey;
-use telio_utils::telio_log_debug;
+use telio_utils::{telio_log_debug, telio_log_error};
 
 use crate::{
     chain_helpers::{
@@ -510,6 +511,23 @@ impl StatefullFirewall {
     }
 }
 
+extern "C" fn write_to_sink(
+    data: *mut c_void,
+    buffer: *const u8,
+    buffer_len: usize,
+    _assoc_data: *const u8,
+    _assoc_data_len: usize,
+) {
+    let sink_ptr = data as *mut &mut dyn io::Write;
+    let sink = unsafe { &mut (*sink_ptr) };
+
+    let packet_data = unsafe { std::slice::from_raw_parts(buffer, buffer_len) };
+
+    if let Err(err) = sink.write(packet_data) {
+        telio_log_error!("Could not inject the packet: {:?}", err);
+    }
+}
+
 impl Firewall for StatefullFirewall {
     fn clear_port_whitelist(&self) {
         telio_log_debug!("Clearing firewall port whitelist");
@@ -576,6 +594,8 @@ impl Firewall for StatefullFirewall {
         buffer: &[u8],
         sink: &mut dyn io::Write,
     ) -> bool {
+        let sink_ptr = &sink as *const &mut dyn io::Write;
+
         LibfwVerdict::LibfwVerdictAccept
             == unsafe {
                 libfw_process_outbound_packet(
@@ -584,8 +604,8 @@ impl Firewall for StatefullFirewall {
                     buffer.len(),
                     public_key as *const u8,
                     public_key.len(),
-                    std::ptr::null_mut(),
-                    None,
+                    sink_ptr as *mut c_void,
+                    Some(write_to_sink),
                 )
             }
     }

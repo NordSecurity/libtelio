@@ -1170,6 +1170,50 @@ impl Conntrack {
         result
     }
 
+    pub(crate) fn reject_outbound_ip_packet<'a, P: IpPacket<'a>, F>(
+        &self,
+        buffer: &'a [u8],
+        inject_packet_cb: F,
+    ) -> Result<()>
+    where
+        F: FnMut(&[u8]),
+    {
+        let ip = unwrap_option_or_return!(P::try_from(buffer), Err(Error::MalformedIpPacket));
+        match ip.get_next_level_protocol() {
+            IpNextHeaderProtocols::Udp => {
+                let link = Conntrack::build_conn_info(&ip, Direction::Outbound)?.0;
+                let Some(first_chunk) = ip
+                    .packet()
+                    .chunks(UdpConnectionInfo::LAST_PKG_MAX_CHUNK_LEN)
+                    .next()
+                else {
+                    libfw_log_warn!("Failed to extract headers of UDP packet for {peer:?}");
+                    return Err(Error::MalformedUdpPacket);
+                };
+
+                _ = self.send_icmp_port_unreachable_packets(
+                    std::iter::once((&link, first_chunk)),
+                    inject_packet_cb,
+                );
+
+                return Ok(());
+            }
+            IpNextHeaderProtocols::Tcp => {
+                let (link, tcp_packet) = Conntrack::build_conn_info(&ip, Direction::Outbound)?;
+                let tcp_packet =
+                    unwrap_option_or_return!(tcp_packet, Err(Error::MalformedTcpPacket));
+                _ = self.send_tcp_rst_packets(
+                    std::iter::once((&link, 0, Some(tcp_packet.get_sequence() + 1))),
+                    inject_packet_cb,
+                );
+                return Ok(());
+            }
+            _ => {
+                return Err(Error::UnexpectedPacketType);
+            }
+        }
+    }
+
     pub(crate) fn track_inbound_ip_packet<'a, P: IpPacket<'a>>(
         &self,
         associated_data: Option<&[u8]>,
