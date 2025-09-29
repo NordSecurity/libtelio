@@ -16,6 +16,7 @@ use pnet_packet::{
 };
 use smallvec::ToSmallVec;
 use std::{
+    ffi::c_void,
     fmt::Debug,
     io::{self},
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr, SocketAddr},
@@ -606,6 +607,21 @@ impl StatefullFirewall {
     }
 }
 
+extern "C" fn write_to_sink(
+    data: *mut c_void,
+    buffer: *const u8,
+    buffer_len: usize,
+    _assoc_data: *const u8,
+    _assoc_data_len: usize,
+) {
+    let sink_ptr = data as *mut &mut dyn io::Write;
+    let sink = unsafe { &mut (*sink_ptr) };
+
+    let packet_data = unsafe { std::slice::from_raw_parts(buffer, buffer_len) };
+
+    let _ = sink.write(packet_data);
+}
+
 impl Firewall for StatefullFirewall {
     fn clear_port_whitelist(&self) {
         telio_log_debug!("Clearing firewall port whitelist");
@@ -672,6 +688,8 @@ impl Firewall for StatefullFirewall {
         buffer: &[u8],
         sink: &mut dyn io::Write,
     ) -> bool {
+        let sink_ptr = &sink as *const &mut dyn io::Write;
+
         LibfwVerdict::LibfwVerdictAccept
             == unsafe {
                 libfw_process_outbound_packet(
@@ -680,8 +698,8 @@ impl Firewall for StatefullFirewall {
                     buffer.len(),
                     public_key as *const u8,
                     public_key.len(),
-                    std::ptr::null_mut(),
-                    None,
+                    sink_ptr as *mut c_void,
+                    Some(write_to_sink),
                 )
             }
     }

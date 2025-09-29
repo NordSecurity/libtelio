@@ -324,8 +324,8 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
     packet_len: usize,
     associated_data: *const u8,
     associated_data_len: usize,
-    _inject_packet_cb_data: *mut c_void,
-    _inject_inbound_packet_cb: LibfwInjectPacketCallback,
+    inject_packet_cb_data: *mut c_void,
+    inject_inbound_packet_cb: LibfwInjectPacketCallback,
 ) -> LibfwVerdict {
     libfw_log_trace!("Processing outbound packet");
     if packet.is_null() {
@@ -344,7 +344,9 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
         return LibfwVerdict::LibfwVerdictDrop;
     };
 
-    match unwrap_option_or_return!(buffer.first(), LibfwVerdict::LibfwVerdictDrop) >> 4 {
+    let verdict = match unwrap_option_or_return!(buffer.first(), LibfwVerdict::LibfwVerdictDrop)
+        >> 4
+    {
         4 => {
             let conn_state = fw
                 .conntrack
@@ -353,7 +355,7 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
                     libfw_log_warn!("Conntrack failed to track an outbound packet {:?}", err);
                     conntrack::ConnectionState::Invalid
                 });
-            if let Some(chain) = fw.chain.read().as_ref() {
+            let verdict = if let Some(chain) = fw.chain.read().as_ref() {
                 Ipv4Packet::new(buffer)
                     .map(|ip_packet| {
                         chain.process_packet(
@@ -366,7 +368,35 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
                     .unwrap_or(LibfwVerdict::LibfwVerdictDrop)
             } else {
                 LibfwVerdict::LibfwVerdictAccept
+            };
+
+            if verdict == LibfwVerdict::LibfwVerdictReject {
+                if let Some(inject_cb) = inject_inbound_packet_cb {
+                    match fw.conntrack.reject_outbound_ip_packet::<Ipv6Packet, _>(
+                        buffer,
+                        |packet| {
+                            inject_cb(
+                                inject_packet_cb_data,
+                                packet.as_ptr(),
+                                packet.len(),
+                                associated_data,
+                                associated_data_len,
+                            )
+                        },
+                    ) {
+                        Ok(_) | Err(crate::error::Error::UnexpectedPacketType) => {}
+                        Err(_) => {
+                            libfw_log_trace!("Packet rejection failed because packet was malformed")
+                        }
+                    };
+                } else {
+                    libfw_log_trace!(
+                        "Packet should be rejected, but packet injecting callback is None"
+                    );
+                }
             }
+
+            verdict
         }
         6 => {
             let conn_state = fw
@@ -376,7 +406,7 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
                     libfw_log_warn!("Conntrack failed to track an outbound packet {:?}", err);
                     conntrack::ConnectionState::Invalid
                 });
-            if let Some(chain) = fw.chain.read().as_ref() {
+            let verdict = if let Some(chain) = fw.chain.read().as_ref() {
                 Ipv6Packet::new(buffer)
                     .map(|ip_packet| {
                         chain.process_packet(
@@ -389,13 +419,43 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
                     .unwrap_or(LibfwVerdict::LibfwVerdictDrop)
             } else {
                 LibfwVerdict::LibfwVerdictAccept
+            };
+
+            if verdict == LibfwVerdict::LibfwVerdictReject {
+                if let Some(inject_cb) = inject_inbound_packet_cb {
+                    match fw.conntrack.reject_outbound_ip_packet::<Ipv6Packet, _>(
+                        buffer,
+                        |packet| {
+                            inject_cb(
+                                inject_packet_cb_data,
+                                packet.as_ptr(),
+                                packet.len(),
+                                associated_data,
+                                associated_data_len,
+                            )
+                        },
+                    ) {
+                        Ok(_) | Err(crate::error::Error::UnexpectedPacketType) => {}
+                        Err(_) => {
+                            libfw_log_trace!("Packet rejection failed because packet was malformed")
+                        }
+                    };
+                } else {
+                    libfw_log_trace!(
+                        "Packet should be rejected, but packet injecting callback is None"
+                    );
+                }
             }
+
+            verdict
         }
         version => {
             libfw_log_warn!("Unexpected IP version {} for outbound packet", version);
             LibfwVerdict::LibfwVerdictDrop
         }
-    }
+    };
+
+    verdict
 }
 
 ///
