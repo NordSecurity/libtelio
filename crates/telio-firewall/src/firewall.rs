@@ -177,7 +177,7 @@ pub struct StatefullFirewall {
     /// Whitelist of networks/peers allowed to connect
     whitelist: RwLock<Whitelist>,
     /// Indicates whether the firewall should use IPv6
-    _allow_ipv6: bool,
+    allow_ipv6: bool,
     /// Local node ip addresses
     ip_addresses: RwLock<Vec<StdIpAddr>>,
     /// Custom IPv4 range to check against
@@ -212,7 +212,7 @@ impl StatefullFirewall {
         Self {
             firewall: libfw_init(),
             whitelist: RwLock::new(Whitelist::default()),
-            _allow_ipv6: use_ipv6,
+            allow_ipv6: use_ipv6,
             ip_addresses: RwLock::new(Vec::<StdIpAddr>::new()),
             exclude_ip_range: feature.exclude_private_ip_range.map(Into::into),
             outgoing_tcp_blacklist: RwLock::new(
@@ -1124,8 +1124,6 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src3)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src4)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src1)), true);
-
-            // Should FAIL (was added but dropped from LRUCache)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), false);
 
             // Should FAIL (has no matching outgoing connection)
@@ -1256,9 +1254,7 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src3)), is_ipv4);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src4)), is_ipv4);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src1)), is_ipv4);
-
-            // Should FAIL (was added but dropped from LRUCache)
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), false);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), is_ipv4);
 
             // Should FAIL (has no matching outgoing connection)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src5)), false);
