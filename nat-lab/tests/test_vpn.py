@@ -30,10 +30,7 @@ from utils.connection_util import generate_connection_tracker_config
 from utils.netcat import NetCatClient
 from utils.ping import ping
 from utils.process import ProcessExecError
-from utils.python import get_python_binary
 from utils.router import IPProto, IPStack
-
-VAGRANT_LIBVIRT_MANAGEMENT_IP = "192.168.121"
 
 
 async def _connect_vpn(
@@ -54,16 +51,6 @@ async def _connect_vpn(
 
     ip = await stun.get(client_conn, config.STUN_SERVER)
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
-
-
-async def ensure_interface_router_property_expectations(client_conn: Connection):
-    process = await client_conn.create_process([
-        get_python_binary(client_conn),
-        f"{config.LIBTELIO_BINARY_PATH_VM_MAC}/list_interfaces_with_router_property.py",
-    ]).execute()
-    interfaces_with_router_prop = process.get_stdout().splitlines()
-    assert len(interfaces_with_router_prop) == 1
-    assert VAGRANT_LIBVIRT_MANAGEMENT_IP in interfaces_with_router_prop[0]
 
 
 class VpnConfig:
@@ -111,7 +98,7 @@ class VpnConfig:
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -122,7 +109,7 @@ class VpnConfig:
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -135,7 +122,7 @@ class VpnConfig:
             id="wg_server",
         ),
         pytest.param(
-            VpnConfig(config.NLX_SERVER, ConnectionTag.DOCKER_NLX_1, False),
+            VpnConfig(config.NLX_SERVER, ConnectionTag.VM_LINUX_NLX_1, False),
             id="nlx_server",
         ),
     ],
@@ -152,7 +139,7 @@ async def test_vpn_connection(
                 stun_limits=(1, 1),
                 nlx_1_limits=(
                     (1, 1)
-                    if vpn_conf.conn_tag == ConnectionTag.DOCKER_NLX_1
+                    if vpn_conf.conn_tag == ConnectionTag.VM_LINUX_NLX_1
                     else (0, 0)
                 ),
                 vpn_1_limits=(
@@ -169,9 +156,6 @@ async def test_vpn_connection(
         alpha, *_ = env.nodes
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
-
-        if alpha_setup_params.connection_tag == ConnectionTag.VM_MAC:
-            await ensure_interface_router_property_expectations(client_conn)
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
@@ -242,7 +226,7 @@ async def test_vpn_connection(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -259,7 +243,7 @@ async def test_vpn_connection(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -715,7 +699,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -731,7 +715,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -749,7 +733,7 @@ async def test_vpn_connection_private_key_change(
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        ip = await asyncio.wait_for(stun.get(client_conn, config.STUN_SERVER), 5)
+        ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         # connect to vpn as usually
@@ -819,7 +803,7 @@ async def test_vpn_connection_private_key_change(
                     enable_error_notification_service=True,
                 ),
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -833,7 +817,7 @@ async def test_vpn_connection_private_key_change(
                     enable_error_notification_service=True,
                 ),
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -883,9 +867,6 @@ async def test_ens(
 
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
-
-        if alpha_setup_params.connection_tag == ConnectionTag.VM_MAC:
-            await ensure_interface_router_property_expectations(client_conn)
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
@@ -987,7 +968,7 @@ async def make_get_json(url):
                     enable_error_notification_service=True,
                 ),
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -1001,7 +982,7 @@ async def make_get_json(url):
                     enable_error_notification_service=True,
                 ),
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -1037,9 +1018,6 @@ async def test_ens_not_working(
         alpha, *_ = env.nodes
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
-
-        if alpha_setup_params.connection_tag == ConnectionTag.VM_MAC:
-            await ensure_interface_router_property_expectations(client_conn)
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"

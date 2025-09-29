@@ -34,7 +34,6 @@ target/
 /target-windows/
 /windows-local-dev-out/
 /nat-lab/*.log
-/nat-lab/.vagrant
 __pycache__
 event.db
 alpha-events.db
@@ -45,3 +44,4 @@ events-moose.log
 report.json
 /contrib/http_root/cgi-bin/builder
 *_pb2*.py
+/nat-lab/bin/*.ipk
