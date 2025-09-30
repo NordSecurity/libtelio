@@ -372,7 +372,7 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
 
             if verdict == LibfwVerdict::LibfwVerdictReject {
                 if let Some(inject_cb) = inject_inbound_packet_cb {
-                    match fw.conntrack.reject_outbound_ip_packet::<Ipv6Packet, _>(
+                    match fw.conntrack.reject_outbound_ip_packet::<Ipv4Packet, _>(
                         buffer,
                         |packet| {
                             inject_cb(
