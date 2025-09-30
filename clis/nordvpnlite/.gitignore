@@ -1,4 +1,4 @@
 *.log*
 *config.json
 !example_nordvpnlite_config.json
-!openwrt/feed/net/nordvpn/files/config.json
+!openwrt/feed/net/nordvpnlite/files/config.json
