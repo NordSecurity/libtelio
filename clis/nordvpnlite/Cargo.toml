@@ -31,9 +31,9 @@ anyhow.workspace = true
 smart-default = "0.7.1"
 base64 = "0.22.1"
 daemonize = "0.5.0"
+rand.workspace = true
 
 [dev-dependencies]
-rand = "0.9.1"
 serial_test = "3.2.0"
 temp-dir = "0.1.16"
 temp-file = "0.1.9"

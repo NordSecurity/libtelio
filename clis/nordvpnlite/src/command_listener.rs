@@ -211,7 +211,6 @@ impl CommandListener {
 mod tests {
     use super::*;
     use crate::{CommandResponse, DaemonSocket};
-    use rand::Rng;
     use std::path::Path;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -224,8 +223,7 @@ mod tests {
 
     // Create a random socket path for the test, since tests run in parallel they can deadlock
     fn make_socket_path() -> String {
-        let mut rng = rand::rng();
-        format!("{}_{}", TEST_SOCKET_PATH, rng.random::<u16>())
+        format!("{}_{}", TEST_SOCKET_PATH, rand::random::<u16>())
     }
 
     // Helper to create a fake command listener
