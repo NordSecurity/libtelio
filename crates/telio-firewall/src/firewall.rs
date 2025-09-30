@@ -22,7 +22,9 @@ use telio_model::features::{FeatureFirewall, IpProtocol};
 use telio_network_monitors::monitor::{LocalInterfacesObserver, LOCAL_ADDRS_CACHE};
 
 use telio_crypto::PublicKey;
-use telio_utils::{telio_log_debug, telio_log_error};
+use telio_utils::{
+    telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
+};
 
 use crate::{
     chain_helpers::{
@@ -32,8 +34,10 @@ use crate::{
     ffi_chain::{LibfwChain, LibfwVerdict},
     libfirewall_api::{
         libfw_configure_chain, libfw_deinit, libfw_init, libfw_process_inbound_packet,
-        libfw_process_outbound_packet, libfw_trigger_stale_connection_close, LibfwFirewall,
+        libfw_process_outbound_packet, libfw_set_log_callback,
+        libfw_trigger_stale_connection_close, LibfwFirewall,
     },
+    log::LibfwLogLevel,
 };
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
@@ -209,7 +213,12 @@ impl Drop for StatefullFirewall {
 impl StatefullFirewall {
     /// Constructs firewall with libfw structure pointer
     pub fn new(use_ipv6: bool, feature: &FeatureFirewall) -> Self {
-        Self {
+        // Let's initialize libfirewall logging first.
+        // We use TRACE level, which will be telio's level in pracice,
+        // as we use telio logging macros inside.
+        libfw_set_log_callback(LibfwLogLevel::LibfwLogLevelTrace, Some(log_callback));
+
+        let result = Self {
             firewall: libfw_init(),
             whitelist: RwLock::new(Whitelist::default()),
             allow_ipv6: use_ipv6,
@@ -241,7 +250,11 @@ impl StatefullFirewall {
                     })
                     .collect(),
             ),
-        }
+        };
+
+        result.recreate_chain();
+
+        result
     }
 
     fn dst_net_all_ports_filter(net: IpNet, inverted: bool) -> Filter {
@@ -528,6 +541,21 @@ extern "C" fn write_to_sink(
     }
 }
 
+extern "C" fn log_callback(level: LibfwLogLevel, log_line: *const std::ffi::c_char) {
+    let log_cstr = unsafe { std::ffi::CStr::from_ptr(log_line as *mut std::os::raw::c_char) };
+    let Ok(log_str) = log_cstr.to_str() else {
+        telio_log_warn!("UNREADEABLE LOG");
+        return;
+    };
+    match level {
+        LibfwLogLevel::LibfwLogLevelTrace => telio_log_trace!("{}", log_str),
+        LibfwLogLevel::LibfwLogLevelDebug => telio_log_debug!("{}", log_str),
+        LibfwLogLevel::LibfwLogLevelInfo => telio_log_info!("{}", log_str),
+        LibfwLogLevel::LibfwLogLevelWarn => telio_log_warn!("{}", log_str),
+        LibfwLogLevel::LibfwLogLevelErr => telio_log_error!("{}", log_str),
+    }
+}
+
 impl Firewall for StatefullFirewall {
     fn clear_port_whitelist(&self) {
         telio_log_debug!("Clearing firewall port whitelist");
@@ -595,7 +623,6 @@ impl Firewall for StatefullFirewall {
         sink: &mut dyn io::Write,
     ) -> bool {
         let sink_ptr = &sink as *const &mut dyn io::Write;
-
         LibfwVerdict::LibfwVerdictAccept
             == unsafe {
                 libfw_process_outbound_packet(
@@ -631,14 +658,14 @@ impl Firewall for StatefullFirewall {
 
     fn reset_connections(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) -> io::Result<()> {
         telio_log_debug!("Constructing connetion reset packets");
-
+        let sink_ptr = &sink as *const &mut dyn io::Write;
         unsafe {
             libfw_trigger_stale_connection_close(
                 self.firewall,
                 pubkey.as_ptr(),
                 pubkey.len(),
-                std::ptr::null_mut(),
-                None,
+                sink_ptr as *mut c_void,
+                Some(write_to_sink),
                 None,
             );
         }
@@ -1124,7 +1151,7 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src3)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src4)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src1)), true);
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), false);
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src2)), true);
 
             // Should FAIL (has no matching outgoing connection)
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src5)), false);
@@ -1445,8 +1472,8 @@ pub mod tests {
             assert_eq!(fw.process_outbound_packet(&make_peer(), &request2), true);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &request3), true);
 
-            // src2 and src3 are in the cache so they pass, but src1 fails as it is not in the cache
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &reply1), false);
+            // Replies should go through, as their connections can be found in the cache
+            assert_eq!(fw.process_inbound_packet(&make_peer(), &reply1), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &reply2), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &reply3), true);
 
@@ -1799,51 +1826,69 @@ pub mod tests {
             is_v4: bool,
         }
 
-        let test_inputs = vec![
-            TestInput { src1: "8.8.8.8",             src2: "8.8.4.4",              dst: "127.0.0.1", make_icmp: &make_icmp4, is_v4: true },
-            TestInput { src1: "2001:4860:4860::8888",src2: "2001:4860:4860::8844", dst: "::1",       make_icmp: &make_icmp6, is_v4: false},
-        ];
-        for TestInput { src1, src2, dst, make_icmp, is_v4 } in test_inputs {
-            let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),);
+        let src1 = "8.8.8.8";
+        let src2 = "8.8.4.4";
+        let dst = "127.0.0.1";
 
-            // Firewall only allow inbound ICMP packets that are either whitelisted or that exist in the ICMP cache
-            // The ICMP cache only accepts a small number of ICMP types, but unrelated to that, this test ignores the cache completely
-            // As a result of that, no inbound packets are allowed here, but all outbound packets are
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::EchoRequest.into())), false);
-            if is_v4 {
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::Timestamp.into())), false);
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::InformationRequest.into())), false);
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::AddressMaskRequest.into())), false);
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::Traceroute.into())), false);
-            } else {
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, Icmpv6Types::PacketTooBig.into())), false);
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, Icmpv6Types::EchoRequest.into())), false);
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, Icmpv6Types::RouterAdvert.into())), false);
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, Icmpv6Types::NeighborSolicit.into())), false);
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, Icmpv6Types::NeighborAdvert.into())), false);
-            }
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src2, dst, IcmpTypes::EchoRequest.into())), false);
+        let fw = StatefullFirewall::new(true, &FeatureFirewall::default());
 
-            assert_eq!(fw.process_outbound_packet(&make_peer(), &make_icmp(dst, src1, IcmpTypes::EchoRequest.into())), true);
-            assert_eq!(fw.process_outbound_packet(&make_peer(), &make_icmp(dst, src2, IcmpTypes::EchoRequest.into())), true);
-            assert_eq!(fw.process_outbound_packet(&make_peer(), &make_icmp(dst, src1, IcmpTypes::EchoRequest.into())), true);
+        // Firewall only allow inbound ICMP packets that are either whitelisted or that exist in the ICMP cache
+        // The ICMP cache only accepts a small number of ICMP types, but unrelated to that, this test ignores the cache completely
+        // As a result of that, no inbound packets are allowed here, but all outbound packets are
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::EchoRequest.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::Timestamp.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::InformationRequest.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::AddressMaskRequest.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::Traceroute.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src2, dst, IcmpTypes::EchoRequest.into())), false);
 
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::EchoReply.into())), false);
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src2, dst, IcmpTypes::EchoReply.into())), false);
+        assert_eq!(fw.process_outbound_packet(&make_peer(), &make_icmp4(dst, src1, IcmpTypes::EchoRequest.into())), true);
+        assert_eq!(fw.process_outbound_packet(&make_peer(), &make_icmp4(dst, src2, IcmpTypes::EchoRequest.into())), true);
+        assert_eq!(fw.process_outbound_packet(&make_peer(), &make_icmp4(dst, src1, IcmpTypes::EchoRequest.into())), true);
 
-            if is_v4 {
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::TimestampReply.into())), false);
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::AddressMaskReply.into())), false);
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::InformationReply.into())), false);
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::RouterSolicitation.into())), false);
-            } else {
-                assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::RouterSolicitation.into())), false);
-            }
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::DestinationUnreachable.into())), false);
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::ParameterProblem.into())), false);
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::TimeExceeded.into())), false);
-            assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(src1, dst, IcmpTypes::RedirectMessage.into())), false);
-        }
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::EchoReply.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src2, dst, IcmpTypes::EchoReply.into())), false);
+
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::TimestampReply.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::AddressMaskReply.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::InformationReply.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::RouterSolicitation.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::DestinationUnreachable.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::ParameterProblem.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::TimeExceeded.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp4(src1, dst, IcmpTypes::RedirectMessage.into())), false);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn firewall_icmp6_type() {
+        let src1 = "2001:4860:4860::8888";
+        let src2 = "2001:4860:4860::8844";
+        let dst = "::1";
+
+        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),);
+
+        // Firewall only allow inbound ICMP packets that are either whitelisted or that exist in the ICMP cache
+        // The ICMP cache only accepts a small number of ICMP types, but unrelated to that, this test ignores the cache completely
+        // As a result of that, no inbound packets are allowed here, but all outbound packets are
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp6(src1, dst, Icmpv6Types::EchoRequest.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp6(src1, dst, Icmpv6Types::PacketTooBig.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp6(src1, dst, Icmpv6Types::EchoRequest.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp6(src1, dst, Icmpv6Types::RouterAdvert.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp6(src1, dst, Icmpv6Types::NeighborSolicit.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp6(src1, dst, Icmpv6Types::NeighborAdvert.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp6(src2, dst, Icmpv6Types::EchoRequest.into())), false);
+
+        assert_eq!(fw.process_outbound_packet(&make_peer(), &make_icmp6(dst, src1, Icmpv6Types::EchoRequest.into())), true);
+        assert_eq!(fw.process_outbound_packet(&make_peer(), &make_icmp6(dst, src2, Icmpv6Types::EchoRequest.into())), true);
+        assert_eq!(fw.process_outbound_packet(&make_peer(), &make_icmp6(dst, src1, Icmpv6Types::EchoRequest.into())), true);
+
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp6(src1, dst, Icmpv6Types::EchoReply.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp6(src2, dst, Icmpv6Types::EchoReply.into())), false);
+
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp6(src1, dst, Icmpv6Types::DestinationUnreachable.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp6(src1, dst, Icmpv6Types::ParameterProblem.into())), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp6(src1, dst, Icmpv6Types::TimeExceeded.into())), false);
     }
 
     #[rustfmt::skip]
@@ -2060,7 +2105,6 @@ pub mod tests {
             fw.set_ip_addresses(vec![(StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))), StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
 
             let peer = make_random_peer();
-            assert_eq!(fw.process_outbound_packet(&peer.0, &make_icmp(us, them, IcmpTypes::EchoRequest.into())), true);
             assert_eq!(fw.process_inbound_packet(&peer.0, &make_icmp(them, us, IcmpTypes::EchoReply.into())), false);
 
             assert_eq!(fw.process_inbound_packet(&peer.0, &make_icmp(them, us, IcmpTypes::EchoRequest.into())), false);
