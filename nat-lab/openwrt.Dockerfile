@@ -1,6 +1,6 @@
 ARG LIBTELIO_ENV_SEC_CONTAINER_REGISTRY
 
-FROM ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/vpn/client/libtelio-build/openwrt-24.10.2-x86-64:v0.0.1
+FROM ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/openwrt_image/natlab-openwrt-24.10.2-x86-64:v0.0.1
 
 ENV QEMU_CONFIG_TIMEOUT="300"
 
