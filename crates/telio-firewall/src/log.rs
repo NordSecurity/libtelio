@@ -4,7 +4,7 @@ use std::{ffi::c_char, fmt::Display};
 ///
 /// Log levels used in LibfwLogCallback
 ///
-#[allow(clippy::enum_variant_names)]
+#[allow(clippy::enum_variant_names, dead_code)]
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LibfwLogLevel {
