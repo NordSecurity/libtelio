@@ -1197,7 +1197,7 @@ impl Conntrack {
                     inject_packet_cb,
                 );
 
-                return Ok(());
+                Ok(())
             }
             IpNextHeaderProtocols::Tcp => {
                 let (link, tcp_packet) = Conntrack::build_conn_info(&ip, Direction::Outbound)?;
@@ -1207,11 +1207,9 @@ impl Conntrack {
                     std::iter::once((&link, 0, Some(tcp_packet.get_sequence() + 1))),
                     inject_packet_cb,
                 );
-                return Ok(());
+                Ok(())
             }
-            _ => {
-                return Err(Error::UnexpectedPacketType);
-            }
+            _ => Err(Error::UnexpectedPacketType),
         }
     }
 
