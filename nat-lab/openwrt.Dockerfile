@@ -7,7 +7,7 @@ ENV QEMU_CONFIG_TIMEOUT="300"
 COPY --chmod=0755 bin/ /opt/bin/
 
 WORKDIR /ipk-source
-COPY bin/nordvpn_x86_64.ipk /ipk-source/
+COPY bin/nordvpnlite_x86_64.ipk /ipk-source/
 COPY data/core_api/test.pem /ipk-source/
 
 RUN mkdir -p /var/lib/qemu-image
