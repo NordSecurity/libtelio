@@ -246,9 +246,9 @@ impl TelioTaskCmd {
                 }
                 Ok(TelioTaskOutcome::Continue)
             }
-            TelioTaskCmd::ConnectToExitNode(endpoint) => {
+            TelioTaskCmd::ConnectToExitNode(endpoint, dns) => {
                 ctx.interface_config_provider
-                    .set_exit_routes(&endpoint.address)
+                    .set_exit_routes(&endpoint.address, Some(dns))
                     .inspect_err(|e| {
                         error!("Failed to set routes for exit routing with error '{e:?}'")
                     })?;
@@ -317,7 +317,10 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
                 // Send the command to initiate the VPN connection
                 #[allow(mpsc_blocking_send)]
                 if let Err(e) = tx
-                    .send(TelioTaskCmd::ConnectToExitNode(endpoint.to_owned()))
+                    .send(TelioTaskCmd::ConnectToExitNode(
+                        endpoint.to_owned(),
+                        config.dns.clone(),
+                    ))
                     .await
                 {
                     error!("Failed to send connect command to telio task: {e}");
@@ -423,7 +426,7 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
                 match signal {
                     Some(s @ SIGHUP | s @ SIGTERM | s @ SIGINT | s @ SIGQUIT) => {
                         info!("Received signal {:?}, exiting", Signal::try_from(s));
-                        if let Err(e) = telio_tx.send_timeout(TelioTaskCmd::Quit, Duration::from_secs(2)).await {
+                        if let Err(e) = telio_tx.send_timeout(TelioTaskCmd::Quit, Duration::from_secs(10)).await {
                             error!("Unable to send QUIT due to {e}");
                         };
                         break Ok(());

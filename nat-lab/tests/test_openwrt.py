@@ -137,12 +137,48 @@ async def test_openwrt_vpn_connection(openwrt_config: IfcConfigType) -> None:
         )
         await nordvpnlite.request_credentials_from_core()
 
+        async def grep_logread(s: str) -> list[str]:
+            sshproc = await gateway_connection.create_process(
+                ["logread", "-e", s]
+            ).execute()
+            lines = sshproc.get_stdout().splitlines()
+            log.debug("<logread>")
+            log.debug(lines)
+            log.debug("</logread>")
+            return lines
+
+        # For OpenWRT, lets clear the logs and restart dnsmasq to have a fresh state for logs.
+        # It allows to run test multiple times and makes it not influenced by the test before it.
+        await gateway_connection.create_process(
+            ["/etc/init.d/log", "restart"]
+        ).execute()
+        await gateway_connection.create_process(
+            ["/etc/init.d/dnsmasq", "restart"]
+        ).execute()
+        await asyncio.sleep(2)
+
+        ns_lines = await grep_logread("nameserver")
+        assert len(ns_lines) == 1
+        assert "daemon.info dnsmasq[1]: using nameserver 10.0.80.82" in ns_lines[0]
+
         async with nordvpnlite.start():
             log.debug("NordVPN Lite started, waiting for connected vpn state...")
+
             await nordvpnlite.wait_for_vpn_connected_state()
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"]
             )
+
+        # TODO: this sleep is because nordvpnlite returns immediatelly after accepting the command.
+        # On daemon quit it will do the dnsmasq restoration and restart which might take a second or two
+        await asyncio.sleep(5)
+
+        # check if DHCP DNS nameservers were restored
+        ns_lines = await grep_logread("nameserver")
+        assert len(ns_lines) == 3
+        assert "daemon.info dnsmasq[1]: using nameserver 10.0.80.82" in ns_lines[0]
+        assert "daemon.info dnsmasq[1]: using nameserver 10.0.80.83" in ns_lines[1]
+        assert "daemon.info dnsmasq[1]: using nameserver 10.0.80.82" in ns_lines[2]
 
 
 @pytest.mark.asyncio

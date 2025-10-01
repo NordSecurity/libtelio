@@ -131,6 +131,13 @@ impl NordlynxKeyResponse {
     }
 }
 
+fn default_dns() -> Vec<IpAddr> {
+    vec![
+        Ipv4Addr::new(103, 86, 96, 100).into(),
+        Ipv4Addr::new(103, 86, 99, 100).into(),
+    ]
+}
+
 #[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone)]
 pub struct NordVpnLiteConfig {
     #[serde(
@@ -145,6 +152,8 @@ pub struct NordVpnLiteConfig {
     pub interface: InterfaceConfig,
     #[serde(default)]
     pub vpn: VpnConfig,
+    #[serde(default = "default_dns", deserialize_with = "single_str_or_multiple")]
+    pub dns: Vec<IpAddr>,
 
     /// Overrides the default WireGuard endpoint port, should be used only for testing.
     /// The Core API does not include the WireGuard port in its response, and in environments like
@@ -254,12 +263,35 @@ impl Default for NordVpnLiteConfig {
                 config_provider: Default::default(),
             },
             vpn: Default::default(),
+            dns: default_dns(),
             override_default_wg_port: None,
             authentication_token: Default::default(),
             http_certificate_file_path: None,
             mqtt: MqttConfig::default(),
         }
     }
+}
+
+fn single_str_or_multiple<'de, D>(deserializer: D) -> Result<Vec<IpAddr>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum IpOrVec {
+        One(IpAddr),
+        Many(Vec<IpAddr>),
+    }
+
+    let parsed = Option::<IpOrVec>::deserialize(deserializer)?;
+
+    let r = match parsed {
+        None => Vec::new(),
+        Some(IpOrVec::One(ip)) => vec![ip],
+        Some(IpOrVec::Many(ips)) => ips,
+    };
+
+    Ok(r)
 }
 
 fn deserialize_percent<'de, D>(deserializer: D) -> Result<Percentage, D::Error>
@@ -396,6 +428,7 @@ mod tests {
             override_default_wg_port: None,
             authentication_token: Default::default(),
             http_certificate_file_path: None,
+            dns: vec![Ipv4Addr::new(1, 1, 1, 1).into()],
             mqtt: MqttConfig {
                 backoff_initial: NonZeroU64::new(1).unwrap(),
                 backoff_maximal: NonZeroU64::new(300).unwrap(),
@@ -413,6 +446,7 @@ mod tests {
                 "config_provider": "manual"
             },
             "vpn": "recommended",
+            "dns": "1.1.1.1",
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
@@ -428,6 +462,7 @@ mod tests {
                     "name": "utun10",
                     "config_provider": "manual"
                 },
+                "dns": ["1.1.1.1"],
                 "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                 "mqtt": {}
             }"#;
@@ -472,6 +507,7 @@ mod tests {
                     .unwrap(),
                 hostname: None,
             }),
+            dns: default_dns(),
             ..NordVpnLiteConfig::default()
         };
 
