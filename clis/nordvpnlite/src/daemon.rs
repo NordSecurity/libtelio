@@ -410,6 +410,7 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
                     Ok(command) => {
                         debug!("Client command {:?} executed successfully", command);
                         if command == ClientCmd::QuitDaemon {
+                            std::thread::sleep(std::time::Duration::from_secs(5));
                             break Ok(())
                         }
                     }
