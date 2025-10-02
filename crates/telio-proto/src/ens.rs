@@ -569,6 +569,7 @@ mod tests {
         ChallengeResponse, ConnectionError,
     };
     use rcgen::{generate_simple_self_signed, CertifiedKey, Issuer};
+    use rcgen::{BasicConstraints, CertificateParams, DistinguishedName, DnType, IsCa, KeyPair};
     use telio_crypto::SecretKey;
     use telio_sockets::NativeProtector;
     use telio_utils::exponential_backoff::{
@@ -590,13 +591,21 @@ mod tests {
         End,
     }
 
-    struct GrpcStub {
+    struct State {
         command_rx: Receiver<Command>,
         challenges: Mutex<HashSet<Uuid>>,
         vpn_server_private_key: SecretKey,
     }
 
-    use rcgen::{BasicConstraints, CertificateParams, DistinguishedName, DnType, IsCa, KeyPair};
+    impl State {
+        fn new(command_rx: Receiver<Command>, vpn_server_private_key: SecretKey) -> Self {
+            Self {
+                challenges: Mutex::new(HashSet::default()),
+                vpn_server_private_key,
+                command_rx,
+            }
+        }
+    }
 
     // Root CA and a leaf cert issued by it
     #[derive(Debug)]
@@ -644,21 +653,19 @@ mod tests {
         }
     }
 
-    impl GrpcStub {
-        fn new(command_rx: Receiver<Command>, vpn_server_private_key: SecretKey) -> Self {
-            Self {
-                challenges: Mutex::new(HashSet::default()),
-                vpn_server_private_key,
-                command_rx,
-            }
+    #[derive(Clone)]
+    struct GrpcStub(Arc<State>);
+
+    impl std::ops::Deref for GrpcStub {
+        type Target = State;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
         }
     }
 
-    #[derive(Clone)]
-    struct ArcGrpcStub(Arc<GrpcStub>);
-
     #[tonic::async_trait]
-    impl ens_server::Ens for ArcGrpcStub {
+    impl ens_server::Ens for GrpcStub {
         type ConnectionErrorsStream = ReceiverStream<Result<ConnectionError, tonic::Status>>;
         async fn connection_errors(
             &self,
@@ -667,7 +674,7 @@ mod tests {
         {
             let (tx, rx) = tokio::sync::mpsc::channel(1);
 
-            let command_rx = self.0.command_rx.clone();
+            let command_rx = self.command_rx.clone();
             tokio::spawn(async move {
                 loop {
                     println!("next loop iteration...");
@@ -684,13 +691,13 @@ mod tests {
     }
 
     #[tonic::async_trait]
-    impl login_server::Login for ArcGrpcStub {
+    impl login_server::Login for GrpcStub {
         async fn get_challenge(
             &self,
             _request: tonic::Request<ChallengeRequest>,
         ) -> std::result::Result<tonic::Response<ChallengeResponse>, tonic::Status> {
             let challenge = Uuid::new_v4();
-            self.0.challenges.lock().unwrap().insert(challenge);
+            self.challenges.lock().unwrap().insert(challenge);
             Ok(tonic::Response::new(ChallengeResponse {
                 challenge: challenge.to_string(),
             }))
@@ -698,7 +705,7 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct CheckAuthenticationInterceptor(ArcGrpcStub);
+    struct CheckAuthenticationInterceptor(GrpcStub);
 
     impl Interceptor for CheckAuthenticationInterceptor {
         fn call(&mut self, req: Request<()>) -> Result<Request<()>, Status> {
@@ -711,8 +718,8 @@ mod tests {
                         &decoded[48..],
                     );
 
-                    if let Some(_) = self.0 .0.challenges.lock().unwrap().take(&challenge_uuid) {
-                        let secret = self.0 .0.vpn_server_private_key.ecdh(&client_public_key);
+                    if let Some(_) = self.0.challenges.lock().unwrap().take(&challenge_uuid) {
+                        let secret = self.0.vpn_server_private_key.ecdh(&client_public_key);
                         if received_authentication_code
                             == authentication_tag(secret, &decoded[..48])
                         {
@@ -741,10 +748,7 @@ mod tests {
         let server_private_key = SecretKey::gen();
 
         let (command_tx, command_rx) = unbounded();
-        let grpc_stub = ArcGrpcStub(Arc::new(GrpcStub::new(
-            command_rx,
-            server_private_key.clone(),
-        )));
+        let grpc_stub = GrpcStub(Arc::new(State::new(command_rx, server_private_key.clone())));
         let ens_srv = EnsServer::with_interceptor(
             grpc_stub.clone(),
             CheckAuthenticationInterceptor(grpc_stub.clone()),
