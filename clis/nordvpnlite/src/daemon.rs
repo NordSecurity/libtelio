@@ -120,6 +120,15 @@ impl ExitNodeStatus {
     }
 }
 
+/// Current stage of the daemon
+/// It is ininitializing state while fetching credentials and before starting the telio task
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub enum DaemonState {
+    #[default]
+    Initializing,
+    Ready,
+}
+
 /// Outcome of executing a TelioTaskCmd, indicating whether TelioTask should keep listening
 /// for commands or not
 #[derive(Debug, PartialEq, Eq)]
@@ -351,15 +360,25 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
         loop {
             select! {
                 nordlynx_private_key = &mut api_request_future => break nordlynx_private_key?,
-                res = cmd_listener.try_recv_quit() => {
-                    match res {
-                        Ok(_) => {
-                            info!("Received quit command, exiting");
-                            return Ok(())
+                connection_result = cmd_listener.accept_client_connection() => {
+                    match connection_result {
+                        Ok(connection) => {
+                            match cmd_listener.handle_client_command(DaemonState::Initializing, connection).await {
+                                Ok(ClientCmd::QuitDaemon) => {
+                                    info!("Received quit command, exiting");
+                                    return Ok(())
+                                },
+                                Ok(command) => {
+                                    debug!("Received command {command:?} while obtaining service credentials, ignoring");
+                                },
+                                Err(err) => {
+                                    debug!("Received invalid command while obtaining service credentials: {err:?}");
+                                },
+                            }
                         },
-                        Err(e) => {
-                            debug!("Received command {:?} while obtaining service credentials, ignoring", e);
-                        },
+                        Err(err) => {
+                            error!("Failed accepting client connection: {err}");
+                        }
                     }
                 },
                 _ = signals.next() => {
@@ -405,16 +424,24 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
                 }
             },
             // Handle commands from the client side
-            result = cmd_listener.handle_client_connection() => {
-                match result {
-                    Ok(command) => {
-                        debug!("Client command {:?} executed successfully", command);
-                        if command == ClientCmd::QuitDaemon {
-                            break Ok(())
+            connection_result = cmd_listener.accept_client_connection() => {
+                match connection_result {
+                    Ok(connection) => {
+                        match cmd_listener.handle_client_command(DaemonState::Ready, connection).await {
+                            Ok(ClientCmd::QuitDaemon) => {
+                                info!("Received quit command, exiting");
+                                break Ok(())
+                            },
+                            Ok(command) => {
+                                debug!("Client command {:?} executed successfully", command);
+                            },
+                            Err(err) => {
+                                error!("Received invalid command from client: {}", err);
+                            }
                         }
-                    }
+                    },
                     Err(err) => {
-                        error!("Received invalid command from client: {}", err);
+                        error!("Failed accepting client connection: {err}");
                     }
                 }
             },

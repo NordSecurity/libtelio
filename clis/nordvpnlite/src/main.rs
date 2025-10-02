@@ -121,6 +121,10 @@ async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
                         println!("{}", serde_json::to_string_pretty(&status)?);
                         Ok(())
                     }
+                    CommandResponse::DaemonInitializing => {
+                        println!("Daemon is not ready, ignoring");
+                        Err(NordVpnLiteError::CommandFailed(cmd))
+                    }
                     CommandResponse::Err(e) => {
                         println!("Command executed failed: {e}");
                         Err(NordVpnLiteError::CommandFailed(cmd))
