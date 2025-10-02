@@ -206,7 +206,7 @@ impl CommandListener {
                         CommandResponse::Err(format!("Invalid command: {command_str}")).serialize(),
                     )
                     .await?;
-                Err(NordVpnLiteError::InvalidCommand(command_str))
+                Err(err.into())
             }
         }
     }
@@ -350,7 +350,7 @@ mod tests {
         let response = client_send_command(&path, command).await;
         let cmd = daemon.await.unwrap();
 
-        assert_matches!(cmd, Err(NordVpnLiteError::InvalidCommand(_)));
+        assert_matches!(cmd, Err(NordVpnLiteError::ParsingError(_)));
         assert_matches!(response, Ok(CommandResponse::Err(_)));
     }
 

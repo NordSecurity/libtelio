@@ -40,7 +40,7 @@ async def test_nordvpnlite_logs() -> None:
 
         nordvpnlite = await NordVpnLite.new(exit_stack, connection=connection)
         async with nordvpnlite.start():
-            pass
+            await nordvpnlite.wait_for_telio_running_status()
 
         expected_log_contents = {
             str(nordvpnlite.config.paths.daemon_log): "task started",

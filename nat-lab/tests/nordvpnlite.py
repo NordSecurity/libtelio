@@ -238,21 +238,21 @@ class NordVpnLite:
             stdout, _ = await self.execute_command(["is-alive"])
             return "Command executed successfully" in stdout
         except ProcessExecError as exc:
-            if "Obtaining nordlynx key, ignoring" in exc.stdout:
-                raise IgnoreableError() from exc
             if "Error: DaemonIsNotRunning" in exc.stderr:
                 return False
-            # TODO: remove after LLT-6694
-            if "Connection reset by peer" in exc.stderr:
-                raise IgnoreableError() from exc
-            # TODO: remove after LLT-6694
-            if "Broken pipe" in exc.stderr:
-                raise IgnoreableError() from exc
             raise exc
 
     async def get_status(self) -> str:
-        status, _ = await self.execute_command(["get-status"])
-        return status
+        try:
+            status, _ = await self.execute_command(["get-status"])
+            return status
+        except ProcessExecError as exc:
+            if "Daemon is not ready, ignoring" in exc.stdout:
+                raise IgnoreableError() from exc
+            # TODO: remove after LLT-6693
+            if "ClientTimeoutError" in exc.stdout:
+                raise IgnoreableError() from exc
+            raise exc
 
     async def quit(self) -> None:
         stdout, stderr = await self.execute_command(["quit-daemon"])
@@ -326,11 +326,28 @@ class NordVpnLite:
         # TODO: remove after LLT-6693
         await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
         while True:
-            status = json.loads(await self.get_status())
-            if status["exit_node"]:
-                if status["exit_node"]["state"] == "connected":
+            try:
+                status = json.loads(await self.get_status())
+                if status["exit_node"]:
+                    if status["exit_node"]["state"] == "connected":
+                        return
+                await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+            except IgnoreableError:
+                await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+                continue
+
+    async def wait_for_telio_running_status(self):
+        # TODO: remove after LLT-6693
+        await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+        while True:
+            try:
+                status = json.loads(await self.get_status())
+                if status["telio_is_running"]:
                     return
-            await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+                await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+            except IgnoreableError:
+                await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+                continue
 
     @asynccontextmanager
     async def setup_interface(self, vpn_routes: bool) -> AsyncIterator:
