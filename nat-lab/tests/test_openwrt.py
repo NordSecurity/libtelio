@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 import re
-from config import WG_SERVER, PHOTO_ALBUM_IP, STUN_SERVER, LAN_ADDR_MAP
+from config import WG_SERVER, WG_SERVER_2, PHOTO_ALBUM_IP, STUN_SERVER, LAN_ADDR_MAP
 from contextlib import AsyncExitStack
 from helpers import setup_connections
 from nordvpnlite import NordVpnLite, Config, IfcConfigType, Paths
@@ -337,4 +337,135 @@ async def test_openwrt_simulate_network_down() -> None:
             # check vpn connection is working after interface is UP
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"]
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.openwrt
+async def test_openwrt_vpn_reconnect() -> None:
+    """
+    Test re-connect to vpn from OpenWRT router
+
+    Steps:
+        1. Prepare vpn servers
+        2. Start NordVPN Lite in OpenWRT container
+        3. Check ip address of both openwrt container and client node is equal to vpn ip address
+        4. Ping PHOTO_ALBUM_IP from both openwrt and client node
+        5. Disconnect from vpn
+        6. Check PHOTO_ALBUM_IP is reachable and ip addresses are equal to public ips
+        7. Connect to vpn again with the same config (start NordVPN Lite)
+        8. Check ip address of both openwrt container and client node is equal to vpn ip address
+        9. Ping PHOTO_ALBUM_IP from both openwrt and client node
+
+    """
+    async with AsyncExitStack() as exit_stack:
+        client_connection = (
+            await setup_connections(exit_stack, [ConnectionTag.DOCKER_OPENWRT_CLIENT_1])
+        )[0].connection
+        gateway_connection = (
+            await setup_connections(exit_stack, [ConnectionTag.VM_OPENWRT_GW_1])
+        )[0].connection
+        await gateway_connection.create_process(
+            ["mkdir", "-p", "/etc/nordvpnlite"]
+        ).execute()
+        await gateway_connection.upload_file(
+            f"data/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_PL.value}",
+            f"/etc/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_PL.value}",
+        )
+
+        config_path = Paths(exec_path=Path("nordvpnlite"))
+        nordvpnlite = NordVpnLite(
+            gateway_connection,
+            exit_stack,
+            config=Config(IfcConfigType.VPN_OPENWRT_UCI_PL, paths=config_path),
+        )
+        await nordvpnlite.request_credentials_from_core()
+
+        async with nordvpnlite.start():
+            log.debug("NordVPN Lite started, waiting for connected vpn state...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+            await check_gateway_and_client_ip(
+                gateway_connection, client_connection, WG_SERVER["ipv4"]
+            )
+
+        log.debug("Check connection after disconnect from vpn")
+        await check_gateway_and_client_ip(
+            gateway_connection, client_connection, "10.0.0.0"
+        )
+
+        async with nordvpnlite.start():
+            log.debug("Reconnect to VPN...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+            await check_gateway_and_client_ip(
+                gateway_connection, client_connection, WG_SERVER["ipv4"]
+            )
+
+
+@pytest.mark.asyncio
+@pytest.mark.openwrt
+async def test_openwrt_vpn_reconnect_different_country() -> None:
+    """
+    Test re-connect to vpn server of another country
+
+    Steps:
+        1. Prepare vpn servers
+        2. Connect to PL vpn server
+        3. Check ip address of both openwrt container and client node is equal to vpn ip address
+        4. Ping PHOTO_ALBUM_IP from both openwrt and client node
+        5. Disconnect from vpn
+        6. Check PHOTO_ALBUM_IP is reachable and ip addresses are equal to public ips
+        7. Connect to DE vpn server
+        8. Check ip address of both openwrt container and client node is equal to vpn ip address
+        9. Ping PHOTO_ALBUM_IP from both openwrt and client node
+
+    """
+    async with AsyncExitStack() as exit_stack:
+        client_connection = (
+            await setup_connections(exit_stack, [ConnectionTag.DOCKER_OPENWRT_CLIENT_1])
+        )[0].connection
+        gateway_connection = (
+            await setup_connections(exit_stack, [ConnectionTag.VM_OPENWRT_GW_1])
+        )[0].connection
+        await gateway_connection.create_process(
+            ["mkdir", "-p", "/etc/nordvpnlite"]
+        ).execute()
+        await gateway_connection.upload_file(
+            f"data/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_PL.value}",
+            f"/etc/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_PL.value}",
+        )
+        await gateway_connection.upload_file(
+            f"data/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_DE.value}",
+            f"/etc/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_DE.value}",
+        )
+
+        config_path = Paths(exec_path=Path("nordvpnlite"))
+        nordvpnlite = NordVpnLite(
+            gateway_connection,
+            exit_stack,
+            config=Config(IfcConfigType.VPN_OPENWRT_UCI_PL, paths=config_path),
+        )
+        await nordvpnlite.request_credentials_from_core()
+
+        async with nordvpnlite.start():
+            log.debug("NordVPN Lite started, waiting for connected vpn state...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+            await check_gateway_and_client_ip(
+                gateway_connection, client_connection, WG_SERVER["ipv4"]
+            )
+
+        log.debug("Check connection after disconnect from vpn")
+        await check_gateway_and_client_ip(
+            gateway_connection, client_connection, "10.0.0.0"
+        )
+
+        nordvpnlite_de = NordVpnLite(
+            gateway_connection,
+            exit_stack,
+            config=Config(IfcConfigType.VPN_OPENWRT_UCI_DE, paths=config_path),
+        )
+        async with nordvpnlite_de.start():
+            log.debug("Reconnect to VPN DE...")
+            await nordvpnlite_de.wait_for_vpn_connected_state()
+            await check_gateway_and_client_ip(
+                gateway_connection, client_connection, WG_SERVER_2["ipv4"]
             )
