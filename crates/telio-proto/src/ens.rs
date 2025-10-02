@@ -6,9 +6,9 @@ use std::{
 
 use base64::prelude::{Engine, BASE64_STANDARD};
 use blake3::{derive_key, keyed_hash};
-use grpc::ConnectionError;
 use http::Uri;
 use hyper_util::rt::TokioIo;
+
 #[cfg(feature = "enable_ens")]
 use rustls::{
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
@@ -38,24 +38,10 @@ use uuid::Uuid;
 
 use crate::ens::grpc::{ChallengeRequest, ConnectionErrorRequest};
 
-#[allow(missing_docs)]
 pub(crate) mod grpc {
-    use telio_model::mesh::VpnConnectionError;
-    tonic::include_proto!("ens");
-
-    impl From<ConnectionError> for VpnConnectionError {
-        fn from(connection_error: ConnectionError) -> Self {
-            match connection_error.code {
-                code if code == Error::ConnectionLimitReached as i32 => {
-                    Self::ConnectionLimitReached
-                }
-                code if code == Error::ServerMaintenance as i32 => Self::ServerMaintenance,
-                code if code == Error::Unauthenticated as i32 => Self::Unauthenticated,
-                code if code == Error::Superseded as i32 => Self::Superseded,
-                _code => Self::Unknown,
-            }
-        }
-    }
+    pub use llt_proto::ens::{
+        ens_client, login_client, ChallengeRequest, ConnectionError, ConnectionErrorRequest, Error,
+    };
 }
 
 const CONTEXT: &str = "ens-auth";
@@ -83,7 +69,7 @@ pub enum Error {
 /// ErrorNotificationService manages tasks started and stopped to consume the ENS grpc error streams
 pub struct ErrorNotificationService {
     quit: Option<(watch::Sender<bool>, JoinHandle<()>)>,
-    tx: Tx<(ConnectionError, PublicKey)>,
+    tx: Tx<(grpc::ConnectionError, PublicKey)>,
     socket_pool: Arc<SocketPool>,
     allow_only_mlkem: bool,
     // DER encoded root certificate to be use for verification of TLS
@@ -103,8 +89,8 @@ impl ErrorNotificationService {
         socket_pool: Arc<SocketPool>,
         allow_only_mlkem: bool,
         root_certificate_override: Option<Vec<u8>>,
-    ) -> (Self, Rx<(ConnectionError, PublicKey)>) {
-        let Chan { rx, tx }: Chan<(ConnectionError, PublicKey)> = Chan::new(buffer_size);
+    ) -> (Self, Rx<(grpc::ConnectionError, PublicKey)>) {
+        let Chan { rx, tx }: Chan<(grpc::ConnectionError, PublicKey)> = Chan::new(buffer_size);
         if let Some(cert) = &root_certificate_override {
             telio_log_info!(
                 "Will use root certificate override: {:?}",
@@ -217,7 +203,7 @@ async fn task(
     vpn_public_key: PublicKey,
     local_private_key: SecretKey,
     pool: Arc<SocketPool>,
-    tx: Tx<(ConnectionError, PublicKey)>,
+    tx: Tx<(grpc::ConnectionError, PublicKey)>,
     mut quit_rx: watch::Receiver<bool>,
     allow_only_mlkem: bool,
     mut backoff: impl Backoff,
@@ -580,7 +566,7 @@ mod tests {
     };
 
     use async_channel::{self, unbounded, Receiver, Sender};
-    use grpc::{
+    use llt_proto::ens::{
         ens_server::{self, EnsServer},
         login_server::{self, LoginServer},
         ChallengeResponse, ConnectionError,
@@ -610,13 +596,13 @@ mod tests {
         End,
     }
 
-    struct GrpcStub {
+    struct State {
         command_rx: Receiver<Command>,
         challenges: Mutex<HashSet<Uuid>>,
         vpn_server_private_key: SecretKey,
     }
 
-    impl GrpcStub {
+    impl State {
         fn new(command_rx: Receiver<Command>, vpn_server_private_key: SecretKey) -> Self {
             Self {
                 challenges: Mutex::new(HashSet::default()),
@@ -626,8 +612,19 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct GrpcStub(Arc<State>);
+
+    impl std::ops::Deref for GrpcStub {
+        type Target = State;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
     #[tonic::async_trait]
-    impl ens_server::Ens for Arc<GrpcStub> {
+    impl ens_server::Ens for GrpcStub {
         type ConnectionErrorsStream = ReceiverStream<Result<ConnectionError, tonic::Status>>;
         async fn connection_errors(
             &self,
@@ -653,7 +650,7 @@ mod tests {
     }
 
     #[tonic::async_trait]
-    impl login_server::Login for Arc<GrpcStub> {
+    impl login_server::Login for GrpcStub {
         async fn get_challenge(
             &self,
             _request: tonic::Request<ChallengeRequest>,
@@ -667,7 +664,7 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct CheckAuthenticationInterceptor(Arc<GrpcStub>);
+    struct CheckAuthenticationInterceptor(GrpcStub);
 
     impl Interceptor for CheckAuthenticationInterceptor {
         fn call(&mut self, req: Request<()>) -> Result<Request<()>, Status> {
@@ -756,7 +753,7 @@ mod tests {
         let server_private_key = SecretKey::gen();
 
         let (command_tx, command_rx) = unbounded();
-        let grpc_stub = Arc::new(GrpcStub::new(command_rx, server_private_key.clone()));
+        let grpc_stub = GrpcStub(Arc::new(State::new(command_rx, server_private_key.clone())));
         let ens_srv = EnsServer::with_interceptor(
             grpc_stub.clone(),
             CheckAuthenticationInterceptor(grpc_stub.clone()),

@@ -2546,7 +2546,7 @@ impl TaskRuntime for Runtime {
                             }
                         };
 
-                        node.vpn_connection_error = Some(connection_error.into());
+                        node.vpn_connection_error = Some(convert_connection_error(connection_error));
                         if !self.is_dublicated_event(&node) {
                             let _ = self.event_publishers.libtelio_event_publisher.send(
                                 Box::new(Event::Node {body: node.clone()})
@@ -2719,6 +2719,27 @@ fn get_config_peer<'a>(config: Option<&'a Config>, public_key: &'a PublicKey) ->
         .as_ref()?
         .iter()
         .find(|p| p.base.public_key == *public_key)
+}
+
+fn convert_connection_error(
+    connection_error: ConnectionError,
+) -> telio_model::mesh::VpnConnectionError {
+    use telio_proto::GrpcError;
+    match connection_error.code {
+        code if code == GrpcError::ConnectionLimitReached as i32 => {
+            telio_model::mesh::VpnConnectionError::ConnectionLimitReached
+        }
+        code if code == GrpcError::ServerMaintenance as i32 => {
+            telio_model::mesh::VpnConnectionError::ServerMaintenance
+        }
+        code if code == GrpcError::Unauthenticated as i32 => {
+            telio_model::mesh::VpnConnectionError::Unauthenticated
+        }
+        code if code == GrpcError::Superseded as i32 => {
+            telio_model::mesh::VpnConnectionError::Superseded
+        }
+        _code => telio_model::mesh::VpnConnectionError::Unknown,
+    }
 }
 
 #[cfg(test)]

@@ -94,9 +94,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.99"
+version = "1.0.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0674a1ddeecb70197781e945de4b3b8ffb61fa939a5597bcf48503737663100"
+checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "arc-swap"
@@ -2518,6 +2518,18 @@ name = "litemap"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "241eaef5fd12c88705a01fc1066c48c4b36e0dd4377dcdc7ec3942cea7a69956"
+
+[[package]]
+name = "llt-proto"
+version = "0.1.0"
+source = "git+https://github.com/NordSecurity/llt-proto.git?tag=v1.0.0#4a9e79beebee837a7873636a164c88cf0971a4df"
+dependencies = [
+ "anyhow",
+ "prost",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+]
 
 [[package]]
 name = "lock_api"
@@ -4978,6 +4990,7 @@ dependencies = [
  "hex",
  "http",
  "hyper-util",
+ "llt-proto",
  "prost",
  "protobuf",
  "protobuf-codegen",
