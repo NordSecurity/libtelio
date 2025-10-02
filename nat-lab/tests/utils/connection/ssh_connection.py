@@ -24,6 +24,8 @@ class SshConnection(Connection):
             target_os = TargetOS.Windows
         elif tag is ConnectionTag.VM_MAC:
             target_os = TargetOS.Mac
+        elif tag is ConnectionTag.VM_OPENWRT_GW_1:
+            target_os = TargetOS.Linux
         else:
             assert False, format(
                 "Can't create ssh connection for the provided tag: %s", tag.name
@@ -47,22 +49,29 @@ class SshConnection(Connection):
         tag: ConnectionTag,
         copy_binaries: bool = False,
     ) -> AsyncIterator["SshConnection"]:
-        subprocess.check_call(
-            ["sudo", "bash", "vm_nat.sh", "disable"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        subprocess.check_call(
-            ["sudo", "bash", "vm_nat.sh", "enable"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        if tag not in [ConnectionTag.VM_OPENWRT_GW_1]:
+            subprocess.check_call(
+                ["sudo", "bash", "vm_nat.sh", "disable"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            subprocess.check_call(
+                ["sudo", "bash", "vm_nat.sh", "enable"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
 
         async with asyncssh.connect(
             ip,
-            username="root" if tag is ConnectionTag.VM_MAC else "vagrant",
-            password="vagrant",
+            username=(
+                "root"
+                if tag in [ConnectionTag.VM_MAC, ConnectionTag.VM_OPENWRT_GW_1]
+                else "vagrant"
+            ),
+            password=None if tag in [ConnectionTag.VM_OPENWRT_GW_1] else "vagrant",
             known_hosts=None,
+            connect_timeout=15,
+            login_timeout=15,
         ) as ssh_connection:
             async with cls(ssh_connection, tag) as connection:
                 if copy_binaries:
@@ -119,3 +128,14 @@ class SshConnection(Connection):
             await utils_win.copy_binaries(self._connection, self)
         elif self.target_os is TargetOS.Mac:
             await utils_mac.copy_binaries(self._connection, self)
+
+    async def upload_file(self, local_file_path: str, remote_file_path: str) -> None:
+        """Upload file from 'local_file_path' to 'remote_file_path' on the connected node"""
+        try:
+            await asyncssh.scp(
+                local_file_path, (self._connection, remote_file_path), recurse=True
+            )
+        except asyncssh.SFTPFailure as e:
+            if "No such file or directory" in e.reason:
+                return
+            raise e

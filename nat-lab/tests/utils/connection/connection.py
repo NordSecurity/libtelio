@@ -22,6 +22,7 @@ class ConnectionTag(Enum):
     DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK = auto()
     DOCKER_UDP_BLOCK_CLIENT_1 = auto()
     DOCKER_UDP_BLOCK_CLIENT_2 = auto()
+    DOCKER_OPENWRT_CLIENT_1 = auto()
     DOCKER_INTERNAL_SYMMETRIC_CLIENT = auto()
     VM_WINDOWS_1 = auto()
     VM_WINDOWS_2 = auto()
@@ -38,6 +39,7 @@ class ConnectionTag(Enum):
     DOCKER_UDP_BLOCK_GW_2 = auto()
     DOCKER_UPNP_GW_1 = auto()
     DOCKER_UPNP_GW_2 = auto()
+    VM_OPENWRT_GW_1 = auto()
     DOCKER_VPN_1 = auto()
     DOCKER_VPN_2 = auto()
     DOCKER_NLX_1 = auto()
@@ -106,6 +108,10 @@ class Connection(ABC):
 
     @abstractmethod
     async def download(self, remote_path: str, local_path: str) -> None:
+        pass
+
+    @abstractmethod
+    async def upload_file(self, local_file_path: str, remote_file_path: str) -> None:
         pass
 
     async def get_ip_address(self) -> tuple[str, str]:

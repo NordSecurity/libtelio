@@ -37,6 +37,8 @@ SETUP_CHECK_TIMEOUT_S = 30
 SETUP_CHECK_RETRIES = 5
 SETUP_CHECK_CONNECTIVITY_TIMEOUT = 60
 SETUP_CHECK_CONNECTIVITY_RETRIES = 1
+GW_CHECK_CONNECTIVITY_TIMEOUT = 30
+GW_CHECK_CONNECTIVITY_RETRIES = 2
 
 RUNNER = asyncio.Runner()
 # pylint: disable=unnecessary-dunder-call
@@ -248,6 +250,22 @@ async def perform_setup_checks() -> bool:
     return True
 
 
+async def check_gateway_connectivity() -> bool:
+    for _ in range(GW_CHECK_CONNECTIVITY_RETRIES + 1):
+        try:
+            for gw_tag in ConnectionTag:
+                if "_GW" in gw_tag.name:
+                    await SESSION_SCOPE_EXIT_STACK.enter_async_context(
+                        new_connection_raw(gw_tag)
+                    )
+            return True
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            log.error("Failed to connect to one of the gateways")
+            log.error("Exception error: %s", e)
+            await asyncio.sleep(GW_CHECK_CONNECTIVITY_TIMEOUT)
+    return False
+
+
 async def kill_natlab_processes():
     # Do not execute cleanup in non-CI environment,
     # because cleanup requires elevated privileges,
@@ -436,6 +454,8 @@ def pytest_runtest_setup():
 # pylint: disable=unused-argument
 def pytest_sessionstart(session):
     if os.environ.get("NATLAB_SAVE_LOGS"):
+        if not RUNNER.run(check_gateway_connectivity()):
+            pytest.exit("Gateway nodes connectivity check failed, exiting ...")
         RUNNER.run(start_tcpdump_processes())
 
 

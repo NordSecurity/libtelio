@@ -23,6 +23,7 @@ from utils.network_switcher import (
     NetworkSwitcherDocker,
     NetworkSwitcherMac,
     NetworkSwitcherWindows,
+    NetworkSwitcherOpenwrt,
 )
 
 
@@ -88,6 +89,8 @@ async def create_network_switcher(
         return await NetworkSwitcherWindows.create(connection)
     if tag == ConnectionTag.VM_MAC:
         return NetworkSwitcherMac(connection)
+    if tag == ConnectionTag.VM_OPENWRT_GW_1:
+        return NetworkSwitcherOpenwrt(connection)
 
     assert False, f"tag {tag} not supported"
 
@@ -339,6 +342,7 @@ def is_tag_valid_for_ssh_connection(tag: ConnectionTag) -> bool:
         ConnectionTag.VM_WINDOWS_1,
         ConnectionTag.VM_WINDOWS_2,
         ConnectionTag.VM_MAC,
+        ConnectionTag.VM_OPENWRT_GW_1,
     ]
 
 
