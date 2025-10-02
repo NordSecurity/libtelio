@@ -6,9 +6,9 @@ use std::{
 
 use base64::prelude::{Engine, BASE64_STANDARD};
 use blake3::{derive_key, keyed_hash};
-use grpc::ConnectionError;
 use http::Uri;
 use hyper_util::rt::TokioIo;
+
 #[cfg(feature = "enable_ens")]
 use rustls::{
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
@@ -36,27 +36,10 @@ use tonic::{
 use tower::service_fn;
 use uuid::Uuid;
 
-use crate::ens::grpc::{ChallengeRequest, ConnectionErrorRequest};
-
-#[allow(missing_docs)]
-pub(crate) mod grpc {
-    use telio_model::mesh::VpnConnectionError;
-    tonic::include_proto!("ens");
-
-    impl From<ConnectionError> for VpnConnectionError {
-        fn from(connection_error: ConnectionError) -> Self {
-            match connection_error.code {
-                code if code == Error::ConnectionLimitReached as i32 => {
-                    Self::ConnectionLimitReached
-                }
-                code if code == Error::ServerMaintenance as i32 => Self::ServerMaintenance,
-                code if code == Error::Unauthenticated as i32 => Self::Unauthenticated,
-                code if code == Error::Superseded as i32 => Self::Superseded,
-                _code => Self::Unknown,
-            }
-        }
-    }
-}
+pub use llt_proto::ens::{
+    ens_client, login_client, ChallengeRequest, ConnectionError, ConnectionErrorRequest,
+    Error as GrpcError,
+};
 
 const CONTEXT: &str = "ens-auth";
 const ENS_PORT: u16 = 993;
@@ -271,7 +254,7 @@ async fn task(
             backoff
         );
 
-        let mut client = grpc::ens_client::EnsClient::with_interceptor(
+        let mut client = ens_client::EnsClient::with_interceptor(
             external_channel,
             authentication_interceptor(authenticated_challenge),
         );
@@ -323,7 +306,7 @@ async fn get_login_challenge(
     vpn_public_key: PublicKey,
     local_private_key: SecretKey,
 ) -> anyhow::Result<AsciiMetadataValue> {
-    let mut login_client = grpc::login_client::LoginClient::new(external_channel);
+    let mut login_client = login_client::LoginClient::new(external_channel);
 
     let challenge_response = login_client
         .get_challenge(ChallengeRequest::default())
@@ -580,7 +563,7 @@ mod tests {
     };
 
     use async_channel::{self, unbounded, Receiver, Sender};
-    use grpc::{
+    use llt_proto::ens::{
         ens_server::{self, EnsServer},
         login_server::{self, LoginServer},
         ChallengeResponse, ConnectionError,
@@ -671,8 +654,11 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct ArcGrpcStub(Arc<GrpcStub>);
+
     #[tonic::async_trait]
-    impl ens_server::Ens for Arc<GrpcStub> {
+    impl ens_server::Ens for ArcGrpcStub {
         type ConnectionErrorsStream = ReceiverStream<Result<ConnectionError, tonic::Status>>;
         async fn connection_errors(
             &self,
@@ -681,7 +667,7 @@ mod tests {
         {
             let (tx, rx) = tokio::sync::mpsc::channel(1);
 
-            let command_rx = self.command_rx.clone();
+            let command_rx = self.0.command_rx.clone();
             tokio::spawn(async move {
                 loop {
                     println!("next loop iteration...");
@@ -698,13 +684,13 @@ mod tests {
     }
 
     #[tonic::async_trait]
-    impl login_server::Login for Arc<GrpcStub> {
+    impl login_server::Login for ArcGrpcStub {
         async fn get_challenge(
             &self,
             _request: tonic::Request<ChallengeRequest>,
         ) -> std::result::Result<tonic::Response<ChallengeResponse>, tonic::Status> {
             let challenge = Uuid::new_v4();
-            self.challenges.lock().unwrap().insert(challenge);
+            self.0.challenges.lock().unwrap().insert(challenge);
             Ok(tonic::Response::new(ChallengeResponse {
                 challenge: challenge.to_string(),
             }))
@@ -712,7 +698,7 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct CheckAuthenticationInterceptor(Arc<GrpcStub>);
+    struct CheckAuthenticationInterceptor(ArcGrpcStub);
 
     impl Interceptor for CheckAuthenticationInterceptor {
         fn call(&mut self, req: Request<()>) -> Result<Request<()>, Status> {
@@ -725,8 +711,8 @@ mod tests {
                         &decoded[48..],
                     );
 
-                    if let Some(_) = self.0.challenges.lock().unwrap().take(&challenge_uuid) {
-                        let secret = self.0.vpn_server_private_key.ecdh(&client_public_key);
+                    if let Some(_) = self.0 .0.challenges.lock().unwrap().take(&challenge_uuid) {
+                        let secret = self.0 .0.vpn_server_private_key.ecdh(&client_public_key);
                         if received_authentication_code
                             == authentication_tag(secret, &decoded[..48])
                         {
@@ -755,7 +741,10 @@ mod tests {
         let server_private_key = SecretKey::gen();
 
         let (command_tx, command_rx) = unbounded();
-        let grpc_stub = Arc::new(GrpcStub::new(command_rx, server_private_key.clone()));
+        let grpc_stub = ArcGrpcStub(Arc::new(GrpcStub::new(
+            command_rx,
+            server_private_key.clone(),
+        )));
         let ens_srv = EnsServer::with_interceptor(
             grpc_stub.clone(),
             CheckAuthenticationInterceptor(grpc_stub.clone()),
@@ -814,11 +803,11 @@ mod tests {
 
         let errors_to_emit = [
             ConnectionError {
-                code: grpc::Error::Unknown as i32,
+                code: GrpcError::Unknown as i32,
                 additional_info: None,
             },
             ConnectionError {
-                code: grpc::Error::ConnectionLimitReached as i32,
+                code: GrpcError::ConnectionLimitReached as i32,
                 additional_info: Some("additional info".to_owned()),
             },
         ];
@@ -888,11 +877,11 @@ mod tests {
 
         let errors_to_emit = [
             ConnectionError {
-                code: grpc::Error::Unknown as i32,
+                code: GrpcError::Unknown as i32,
                 additional_info: None,
             },
             ConnectionError {
-                code: grpc::Error::ConnectionLimitReached as i32,
+                code: GrpcError::ConnectionLimitReached as i32,
                 additional_info: Some("additional info".to_owned()),
             },
         ];
