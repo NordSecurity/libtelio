@@ -350,7 +350,7 @@ async def _copy_vm_binaries(tag: ConnectionTag):
 async def _copy_vm_binaries_if_needed(items):
     windows_bins_copied = False
     mac_bins_copied = False
-
+    openwrt_bins_copied = False
     for item in items:
         for mark in item.own_markers:
             if mark.name == "windows" and not windows_bins_copied:
@@ -360,8 +360,11 @@ async def _copy_vm_binaries_if_needed(items):
             elif mark.name == "mac" and not mac_bins_copied:
                 await _copy_vm_binaries(ConnectionTag.VM_MAC)
                 mac_bins_copied = True
+            elif mark.name == "openwrt" and not openwrt_bins_copied:
+                await _copy_vm_binaries(ConnectionTag.VM_OPENWRT_GW_1)
+                openwrt_bins_copied = True
 
-            if windows_bins_copied and mac_bins_copied:
+            if windows_bins_copied and mac_bins_copied and openwrt_bins_copied:
                 return
 
 
