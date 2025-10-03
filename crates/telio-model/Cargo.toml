@@ -25,6 +25,7 @@ strum.workspace = true
 
 telio-crypto.workspace = true
 telio-utils.workspace = true
+base64.workspace = true
 
 [dev-dependencies]
 once_cell.workspace = true

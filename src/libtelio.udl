@@ -806,6 +806,10 @@ dictionary FeatureErrorNotificationService {
 
     /// Configuration of the backoff algorithm used by ENS
     Backoff backoff;
+    
+    /// DER encoded root certificate to be used for verification of all TLS connections
+    /// to gRPC ENS endpoint in place of the hardcoded one
+    bytes? root_certificate_override;
 };
 
 /// Exponential backoff bounds

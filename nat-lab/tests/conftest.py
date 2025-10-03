@@ -2,6 +2,7 @@ import asyncio
 import base64
 import logging
 import os
+import Pyro5  # type: ignore
 import pytest
 import shutil
 import ssl
@@ -453,6 +454,7 @@ def pytest_runtest_setup():
 
 # pylint: disable=unused-argument
 def pytest_sessionstart(session):
+    Pyro5.config.SERPENT_BYTES_REPR = True
     if os.environ.get("NATLAB_SAVE_LOGS"):
         if not RUNNER.run(check_gateway_connectivity()):
             pytest.exit("Gateway nodes connectivity check failed, exiting ...")
