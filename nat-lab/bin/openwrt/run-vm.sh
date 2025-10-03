@@ -13,4 +13,3 @@ exec /usr/bin/qemu-system-x86_64 \
     -serial chardev:chr0 \
     -monitor unix:/tmp/qemu-monitor.sock,server,nowait \
     -drive file=/var/lib/qemu/image.raw,format=raw,if=virtio \
-    -drive file=/var/lib/qemu-image/ipks.img,format=raw,if=virtio,media=disk
