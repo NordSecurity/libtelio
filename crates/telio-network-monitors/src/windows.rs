@@ -9,7 +9,6 @@ use winapi::shared::{
     ws2def::AF_UNSPEC,
 };
 
-
 #[derive(Clone, Debug)]
 /// Wrapper around HANDLE to pass between threads
 pub struct SafeHandle(
