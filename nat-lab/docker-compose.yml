@@ -616,9 +616,12 @@ services:
   photo-album:
     hostname: photo-album
     image: nat-lab:base
-    entrypoint: "/usr/bin/python3 -m http.server --bind :: --directory /srv/www 80"
+    entrypoint: /opt/bin/photo-album
     cap_drop:
       - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
     security_opt:
       - no-new-privileges:true
     networks:
