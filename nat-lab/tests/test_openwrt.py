@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 import re
 from config import WG_SERVER, PHOTO_ALBUM_IP, STUN_SERVER, LAN_ADDR_MAP
@@ -127,9 +128,15 @@ async def test_openwrt_ip_leaks() -> None:
             ]).run() as tcp_dump:
                 await ping(gateway_connection, PHOTO_ALBUM_IP)
                 await ping(client_connection, PHOTO_ALBUM_IP)
-                await gateway_connection.create_process(
-                    ["sh", "-c", f"echo -n | nc {PHOTO_ALBUM_IP} 80 >/dev/null 2>&1"]
-                ).execute()
+                # wrapping into asyncio.wait_for as BusyBox nc doesn't support timeouts
+                await asyncio.wait_for(
+                    gateway_connection.create_process([
+                        "sh",
+                        "-c",
+                        f"echo -n | nc {PHOTO_ALBUM_IP} 80 >/dev/null 2>&1",
+                    ]).execute(),
+                    timeout=3,
+                )
                 await client_connection.create_process([
                     "bash",
                     "-c",
