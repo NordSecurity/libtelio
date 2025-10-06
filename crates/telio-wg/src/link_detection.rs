@@ -14,6 +14,7 @@ use telio_model::{
     features::FeatureLinkDetection,
     mesh::{LinkState, NodeState},
 };
+use telio_network_monitors::monitor::LocalInterfacesObserver;
 use telio_sockets::SocketPool;
 use telio_task::io::{chan, Chan};
 use telio_utils::{
@@ -21,11 +22,11 @@ use telio_utils::{
     telio_log_warn, Instant, IpStack,
 };
 
+use self::enhanced_detection::EnhancedDetection;
 use crate::{
     uapi::UpdateReason,
     wg::{BytesAndTimestamps, WG_KEEPALIVE},
 };
-use self::enhanced_detection::EnhancedDetection;
 
 /// Component that manages the link state of each peer.
 ///
@@ -43,6 +44,30 @@ pub struct LinkDetection {
     ping_channel: chan::Tx<(Vec<IpAddr>, Option<IpStack>)>,
     peers: HashMap<PublicKey, State>,
     use_for_downgrade: bool,
+    nw_change_observer_rx: Option<chan::Rx<()>>,
+    _observer_handle: Option<Arc<LinkDetectionObserver>>,
+}
+
+/// Observer wrapper that forwards network change events from network monitor to LinkDetection
+///
+/// This spares LinkDetection to be Send+Sync because otherwise a LinkDetection reference would need
+/// to be passed to the NetworkMonitor mod (see telio::device::Runtime::start()) just for the sake of
+/// accessing the LocalInterfacesObserver::notify() implementation.
+#[derive(Debug)]
+pub struct LinkDetectionObserver {
+    /// Channel transmitter for sending network change notifications
+    pub tx: chan::Tx<()>,
+}
+
+impl LocalInterfacesObserver for LinkDetectionObserver {
+    fn notify(&self) {
+        telio_log_debug!("Notified about local interfaces change");
+        // don't block or panic if the receiver is gone
+        let tx = self.tx.clone();
+        tokio::spawn(async move {
+            let _ = tx.send(()).await;
+        });
+    }
 }
 
 impl LinkDetection {
@@ -51,6 +76,8 @@ impl LinkDetection {
         cfg: FeatureLinkDetection,
         ipv6_enabled: bool,
         socket_pool: Arc<SocketPool>,
+        nw_change_observer_rx: Option<chan::Rx<()>>,
+        _observer_handle: Option<Arc<LinkDetectionObserver>>,
     ) -> Self {
         let ping_channel = Chan::default();
         let enhanced_detection = if cfg.no_of_pings != 0 {
@@ -77,6 +104,8 @@ impl LinkDetection {
             ping_channel: ping_channel.tx,
             peers: HashMap::default(),
             use_for_downgrade: cfg.use_for_downgrade,
+            nw_change_observer_rx,
+            _observer_handle,
         }
     }
 
@@ -91,6 +120,36 @@ impl LinkDetection {
             .insert(*public_key, State::new(stats, self.cfg_max_allowed_rtt));
     }
 
+    /// Processes pending network change notifications.
+    ///
+    /// This method checks for network interface changes and adjusts link state tracking
+    /// accordingly, particularly on Windows where interface state changes can affect
+    /// traffic counter reliability.
+    pub async fn handle_network_changes(&mut self) {
+        if let Some(rx) = &mut self.nw_change_observer_rx {
+            while rx.try_recv().is_ok() {
+                // On WireguardNT tx counters are not increased when the interface is disabled. It's then
+                // considered that it might have happened and thus the link state detection is triggered by
+                // artificially setting the first_ts_after_rx instant and start the countdown
+                // TODO: Implement local interfaces tracking to accurately find if the relevant interface
+                // was indeed disabled.
+                #[cfg(target_os = "windows")]
+                {
+                    if self.enhanced_detection.is_none() {
+                        telio_log_warn!("Link state not reliable for the next few minutes, the interface might have been disabled.");
+                        telio_log_warn!("If a packet is not received in the next 3s the link will be considered down, consider enabling enhanced detection for increased accuracy.");
+                    }
+                    for (public_key, state) in &self.peers {
+                        if let Ok(mut stats) = state.stats.lock() {
+                            stats.first_tx_after_rx = Some(Instant::now());
+                            telio_log_debug!("Setting first_tx_after_rx artificially because current counters can't be trusted: {public_key}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Updates the link state for a specific peer.
     ///
     /// # Returns
@@ -103,6 +162,8 @@ impl LinkDetection {
         reason: UpdateReason,
         curr_ip_stack: Option<IpStack>,
     ) -> LinkDetectionUpdateResult {
+        self.handle_network_changes().await;
+
         telio_log_debug!(
             "update for {}, node_addresses: {:?}, reason: {:?}, curr_ip_stack: {:?}",
             public_key,
