@@ -96,7 +96,7 @@ use telio_model::{
 use telio_network_monitors::monitor::PATH_CHANGE_BROADCAST;
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
-static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
+static NETWORK_PATH_MONITOR_START: Once = Once::new();
 static CRYPTO_PROVIDER_INIT: Once = Once::new();
 
 pub use wg::{
