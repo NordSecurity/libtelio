@@ -714,9 +714,20 @@ impl Runtime for State {
                         telio_log_info!("Disconnecting from DERP server, due to transmission tasks error");
 
                         self.last_disconnection_reason = match err {
-                            Ok(Ok(())) => RelayConnectionChangeReason::ConfigurationChange,
-                            Ok(Err(err)) => err.into(),
-                            _ => RelayConnectionChangeReason::ClientError,
+                            Ok(Ok(())) => {
+                                let reason = RelayConnectionChangeReason::ConfigurationChange;
+                                telio_log_debug!("DERP transmission task error -> {reason:?}");
+                                reason
+                            },
+                            Ok(Err(err)) => {
+                                telio_log_debug!("DERP transmission task error: {:?}", err);
+                                err.into()
+                            },
+                            Err(join_err) => {
+                                let reason = RelayConnectionChangeReason::ClientError;
+                                telio_log_debug!("DERP transmission task join error: {:?} -> {reason:?}", join_err);
+                                reason
+                            },
                         };
                         self.disconnect().await;
                     },
