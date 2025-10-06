@@ -18,3 +18,6 @@ pub use crate::{
     link_detection::LinkDetection,
     wg::*,
 };
+
+#[cfg(target_os = "windows")]
+pub use crate::link_detection::LinkDetectionObserver;
