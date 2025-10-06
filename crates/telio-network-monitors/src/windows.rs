@@ -1,13 +1,14 @@
 use crate::monitor::PATH_CHANGE_BROADCAST;
-use std::os::raw::c_ulong;
 use std::ptr;
 use telio_utils::{telio_log_error, telio_log_trace, telio_log_warn};
+pub use winapi::shared::netioapi::MIB_NOTIFICATION_TYPE;
 use winapi::shared::{
     netioapi::{CancelMibChangeNotify2, NotifyIpInterfaceChange, MIB_IPINTERFACE_ROW},
     ntdef::{HANDLE, PVOID},
     winerror::NO_ERROR,
     ws2def::AF_UNSPEC,
 };
+
 
 #[derive(Clone, Debug)]
 /// Wrapper around HANDLE to pass between threads
@@ -19,10 +20,16 @@ unsafe impl Send for SafeHandle {}
 unsafe impl Sync for SafeHandle {}
 
 unsafe extern "system" fn callback(
-    _caller_context: PVOID,
+    context: PVOID,
     _row: *mut MIB_IPINTERFACE_ROW,
-    _notification_type: c_ulong,
+    notification_type: MIB_NOTIFICATION_TYPE,
 ) {
+    telio_log_trace!(
+        "Windows IP interface monitor received a {} (NotificationType) for {} (CallerContext).",
+        notification_type,
+        context as usize
+    );
+
     if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
         telio_log_warn!("Failed to notify about changed path {e}");
     }

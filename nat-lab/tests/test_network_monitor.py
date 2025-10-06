@@ -38,5 +38,8 @@ async def test_network_monitor(
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
         await client_alpha.restart_interface()
-
-        await client_alpha.wait_for_log("Updating local addr cache")
+        await client_alpha.wait_for_log(
+            "Detected network interface modification, notifying..",
+            count=4,
+            not_greater=True,
+        )
