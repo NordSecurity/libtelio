@@ -3,6 +3,7 @@
 
 use std::{collections::HashSet, fmt, net::IpAddr, str::FromStr, time::Duration};
 
+use base64::{prelude::BASE64_STANDARD, Engine};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{de::IntoDeserializer, Deserialize, Deserializer, Serialize};
 use smart_default::SmartDefault;
@@ -568,7 +569,7 @@ pub struct FeatureUpnp {
 }
 
 /// Configuration for the Error Notification Service
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct FeatureErrorNotificationService {
@@ -583,6 +584,27 @@ pub struct FeatureErrorNotificationService {
     /// Configuration of the backoff algorithm used by ENS
     #[serde(default)]
     pub backoff: Backoff,
+
+    /// DER encoded root certificate to be used for verification of all TLS connections
+    /// to gRPC ENS endpoint in place of the hardcoded one
+    pub root_certificate_override: Option<Vec<u8>>,
+}
+
+impl std::fmt::Debug for FeatureErrorNotificationService {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FeatureErrorNotificationService")
+            .field("buffer_size", &self.buffer_size)
+            .field("allow_only_pq", &self.allow_only_pq)
+            .field("backoff", &self.backoff)
+            .field(
+                "root_certificate_override",
+                &self
+                    .root_certificate_override
+                    .as_ref()
+                    .map(|cert| BASE64_STANDARD.encode(cert)),
+            )
+            .finish()
+    }
 }
 
 /// Exponential backoff bounds
@@ -878,6 +900,7 @@ mod tests {
                         buffer_size: 42,
                         allow_only_pq: true,
                         backoff: Default::default(),
+                        root_certificate_override: None
                     })
                 }
             );
@@ -1069,7 +1092,8 @@ mod tests {
                     backoff: Backoff {
                         initial_s: 2,
                         maximal_s: Some(120),
-                    }
+                    },
+                    root_certificate_override: None,
                 }),
                 error_notification_service
             );
@@ -1084,6 +1108,7 @@ mod tests {
                     buffer_size: 5,
                     allow_only_pq: true,
                     backoff: Default::default(),
+                    root_certificate_override: None,
                 }),
                 error_notification_service
             );
@@ -1099,7 +1124,8 @@ mod tests {
                     backoff: Backoff {
                         initial_s: 42,
                         maximal_s: Some(120),
-                    }
+                    },
+                    root_certificate_override: None,
                 }),
                 error_notification_service
             );
@@ -1116,7 +1142,8 @@ mod tests {
                     backoff: Backoff {
                         initial_s: 42,
                         maximal_s: None
-                    }
+                    },
+                    root_certificate_override: None,
                 }),
                 error_notification_service
             );
@@ -1133,7 +1160,8 @@ mod tests {
                     backoff: Backoff {
                         initial_s: 12345,
                         maximal_s: Some(67890)
-                    }
+                    },
+                    root_certificate_override: None,
                 }),
                 error_notification_service
             );

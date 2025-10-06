@@ -9,13 +9,15 @@ import json
 import sys
 import uuid
 
-
 from aiohttp import web
-from datetime import datetime, timedelta
-from cryptography.hazmat.primitives.asymmetric import x25519, rsa
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from cryptography.hazmat.primitives.asymmetric import x25519, rsa, ec
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.x509 import NameOID
+from cryptography.x509.oid import NameOID, ExtensionOID
+import ipaddress
+
 from pathlib import Path
 
 # Add protobuf directory to path for all tests
@@ -96,20 +98,111 @@ class AuthenticationInterceptor(grpc.aio.ServerInterceptor):
         ret = await continuation(handler_call_details)
         return ret
 
-def generate_self_signed_cert(
+@dataclass
+class TlsConfig:
+    fingerprint: str
+    leaf_key_pem: str
+    leaf_cert_pem: str
+    intermediate_cert_pem: str
+    root_cert_der: bytes
+    
+def generate_certificate_chain(
     common_name: str,
     dns_names: list[str],
     ip_addrs: list[str],
 ):
-    private_key = rsa.generate_private_key(public_exponent=65537, key_size=1024)
+    root_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    intermediate_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    leaf_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
-    subject = issuer = x509.Name(
-        [
-            x509.NameAttribute(NameOID.COUNTRY_NAME, "LT"),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "NordSec"),
-            x509.NameAttribute(NameOID.COMMON_NAME, common_name),
-        ]
+    # Root CA Certificate
+    root_subject = x509.Name([
+        x509.NameAttribute(NameOID.COUNTRY_NAME, "LT"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "NordSec"),
+        x509.NameAttribute(NameOID.COMMON_NAME, "NordSec Test Root CA"),
+    ])
+    
+    root_cert = (
+        x509.CertificateBuilder()
+        .subject_name(root_subject)
+        .issuer_name(root_subject)  # Self-signed
+        .public_key(root_private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.utcnow() - timedelta(days=1))
+        .not_valid_after(datetime.utcnow() + timedelta(days=7))
+        .add_extension(
+            x509.BasicConstraints(ca=True, path_length=2), critical=True
+        )
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=True,
+                crl_sign=True,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(root_private_key.public_key()),
+            critical=False,
+        )
+        .sign(root_private_key, hashes.SHA256())
     )
+
+    # Intermediate CA Certificate
+    intermediate_subject = x509.Name([
+        x509.NameAttribute(NameOID.COUNTRY_NAME, "LT"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "NordSec"),
+        x509.NameAttribute(NameOID.COMMON_NAME, "NordSec Test Intermediate CA"),
+    ])
+    
+    intermediate_cert = (
+        x509.CertificateBuilder()
+        .subject_name(intermediate_subject)
+        .issuer_name(root_cert.subject)  # Signed by root
+        .public_key(intermediate_private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.utcnow() - timedelta(hours=1))
+        .not_valid_after(datetime.utcnow() + timedelta(days=7))
+        .add_extension(
+            x509.BasicConstraints(ca=True, path_length=0), critical=True
+        )
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=True,
+                crl_sign=True,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(intermediate_private_key.public_key()),
+            critical=False,
+        )
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(root_private_key.public_key()),
+            critical=False,
+        )
+        .sign(root_private_key, hashes.SHA256())
+    )
+
+    # Leaf Certificate
+    leaf_subject = x509.Name([
+        x509.NameAttribute(NameOID.COUNTRY_NAME, "LT"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "NordSec"),
+        x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+    ])
 
     san_list = []
     for d in dns_names:
@@ -117,11 +210,11 @@ def generate_self_signed_cert(
     for ip in ip_addrs:
         san_list.append(x509.IPAddress(ipaddress.ip_address(ip)))
 
-    cert = (
+    leaf_cert = (
         x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(issuer)
-        .public_key(private_key.public_key())
+        .subject_name(leaf_subject)
+        .issuer_name(intermediate_cert.subject)
+        .public_key(leaf_private_key.public_key())
         .serial_number(x509.random_serial_number())
         .not_valid_before(datetime.utcnow() - timedelta(minutes=1))
         .not_valid_after(datetime.utcnow() + timedelta(days=7))
@@ -129,19 +222,53 @@ def generate_self_signed_cert(
         .add_extension(
             x509.BasicConstraints(ca=False, path_length=None), critical=True
         )
-        .sign(private_key, hashes.SHA256())
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                content_commitment=False,
+                key_encipherment=True,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=False,
+                crl_sign=False,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(
+            x509.ExtendedKeyUsage([
+                x509.oid.ExtendedKeyUsageOID.SERVER_AUTH,
+                x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH,
+            ]),
+            critical=True,
+        )
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(leaf_private_key.public_key()),
+            critical=False,
+        )
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(intermediate_private_key.public_key()),
+            critical=False,
+        )
+        .sign(intermediate_private_key, hashes.SHA256())  # Signed by intermediate's private key
     )
 
-    cert_der = cert.public_bytes(serialization.Encoding.DER)
-    fingerprint = hashlib.sha256(cert_der).hexdigest()
-
-    cert_pem = cert.public_bytes(serialization.Encoding.PEM)
-    key_pem = private_key.private_bytes(
+    leaf_cert_der = leaf_cert.public_bytes(serialization.Encoding.DER)
+    fingerprint = hashlib.sha256(leaf_cert_der).hexdigest()
+    
+    root_cert_der = root_cert.public_bytes(serialization.Encoding.DER)
+    intermediate_cert_pem = intermediate_cert.public_bytes(serialization.Encoding.PEM)
+    leaf_cert_pem = leaf_cert.public_bytes(serialization.Encoding.PEM)
+    
+    leaf_key_pem = leaf_private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
+        encryption_algorithm=serialization.NoEncryption()
     )
-    return cert_pem, key_pem, fingerprint
+    
+    return TlsConfig(fingerprint, leaf_key_pem, leaf_cert_pem, intermediate_cert_pem, root_cert_der)
+
 
 async def handle_connection_error(request):
     try:
@@ -174,12 +301,14 @@ def handle_grpc_tls_fingerprint(fingerprint):
         return web.json_response({"fingerprint": fingerprint})
     return handler
 
-async def start_http_server(host, port, fingerprint):
+async def start_http_server(host, port, tls_config):
     app = web.Application()
     app.router.add_post('/api/connection_error', handle_connection_error)
     app.router.add_post('/api/vpn_server_private_key', handle_vpn_server_private_key)
-    app.router.add_get('/api/grpc_tls_fingerprint', handle_grpc_tls_fingerprint(fingerprint))
-    
+    app.router.add_get('/api/grpc_tls_fingerprint', handle_grpc_tls_fingerprint(tls_config.fingerprint))
+    app.router.add_get('/api/grpc_tls_root_certificate', handle_grpc_tls_root_certificate(tls_config.root_cert_der))
+    app.router.add_get('/api/incorrect_root_certificate', handle_incorrect_root_certificate)
+
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host, port)
@@ -188,9 +317,63 @@ async def start_http_server(host, port, fingerprint):
     print(f"HTTP server started at http://{host}:{port}")
     return runner
 
-async def start_grpc_server(cert_pem, key_pem):
+
+def handle_grpc_tls_root_certificate(root_certificate):
+    async def handler(request):
+        encoded = base64.b64encode(root_certificate).decode('ascii')
+        return web.json_response({"root_certificate": encoded })
+    return handler
+
+
+async def handle_incorrect_root_certificate(request):
+    root_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    root_subject = x509.Name([
+        x509.NameAttribute(NameOID.COUNTRY_NAME, "LT"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "NordSec"),
+        x509.NameAttribute(NameOID.COMMON_NAME, "NordSec Root CA"),
+    ])
+    
+    root_cert = (
+        x509.CertificateBuilder()
+        .subject_name(root_subject)
+        .issuer_name(root_subject)  # Self-signed
+        .public_key(root_private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.utcnow() - timedelta(days=1))
+        .not_valid_after(datetime.utcnow() + timedelta(days=7))
+        .add_extension(
+            x509.BasicConstraints(ca=True, path_length=2), critical=True
+        )
+        .add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=True,
+                crl_sign=True,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(root_private_key.public_key()),
+            critical=False,
+        )
+        .sign(root_private_key, hashes.SHA256())
+    )
+    root_certificate = root_cert.public_bytes(serialization.Encoding.DER)
+    encoded = base64.b64encode(root_certificate).decode('ascii')
+
+    return web.json_response({"root_certificate": encoded })
+
+
+async def start_grpc_server(chain):
+    
     server_creds = grpc.ssl_server_credentials(
-        private_key_certificate_chain_pairs=[(key_pem, cert_pem)],
+        private_key_certificate_chain_pairs=chain,
         root_certificates=None,
         require_client_auth=False,
     )
@@ -206,20 +389,24 @@ async def start_grpc_server(cert_pem, key_pem):
     return server
 
 async def main():
-    cert_pem, key_pem, fingerprint = generate_self_signed_cert(
+    tls_config = generate_certificate_chain(
         common_name="localhost",
         dns_names=["localhost"],
         ip_addrs=["127.0.0.1"],
     )
+    fingerprint = tls_config.fingerprint
+    leaf_cert_pem, leaf_key_pem = tls_config.leaf_cert_pem, tls_config.leaf_key_pem
+    intermediate_cert_pem = tls_config.intermediate_cert_pem
 
     print(f"Generated gRPC TLS certificate with fingerprint: {fingerprint}")
     
     print("Starting test api")
-    http_runner = await start_http_server(host="0.0.0.0", port=8000, fingerprint=fingerprint)
+    http_runner = await start_http_server(host="0.0.0.0", port=8000, tls_config=tls_config)
     
     print("Starting ENS")
     global grpc_server
-    grpc_server = await start_grpc_server(cert_pem, key_pem)
+    chain_pem = leaf_cert_pem + intermediate_cert_pem
+    grpc_server = await start_grpc_server([(leaf_key_pem, chain_pem)])
     
     try:
         await grpc_server.wait_for_termination()

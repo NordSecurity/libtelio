@@ -61,6 +61,7 @@ pub(crate) mod grpc {
 const CONTEXT: &str = "ens-auth";
 const ENS_PORT: u16 = 993;
 const AUTHENTICATION_KEY: &str = "authentication";
+const DEFAULT_ROOT_CERTIFICATE: &[u8] = include_bytes!("../data/default_root_certificate.der");
 
 /// ENS errors
 #[derive(Debug, thiserror::Error)]
@@ -85,6 +86,8 @@ pub struct ErrorNotificationService {
     tx: Tx<(ConnectionError, PublicKey)>,
     socket_pool: Arc<SocketPool>,
     allow_only_mlkem: bool,
+    // DER encoded root certificate to be use for verification of TLS
+    root_certificate: Vec<u8>,
 }
 
 impl Drop for ErrorNotificationService {
@@ -99,14 +102,24 @@ impl ErrorNotificationService {
         buffer_size: usize,
         socket_pool: Arc<SocketPool>,
         allow_only_mlkem: bool,
+        root_certificate_override: Option<Vec<u8>>,
     ) -> (Self, Rx<(ConnectionError, PublicKey)>) {
         let Chan { rx, tx }: Chan<(ConnectionError, PublicKey)> = Chan::new(buffer_size);
+        if let Some(cert) = &root_certificate_override {
+            telio_log_info!(
+                "Will use root certificate override: {:?}",
+                BASE64_STANDARD.encode(cert)
+            );
+        }
+
         (
             Self {
                 quit: None,
                 tx,
                 socket_pool,
                 allow_only_mlkem,
+                root_certificate: root_certificate_override
+                    .unwrap_or_else(|| DEFAULT_ROOT_CERTIFICATE.to_vec()),
             },
             rx,
         )
@@ -145,6 +158,7 @@ impl ErrorNotificationService {
         let pool = self.socket_pool.clone();
         let tx = self.tx.clone();
         let allow_only_mlkem = self.allow_only_mlkem;
+        let root_certificate = self.root_certificate.clone();
 
         let join_handle = tokio::spawn(async move {
             // This future is too big for keeping it on the stack
@@ -157,6 +171,7 @@ impl ErrorNotificationService {
                 quit_rx,
                 allow_only_mlkem,
                 backoff,
+                root_certificate,
             ))
             .await
             {
@@ -206,6 +221,7 @@ async fn task(
     mut quit_rx: watch::Receiver<bool>,
     allow_only_mlkem: bool,
     mut backoff: impl Backoff,
+    root_certificate: Vec<u8>,
 ) -> anyhow::Result<()> {
     'outer: loop {
         macro_rules! restart {
@@ -235,7 +251,13 @@ async fn task(
 
         let pool = pool.clone();
         let external_channel = handle_error!(
-            Box::pin(create_external_channel(vpn_uri, pool, allow_only_mlkem)).await,
+            Box::pin(create_external_channel(
+                vpn_uri,
+                pool,
+                allow_only_mlkem,
+                root_certificate.clone()
+            ))
+            .await,
             backoff
         );
 
@@ -334,9 +356,11 @@ async fn create_external_channel(
     vpn_uri: &str,
     pool: Arc<SocketPool>,
     allow_only_mlkem: bool,
+    root_certificate: Vec<u8>,
 ) -> anyhow::Result<Channel> {
     let socket_factory = move |uri: Uri| {
         let pool = pool.clone();
+        let root_certificate = root_certificate.clone();
         async move {
             let host = match uri.host() {
                 Some(host) => host,
@@ -363,7 +387,7 @@ async fn create_external_channel(
 
             if let Some(resolved) = ((host, port).to_socket_addrs()?).next() {
                 let tcp_stream = socket.connect(resolved).await?;
-                let tls_connector = make_tls_connector(allow_only_mlkem)?;
+                let tls_connector = make_tls_connector(allow_only_mlkem, &root_certificate)?;
                 let tls_stream = tls_connector.connect(domain, tcp_stream).await?;
                 return Ok::<_, std::io::Error>(TokioIo::new(tls_stream));
             }
@@ -380,32 +404,90 @@ async fn create_external_channel(
 }
 
 #[cfg(not(feature = "enable_ens"))]
-fn make_tls_connector(_allow_only_mlkem: bool) -> std::io::Result<TlsConnector> {
+fn make_tls_connector(
+    _allow_only_mlkem: bool,
+    _root_certificate: &[u8],
+) -> std::io::Result<TlsConnector> {
     telio_log_warn!("An attempt was made to enable ENS when it is disabled at compile time");
     Err(std::io::Error::other("ENS is disabled"))
 }
 
 #[cfg(feature = "enable_ens")]
-fn make_tls_connector(allow_only_mlkem: bool) -> std::io::Result<TlsConnector> {
-    #[derive(Debug)]
-    struct AcceptAnyCertVerifier;
+fn make_tls_connector(
+    allow_only_mlkem: bool,
+    root_certificate: &[u8],
+) -> std::io::Result<TlsConnector> {
+    use rustls::RootCertStore;
 
-    impl ServerCertVerifier for AcceptAnyCertVerifier {
+    #[derive(Debug)]
+    struct TrustedRootCertVerifier(RootCertStore);
+
+    impl TrustedRootCertVerifier {
+        fn new(root_certificate: &[u8]) -> std::io::Result<Self> {
+            let mut root_store = RootCertStore::empty();
+            let (added, ignored) = root_store
+                .add_parsable_certificates([CertificateDer::from_slice(root_certificate)]);
+            if ignored > 0 {
+                telio_log_warn!("Added {added} certs to trusted store, ignored: {ignored}");
+                Err(std::io::Error::other(
+                    "Failed to add root cert to the root certificate store",
+                ))
+            } else {
+                telio_log_debug!("Added {added} certs to trusted store, ignored: {ignored}");
+                Ok(Self(root_store))
+            }
+        }
+    }
+
+    impl ServerCertVerifier for TrustedRootCertVerifier {
         fn verify_server_cert(
             &self,
             end_entity: &CertificateDer<'_>,
-            _intermediates: &[CertificateDer<'_>],
+            intermediates: &[CertificateDer<'_>],
             server_name: &ServerName<'_>,
             _ocsp_response: &[u8],
-            _now: UnixTime,
+            now: UnixTime,
         ) -> Result<ServerCertVerified, rustls::Error> {
+            use rustls::{
+                client::verify_server_cert_signed_by_trust_anchor,
+                pki_types::SignatureVerificationAlgorithm, server::ParsedCertificate,
+            };
             use sha2::{Digest, Sha256};
             let hash: [u8; 32] = Sha256::digest(end_entity).into();
             telio_log_info!(
                 "Remote gRPC server ({server_name:?}) sha256 fingerprint: {}",
                 hex::encode(hash)
             );
-            Ok(ServerCertVerified::assertion())
+
+            let end_entity: ParsedCertificate = end_entity.try_into()?;
+
+            use webpki::aws_lc_rs::*;
+            let schemas: Vec<&dyn SignatureVerificationAlgorithm> = vec![
+                ECDSA_P256_SHA256,
+                ECDSA_P384_SHA384,
+                ECDSA_P521_SHA512,
+                ED25519,
+                RSA_PKCS1_2048_8192_SHA256,
+                RSA_PKCS1_2048_8192_SHA384,
+                RSA_PKCS1_2048_8192_SHA512,
+                RSA_PSS_2048_8192_SHA256_LEGACY_KEY,
+                RSA_PSS_2048_8192_SHA384_LEGACY_KEY,
+                RSA_PSS_2048_8192_SHA512_LEGACY_KEY,
+            ];
+
+            let verification = verify_server_cert_signed_by_trust_anchor(
+                &end_entity,
+                &self.0,
+                intermediates,
+                now,
+                &schemas,
+            );
+
+            telio_log_info!("Remote gRPC TLS certificate verification result: {verification:?}");
+            match verification {
+                Ok(()) => Ok(ServerCertVerified::assertion()),
+                Err(e) => Err(e),
+            }
         }
 
         fn verify_tls12_signature(
@@ -428,22 +510,17 @@ fn make_tls_connector(allow_only_mlkem: bool) -> std::io::Result<TlsConnector> {
 
         fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
             vec![
-                SignatureScheme::RSA_PKCS1_SHA1,
-                SignatureScheme::ECDSA_SHA1_Legacy,
-                SignatureScheme::RSA_PKCS1_SHA256,
                 SignatureScheme::ECDSA_NISTP256_SHA256,
-                SignatureScheme::RSA_PKCS1_SHA384,
                 SignatureScheme::ECDSA_NISTP384_SHA384,
-                SignatureScheme::RSA_PKCS1_SHA512,
                 SignatureScheme::ECDSA_NISTP521_SHA512,
+                SignatureScheme::ED25519,
+                SignatureScheme::ED448,
+                SignatureScheme::RSA_PKCS1_SHA256,
+                SignatureScheme::RSA_PKCS1_SHA384,
+                SignatureScheme::RSA_PKCS1_SHA512,
                 SignatureScheme::RSA_PSS_SHA256,
                 SignatureScheme::RSA_PSS_SHA384,
                 SignatureScheme::RSA_PSS_SHA512,
-                SignatureScheme::ED25519,
-                SignatureScheme::ED448,
-                SignatureScheme::ML_DSA_44,
-                SignatureScheme::ML_DSA_65,
-                SignatureScheme::ML_DSA_87,
             ]
         }
     }
@@ -459,8 +536,9 @@ fn make_tls_connector(allow_only_mlkem: bool) -> std::io::Result<TlsConnector> {
         .with_safe_default_protocol_versions()
         .map_err(|e| std::io::Error::other(format!("{e}")))?
         .dangerous()
-        .with_custom_certificate_verifier(Arc::new(AcceptAnyCertVerifier))
+        .with_custom_certificate_verifier(Arc::new(TrustedRootCertVerifier::new(root_certificate)?))
         .with_no_client_auth();
+
     tls_config.alpn_protocols = vec![b"h2".to_vec()];
 
     Ok(TlsConnector::from(Arc::new(tls_config)))
@@ -507,7 +585,10 @@ mod tests {
         login_server::{self, LoginServer},
         ChallengeResponse, ConnectionError,
     };
-    use rcgen::{generate_simple_self_signed, CertifiedKey};
+    use rcgen::{
+        generate_simple_self_signed, BasicConstraints, CertificateParams, CertifiedKey,
+        DistinguishedName, DnType, IsCa, Issuer, KeyPair,
+    };
     use telio_crypto::SecretKey;
     use telio_sockets::NativeProtector;
     use telio_utils::exponential_backoff::{
@@ -617,7 +698,60 @@ mod tests {
         }
     }
 
-    async fn spawn_server() -> (u16, PublicKey, Sender<Command>) {
+    // Root CA and a leaf cert issued by it
+    #[derive(Debug)]
+    struct TlsConfig {
+        ca_cert_der: Vec<u8>,
+        leaf_cert_pem: String,
+        leaf_key_pem: String,
+    }
+
+    impl TlsConfig {
+        fn new() -> Self {
+            let mut ca_params = CertificateParams::default();
+            ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+
+            let mut ca_dn = DistinguishedName::new();
+            ca_dn.push(DnType::CommonName, "Test CA");
+            ca_dn.push(DnType::OrganizationName, "Test Org");
+            ca_params.distinguished_name = ca_dn;
+
+            let ca_key_pair = KeyPair::generate().unwrap();
+            let ca_cert = ca_params.self_signed(&ca_key_pair).unwrap();
+            let issuer = Issuer::new(ca_params, ca_key_pair);
+
+            let mut leaf_params = CertificateParams::default();
+            let mut leaf_dn = DistinguishedName::new();
+            leaf_dn.push(DnType::CommonName, "localhost");
+            leaf_params.distinguished_name = leaf_dn;
+            leaf_params.subject_alt_names = vec![
+                rcgen::SanType::DnsName("localhost".parse().unwrap()),
+                rcgen::SanType::IpAddress(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            ];
+
+            let leaf_key_pair = KeyPair::generate().unwrap();
+            let leaf_cert = leaf_params.signed_by(&leaf_key_pair, &issuer).unwrap();
+
+            let ca_cert_der = ca_cert.der().to_vec();
+            let leaf_cert_pem = leaf_cert.pem();
+            let leaf_key_pem = leaf_key_pair.serialize_pem();
+
+            TlsConfig {
+                ca_cert_der,
+                leaf_cert_pem,
+                leaf_key_pem,
+            }
+        }
+    }
+
+    struct ServerConfig {
+        port: u16,
+        public_key: PublicKey,
+        command_tx: Sender<Command>,
+        tls_config: TlsConfig,
+    }
+
+    async fn spawn_server() -> ServerConfig {
         install_default_crypto_provider();
         let server_private_key = SecretKey::gen();
 
@@ -629,36 +763,39 @@ mod tests {
         );
         let login_srv = LoginServer::new(grpc_stub.clone());
         let (port_tx, port_rx) = oneshot::channel();
-        tokio::spawn(async move {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let actual_addr = listener.local_addr().unwrap();
-            port_tx.send(actual_addr.port()).unwrap();
+        let tls_config = TlsConfig::new();
 
-            let CertifiedKey { cert, signing_key } =
-                generate_simple_self_signed(SUBJECT_ALT_NAMES.clone()).unwrap();
+        let cert_pem = tls_config.leaf_cert_pem.clone();
+        let key_pem = tls_config.leaf_key_pem.clone();
+        tokio::spawn({
+            let cert_pem = cert_pem.clone();
+            async move {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let actual_addr = listener.local_addr().unwrap();
+                port_tx.send(actual_addr.port()).unwrap();
 
-            let cert_pem = cert.pem();
-            let key_pem = signing_key.serialize_pem();
+                use tonic::transport::ServerTlsConfig;
 
-            use tonic::transport::ServerTlsConfig;
+                let tonic_tls_config = ServerTlsConfig::new()
+                    .identity(tonic::transport::Identity::from_pem(cert_pem, key_pem));
 
-            let tonic_tls_config = ServerTlsConfig::new()
-                .identity(tonic::transport::Identity::from_pem(cert_pem, key_pem));
-
-            Server::builder()
-                .tls_config(tonic_tls_config)
-                .unwrap()
-                .add_service(ens_srv)
-                .add_service(login_srv)
-                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
-                .await
-                .unwrap();
+                Server::builder()
+                    .tls_config(tonic_tls_config)
+                    .unwrap()
+                    .add_service(ens_srv)
+                    .add_service(login_srv)
+                    .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                    .await
+                    .unwrap();
+            }
         });
-        (
-            port_rx.await.unwrap(),
-            server_private_key.public(),
+
+        ServerConfig {
+            port: port_rx.await.unwrap(),
+            public_key: server_private_key.public(),
             command_tx,
-        )
+            tls_config,
+        }
     }
 
     async fn send_errors(errors_to_emit: &[ConnectionError], errors_tx: Sender<Command>) {
@@ -687,42 +824,46 @@ mod tests {
             },
         ];
 
-        let (port, server_public_key, command_tx) = spawn_server().await;
+        let server_config = spawn_server().await;
 
         let allow_only_mlkem = true;
-        let (mut ens, mut rx) =
-            ErrorNotificationService::new(10, make_socket_pool(), allow_only_mlkem);
+        let (mut ens, mut rx) = ErrorNotificationService::new(
+            10,
+            make_socket_pool(),
+            allow_only_mlkem,
+            Some(server_config.tls_config.ca_cert_der.clone()),
+        );
 
         ens.start_monitor_on_port(
             IpAddr::V4(Ipv4Addr::LOCALHOST),
-            port,
-            server_public_key,
+            server_config.port,
+            server_config.public_key,
             client_private_key.clone(),
             backoff.clone(),
         )
         .await
         .unwrap();
 
-        send_errors(&errors_to_emit, command_tx.clone()).await;
+        send_errors(&errors_to_emit, server_config.command_tx.clone()).await;
         let _collected_errors = collect_errors(2, &mut rx).await;
 
         ens.start_monitor_on_port(
             IpAddr::V4(Ipv4Addr::LOCALHOST),
-            port,
-            server_public_key,
+            server_config.port,
+            server_config.public_key,
             client_private_key,
             backoff,
         )
         .await
         .unwrap();
 
-        send_errors(&errors_to_emit, command_tx.clone()).await;
+        send_errors(&errors_to_emit, server_config.command_tx.clone()).await;
         let collected_errors = collect_errors(2, &mut rx).await;
 
         assert_eq!(
             errors_to_emit
                 .into_iter()
-                .map(|e| (e, server_public_key.clone()))
+                .map(|e| (e, server_config.public_key.clone()))
                 .collect::<Vec<_>>(),
             collected_errors
         );
@@ -757,11 +898,16 @@ mod tests {
             },
         ];
 
-        let (port, server_public_key, errors_tx) = spawn_server().await;
+        let server_config = spawn_server().await;
 
         let allow_only_mlkem = true;
-        let (mut ens, mut rx) =
-            ErrorNotificationService::new(10, make_socket_pool(), allow_only_mlkem);
+
+        let (mut ens, mut rx) = ErrorNotificationService::new(
+            10,
+            make_socket_pool(),
+            allow_only_mlkem,
+            Some(server_config.tls_config.ca_cert_der.clone()),
+        );
 
         let mut backoff = MockBackoff::new();
 
@@ -774,8 +920,8 @@ mod tests {
 
         ens.start_monitor_on_port(
             IpAddr::V4(Ipv4Addr::LOCALHOST),
-            port,
-            server_public_key,
+            server_config.port,
+            server_config.public_key,
             client_private_key.clone(),
             backoff,
         )
@@ -783,15 +929,24 @@ mod tests {
         .unwrap();
 
         for e in errors_to_emit.clone() {
-            errors_tx.send(Command::Send(e)).await.unwrap();
+            server_config
+                .command_tx
+                .send(Command::Send(e))
+                .await
+                .unwrap();
         }
-        errors_tx
+        server_config
+            .command_tx
             .send(Command::Error(tonic::Status::unknown("some message")))
             .await
             .unwrap();
-        errors_tx.send(Command::End).await.unwrap();
+        server_config.command_tx.send(Command::End).await.unwrap();
         for e in errors_to_emit {
-            errors_tx.send(Command::Send(e)).await.unwrap();
+            server_config
+                .command_tx
+                .send(Command::Send(e))
+                .await
+                .unwrap();
         }
         let _collected_errors = collect_errors(3, &mut rx).await;
     }
@@ -866,7 +1021,7 @@ mod tests {
 
         let allow_only_mlkem = true;
         let (mut ens, mut rx) =
-            ErrorNotificationService::new(10, make_socket_pool(), allow_only_mlkem);
+            ErrorNotificationService::new(10, make_socket_pool(), allow_only_mlkem, None);
 
         let result = ens
             .start_monitor_on_port(

@@ -1246,12 +1246,13 @@ impl Runtime {
         let polling_interval = interval(Duration::from_secs(5));
 
         let (error_notification_service, error_notification_service_subscriber) =
-            if let Some(error_notification_service) = features.error_notification_service {
+            if let Some(error_notification_service) = &features.error_notification_service {
                 telio_log_info!("Will create ENS");
                 let (ens, rx) = ErrorNotificationService::new(
                     error_notification_service.buffer_size as usize,
                     socket_pool.clone(),
                     error_notification_service.allow_only_pq,
+                    error_notification_service.root_certificate_override.clone(),
                 );
                 (Some(ens), rx)
             } else {
@@ -2089,6 +2090,7 @@ impl Runtime {
                 let backoff: ExponentialBackoffBounds = self
                     .features
                     .error_notification_service
+                    .as_ref()
                     .map(|ens| ens.backoff.into())
                     .unwrap_or_default();
                 ens.start_monitor(
