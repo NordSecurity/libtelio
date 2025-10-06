@@ -15,6 +15,6 @@ pub mod link_detection;
 
 pub use crate::{
     adapter::{Adapter, AdapterType, Error, FirewallInboundCb, FirewallOutboundCb, Tun},
-    link_detection::LinkDetection,
+    link_detection::{LinkDetection, LinkDetectionObserver},
     wg::*,
 };

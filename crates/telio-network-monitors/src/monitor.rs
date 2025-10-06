@@ -121,15 +121,11 @@ impl NetworkMonitor {
                             if is_paused {
                                 telio_log_debug!("Received OS interface change notification but the module is paused.");
                             } else {
-                                telio_log_debug!(
-                                    "Received OS interface change notification"
-                                );
+                                telio_log_debug!("Received OS interface change notification");
                             }
 
                             if !is_paused && save_local_interfaces(&get_if_addr) {
-                                telio_log_debug!(
-                                    "Notifying observers with change type"
-                                );
+                                telio_log_debug!("Notifying observers with change type");
                                 for observer in observers_loop_copy.lock().iter() {
                                     telio_log_debug!(
                                         "Processing observer at {:p}",
