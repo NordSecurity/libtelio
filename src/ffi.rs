@@ -223,10 +223,6 @@ impl Telio {
             }
         };
 
-        CRYPTO_PROVIDER_INIT.call_once(|| {
-            telio_proto::install_default_crypto_provider();
-        });
-
         let panic_event_dispatcher = event_dispatcher.clone();
         PANIC_HOOK.call_once(|| {
             let events = panic_event_dispatcher;
@@ -883,7 +879,6 @@ impl Telio {
 
 /// cbindgen:ignore
 static PANIC_HOOK: Once = Once::new();
-static CRYPTO_PROVIDER_INIT: Once = Once::new();
 
 trait FFILog {
     fn log_result(self, caller: &str) -> FfiResult<()>;

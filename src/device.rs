@@ -67,7 +67,7 @@ use std::{
     future::Future,
     io::{self, Error as IoError},
     net::{IpAddr, Ipv4Addr},
-    sync::Arc,
+    sync::{Arc, Once},
     time::Duration,
 };
 
@@ -97,6 +97,7 @@ use telio_network_monitors::monitor::PATH_CHANGE_BROADCAST;
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
 static NETWORK_PATH_MONITOR_START: std::sync::Once = std::sync::Once::new();
+static CRYPTO_PROVIDER_INIT: Once = Once::new();
 
 pub use wg::{
     uapi::Event as WGEvent, uapi::Interface, AdapterType, DynamicWg, Error as AdapterError,
@@ -495,6 +496,10 @@ impl Device {
         event_cb: F,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
+        CRYPTO_PROVIDER_INIT.call_once(|| {
+            telio_proto::install_default_crypto_provider();
+        });
+
         LOG_CENSOR.set_enabled(features.hide_user_data);
         hide_thread_id_in_logs(features.hide_thread_id);
 
