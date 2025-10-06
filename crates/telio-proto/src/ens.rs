@@ -612,6 +612,52 @@ mod tests {
         }
     }
 
+    // Root CA and a leaf cert issued by it
+    #[derive(Debug)]
+    struct TlsConfig {
+        ca_cert_der: Vec<u8>,
+        leaf_cert_pem: String,
+        leaf_key_pem: String,
+    }
+
+    impl TlsConfig {
+        fn new() -> Self {
+            let mut ca_params = CertificateParams::default();
+            ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+
+            let mut ca_dn = DistinguishedName::new();
+            ca_dn.push(DnType::CommonName, "Test CA");
+            ca_dn.push(DnType::OrganizationName, "Test Org");
+            ca_params.distinguished_name = ca_dn;
+
+            let ca_key_pair = KeyPair::generate().unwrap();
+            let ca_cert = ca_params.self_signed(&ca_key_pair).unwrap();
+            let issuer = Issuer::new(ca_params, ca_key_pair);
+
+            let mut leaf_params = CertificateParams::default();
+            let mut leaf_dn = DistinguishedName::new();
+            leaf_dn.push(DnType::CommonName, "localhost");
+            leaf_params.distinguished_name = leaf_dn;
+            leaf_params.subject_alt_names = vec![
+                rcgen::SanType::DnsName("localhost".parse().unwrap()),
+                rcgen::SanType::IpAddress(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            ];
+
+            let leaf_key_pair = KeyPair::generate().unwrap();
+            let leaf_cert = leaf_params.signed_by(&leaf_key_pair, &issuer).unwrap();
+
+            let ca_cert_der = ca_cert.der().to_vec();
+            let leaf_cert_pem = leaf_cert.pem();
+            let leaf_key_pem = leaf_key_pair.serialize_pem();
+
+            TlsConfig {
+                ca_cert_der,
+                leaf_cert_pem,
+                leaf_key_pem,
+            }
+        }
+    }
+
     #[derive(Clone)]
     struct GrpcStub(Arc<State>);
 
@@ -691,52 +737,6 @@ mod tests {
                     }
                 }
                 _ => Err(Status::unauthenticated("No valid auth token")),
-            }
-        }
-    }
-
-    // Root CA and a leaf cert issued by it
-    #[derive(Debug)]
-    struct TlsConfig {
-        ca_cert_der: Vec<u8>,
-        leaf_cert_pem: String,
-        leaf_key_pem: String,
-    }
-
-    impl TlsConfig {
-        fn new() -> Self {
-            let mut ca_params = CertificateParams::default();
-            ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
-
-            let mut ca_dn = DistinguishedName::new();
-            ca_dn.push(DnType::CommonName, "Test CA");
-            ca_dn.push(DnType::OrganizationName, "Test Org");
-            ca_params.distinguished_name = ca_dn;
-
-            let ca_key_pair = KeyPair::generate().unwrap();
-            let ca_cert = ca_params.self_signed(&ca_key_pair).unwrap();
-            let issuer = Issuer::new(ca_params, ca_key_pair);
-
-            let mut leaf_params = CertificateParams::default();
-            let mut leaf_dn = DistinguishedName::new();
-            leaf_dn.push(DnType::CommonName, "localhost");
-            leaf_params.distinguished_name = leaf_dn;
-            leaf_params.subject_alt_names = vec![
-                rcgen::SanType::DnsName("localhost".parse().unwrap()),
-                rcgen::SanType::IpAddress(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
-            ];
-
-            let leaf_key_pair = KeyPair::generate().unwrap();
-            let leaf_cert = leaf_params.signed_by(&leaf_key_pair, &issuer).unwrap();
-
-            let ca_cert_der = ca_cert.der().to_vec();
-            let leaf_cert_pem = leaf_cert.pem();
-            let leaf_key_pem = leaf_key_pair.serialize_pem();
-
-            TlsConfig {
-                ca_cert_der,
-                leaf_cert_pem,
-                leaf_key_pem,
             }
         }
     }
