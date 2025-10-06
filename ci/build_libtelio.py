@@ -135,6 +135,27 @@ def post_copy_darwin_debug_symbols_to_distribution_dir(config, args):
                     )
 
 
+def find_file_in_tree(filename, search_path):
+    found_files = []
+    for root, _, files in os.walk(search_path):
+        if filename in files:
+            found_files.append(os.path.join(root, filename))
+    return found_files
+
+
+def post_copy_ens_proto_to_dist(config, args):
+    assert "linux" == config.target_os
+
+    target_root_path = PROJECT_CONFIG.get_cargo_path(
+        config.rust_target, "", config.debug
+    )
+
+    paths = find_file_in_tree("ens.proto", target_root_path)
+    assert len(paths) == 1
+
+    shutil.copy2(paths[0], PROJECT_CONFIG.get_distribution_dir() + "/linux/ens.proto")
+
+
 """
 This local config is highly customizable as every project can have a different
 local config depending on their needs.
@@ -299,7 +320,10 @@ LIBTELIO_CONFIG = {
                 },
             },
         },
-        "post_build": [post_copy_libsqlite3_binary_to_dist],
+        "post_build": [
+            post_copy_libsqlite3_binary_to_dist,
+            post_copy_ens_proto_to_dist,
+        ],
         "packages": {
             "tcli": {"tcli": "tcli"},
             "derpcli": {"derpcli": "derpcli"},

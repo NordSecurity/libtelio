@@ -29,7 +29,5 @@ fn main() -> Result<()> {
         .out_dir(out_dir)
         .run()?;
 
-    tonic_prost_build::configure().compile_protos(&["protos/ens.proto"], &["protos"])?;
-
     Ok(())
 }
