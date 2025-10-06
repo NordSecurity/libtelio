@@ -1,11 +1,11 @@
 {
   "authentication_token": "<REPLACE_WITH_YOUR_TOKEN>",
   "log_level": "error",
-  "log_file_path": "/var/log/nordvpn.log",
+  "log_file_path": "/var/log/nordvpnlite.log",
   "log_file_count": 0,
   "adapter_type": "linux-native",
   "interface": {
-    "name": "nordvpn",
+    "name": "nordvpnlite",
     "config_provider": "uci"
   },
   "vpn": "recommended"
