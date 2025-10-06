@@ -1,4 +1,6 @@
-use enhanced_detection::EnhancedDetection;
+//! Component that defines a peer link state, computing if its up/down.
+mod enhanced_detection;
+
 use std::{
     collections::HashMap,
     default,
@@ -23,9 +25,18 @@ use crate::{
     uapi::UpdateReason,
     wg::{BytesAndTimestamps, WG_KEEPALIVE},
 };
+use self::enhanced_detection::EnhancedDetection;
 
-mod enhanced_detection;
-
+/// Component that manages the link state of each peer.
+///
+/// `LinkDetection` monitors peer connectivity by analyzing traffic patterns and when enhanced
+/// detection is enabled performing active probing through ICMP ping to determine if a peer link is up or down.
+///
+/// # Features
+/// - Passive detection based on WireGuard traffic statistics
+/// - Optional enhanced detection using ICMP pings
+/// - Network change awareness for improved reliability (windows-only, LLT-5073)
+/// - Configurable RTT thresholds and downgrade behavior
 pub struct LinkDetection {
     cfg_max_allowed_rtt: Duration,
     enhanced_detection: Option<EnhancedDetection>,
@@ -35,6 +46,7 @@ pub struct LinkDetection {
 }
 
 impl LinkDetection {
+    /// Creates a new `LinkDetection` instance with the specified configuration.
     pub fn new(
         cfg: FeatureLinkDetection,
         ipv6_enabled: bool,
@@ -68,12 +80,22 @@ impl LinkDetection {
         }
     }
 
+    /// Inserts a new peer.
+    ///
+    /// # Parameters
+    /// - `public_key`: The public key identifying the peer
+    /// - `stats`: Shared peer's traffic counters
     pub fn insert(&mut self, public_key: &PublicKey, stats: Arc<Mutex<BytesAndTimestamps>>) {
         telio_log_debug!("insert {}", public_key);
         self.peers
             .insert(*public_key, State::new(stats, self.cfg_max_allowed_rtt));
     }
 
+    /// Updates the link state for a specific peer.
+    ///
+    /// # Returns
+    /// A `LinkDetectionUpdateResult` indicating whether the link state changed and
+    /// whether a notification should be sent
     pub async fn update(
         &mut self,
         public_key: &PublicKey,
@@ -123,11 +145,13 @@ impl LinkDetection {
         }
     }
 
+    /// Removes a peer.
     pub fn remove(&mut self, public_key: &PublicKey) {
         telio_log_debug!("remove {}", public_key);
         self.peers.remove(public_key);
     }
 
+    /// Gets the link state for a peer if downgrade detection is enabled.
     pub fn get_link_state_for_downgrade(&self, public_key: &PublicKey) -> Option<LinkState> {
         if self.use_for_downgrade {
             self.peers.get(public_key).map(|s| s.current_link_state())
@@ -136,6 +160,7 @@ impl LinkDetection {
         }
     }
 
+    /// Stops the link detection component, releasing any associated resources.
     pub async fn stop(self) {
         if let Some(ed) = self.enhanced_detection {
             ed.stop().await;
@@ -157,9 +182,12 @@ impl LinkDetection {
     }
 }
 
+/// Result of a link detection update operation.
 #[derive(Default, Debug)]
 pub struct LinkDetectionUpdateResult {
+    /// Whether the link state change should trigger a notification
     pub should_notify: bool,
+    /// The current link state, if available
     pub link_state: Option<LinkState>,
 }
 
