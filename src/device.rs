@@ -50,6 +50,9 @@ use telio_nurse::{
     MeshnetEntities as NurseMeshnetEntities, Nurse, NurseIo,
 };
 use telio_wg as wg;
+#[cfg(target_os = "windows")]
+use telio_wg::link_detection::LinkDetectionObserver;
+
 use thiserror::Error as TError;
 use tokio::{
     runtime::{Builder, Runtime as AsyncRuntime},
@@ -1074,11 +1077,31 @@ impl Runtime {
         }
 
         let link_detection = if let Some(ld_config) = features.link_detection {
-            Some(LinkDetection::new(
-                ld_config,
-                features.ipv6,
-                socket_pool.clone(),
-            ))
+            cfg_if! {
+                if #[cfg(target_os = "windows")] {
+                    let Chan {
+                        tx: ld_observer_tx,
+                        rx: ld_observer_rx,
+                    } = Chan::default();
+                    let ld_observer = Arc::new(LinkDetectionObserver { tx: ld_observer_tx });
+                    network_monitor.register_local_interfaces_observer(Arc::downgrade(
+                        &(ld_observer.clone() as Arc<dyn LocalInterfacesObserver>),
+                    ));
+                    Some(LinkDetection::new(
+                        ld_config,
+                        features.ipv6,
+                        socket_pool.clone(),
+                        Some(ld_observer_rx),
+                        Some(ld_observer),
+                    ))
+                } else {
+                    Some(LinkDetection::new(
+                        ld_config,
+                        features.ipv6,
+                        socket_pool.clone(),
+                    ))
+                }
+            }
         } else {
             None
         };

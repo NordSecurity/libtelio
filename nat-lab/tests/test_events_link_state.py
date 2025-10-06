@@ -1012,10 +1012,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
                 enhanced_detection=False,
                 direct=True,
             ),
-            marks=[
-                pytest.mark.windows,
-                pytest.mark.xfail(reason="Expected failure on Windows, see LLT-5073"),
-            ],
+            marks=pytest.mark.windows,
         ),
         pytest.param(
             _generate_setup_parameter_pair(
@@ -1026,10 +1023,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
                 enhanced_detection=True,
                 direct=True,
             ),
-            marks=[
-                pytest.mark.windows,
-                pytest.mark.xfail(reason="Expected failure on Windows, see LLT-5073"),
-            ],
+            marks=pytest.mark.windows,
         ),
     ],
 )
@@ -1145,10 +1139,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
                 enhanced_detection=False,
                 vpn=True,
             ),
-            marks=[
-                pytest.mark.windows,
-                pytest.mark.xfail(reason="Expected failure on Windows, see LLT-5073"),
-            ],
+            marks=pytest.mark.windows,
         ),
         pytest.param(
             _generate_setup_parameter_pair(
@@ -1158,10 +1149,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
                 enhanced_detection=True,
                 vpn=True,
             ),
-            marks=[
-                pytest.mark.windows,
-                pytest.mark.xfail(reason="Expected failure on Windows, see LLT-5073"),
-            ],
+            marks=pytest.mark.windows,
         ),
     ],
 )

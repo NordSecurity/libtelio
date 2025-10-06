@@ -736,6 +736,12 @@ impl State {
             }
         }
 
+        // This is a workaround for WireguardNT (windows): #LLT-5073
+        #[cfg(target_os = "windows")]
+        if let Some(link_detection) = self.link_detection.as_mut() {
+            link_detection.handle_network_changes().await;
+        }
+
         // Check for updates, and notify
         for key in &diff_keys.update_keys {
             if let (Some(old), Some(new)) = (from.peers.get(key), to.peers.get(key)) {
