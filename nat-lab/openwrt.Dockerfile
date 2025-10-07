@@ -33,12 +33,6 @@ RUN ln -s /opt/bin/openwrt/10-usbmount-initsh.sh    /usr/local/share/vmconfig/vm
     ln -s /opt/bin/openwrt/serialize-vm-config.sh   /usr/local/bin/serialize-vm-config.sh && \
     ln -s /opt/bin/openwrt/send-config-to-vm.sh     /usr/local/bin/send-config-to-vm.sh && \
     ln -s /opt/bin/openwrt/run-vm.sh                /usr/local/bin/run-vm.sh && \
-    ln -s /opt/bin/openwrt/entrypoint.sh            /usr/local/bin/entrypoint.sh && \
     ln -s /opt/bin/openwrt/container_net_setup.sh   /usr/local/bin/container_net_setup.sh
 
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD \
-ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=3 root@192.168.115.254 'exit' || exit 1
-
 WORKDIR /tmp
-
-CMD ["/usr/local/bin/entrypoint.sh"]
