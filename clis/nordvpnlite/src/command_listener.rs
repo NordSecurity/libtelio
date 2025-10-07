@@ -122,15 +122,6 @@ impl CommandListener {
         }
     }
 
-    // Quick command handling before telio task is initialized
-    fn early_process_command(&mut self, command: &ClientCmd) -> CommandResponse {
-        match command {
-            ClientCmd::QuitDaemon => CommandResponse::Ok,
-            ClientCmd::IsAlive => CommandResponse::Ok,
-            ClientCmd::GetStatus => CommandResponse::DaemonInitializing,
-        }
-    }
-
     // Main command handling communicating with telio task
     async fn process_command(
         &mut self,
@@ -183,9 +174,13 @@ impl CommandListener {
 
         match serde_json::from_str::<ClientCmd>(&command_str) {
             Ok(command) => {
-                // daemon is still initializing, only QuitDaemon and IsAlive allowed
                 let response = if state < DaemonState::Ready {
-                    self.early_process_command(&command)
+                    // Quick command handling before telio task is initialized
+                    match &command {
+                        ClientCmd::QuitDaemon => CommandResponse::Ok,
+                        ClientCmd::IsAlive => CommandResponse::Ok,
+                        ClientCmd::GetStatus => CommandResponse::DaemonInitializing,
+                    }
                 } else {
                     self.process_command(&command).await?
                 };
@@ -209,6 +204,7 @@ impl CommandListener {
 mod tests {
     use super::*;
     use crate::{CommandResponse, DaemonSocket};
+    use assert_matches::assert_matches;
     use std::path::Path;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -255,13 +251,13 @@ mod tests {
     }
 
     // Broken client, closes connection without waiting for response
-    async fn broken_client_send_command(path: &str, cmd: &str) -> std::io::Result<CommandResponse> {
+    async fn broken_client_send_command(path: &str, cmd: &str) -> std::io::Result<()> {
         let mut client_stream = UnixStream::connect(&Path::new(path)).await?;
         client_stream
             .write_all(format!("{}\n", cmd).as_bytes())
             .await?;
 
-        Ok(CommandResponse::Ok)
+        Ok(())
     }
 
     async fn test_command_helper(
@@ -285,7 +281,8 @@ mod tests {
         });
 
         let daemon_response = if broken_client {
-            broken_client_send_command(&path, &command).await
+            broken_client_send_command(&path, &command).await.unwrap();
+            Err(std::io::Error::other("broken client, no response"))
         } else {
             client_send_command(&path, &command).await
         };
@@ -348,11 +345,8 @@ mod tests {
         let response = client_send_command(&path, command).await;
         let cmd = daemon.await.unwrap();
 
-        assert!(
-            matches!(cmd, Err(NordVpnLiteError::InvalidCommand(_))),
-            "Got {cmd:?} when expecting InvalidCommand"
-        );
-        assert!(matches!(response, Ok(CommandResponse::Err(_))));
+        assert_matches!(cmd, Err(NordVpnLiteError::InvalidCommand(_)));
+        assert_matches!(response, Ok(CommandResponse::Err(_)));
     }
 
     #[tokio::test]
@@ -370,20 +364,14 @@ mod tests {
         let _ = broken_client_send_command(&path, command).await;
         let cmd = daemon.await.unwrap();
 
-        assert!(
-            matches!(cmd, Err(NordVpnLiteError::Io(_))),
-            "Got {cmd:?} when expecting Io error"
-        );
+        assert_matches!(cmd, Err(NordVpnLiteError::Io(_)));
     }
 
     #[tokio::test]
     async fn test_command_broken() {
         let (_, cmd) = test_command_helper(ClientCmd::GetStatus, DaemonState::Ready, true).await;
 
-        assert!(
-            matches!(cmd, Err(NordVpnLiteError::Io(_))),
-            "Got {cmd:?} when expecting Io error"
-        );
+        assert_matches!(cmd, Err(NordVpnLiteError::Io(_)));
     }
 
     #[tokio::test]
@@ -410,6 +398,6 @@ mod tests {
             test_command_helper(ClientCmd::GetStatus, DaemonState::Initializing, false).await;
 
         assert_eq!(cmd.unwrap(), ClientCmd::GetStatus);
-        assert!(matches!(response, Ok(CommandResponse::DaemonInitializing)));
+        assert_eq!(response.unwrap(), CommandResponse::DaemonInitializing);
     }
 }

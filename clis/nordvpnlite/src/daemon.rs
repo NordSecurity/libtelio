@@ -121,7 +121,7 @@ impl ExitNodeStatus {
 }
 
 /// Current stage of the daemon
-/// It is ininitializing state while fetching credentials and before starting the telio task
+/// It is in ininitializing state while fetching credentials and before starting the telio task
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum DaemonState {
     #[default]
