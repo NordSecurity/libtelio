@@ -268,6 +268,7 @@ impl<T: WireGuard, G: GetIfAddrs> Runtime for State<T, G> {
 mod tests {
 
     use super::*;
+    use if_addrs::IfOperStatus;
     use maplit::hashmap;
     use std::net::Ipv4Addr;
     use telio_crypto::{
@@ -401,6 +402,7 @@ mod tests {
                 broadcast: None,
             }),
             index: None,
+            oper_status: IfOperStatus::Testing,
             #[cfg(windows)]
             adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
         }])

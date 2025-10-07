@@ -46,6 +46,7 @@ pub fn gather_local_interfaces<G: GetIfAddrs>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use if_addrs::IfOperStatus;
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     #[tokio::test]
@@ -62,6 +63,7 @@ mod tests {
                         broadcast: None,
                     }),
                     index: None,
+                    oper_status: IfOperStatus::Testing,
                     #[cfg(windows)]
                     adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
                 },
@@ -74,6 +76,7 @@ mod tests {
                         broadcast: None,
                     }),
                     index: None,
+                    oper_status: IfOperStatus::Testing,
                     #[cfg(windows)]
                     adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
                 },
@@ -86,6 +89,7 @@ mod tests {
                         broadcast: None,
                     }),
                     index: None,
+                    oper_status: IfOperStatus::Testing,
                     #[cfg(windows)]
                     adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
                 },
@@ -98,6 +102,7 @@ mod tests {
                         broadcast: None,
                     }),
                     index: None,
+                    oper_status: IfOperStatus::Testing,
                     #[cfg(windows)]
                     adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
                 },

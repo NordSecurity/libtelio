@@ -11,7 +11,7 @@ sn_fake_clock = ["dep:sn_fake_clock"]
 arbitrary = ["dep:proptest-derive", "dep:proptest"]
 
 [dependencies]
-backtrace = "0.3.75"
+backtrace = "0.3.76"
 blake3.workspace = true
 boot-time = { git = "https://github.com/NordSecurity/boot_time.git", rev = "14f9a90d43a601ae50e69044894538c1398120a7" }
 futures.workspace = true
@@ -19,8 +19,8 @@ hashlink.workspace = true
 ipnet.workspace = true
 mockall = { workspace = true, optional = true }
 parking_lot.workspace = true
-proptest = { version = "1.6", optional = true }
-proptest-derive = { version = "0.5", optional = true }
+proptest = { workspace = true, optional = true }
+proptest-derive = { workspace = true, optional = true }
 rand.workspace = true
 rand_core.workspace = true
 regex.workspace = true
@@ -31,7 +31,7 @@ sn_fake_clock = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
-zeroize = { version = "1.8.1", features = ["derive"] }
+zeroize = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 lru_time_cache = { version = "0.11.11", features = ["sn_fake_clock"] }
@@ -48,4 +48,3 @@ telio-test.workspace = true
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(kani)'] }
-
