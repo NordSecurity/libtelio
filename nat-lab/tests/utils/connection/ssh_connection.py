@@ -2,6 +2,7 @@ import asyncssh
 import shlex
 import subprocess
 import utils.vm.mac_vm_util as utils_mac
+import utils.vm.openwrt_vm_util as utils_openwrt
 import utils.vm.windows_vm_util as utils_win
 from .connection import Connection, TargetOS, ConnectionTag, setup_ephemeral_ports
 from contextlib import asynccontextmanager
@@ -128,6 +129,11 @@ class SshConnection(Connection):
             await utils_win.copy_binaries(self._connection, self)
         elif self.target_os is TargetOS.Mac:
             await utils_mac.copy_binaries(self._connection, self)
+        elif (
+            self.target_os is TargetOS.Linux  # type: ignore[redundant-expr]
+            and self.tag is ConnectionTag.VM_OPENWRT_GW_1
+        ):
+            await utils_openwrt.copy_binaries(self._connection, self)
 
     async def upload_file(self, local_file_path: str, remote_file_path: str) -> None:
         """Upload file from 'local_file_path' to 'remote_file_path' on the connected node"""
