@@ -25,7 +25,12 @@ block = "0.1"
 neli = { version = "0.6.5", features = ["async"] }
 
 [target.'cfg(windows)'.dependencies]
-winapi = { workspace = true, features = ["iphlpapi", "netioapi", "winnt", "ws2def"] }
+winapi = { workspace = true, features = [
+  "iphlpapi",
+  "netioapi",
+  "winnt",
+  "ws2def",
+] }
 windows.workspace = true
 
 [dev-dependencies]
