@@ -163,11 +163,11 @@ uniffi = "0.28.3"
 url = "2.5"
 uuid = { version = "1.17", features = ["v4"] }
 winapi = { version = "0.3", features = ["netioapi", "ws2def"] }
-windows = { version = "0.62", features = [
+windows = { version = "0.61", features = [
   "Win32_Networking_WinSock",
   "Win32_NetworkManagement_IpHelper",
 ] }
-winreg = "0.55.0"
+winreg = "0.50.0"
 
 neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v2.2.4", features = [
   "device",
