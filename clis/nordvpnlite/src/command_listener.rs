@@ -161,10 +161,22 @@ impl CommandListener {
         }
     }
 
+    /// Accept a new incoming client connection.
+    ///
+    /// This wraps `UnixListener::accept()` and is cancel-safe.
+    /// Important when used inside a `tokio::select!` loop,
+    /// if any other branch completes first, this future may be cancelled.
+    /// Once accepted, the connection must be handled by `handle_client_command()`.
     pub async fn accept_client_connection(&mut self) -> Result<DaemonConnection, NordVpnLiteError> {
         Ok(self.socket.accept().await?)
     }
 
+    /// Handle a single command received from a client connection.
+    ///
+    /// This function reads a `ClientCmd` from the given connection,
+    /// passes it on to TelioTask for processing and responds with a reply accordingly.
+    /// `is_ready = false` - Ensures that early client commands during daemon startup are accepted.
+    /// Note: Inside an already matched `select!` branch, `handle_client_command()` is safe from being cancelled.
     pub async fn handle_client_command(
         &mut self,
         is_ready: bool,
@@ -177,7 +189,7 @@ impl CommandListener {
                 let response = if is_ready {
                     self.process_command(&command).await?
                 } else {
-                    // Quick command handling before TelioTask is initialized
+                    // Early command handling before TelioTask is initialized
                     match &command {
                         ClientCmd::QuitDaemon => CommandResponse::Ok,
                         ClientCmd::IsAlive => CommandResponse::Ok,
