@@ -493,6 +493,7 @@ services:
       - SYS_ADMIN
     security_opt:
       - no-new-privileges:true
+    entrypoint: /opt/bin/openwrt/entrypoint.sh
     devices:
       - "/dev/net/tun"
     networks:
@@ -510,6 +511,12 @@ services:
     dns:
       - 10.0.80.82
       - 10.0.80.83
+    healthcheck:
+      test: /opt/bin/openwrt/openwrt-qemu-healthcheck.sh
+      interval: 15s
+      timeout: 5s
+      start_period: 45s
+      retries: 5
 
   ###########################################################
   #                       MISC SERVERS                      #
