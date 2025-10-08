@@ -1033,7 +1033,14 @@ impl Runtime for State {
         #[cfg(unix)]
         use std::os::fd::AsRawFd;
         #[cfg(unix)]
-        self.cfg.tun.map(|tun| nix::unistd::close(tun.as_raw_fd()));
+        self.cfg.tun.map(|tun| {
+            telio_log_debug!("Will close explicitly the first time. tun fd: {}", tun.as_raw_fd());
+            nix::unistd::close(tun.as_raw_fd()).unwrap();
+            telio_log_debug!("Will close explicitly the second time");
+            nix::unistd::close(tun.as_raw_fd()).unwrap();
+            telio_log_debug!("Will close explicitly the third time");
+            nix::unistd::close(tun.as_raw_fd())
+        });
     }
 }
 
