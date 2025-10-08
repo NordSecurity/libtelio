@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -112,6 +113,35 @@ def check_containers() -> None:
         if not find_container(service, docker_status):
             run_command(["docker", "compose", "logs", service])
             missing_services.append(service)
+            continue
+
+        container_ids_raw = run_command_with_output(
+            ["docker", "compose", "ps", "-q", service], hide_output=True
+        ).strip()
+        container_ids = [
+            cid.strip() for cid in container_ids_raw.splitlines() if cid.strip()
+        ]
+
+        for cid in container_ids:
+            container_state_raw = run_command_with_output(
+                ["docker", "inspect", cid, "--format", "{{json .State.Health}}"],
+                hide_output=True,
+            ).strip()
+
+            try:
+                container_state_json = (
+                    None
+                    if not container_state_raw or container_state_raw.lower() == "null"
+                    else json.loads(container_state_raw)
+                )
+            except json.JSONDecodeError:
+                container_state_json = None
+
+            if isinstance(container_state_json, dict):
+                status = (container_state_json.get("Status") or "").lower()
+                if status == "unhealthy":
+                    logs = container_state_json.get("Log") or []
+                    print(f"Container {cid} is unhealthy.\nLogs: {logs}")
 
     if missing_services:
         raise Exception(
