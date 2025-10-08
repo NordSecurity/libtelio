@@ -120,15 +120,6 @@ impl ExitNodeStatus {
     }
 }
 
-/// Current stage of the daemon
-/// It is in ininitializing state while fetching credentials and before starting the telio task
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub enum DaemonState {
-    #[default]
-    Initializing,
-    Ready,
-}
-
 /// Outcome of executing a TelioTaskCmd, indicating whether TelioTask should keep listening
 /// for commands or not
 #[derive(Debug, PartialEq, Eq)]
@@ -363,7 +354,7 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
                 connection_result = cmd_listener.accept_client_connection() => {
                     match connection_result {
                         Ok(connection) => {
-                            match cmd_listener.handle_client_command(DaemonState::Initializing, connection).await {
+                            match cmd_listener.handle_client_command(false, connection).await {
                                 Ok(ClientCmd::QuitDaemon) => {
                                     info!("Received quit command, exiting");
                                     return Ok(())
@@ -427,7 +418,7 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
             connection_result = cmd_listener.accept_client_connection() => {
                 match connection_result {
                     Ok(connection) => {
-                        match cmd_listener.handle_client_command(DaemonState::Ready, connection).await {
+                        match cmd_listener.handle_client_command(true, connection).await {
                             Ok(ClientCmd::QuitDaemon) => {
                                 info!("Received quit command, exiting");
                                 break Ok(())

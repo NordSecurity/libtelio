@@ -7,7 +7,7 @@ use tracing::{error, trace};
 use crate::{
     comms::{DaemonConnection, DaemonSocket},
     config::Endpoint,
-    daemon::{DaemonState, NordVpnLiteError, TelioStatusReport},
+    daemon::{NordVpnLiteError, TelioStatusReport},
 };
 
 // TODO: reduce to 1 when investigating LLT-6693
@@ -167,22 +167,22 @@ impl CommandListener {
 
     pub async fn handle_client_command(
         &mut self,
-        state: DaemonState,
+        is_ready: bool,
         mut connection: DaemonConnection,
     ) -> Result<ClientCmd, NordVpnLiteError> {
         let command_str = connection.read_command().await?;
 
         match serde_json::from_str::<ClientCmd>(&command_str) {
             Ok(command) => {
-                let response = if state < DaemonState::Ready {
-                    // Quick command handling before telio task is initialized
+                let response = if is_ready {
+                    self.process_command(&command).await?
+                } else {
+                    // Quick command handling before TelioTask is initialized
                     match &command {
                         ClientCmd::QuitDaemon => CommandResponse::Ok,
                         ClientCmd::IsAlive => CommandResponse::Ok,
                         ClientCmd::GetStatus => CommandResponse::DaemonInitializing,
                     }
-                } else {
-                    self.process_command(&command).await?
                 };
                 connection.respond(response.serialize()).await?;
                 Ok(command)
@@ -262,7 +262,7 @@ mod tests {
 
     async fn test_command_helper(
         command: ClientCmd,
-        daemon_state: DaemonState,
+        is_ready: bool,
         broken_client: bool,
     ) -> (
         Result<CommandResponse, std::io::Error>,
@@ -275,9 +275,7 @@ mod tests {
         let daemon = tokio::spawn(async move {
             let connection = listener.accept_client_connection().await.unwrap();
 
-            listener
-                .handle_client_command(daemon_state, connection)
-                .await
+            listener.handle_client_command(is_ready, connection).await
         });
 
         let daemon_response = if broken_client {
@@ -302,8 +300,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_command_quit() {
-        let (response, cmd) =
-            test_command_helper(ClientCmd::QuitDaemon, DaemonState::Ready, false).await;
+        let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, true, false).await;
 
         assert_eq!(response.unwrap(), CommandResponse::Ok);
         assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
@@ -311,8 +308,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_command_is_alive() {
-        let (response, cmd) =
-            test_command_helper(ClientCmd::IsAlive, DaemonState::Ready, false).await;
+        let (response, cmd) = test_command_helper(ClientCmd::IsAlive, true, false).await;
 
         assert_eq!(response.unwrap(), CommandResponse::Ok);
         assert_eq!(cmd.unwrap(), ClientCmd::IsAlive);
@@ -320,8 +316,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_command_status() {
-        let (response, cmd) =
-            test_command_helper(ClientCmd::GetStatus, DaemonState::Ready, false).await;
+        let (response, cmd) = test_command_helper(ClientCmd::GetStatus, true, false).await;
 
         assert_eq!(
             response.unwrap(),
@@ -338,9 +333,7 @@ mod tests {
         let command = "garbage";
         let daemon = tokio::spawn(async move {
             let connection = listener.accept_client_connection().await.unwrap();
-            listener
-                .handle_client_command(DaemonState::Ready, connection)
-                .await
+            listener.handle_client_command(true, connection).await
         });
         let response = client_send_command(&path, command).await;
         let cmd = daemon.await.unwrap();
@@ -357,9 +350,7 @@ mod tests {
         let command = "garbage";
         let daemon = tokio::spawn(async move {
             let connection = listener.accept_client_connection().await.unwrap();
-            listener
-                .handle_client_command(DaemonState::Ready, connection)
-                .await
+            listener.handle_client_command(true, connection).await
         });
         let _ = broken_client_send_command(&path, command).await;
         let cmd = daemon.await.unwrap();
@@ -369,15 +360,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_command_broken() {
-        let (_, cmd) = test_command_helper(ClientCmd::GetStatus, DaemonState::Ready, true).await;
+        let (_, cmd) = test_command_helper(ClientCmd::GetStatus, true, true).await;
 
         assert_matches!(cmd, Err(NordVpnLiteError::Io(_)));
     }
 
     #[tokio::test]
     async fn test_command_early_quit() {
-        let (response, cmd) =
-            test_command_helper(ClientCmd::QuitDaemon, DaemonState::Initializing, false).await;
+        let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, false, false).await;
 
         assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
         assert_eq!(response.unwrap(), CommandResponse::Ok);
@@ -385,8 +375,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_command_early_is_alive() {
-        let (response, cmd) =
-            test_command_helper(ClientCmd::IsAlive, DaemonState::Initializing, false).await;
+        let (response, cmd) = test_command_helper(ClientCmd::IsAlive, false, false).await;
 
         assert_eq!(cmd.unwrap(), ClientCmd::IsAlive);
         assert_eq!(response.unwrap(), CommandResponse::Ok);
@@ -394,8 +383,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_command_early_status() {
-        let (response, cmd) =
-            test_command_helper(ClientCmd::GetStatus, DaemonState::Initializing, false).await;
+        let (response, cmd) = test_command_helper(ClientCmd::GetStatus, false, false).await;
 
         assert_eq!(cmd.unwrap(), ClientCmd::GetStatus);
         assert_eq!(response.unwrap(), CommandResponse::DaemonInitializing);
