@@ -53,6 +53,7 @@ LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "192.168.114.254",
     ConnectionTag.DOCKER_VPN_1: "10.0.100.1",
     ConnectionTag.DOCKER_NLX_1: "10.0.100.51",
+    ConnectionTag.DOCKER_PHOTO_ALBUM: "10.0.80.80",
 }
 
 LAN_ADDR_MAP_V6: Dict[ConnectionTag, str] = {

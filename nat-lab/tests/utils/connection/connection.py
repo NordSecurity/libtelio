@@ -49,6 +49,7 @@ class ConnectionTag(Enum):
     DOCKER_DERP_3 = auto()
     DOCKER_DNS_SERVER_1 = auto()
     DOCKER_DNS_SERVER_2 = auto()
+    DOCKER_PHOTO_ALBUM = auto()
 
     def __repr__(self):
         return f"{self.name}"
