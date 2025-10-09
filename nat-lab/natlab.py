@@ -15,6 +15,8 @@ PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/
 sys.path += [f"{PROJECT_ROOT}/ci"]
 from env import LIBTELIO_ENV_NAT_LAB_DEPS_TAG  # type: ignore # pylint: disable=import-error, wrong-import-position
 
+NATLAB_CONTAINER_RESTART_ATTEMPTS = 5
+
 
 def run_command(command, env=None):
     if env:
@@ -97,9 +99,9 @@ def start(skip_keywords=None, force_recreate=False):
             command, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
         )
     except subprocess.CalledProcessError:
-        check_containers(exclude_services)
+        manage_containers(exclude_services)
     else:
-        check_containers(exclude_services)
+        manage_containers(exclude_services)
 
 
 def stop():
@@ -126,10 +128,26 @@ def quick_restart_container(names: List[str], env=None):
 
     for container in docker_status:
         if any(name for name in names if name in container):
-            subprocess.run(["docker", "restart", container, "-t", "0"], env=env)
+            print("Killing container: ", container)
+            run_command(["docker", "container", "kill", container], env=env)
+    for name in names:
+        print("Restarting service: ", name)
+        run_command(
+            [
+                "docker",
+                "compose",
+                "up",
+                "-d",
+                "--wait",
+                "--force-recreate",
+                name,
+                "--quiet-pull",
+            ],
+            env=env,
+        )
 
 
-def check_containers(exclude_containers=None) -> None:
+def check_containers(exclude_containers=None, check_only=False) -> List[str]:
     if exclude_containers is None:
         exclude_containers = []
 
@@ -151,7 +169,6 @@ def check_containers(exclude_containers=None) -> None:
 
     for service in services_to_check:
         if not find_container(service, docker_status):
-            run_command(["docker", "compose", "logs", service])
             missing_services.append(service)
             continue
 
@@ -183,15 +200,39 @@ def check_containers(exclude_containers=None) -> None:
                     logs = container_state_json.get("Log") or []
                     print(f"Container {cid} is unhealthy.\nLogs: {logs}")
 
-    if missing_services:
+    # Used to call from cli
+    if check_only and missing_services:
+        for service in missing_services:
+            run_command(["docker", "compose", "logs", service])
         raise Exception(
             f"Containers failed to start: {missing_services}; see docker logs above"
         )
 
+    return missing_services
+
+
+def manage_containers(exclude_containers=None) -> None:
+    restart_attempts = 0
+    missing = []
+    while restart_attempts < NATLAB_CONTAINER_RESTART_ATTEMPTS:
+        missing = check_containers(exclude_containers, False)
+        if missing:
+            print("Missing services: ", missing)
+            quick_restart_container(
+                missing, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
+            )
+        else:
+            return
+        restart_attempts += 1
+
+    for service in missing:
+        run_command(["docker", "compose", "logs", service])
+    raise Exception(f"Containers failed to start: {missing}; see docker logs above")
+
 
 def find_container(service: str, docker_status: List[str]) -> bool:
     for line in docker_status:
-        if line.find(service) >= 0:
+        if (service in line) and ("unhealthy" not in line):
             return True
 
     return False
@@ -355,7 +396,7 @@ def main():
     elif args.command == "kill":
         kill()
     elif args.command == "check-containers":
-        check_containers()
+        check_containers(check_only=True)
 
 
 if __name__ == "__main__":

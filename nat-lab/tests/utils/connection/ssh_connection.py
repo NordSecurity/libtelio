@@ -55,7 +55,7 @@ class SshConnection(Connection):
         copy_binaries: bool = False,
     ) -> AsyncIterator["SshConnection"]:
         username = "root"
-        password = "root"
+        password: str | None = "root"
         if tag is ConnectionTag.VM_MAC:
             username = "root"
             password = "jobs"

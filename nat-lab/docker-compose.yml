@@ -1049,12 +1049,12 @@ networks:
       config:
         - subnet: 192.168.111.0/24
 
- openwrt-net-01:
-   driver: bridge
-   ipam:
-     driver: default
-     config:
-       - subnet: 192.168.115.0/24
+  openwrt-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.115.0/24
 
   windows-net-01:
     driver: bridge

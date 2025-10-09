@@ -111,6 +111,14 @@ LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
     ConnectionTag.DOCKER_VPN_1: {"primary": "10.0.100.1", "secondary": ""},
     ConnectionTag.VM_LINUX_NLX_1: {"primary": "10.0.100.51", "secondary": ""},
     ConnectionTag.DOCKER_PHOTO_ALBUM: {"primary": "10.0.80.80", "secondary": ""},
+    ConnectionTag.VM_OPENWRT_GW_1: {
+        "primary": "192.168.115.254",
+        "secondary": "10.0.254.14",
+    },
+    ConnectionTag.DOCKER_OPENWRT_CLIENT_1: {
+        "primary": "192.168.115.100",
+        "secondary": "",
+    },
 }
 
 GW_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {

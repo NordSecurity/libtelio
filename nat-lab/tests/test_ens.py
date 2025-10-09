@@ -5,11 +5,7 @@ import config
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
-from helpers_vpn import (
-    connect_vpn,
-    VpnConfig,
-    ensure_interface_router_property_expectations,
-)
+from helpers_vpn import connect_vpn, VpnConfig
 from typing import cast
 from utils import stun
 from utils.bindings import (
@@ -48,7 +44,7 @@ ENS_PORT = 993
                     enable_error_notification_service=True,
                 ),
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -62,7 +58,7 @@ ENS_PORT = 993
                     enable_error_notification_service=True,
                 ),
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -118,9 +114,6 @@ async def test_ens(
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        if alpha_setup_params.connection_tag == ConnectionTag.VM_MAC:
-            await ensure_interface_router_property_expectations(client_conn)
-
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
@@ -171,7 +164,7 @@ async def test_ens(
                     enable_error_notification_service=True,
                 ),
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -185,7 +178,7 @@ async def test_ens(
                     enable_error_notification_service=True,
                 ),
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -231,9 +224,6 @@ async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
 
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
-
-        if alpha_setup_params.connection_tag == ConnectionTag.VM_MAC:
-            await ensure_interface_router_property_expectations(client_conn)
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
@@ -340,7 +330,7 @@ async def make_get_json(url):
                     enable_error_notification_service=True,
                 ),
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -354,7 +344,7 @@ async def make_get_json(url):
                     enable_error_notification_service=True,
                 ),
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -390,9 +380,6 @@ async def test_ens_not_working(
         alpha, *_ = env.nodes
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
-
-        if alpha_setup_params.connection_tag == ConnectionTag.VM_MAC:
-            await ensure_interface_router_property_expectations(client_conn)
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"

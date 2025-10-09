@@ -1,6 +1,6 @@
 import config
 from aiodocker import Docker
-from config import LAN_ADDR_MAP, LAN_ADDR_MAP_V6, SECONDARY_VM_NETWORK_PREFIX
+from config import LAN_ADDR_MAP, LAN_ADDR_MAP_V6
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncIterator, Tuple, Optional, List, Union
@@ -380,7 +380,10 @@ async def set_secondary_ifc_state(
             interfaces = await Interface.get_enabled_network_interfaces(connection)
             for interface in interfaces:
                 if interface.ipv4:
-                    if interface.ipv4.startswith(SECONDARY_VM_NETWORK_PREFIX):
+                    if (
+                        interface.ipv4
+                        == config.LAN_ADDR_MAP[connection.tag]["secondary"]
+                    ):
                         secondary_ifc = interface
         assert secondary_ifc, LookupError("Couldn't find secondary interface")
         if enable:
