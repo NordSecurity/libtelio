@@ -186,6 +186,7 @@ mod tests {
     use crate::local_interfaces::MockGetIfAddrs;
 
     use super::*;
+    use if_addrs::IfOperStatus;
     use serial_test::serial;
     use std::{
         net::Ipv4Addr,
@@ -208,6 +209,7 @@ mod tests {
                     broadcast: None,
                 }),
                 index: None,
+                oper_status: IfOperStatus::Testing,
                 #[cfg(windows)]
                 adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
             }])
