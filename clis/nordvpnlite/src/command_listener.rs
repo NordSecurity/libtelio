@@ -11,7 +11,7 @@ use crate::{
 };
 
 // TODO: reduce to 1 when investigating LLT-6693
-pub(crate) const TIMEOUT_SEC: u64 = 2;
+pub(crate) const TIMEOUT_SEC: u64 = 20;
 
 #[derive(Parser, Debug, PartialEq)]
 #[clap()]
