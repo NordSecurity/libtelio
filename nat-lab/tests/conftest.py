@@ -252,18 +252,24 @@ async def perform_setup_checks() -> bool:
 
 
 async def check_gateway_connectivity() -> bool:
+    current_gateway = None
     for _ in range(GW_CHECK_CONNECTIVITY_RETRIES + 1):
         try:
             for gw_tag in ConnectionTag:
                 if "_GW" in gw_tag.name:
+                    current_gateway = gw_tag
                     await SESSION_SCOPE_EXIT_STACK.enter_async_context(
                         new_connection_raw(gw_tag)
                     )
             return True
         except Exception as e:  # pylint: disable=broad-exception-caught
-            log.error("Failed to connect to one of the gateways")
+            gw_name = getattr(current_gateway, "name", "unknown")
+            log.error("Failed to connect to %s", gw_name)
             log.error("Exception error: %s", e)
             await asyncio.sleep(GW_CHECK_CONNECTIVITY_TIMEOUT)
+    # ignore connection failure in case of OpenWrt Gateway
+    if current_gateway and current_gateway in [ConnectionTag.VM_OPENWRT_GW_1]:
+        return True
     return False
 
 
@@ -541,11 +547,20 @@ async def collect_mac_diagnostic_reports():
 
 
 async def start_tcpdump_processes():
-    connections = [
-        await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(gw_tag))
-        for gw_tag in ConnectionTag
-        if "_GW" in gw_tag.name
-    ]
+    connections = []
+    for gw_tag in ConnectionTag:
+        if "_GW" in gw_tag.name:
+            try:
+                connection = await SESSION_SCOPE_EXIT_STACK.enter_async_context(
+                    new_connection_raw(gw_tag)
+                )
+                connections.append(connection)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                # ignore OpenWrt gateway connection failure
+                if gw_tag in [ConnectionTag.VM_OPENWRT_GW_1]:
+                    log.error("Failed to connect to the %s", gw_tag.name)
+                else:
+                    raise e
     connections += [
         await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(conn_tag))
         for conn_tag in [
