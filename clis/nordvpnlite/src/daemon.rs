@@ -426,7 +426,7 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
                 match signal {
                     Some(s @ SIGHUP | s @ SIGTERM | s @ SIGINT | s @ SIGQUIT) => {
                         info!("Received signal {:?}, exiting", Signal::try_from(s));
-                        if let Err(e) = telio_tx.send_timeout(TelioTaskCmd::Quit, Duration::from_secs(10)).await {
+                        if let Err(e) = telio_tx.send_timeout(TelioTaskCmd::Quit, Duration::from_secs(2)).await {
                             error!("Unable to send QUIT due to {e}");
                         };
                         break Ok(());
