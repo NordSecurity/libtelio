@@ -1,6 +1,5 @@
 import asyncssh
 import shlex
-import subprocess
 import utils.vm.mac_vm_util as utils_mac
 import utils.vm.openwrt_vm_util as utils_openwrt
 import utils.vm.windows_vm_util as utils_win
@@ -25,7 +24,12 @@ class SshConnection(Connection):
             target_os = TargetOS.Windows
         elif tag is ConnectionTag.VM_MAC:
             target_os = TargetOS.Mac
-        elif tag is ConnectionTag.VM_OPENWRT_GW_1:
+        elif tag in [
+            ConnectionTag.VM_OPENWRT_GW_1,
+            ConnectionTag.VM_LINUX_NLX_1,
+            ConnectionTag.VM_LINUX_FULLCONE_GW_1,
+            ConnectionTag.VM_LINUX_FULLCONE_GW_2,
+        ]:
             target_os = TargetOS.Linux
         else:
             assert False, format(
@@ -50,27 +54,23 @@ class SshConnection(Connection):
         tag: ConnectionTag,
         copy_binaries: bool = False,
     ) -> AsyncIterator["SshConnection"]:
-        if tag not in [ConnectionTag.VM_OPENWRT_GW_1]:
-            subprocess.check_call(
-                ["sudo", "bash", "vm_nat.sh", "disable"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            subprocess.check_call(
-                ["sudo", "bash", "vm_nat.sh", "enable"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+        username = "root"
+        password: str | None = "root"
+        if tag is ConnectionTag.VM_MAC:
+            username = "root"
+            password = "jobs"
+        elif tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
+            username = "bill"
+            password = "gates"
+        elif tag is ConnectionTag.VM_OPENWRT_GW_1:
+            password = None
 
         async with asyncssh.connect(
             ip,
-            username=(
-                "root"
-                if tag in [ConnectionTag.VM_MAC, ConnectionTag.VM_OPENWRT_GW_1]
-                else "vagrant"
-            ),
-            password=None if tag in [ConnectionTag.VM_OPENWRT_GW_1] else "vagrant",
+            username=username,
+            password=password,
             known_hosts=None,
+            agent_path=None,
             connect_timeout=15,
             login_timeout=15,
         ) as ssh_connection:

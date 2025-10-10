@@ -30,9 +30,8 @@ class ConnectionTag(Enum):
     DOCKER_CONE_GW_1 = auto()
     DOCKER_CONE_GW_2 = auto()
     DOCKER_CONE_GW_3 = auto()
-    DOCKER_CONE_GW_4 = auto()
-    DOCKER_FULLCONE_GW_1 = auto()
-    DOCKER_FULLCONE_GW_2 = auto()
+    VM_LINUX_FULLCONE_GW_1 = auto()
+    VM_LINUX_FULLCONE_GW_2 = auto()
     DOCKER_SYMMETRIC_GW_1 = auto()
     DOCKER_SYMMETRIC_GW_2 = auto()
     DOCKER_UDP_BLOCK_GW_1 = auto()
@@ -42,7 +41,7 @@ class ConnectionTag(Enum):
     VM_OPENWRT_GW_1 = auto()
     DOCKER_VPN_1 = auto()
     DOCKER_VPN_2 = auto()
-    DOCKER_NLX_1 = auto()
+    VM_LINUX_NLX_1 = auto()
     DOCKER_INTERNAL_SYMMETRIC_GW = auto()
     DOCKER_DERP_1 = auto()
     DOCKER_DERP_2 = auto()
@@ -50,6 +49,12 @@ class ConnectionTag(Enum):
     DOCKER_DNS_SERVER_1 = auto()
     DOCKER_DNS_SERVER_2 = auto()
     DOCKER_PHOTO_ALBUM = auto()
+    DOCKER_WINDOWS_GW_1 = auto()
+    DOCKER_WINDOWS_GW_2 = auto()
+    DOCKER_WINDOWS_GW_3 = auto()
+    DOCKER_WINDOWS_GW_4 = auto()
+    DOCKER_MAC_GW_1 = auto()
+    DOCKER_MAC_GW_2 = auto()
 
     def __repr__(self):
         return f"{self.name}"

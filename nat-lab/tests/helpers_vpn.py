@@ -5,7 +5,6 @@ from typing import Optional, Dict, Union
 from utils import stun
 from utils.connection import Connection, ConnectionTag
 from utils.ping import ping
-from utils.python import get_python_binary
 
 VAGRANT_LIBVIRT_MANAGEMENT_IP = "192.168.121"
 
@@ -36,13 +35,3 @@ class VpnConfig:
     conn_tag: ConnectionTag
     # pinging the client is not a requirement and requires routing setup which might not be present
     should_ping_client: bool
-
-
-async def ensure_interface_router_property_expectations(client_conn: Connection):
-    process = await client_conn.create_process([
-        get_python_binary(client_conn),
-        f"{config.LIBTELIO_BINARY_PATH_VM_MAC}/list_interfaces_with_router_property.py",
-    ]).execute()
-    interfaces_with_router_prop = process.get_stdout().splitlines()
-    assert len(interfaces_with_router_prop) == 1
-    assert VAGRANT_LIBVIRT_MANAGEMENT_IP in interfaces_with_router_prop[0]

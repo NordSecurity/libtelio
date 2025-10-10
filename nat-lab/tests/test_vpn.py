@@ -3,11 +3,7 @@ import config
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment, setup_connections
-from helpers_vpn import (
-    connect_vpn,
-    VpnConfig,
-    ensure_interface_router_property_expectations,
-)
+from helpers_vpn import connect_vpn, VpnConfig
 from uniffi import FirewallBlacklistTuple, IpProtocol
 from utils import testing, stun
 from utils.bindings import (
@@ -56,7 +52,7 @@ from utils.router import IPProto, IPStack
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -67,7 +63,7 @@ from utils.router import IPProto, IPStack
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -80,7 +76,7 @@ from utils.router import IPProto, IPStack
             id="wg_server",
         ),
         pytest.param(
-            VpnConfig(config.NLX_SERVER, ConnectionTag.DOCKER_NLX_1, False),
+            VpnConfig(config.NLX_SERVER, ConnectionTag.VM_LINUX_NLX_1, False),
             id="nlx_server",
         ),
     ],
@@ -97,7 +93,7 @@ async def test_vpn_connection(
                 stun_limits=(1, 1),
                 nlx_1_limits=(
                     (1, 1)
-                    if vpn_conf.conn_tag == ConnectionTag.DOCKER_NLX_1
+                    if vpn_conf.conn_tag == ConnectionTag.VM_LINUX_NLX_1
                     else (0, 0)
                 ),
                 vpn_1_limits=(
@@ -114,9 +110,6 @@ async def test_vpn_connection(
         alpha, *_ = env.nodes
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
-
-        if alpha_setup_params.connection_tag == ConnectionTag.VM_MAC:
-            await ensure_interface_router_property_expectations(client_conn)
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
@@ -187,7 +180,7 @@ async def test_vpn_connection(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -204,7 +197,7 @@ async def test_vpn_connection(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -660,7 +653,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.15",
             marks=[
                 pytest.mark.windows,
             ],
@@ -676,7 +669,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 ),
                 is_meshnet=False,
             ),
-            "10.0.254.7",
+            "10.0.254.19",
             marks=pytest.mark.mac,
         ),
     ],
@@ -694,7 +687,7 @@ async def test_vpn_connection_private_key_change(
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
-        ip = await asyncio.wait_for(stun.get(client_conn, config.STUN_SERVER), 5)
+        ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         # connect to vpn as usually
