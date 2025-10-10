@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import errno
 import json
 import os
 import shutil
@@ -39,7 +40,7 @@ def run_command_with_output(command, hide_output=False):
 def start():
     check_docker_version_compatibility()
 
-    generate_grpc("../crates/telio-proto/protos/ens.proto")
+    generate_grpc("../dist/linux/ens.proto")
 
     if "GITLAB_CI" in os.environ:
         with open("docker-compose.yml", "r", encoding="utf-8") as file:
@@ -193,6 +194,12 @@ def get_docker_version():
 def generate_grpc(path):
     os.makedirs("bin/grpc_protobuf", exist_ok=True)
     include = os.path.dirname(path)
+    if not os.path.exists(path):
+        print(
+            f"You need to have {path} generated. You can do it by building libtelio, for example with:"
+        )
+        print("\n\tuv run ./run_local.py --notests\n")
+        raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), path)
     run_command([
         "python3",
         "-m",
