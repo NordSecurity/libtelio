@@ -1,5 +1,3 @@
-use std::net::IpAddr;
-
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use telio::telio_task::io::chan;
@@ -8,7 +6,7 @@ use tracing::{error, trace};
 
 use crate::{
     comms::DaemonSocket,
-    config::Endpoint,
+    config::{DnsConfig, Endpoint},
     daemon::{NordVpnLiteError, TelioStatusReport},
 };
 
@@ -26,12 +24,18 @@ pub enum ClientCmd {
     QuitDaemon,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExitNodeConfig {
+    pub endpoint: Endpoint,
+    pub dns: DnsConfig,
+}
+
 #[derive(Debug)]
 pub enum TelioTaskCmd {
     // Get telio status
     GetStatus(oneshot::Sender<TelioStatusReport>),
     // Connect to exit node with endpoint and optional hostname
-    ConnectToExitNode(Endpoint, Vec<IpAddr>),
+    ConnectToExitNode(ExitNodeConfig),
     // Break the receive loop to quit the daemon and exit gracefully
     Quit,
 }

@@ -1,8 +1,8 @@
-use crate::NordVpnLiteError;
+use crate::{config::DnsConfig, NordVpnLiteError};
 use ipnet::IpNet;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::process::Command;
 use tracing::{debug, error, info, warn};
 
@@ -11,6 +11,9 @@ use telio::telio_utils::LIBTELIO_FWMARK;
 
 // Copied from NordVPN Linux app
 const DEFAULT_ROUTING_TABLE_ID: u32 = 205;
+
+const DNS_SERVER1: Ipv4Addr = Ipv4Addr::new(103, 86, 96, 100);
+const DNS_SERVER2: Ipv4Addr = Ipv4Addr::new(103, 86, 99, 100);
 
 pub trait ConfigureInterface {
     /// Initialize the interface
@@ -23,10 +26,10 @@ pub trait ConfigureInterface {
     fn set_exit_routes(
         &mut self,
         exit_node: &IpAddr,
-        dns: Option<Vec<IpAddr>>,
+        dns: DnsConfig,
     ) -> Result<(), NordVpnLiteError>;
     /// Some of the configured routes are not cleared when the adapter is removed and must be removed manually
-    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError>;
+    fn cleanup_exit_routes(&mut self, dns: &DnsConfig) -> Result<(), NordVpnLiteError>;
     /// Manually cleanup the interface before the adapter is removed
     fn cleanup_interface(&mut self) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
@@ -123,12 +126,12 @@ impl ConfigureInterface for Manual {
     fn set_exit_routes(
         &mut self,
         _exit_node: &IpAddr,
-        _dns: Option<Vec<IpAddr>>,
+        _dns: DnsConfig,
     ) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
 
-    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError> {
+    fn cleanup_exit_routes(&mut self, _dns: &DnsConfig) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
 }
@@ -218,12 +221,12 @@ impl ConfigureInterface for Ifconfig {
     fn set_exit_routes(
         &mut self,
         _exit_node: &IpAddr,
-        _dns: Option<Vec<IpAddr>>,
+        _dns: DnsConfig,
     ) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
 
-    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError> {
+    fn cleanup_exit_routes(&mut self, _dns: &DnsConfig) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
 }
@@ -388,7 +391,7 @@ impl ConfigureInterface for Iproute {
     fn set_exit_routes(
         &mut self,
         exit_node: &IpAddr,
-        _dns: Option<Vec<IpAddr>>,
+        _dns: DnsConfig,
     ) -> Result<(), NordVpnLiteError> {
         #[cfg(target_os = "linux")]
         if exit_node.is_ipv4() {
@@ -436,7 +439,7 @@ impl ConfigureInterface for Iproute {
         Ok(())
     }
 
-    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError> {
+    fn cleanup_exit_routes(&mut self, _dns: &DnsConfig) -> Result<(), NordVpnLiteError> {
         if let Some(fw_rule_prio) = &self.fw_rule_prio {
             execute(Command::new("ip").args(["rule", "del", "priority", fw_rule_prio]))?;
         }
@@ -760,11 +763,10 @@ impl ConfigureInterface for Uci {
         output.trim().parse::<IpAddr>().ok()
     }
 
-    // TODO: this function does nothing with exit_node in uci?
     fn set_exit_routes(
         &mut self,
         _exit_node: &IpAddr,
-        dns: Option<Vec<IpAddr>>,
+        dns: DnsConfig,
     ) -> Result<(), NordVpnLiteError> {
         let table = Iproute::find_available_table()?;
         let (vpn_rule_prio, lan_rule_prio) = {
@@ -841,8 +843,12 @@ impl ConfigureInterface for Uci {
         // Disable IPv6
         self.disable_ipv6()?;
 
-        if let Some(dns) = dns {
-            self.configure_dnsmasq(&dns)?;
+        match dns {
+            DnsConfig::Recommended => {
+                self.configure_dnsmasq(&[DNS_SERVER1.into(), DNS_SERVER2.into()])?
+            }
+            DnsConfig::SystemDefault => {}
+            DnsConfig::Custom(custom_dns) => self.configure_dnsmasq(&custom_dns.0)?,
         }
 
         // Save and apply
@@ -852,7 +858,7 @@ impl ConfigureInterface for Uci {
         Ok(())
     }
 
-    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError> {
+    fn cleanup_exit_routes(&mut self, dns: &DnsConfig) -> Result<(), NordVpnLiteError> {
         debug!("Removing exit routes");
         if let Err(e) = execute(Command::new("uci").args(["del", "network.nordvpnlite_route"])) {
             error!("Error removing route: {e}");
@@ -874,7 +880,10 @@ impl ConfigureInterface for Uci {
         }
 
         // Restore DNS settings
-        self.restore_dnsmasq()?;
+        match dns {
+            DnsConfig::SystemDefault => {}
+            _ => self.restore_dnsmasq()?,
+        }
 
         // Restore IPv6
         self.restore_ipv6()?;

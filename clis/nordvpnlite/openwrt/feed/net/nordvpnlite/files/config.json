@@ -8,6 +8,9 @@
     "name": "nordvpnlite",
     "config_provider": "uci"
   },
-  "vpn": "recommended"
+  "vpn": {
+    "server": "recommended",
+    "dns": "recommended"
+  }
 }
 

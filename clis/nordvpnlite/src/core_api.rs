@@ -17,7 +17,7 @@ use telio::telio_utils::exponential_backoff::{
     Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
 };
 
-use crate::config::{Endpoint, NordToken, NordVpnLiteConfig, NordlynxKeyResponse, VpnConfig};
+use crate::config::{Endpoint, NordToken, NordVpnLiteConfig, NordlynxKeyResponse, VpnSelection};
 use crate::NordVpnLiteError;
 
 const API_BASE: &str = "https://api.nordvpn.com/v1";
@@ -453,11 +453,11 @@ async fn get_recommended_servers(
 }
 
 pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec<Endpoint>, Error> {
-    let country_id: Option<u64> = match &config.vpn {
+    let country_id: Option<u64> = match &config.vpn.server {
         // Use the endpoint directly if provided in the config
-        VpnConfig::Server(endpoint) => return Ok(vec![endpoint.clone()]),
+        VpnSelection::Endpoint(endpoint) => return Ok(vec![endpoint.clone()]),
         // Find VPN exit node based on country
-        VpnConfig::Country(target_country) => {
+        VpnSelection::Country(target_country) => {
             if !target_country.chars().all(|c| c.is_ascii_alphabetic()) {
                 warn!("Invalid country format: '{target_country}', non-ascii characters used");
                 None
@@ -489,7 +489,7 @@ pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec
                 }
             }
         }
-        VpnConfig::Recommended => None,
+        VpnSelection::Recommended => None,
     };
 
     if country_id.is_none() {
