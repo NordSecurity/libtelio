@@ -353,7 +353,7 @@ pub struct CustomDns(#[serde(deserialize_with = "single_str_or_multiple")] pub V
 
 #[derive(Deserialize, Serialize, Debug, Clone, Eq, PartialEq, Default)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum DnsConfig {
+pub enum Dns {
     // Use recommended VPN DNS settings
     #[default]
     #[serde(rename = "recommended")]
@@ -370,16 +370,16 @@ pub enum DnsConfig {
 #[serde(deny_unknown_fields)]
 pub struct VpnConfig {
     #[serde(default)]
-    pub dns: DnsConfig,
+    pub dns: Dns,
 
     #[serde(default)]
-    pub server: VpnSelection,
+    pub server: VpnServer,
 }
 
 /// Type of VPN server connection, automatic by country, or specified server endpoint
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Default)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum VpnSelection {
+pub enum VpnServer {
     #[default]
     #[serde(rename = "recommended")]
     Recommended,
@@ -503,7 +503,7 @@ mod tests {
     #[test]
     fn test_config_vpn_country() {
         let mut expected_config = NordVpnLiteConfig::default();
-        expected_config.vpn.server = VpnSelection::Country("de".to_string());
+        expected_config.vpn.server = VpnServer::Country("de".to_string());
 
         let json = r#"{
             "log_level": "Trace",
@@ -549,8 +549,7 @@ mod tests {
     #[test]
     fn test_config_vpn_dns_custom() {
         let mut expected_config = NordVpnLiteConfig::default();
-        expected_config.vpn.dns =
-            DnsConfig::Custom(CustomDns(vec![Ipv4Addr::new(1, 1, 1, 1).into()]));
+        expected_config.vpn.dns = Dns::Custom(CustomDns(vec![Ipv4Addr::new(1, 1, 1, 1).into()]));
 
         let json = r#"{
             "log_level": "Trace",
@@ -575,7 +574,7 @@ mod tests {
     #[test]
     fn test_config_vpn_dns_custom_multiple() {
         let mut expected_config = NordVpnLiteConfig::default();
-        expected_config.vpn.dns = DnsConfig::Custom(CustomDns(vec![
+        expected_config.vpn.dns = Dns::Custom(CustomDns(vec![
             Ipv4Addr::new(1, 1, 1, 1).into(),
             Ipv4Addr::new(8, 8, 8, 8).into(),
         ]));
@@ -603,7 +602,7 @@ mod tests {
     #[test]
     fn test_config_vpn_dns_system() {
         let mut expected_config = NordVpnLiteConfig::default();
-        expected_config.vpn.dns = DnsConfig::SystemDefault;
+        expected_config.vpn.dns = Dns::SystemDefault;
 
         let json = r#"{
             "log_level": "Trace",
@@ -645,7 +644,7 @@ mod tests {
     fn test_config_vpn_endpoint() {
         let expected_config = NordVpnLiteConfig {
             vpn: VpnConfig {
-                server: VpnSelection::Endpoint(Endpoint {
+                server: VpnServer::Endpoint(Endpoint {
                     address: "127.0.0.1".parse().unwrap(),
                     public_key: "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
                         .parse()
@@ -865,11 +864,6 @@ mod tests {
         let file = temp_config(&config_json);
         let config = NordVpnLiteConfig::from_file(file.path().to_str().unwrap()).unwrap();
 
-        println!("{:?}", config);
-        println!(
-            "????????????????????? -> {:?}",
-            NordVpnLiteConfig::from_file(file.path().to_str().unwrap()).unwrap()
-        );
         assert_eq!(config.log_file_path, log_path.to_string_lossy());
         assert_eq!(
             serde_json::from_str::<NordVpnLiteConfig>(&config_json).unwrap(),

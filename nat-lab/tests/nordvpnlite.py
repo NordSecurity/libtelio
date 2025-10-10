@@ -403,7 +403,7 @@ class NordVpnLite:
         def update_public_key_in_json(content: str, new_key: str) -> str:
             try:
                 config_data = json.loads(content)
-                config_data["vpn"]["server"]["public_key"] = new_key
+                config_data["vpn"]["server"]["endpoint"]["public_key"] = new_key
                 return json.dumps(config_data, indent=2)
             except json.JSONDecodeError as e:
                 raise RuntimeError(

@@ -11,7 +11,7 @@
   },
   "vpn": {
     "server": {
-      "endpoint:" {
+      "endpoint": {
         "address": "10.0.100.1",
         "public_key": "public-key-placeholder"
       }

@@ -6,7 +6,7 @@ use tracing::{error, trace};
 
 use crate::{
     comms::DaemonSocket,
-    config::{DnsConfig, Endpoint},
+    config::{Dns, Endpoint},
     daemon::{NordVpnLiteError, TelioStatusReport},
 };
 
@@ -27,7 +27,7 @@ pub enum ClientCmd {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExitNodeConfig {
     pub endpoint: Endpoint,
-    pub dns: DnsConfig,
+    pub dns: Dns,
 }
 
 #[derive(Debug)]
