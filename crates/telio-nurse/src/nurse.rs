@@ -147,9 +147,6 @@ impl State {
         ipv6_enabled: bool,
         socket_pool: Arc<SocketPool>,
     ) -> Self {
-        let meshnet_id = Self::meshnet_id();
-        telio_log_debug!("Meshnet ID: {meshnet_id}");
-
         // Analytics channel
         let analytics_channel = Chan::default();
 
@@ -175,7 +172,7 @@ impl State {
 
         let heartbeat = HeartbeatAnalytics::new(
             public_key,
-            meshnet_id,
+            None,
             config.heartbeat_config,
             heartbeat_io,
             aggregator,
@@ -371,7 +368,7 @@ impl State {
         .await;
     }
 
-    fn meshnet_id() -> Uuid {
+    pub fn meshnet_id() -> Uuid {
         telio_lana::fetch_context_string(String::from(
             "application.libtelioapp.config.current_state.internal_meshnet.fp",
         ))
