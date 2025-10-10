@@ -36,6 +36,7 @@ use crate::aggregator::ConnectivityDataAggregator;
 use crate::aggregator::AggregatorCollectedSegments;
 use crate::config::HeartbeatConfig;
 use crate::data::{AnalyticsMessage, HeartbeatInfo, MeshConfigUpdateEvent};
+use crate::nurse::State;
 
 /// Approximately 30 years worth of time, used to pause timers and periods
 const FAR_FUTURE: Duration = Duration::from_secs(86400 * 365 * 30);
@@ -215,7 +216,7 @@ pub struct Analytics {
     config: HeartbeatConfig,
     pub io: Io,
 
-    meshnet_id: Uuid,
+    meshnet_id: Option<Uuid>,
     state: RuntimeState,
 
     pub cached_private_key: Option<SecretKey>,
@@ -354,7 +355,7 @@ impl Analytics {
     /// An empty Analytics instance with the given config
     pub fn new(
         public_key: PublicKey,
-        meshnet_id: Uuid,
+        meshnet_id: Option<Uuid>,
         config: HeartbeatConfig,
         io: Io,
         aggregator: Arc<ConnectivityDataAggregator>,
@@ -391,6 +392,10 @@ impl Analytics {
             multiplexer_channel: multiplexer,
         }) = meshnet_entities
         {
+            if self.meshnet_id.is_none() {
+                self.meshnet_id = Some(State::meshnet_id());
+                telio_log_debug!("Meshnet ID: {:?}", self.meshnet_id);
+            }
             reset_after(
                 &mut self.task_interval,
                 self.config.initial_collect_interval,
@@ -600,7 +605,14 @@ impl Analytics {
         }
 
         let heartbeat = HeartbeatMessage::response(
-            self.meshnet_id.into_bytes().to_vec(),
+            self.meshnet_id
+                .get_or_insert({
+                    let meshnet_id = State::meshnet_id();
+                    telio_log_warn!("Meshnet ID not generated yet. Generating new ID {meshnet_id}");
+                    meshnet_id
+                })
+                .into_bytes()
+                .to_vec(),
             self.config.fingerprint.clone(),
             &links,
         );
@@ -686,7 +698,14 @@ impl Analytics {
         } = self.get_current_meshmap_info().await;
 
         let mut heartbeat_info = HeartbeatInfo {
-            meshnet_id: self.meshnet_id.to_string(),
+            meshnet_id: self
+                .meshnet_id
+                .get_or_insert({
+                    let meshnet_id = State::meshnet_id();
+                    telio_log_warn!("Meshnet ID not generated yet. Generating new ID {meshnet_id}");
+                    meshnet_id
+                })
+                .to_string(),
             meshnet_enabled: self.meshnet_enabled,
             heartbeat_interval: i32::try_from(self.config.collect_interval.as_secs()).unwrap_or(0),
             ..Default::default()
@@ -863,10 +882,9 @@ impl Analytics {
         }
 
         match self.local_nodes.get(&pk) {
-            Some(NodeInfo::Node { meshnet_id, .. }) => meshnet_id
-                .as_ref()
-                .map(|meshnet_id| *meshnet_id == self.meshnet_id)
-                .unwrap_or(false),
+            Some(NodeInfo::Node { meshnet_id, .. }) => {
+                meshnet_id.as_ref() == self.meshnet_id.as_ref()
+            }
             _ => false,
         }
     }
@@ -940,22 +958,25 @@ impl Analytics {
 
     async fn update_current_meshmap_info(&mut self) {
         // Add our temporary meshnet_id to collection before we try to resolve it
-        self.collection
-            .add_meshnet_id(self.public_key, self.meshnet_id);
+        self.collection.add_meshnet_id(
+            self.public_key,
+            self.meshnet_id.unwrap_or_else(Uuid::new_v4),
+        );
         let config_local_nodes = self
             .config_nodes
             .iter()
             .filter(|(_, is_local)| **is_local)
             .map(|(pk, _)| *pk)
             .collect::<HashSet<_>>();
-        self.meshnet_id = self
-            .collection
-            .resolve_current_meshnet_id(&config_local_nodes);
+        self.meshnet_id = Some(
+            self.collection
+                .resolve_current_meshnet_id(&config_local_nodes),
+        );
 
         // All local nodes will have the same meshnet id
         for pk in config_local_nodes.iter() {
             if let NodeInfo::Node { meshnet_id, .. } = self.local_nodes.entry(*pk).or_default() {
-                *meshnet_id = Some(self.meshnet_id);
+                *meshnet_id = self.meshnet_id;
             }
         }
         self.collection
@@ -1145,7 +1166,7 @@ mod tests {
             .unwrap_or_else(|| Arc::new(fake_aggregator))
             .clone();
 
-        let analytics = Analytics::new(pk, meshnet_id, config, io, aggregator.clone());
+        let analytics = Analytics::new(pk, Some(meshnet_id), config, io, aggregator.clone());
 
         State {
             public_key: pk,
