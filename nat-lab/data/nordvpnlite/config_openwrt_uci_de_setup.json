@@ -10,7 +10,9 @@
     "config_provider": "uci"
   },
   "vpn": {
-    "country": "de"
+    "server": {
+      "country": "de"
+    }
   },
   "override_default_wg_port": 1023
 }

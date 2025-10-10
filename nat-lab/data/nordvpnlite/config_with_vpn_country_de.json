@@ -10,7 +10,9 @@
     "config_provider": "iproute"
   },
   "vpn": {
-    "country": "de"
+    "server": {
+      "country": "de"
+    }
   },
   "override_default_wg_port": 1023
 }

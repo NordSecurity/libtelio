@@ -132,6 +132,7 @@ impl NordlynxKeyResponse {
 }
 
 #[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct NordVpnLiteConfig {
     #[serde(
         deserialize_with = "deserialize_log_level",
@@ -262,6 +263,28 @@ impl Default for NordVpnLiteConfig {
     }
 }
 
+fn single_str_or_multiple<'de, D>(deserializer: D) -> Result<Vec<IpAddr>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum IpOrVec {
+        One(IpAddr),
+        Many(Vec<IpAddr>),
+    }
+
+    let parsed = Option::<IpOrVec>::deserialize(deserializer)?;
+
+    let r = match parsed {
+        None => Vec::new(),
+        Some(IpOrVec::One(ip)) => vec![ip],
+        Some(IpOrVec::Many(ips)) => ips,
+    };
+
+    Ok(r)
+}
+
 fn deserialize_percent<'de, D>(deserializer: D) -> Result<Percentage, D::Error>
 where
     D: Deserializer<'de>,
@@ -325,17 +348,45 @@ pub struct Endpoint {
     pub hostname: Option<String>,
 }
 
-/// Type of VPN server connection, automatic by country, or specified server endpoint
-#[derive(Default, PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum VpnConfig {
-    /// Direct endpoint and public key of VPN server
-    Server(Endpoint),
-    /// Country name or ISO code of VPN server location
-    Country(String),
-    /// Any server from the recommendations list
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, Default)]
+pub struct CustomDns(#[serde(deserialize_with = "single_str_or_multiple")] pub Vec<IpAddr>);
+
+#[derive(Deserialize, Serialize, Debug, Clone, Eq, PartialEq, Default)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Dns {
+    // Use recommended VPN DNS settings
     #[default]
+    #[serde(rename = "recommended")]
     Recommended,
+    // Use System DNS, meaning we do not do anything
+    #[serde(rename = "system")]
+    SystemDefault,
+    // Custom DNS settings
+    #[serde(rename = "custom")]
+    Custom(CustomDns),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
+pub struct VpnConfig {
+    #[serde(default)]
+    pub dns: Dns,
+
+    #[serde(default)]
+    pub server: VpnServer,
+}
+
+/// Type of VPN server connection, automatic by country, or specified server endpoint
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Default)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum VpnServer {
+    #[default]
+    #[serde(rename = "recommended")]
+    Recommended,
+    #[serde(rename = "endpoint")]
+    Endpoint(Endpoint),
+    #[serde(rename = "country")]
+    Country(String),
 }
 
 #[cfg(test)]
@@ -365,7 +416,10 @@ mod tests {
                     "config_provider": "manual"
                 }},
                 "vpn": {{
-                    "country": "lt"
+                    "server": {{
+                        "country": "lt"
+                    }},
+                    "dns": "recommended"
                 }},
                 "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }}"#,
@@ -412,7 +466,10 @@ mod tests {
                 "name": "utun10",
                 "config_provider": "manual"
             },
-            "vpn": "recommended",
+            "vpn": {
+                "server": "recommended",
+                "dns": "recommended"
+            },
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
@@ -445,6 +502,30 @@ mod tests {
 
     #[test]
     fn test_config_vpn_country() {
+        let mut expected_config = NordVpnLiteConfig::default();
+        expected_config.vpn.server = VpnServer::Country("de".to_string());
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "vpn": {
+                "server": {
+                    "country": "de"
+                }
+            },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert_eq!(expected_config, serde_json::from_str(json).unwrap());
+    }
+
+    #[test]
+    fn test_config_vpn_dns_recommended() {
         let expected_config = NordVpnLiteConfig::default();
 
         let json = r#"{
@@ -455,7 +536,104 @@ mod tests {
                 "name": "nlx",
                 "config_provider": "manual"
             },
-            "vpn": "recommended",
+            "vpn": {
+                "server": "recommended",
+                "dns": "recommended"
+            },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert_eq!(expected_config, serde_json::from_str(json).unwrap());
+    }
+
+    #[test]
+    fn test_config_vpn_dns_custom() {
+        let mut expected_config = NordVpnLiteConfig::default();
+        expected_config.vpn.dns = Dns::Custom(CustomDns(vec![Ipv4Addr::new(1, 1, 1, 1).into()]));
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "vpn": {
+                "server": "recommended",
+                "dns": {
+                    "custom": "1.1.1.1"
+                }
+            },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert_eq!(expected_config, serde_json::from_str(json).unwrap());
+    }
+
+    #[test]
+    fn test_config_vpn_dns_custom_multiple() {
+        let mut expected_config = NordVpnLiteConfig::default();
+        expected_config.vpn.dns = Dns::Custom(CustomDns(vec![
+            Ipv4Addr::new(1, 1, 1, 1).into(),
+            Ipv4Addr::new(8, 8, 8, 8).into(),
+        ]));
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "vpn": {
+                "server": "recommended",
+                "dns": {
+                   "custom": ["1.1.1.1", "8.8.8.8"]
+                }
+            },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert_eq!(expected_config, serde_json::from_str(json).unwrap());
+    }
+
+    #[test]
+    fn test_config_vpn_dns_system() {
+        let mut expected_config = NordVpnLiteConfig::default();
+        expected_config.vpn.dns = Dns::SystemDefault;
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "vpn": {
+                "server": "recommended",
+                "dns": "system"
+            },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert_eq!(expected_config, serde_json::from_str(json).unwrap());
+    }
+
+    #[test]
+    fn test_config_vpn_default_setting() {
+        let expected_config = NordVpnLiteConfig::default();
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
@@ -465,13 +643,16 @@ mod tests {
     #[test]
     fn test_config_vpn_endpoint() {
         let expected_config = NordVpnLiteConfig {
-            vpn: VpnConfig::Server(Endpoint {
-                address: "127.0.0.1".parse().unwrap(),
-                public_key: "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
-                    .parse()
-                    .unwrap(),
-                hostname: None,
-            }),
+            vpn: VpnConfig {
+                server: VpnServer::Endpoint(Endpoint {
+                    address: "127.0.0.1".parse().unwrap(),
+                    public_key: "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
+                        .parse()
+                        .unwrap(),
+                    hostname: None,
+                }),
+                ..Default::default()
+            },
             ..NordVpnLiteConfig::default()
         };
 
@@ -485,8 +666,10 @@ mod tests {
             },
             "vpn": {
                 "server": {
-                    "address": "127.0.0.1",
-                    "public_key": "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
+                    "endpoint": {
+                        "address": "127.0.0.1",
+                        "public_key": "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
+                    }
                 }
             },
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -506,8 +689,10 @@ mod tests {
                 "config_provider": "manual"
             },
             "vpn": {
-                "country": "de",
-                "country": "pl",
+                "server": {
+                    "country": "de",
+                    "country": "pl"
+                }
             },
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
@@ -522,10 +707,14 @@ mod tests {
                 "config_provider": "manual"
             },
             "vpn": {
-                "country": "de",
+                "server": {
+                    "country": "de"
+                }
             },
             "vpn": {
-                "country": "pl",
+                "server": {
+                    "country": "pl"
+                }
             },
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
@@ -541,7 +730,9 @@ mod tests {
                 "config_provider": "manual"
             },
             "vpn": {
-                "country": "de",
+                "server": {
+                    "country": "de"
+                }
             },
             "vpn": {
                 "server": {
@@ -563,10 +754,100 @@ mod tests {
                 "config_provider": "manual"
             },
             "vpn": {
-                "country": "de",
                 "server": {
+                    "country": "de",
                     "address": "127.0.0.1",
                     "public_key": "urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6uro="
+                }
+            },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert!(serde_json::from_str::<NordVpnLiteConfig>(json).is_err());
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "vpn": {
+                "dns": "recommended",
+                "dns": "recommended",
+            },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert!(serde_json::from_str::<NordVpnLiteConfig>(json).is_err());
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "vpn": {
+                "dns": "system",
+                "dns": {
+                    "custom": "1.1.1.1"
+                }
+            },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert!(serde_json::from_str::<NordVpnLiteConfig>(json).is_err());
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "vpn": {
+                "dns": {
+                    "custom": "1.1.1.1.1"
+                }
+            },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert!(serde_json::from_str::<NordVpnLiteConfig>(json).is_err());
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "vpn": {
+                "dns": {
+                    "custom": ["1.1.1.1.1"]
+                }
+            },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert!(serde_json::from_str::<NordVpnLiteConfig>(json).is_err());
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "vpn": {
+                "dns": {
+                    "custom": ["1.1.1.1", "1.1.1.1.1"]
                 }
             },
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -584,6 +865,10 @@ mod tests {
         let config = NordVpnLiteConfig::from_file(file.path().to_str().unwrap()).unwrap();
 
         assert_eq!(config.log_file_path, log_path.to_string_lossy());
+        assert_eq!(
+            serde_json::from_str::<NordVpnLiteConfig>(&config_json).unwrap(),
+            config
+        );
     }
 
     #[test]

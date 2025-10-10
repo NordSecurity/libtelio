@@ -157,6 +157,7 @@ class NordVpnLite:
         self,
         cmd: list,
     ) -> tuple[str, str]:
+        start_time = time.time()
         try:
             cmd = [str(self.config.paths.exec_path)] + cmd
             proc = await self.connection.create_process(cmd).execute()
@@ -167,8 +168,12 @@ class NordVpnLite:
                 stdout,
                 stderr,
             )
+            time_took = time.time() - start_time
+            log.debug("Command: [%s] took %.3f seconds", cmd, time_took)
             return stdout, stderr
         except ProcessExecError as exc:
+            time_took = time.time() - start_time
+            log.debug("Command: [%s] took %.3f seconds", cmd, time_took)
             log.debug("Exception occured while executing nordvpnlite command: %s", exc)
             raise
 
@@ -398,7 +403,7 @@ class NordVpnLite:
         def update_public_key_in_json(content: str, new_key: str) -> str:
             try:
                 config_data = json.loads(content)
-                config_data["vpn"]["server"]["public_key"] = new_key
+                config_data["vpn"]["server"]["endpoint"]["public_key"] = new_key
                 return json.dumps(config_data, indent=2)
             except json.JSONDecodeError as e:
                 raise RuntimeError(
