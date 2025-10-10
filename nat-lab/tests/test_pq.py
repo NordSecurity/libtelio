@@ -568,10 +568,9 @@ async def test_pq_vpn_handshake_after_nonet(
             list(PathType),
             is_exit=True,
             is_vpn=True,
-            timeout=10,
         )
 
-        await ping(client_conn, config.PHOTO_ALBUM_IP, timeout=10)
+        await ping(client_conn, config.PHOTO_ALBUM_IP)
 
 
 @pytest.mark.timeout(240)
