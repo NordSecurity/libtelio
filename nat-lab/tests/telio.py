@@ -1044,7 +1044,7 @@ class Client:
                         log.info("[%s] -> %s @ %s", self._node.name, event[1], event[0])
                         self._runtime.handle_event(event[1], event[0])
                         event = await self.get_proxy().next_event()
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.1)
             except:
                 if self._quit:
                     return

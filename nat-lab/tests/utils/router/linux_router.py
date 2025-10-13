@@ -1,4 +1,5 @@
 import config
+import secrets
 from .router import Router, IPStack, IPProto, get_ip_address_type
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, List
@@ -584,6 +585,13 @@ class LinuxRouter(Router):
         try:
             yield
         finally:
+            # So upnpd is daemon which is started in entrypoint of container.
+            # It is expected to be there during all duration of natlab, except when we shortly kill it for the test.
+            # The problem with shortly killing it and then starting via `conn.create_process()`,
+            # we add KILL_ID as context for that process, which is then being wiped before each test by PRETEST_CLEANUPS.
+            # Therefore we add DO_NOT_KILL id for it, because we need it through the session.
             await self._connection.create_process(
-                ["upnpd", "eth0", "eth1"], quiet=True
+                ["upnpd", "eth0", "eth1"],
+                quiet=True,
+                kill_id="DO_NOT_KILL" + secrets.token_hex(8).upper(),
             ).execute()

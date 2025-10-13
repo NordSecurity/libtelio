@@ -17,43 +17,135 @@ def get_root_path(path: str) -> str:
     return os.path.normpath(PROJECT_ROOT + path)
 
 
-LAN_ADDR_MAP: Dict[ConnectionTag, str] = {
-    ConnectionTag.DOCKER_CONE_CLIENT_1: "192.168.101.104",
-    ConnectionTag.DOCKER_CONE_CLIENT_2: "192.168.102.54",
-    ConnectionTag.DOCKER_FULLCONE_CLIENT_1: "192.168.109.88",
-    ConnectionTag.DOCKER_FULLCONE_CLIENT_2: "192.168.106.88",
-    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: "192.168.103.88",
-    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2: "192.168.104.88",
-    ConnectionTag.DOCKER_UPNP_CLIENT_1: "192.168.105.88",
-    ConnectionTag.DOCKER_UPNP_CLIENT_2: "192.168.112.88",
-    ConnectionTag.DOCKER_SHARED_CLIENT_1: "192.168.101.67",
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: "10.0.11.2",
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: "10.0.11.3",
-    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: "10.0.11.4",
-    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "192.168.110.100",
-    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "192.168.111.100",
-    ConnectionTag.DOCKER_OPENWRT_CLIENT_1: "192.168.115.100",
-    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: "192.168.114.88",
-    ConnectionTag.VM_WINDOWS_1: "10.55.0.13",
-    ConnectionTag.VM_WINDOWS_2: "10.55.0.14",
-    ConnectionTag.VM_MAC: "10.55.0.12",
-    ConnectionTag.DOCKER_CONE_GW_1: "192.168.101.254",
-    ConnectionTag.DOCKER_CONE_GW_2: "192.168.102.254",
-    ConnectionTag.DOCKER_CONE_GW_3: "192.168.107.254",
-    ConnectionTag.DOCKER_CONE_GW_4: "192.168.108.254",
-    ConnectionTag.DOCKER_FULLCONE_GW_1: "192.168.109.254",
-    ConnectionTag.DOCKER_FULLCONE_GW_2: "192.168.106.254",
-    ConnectionTag.DOCKER_SYMMETRIC_GW_1: "192.168.103.254",
-    ConnectionTag.DOCKER_SYMMETRIC_GW_2: "192.168.104.254",
-    ConnectionTag.DOCKER_UDP_BLOCK_GW_1: "192.168.110.254",
-    ConnectionTag.DOCKER_UDP_BLOCK_GW_2: "192.168.111.254",
-    ConnectionTag.DOCKER_UPNP_GW_1: "192.168.105.254",
-    ConnectionTag.DOCKER_UPNP_GW_2: "192.168.112.254",
-    ConnectionTag.VM_OPENWRT_GW_1: "192.168.115.254",
-    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "192.168.114.254",
-    ConnectionTag.DOCKER_VPN_1: "10.0.100.1",
-    ConnectionTag.DOCKER_NLX_1: "10.0.100.51",
-    ConnectionTag.DOCKER_PHOTO_ALBUM: "10.0.80.80",
+LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
+    ConnectionTag.DOCKER_CONE_CLIENT_1: {"primary": "192.168.101.104", "secondary": ""},
+    ConnectionTag.DOCKER_CONE_CLIENT_2: {"primary": "192.168.102.54", "secondary": ""},
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_1: {
+        "primary": "192.168.109.88",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_FULLCONE_CLIENT_2: {
+        "primary": "192.168.106.88",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_1: {
+        "primary": "192.168.103.88",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_SYMMETRIC_CLIENT_2: {
+        "primary": "192.168.104.88",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_UPNP_CLIENT_1: {"primary": "192.168.105.88", "secondary": ""},
+    ConnectionTag.DOCKER_UPNP_CLIENT_2: {"primary": "192.168.112.88", "secondary": ""},
+    ConnectionTag.DOCKER_SHARED_CLIENT_1: {
+        "primary": "192.168.101.67",
+        "secondary": "192.168.113.67",
+    },
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: {
+        "primary": "10.0.11.2",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_2: {
+        "primary": "10.0.11.3",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK: {
+        "primary": "10.0.11.4",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: {
+        "primary": "192.168.110.100",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: {
+        "primary": "192.168.111.100",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: {
+        "primary": "192.168.114.88",
+        "secondary": "",
+    },
+    ConnectionTag.VM_WINDOWS_1: {
+        "primary": "192.168.150.54",
+        "secondary": "192.168.151.54",
+    },
+    ConnectionTag.VM_WINDOWS_2: {
+        "primary": "192.168.152.54",
+        "secondary": "192.168.153.54",
+    },
+    ConnectionTag.VM_MAC: {"primary": "192.168.154.54", "secondary": "192.168.155.54"},
+    ConnectionTag.DOCKER_CONE_GW_1: {"primary": "192.168.101.254", "secondary": ""},
+    ConnectionTag.DOCKER_CONE_GW_2: {"primary": "192.168.102.254", "secondary": ""},
+    ConnectionTag.DOCKER_CONE_GW_3: {"primary": "192.168.113.254", "secondary": ""},
+    ConnectionTag.VM_LINUX_FULLCONE_GW_1: {
+        "primary": "192.168.109.254",
+        "secondary": "10.0.254.9",
+    },
+    ConnectionTag.VM_LINUX_FULLCONE_GW_2: {
+        "primary": "192.168.106.254",
+        "secondary": "10.0.254.6",
+    },
+    ConnectionTag.DOCKER_SYMMETRIC_GW_1: {
+        "primary": "192.168.103.254",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_SYMMETRIC_GW_2: {
+        "primary": "192.168.104.254",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_UDP_BLOCK_GW_1: {
+        "primary": "192.168.110.254",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_UDP_BLOCK_GW_2: {
+        "primary": "192.168.111.254",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_UPNP_GW_1: {"primary": "192.168.105.254", "secondary": ""},
+    ConnectionTag.DOCKER_UPNP_GW_2: {"primary": "192.168.112.254", "secondary": ""},
+    ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: {
+        "primary": "192.168.114.254",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_VPN_1: {"primary": "10.0.100.1", "secondary": ""},
+    ConnectionTag.VM_LINUX_NLX_1: {"primary": "10.0.100.51", "secondary": ""},
+    ConnectionTag.DOCKER_PHOTO_ALBUM: {"primary": "10.0.80.80", "secondary": ""},
+    ConnectionTag.VM_OPENWRT_GW_1: {
+        "primary": "192.168.115.254",
+        "secondary": "10.0.254.14",
+    },
+    ConnectionTag.DOCKER_OPENWRT_CLIENT_1: {
+        "primary": "192.168.115.100",
+        "secondary": "",
+    },
+}
+
+GW_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
+    ConnectionTag.VM_WINDOWS_1: {
+        "primary": "192.168.150.254",
+        "secondary": "192.168.151.254",
+    },
+    ConnectionTag.VM_WINDOWS_2: {
+        "primary": "192.168.152.254",
+        "secondary": "192.168.153.254",
+    },
+    ConnectionTag.VM_MAC: {
+        "primary": "192.168.154.254",
+        "secondary": "192.168.155.254",
+    },
+    ConnectionTag.VM_LINUX_NLX_1: {
+        "primary": "",
+        "secondary": "",
+    },
+    ConnectionTag.VM_LINUX_FULLCONE_GW_1: {
+        "primary": "",
+        "secondary": "",
+    },
+    ConnectionTag.VM_LINUX_FULLCONE_GW_2: {
+        "primary": "",
+        "secondary": "",
+    },
 }
 
 LAN_ADDR_MAP_V6: Dict[ConnectionTag, str] = {
@@ -61,15 +153,6 @@ LAN_ADDR_MAP_V6: Dict[ConnectionTag, str] = {
         "2001:db8:85a4::dead:beef:ceed"
     ),
 }
-
-LINUX_VM_PRIMARY_GATEWAY = "10.55.0.10"
-LINUX_VM_SECONDARY_GATEWAY = "10.66.0.10"
-
-PRIMARY_VM_NETWORK_PREFIX = "10.55.0"
-SECONDARY_VM_NETWORK_PREFIX = "10.66.0"
-
-# https://vagrant-libvirt.github.io/vagrant-libvirt/configuration.html#management-network
-LIBVIRT_MANAGEMENT_NETWORK_PREFIX = "192.168.121"
 
 # Same as defined in `libtelio/nat-lab/docker-compose.yml`, 10.0.0.0/16
 DOCKER_NETWORK_IP = "10.0.0.0"
@@ -101,7 +184,8 @@ WINDUMP_BINARY_WINDOWS = "C:/workspace/WinDump.exe".replace("/", "\\")
 # Libtelio binary path inside Docker containers.
 if os.getenv("TELIO_BIN_PROFILE") not in ["release", "debug"]:
     raise ValueError(
-        'TELIO_BIN_PROFILE environment variable must be set to either "release" or "debug".'
+        'TELIO_BIN_PROFILE environment variable must be set to either "release" or'
+        ' "debug".'
     )
 
 if platform.system() == "Darwin":

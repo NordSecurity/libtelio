@@ -249,12 +249,10 @@ class NetworkSwitcherWindows(NetworkSwitcher):
     def __init__(
         self,
         connection: Connection,
-        mgmt_ifc: Optional[Interface],
         primary_ifc: Interface,
         secondary_ifc: Interface,
     ) -> None:
         self._connection = connection
-        self._mgmt_interface = mgmt_ifc
         self._primary_interface = primary_ifc
         self._secondary_interface = secondary_ifc
 
@@ -263,25 +261,21 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         interfaces = await Interface.get_enabled_network_interfaces(connection)
 
         # Allow management interface to be shut down
-        management_itf = Interface.find_interface_by_ipv4(
-            interfaces, config.LIBVIRT_MANAGEMENT_NETWORK_PREFIX
-        )
         primary_itf = Interface.find_interface_by_ipv4(
-            interfaces, config.PRIMARY_VM_NETWORK_PREFIX
+            interfaces, config.LAN_ADDR_MAP[connection.tag]["primary"]
         )
         secondary_itf = Interface.find_interface_by_ipv4(
-            interfaces, config.SECONDARY_VM_NETWORK_PREFIX
+            interfaces, config.LAN_ADDR_MAP[connection.tag]["secondary"]
         )
         assert (
             primary_itf
-        ), f"Couldn't find primary VM interface (10.55/16) on the interfaces list: {interfaces}"
+        ), f"Couldn't find primary VM interface on the interfaces list: {interfaces}"
         assert (
             secondary_itf
-        ), f"Couldn't find secondary VM interface (10.66/16) on the interfaces list: {interfaces}"
+        ), f"Couldn't find secondary VM interface on the interfaces list: {interfaces}"
 
         return NetworkSwitcherWindows(
             connection,
-            management_itf,
             primary_itf,
             secondary_itf,
         )
@@ -298,7 +292,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             "route",
             "0.0.0.0/0",
             self._primary_interface.name,
-            f"nexthop={config.LINUX_VM_PRIMARY_GATEWAY}",
+            f"nexthop={config.GW_ADDR_MAP[self._connection.tag]['primary']}",
         ]).execute()
 
         if not await CommandGrepper(
@@ -314,7 +308,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         ).check_exists(
             "0.0.0.0/0",
             [
-                config.LINUX_VM_PRIMARY_GATEWAY,
+                config.GW_ADDR_MAP[self._connection.tag]["primary"],
             ],
         ):
             raise Exception("Failed to switch to primary network")
@@ -331,7 +325,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
             "route",
             "0.0.0.0/0",
             self._secondary_interface.name,
-            f"nexthop={config.LINUX_VM_SECONDARY_GATEWAY}",
+            f"nexthop={config.GW_ADDR_MAP[self._connection.tag]['secondary']}",
         ]).execute()
 
         if not await CommandGrepper(
@@ -347,7 +341,7 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         ).check_exists(
             "0.0.0.0/0",
             [
-                config.LINUX_VM_SECONDARY_GATEWAY,
+                config.GW_ADDR_MAP[self._connection.tag]["secondary"],
             ],
         ):
             raise Exception("Failed to switch to secondary network")
@@ -356,7 +350,5 @@ class NetworkSwitcherWindows(NetworkSwitcher):
         # Deleting routes by interface name instead of network destination (0.0.0.0/0) makes
         # it possible to have multiple default routes at the same time: first default route
         # for LAN network, and second default route for VPN network.
-        if self._mgmt_interface:
-            await self._mgmt_interface.disable(self._connection)
         await self._primary_interface.delete_route(self._connection)
         await self._secondary_interface.delete_route(self._connection)

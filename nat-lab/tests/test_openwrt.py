@@ -226,8 +226,8 @@ async def test_openwrt_ip_leaks() -> None:
                 tcp_dump_lines = [line.strip() for line in lines if line.strip()]
                 leak_ips = [
                     "10.0.0.0",
-                    LAN_ADDR_MAP[ConnectionTag.DOCKER_OPENWRT_CLIENT_1],
-                    LAN_ADDR_MAP[ConnectionTag.VM_OPENWRT_GW_1],
+                    LAN_ADDR_MAP[ConnectionTag.DOCKER_OPENWRT_CLIENT_1]["primary"],
+                    LAN_ADDR_MAP[ConnectionTag.VM_OPENWRT_GW_1]["primary"],
                 ]
 
                 errors = [

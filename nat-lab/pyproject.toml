@@ -9,7 +9,7 @@ dependencies = [
     "aiosignal==1.3.1",
     "astroid==3.2.2",
     "async-timeout==4.0.3",
-    "asyncssh==2.14.2",
+    "asyncssh==2.21.0",
     "attrs==24.2.0",
     "autoflake==2.3.1",
     "black==24.1.1",
@@ -157,6 +157,7 @@ disable = [
 ]
 
 [tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
 asyncio_mode = "auto"
 addopts = [
     "--html=report.html",
@@ -181,3 +182,6 @@ markers = [
     "utils: tests the natlab utilities",
     "openwrt: tests that require OpenWrt VM to be running",
 ]
+
+[tool.pyright]
+exclude = ["**/.venv"]

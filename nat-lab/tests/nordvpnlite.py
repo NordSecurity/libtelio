@@ -378,7 +378,7 @@ class NordVpnLite:
         )
         self._node = node
 
-        self._api.prepare_all_vpn_servers()
+        await self._api.prepare_all_vpn_servers()
         for country_id, server_config in enumerate(WG_SERVERS, start=1):
             await register_vpn_server_key(
                 self.connection, str(server_config["public_key"]), country_id
