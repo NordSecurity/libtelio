@@ -95,6 +95,38 @@ async def wait_for_interface_state(
     return success
 
 
+async def print_network_state(connection: Connection) -> None:
+    """
+    Print current network state of the OpenWRT gateway.
+
+    Args:
+        connection (Connection):
+            An active SSH or Docker connection to the OpenWRT gateway.
+    Returns:
+        None
+    """
+    ip_a_log = await connection.create_process(["ip", "a"]).execute()
+    ip_a = ip_a_log.get_stdout().strip()
+    log.debug(
+        "--- Log of ip a command ---\n %s",
+        ip_a,
+    )
+
+    ip_r_log = await connection.create_process(["ip", "r"]).execute()
+    ip_r = ip_r_log.get_stdout().strip()
+    log.debug(
+        "--- Log of ip r command ---\n %s",
+        ip_r,
+    )
+
+    ip_tables_log = await connection.create_process(["iptables", "-L"]).execute()
+    ip_tables = ip_tables_log.get_stdout().strip()
+    log.debug(
+        "--- Log of iptables -L command ---\n %s",
+        ip_tables,
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.openwrt
 @pytest.mark.parametrize(
@@ -121,6 +153,9 @@ async def test_openwrt_vpn_connection(openwrt_config: IfcConfigType) -> None:
         gateway_connection = (
             await setup_connections(exit_stack, [ConnectionTag.VM_OPENWRT_GW_1])
         )[0].connection
+        # printing networking state before test execution
+        await print_network_state(gateway_connection)
+
         await gateway_connection.create_process(
             ["mkdir", "-p", "/etc/nordvpnlite"]
         ).execute()
@@ -168,9 +203,12 @@ async def test_openwrt_ip_leaks() -> None:
         gateway_connection = (
             await setup_connections(exit_stack, [ConnectionTag.VM_OPENWRT_GW_1])
         )[0].connection
+        # printing networking state before test execution
+        await print_network_state(gateway_connection)
         photo_album_connection = await exit_stack.enter_async_context(
             new_connection_raw(ConnectionTag.DOCKER_PHOTO_ALBUM)
         )
+
         await gateway_connection.create_process(
             ["mkdir", "-p", "/etc/nordvpnlite"]
         ).execute()
@@ -262,6 +300,9 @@ async def test_openwrt_simulate_network_down() -> None:
         gateway_connection = (
             await setup_connections(exit_stack, [ConnectionTag.VM_OPENWRT_GW_1])
         )[0].connection
+        # printing networking state before test execution
+        await print_network_state(gateway_connection)
+
         await gateway_connection.create_process(
             ["mkdir", "-p", "/etc/nordvpnlite"]
         ).execute()
