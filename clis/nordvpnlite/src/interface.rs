@@ -4,7 +4,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::process::Command;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 #[cfg(target_os = "linux")]
 use telio::telio_utils::LIBTELIO_FWMARK;
@@ -20,7 +20,11 @@ pub trait ConfigureInterface {
     /// Get the configured IP address for the interface
     fn get_ip(&self) -> Option<IpAddr>;
     /// Configure routes for exit routing
-    fn set_exit_routes(&mut self, exit_node: &IpAddr) -> Result<(), NordVpnLiteError>;
+    fn set_exit_routes(
+        &mut self,
+        exit_node: &IpAddr,
+        dns: &[IpAddr],
+    ) -> Result<(), NordVpnLiteError>;
     /// Some of the configured routes are not cleared when the adapter is removed and must be removed manually
     fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError>;
     /// Manually cleanup the interface before the adapter is removed
@@ -116,7 +120,11 @@ impl ConfigureInterface for Manual {
         None
     }
 
-    fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), NordVpnLiteError> {
+    fn set_exit_routes(
+        &mut self,
+        _exit_node: &IpAddr,
+        _dns: &[IpAddr],
+    ) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
 
@@ -207,7 +215,11 @@ impl ConfigureInterface for Ifconfig {
         None
     }
 
-    fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), NordVpnLiteError> {
+    fn set_exit_routes(
+        &mut self,
+        _exit_node: &IpAddr,
+        _dns: &[IpAddr],
+    ) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
 
@@ -373,7 +385,11 @@ impl ConfigureInterface for Iproute {
         None
     }
 
-    fn set_exit_routes(&mut self, exit_node: &IpAddr) -> Result<(), NordVpnLiteError> {
+    fn set_exit_routes(
+        &mut self,
+        exit_node: &IpAddr,
+        _dns: &[IpAddr],
+    ) -> Result<(), NordVpnLiteError> {
         #[cfg(target_os = "linux")]
         if exit_node.is_ipv4() {
             let table = Self::find_available_table()?.to_string();
@@ -447,6 +463,12 @@ pub struct Uci {
     /// Reflects the value of `network.wan6.disabled`.
     /// If the option is unset, the interface is enabled by default.
     wan6_disabled_initial_setting: Option<UciBoolOption>,
+
+    /// Initial dnsmasq noresolv value
+    initial_setting_dnsmasq_noresolv: Option<UciBoolOption>,
+
+    /// Initial dnsmasq server value
+    initial_setting_dnsmasq_server: Option<Vec<String>>,
 }
 
 /// Represents a boolean option in the UCI configuration system.
@@ -531,14 +553,96 @@ impl Uci {
                 })
                 .ok();
 
+        let initial_setting_dnsmasq_noresolv =
+            execute(Command::new("uci").args(["get", "dhcp.@dnsmasq[0]"]))
+                .map(|_| {
+                    execute_with_output(
+                        Command::new("uci").args(["get", "dhcp.@dnsmasq[0].noresolv"]),
+                    )
+                    .map(|res| UciBoolOption::from_str(&res))
+                    .unwrap_or(UciBoolOption::Default)
+                })
+                .ok();
+
+        let initial_setting_dnsmasq_server =
+            execute_with_output(Command::new("uci").args(["get", "dhcp.@dnsmasq[0].server"]))
+                .map(|res| {
+                    Some(
+                        res.split_whitespace()
+                            .map(|s| s.to_owned())
+                            .collect::<Vec<String>>(),
+                    )
+                })
+                .unwrap_or(None);
+
         debug!("Initial network.wan.ipv6 state {wan_ipv6_initial_setting:?}");
         debug!("Initial network.wan6.disabled state {wan6_disabled_initial_setting:?}");
+        debug!("Initial dhcp.@dnsmasq[0].noresolv {initial_setting_dnsmasq_noresolv:?}");
+        debug!("Initial dhcp.@dnsmasq[0].server {initial_setting_dnsmasq_server:?}");
 
         Self {
             interface_name: interface_name.to_string(),
             wan_ipv6_initial_setting,
             wan6_disabled_initial_setting,
+            initial_setting_dnsmasq_noresolv,
+            initial_setting_dnsmasq_server,
         }
+    }
+
+    fn configure_dnsmasq(&mut self, ips: &[IpAddr]) -> Result<(), NordVpnLiteError> {
+        debug!("Configuring dnsmasq servers: {:?}", ips);
+
+        execute(Command::new("uci").args(["set", "dhcp.@dnsmasq[0].noresolv=1"]))?;
+        execute(Command::new("uci").args(["delete", "dhcp.@dnsmasq[0].server"]))
+            .map_err(|e| {
+                debug!("uci couldn't delete dnsmasq server entry: {}", e);
+            })
+            .ok();
+
+        for ip in ips {
+            execute(
+                Command::new("uci").args(["add_list", &format!("dhcp.@dnsmasq[0].server={}", ip)]),
+            )?;
+        }
+
+        execute(Command::new("uci").args(["commit", "dhcp"]))?;
+        execute(Command::new("service").args(["dnsmasq", "restart"]))?;
+
+        Ok(())
+    }
+
+    fn restore_dnsmasq(&self) -> Result<(), NordVpnLiteError> {
+        debug!("Restoring dnsmasq settings");
+
+        match self.initial_setting_dnsmasq_noresolv {
+            Some(ref v) => {
+                let state = if v.is_true() { "1" } else { "0" };
+                if let Err(e) = execute(
+                    Command::new("uci")
+                        .args(["set", &format!("dhcp.@dnsmasq[0].noresolv={}", state)]),
+                ) {
+                    error!("Error restoring dhcp.@dnsmasq[0].noresolv: {}", e);
+                }
+            }
+            None => warn!("No value stored for dhcp.@dnsmasq[0].noresolv. Ignoring."),
+        }
+
+        // Adding servers works in append mode, we must delete first
+        execute(Command::new("uci").args(["delete", "dhcp.@dnsmasq[0].server"]))?;
+
+        if let Some(ips) = &self.initial_setting_dnsmasq_server {
+            for ip in ips {
+                execute(
+                    Command::new("uci")
+                        .args(["add_list", &format!("dhcp.@dnsmasq[0].server={}", ip)]),
+                )?;
+            }
+        }
+
+        execute(Command::new("uci").args(["commit", "dhcp"]))?;
+        execute(Command::new("service").args(["dnsmasq", "restart"]))?;
+
+        Ok(())
     }
 
     // Helper to disable IPv6
@@ -656,7 +760,11 @@ impl ConfigureInterface for Uci {
         output.trim().parse::<IpAddr>().ok()
     }
 
-    fn set_exit_routes(&mut self, _exit_node: &IpAddr) -> Result<(), NordVpnLiteError> {
+    fn set_exit_routes(
+        &mut self,
+        _exit_node: &IpAddr,
+        dns: &[IpAddr],
+    ) -> Result<(), NordVpnLiteError> {
         let table = Iproute::find_available_table()?;
         let (vpn_rule_prio, lan_rule_prio) = {
             let priorities = Iproute::find_available_lower_rule_priorities(2)?;
@@ -732,6 +840,9 @@ impl ConfigureInterface for Uci {
         // Disable IPv6
         self.disable_ipv6()?;
 
+        // Configure DNS
+        self.configure_dnsmasq(dns)?;
+
         // Save and apply
         self.reload_firewall()?;
         self.reload_network()?;
@@ -759,6 +870,9 @@ impl ConfigureInterface for Uci {
         {
             error!("Error removing forwarding: {e}");
         }
+
+        // Restore DNS settings
+        self.restore_dnsmasq()?;
 
         // Restore IPv6
         self.restore_ipv6()?;

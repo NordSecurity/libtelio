@@ -12,7 +12,7 @@ uci set network.wan.proto='static'
 uci set network.wan.ipaddr='10.0.0.0'
 uci set network.wan.netmask='255.255.255.254'
 
-# Add defailt gateway via 10.0.0.1
+# Add default gateway via 10.0.0.1
 uci set network.wan.gateway='10.0.0.1'
 
 uci commit network
