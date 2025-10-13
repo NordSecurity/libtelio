@@ -638,6 +638,7 @@ def pytest_sessionfinish(session, exitstatus):
             RUNNER.close()
         collect_nordderper_logs()
         collect_dns_server_logs()
+        collect_core_api_server_logs()
         asyncio.run(collect_kernel_logs(session.items, "after_tests"))
         asyncio.run(collect_mac_diagnostic_reports())
         asyncio.run(save_fakefm_logs())
@@ -663,6 +664,20 @@ def collect_dns_server_logs():
         destination_path = f"logs/dns_server_{i}.log"
 
         copy_file_from_container(container_name, "/dns-server.log", destination_path)
+
+
+def collect_core_api_server_logs():
+    container_name = "nat-lab-core-api-1"
+    os.makedirs("logs", exist_ok=True)
+    out_path = os.path.join("logs", "core_api.log")
+    with open(out_path, "w", encoding="utf-8") as f:
+        subprocess.run(
+            ["docker", "logs", container_name],
+            stdout=f,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=True,
+        )
 
 
 def copy_file_from_container(container_name, src_path, dst_path):
