@@ -152,7 +152,7 @@ async def test_dns(
         # If the previous calls didn't fail, we can assume that the resolver is running so no need to wait for the timeout and test the validity of the response
         await query_dns(
             connection_alpha,
-            "beta.nord",
+            "beta.nord.",
             string_to_compressed_ipv6(beta.ip_addresses),
             dns_server_address_alpha,
         )
