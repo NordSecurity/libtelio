@@ -63,23 +63,23 @@ impl Runtime for State {
 
     async fn wait(&mut self) -> WaitResponse<'_, Self::Err> {
         if let Some(targets) = self.ping_channel.recv().await {
-            telio_log_debug!("ping channel received trigger");
+            telio_log_debug!("{} received a trigger", Self::NAME);
             Self::guard(async move {
                 let curr_ip_stack = targets.1;
-
-                // We do not want to ping anything, unless we have an IP address assigned
-                if let Some(ips) = curr_ip_stack.as_ref() {
+                // We do not want to ping anything, unless we have an IP address/stack assigned
+                if let Some(ipstack) = curr_ip_stack.as_ref() {
                     for target in targets.0 {
                         let t = match target {
                             IpAddr::V4(v4) => (Some(v4), None),
                             IpAddr::V6(v6) => (None, Some(v6)),
                         };
                         // Skip unsupported combinations
-                        match (ips, target) {
+                        match (ipstack, target) {
                             (IpStack::IPv4, IpAddr::V6(_)) | (IpStack::IPv6, IpAddr::V4(_)) => {
                                 continue
                             }
-                            _ => telio_log_debug!("Unsupported target combination"),
+                            // Supported combo, nothing to do here
+                            _ => (),
                         }
                         if let Ok(t) = DualTarget::new(t) {
                             if let Err(e) = self.pinger.send_ping(&t).await {
@@ -87,9 +87,9 @@ impl Runtime for State {
                             }
                         }
                     }
-                } else {
-                    telio_log_debug!("No targets to ping");
                 }
+                telio_log_debug!("No targets left to ping");
+
                 Ok(())
             })
         } else {

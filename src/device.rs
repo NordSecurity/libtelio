@@ -1838,14 +1838,11 @@ impl Runtime {
 
         // Update for proxy and derp config
         if let Some(config) = config {
-            let _ = get_ip_stack(config.this.ip_addresses.as_ref().map_or(&[], |v| v))
-                .ok()
-                .map(|ip_stack| async {
-                    self.entities
-                        .wireguard_interface
-                        .set_ip_stack(Some(ip_stack))
-                        .await
-                });
+            let ip_stack = get_ip_stack(config.this.ip_addresses.as_ref().map_or(&[], |v| v)).ok();
+            self.entities
+                .wireguard_interface
+                .set_ip_stack(ip_stack)
+                .await?;
 
             let meshnet_entities: MeshnetEntities = if let MeshnetState::Entities(entities) =
                 std::mem::replace(
