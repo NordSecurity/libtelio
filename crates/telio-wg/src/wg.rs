@@ -1030,10 +1030,6 @@ impl Runtime for State {
         if let Some(link_detection) = self.link_detection {
             link_detection.stop().await;
         }
-        #[cfg(unix)]
-        use std::os::fd::AsRawFd;
-        #[cfg(unix)]
-        self.cfg.tun.map(|tun| nix::unistd::close(tun.as_raw_fd()));
     }
 }
 
