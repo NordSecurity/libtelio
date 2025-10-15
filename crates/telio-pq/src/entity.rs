@@ -19,7 +19,7 @@ struct Peer {
     /// This is a key rotation task guard, its `Drop` implementation aborts the task
     _rotation_task: super::conn::ConnKeyRotation,
     keys: Option<super::Keys>,
-    last_handshake_ts: Option<SystemTime>,
+    last_key_fetch_ts: Option<SystemTime>,
 }
 
 pub struct Entity {
@@ -56,10 +56,10 @@ impl Entity {
     pub fn on_event(&self, event: super::Event) {
         if let Some(peer) = self.peer.lock().as_mut() {
             match event {
-                super::Event::Handshake(addr, keys) => {
+                super::Event::KeyFetch(addr, keys) => {
                     if peer.addr == addr {
                         peer.keys = Some(keys);
-                        peer.last_handshake_ts = Some(SystemTime::now());
+                        peer.last_key_fetch_ts = Some(SystemTime::now());
                     }
                 }
                 super::Event::Rekey(super::Keys {
@@ -72,7 +72,8 @@ impl Entity {
                             // and only then update the preshared key,
                             // otherwise we're connecting to different node already
                             keys.pq_shared = pq_shared;
-                            peer.last_handshake_ts = Some(SystemTime::now());
+                            // Keys are also fetched during rekey
+                            peer.last_key_fetch_ts = Some(SystemTime::now());
                         } else {
                             telio_log_debug!(
                                 "PQ secret key does not match, ignoring shared secret rotation"
@@ -133,7 +134,7 @@ impl Entity {
             let mut peer = self.peer.lock();
             let should_restart = peer
                 .as_ref()
-                .and_then(|peer| peer.last_handshake_ts)
+                .and_then(|peer| peer.last_key_fetch_ts)
                 .is_some_and(|ts| match ts.elapsed() {
                     Ok(dur) => dur > REJECT_AFTER_TIME,
                     Err(err) => err.duration() > Duration::from_secs(5),
@@ -171,7 +172,7 @@ impl Entity {
                 &self.features,
             ),
             keys: None,
-            last_handshake_ts: None,
+            last_key_fetch_ts: None,
         });
 
         #[allow(mpsc_blocking_send)]
