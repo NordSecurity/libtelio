@@ -39,7 +39,7 @@ pub enum TelioTaskCmd {
     // Connect to exit node with endpoint and optional hostname
     ConnectToExitNode(ExitNodeConfig),
     // Break the receive loop to quit the daemon and exit gracefully
-    Quit,
+    Quit(oneshot::Sender<()>),
 }
 
 #[derive(Parser, Debug)]
@@ -152,17 +152,21 @@ impl CommandListener {
                 })
                 .await
             }
-            ClientCmd::QuitDaemon =>
-            {
+            ClientCmd::QuitDaemon => {
+                trace!("Quitting telio task");
+                let (response_tx, response_rx) = oneshot::channel();
                 #[allow(mpsc_blocking_send)]
                 self.telio_task_tx
-                    .send(TelioTaskCmd::Quit)
+                    .send(TelioTaskCmd::Quit(response_tx))
                     .await
-                    .map(|_| CommandResponse::Ok)
                     .map_err(|e| {
                         error!("Error sending command: {}", e);
                         NordVpnLiteError::CommandFailed(ClientCmd::QuitDaemon)
-                    })
+                    })?;
+                // Wait for a response from TelioTask
+                // this essentually blocks the client quit command until the daemon initiated
+                // cleanup
+                handle_response(response_rx, |_| Ok(CommandResponse::Ok)).await
             }
             ClientCmd::IsAlive => Ok(CommandResponse::Ok),
         }
@@ -245,9 +249,15 @@ mod tests {
 
         // spawn a fake telio task
         task::spawn(async move {
-            if let TelioTaskCmd::GetStatus(response_tx_channel) = task_rx.recv().await.unwrap() {
-                let status_report = TelioStatusReport::default();
-                response_tx_channel.send(status_report).unwrap();
+            match task_rx.recv().await.unwrap() {
+                TelioTaskCmd::GetStatus(response_tx_channel) => {
+                    let status_report = TelioStatusReport::default();
+                    response_tx_channel.send(status_report).unwrap();
+                }
+                TelioTaskCmd::Quit(response_tx_channel) => {
+                    response_tx_channel.send(()).unwrap();
+                }
+                _ => {}
             }
         });
 
