@@ -64,7 +64,7 @@ impl ConnKeyRotation {
             // may not care since the task itself will be killed soon
             #[allow(mpsc_blocking_send)]
             let _ = chan
-                .send(super::Event::Handshake(addr, wg_keys.clone()))
+                .send(super::Event::KeyFetch(addr, wg_keys.clone()))
                 .await;
 
             telio_log_debug!("Rekey interval: {}s", rekey_interval.as_secs());

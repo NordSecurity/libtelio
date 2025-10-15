@@ -544,7 +544,7 @@ async def test_pq_vpn_handshake_after_nonet(
             client_conn,
             client_alpha,
         )
-        just_before_pq_restart = pq_connected + timedelta(seconds=179)
+        just_before_pq_restart = pq_connected + timedelta(seconds=120)
 
         async with client_alpha.get_router().break_udp_conn_to_host(
             str(config.NLX_SERVER["ipv4"])
