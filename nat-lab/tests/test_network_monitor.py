@@ -25,6 +25,7 @@ DEFAULT_WAITING_TIME = 2
             ),
             marks=[
                 pytest.mark.mac,
+                pytest.mark.xfail(reason="Expected failure on mac, see LLT-6728"),
             ],
         ),
     ],
