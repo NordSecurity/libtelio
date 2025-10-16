@@ -97,14 +97,14 @@ async def wait_for_interface_state(
     return success
 
 
-async def wait_for_net_reload(connection: Connection, cleanup_timestamp: str) -> bool:
+async def wait_for_net_reload(connection: Connection, cleanup_start_ts: str) -> bool:
     """
     Wait for network to reload after nordvpnlite stop.
 
     Args:
         connection (Connection):
             An active SSH or Docker connection to the OpenWRT gateway.
-        cleanup_timestamp (str):
+        cleanup_start_ts (str):
             Timestamp when clean up started.
 
     Returns:
@@ -125,7 +125,7 @@ async def wait_for_net_reload(connection: Connection, cleanup_timestamp: str) ->
         log.debug(
             "Network reload messages from dmesg: %s, clean up timestamp: %s",
             messages,
-            cleanup_timestamp,
+            cleanup_start_ts,
         )
         filtered = []
         for line in messages.splitlines():
@@ -136,7 +136,7 @@ async def wait_for_net_reload(connection: Connection, cleanup_timestamp: str) ->
             try:
                 dt = datetime.datetime.strptime(date_str, "%a %b %d %H:%M:%S %Y")
                 ts = int(time.mktime(dt.timetuple()))
-                if ts > int(cleanup_timestamp):
+                if ts > int(cleanup_start_ts):
                     filtered.append(line)
             except ValueError:
                 log.debug("Can't convert date to timestamp: %s", date_str)
@@ -230,11 +230,11 @@ async def test_openwrt_vpn_connection(openwrt_config: IfcConfigType) -> None:
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"]
             )
-            result = await gateway_connection.create_process(
+            current_ts = await gateway_connection.create_process(
                 ["sh", "-c", "date +%s"]
             ).execute()
-            cleanup_timestamp = result.get_stdout().strip()
-        if not await wait_for_net_reload(gateway_connection, cleanup_timestamp):
+            cleanup_start_ts = current_ts.get_stdout().strip()
+        if not await wait_for_net_reload(gateway_connection, cleanup_start_ts):
             log.error("Network hasn't been reloaded yet. It might affect next tests")
 
 
@@ -333,11 +333,11 @@ async def test_openwrt_ip_leaks() -> None:
                     if ip in line
                 ]
                 assert not errors, "Next IPs were leaked:\n" + "\n".join(errors)
-            result = await gateway_connection.create_process(
+            current_ts = await gateway_connection.create_process(
                 ["sh", "-c", "date +%s"]
             ).execute()
-            cleanup_timestamp = result.get_stdout().strip()
-        if not await wait_for_net_reload(gateway_connection, cleanup_timestamp):
+            cleanup_start_ts = current_ts.get_stdout().strip()
+        if not await wait_for_net_reload(gateway_connection, cleanup_start_ts):
             log.error("Network hasn't been reloaded yet. It might affect next tests")
 
 
@@ -402,9 +402,9 @@ async def test_openwrt_simulate_network_down() -> None:
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"]
             )
-            result = await gateway_connection.create_process(
+            current_ts = await gateway_connection.create_process(
                 ["sh", "-c", "date +%s"]
             ).execute()
-            cleanup_timestamp = result.get_stdout().strip()
-        if not await wait_for_net_reload(gateway_connection, cleanup_timestamp):
+            cleanup_start_ts = current_ts.get_stdout().strip()
+        if not await wait_for_net_reload(gateway_connection, cleanup_start_ts):
             log.error("Network hasn't been reloaded yet. It might affect next tests")
