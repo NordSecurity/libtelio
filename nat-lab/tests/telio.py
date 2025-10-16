@@ -49,6 +49,8 @@ from utils.testing import (
     get_current_test_case_and_parameters,
 )
 
+DEVICE_STOP_TIMEOUT = 30
+
 
 class WontHappenError(Exception):
     pass
@@ -561,6 +563,8 @@ class Client:
                         await self.set_meshnet_config(meshnet_config)
                     yield self
             finally:
+                # Stopping the instance might fail, but we don't want that to prevent us from doing the cleanup
+                stop_exception = None
                 log.info(
                     "[%s] Test cleanup: Stopping tcpdump and collecting core dumps",
                     self._node.name,
@@ -579,14 +583,32 @@ class Client:
                     self._node.name,
                 )
                 if self._process.is_executing():
+                    log.info(
+                        "[%s] Test cleanup: process is still executing",
+                        self._node.name,
+                    )
                     if self._libtelio_proxy:
-                        await self.stop_device()
+                        log.info(
+                            "[%s] Test cleanup: will stop the device",
+                            self._node.name,
+                        )
+                        try:
+                            async with asyncio.timeout(DEVICE_STOP_TIMEOUT):
+                                await self.stop_device()
+                                self._quit = True
+                        # pylint: disable=broad-except
+                        except Exception as e:
+                            log.exception(
+                                "[%s] Exception while stopping device: %s. Will ignore until the end of the cleanup",
+                                self._node.name,
+                                e,
+                            )
+                            stop_exception = e
                     else:
                         log.info(
                             "[%s] Test cleanup: We don't have LibtelioProxy instance, Stop() not called.",
                             self._node.name,
                         )
-                    self._quit = True
 
                 log.info("[%s]  Test cleanup: Shutting down", self._node.name)
                 if self._libtelio_proxy:
@@ -623,6 +645,8 @@ class Client:
                 await self._save_logs()
 
                 log.info("[%s] Test cleanup complete", self._node.name)
+                if stop_exception is not None:
+                    raise stop_exception
 
     async def simple_start(self):
         await self.get_proxy().start_named(
