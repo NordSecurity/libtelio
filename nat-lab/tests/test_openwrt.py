@@ -1,16 +1,24 @@
 import asyncio
 import pytest
 import re
-from config import WG_SERVER, PHOTO_ALBUM_IP, STUN_SERVER, LAN_ADDR_MAP
+from config import WG_SERVER, PHOTO_ALBUM_IP, LAN_ADDR_MAP, STUN_SERVER
 from contextlib import AsyncExitStack
-from helpers import setup_connections
+from helpers import (
+    setup_connections,
+    print_network_state,
+    wait_for_interface_state,
+    wait_for_log_line,
+)
 from nordvpnlite import NordVpnLite, Config, IfcConfigType, Paths
 from pathlib import Path
 from utils import stun
 from utils.connection import Connection, ConnectionTag
 from utils.connection_util import new_connection_raw
 from utils.logger import log
+from utils.openwrt import start_logread_process
 from utils.ping import ping
+
+NETWORK_RESTART_LOG_LINE = "netifd: Network device 'eth1' link is up"
 
 
 async def check_gateway_and_client_ip(
@@ -56,74 +64,6 @@ async def check_gateway_and_client_ip(
     assert client_ip == expected_ip, (
         f"Client device has wrong public IP when connected to VPN: {client_ip}. "
         f"Expected value: {expected_ip}"
-    )
-
-
-async def wait_for_interface_state(
-    connection: Connection, interface: str, expected_state: str
-) -> bool:
-    """
-    Wait for an interface state to become up or down.
-
-    Args:
-        connection (Connection):
-            An active SSH or Docker connection to the OpenWRT gateway.
-        interface (str):
-            Interface name to check.
-        expected_state (str):
-            Expected state of the interface - up or down.
-
-    Returns:
-        bool
-    """
-    success = False
-    for _ in range(2):
-        result = await connection.create_process(
-            ["sh", "-c", "ip link show %s | awk '/state/ {print $9}'" % interface]
-        ).execute()
-        state = result.get_stdout().strip()
-        if state == expected_state:
-            success = True
-            break
-        log.debug(
-            "Interface %s has state: %s, expected state: %s",
-            interface,
-            state,
-            expected_state,
-        )
-        await asyncio.sleep(1)
-    return success
-
-
-async def print_network_state(connection: Connection) -> None:
-    """
-    Print current network state of the OpenWRT gateway.
-
-    Args:
-        connection (Connection):
-            An active SSH or Docker connection to the OpenWRT gateway.
-    Returns:
-        None
-    """
-    ip_a_log = await connection.create_process(["ip", "a"]).execute()
-    ip_a = ip_a_log.get_stdout().strip()
-    log.debug(
-        "--- Log of ip a command ---\n %s",
-        ip_a,
-    )
-
-    ip_r_log = await connection.create_process(["ip", "r"]).execute()
-    ip_r = ip_r_log.get_stdout().strip()
-    log.debug(
-        "--- Log of ip r command ---\n %s",
-        ip_r,
-    )
-
-    ip_tables_log = await connection.create_process(["iptables", "-L"]).execute()
-    ip_tables = ip_tables_log.get_stdout().strip()
-    log.debug(
-        "--- Log of iptables -L command ---\n %s",
-        ip_tables,
     )
 
 
@@ -203,6 +143,11 @@ async def test_openwrt_vpn_connection(openwrt_config: IfcConfigType) -> None:
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"]
             )
+            logread_proc = await start_logread_process(
+                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
 
         # Dnsmasq restart will populate the logs soon
         await asyncio.sleep(5)
@@ -310,6 +255,11 @@ async def test_openwrt_ip_leaks() -> None:
                     if ip in line
                 ]
                 assert not errors, "Next IPs were leaked:\n" + "\n".join(errors)
+            logread_proc = await start_logread_process(
+                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
 
 
 @pytest.mark.asyncio
@@ -373,3 +323,8 @@ async def test_openwrt_simulate_network_down() -> None:
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"]
             )
+            logread_proc = await start_logread_process(
+                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
