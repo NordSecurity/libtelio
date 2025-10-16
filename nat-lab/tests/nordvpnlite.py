@@ -249,6 +249,9 @@ class NordVpnLite:
         except ProcessExecError as exc:
             if "Daemon is not ready, ignoring" in exc.stdout:
                 raise IgnoreableError() from exc
+            # TODO: remove after LLT-669
+            if "ClientTimeoutError" in exc.stdout:
+                raise IgnoreableError() from exc
             raise exc
 
     async def quit(self) -> None:
@@ -328,6 +331,19 @@ class NordVpnLite:
                 if status["exit_node"]:
                     if status["exit_node"]["state"] == "connected":
                         return
+                await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+            except IgnoreableError:
+                await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+                continue
+
+    async def wait_for_telio_running_status(self):
+        # TODO: remove after LLT-6693
+        await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+        while True:
+            try:
+                status = json.loads(await self.get_status())
+                if status["telio_is_running"]:
+                    return
                 await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
             except IgnoreableError:
                 await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
