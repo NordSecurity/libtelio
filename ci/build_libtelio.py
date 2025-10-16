@@ -149,10 +149,9 @@ def post_copy_ens_proto_to_dist(config, args):
     target_root_path = PROJECT_CONFIG.get_cargo_path(
         config.rust_target, "", config.debug
     )
-
     paths = find_file_in_tree("ens.proto", target_root_path)
-    assert len(paths) == 1
-
+    contents = {open(path, "r").read() for path in paths}
+    assert len(contents), f"All the found files are not equal: {paths}"
     shutil.copy2(paths[0], PROJECT_CONFIG.get_distribution_dir() + "/linux/ens.proto")
 
 
