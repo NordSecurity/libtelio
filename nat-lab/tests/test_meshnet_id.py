@@ -25,7 +25,7 @@ async def test_meshnet_id_generated_only_when_meshnet_starts() -> None:
             )
         )
 
-        client_alpha = env.clients
+        [client_alpha] = env.clients
         # Wait for everything to get set up
         await asyncio.sleep(5)
         logs = await client_alpha.get_log()
