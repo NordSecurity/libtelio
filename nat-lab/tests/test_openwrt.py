@@ -1,6 +1,8 @@
 import asyncio
+import datetime
 import pytest
 import re
+import time
 from config import WG_SERVER, PHOTO_ALBUM_IP, STUN_SERVER, LAN_ADDR_MAP
 from contextlib import AsyncExitStack
 from helpers import setup_connections
@@ -95,6 +97,56 @@ async def wait_for_interface_state(
     return success
 
 
+async def wait_for_net_reload(connection: Connection, cleanup_timestamp: str) -> bool:
+    """
+    Wait for network to reload after nordvpnlite stop.
+
+    Args:
+        connection (Connection):
+            An active SSH or Docker connection to the OpenWRT gateway.
+        cleanup_timestamp (str):
+            Timestamp when clean up started.
+
+    Returns:
+        bool
+    """
+    log_pattern = re.compile(
+        r"([A-Za-z]{3} [A-Za-z]{3} \d{1,2} \d{2}:\d{2}:\d{2} \d{4}) daemon\.notice netifd: Network device 'eth1' link is up"
+    )
+    for _ in range(3):
+        # wait for network reload to complete
+        await asyncio.sleep(2)
+        result = await connection.create_process([
+            "sh",
+            "-c",
+            "logread | grep -i \"netifd: Network device 'eth1' link is up\"",
+        ]).execute()
+        messages = result.get_stdout().strip()
+        log.debug(
+            "Network reload messages from dmesg: %s, clean up timestamp: %s",
+            messages,
+            cleanup_timestamp,
+        )
+        filtered = []
+        for line in messages.splitlines():
+            m = log_pattern.search(line)
+            if not m:
+                continue
+            date_str = m.group(1)
+            try:
+                dt = datetime.datetime.strptime(date_str, "%a %b %d %H:%M:%S %Y")
+                ts = int(time.mktime(dt.timetuple()))
+                if ts > int(cleanup_timestamp):
+                    filtered.append(line)
+            except ValueError:
+                log.debug("Can't convert date to timestamp: %s", date_str)
+                continue
+        if filtered:
+            log.info("Found new 'eth1 link up' messages after cleanup: %s", filtered)
+            return True
+    return False
+
+
 async def print_network_state(connection: Connection) -> None:
     """
     Print current network state of the OpenWRT gateway.
@@ -178,6 +230,12 @@ async def test_openwrt_vpn_connection(openwrt_config: IfcConfigType) -> None:
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"]
             )
+            result = await gateway_connection.create_process(
+                ["sh", "-c", "date +%s"]
+            ).execute()
+            cleanup_timestamp = result.get_stdout().strip()
+        if not await wait_for_net_reload(gateway_connection, cleanup_timestamp):
+            log.error("Network hasn't been reloaded yet. It might affect next tests")
 
 
 @pytest.mark.asyncio
@@ -275,6 +333,12 @@ async def test_openwrt_ip_leaks() -> None:
                     if ip in line
                 ]
                 assert not errors, "Next IPs were leaked:\n" + "\n".join(errors)
+            result = await gateway_connection.create_process(
+                ["sh", "-c", "date +%s"]
+            ).execute()
+            cleanup_timestamp = result.get_stdout().strip()
+        if not await wait_for_net_reload(gateway_connection, cleanup_timestamp):
+            log.error("Network hasn't been reloaded yet. It might affect next tests")
 
 
 @pytest.mark.asyncio
@@ -338,3 +402,9 @@ async def test_openwrt_simulate_network_down() -> None:
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"]
             )
+            result = await gateway_connection.create_process(
+                ["sh", "-c", "date +%s"]
+            ).execute()
+            cleanup_timestamp = result.get_stdout().strip()
+        if not await wait_for_net_reload(gateway_connection, cleanup_timestamp):
+            log.error("Network hasn't been reloaded yet. It might affect next tests")
