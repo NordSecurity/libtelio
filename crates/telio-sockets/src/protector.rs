@@ -56,6 +56,9 @@ pub trait Protector: Send + Sync {
 
     /// Update the tunnel interface identifier to be applied when making the socket internal.
     fn set_tunnel_interface(&self, interface: u64);
+
+    /// [Windows only] Update the list of interfaces to exclude, when making external calls.
+    fn set_ext_if_filter(&self, list: &[String]);
 }
 
 /// A blanket implementation of `Arc<Protector>`.
@@ -81,6 +84,10 @@ impl<T: Protector + ?Sized> Protector for Arc<T> {
     fn set_tunnel_interface(&self, interface: u64) {
         self.as_ref().set_tunnel_interface(interface)
     }
+
+    fn set_ext_if_filter(&self, list: &[String]) {
+        self.as_ref().set_ext_if_filter(list)
+    }
 }
 
 /// Construct a [`Protector`] instance that applies a closure.
@@ -103,6 +110,8 @@ pub fn make_external_protector(protect: Protect) -> Arc<(dyn Protector + 'static
         fn set_fwmark(&self, _fwmark: u32) {}
 
         fn set_tunnel_interface(&self, _interface: u64) {}
+
+        fn set_ext_if_filter(&self, _list: &[String]) {}
     }
     Arc::new(ProtectorMakeExternalCb(protect))
 }

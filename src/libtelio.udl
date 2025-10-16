@@ -238,6 +238,12 @@ interface Telio {
     [Throws=TelioError]
     void start_named(SecretKey secret_key, TelioAdapterType adapter, string name);
 
+    /// Start telio with specified adapter type, adapter name and filtered default interface list.
+    ///
+    /// Adapter will attempt to open its own tunnel.
+    [Throws=TelioError]
+    void start_named_ext_if_filter(SecretKey secret_key, TelioAdapterType adapter, string name, sequence<string> ext_if_filter);
+
     /// Start telio device with specified adapter and already open tunnel.
     ///
     /// Telio will take ownership of tunnel , and close it on stop.
@@ -252,6 +258,10 @@ interface Telio {
 
     /// get device luid.
     u64 get_adapter_luid();
+
+    /// Set filtered interfaces list on adapter
+    [Throws=TelioError]
+    void set_ext_if_filter(sequence<string> ext_if_filter);
 
     /// Sets private key for started device.
     ///

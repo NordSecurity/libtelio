@@ -149,6 +149,9 @@ class MacRouter(Router):
             ).execute()
             self._meshnet_route_v6_created = True
 
+    async def create_fake_ipv4_route(self, route: str) -> None:
+        pass
+
     async def create_vpn_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             await self._connection.create_process([
