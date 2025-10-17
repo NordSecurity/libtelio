@@ -7,7 +7,7 @@ use pnet_packet::{ipv4::Ipv4Packet, ipv6::Ipv6Packet};
 use crate::{
     chain::Chain,
     conntrack::{self, unwrap_option_or_return, Conntrack},
-    error::LibfwError,
+    error::LibfwResult,
     ffi_chain::{LibfwChain, LibfwVerdict},
     log::{
         libfw_log_trace, libfw_log_warn, LibfwLogCallback, LibfwLogLevel, LOG_CALLBACK,
@@ -99,18 +99,18 @@ pub extern "C" fn libfw_init() -> *mut LibfwFirewall {
 pub unsafe extern "C" fn libfw_configure_chain(
     fw: *mut LibfwFirewall,
     ffi_chain: *const LibfwChain,
-) -> LibfwError {
+) -> LibfwResult {
     match ffi_chain.as_ref() {
         Some(ffi_chain) => match ffi_chain.try_into() {
             Ok(chain) => {
                 unsafe {
                     *(*fw).chain.write() = Some(chain);
                 }
-                LibfwError::LibfwSuccess
+                LibfwResult::LibfwSuccess
             }
             Err(err) => err.into(),
         },
-        None => LibfwError::LibfwErrorNullPointer,
+        None => LibfwResult::LibfwErrorNullPointer,
     }
 }
 
@@ -142,7 +142,7 @@ pub unsafe extern "C" fn libfw_trigger_stale_connection_close(
     inject_packet_cb_data: *mut c_void,
     inject_inbound_packet_cb: LibfwInjectPacketCallback,
     _inject_outbound_packet_cb: LibfwInjectPacketCallback,
-) -> LibfwError {
+) -> LibfwResult {
     libfw_log_trace!("Stale connection closing triggered");
     if let Some((fw, callback)) = firewall.as_mut().zip(inject_inbound_packet_cb) {
         let assoc_data = if associated_data.is_null() {
@@ -181,10 +181,10 @@ pub unsafe extern "C" fn libfw_trigger_stale_connection_close(
             libfw_log_warn!("Failed to reset UDP connections: {:?}", err);
             err.into()
         } else {
-            LibfwError::LibfwSuccess
+            LibfwResult::LibfwSuccess
         }
     } else {
-        LibfwError::LibfwErrorNullPointer
+        LibfwResult::LibfwErrorNullPointer
     }
 }
 
