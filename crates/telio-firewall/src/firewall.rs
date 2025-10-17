@@ -126,7 +126,7 @@ pub trait Firewall {
 
     /// Creates packets that are supposed to kill the existing connections.
     /// The end goal here is to fore the client app sockets to reconnect.
-    fn reset_connections(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) -> io::Result<()>;
+    fn reset_connections(&self, pubkey: &PublicKey, sink: &mut dyn io::Write);
 
     /// Saves local node Ip address into firewall object
     fn set_ip_addresses(&self, ip_addrs: Vec<StdIpAddr>);
@@ -656,7 +656,7 @@ impl Firewall for StatefullFirewall {
             }
     }
 
-    fn reset_connections(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) -> io::Result<()> {
+    fn reset_connections(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) {
         telio_log_debug!("Constructing connetion reset packets");
         let sink_ptr = &sink as *const &mut dyn io::Write;
         unsafe {
@@ -669,8 +669,6 @@ impl Firewall for StatefullFirewall {
                 None,
             );
         }
-
-        Ok(())
     }
 
     fn set_ip_addresses(&self, ip_addrs: Vec<StdIpAddr>) {
@@ -689,6 +687,8 @@ impl Default for StatefullFirewall {
 #[cfg(any(test, feature = "test_utils"))]
 #[allow(missing_docs, unused)]
 pub mod tests {
+    use crate::error::LibfwResult;
+
     use super::*;
     use pnet_packet::{
         icmp::{
