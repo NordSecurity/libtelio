@@ -1276,7 +1276,7 @@ mod tests {
 
     use crate::{
         conntrack::{ConnectionState, Conntrack},
-        firewall::IpPacket,
+        packet::IpPacket,
     };
 
     const IPV4_HEADER_MIN: usize = 20; // IPv4 header minimal length in bytes
