@@ -14,6 +14,7 @@ use telio_sockets::protector::make_external_protector;
 use uuid::Uuid;
 
 use std::{
+    convert::TryInto,
     net::{IpAddr, SocketAddr},
     panic::{self, AssertUnwindSafe},
     sync::{Arc, Mutex, Once},
@@ -376,7 +377,9 @@ impl Telio {
             self.device_op(true, |dev| {
                 dev.start(DeviceConfig {
                     private_key: private_key.clone(),
-                    adapter: adapter.into(),
+                    adapter: adapter
+                        .try_into()
+                        .map_err(|e| TelioError::UnknownError { inner: e })?,
                     fwmark: None,
                     name: None,
                     tun: None,
@@ -407,7 +410,9 @@ impl Telio {
             self.device_op(true, |dev| {
                 dev.start(DeviceConfig {
                     private_key: private_key.clone(),
-                    adapter: adapter.into(),
+                    adapter: adapter
+                        .try_into()
+                        .map_err(|e| TelioError::UnknownError { inner: e })?,
                     fwmark: None,
                     name: Some(name.clone()),
                     tun: None,
@@ -440,7 +445,9 @@ impl Telio {
             self.device_op(true, |dev| {
                 dev.start(DeviceConfig {
                     private_key: private_key.clone(),
-                    adapter: adapter.into(),
+                    adapter: adapter
+                        .try_into()
+                        .map_err(|e| TelioError::UnknownError { inner: e })?,
                     fwmark: None,
                     name: Some(name.clone()),
                     tun: None,
@@ -506,7 +513,9 @@ impl Telio {
                 let tun = None;
                 dev.start(DeviceConfig {
                     private_key: private_key.clone(),
-                    adapter: adapter.into(),
+                    adapter: adapter
+                        .try_into()
+                        .map_err(|e| TelioError::UnknownError { inner: e })?,
                     fwmark: None,
                     name: None,
                     tun,

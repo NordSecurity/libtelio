@@ -486,7 +486,7 @@ impl Config {
         let tun = None;
 
         Ok(Self {
-            adapter: self.adapter,
+            adapter: self.adapter.clone(),
             name: self.name.clone(),
             tun,
             socket_pool: self.socket_pool.clone(),
@@ -1122,6 +1122,10 @@ pub mod tests {
 
         async fn set_tun(&self, _tun: Tun) -> Result<(), Error> {
             Err(Error::UnsupportedAdapter)
+        }
+
+        fn clone_box(&self) -> Option<Box<dyn Adapter>> {
+            None
         }
     }
 

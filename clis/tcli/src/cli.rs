@@ -706,7 +706,7 @@ impl Cli {
             let device_config = DeviceConfig {
                 private_key: private_key.clone(),
                 name: Some(name),
-                adapter: adapter_type,
+                adapter: adapter_type.clone(),
                 ..Default::default()
             };
 

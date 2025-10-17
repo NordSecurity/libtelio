@@ -82,6 +82,8 @@ enum TelioAdapterType {
     "LinuxNativeTun",
     /// WindowsNativeWireguardNt implementation
     "WindowsNativeTun",
+    /// Custom adapter type
+    "Custom",
 };
 
 /// Possible log levels.

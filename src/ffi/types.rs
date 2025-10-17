@@ -3,7 +3,7 @@ use telio_model::event::Event;
 use telio_utils::map_enum;
 use tracing::Level;
 
-use std::panic::RefUnwindSafe;
+use std::{convert::TryFrom, panic::RefUnwindSafe};
 
 use crate::device::{AdapterType, Error as DevError};
 
@@ -51,6 +51,8 @@ pub enum TelioAdapterType {
     LinuxNativeTun,
     /// WindowsNativeWireguardNt implementation
     WindowsNativeTun,
+    /// Custom adapter implementation
+    Custom,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -113,19 +115,29 @@ impl From<&DevError> for TelioError {
     }
 }
 
-map_enum! {
-    AdapterType -> TelioAdapterType,
-    NepTUN = BoringTun,
-    LinuxNativeWg = LinuxNativeTun,
-    WindowsNativeWg = WindowsNativeTun
+impl From<AdapterType> for TelioAdapterType {
+    fn from(value: AdapterType) -> Self {
+        match value {
+            AdapterType::NepTUN => TelioAdapterType::BoringTun,
+            AdapterType::LinuxNativeWg => TelioAdapterType::LinuxNativeTun,
+            AdapterType::WindowsNativeWg => TelioAdapterType::WindowsNativeTun,
+            AdapterType::Custom(_) => TelioAdapterType::Custom,
+        }
+    }
 }
 
-map_enum! {
-    TelioAdapterType -> AdapterType,
-    NepTUN = NepTUN,
-    BoringTun = NepTUN,
-    LinuxNativeTun = LinuxNativeWg,
-    WindowsNativeTun = WindowsNativeWg
+impl TryFrom<TelioAdapterType> for AdapterType {
+    type Error = String;
+
+    fn try_from(value: TelioAdapterType) -> Result<Self, Self::Error> {
+        match value {
+            TelioAdapterType::NepTUN => Ok(AdapterType::NepTUN),
+            TelioAdapterType::BoringTun => Ok(AdapterType::NepTUN),
+            TelioAdapterType::LinuxNativeTun => Ok(AdapterType::LinuxNativeWg),
+            TelioAdapterType::WindowsNativeTun => Ok(AdapterType::WindowsNativeWg),
+            TelioAdapterType::Custom => Err("Unsupported TelioAdapterType::Custom".to_owned()),
+        }
+    }
 }
 
 // Deprecated slog crate had 6 levels
