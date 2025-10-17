@@ -4,7 +4,7 @@
 #[allow(clippy::enum_variant_names)]
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-pub enum LibfwError {
+pub enum LibfwResult {
     LibfwSuccess,
     LibfwErrorMalformedIpPacket,
     LibfwErrorMalformedUdpPacket,
@@ -36,45 +36,45 @@ pub(crate) enum Error {
 
 pub(crate) type Result<T> = std::result::Result<T, Error>;
 
-impl From<LibfwError> for Result<()> {
-    fn from(value: LibfwError) -> Self {
+impl From<LibfwResult> for Result<()> {
+    fn from(value: LibfwResult) -> Self {
         match value {
-            LibfwError::LibfwSuccess => Ok(()),
-            LibfwError::LibfwErrorMalformedIpPacket => Err(Error::MalformedIpPacket),
-            LibfwError::LibfwErrorMalformedUdpPacket => Err(Error::MalformedUdpPacket),
-            LibfwError::LibfwErrorMalformedTcpPacket => Err(Error::MalformedTcpPacket),
-            LibfwError::LibfwErrorMalformedIcmpPacket => Err(Error::MalformedIcmpPacket),
-            LibfwError::LibfwErrorUnexpectedProtocol => Err(Error::UnexpectedProtocol),
-            LibfwError::LibfwErrorInvalidIcmpErrorPayload => Err(Error::InvalidIcmpErrorPayload),
-            LibfwError::LibfwErrorUnexpectedPacketType => Err(Error::UnexpectedPacketType),
-            LibfwError::LibfwErrorNullPointer => Err(Error::NullPointer),
-            LibfwError::LibfwErrorNotImplemented => Err(Error::NotImplemented),
-            LibfwError::LibfwErrorInvalidChain => Err(Error::InvalidChain),
+            LibfwResult::LibfwSuccess => Ok(()),
+            LibfwResult::LibfwErrorMalformedIpPacket => Err(Error::MalformedIpPacket),
+            LibfwResult::LibfwErrorMalformedUdpPacket => Err(Error::MalformedUdpPacket),
+            LibfwResult::LibfwErrorMalformedTcpPacket => Err(Error::MalformedTcpPacket),
+            LibfwResult::LibfwErrorMalformedIcmpPacket => Err(Error::MalformedIcmpPacket),
+            LibfwResult::LibfwErrorUnexpectedProtocol => Err(Error::UnexpectedProtocol),
+            LibfwResult::LibfwErrorInvalidIcmpErrorPayload => Err(Error::InvalidIcmpErrorPayload),
+            LibfwResult::LibfwErrorUnexpectedPacketType => Err(Error::UnexpectedPacketType),
+            LibfwResult::LibfwErrorNullPointer => Err(Error::NullPointer),
+            LibfwResult::LibfwErrorNotImplemented => Err(Error::NotImplemented),
+            LibfwResult::LibfwErrorInvalidChain => Err(Error::InvalidChain),
         }
     }
 }
 
-impl From<Error> for LibfwError {
+impl From<Error> for LibfwResult {
     fn from(value: Error) -> Self {
         match value {
-            Error::MalformedIpPacket => LibfwError::LibfwErrorMalformedIpPacket,
-            Error::MalformedUdpPacket => LibfwError::LibfwErrorMalformedUdpPacket,
-            Error::MalformedTcpPacket => LibfwError::LibfwErrorMalformedTcpPacket,
-            Error::MalformedIcmpPacket => LibfwError::LibfwErrorMalformedIcmpPacket,
-            Error::UnexpectedProtocol => LibfwError::LibfwErrorUnexpectedProtocol,
-            Error::InvalidIcmpErrorPayload => LibfwError::LibfwErrorInvalidIcmpErrorPayload,
-            Error::UnexpectedPacketType => LibfwError::LibfwErrorUnexpectedPacketType,
-            Error::NullPointer => LibfwError::LibfwErrorNullPointer,
-            Error::NotImplemented => LibfwError::LibfwErrorNotImplemented,
-            Error::InvalidChain => LibfwError::LibfwErrorInvalidChain,
+            Error::MalformedIpPacket => LibfwResult::LibfwErrorMalformedIpPacket,
+            Error::MalformedUdpPacket => LibfwResult::LibfwErrorMalformedUdpPacket,
+            Error::MalformedTcpPacket => LibfwResult::LibfwErrorMalformedTcpPacket,
+            Error::MalformedIcmpPacket => LibfwResult::LibfwErrorMalformedIcmpPacket,
+            Error::UnexpectedProtocol => LibfwResult::LibfwErrorUnexpectedProtocol,
+            Error::InvalidIcmpErrorPayload => LibfwResult::LibfwErrorInvalidIcmpErrorPayload,
+            Error::UnexpectedPacketType => LibfwResult::LibfwErrorUnexpectedPacketType,
+            Error::NullPointer => LibfwResult::LibfwErrorNullPointer,
+            Error::NotImplemented => LibfwResult::LibfwErrorNotImplemented,
+            Error::InvalidChain => LibfwResult::LibfwErrorInvalidChain,
         }
     }
 }
 
-impl<T> From<Result<T>> for LibfwError {
+impl<T> From<Result<T>> for LibfwResult {
     fn from(value: Result<T>) -> Self {
         match value {
-            Ok(_) => LibfwError::LibfwSuccess,
+            Ok(_) => LibfwResult::LibfwSuccess,
             Err(err) => err.into(),
         }
     }
