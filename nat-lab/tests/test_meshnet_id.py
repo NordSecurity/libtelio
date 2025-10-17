@@ -14,7 +14,7 @@ async def test_meshnet_id_generated_only_when_meshnet_starts() -> None:
             adapter_type_override=TelioAdapterType.NEP_TUN,
             features=default_features(
                 enable_nurse=True,
-                enable_lana=["path.db", False],
+                enable_lana=("path.db", False),
             ),
             is_meshnet=False,
         )
