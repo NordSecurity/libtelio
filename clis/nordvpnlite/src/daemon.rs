@@ -393,6 +393,7 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
                 match join_result {
                     Ok(Ok(_)) => {
                         info!("Telio task thread completed normally");
+                        break Ok(())
                     }
                     Ok(Err(err)) => {
                         error!("Telio task failed with error: {:?}", err);
@@ -409,9 +410,6 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
                 match result {
                     Ok(command) => {
                         debug!("Client command {:?} executed successfully", command);
-                        if command == ClientCmd::QuitDaemon {
-                            break Ok(())
-                        }
                     }
                     Err(err) => {
                         error!("Received invalid command from client: {}", err);
