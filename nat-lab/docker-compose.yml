@@ -54,6 +54,9 @@ services:
     entrypoint: /opt/bin/client
     devices:
       - "/dev/net/tun"
+    depends_on:
+      cone-gw-01:
+        condition: service_healthy
     cap_drop:
       - ALL
     cap_add:
@@ -113,6 +116,11 @@ services:
       core:
         soft: -1
         hard: -1
+    depends_on:
+      windows-gw-01:
+        condition: service_healthy
+      windows-gw-02:
+        condition: service_healthy
     extra_hosts:
       - "photo-album:10.0.80.80"
       - "stun-01:10.0.1.1"
@@ -149,6 +157,11 @@ services:
   windows-client-02:
     hostname: windows-client-02
     <<: *windows-client
+    depends_on:
+      windows-gw-03:
+        condition: service_healthy
+      windows-gw-04:
+        condition: service_healthy
     networks:
       windows-net-03:
         ipv4_address: 192.168.152.54
@@ -167,6 +180,9 @@ services:
   cone-client-02:
     hostname: cone-client-02
     <<: *common-client
+    depends_on:
+      cone-gw-02:
+        condition: service_healthy
     networks:
       cone-net-02:
         ipv4_address: 192.168.102.54
@@ -184,6 +200,11 @@ services:
       core:
         soft: -1
         hard: -1
+    depends_on:
+      mac-gw-01:
+        condition: service_healthy
+      mac-gw-02:
+        condition: service_healthy
     extra_hosts:
       - "photo-album:10.0.80.80"
       - "stun-01:10.0.1.1"
@@ -221,6 +242,11 @@ services:
   shared-client-01:
     hostname: shared-client-01
     <<: *common-client
+    depends_on:
+      cone-gw-01:
+        condition: service_healthy
+      cone-gw-03:
+        condition: service_healthy
     networks:
       cone-net-01:
         ipv4_address: 192.168.101.67
@@ -272,6 +298,9 @@ services:
   fullcone-client-01:
     hostname: fullcone-client-01
     <<: *common-client
+    depends_on:
+      fullcone-gw-01:
+        condition: service_healthy
     networks:
       fullcone-net-01:
         ipv4_address: 192.168.109.88
@@ -281,6 +310,9 @@ services:
   fullcone-client-02:
     hostname: fullcone-client-02
     <<: *common-client
+    depends_on:
+      fullcone-gw-02:
+        condition: service_healthy
     networks:
       fullcone-net-02:
         ipv4_address: 192.168.106.88
@@ -290,6 +322,9 @@ services:
   upnp-client-01:
     hostname: upnp-client-01
     <<: *common-client
+    depends_on:
+      upnp-gw-01:
+        condition: service_healthy
     networks:
       upnp-net-01:
         ipv4_address: 192.168.105.88
@@ -299,6 +334,9 @@ services:
   upnp-client-02:
     hostname: upnp-client-02
     <<: *common-client
+    depends_on:
+      upnp-gw-02:
+        condition: service_healthy
     networks:
       upnp-net-02:
         ipv4_address: 192.168.112.88
@@ -308,6 +346,9 @@ services:
   symmetric-client-01:
     hostname: symmetric-client-01
     <<: *common-client
+    depends_on:
+      symmetric-gw-01:
+        condition: service_healthy
     networks:
       hsymmetric-net-01:
         ipv4_address: 192.168.103.88
@@ -317,6 +358,9 @@ services:
   symmetric-client-02:
     hostname: symmetric-client-02
     <<: *common-client
+    depends_on:
+      symmetric-gw-02:
+        condition: service_healthy
     networks:
       hsymmetric-net-02:
         ipv4_address: 192.168.104.88
@@ -326,6 +370,9 @@ services:
   internal-symmetric-client-01:
     hostname: internal-symmetric-client-01
     <<: *common-client
+    depends_on:
+      internal-symmetric-gw-01:
+        condition: service_healthy
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.114.254
       INTERMEDIATE_NETWORK: 192.168.103.0/24
@@ -336,6 +383,9 @@ services:
   udp-block-client-01:
     hostname: udp-block-client-01
     <<: *common-client
+    depends_on:
+      udp-block-gw-01:
+        condition: service_healthy
     networks:
       udp-block-net-01:
         ipv4_address: 192.168.110.100
@@ -345,6 +395,9 @@ services:
   udp-block-client-02:
     hostname: udp-block-client-02
     <<: *common-client
+    depends_on:
+      udp-block-gw-02:
+        condition: service_healthy
     networks:
       udp-block-net-02:
         ipv4_address: 192.168.111.100
@@ -354,6 +407,9 @@ services:
   openwrt-client-01:
     hostname: openwrt-client-01
     <<: *common-client
+    depends_on:
+      openwrt-gw-01:
+        condition: service_healthy
     networks:
       openwrt-net-01:
         ipv4_address: 192.168.115.100
