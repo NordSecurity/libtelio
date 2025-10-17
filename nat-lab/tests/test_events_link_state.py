@@ -155,6 +155,52 @@ FEATURE_DISABLED_PARAMS = [
     ])
 ]
 
+# Beta node sends the keepalive packets with period according with its wg implementation, impacting
+# alpha link detection mechanism.
+#
+# Enhanced detection must be second item in the tuple so that test names ending index refer to correct ED state.
+# ie: [<test_name>0] -> ED is disabled
+# ie: [<test_name>1] -> ED is enabled
+FEATURE_ENABLED_PARAMS_RELAY_PLUS_LINUX_NATIVE_TUN_AS_BETA = (
+    FEATURE_ENABLED_PARAMS_RELAY
+    + [
+        param
+        for param_pair in [
+            (
+                pytest.param(
+                    _generate_setup_parameter_pair(
+                        [
+                            (tag, adapter),
+                            (
+                                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                                TelioAdapterType.LINUX_NATIVE_TUN,
+                            ),
+                        ],
+                        enhanced_detection=False,
+                    ),
+                ),
+                pytest.param(
+                    _generate_setup_parameter_pair(
+                        [
+                            (tag, adapter),
+                            (
+                                ConnectionTag.DOCKER_CONE_CLIENT_2,
+                                TelioAdapterType.LINUX_NATIVE_TUN,
+                            ),
+                        ],
+                        enhanced_detection=True,
+                    ),
+                ),
+            )
+            for tag, adapter in [
+                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
+                (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+            ]
+        ]
+        for param in param_pair
+    ]
+)
+
 
 async def wait_for_any_with_timeout(tasks, timeout: float):
     done_tasks, _pending_tasks = await asyncio.wait(
@@ -420,7 +466,9 @@ class ICMP_control:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS_RELAY)
+@pytest.mark.parametrize(
+    "setup_params", FEATURE_ENABLED_PARAMS_RELAY_PLUS_LINUX_NATIVE_TUN_AS_BETA
+)
 async def test_event_link_state_peer_doesnt_respond(
     setup_params: List[SetupParameters],
 ) -> None:
