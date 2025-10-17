@@ -32,7 +32,7 @@ async def test_meshnet_id_generated_only_when_meshnet_starts() -> None:
         logs = await client_alpha.get_log()
         logs = logs.lower()
         # There should be no meshnet ID generation
-        assert logs.count("Meshnet ID:") > 0
+        assert logs.count("Meshnet ID:") == 0
 
         config = env.api.get_meshnet_config(env.nodes[0].id)
         await client_alpha.set_meshnet_config(config)
