@@ -82,6 +82,8 @@ enum TelioAdapterType {
     "LinuxNativeTun",
     /// WindowsNativeWireguardNt implementation
     "WindowsNativeTun",
+    /// TODO
+    "Custom",
 };
 
 /// Possible log levels.
@@ -198,6 +200,60 @@ namespace telio {
     void add_timestamps_to_logs();
 };
 
+dictionary WgPeer {
+    string public_key;
+    string? endpoint;
+    sequence<string> ip_addresses;
+    u32? persistent_keepalive_interval;
+    sequence<string> allowed_ips;
+    u64? rx_bytes;
+    u64? time_since_last_rx_ms;
+    u64? tx_bytes;
+    u64? time_since_last_handshake_ms;
+};
+
+dictionary WgInterface {
+    string? private_key;
+    u16? listen_port;
+    // TODO: do we need proxy_listen_port?
+    u32 fwmark;
+    record<string, WgPeer> peers;
+};
+
+dictionary WgResponse {
+    i32 errno;
+    WgInterface? interface;
+};
+
+dictionary WgDevice {
+    string? private_key;
+    u16? listen_port;
+    u32? fwmark;  
+    boolean? replace_peers;
+    sequence<WgPeer> peers;
+};
+
+[Enum]
+interface WgCmd {
+    Get();
+    Set(WgDevice device);
+};
+
+[Trait, WithForeign]
+interface TelioCustomAdapter {
+    void start();
+    void stop();
+    u64 get_adapter_luid();
+    // TODO: ERROR
+    WgResponse send_uapi_cmd(WgCmd cmd);
+    
+    void drop_connected_sockets(); // TODO: probably not possible
+    void inject_reset_packets(string exit_pubkey); // TODO: probably not possible
+    void set_tun(i32 tun_fd); // TODO: probably not possible
+
+    void protect(boolean protect, i32 socket_fd);
+};
+
 interface Telio {
     /// Create new telio library instance
     /// # Parameters
@@ -226,6 +282,12 @@ interface Telio {
     [Throws=TelioError]
     void stop();
 
+    /// Start telio with specified adapter.
+    ///
+    /// Adapter will attempt to open its own tunnel.
+    [Throws=TelioError]
+    void start_custom(SecretKey secret_key, TelioCustomAdapter adapter);
+    
     /// Start telio with specified adapter.
     ///
     /// Adapter will attempt to open its own tunnel.
