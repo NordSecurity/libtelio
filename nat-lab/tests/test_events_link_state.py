@@ -58,11 +58,11 @@ def long_persistent_keepalive_periods() -> FeatureWireguard:
 
 def _generate_setup_parameter_pair(
     cfg: List[Tuple[ConnectionTag, TelioAdapterType]],
-    enhaced_detection: bool,
+    enhanced_detection: bool,
     direct: bool = False,
     vpn: bool = False,
 ) -> List[SetupParameters]:
-    if enhaced_detection:
+    if enhanced_detection:
         count = 1
     else:
         count = 0
@@ -115,7 +115,7 @@ FEATURE_ENABLED_PARAMS_RELAY = [
                             TelioAdapterType.NEP_TUN,
                         ),
                     ],
-                    enhaced_detection=False,
+                    enhanced_detection=False,
                 ),
                 marks=pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else (),
             ),
@@ -128,7 +128,7 @@ FEATURE_ENABLED_PARAMS_RELAY = [
                             TelioAdapterType.NEP_TUN,
                         ),
                     ],
-                    enhaced_detection=True,
+                    enhanced_detection=True,
                 ),
                 marks=pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else (),
             ),
@@ -527,7 +527,7 @@ async def test_event_link_state_delayed_packet(
                     (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
                     (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
                 ],
-                enhaced_detection=False,
+                enhanced_detection=False,
                 direct=False,
             ),
         ),
@@ -537,7 +537,7 @@ async def test_event_link_state_delayed_packet(
                     (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
                     (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
                 ],
-                enhaced_detection=True,
+                enhanced_detection=True,
                 direct=False,
             ),
         ),
@@ -550,7 +550,7 @@ async def test_event_link_state_delayed_packet(
                     ),
                     (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
                 ],
-                enhaced_detection=False,
+                enhanced_detection=False,
                 direct=False,
             ),
         ),
@@ -563,7 +563,7 @@ async def test_event_link_state_delayed_packet(
                     ),
                     (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
                 ],
-                enhaced_detection=True,
+                enhanced_detection=True,
                 direct=False,
             ),
         ),
@@ -573,7 +573,7 @@ async def test_event_link_state_delayed_packet(
                     (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
                     (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
                 ],
-                enhaced_detection=False,
+                enhanced_detection=False,
                 direct=False,
             ),
             marks=pytest.mark.windows,
@@ -584,7 +584,7 @@ async def test_event_link_state_delayed_packet(
                     (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
                     (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
                 ],
-                enhaced_detection=True,
+                enhanced_detection=True,
                 direct=False,
             ),
             marks=pytest.mark.windows,
@@ -660,7 +660,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
                     (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
                     (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
                 ],
-                enhaced_detection=False,
+                enhanced_detection=False,
                 direct=True,
             ),
         ),
@@ -670,7 +670,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
                     (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
                     (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
                 ],
-                enhaced_detection=True,
+                enhanced_detection=True,
                 direct=True,
             ),
         ),
@@ -680,7 +680,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
                     (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
                     (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
                 ],
-                enhaced_detection=False,
+                enhanced_detection=False,
                 direct=True,
             ),
             marks=[
@@ -694,7 +694,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
                     (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
                     (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
                 ],
-                enhaced_detection=True,
+                enhanced_detection=True,
                 direct=True,
             ),
             marks=[
@@ -795,7 +795,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
                 [
                     (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
                 ],
-                enhaced_detection=False,
+                enhanced_detection=False,
                 vpn=True,
             ),
         ),
@@ -804,7 +804,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
                 [
                     (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
                 ],
-                enhaced_detection=True,
+                enhanced_detection=True,
                 vpn=True,
             ),
         ),
@@ -813,7 +813,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
                 [
                     (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
                 ],
-                enhaced_detection=False,
+                enhanced_detection=False,
                 vpn=True,
             ),
             marks=[
@@ -826,7 +826,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
                 [
                     (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
                 ],
-                enhaced_detection=True,
+                enhanced_detection=True,
                 vpn=True,
             ),
             marks=[
