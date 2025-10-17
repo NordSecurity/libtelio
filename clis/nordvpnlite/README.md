@@ -77,6 +77,7 @@ needs be absolute, otherwise will be relative to `working-directory` when daemon
     * `public_key` - The public key of the server/peer to connect to
   * `country` - Full country name or ISO A2 code, of the desired VPN server location.
   * `recommended` - First server from the API recommendation list will be selected.
+* `dns` - Optional list of DNS server IP addresses to use. If not set, built-in safe defaults are used.
 
 And following cli commands:
 

@@ -67,6 +67,13 @@ fn reconnect_after_expiry_default() -> Percentage {
     Percentage(90)
 }
 
+fn dns_default() -> Vec<IpAddr> {
+    vec![
+        Ipv4Addr::new(103, 86, 96, 100).into(),
+        Ipv4Addr::new(103, 86, 99, 100).into(),
+    ]
+}
+
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct NordToken(Arc<Hidden<String>>);
 
@@ -132,6 +139,7 @@ impl NordlynxKeyResponse {
 }
 
 #[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct NordVpnLiteConfig {
     #[serde(
         deserialize_with = "deserialize_log_level",
@@ -145,7 +153,8 @@ pub struct NordVpnLiteConfig {
     pub interface: InterfaceConfig,
     #[serde(default)]
     pub vpn: VpnConfig,
-
+    #[serde(default = "dns_default")]
+    pub dns: Vec<IpAddr>,
     /// Overrides the default WireGuard endpoint port, should be used only for testing.
     /// The Core API does not include the WireGuard port in its response, and in environments like
     /// natlab where a non-standard port is used, this allows specifying a custom port manually.
@@ -254,6 +263,7 @@ impl Default for NordVpnLiteConfig {
                 config_provider: Default::default(),
             },
             vpn: Default::default(),
+            dns: dns_default(),
             override_default_wg_port: None,
             authentication_token: Default::default(),
             http_certificate_file_path: None,
@@ -393,6 +403,7 @@ mod tests {
                 config_provider: InterfaceConfigurationProvider::Manual,
             },
             vpn: Default::default(),
+            dns: dns_default(),
             override_default_wg_port: None,
             authentication_token: Default::default(),
             http_certificate_file_path: None,
@@ -463,6 +474,67 @@ mod tests {
     }
 
     #[test]
+    fn test_config_dns_custom() {
+        let mut expected_config = NordVpnLiteConfig::default();
+        expected_config.dns = vec![Ipv4Addr::new(1, 1, 1, 1).into()];
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "dns": ["1.1.1.1"],
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert_eq!(expected_config, serde_json::from_str(json).unwrap());
+    }
+
+    #[test]
+    fn test_config_dns_custom_multiple() {
+        let mut expected_config = NordVpnLiteConfig::default();
+        expected_config.dns = vec![
+            Ipv4Addr::new(1, 1, 1, 1).into(),
+            Ipv4Addr::new(8, 8, 8, 8).into(),
+        ];
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "dns": ["1.1.1.1", "8.8.8.8"],
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert_eq!(expected_config, serde_json::from_str(json).unwrap());
+    }
+
+    #[test]
+    fn test_config_vpn_and_dns_default_setting() {
+        let expected_config = NordVpnLiteConfig::default();
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert_eq!(expected_config, serde_json::from_str(json).unwrap());
+    }
+
+    #[test]
     fn test_config_vpn_endpoint() {
         let expected_config = NordVpnLiteConfig {
             vpn: VpnConfig::Server(Endpoint {
@@ -507,7 +579,7 @@ mod tests {
             },
             "vpn": {
                 "country": "de",
-                "country": "pl",
+                "country": "pl"
             },
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
@@ -522,10 +594,10 @@ mod tests {
                 "config_provider": "manual"
             },
             "vpn": {
-                "country": "de",
+                "country": "de"
             },
             "vpn": {
-                "country": "pl",
+                "country": "pl"
             },
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
@@ -541,7 +613,7 @@ mod tests {
                 "config_provider": "manual"
             },
             "vpn": {
-                "country": "de",
+                "country": "de"
             },
             "vpn": {
                 "server": {
@@ -573,6 +645,24 @@ mod tests {
             }"#;
 
         assert!(serde_json::from_str::<NordVpnLiteConfig>(json).is_err());
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "vpn": "recommended",
+            "dns": ["1.1.1.1.1"]
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert!(
+            serde_json::from_str::<NordVpnLiteConfig>(json).is_err(),
+            "Bad DNS ip"
+        );
     }
 
     #[test]
@@ -584,6 +674,10 @@ mod tests {
         let config = NordVpnLiteConfig::from_file(file.path().to_str().unwrap()).unwrap();
 
         assert_eq!(config.log_file_path, log_path.to_string_lossy());
+        assert_eq!(
+            serde_json::from_str::<NordVpnLiteConfig>(&config_json).unwrap(),
+            config
+        );
     }
 
     #[test]

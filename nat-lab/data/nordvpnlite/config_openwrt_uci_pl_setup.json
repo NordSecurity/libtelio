@@ -12,5 +12,6 @@
   "vpn": {
     "country": "pl"
   },
+  "dns": ["10.0.80.83"],
   "override_default_wg_port": 1023
 }

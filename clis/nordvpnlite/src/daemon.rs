@@ -26,7 +26,7 @@ use telio::{
     telio_model::mesh::NodeState,
 };
 
-use crate::command_listener::{ClientCmd, TelioTaskCmd, TIMEOUT_SEC};
+use crate::command_listener::{ClientCmd, ExitNodeConfig, TelioTaskCmd, TIMEOUT_SEC};
 use crate::core_api::get_server_endpoints_list;
 use crate::{
     command_listener::CommandListener,
@@ -246,18 +246,18 @@ impl TelioTaskCmd {
                 }
                 Ok(TelioTaskOutcome::Continue)
             }
-            TelioTaskCmd::ConnectToExitNode(endpoint) => {
+            TelioTaskCmd::ConnectToExitNode(exit_node) => {
                 ctx.interface_config_provider
-                    .set_exit_routes(&endpoint.address)
+                    .set_exit_routes(&exit_node.endpoint.address, &exit_node.dns)
                     .inspect_err(|e| {
                         error!("Failed to set routes for exit routing with error '{e:?}'")
                     })?;
                 let node = ExitNode {
                     identifier: uuid::Uuid::new_v4().to_string(),
-                    public_key: endpoint.public_key,
+                    public_key: exit_node.endpoint.public_key,
                     allowed_ips: None,
                     endpoint: Some(SocketAddr::new(
-                        endpoint.address,
+                        exit_node.endpoint.address,
                         ctx.config
                             .override_default_wg_port
                             .unwrap_or(DEFAULT_WIREGUARD_PORT),
@@ -267,15 +267,15 @@ impl TelioTaskCmd {
                     Ok(_) => {
                         info!(
                             "Connected to exit node: {} ({}) [{}]",
-                            endpoint.address,
-                            endpoint.public_key,
-                            endpoint.hostname.as_deref().unwrap_or_default()
+                            exit_node.endpoint.address,
+                            exit_node.endpoint.public_key,
+                            exit_node.endpoint.hostname.as_deref().unwrap_or_default()
                         );
                         let external_nodes = ctx.telio.external_nodes()?;
-                        let exit_node = external_nodes
-                            .iter()
-                            .find(|node| node.is_exit)
-                            .map(|node| ExitNodeStatus::from_node(node, endpoint.hostname));
+                        let exit_node =
+                            external_nodes.iter().find(|node| node.is_exit).map(|node| {
+                                ExitNodeStatus::from_node(node, exit_node.endpoint.hostname)
+                            });
                         ctx.exit_node = exit_node;
                     }
                     Err(e) => {
@@ -317,7 +317,10 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
                 // Send the command to initiate the VPN connection
                 #[allow(mpsc_blocking_send)]
                 if let Err(e) = tx
-                    .send(TelioTaskCmd::ConnectToExitNode(endpoint.to_owned()))
+                    .send(TelioTaskCmd::ConnectToExitNode(ExitNodeConfig {
+                        endpoint: endpoint.to_owned(),
+                        dns: config.dns.clone(),
+                    }))
                     .await
                 {
                     error!("Failed to send connect command to telio task: {e}");
