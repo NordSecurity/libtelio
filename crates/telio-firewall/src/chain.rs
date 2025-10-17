@@ -32,7 +32,7 @@ use crate::{
         LIBFW_IP_TYPE_V4, LIBFW_IP_TYPE_V6, LIBFW_NEXT_PROTO_ICMP, LIBFW_NEXT_PROTO_ICMPV6,
         LIBFW_NEXT_PROTO_TCP, LIBFW_NEXT_PROTO_UDP,
     },
-    firewall::IpPacket,
+    packet::IpPacket,
 };
 
 ///
