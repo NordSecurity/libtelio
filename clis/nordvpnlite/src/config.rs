@@ -139,7 +139,7 @@ impl NordlynxKeyResponse {
     }
 }
 
-#[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct NordVpnLiteConfig {
     #[serde(
@@ -150,6 +150,10 @@ pub struct NordVpnLiteConfig {
     pub log_file_path: String,
     #[serde(default = "default_log_file_count")]
     pub log_file_count: usize,
+    #[serde(
+        serialize_with = "serialize_adapter_type",
+        deserialize_with = "deserialize_adapter_type"
+    )]
     pub adapter_type: AdapterType,
     pub interface: InterfaceConfig,
     #[serde(default)]
@@ -172,6 +176,40 @@ pub struct NordVpnLiteConfig {
 
     #[serde(default)]
     pub mqtt: MqttConfig,
+}
+
+impl PartialEq for NordVpnLiteConfig {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.adapter_type, &other.adapter_type) {
+            (AdapterType::NepTUN, AdapterType::NepTUN) => {}
+            (AdapterType::LinuxNativeWg, AdapterType::LinuxNativeWg) => {}
+            (AdapterType::WindowsNativeWg, AdapterType::WindowsNativeWg) => {}
+            _ => return false,
+        }
+
+        (
+            &self.log_level,
+            &self.log_file_path,
+            &self.log_file_count,
+            &self.interface,
+            &self.vpn,
+            &self.override_default_wg_port,
+            &self.authentication_token,
+            &self.http_certificate_file_path,
+            &self.mqtt,
+        )
+            .eq(&(
+                &other.log_level,
+                &other.log_file_path,
+                &other.log_file_count,
+                &other.interface,
+                &other.vpn,
+                &other.override_default_wg_port,
+                &other.authentication_token,
+                &other.http_certificate_file_path,
+                &other.mqtt,
+            ))
+    }
 }
 
 impl NordVpnLiteConfig {
@@ -271,6 +309,30 @@ impl Default for NordVpnLiteConfig {
             mqtt: MqttConfig::default(),
         }
     }
+}
+
+fn serialize_adapter_type<S>(adapter: &AdapterType, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let name = match adapter {
+        AdapterType::NepTUN => "netpun",
+        AdapterType::LinuxNativeWg => "linux-native",
+        AdapterType::WindowsNativeWg => "wireguard-nt",
+        AdapterType::Custom(_) => "custom",
+    };
+    serializer.serialize_str(name)
+}
+
+fn deserialize_adapter_type<'de, D>(deserializer: D) -> Result<AdapterType, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(deserializer).and_then(|s: String| {
+        AdapterType::from_str(&s).map_err(|_| {
+            de::Error::unknown_variant(&s, &["TODO", "TODO", "TODO", "TODO", "TODO", "TODO"])
+        })
+    })
 }
 
 fn deserialize_percent<'de, D>(deserializer: D) -> Result<Percentage, D::Error>

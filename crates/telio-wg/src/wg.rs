@@ -517,7 +517,7 @@ impl Config {
         let tun = None;
 
         Ok(Self {
-            adapter: self.adapter,
+            adapter: self.adapter.clone(),
             name: self.name.clone(),
             tun,
             socket_pool: self.socket_pool.clone(),

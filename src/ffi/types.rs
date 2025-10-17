@@ -51,6 +51,8 @@ pub enum TelioAdapterType {
     LinuxNativeTun,
     /// WindowsNativeWireguardNt implementation
     WindowsNativeTun,
+    /// TODO:
+    Custom,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -113,11 +115,23 @@ impl From<&DevError> for TelioError {
     }
 }
 
-map_enum! {
-    AdapterType -> TelioAdapterType,
-    NepTUN = BoringTun,
-    LinuxNativeWg = LinuxNativeTun,
-    WindowsNativeWg = WindowsNativeTun
+// map_enum! {
+//     AdapterType -> TelioAdapterType,
+//     NepTUN = BoringTun,
+//     LinuxNativeWg = LinuxNativeTun,
+//     WindowsNativeWg = WindowsNativeTun,
+//     Custom(_) = LinuxNativeTun
+// }
+
+impl From<AdapterType> for TelioAdapterType {
+    fn from(value: AdapterType) -> Self {
+        match value {
+            AdapterType::NepTUN => TelioAdapterType::BoringTun,
+            AdapterType::LinuxNativeWg => TelioAdapterType::LinuxNativeTun,
+            AdapterType::WindowsNativeWg => TelioAdapterType::WindowsNativeTun,
+            AdapterType::Custom(_) => TelioAdapterType::Custom,
+        }
+    }
 }
 
 map_enum! {
@@ -125,7 +139,8 @@ map_enum! {
     NepTUN = NepTUN,
     BoringTun = NepTUN,
     LinuxNativeTun = LinuxNativeWg,
-    WindowsNativeTun = WindowsNativeWg
+    WindowsNativeTun = WindowsNativeWg,
+    Custom = LinuxNativeWg // TODO
 }
 
 // Deprecated slog crate had 6 levels

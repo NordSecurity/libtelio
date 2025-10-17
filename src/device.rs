@@ -1132,7 +1132,7 @@ impl Runtime {
                         libtelio_wide_event_publisher: Some(libtelio_wide_event_publisher.clone()),
                     },
                     wg::Config {
-                        adapter: config.adapter,
+                        adapter: config.adapter.clone(),
                         name: config.name.clone(),
                         tun: config.tun,
                         socket_pool: socket_pool.clone(),
@@ -1142,9 +1142,9 @@ impl Runtime {
                         )),
                         firewall_reset_connections,
                         enable_dynamic_wg_nt_control: features.wireguard.enable_dynamic_wg_nt_control,
-                        skt_buffer_size : Runtime::sanitize_neptun_config(features.wireguard.skt_buffer_size, config.adapter),
-                        inter_thread_channel_size : Runtime::sanitize_neptun_config(features.wireguard.inter_thread_channel_size, config.adapter),
-                        max_inter_thread_batched_pkts : Runtime::sanitize_neptun_config(features.wireguard.max_inter_thread_batched_pkts, config.adapter),
+                        skt_buffer_size : Runtime::sanitize_neptun_config(features.wireguard.skt_buffer_size, config.adapter.clone()),
+                        inter_thread_channel_size : Runtime::sanitize_neptun_config(features.wireguard.inter_thread_channel_size, config.adapter.clone()),
+                        max_inter_thread_batched_pkts : Runtime::sanitize_neptun_config(features.wireguard.max_inter_thread_batched_pkts, config.adapter.clone()),
                     },
                     features.link_detection,
                     features.ipv6,
@@ -2384,7 +2384,7 @@ impl Runtime {
 
     fn sanitize_neptun_config(config_param: Option<u32>, adapter: AdapterType) -> Option<u32> {
         match config_param {
-            Some(b) if adapter == AdapterType::NepTUN => Some(b),
+            Some(b) if matches!(adapter, AdapterType::NepTUN) => Some(b),
             Some(_) => {
                 telio_log_warn!("Config parameter set in non-Neptun adapter, setting it to None");
                 None
