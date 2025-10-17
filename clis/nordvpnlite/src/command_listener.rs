@@ -32,7 +32,7 @@ pub enum TelioTaskCmd {
     // Connect to exit node with endpoint and optional hostname
     ConnectToExitNode(Endpoint),
     // Break the receive loop to quit the daemon and exit gracefully
-    Quit(oneshot::Sender<()>),
+    Quit,
 }
 
 #[derive(Parser, Debug)]
@@ -143,19 +143,17 @@ impl CommandListener {
                 })
                 .await
             }
-            ClientCmd::QuitDaemon => {
-                trace!("Quitting telio task");
-                let (response_tx, response_rx) = oneshot::channel();
+            ClientCmd::QuitDaemon =>
+            {
                 #[allow(mpsc_blocking_send)]
                 self.telio_task_tx
-                    .send(TelioTaskCmd::Quit(response_tx))
+                    .send(TelioTaskCmd::Quit)
                     .await
+                    .map(|_| CommandResponse::Ok)
                     .map_err(|e| {
                         error!("Error sending command: {}", e);
                         NordVpnLiteError::CommandFailed(ClientCmd::QuitDaemon)
-                    })?;
-                // wait for a response from telio runner
-                handle_response(response_rx, |_| Ok(CommandResponse::Ok)).await
+                    })
             }
             ClientCmd::IsAlive => Ok(CommandResponse::Ok),
         }
