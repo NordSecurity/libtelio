@@ -11,6 +11,7 @@ from utils.connection import Connection, ConnectionTag
 from utils.connection_util import new_connection_raw
 from utils.logger import log
 from utils.ping import ping
+from utils.process import Process
 
 
 async def check_gateway_and_client_ip(
@@ -93,6 +94,25 @@ async def wait_for_interface_state(
         )
         await asyncio.sleep(1)
     return success
+
+
+async def wait_for_log_line(log_process: Process) -> None:
+    """
+    Accepts process polling for a log line and wait for a log to appear.
+
+    Args:
+        log_process (Process):
+            An active SSH or Docker process polling for a log line.
+
+    Returns:
+        None
+    """
+    while True:
+        await asyncio.sleep(1)
+        log_line = log_process.get_stdout().strip()
+        if log_line:
+            log.debug("Expected log line captured: %s ", log_line)
+            return
 
 
 async def print_network_state(connection: Connection) -> None:
@@ -178,6 +198,15 @@ async def test_openwrt_vpn_connection(openwrt_config: IfcConfigType) -> None:
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"]
             )
+            logread_proc = await exit_stack.enter_async_context(
+                gateway_connection.create_process([
+                    "sh",
+                    "-c",
+                    "logread -f | grep -i \"netifd: Network device 'eth1' link is up\"",
+                ]).run()
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
 
 
 @pytest.mark.asyncio
@@ -275,6 +304,15 @@ async def test_openwrt_ip_leaks() -> None:
                     if ip in line
                 ]
                 assert not errors, "Next IPs were leaked:\n" + "\n".join(errors)
+            logread_proc = await exit_stack.enter_async_context(
+                gateway_connection.create_process([
+                    "sh",
+                    "-c",
+                    "logread -f | grep -i \"netifd: Network device 'eth1' link is up\"",
+                ]).run()
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
 
 
 @pytest.mark.asyncio
@@ -338,3 +376,12 @@ async def test_openwrt_simulate_network_down() -> None:
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"]
             )
+            logread_proc = await exit_stack.enter_async_context(
+                gateway_connection.create_process([
+                    "sh",
+                    "-c",
+                    "logread -f | grep -i \"netifd: Network device 'eth1' link is up\"",
+                ]).run()
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
