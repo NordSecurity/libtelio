@@ -200,6 +200,57 @@ namespace telio {
     void add_timestamps_to_logs();
 };
 
+dictionary WgPeer {
+    PublicKey public_key;
+    string? endpoint;
+    sequence<IpAddr> ip_addresses;
+    u32? persistent_keepalive_interval;
+    sequence<IpNet> allowed_ips;
+    u64? rx_bytes;
+    u64? time_since_last_rx_ms;
+    u64? tx_bytes;
+    u64? time_since_last_handshake_ms;
+    string? preshared_key;
+};
+
+dictionary WgInterface {
+    string? private_key;
+    u16? listen_port;
+    u32 fwmark;
+    record<string, WgPeer> peers;
+};
+
+dictionary WgResponse {
+    i32 errno;
+    WgInterface? interface;
+};
+
+dictionary WgDevice {
+    string? private_key;
+    u16? listen_port;
+    u32? fwmark;  
+    boolean? replace_peers;
+    sequence<WgPeer> peers;
+};
+
+[Enum]
+interface WgCmd {
+    Get();
+    Set(WgDevice device);
+};
+
+[Trait, WithForeign]
+interface TelioCustomAdapter {
+    /// Start the adapter
+    void start();
+
+    /// Stop the adapter
+    void stop();
+
+    /// Send an UAPI command
+    WgResponse send_uapi_cmd(WgCmd cmd);
+};
+
 interface Telio {
     /// Create new telio library instance
     /// # Parameters
@@ -228,6 +279,12 @@ interface Telio {
     [Throws=TelioError]
     void stop();
 
+    /// Start telio with specified adapter.
+    ///
+    /// Adapter will attempt to open its own tunnel.
+    [Throws=TelioError]
+    void start_custom(SecretKey secret_key, TelioCustomAdapter adapter);
+    
     /// Start telio with specified adapter.
     ///
     /// Adapter will attempt to open its own tunnel.

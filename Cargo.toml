@@ -36,6 +36,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 uniffi.workspace = true
 uuid.workspace = true
+wireguard-uapi.workspace = true
 
 telio-crypto.workspace = true
 telio-dns.workspace = true
@@ -162,6 +163,7 @@ tracing-appender = "0.2"
 uniffi = "0.28.3"
 url = "2.5"
 uuid = { version = "1.17", features = ["v4"] }
+wireguard-uapi = { git = "https://github.com/NordSecurity/wireguard-uapi-rs.git", rev = "5f5d9952ced4faf10f56d98153e4a8e560102e5c", features = ["xplatform", "zeroize"], default-features = false  }
 winapi = { version = "0.3", features = ["netioapi", "ws2def"] }
 windows = { version = "0.61", features = [
   "Win32_Networking_WinSock",
