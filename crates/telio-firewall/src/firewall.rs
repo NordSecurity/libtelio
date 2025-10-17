@@ -689,11 +689,6 @@ impl Default for StatefullFirewall {
 #[cfg(any(test, feature = "test_utils"))]
 #[allow(missing_docs, unused)]
 pub mod tests {
-    use crate::{
-        conntrack::{Connection, ConnectionState, IpConnWithPort, TcpConnectionInfo},
-        packet::IpAddr,
-    };
-
     use super::*;
     use pnet_packet::{
         icmp::{
@@ -706,7 +701,7 @@ pub mod tests {
         ipv6::{Ipv6Packet, MutableIpv6Packet},
         tcp::{MutableTcpPacket, TcpPacket},
         udp::MutableUdpPacket,
-        MutablePacket,
+        MutablePacket, Packet,
     };
     use smallvec::{SmallVec, ToSmallVec};
     use std::{
@@ -1026,78 +1021,6 @@ pub mod tests {
         make_icmp6_with_body(src, dst, icmp_type, &[])
     }
 
-    #[test]
-    fn firewall_ipv4_packet_validation() {
-        let mut raw = make_icmp4("127.0.0.1", "8.8.8.8", IcmpTypes::EchoRequest.into());
-        let mut ip = MutableIpv4Packet::new(&mut raw).expect("PRE: Bad IP buffer");
-        assert_eq!(ip.to_immutable().check_valid(), true);
-
-        ip.set_version(4);
-        assert_eq!(ip.to_immutable().check_valid(), true);
-
-        ip.set_version(0); // Invalid IP version
-        assert_eq!(ip.to_immutable().check_valid(), false);
-
-        ip.set_version(6); // Only Ipv4 supported
-        assert_eq!(ip.to_immutable().check_valid(), false);
-
-        ip.set_version(4);
-        ip.set_header_length(4); // Ipv4->IHL must be [5..15]
-        assert_eq!(ip.to_immutable().check_valid(), false);
-
-        let icmp =
-            MutableIcmpPacket::new(&mut raw[IPV4_HEADER_MIN..]).expect("PRE: Bad ICMP buffer");
-        assert_eq!(icmp.get_icmp_type(), IcmpTypes::EchoRequest);
-    }
-
-    #[test]
-    fn firewall_ipv6_packet_validation() {
-        let mut raw = make_icmp6("::1", "2001:4860:4860::8888", IcmpTypes::EchoRequest.into());
-        let mut ip = MutableIpv6Packet::new(&mut raw).expect("PRE: Bad IP buffer");
-        assert_eq!(ip.to_immutable().check_valid(), true);
-
-        ip.set_version(6);
-        assert_eq!(ip.to_immutable().check_valid(), true);
-
-        ip.set_version(0); // Invalid IP version
-        assert_eq!(ip.to_immutable().check_valid(), false);
-
-        ip.set_version(4); // Only Ipv6 supported
-        assert_eq!(ip.to_immutable().check_valid(), false);
-
-        let icmp =
-            MutableIcmpv6Packet::new(&mut raw[IPV6_HEADER_MIN..]).expect("PRE: Bad ICMP buffer");
-        assert_eq!(icmp.get_icmpv6_type(), Icmpv6Types::EchoRequest);
-    }
-
-    #[test]
-    fn firewall_ipv6_packet_validation_of_payload_length() {
-        let mut raw = make_icmp6("::1", "2001:4860:4860::8888", IcmpTypes::EchoRequest.into());
-        {
-            let mut ip = MutableIpv6Packet::new(&mut raw).expect("PRE: Bad IP buffer");
-            ip.set_payload_length(ip.get_payload_length() + 1);
-        }
-        let ip = Ipv6Packet::new(&mut raw).expect("PRE: Bad IP buffer");
-        assert!(!ip.check_valid());
-    }
-
-    #[test]
-    fn firewall_packet_validation_ipv4_ihl() {
-        const IPV4_IHL: usize = 15; //Ipv4->IHL is 4 bits, can be [5..15]
-        const PACKET_LENGTH: usize = 4 * IPV4_IHL;
-
-        let mut raw = [0u8; PACKET_LENGTH];
-        let mut ip = MutableIpv4Packet::new(&mut raw).expect("PRE: Bad IP buffer");
-
-        set_ipv4(
-            &mut ip,
-            IpNextHeaderProtocols::Udp,
-            PACKET_LENGTH,
-            PACKET_LENGTH,
-        );
-        assert_eq!(ip.to_immutable().check_valid(), true); // IPv4->IHL=15 => continue
-    }
-
     #[rustfmt::skip]
     #[test]
     fn firewall_udp() {
@@ -1299,13 +1222,6 @@ pub mod tests {
             make_tcp: MakeTcp,
         }
 
-        impl TestInput {
-            fn us_port(&self) -> u16 { self.us.parse::<StdSocketAddr>().unwrap().port() }
-            fn them_port(&self) -> u16 { self.them.parse::<StdSocketAddr>().unwrap().port() }
-            fn us_ip(&self) -> IpAddr { self.us.parse::<StdSocketAddr>().unwrap().ip().into() }
-            fn them_ip(&self) -> IpAddr { self.them.parse::<StdSocketAddr>().unwrap().ip().into() }
-        }
-
         let test_inputs = vec![
             TestInput{ us: "127.0.0.1:1111", them: "8.8.8.8:8888",                 make_tcp: &make_tcp },
             TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6 },
@@ -1322,15 +1238,6 @@ pub mod tests {
             assert_eq!(fw.process_outbound_packet(&make_peer(), &outgoing_init_packet), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN)), true);
-
-            let link = IpConnWithPort {
-                remote_addr: test_input.them_ip(),
-                remote_port: test_input.them_port(),
-                local_addr: test_input.us_ip(),
-                local_port: test_input.us_port(),
-            };
-            let tcp_key = Connection { link , associated_data: Some(peer.to_smallvec()) };
-
 
             assert_eq!(fw.process_outbound_packet(&make_peer(), &make_tcp(us, them, TcpFlags::RST)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN)), false);
@@ -1355,13 +1262,6 @@ pub mod tests {
             make_tcp: MakeTcp,
         }
 
-        impl TestInput {
-            fn us_port(&self) -> u16 { self.us.parse::<StdSocketAddr>().unwrap().port() }
-            fn them_port(&self) -> u16 { self.them.parse::<StdSocketAddr>().unwrap().port() }
-            fn us_ip(&self) -> IpAddr { self.us.parse::<StdSocketAddr>().unwrap().ip().into() }
-            fn them_ip(&self) -> IpAddr { self.them.parse::<StdSocketAddr>().unwrap().ip().into() }
-        }
-
         let test_inputs = vec![
             TestInput{ us: "127.0.0.1:1111", them: "8.8.8.8:8888",                 make_tcp: &make_tcp },
             TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6 },
@@ -1371,15 +1271,8 @@ pub mod tests {
             fw.set_ip_addresses(vec![StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1)),StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),]);
             let peer = make_peer();
 
-            let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);
+            let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);  
             assert_eq!(fw.process_outbound_packet(&peer, &outgoing_init_packet), true);
-            let link = IpConnWithPort {
-                remote_addr: test_input.them_ip(),
-                remote_port: test_input.them_port(),
-                local_addr: test_input.us_ip(),
-                local_port: test_input.us_port(),
-            };
-            let conn_key = Connection { link , associated_data: Some(peer.to_smallvec()) };
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
@@ -1399,13 +1292,6 @@ pub mod tests {
             make_tcp: MakeTcp,
         }
 
-        impl TestInput {
-            fn us_port(&self) -> u16 { self.us.parse::<StdSocketAddr>().unwrap().port() }
-            fn them_port(&self) -> u16 { self.them.parse::<StdSocketAddr>().unwrap().port() }
-            fn us_ip(&self) -> IpAddr { self.us.parse::<StdSocketAddr>().unwrap().ip().into() }
-            fn them_ip(&self) -> IpAddr { self.them.parse::<StdSocketAddr>().unwrap().ip().into() }
-        }
-
         let test_inputs = vec![
             TestInput{ us: "127.0.0.1:1111", them: "8.8.8.8:8888",                 make_tcp: &make_tcp },
             TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6 },
@@ -1418,13 +1304,6 @@ pub mod tests {
 
             let outgoing_init_packet = make_tcp(us, them, TcpFlags::SYN);
             assert_eq!(fw.process_outbound_packet(&make_peer(), &outgoing_init_packet), true);
-            let link = IpConnWithPort {
-                remote_addr: test_input.them_ip(),
-                remote_port: test_input.them_port(),
-                local_addr: test_input.us_ip(),
-                local_port: test_input.us_port(),
-            };
-            let conn_key = Connection { link , associated_data: Some(peer.to_smallvec()) };
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(them, us, TcpFlags::FIN)), true);
@@ -2692,7 +2571,7 @@ pub mod tests {
         // Check common conditions
         for ip in &ip6pkgs {
             assert_eq!(ip.get_version(), 6);
-            assert_eq!(ip.get_next_level_protocol(), IpNextHeaderProtocols::Tcp);
+            assert_eq!(ip.get_next_header(), IpNextHeaderProtocols::Tcp);
         }
 
         for tcp in &tcp6pkgs {
@@ -2774,7 +2653,7 @@ pub mod tests {
 
         let ip6 = Ipv6Packet::new(&sink.pkgs[1]).unwrap();
         assert_eq!(ip6.get_version(), 6);
-        assert_eq!(ip6.get_next_level_protocol(), IpNextHeaderProtocols::Icmpv6);
+        assert_eq!(ip6.get_next_header(), IpNextHeaderProtocols::Icmpv6);
         assert_eq!(ip6.get_source(), Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 3));
         assert_eq!(ip6.get_destination(), Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 2));
 
@@ -2918,18 +2797,6 @@ pub mod tests {
         features.neptun_reset_conns = true;
 
         for TestInput { src, dst, make_tcp } in test_inputs {
-            let remote = std::net::SocketAddr::from_str(dst).unwrap();
-            let local = std::net::SocketAddr::from_str(src).unwrap();
-            let key = Connection {
-                link: IpConnWithPort {
-                    remote_addr: remote.ip().into(),
-                    remote_port: remote.port(),
-                    local_addr: local.ip().into(),
-                    local_port: local.port(),
-                },
-                associated_data: Some(peer.to_smallvec()),
-            };
-
             let fw = StatefullFirewall::new(true, &features);
             fw.add_vpn_peer(PublicKey::new(peer));
 
@@ -2970,17 +2837,6 @@ pub mod tests {
             (0..u8::max_value()).filter(|flags| *flags & (TcpFlags::SYN | TcpFlags::ACK) == 0)
         {
             for TestInput { src, dst, make_tcp } in &test_inputs {
-                let remote = std::net::SocketAddr::from_str(dst).unwrap();
-                let local = std::net::SocketAddr::from_str(src).unwrap();
-                let key = Connection {
-                    link: IpConnWithPort {
-                        remote_addr: remote.ip().into(),
-                        remote_port: remote.port(),
-                        local_addr: local.ip().into(),
-                        local_port: local.port(),
-                    },
-                    associated_data: Some(peer.to_smallvec()),
-                };
                 let fw = StatefullFirewall::new(true, &features);
                 fw.add_vpn_peer(PublicKey::new(peer));
 
@@ -3013,17 +2869,6 @@ pub mod tests {
         let mut features = FeatureFirewall::default();
 
         for TestInput { src, dst, make_tcp } in test_inputs {
-            let remote = std::net::SocketAddr::from_str(dst).unwrap();
-            let local = std::net::SocketAddr::from_str(src).unwrap();
-            let key = Connection {
-                link: IpConnWithPort {
-                    remote_addr: remote.ip().into(),
-                    remote_port: remote.port(),
-                    local_addr: local.ip().into(),
-                    local_port: local.port(),
-                },
-                associated_data: Some(peer.to_smallvec()),
-            };
             let fw = StatefullFirewall::new(true, &features);
             fw.set_ip_addresses(vec![
                 (StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1))),
