@@ -36,8 +36,8 @@ POSSIBLE_DOWN_DELAY_ED = LINK_STATE_TIMEOUT_S
 # If the tests happen to be flaky, this value shouldn't be increased.
 TOLERANCE = 1.5
 # The time by which we would expect to emit at least one link-state event, when tx_ts > rx_ts and none rx packet for the same period.
-IDLE_TIMEOUT_S = round((LINK_STATE_TIMEOUT_S + POSSIBLE_DOWN_DELAY) * TOLERANCE)
-IDLE_TIMEOUT_ED_S = round((LINK_STATE_TIMEOUT_S + POSSIBLE_DOWN_DELAY_ED) * TOLERANCE)
+IDLE_TIMEOUT_S = round((LINK_STATE_TIMEOUT_S + POSSIBLE_DOWN_DELAY) * TOLERANCE) # 21s
+IDLE_TIMEOUT_ED_S = round((LINK_STATE_TIMEOUT_S + POSSIBLE_DOWN_DELAY_ED) * TOLERANCE) # 33s
 
 
 def long_persistent_keepalive_periods() -> FeatureWireguard:
@@ -99,7 +99,9 @@ def _generate_setup_parameter_pair(
         for tag, adapter in cfg
     ]
 
-
+# Enhanced detection must be second item in the tuple so that test names ending index refer to correct ED state.
+# ie: [<test_name>0] -> ED is disabled
+# ie: [<test_name>1] -> ED is enabled
 FEATURE_ENABLED_PARAMS_RELAY = [
     param
     for param_pair in [
@@ -422,8 +424,9 @@ class ICMP_control:
 async def test_event_link_state_peer_doesnt_respond(
     setup_params: List[SetupParameters],
 ) -> None:
-    # Peer is online, however doesn't respond to ICMP ECHO REQUESTS.
-    # This means that link detection must not consider the peer offline since it will sent WG-PASSIVE_KEEPALIVE back and this test assures that.
+    # Beta peer is online, however it won't respond to ICMP ECHO REQUESTS.
+    # This means that link detection must not consider the peer offline since it will send the WG-PASSIVE_KEEPALIVE packet
+    # back, this test assures that.
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(exit_stack, setup_params)
         alpha, beta = env.nodes
@@ -432,14 +435,17 @@ async def test_event_link_state_peer_doesnt_respond(
             conn.connection for conn in env.connections
         ]
 
+        # Ping just to assert connection between peers, counters timestamps are trivial at this stage
         # After this ping beta's wireguard drivers will have ts_tx > ts_rx (link state feature will probably have ts_tx == ts_rx)
         await ping(connection_alpha, beta.ip_addresses[0])
 
+        # Beta won't respond to ICMP requests so that Alpha's link detection countdown is triggered (tx_ts > rx_ts)
+        # Nevertheless, alpha will still receive beta's passive keepalive, maintaining the link state alive.
         async with ICMP_control(connection_beta):
             with pytest.raises(asyncio.TimeoutError):
                 await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
 
-            # If there was no connection, alpha->beta DOWN link state should be detected after 14-21s (ie: IDLE_TIMEOUT_S),
+            # If alpha doesn't receive any packet, alpha->beta DOWN link state would be detected (after 14-21s: IDLE_TIMEOUT_S + tolerance),
             # however beta is sending a keepalive after WG_PASSIVE_KEEPALIVE_S to let alpha knows that he's alive.
             with pytest.raises(asyncio.TimeoutError):
                 await wait_for_any_with_timeout(
@@ -457,7 +463,6 @@ async def test_event_link_state_peer_doesnt_respond(
                     ],
                     timeout=resolve_idle_timeout(setup_params[0]),
                 )
-
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS_RELAY)
