@@ -4803,6 +4803,7 @@ dependencies = [
  "enum-map",
  "if-addrs",
  "ipnet",
+ "libloading",
  "mockall",
  "num_enum",
  "parking_lot",

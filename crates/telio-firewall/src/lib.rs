@@ -10,5 +10,6 @@ pub(crate) mod error;
 pub(crate) mod ffi_chain;
 pub mod firewall;
 pub(crate) mod libfirewall_api;
+pub(crate) mod libfirewall_wrapper;
 pub(crate) mod log;
 pub(crate) mod packet;
