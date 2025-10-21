@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment
@@ -28,9 +27,9 @@ async def test_meshnet_id_generated_only_when_meshnet_starts() -> None:
 
         [client_alpha] = env.clients
         # Wait for everything to get set up
-        await asyncio.sleep(5)
+        await client_alpha.wait_for_log("Telio::start_named: Ok(())")
+
         logs = await client_alpha.get_log()
-        logs = logs.lower()
         # There should be no meshnet ID generation
         assert logs.count("Meshnet ID:") == 0
 

@@ -604,15 +604,15 @@ impl Analytics {
             links.push(status);
         }
 
+        let Some(meshnet_id) = self.meshnet_id else {
+            telio_log_error!(
+                "No Meshnet ID. Meshnet ID should be generated before request message"
+            );
+            return;
+        };
+
         let heartbeat = HeartbeatMessage::response(
-            self.meshnet_id
-                .get_or_insert({
-                    let meshnet_id = State::meshnet_id();
-                    telio_log_warn!("Meshnet ID not generated yet. Generating new ID {meshnet_id}");
-                    meshnet_id
-                })
-                .into_bytes()
-                .to_vec(),
+            meshnet_id.into_bytes().to_vec(),
             self.config.fingerprint.clone(),
             &links,
         );
@@ -697,15 +697,13 @@ impl Analytics {
             internal_sorted_fingerprints,
         } = self.get_current_meshmap_info().await;
 
+        let Some(meshnet_id) = self.meshnet_id else {
+            telio_log_error!("No Meshnet ID. ID should be generated before aggregation");
+            return;
+        };
+
         let mut heartbeat_info = HeartbeatInfo {
-            meshnet_id: self
-                .meshnet_id
-                .get_or_insert({
-                    let meshnet_id = State::meshnet_id();
-                    telio_log_warn!("Meshnet ID not generated yet. Generating new ID {meshnet_id}");
-                    meshnet_id
-                })
-                .to_string(),
+            meshnet_id: meshnet_id.to_string(),
             meshnet_enabled: self.meshnet_enabled,
             heartbeat_interval: i32::try_from(self.config.collect_interval.as_secs()).unwrap_or(0),
             ..Default::default()
