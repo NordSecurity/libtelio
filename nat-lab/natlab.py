@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import warnings
 from packaging import version
 from typing import List
@@ -48,6 +49,15 @@ def start(skip_keywords=None, force_recreate=False):
     generate_grpc("../dist/linux/ens.proto")
 
     if "GITLAB_CI" in os.environ:
+        # This is possibly a temporary solution. We observe that starting docker compose
+        # takes a lot of resources. Because our pipeline starts 9 parallel nat-lab jobs
+        # it sometimes happen that when the job from a previous pipeline is executed
+        # on the runner, multiple new jobs start at the same time, all starting up docker
+        # containers. During this startup phase the old job is experiencing timeouts.
+        # We can try to offset this startup time of the parallel runs to check if it helps.
+        start_delay = (int(os.environ.get("CI_NODE_INDEX", "1")) - 1) * 120
+        time.sleep(start_delay)
+
         with open("docker-compose.yml", "r", encoding="utf-8") as file:
             filedata = file.read()
         original_port_mapping = 'ports: ["58001"]'
