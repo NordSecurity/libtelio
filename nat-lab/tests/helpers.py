@@ -29,6 +29,7 @@ from utils.connection_util import (
 )
 from utils.logger import log
 from utils.ping import ping
+from utils.process import Process
 from utils.router import IPStack
 from utils.tcpdump import make_tcpdump
 from uuid import UUID
@@ -539,3 +540,92 @@ def string_to_compressed_ipv6(ip_str_list: List[str]) -> List[str]:
             return ip_str
 
     return [compress_ip(ip_str) for ip_str in ip_str_list]
+
+
+# TODO (LLT-6746): move to router.py
+async def wait_for_interface_state(
+    connection: Connection, interface: str, expected_state: str
+) -> bool:
+    """
+    Wait for an interface state to become up or down.
+
+    Args:
+        connection (Connection):
+            An active SSH or Docker connection to the instance.
+        interface (str):
+            Interface name to check.
+        expected_state (str):
+            Expected state of the interface - up or down.
+
+    Returns:
+        bool
+    """
+    success = False
+    for _ in range(2):
+        result = await connection.create_process(
+            ["sh", "-c", "ip link show %s | awk '/state/ {print $9}'" % interface]
+        ).execute()
+        state = result.get_stdout().strip()
+        if state == expected_state:
+            success = True
+            break
+        log.debug(
+            "Interface %s has state: %s, expected state: %s",
+            interface,
+            state,
+            expected_state,
+        )
+        await asyncio.sleep(1)
+    return success
+
+
+# TODO (LLT-6746): move to router.py
+async def print_network_state(connection: Connection) -> None:
+    """
+    Print current network state of the provided instance.
+
+    Args:
+        connection (Connection):
+            An active SSH or Docker connection to the provided instance.
+    Returns:
+        None
+    """
+    ip_a_log = await connection.create_process(["ip", "a"]).execute()
+    ip_a = ip_a_log.get_stdout().strip()
+    log.debug(
+        "--- Log of ip a command ---\n %s",
+        ip_a,
+    )
+
+    ip_r_log = await connection.create_process(["ip", "r"]).execute()
+    ip_r = ip_r_log.get_stdout().strip()
+    log.debug(
+        "--- Log of ip r command ---\n %s",
+        ip_r,
+    )
+
+    ip_tables_log = await connection.create_process(["iptables", "-L"]).execute()
+    ip_tables = ip_tables_log.get_stdout().strip()
+    log.debug(
+        "--- Log of iptables -L command ---\n %s",
+        ip_tables,
+    )
+
+
+async def wait_for_log_line(log_process: Process) -> None:
+    """
+    Accepts process polling for a log line and wait for a log to appear.
+
+    Args:
+        log_process (Process):
+            An active SSH or Docker process polling for a log line.
+
+    Returns:
+        None
+    """
+    while True:
+        await asyncio.sleep(1)
+        log_line = log_process.get_stdout().strip()
+        if log_line:
+            log.info("Expected log line captured: %s ", log_line)
+            return
