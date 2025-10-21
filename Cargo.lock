@@ -2714,7 +2714,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "2.2.3"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v2.2.3#c362264f78d5fa5635fc318cc7bbb49740239e10"
+source = "git+https://github.com/NordSecurity/neptun.git?branch=lukasp%2Freduce_handshake_failure_log_severity#0317b5484679b3510e988899bb79628723ef24a3"
 dependencies = [
  "aead",
  "base64 0.13.1",
@@ -2732,7 +2732,8 @@ dependencies = [
  "parking_lot",
  "rand_core 0.6.4",
  "ring",
- "socket2 0.5.10",
+ "socket2 0.6.0",
+ "subtle",
  "thiserror 1.0.69",
  "tracing",
  "untrusted",
