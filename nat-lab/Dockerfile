@@ -8,8 +8,8 @@ LABEL org.opencontainers.image.source="https://github.com/NordSecurity/libtelio/
 COPY --chmod=0755 bin/ /opt/bin/
 COPY --chmod=0755 data/custom_debs /opt/custom_debs
 
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-RUN sh -c ". ~/.bashrc && uv add --directory /opt/bin grpcio==1.73.1 protobuf==6.30.2 aiohttp==3.12.14 cryptography==45.0.5 blake3==1.0.5"
+COPY --from=ghcr.io/astral-sh/uv:0.9.4 /uv /uvx /bin/
+RUN sh -c "uv add --directory /opt/bin grpcio==1.73.1 protobuf==6.30.2 aiohttp==3.12.14 cryptography==45.0.5 blake3==1.0.5"
 
 # If custom deb is found, install it. This command doesn't fail if it doesn't find anything.
 # Useful for overriding prebaked binaries, such as nordderper. /opt/custom_deb_install.log contains logs for each installation done

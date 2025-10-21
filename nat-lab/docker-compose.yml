@@ -15,6 +15,9 @@ services:
     hostname: nlx-01
     privileged: true
     image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
+    depends_on:
+      fullcone-gw-02:
+        condition: service_healthy
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
@@ -121,6 +124,8 @@ services:
         condition: service_healthy
       windows-gw-02:
         condition: service_healthy
+      nlx-01:
+        condition: service_healthy
     extra_hosts:
       - "photo-album:10.0.80.80"
       - "stun-01:10.0.1.1"
@@ -161,6 +166,8 @@ services:
       windows-gw-03:
         condition: service_healthy
       windows-gw-04:
+        condition: service_healthy
+      windows-client-01:
         condition: service_healthy
     networks:
       windows-net-03:
@@ -204,6 +211,8 @@ services:
       mac-gw-01:
         condition: service_healthy
       mac-gw-02:
+        condition: service_healthy
+      windows-client-02:
         condition: service_healthy
     extra_hosts:
       - "photo-album:10.0.80.80"
@@ -410,6 +419,8 @@ services:
     depends_on:
       openwrt-gw-01:
         condition: service_healthy
+      mac-client-01:
+        condition: service_healthy
     networks:
       openwrt-net-01:
         ipv4_address: 192.168.115.100
@@ -522,6 +533,9 @@ services:
   fullcone-gw-02:
     hostname: fullcone-gw-02
     <<: *common-fullcone-gw
+    depends_on:
+      fullcone-gw-01:
+        condition: service_healthy
     environment:
       USERNAME: "root"
       PASSWORD: "root"
