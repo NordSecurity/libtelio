@@ -1,5 +1,6 @@
 {
   "authentication_token": "<REPLACE_WITH_YOUR_TOKEN>",
+  "vpn": "recommended",
   "log_level": "error",
   "log_file_path": "/var/log/nordvpnlite.log",
   "log_file_count": 0,
@@ -7,7 +8,5 @@
   "interface": {
     "name": "nordvpnlite",
     "config_provider": "uci"
-  },
-  "vpn": "recommended"
+  }
 }
-
