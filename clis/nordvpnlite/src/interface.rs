@@ -607,6 +607,7 @@ impl Uci {
 
         execute(Command::new("uci").args(["commit", "dhcp"]))?;
         execute(Command::new("service").args(["dnsmasq", "restart"]))?;
+        execute(Command::new("/etc/init.d/dnsmasq").args(["reload"]))?;
 
         Ok(())
     }
@@ -640,7 +641,7 @@ impl Uci {
         }
 
         execute(Command::new("uci").args(["commit", "dhcp"]))?;
-        execute(Command::new("service").args(["dnsmasq", "restart"]))?;
+        execute(Command::new("/etc/init.d/dnsmasq").args(["reload"]))?;
 
         Ok(())
     }

@@ -67,6 +67,7 @@ fn reconnect_after_expiry_default() -> Percentage {
     Percentage(90)
 }
 
+// These IPs are documented but the documentation is not publicly available
 fn dns_default() -> Vec<IpAddr> {
     vec![
         Ipv4Addr::new(103, 86, 96, 100).into(),
