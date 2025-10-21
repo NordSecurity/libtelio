@@ -2135,22 +2135,28 @@ impl Runtime {
     }
 
     async fn disconnect_exit_nodes(&mut self) -> Result {
+        telio_log_info!("disconnect_exit_nodes");
+
         if let Some(exit_node) = self.requested_state.exit_node.take() {
+            telio_log_info!("disconnect_exit_nodes -> exit_node exists");
             self.requested_state.last_exit_node = Some(exit_node);
 
             // for macos dns
             bind_tun::set_should_bind(false);
 
             if let (Some(dns), Some(forward_dns)) = (
-                &self.entities.dns.lock().await.resolver,
+                &self.entities.dns.lock().await.resolver, // POI
                 &self.requested_state.upstream_servers,
             ) {
+                telio_log_info!("disconnect_exit_nodes -> reconfigure_dns_peer");
                 self.reconfigure_dns_peer(dns, forward_dns).await?;
             }
 
+            telio_log_info!("disconnect_exit_nodes -> before ENS stop");
             if let Some(ens) = self.entities.error_notification_service.as_mut() {
                 ens.stop().await;
             }
+            telio_log_info!("disconnect_exit_nodes -> will consolidate_wg_state");
 
             wg_controller::consolidate_wg_state(
                 &self.requested_state,
@@ -2161,8 +2167,11 @@ impl Runtime {
             .await?;
         }
 
+        telio_log_info!("disconnect_exit_nodes -> before PQ stop");
+
         self.entities.postquantum_wg.stop().await;
 
+        telio_log_info!("Done. disconnect_exit_nodes");
         Ok(())
     }
 

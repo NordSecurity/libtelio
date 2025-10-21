@@ -372,7 +372,7 @@ impl Telio {
             private_key.public(),
             &adapter
         );
-        catch_ffi_panic(|| {
+        let res = catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.start(DeviceConfig {
                     private_key: private_key.clone(),
@@ -383,7 +383,16 @@ impl Telio {
                 })
                 .log_result("Telio::start")
             })
-        })
+        });
+
+        telio_log_info!(
+            "Done. Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}",
+            self.id,
+            private_key.public(),
+            &adapter
+        );
+
+        res
     }
 
     /// Start telio with specified adapter and name.
@@ -441,7 +450,7 @@ impl Telio {
             &adapter
         );
 
-        catch_ffi_panic(|| {
+        let res = catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 #[cfg(not(target_os = "windows"))]
                 let tun = {
@@ -459,18 +468,31 @@ impl Telio {
                 })
                 .log_result("Telio::start_with_tun")
             })
-        })
+        });
+
+        telio_log_info!(
+            "Done. Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Tun: {_tun}",
+            self.id,
+            private_key.public(),
+            &adapter
+        );
+
+        res
     }
 
     /// Stop telio device.
     pub fn stop(&self) -> FfiResult<()> {
         telio_log_info!("Telio::stop entry with instance id: {}.", self.id,);
-        catch_ffi_panic(|| {
+        let res = catch_ffi_panic(|| {
             self.device_op(false, |dev| {
                 dev.stop();
                 Ok(())
             })
-        })
+        });
+
+        telio_log_info!("Done. Telio::stop entry with instance id: {}.", self.id,);
+
+        res
     }
 
     /// get device luid.
@@ -571,12 +593,19 @@ impl Telio {
             "Telio::notify_network_change entry with instance id: {}.",
             self.id
         );
-        catch_ffi_panic(|| {
+        let res = catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.notify_network_change()
                     .log_result("Telio::notify_network_change")
             })
-        })
+        });
+
+        telio_log_info!(
+            "Done. Telio::notify_network_change entry with instance id: {}.",
+            self.id
+        );
+
+        res
     }
 
     /// Notify telio system is going to sleep.
@@ -613,7 +642,13 @@ impl Telio {
             allowed_ips,
             endpoint,
         );
-        self.connect_to_exit_node_with_id(None, public_key, allowed_ips, endpoint)
+        let res = self.connect_to_exit_node_with_id(None, public_key, allowed_ips, endpoint);
+
+        telio_log_info!(
+            "Done. Telio::connect_to_exit_node entry with instance id :{}",
+            self.id
+        );
+        res
     }
 
     /// Connects to an exit node. (VPN if endpoint is not NULL, Peer if endpoint is NULL)
@@ -708,12 +743,20 @@ impl Telio {
             self.id,
             forward_servers
         );
-        catch_ffi_panic(|| {
+        let res = catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.enable_magic_dns(forward_servers)
                     .log_result("Telio::enable_magic_dns")
             })
-        })
+        });
+
+        telio_log_info!(
+            "Done. Telio::enable_magic_dns entry with instance id: {}. DNS Server: {:?}",
+            self.id,
+            forward_servers
+        );
+
+        res
     }
 
     /// Disables magic DNS if it was enabled.
@@ -722,12 +765,19 @@ impl Telio {
             "Telio::disable_magic_dns entry with instance id: {}.",
             self.id
         );
-        catch_ffi_panic(|| {
+        let res = catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.disable_magic_dns()
                     .log_result("Telio::disable_magic_dns")
             })
-        })
+        });
+
+        telio_log_info!(
+            "Done. Telio::disable_magic_dns entry with instance id: {}.",
+            self.id
+        );
+
+        res
     }
 
     /// Disconnects from specified exit node.
@@ -741,26 +791,42 @@ impl Telio {
             self.id,
             public_key
         );
-        catch_ffi_panic(|| {
+        let res = catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.disconnect_exit_node(public_key)
                     .log_result("Telio::disconnect_from_exit_node")
             })
-        })
+        });
+
+        telio_log_info!(
+            "Done. Telio::disconnect_from_exit_node entry with instance id: {}. Public Key: {:?}",
+            self.id,
+            public_key
+        );
+
+        res
     }
 
     /// Disconnects from all exit nodes with no parameters required.
     pub fn disconnect_from_exit_nodes(&self) -> FfiResult<()> {
+        // TODO: could print that we returned from the function, now it's not clear
         telio_log_info!(
             "Telio::disconnect_from_exit_nodes entry with instance id: {}.",
             self.id
         );
-        catch_ffi_panic(|| {
+        let res = catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.disconnect_exit_nodes()
                     .log_result("Telio::disconnect_from_exit_nodes")
             })
-        })
+        });
+
+        telio_log_info!(
+            "Done. Telio::disconnect_from_exit_nodes entry with instance id: {}.",
+            self.id
+        );
+
+        res
     }
 
     /// Enables meshnet if it is not enabled yet.
@@ -775,13 +841,21 @@ impl Telio {
             self.id,
             &cfg
         );
-        catch_ffi_panic(|| {
+        let res = catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 let cfg = cfg.clone();
                 let cfg = Some(cfg);
                 dev.set_config(&cfg).log_result("Telio::set_meshnet")
             })
-        })
+        });
+
+        telio_log_info!(
+            "Done. Telio::set_meshnet entry with instance id: {}. Meshmap: {:?}",
+            self.id,
+            &cfg
+        );
+
+        res
     }
 
     /// Disables the meshnet functionality by closing all the connections.
@@ -790,11 +864,18 @@ impl Telio {
             "Telio::set_meshnet_off entry with instance id: {}.",
             self.id
         );
-        catch_ffi_panic(|| {
+        let res = catch_ffi_panic(|| {
             self.device_op(true, |dev| {
                 dev.set_config(&None).log_result("Telio::set_meshnet_off")
             })
-        })
+        });
+
+        telio_log_info!(
+            "Done. Telio::set_meshnet_off entry with instance id: {}.",
+            self.id
+        );
+
+        res
     }
 
     pub fn get_status_map(&self) -> Vec<Node> {
