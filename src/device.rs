@@ -198,6 +198,8 @@ pub enum Error {
     EnsFailure(#[from] Box<EnsError>),
     #[error("Exponential backoff error {0}")]
     ExponentialBackoffError(#[from] exponential_backoff::Error),
+    #[error("Firewall loading error {0}")]
+    FirewallLoadingError(#[from] libloading::Error),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -1036,7 +1038,7 @@ impl Runtime {
         features: Features,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
-        let firewall = Arc::new(StatefullFirewall::new(features.ipv6, &features.firewall));
+        let firewall = Arc::new(StatefullFirewall::new(features.ipv6, &features.firewall)?);
 
         let firewall_filter_inbound_packets = {
             let fw = firewall.clone();
