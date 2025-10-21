@@ -670,6 +670,16 @@ class Client:
             self.get_router().set_interface_name(tun_name)
             await self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
 
+    async def start_named_ext_if_filter(self, tun_name, ext_if_filter: List[str]):
+        if not isinstance(self.get_router(), WindowsRouter):
+            raise Exception("start_named_ext_if_filter can only be used on Windows")
+        await self.get_proxy().start_named_ext_if_filter(
+            private_key=self._node.private_key,
+            adapter=self._adapter_type,
+            name=tun_name,
+            ext_if_list=ext_if_filter,
+        )
+
     async def wait_for_state_peer(
         self,
         public_key,

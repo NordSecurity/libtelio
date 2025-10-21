@@ -380,6 +380,7 @@ impl Telio {
                     fwmark: None,
                     name: None,
                     tun: None,
+                    ext_if_filter: None,
                 })
                 .log_result("Telio::start")
             })
@@ -410,8 +411,61 @@ impl Telio {
                     fwmark: None,
                     name: Some(name.clone()),
                     tun: None,
+                    ext_if_filter: None,
                 })
                 .log_result("Telio::start_named")
+            })
+        })
+    }
+
+    /// Start telio with specified adapter type, adapter name
+    /// and provided external interface filter.
+    ///
+    /// Adapter will attempt to open its own tunnel.
+    pub fn start_named_ext_if_filter(
+        &self,
+        private_key: SecretKey,
+        adapter: TelioAdapterType,
+        name: String,
+        ext_if_filter: Vec<String>,
+    ) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Name: {}",
+            self.id,
+            private_key.public(),
+            &adapter,
+            &name,
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.start(DeviceConfig {
+                    private_key: private_key.clone(),
+                    adapter: adapter.into(),
+                    fwmark: None,
+                    name: Some(name.clone()),
+                    tun: None,
+                    ext_if_filter: Some(ext_if_filter.clone()),
+                })
+                .log_result("Telio::start_named_ext_if_filter")
+            })
+        })
+    }
+
+    /// Set filtered interface list on adapter.
+    ///
+    /// # Parameters
+    /// - `ext_if_filter`: list of NIC names to exclude, when using external interface.
+    ///
+    pub fn set_ext_if_filter(&self, ext_if_filter: Vec<String>) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::set_ext_if_filter entry with instance id: {}. filtered NICs: {:?}",
+            self.id,
+            ext_if_filter
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.set_ext_if_filter(ext_if_filter.clone())
+                    .map_err(TelioError::from)
             })
         })
     }
@@ -456,6 +510,7 @@ impl Telio {
                     fwmark: None,
                     name: None,
                     tun,
+                    ext_if_filter: None,
                 })
                 .log_result("Telio::start_with_tun")
             })
