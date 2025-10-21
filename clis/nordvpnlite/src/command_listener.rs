@@ -1,3 +1,5 @@
+use std::net::IpAddr;
+
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use telio::telio_task::io::chan;
@@ -10,8 +12,7 @@ use crate::{
     daemon::{NordVpnLiteError, TelioStatusReport},
 };
 
-// TODO: reduce to 1 when investigating LLT-6693
-pub(crate) const TIMEOUT_SEC: u64 = 2;
+pub(crate) const TIMEOUT_SEC: u64 = 10;
 
 #[derive(Parser, Debug, PartialEq)]
 #[clap()]
@@ -25,12 +26,18 @@ pub enum ClientCmd {
     QuitDaemon,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExitNodeConfig {
+    pub endpoint: Endpoint,
+    pub dns: Vec<IpAddr>,
+}
+
 #[derive(Debug)]
 pub enum TelioTaskCmd {
     // Get telio status
     GetStatus(oneshot::Sender<TelioStatusReport>),
     // Connect to exit node with endpoint and optional hostname
-    ConnectToExitNode(Endpoint),
+    ConnectToExitNode(ExitNodeConfig),
     // Break the receive loop to quit the daemon and exit gracefully
     Quit,
 }
