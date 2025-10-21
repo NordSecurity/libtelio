@@ -4712,6 +4712,7 @@ dependencies = [
  "ipnet",
  "jni",
  "lazy_static",
+ "libloading",
  "maplit",
  "mockall",
  "nat-detect",
@@ -4817,6 +4818,7 @@ dependencies = [
  "telio-model",
  "telio-network-monitors",
  "telio-utils",
+ "thiserror 2.0.17",
  "tokio",
  "tracing",
 ]

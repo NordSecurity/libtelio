@@ -198,6 +198,8 @@ pub enum Error {
     EnsFailure(#[from] Box<EnsError>),
     #[error("Exponential backoff error {0}")]
     ExponentialBackoffError(#[from] exponential_backoff::Error),
+    #[error("Firewall init error: {0:?}")]
+    FirewallError(#[from] telio_firewall::firewall::Error),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -1039,7 +1041,7 @@ impl Runtime {
         let firewall = Arc::new(StatefullFirewall::new(
             features.ipv6,
             features.firewall.clone(),
-        ));
+        )?);
 
         let firewall_filter_inbound_packets = {
             let fw = firewall.clone();
