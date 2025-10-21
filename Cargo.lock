@@ -4778,6 +4778,7 @@ dependencies = [
  "ipnet",
  "jni",
  "lazy_static",
+ "libloading",
  "maplit",
  "mockall",
  "nat-detect",
