@@ -1275,7 +1275,9 @@ mod tests {
     };
 
     use crate::{
-        conntrack::{ConnectionState, Conntrack},
+        conntrack::{
+            ConnectionState, Conntrack, LRU_CACHE_ICMP_TTL, LRU_CACHE_TCP_TTL, LRU_CACHE_UDP_TTL,
+        },
         packet::IpPacket,
     };
 
@@ -1481,6 +1483,42 @@ mod tests {
         make_icmp4_with_body(src, dst, icmp_type, &[])
     }
 
+    fn handle_inbound_ipv4_packet(
+        ctk: &Conntrack,
+        packet: &[u8],
+        assoc_data: Option<&[u8]>,
+    ) -> ConnectionState {
+        ctk.track_inbound_ip_packet::<Ipv4Packet>(assoc_data, packet)
+            .expect("Unexpected conntrack error")
+    }
+
+    fn handle_outbound_ipv4_packet(
+        ctk: &Conntrack,
+        packet: &[u8],
+        assoc_data: Option<&[u8]>,
+    ) -> ConnectionState {
+        ctk.track_outbound_ip_packet::<Ipv4Packet>(assoc_data, packet)
+            .expect("Unexpected conntrack error")
+    }
+
+    fn handle_inbound_ipv6_packet(
+        ctk: &Conntrack,
+        packet: &[u8],
+        assoc_data: Option<&[u8]>,
+    ) -> ConnectionState {
+        ctk.track_inbound_ip_packet::<Ipv6Packet>(assoc_data, packet)
+            .expect("Unexpected conntrack error")
+    }
+
+    fn handle_outbound_ipv6_packet(
+        ctk: &Conntrack,
+        packet: &[u8],
+        assoc_data: Option<&[u8]>,
+    ) -> ConnectionState {
+        ctk.track_outbound_ip_packet::<Ipv6Packet>(assoc_data, packet)
+            .expect("Unexpected conntrack error")
+    }
+
     #[test]
     fn conntrack_establishing_outbound_udp_connection() {
         let conntrack = Conntrack::new();
@@ -1496,18 +1534,21 @@ mod tests {
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_udp_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.udp.lock().len(), 1);
 
         // Another outbound packet
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_udp_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.udp.lock().len(), 1);
 
         // Inbound packet should change conn state to established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_udp_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
+        assert_eq!(conntrack.udp.lock().len(), 1);
     }
 
     #[test]
@@ -1525,18 +1566,100 @@ mod tests {
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_udp_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.udp.lock().len(), 1);
 
         // Another outbound packet
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_udp_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.udp.lock().len(), 1);
 
         // Inbound packet should change conn state to established
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_udp_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
+        assert_eq!(conntrack.udp.lock().len(), 1);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn multiple_udp_connections() {
+        struct TestInput {
+            src1: &'static str,
+            src2: &'static str,
+            src3: &'static str,
+            src4: &'static str,
+            src5: &'static str,
+            dst1: &'static str,
+            dst2: &'static str,
+            make_udp: fn(&str, &str) -> Vec<u8>,
+            handle_inbound_packet: fn(&Conntrack, &[u8], Option<&[u8]>) -> ConnectionState,
+            handle_outbound_packet: fn(&Conntrack, &[u8], Option<&[u8]>) -> ConnectionState,
+        }
+
+        let test_inputs = vec![
+            TestInput{
+                src1: "127.0.0.1:1111", src2: "127.0.0.1:2222",
+                src3: "127.0.0.1:3333", src4: "127.0.0.1:4444",
+                src5: "127.0.0.1:5555",
+                dst1: "8.8.8.8:8888", dst2: "8.8.8.8:7777",
+                make_udp: make_udp,
+                handle_inbound_packet: handle_inbound_ipv4_packet,
+                handle_outbound_packet: handle_outbound_ipv4_packet,
+            },
+            TestInput{
+                src1: "[::1]:1111", src2: "[::1]:2222",
+                src3: "[::1]:3333", src4: "[::1]:4444",
+                src5: "[::1]:5555",
+                dst1: "[2001:4860:4860::8888]:8888",
+                dst2: "[2001:4860:4860::8888]:7777",
+                make_udp: make_udp6,
+                handle_inbound_packet: handle_inbound_ipv6_packet,
+                handle_outbound_packet: handle_outbound_ipv6_packet,
+            },
+        ];
+
+        for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_udp, handle_inbound_packet, handle_outbound_packet } in test_inputs {
+            let ctk = Conntrack::new_with_capacity_and_ttl(3, LRU_CACHE_TCP_TTL, LRU_CACHE_UDP_TTL, LRU_CACHE_ICMP_TTL);
+
+            assert_eq!(handle_inbound_packet(&ctk, &make_udp(dst1, src1), None), ConnectionState::New);
+            assert_eq!(ctk.udp.lock().len(), 1);
+            assert_eq!(handle_inbound_packet(&ctk, &make_udp(dst1, src2), None), ConnectionState::New);
+            assert_eq!(ctk.udp.lock().len(), 2);
+            assert_eq!(handle_inbound_packet(&ctk, &make_udp(dst1, src3), None), ConnectionState::New);
+            assert_eq!(ctk.udp.lock().len(), 3);
+            assert_eq!(handle_inbound_packet(&ctk, &make_udp(dst1, src4), None), ConnectionState::New);
+            assert_eq!(ctk.udp.lock().len(), 3);
+
+            assert_eq!(handle_outbound_packet(&ctk, &make_udp(src1, dst1), None), ConnectionState::New);
+            assert_eq!(handle_outbound_packet(&ctk, &make_udp(src2, dst1), None), ConnectionState::New);
+            assert_eq!(handle_outbound_packet(&ctk, &make_udp(src1, dst1), None), ConnectionState::New);
+            assert_eq!(ctk.udp.lock().len(), 3);
+
+            assert_eq!(handle_outbound_packet(&ctk, &make_udp(src3, dst1), None), ConnectionState::New);
+            assert_eq!(handle_outbound_packet(&ctk, &make_udp(src1, dst1), None), ConnectionState::New);
+            assert_eq!(ctk.udp.lock().len(), 3);
+
+            assert_eq!(handle_outbound_packet(&ctk, &make_udp(src4, dst1), None), ConnectionState::New);
+            assert_eq!(handle_outbound_packet(&ctk, &make_udp(src1, dst1), None), ConnectionState::New);
+            assert_eq!(ctk.udp.lock().len(), 3);
+
+            assert_eq!(handle_inbound_packet(&ctk, &make_udp(dst1, src3), None), ConnectionState::Established);
+            assert_eq!(handle_inbound_packet(&ctk, &make_udp(dst1, src4), None), ConnectionState::Established);
+            assert_eq!(handle_inbound_packet(&ctk, &make_udp(dst1, src1), None), ConnectionState::Established);
+            assert_eq!(ctk.udp.lock().len(), 3);
+
+            assert_eq!(handle_inbound_packet(&ctk, &make_udp(dst1, src2), None), ConnectionState::New);
+            assert_eq!(handle_inbound_packet(&ctk, &make_udp(dst1, src2), None), ConnectionState::New);
+            assert_eq!(ctk.udp.lock().len(), 3);
+
+            assert_eq!(handle_inbound_packet(&ctk, &make_udp(dst1, src5), None), ConnectionState::New);
+            assert_eq!(handle_inbound_packet(&ctk, &make_udp(dst2, src1), None), ConnectionState::New);
+            assert_eq!(handle_inbound_packet(&ctk, &make_udp(dst2, src1), None), ConnectionState::New);
+            assert_eq!(ctk.udp.lock().len(), 3);
+        }
     }
 
     #[test]
@@ -1557,42 +1680,49 @@ mod tests {
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_syn_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // Second oubound SYN packet shouldn't change conn state to established
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_syn_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // Outbound SYN-ACK packet shouldn't change the state to established
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // Inbound packet should change conn state to established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // First FIN packet should still get state Established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_fin_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // Second FIN from the same direction should also get Established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_fin_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // Inbound FIN should change connection state to closed
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_fin_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Closed);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
     }
 
     #[test]
@@ -1613,42 +1743,124 @@ mod tests {
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // Second inbound SYN packet shouldn't change conn state to established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // Inbound SYN-ACK packet shouldn't change the state to established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // Outbound packet should change conn state to established
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // First FIN packet should still get state Established
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_fin_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // Second FIN from the same direction should also get Established
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_fin_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // Inbound FIN should change connection state to closed
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_fin_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Closed);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn multiple_tcp_connections() {
+        struct TestInput {
+            src1: &'static str,
+            src2: &'static str,
+            src3: &'static str,
+            src4: &'static str,
+            src5: &'static str,
+            dst1: &'static str,
+            dst2: &'static str,
+            make_tcp: fn(&str, &str, u8) -> Vec<u8>,
+            handle_inbound_packet: fn(&Conntrack, &[u8], Option<&[u8]>) -> ConnectionState,
+            handle_outbound_packet: fn(&Conntrack, &[u8], Option<&[u8]>) -> ConnectionState,
+        }
+        
+
+        let test_inputs = vec![
+            TestInput{
+                src1: "127.0.0.1:1111", src2: "127.0.0.1:2222",
+                src3: "127.0.0.1:3333", src4: "127.0.0.1:4444",
+                src5: "127.0.0.1:5555",
+                dst1: "8.8.8.8:8888", dst2: "8.8.8.8:7777",
+                make_tcp: make_tcp,
+                handle_inbound_packet: handle_inbound_ipv4_packet,
+                handle_outbound_packet: handle_outbound_ipv4_packet,
+            },
+            TestInput{
+                src1: "[::1]:1111", src2: "[::1]:2222",
+                src3: "[::1]:3333", src4: "[::1]:4444",
+                src5: "[::1]:5555",
+                dst1: "[2001:4860:4860::8888]:8888",
+                dst2: "[2001:4860:4860::8888]:7777",
+                make_tcp: make_tcp6,
+                handle_inbound_packet: handle_inbound_ipv6_packet,
+                handle_outbound_packet: handle_outbound_ipv6_packet,
+            },
+        ];
+
+        for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_tcp, handle_inbound_packet, handle_outbound_packet } in test_inputs {
+            let ctk = Conntrack::new_with_capacity_and_ttl(3, LRU_CACHE_TCP_TTL, LRU_CACHE_UDP_TTL, LRU_CACHE_ICMP_TTL);
+
+            assert_eq!(handle_inbound_packet(&ctk, &make_tcp(dst1, src1, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(ctk.tcp.lock().len(), 1);
+            assert_eq!(handle_inbound_packet(&ctk, &make_tcp(dst1, src2, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(ctk.tcp.lock().len(), 2);
+            assert_eq!(handle_inbound_packet(&ctk, &make_tcp(dst1, src3, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(ctk.tcp.lock().len(), 3);
+            assert_eq!(handle_inbound_packet(&ctk, &make_tcp(dst1, src4, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(ctk.tcp.lock().len(), 3);
+
+            assert_eq!(handle_outbound_packet(&ctk, &make_tcp(src1, dst1, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(handle_outbound_packet(&ctk, &make_tcp(src2, dst1, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(handle_outbound_packet(&ctk, &make_tcp(src1, dst1, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(handle_outbound_packet(&ctk, &make_tcp(src3, dst1, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(handle_outbound_packet(&ctk, &make_tcp(src1, dst1, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(handle_outbound_packet(&ctk, &make_tcp(src4, dst1, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(handle_outbound_packet(&ctk, &make_tcp(src1, dst1, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(ctk.tcp.lock().len(), 3);
+
+            // After this bunch of outbound connection src1 -> dst1, src4 -> dst1, src3 -> dst1 should be left
+            assert_eq!(handle_inbound_packet(&ctk, &make_tcp(dst1, src4, TcpFlags::SYN | TcpFlags::ACK), None), ConnectionState::Established);
+            assert_eq!(handle_inbound_packet(&ctk, &make_tcp(dst1, src3, TcpFlags::SYN | TcpFlags::ACK), None), ConnectionState::Established);
+            assert_eq!(handle_inbound_packet(&ctk, &make_tcp(dst1, src1, TcpFlags::SYN | TcpFlags::ACK), None), ConnectionState::Established);
+            assert_eq!(ctk.tcp.lock().len(), 3);
+
+            // This should be already out of the cache
+            assert_eq!(handle_inbound_packet(&ctk, &make_tcp(dst1, src2, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(handle_inbound_packet(&ctk, &make_tcp(dst1, src5, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(handle_inbound_packet(&ctk, &make_tcp(dst2, src1, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(handle_inbound_packet(&ctk, &make_tcp(src1, dst1, TcpFlags::SYN), None), ConnectionState::New);
+            assert_eq!(ctk.tcp.lock().len(), 3);
+        }
     }
 
     #[test]
@@ -1660,30 +1872,36 @@ mod tests {
 
         let outbound_icmp_req_packet = make_icmp4(src, dst, IcmpTypes::EchoRequest);
         let inbound_icmp_reply_packet = make_icmp4(dst, src, IcmpTypes::EchoReply);
-        let inbound_icmp_req_packet = make_icmp4(dst, src, IcmpTypes::EchoRequest);
+        let inbound_icmp_req_packet: Vec<u8> = make_icmp4(dst, src, IcmpTypes::EchoRequest);
 
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_icmp_req_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.icmp.lock().len(), 1);
 
-        // Inbound request packet is just ignored - not considered to be a part of the outgoing connection
+        // Inbound request packet should create another connection
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &inbound_icmp_req_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+
+        // So we should have 2 connections in cache now
+        assert_eq!(conntrack.icmp.lock().len(), 2);
 
         // It should be established for the first reply
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_icmp_reply_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
+        assert_eq!(conntrack.icmp.lock().len(), 2);
 
         // After the first reply is processed, the ICMP connection should still be established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_icmp_reply_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
+        assert_eq!(conntrack.icmp.lock().len(), 2);
     }
 
     #[test]
@@ -1710,18 +1928,22 @@ mod tests {
                 .track_inbound_ip_packet::<Ipv4Packet>(None, &reply_icmp_req_packet)
                 .expect("Unexpected conntrack error");
             assert_eq!(conn_state, ConnectionState::Invalid);
+            // It's a rare case when conntrack just doesn't add an entry
+            assert_eq!(conntrack.icmp.lock().len(), 0);
 
             // The connection for outbound request should be new
             let conn_state = conntrack
                 .track_outbound_ip_packet::<Ipv4Packet>(None, &request_icmp_resp_packet)
                 .expect("Unexpected conntrack error");
             assert_eq!(conn_state, ConnectionState::New);
+            assert_eq!(conntrack.icmp.lock().len(), 1);
 
             // Next reply has corresponding conntrack entry so it should get ESTABLISHED state
             let conn_state = conntrack
                 .track_inbound_ip_packet::<Ipv4Packet>(None, &reply_icmp_req_packet)
                 .expect("Unexpected conntrack error");
             assert_eq!(conn_state, ConnectionState::Established);
+            assert_eq!(conntrack.icmp.lock().len(), 1);
         }
 
         // Test outbound replies
@@ -1736,18 +1958,21 @@ mod tests {
                 .track_outbound_ip_packet::<Ipv4Packet>(None, &reply_icmp_req_packet)
                 .expect("Unexpected conntrack error");
             assert_eq!(conn_state, ConnectionState::Invalid);
+            assert_eq!(conntrack.icmp.lock().len(), 0);
 
             // The connection for inbound request should be new
             let conn_state = conntrack
                 .track_inbound_ip_packet::<Ipv4Packet>(None, &request_icmp_resp_packet)
                 .expect("Unexpected conntrack error");
             assert_eq!(conn_state, ConnectionState::New);
+            assert_eq!(conntrack.icmp.lock().len(), 1);
 
             // Next reply has corresponding conntrack entry so it should get ESTABLISHED state
             let conn_state = conntrack
                 .track_outbound_ip_packet::<Ipv4Packet>(None, &reply_icmp_req_packet)
                 .expect("Unexpected conntrack error");
             assert_eq!(conn_state, ConnectionState::Established);
+            assert_eq!(conntrack.icmp.lock().len(), 1);
         }
     }
 
@@ -1778,12 +2003,14 @@ mod tests {
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_udp_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.udp.lock().len(), 1);
 
         // First inbound packet should make it established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_udp_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
+        assert_eq!(conntrack.udp.lock().len(), 1);
 
         // ICMP error message should also be treated as a part of established connection
         let conn_state = conntrack
@@ -1792,10 +2019,12 @@ mod tests {
         assert_eq!(conn_state, ConnectionState::Established);
 
         // But after ICMP error message the connection should be removed
+        assert_eq!(conntrack.udp.lock().len(), 0);
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_udp_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.udp.lock().len(), 1);
     }
 
     #[test]
@@ -1815,10 +2044,13 @@ mod tests {
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_syn_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
+
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // Inbound RST packet - connection should be closed immediately
         let conn_state = conntrack
@@ -1827,10 +2059,14 @@ mod tests {
         assert_eq!(conn_state, ConnectionState::Closed);
 
         // After that conntrack entry should be removed
+        assert_eq!(conntrack.tcp.lock().len(), 0);
+
+        // And SYN-ACK without SYN shouldn't create a new connection
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
+        assert_eq!(conntrack.tcp.lock().len(), 0);
     }
 
     #[test]
@@ -1847,6 +2083,7 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
+        assert_eq!(conntrack.tcp.lock().len(), 1);
         // Outbound opened connection
         assert_eq!(
             conntrack
@@ -1857,6 +2094,7 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
+        assert_eq!(conntrack.tcp.lock().len(), 2);
         assert_eq!(
             conntrack
                 .track_inbound_ip_packet::<Ipv4Packet>(
@@ -1870,6 +2108,8 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::Established
         );
+        assert_eq!(conntrack.tcp.lock().len(), 2);
+
         // Inbound connection
         assert_eq!(
             conntrack
@@ -1884,6 +2124,8 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
+        assert_eq!(conntrack.tcp.lock().len(), 3);
+
         // Inbound with data
         assert_eq!(
             conntrack
@@ -1898,6 +2140,8 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
+        assert_eq!(conntrack.tcp.lock().len(), 4);
+
         assert_eq!(
             conntrack
                 .track_inbound_ip_packet::<Ipv4Packet>(
@@ -1911,6 +2155,7 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
+        assert_eq!(conntrack.tcp.lock().len(), 4);
 
         // Outbound IPv6 opened connection
         assert_eq!(
@@ -1922,6 +2167,8 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
+        assert_eq!(conntrack.tcp.lock().len(), 5);
+
         assert_eq!(
             conntrack
                 .track_inbound_ip_packet::<Ipv6Packet>(
@@ -1935,6 +2182,8 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::Established
         );
+        assert_eq!(conntrack.tcp.lock().len(), 5);
+
         // Inbound IPv6 connection
         assert_eq!(
             conntrack
@@ -1949,6 +2198,7 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
+        assert_eq!(conntrack.tcp.lock().len(), 6);
 
         // Let's establish a connection for a different assoc data
         let diff_assoc_data = b"different_assoc_data";
@@ -1961,6 +2211,7 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
+        assert_eq!(conntrack.tcp.lock().len(), 7);
         assert_eq!(
             conntrack
                 .track_inbound_ip_packet::<Ipv4Packet>(
@@ -1974,6 +2225,7 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::Established
         );
+        assert_eq!(conntrack.tcp.lock().len(), 7);
 
         #[derive(Default)]
         struct Sink {
@@ -2094,6 +2346,7 @@ mod tests {
 
         // Only TCP entry for different assoc data should be still present
         assert_eq!(conntrack.get_connections_count().0, 1);
+        assert_eq!(conntrack.tcp.lock().len(), 1);
     }
 
     #[test]
@@ -2110,12 +2363,15 @@ mod tests {
                 .expect("Conntrack tracking error"),
             ConnectionState::New
         );
+        assert_eq!(conntrack.udp.lock().len(), 1);
+
         assert_eq!(
             conntrack
                 .track_outbound_ip_packet::<Ipv6Packet>(None, &test_udp6pkg,)
                 .expect("Conntrack tracking error"),
             ConnectionState::New
         );
+        assert_eq!(conntrack.udp.lock().len(), 2);
 
         // Let's add an entry for a different assoc data
         let diff_assoc_data = b"different_assoc_data";
@@ -2125,6 +2381,7 @@ mod tests {
                 .expect("Conntrack tracking error"),
             ConnectionState::New
         );
+        assert_eq!(conntrack.udp.lock().len(), 3);
 
         #[derive(Default)]
         struct Sink {
@@ -2180,6 +2437,7 @@ mod tests {
 
         // Only entry for the different assoc data should stay
         assert_eq!(conntrack.get_connections_count().1, 1);
+        assert_eq!(conntrack.udp.lock().len(), 1);
     }
 
     #[rustfmt::skip]
