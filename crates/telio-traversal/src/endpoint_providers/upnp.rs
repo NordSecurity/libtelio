@@ -4,7 +4,6 @@ use crate::endpoint_providers::{
 };
 use crate::ping_pong_handler::PingPongHandler;
 use async_trait::async_trait;
-use futures::future::pending;
 use futures::prelude::*;
 use igd::{
     aio::{search_gateway, Gateway},
@@ -21,12 +20,12 @@ use telio_crypto::PublicKey;
 use telio_proto::{Session, WGPort};
 use telio_sockets::External;
 use telio_task::{io::chan::Tx, task_exec, BoxAction, Runtime, Task};
-use telio_utils::interval;
 use telio_utils::{
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
     telio_log_debug, telio_log_info, telio_log_warn, Instant, PinnedSleep,
 };
 use telio_wg::{DynamicWg, WireGuard};
+use tokio::time::sleep;
 use tokio::{net::UdpSocket, pin, sync::Mutex};
 
 #[cfg(test)]
@@ -661,10 +660,8 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
         if !self.igd_gw.lease_needs_renew() && self.is_endpoint_provider_paused {
             let d = self.igd_gw.should_renew_lease_after();
             telio_log_debug!("Skipping getting endpoint via UPNP endpoint provider(ModulePaused), lease renw after {d:?}");
-            let mut renew_interval = interval(d.unwrap_or(FAR_FUTURE));
             tokio::select! {
-                _ = renew_interval.tick() => {},
-                _ = pending() => {return Ok(())},
+                _ = sleep(d.unwrap_or(FAR_FUTURE)) => {},
                 update = &mut updated => {
                     return update(self).await;
                 }
