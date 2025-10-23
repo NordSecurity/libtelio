@@ -104,7 +104,7 @@ class ArtifactsDownloader:
         raise Exception("No suitable build tag was found")
 
     def _get_remote_path(self) -> str:
-        LIBTELIO_BUILD_PROJECT_ID = 6299
+        LIBTELIO_BUILD_PROJECT_ID = 2386
         libtelio_env_sec_gitlab_repository = os.environ.get(
             "LIBTELIO_ENV_SEC_GITLAB_REPOSITORY", None
         )
