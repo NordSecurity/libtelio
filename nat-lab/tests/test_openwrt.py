@@ -1,24 +1,20 @@
 import asyncio
 import pytest
 import re
-from config import WG_SERVER, PHOTO_ALBUM_IP, LAN_ADDR_MAP, STUN_SERVER
+from config import WG_SERVER, WG_SERVER_2, PHOTO_ALBUM_IP, STUN_SERVER, LAN_ADDR_MAP
 from contextlib import AsyncExitStack
-from helpers import (
-    setup_connections,
-    print_network_state,
-    wait_for_interface_state,
-    wait_for_log_line,
-)
+from helpers import print_network_state, wait_for_interface_state, wait_for_log_line
 from nordvpnlite import NordVpnLite, Config, IfcConfigType, Paths
 from pathlib import Path
 from utils import stun
 from utils.connection import Connection, ConnectionTag
-from utils.connection_util import new_connection_raw
+from utils.connection_util import new_connection_raw, new_connection_by_tag
 from utils.logger import log
 from utils.openwrt import start_logread_process
 from utils.ping import ping
 
 NETWORK_RESTART_LOG_LINE = "netifd: Network device 'eth1' link is up"
+OPENWRT_GW_WAN_IP = "10.0.0.0"
 
 
 async def check_gateway_and_client_ip(
@@ -67,6 +63,58 @@ async def check_gateway_and_client_ip(
     )
 
 
+async def setup_openwrt_test_environment(
+    country_config: IfcConfigType,
+    exit_stack: AsyncExitStack,
+) -> tuple[Connection, Connection, NordVpnLite]:
+    """
+    Set up the OpenWrt test environment.
+
+    This function establishes SSH connections to the OpenWrt gateway and client
+    virtual machines, uploads configuration files to the gateway, initializes
+    the VpnLite daemon interface for managing the VPN service, and prepares
+    mock data for a third-party API used during tests.
+
+    Args:
+        country_config (IfcConfigType):
+            Country config for which the OpenWrt environment
+            should be configured.
+        exit_stack (AsyncExitStack)
+
+    Returns:
+        tuple[Connection, Connection, VpnLite]:
+            A tuple containing:
+            - `client_connection`: connection to the OpenWrt client VM.
+            - `gateway_connection`: connection to the OpenWrt gateway VM.
+            - `nordvpnlite`: Instance of `NordVpnLite` class used to manage the daemon.
+    """
+    client_connection = await exit_stack.enter_async_context(
+        new_connection_by_tag(ConnectionTag.DOCKER_OPENWRT_CLIENT_1)
+    )
+    gateway_connection = await exit_stack.enter_async_context(
+        new_connection_by_tag(ConnectionTag.VM_OPENWRT_GW_1)
+    )
+    # printing networking state before test execution
+    await print_network_state(gateway_connection)
+
+    await gateway_connection.create_process(
+        ["mkdir", "-p", "/etc/nordvpnlite"]
+    ).execute()
+    await gateway_connection.upload_file(
+        f"data/nordvpnlite/{country_config.value}",
+        f"/etc/nordvpnlite/{country_config.value}",
+    )
+
+    config_path = Paths(exec_path=Path("nordvpnlite"))
+    nordvpnlite = NordVpnLite(
+        gateway_connection,
+        exit_stack,
+        config=Config(country_config, paths=config_path),
+    )
+    await nordvpnlite.request_credentials_from_core()
+    return client_connection, gateway_connection, nordvpnlite
+
+
 @pytest.mark.asyncio
 @pytest.mark.openwrt
 @pytest.mark.parametrize(
@@ -87,30 +135,10 @@ async def test_openwrt_vpn_connection(openwrt_config: IfcConfigType) -> None:
         5. Ping PHOTO_ALBUM_IP from both openwrt and client node
     """
     async with AsyncExitStack() as exit_stack:
-        client_connection = (
-            await setup_connections(exit_stack, [ConnectionTag.DOCKER_OPENWRT_CLIENT_1])
-        )[0].connection
-        gateway_connection = (
-            await setup_connections(exit_stack, [ConnectionTag.VM_OPENWRT_GW_1])
-        )[0].connection
-        # printing networking state before test execution
-        await print_network_state(gateway_connection)
-
-        await gateway_connection.create_process(
-            ["mkdir", "-p", "/etc/nordvpnlite"]
-        ).execute()
-        await gateway_connection.upload_file(
-            f"data/nordvpnlite/{openwrt_config.value}",
-            f"/etc/nordvpnlite/{openwrt_config.value}",
+        # setting up openwrt environment
+        client_connection, gateway_connection, nordvpnlite = (
+            await setup_openwrt_test_environment(openwrt_config, exit_stack)
         )
-
-        config_path = Paths(exec_path=Path("nordvpnlite"))
-        nordvpnlite = NordVpnLite(
-            gateway_connection,
-            exit_stack,
-            config=Config(openwrt_config, paths=config_path),
-        )
-        await nordvpnlite.request_credentials_from_core()
 
         async def grep_logread(s: str) -> list[str]:
             sshproc = await gateway_connection.create_process(
@@ -174,36 +202,18 @@ async def test_openwrt_ip_leaks() -> None:
         5. Ping PHOTO_ALBUM_IP from both openwrt and client node
         6. Initiate tcp connection from openwrt gateway and client to photo album
         7. Send udp packets from openwrt client to photo album
-        8. Check tcpdump on gateway and client node - all IPs should be vpn ip
+        8. Check tcpdump collected on PHOTO ALBUM - all IPs should be vpn ip
     """
     async with AsyncExitStack() as exit_stack:
-        client_connection = (
-            await setup_connections(exit_stack, [ConnectionTag.DOCKER_OPENWRT_CLIENT_1])
-        )[0].connection
-        gateway_connection = (
-            await setup_connections(exit_stack, [ConnectionTag.VM_OPENWRT_GW_1])
-        )[0].connection
-        # printing networking state before test execution
-        await print_network_state(gateway_connection)
+        # setting up openwrt environment
+        client_connection, gateway_connection, nordvpnlite = (
+            await setup_openwrt_test_environment(
+                IfcConfigType.VPN_OPENWRT_UCI_PL, exit_stack
+            )
+        )
         photo_album_connection = await exit_stack.enter_async_context(
             new_connection_raw(ConnectionTag.DOCKER_PHOTO_ALBUM)
         )
-
-        await gateway_connection.create_process(
-            ["mkdir", "-p", "/etc/nordvpnlite"]
-        ).execute()
-        await gateway_connection.upload_file(
-            f"data/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_PL.value}",
-            f"/etc/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_PL.value}",
-        )
-
-        config_path = Paths(exec_path=Path("nordvpnlite"))
-        nordvpnlite = NordVpnLite(
-            gateway_connection,
-            exit_stack,
-            config=Config(IfcConfigType.VPN_OPENWRT_UCI_PL, paths=config_path),
-        )
-        await nordvpnlite.request_credentials_from_core()
 
         async with nordvpnlite.start():
             log.debug("NordVPN Lite started, waiting for connected vpn state...")
@@ -243,7 +253,7 @@ async def test_openwrt_ip_leaks() -> None:
                 lines = re.split(pattern, tcp_dump.get_stdout())
                 tcp_dump_lines = [line.strip() for line in lines if line.strip()]
                 leak_ips = [
-                    "10.0.0.0",
+                    OPENWRT_GW_WAN_IP,
                     LAN_ADDR_MAP[ConnectionTag.DOCKER_OPENWRT_CLIENT_1]["primary"],
                     LAN_ADDR_MAP[ConnectionTag.VM_OPENWRT_GW_1]["primary"],
                 ]
@@ -279,30 +289,12 @@ async def test_openwrt_simulate_network_down() -> None:
         8. Ping PHOTO_ALBUM_IP from both openwrt and client node
     """
     async with AsyncExitStack() as exit_stack:
-        client_connection = (
-            await setup_connections(exit_stack, [ConnectionTag.DOCKER_OPENWRT_CLIENT_1])
-        )[0].connection
-        gateway_connection = (
-            await setup_connections(exit_stack, [ConnectionTag.VM_OPENWRT_GW_1])
-        )[0].connection
-        # printing networking state before test execution
-        await print_network_state(gateway_connection)
-
-        await gateway_connection.create_process(
-            ["mkdir", "-p", "/etc/nordvpnlite"]
-        ).execute()
-        await gateway_connection.upload_file(
-            f"data/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_PL.value}",
-            f"/etc/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_PL.value}",
+        # setting up openwrt environment
+        client_connection, gateway_connection, nordvpnlite = (
+            await setup_openwrt_test_environment(
+                IfcConfigType.VPN_OPENWRT_UCI_PL, exit_stack
+            )
         )
-
-        config_path = Paths(exec_path=Path("nordvpnlite"))
-        nordvpnlite = NordVpnLite(
-            gateway_connection,
-            exit_stack,
-            config=Config(IfcConfigType.VPN_OPENWRT_UCI_PL, paths=config_path),
-        )
-        await nordvpnlite.request_credentials_from_core()
 
         async with nordvpnlite.start():
             log.debug("NordVPN Lite started, waiting for connected vpn state...")
@@ -322,6 +314,129 @@ async def test_openwrt_simulate_network_down() -> None:
             # check vpn connection is working after interface is UP
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"]
+            )
+            logread_proc = await start_logread_process(
+                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
+
+
+@pytest.mark.asyncio
+@pytest.mark.openwrt
+async def test_openwrt_vpn_reconnect() -> None:
+    """
+    Test re-connect to vpn from OpenWRT router
+
+    Steps:
+        1. Prepare vpn servers
+        2. Start NordVPN Lite in OpenWRT container
+        3. Check ip address of both openwrt container and client node is equal to vpn ip address
+        4. Ping PHOTO_ALBUM_IP from both openwrt and client node
+        5. Disconnect from vpn
+        6. Check PHOTO_ALBUM_IP is reachable and ip addresses are equal to public ips
+        7. Connect to vpn again with the same config (start NordVPN Lite)
+        8. Check ip address of both openwrt container and client node is equal to vpn ip address
+        9. Ping PHOTO_ALBUM_IP from both openwrt and client node
+
+    """
+    async with AsyncExitStack() as exit_stack:
+        # setting up openwrt environment
+        client_connection, gateway_connection, nordvpnlite = (
+            await setup_openwrt_test_environment(
+                IfcConfigType.VPN_OPENWRT_UCI_PL, exit_stack
+            )
+        )
+
+        async with nordvpnlite.start():
+            log.debug("NordVPN Lite started, waiting for connected vpn state...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+            await check_gateway_and_client_ip(
+                gateway_connection, client_connection, WG_SERVER["ipv4"]
+            )
+            logread_proc = await start_logread_process(
+                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
+
+        log.debug("Check connection after disconnect from vpn")
+        await check_gateway_and_client_ip(
+            gateway_connection, client_connection, OPENWRT_GW_WAN_IP
+        )
+
+        async with nordvpnlite.start():
+            log.debug("Reconnect to VPN...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+            await check_gateway_and_client_ip(
+                gateway_connection, client_connection, WG_SERVER["ipv4"]
+            )
+            logread_proc = await start_logread_process(
+                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
+
+
+@pytest.mark.asyncio
+@pytest.mark.openwrt
+async def test_openwrt_vpn_reconnect_different_country() -> None:
+    """
+    Test re-connect to vpn server of another country
+
+    Steps:
+        1. Prepare vpn servers
+        2. Connect to PL vpn server
+        3. Check ip address of both openwrt container and client node is equal to vpn ip address
+        4. Ping PHOTO_ALBUM_IP from both openwrt and client node
+        5. Disconnect from vpn
+        6. Check PHOTO_ALBUM_IP is reachable and ip addresses are equal to public ips
+        7. Connect to DE vpn server
+        8. Check ip address of both openwrt container and client node is equal to vpn ip address
+        9. Ping PHOTO_ALBUM_IP from both openwrt and client node
+
+    """
+    async with AsyncExitStack() as exit_stack:
+        # setting up openwrt environment
+        client_connection, gateway_connection, nordvpnlite = (
+            await setup_openwrt_test_environment(
+                IfcConfigType.VPN_OPENWRT_UCI_PL, exit_stack
+            )
+        )
+
+        async with nordvpnlite.start():
+            log.debug("NordVPN Lite started, waiting for connected vpn state...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+            await check_gateway_and_client_ip(
+                gateway_connection, client_connection, WG_SERVER["ipv4"]
+            )
+            logread_proc = await start_logread_process(
+                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
+
+        log.debug("Check connection after disconnect from vpn")
+        await check_gateway_and_client_ip(
+            gateway_connection, client_connection, OPENWRT_GW_WAN_IP
+        )
+
+        # uploading config for the second country
+        await gateway_connection.upload_file(
+            f"data/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_DE.value}",
+            f"/etc/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_DE.value}",
+        )
+        config_path = Paths(exec_path=Path("nordvpnlite"))
+        nordvpnlite_de = NordVpnLite(
+            gateway_connection,
+            exit_stack,
+            config=Config(IfcConfigType.VPN_OPENWRT_UCI_DE, paths=config_path),
+        )
+        async with nordvpnlite_de.start():
+            log.debug("Reconnect to VPN DE...")
+            await nordvpnlite_de.wait_for_vpn_connected_state()
+            await check_gateway_and_client_ip(
+                gateway_connection, client_connection, WG_SERVER_2["ipv4"]
             )
             logread_proc = await start_logread_process(
                 gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
