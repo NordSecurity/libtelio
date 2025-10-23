@@ -61,6 +61,15 @@ async def check_gateway_and_client_ip(
         f"Client device has wrong public IP when connected to VPN: {client_ip}. "
         f"Expected value: {expected_ip}"
     )
+    luci_ui_response = await client_connection.create_process([
+        "sh",
+        "-c",
+        f'curl -s -o /dev/null -w "%{{http_code}}" http://{LAN_ADDR_MAP[ConnectionTag.VM_OPENWRT_GW_1]["primary"]}/',
+    ]).execute()
+    luci_ui_response_status = luci_ui_response.get_stdout().strip()
+    assert (
+        luci_ui_response_status == "200"
+    ), f"LuCi UI isn't available. Response status: {luci_ui_response_status}"
 
 
 async def setup_openwrt_test_environment(
