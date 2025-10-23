@@ -327,7 +327,7 @@ async def test_event_link_state_peer_goes_offline(
         await client_beta.stop_device()
         # Stopping beta generates rx/tx traffic with alpha, so wait 1 second before the next ping to skip the current
         # polling interval and therefore guarantee that only tx increases (relatively to alpha->beta link)
-        await asyncio.sleep(WG_POLLING_PERIOD_S)
+        await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
 
         # Expect the link to still be UP for the duration of WG Keepalive timeout + Max. RTT Allowed
         with pytest.raises(asyncio.TimeoutError):
@@ -480,7 +480,7 @@ async def test_event_link_state_delayed_packet(
         )
 
         # Waiting for the finish of the previous ping polling interval.
-        await asyncio.sleep(WG_POLLING_PERIOD_S)
+        await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
 
         # alpha will only receive the ICMP reply 20s after,
         # in the meantime alpha->beta link state goes DOWN.
@@ -619,7 +619,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
 
         # notify_network_change() drops every socket, thus generating some traffic with beta. Waiting before the next ping
         # will guarantee a different polling interval where tx is the only counter to be increased
-        await asyncio.sleep(WG_POLLING_PERIOD_S)
+        await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
 
         with pytest.raises(asyncio.TimeoutError):
             await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
@@ -749,7 +749,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
 
         # notify_network_change() drops every socket, thus generating some traffic with beta. Waiting before the next ping
         # will guarantee a different polling interval where tx is the only counter to be increased
-        await asyncio.sleep(WG_POLLING_PERIOD_S)
+        await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
 
         with pytest.raises(asyncio.TimeoutError):
             await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
@@ -876,7 +876,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_with_vpn(
 
         # notify_network_change() drops every socket, thus generating some traffic with beta. Waiting before the next ping
         # will guarantee a different polling interval where tx is the only counter to be increased
-        await asyncio.sleep(WG_POLLING_PERIOD_S)
+        await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
 
         with pytest.raises(asyncio.TimeoutError):
             await ping(connection_alpha, config.PHOTO_ALBUM_IP, WG_POLLING_PERIOD_S)
