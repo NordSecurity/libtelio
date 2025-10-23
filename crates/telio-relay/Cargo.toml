@@ -6,6 +6,9 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
+[features]
+enable_ens = ["telio-proto/enable_ens"]
+
 [dependencies]
 rand_core = { workspace = true, default-features = false }
 tokio-rustls = { version = "0.26.2", default-features = false }
