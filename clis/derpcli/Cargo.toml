@@ -31,7 +31,7 @@ tokio = { workspace = true, features = [
 url.workspace = true
 
 telio-crypto.workspace = true
-telio-relay.workspace = true
+telio-relay = { workspace = true, features = ["enable_ens"] }
 telio-sockets.workspace = true
 
 [dev-dependencies]
