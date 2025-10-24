@@ -84,3 +84,4 @@ And following cli commands:
 * `nordvpnlite get-status` - returns the status of nordvpnlite and the VPN connection
 * `nordvpnlite is-alive` - query if the daemon is running
 * `nordvpnlite quit-daemon` - stop daemon execution
+* `nordvpnlite countries` - list countries with available VPN servers
