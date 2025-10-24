@@ -5,8 +5,8 @@ use crate::{
 use async_trait::async_trait;
 use hickory_server::{
     authority::MessageRequest,
-    proto::{rr::LowerName, serialize::binary::BinDecodable},
-    server::{Protocol, Request},
+    proto::{rr::LowerName, serialize::binary::BinDecodable, xfer::Protocol},
+    server::Request,
 };
 use neptun::noise::{Tunn, TunnResult};
 use pnet_packet::{
@@ -697,14 +697,14 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
 
         self.zones_mut()
             .await
-            .upsert(LowerName::from_str(zone)?, Box::new(azone));
+            .upsert(LowerName::from_str(zone)?, vec![azone]);
         Ok(())
     }
 
     async fn forward(&self, to: &[IpAddr]) -> Result<(), String> {
         self.zones_mut().await.upsert(
             LowerName::from_str(".")?,
-            Box::new(Arc::new(ForwardZone::new(".", to).await?)),
+            vec![Arc::new(ForwardZone::new(".", to).await?)],
         );
         Ok(())
     }
@@ -768,10 +768,10 @@ mod tests {
             .await
             .unwrap();
         nameserver
-            .upsert("nord", &records, TtlValue(60))
+            .upsert("nord.", &records, TtlValue(60))
             .await
             .unwrap();
-        let request = dns_request(entry_name.clone());
+        let request = dns_request(String::from("pashka.nord"));
         let resolver = Resolver::new();
         nameserver
             .zones()
@@ -793,10 +793,9 @@ mod tests {
 
     #[tokio::test]
     async fn zones_are_lazily_copied_on_write_access() {
-        let name1 = "test.nord.".to_owned();
         let mut records = Records::new();
         records.insert(
-            name1.clone(),
+            "test.nord.".to_owned(),
             vec![IpAddr::V4(Ipv4Addr::new(100, 69, 69, 69))],
         );
         let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
@@ -804,38 +803,36 @@ mod tests {
             .unwrap();
         let raw_read_ptr1 = Arc::as_ptr(&nameserver.zones().await);
         nameserver
-            .upsert("nord", &records, TtlValue(60))
+            .upsert("nord.", &records, TtlValue(60))
             .await
             .unwrap();
         let raw_read_ptr2 = Arc::as_ptr(&nameserver.zones().await);
         assert_eq!(raw_read_ptr1, raw_read_ptr2);
 
-        let name2 = "test.nord2.".to_owned();
         let mut records = Records::new();
         records.insert(
-            name2.clone(),
+            "test.nord2.".to_owned(),
             vec![IpAddr::V4(Ipv4Addr::new(100, 69, 69, 69))],
         );
 
         let read_ptr3 = nameserver.zones().await;
         nameserver
-            .upsert("nord2", &records, TtlValue(60))
+            .upsert("nord2.", &records, TtlValue(60))
             .await
             .unwrap();
         let raw_read_ptr4 = Arc::as_ptr(&nameserver.zones().await);
         assert_ne!(Arc::as_ptr(&read_ptr3), raw_read_ptr4);
 
         let zones = nameserver.zones().await;
-        assert!(zones.contains(&LowerName::from_str("nord").unwrap()));
-        assert!(zones.contains(&LowerName::from_str("nord2").unwrap()));
+        assert!(zones.contains(&LowerName::from_str("nord.").unwrap()));
+        assert!(zones.contains(&LowerName::from_str("nord2.").unwrap()));
     }
 
     #[tokio::test]
     async fn forward_zones_are_cloned_too() {
-        let name1 = "test.nord.".to_owned();
         let mut records = Records::new();
         records.insert(
-            name1.clone(),
+            "test.nord.".to_owned(),
             vec![IpAddr::V4(Ipv4Addr::new(100, 69, 69, 69))],
         );
         let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
@@ -848,6 +845,6 @@ mod tests {
 
         let zones = nameserver.zones().await;
         assert!(zones.contains(&LowerName::from_str(".").unwrap()));
-        assert!(zones.contains(&LowerName::from_str("nord").unwrap()));
+        assert!(zones.contains(&LowerName::from_str("nord.").unwrap()));
     }
 }

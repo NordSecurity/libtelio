@@ -1,11 +1,14 @@
 use async_trait::async_trait;
 use hickory_server::{
     authority::{
-        Authority, AuthorityObject, Catalog, LookupError, LookupOptions, MessageRequest,
-        UpdateResult, ZoneType,
+        Authority, AuthorityObject, Catalog, LookupControlFlow, LookupError, LookupOptions,
+        MessageRequest, UpdateResult, ZoneType,
     },
-    proto::rr::{rdata, rdata::SOA, DNSClass, LowerName, Name, RData, Record, RecordType},
-    resolver::config::{NameServerConfigGroup, ResolverOpts},
+    proto::rr::{
+        rdata::{self, SOA},
+        DNSClass, LowerName, Name, RData, Record, RecordType,
+    },
+    resolver::config::{NameServerConfigGroup, ResolveHosts, ResolverOpts},
     server::{Request, RequestInfo, ResponseHandler, ResponseInfo},
     store::{forwarder::ForwardConfig, in_memory::InMemoryAuthority},
 };
@@ -14,6 +17,7 @@ use std::{
     convert::TryInto,
     net::IpAddr,
     str::FromStr,
+    sync::Arc,
 };
 use telio_model::features::TtlValue;
 use telio_utils::telio_log_warn;
@@ -58,33 +62,26 @@ impl AuthoritativeZone {
                 default
             }
         };
+        let rdata = RData::SOA(SOA::new(
+            Name::parse("mesh.nordsec.com.", None)?,
+            Name::parse("support.nordsec.com.", None)?,
+            2015082403,
+            7200,
+            ttl_value_signed,
+            1209600,
+            ttl_value.0,
+        ));
         zone.upsert(
-            Record::new()
-                .set_name(zone_name)
-                .set_ttl(ttl_value.0)
-                .set_rr_type(RecordType::SOA)
+            Record::from_rdata(zone_name, ttl_value.0, rdata)
                 .set_dns_class(DNSClass::IN)
-                .set_data(Some(RData::SOA(SOA::new(
-                    Name::parse("mesh.nordsec.com.", None)?,
-                    Name::parse("support.nordsec.com.", None)?,
-                    2015082403,
-                    7200,
-                    ttl_value_signed,
-                    1209600,
-                    ttl_value.0,
-                ))))
                 .clone(),
             0,
         )
         .await;
 
-        let build_record = |name: Name, ty: RecordType, data: RData| -> Record {
-            Record::new()
-                .set_name(name)
-                .set_ttl(ttl_value.0)
-                .set_rr_type(ty)
+        let build_record = |name: Name, data: RData| -> Record {
+            Record::from_rdata(name, ttl_value.0, data)
                 .set_dns_class(DNSClass::IN)
-                .set_data(Some(data))
                 .clone()
         };
 
@@ -94,20 +91,13 @@ impl AuthoritativeZone {
                 match *ip {
                     IpAddr::V4(ipv4) => {
                         let _ = zone
-                            .upsert(
-                                build_record(name.clone(), RecordType::A, RData::A(rdata::A(ipv4))),
-                                0,
-                            )
+                            .upsert(build_record(name.clone(), RData::A(rdata::A(ipv4))), 0)
                             .await;
                     }
                     IpAddr::V6(ipv6) => {
                         let _ = zone
                             .upsert(
-                                build_record(
-                                    name.clone(),
-                                    RecordType::AAAA,
-                                    RData::AAAA(rdata::AAAA(ipv6)),
-                                ),
+                                build_record(name.clone(), RData::AAAA(rdata::AAAA(ipv6))),
                                 0,
                             )
                             .await;
@@ -125,19 +115,19 @@ impl Authority for AuthoritativeZone {
     type Lookup = <InMemoryAuthority as Authority>::Lookup;
 
     fn zone_type(&self) -> ZoneType {
-        self.zone.zone_type()
+        Authority::zone_type(&self.zone)
     }
 
     fn is_axfr_allowed(&self) -> bool {
-        self.zone.is_axfr_allowed()
+        Authority::is_axfr_allowed(&self.zone)
     }
 
     async fn update(&self, update: &MessageRequest) -> UpdateResult<bool> {
-        self.zone.update(update).await
+        Authority::update(&self.zone, update).await
     }
 
     fn origin(&self) -> &LowerName {
-        self.zone.origin()
+        Authority::origin(&self.zone)
     }
 
     async fn lookup(
@@ -145,24 +135,24 @@ impl Authority for AuthoritativeZone {
         name: &LowerName,
         rtype: RecordType,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
-        self.zone.lookup(name, rtype, lookup_options).await
+    ) -> LookupControlFlow<Self::Lookup> {
+        Authority::lookup(&self.zone, name, rtype, lookup_options).await
     }
 
     async fn search(
         &self,
         request_info: RequestInfo<'_>,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
-        self.zone.search(request_info, lookup_options).await
+    ) -> LookupControlFlow<Self::Lookup> {
+        Authority::search(&self.zone, request_info, lookup_options).await
     }
 
     async fn get_nsec_records(
         &self,
         name: &LowerName,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
-        self.zone.get_nsec_records(name, lookup_options).await
+    ) -> LookupControlFlow<Self::Lookup> {
+        Authority::get_nsec_records(&self.zone, name, lookup_options).await
     }
 }
 
@@ -179,7 +169,7 @@ impl ForwardZone {
         // Some tools and browsers do not accept responses without intermediates preserved
         options.preserve_intermediates = true;
         // We provide our own forward servers, so we don't need to look at the hosts file
-        options.use_hosts_file = false;
+        options.use_hosts_file = ResolveHosts::Never;
 
         options.num_concurrent_reqs = 1;
 
@@ -188,7 +178,7 @@ impl ForwardZone {
 
         let zone = ForwardAuthority::try_from_config(
             Name::from_str(name)?,
-            ZoneType::Forward,
+            ZoneType::External,
             ForwardConfig {
                 options: Some(options),
                 name_servers: NameServerConfigGroup::from_ips_clear(ips, 53, true),
@@ -204,19 +194,19 @@ impl Authority for ForwardZone {
     type Lookup = <ForwardAuthority as Authority>::Lookup;
 
     fn zone_type(&self) -> ZoneType {
-        self.zone.zone_type()
+        Authority::zone_type(&self.zone)
     }
 
     fn is_axfr_allowed(&self) -> bool {
-        self.zone.is_axfr_allowed()
+        Authority::is_axfr_allowed(&self.zone)
     }
 
     async fn update(&self, update: &MessageRequest) -> UpdateResult<bool> {
-        self.zone.update(update).await
+        Authority::update(&self.zone, update).await
     }
 
     fn origin(&self) -> &LowerName {
-        self.zone.origin()
+        Authority::origin(&self.zone)
     }
 
     async fn lookup(
@@ -224,24 +214,24 @@ impl Authority for ForwardZone {
         name: &LowerName,
         rtype: RecordType,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
-        self.zone.lookup(name, rtype, lookup_options).await
+    ) -> LookupControlFlow<Self::Lookup> {
+        Authority::lookup(&self.zone, name, rtype, lookup_options).await
     }
 
     async fn search(
         &self,
         request_info: RequestInfo<'_>,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
-        self.zone.search(request_info, lookup_options).await
+    ) -> LookupControlFlow<Self::Lookup> {
+        Authority::search(&self.zone, request_info, lookup_options).await
     }
 
     async fn get_nsec_records(
         &self,
         name: &LowerName,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
-        self.zone.get_nsec_records(name, lookup_options).await
+    ) -> LookupControlFlow<Self::Lookup> {
+        Authority::get_nsec_records(&self.zone, name, lookup_options).await
     }
 }
 
@@ -256,8 +246,8 @@ impl ClonableZones {
         Self::default()
     }
 
-    pub fn upsert(&mut self, name: LowerName, authority: Box<dyn AuthorityObject>) {
-        self.zones.upsert(name.clone(), authority);
+    pub fn upsert(&mut self, name: LowerName, authorities: Vec<Arc<dyn AuthorityObject>>) {
+        self.zones.upsert(name.clone(), authorities);
         self.names.insert(name);
     }
 
@@ -283,7 +273,7 @@ impl Clone for ClonableZones {
                 .iter()
                 .flat_map(|name| self.zones.find(name).map(|auth| (name, auth)))
                 .fold(Zones::new(), |mut zone, (name, auth)| {
-                    zone.upsert(name.clone(), auth.box_clone());
+                    zone.upsert(name.clone(), auth.clone());
                     zone
                 }),
             names: self.names.clone(),
@@ -302,13 +292,13 @@ mod tests {
         expected_ipv4: Option<Ipv4Addr>,
         expected_ipv6: Option<Ipv6Addr>,
     ) {
-        let lookup = zone
-            .lookup(
-                &Name::from_str(name).unwrap().into(),
-                RecordType::A,
-                Default::default(),
-            )
-            .await;
+        let lookup = Authority::lookup(
+            zone,
+            &Name::from_str(name).unwrap().into(),
+            RecordType::A,
+            Default::default(),
+        )
+        .await;
 
         if let Some(expected_ipv4) = expected_ipv4 {
             let lookup = lookup.unwrap();
@@ -316,18 +306,21 @@ mod tests {
             assert_eq!(records.len(), 1);
             let record = records[0];
             assert_eq!(record.name(), &Name::from_str(name).unwrap());
-            assert_eq!(record.data(), Some(&RData::A(rdata::A(expected_ipv4))));
+            assert_eq!(record.data(), &RData::A(rdata::A(expected_ipv4)));
         } else {
-            assert!(matches!(lookup, Err(LookupError::NameExists)));
+            assert!(matches!(
+                lookup,
+                LookupControlFlow::Continue(Err(LookupError::NameExists))
+            ));
         }
 
-        let lookup = zone
-            .lookup(
-                &Name::from_str(name).unwrap().into(),
-                RecordType::AAAA,
-                Default::default(),
-            )
-            .await;
+        let lookup = Authority::lookup(
+            zone,
+            &Name::from_str(name).unwrap().into(),
+            RecordType::AAAA,
+            Default::default(),
+        )
+        .await;
 
         if let Some(expected_ipv6) = expected_ipv6 {
             let lookup = lookup.unwrap();
@@ -335,12 +328,12 @@ mod tests {
             assert_eq!(records.len(), 1);
             let record = records[0];
             assert_eq!(record.name(), &Name::from_str(name).unwrap());
-            assert_eq!(
-                record.data(),
-                Some(&RData::AAAA(rdata::AAAA(expected_ipv6)))
-            );
+            assert_eq!(record.data(), &RData::AAAA(rdata::AAAA(expected_ipv6)));
         } else {
-            assert!(matches!(lookup, Err(LookupError::NameExists)));
+            assert!(matches!(
+                lookup,
+                LookupControlFlow::Continue(Err(LookupError::NameExists))
+            ));
         }
     }
 

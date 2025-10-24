@@ -946,7 +946,7 @@ impl RequestedState {
             .filter_map(|v| {
                 v.ip_addresses
                     .as_ref()
-                    .map(|ips| (v.hostname.0.to_owned().to_string(), ips.clone()))
+                    .map(|ips| (format!("{}.", v.hostname.0), ips.clone()))
             })
             .collect()
     }
@@ -972,7 +972,7 @@ impl RequestedState {
             })
             .filter(|(nick, _)| validate_nickname(nick))
             .fold(Records::new(), |mut records, (mut nick, ip)| {
-                nick.0 += ".nord";
+                nick.0 += ".nord.";
 
                 if let Entry::Vacant(e) = records.entry(nick.0.to_owned()) {
                     e.insert(ip);
@@ -1621,7 +1621,7 @@ impl Runtime {
                 .collect();
             peers.extend(wildcarded_peers);
 
-            dns.upsert("nord", &peers, self.features.dns.ttl_value)
+            dns.upsert("nord.", &peers, self.features.dns.ttl_value)
                 .await
                 .map_err(Error::DnsResolverError)?;
         }
@@ -2839,11 +2839,11 @@ mod tests {
 
         let records = requested_state.collect_dns_records();
 
-        assert!(records["alpha.nord"].contains(&IpAddr::V4(alpha_ipv4)));
-        assert!(records["alpha.nord"].contains(&IpAddr::V6(alpha_ipv6)));
+        assert!(records["alpha.nord."].contains(&IpAddr::V4(alpha_ipv4)));
+        assert!(records["alpha.nord."].contains(&IpAddr::V6(alpha_ipv6)));
 
-        assert_eq!(records["beta.nord"].clone(), vec![IpAddr::V4(beta_ipv4)]);
-        assert_eq!(records["gamma.nord"].clone(), vec![IpAddr::V6(gamma_ipv6)]);
+        assert_eq!(records["beta.nord."].clone(), vec![IpAddr::V4(beta_ipv4)]);
+        assert_eq!(records["gamma.nord."].clone(), vec![IpAddr::V6(gamma_ipv6)]);
 
         assert_eq!(records.len(), 3);
     }
@@ -2882,20 +2882,20 @@ mod tests {
         let mut records = requested_state.collect_dns_nickname_records();
         records.extend(requested_state.collect_dns_records());
 
-        assert!(records["alpha.nord"].contains(&IpAddr::V4(alpha_ipv4)));
-        assert!(records["alpha.nord"].contains(&IpAddr::V6(alpha_ipv6)));
-        assert!(records["johnnyrotten.nord"].contains(&IpAddr::V4(alpha_ipv4)));
-        assert!(records["johnnyrotten.nord"].contains(&IpAddr::V6(alpha_ipv6)));
+        assert!(records["alpha.nord."].contains(&IpAddr::V4(alpha_ipv4)));
+        assert!(records["alpha.nord."].contains(&IpAddr::V6(alpha_ipv6)));
+        assert!(records["johnnyrotten.nord."].contains(&IpAddr::V4(alpha_ipv4)));
+        assert!(records["johnnyrotten.nord."].contains(&IpAddr::V6(alpha_ipv6)));
 
-        assert_eq!(records["beta.nord"].clone(), vec![IpAddr::V4(beta_ipv4)]);
+        assert_eq!(records["beta.nord."].clone(), vec![IpAddr::V4(beta_ipv4)]);
         assert_eq!(
-            records["bond-jamesbond.nord"].clone(),
+            records["bond-jamesbond.nord."].clone(),
             vec![IpAddr::V4(beta_ipv4)]
         );
 
-        assert_eq!(records["gaMMa.nord"].clone(), vec![IpAddr::V6(gamma_ipv6)]);
+        assert_eq!(records["gaMMa.nord."].clone(), vec![IpAddr::V6(gamma_ipv6)]);
 
-        assert!(!records.contains_key("theta.nord"));
+        assert!(!records.contains_key("theta.nord."));
 
         assert_eq!(records.len(), 5);
     }
@@ -2962,9 +2962,9 @@ mod tests {
         let mut records = requested_state.collect_dns_nickname_records();
         records.extend(requested_state.collect_dns_records());
 
-        assert!(records[valid_hostname].contains(&valid_ipv4.clone().unwrap()[0]));
+        assert!(records[&format!("{valid_hostname}.")].contains(&valid_ipv4.clone().unwrap()[0]));
         assert!(
-            records[format!("{}.nord", valid_nickname.clone().unwrap()).as_str()]
+            records[format!("{}.nord.", valid_nickname.clone().unwrap()).as_str()]
                 .contains(&valid_ipv4.clone().unwrap()[0])
         );
 
@@ -3003,13 +3003,13 @@ mod tests {
         let mut records = requested_state.collect_dns_nickname_records();
         records.extend(requested_state.collect_dns_records());
 
-        assert_eq!(records["alpha.nord"].clone(), vec![IpAddr::V4(alpha_ipv4)]);
+        assert_eq!(records["alpha.nord."].clone(), vec![IpAddr::V4(alpha_ipv4)]);
         assert_eq!(
-            records["johnnyrotten.nord"].clone(),
+            records["johnnyrotten.nord."].clone(),
             vec![IpAddr::V4(alpha_ipv4)]
         );
-        assert_eq!(records["beta.nord"].clone(), vec![IpAddr::V4(beta_ipv4)]);
-        assert_eq!(records["gamma.nord"].clone(), vec![IpAddr::V4(gamma_ipv4)]);
+        assert_eq!(records["beta.nord."].clone(), vec![IpAddr::V4(beta_ipv4)]);
+        assert_eq!(records["gamma.nord."].clone(), vec![IpAddr::V4(gamma_ipv4)]);
 
         assert_eq!(records.len(), 4);
     }
