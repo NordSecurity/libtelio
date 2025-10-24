@@ -77,6 +77,8 @@ pub enum Cmd {
     Start(DaemonOpts),
     #[clap(flatten)]
     Client(ClientCmd),
+    #[clap(about = "Show countries with available VPN servers")]
+    Countries,
 }
 
 /// Command response type used to communicate between `telio runner -> daemon -> client`
