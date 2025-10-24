@@ -312,7 +312,7 @@ fn http_client(cert_path: Option<&Path>) -> Client {
 
 /// Get list of all known countries from core API.
 pub async fn get_countries_with_exp_backoff(
-    auth_token: &NordToken,
+    auth_token: Option<&NordToken>,
     cert_path: Option<&Path>,
 ) -> Result<Vec<Country>, Error> {
     let mut backoff = build_backoff()?;
@@ -337,21 +337,23 @@ pub async fn get_countries_with_exp_backoff(
 
 /// Get list of all known countries from core API.
 async fn get_countries(
-    auth_token: &NordToken,
+    auth_token: Option<&NordToken>,
     cert_path: Option<&Path>,
 ) -> Result<Vec<Country>, Error> {
     debug!("Getting countries list");
-    let client = http_client(cert_path);
-    let response = client
+    let mut request = http_client(cert_path)
         .get(format!("{}/countries", API_BASE))
-        .header(
-            header::AUTHORIZATION,
-            format!("Bearer token:{}", auth_token as &str),
-        )
         .header(header::ACCEPT, "application/json")
-        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS))
-        .send()
-        .await?;
+        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS));
+
+    if let Some(token) = auth_token {
+        request = request.header(
+            header::AUTHORIZATION,
+            format!("Bearer token:{}", token as &str),
+        )
+    };
+
+    let response = request.send().await?;
     let status = response.status();
     let resp = response.text().await?;
     if status == StatusCode::OK {
@@ -463,7 +465,7 @@ pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec
                 None
             } else {
                 match get_countries_with_exp_backoff(
-                    &config.authentication_token,
+                    Some(&config.authentication_token),
                     config.http_certificate_file_path.as_deref(),
                 )
                 .await
