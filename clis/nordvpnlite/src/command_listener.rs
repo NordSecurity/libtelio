@@ -18,11 +18,11 @@ pub(crate) const TIMEOUT_SEC: u64 = 10;
 #[clap()]
 #[derive(Serialize, Deserialize)]
 pub enum ClientCmd {
-    #[clap(about = "Retrieve the status report")]
+    #[clap(name = "status", about = "Retrieve the status report")]
     GetStatus,
-    #[clap(about = "Query if daemon is running")]
+    #[clap(hide = true)]
     IsAlive,
-    #[clap(about = "Stop daemon execution")]
+    #[clap(name = "stop", about = "Stop daemon execution")]
     QuitDaemon,
 }
 
@@ -71,6 +71,7 @@ pub(crate) struct DaemonOpts {
 /// that are too resource constrained for the full NordVPN application.
 #[derive(Parser, Debug)]
 #[clap()]
+#[command(version)]
 pub enum Cmd {
     #[clap(about = "Runs the nordvpnlite event loop")]
     Start(DaemonOpts),

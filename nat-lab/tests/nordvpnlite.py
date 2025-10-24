@@ -249,7 +249,7 @@ class NordVpnLite:
 
     async def get_status(self) -> str:
         try:
-            status, _ = await self.execute_command(["get-status"])
+            status, _ = await self.execute_command(["status"])
             return status
         except ProcessExecError as exc:
             if "Daemon is not ready, ignoring" in exc.stdout:
@@ -260,10 +260,10 @@ class NordVpnLite:
             raise exc
 
     async def quit(self) -> None:
-        stdout, stderr = await self.execute_command(["quit-daemon"])
+        stdout, stderr = await self.execute_command(["stop"])
         assert (
             "Command executed successfully" in stdout
-        ), f"Failed to execute quit-daemon command: {stderr}"
+        ), f"Failed to execute stop command: {stderr}"
 
         assert (
             not await self.is_alive()
