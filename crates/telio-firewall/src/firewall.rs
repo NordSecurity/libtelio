@@ -656,23 +656,27 @@ impl Firewall for StatefullFirewall {
     ) -> bool {
         match unwrap_option_or_return!(buffer.first(), false) >> 4 {
             4 => {
-                if self
+                match self
                     .conntrack
                     .track_outbound_ip_packet::<Ipv4Packet>(Some(public_key), buffer)
-                    .is_err()
                 {
-                    telio_log_warn!("Conntrack failed for outbound IPv4 packet");
+                    Err(e) => {
+                        telio_log_warn!("Conntrack failed for outbound IPv4 packet: {:?}", e);
+                    }
+                    Ok(_) => {}
                 }
                 self.process_outbound_ip_packet::<Ipv4Packet>(public_key, buffer, sink)
                     .unwrap_or(false)
             }
             6 if self.allow_ipv6 => {
-                if self
+                match self
                     .conntrack
                     .track_outbound_ip_packet::<Ipv6Packet>(Some(public_key), buffer)
-                    .is_err()
                 {
-                    telio_log_warn!("Conntrack failed for outbound IPv6 packet");
+                    Err(e) => {
+                        telio_log_warn!("Conntrack failed for outbound IPv6 packet: {:?}", e);
+                    }
+                    Ok(_) => {}
                 }
                 self.process_outbound_ip_packet::<Ipv6Packet>(public_key, buffer, sink)
                     .unwrap_or(false)
@@ -691,12 +695,15 @@ impl Firewall for StatefullFirewall {
     fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
         match unwrap_option_or_return!(buffer.first(), false) >> 4 {
             4 => {
-                let Ok(conn_state) = self
+                let conn_state = match self
                     .conntrack
                     .track_inbound_ip_packet::<Ipv4Packet>(Some(public_key), buffer)
-                else {
-                    telio_log_warn!("Contrack failed to process the packet");
-                    return false;
+                {
+                    Ok(state) => state,
+                    Err(e) => {
+                        telio_log_warn!("Contrack failed to process the packet: {:?}", e);
+                        return false;
+                    }
                 };
                 let result = self
                     .process_inbound_ip_packet::<Ipv4Packet>(public_key, buffer, conn_state)
@@ -705,12 +712,15 @@ impl Firewall for StatefullFirewall {
                 result
             }
             6 if self.allow_ipv6 => {
-                let Ok(conn_state) = self
+                let conn_state = match self
                     .conntrack
                     .track_inbound_ip_packet::<Ipv6Packet>(Some(public_key), buffer)
-                else {
-                    telio_log_warn!("Contrack failed to process the packet");
-                    return false;
+                {
+                    Ok(state) => state,
+                    Err(e) => {
+                        telio_log_warn!("Contrack failed to process the packet: {:?}", e);
+                        return false;
+                    }
                 };
                 let result = self
                     .process_inbound_ip_packet::<Ipv6Packet>(public_key, buffer, conn_state)
