@@ -81,6 +81,6 @@ needs be absolute, otherwise will be relative to `working-directory` when daemon
 
 And following cli commands:
 
-* `nordvpnlite get-status` - returns the status of nordvpnlite and the VPN connection
+* `nordvpnlite status` - returns the status of nordvpnlite and the VPN connection
 * `nordvpnlite is-alive` - query if the daemon is running
-* `nordvpnlite quit-daemon` - stop daemon execution
+* `nordvpnlite stop` - stop daemon execution
