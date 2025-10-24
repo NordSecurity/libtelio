@@ -325,7 +325,7 @@ async def test_event_link_state_peer_goes_offline(
         await ping(connection_alpha, beta.ip_addresses[0])
 
         await client_beta.stop_device()
-        # Stopping beta generates rx/tx traffic with alpha, so wait 1 second before the next ping to skip the current
+        # Stopping beta generates rx/tx traffic with alpha, so wait 2 seconds before the next ping to skip the current
         # polling interval and therefore guarantee that only tx increases (relatively to alpha->beta link)
         await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
 
