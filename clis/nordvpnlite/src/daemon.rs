@@ -11,7 +11,10 @@ use telio::crypto::PublicKey;
 use telio::telio_model::mesh::{ExitNode, Node};
 use thiserror::Error as ThisError;
 use tokio::task::JoinError;
-use tokio::{sync::mpsc, time::Duration};
+use tokio::{
+    sync::{mpsc, oneshot},
+    time::Duration,
+};
 use tracing::{debug, error, info, trace, warn};
 use tracing_appender::rolling::InitError;
 
@@ -284,7 +287,7 @@ impl TelioTaskCmd {
                 }
                 Ok(TelioTaskOutcome::Continue)
             }
-            TelioTaskCmd::Quit => {
+            TelioTaskCmd::Quit(response_tx_channel) => {
                 ctx.telio.stop();
                 _ = ctx
                     .interface_config_provider
@@ -296,6 +299,10 @@ impl TelioTaskCmd {
                     .interface_config_provider
                     .cleanup_interface()
                     .inspect_err(|e| error!("Failed to cleanup interface with error '{e:?}'"));
+
+                if response_tx_channel.send(()).is_err() {
+                    error!("Telio task failed sending quit response: receiver dropped")
+                }
                 Ok(TelioTaskOutcome::Exit)
             }
         }
@@ -405,7 +412,8 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
             join_result = &mut telio_task_handle => {
                 match join_result {
                     Ok(Ok(_)) => {
-                        info!("Telio task thread completed normally");
+                        info!("Telio task thread completed, exiting");
+                        break Ok(())
                     }
                     Ok(Err(err)) => {
                         error!("Telio task failed with error: {:?}", err);
@@ -422,10 +430,6 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
                 match connection_result {
                     Ok(connection) => {
                         match cmd_listener.handle_client_command(true, connection).await {
-                            Ok(ClientCmd::QuitDaemon) => {
-                                info!("Received quit command, exiting");
-                                break Ok(())
-                            },
                             Ok(command) => {
                                 debug!("Client command {:?} executed successfully", command);
                             },
@@ -444,9 +448,14 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
                 match signal {
                     Some(s @ SIGHUP | s @ SIGTERM | s @ SIGINT | s @ SIGQUIT) => {
                         info!("Received signal {:?}, exiting", Signal::try_from(s));
-                        if let Err(e) = telio_tx.send_timeout(TelioTaskCmd::Quit, Duration::from_secs(2)).await {
+                        let (response_tx, response_rx) = oneshot::channel();
+                        if let Err(e) = telio_tx.send_timeout(TelioTaskCmd::Quit(response_tx), Duration::from_secs(2)).await {
                             error!("Unable to send QUIT due to {e}");
                         };
+                        if let Err(e) = response_rx.await {
+                            error!("Error receiving quit response from telio task: {e}");
+                        }
+
                         break Ok(());
                     }
                     Some(s) => {
