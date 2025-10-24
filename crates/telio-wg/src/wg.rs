@@ -236,7 +236,6 @@ impl DynamicWg {
     ///             max_inter_thread_batched_pkts: None,
     ///         },
     ///         None,
-    ///         true,
     ///         Duration::from_millis(1000),
     ///         Duration::from_millis(50)
     ///     );
@@ -245,15 +244,13 @@ impl DynamicWg {
     pub async fn start(
         io: Io,
         cfg: Config,
-        link_detection: Option<FeatureLinkDetection>,
-        ipv6_enabled: bool,
+        link_detection: Option<LinkDetection>,
         polling_period: Duration,
         polling_period_after_update: Duration,
     ) -> Result<Self, Error>
     where
         Self: Sized,
     {
-        let socket_pool = cfg.socket_pool.clone();
         let adapter = Self::start_adapter(cfg.try_clone()?).await?;
         #[cfg(unix)]
         return Ok(Self::start_with(
@@ -261,33 +258,26 @@ impl DynamicWg {
             adapter,
             link_detection,
             cfg,
-            ipv6_enabled,
             polling_period,
             polling_period_after_update,
-            socket_pool,
         ));
         #[cfg(windows)]
         return Ok(Self::start_with(
             io,
             adapter,
             link_detection,
-            ipv6_enabled,
             polling_period,
             polling_period_after_update,
-            socket_pool,
         ));
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn start_with(
         io: Io,
         adapter: Box<dyn Adapter>,
-        link_detection: Option<FeatureLinkDetection>,
+        link_detection: Option<LinkDetection>,
         #[cfg(unix)] cfg: Config,
-        ipv6_enabled: bool,
         polling_period: Duration,
         polling_period_after_update: Duration,
-        socket_pool: Arc<SocketPool>,
     ) -> Self {
         let interval = interval(polling_period);
         Self {
@@ -300,8 +290,7 @@ impl DynamicWg {
                 event: io.events,
                 analytics_tx: io.analytics_tx,
                 uapi_fail_counter: 0,
-                link_detection: link_detection
-                    .map(|ld| LinkDetection::new(ld, ipv6_enabled, socket_pool)),
+                link_detection,
                 libtelio_event: io.libtelio_wide_event_publisher,
                 stats: HashMap::new(),
                 ip_stack: None,
@@ -1213,8 +1202,6 @@ pub mod tests {
                 })
             });
 
-        let socket_pool = Arc::new(SocketPool::new(MockProtector::default()));
-
         let wg = DynamicWg::start_with(
             Io {
                 events: events_ch.tx.clone(),
@@ -1227,10 +1214,8 @@ pub mod tests {
             Config::new().unwrap(),
             #[cfg(all(unix, not(test)))]
             cfg,
-            true,
             Duration::from_millis(DEFAULT_POLLING_PERIOD_MS),
             Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS),
-            socket_pool,
         );
         time::advance(Duration::from_millis(0)).await;
         adapter.lock().await.checkpoint();

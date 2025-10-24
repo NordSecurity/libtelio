@@ -49,7 +49,7 @@ use telio_nurse::{
     config::Config as NurseConfig, data::MeshConfigUpdateEvent,
     MeshnetEntities as NurseMeshnetEntities, Nurse, NurseIo,
 };
-use telio_wg as wg;
+use telio_wg::{self as wg, link_detection::LinkDetectionObserver};
 use thiserror::Error as TError;
 use tokio::{
     runtime::{Builder, Runtime as AsyncRuntime},
@@ -100,8 +100,8 @@ static NETWORK_PATH_MONITOR_START: Once = Once::new();
 static CRYPTO_PROVIDER_INIT: Once = Once::new();
 
 pub use wg::{
-    uapi::Event as WGEvent, uapi::Interface, AdapterType, DynamicWg, Error as AdapterError,
-    FirewallInboundCb, FirewallOutboundCb, Tun, WireGuard,
+    link_detection::LinkDetection, uapi::Event as WGEvent, uapi::Interface, AdapterType, DynamicWg,
+    Error as AdapterError, FirewallInboundCb, FirewallOutboundCb, Tun, WireGuard,
 };
 
 #[cfg(test)]
@@ -1096,6 +1096,26 @@ impl Runtime {
             socket_pool.set_ext_if_filter(ext_if_filter);
         }
 
+        let link_detection = if let Some(ld_config) = features.link_detection {
+            let Chan {
+                tx: ld_observer_tx,
+                rx: ld_observer_rx,
+            } = Chan::default();
+            let ld_observer = Arc::new(LinkDetectionObserver { tx: ld_observer_tx });
+            network_monitor.register_local_interfaces_observer(Arc::downgrade(
+                &(ld_observer.clone() as Arc<dyn LocalInterfacesObserver>),
+            ));
+            Some(LinkDetection::new(
+                ld_config,
+                features.ipv6,
+                socket_pool.clone(),
+                Some(ld_observer_rx),
+                Some(ld_observer),
+            ))
+        } else {
+            None
+        };
+
         let derp_events = McChan::default();
 
         let (config_update_ch, collection_trigger_ch, qos_trigger_ch) = if features.nurse.is_some()
@@ -1146,8 +1166,7 @@ impl Runtime {
                         inter_thread_channel_size : Runtime::sanitize_neptun_config(features.wireguard.inter_thread_channel_size, config.adapter),
                         max_inter_thread_batched_pkts : Runtime::sanitize_neptun_config(features.wireguard.max_inter_thread_batched_pkts, config.adapter),
                     },
-                    features.link_detection,
-                    features.ipv6,
+                    link_detection,
                     Duration::from_millis(features.wireguard.polling.wireguard_polling_period.into()),
                     Duration::from_millis(features.wireguard.polling.wireguard_polling_period_after_state_change.into()),
                 ).await?);
