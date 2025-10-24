@@ -47,6 +47,13 @@ The config file should be provided in a JSON format
 
 Currently supported configuration variables:
 
+* `authentication_token` - Token from Nord VPN account to authenticate API calls
+* `vpn` - VPN config type. If omitted, 'recommended' type is chosen. Possible options:
+  * `server` - manually specified endpoint:
+    * `address` - The IP address of the server/endpoint to connect to
+    * `public_key` - The public key of the server/peer to connect to
+  * `country` - Full country name or ISO A2 code, of the desired VPN server location.
+  * `recommended` - First server from the API recommendation list will be selected.
 * `log_level` - filters the logged messages by priority, possible levels:
   * `error`
   * `warn`
@@ -57,7 +64,6 @@ Currently supported configuration variables:
 * `log_file_path` - a path to store the daemon's logs,
 needs be absolute, otherwise will be relative to `working-directory` when daemonized
 * `log_file_count` - number of recent log files (log files are rotated daily)
-* `authentication_token` - Token from Nord VPN account to authenticate API calls
 * `app_user_uid` - A unique number for each user of the application
 * `adapter_type` - Wireguard adapter to use, possible options:
   * `neptun` - User space implementation, available on multiple platforms
@@ -71,12 +77,6 @@ needs be absolute, otherwise will be relative to `working-directory` when daemon
     * `ifconfig` - systems using ifconfig command
     * `iproute` - systems using iproute2 command
     * `uci` - OpenWRT systems using uci command
-* `vpn` - VPN config type. If omitted, 'recommended' type is chosen. Possible options:
-  * `server` - manually specified endpoint:
-    * `address` - The IP address of the server/endpoint to connect to
-    * `public_key` - The public key of the server/peer to connect to
-  * `country` - Full country name or ISO A2 code, of the desired VPN server location.
-  * `recommended` - First server from the API recommendation list will be selected.
 * `dns` - Optional list of DNS server IP addresses to use. If not set, built-in safe defaults are used.
 
 And following cli commands:

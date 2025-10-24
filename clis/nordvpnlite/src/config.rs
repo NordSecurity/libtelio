@@ -143,6 +143,15 @@ impl NordlynxKeyResponse {
 #[serde(deny_unknown_fields)]
 pub struct NordVpnLiteConfig {
     #[serde(
+        deserialize_with = "deserialize_nord_token",
+        serialize_with = "serialize_nord_token"
+    )]
+    pub authentication_token: NordToken,
+
+    #[serde(default)]
+    pub vpn: VpnConfig,
+
+    #[serde(
         deserialize_with = "deserialize_log_level",
         serialize_with = "serialize_log_level"
     )]
@@ -152,20 +161,12 @@ pub struct NordVpnLiteConfig {
     pub log_file_count: usize,
     pub adapter_type: AdapterType,
     pub interface: InterfaceConfig,
-    #[serde(default)]
-    pub vpn: VpnConfig,
     #[serde(default = "dns_default")]
     pub dns: Vec<IpAddr>,
     /// Overrides the default WireGuard endpoint port, should be used only for testing.
     /// The Core API does not include the WireGuard port in its response, and in environments like
     /// natlab where a non-standard port is used, this allows specifying a custom port manually.
     pub override_default_wg_port: Option<u16>,
-
-    #[serde(
-        deserialize_with = "deserialize_nord_token",
-        serialize_with = "serialize_nord_token"
-    )]
-    pub authentication_token: NordToken,
 
     /// Path to a http pem certificate to be used when connecting to CoreApi
     pub http_certificate_file_path: Option<PathBuf>,
