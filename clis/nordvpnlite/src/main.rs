@@ -17,6 +17,7 @@ use crate::{
     command_listener::{Cmd, CommandResponse, TIMEOUT_SEC},
     comms::DaemonSocket,
     config::NordVpnLiteConfig,
+    core_api::get_countries_with_exp_backoff,
     daemon::NordVpnLiteError,
 };
 
@@ -133,6 +134,15 @@ async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
             } else {
                 Err(NordVpnLiteError::DaemonIsNotRunning)
             }
+        }
+        // Display list of available countries
+        Cmd::Countries => {
+            let countries = get_countries_with_exp_backoff(None, None).await?;
+
+            for country in countries {
+                println!("{}: {}", country.name, country.code);
+            }
+            Ok(())
         }
 
         // Unexpected command, Cmd::Start should be handled by main
