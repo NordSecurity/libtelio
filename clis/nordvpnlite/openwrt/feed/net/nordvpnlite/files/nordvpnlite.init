@@ -11,6 +11,6 @@ start_service() {
 }
 
 stop_service() {
-  /usr/sbin/nordvpnlite quit-daemon
+  /usr/sbin/nordvpnlite stop
 }
 
