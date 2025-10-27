@@ -2,64 +2,34 @@
 
 set -euxo pipefail
 
+up() {
+  local service="$1"
+  echo "$service: enable + start"
+  if systemctl enable --now "$service" && systemctl is-active --quiet "$service"; then
+    echo "OK: $service"
+  else
+    echo "FAIL: $service"
+    systemctl status "$s" --no-pager || true
+    exit 1
+  fi
+}
+
 # This is a workaround for 6.x kernel bug, which can cause NULL-deref when
 # iptables are executed too early at boot.
 # More details:
 # https://lore.kernel.org/netdev/20240731213046.6194-3-pablo@netfilter.org/T/#m597226ed32420a20bca5be58cf1c21073f06083b
 sleep 5
 
-sysctl net.ipv4.ip_forward=1
-sysctl net.ipv4.conf.all.rp_filter=0
-sysctl net.ipv4.conf.default.rp_filter=0
-sysctl net.ipv6.conf.all.disable_ipv6=0
-sysctl net.ipv6.conf.default.disable_ipv6=0
-sysctl net.ipv6.conf.all.forwarding=1
-
-mkdir -p /etc/nordlynx
-ip link add dev nordlynx0 type nordlynx
-ip addr add 10.5.0.1/16 dev nordlynx0
-ip addr add 100.64.0.1/10 dev nordlynx0
-ip link set mtu 1420 dev nordlynx0
-ip link set dev nordlynx0 up
-
-nlx set nordlynx0 listen-port 1023
-
-iptables -A FORWARD -i nordlynx0 -j ACCEPT;
-iptables -A FORWARD -o nordlynx0 -j ACCEPT;
-iptables -t nat -A POSTROUTING -o enp0s3 -j MASQUERADE
-
 # Backup IP tables
 iptables-save -f iptables_backup
 ip6tables-save -f ip6tables_backup
 
-# courtesy sleep so it would be really all up and running
-sleep 2
-
-ip addr s > /var/log/ipaddr.show
-nlx > /var/log/nlx.log
-/opt/fakefm/fakefm/main -s testing123 > /var/log/fakefm.log 2>&1 &
-/opt/nlx-radius/nlx-radius/target/release/nlx-radius > /var/log/nordlynx.log 2>&1 &
-
-# run PQ upgrader
-cat > config.yml << EOL
-bind:
-  port: 6480
-logging:
-  output: file
-  level: Debug
-  file: /var/log/pq-upgrader.log
-dynamic_configuration:
-  enabled: false
-  port: 7771
-limits:
-  peer:
-    session_length: 5
-    rate: 10
-    burst: 5
-EOL
-
-pushd /opt/pq-upgrader/pq-upgr/upgrader
-./upgrader > /var/log/upgrader.log 2>&1 &
-popd
+echo "Setting up services..."
+systemctl daemon-reload
+up nlx-quick@nordlynx0
+up nlx-radius
+up fakefm.service
+up pq-upgrader
+up nlx-ns
 
 touch /ready
