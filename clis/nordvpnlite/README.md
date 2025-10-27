@@ -33,7 +33,8 @@ manage it.
 
 There is a command for running the daemon:
 
-* `nordvpnlite start <path_to_config_file>` - starts the daemon.
+* `nordvpnlite start` - starts the daemon.
+  * `--config-file <path_to_config_file>` - specify alternative configuration file,
   * `--no-detach` - run the nordvpnlite in the foreground as a regular process,
   without detaching from the terminal.
   * `--stdout-path` - Redirect daemon standard output to the specified file,

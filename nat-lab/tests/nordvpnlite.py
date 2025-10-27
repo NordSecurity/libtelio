@@ -208,11 +208,13 @@ class NordVpnLite:
 
             cmd = ["start"]
             if not self.config.no_detach:
+                cmd.append("--config-file")
                 cmd.append(str(self.config.path()))
                 stdout, stderr = await self.execute_command(cmd)
                 await wait_for_nordvpnlite_start()
             else:
                 cmd.append("--no-detach")
+                cmd.append("--config-file")
                 cmd.append(str(self.config.path()))
                 proc = await self.run_command(cmd)
                 await wait_for_nordvpnlite_start()
