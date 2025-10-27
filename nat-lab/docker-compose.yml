@@ -14,7 +14,7 @@ services:
   nlx-01: &common-nlx
     hostname: nlx-01
     privileged: true
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
+    image: ${SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
@@ -483,7 +483,7 @@ services:
   fullcone-gw-01: &common-fullcone-gw
     hostname: fullcone-gw-01
     privileged: true
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
+    image: ${SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
