@@ -44,7 +44,12 @@ pub enum TelioTaskCmd {
 
 #[derive(Parser, Debug)]
 pub(crate) struct DaemonOpts {
-    /// Path to the config file
+    /// Specify alternative configuration file
+    #[clap(
+        long = "config-file",
+        short = 'c',
+        default_value = "/etc/nordvpnlite/config.json"
+    )]
     pub config_path: String,
 
     /// Do not detach the nordvpnlite process from the terminal
@@ -53,14 +58,12 @@ pub(crate) struct DaemonOpts {
 
     /// Specifies the daemons working directory.
     ///
-    /// Defaults to "/".
     /// Ignored with no_detach flag.
     #[clap(long = "working-directory", default_value = "/")]
     pub working_directory: String,
 
     /// Redirect standard output to the specified file
     ///
-    /// Defaults to "/var/log/nordvpnlite.log".
     /// Ignored with no-detach flag.
     #[clap(long = "stdout-path", default_value = "/var/log/nordvpnlite.log")]
     pub stdout_path: String,
