@@ -31,6 +31,8 @@ async def check_gateway_and_client_ip(
          its public IP, as reported by STUN, matches the expected IP.
       2. Ensures that the client device can also reach the same host and that
          its public IP matches the expected IP.
+      3. Ensures that LuCi UI is available from the client device when
+         connected to or disconnected from the VPN.
 
     Args:
         gateway_connection (Connection):
@@ -44,7 +46,7 @@ async def check_gateway_and_client_ip(
     Raises:
         AssertionError:
             If either the gateway or the client reports a public IP different from
-            `expected_ip`.
+            `expected_ip` and if LuCi UI isn't available from the client device.
     Returns:
         None
     """
@@ -61,6 +63,15 @@ async def check_gateway_and_client_ip(
         f"Client device has wrong public IP when connected to VPN: {client_ip}. "
         f"Expected value: {expected_ip}"
     )
+    luci_ui_response = await client_connection.create_process([
+        "sh",
+        "-c",
+        f'curl -s -o /dev/null -w "%{{http_code}}" http://{LAN_ADDR_MAP[ConnectionTag.VM_OPENWRT_GW_1]["primary"]}/',
+    ]).execute()
+    luci_ui_response_status = luci_ui_response.get_stdout().strip()
+    assert (
+        luci_ui_response_status == "200"
+    ), f"LuCi UI isn't available. Response status: {luci_ui_response_status}"
 
 
 async def setup_openwrt_test_environment(
