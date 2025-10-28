@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+set -euxo pipefail
+
+/libtelio/nat-lab/bin/configure_route.sh primary mac
+
+# Wait up to 60 seconds for Remote Login (SSH) to be enabled
+timeout_secs=60
+interval_secs=2
+end=$((SECONDS + timeout_secs))
+last_rc=1
+
+while [ $SECONDS -lt $end ]; do
+    if output=$(python3 /run/qga.py --sh 'if ! command -v systemsetup >/dev/null 2>&1; then echo "systemsetup not found"; exit 3; fi; if /usr/sbin/systemsetup -getremotelogin 2>/dev/null | grep -q "On"; then echo "Remote Login (SSH) is On"; exit 0; else echo "Remote Login (SSH) is Off"; exit 2; fi'); then
+        echo "$output"
+        break
+    else
+        last_rc=$?
+        # Print whatever the remote reported
+        echo "$output"
+        echo "Remote Login (SSH) not enabled yet (rc=$last_rc). Retrying in ${interval_secs}s..."
+        sleep "$interval_secs"
+    fi
+done
+
+if [ $SECONDS -ge $end ]; then
+    echo "Timed out waiting for Remote Login (SSH) to be enabled within ${timeout_secs}s"
+    exit "$last_rc"
+fi
+
+commands=(
+    'osascript -e "tell application \"System Preferences\" to quit"'
+    'softwareupdate --schedule off'
+    'defaults write /Library/Preferences/com.apple.SoftwareUpdate.plist AutomaticCheckEnabled -bool NO'
+    'defaults write /Library/Preferences/com.apple.SoftwareUpdate.plist AutomaticDownload -bool NO'
+    'defaults write /Library/Preferences/com.apple.SoftwareUpdate.plist ConfigDataInstall -bool NO'
+    'defaults write /Library/Preferences/com.apple.SoftwareUpdate.plist CriticalUpdateInstall -bool NO'
+    'defaults write /Library/Preferences/com.apple.commerce.plist AutoUpdateRestartRequired -bool NO'
+    'defaults write /Library/Preferences/com.apple.commerce.plist AutoUpdate -bool NO'
+    'launchctl bootout system /System/Library/LaunchDaemons/com.apple.PerfPowerServices.plist'
+)
+
+for cmd in "${commands[@]}"; do
+    python3 /run/qga.py --sh "$cmd"
+done

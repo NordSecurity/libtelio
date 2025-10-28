@@ -1,5 +1,3 @@
-version: '3.2'
-
 services:
   base:
     image: nat-lab:base
@@ -11,34 +9,39 @@ services:
     profiles:
       - base
 
-  # Nordlynx servers
+  # sysctls here are configured for docker holding VM, they are not applied to VM
+  # add them manually into entrypoint script, which is passed as `EXTRA_SCRIPT` in variables
   nlx-01: &common-nlx
     hostname: nlx-01
     privileged: true
-    build:
-      context: .
-      args:
-        LIBTELIO_ENV_SEC_CONTAINER_REGISTRY: $LIBTELIO_ENV_SEC_CONTAINER_REGISTRY
-        LIBTELIO_ENV_NAT_LAB_DEPS_TAG: $LIBTELIO_ENV_NAT_LAB_DEPS_TAG
-    entrypoint: /opt/bin/nordlynx
-    cap_add:
-      - NET_RAW
-      - NET_ADMIN
-    sysctls:
-      - net.ipv4.ip_forward=1
-      - net.ipv6.conf.all.disable_ipv6=0
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
+    devices:
+      - "/dev/net/tun"
+      - "/dev/kvm"
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
+    volumes:
+      - ../:/shared
+    healthcheck:
+      test: "[ -f /ready ] || exit 1"
+      interval: 2s
+      retries: 120
+      start_period: 60s
+      timeout: 2s
+    environment:
+      USERNAME: "root"
+      PASSWORD: "root"
+      NETWORK: "bridge"
+      RAM_SIZE: "512M"
+      CPU_CORES: "1"
+      EXTRA_SCRIPT: "/shared/nat-lab/bin/nlx-vm"
+      CLIENT_GATEWAY_PRIMARY: none
     networks:
       internet:
         ipv4_address: 10.0.100.51
         priority: 1000
-    environment:
-      CLIENT_GATEWAY_PRIMARY: none
-    volumes:
-      - ./:/sync
-      - ../:/libtelio
-    healthcheck:
-      test: "ls /ready"
-
   ###########################################################
   #                         CLIENTS                         #
   ###########################################################
@@ -51,6 +54,9 @@ services:
     entrypoint: /opt/bin/client
     devices:
       - "/dev/net/tun"
+    depends_on:
+      cone-gw-01:
+        condition: service_healthy
     cap_drop:
       - ALL
     cap_add:
@@ -94,28 +100,159 @@ services:
       - "api.nordvpn.com:10.0.80.86"
     volumes:
       - ../:/libtelio
-      - ./data/teliod:/etc/teliod
+      - ./data/nordvpnlite:/etc/nordvpnlite
       - ./data/core_api/test.pem:/etc/ssl/server_certificate/test.pem
     healthcheck:
       test: "ls /ready"
+
+  windows-client-01: &windows-client
+    hostname: windows-client-01
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:${LIBTELIO_ENV_NAT_LAB_WINDOWS_VM_TAG}
+    privileged: true
+    devices:
+      - "/dev/net/tun"
+      - "/dev/kvm"
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
+    depends_on:
+      windows-gw-01:
+        condition: service_healthy
+      windows-gw-02:
+        condition: service_healthy
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+      - "pmtu-probe:10.0.80.84"
+      - "mqtt.nordvpn.com:10.0.80.85"
+      - "api.nordvpn.com:10.0.80.86"
+    volumes:
+      - ../:/libtelio
+    healthcheck:
+      test: "[ -f /local/ready ] || exit 1"
+      interval: 2s
+      retries: 120
+      start_period: 60s
+      timeout: 2s
+    environment:
+      USERNAME: "bill"
+      PASSWORD: "gates"
+      NETWORK: "bridge"
+      RAM_SIZE: "2G"
+      CPU_CORES: "1"
+      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/windows-client"
+      CLIENT_GATEWAY_PRIMARY: 192.168.150.254
+      CLIENT_GATEWAY_SECONDARY: 192.168.151.254
+    networks:
+      windows-net-01:
+        ipv4_address: 192.168.150.54
+      windows-net-02:
+        ipv4_address: 192.168.151.54
+
+  windows-client-02:
+    hostname: windows-client-02
+    <<: *windows-client
+    depends_on:
+      windows-gw-03:
+        condition: service_healthy
+      windows-gw-04:
+        condition: service_healthy
+    networks:
+      windows-net-03:
+        ipv4_address: 192.168.152.54
+      windows-net-04:
+        ipv4_address: 192.168.153.54
+    environment:
+      USERNAME: "bill"
+      PASSWORD: "gates"
+      NETWORK: "bridge"
+      RAM_SIZE: "2G"
+      CPU_CORES: "1"
+      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/windows-client"
+      CLIENT_GATEWAY_PRIMARY: 192.168.152.254
+      CLIENT_GATEWAY_SECONDARY: 192.168.153.254
+
   cone-client-02:
     hostname: cone-client-02
     <<: *common-client
+    depends_on:
+      cone-gw-02:
+        condition: service_healthy
     networks:
       cone-net-02:
         ipv4_address: 192.168.102.54
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.102.254
+
+  mac-client-01: &mac-client
+    hostname: mac-client-01
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos:${LIBTELIO_ENV_NAT_LAB_MACOS_VM_TAG}
+    privileged: true
+    devices:
+      - "/dev/net/tun"
+      - "/dev/kvm"
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
+    depends_on:
+      mac-gw-01:
+        condition: service_healthy
+      mac-gw-02:
+        condition: service_healthy
+    extra_hosts:
+      - "photo-album:10.0.80.80"
+      - "stun-01:10.0.1.1"
+      - "derp-01:10.0.10.1"
+      - "derp-02:10.0.10.2"
+      - "derp-03:10.0.10.3"
+      - "derp-00:10.0.10.245"
+      - "pmtu-probe:10.0.80.84"
+      - "mqtt.nordvpn.com:10.0.80.85"
+      - "api.nordvpn.com:10.0.80.86"
+    volumes:
+      - ../:/libtelio
+    healthcheck:
+      test: "ls /ready"
+      interval: 2s
+      retries: 120
+      start_period: 60s
+      timeout: 2s
+    environment:
+      USERNAME: "root"
+      PASSWORD: "jobs"
+      NETWORK: "bridge"
+      RAM_SIZE: "2G"
+      CPU_CORES: "1"
+      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/mac-client"
+      CLIENT_GATEWAY_PRIMARY: 192.168.154.254
+      CLIENT_GATEWAY_SECONDARY: 192.168.155.254
+    networks:
+      mac-net-01:
+        ipv4_address: 192.168.154.54
+      mac-net-02:
+        ipv4_address: 192.168.155.54
+
   # Client that shares two cone networks on different interfaces
   shared-client-01:
     hostname: shared-client-01
     <<: *common-client
+    depends_on:
+      cone-gw-01:
+        condition: service_healthy
+      cone-gw-03:
+        condition: service_healthy
     networks:
       cone-net-01:
         ipv4_address: 192.168.101.67
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth0'
-      cone-net-05:
+      cone-net-03:
         ipv4_address: 192.168.113.67
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
@@ -140,6 +277,7 @@ services:
         ipv4_address: 10.0.11.3
     environment:
       CLIENT_GATEWAY_PRIMARY: none
+
   # Open internet client used on ipv6 tests
   open-internet-client-dual-stack:
     hostname: open-client-dual-stack
@@ -160,14 +298,21 @@ services:
   fullcone-client-01:
     hostname: fullcone-client-01
     <<: *common-client
+    depends_on:
+      fullcone-gw-01:
+        condition: service_healthy
     networks:
       fullcone-net-01:
         ipv4_address: 192.168.109.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.109.254
+
   fullcone-client-02:
     hostname: fullcone-client-02
     <<: *common-client
+    depends_on:
+      fullcone-gw-02:
+        condition: service_healthy
     networks:
       fullcone-net-02:
         ipv4_address: 192.168.106.88
@@ -177,14 +322,21 @@ services:
   upnp-client-01:
     hostname: upnp-client-01
     <<: *common-client
+    depends_on:
+      upnp-gw-01:
+        condition: service_healthy
     networks:
       upnp-net-01:
         ipv4_address: 192.168.105.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.105.254
+
   upnp-client-02:
     hostname: upnp-client-02
     <<: *common-client
+    depends_on:
+      upnp-gw-02:
+        condition: service_healthy
     networks:
       upnp-net-02:
         ipv4_address: 192.168.112.88
@@ -194,22 +346,33 @@ services:
   symmetric-client-01:
     hostname: symmetric-client-01
     <<: *common-client
+    depends_on:
+      symmetric-gw-01:
+        condition: service_healthy
     networks:
       hsymmetric-net-01:
         ipv4_address: 192.168.103.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.103.254
+
   symmetric-client-02:
     hostname: symmetric-client-02
     <<: *common-client
+    depends_on:
+      symmetric-gw-02:
+        condition: service_healthy
     networks:
       hsymmetric-net-02:
         ipv4_address: 192.168.104.88
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.104.254
+
   internal-symmetric-client-01:
     hostname: internal-symmetric-client-01
     <<: *common-client
+    depends_on:
+      internal-symmetric-gw-01:
+        condition: service_healthy
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.114.254
       INTERMEDIATE_NETWORK: 192.168.103.0/24
@@ -220,29 +383,26 @@ services:
   udp-block-client-01:
     hostname: udp-block-client-01
     <<: *common-client
+    depends_on:
+      udp-block-gw-01:
+        condition: service_healthy
     networks:
       udp-block-net-01:
         ipv4_address: 192.168.110.100
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.110.254
+
   udp-block-client-02:
     hostname: udp-block-client-02
     <<: *common-client
+    depends_on:
+      udp-block-gw-02:
+        condition: service_healthy
     networks:
       udp-block-net-02:
         ipv4_address: 192.168.111.100
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.111.254
-
-  openwrt-client-01:
-    hostname: openwrt-client-01
-    <<: *common-client
-    networks:
-      openwrt-net-01:
-        ipv4_address: 192.168.115.100
-    environment:
-      CLIENT_GATEWAY_PRIMARY: 192.168.115.254
-
 
   ###########################################################
   #                        GATEWAYS                         #
@@ -276,6 +436,7 @@ services:
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
+
   cone-gw-02:
     hostname: cone-gw-02
     <<: *common-gw
@@ -295,48 +456,45 @@ services:
     <<: *common-gw
     networks:
       internet:
-        ipv4_address: 10.0.254.7
-        priority: 1000
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth0'
-      cone-net-03:
-        ipv4_address: 192.168.107.254
-        priority: 900
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth1'
-  cone-gw-04:
-    hostname: cone-gw-04
-    <<: *common-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.8
-        priority: 1000
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth0'
-      cone-net-04:
-        ipv4_address: 192.168.108.254
-        priority: 900
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth1'
-  cone-gw-05:
-    hostname: cone-gw-05
-    <<: *common-gw
-    networks:
-      internet:
         ipv4_address: 10.0.254.13
         priority: 1000
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth0'
-      cone-net-05:
+      cone-net-03:
         ipv4_address: 192.168.113.254
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
 
-  fullcone-gw-01:
+  # sysctls here are configured for docker holding VM, they are not applied to VM
+  # add them manually into entrypoint script, which is passed as `EXTRA_SCRIPT` in variables
+  fullcone-gw-01: &common-fullcone-gw
     hostname: fullcone-gw-01
-    <<: *common-gw
-    entrypoint: /opt/bin/fullcone-gw
+    privileged: true
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
+    devices:
+      - "/dev/net/tun"
+      - "/dev/kvm"
+    ulimits:
+      core:
+        soft: -1
+        hard: -1
+    volumes:
+      - ../:/shared
+    healthcheck:
+      test: "[ -f /ready ] || exit 1"
+      interval: 2s
+      retries: 120
+      start_period: 60s
+      timeout: 2s
+    environment:
+      USERNAME: "root"
+      PASSWORD: "root"
+      NETWORK: "bridge"
+      RAM_SIZE: "512M"
+      CPU_CORES: "1"
+      EXTRA_SCRIPT: "/shared/nat-lab/bin/fullcone-gw-vm"
+      CLIENT_GATEWAY_PRIMARY: none
     networks:
       internet:
         ipv4_address: 10.0.254.9
@@ -348,10 +506,18 @@ services:
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
+
   fullcone-gw-02:
     hostname: fullcone-gw-02
-    <<: *common-gw
-    entrypoint: /opt/bin/fullcone-gw
+    <<: *common-fullcone-gw
+    environment:
+      USERNAME: "root"
+      PASSWORD: "root"
+      NETWORK: "bridge"
+      RAM_SIZE: "512M"
+      CPU_CORES: "1"
+      EXTRA_SCRIPT: "/shared/nat-lab/bin/fullcone-gw-vm"
+      CLIENT_GATEWAY_PRIMARY: none
     networks:
       internet:
         ipv4_address: 10.0.254.6
@@ -379,6 +545,7 @@ services:
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
+
   symmetric-gw-02:
     hostname: symmetric-gw-02
     <<: *common-gw
@@ -394,6 +561,7 @@ services:
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
+
   internal-symmetric-gw-01:
     hostname: internal-symmetric-gw-01
     <<: *common-gw
@@ -429,6 +597,7 @@ services:
           com.docker.network.endpoint.ifname: 'eth1'
     volumes:
       - ./data/upnpd/upnpd.conf:/etc/upnpd.conf
+
   upnp-gw-02:
     hostname: upnp-gw-02
     <<: *common-gw
@@ -461,6 +630,7 @@ services:
         priority: 900
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
+
   udp-block-gw-02:
     hostname: udp-block-gw-02
     <<: *common-gw
@@ -477,38 +647,71 @@ services:
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
 
-  openwrt-gw-01:
-    hostname: openwrt-gw-01
-    build:
-      context: .
-      dockerfile: openwrt.Dockerfile
-    entrypoint: /opt/bin/openwrt_docker_entrypoint.sh
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    sysctls:
-      - net.ipv4.ip_forward=1
-    security_opt:
-      - no-new-privileges:true
+  windows-gw-01: &windows-gw
+    hostname: windows-gw-01
+    <<: *common-gw
     networks:
       internet:
-        ipv4_address: 10.0.254.14
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth0'
-      openwrt-net-01:
-        ipv4_address: 192.168.115.254
-        driver_opts:
-          com.docker.network.endpoint.ifname: 'eth1'
-    depends_on:
-      core-api:
-        condition: service_healthy
-    dns:
-      - 10.0.80.82
-      - 10.0.80.83
-    volumes:
-      - ./data/core_api/test.pem:/etc/ssl/certs/test.pem
+        ipv4_address: 10.0.254.15
+        priority: 1000
+      windows-net-01:
+        ipv4_address: 192.168.150.254
+        priority: 900
+
+  windows-gw-02:
+    hostname: windows-gw-02
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.16
+        priority: 1000
+      windows-net-02:
+        ipv4_address: 192.168.151.254
+        priority: 900
+
+  windows-gw-03:
+    hostname: windows-gw-03
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.17
+        priority: 1000
+      windows-net-03:
+        ipv4_address: 192.168.152.254
+        priority: 900
+
+  windows-gw-04:
+    hostname: windows-gw-04
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.18
+        priority: 1000
+      windows-net-04:
+        ipv4_address: 192.168.153.254
+        priority: 900
+
+  mac-gw-01:
+    hostname: mac-gw-01
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.19
+        priority: 1000
+      mac-net-01:
+        ipv4_address: 192.168.154.254
+        priority: 900
+
+  mac-gw-02:
+    hostname: mac-gw-02
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.20
+        priority: 1000
+      mac-net-02:
+        ipv4_address: 192.168.155.254
+        priority: 900
 
   ###########################################################
   #                       MISC SERVERS                      #
@@ -536,6 +739,7 @@ services:
     working_dir: /etc/nordderper
     healthcheck:
       test: "curl http://localhost:8765" # Here the port comes from nat-lab/data/nordderper/config*.yml
+
   derp-02:
     hostname: derp-02
     <<: *common-derp
@@ -544,6 +748,7 @@ services:
         ipv4_address: 10.0.10.2
     volumes:
       - ./data/nordderper/config2.yml:/etc/nordderper/config.yml
+
   derp-03:
     hostname: derp-03
     <<: *common-derp
@@ -583,6 +788,8 @@ services:
     hostname: vpn-01
     image: nat-lab:base
     entrypoint: /opt/bin/vpn-server
+    healthcheck:
+      test: "ls /ready"
     cap_drop:
       - ALL
     cap_add:
@@ -603,6 +810,7 @@ services:
       PYTHONUNBUFFERED: 1
     volumes:
       - ../:/libtelio
+
   vpn-02:
     hostname: vpn-02
     <<: *common-vpn
@@ -615,9 +823,14 @@ services:
   photo-album:
     hostname: photo-album
     image: nat-lab:base
-    entrypoint: "/usr/bin/python3 -m http.server --bind :: --directory /srv/www 80"
+    entrypoint: /opt/bin/photo-album
     cap_drop:
       - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SETUID
+      - SETGID
     security_opt:
       - no-new-privileges:true
     networks:
@@ -665,6 +878,7 @@ services:
         ipv6_address: 2001:db8:85a4::adda:edde:7
     healthcheck:
       test: "nslookup google.com localhost"
+
   dns-server-2:
     hostname: dns-server-2
     image: nat-lab:base
@@ -682,7 +896,6 @@ services:
     healthcheck:
       test: "nslookup google.com localhost"
 
-
   mqtt-broker:
     hostname: mqtt-broker
     image: bytebeamio/rumqttd
@@ -692,10 +905,10 @@ services:
         ipv4_address: 10.0.80.85
         ipv6_address: 2001:db8:85a4::adda:edde:a
     healthcheck:
-      test: ["CMD-SHELL", "netstat -tlnp | grep 8883 | grep LISTEN"]
+      test: [ "CMD-SHELL", "netstat -tlnp | grep 8883 | grep LISTEN" ]
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout: 2s
+      retries: 10
       start_period: 5s
     depends_on:
       dns-server-1:
@@ -740,6 +953,7 @@ networks:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: 'false'
+      com.docker.network.bridge.gateway_mode_ipv4: "nat"
     ipam:
       driver: default
       config:
@@ -754,29 +968,15 @@ networks:
       driver: default
       config:
         - subnet: 192.168.101.0/24
+
   cone-net-02:
     driver: bridge
     ipam:
       driver: default
       config:
         - subnet: 192.168.102.0/24
+
   cone-net-03:
-    driver: bridge
-    driver_opts:
-        com.docker.network.bridge.gateway_mode_ipv4: 'nat-unprotected'
-    ipam:
-      driver: default
-      config:
-        - subnet: 192.168.107.0/24
-  cone-net-04:
-    driver: bridge
-    driver_opts:
-      com.docker.network.bridge.gateway_mode_ipv4: 'nat-unprotected'
-    ipam:
-      driver: default
-      config:
-        - subnet: 192.168.108.0/24
-  cone-net-05:
     driver: bridge
     ipam:
       driver: default
@@ -793,12 +993,14 @@ networks:
       driver: default
       config:
         - subnet: 192.168.103.0/24
+
   hsymmetric-net-02:
     driver: bridge
     ipam:
       driver: default
       config:
         - subnet: 192.168.104.0/24
+
   hsymmetric-internal-net-01:
     driver: bridge
     ipam:
@@ -814,6 +1016,7 @@ networks:
       driver: default
       config:
         - subnet: 192.168.109.0/24
+
   fullcone-net-02:
     driver: bridge
     ipam:
@@ -827,6 +1030,7 @@ networks:
       driver: default
       config:
         - subnet: 192.168.105.0/24
+
   upnp-net-02:
     driver: bridge
     ipam:
@@ -840,6 +1044,7 @@ networks:
       driver: default
       config:
         - subnet: 192.168.110.0/24
+
   udp-block-net-02:
     driver: bridge
     ipam:
@@ -847,9 +1052,44 @@ networks:
       config:
         - subnet: 192.168.111.0/24
 
-  openwrt-net-01:
+  windows-net-01:
     driver: bridge
     ipam:
       driver: default
       config:
-        - subnet: 192.168.115.0/24
+        - subnet: 192.168.150.0/24
+
+  windows-net-02:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.151.0/24
+
+  windows-net-03:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.152.0/24
+
+  windows-net-04:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.153.0/24
+
+  mac-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.154.0/24
+
+  mac-net-02:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.155.0/24

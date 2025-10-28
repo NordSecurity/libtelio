@@ -18,10 +18,12 @@ from utils.connection_tracker import (
     FiveTuple,
 )
 from utils.network_switcher import (
+    Interface,
     NetworkSwitcher,
     NetworkSwitcherDocker,
     NetworkSwitcherMac,
     NetworkSwitcherWindows,
+    NetworkSwitcherLinux,
 )
 
 
@@ -69,7 +71,7 @@ async def new_connection_raw(
                     yield connection
         elif is_tag_valid_for_ssh_connection(tag):
             async with SshConnection.new_connection(
-                LAN_ADDR_MAP[tag], tag
+                LAN_ADDR_MAP[tag]["primary"], tag
             ) as connection:
                 yield connection
         else:
@@ -87,6 +89,12 @@ async def create_network_switcher(
         return await NetworkSwitcherWindows.create(connection)
     if tag == ConnectionTag.VM_MAC:
         return NetworkSwitcherMac(connection)
+    if tag in [
+        ConnectionTag.VM_LINUX_NLX_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_2,
+    ]:
+        return NetworkSwitcherLinux(connection)
 
     assert False, f"tag {tag} not supported"
 
@@ -182,7 +190,7 @@ def generate_connection_tracker_config(
     derp_2_limits: tuple[Optional[int], Optional[int]] = (0, 0),
     derp_3_limits: tuple[Optional[int], Optional[int]] = (0, 0),
 ) -> List[ConnTrackerEventsValidator]:
-    lan_addr = LAN_ADDR_MAP[connection_tag]
+    lan_addr = LAN_ADDR_MAP[connection_tag]["primary"]
     ctc_list = [
         ConnectionCountLimit.create_with_tuple(
             "nlx_1",
@@ -338,4 +346,57 @@ def is_tag_valid_for_ssh_connection(tag: ConnectionTag) -> bool:
         ConnectionTag.VM_WINDOWS_1,
         ConnectionTag.VM_WINDOWS_2,
         ConnectionTag.VM_MAC,
+        ConnectionTag.VM_LINUX_NLX_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_2,
     ]
+
+
+# This function stems from the fact that pytest connection with VMs and libtelio instances
+#  - through FFI (remote/proxy.py) - always rely on the primary interface so disabling it becomes non practical.
+async def set_secondary_ifc_state(
+    connection: Connection, enable: bool, secondary_ifc: Optional[Interface] = None
+) -> Optional[Interface]:
+    if connection.target_os == TargetOS.Linux:
+        await connection.create_process([
+            "ip",
+            "link",
+            "set",
+            "eth1",
+            "up" if enable else "down",
+        ]).execute()
+    elif connection.target_os == TargetOS.Mac:
+        await connection.create_process([
+            "ifconfig",
+            "eth1",
+            "up" if enable else "down",
+        ]).execute()
+    elif connection.target_os == TargetOS.Windows:
+        if not secondary_ifc:
+            interfaces = await Interface.get_enabled_network_interfaces(connection)
+            for interface in interfaces:
+                if interface.ipv4:
+                    if (
+                        interface.ipv4
+                        == config.LAN_ADDR_MAP[connection.tag]["secondary"]
+                    ):
+                        secondary_ifc = interface
+        assert secondary_ifc, LookupError("Couldn't find secondary interface")
+        if enable:
+            await secondary_ifc.enable(connection)
+        else:
+            await secondary_ifc.disable(connection)
+        return secondary_ifc
+
+    # TODO: Create Interface class for Linux/Macos, until then secondary ifc ("eth1") is hardcoded
+    return None
+
+
+@asynccontextmanager
+async def toggle_secondary_adapter(connection: Connection, enable: bool):
+    secondary_ifc = None
+    try:
+        secondary_ifc = await set_secondary_ifc_state(connection, enable)
+        yield
+    finally:
+        await set_secondary_ifc_state(connection, not enable, secondary_ifc)

@@ -114,6 +114,14 @@ class LibtelioWrapper:
         )
 
     @serialize_error
+    def start_named_ext_if_filter(
+        self, private_key, adapter, name: str, ext_if_list: List[str]
+    ):
+        self._libtelio.start_named_ext_if_filter(
+            private_key, libtelio.TelioAdapterType(adapter), name, ext_if_list
+        )
+
+    @serialize_error
     def create_tun(self, tun_id: int) -> int:
         return create_tun(tun_id)
 
@@ -126,6 +134,10 @@ class LibtelioWrapper:
     @serialize_error
     def set_fwmark(self, fwmark: int):
         self._libtelio.set_fwmark(fwmark)
+
+    @serialize_error
+    def set_ext_if_filter(self, ext_if_list: List[str]):
+        self._libtelio.set_ext_if_filter(ext_if_list)
 
     @serialize_error
     def set_tun(self, tun: int):

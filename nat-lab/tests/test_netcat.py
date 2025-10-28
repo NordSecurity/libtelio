@@ -1,9 +1,9 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_environment
+from helpers import SetupParameters, setup_mesh_nodes
+from utils.bindings import TelioAdapterType
 from utils.connection import ConnectionTag
-from utils.connection_util import new_connection_by_tag
 from utils.netcat import NetCatServer, NetCatClient
 
 TEST_STRING = "test_data"
@@ -16,9 +16,15 @@ PORT = 12345
     "setup_params",
     [
         pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_MAC,
-            ),
+            [
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_MAC,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                ),
+            ],
             marks=pytest.mark.mac,
         ),
     ],
@@ -30,19 +36,18 @@ PORT = 12345
         pytest.param(False),
     ],
 )
-async def test_netcat(setup_params: SetupParameters, udp: bool) -> None:
+async def test_netcat(setup_params: list[SetupParameters], udp: bool) -> None:
     async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [setup_params])
-        )
-        connection, *_ = [conn.connection for conn in env.connections]
-        server_ip = (await connection.get_ip_address())[1]
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        connection, client_connection, *_ = [
+            conn.connection for conn in env.connections
+        ]
+        server_node, _ = env.nodes
+        server_ip = server_node.ip_addresses[0]
 
-        client_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
-        )
-
-        async with NetCatServer(connection, PORT, udp=udp).run() as server:
+        async with NetCatServer(
+            connection, PORT, udp=udp, bind_ip=server_ip
+        ).run() as server:
             await server.listening_started()
             async with NetCatClient(
                 client_connection, server_ip, PORT, udp=udp

@@ -1,11 +1,14 @@
+import base64
 import json
 import pytest
+import re
 from config import CORE_API_CA_CERTIFICATE_PATH, CORE_API_URL
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from enum import Enum
 from helpers import send_https_request, verify_uuid
-from utils.connection import ConnectionTag
+from typing import Optional
+from utils.connection import ConnectionTag, Connection
 from utils.connection_util import new_connection_by_tag
 
 
@@ -21,6 +24,7 @@ class CoreApiErrorCode(Enum):
     MACHINE_ALREADY_EXISTS = 101117
     AUTHORIZATION_HEADER_NOT_PROVIDED = 100105
     INVALID_CREDENTIALS = 100104
+    UNAUTHORIZED = 101301
 
 
 peer_structure = {
@@ -61,6 +65,10 @@ BEARER_AUTHORIZATION_HEADER = (
     f"Bearer {CORE_API_CREDENTIALS['username']}:{CORE_API_CREDENTIALS['password']}"
 )
 
+COUNTRY_ID_PL = 1
+COUNTRY_ID_DE = 2
+COUNTRY_ID_INVALID = 5
+
 
 def validate_dict_structure(data_to_validate, expected_data_structure) -> None:
     for key, expected_type in expected_data_structure.items():
@@ -88,10 +96,11 @@ def validate_dict_structure(data_to_validate, expected_data_structure) -> None:
             raise ValueError(f"Unexpected type for key '{key}': {expected_type}")
 
 
-async def clean_up_machines(connection, api_url):
+async def clean_up_machines(connection: Connection):
+    """Clear out all the registered machines from the mocked core API"""
     machines = await send_https_request(
         connection,
-        f"{api_url}/v1/meshnet/machines",
+        f"{CORE_API_URL}/v1/meshnet/machines",
         "GET",
         CORE_API_CA_CERTIFICATE_PATH,
         authorization_header=BEARER_AUTHORIZATION_HEADER,
@@ -100,12 +109,32 @@ async def clean_up_machines(connection, api_url):
     for machine in machines:
         await send_https_request(
             connection,
-            f"{api_url}/v1/meshnet/machines/{machine['identifier']}",
+            f"{CORE_API_URL}/v1/meshnet/machines/{machine['identifier']}",
             "DELETE",
             CORE_API_CA_CERTIFICATE_PATH,
             expect_response=False,
             authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
+
+
+async def register_vpn_server_key(
+    connection: Connection, public_key: str, country_id: Optional[int] = None
+):
+    """Register a VPN server public_key for given country_id with the mocked core API"""
+    payload: dict[str, str | int] = {"public_key": public_key}
+    if country_id:
+        payload["country_id"] = country_id
+    payload_json = json.dumps(payload)
+
+    await send_https_request(
+        connection,
+        f"{CORE_API_URL}/test/public-key",
+        "POST",
+        CORE_API_CA_CERTIFICATE_PATH,
+        data=payload_json,
+        authorization_header=BEARER_AUTHORIZATION_HEADER,
+        expect_response=False,
+    )
 
 
 # this key is only used for testing
@@ -139,7 +168,7 @@ async def fixture_register_machine(machine_data):
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
         )
 
-        await clean_up_machines(connection, CORE_API_URL)
+        await clean_up_machines(connection)
 
         registered_machines = []
 
@@ -332,7 +361,7 @@ async def test_not_able_to_register_same_machine_twice():
         connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
         )
-        await clean_up_machines(connection, CORE_API_URL)
+        await clean_up_machines(connection)
 
         payload = json.dumps(linux_vm.__dict__)
 
@@ -520,17 +549,7 @@ async def test_get_servers_no_filters():
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
         )
 
-        payload = json.dumps({"public_key": linux_vm_public_key})
-
-        await send_https_request(
-            connection,
-            f"{CORE_API_URL}/test/public-key",
-            "POST",
-            CORE_API_CA_CERTIFICATE_PATH,
-            data=payload,
-            authorization_header=BEARER_AUTHORIZATION_HEADER,
-            expect_response=False,
-        )
+        await register_vpn_server_key(connection, linux_vm_public_key, None)
 
         response_data = await send_https_request(
             connection,
@@ -559,21 +578,11 @@ async def test_get_servers_with_filters():
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
         )
 
-        payload = json.dumps({"public_key": linux_vm_public_key, "country_id": 2})
-
-        await send_https_request(
-            connection,
-            f"{CORE_API_URL}/test/public-key",
-            "POST",
-            CORE_API_CA_CERTIFICATE_PATH,
-            data=payload,
-            authorization_header=BEARER_AUTHORIZATION_HEADER,
-            expect_response=False,
-        )
+        await register_vpn_server_key(connection, linux_vm_public_key, COUNTRY_ID_DE)
 
         response_data = await send_https_request(
             connection,
-            f"{CORE_API_URL}/v1/servers/recommendations?filters%5Bcountry_id%5D=2",
+            f"{CORE_API_URL}/v1/servers/recommendations?filters%5Bcountry_id%5D={COUNTRY_ID_DE}",
             "GET",
             CORE_API_CA_CERTIFICATE_PATH,
             authorization_header=BEARER_AUTHORIZATION_HEADER,
@@ -598,26 +607,107 @@ async def test_get_nonexisting_servers():
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
         )
 
-        payload = json.dumps({"public_key": linux_vm_public_key, "country_id": 5})
-
-        await send_https_request(
-            connection,
-            f"{CORE_API_URL}/test/public-key",
-            "POST",
-            CORE_API_CA_CERTIFICATE_PATH,
-            data=payload,
-            authorization_header=BEARER_AUTHORIZATION_HEADER,
-            expect_response=False,
+        # note that there are only 2 country_id servers hardcoded,
+        # even if we register one for any other, this test will fail
+        await register_vpn_server_key(
+            connection, linux_vm_public_key, COUNTRY_ID_INVALID
         )
 
         response_data = await send_https_request(
             connection,
-            f"{CORE_API_URL}/v1/servers/recommendations?filters%5Bcountry_id%5D=5",
+            f"{CORE_API_URL}/v1/servers/recommendations?filters%5Bcountry_id%5D={COUNTRY_ID_INVALID}",
             "GET",
             CORE_API_CA_CERTIFICATE_PATH,
             authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
+
         assert (
             response_data["errors"]["message"]
             == "No vpn servers found for provided filters"
         )
+
+
+@pytest.mark.asyncio
+async def test_service_credentials_success():
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+
+        credentials = (
+            f"{CORE_API_CREDENTIALS['username']}:{CORE_API_CREDENTIALS['password']}"
+        )
+        encoded_credentials = base64.b64encode(credentials.encode("utf-8")).decode(
+            "utf-8"
+        )
+        basic_auth_header = f"Basic {encoded_credentials}"
+
+        response_data = await send_https_request(
+            connection,
+            f"{CORE_API_URL}/v1/users/services/credentials",
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
+            authorization_header=basic_auth_header,
+        )
+
+        assert isinstance(response_data["id"], int)
+        assert isinstance(response_data["username"], str)
+        assert isinstance(response_data["password"], str)
+        assert isinstance(response_data["nordlynx_private_key"], str)
+
+        assert len(response_data["username"]) == 24
+        assert len(response_data["password"]) == 24
+        assert len(response_data["nordlynx_private_key"]) == 44
+
+        timestamp_pattern = r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$"
+        assert re.match(timestamp_pattern, response_data["created_at"])
+        assert re.match(timestamp_pattern, response_data["updated_at"])
+
+
+@pytest.mark.asyncio
+async def test_service_credentials_no_auth_header():
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+
+        response_data = await send_https_request(
+            connection,
+            f"{CORE_API_URL}/v1/users/services/credentials",
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
+        )
+
+        assert (
+            response_data["errors"]["code"]
+            == CoreApiErrorCode.AUTHORIZATION_HEADER_NOT_PROVIDED.value
+        )
+        assert response_data["errors"]["message"] == "Authorization header not provided"
+
+
+@pytest.mark.asyncio
+async def test_service_credentials_invalid_credentials():
+    async with AsyncExitStack() as exit_stack:
+        connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
+        )
+
+        invalid_credentials = "invalid_user:invalid_token"
+        encoded_credentials = base64.b64encode(
+            invalid_credentials.encode("utf-8")
+        ).decode("utf-8")
+        basic_auth_header = f"Basic {encoded_credentials}"
+
+        response_data = await send_https_request(
+            connection,
+            f"{CORE_API_URL}/v1/users/services/credentials",
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
+            authorization_header=basic_auth_header,
+        )
+
+        assert (
+            response_data["errors"]["code"]
+            == CoreApiErrorCode.INVALID_CREDENTIALS.value
+        )
+        assert response_data["errors"]["message"] == "Invalid credentials"

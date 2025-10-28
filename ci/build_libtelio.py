@@ -38,11 +38,6 @@ MOOSE_MAP = {
     "armv7hf": "armv7_eabihf",
 }
 
-QNAP_MAP = {
-    "x86_64": "x86_64",
-    "aarch64": "arm_64",
-}
-
 PROJECT_CONFIG = rutils.Project(
     rust_version="1.89.0",
     root_dir=PROJECT_ROOT,
@@ -140,35 +135,12 @@ def post_copy_darwin_debug_symbols_to_distribution_dir(config, args):
                     )
 
 
-def post_qnap_build_wrap_binary_on_qpkg(config, args):
-    packages = LIBTELIO_CONFIG[config.target_os].get("packages", None)
-    if packages:
-        for _, bins in packages.items():
-            for _, bin in bins.items():
-                src_path = os.path.join(
-                    PROJECT_CONFIG.get_distribution_path(
-                        config.target_os, config.arch, "", config.debug
-                    ),
-                    bin,
-                )
-                dst_path = os.path.join(
-                    PROJECT_CONFIG.get_root_dir(),
-                    f"qnap/{QNAP_MAP[config.arch]}",
-                )
-                os.makedirs(dst_path, exist_ok=True)
-                if os.path.isfile(src_path):
-                    shutil.copy2(src_path, dst_path)
-        rutils.run_command_with_output(
-            [
-                "qbuild",
-                "--root",
-                os.path.join(PROJECT_CONFIG.get_root_dir(), "qnap/"),
-                "--build-dir",
-                PROJECT_CONFIG.get_distribution_path(
-                    config.target_os, config.arch, "", config.debug
-                ),
-            ]
-        )
+def find_file_in_tree(filename, search_path):
+    found_files = []
+    for root, _, files in os.walk(search_path):
+        if filename in files:
+            found_files.append(os.path.join(root, filename))
+    return found_files
 
 
 """
@@ -325,7 +297,9 @@ LIBTELIO_CONFIG = {
                 },
             },
         },
-        "post_build": [post_copy_libsqlite3_binary_to_dist],
+        "post_build": [
+            post_copy_libsqlite3_binary_to_dist,
+        ],
         "packages": {
             "tcli": {"tcli": "tcli"},
             "derpcli": {"derpcli": "derpcli"},
@@ -333,13 +307,6 @@ LIBTELIO_CONFIG = {
             "teliod": {"teliod": "teliod"},
             NAME: {f"lib{NAME}": f"lib{NAME}.so"},
         },
-    },
-    "qnap": {
-        "post_build": [post_qnap_build_wrap_binary_on_qpkg],
-        "packages": {
-            "teliod": {"teliod": "teliod"},
-        },
-        "build_args": ("--features", "qnap"),
     },
     "macos": {
         "packages": {
@@ -366,10 +333,11 @@ LIBTELIO_CONFIG = {
 
 def main() -> None:
     parser = rutils.create_cli_parser()
-    (build_parser, bindings_parser, lipo_parser) = (
+    (build_parser, bindings_parser, lipo_parser, fetch_artifacts_parser) = (
         parser._subparsers._group_actions[0].choices["build"],
         parser._subparsers._group_actions[0].choices["bindings"],
         parser._subparsers._group_actions[0].choices["lipo"],
+        parser._subparsers._group_actions[0].choices["fetch-artifacts"],
     )
     build_parser.add_argument("--moose", action="store_true", help="Use libmoose")
     build_parser.add_argument(
@@ -396,7 +364,7 @@ def main() -> None:
         help="Include tcli package",
     )
 
-    for parsers in [build_parser, bindings_parser]:
+    for parsers in [build_parser, bindings_parser, fetch_artifacts_parser]:
         parsers.add_argument(
             "--try-fetch-from-pipeline",
             choices=["main", "nightly", "staging"],
@@ -426,6 +394,14 @@ def main() -> None:
         exec_bindings(args)
     elif args.command == "lipo":
         exec_lipo(args)
+    elif args.command == "fetch-artifacts":
+        try_download_artifacts(
+            args.try_fetch_from_pipeline,
+            PROJECT_ROOT,
+            PROJECT_ROOT,
+            None,
+            args.job_name,
+        )
     elif args.command == "aar":
         abu.generate_aar(PROJECT_CONFIG, args)
     elif args.command == "xcframework":
@@ -542,7 +518,6 @@ def exec_build(args):
         return
 
     if args.moose:
-        # Currently, moose is not supported on qnap
         if args.os in ["linux", "windows", "android"]:
             sys.path.append(f"{PROJECT_ROOT}/ci")
             moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP[args.arch])

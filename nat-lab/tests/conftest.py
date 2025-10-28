@@ -1,25 +1,32 @@
 import asyncio
+import base64
+import json
 import logging
 import os
+import Pyro5  # type: ignore
 import pytest
+import re
 import shutil
+import ssl
 import subprocess
-from config import DERP_PRIMARY, LAN_ADDR_MAP
+import urllib.error
+import urllib.request
+from collections import defaultdict
+from config import LAN_ADDR_MAP, CORE_API_IP, CORE_API_CREDENTIALS
 from contextlib import AsyncExitStack
 from helpers import SetupParameters
+from http import HTTPStatus
 from interderp_cli import InterDerpClient
 from itertools import combinations
-from typing import Dict, List, Tuple
 from utils.bindings import TelioAdapterType
-from utils.connection import ConnectionTag, clear_ephemeral_setups_set
+from utils.connection import ConnectionTag, TargetOS, clear_ephemeral_setups_set
 from utils.connection.docker_connection import DockerConnection
 from utils.connection.ssh_connection import SshConnection
-from utils.connection_util import new_connection_raw, new_connection_with_conn_tracker
+from utils.connection_util import new_connection_raw
 from utils.logger import log
-from utils.ping import ping
 from utils.process import ProcessExecError
 from utils.router import IPStack
-from utils.tcpdump import make_tcpdump, make_local_tcpdump
+from utils.tcpdump import make_local_tcpdump, make_tcpdump
 from utils.testing import get_current_test_log_path
 
 DERP_SERVER_1_ADDR = "http://10.0.10.1:8765"
@@ -32,10 +39,17 @@ SETUP_CHECK_TIMEOUT_S = 30
 SETUP_CHECK_RETRIES = 5
 SETUP_CHECK_CONNECTIVITY_TIMEOUT = 60
 SETUP_CHECK_CONNECTIVITY_RETRIES = 1
+GW_CHECK_CONNECTIVITY_TIMEOUT = 30
+GW_CHECK_CONNECTIVITY_RETRIES = 2
+SETUP_CHECK_MAC_COLLISION_TIMEOUT_S = 300
+SETUP_CHECK_MAC_COLLISION_RETRIES = 1
+SETUP_CHECK_ARP_CACHE_TIMEOUT_S = 300
+SETUP_CHECK_ARP_CACHE_RETRIES = 1
+SETUP_CHECK_DUPLICATE_IP_TIMEOUT_S = 60
+SETUP_CHECK_DUPLICATE_IP_RETRIES = 1
 
-RUNNER = asyncio.Runner()
-# pylint: disable=unnecessary-dunder-call
-SESSION_SCOPE_EXIT_STACK = RUNNER.run(AsyncExitStack().__aenter__())
+RUNNER: asyncio.Runner | None = None
+SESSION_SCOPE_EXIT_STACK: AsyncExitStack | None = None
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -119,67 +133,6 @@ def pytest_make_parametrize_id(config, val):
     return param_id
 
 
-async def setup_check_connectivity():
-    if "GITLAB_CI" not in os.environ:
-        return
-
-    reverse: Dict[str, str] = {
-        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]: "VM_WINDOWS_1",
-        LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2]: "VM_WINDOWS_2",
-        LAN_ADDR_MAP[ConnectionTag.VM_MAC]: "VM_MAC",
-        DERP_PRIMARY.ipv4: "PRIMARY_DERP",
-    }
-
-    test_nodes = {
-        ConnectionTag.VM_WINDOWS_1: [
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2],
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC],
-            DERP_PRIMARY.ipv4,
-        ],
-        ConnectionTag.VM_WINDOWS_2: [
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1],
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC],
-            DERP_PRIMARY.ipv4,
-        ],
-        ConnectionTag.VM_MAC: [
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1],
-            LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_2],
-            DERP_PRIMARY.ipv4,
-        ],
-    }
-    results: Dict[ConnectionTag, List[Tuple[str, bool]]] = {
-        key: [] for key in test_nodes
-    }
-    for source, destinations in test_nodes.items():
-        for dest_ip in destinations:
-            try:
-                async with new_connection_with_conn_tracker(source, None) as (
-                    connection,
-                    _,
-                ):
-                    await ping(connection, dest_ip, 5)
-                    results[source].append((reverse[dest_ip], True))
-            except Exception as e:  # pylint: disable=broad-exception-caught
-                log.error(
-                    "Failed to connect from %s to %s: %s",
-                    source,
-                    reverse[dest_ip],
-                    repr(e),
-                )
-                log.error("Exception type: %s", e.__class__.__name__)
-                log.error("Exception args: %s", e.args)
-                log.error("Exception attributes: %s", dir(e))
-                results[source].append((reverse[dest_ip], False))
-
-    log.info("Connectivity between VMs (and docker):")
-    for k, v in results.items():
-        log.info("%s: %s", k, v)
-
-    for k, v in results.items():
-        for dest_ip, status in v:
-            assert status, f"Failed to connect from {k} to {dest_ip}"
-
-
 async def setup_check_interderp():
     async with AsyncExitStack() as exit_stack:
         connections = [
@@ -213,13 +166,213 @@ async def setup_check_interderp():
                 await derp_test.save_logs()
 
 
+async def setup_check_duplicate_ip_addresses():
+    """
+    Enumerate all running Docker containers, gather their IPv4 addresses (excluding 127.0.0.1),
+    and fail if any IPv4 address is used by more than one container.
+    Converted from nat-lab/check_ip.sh.
+    """
+    try:
+        containers_out = subprocess.check_output(
+            ["docker", "ps", "-q"], text=True
+        ).strip()
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        print(
+            f"setup_check: cannot execute 'docker ps -q': {e}; skipping duplicate IP check"
+        )
+        return
+
+    if not containers_out:
+        print("setup_check: No running containers found.")
+        return
+
+    containers = [c for c in containers_out.splitlines() if c.strip()]
+
+    ip_owner: dict[str, str] = {}
+    duplicates: dict[str, set[str]] = defaultdict(set)
+
+    for cid in containers:
+        try:
+            name = subprocess.check_output(
+                ["docker", "inspect", "--format={{.Name}}", cid],
+                text=True,
+            ).strip()
+            name = re.sub(r"^/+", "", name)
+        except subprocess.CalledProcessError:
+            name = cid
+
+        # Extract IPv4 addresses inside the container without relying on grep -P.
+        # Use: ip -4 -o addr show -> "... IFACE ... A.B.C.D/XX ..."
+        # Then project the CIDR column and strip mask.
+        try:
+            ips_out = subprocess.check_output(
+                [
+                    "docker",
+                    "exec",
+                    cid,
+                    "sh",
+                    "-c",
+                    "ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1",
+                ],
+                text=True,
+            )
+        except subprocess.CalledProcessError:
+            ips_out = ""
+
+        ips = [
+            ip.strip()
+            for ip in ips_out.split()
+            if ip.strip() and not ip.startswith("127.")
+        ]
+
+        # Print container name and IPs (for debugging parity with the original script)
+        print(f"========== {name} ({cid}) ==========")
+        if not ips:
+            print("No IPs found")
+        else:
+            for ip in ips:
+                print(f"IP: {ip}")
+        print()
+
+        # Detect duplicates
+        for ip in ips:
+            if ip in ip_owner and ip_owner[ip] != name:
+                duplicates[ip].update({ip_owner[ip], name})
+            else:
+                ip_owner[ip] = name
+
+    if duplicates:
+        for ip, owners in sorted(duplicates.items()):
+            print(
+                f"  -> Duplicate IP {ip} found! Used by containers: {', '.join(sorted(owners))}"
+            )
+        details = {ip: sorted(list(owners)) for ip, owners in duplicates.items()}
+        raise Exception(f"Found duplicate container IPv4 addresses: {details}")
+
+
+async def setup_check_duplicate_mac_addresses():
+    mac_re = re.compile(r"(?:[0-9a-f]{2}[:\-]){5}[0-9a-f]{2}", re.IGNORECASE)
+    seen = defaultdict(set)  # mac -> set of ConnectionTag
+
+    ignore_macs = {
+        "00:00:00:00:00:00",
+        "ff:ff:ff:ff:ff:ff",
+    }
+
+    async with AsyncExitStack() as exit_stack:
+        for conn_tag in ConnectionTag:
+            conn = await exit_stack.enter_async_context(new_connection_raw(conn_tag))
+
+            if conn.target_os == TargetOS.Linux:
+                cmd = ["sh", "-c", "ip link show | awk '/link\\/ether/ {print $2}'"]
+            elif conn.target_os == TargetOS.Mac:
+                cmd = ["sh", "-c", "ifconfig | awk '/ether/ {print $2}'"]
+            elif conn.target_os == TargetOS.Windows:
+                cmd = ["getmac", "/v", "/fo", "list"]
+            else:
+                raise Exception("unknown target os")
+
+            proc = await conn.create_process(cmd).execute()
+            output = proc.get_stdout()
+
+            # extract MACs (handles both ":" and "-" formats)
+            for m in mac_re.finditer(output):
+                normalized = m.group(0).lower().replace("-", ":")
+                if normalized in ignore_macs:
+                    continue
+                seen[normalized].add(conn_tag)
+
+    duplicates = {
+        mac: sorted(map(str, tags)) for mac, tags in seen.items() if len(tags) > 1
+    }
+    if duplicates:
+        for mac, tags in duplicates.items():
+            print(f"{mac} -> {', '.join(tags)}")
+        raise Exception(f"Found duplicate MACs: {duplicates}")
+
+
+async def setup_check_arp_cache():
+    """
+    Ensure all VM LAN_ADDR_MAP IPv4 addresses are present in the host ARP cache
+    and are in a usable state.
+    """
+    if TargetOS.local() != TargetOS.Linux:
+        print("setup_check: skipping ARP cache validation on non-Linux host")
+        return
+
+    def warm_arp(ip: str) -> None:
+        subprocess.call(
+            ["ping", "-c", "1", "-W", "1", ip],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def read_arp_entries() -> list[dict]:
+        return json.loads(
+            subprocess.check_output(["ip", "-j", "neigh", "show"], text=True).strip()
+        )
+
+    subprocess.call(["sudo", "ip", "-s", "-s", "neigh", "flush", "all"])
+
+    acceptable_states = {"REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT"}
+    failures: list[str] = []
+
+    vm_tags = [tag for tag in ConnectionTag if tag.name.startswith("VM_")]
+    for tag in vm_tags:
+        for ip in LAN_ADDR_MAP[tag].values():
+            success = False
+            last_arp_entries: list[dict] = []
+            if ip == "":
+                continue
+            while True:
+                if success:
+                    break
+                warm_arp(ip)
+                last_arp_entries = read_arp_entries()
+                for e in last_arp_entries:
+                    dst_ip = e.get("dst")
+                    lladdr = e.get("lladdr")
+                    state = e.get("state")
+                    if dst_ip is None or dst_ip != ip:
+                        continue
+                    if lladdr is None:
+                        continue
+                    if state is None or state[0] not in acceptable_states:
+                        continue
+                    success = True
+                    break
+            if not success:
+                state = next(
+                    (
+                        e.get("state", "missing")
+                        for e in last_arp_entries
+                        if e.get("dst") == ip
+                    ),
+                    "missing",
+                )
+                failures.append(f"{tag.name}:{ip} state={state}")
+
+    if failures:
+        raise Exception("ARP cache not ready for VMs: " + ", ".join(failures))
+
+
 SETUP_CHECKS = [
-    (setup_check_interderp, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
     (
-        setup_check_connectivity,
-        SETUP_CHECK_CONNECTIVITY_TIMEOUT,
-        SETUP_CHECK_CONNECTIVITY_RETRIES,
+        setup_check_duplicate_ip_addresses,
+        SETUP_CHECK_DUPLICATE_IP_TIMEOUT_S,
+        SETUP_CHECK_DUPLICATE_IP_RETRIES,
     ),
+    (
+        setup_check_arp_cache,
+        SETUP_CHECK_ARP_CACHE_TIMEOUT_S,
+        SETUP_CHECK_ARP_CACHE_RETRIES,
+    ),
+    (
+        setup_check_duplicate_mac_addresses,
+        SETUP_CHECK_MAC_COLLISION_TIMEOUT_S,
+        SETUP_CHECK_MAC_COLLISION_RETRIES,
+    ),
+    (setup_check_interderp, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
 ]
 
 
@@ -243,6 +396,27 @@ async def perform_setup_checks() -> bool:
     return True
 
 
+async def check_gateway_connectivity() -> bool:
+    if SESSION_SCOPE_EXIT_STACK is None:
+        raise RuntimeError("SESSION_SCOPE_EXIT_STACK is not initialized")
+    current_gateway = None
+    for _ in range(GW_CHECK_CONNECTIVITY_RETRIES + 1):
+        try:
+            for gw_tag in ConnectionTag:
+                if "_GW" in gw_tag.name:
+                    current_gateway = gw_tag
+                    await SESSION_SCOPE_EXIT_STACK.enter_async_context(
+                        new_connection_raw(gw_tag)
+                    )
+            return True
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            gw_name = getattr(current_gateway, "name", "unknown")
+            log.error("Failed to connect to %s", gw_name)
+            log.error("Exception error: %s", e)
+            await asyncio.sleep(GW_CHECK_CONNECTIVITY_TIMEOUT)
+    return False
+
+
 async def kill_natlab_processes():
     # Do not execute cleanup in non-CI environment,
     # because cleanup requires elevated privileges,
@@ -262,7 +436,49 @@ async def kill_natlab_processes():
     subprocess.run(["sudo", cleanup_script_path]).check_returncode()
 
 
-PRETEST_CLEANUPS = [kill_natlab_processes, clear_ephemeral_setups_set]
+async def reset_service_credentials_cache():
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    credentials = (
+        f"{CORE_API_CREDENTIALS['username']}:{CORE_API_CREDENTIALS['password']}"
+    )
+    encoded_credentials = base64.b64encode(credentials.encode()).decode()
+    headers = {
+        "Authorization": f"Basic {encoded_credentials}",
+        "Content-Type": "application/json",
+        "Content-Length": "0",
+    }
+    request = urllib.request.Request(
+        f"https://{CORE_API_IP}/test/reset-credentials",
+        data=b"",
+        method="POST",
+        headers=headers,
+    )
+    try:
+        with urllib.request.urlopen(request, context=ssl_context) as response:
+            if response.status == HTTPStatus.OK:
+                log.debug("Service credentials cache reset successfully")
+            else:
+                log.warning(
+                    "Failed to reset service credentials cache: HTTP %s",
+                    response.status,
+                )
+    except urllib.error.HTTPError as e:
+        log.warning(
+            "Failed to reset service credentials cache: HTTP %s - %s", e.code, e.reason
+        )
+        raise
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        log.warning("Error resetting service credentials cache: %s", e)
+        raise
+
+
+PRETEST_CLEANUPS = [
+    kill_natlab_processes,
+    clear_ephemeral_setups_set,
+    reset_service_credentials_cache,
+]
 
 
 async def perform_pretest_cleanups():
@@ -274,7 +490,7 @@ async def _copy_vm_binaries(tag: ConnectionTag):
     try:
         log.info("Copying binaries for %s", tag)
         async with SshConnection.new_connection(
-            LAN_ADDR_MAP[tag], tag, copy_binaries=True
+            LAN_ADDR_MAP[tag]["primary"], tag, copy_binaries=True
         ):
             pass
     except OSError as e:
@@ -285,7 +501,6 @@ async def _copy_vm_binaries(tag: ConnectionTag):
 async def _copy_vm_binaries_if_needed(items):
     windows_bins_copied = False
     mac_bins_copied = False
-
     for item in items:
         for mark in item.own_markers:
             if mark.name == "windows" and not windows_bins_copied:
@@ -331,7 +546,7 @@ def save_audit_log_from_host(suffix):
 
 
 async def save_fakefm_logs():
-    async with new_connection_raw(ConnectionTag.DOCKER_NLX_1) as conn:
+    async with new_connection_raw(ConnectionTag.VM_LINUX_NLX_1) as conn:
         try:
             source_path = "/var/log/fakefm.log"
             cat_proc = await conn.create_process(["cat", source_path]).execute()
@@ -363,7 +578,7 @@ async def collect_kernel_logs(items, suffix):
         if any(mark.name == "mac" for mark in item.own_markers):
             try:
                 async with SshConnection.new_connection(
-                    LAN_ADDR_MAP[ConnectionTag.VM_MAC], ConnectionTag.VM_MAC
+                    LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
                 ) as conn:
                     await _save_macos_logs(conn, suffix)
             except OSError as e:
@@ -386,9 +601,16 @@ def pytest_runtest_setup():
     asyncio.run(perform_pretest_cleanups())
 
 
+# Session-long AsyncExitStack is created at session start and closed at session finish.
 # pylint: disable=unused-argument
 def pytest_sessionstart(session):
+    global RUNNER, SESSION_SCOPE_EXIT_STACK
+    setattr(Pyro5.config, "SERPENT_BYTES_REPR", True)
     if os.environ.get("NATLAB_SAVE_LOGS"):
+        RUNNER = asyncio.Runner()
+        SESSION_SCOPE_EXIT_STACK = AsyncExitStack()
+        if not RUNNER.run(check_gateway_connectivity()):
+            pytest.exit("Gateway nodes connectivity check failed, exiting ...")
         RUNNER.run(start_tcpdump_processes())
 
 
@@ -398,9 +620,16 @@ def pytest_sessionfinish(session, exitstatus):
         return
 
     if not session.config.option.collectonly:
-        RUNNER.close()
+        if RUNNER is not None and SESSION_SCOPE_EXIT_STACK is not None:
+            try:
+                RUNNER.run(SESSION_SCOPE_EXIT_STACK.aclose())
+            finally:
+                RUNNER.close()
+        elif RUNNER is not None:
+            RUNNER.close()
         collect_nordderper_logs()
         collect_dns_server_logs()
+        collect_core_api_server_logs()
         asyncio.run(collect_kernel_logs(session.items, "after_tests"))
         asyncio.run(collect_mac_diagnostic_reports())
         asyncio.run(save_fakefm_logs())
@@ -426,6 +655,20 @@ def collect_dns_server_logs():
         destination_path = f"logs/dns_server_{i}.log"
 
         copy_file_from_container(container_name, "/dns-server.log", destination_path)
+
+
+def collect_core_api_server_logs():
+    container_name = "nat-lab-core-api-1"
+    os.makedirs("logs", exist_ok=True)
+    out_path = os.path.join("logs", "core_api.log")
+    with open(out_path, "w", encoding="utf-8") as f:
+        subprocess.run(
+            ["docker", "logs", container_name],
+            stdout=f,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=True,
+        )
 
 
 def copy_file_from_container(container_name, src_path, dst_path):
@@ -454,7 +697,7 @@ async def collect_mac_diagnostic_reports():
     log.info("Collect mac diagnostic reports")
     try:
         async with SshConnection.new_connection(
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC], ConnectionTag.VM_MAC
+            LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
         ) as connection:
             await connection.download(
                 "/Library/Logs/DiagnosticReports", "logs/system_diagnostic_reports"
@@ -469,11 +712,15 @@ async def collect_mac_diagnostic_reports():
 
 
 async def start_tcpdump_processes():
-    connections = [
-        await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(gw_tag))
-        for gw_tag in ConnectionTag
-        if "_GW" in gw_tag.name
-    ]
+    if SESSION_SCOPE_EXIT_STACK is None:
+        raise RuntimeError("SESSION_SCOPE_EXIT_STACK is not initialized")
+    connections = []
+    for gw_tag in ConnectionTag:
+        if "_GW" in gw_tag.name:
+            connection = await SESSION_SCOPE_EXIT_STACK.enter_async_context(
+                new_connection_raw(gw_tag)
+            )
+            connections.append(connection)
     connections += [
         await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(conn_tag))
         for conn_tag in [
