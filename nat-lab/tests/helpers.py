@@ -342,7 +342,7 @@ async def setup_environment(
             violations = await conn_manager.tracker.find_conntracker_violations()
             assert (
                 violations is None
-            ), f"conntracker reported out of limits {violations}"
+            ), f"conntracker ({conn_manager.connection.tag}) reported out of limits {violations}"
 
 
 async def setup_mesh_nodes(

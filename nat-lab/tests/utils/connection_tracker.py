@@ -181,12 +181,12 @@ class ConnectionCountLimit(ConnTrackerEventsValidator):
         if self.max_limit is not None and count > self.max_limit:
             return ConnTrackerViolation(
                 recoverable=False,
-                reason=f"In {self.key} there has been {count} connections to {FiveTuple} which is more than max limit of {self.max_limit}",
+                reason=f"In {self.key} there has been {count} connections to {self.target} which is more than max limit of {self.max_limit}",
             )
         if self.min_limit is not None and count < self.min_limit:
             return ConnTrackerViolation(
                 recoverable=True,
-                reason=f"In {self.key} there has been {count} connections to {FiveTuple} which is less than min limit of {self.min_limit}",
+                reason=f"In {self.key} there has been {count} connections to {self.target} which is less than min limit of {self.min_limit}",
             )
 
         return None
