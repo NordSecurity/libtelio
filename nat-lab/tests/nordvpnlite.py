@@ -34,6 +34,7 @@ class IgnoreableError(Exception):
 
 
 class IfcConfigType(Enum):
+    DEFAULT = "config.json"
     MANUAL = "config_with_manual_setup.json"
     IPROUTE = "config_with_iproute_setup.json"
     VPN_COUNTRY_PL = "config_with_vpn_country_pl.json"
@@ -73,7 +74,7 @@ class Paths:
     def lib_log(self) -> Path:
         return self.log_dir / "nordvpnlite_natlab.log"
 
-    def config_path(self, config_type) -> Path:
+    def config_path(self, config_type: IfcConfigType) -> Path:
         return self.config_dir / config_type.value
 
 
@@ -291,6 +292,23 @@ class NordVpnLite:
         except ProcessExecError as exc:
             if "nordvpnlite: no process found" not in exc.stderr:
                 raise
+
+    async def remove_default_config(self) -> None:
+        path = self.config.paths.config_path(IfcConfigType.DEFAULT)
+        await self.connection.create_process(["rm", "-f", str(path)]).execute()
+        await self.connection.create_process(["test", "!", "-f", str(path)]).execute()
+
+    async def default_config_exists(self) -> bool:
+        try:
+            await self.connection.create_process([
+                "test",
+                "-s",
+                str(self.config.paths.config_path(IfcConfigType.DEFAULT)),
+            ]).execute()
+            return True
+        except ProcessExecError as exc:
+            assert (exc.returncode, exc.stdout, exc.stderr) == (1, "", "")
+            return False
 
     async def remove_logs(self) -> None:
         for path in [self.config.paths.daemon_log, self.config.paths.lib_log]:

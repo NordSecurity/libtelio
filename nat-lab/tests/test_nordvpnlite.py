@@ -128,3 +128,31 @@ async def test_nordvpnlite_vpn_country_connection(country: IfcConfigType) -> Non
                     hostname in report
                     for hostname in ["pl128.nordvpn.com", "de1263.nordvpn.com"]
                 ), report
+
+
+async def test_nordvpnlite_default_config_created() -> None:
+    async with AsyncExitStack() as exit_stack:
+        connection = (
+            await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
+        )[0].connection
+
+        nordvpnlite = await NordVpnLite.new(exit_stack, connection=connection)
+        await nordvpnlite.remove_default_config()
+        assert not await nordvpnlite.default_config_exists()
+
+        try:
+            # Start nordvpnlite without a config-file parameter
+            await nordvpnlite.execute_command(["start"])
+            pytest.fail("Start should not succeed with default config")
+        except ProcessExecError as exc:
+            assert (
+                str(nordvpnlite.config.paths.config_path(IfcConfigType.DEFAULT))
+                in exc.stdout
+            ), "Config path not mentioned in stdout"
+            assert "creating default config" in exc.stderr
+            assert "InvalidConfigToken" in exc.stderr
+            assert (
+                await nordvpnlite.default_config_exists()
+            ), "Default config was not created"
+        finally:
+            await nordvpnlite.remove_default_config()
