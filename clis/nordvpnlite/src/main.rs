@@ -137,7 +137,7 @@ async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
         }
         // Display list of available countries
         Cmd::Countries => {
-            for country in get_countries_with_exp_backoff(None, None).await? {
+            for country in get_countries_with_exp_backoff(None).await? {
                 println!("{}: {}", country.name, country.code);
             }
             Ok(())
