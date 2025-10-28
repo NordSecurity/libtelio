@@ -83,6 +83,10 @@ impl NordToken {
     pub fn new(token: &str) -> Result<Self, NordVpnLiteError> {
         if Self::validate(token) {
             Ok(NordToken(Arc::new(token.to_owned().into())))
+        } else if token.to_lowercase().contains("token") {
+            Err(NordVpnLiteError::InvalidConfigToken {
+                msg: "Provide your authentication token from https://my.nordaccount.com".to_owned(),
+            })
         } else {
             Err(NordVpnLiteError::InvalidConfigToken {
                 msg: "Invalid authentication token format".to_owned(),
@@ -213,8 +217,8 @@ impl NordVpnLiteConfig {
                 file.write_all(config_json.as_bytes())?;
 
                 Err(NordVpnLiteError::InvalidConfigToken {
-                    msg: "Invalid config: Provide your authentication token from https://my.nordaccount.com"
-                        .to_string(),
+                    msg: "Provide your authentication token from https://my.nordaccount.com"
+                        .to_owned(),
                 })
             }
             Err(err) => Err(err.into()),
