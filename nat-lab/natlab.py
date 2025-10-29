@@ -363,6 +363,11 @@ def main():
         "--skip-nlx", action="store_true", help="Skip starting nlx-01 container"
     )
     start_parser.add_argument(
+        "--skip-openwrt",
+        action="store_true",
+        help="Skip starting openwrt related containers",
+    )
+    start_parser.add_argument(
         "--lite-mode",
         action="store_true",
         help="Skip all heavy containers (windows, mac, fullcone and nlx)",
@@ -385,7 +390,7 @@ def main():
     if args.command == "start":
         skip_keywords = set()
         if args.lite_mode:
-            skip_keywords.update(["fullcone", "windows", "mac", "nlx"])
+            skip_keywords.update(["fullcone", "windows", "mac", "nlx", "openwrt"])
         else:
             if args.skip_fullcone:
                 skip_keywords.add("fullcone")
@@ -403,6 +408,8 @@ def main():
                 skip_keywords.add("mac")
             if args.skip_nlx:
                 skip_keywords.add("nlx")
+            if args.skip_openwrt:
+                skip_keywords.add("openwrt")
         start(skip_keywords)
     elif args.command == "restart":
         restart()
