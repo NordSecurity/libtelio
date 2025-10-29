@@ -80,11 +80,6 @@ pub trait Adapter: Send + Sync {
     /// details.
     async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, Error>;
 
-    /// Get WireGuard adapter file descriptor. Overridable
-    fn get_wg_socket(&self, _ipv6: bool) -> Result<Option<i32>, Error> {
-        Ok(None)
-    }
-
     /// Disconnect all connected peer sockets
     async fn drop_connected_sockets(&self) {}
 

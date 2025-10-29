@@ -59,8 +59,6 @@ pub trait WireGuard: Send + Sync + 'static {
     /// this is required becasuse wiregurad-go windows implementation
     /// has two different ports, for local connections and external connections
     async fn wait_for_proxy_listen_port(&self, d: Duration) -> Result<u16, Error>;
-    /// Get adapter file descriptor if supported by platform, `None` otherwise
-    async fn get_wg_socket(&self, ipv6: bool) -> Result<Option<i32>, Error>;
     /// Get current link state for a peer
     async fn get_link_state(&self, key: PublicKey) -> Result<Option<LinkState>, Error>;
     /// Set secret key for adapter
@@ -380,12 +378,6 @@ impl WireGuard for DynamicWg {
 
             sleep(Duration::from_millis(10)).await;
         }
-    }
-
-    async fn get_wg_socket(&self, ipv6: bool) -> Result<Option<i32>, Error> {
-        task_exec!(&self.task, async move |s| Ok(s.adapter.get_wg_socket(ipv6)))
-            .await
-            .unwrap_or(Ok(None))
     }
 
     async fn get_link_state(&self, key: PublicKey) -> Result<Option<LinkState>, Error> {
@@ -1150,12 +1142,6 @@ pub mod tests {
         fn get_adapter_luid(&self) -> u64 {
             task::block_in_place(|| {
                 Handle::current().block_on(async { self.lock().await.get_adapter_luid() })
-            })
-        }
-
-        fn get_wg_socket(&self, ipv6: bool) -> Result<Option<i32>, Error> {
-            task::block_in_place(|| {
-                Handle::current().block_on(async { self.lock().await.get_wg_socket(ipv6) })
             })
         }
 

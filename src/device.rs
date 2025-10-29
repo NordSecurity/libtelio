@@ -715,19 +715,6 @@ impl Device {
         })
     }
 
-    #[cfg(not(windows))]
-    async fn protect_from_vpn(&self, adapter: &impl WireGuard) -> Result {
-        if let Some(protect) = self.protect.as_ref() {
-            if let Some(fd) = adapter.get_wg_socket(false).await? {
-                let _ = protect.make_external(fd);
-            }
-            if let Some(fd) = adapter.get_wg_socket(true).await? {
-                let _ = protect.make_external(fd);
-            }
-        }
-        Ok(())
-    }
-
     /// Configure meshnet
     ///
     /// This method sets the desired meshnet configuration
@@ -782,10 +769,6 @@ impl Device {
             })
             .await?;
 
-            // TODO: delete this as sockets are protected from within NepTUN itself
-            #[cfg(not(windows))]
-            self.protect_from_vpn(&*_wireguard_interface).await?;
-
             Ok(())
         })
     }
@@ -804,10 +787,6 @@ impl Device {
                 Ok(rt.entities.wireguard_interface.clone())
             })
             .await?;
-
-            // TODO: delete this as sockets are protected from within NepTUN itself
-            #[cfg(not(windows))]
-            self.protect_from_vpn(&*_wireguard_interface).await?;
 
             Ok(())
         })
