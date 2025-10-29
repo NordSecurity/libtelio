@@ -1,7 +1,7 @@
 ARG LIBTELIO_ENV_SEC_CONTAINER_REGISTRY
 ARG LIBTELIO_ENV_NAT_LAB_DEPS_TAG
 
-FROM ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/vpn/client/libtelio-build/natlab-deps-common:${LIBTELIO_ENV_NAT_LAB_DEPS_TAG}
+FROM ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/nat_lab:${LIBTELIO_ENV_NAT_LAB_DEPS_TAG}
 LABEL org.opencontainers.image.authors="info@nordsec.com"
 LABEL org.opencontainers.image.source="https://github.com/NordSecurity/libtelio/blob/main/nat-lab/Dockerfile"
 
