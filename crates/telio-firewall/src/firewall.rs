@@ -23,7 +23,7 @@ use telio_network_monitors::monitor::{LocalInterfacesObserver, LOCAL_ADDRS_CACHE
 
 use telio_crypto::PublicKey;
 use telio_utils::{
-    telio_log_debug, telio_log_error
+    telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
 };
 
 use crate::{
@@ -34,9 +34,10 @@ use crate::{
     ffi_chain::{LibfwChain, LibfwVerdict},
     libfirewall_api::{
         libfw_configure_chain, libfw_deinit, libfw_init, libfw_process_inbound_packet,
-        libfw_process_outbound_packet,
+        libfw_process_outbound_packet, libfw_set_log_callback,
         libfw_trigger_stale_connection_close, LibfwFirewall,
     },
+    log::LibfwLogLevel,
 };
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
@@ -212,6 +213,11 @@ impl Drop for StatefullFirewall {
 impl StatefullFirewall {
     /// Constructs firewall with libfw structure pointer
     pub fn new(use_ipv6: bool, feature: &FeatureFirewall) -> Self {
+        // Let's initialize libfirewall logging first.
+        // We use TRACE level, which will be telio's level in pracice,
+        // as we use telio logging macros inside.
+        libfw_set_log_callback(LibfwLogLevel::LibfwLogLevelTrace, Some(log_callback));
+
         let result = Self {
             firewall: libfw_init(),
             whitelist: RwLock::new(Whitelist::default()),
@@ -532,6 +538,21 @@ extern "C" fn write_to_sink(
 
     if let Err(err) = sink.write(packet_data) {
         telio_log_error!("Could not inject the packet: {:?}", err);
+    }
+}
+
+extern "C" fn log_callback(level: LibfwLogLevel, log_line: *const std::ffi::c_char) {
+    let log_cstr = unsafe { std::ffi::CStr::from_ptr(log_line as *mut std::os::raw::c_char) };
+    let Ok(log_str) = log_cstr.to_str() else {
+        telio_log_warn!("UNREADEABLE LOG");
+        return;
+    };
+    match level {
+        LibfwLogLevel::LibfwLogLevelTrace => telio_log_trace!("{}", log_str),
+        LibfwLogLevel::LibfwLogLevelDebug => telio_log_debug!("{}", log_str),
+        LibfwLogLevel::LibfwLogLevelInfo => telio_log_info!("{}", log_str),
+        LibfwLogLevel::LibfwLogLevelWarn => telio_log_warn!("{}", log_str),
+        LibfwLogLevel::LibfwLogLevelErr => telio_log_error!("{}", log_str),
     }
 }
 
