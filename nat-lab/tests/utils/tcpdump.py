@@ -19,7 +19,7 @@ PCAP_FILE_PATH = {
     TargetOS.Mac: "/var/root/dump.pcap",
     TargetOS.Windows: "C:\\workspace\\dump.pcap",
 }
-TCPDUMP_START_EVENT_TIMEOUT_S = 3
+TCPDUMP_START_EVENT_TIMEOUT_S = 10
 
 
 class TcpDump:
