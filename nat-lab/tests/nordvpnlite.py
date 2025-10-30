@@ -114,7 +114,7 @@ class Config:
 
 
 class NordVpnLite:
-    START_TIMEOUT_S = 3
+    START_TIMEOUT_S = 10
     SOCKET_CHECK_INTERVAL_S = 0.5
     NORDVPNLITE_CMD_CHECK_INTERVAL_S = 10  # TODO (LLT-6693): revert back to 1
 
