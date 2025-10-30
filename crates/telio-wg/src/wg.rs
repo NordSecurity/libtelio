@@ -1126,7 +1126,7 @@ pub mod tests {
 
     #[async_trait]
     impl Adapter for Arc<Mutex<MockAdapter>> {
-        async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, AdapterError> {
+        async fn send_uapi_cmd(&mut self, cmd: &Cmd) -> Result<Response, AdapterError> {
             self.lock().await.send_uapi_cmd(cmd).await
         }
 

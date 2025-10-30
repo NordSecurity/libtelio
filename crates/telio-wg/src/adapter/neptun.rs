@@ -78,14 +78,14 @@ impl NepTUN {
         })
     }
 
-    async fn send_uapi_cmd_str(&self, cmd: &str) -> String {
+    async fn send_uapi_cmd_str(&mut self, cmd: &str) -> String {
         self.device.read().await.send_uapi_cmd(cmd)
     }
 }
 
 #[async_trait]
 impl Adapter for NepTUN {
-    async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, AdapterError> {
+    async fn send_uapi_cmd(&mut self, cmd: &Cmd) -> Result<Response, AdapterError> {
         let res = self.send_uapi_cmd_str(&cmd.to_string()).await;
         Ok(uapi::response_from_str(&res)?)
     }
