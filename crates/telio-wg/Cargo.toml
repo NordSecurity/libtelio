@@ -32,6 +32,7 @@ tokio = { workspace = true, features = ["full"] }
 
 telio-crypto.workspace = true
 telio-model.workspace = true
+telio-network-monitors.workspace = true
 telio-sockets = { workspace = true, features = ["mockall"] }
 telio-task.workspace = true
 telio-utils.workspace = true

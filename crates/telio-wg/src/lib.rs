@@ -11,9 +11,13 @@ pub(crate) mod windows;
 
 pub mod uapi;
 
-mod link_detection;
+pub mod link_detection;
 
 pub use crate::{
     adapter::{Adapter, AdapterType, Error, FirewallInboundCb, FirewallOutboundCb, Tun},
+    link_detection::LinkDetection,
     wg::*,
 };
+
+#[cfg(target_os = "windows")]
+pub use crate::link_detection::LinkDetectionObserver;
