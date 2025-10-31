@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use std::io::Error as IOError;
 use std::slice::Windows;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{mem, option, result};
 use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
@@ -25,12 +25,24 @@ use wireguard_nt::{
     self, set_logger, Error as WireGuardNTError, SetInterface, SetPeer, WIREGUARD_STATE_UP,
 };
 use wireguard_uapi::xplatform;
+use widestring::U16CStr;
+
+use tokio::sync::broadcast::{Sender, Receiver, error::TryRecvError};
+use once_cell::sync::Lazy;
+
+use std::net::UdpSocket;
+
+pub static SERVER_HANDSHAKE_NOTIFICATION: Lazy<Sender<Instant>> = Lazy::new(|| Sender::new(1000));
 
 /// Telio wrapper around wireguard-nt
 #[cfg(windows)]
 pub struct WindowsNativeWg {
     // Object holding the adapter handle and associated wireguard functionality
     adapter: Arc<wireguard_nt::Adapter>,
+
+    server_handshake_receiver: Receiver<Instant>,
+    last_server_handshake_ts: Option<Instant>,
+    last_listen_port_change_ts: Option<Instant>,
 
     // Required for calling winipcfg API. Cannot be retrieved from the driver once the vNIC has failed / was removed.
     luid: u64,
@@ -51,6 +63,9 @@ pub struct WindowsNativeWg {
 pub enum Error {
     #[error("wireguard-nt: {0}")]
     Fail(String),
+
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
 }
 
 #[derive(Debug, PartialEq)]
@@ -58,6 +73,46 @@ enum AdapterState {
     Up,
     Down,
 }
+
+
+/// In this PoC experiment we would like to get notified
+/// when WireGuard handshake fails, such that we could,
+/// react more quickly and swap the port. This will likely
+/// produce some false-positives, but it is ok for experiment
+/// purposes.
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn intercepting_logger(
+    level: wireguard_nt::wireguard_nt_raw::WIREGUARD_LOGGER_LEVEL,
+    _timestamp: wireguard_nt::wireguard_nt_raw::DWORD64,
+    message: *const wireguard_nt::wireguard_nt_raw::WCHAR,
+) {
+    if message.is_null() {
+        return;
+    }
+    //WireGuard will always give us a valid UTF16 null terminated string
+    let msg = unsafe { U16CStr::from_ptr_str(message) };
+    let utf8_msg = msg.to_string_lossy();
+
+    if utf8_msg.contains("Receiving handshake initiation from peer") {
+        telio_log_info!("wireguard_nt: Notifying about server-side handshake");
+        let res = SERVER_HANDSHAKE_NOTIFICATION.send(Instant::now());
+        telio_log_info!("wireguard_nt: Notification {:?}", res);
+    };
+
+    match level {
+        wireguard_nt::wireguard_nt_raw::WIREGUARD_LOGGER_LEVEL_WIREGUARD_LOG_INFO => {
+            telio_log_info!("wireguard_nt: {}", utf8_msg)
+        }
+        wireguard_nt::wireguard_nt_raw::WIREGUARD_LOGGER_LEVEL_WIREGUARD_LOG_WARN => {
+            telio_log_warn!("wireguard_nt: {}", utf8_msg)
+        }
+        wireguard_nt::wireguard_nt_raw::WIREGUARD_LOGGER_LEVEL_WIREGUARD_LOG_ERR => {
+            telio_log_error!("wireguard_nt: {}", utf8_msg)
+        }
+        _ => telio_log_error!("wireguard_nt: {} (with invalid log level {})", utf8_msg, level),
+    }
+}
+
 
 // Windows native associated functions
 #[cfg(windows)]
@@ -70,6 +125,9 @@ impl WindowsNativeWg {
     ) -> Self {
         Self {
             adapter: adapter.clone(),
+            server_handshake_receiver: SERVER_HANDSHAKE_NOTIFICATION.subscribe(),
+            last_server_handshake_ts: None,
+            last_listen_port_change_ts: None,
             luid,
             cleaned_up: Arc::new(Mutex::new(false)),
             watcher: watcher.clone(),
@@ -146,6 +204,10 @@ impl WindowsNativeWg {
                             &watcher,
                             enable_dynamic_wg_nt_control,
                         );
+
+                        // set custom logger to enable intercepting failed handshake logs:
+                        wireguard_nt::log::set_logger(&wg_dll, Some(intercepting_logger));
+
                         if let Ok(mut watcher) = watcher.lock() {
                             watcher.configure(wgnt.adapter.clone(), luid);
                             Ok(wgnt)
@@ -159,6 +221,7 @@ impl WindowsNativeWg {
                         "Failed to create adapter: {e:?}",
                     )))),
                 }
+
             }
             Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
                 "Failed to load wireguard dll: {e:?}",
@@ -200,6 +263,7 @@ impl WindowsNativeWg {
                 "WireGuard service not running".to_string(),
             )));
         }
+
         if !wg_dev
             .adapter
             .set_logging(wireguard_nt::AdapterLoggingLevel::OnWithPrefix)
@@ -217,8 +281,54 @@ impl WindowsNativeWg {
         Ok(wg_dev)
     }
 
-    fn get_config_uapi(&self) -> Response {
-        match self.adapter.get_config_uapi() {
+    async fn trigger_listen_port_change(&mut self, config: Response) -> Result<(), Error> {
+        telio_log_debug!("Triggering listen_port change");
+
+        // Guard against invalid config
+        if config.errno != 0 {
+            return Err(Error::Fail("Unsuccesfull config errno".to_string()))
+        };
+
+        let mut itf = if let Some(itf) = config.interface {
+            itf
+        } else {
+            return Err(Error::Fail("Empty config".to_string()));
+        };
+
+        // The following is an oportunistic opproach
+        // at acquiring port which is free on the OS.
+        //
+        // Yes, it is racy. But the whole initiative
+        // here is an experiment, hence for experiment
+        // purposes it should be good enough.
+        //
+        // The working principle is the following:
+        //  1. create a IPv4 UDP socket, bind it to
+        //     0.0.0.0 with unspecified port
+        //  2. the close the port
+        //  3. in quick succession issue set config
+        //     UAPI command
+        //
+        //  and hope that in the steps between 2 and 3rd
+        //  there was no other process which took this 
+        //  port.
+        let ephemeral_socket = UdpSocket::bind("0.0.0.0:0")?;
+        let assigned_port = ephemeral_socket.local_addr()?.port();
+        drop(ephemeral_socket);
+
+        // Now attempt to change the listen-port in WG-NT
+        telio_log_debug!("Attempting to change WG listen port from {:?} to {:?}", itf.listen_port, assigned_port);
+        itf.listen_port = Some(assigned_port);
+
+        self.send_uapi_cmd(&Cmd::Set(itf.into())).await.map_err(|e| Error::Fail(format!("Adapter error: {:?}", e)))?;
+
+        self.last_listen_port_change_ts = Some(Instant::now());
+        Ok(())
+    }
+
+    async fn get_config_uapi(&mut self) -> Response {
+
+        let resp = match self.adapter.get_config_uapi() {
             Ok(device) => Response {
                 errno: 0,
                 interface: Some(Interface::from(device)),
@@ -237,7 +347,43 @@ impl WindowsNativeWg {
                     interface: None,
                 }
             }
+        };
+
+        // This function is called periodically, hence
+        // we can check how many server-side handshakes
+        // do we have and estimate the rate of those
+        // handshakes.
+        // If this rate is above 0.1 h/s - we can trigger 
+        // listen-port change
+        match (self.last_server_handshake_ts, self.server_handshake_receiver.try_recv()) {
+            (Some(last_hs_ts), Ok(hs_ts)) => {
+                // Throttle listen-port change to no more than one per 30s
+                if self.last_listen_port_change_ts.map(|ts| ts.elapsed() > Duration::from_secs(30)).unwrap_or(true) {
+                    let diff = hs_ts - last_hs_ts;
+                    telio_log_debug!("Received second server-side handshake indicating, time diff: {:?}", diff);
+                    if diff < Duration::from_secs(10) {
+                        let res = self.trigger_listen_port_change(resp.clone()).await;
+                        telio_log_debug!("listen_port_change resulted in {:?}", res);
+                    }
+                } else {
+                    telio_log_debug!("Skipping listen_port change due to one performed just recently");
+                }
+
+                self.last_server_handshake_ts = Some(hs_ts);
+            },
+            (None, Ok(hs_ts)) => {
+                telio_log_debug!("First server-side handshake");
+                self.last_server_handshake_ts = Some(hs_ts);
+            },
+            (None, Err(TryRecvError::Empty)) => {}, //Empty notifications is not interesting enough
+                                                    // to be logged
+            (None, Err(e)) => {
+                telio_log_debug!("Received error from server-side handshake monitor: {:?}", e);
+            },
+            (_, _) => {}
         }
+
+        resp
     }
 
     /// Ensure adapter state (up/down)
@@ -384,9 +530,9 @@ impl WindowsNativeWg {
 #[cfg(windows)]
 #[async_trait::async_trait]
 impl Adapter for WindowsNativeWg {
-    async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, AdapterError> {
+    async fn send_uapi_cmd(&mut self, cmd: &Cmd) -> Result<Response, AdapterError> {
         match cmd {
-            Get => Ok(self.get_config_uapi()),
+            Get => Ok(self.get_config_uapi().await),
             Set(set_cfg) => {
                 // If we have any peers added -> bring the adapter up
                 if self.enable_dynamic_wg_nt_control && !set_cfg.peers.is_empty() {
@@ -402,7 +548,7 @@ impl Adapter for WindowsNativeWg {
                             interface_watcher.set_last_known_configuration(set_cfg);
                         }
 
-                        let resp = self.get_config_uapi();
+                        let resp = self.get_config_uapi().await;
                         let peer_cnt = resp.interface.as_ref().map(|i| i.peers.len());
                         (Ok(resp), peer_cnt)
                     }
