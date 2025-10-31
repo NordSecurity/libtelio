@@ -568,6 +568,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
                     "telio-firewall-server-side-kill",
                     FiveTuple(protocol="tcp", dst_ip=CLIENT_ALPHA_IP, dst_port=PORT),
                     [TcpState.LAST_ACK, TcpState.TIME_WAIT],
+                    trailing_state=TcpState.CLOSE,
                 )
             ],
         ).run() as conntrack:
@@ -669,6 +670,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                     "nc",
                     FiveTuple(protocol="tcp", dst_ip=CLIENT_ALPHA_IP, dst_port=PORT),
                     [TcpState.LAST_ACK, TcpState.TIME_WAIT],
+                    trailing_state=TcpState.CLOSE,
                 )
             ],
         ).run() as conntrack:

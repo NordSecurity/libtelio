@@ -36,7 +36,7 @@ from utils.connection import Connection, TargetOS
 from utils.connection.docker_connection import DockerConnection, container_id
 from utils.connection_util import get_uniffi_path
 from utils.logger import log
-from utils.moose import MOOSE_LOGS_DIR
+from utils.moose import MOOSE_DB_TIMEOUT_MS, MOOSE_LOGS_DIR
 from utils.output_notifier import OutputNotifier
 from utils.process import Process, ProcessExecError
 from utils.python import get_python_binary
@@ -48,6 +48,8 @@ from utils.testing import (
     get_current_test_log_path,
     get_current_test_case_and_parameters,
 )
+
+DEVICE_STOP_TIMEOUT = 30
 
 
 class WontHappenError(Exception):
@@ -158,6 +160,7 @@ class Runtime:
         paths: List[PathType],
         is_exit: bool = False,
         is_vpn: bool = False,
+        link_state: Optional[LinkState] = None,
     ) -> None:
         def _get_events() -> List[TelioNode]:
             return [
@@ -169,6 +172,7 @@ class Runtime:
                 and peer.state in states
                 and is_exit == peer.is_exit
                 and is_vpn == peer.is_vpn
+                and (link_state is None or peer.link_state == link_state)
             ]
 
         old_events = _get_events()
@@ -359,9 +363,12 @@ class Events:
         is_exit: bool = False,
         is_vpn: bool = False,
         timeout: Optional[float] = None,
+        link_state: Optional[LinkState] = None,
     ) -> None:
         await asyncio.wait_for(
-            self._runtime.notify_peer_event(public_key, states, paths, is_exit, is_vpn),
+            self._runtime.notify_peer_event(
+                public_key, states, paths, is_exit, is_vpn, link_state
+            ),
             timeout,
         )
 
@@ -556,6 +563,8 @@ class Client:
                         await self.set_meshnet_config(meshnet_config)
                     yield self
             finally:
+                # Stopping the instance might fail, but we don't want that to prevent us from doing the cleanup
+                stop_exception = None
                 log.info(
                     "[%s] Test cleanup: Stopping tcpdump and collecting core dumps",
                     self._node.name,
@@ -574,14 +583,32 @@ class Client:
                     self._node.name,
                 )
                 if self._process.is_executing():
+                    log.info(
+                        "[%s] Test cleanup: process is still executing",
+                        self._node.name,
+                    )
                     if self._libtelio_proxy:
-                        await self.stop_device()
+                        log.info(
+                            "[%s] Test cleanup: will stop the device",
+                            self._node.name,
+                        )
+                        try:
+                            async with asyncio.timeout(DEVICE_STOP_TIMEOUT):
+                                await self.stop_device()
+                                self._quit = True
+                        # pylint: disable=broad-except
+                        except Exception as e:
+                            log.exception(
+                                "[%s] Exception while stopping device: %s. Will ignore until the end of the cleanup",
+                                self._node.name,
+                                e,
+                            )
+                            stop_exception = e
                     else:
                         log.info(
                             "[%s] Test cleanup: We don't have LibtelioProxy instance, Stop() not called.",
                             self._node.name,
                         )
-                    self._quit = True
 
                 log.info("[%s]  Test cleanup: Shutting down", self._node.name)
                 if self._libtelio_proxy:
@@ -618,6 +645,8 @@ class Client:
                 await self._save_logs()
 
                 log.info("[%s] Test cleanup complete", self._node.name)
+                if stop_exception is not None:
+                    raise stop_exception
 
     async def simple_start(self):
         await self.get_proxy().start_named(
@@ -641,6 +670,16 @@ class Client:
             self.get_router().set_interface_name(tun_name)
             await self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
 
+    async def start_named_ext_if_filter(self, tun_name, ext_if_filter: List[str]):
+        if not isinstance(self.get_router(), WindowsRouter):
+            raise Exception("start_named_ext_if_filter can only be used on Windows")
+        await self.get_proxy().start_named_ext_if_filter(
+            private_key=self._node.private_key,
+            adapter=self._adapter_type,
+            name=tun_name,
+            ext_if_list=ext_if_filter,
+        )
+
     async def wait_for_state_peer(
         self,
         public_key,
@@ -652,6 +691,9 @@ class Client:
         link_state: Optional[LinkState] = None,
         vpn_connection_error: Optional[VpnConnectionError] = None,
     ) -> None:
+        info = f"peer({public_key}) with states({states}), paths({paths}), is_exit({is_exit}), is_vpn({is_vpn}), link_state({link_state}), vpn_connection_error({vpn_connection_error})"
+
+        log.debug("[%s]: wait for peer state %s", self._node.name, info)
         await self.get_events().wait_for_state_peer(
             public_key,
             states,
@@ -670,6 +712,9 @@ class Client:
         timeout: Optional[float] = None,
     ) -> None:
         """Wait until a link_state event matching the `state` for `public_key` is available."""
+        info = f"peer({public_key}) with state({state})"
+
+        log.debug("[%s]: wait for link state %s", self._node.name, info)
         await self.get_events().wait_for_link_state(
             public_key,
             state,
@@ -684,8 +729,9 @@ class Client:
         is_exit: bool = False,
         is_vpn: bool = False,
         timeout: Optional[float] = None,
+        link_state: Optional[LinkState] = None,
     ) -> None:
-        event_info = f"peer({public_key}) with states({states}), paths({paths}), is_exit={is_exit}, is_vpn={is_vpn}"
+        event_info = f"peer({public_key}) with states({states}), paths({paths}), link_state({link_state}), is_exit={is_exit}, is_vpn={is_vpn}"
 
         log.debug("[%s]: wait for peer event %s", self._node.name, event_info)
         await self.get_events().wait_for_event_peer(
@@ -695,6 +741,7 @@ class Client:
             is_exit,
             is_vpn,
             timeout,
+            link_state,
         )
         log.debug("[%s]: got peer event %s", self._node.name, event_info)
 
@@ -841,6 +888,7 @@ class Client:
         public_key: str,
         timeout: Optional[float] = None,
         pq: bool = False,
+        link_state_enabled: bool = False,
     ) -> None:
         await self._configure_interface()
         await self.get_router().create_vpn_route()
@@ -852,6 +900,7 @@ class Client:
                 is_exit=True,
                 is_vpn=True,
                 timeout=timeout,
+                link_state=LinkState.UP if link_state_enabled else None,
             )
         ) as event:
             self.get_runtime().allowed_pub_keys.add(public_key)
@@ -1035,7 +1084,7 @@ class Client:
                         log.info("[%s] -> %s @ %s", self._node.name, event[1], event[0])
                         self._runtime.handle_event(event[1], event[0])
                         event = await self.get_proxy().next_event()
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.1)
             except:
                 if self._quit:
                     return
@@ -1045,19 +1094,35 @@ class Client:
         if self._fingerprint is not None:
             await self.wait_for_log("[Moose] Init callback success")
             database, fingerprint = self._fingerprint
-            await self._connection.create_process(
-                [
-                    "sqlite3",
-                    database,
-                    "--cmd",
-                    "PRAGMA busy_timeout = 30000;",
-                    (
-                        "INSERT OR REPLACE INTO shared_context (key, val, is_essential) VALUES"
-                        f" ('device.fp._string', '\"{fingerprint}\"', 1)"
-                    ),
-                ],
-                quiet=True,
-            ).execute()
+            max_retries = MOOSE_DB_TIMEOUT_MS / 1000
+            max_timeout = MOOSE_DB_TIMEOUT_MS / 30
+
+            while max_retries:
+                try:
+                    await self._connection.create_process(
+                        [
+                            "sqlite3",
+                            database,
+                            "--cmd",
+                            f"PRAGMA busy_timeout = {max_timeout};",
+                            (
+                                "INSERT OR REPLACE INTO shared_context (key, val, is_essential) VALUES"
+                                f" ('device.fp._string', '\"{fingerprint}\"', 1)"
+                            ),
+                        ],
+                        quiet=True,
+                    ).execute()
+                    return
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    print(
+                        f"maybe_write_device_fingerprint_to_moose_db error: {e}, retrying ..."
+                    )
+                    max_retries -= 1
+                    await asyncio.sleep(0.1)
+            if not max_retries:
+                raise Exception(
+                    "Retries exhausted, while trying to write fingerprint to db"
+                )
 
     async def trigger_event_collection(self) -> None:
         await self.get_proxy().trigger_analytics_event()

@@ -91,6 +91,10 @@ class Router(ABC):
         pass
 
     @abstractmethod
+    async def create_fake_ipv4_route(self, route: str) -> None:
+        pass
+
+    @abstractmethod
     async def create_meshnet_route(self) -> None:
         pass
 

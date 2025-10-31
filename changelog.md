@@ -1,5 +1,14 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v6.1.2
+### ****
+---
+* LLT-6517: Prevent deadlocks in firewall
+* LLT-6058: Fix state reporting for Android TV
+
+
+<br>
+
 ### v6.1.1
 ### ****
 ---

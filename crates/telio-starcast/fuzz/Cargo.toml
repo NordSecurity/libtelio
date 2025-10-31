@@ -13,6 +13,8 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 telio-starcast = {path = ".."}
 
+surge-ping = "=0.8.1"
+
 # Prevent this from interfering with workspaces
 [workspace]
 members = ["."]

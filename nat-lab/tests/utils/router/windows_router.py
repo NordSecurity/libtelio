@@ -135,6 +135,37 @@ class WindowsRouter(Router):
             quiet=True,
         ).execute()
 
+    async def create_fake_ipv4_route(self, route: str) -> None:
+        try:
+            await self._connection.create_process(
+                [
+                    "netsh",
+                    "interface",
+                    "ipv4",
+                    "add",
+                    "route",
+                    route,
+                    self._interface_name,
+                ],
+                quiet=True,
+            ).execute()
+        except ProcessExecError as exception:
+            if exception.stdout.find("The object already exists.") < 0:
+                raise exception
+
+        if not await CommandGrepper(
+            self._connection,
+            [
+                "netsh",
+                "interface",
+                "ipv4",
+                "show",
+                "route",
+            ],
+            timeout=self._status_check_timeout_s,
+        ).check_exists(route, [self._interface_name]):
+            raise Exception("Failed to create fake ipv4 route")
+
     async def create_meshnet_route(self) -> None:
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
             try:

@@ -1,4 +1,11 @@
 from abc import ABC, abstractmethod
+from enum import Enum
+
+
+class InterfaceState(Enum):
+    Disabled = 0
+    Enabled = 1
+    Unknown = 2
 
 
 class NetworkSwitcher(ABC):

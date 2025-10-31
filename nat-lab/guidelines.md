@@ -1,4 +1,4 @@
-### Natlab Guidelines:
+# Natlab Guidelines
 
 1. **Use Parametrization:**
    - Test across all operating systems when possible.
@@ -10,7 +10,8 @@
    - Wider usage of a test.
 
    **Example:**
-   ```
+
+   ```python
    @pytest.mark.parametrize("alpha_node", [ConnectionTag.VM_MAC, ConnectionTag.WINDOWS_VM, ConnectionTag.DOCKER_CONE_CLIENT_1])
    @pytest.mark.parametrize("beta_node", ConnectionTag.VM_MAC)
    def test_params(alpha_node, beta_node):
@@ -32,13 +33,16 @@
 
    **Example**:
    - DON'T:
-   ```
+
+   ```python
       await connect_to_vpn()
       # event might occur event before starting to wait
       await wait_for_event_peer(State.Connected)
    ```
+
    - DO:
-   ```
+
+   ```python
       async with asyncio_util.run_async_context(wait_for_event_peer(State.Connected)) as event:
             await asyncio.wait_for(
                 asyncio.gather(
@@ -59,7 +63,8 @@
 
    **Example:**
    - As previously mentioned, event might occur before starting to wait for it. To avoid natlab hanging, wrap coroutine or future to complete with timeout.
-   ```
+
+   ```python
       await connect_to_vpn()
       await asyncio.wait_for(wait_for_event_peer(State.Connected), timeout=5)
    ```
@@ -73,7 +78,8 @@
 
    **Example**:
    - DON'T:
-   ```
+
+   ```python
    def test_1():
       # for the purpose of example, break_tcp_conn_to_host is not context manager and doesnt have a proper cleanup
 
@@ -105,7 +111,8 @@
    ```
 
    - DO:
-   ```
+
+   ```python
    @contextmanager
    def tmp_break_conn()
       try:
@@ -130,7 +137,8 @@
 
    **Example:**
    - Use connection tracker. Providing configuration to environment setup will enable it. When test being teardown, it will be checked, wether actual connection to vpn server was made.
-   ```
+
+   ```python
    def test_connection():
       env = setup_env(SetupParams(connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1, connection_tracker_config=generate_connection_tracker_config(vpn_1_limits=ConnectionLimits(1, 1))))
       client.connect_to_vpn()
@@ -147,14 +155,17 @@
    **Example:**  
    To check if two nodes are connected via meshnet PING is used.
    - DO:
-   ```
+
+   ```python
    def test_meshnet(alpha, beta):
       env = setup_env([alpha, beta])
       verify_connectivity_between_nodes([alpha, beta])
       # assume that both peers are available
    ```
+
    - DON'T, because one of the node, might be blocking other node in firewall and by being able to ping from one side, you can't assume that connection is available both ways:
-   ```
+
+   ```python
    def test_meshnet(alpha, beta):
       env = setup_env([alpha, beta])
 
@@ -163,8 +174,10 @@
 
       # assume that both peers are available
    ```
+
    because, this might have been the actual configuraton:
-   ```
+
+   ```python
       alpha.set_peer_firewall_settings(beta, False)
       beta.set_peer_firewall_settings(alpha, True)
    ```
@@ -175,14 +188,16 @@
    **Example:**  
    Starting listening with `netcat`:
    - DON'T:
-   ```
+
+   ```python
    await connection_alpha.create_process("nc -nluv -4 100.64.0.100 12345")
    await asyncio.sleep(2)
    # assume that listening started
    ```
 
    - DO:
-   ```
+
+   ```python
    output_notifier = OutputNotifier()
    listening_start_event = asyncio.Event()
    process = connection_alpha.create_process("nc -nluv -4 100.64.0.100 12345", on_stdout = output_notifier.handle_output())
@@ -201,4 +216,3 @@
     - Maintainability
     - Uniformity
     - Multiple OS support
-

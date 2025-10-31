@@ -9,6 +9,7 @@ from helpers import (
     setup_mesh_nodes,
     SetupParameters,
 )
+from unittest.mock import Mock, AsyncMock, patch
 from utils import stun
 from utils.asyncio_util import run_async_contexts
 from utils.bindings import (
@@ -20,7 +21,13 @@ from utils.bindings import (
     RelayState,
 )
 from utils.connection import TargetOS, ConnectionTag
+from utils.network_switcher.network_switcher_windows import (
+    Interface as WinInterface,
+    NetworkSwitcherWindows,
+    InterfaceState,
+)
 from utils.ping import ping
+from utils.process import ProcessExecError
 
 
 @pytest.mark.asyncio
@@ -34,14 +41,14 @@ from utils.ping import ping
         ),
         pytest.param(
             ConnectionTag.VM_WINDOWS_1,
-            "10.0.254.7",
-            "10.0.254.8",
+            "10.0.254.15",
+            "10.0.254.16",
             marks=pytest.mark.windows,
         ),
         pytest.param(
             ConnectionTag.VM_MAC,
-            "10.0.254.7",
-            "10.0.254.8",
+            "10.0.254.19",
+            "10.0.254.20",
             marks=pytest.mark.mac,
         ),
     ],
@@ -301,3 +308,405 @@ async def test_mesh_network_switch_direct(
         beta_client.allow_errors([
             "telio_traversal::endpoint_providers::stun.*Starting session failed.*A socket operation was attempted to an unreachable network"
         ])
+
+
+class TestInterfaceWindows:
+    @pytest.mark.asyncio
+    async def test_get_network_interfaces(self):
+        mock_connection = Mock()
+        mock_connection.tag = ConnectionTag.VM_WINDOWS_1
+
+        show_interface_output = """Admin State    State          Type             Interface Name
+-------------------------------------------------------------------------
+Enabled        Connected      Dedicated        Ethernet
+Enabled        Connected      Dedicated        Ethernet 2"""
+        mock_show_interface_process = Mock()
+        mock_show_interface_process.get_stdout.return_value = show_interface_output
+        mock_show_interface_process.execute = AsyncMock(
+            return_value=mock_show_interface_process
+        )
+
+        show_addresses_output = """Configuration for interface "Ethernet"
+    DHCP enabled:                         No
+    IP Address:                           192.168.151.54
+    Subnet Prefix:                        192.168.151.0/24 (mask 255.255.255.0)
+    Default Gateway:                      192.168.150.254
+    Gateway Metric:                       256
+    InterfaceMetric:                      15
+
+Configuration for interface "Ethernet 2"
+    DHCP enabled:                         No
+    IP Address:                           192.168.150.54
+    Subnet Prefix:                        192.168.150.0/24 (mask 255.255.255.0)
+    InterfaceMetric:                      15
+
+Configuration for interface "Loopback Pseudo-Interface 1"
+    DHCP enabled:                         No
+    IP Address:                           127.0.0.1
+    Subnet Prefix:                        127.0.0.0/8 (mask 255.0.0.0)
+    InterfaceMetric:                      75"""
+        mock_show_address_process = Mock()
+        mock_show_address_process.get_stdout.return_value = show_addresses_output
+        mock_show_address_process.execute = AsyncMock(
+            return_value=mock_show_address_process
+        )
+
+        mock_connection.create_process.side_effect = [
+            mock_show_interface_process,
+            mock_show_address_process,
+            mock_show_interface_process,
+            mock_show_interface_process,
+            mock_show_interface_process,
+        ]
+
+        interfaces = await WinInterface.get_enabled_network_interfaces(mock_connection)
+
+        assert len(interfaces) == 2
+
+        ifc = WinInterface.find_interface_by_name(interfaces, "Ethernet")
+        assert ifc, interfaces
+        assert await ifc.get_state(mock_connection) is InterfaceState.Enabled
+        assert ifc.ipv4 == config.LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["secondary"]
+
+        ifc = WinInterface.find_interface_by_name(interfaces, "Ethernet 2")
+        assert ifc, interfaces
+        assert await ifc.get_state(mock_connection) is InterfaceState.Enabled
+        assert ifc.ipv4 == config.LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"]
+
+    @pytest.mark.asyncio
+    async def test_delete_route_fails(self):
+        mock_connection = Mock()
+        mock_process = Mock()
+
+        # interface doesn't exist -> success
+        mock_error = ProcessExecError(
+            1,
+            "test",
+            ["some", "cmd"],
+            "The filename, directory name, or volume label syntax is incorrect",
+            "",
+        )
+        mock_process.execute = AsyncMock(side_effect=mock_error)
+        mock_connection.create_process.return_value = mock_process
+        await WinInterface("Ethernet Instance 0", InterfaceState.Enabled).delete_route(
+            mock_connection
+        )
+
+        # route doesn't exist -> success
+        mock_error = ProcessExecError(1, "", [""], "Element not found", "")
+        mock_process.execute = AsyncMock(side_effect=mock_error)
+        mock_connection.create_process.return_value = mock_process
+        await WinInterface("Ethernet Instance 0", InterfaceState.Enabled).delete_route(
+            mock_connection
+        )
+
+        # command fails -> exception thrown
+        mock_error = ProcessExecError(
+            1, "", [""], "Failed to execute command error", "some stderr"
+        )
+        mock_process.execute = AsyncMock(side_effect=mock_error)
+        mock_connection.create_process.return_value = mock_process
+        with pytest.raises(ProcessExecError):
+            await WinInterface(
+                "Ethernet Instance 0", InterfaceState.Enabled
+            ).delete_route(mock_connection)
+
+    @pytest.mark.asyncio
+    async def test_interface_enable_with_slow_startup(self):
+        mock_connection = Mock()
+        mock_connection.tag = ConnectionTag.VM_WINDOWS_1
+        mock_process = Mock()
+        mock_process.execute = AsyncMock(return_value=mock_process)
+        mock_connection.create_process.return_value = mock_process
+
+        attempt_count = 0
+
+        # pylint: disable-next=unused-argument
+        async def mock_get_interfaces(*args, **kwargs):
+            nonlocal attempt_count
+            attempt_count += 1
+            if attempt_count < 10:
+                return []
+            return [
+                WinInterface(
+                    "Ethernet Instance 0", InterfaceState.Enabled, "10.55.0.13"
+                )
+            ]
+
+        with patch.object(
+            WinInterface,
+            "get_enabled_network_interfaces",
+            side_effect=mock_get_interfaces,
+        ):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                ifc = WinInterface("Ethernet Instance 0", InterfaceState.Disabled)
+                await ifc.enable(mock_connection)
+                assert attempt_count == 10
+
+
+class TestNetworkSwitcherWindows:
+    @pytest.mark.asyncio
+    async def test_create_is_successful(self):
+        mock_connection = Mock()
+        mock_connection.tag = ConnectionTag.VM_WINDOWS_1
+        test_interfaces = [
+            WinInterface(
+                "Primary",
+                InterfaceState.Enabled,
+                config.LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"],
+            ),
+            WinInterface(
+                "Secondary",
+                InterfaceState.Enabled,
+                config.LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["secondary"],
+            ),
+        ]
+
+        with patch.object(
+            WinInterface, "get_enabled_network_interfaces", return_value=test_interfaces
+        ):
+            nw_switcher = await NetworkSwitcherWindows.create(mock_connection)
+
+            # pylint: disable=protected-access
+            assert nw_switcher._primary_interface == test_interfaces[0]
+            assert nw_switcher._secondary_interface == test_interfaces[1]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "interfaces",
+        [
+            pytest.param(
+                [
+                    WinInterface(
+                        "Primary",
+                        InterfaceState.Enabled,
+                        config.LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"],
+                    )
+                ],
+            ),
+            pytest.param(
+                [
+                    WinInterface(
+                        "Secondary",
+                        InterfaceState.Enabled,
+                        config.LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["secondary"],
+                    )
+                ],
+            ),
+        ],
+    )
+    async def test_create_missing_interface(self, interfaces):
+        mock_connection = Mock()
+        mock_connection.tag = ConnectionTag.VM_WINDOWS_1
+        strerr = rf"Couldn't find {'secondary' if interfaces[0].name == 'Primary' else 'primary'}"
+        with patch.object(
+            WinInterface, "get_enabled_network_interfaces", return_value=interfaces
+        ):
+            with pytest.raises(AssertionError, match=strerr):
+                await NetworkSwitcherWindows.create(mock_connection)
+
+    @pytest.mark.asyncio
+    async def test_create_with_disabled_interface_with_ip_assigned(self):
+        mock_connection = Mock()
+        mock_connection.tag = ConnectionTag.VM_WINDOWS_1
+
+        show_interface_output = """Admin State    State          Type             Interface Name
+-------------------------------------------------------------------------
+Disabled       Connected      Dedicated        Ethernet
+Enabled        Connected      Dedicated        Ethernet 2"""
+        mock_show_interface_process = Mock()
+        mock_show_interface_process.get_stdout.return_value = show_interface_output
+        mock_show_interface_process.execute = AsyncMock(
+            return_value=mock_show_interface_process
+        )
+
+        show_addresses_output = """Configuration for interface "Ethernet"
+    DHCP enabled:                         No
+    IP Address:                           192.168.151.54
+    Subnet Prefix:                        192.168.151.0/24 (mask 255.255.255.0)
+    Default Gateway:                      192.168.150.254
+    Gateway Metric:                       256
+    InterfaceMetric:                      15
+
+Configuration for interface "Ethernet 2"
+    DHCP enabled:                         No
+    IP Address:                           192.168.150.54
+    Subnet Prefix:                        192.168.150.0/24 (mask 255.255.255.0)
+    InterfaceMetric:                      15
+
+Configuration for interface "Loopback Pseudo-Interface 1"
+    DHCP enabled:                         No
+    IP Address:                           127.0.0.1
+    Subnet Prefix:                        127.0.0.0/8 (mask 255.0.0.0)
+    InterfaceMetric:                      75"""
+        mock_show_address_process = Mock()
+        mock_show_address_process.get_stdout.return_value = show_addresses_output
+        mock_show_address_process.execute = AsyncMock(
+            return_value=mock_show_address_process
+        )
+        mock_connection.create_process.side_effect = [
+            mock_show_interface_process,
+            mock_show_address_process,
+        ]
+
+        with pytest.raises(
+            ValueError, match="Disabled interface with address assigned"
+        ):
+            await NetworkSwitcherWindows.create(mock_connection)
+
+    @pytest.mark.asyncio
+    async def test_create_with_enabled_interface_without_ip_assigned(self):
+        mock_connection = Mock()
+        mock_connection.tag = ConnectionTag.VM_WINDOWS_1
+
+        show_interface_output = """Admin State    State          Type             Interface Name
+-------------------------------------------------------------------------
+Enabled        Connected      Dedicated        Ethernet
+Enabled        Connected      Dedicated        Ethernet 2"""
+        mock_show_interface_process = Mock()
+        mock_show_interface_process.get_stdout.return_value = show_interface_output
+        mock_show_interface_process.execute = AsyncMock(
+            return_value=mock_show_interface_process
+        )
+
+        show_addresses_output = """Configuration for interface "Ethernet"
+    DHCP enabled:                         No
+    IP Address:
+    Subnet Prefix:                        192.168.151.0/24 (mask 255.255.255.0)
+    Default Gateway:                      192.168.150.254
+    Gateway Metric:                       256
+    InterfaceMetric:                      15
+
+Configuration for interface "Ethernet 2"
+    DHCP enabled:                         No
+    IP Address:                           192.168.150.54
+    Subnet Prefix:                        192.168.150.0/24 (mask 255.255.255.0)
+    InterfaceMetric:                      15
+
+Configuration for interface "Loopback Pseudo-Interface 1"
+    DHCP enabled:                         No
+    IP Address:                           127.0.0.1
+    Subnet Prefix:                        127.0.0.0/8 (mask 255.0.0.0)
+    InterfaceMetric:                      75"""
+        mock_show_address_process = Mock()
+        mock_show_address_process.get_stdout.return_value = show_addresses_output
+        mock_show_address_process.execute = AsyncMock(
+            return_value=mock_show_address_process
+        )
+        mock_connection.create_process.side_effect = [
+            mock_show_interface_process,
+            mock_show_address_process,
+        ]
+        with pytest.raises(
+            AssertionError, match=r"Couldn't find secondary VM interface"
+        ):
+            await NetworkSwitcherWindows.create(mock_connection)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "gateway",
+        [
+            pytest.param(config.GW_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"]),
+            pytest.param(config.GW_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["secondary"]),
+        ],
+    )
+    async def test_switch_network(self, gateway):
+        mock_primary = Mock(
+            spec=WinInterface("Ethernet Instance 0", InterfaceState.Disabled)
+        )
+        mock_primary.delete_route = AsyncMock()
+
+        mock_secondary = Mock(
+            spec=WinInterface("Ethernet Instance 0 2", InterfaceState.Enabled)
+        )
+        mock_secondary.delete_route = AsyncMock()
+
+        mock_process = Mock()
+        mock_process.get_stdout.return_value = (
+            f"0.0.0.0/0    {gateway}    Primary Interface"
+        )
+        mock_process.get_stderr.return_value = ""
+        mock_process.execute = AsyncMock(return_value=mock_process)
+
+        mock_connection = Mock()
+        mock_connection.tag = ConnectionTag.VM_WINDOWS_1
+        mock_connection.create_process.return_value = mock_process
+
+        with patch(
+            "utils.network_switcher.network_switcher_windows.CommandGrepper"
+        ) as mock_grepper:
+            mock_grepper_instance = AsyncMock()
+            mock_grepper_instance.check_exists = AsyncMock(return_value=True)
+            mock_grepper.return_value = mock_grepper_instance
+
+            nw_switcher = NetworkSwitcherWindows(
+                mock_connection, mock_primary, mock_secondary
+            )
+
+            if gateway == config.GW_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"]:
+                await nw_switcher.switch_to_primary_network()
+            else:
+                await nw_switcher.switch_to_secondary_network()
+
+            mock_primary.delete_route.assert_called_once()
+            mock_secondary.delete_route.assert_called_once()
+
+            mock_connection.create_process.assert_any_call([
+                "netsh",
+                "interface",
+                "ipv4",
+                "add",
+                "route",
+                "0.0.0.0/0",
+                (
+                    mock_primary.name
+                    if gateway
+                    == config.GW_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"]
+                    else mock_secondary.name
+                ),
+                f"nexthop={gateway}",
+            ])
+
+    @pytest.mark.asyncio
+    async def test_switch_network_failure(self):
+        mock_primary = Mock(
+            spec=WinInterface("Ethernet Instance 0", InterfaceState.Enabled)
+        )
+        mock_primary.delete_route = AsyncMock()
+
+        mock_secondary = Mock(
+            spec=WinInterface("Ethernet Instance 0 2", InterfaceState.Enabled)
+        )
+        mock_secondary.delete_route = AsyncMock()
+
+        mock_process = Mock()
+        mock_process.get_stdout.return_value = ""
+        mock_process.get_stderr.return_value = ""
+        mock_process.execute = AsyncMock(return_value=mock_process)
+
+        mock_connection = Mock()
+        mock_connection.tag = ConnectionTag.VM_WINDOWS_1
+        mock_connection.create_process.return_value = mock_process
+
+        mock_grepper_instance = Mock()
+        mock_grepper_instance.check_exists = AsyncMock(return_value=False)
+
+        # pylint: disable-next=unused-argument
+        def mock_grepper_init(*args, **kwargs):
+            return mock_grepper_instance
+
+        with patch(
+            "utils.network_switcher.network_switcher_windows.CommandGrepper",
+            side_effect=mock_grepper_init,
+        ):
+            nw_switcher = NetworkSwitcherWindows(
+                mock_connection, mock_primary, mock_secondary
+            )
+
+            with pytest.raises(Exception, match="Failed to switch to primary network"):
+                await nw_switcher.switch_to_primary_network()
+
+            with pytest.raises(
+                Exception, match="Failed to switch to secondary network"
+            ):
+                await nw_switcher.switch_to_secondary_network()

@@ -357,10 +357,15 @@ impl StatefullFirewall {
 
         match proto {
             IpNextHeaderProtocols::Udp => {
-                let blacklist = self.outgoing_udp_blacklist.read();
                 let link =
                     Conntrack::build_conn_info(&ip, LibfwDirection::LibfwDirectionOutbound)?.0;
-                if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
+
+                let conn_is_blacklisted = self
+                    .outgoing_udp_blacklist
+                    .read()
+                    .contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port));
+
+                if conn_is_blacklisted {
                     let Some(first_chunk) = ip
                         .packet()
                         .chunks(UdpConnectionInfo::LAST_PKG_MAX_CHUNK_LEN)
@@ -379,14 +384,19 @@ impl StatefullFirewall {
                 }
             }
             IpNextHeaderProtocols::Tcp => {
-                let blacklist = self.outgoing_tcp_blacklist.read();
                 let (link, tcp_packet) = Conntrack::build_conn_info(
                     &ip,
                     crate::conntrack::LibfwDirection::LibfwDirectionOutbound,
                 )?;
+
+                let conn_is_blacklisted = self
+                    .outgoing_tcp_blacklist
+                    .read()
+                    .contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port));
+
                 let tcp_packet =
                     unwrap_option_or_return!(tcp_packet, Err(Error::MalformedTcpPacket));
-                if blacklist.contains(&SocketAddr::new(link.remote_addr.into(), link.remote_port)) {
+                if conn_is_blacklisted {
                     _ = self.conntrack.send_tcp_rst_packets(
                         std::iter::once((&link, 0, Some(tcp_packet.get_sequence() + 1))),
                         |packet: &[u8]| sink.write_all(packet),
@@ -398,12 +408,12 @@ impl StatefullFirewall {
             _ => (),
         };
 
-        // whitelist read-lock scope
-        let whitelist = self.whitelist.read();
+        #[allow(index_access_check)]
+        let incoming_conn_allowed =
+            self.whitelist.read().peer_whitelists[Permissions::IncomingConnections].contains(&peer);
 
         // If peer is whitelisted - allow immediately
-        #[allow(index_access_check)]
-        if whitelist.peer_whitelists[Permissions::IncomingConnections].contains(&peer) {
+        if incoming_conn_allowed {
             telio_log_trace!(
                 "Outbound IP packet is for whitelisted peer, forwarding: {:?}",
                 ip
@@ -431,39 +441,45 @@ impl StatefullFirewall {
         let peer = PublicKey(*public_key);
         let proto = ip.get_next_level_protocol();
 
-        let whitelist = self.whitelist.read();
-
-        // Fasttrack, if peer is whitelisted - allow immediately
-        if let Some(vpn_peer) = whitelist.vpn_peer {
-            if vpn_peer == peer {
-                telio_log_trace!("Inbound IP packet is for vpn peer, forwarding: {:?}", ip);
-                // We still need to track the state of TCP and UDP connections
-                return Ok(true);
-            }
-        }
-
         if !ip.check_valid() {
             telio_log_trace!("Inbound IP packet is not valid, dropping: {:?}", ip);
             return Ok(false);
         }
 
         let local_addr = From::<IpAddr>::from(ip.get_destination().into());
-        if self.is_private_address_except_local_interface(&local_addr) {
-            #[allow(index_access_check)]
-            return Ok(whitelist.peer_whitelists[Permissions::LocalAreaConnections].contains(&peer));
-        }
+        let local_ip_contains = self.ip_addresses.read().contains(&local_addr);
 
-        // For packets which are non local we can route them only when rounting for the particular peer is enabled
-        let local_ip = self.ip_addresses.read();
-        if !local_ip.contains(&local_addr) {
-            #[allow(index_access_check)]
-            if whitelist.peer_whitelists[Permissions::RoutingConnections].contains(&peer) {
-                telio_log_trace!("Forwarding due to Routing policy");
-                telio_log_trace!("Accepting packet {:?} {:?}", ip.get_source().into(), peer);
-                return Ok(true);
-            } else {
-                telio_log_trace!("Dropping packet {:?} {:?}", ip.get_source().into(), peer);
-                return Ok(false);
+        // Scope to limit how long whitelist is held
+        {
+            let whitelist = self.whitelist.read();
+
+            // Fasttrack, if peer is whitelisted - allow immediately
+            if let Some(vpn_peer) = whitelist.vpn_peer {
+                if vpn_peer == peer {
+                    telio_log_trace!("Inbound IP packet is for vpn peer, forwarding: {:?}", ip);
+                    // We still need to track the state of TCP and UDP connections
+                    return Ok(true);
+                }
+            }
+
+            if self.is_private_address_except_local_interface(&local_addr) {
+                #[allow(index_access_check)]
+                return Ok(
+                    whitelist.peer_whitelists[Permissions::LocalAreaConnections].contains(&peer)
+                );
+            }
+
+            // For packets which are non local we can route them only when rounting for the particular peer is enabled
+            if !local_ip_contains {
+                #[allow(index_access_check)]
+                if whitelist.peer_whitelists[Permissions::RoutingConnections].contains(&peer) {
+                    telio_log_trace!("Forwarding due to Routing policy");
+                    telio_log_trace!("Accepting packet {:?} {:?}", ip.get_source().into(), peer);
+                    return Ok(true);
+                } else {
+                    telio_log_trace!("Dropping packet {:?} {:?}", ip.get_source().into(), peer);
+                    return Ok(false);
+                }
             }
         }
 
@@ -557,8 +573,11 @@ impl StatefullFirewall {
     }
 
     fn is_private_address_except_local_interface(&self, ip: &StdIpAddr) -> bool {
-        let local_addrs_cache = LOCAL_ADDRS_CACHE.lock();
-        if local_addrs_cache.iter().any(|itf| itf.addr.ip().eq(ip)) {
+        let local_addrs_contains = LOCAL_ADDRS_CACHE
+            .lock()
+            .iter()
+            .any(|itf| itf.addr.ip().eq(ip));
+        if local_addrs_contains {
             return false;
         }
 
@@ -598,8 +617,7 @@ impl StatefullFirewall {
 impl Firewall for StatefullFirewall {
     fn clear_port_whitelist(&self) {
         telio_log_debug!("Clearing firewall port whitelist");
-        let mut whitelist = self.whitelist.write();
-        whitelist.port_whitelist.clear();
+        self.whitelist.write().port_whitelist.clear();
     }
 
     fn add_to_port_whitelist(&self, peer: PublicKey, port: u16) {
@@ -737,10 +755,7 @@ impl Firewall for StatefullFirewall {
     }
 
     fn set_ip_addresses(&self, ip_addrs: Vec<StdIpAddr>) {
-        let mut node_ip_address = self.ip_addresses.write();
-        for ip in ip_addrs {
-            node_ip_address.push(ip);
-        }
+        self.ip_addresses.write().extend_from_slice(&ip_addrs);
     }
 }
 

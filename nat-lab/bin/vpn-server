@@ -9,7 +9,8 @@ set -euxo pipefail
 sleep 5
 
 # Configure standart linux NAT, this will be port restricted cone NAT
-iptables -t nat -A POSTROUTING -s 100.64.0.0/10 ! -o wg0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s 100.64.0.0/10 ! -o wg0 -j MASQUERADE # Meshnet
+iptables -t nat -A POSTROUTING -s 10.5.0.0/16 ! -o wg0 -j MASQUERADE # VPN
 ip6tables -t nat -A POSTROUTING -s fd74:656c:696f::/48 ! -o wg0 -j MASQUERADE
 
 # Backup IP tables
