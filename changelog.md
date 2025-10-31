@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v6.2.0-rc1
+### **Pink Soup**
+---
+* LLT-6080: Ability to pass an interface list in windows, for them to be excluded, when binding to "default interface"
+* Fix: UPNP provider renew interval
+<br>
+
 ### v6.2.0-rc0
 ### **Pink Soup**
 ---
