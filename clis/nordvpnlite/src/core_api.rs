@@ -312,14 +312,13 @@ fn http_client(cert_path: Option<&Path>) -> Client {
 
 /// Get list of all known countries from core API.
 pub async fn get_countries_with_exp_backoff(
-    auth_token: &NordToken,
     cert_path: Option<&Path>,
 ) -> Result<Vec<Country>, Error> {
     let mut backoff = build_backoff()?;
     let mut retries = 0;
 
     loop {
-        match get_countries(auth_token, cert_path).await {
+        match get_countries(cert_path).await {
             Ok(countries) => return Ok(countries),
             Err(Error::Reqwest(ref e)) if e.is_timeout() => {
                 warn!(
@@ -336,22 +335,15 @@ pub async fn get_countries_with_exp_backoff(
 }
 
 /// Get list of all known countries from core API.
-async fn get_countries(
-    auth_token: &NordToken,
-    cert_path: Option<&Path>,
-) -> Result<Vec<Country>, Error> {
+async fn get_countries(cert_path: Option<&Path>) -> Result<Vec<Country>, Error> {
     debug!("Getting countries list");
-    let client = http_client(cert_path);
-    let response = client
+    let response = http_client(cert_path)
         .get(format!("{}/countries", API_BASE))
-        .header(
-            header::AUTHORIZATION,
-            format!("Bearer token:{}", auth_token as &str),
-        )
         .header(header::ACCEPT, "application/json")
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS))
         .send()
         .await?;
+
     let status = response.status();
     let resp = response.text().await?;
     if status == StatusCode::OK {
@@ -373,15 +365,13 @@ async fn get_countries(
 pub async fn get_recommended_servers_with_exp_backoff(
     country_id_filter: Option<u64>,
     limit_filter: Option<u64>,
-    auth_token: &NordToken,
     cert_path: Option<&Path>,
 ) -> Result<Vec<Server>, Error> {
     let mut backoff = build_backoff()?;
     let mut retries = 0;
 
     loop {
-        match get_recommended_servers(country_id_filter, limit_filter, auth_token, cert_path).await
-        {
+        match get_recommended_servers(country_id_filter, limit_filter, cert_path).await {
             Ok(servers) => return Ok(servers),
             Err(Error::Reqwest(ref e)) if e.is_timeout() => {
                 warn!(
@@ -401,7 +391,6 @@ pub async fn get_recommended_servers_with_exp_backoff(
 async fn get_recommended_servers(
     country_id_filter: Option<u64>,
     limit_filter: Option<u64>,
-    auth_token: &NordToken,
     cert_path: Option<&Path>,
 ) -> Result<Vec<Server>, Error> {
     debug!(
@@ -429,10 +418,6 @@ async fn get_recommended_servers(
     let client = http_client(cert_path);
     let response = client
         .get(format!("{}/servers/recommendations", API_BASE))
-        .header(
-            header::AUTHORIZATION,
-            format!("Bearer token:{}", auth_token as &str),
-        )
         .header(header::ACCEPT, "application/json")
         .query(&filter)
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS))
@@ -462,11 +447,8 @@ pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec
                 warn!("Invalid country format: '{target_country}', non-ascii characters used");
                 None
             } else {
-                match get_countries_with_exp_backoff(
-                    &config.authentication_token,
-                    config.http_certificate_file_path.as_deref(),
-                )
-                .await
+                match get_countries_with_exp_backoff(config.http_certificate_file_path.as_deref())
+                    .await
                 {
                     Ok(countries_list) => countries_list
                         .iter()
@@ -500,7 +482,6 @@ pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec
     let mut servers = get_recommended_servers_with_exp_backoff(
         country_id,
         None,
-        &config.authentication_token,
         config.http_certificate_file_path.as_deref(),
     )
     .await?

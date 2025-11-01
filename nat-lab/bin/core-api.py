@@ -433,12 +433,10 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         }
         self._write_response(response, status_code=HTTPStatus.CREATED)
 
-    @requires_bearer_token
     def handle_get_countries(self):
         countries = get_countries()
         self._write_response(countries)
 
-    @requires_bearer_token
     def handle_get_servers(self, query_params):
         print(f"Passed params: {query_params}")
         filters = {}
