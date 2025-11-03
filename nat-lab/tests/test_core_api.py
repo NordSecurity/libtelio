@@ -403,8 +403,6 @@ async def test_not_able_to_register_same_machine_twice():
         ("/v1/meshnet/machines/uid", "DELETE"),
         ("/v1/meshnet/machines/uid", "PATCH"),
         ("/v1/notifications/tokens", "POST"),
-        ("/v1/countries", "GET"),
-        ("/v1/servers/recommendations", "GET"),
         ("/test/public-key", "POST"),
     ],
 )
@@ -446,8 +444,6 @@ async def test_endpoints_requires_authorization_header(endpoint, method):
         ("/v1/meshnet/machines/uid/map", "GET"),
         ("/v1/meshnet/machines/uid", "DELETE"),
         ("/v1/meshnet/machines/uid", "PATCH"),
-        ("/v1/countries", "GET"),
-        ("/v1/servers/recommendations", "GET"),
         ("/test/public-key", "POST"),
     ],
 )
@@ -529,7 +525,6 @@ async def test_get_countries():
             f"{CORE_API_URL}/v1/countries",
             "GET",
             CORE_API_CA_CERTIFICATE_PATH,
-            authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
 
         assert isinstance(response_data, list)
@@ -556,7 +551,6 @@ async def test_get_servers_no_filters():
             f"{CORE_API_URL}/v1/servers/recommendations",
             "GET",
             CORE_API_CA_CERTIFICATE_PATH,
-            authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
 
         assert isinstance(response_data, list)
@@ -585,7 +579,6 @@ async def test_get_servers_with_filters():
             f"{CORE_API_URL}/v1/servers/recommendations?filters%5Bcountry_id%5D={COUNTRY_ID_DE}",
             "GET",
             CORE_API_CA_CERTIFICATE_PATH,
-            authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
 
         assert isinstance(response_data, list)
@@ -618,7 +611,6 @@ async def test_get_nonexisting_servers():
             f"{CORE_API_URL}/v1/servers/recommendations?filters%5Bcountry_id%5D={COUNTRY_ID_INVALID}",
             "GET",
             CORE_API_CA_CERTIFICATE_PATH,
-            authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
 
         assert (
