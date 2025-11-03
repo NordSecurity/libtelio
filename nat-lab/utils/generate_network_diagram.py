@@ -114,10 +114,10 @@ def generate_diagram(networks):
 
     clients, gateways = extract_services(networks)
 
-    # re-arrange cone-05 network
-    cone_net5 = networks.pop("cone-net-05")
+    # re-arrange cone-03 network
+    cone_net3 = networks.pop("cone-net-03")
     networks_list = list(networks.items())
-    networks_list.insert(1, ("cone-net-05", cone_net5))
+    networks_list.insert(1, ("cone-net-03", cone_net3))
 
     # Networks
     diagram += "%% Networks"
@@ -153,14 +153,6 @@ def generate_diagram(networks):
                 diagram += f"  {client.name} -..- {gateway_name}\n"
             else:
                 diagram += f"  {client.name} -.- {gateway_name}\n"
-
-    # Add vagrant boxes
-    diagram += "\n  %% Vagrant boxes\n"
-    diagram += "  subgraph vagrant\n"
-    diagram += '    vm-boxes("vm-boxes\n        10.55.0.0/24 \n        10.66.0.0/24")\n'
-    diagram += "  end\n"
-    diagram += "  vm-boxes -.- cone-gw-03\n"
-    diagram += "  vm-boxes -.- cone-gw-04\n"
 
     return diagram
 

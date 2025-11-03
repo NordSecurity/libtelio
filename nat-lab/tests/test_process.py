@@ -10,25 +10,33 @@ from utils.process import ProcessExecError
 async def _get_running_process_list(connection: Connection) -> str:
     command = ["ps", "aux"]
     if connection.target_os is TargetOS.Windows:
-        command = ["WMIC", "path", "win32_process", "get", "Commandline"]
+        command = [
+            "powershell",
+            "-Command",
+            "Get-WmiObject Win32_Process | Select-Object -ExpandProperty CommandLine",
+        ]
     return (await connection.create_process(command).execute()).get_stdout()
 
 
 @pytest.mark.parametrize(
     "connection_tag,command",
     [
-        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, "/usr/bin/ls"),
-        pytest.param(ConnectionTag.VM_WINDOWS_1, "dir", marks=pytest.mark.windows),
-        pytest.param(ConnectionTag.VM_MAC, "/bin/ls", marks=pytest.mark.mac),
+        pytest.param(ConnectionTag.DOCKER_CONE_CLIENT_1, ["/usr/bin/ls"]),
+        pytest.param(
+            ConnectionTag.VM_WINDOWS_1, ["dir", "C:"], marks=pytest.mark.windows
+        ),
+        pytest.param(ConnectionTag.VM_MAC, ["/bin/ls"], marks=pytest.mark.mac),
     ],
 )
-async def test_process_execute_success(connection_tag: ConnectionTag, command: str):
+async def test_process_execute_success(
+    connection_tag: ConnectionTag, command: list[str]
+):
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(
             new_connection_by_tag(connection_tag)
         )
-        await connection.create_process([command]).execute()
-        assert command not in await _get_running_process_list(connection)
+        await connection.create_process(command).execute()
+        assert " ".join(command) not in await _get_running_process_list(connection)
 
 
 @pytest.mark.parametrize(
@@ -113,8 +121,8 @@ async def test_process_run_fail(connection_tag: ConnectionTag, command: list[str
             new_connection_by_tag(connection_tag)
         )
         with pytest.raises(ProcessExecError) as e:
-            async with connection.create_process(command).run():
-                await asyncio.sleep(1)
+            async with connection.create_process(command).run() as process:
+                await process.is_done()
         assert e.value.cmd == command
         assert e.value.returncode == 77
         assert " ".join(command) not in await _get_running_process_list(connection)

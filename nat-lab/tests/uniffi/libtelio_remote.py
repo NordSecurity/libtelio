@@ -128,6 +128,10 @@ class LibtelioWrapper:
         self._libtelio.set_fwmark(fwmark)
 
     @serialize_error
+    def set_ext_if_filter(self, ext_if_list: List[str]):
+        self._libtelio.set_ext_if_filter(ext_if_list)
+
+    @serialize_error
     def set_tun(self, tun: int):
         self._libtelio.set_tun(tun)
 

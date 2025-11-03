@@ -8,7 +8,7 @@ from ipaddress import AddressValueError, IPv6Address
 from itertools import product, zip_longest
 from mesh_api import Node, API
 from telio import Client
-from typing import AsyncIterator, List, Tuple, Optional, Union
+from typing import Any, AsyncIterator, List, Tuple, Optional, Union
 from utils.bindings import (
     default_features,
     Features,
@@ -29,6 +29,7 @@ from utils.connection_util import (
 )
 from utils.logger import log
 from utils.ping import ping
+from utils.process import Process
 from utils.router import IPStack
 from utils.tcpdump import make_tcpdump
 from uuid import UUID
@@ -303,13 +304,13 @@ async def setup_environment(
         connections = [
             await exit_stack.enter_async_context(new_connection_raw(conn_tag))
             for conn_tag in [
-                ConnectionTag.DOCKER_NLX_1,
+                ConnectionTag.VM_LINUX_NLX_1,
                 ConnectionTag.DOCKER_VPN_1,
                 ConnectionTag.DOCKER_VPN_2,
             ]
         ]
         await exit_stack.enter_async_context(make_tcpdump(connections))
-        api.prepare_all_vpn_servers()
+        await api.prepare_all_vpn_servers(connections)
 
     clients = await setup_clients(
         exit_stack,
@@ -471,14 +472,19 @@ async def ping_between_all_nodes(env: Environment) -> None:
 
 
 async def send_https_request(
-    connection,
-    endpoint,
-    method,
-    ca_cert_path,
-    data=None,
-    authorization_header=None,
-    expect_response=True,
+    connection: Connection,
+    endpoint: str,
+    method: str,
+    ca_cert_path: str,
+    data: Optional[Any] = None,
+    authorization_header: Optional[str] = None,
+    extra_headers: Optional[List[str]] = None,
+    expect_response: bool = True,
+    basic_auth: Optional[Tuple[str, str]] = None,
 ):
+    if extra_headers is None:
+        extra_headers = ["Content-Type: application/json"]
+
     curl_command = [
         "curl",
         "--cacert",
@@ -486,9 +492,10 @@ async def send_https_request(
         "-X",
         method,
         endpoint,
-        "-H",
-        "Content-Type: application/json",
     ]
+
+    for header in extra_headers:
+        curl_command.extend(["-H", header])
 
     if data:
         curl_command.extend(["-d", data])
@@ -496,13 +503,17 @@ async def send_https_request(
     if authorization_header:
         curl_command.extend(["-H", f"Authorization: {authorization_header}"])
 
-    log.info("Curl command: %s", curl_command)
+    if basic_auth:
+        username, password = basic_auth
+        curl_command.extend(["-u", f"{username}:{password}"])
 
-    process = await connection.create_process(curl_command, quiet=True).execute()
+    process = await connection.create_process(curl_command, quiet=False).execute()
     response = process.get_stdout()
     if expect_response:
         try:
-            return json.loads(response)
+            response = json.loads(response)
+            log.debug("[%s] %s %s: %s", connection.tag.name, method, endpoint, response)
+            return response
         except json.JSONDecodeError:
             assert False, f"Expected JSON response but got: {response}"
     return None
@@ -529,3 +540,92 @@ def string_to_compressed_ipv6(ip_str_list: List[str]) -> List[str]:
             return ip_str
 
     return [compress_ip(ip_str) for ip_str in ip_str_list]
+
+
+# TODO (LLT-6746): move to router.py
+async def wait_for_interface_state(
+    connection: Connection, interface: str, expected_state: str
+) -> bool:
+    """
+    Wait for an interface state to become up or down.
+
+    Args:
+        connection (Connection):
+            An active SSH or Docker connection to the instance.
+        interface (str):
+            Interface name to check.
+        expected_state (str):
+            Expected state of the interface - up or down.
+
+    Returns:
+        bool
+    """
+    success = False
+    for _ in range(2):
+        result = await connection.create_process(
+            ["sh", "-c", "ip link show %s | awk '/state/ {print $9}'" % interface]
+        ).execute()
+        state = result.get_stdout().strip()
+        if state == expected_state:
+            success = True
+            break
+        log.debug(
+            "Interface %s has state: %s, expected state: %s",
+            interface,
+            state,
+            expected_state,
+        )
+        await asyncio.sleep(1)
+    return success
+
+
+# TODO (LLT-6746): move to router.py
+async def print_network_state(connection: Connection) -> None:
+    """
+    Print current network state of the provided instance.
+
+    Args:
+        connection (Connection):
+            An active SSH or Docker connection to the provided instance.
+    Returns:
+        None
+    """
+    ip_a_log = await connection.create_process(["ip", "a"]).execute()
+    ip_a = ip_a_log.get_stdout().strip()
+    log.debug(
+        "--- Log of ip a command ---\n %s",
+        ip_a,
+    )
+
+    ip_r_log = await connection.create_process(["ip", "r"]).execute()
+    ip_r = ip_r_log.get_stdout().strip()
+    log.debug(
+        "--- Log of ip r command ---\n %s",
+        ip_r,
+    )
+
+    ip_tables_log = await connection.create_process(["iptables", "-L"]).execute()
+    ip_tables = ip_tables_log.get_stdout().strip()
+    log.debug(
+        "--- Log of iptables -L command ---\n %s",
+        ip_tables,
+    )
+
+
+async def wait_for_log_line(log_process: Process) -> None:
+    """
+    Accepts process polling for a log line and wait for a log to appear.
+
+    Args:
+        log_process (Process):
+            An active SSH or Docker process polling for a log line.
+
+    Returns:
+        None
+    """
+    while True:
+        await asyncio.sleep(1)
+        log_line = log_process.get_stdout().strip()
+        if log_line:
+            log.info("Expected log line captured: %s ", log_line)
+            return

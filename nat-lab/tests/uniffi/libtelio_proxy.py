@@ -6,7 +6,7 @@ import time
 import uniffi.telio_bindings as libtelio
 from functools import wraps
 from Pyro5.api import Proxy  # type: ignore
-from typing import Optional
+from typing import List, Optional
 from uniffi.serialization import init_serialization  # type: ignore
 
 # isort: off
@@ -116,8 +116,22 @@ class LibtelioProxy:
         )
 
     @move_to_async_thread
+    def start_named_ext_if_filter(
+        self, private_key, adapter, name: str, ext_if_list: List[str]
+    ):
+        self._handle_remote_error(
+            lambda r: r.start_named_ext_if_filter(
+                private_key, adapter.value, name, ext_if_list
+            )
+        )
+
+    @move_to_async_thread
     def set_fwmark(self, fwmark: int):
         self._handle_remote_error(lambda r: r.set_fwmark(fwmark))
+
+    @move_to_async_thread
+    def set_ext_if_filter(self, ext_if_list: List[str]):
+        self._handle_remote_error(lambda r: r.set_ext_if_filter(ext_if_list))
 
     @move_to_async_thread
     def set_tun(self, tun: int):

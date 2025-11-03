@@ -48,13 +48,13 @@ graph LR
         2001:db8:85a4::adda:edde:b")
   end
 
-  %% Network cone-net-05
-  subgraph cone-net-05[cone-net-05]
+  %% Network cone-net-03
+  subgraph cone-net-03[cone-net-03]
   direction LR
     shared-client-01("shared-client-01
         192.168.101.67
         192.168.113.67")
-    cone-gw-05(["cone-gw-05
+    cone-gw-03(["cone-gw-03
         10.0.254.13
         192.168.113.254"])
   end
@@ -78,22 +78,6 @@ graph LR
     cone-gw-02(["cone-gw-02
         10.0.254.2
         192.168.102.254"])
-  end
-
-  %% Network cone-net-03
-  subgraph cone-net-03[cone-net-03]
-  direction LR
-    cone-gw-03(["cone-gw-03
-        10.0.254.7
-        192.168.107.254"])
-  end
-
-  %% Network cone-net-04
-  subgraph cone-net-04[cone-net-04]
-  direction LR
-    cone-gw-04(["cone-gw-04
-        10.0.254.8
-        192.168.108.254"])
   end
 
   %% Network hsymmetric-net-01
@@ -186,22 +170,76 @@ graph LR
         192.168.111.254"])
   end
 
-  %% Network openwrt-net-01
-  subgraph openwrt-net-01[openwrt-net-01]
+  %% Network windows-net-01
+  subgraph windows-net-01[windows-net-01]
   direction LR
-    openwrt-client-01("openwrt-client-01
-        192.168.115.100")
-    openwrt-gw-01(["openwrt-gw-01
-        10.0.254.14
-        192.168.115.254"])
+    windows-client-01("windows-client-01
+        192.168.150.54
+        192.168.151.54")
+    windows-gw-01(["windows-gw-01
+        10.0.254.15
+        192.168.150.254"])
+  end
+
+  %% Network windows-net-02
+  subgraph windows-net-02[windows-net-02]
+  direction LR
+    windows-client-01("windows-client-01
+        192.168.150.54
+        192.168.151.54")
+    windows-gw-02(["windows-gw-02
+        10.0.254.16
+        192.168.151.254"])
+  end
+
+  %% Network windows-net-03
+  subgraph windows-net-03[windows-net-03]
+  direction LR
+    windows-client-02("windows-client-02
+        192.168.152.54
+        192.168.153.54")
+    windows-gw-03(["windows-gw-03
+        10.0.254.17
+        192.168.152.254"])
+  end
+
+  %% Network windows-net-04
+  subgraph windows-net-04[windows-net-04]
+  direction LR
+    windows-client-02("windows-client-02
+        192.168.152.54
+        192.168.153.54")
+    windows-gw-04(["windows-gw-04
+        10.0.254.18
+        192.168.153.254"])
+  end
+
+  %% Network mac-net-01
+  subgraph mac-net-01[mac-net-01]
+  direction LR
+    mac-client-01("mac-client-01
+        192.168.154.54
+        192.168.155.54")
+    mac-gw-01(["mac-gw-01
+        10.0.254.19
+        192.168.154.254"])
+  end
+
+  %% Network mac-net-02
+  subgraph mac-net-02[mac-net-02]
+  direction LR
+    mac-client-01("mac-client-01
+        192.168.154.54
+        192.168.155.54")
+    mac-gw-02(["mac-gw-02
+        10.0.254.20
+        192.168.155.254"])
   end
 
   %% Node Connections
   cone-gw-01 -..- internet
   cone-gw-02 -..- internet
   cone-gw-03 -..- internet
-  cone-gw-04 -..- internet
-  cone-gw-05 -..- internet
   symmetric-gw-01 -..- internet
   symmetric-gw-02 -..- internet
   fullcone-gw-01 -..- internet
@@ -210,10 +248,15 @@ graph LR
   upnp-gw-02 -..- internet
   udp-block-gw-01 -..- internet
   udp-block-gw-02 -..- internet
-  openwrt-gw-01 -..- internet
+  windows-gw-01 -..- internet
+  windows-gw-02 -..- internet
+  windows-gw-03 -..- internet
+  windows-gw-04 -..- internet
+  mac-gw-01 -..- internet
+  mac-gw-02 -..- internet
   cone-client-01 -.- cone-gw-01
   shared-client-01 -.- cone-gw-01
-  shared-client-01 -.- cone-gw-05
+  shared-client-01 -.- cone-gw-03
   cone-client-02 -.- cone-gw-02
   symmetric-client-01 -.- symmetric-gw-01
   internal-symmetric-gw-01 -..- symmetric-gw-01
@@ -225,14 +268,10 @@ graph LR
   upnp-client-02 -.- upnp-gw-02
   udp-block-client-01 -.- udp-block-gw-01
   udp-block-client-02 -.- udp-block-gw-02
-  openwrt-client-01 -.- openwrt-gw-01
-
-  %% Vagrant boxes
-  subgraph vagrant
-    vm-boxes("vm-boxes
-        10.55.0.0/24 
-        10.66.0.0/24")
-  end
-  vm-boxes -.- cone-gw-03
-  vm-boxes -.- cone-gw-04
+  windows-client-01 -.- windows-gw-01
+  windows-client-01 -.- windows-gw-02
+  windows-client-02 -.- windows-gw-03
+  windows-client-02 -.- windows-gw-04
+  mac-client-01 -.- mac-gw-01
+  mac-client-01 -.- mac-gw-02
 ```
