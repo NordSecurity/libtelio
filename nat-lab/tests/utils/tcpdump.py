@@ -252,8 +252,6 @@ async def make_tcpdump(
         async with AsyncExitStack() as exit_stack:
             for conn in connection_list:
                 # TODO(LLT-5942): temporary disable windows tcpdump
-                if conn.target_os == TargetOS.Windows:
-                    continue
                 for attempt in range(1, 4):
                     try:
                         await exit_stack.enter_async_context(
