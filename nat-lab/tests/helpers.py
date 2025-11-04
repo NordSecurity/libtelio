@@ -30,6 +30,7 @@ from utils.connection_util import (
 from utils.logger import log
 from utils.ping import ping
 from utils.process import Process
+from utils.process.process import ProcessExecError
 from utils.router import IPStack
 from utils.tcpdump import make_tcpdump
 from uuid import UUID
@@ -492,6 +493,13 @@ async def send_https_request(
         "-X",
         method,
         endpoint,
+        "--no-keepalive",  # Disable HTTP keep-alive to avoid SSL EOF issues
+        "--max-time",
+        "30",  # Set a reasonable timeout
+        # OpenSSL 3.x workarounds for improper SSL shutdown
+        "--ssl-no-revoke",  # Skip certificate revocation checks
+        "--tls-max",
+        "1.2",  # Force TLS 1.2 which is more lenient with connection handling
     ]
 
     for header in extra_headers:
@@ -507,8 +515,24 @@ async def send_https_request(
         username, password = basic_auth
         curl_command.extend(["-u", f"{username}:{password}"])
 
-    process = await connection.create_process(curl_command, quiet=False).execute()
-    response = process.get_stdout()
+    try:
+        process = await connection.create_process(curl_command, quiet=False).execute()
+        response = process.get_stdout()
+    except ProcessExecError as e:
+        # Handle OpenSSL 3.5.1 EOF error (exit code 56)
+        # If we got a valid JSON response despite the SSL error, use it
+        if e.returncode == 56 and e.stdout:
+            response = e.stdout
+            log.debug(
+                "[%s] %s %s: Ignoring SSL EOF error (exit code 56), got response",
+                connection.tag.name,
+                method,
+                endpoint,
+            )
+        else:
+            # Re-raise if it's a different error or no response
+            raise
+
     if expect_response:
         try:
             response = json.loads(response)
@@ -604,7 +628,7 @@ async def print_network_state(connection: Connection) -> None:
         ip_r,
     )
 
-    ip_tables_log = await connection.create_process(["iptables", "-L"]).execute()
+    ip_tables_log = await connection.create_process(["iptables", "-w", "-L"]).execute()
     ip_tables = ip_tables_log.get_stdout().strip()
     log.debug(
         "--- Log of iptables -L command ---\n %s",
