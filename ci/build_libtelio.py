@@ -669,7 +669,9 @@ def copy_uniffi_files_for_testing(args):
         binary_src = f"target/x86_64-pc-windows-gnu/release/telio.dll"
         binary_dest = f"{uniffi_dir}telio.dll"
     else:
-        pass
+        raise ValueError(
+            f"Unsupported OS to use with --uniffi-test-bindings: {args.os}"
+        )
 
     if args.debug:
         binary_src = binary_src.replace("release", "debug")
