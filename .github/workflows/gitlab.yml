@@ -24,6 +24,6 @@ jobs:
       access-token: ${{ secrets.GITLAB_API_TOKEN }}
       trigger-token: ${{ secrets.TOKEN }}
       project-id: ${{ secrets.PROJECT_ID }}
-    with:
+    with:   
       cancel-outdated-pipelines: ${{ github.ref_name != 'main' }}
       triggered-ref: ${{ needs.read-triggered-ref.outputs.value }} # defined in .env file
