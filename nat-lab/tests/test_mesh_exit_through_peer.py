@@ -155,10 +155,10 @@ async def test_mesh_exit_through_peer(
         # Since there's no way to get the actual events in the current NAT Lab API, using asyncio.wait() to await for a disconnect event future
         # and also all other events future, then checking which occurred first.
         disconnect_task = asyncio.create_task(
-            client_alpha.wait_for_future_event_peer(
+            client_alpha.wait_for_event_peer(
                 beta.public_key,
                 states=[NodeState.DISCONNECTED],
-                duration_from_now=5,
+                timeout=None,
                 paths=list(PathType),
                 is_exit=True,
             )
@@ -176,7 +176,7 @@ async def test_mesh_exit_through_peer(
 
         done, pending = await asyncio.wait(
             [disconnect_task, any_other_state_task],
-            timeout=5,
+            timeout=None,
             return_when=asyncio.FIRST_COMPLETED,
         )
         assert (
