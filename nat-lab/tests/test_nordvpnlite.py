@@ -20,16 +20,12 @@ async def test_nordvpnlite_start(no_detach) -> None:
     async with AsyncExitStack() as exit_stack:
         nordvpnlite = await NordVpnLite.new(exit_stack, no_detach=no_detach)
 
-        with pytest.raises(ProcessExecError) as err:
-            await nordvpnlite.quit()
-        assert err.value.stderr == "Error: DaemonIsNotRunning"
+        await nordvpnlite.quit()
 
         async with nordvpnlite.start() as nordvpnlite_client:
             assert await nordvpnlite_client.is_alive()
 
-        with pytest.raises(ProcessExecError) as err:
-            await nordvpnlite.quit()
-        assert err.value.stderr == "Error: DaemonIsNotRunning"
+        await nordvpnlite.quit()
 
 
 async def test_nordvpnlite_logs() -> None:

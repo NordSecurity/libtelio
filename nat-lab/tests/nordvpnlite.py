@@ -263,6 +263,7 @@ class NordVpnLite:
         stdout, stderr = await self.execute_command(["stop"])
         assert (
             "Command executed successfully" in stdout
+            or "Daemon is already stopped" in stdout
         ), f"Failed to execute stop command: {stderr}"
 
         assert (
