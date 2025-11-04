@@ -136,10 +136,8 @@ async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
                     ClientCmd::QuitDaemon => {
                         println!("Daemon is already stopped");
                         Ok(())
-                    },
-                    _ => {
-                        Err(NordVpnLiteError::DaemonIsNotRunning)
                     }
+                    _ => Err(NordVpnLiteError::DaemonIsNotRunning),
                 }
             }
         }
