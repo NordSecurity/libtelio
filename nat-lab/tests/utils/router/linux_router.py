@@ -251,6 +251,7 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     "iptables",
+                    "-w",  # Wait for xtables lock
                     "-t",
                     "nat",
                     "-A",
@@ -270,6 +271,7 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     "ip6tables",
+                    "-w",  # Wait for xtables lock
                     "-t",
                     "nat",
                     "-A",
@@ -291,6 +293,7 @@ class LinuxRouter(Router):
                 await self._connection.create_process(
                     [
                         "iptables",
+                        "-w",  # Wait for xtables lock
                         "-t",
                         "nat",
                         "-D",
@@ -315,6 +318,7 @@ class LinuxRouter(Router):
                 await self._connection.create_process(
                     [
                         "ip6tables",
+                        "-w",  # Wait for xtables lock
                         "-t",
                         "nat",
                         "-D",
@@ -349,6 +353,7 @@ class LinuxRouter(Router):
         await self._connection.create_process(
             [
                 iptables_string,
+                "-w",  # Wait for xtables lock
                 "-t",
                 "filter",
                 "-A",
@@ -363,6 +368,7 @@ class LinuxRouter(Router):
         await self._connection.create_process(
             [
                 iptables_string,
+                "-w",  # Wait for xtables lock
                 "-t",
                 "filter",
                 "-A",
@@ -381,6 +387,7 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     iptables_string,
+                    "-w",  # Wait for xtables lock
                     "-t",
                     "filter",
                     "-D",
@@ -395,6 +402,7 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     iptables_string,
+                    "-w",  # Wait for xtables lock
                     "-t",
                     "filter",
                     "-D",
@@ -419,6 +427,7 @@ class LinuxRouter(Router):
         await self._connection.create_process(
             [
                 iptables_string,
+                "-w",  # Wait for xtables lock
                 "-t",
                 "filter",
                 "-A",
@@ -441,6 +450,7 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     iptables_string,
+                    "-w",  # Wait for xtables lock
                     "-t",
                     "filter",
                     "-D",
@@ -469,6 +479,7 @@ class LinuxRouter(Router):
         await self._connection.create_process(
             [
                 iptables_string,
+                "-w",  # Wait for xtables lock
                 "-t",
                 "filter",
                 "-A",
@@ -491,6 +502,7 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     iptables_string,
+                    "-w",  # Wait for xtables lock
                     "-t",
                     "filter",
                     "-D",
@@ -514,6 +526,7 @@ class LinuxRouter(Router):
         await self._connection.create_process(
             [
                 "iptables",
+                "-w",  # Wait for xtables lock
                 "-A",
                 "OUTPUT",
                 "-p",
@@ -532,6 +545,7 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     "iptables",
+                    "-w",  # Wait for xtables lock
                     "-D",
                     "OUTPUT",
                     "-p",
@@ -549,6 +563,7 @@ class LinuxRouter(Router):
         await self._connection.create_process(
             [
                 "iptables",
+                "-w",  # Wait for xtables lock
                 "-A",
                 "OUTPUT",
                 "-p",
@@ -567,6 +582,7 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     "iptables",
+                    "-w",  # Wait for xtables lock
                     "-D",
                     "OUTPUT",
                     "-p",
