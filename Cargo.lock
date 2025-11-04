@@ -2311,7 +2311,7 @@ dependencies = [
  "libc",
  "recvmsg",
  "tokio",
- "widestring 1.2.0",
+ "widestring 1.2.1",
  "windows-sys 0.52.0",
 ]
 
@@ -2355,7 +2355,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b58db92f96b720de98181bbbe63c831e87005ab460c1bf306eb2622b4707997f"
 dependencies = [
  "socket2 0.5.10",
- "widestring 1.2.0",
+ "widestring 1.2.1",
  "windows-sys 0.48.0",
  "winreg",
 ]
@@ -5274,6 +5274,7 @@ dependencies = [
  "nix 0.30.1",
  "ntest",
  "num_cpus",
+ "once_cell",
  "pretty_assertions",
  "proptest",
  "proptest-derive",
@@ -5296,6 +5297,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "widestring 1.2.1",
  "winapi",
  "windows",
  "winreg",
@@ -6285,9 +6287,9 @@ checksum = "c168940144dd21fd8046987c16a46a33d5fc84eec29ef9dcddc2ac9e31526b7c"
 
 [[package]]
 name = "widestring"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd7cf3379ca1aac9eea11fba24fd7e315d621f8dfe35c8d7d2be8b793726e07d"
+checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
 
 [[package]]
 name = "winapi"
@@ -6765,7 +6767,7 @@ dependencies = [
 [[package]]
 name = "wireguard-nt"
 version = "1.0.0"
-source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper?tag=v1.2.0#f6c5684fc8cb49958b99ad5178cc61ace3e8a4c1"
+source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper?branch=LLT-6783_rotate_wg_nt_listen_port_when_handshake_fails#a686286ee32094648a9fe1912e7c134676057e04"
 dependencies = [
  "bitflags 2.9.4",
  "getrandom 0.2.16",
