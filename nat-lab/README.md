@@ -569,3 +569,4 @@ uv sync
   - pytest --html=out/report.html --self-contained-html
 - Notes:
   - The report includes captured logs, durations, and rerun status (if using --reruns). It’s portable for CI artifacts.
+
