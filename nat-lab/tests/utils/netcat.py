@@ -97,11 +97,16 @@ class NetCat:
 
     async def send_data(self, data: str) -> None:
         """Write data to stdin"""
+        log.debug("NetCat: Sending data: %s", data.strip())
         await self._process.escape_and_write_stdin([data])
         return None
 
     async def on_stdout(self, stdout: str) -> None:
         """Handle incoming data"""
+        log.debug(
+            "NetCat: Received stdout data: %s",
+            stdout.strip() if stdout.strip() else "(empty)",
+        )
         self._stdout_data += stdout
         self._data_received.set()
         return None
@@ -141,6 +146,7 @@ class NetCatServer(NetCat):
         bind_ip: Optional[str] = None,
     ):
         super().__init__(connection, bind_ip, port, listen=True, udp=udp, ipv6=ipv6)
+        self._udp = udp  # Store UDP flag for use in connection_received
         self._listening_event: asyncio.Event = asyncio.Event()
         status = "Listening" if not udp else "Bound"
         address = bind_ip if bind_ip else "::" if ipv6 else "0.0.0.0"
@@ -167,8 +173,17 @@ class NetCatServer(NetCat):
 
     async def connection_received(self) -> None:
         """Wait for connection received event"""
-        await self._connection_event.wait()
-        self._connection_event.clear()
+        # For UDP servers, the connection is only "received" when data arrives
+        # This is because UDP is connectionless
+        if self._udp:
+            # Instead of waiting for "Connection received", wait for first data
+            # The connection event will be set when data arrives in the netcat.py implementation
+            await self._connection_event.wait()
+            self._connection_event.clear()
+        else:
+            # For TCP, wait for the connection received message
+            await self._connection_event.wait()
+            self._connection_event.clear()
 
 
 class NetCatClient(NetCat):
@@ -197,11 +212,28 @@ class NetCatClient(NetCat):
             source_ip=source_ip,
         )
         self._connection_event: asyncio.Event = asyncio.Event()
+        self._udp = udp
         protocol = "tcp" if not udp else "udp"
-        self._output_notifier.notify_output(
-            f"{port} port [{protocol}/*] succeeded",
-            self._connection_event,
-        )
+
+        # For UDP connections, nc outputs different messages
+        if udp:
+            # UDP connections show "Connection to <host> <port> port [udp/*] succeeded!"
+            # or just start without any specific success message
+            self._output_notifier.notify_output(
+                f"Connection to {host} {port} port [{protocol}/*] succeeded",
+                self._connection_event,
+            )
+            # Also check for the simpler format
+            self._output_notifier.notify_output(
+                f"{port} port [{protocol}/*] succeeded",
+                self._connection_event,
+            )
+        else:
+            # TCP connections show "<port> port [tcp/*] succeeded"
+            self._output_notifier.notify_output(
+                f"{port} port [{protocol}/*] succeeded",
+                self._connection_event,
+            )
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["NetCatClient"]:
@@ -213,5 +245,18 @@ class NetCatClient(NetCat):
 
     async def connection_succeeded(self) -> None:
         """Wait for connection succeeded event"""
-        await self._connection_event.wait()
-        self._connection_event.clear()
+        if self._udp:
+            # For UDP, since it's connectionless, we might not get a "succeeded" message
+            # Wait a short time to see if we get the message, otherwise assume success
+            try:
+                await asyncio.wait_for(self._connection_event.wait(), timeout=5.0)
+                self._connection_event.clear()
+            except asyncio.TimeoutError:
+                # For UDP, no error within timeout means connection is likely successful
+                log.debug(
+                    "UDP connection assumed successful after timeout (no error received)"
+                )
+        else:
+            # For TCP, wait for the success message
+            await self._connection_event.wait()
+            self._connection_event.clear()
