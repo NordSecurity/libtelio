@@ -44,7 +44,7 @@ fn execute(command: &mut Command) -> Result<(), NordVpnLiteError> {
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        error!("Error executing command {:?}: {:?}", command, stderr);
+        debug!("Error executing command {:?}: {:?}", command, stderr);
         Err(NordVpnLiteError::SystemCommandFailed(stderr.into()))
     }
 }
@@ -57,11 +57,15 @@ fn execute_with_output(command: &mut Command) -> Result<String, NordVpnLiteError
         .map_err(|e| NordVpnLiteError::SystemCommandFailed(e.to_string()))?;
 
     if output.status.success() {
-        String::from_utf8(output.stdout)
-            .map_err(|e| NordVpnLiteError::SystemCommandFailed(e.to_string()))
+        String::from_utf8(output.stdout).map_err(|e| {
+            NordVpnLiteError::SystemCommandFailed(format!(
+                "Command executed but couldn't convert output to string: {}",
+                e
+            ))
+        })
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        error!("Error executing command {:?}: {:?}", command, stderr);
+        debug!("Error executing command {:?}: {:?}", command, stderr);
         Err(NordVpnLiteError::SystemCommandFailed(stderr.into()))
     }
 }
