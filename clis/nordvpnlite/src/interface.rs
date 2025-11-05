@@ -281,7 +281,8 @@ impl Iproute {
     // Based on the implementation from the NordVPN Linux app
     // Finds the main rule priority and the list of assigned priorities
     fn find_main_and_assigned_rule_priorities() -> Result<(u32, Vec<u32>), NordVpnLiteError> {
-        let mut main_prio = 0;
+        let mut main_prio = None;
+        // TODO: the functions calculating the priority and placement must be unit tested with concrete(simulated) values
         let existing_prios = execute_with_output(Command::new("ip").args(["rule", "list"]))?
             .lines()
             .filter_map(|line| {
@@ -289,14 +290,16 @@ impl Iproute {
                     .split_once(':')
                     .and_then(|(prio, _)| prio.parse::<u32>().ok());
                 if let Some(prio) = prio {
-                    if line.contains("from all lookup main") {
-                        main_prio = prio;
+                    if line.contains("lookup main") {
+                        if main_prio.is_none() {
+                            main_prio = Some(prio);
+                        }
                     }
                 }
                 prio
             })
             .collect::<Vec<_>>();
-        Ok((main_prio, existing_prios))
+        Ok((main_prio.unwrap_or(0), existing_prios))
     }
 
     // Iterate over existing_prios until we find the next available lower priority
@@ -1028,6 +1031,14 @@ impl Ipv6SupportManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+    #[test]
+    fn test_iproute_rule_prio() {
+        let ip = Iproute::find_main_and_assigned_rule_priorities();
+
+        println!("=--> {:?}", ip);
+    }
 
     // This test exists as a way to catch any issues with the regex in VpnIpInfo::find_available_table
     // Specifically, the test is not checking that the regex works as expected, just that it doesn't panic
