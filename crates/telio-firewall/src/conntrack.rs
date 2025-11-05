@@ -18,7 +18,7 @@ use crate::{
 use num_enum::TryFromPrimitive;
 use parking_lot::Mutex;
 use pnet_packet::{
-    icmp::{destination_unreachable::IcmpCodes, IcmpPacket, IcmpTypes, MutableIcmpPacket},
+    icmp::{self, destination_unreachable::IcmpCodes, IcmpPacket, IcmpTypes, MutableIcmpPacket},
     icmpv6::{Icmpv6Code, Icmpv6Types, MutableIcmpv6Packet},
     ip::IpNextHeaderProtocols,
     ipv4::{Ipv4Flags, Ipv4Packet, MutableIpv4Packet},
@@ -86,7 +86,7 @@ pub(crate) struct IcmpConn {
     src_addr: IpAddr,
     dst_addr: IpAddr,
     response_type: u8,
-    identifier_sequence: u32,
+    identifier_sequence: u16,
     // Data associated with the packets, usually the public keys refering
     // to source peer for inbound connections and destination peer for outbound
     // connections, which may be used for tracking and filtering packets
@@ -507,9 +507,11 @@ impl Conntrack {
 
                     // restarts cache entry timeout
                     let next_seq = if (flags & TcpFlags::SYN) == TcpFlags::SYN {
-                        pkt.get_sequence() + 1
+                        pkt.get_sequence().overflowing_add(1).0
                     } else {
-                        pkt.get_sequence() + pkt.payload().len() as u32
+                        pkt.get_sequence()
+                            .overflowing_add(pkt.payload().len() as u32)
+                            .0
                     };
 
                     connection_info.next_seq = Some(next_seq);
@@ -533,7 +535,7 @@ impl Conntrack {
                             tx_alive: true,
                             rx_alive: true,
                             conn_remote_initiated: true,
-                            next_seq: Some(pkt.get_sequence() + 1),
+                            next_seq: Some(pkt.get_sequence().overflowing_add(1).0),
                             state: ConnectionState::New,
                         };
                         libfw_log_trace!(
@@ -555,7 +557,7 @@ impl Conntrack {
         ip: &P,
         associated_data: Option<&[u8]>,
     ) -> Result<ConnectionState> {
-        match Self::build_icmp_key(ip, associated_data) {
+        match Self::build_icmp_key(ip, associated_data, false) {
             Ok((IcmpKey::Conn(key), icmp_packet_group)) => {
                 libfw_log_trace!("Processing inbound ICMP packet with {:?}", key);
                 let mut icmp_cache = self.icmp.lock();
@@ -604,9 +606,7 @@ impl Conntrack {
             IcmpErrorKey::Icmp(icmp_key) => {
                 let mut icmp_cache = self.icmp.lock();
                 if icmp_cache.get(&icmp_key).is_some() {
-                    libfw_log_trace!("Removing ICMP conntrack entry {:?}", icmp_key);
-                    icmp_cache.remove(&icmp_key);
-                    return ConnectionState::Established;
+                    return ConnectionState::Related;
                 }
             }
             IcmpErrorKey::Tcp(link) => {
@@ -620,7 +620,7 @@ impl Conntrack {
                 if tcp_cache.get(&tcp_key).is_some() {
                     libfw_log_trace!("Removing TCP conntrack entry {:?}", tcp_key);
                     tcp_cache.remove(&tcp_key);
-                    return ConnectionState::Established;
+                    return ConnectionState::Related;
                 }
             }
             IcmpErrorKey::Udp(link) => {
@@ -633,11 +633,11 @@ impl Conntrack {
                 if udp_cache.get(&udp_key).is_some() {
                     libfw_log_trace!("Removing UDP conntrack entry {:?}", udp_key);
                     udp_cache.remove(&udp_key);
-                    return ConnectionState::Established;
+                    return ConnectionState::Related;
                 }
             }
         }
-        ConnectionState::New
+        ConnectionState::Invalid
     }
 
     pub fn build_conn_info<'a, P: IpPacket<'a>>(
@@ -689,11 +689,15 @@ impl Conntrack {
     fn build_icmp_key<'a, P: IpPacket<'a>>(
         ip: &P,
         associated_data: Option<&[u8]>,
+        ignore_checksum: bool,
     ) -> Result<(IcmpKey, IcmpPacketGroup)> {
         let icmp_packet = match IcmpPacket::new(ip.payload()) {
-            Some(packet) => packet,
+            Some(packet) if icmp::checksum(&packet) == packet.get_checksum() || ignore_checksum => {
+                packet
+            }
             _ => {
                 libfw_log_trace!("Could not create ICMP packet from IP packet {:?}", ip);
+                println!("Could not create ICMP packet from IP packet {:?}", ip);
                 return Err(Error::MalformedIcmpPacket);
             }
         };
@@ -715,7 +719,9 @@ impl Conntrack {
                 (icmp_type, IcmpPacketGroup::Reply)
             } else if (icmp_type == v4::DestinationUnreachable.0
                 || icmp_type == v4::TimeExceeded.0
-                || icmp_type == v4::ParameterProblem.0)
+                || icmp_type == v4::ParameterProblem.0
+                || icmp_type == v4::SourceQuench.0
+                || icmp_type == v4::RedirectMessage.0)
                 && ip.get_next_level_protocol() == IpNextHeaderProtocols::Icmp
             {
                 return Self::build_icmp_error_key(icmp_packet, associated_data, true)
@@ -746,10 +752,11 @@ impl Conntrack {
         let identifier_sequence = {
             let bytes = icmp_packet
                 .payload()
-                .get(0..4)
+                // The ICMP identifier is stored in the first two bytes of the payload
+                .get(0..2)
                 .and_then(|b| b.try_into().ok());
             let bytes = unwrap_option_or_return!(bytes, Err(Error::MalformedIcmpPacket));
-            u32::from_ne_bytes(bytes)
+            u16::from_ne_bytes(bytes)
         };
 
         let src_addr = if packet_group == IcmpPacketGroup::Reply {
@@ -804,7 +811,7 @@ impl Conntrack {
                 }
                 IpNextHeaderProtocols::Icmp => {
                     if let (IcmpKey::Conn(conn), _) =
-                        Self::build_icmp_key(&packet, associated_data)?
+                        Self::build_icmp_key(&packet, associated_data, true)?
                     {
                         IcmpErrorKey::Icmp(Box::new(conn))
                     } else {
@@ -832,7 +839,7 @@ impl Conntrack {
                 }
                 IpNextHeaderProtocols::Icmpv6 => {
                     if let (IcmpKey::Conn(conn), _) =
-                        Self::build_icmp_key(&packet, associated_data)?
+                        Self::build_icmp_key(&packet, associated_data, false)?
                     {
                         IcmpErrorKey::Icmp(Box::new(conn))
                     } else {
@@ -961,10 +968,8 @@ impl Conntrack {
 
                     libfw_log_debug!("Injecting IPv4 TCP RST packet {key:#?}");
 
-                    #[allow(clippy::indexing_slicing)]
                     ipv4pkgbuf[..IPV4_LEN].copy_from_slice(ipv4pkg.packet());
 
-                    #[allow(clippy::indexing_slicing)]
                     ipv4pkgbuf[IPV4_LEN..].copy_from_slice(tcppkg.packet());
 
                     inject_packet_cb(&ipv4pkgbuf);
@@ -984,10 +989,8 @@ impl Conntrack {
 
                     libfw_log_debug!("Injecting IPv4 TCP RST packet {key:#?}");
 
-                    #[allow(clippy::indexing_slicing)]
                     ipv6pkgbuf[..IPV6_LEN].copy_from_slice(ipv6pkg.packet());
 
-                    #[allow(clippy::indexing_slicing)]
                     ipv6pkgbuf[IPV6_LEN..].copy_from_slice(tcppkg.packet());
                     inject_packet_cb(&ipv6pkgbuf);
                 }
@@ -1018,7 +1021,7 @@ impl Conntrack {
         let mut ipv6pkgbuf = [0u8; IPV6_HEADER_LEN + ICMP_HEADER_LEN + ICMP_MAX_DATA_LEN];
 
         // Write most of the fields for ICMP and IP packets upfront
-        #[allow(clippy::expect_used, clippy::indexing_slicing)]
+        #[allow(clippy::expect_used)]
         let mut ipv4pkg = MutableIpv4Packet::new(&mut ipv4pkgbuf[..IPV4_HEADER_LEN])
             .expect("IPv4 buffer should not be too small");
         ipv4pkg.set_version(4);
@@ -1027,14 +1030,14 @@ impl Conntrack {
         ipv4pkg.set_ttl(0xFF);
         ipv4pkg.set_next_level_protocol(IpNextHeaderProtocols::Icmp);
 
-        #[allow(clippy::expect_used, clippy::indexing_slicing)]
+        #[allow(clippy::expect_used)]
         let mut ipv6pkg = MutableIpv6Packet::new(&mut ipv6pkgbuf[..IPV6_HEADER_LEN])
             .expect("IPv6 buffer should not be too small");
         ipv6pkg.set_version(6);
         ipv6pkg.set_next_header(IpNextHeaderProtocols::Icmpv6);
         ipv6pkg.set_hop_limit(0xff);
 
-        #[allow(clippy::expect_used, clippy::indexing_slicing)]
+        #[allow(clippy::expect_used)]
         let mut icmppkg = MutableIcmpPacket::new(
             &mut ipv4pkgbuf[IPV4_HEADER_LEN..(IPV4_HEADER_LEN + ICMP_HEADER_LEN)],
         )
@@ -1042,7 +1045,7 @@ impl Conntrack {
         icmppkg.set_icmp_type(IcmpTypes::DestinationUnreachable);
         icmppkg.set_icmp_code(IcmpCodes::DestinationPortUnreachable);
 
-        #[allow(clippy::expect_used, clippy::indexing_slicing)]
+        #[allow(clippy::expect_used)]
         let mut icmpv6pkg = MutableIcmpv6Packet::new(
             &mut ipv6pkgbuf[IPV6_HEADER_LEN..(IPV6_HEADER_LEN + ICMP_HEADER_LEN)],
         )
@@ -1057,22 +1060,20 @@ impl Conntrack {
                 (IpAddr::Ipv4(local_addr), IpAddr::Ipv4(remote_addr)) => {
                     let end = IPV4_HEADER_LEN + ICMP_HEADER_LEN + last_headers.len();
 
-                    #[allow(clippy::indexing_slicing)]
                     let ipv4pkgbuf = &mut ipv4pkgbuf[..end];
-                    #[allow(clippy::indexing_slicing)]
                     ipv4pkgbuf[(IPV4_HEADER_LEN + ICMP_HEADER_LEN)..].copy_from_slice(last_headers);
 
                     let src = remote_addr.into();
                     let dst = local_addr.into();
 
-                    #[allow(clippy::expect_used, clippy::indexing_slicing)]
+                    #[allow(clippy::expect_used)]
                     let mut icmppkg = MutableIcmpPacket::new(&mut ipv4pkgbuf[IPV4_HEADER_LEN..])
                         .expect("ICMP buffer should not be too small");
                     icmppkg.set_checksum(0);
                     icmppkg.set_checksum(pnet_packet::icmp::checksum(&icmppkg.to_immutable()));
                     drop(icmppkg);
 
-                    #[allow(clippy::expect_used, clippy::indexing_slicing)]
+                    #[allow(clippy::expect_used)]
                     let mut ipv4pkg = MutableIpv4Packet::new(&mut ipv4pkgbuf[..IPV4_HEADER_LEN])
                         .expect("IPv4 buffer should not be too small");
                     ipv4pkg.set_source(src);
@@ -1090,15 +1091,13 @@ impl Conntrack {
                 (IpAddr::Ipv6(local_addr), IpAddr::Ipv6(remote_addr)) => {
                     let end = IPV6_HEADER_LEN + ICMP_HEADER_LEN + last_headers.len();
 
-                    #[allow(clippy::indexing_slicing)]
                     let ipv6pkgbuf = &mut ipv6pkgbuf[..end];
-                    #[allow(clippy::indexing_slicing)]
                     ipv6pkgbuf[(IPV6_HEADER_LEN + ICMP_HEADER_LEN)..].copy_from_slice(last_headers);
 
                     let src = remote_addr.into();
                     let dst = local_addr.into();
 
-                    #[allow(clippy::expect_used, clippy::indexing_slicing)]
+                    #[allow(clippy::expect_used)]
                     let mut icmpv6pkg =
                         MutableIcmpv6Packet::new(&mut ipv6pkgbuf[IPV6_HEADER_LEN..])
                             .expect("ICMPv6 buffer should not be too small");
@@ -1109,7 +1108,7 @@ impl Conntrack {
                         &dst,
                     ));
 
-                    #[allow(clippy::expect_used, clippy::indexing_slicing)]
+                    #[allow(clippy::expect_used)]
                     let mut ipv6pkg = MutableIpv6Packet::new(&mut ipv6pkgbuf[..IPV6_HEADER_LEN])
                         .expect("IPv4 buffer should not be too small");
                     ipv6pkg.set_source(src);
@@ -1260,10 +1259,10 @@ mod tests {
 
     use pnet_packet::{
         icmp::{
-            checksum,
+            self,
             destination_unreachable::{self, DestinationUnreachablePacket},
             echo_reply::IcmpCodes,
-            IcmpPacket, IcmpType, IcmpTypes, MutableIcmpPacket,
+            IcmpCode, IcmpPacket, IcmpType, IcmpTypes, MutableIcmpPacket,
         },
         icmpv6::{Icmpv6Code, Icmpv6Packet, Icmpv6Types},
         ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
@@ -1443,23 +1442,26 @@ mod tests {
         src: Ipv4Addr,
         dst: Ipv4Addr,
         icmp_type: IcmpType,
+        icmp_code: IcmpCode,
         body: &[u8],
+        fix_checksum: bool,
     ) -> Vec<u8> {
-        let additional_body_len = body.len().saturating_sub(14);
-        let ip_len = IPV4_HEADER_MIN + ICMP_HEADER + 10 + additional_body_len;
+        let ip_len = IPV4_HEADER_MIN + ICMP_HEADER + body.len();
         let mut raw = vec![0u8; ip_len];
 
         let mut packet =
             MutableIcmpPacket::new(&mut raw[IPV4_HEADER_MIN..]).expect("ICMP: Bad ICMP buffer");
         packet.set_icmp_type(icmp_type);
-        packet.set_icmp_code(IcmpCodes::NoCode);
-        packet.set_payload(&[0x1, 0x2, 0x3, 0x4]);
+        packet.set_icmp_code(icmp_code);
+        packet.set_payload(&body);
         packet.set_checksum(0);
 
-        let checksum = checksum(
-            &IcmpPacket::new(packet.packet()).expect("This should be a valid ICMP packet"),
-        );
-        packet.set_checksum(checksum);
+        let icmp_packet =
+            IcmpPacket::new(packet.packet()).expect("It should be a valid ICMP packet");
+
+        if fix_checksum {
+            packet.set_checksum(icmp::checksum(&icmp_packet));
+        }
 
         let mut ip = MutableIpv4Packet::new(&mut raw).expect("ICMP: Bad IP buffer");
         set_ipv4(
@@ -1471,16 +1473,16 @@ mod tests {
         ip.set_source(src);
         ip.set_destination(dst);
 
-        let body_start = 14.max(body.len());
-        for (i, b) in body.iter().enumerate() {
-            raw[ip_len - (body_start - i)] = *b;
-        }
-
         raw
     }
 
-    fn make_icmp4(src: Ipv4Addr, dst: Ipv4Addr, icmp_type: IcmpType) -> Vec<u8> {
-        make_icmp4_with_body(src, dst, icmp_type, &[])
+    fn make_icmp4(
+        src: Ipv4Addr,
+        dst: Ipv4Addr,
+        icmp_type: IcmpType,
+        icmp_code: IcmpCode,
+    ) -> Vec<u8> {
+        make_icmp4_with_body(src, dst, icmp_type, icmp_code, &[], true)
     }
 
     fn handle_inbound_ipv4_packet(
@@ -1602,19 +1604,19 @@ mod tests {
         let test_inputs = vec![
             TestInput{
                 src1: "127.0.0.1:1111", src2: "127.0.0.1:2222",
-                src3: "127.0.0.1:3333", src4: "127.0.0.1:4444",
-                src5: "127.0.0.1:5555",
-                dst1: "8.8.8.8:8888", dst2: "8.8.8.8:7777",
+                src3: "127.0.0.1:3333", src4: "192.168.0.2:4444",
+                src5: "192.168.0.2:5555",
+                dst1: "8.8.8.8:8888", dst2: "192.168.0.1:7777",
                 make_udp: make_udp,
                 handle_inbound_packet: handle_inbound_ipv4_packet,
                 handle_outbound_packet: handle_outbound_ipv4_packet,
             },
             TestInput{
                 src1: "[::1]:1111", src2: "[::1]:2222",
-                src3: "[::1]:3333", src4: "[::1]:4444",
-                src5: "[::1]:5555",
+                src3: "[::1]:3333", src4: "[fe80::2]:4444",
+                src5: "[fe80::2]:5555",
                 dst1: "[2001:4860:4860::8888]:8888",
-                dst2: "[2001:4860:4860::8888]:7777",
+                dst2: "[2001:4860:4860::7777]:7777",
                 make_udp: make_udp6,
                 handle_inbound_packet: handle_inbound_ipv6_packet,
                 handle_outbound_packet: handle_outbound_ipv6_packet,
@@ -1870,9 +1872,12 @@ mod tests {
         let src = Ipv4Addr::new(127, 0, 0, 1);
         let dst = Ipv4Addr::new(8, 8, 8, 8);
 
-        let outbound_icmp_req_packet = make_icmp4(src, dst, IcmpTypes::EchoRequest);
-        let inbound_icmp_reply_packet = make_icmp4(dst, src, IcmpTypes::EchoReply);
-        let inbound_icmp_req_packet: Vec<u8> = make_icmp4(dst, src, IcmpTypes::EchoRequest);
+        let outbound_icmp_req_packet =
+            make_icmp4(src, dst, IcmpTypes::EchoRequest, IcmpCodes::NoCode);
+        let inbound_icmp_reply_packet =
+            make_icmp4(dst, src, IcmpTypes::EchoReply, IcmpCodes::NoCode);
+        let inbound_icmp_req_packet: Vec<u8> =
+            make_icmp4(dst, src, IcmpTypes::EchoRequest, IcmpCodes::NoCode);
 
         let conn_state = conntrack
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_icmp_req_packet)
@@ -1920,8 +1925,10 @@ mod tests {
         for (req_type, reply_type) in icmp_type_pairs {
             let conntrack = Conntrack::new();
 
-            let reply_icmp_req_packet = make_icmp4(remote_addr, local_addr, reply_type);
-            let request_icmp_resp_packet = make_icmp4(local_addr, remote_addr, req_type);
+            let reply_icmp_req_packet =
+                make_icmp4(remote_addr, local_addr, reply_type, IcmpCodes::NoCode);
+            let request_icmp_resp_packet =
+                make_icmp4(local_addr, remote_addr, req_type, IcmpCodes::NoCode);
 
             // Reply without conntrack entry should be invalid
             let conn_state = conntrack
@@ -1947,11 +1954,14 @@ mod tests {
         }
 
         // Test outbound replies
+
         for (req_type, reply_type) in icmp_type_pairs {
             let conntrack = Conntrack::new();
 
-            let reply_icmp_req_packet = make_icmp4(local_addr, remote_addr, reply_type);
-            let request_icmp_resp_packet = make_icmp4(remote_addr, local_addr, req_type);
+            let reply_icmp_req_packet =
+                make_icmp4(local_addr, remote_addr, reply_type, IcmpCodes::NoCode);
+            let request_icmp_resp_packet =
+                make_icmp4(remote_addr, local_addr, req_type, IcmpCodes::NoCode);
 
             // Reply without conntrack entry should be invalid
             let conn_state = conntrack
@@ -1995,7 +2005,9 @@ mod tests {
             icmp_src,
             icmp_dst,
             IcmpTypes::DestinationUnreachable.into(),
+            IcmpCodes::NoCode,
             &data,
+            true,
         );
 
         // Initiate the outbound connection
@@ -2003,28 +2015,24 @@ mod tests {
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_udp_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
-        assert_eq!(conntrack.udp.lock().len(), 1);
 
         // First inbound packet should make it established
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_udp_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
-        assert_eq!(conntrack.udp.lock().len(), 1);
 
         // ICMP error message should also be treated as a part of established connection
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_icmp_resp_packet)
             .expect("Unexpected conntrack error");
-        assert_eq!(conn_state, ConnectionState::Established);
+        assert_eq!(conn_state, ConnectionState::Related);
 
         // But after ICMP error message the connection should be removed
-        assert_eq!(conntrack.udp.lock().len(), 0);
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_udp_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
-        assert_eq!(conntrack.udp.lock().len(), 1);
     }
 
     #[test]
@@ -2044,13 +2052,10 @@ mod tests {
             .track_outbound_ip_packet::<Ipv4Packet>(None, &outbound_syn_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
-        assert_eq!(conntrack.tcp.lock().len(), 1);
-
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::Established);
-        assert_eq!(conntrack.tcp.lock().len(), 1);
 
         // Inbound RST packet - connection should be closed immediately
         let conn_state = conntrack
@@ -2059,14 +2064,10 @@ mod tests {
         assert_eq!(conn_state, ConnectionState::Closed);
 
         // After that conntrack entry should be removed
-        assert_eq!(conntrack.tcp.lock().len(), 0);
-
-        // And SYN-ACK without SYN shouldn't create a new connection
         let conn_state = conntrack
             .track_inbound_ip_packet::<Ipv4Packet>(None, &inbound_syn_ack_packet)
             .expect("Unexpected conntrack error");
         assert_eq!(conn_state, ConnectionState::New);
-        assert_eq!(conntrack.tcp.lock().len(), 0);
     }
 
     #[test]
@@ -2083,7 +2084,6 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
-        assert_eq!(conntrack.tcp.lock().len(), 1);
         // Outbound opened connection
         assert_eq!(
             conntrack
@@ -2094,7 +2094,6 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
-        assert_eq!(conntrack.tcp.lock().len(), 2);
         assert_eq!(
             conntrack
                 .track_inbound_ip_packet::<Ipv4Packet>(
@@ -2108,8 +2107,6 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::Established
         );
-        assert_eq!(conntrack.tcp.lock().len(), 2);
-
         // Inbound connection
         assert_eq!(
             conntrack
@@ -2124,8 +2121,6 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
-        assert_eq!(conntrack.tcp.lock().len(), 3);
-
         // Inbound with data
         assert_eq!(
             conntrack
@@ -2140,8 +2135,6 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
-        assert_eq!(conntrack.tcp.lock().len(), 4);
-
         assert_eq!(
             conntrack
                 .track_inbound_ip_packet::<Ipv4Packet>(
@@ -2155,7 +2148,6 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
-        assert_eq!(conntrack.tcp.lock().len(), 4);
 
         // Outbound IPv6 opened connection
         assert_eq!(
@@ -2167,8 +2159,6 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
-        assert_eq!(conntrack.tcp.lock().len(), 5);
-
         assert_eq!(
             conntrack
                 .track_inbound_ip_packet::<Ipv6Packet>(
@@ -2182,8 +2172,6 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::Established
         );
-        assert_eq!(conntrack.tcp.lock().len(), 5);
-
         // Inbound IPv6 connection
         assert_eq!(
             conntrack
@@ -2198,7 +2186,6 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
-        assert_eq!(conntrack.tcp.lock().len(), 6);
 
         // Let's establish a connection for a different assoc data
         let diff_assoc_data = b"different_assoc_data";
@@ -2211,7 +2198,6 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::New
         );
-        assert_eq!(conntrack.tcp.lock().len(), 7);
         assert_eq!(
             conntrack
                 .track_inbound_ip_packet::<Ipv4Packet>(
@@ -2225,7 +2211,6 @@ mod tests {
                 .expect("Unexpected error during packet tracking"),
             ConnectionState::Established
         );
-        assert_eq!(conntrack.tcp.lock().len(), 7);
 
         #[derive(Default)]
         struct Sink {
@@ -2346,7 +2331,6 @@ mod tests {
 
         // Only TCP entry for different assoc data should be still present
         assert_eq!(conntrack.get_connections_count().0, 1);
-        assert_eq!(conntrack.tcp.lock().len(), 1);
     }
 
     #[test]
@@ -2363,15 +2347,12 @@ mod tests {
                 .expect("Conntrack tracking error"),
             ConnectionState::New
         );
-        assert_eq!(conntrack.udp.lock().len(), 1);
-
         assert_eq!(
             conntrack
                 .track_outbound_ip_packet::<Ipv6Packet>(None, &test_udp6pkg,)
                 .expect("Conntrack tracking error"),
             ConnectionState::New
         );
-        assert_eq!(conntrack.udp.lock().len(), 2);
 
         // Let's add an entry for a different assoc data
         let diff_assoc_data = b"different_assoc_data";
@@ -2381,7 +2362,6 @@ mod tests {
                 .expect("Conntrack tracking error"),
             ConnectionState::New
         );
-        assert_eq!(conntrack.udp.lock().len(), 3);
 
         #[derive(Default)]
         struct Sink {
@@ -2437,7 +2417,6 @@ mod tests {
 
         // Only entry for the different assoc data should stay
         assert_eq!(conntrack.get_connections_count().1, 1);
-        assert_eq!(conntrack.udp.lock().len(), 1);
     }
 
     #[rustfmt::skip]

@@ -436,6 +436,18 @@ pub(crate) fn configure_chain(
             action: LibfwVerdict::LibfwVerdictAccept,
         });
 
+        // And packets related to them
+        rules.push(Rule {
+            filters: vec![
+                Filter {
+                    filter_data: FilterData::ConntrackState(ConnectionState::Related),
+                    inverted: false,
+                },
+                Self::dst_net_all_ports_filter(IpNet::from(*ip), false),
+            ],
+            action: LibfwVerdict::LibfwVerdictAccept,
+        });
+
         // Accept certain TCP packets for finished connections
         rules.push(Rule {
             filters: vec![
