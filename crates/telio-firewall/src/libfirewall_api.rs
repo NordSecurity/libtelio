@@ -353,6 +353,7 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
                 .track_outbound_ip_packet::<Ipv4Packet>(assoc_data, buffer)
                 .unwrap_or_else(|err| {
                     libfw_log_warn!("Conntrack failed to track an outbound packet {:?}", err);
+                    println!("Conntrack failed to track an outbound packet {:?}", err);
                     conntrack::ConnectionState::Invalid
                 });
             let verdict = if let Some(chain) = fw.chain.read().as_ref() {
@@ -404,6 +405,7 @@ pub unsafe extern "C" fn libfw_process_outbound_packet(
                 .track_outbound_ip_packet::<Ipv6Packet>(assoc_data, buffer)
                 .unwrap_or_else(|err| {
                     libfw_log_warn!("Conntrack failed to track an outbound packet {:?}", err);
+                    println!("Conntrack failed to track an outbound packet {:?}", err);
                     conntrack::ConnectionState::Invalid
                 });
             let verdict = if let Some(chain) = fw.chain.read().as_ref() {
