@@ -157,6 +157,9 @@ class NordVpnLite:
         self,
         cmd: list,
     ) -> tuple[str, str]:
+        # TODO(LLT-6785): remove the sleep
+        await asyncio.sleep(5)
+
         start_time = time.time()
         try:
             cmd = [str(self.config.paths.exec_path)] + cmd
