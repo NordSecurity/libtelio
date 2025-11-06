@@ -56,7 +56,9 @@ def start(skip_keywords=None, force_recreate=False):
         # containers. During this startup phase the old job is experiencing timeouts.
         # We can try to offset this startup time of the parallel runs to check if it helps.
         start_delay = (int(os.environ.get("CI_NODE_INDEX", "1")) - 1) * 120
+        print(f"Delaying execution for {start_delay}s to amortize the load")
         time.sleep(start_delay)
+        print(f"Continuing after delay of {start_delay}s")
 
         with open("docker-compose.yml", "r", encoding="utf-8") as file:
             filedata = file.read()
