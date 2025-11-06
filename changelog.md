@@ -1,10 +1,30 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v6.2.0
+### **Pink Soup**
+---
+
+* LLT-6308: Add C-compatible layer to telio-firewall
+* LLT-6524: Rename teliod to NordVPN Lite
+* LLT-6058: Fix state reporting for Android TV
+* LLT-6571: Fix bug where setting feature config boringtun_reset_conns did nothing
+* LLT-6489: Implement backoff strategy for ENS
+* LLT-6598: Bump uniffi-generators to v0.28.3-4 to fix windows issue where GC might relocate callbacks, causing segfaults
+* LLT-6689: Verification of certificate use by TLS/gRPC/ENS server
+* LLT-6361: Compute and print the SHA-256 fingerprint of the TLS certificate used in gRPC
+* LLT-6469: Implement post-quantum TLS for ENS
+* LLT-6528: Add control-flow-guard to windows build
+* LLT-6080: Ability to pass an interface list in windows, for them to be excluded, when binding to "default interface"
+* Fix: UPNP provider renew interval
+
+<br>
+
 ### v6.2.0-rc1
 ### **Pink Soup**
 ---
 * LLT-6080: Ability to pass an interface list in windows, for them to be excluded, when binding to "default interface"
 * Fix: UPNP provider renew interval
+
 <br>
 
 ### v6.2.0-rc0
