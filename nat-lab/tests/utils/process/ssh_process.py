@@ -72,6 +72,11 @@ class SshProcess(Process):
             raise
         finally:
             if self._process and self._process.returncode is None:
+                log.warning(
+                    "[%s] Killing remote process for command: %s (returncode is None)",
+                    self._vm_name,
+                    command_str,
+                )
                 self._process.kill()
                 self._process.close()
                 await self._process.wait_closed()
@@ -81,13 +86,23 @@ class SshProcess(Process):
 
         # 0 success
         if completed_process.returncode and completed_process.returncode != 0:
-            raise ProcessExecError(
+            err = ProcessExecError(
                 completed_process.returncode,
                 self._vm_name,
                 self._command,
                 self._stdout,
                 self._stderr,
             )
+            log.error(
+                "[%s] Command failed (returncode=%s) on %s: %s; stdout=%s; stderr=%s",
+                self._vm_name,
+                err.returncode,
+                err.remote_name,
+                command_str,
+                err.stdout,
+                err.stderr,
+            )
+            raise err
 
         return self
 
