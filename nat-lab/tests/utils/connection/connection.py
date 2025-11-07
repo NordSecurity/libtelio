@@ -133,6 +133,12 @@ class Connection(ABC):
     async def clean_interface(self) -> None:
         pass
 
+    async def reboot(self) -> None:
+        raise NotImplemented
+
+    async def is_healthy(self) -> bool:
+        raise NotImplemented
+
 
 async def clear_ephemeral_setups_set():
     EPHEMERAL_SETUP_SET.clear()
