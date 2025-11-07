@@ -345,7 +345,7 @@ fn ipv6_blocked() {
         },
     ];
     for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_udp , is_ipv4} in test_inputs {
-        let fw = StatefullFirewall::new(false, &FeatureFirewall::default(),);
+        let fw = StatefullFirewall::new(false, &FeatureFirewall::default(),).expect("Failed to load libfirewall");
         fw.set_ip_addresses(vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
         // Should FAIL (no matching outgoing connections yet)
         assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(dst1, src1)), false);
@@ -401,7 +401,7 @@ fn outgoing_blacklist() {
         let fw = StatefullFirewall::new(true, &FeatureFirewall {
             outgoing_blacklist: blacklist.clone(),
             ..Default::default()
-        },);
+        },).expect("Failed to load libfirewall");
         fw.set_ip_addresses(vec![
             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
@@ -415,7 +415,7 @@ fn outgoing_blacklist() {
 #[rustfmt::skip]
 #[test]
 fn firewall_whitelist_crud() {
-    let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),);
+    let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),).expect("Failed to load libfirewall");
     assert!(fw.get_peer_whitelist(Permissions::IncomingConnections).is_empty());
 
     let peer = make_random_peer();
@@ -479,7 +479,7 @@ fn firewall_whitelist() {
     for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_udp, make_tcp, make_icmp } in &test_inputs {
         let mut feature = FeatureFirewall::default();
         feature.neptun_reset_conns = true;
-        let fw = StatefullFirewall::new(true, &feature);
+        let fw = StatefullFirewall::new(true, &feature).expect("Failed to load libfirewall");
         fw.set_ip_addresses(vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
         let peer1 = make_random_peer();
         let peer2 = make_random_peer();
@@ -539,7 +539,7 @@ fn firewall_vpn_peer() {
     let syn : u8 = TcpFlags::SYN;
         for TestInput { src1, src2, dst1, make_udp, make_tcp } in &test_inputs {
             let feature = FeatureFirewall::default();
-            let fw = StatefullFirewall::new(true, &feature);
+            let fw = StatefullFirewall::new(true, &feature).expect("Failed to load libfirewall");
             fw.set_ip_addresses(vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
             let peer1 = make_random_peer();
             let peer2 = make_random_peer();
@@ -582,7 +582,7 @@ fn firewall_whitelist_change_icmp() {
     for TestInput { us, them, make_icmp, is_v4 } in &test_inputs {
         let feature = FeatureFirewall::default();
         // Set number of conntrack entries to 0 to test only the whitelist
-        let fw = StatefullFirewall::new(true, &feature);
+        let fw = StatefullFirewall::new(true, &feature).expect("Failed to load libfirewall");
         fw.set_ip_addresses(vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
 
         let peer = make_random_peer();
@@ -616,7 +616,7 @@ fn firewall_whitelist_change_udp_allow() {
     ];
 
     for TestInput { us, them, make_udp } in test_inputs {
-        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),);
+        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),).expect("Failed to load libfirewall");
         fw.set_ip_addresses(vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
 
         let them_peer = make_random_peer();
@@ -643,7 +643,7 @@ fn firewall_whitelist_change_udp_block() {
     ];
 
     for TestInput { us, them, make_udp } in test_inputs {
-        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),);
+        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),).expect("Failed to load libfirewall");
         fw.set_ip_addresses(vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
         let them_peer = make_random_peer();
 
@@ -667,7 +667,7 @@ fn firewall_whitelist_change_tcp_allow() {
         TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6, },
     ];
     for TestInput { us, them, make_tcp } in test_inputs {
-        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),);
+        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),).expect("Failed to load libfirewall");
         fw.set_ip_addresses(vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
 
         let them_peer = make_random_peer();
@@ -695,7 +695,7 @@ fn firewall_whitelist_change_tcp_block() {
         TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6, },
     ];
     for TestInput { us, them, make_tcp } in test_inputs {
-        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),);
+        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),).expect("Failed to load libfirewall");
         fw.set_ip_addresses(vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
 
         let them_peer = make_random_peer();
@@ -744,7 +744,7 @@ fn firewall_whitelist_peer() {
     ];
         for TestInput { src1, src2, dst, make_udp, make_tcp, make_icmp } in &test_inputs {
             let feature = FeatureFirewall::default();
-            let fw = StatefullFirewall::new(true, &feature);
+            let fw = StatefullFirewall::new(true, &feature).expect("Failed to load libfirewall");
             fw.set_ip_addresses(vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
             assert!(fw.get_peer_whitelist(Permissions::IncomingConnections).is_empty());
 
@@ -811,7 +811,7 @@ fn firewall_test_permissions() {
     {
         let mut feature = FeatureFirewall::default();
         feature.neptun_reset_conns = true;
-        let fw = StatefullFirewall::new(true, &feature);
+        let fw = StatefullFirewall::new(true, &feature).expect("Failed to load libfirewall");
         fw.set_ip_addresses(vec![
             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
@@ -955,7 +955,7 @@ fn firewall_whitelist_port() {
         }
     ];
     for test_input @ TestInput { src: _, dst: _, make_udp, make_tcp, make_icmp } in test_inputs {
-        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),);
+        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),).expect("Failed to load libfirewall");
         fw.set_ip_addresses(vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))]);
         assert!(fw.get_peer_whitelist(Permissions::IncomingConnections).is_empty());
         assert!(fw.get_port_whitelist().is_empty());

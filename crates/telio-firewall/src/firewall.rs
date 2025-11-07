@@ -71,7 +71,7 @@ impl Icmp for Icmpv6Type {
 
 /// Firewall trait.
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
-pub trait Firewall {
+pub trait Firewall: Sync + Send {
     /// Clears the port whitelist
     fn clear_port_whitelist(&self);
 
