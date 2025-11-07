@@ -132,6 +132,6 @@ impl Adapter for NepTUN {
     }
 
     fn clone_box(&self) -> Box<dyn Adapter> {
-        todo!();
+        unimplemented!();
     }
 }

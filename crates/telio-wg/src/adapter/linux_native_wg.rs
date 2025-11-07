@@ -87,6 +87,10 @@ impl Adapter for LinuxNativeWg {
     async fn set_tun(&self, _tun: super::Tun) -> Result<(), AdapterError> {
         Err(AdapterError::UnsupportedAdapter)
     }
+
+    fn clone_box(&self) -> Box<dyn Adapter> {
+        unimplemented!();
+    }
 }
 
 impl Drop for LinuxNativeWg {
