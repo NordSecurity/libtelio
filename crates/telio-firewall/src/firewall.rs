@@ -71,7 +71,7 @@ impl Icmp for Icmpv6Type {
 
 /// Firewall trait.
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
-pub trait Firewall {
+pub trait Firewall: Sync + Send {
     /// Clears the port whitelist
     fn clear_port_whitelist(&self);
 
@@ -209,19 +209,22 @@ impl Drop for StatefullFirewall {
 impl StatefullFirewall {
     /// Constructs firewall with libfw structure pointer
     pub fn new(use_ipv6: bool, feature: &FeatureFirewall) -> Result<Self, ::libloading::Error> {
-        #[cfg(target_os = "linux")]
-        let lib_name = "libfirewall.so";
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos",))]
         let lib_name = "libfirewall.dylib";
+
         #[cfg(target_os = "windows")]
         let lib_name = "libfirewall.dll";
 
+        //#[cfg(any(target_os = "linux", target_os = "android"))]
+        #[cfg(not(any(
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "tvos",
+            target_os = "windows"
+        )))]
+        let lib_name = "libfirewall.so";
+
         // We want to use this path when these are our tests or libtelio tests
-        #[cfg(any(test, feature = "mockall"))]
-        let libfirewall_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../dist")
-            .join(lib_name);
-        #[cfg(not(any(test, feature = "mockall")))]
         let libfirewall_path = PathBuf::from(lib_name);
 
         // Dynamically load libfirewall
