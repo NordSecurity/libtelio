@@ -88,3 +88,13 @@ And following cli commands:
 * `nordvpnlite is-alive` - query if the daemon is running
 * `nordvpnlite stop` - stop daemon execution
 * `nordvpnlite countries` - list countries with available VPN servers
+
+## OpenWRT
+
+After installing the `.ipk` package:
+
+* Edit the `/etc/nordvpnlite/config.json` file, and replace `authentication_token` with your authentication token obtained from [my.nordaccount.com](https://my.nordaccount.com)
+* To start the `nordvpnlite` service run `/etc/init.d/nordvpnlite start`
+* After each edit of `config.json` reload the service with `/etc/init.d/nordvpnlite reload`
+* To run `nordvpnlite` automatically at boot, enable the service `/etc/init.d/nordvpnlite enable`
+* To read the service logs run `logread | grep -i nordvpnlite` or `cat /var/log/nordvpnlite.log`
