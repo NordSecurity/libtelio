@@ -4,6 +4,7 @@ from config import PHOTO_ALBUM_IP, STUN_SERVER, WG_SERVER, WG_SERVER_2
 from contextlib import AsyncExitStack
 from helpers import setup_connections
 from nordvpnlite import NordVpnLite, IfcConfigType
+from pathlib import Path
 from utils import stun
 from utils.connection import ConnectionTag
 from utils.logger import log
@@ -124,3 +125,42 @@ async def test_nordvpnlite_vpn_country_connection(country: IfcConfigType) -> Non
                     hostname in report
                     for hostname in ["pl128.nordvpn.com", "de1263.nordvpn.com"]
                 ), report
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    [Path("/etc/nordvpnlite/config.json"), Path("/tmp/nordvpnlite/test/config.json")],
+    ids=["default", "custom"],
+)
+async def test_nordvpnlite_config_created(
+    config_path: Path, request: pytest.FixtureRequest
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        connection = (
+            await setup_connections(exit_stack, [ConnectionTag.DOCKER_CONE_CLIENT_1])
+        )[0].connection
+
+        nordvpnlite = await NordVpnLite.new(exit_stack, connection=connection)
+
+        await nordvpnlite.remove_config(config_path)
+        assert not await nordvpnlite.config_exists(config_path)
+
+        try:
+            if request.node.callspec.id == "default":
+                # Start nordvpnlite without a config-file parameter
+                await nordvpnlite.execute_command(["start"])
+            else:
+                # Start nordvpnlite with a custom config-file parameter
+                await nordvpnlite.execute_command(
+                    ["start", "--config-file", str(config_path)]
+                )
+            pytest.fail("Start should not succeed with default config")
+        except ProcessExecError as exc:
+            assert str(config_path) in exc.stdout, "Config path not mentioned in stdout"
+            assert "creating default config" in exc.stderr
+            assert "InvalidConfigToken" in exc.stderr
+            assert await nordvpnlite.config_exists(
+                config_path
+            ), "Default config was not created"
+        finally:
+            await nordvpnlite.remove_config(config_path)

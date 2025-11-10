@@ -73,6 +73,8 @@ pub enum NordVpnLiteError {
         msg: String,
         value: String,
     },
+    #[error("Invalid token in config: {msg}")]
+    InvalidConfigToken { msg: String },
     #[error(transparent)]
     LogAppenderError(#[from] InitError),
     #[error(transparent)]

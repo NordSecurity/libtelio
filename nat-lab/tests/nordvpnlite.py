@@ -34,6 +34,7 @@ class IgnoreableError(Exception):
 
 
 class IfcConfigType(Enum):
+    DEFAULT = "config.json"
     MANUAL = "config_with_manual_setup.json"
     IPROUTE = "config_with_iproute_setup.json"
     VPN_COUNTRY_PL = "config_with_vpn_country_pl.json"
@@ -73,7 +74,7 @@ class Paths:
     def lib_log(self) -> Path:
         return self.log_dir / "nordvpnlite_natlab.log"
 
-    def config_path(self, config_type) -> Path:
+    def config_path(self, config_type: IfcConfigType) -> Path:
         return self.config_dir / config_type.value
 
 
@@ -211,11 +212,13 @@ class NordVpnLite:
 
             cmd = ["start"]
             if not self.config.no_detach:
+                cmd.append("--config-file")
                 cmd.append(str(self.config.path()))
                 stdout, stderr = await self.execute_command(cmd)
                 await wait_for_nordvpnlite_start()
             else:
                 cmd.append("--no-detach")
+                cmd.append("--config-file")
                 cmd.append(str(self.config.path()))
                 proc = await self.run_command(cmd)
                 await wait_for_nordvpnlite_start()
@@ -293,6 +296,22 @@ class NordVpnLite:
         except ProcessExecError as exc:
             if "nordvpnlite: no process found" not in exc.stderr:
                 raise
+
+    async def remove_config(self, path: Path) -> None:
+        await self.connection.create_process(["rm", "-f", str(path)]).execute()
+        await self.connection.create_process(["test", "!", "-f", str(path)]).execute()
+
+    async def config_exists(self, path: Path) -> bool:
+        try:
+            await self.connection.create_process([
+                "test",
+                "-s",
+                str(path),
+            ]).execute()
+            return True
+        except ProcessExecError as exc:
+            assert (exc.returncode, exc.stdout, exc.stderr) == (1, "", "")
+            return False
 
     async def remove_logs(self) -> None:
         for path in [self.config.paths.daemon_log, self.config.paths.lib_log]:

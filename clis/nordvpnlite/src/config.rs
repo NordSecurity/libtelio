@@ -1,4 +1,5 @@
 use std::{
+    io::Write,
     net::Ipv4Addr,
     num::NonZeroU64,
     path::{Path, PathBuf},
@@ -82,17 +83,26 @@ impl NordToken {
     pub fn new(token: &str) -> Result<Self, NordVpnLiteError> {
         if Self::validate(token) {
             Ok(NordToken(Arc::new(token.to_owned().into())))
+        } else if token.to_lowercase().contains("token") {
+            Err(NordVpnLiteError::InvalidConfigToken {
+                msg: "Provide your authentication token from https://my.nordaccount.com".to_owned(),
+            })
         } else {
-            Err(NordVpnLiteError::InvalidConfigOption {
-                key: "authentication_token".to_owned(),
+            Err(NordVpnLiteError::InvalidConfigToken {
                 msg: "Invalid authentication token format".to_owned(),
-                value: "".to_owned(),
             })
         }
     }
 
     fn validate(token: &str) -> bool {
         token.len() == 64 && token.chars().all(|c| c.is_ascii_hexdigit())
+    }
+
+    /// Token that will fail to deserialize, prompting the user to update it
+    pub fn new_invalid_template() -> Self {
+        NordToken(Arc::new(
+            "<PASTE_YOUR_AUTHENTICATION_TOKEN_HERE>".to_owned().into(),
+        ))
     }
 }
 
@@ -177,17 +187,42 @@ pub struct NordVpnLiteConfig {
 
 impl NordVpnLiteConfig {
     /// Construct a NordVpnLiteConfig by deserializing a file at given path
-    pub fn from_file(path: &str) -> Result<Self, NordVpnLiteError> {
-        println!("Reading config from: {path}");
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, NordVpnLiteError> {
+        let path = path.as_ref();
+        println!("Reading config from: {}", path.display());
 
-        let file = fs::File::open(path)?;
-        let mut config: NordVpnLiteConfig = serde_json::from_reader(file)?;
+        match fs::File::open(path) {
+            Ok(file) => {
+                let mut config: NordVpnLiteConfig = serde_json::from_reader(file)?;
+                config.log_file_path = Self::resolve_log_path(&config.log_file_path)?;
+                Ok(config)
+            }
+            // Create a default config if it does not exist
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!("File not found, creating default config");
 
-        // Config file should only be written when valid, just in case it was
-        // manually modified we check again.
-        config.log_file_path = Self::resolve_log_path(&config.log_file_path)?;
+                // Create directories
+                if let Some(parent) = path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
 
-        Ok(config)
+                // Write default config to file
+                let default_config = Self {
+                    authentication_token: NordToken::new_invalid_template(),
+                    ..Default::default()
+                };
+
+                let mut file = fs::File::create(path)?;
+                let config_json = serde_json::to_string_pretty(&default_config)?;
+                file.write_all(config_json.as_bytes())?;
+
+                Err(NordVpnLiteError::InvalidConfigToken {
+                    msg: "Provide your authentication token from https://my.nordaccount.com"
+                        .to_owned(),
+                })
+            }
+            Err(err) => Err(err.into()),
+        }
     }
 
     fn resolve_log_path(log_file_path: &str) -> Result<String, NordVpnLiteError> {
