@@ -22,6 +22,7 @@ from utils.bindings import (
 from utils.connection import Connection, ConnectionTag, TargetOS
 from utils.connection_util import add_outgoing_packets_delay, toggle_secondary_adapter
 from utils.ping import ping
+from utils.telio_log_notifier import TelioLogNotifier
 
 WG_POLLING_PERIOD_S = 1
 WG_PASSIVE_KEEPALIVE_S = 10
@@ -121,7 +122,11 @@ FEATURE_ENABLED_PARAMS_RELAY = [
                     ],
                     enhanced_detection=False,
                 ),
-                marks=pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else (),
+                marks=(
+                    pytest.mark.windows
+                    if tag is ConnectionTag.VM_WINDOWS_1
+                    else pytest.mark.mac if tag is ConnectionTag.VM_MAC else ()
+                ),
             ),
             pytest.param(
                 _generate_setup_parameter_pair(
@@ -134,13 +139,18 @@ FEATURE_ENABLED_PARAMS_RELAY = [
                     ],
                     enhanced_detection=True,
                 ),
-                marks=pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else (),
+                marks=(
+                    pytest.mark.windows
+                    if tag is ConnectionTag.VM_WINDOWS_1
+                    else pytest.mark.mac if tag is ConnectionTag.VM_MAC else ()
+                ),
             ),
         )
         for tag, adapter in [
             (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.LINUX_NATIVE_TUN),
             (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
             (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+            (ConnectionTag.VM_MAC, TelioAdapterType.NEP_TUN),
         ]
     ]
     for param in param_pair
@@ -813,11 +823,32 @@ async def test_event_link_state_delayed_packet(
         # Waiting for the finish of the previous ping polling interval.
         await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
 
+        ping_task = asyncio.create_task(
+            ping(connection_alpha, beta.ip_addresses[0], None)
+        )
+        import datetime
+
+        print(datetime.datetime.now(), "Waiting for the event to happen...")
+        telio_log_notifier = await exit_stack.enter_async_context(
+            TelioLogNotifier(connection_alpha).run()
+        )
+        await telio_log_notifier.notify_output("first_tx_after_rx=Some").wait()
+        print(datetime.datetime.now(), "Happened")
+
         # alpha will only receive the ICMP reply 20s after,
         # in the meantime alpha->beta link state goes DOWN.
         ping_instant = asyncio.get_event_loop().time()
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
+
+        # TODO: maybe await?
+        print("Ping task to cancel", ping_task)
+        ping_task.cancel()
+
+        try:
+            print(datetime.datetime.now(), "Cancel the ping")
+            await ping_task
+            print(datetime.datetime.now(), "Canceled the ping")
+        except asyncio.CancelledError:
+            pass
 
         await client_alpha.wait_for_link_state(
             beta.public_key, LinkState.DOWN, resolve_idle_timeout(setup_params[0])
