@@ -1,4 +1,5 @@
 import pytest
+import re
 from contextlib import AsyncExitStack
 from helpers import SetupParameters, setup_environment
 from utils.bindings import default_features, TelioAdapterType
@@ -37,3 +38,9 @@ async def test_meshnet_id_generated_only_when_meshnet_starts() -> None:
         await client_alpha.set_meshnet_config(config)
 
         await client_alpha.wait_for_log("Meshnet ID:")
+
+        logs = await client_alpha.get_log()
+        assert re.search(
+            r"Meshnet ID: Some\(([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)",
+            logs,
+        )
