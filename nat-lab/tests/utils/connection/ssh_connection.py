@@ -44,7 +44,15 @@ class SshConnection(Connection):
         return self
 
     async def __aexit__(self, *_):
-        pass
+        await self.close()
+
+    async def close(self):
+        try:
+            self._connection.close()
+            await self._connection.wait_closed()
+        except Exception as e:
+            log.warning("[%s] Error while closing SSH connection: %s", self.tag.name, e)
+            return
 
     @classmethod
     @asynccontextmanager

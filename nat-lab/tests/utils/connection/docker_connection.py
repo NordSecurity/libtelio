@@ -186,6 +186,20 @@ class DockerConnection(Connection):
         except:
             pass  # Most of the time there will be no interface to be deleted
 
+    async def reboot(self) -> None:
+        log.info(f"[{self.tag.name}] Rebooting...")
+        await self._container.restart()
+
+    async def is_healthy(self) -> bool:
+        details = await self._container.show()
+        state = details.get("State", {})
+        health = state.get("Health", {})
+        if not health:
+            raise RuntimeError(
+                f"[{self.tag.name}] No health status available for container"
+            )
+        return health.get("Status") == "healthy"
+
 
 def container_id(tag: ConnectionTag) -> str:
     if tag in DOCKER_SERVICE_IDS:

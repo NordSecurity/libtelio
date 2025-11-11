@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 import re
+from asyncssh.misc import ConnectionLost
 from config import WG_SERVER, WG_SERVER_2, PHOTO_ALBUM_IP, STUN_SERVER, LAN_ADDR_MAP
 from contextlib import AsyncExitStack
 from helpers import print_network_state, wait_for_interface_state, wait_for_log_line
@@ -11,7 +12,7 @@ from utils.connection import Connection, ConnectionTag
 from utils.connection_util import new_connection_raw, new_connection_by_tag
 from utils.logger import log
 from utils.openwrt import start_logread_process
-from utils.ping import ping
+from utils.ping import Ping, ping
 
 NETWORK_RESTART_LOG_LINE = "netifd: Network device 'eth1' link is up"
 OPENWRT_GW_WAN_IP = "10.0.0.0"
@@ -454,3 +455,53 @@ async def test_openwrt_vpn_reconnect_different_country() -> None:
             )
         await wait_for_log_line(logread_proc)
         log.info("Network has been reloaded")
+
+
+@pytest.mark.asyncio
+@pytest.mark.openwrt
+async def test_openwrt_vpn_persists_after_reboot() -> None:
+    async with AsyncExitStack() as exit_stack:
+        # setting up openwrt environment
+        client_connection, gateway_connection, nordvpnlite = (
+            await setup_openwrt_test_environment(
+                IfcConfigType.VPN_OPENWRT_UCI_PL, exit_stack
+            )
+        )
+
+        async with nordvpnlite.start():
+            await nordvpnlite.wait_for_vpn_connected_state()
+            await check_gateway_and_client_ip(
+                gateway_connection, client_connection, WG_SERVER["ipv4"]
+            )
+            # logread_proc = await start_logread_process(
+            #     gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            # )
+
+            gw_address = await gateway_connection.get_ip_address()
+
+            try:
+                await gateway_connection.create_process(["reboot"]).execute()
+            except:
+                pass
+
+            await asyncio.sleep(5)
+            del gateway_connection
+
+            # gateway_host_connection = await exit_stack.enter_async_context(
+            #     new_connection_raw(ConnectionTag.DOCKER_OPENWRT_GW_1)
+            # )
+
+            # while not await gateway_host_connection.is_healthy():
+            #     await asyncio.sleep(3)
+            await ping(client_connection, gw_address[1])
+            gateway_connection = await exit_stack.enter_async_context(
+                new_connection_by_tag(ConnectionTag.VM_OPENWRT_GW_1)
+            )
+            nordvpnlite.connection = gateway_connection
+
+            await check_gateway_and_client_ip(
+                gateway_connection, client_connection, WG_SERVER["ipv4"]
+            )
+
+        # await wait_for_log_line(logread_proc)
+        # log.info("Network has been reloaded")

@@ -46,4 +46,17 @@ define Package/nordvpnlite/install
 	$(INSTALL_DATA) ./files/config.json $(1)/etc/nordvpnlite/config.json
 endef
 
+define Package/nordvpnlite/postinst
+      #!/bin/sh
+      /etc/init.d/nordvpnlite enable
+      exit 0
+endef
+
+define Package/nordvpnlite/prerm
+      #!/bin/sh
+      /etc/init.d/nordvpnlite stop
+      /etc/init.d/nordvpnlite disable
+      exit 0
+endef
+
 $(eval $(call BuildPackage,nordvpnlite))
