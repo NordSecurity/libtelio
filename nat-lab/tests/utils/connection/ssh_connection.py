@@ -79,6 +79,13 @@ class SshConnection(Connection):
                     await connection.copy_binaries()
 
                 if connection.target_os is TargetOS.Windows:
+
+                    print("@@@@@@@@@@@@@@ check the encoding")
+                    p = await connection.create_process(["chcp"]).execute()
+                    print("chcp stdout:", p.get_stdout())
+                    print("chcp stderr:", p.get_stderr())
+                    print("@@@@@@@@@@@@@@ end of check the encoding")
+
                     keys = await utils_win.get_network_interface_tunnel_keys(connection)
                     for key in keys:
                         await connection.create_process(
