@@ -770,3 +770,10 @@ def setup_logger(tmp_path, request):
             file_handler.close()
         else:
             pass
+
+
+@pytest.hookimpl(hookwrapper=True, tryfirst=True)
+def pytest_runtest_call(item):
+    outcome = yield
+    if outcome.excinfo is None and item.get_closest_marker("xfail") is None:
+        log.info("PASSED: %s", item.nodeid)
