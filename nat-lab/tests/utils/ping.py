@@ -67,6 +67,7 @@ class Ping:
 
     async def on_stdout(self, stdout: str) -> None:
         for line in stdout.splitlines():
+            print(f"ping: {self._connection.tag} -> {self._ip}: {line}")
             if self._ip_proto == IPProto.IPv6:
                 result = re.findall(REG_IPV6ADDR, line)
                 if result and (ip_address(result[0]) == ip_address(self._ip)):
@@ -76,7 +77,7 @@ class Ping:
                     self._next_ping_event.set()
 
     async def execute(self) -> None:
-        await self._process.execute(stdout_callback=self.on_stdout)
+        await self._process.execute(stdout_callback=self.on_stdout, stderr_callback=self.on_stdout)
 
     async def wait_for_next_ping(self, timeout: Optional[float] = None) -> None:
         self._next_ping_event.clear()
