@@ -38,8 +38,9 @@ async def copy_binaries(
         )
 
     try:
+        await connection.create_process(["opkg", "remove", "nordvpnlite"]).execute()
         await connection.create_process(
             ["opkg", "install", f"{LOCAL_BIN_DIR}{NORDVPNLITE_OWR_NAME}"]
         ).execute()
     except ProcessExecError as e:
-        raise RuntimeError(f"opkg install failed: {e.stderr}") from e
+        raise RuntimeError(f"opkg install failed: {e}") from e
