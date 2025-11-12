@@ -1079,31 +1079,20 @@ impl Runtime {
         }
 
         let link_detection = if let Some(ld_config) = features.link_detection {
-            cfg_if! {
-                if #[cfg(target_os = "windows")] {
-                    let Chan {
-                        tx: ld_observer_tx,
-                        rx: ld_observer_rx,
-                    } = Chan::default();
-                    let ld_observer = Arc::new(LinkDetectionObserver { tx: ld_observer_tx });
-                    network_monitor.register_local_interfaces_observer(Arc::downgrade(
-                        &(ld_observer.clone() as Arc<dyn LocalInterfacesObserver>),
-                    ));
-                    Some(LinkDetection::new(
-                        ld_config,
-                        features.ipv6,
-                        socket_pool.clone(),
-                        Some(ld_observer_rx),
-                        Some(ld_observer),
-                    ))
-                } else {
-                    Some(LinkDetection::new(
-                        ld_config,
-                        features.ipv6,
-                        socket_pool.clone(),
-                    ))
-                }
+            let ld = Arc::new(Mutex::new(LinkDetection::new(
+                ld_config,
+                features.ipv6,
+                socket_pool.clone(),
+            )));
+
+            #[cfg(target_os = "windows")]
+            {
+                let observer: Arc<dyn LocalInterfacesObserver> =
+                    Arc::new(LinkDetectionObserver::new(ld.clone()));
+                network_monitor.register_local_interfaces_observer(Arc::downgrade(&observer));
             }
+
+            Some(ld)
         } else {
             None
         };

@@ -5,9 +5,13 @@ use std::{
     collections::HashMap,
     default,
     net::IpAddr,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
+use tokio::sync::Mutex as TokioMutex;
 
 use telio_crypto::PublicKey;
 use telio_model::{
@@ -46,33 +50,43 @@ pub struct LinkDetection {
     use_for_downgrade: bool,
     enhanced_detection_enabled: bool,
     #[cfg(target_os = "windows")]
-    nw_change_observer_rx: Option<chan::Rx<()>>,
-    // Keeping observer handle ptr for lifetime management
-    #[cfg(target_os = "windows")]
-    _observer_handle: Option<Arc<LinkDetectionObserver>>,
+    nw_change_flag: Arc<AtomicBool>,
 }
 
-/// Observer wrapper that forwards network change events from network monitor to LinkDetection
-///
-/// This spares LinkDetection to be Send+Sync because otherwise a LinkDetection reference would need
-/// to be passed to the NetworkMonitor mod (see telio::device::Runtime::start()) just for the sake of
-/// accessing the LocalInterfacesObserver::notify() implementation.
+/// LocalInterfacesObserver wrapper for thread safety
 #[cfg(target_os = "windows")]
-#[derive(Debug)]
-pub struct LinkDetectionObserver {
-    /// Channel transmitter for sending network change notifications
-    pub tx: chan::Tx<()>,
+pub struct LinkDetectionObserver(Arc<TokioMutex<LinkDetection>>);
+
+#[cfg(target_os = "windows")]
+impl LinkDetectionObserver {
+    /// Wraps Linkdetction into LinkDetectionObserver to make LocalInterfacesObserver implementation thread safe
+    pub fn new(link_detection: Arc<TokioMutex<LinkDetection>>) -> Self {
+        Self(link_detection)
+    }
+
+    /// Returns a clone of the inner value
+    pub fn inner(&self) -> Arc<TokioMutex<LinkDetection>> {
+        self.0.clone()
+    }
 }
 
+/// Observer implementation that forwards network change events to LinkDetection
 #[cfg(target_os = "windows")]
 impl LocalInterfacesObserver for LinkDetectionObserver {
     fn notify(&self) {
         telio_log_debug!("Notified about local interfaces change");
-        // don't block or panic if the receiver is gone
-        let tx = self.tx.clone();
+        // Blocking current thread should be harmless until we have the lockguard
+        let ld = self.0.blocking_lock();
+        ld.nw_change_flag.store(true, Ordering::Release);
+        // TODO [LLT-5073]
+        // Non-blocking alternative:
+        /*
+        let arc = self.inner();
         tokio::spawn(async move {
-            let _ = tx.send(()).await;
+            let ld = arc.lock().await;
+            ld.nw_change_flag.store(true, Ordering::Release);
         });
+        */
     }
 }
 
@@ -82,8 +96,6 @@ impl LinkDetection {
         cfg: FeatureLinkDetection,
         ipv6_enabled: bool,
         socket_pool: Arc<SocketPool>,
-        #[cfg(target_os = "windows")] nw_change_observer_rx: Option<chan::Rx<()>>,
-        #[cfg(target_os = "windows")] _observer_handle: Option<Arc<LinkDetectionObserver>>,
     ) -> Self {
         let ping_channel = Chan::default();
         let enhanced_detection_enabled = cfg.no_of_pings > 0;
@@ -113,9 +125,7 @@ impl LinkDetection {
             use_for_downgrade: cfg.use_for_downgrade,
             enhanced_detection_enabled,
             #[cfg(target_os = "windows")]
-            nw_change_observer_rx,
-            #[cfg(target_os = "windows")]
-            _observer_handle,
+            nw_change_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -138,28 +148,26 @@ impl LinkDetection {
     /// This is a workaround for WireguardNT (windows): #LLT-5073
     #[cfg(target_os = "windows")]
     pub async fn handle_network_changes(&mut self) {
-        if let Some(rx) = &mut self.nw_change_observer_rx {
-            if rx.try_recv().is_ok() {
-                // On WireguardNT tx counters are not increased when the interface is disabled. It's then
-                // considered that it might have happened and thus the link state detection is triggered by
-                // artificially setting the first_ts_after_rx instant and start the countdown
-                // TODO: Implement local interfaces tracking to accurately find if the relevant interface
-                // was indeed disabled.
-                for (public_key, state) in &mut self.peers {
-                    state.stats.lock().map_or_else(
-                        |e| {
-                            telio_log_error!("poisoned lock - {}", e);
-                        },
-                        |mut stats| {
-                            telio_log_debug!(
-                                "Overriding first_tx_after_rx due to network change for: {}",
-                                public_key
-                            );
-                            stats.first_tx_after_rx = Some(Instant::now());
-                        },
-                    );
-                    state.variant = StateVariant::NetworkChanged;
-                }
+        if self.nw_change_flag.swap(false, Ordering::AcqRel) {
+            // On WireguardNT tx counters are not increased when the interface is disabled. It's then
+            // considered that it might have happened and thus the link state detection is triggered by
+            // artificially setting the first_ts_after_rx instant and start the countdown
+            // TODO: Implement local interfaces tracking to accurately find if the relevant interface
+            // was indeed disabled.
+            for (public_key, state) in &mut self.peers {
+                state.stats.lock().map_or_else(
+                    |e| {
+                        telio_log_error!("poisoned lock - {}", e);
+                    },
+                    |mut stats| {
+                        telio_log_debug!(
+                            "Overriding first_tx_after_rx due to network change for: {}",
+                            public_key
+                        );
+                        stats.first_tx_after_rx = Some(Instant::now());
+                    },
+                );
+                state.variant = StateVariant::NetworkChanged;
             }
         }
     }

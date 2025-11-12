@@ -19,6 +19,7 @@ use telio_utils::{
 };
 use thiserror::Error as TError;
 use tokio::sync::watch;
+use tokio::sync::Mutex as TokioMutex;
 use tokio::time::{self, sleep, Interval, MissedTickBehavior};
 use wireguard_uapi::xplatform::set;
 
@@ -144,8 +145,7 @@ struct State {
     // We won't be notified of any errors, but a periodic call to get_config_uapi() will return a Win32 error code != 0.
     uapi_fail_counter: i32,
 
-    // Link detection mechanism
-    link_detection: Option<LinkDetection>,
+    link_detection: Option<Arc<TokioMutex<LinkDetection>>>,
 
     libtelio_event: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
 
@@ -242,7 +242,7 @@ impl DynamicWg {
     pub async fn start(
         io: Io,
         cfg: Config,
-        link_detection: Option<LinkDetection>,
+        link_detection: Option<Arc<TokioMutex<LinkDetection>>>,
         polling_period: Duration,
         polling_period_after_update: Duration,
     ) -> Result<Self, Error>
@@ -272,7 +272,7 @@ impl DynamicWg {
     fn start_with(
         io: Io,
         adapter: Box<dyn Adapter>,
-        link_detection: Option<LinkDetection>,
+        link_detection: Option<Arc<TokioMutex<LinkDetection>>>,
         #[cfg(unix)] cfg: Config,
         polling_period: Duration,
         polling_period_after_update: Duration,
@@ -371,9 +371,10 @@ impl WireGuard for DynamicWg {
 
     async fn get_link_state(&self, key: PublicKey) -> Result<Option<LinkState>, Error> {
         Ok(task_exec!(&self.task, async move |s| {
-            Ok(s.link_detection
-                .as_ref()
-                .and_then(|ld| ld.get_link_state_for_downgrade(&key)))
+            Ok(match s.link_detection.as_ref() {
+                Some(ld) => ld.lock().await.get_link_state_for_downgrade(&key),
+                None => None,
+            })
         })
         .await?)
     }
@@ -646,9 +647,9 @@ impl State {
                 "Disconnected peer missing from old list",
             ))?;
 
-            // Remove all disconnected peers from no link detection mechanism
-            if let Some(link_detection) = self.link_detection.as_mut() {
-                link_detection.remove(key);
+            // Remove all disconnected peers from link detection mechanism
+            if let Some(link_detection) = &self.link_detection {
+                link_detection.lock().await.remove(key);
             }
 
             self.send_event(
@@ -673,8 +674,8 @@ impl State {
                 .ok_or(Error::InternalError("No stats available for peer"))?;
 
             // Node is new and default LinkState is down. Save it before sending the event
-            if let Some(link_detection) = self.link_detection.as_mut() {
-                link_detection.insert(key, stats.clone());
+            if let Some(link_detection) = &self.link_detection {
+                link_detection.lock().await.insert(key, stats.clone());
             }
 
             self.send_event(
@@ -698,8 +699,8 @@ impl State {
 
         // This is a workaround for WireguardNT (windows): #LLT-5073
         #[cfg(target_os = "windows")]
-        if let Some(link_detection) = self.link_detection.as_mut() {
-            link_detection.handle_network_changes().await;
+        if let Some(link_detection) = &self.link_detection {
+            link_detection.lock().await.handle_network_changes().await;
         }
 
         // Check for updates, and notify
@@ -708,17 +709,18 @@ impl State {
                 let old_state = old.state();
                 let new_state = new.state();
                 let node_addresses = new.ip_addresses.clone();
-                let link_detection_update_result = {
-                    if let Some(link_detection) = self.link_detection.as_mut() {
+                let link_detection_update_result =
+                    if let Some(link_detection) = &self.link_detection {
                         link_detection
+                            .lock()
+                            .await
                             .update(key, node_addresses, reason, self.ip_stack.clone())
                             .await
                     } else {
                         LinkDetectionUpdateResult {
                             ..Default::default()
                         }
-                    }
-                };
+                    };
 
                 if !old.is_same_event(new)
                     || old_state != new_state
@@ -1016,7 +1018,18 @@ impl Runtime for State {
     async fn stop(self) {
         self.adapter.stop().await;
         if let Some(link_detection) = self.link_detection {
-            link_detection.stop().await;
+            match Arc::try_unwrap(link_detection) {
+                Ok(ld) => {
+                    ld.into_inner().stop().await;
+                }
+                Err(ld) => {
+                    // This shouldn't happen since the only other reference, telio-monitor, which is Weak
+                    telio_log_error!(
+                        "Cannot stop LinkDetection: {} strong references",
+                        Arc::strong_count(&ld)
+                    );
+                }
+            }
         }
     }
 }
