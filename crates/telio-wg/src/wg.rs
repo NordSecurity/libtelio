@@ -19,6 +19,7 @@ use telio_utils::{
 };
 use thiserror::Error as TError;
 use tokio::sync::watch;
+use tokio::sync::Mutex as TokioMutex;
 use tokio::time::{self, sleep, Interval, MissedTickBehavior};
 use wireguard_uapi::xplatform::set;
 
@@ -202,7 +203,7 @@ struct State {
     event: Tx<Box<Event>>,
     analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
     uapi_error_tracker: UAPIErrorTracker,
-    // Link detection mechanism
+
     link_detection: Option<LinkDetection>,
 
     libtelio_event: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
@@ -411,9 +412,10 @@ impl WireGuard for DynamicWg {
 
     async fn get_link_state(&self, key: PublicKey) -> Result<Option<LinkState>, Error> {
         Ok(task_exec!(&self.task, async move |s| {
-            Ok(s.link_detection
-                .as_ref()
-                .and_then(|ld| ld.get_link_state_for_downgrade(&key)))
+            Ok(match s.link_detection.as_ref() {
+                Some(ld) => ld.get_link_state_for_downgrade(&key),
+                None => None,
+            })
         })
         .await?)
     }
@@ -686,8 +688,8 @@ impl State {
                 "Disconnected peer missing from old list",
             ))?;
 
-            // Remove all disconnected peers from no link detection mechanism
-            if let Some(link_detection) = self.link_detection.as_mut() {
+            // Remove all disconnected peers from link detection mechanism
+            if let Some(link_detection) = &mut self.link_detection {
                 link_detection.remove(key);
             }
 
@@ -713,7 +715,7 @@ impl State {
                 .ok_or(Error::InternalError("No stats available for peer"))?;
 
             // Node is new and default LinkState is down. Save it before sending the event
-            if let Some(link_detection) = self.link_detection.as_mut() {
+            if let Some(link_detection) = &mut self.link_detection {
                 link_detection.insert(key, stats.clone());
             }
 
@@ -736,20 +738,14 @@ impl State {
             }
         }
 
-        // This is a workaround for WireguardNT (windows): #LLT-5073
-        #[cfg(target_os = "windows")]
-        if let Some(link_detection) = self.link_detection.as_mut() {
-            link_detection.handle_network_changes().await;
-        }
-
         // Check for updates, and notify
         for key in &diff_keys.update_keys {
             if let (Some(old), Some(new)) = (from.peers.get(key), to.peers.get(key)) {
                 let old_state = old.state();
                 let new_state = new.state();
                 let node_addresses = new.ip_addresses.clone();
-                let link_detection_update_result = {
-                    if let Some(link_detection) = self.link_detection.as_mut() {
+                let link_detection_update_result =
+                    if let Some(link_detection) = &mut self.link_detection {
                         link_detection
                             .update(key, node_addresses, reason, self.ip_stack.clone())
                             .await
@@ -757,8 +753,7 @@ impl State {
                         LinkDetectionUpdateResult {
                             ..Default::default()
                         }
-                    }
-                };
+                    };
 
                 if !old.is_same_event(new)
                     || old_state != new_state
@@ -905,6 +900,13 @@ impl State {
         self.stats.retain(|pk, _| to.peers.contains_key(pk));
 
         // Diff and report events
+
+        // This is a workaround for WireguardNT (windows): #LLT-5073
+        // Manipulate first_tx_after_rx indicator on any interface change
+        #[cfg(target_os = "windows")]
+        if let Some(link_detection) = &mut self.link_detection {
+            link_detection.handle_network_changes().await;
+        }
 
         // Adapter doesn't keep track of mesh addresses, or endpoint changes,
         // therefore they are not retrieved from UAPI requests
@@ -1054,9 +1056,6 @@ impl Runtime for State {
 
     async fn stop(self) {
         self.adapter.stop().await;
-        if let Some(link_detection) = self.link_detection {
-            link_detection.stop().await;
-        }
     }
 }
 

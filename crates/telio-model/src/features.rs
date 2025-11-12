@@ -516,7 +516,7 @@ pub struct FeatureLinkDetection {
     #[default = 15]
     pub rtt_seconds: u64,
 
-    /// Check the link state before reporting it as down
+    /// Check the link state before reporting it as down (Windows only)
     #[default = 0]
     pub no_of_pings: u32,
 

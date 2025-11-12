@@ -6,12 +6,11 @@
 //! Interface between [WireGuard](https://wireguard.com/) and the telio library
 
 pub(crate) mod adapter;
+pub(crate) mod link_detection;
 pub(crate) mod wg;
 pub(crate) mod windows;
 
 pub mod uapi;
-
-pub mod link_detection;
 
 pub use crate::{
     adapter::{Adapter, AdapterType, Error, FirewallInboundCb, FirewallOutboundCb, Tun},
@@ -20,4 +19,4 @@ pub use crate::{
 };
 
 #[cfg(target_os = "windows")]
-pub use crate::link_detection::LinkDetectionObserver;
+pub use crate::windows::link_detection_observer::LinkDetectionObserver;
