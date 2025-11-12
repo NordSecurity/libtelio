@@ -1,6 +1,9 @@
 import asyncio
 import re
 import secrets
+import logging
+from utils.logger import log
+import datetime
 from contextlib import asynccontextmanager
 from ipaddress import ip_address
 from typing import AsyncIterator, Optional
@@ -67,7 +70,11 @@ class Ping:
 
     async def on_stdout(self, stdout: str) -> None:
         for line in stdout.splitlines():
-            print(f"ping: {self._connection.tag} -> {self._ip}: {line}")
+            log.debug(f"ping: {self._connection.tag} -> {self._ip}: {line}")
+            log.warning(f"ping: {self._connection.tag} -> {self._ip}: {line}")
+            print(
+                f"{datetime.datetime.now()} ping: {self._connection.tag} -> {self._ip}: {line}"
+            )
             if self._ip_proto == IPProto.IPv6:
                 result = re.findall(REG_IPV6ADDR, line)
                 if result and (ip_address(result[0]) == ip_address(self._ip)):
@@ -77,7 +84,12 @@ class Ping:
                     self._next_ping_event.set()
 
     async def execute(self) -> None:
-        await self._process.execute(stdout_callback=self.on_stdout, stderr_callback=self.on_stdout)
+        print(
+            f"{datetime.datetime.now()} ping: execute {self._connection.tag} -> {self._ip}"
+        )
+        await self._process.execute(
+            stdout_callback=self.on_stdout, stderr_callback=self.on_stdout
+        )
 
     async def wait_for_next_ping(self, timeout: Optional[float] = None) -> None:
         self._next_ping_event.clear()
@@ -90,5 +102,10 @@ class Ping:
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["Ping"]:
-        async with self._process.run(stdout_callback=self.on_stdout):
+        print(
+            f"{datetime.datetime.now()} ping: run {self._connection.tag} -> {self._ip}"
+        )
+        async with self._process.run(
+            stdout_callback=self.on_stdout, stderr_callback=self.on_stdout
+        ):
             yield self
