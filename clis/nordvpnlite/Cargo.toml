@@ -31,7 +31,6 @@ reqwest = { version = "0.12.23", default-features = false, features = [
 ] }
 uuid = { workspace = true, features = ["serde"] }
 anyhow.workspace = true
-smart-default = "0.7.1"
 base64 = "0.22.1"
 daemonize = "0.5.0"
 rand.workspace = true
