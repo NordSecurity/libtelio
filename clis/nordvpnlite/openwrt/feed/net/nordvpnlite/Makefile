@@ -60,7 +60,6 @@ define Package/nordvpnlite/prerm
 #!/bin/sh
 if [ -z "$${IPKG_INSTROOT}" ]; then
 	echo "Disabling nordvpnlite service"
-	/etc/init.d/nordvpnlite stop
 	/etc/init.d/nordvpnlite disable
 fi
 exit 0
