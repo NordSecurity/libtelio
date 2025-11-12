@@ -1,8 +1,11 @@
 use std::{collections::HashMap, os::fd::AsRawFd, sync::Arc, time::Duration};
 
+use base64::{prelude::BASE64_STANDARD, Engine};
 use telio_model::PublicKey;
+use telio_utils::telio_log_debug;
 use telio_wg::Adapter;
 
+#[derive(Debug)]
 pub struct WgDevice {
     pub private_key: Option<String>,
     pub listen_port: Option<u16>,
@@ -11,6 +14,7 @@ pub struct WgDevice {
     pub peers: Vec<WgPeer>,
 }
 
+#[derive(Debug, Clone)]
 pub struct WgInterface {
     pub private_key: Option<String>,
     pub listen_port: Option<u16>,
@@ -18,11 +22,13 @@ pub struct WgInterface {
     pub peers: HashMap<String, WgPeer>,
 }
 
+#[derive(Debug, Clone)]
 pub struct WgResponse {
     pub errno: i32,
     pub interface: Option<WgInterface>,
 }
 
+#[derive(Debug, Clone)]
 pub struct WgPeer {
     pub public_key: String,
     /// Peer's endpoint with `IP address` and `UDP port` number
@@ -78,13 +84,25 @@ impl Into<telio_wg::uapi::Peer> for WgPeer {
             ip_addresses: self
                 .ip_addresses
                 .into_iter()
-                .map(|s| s.parse().unwrap())
+                .flat_map(|s| match s.parse() {
+                    Ok(ip) => Some(ip),
+                    Err(e) => {
+                        telio_log_debug!("Failed to parse '{s}' as an IP: {e}");
+                        None
+                    }
+                })
                 .collect(),
             persistent_keepalive_interval: self.persistent_keepalive_interval,
             allowed_ips: self
                 .allowed_ips
                 .into_iter()
-                .map(|ip| ip.parse().unwrap())
+                .flat_map(|ip| match ip.parse() {
+                    Ok(ip) => Some(ip),
+                    Err(e) => {
+                        telio_log_debug!("Failed to parse '{ip}' as an allowed ip: {e}");
+                        None
+                    }
+                })
                 .collect(),
             rx_bytes: self.rx_bytes,
             time_since_last_rx: self.time_since_last_rx_ms.map(|d| Duration::from_millis(d)),
@@ -97,6 +115,7 @@ impl Into<telio_wg::uapi::Peer> for WgPeer {
     }
 }
 
+#[derive(Debug)]
 pub enum WgCmd {
     Get,
     Set { device: WgDevice },
@@ -116,12 +135,14 @@ pub trait TelioCustomAdapter: Send + Sync {
 }
 
 fn convert_cmd(cmd: &telio_wg::uapi::Cmd) -> WgCmd {
-    match cmd {
+    let ret = match cmd {
         telio_wg::uapi::Cmd::Get => WgCmd::Get,
         telio_wg::uapi::Cmd::Set(device) => WgCmd::Set {
             device: convert_device(device),
         },
-    }
+    };
+    telio_log_debug!("Converting a uapi command to WgCmd {cmd:?} => {ret:?}");
+    ret
 }
 
 fn convert_device(device: &wireguard_uapi::xplatform::set::Device) -> WgDevice {
@@ -129,7 +150,7 @@ fn convert_device(device: &wireguard_uapi::xplatform::set::Device) -> WgDevice {
         private_key: device
             .private_key
             .as_ref()
-            .map(|k| String::from_utf8(k.to_vec()).unwrap()),
+            .map(|k| BASE64_STANDARD.encode(k)),
         listen_port: device.listen_port,
         fwmark: device.fwmark,
         replace_peers: device.replace_peers,
@@ -138,15 +159,19 @@ fn convert_device(device: &wireguard_uapi::xplatform::set::Device) -> WgDevice {
 }
 
 fn convert_wg_response(response: WgResponse) -> telio_wg::uapi::Response {
-    telio_wg::uapi::Response {
+    let tmp = response.clone();
+    let ret = telio_wg::uapi::Response {
         errno: response.errno,
         interface: response.interface.map(convert_wg_interface),
-    }
+    };
+    telio_log_debug!("Converting WgResponse to uapi: {tmp:?} => {ret:?}");
+    ret
 }
 
 fn convert_wg_interface(interface: WgInterface) -> telio_wg::uapi::Interface {
+    telio_log_debug!("convert wg interface: {interface:?}");
     telio_wg::uapi::Interface {
-        private_key: interface.private_key.map(|s| s.parse().unwrap()),
+        private_key: interface.private_key.and_then(|s| s.parse().ok()),
         listen_port: interface.listen_port,
         proxy_listen_port: None, // TODO
         fwmark: interface.fwmark,
