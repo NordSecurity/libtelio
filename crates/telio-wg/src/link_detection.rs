@@ -1,13 +1,16 @@
 //! Component that defines a peer link state, computing if its up/down.
-mod enhanced_detection;
 
 use std::{
     collections::HashMap,
     default,
     net::IpAddr,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
+use tokio::sync::Mutex as TokioMutex;
 
 use telio_crypto::PublicKey;
 use telio_model::{
@@ -22,7 +25,9 @@ use telio_utils::{
     telio_log_warn, Instant, IpStack,
 };
 
-use self::enhanced_detection::EnhancedDetection;
+#[cfg(target_os = "windows")]
+use crate::EnhancedLinkDetection;
+
 use crate::{
     uapi::UpdateReason,
     wg::{BytesAndTimestamps, WG_KEEPALIVE},
@@ -40,82 +45,29 @@ use crate::{
 /// - Configurable RTT thresholds and downgrade behavior
 pub struct LinkDetection {
     cfg_max_allowed_rtt: Duration,
-    enhanced_detection: Option<EnhancedDetection>,
-    ping_channel: chan::Tx<(Vec<IpAddr>, Option<IpStack>)>,
+    #[cfg(target_os = "windows")]
+    enhanced_detection: Arc<EnhancedLinkDetection>,
     peers: HashMap<PublicKey, State>,
     use_for_downgrade: bool,
-    enhanced_detection_enabled: bool,
-    #[cfg(target_os = "windows")]
-    nw_change_observer_rx: Option<chan::Rx<()>>,
-    // Keeping observer handle ptr for lifetime management
-    #[cfg(target_os = "windows")]
-    _observer_handle: Option<Arc<LinkDetectionObserver>>,
-}
-
-/// Observer wrapper that forwards network change events from network monitor to LinkDetection
-///
-/// This spares LinkDetection to be Send+Sync because otherwise a LinkDetection reference would need
-/// to be passed to the NetworkMonitor mod (see telio::device::Runtime::start()) just for the sake of
-/// accessing the LocalInterfacesObserver::notify() implementation.
-#[cfg(target_os = "windows")]
-#[derive(Debug)]
-pub struct LinkDetectionObserver {
-    /// Channel transmitter for sending network change notifications
-    pub tx: chan::Tx<()>,
-}
-
-#[cfg(target_os = "windows")]
-impl LocalInterfacesObserver for LinkDetectionObserver {
-    fn notify(&self) {
-        telio_log_debug!("Notified about local interfaces change");
-        // don't block or panic if the receiver is gone
-        let tx = self.tx.clone();
-        tokio::spawn(async move {
-            let _ = tx.send(()).await;
-        });
-    }
 }
 
 impl LinkDetection {
     /// Creates a new `LinkDetection` instance with the specified configuration.
     pub fn new(
         cfg: FeatureLinkDetection,
-        ipv6_enabled: bool,
-        socket_pool: Arc<SocketPool>,
-        #[cfg(target_os = "windows")] nw_change_observer_rx: Option<chan::Rx<()>>,
-        #[cfg(target_os = "windows")] _observer_handle: Option<Arc<LinkDetectionObserver>>,
+        #[cfg(target_os = "windows")] enhanced_detection: Arc<EnhancedLinkDetection>,
     ) -> Self {
-        let ping_channel = Chan::default();
-        let enhanced_detection_enabled = cfg.no_of_pings > 0;
-        let enhanced_detection = if enhanced_detection_enabled || cfg!(target_os = "windows") {
-            EnhancedDetection::start_with(
-                ping_channel.rx,
-                cfg.no_of_pings,
-                ipv6_enabled,
-                socket_pool,
-            )
-            .ok()
-        } else {
-            None
-        };
-
         telio_log_debug!(
-            "instantiating link detection. cfg.rtt_seconds: {:?}, enhanced_detection: {}",
-            cfg.rtt_seconds,
-            enhanced_detection.is_some(),
+            "instantiating link detection. cfg.rtt_seconds: {:?}",
+            cfg.rtt_seconds
         );
 
         LinkDetection {
             cfg_max_allowed_rtt: Duration::from_secs(cfg.rtt_seconds),
+            #[cfg(target_os = "windows")]
             enhanced_detection,
-            ping_channel: ping_channel.tx,
             peers: HashMap::default(),
             use_for_downgrade: cfg.use_for_downgrade,
-            enhanced_detection_enabled,
-            #[cfg(target_os = "windows")]
-            nw_change_observer_rx,
-            #[cfg(target_os = "windows")]
-            _observer_handle,
         }
     }
 
@@ -138,28 +90,30 @@ impl LinkDetection {
     /// This is a workaround for WireguardNT (windows): #LLT-5073
     #[cfg(target_os = "windows")]
     pub async fn handle_network_changes(&mut self) {
-        if let Some(rx) = &mut self.nw_change_observer_rx {
-            if rx.try_recv().is_ok() {
-                // On WireguardNT tx counters are not increased when the interface is disabled. It's then
-                // considered that it might have happened and thus the link state detection is triggered by
-                // artificially setting the first_ts_after_rx instant and start the countdown
-                // TODO: Implement local interfaces tracking to accurately find if the relevant interface
-                // was indeed disabled.
-                for (public_key, state) in &mut self.peers {
-                    state.stats.lock().map_or_else(
-                        |e| {
-                            telio_log_error!("poisoned lock - {}", e);
-                        },
-                        |mut stats| {
-                            telio_log_debug!(
-                                "Overriding first_tx_after_rx due to network change for: {}",
-                                public_key
-                            );
-                            stats.first_tx_after_rx = Some(Instant::now());
-                        },
-                    );
-                    state.variant = StateVariant::NetworkChanged;
-                }
+        if self
+            .enhanced_detection
+            .nw_change_flag
+            .swap(false, Ordering::AcqRel)
+        {
+            // On WireguardNT tx counters are not increased when the interface is disabled. It's then
+            // considered that it might have happened and thus the link state detection is triggered by
+            // artificially setting the first_ts_after_rx instant and start the countdown
+            // TODO: Implement local interfaces tracking to accurately find if the relevant interface
+            // was indeed disabled.
+            for (public_key, state) in &mut self.peers {
+                state.stats.lock().map_or_else(
+                    |e| {
+                        telio_log_error!("poisoned lock - {}", e);
+                    },
+                    |mut stats| {
+                        telio_log_debug!(
+                            "Overriding first_tx_after_rx due to network change for: {}",
+                            public_key
+                        );
+                        stats.first_tx_after_rx = Some(Instant::now());
+                    },
+                );
+                state.variant = StateVariant::NetworkChanged;
             }
         }
     }
@@ -189,19 +143,14 @@ impl LinkDetection {
         }
 
         if let Some(state) = self.peers.get_mut(public_key) {
-            let result = state.update(self.cfg_max_allowed_rtt, self.enhanced_detection_enabled);
+            let result = state.update(self.cfg_max_allowed_rtt);
 
-            telio_log_debug!(
-                "enhanced detection: {}, result.should_ping: {}. result.link_detection_update_result: {:?}",
-                self.enhanced_detection_enabled,
-                result.should_ping,
-                result.link_detection_update_result
-            );
-            if (self.enhanced_detection_enabled || cfg!(target_os = "windows"))
-                && result.should_ping
-            {
+            telio_log_debug!("{:?}", result.link_detection_update_result);
+            #[cfg(target_os = "windows")]
+            if result.should_ping {
                 if let Err(e) = self
-                    .ping_channel
+                    .enhanced_detection
+                    .pinger_tx
                     .send((node_addresses, curr_ip_stack))
                     .await
                 {
@@ -236,8 +185,13 @@ impl LinkDetection {
 
     /// Stops the link detection component, releasing any associated resources.
     pub async fn stop(self) {
-        if let Some(ed) = self.enhanced_detection {
-            ed.stop().await;
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(enhanced) = Arc::try_unwrap(self.enhanced_detection) {
+                enhanced.stop().await;
+            } else {
+                telio_log_warn!("Unable to stop enhanced detection, strong reference exists.")
+            }
         }
     }
 
@@ -280,9 +234,9 @@ pub struct LinkDetectionUpdateResult {
 // Transitions to StateVariant::Up are straight forward, when the is_link_up condition is true.
 // Transition from StateVariant::Up to StateVariant::Down is made through the StateVariant::PossibleDown state.
 // Transition from StateVariant::Up to StateVariant::PossibleDown, when the is_link_up condition is false.
-// A ICMP ping request may be triggered from  PossibleDown when the ED is enabled, or (wireguardNT exclusive) from the
-// StateVariant::Up state regardless of the ED state a network interface change is detected.
-// StateVariant::PossibleDown which introduces a little delay of 3 seconds (or more for ED) until we report link state Down.
+// StateVariant::PossibleDown introduces a delay of 3 seconds (State::POSSIBLE_DOWN_DELAY) until we report link state Down.
+// Note (Windows): A ICMP ping request may be triggered using the EnhancedLinkDetection module from the
+// StateVariant::Up state when a network interface change is detected.
 #[derive(Debug)]
 enum StateVariant {
     Down,
@@ -296,6 +250,7 @@ enum StateVariant {
 
 #[derive(Debug)]
 struct StateUpdateResult {
+    #[cfg(target_os = "windows")]
     should_ping: bool,
     link_detection_update_result: LinkDetectionUpdateResult,
 }
@@ -304,6 +259,7 @@ struct StateUpdateResult {
 enum StateDecision {
     NoAction,
     Notify,
+    #[cfg(target_os = "windows")]
     Ping,
 }
 
@@ -312,6 +268,7 @@ impl StateDecision {
         matches!(self, StateDecision::Notify)
     }
 
+    #[cfg(target_os = "windows")]
     fn should_ping(&self) -> bool {
         matches!(self, StateDecision::Ping)
     }
@@ -345,7 +302,7 @@ impl State {
         }
     }
 
-    fn update(&mut self, cfg_max_allowed_rtt: Duration, ping_enabled: bool) -> StateUpdateResult {
+    fn update(&mut self, cfg_max_allowed_rtt: Duration) -> StateUpdateResult {
         let now = Instant::now();
         let is_link_up = match self.stats.lock() {
             Ok(s) => s.is_link_up(cfg_max_allowed_rtt, now),
@@ -387,38 +344,25 @@ impl State {
 
             StateVariant::Up => {
                 if !is_link_up {
-                    // Transition to PossibleDown
-                    // No notify for now
-
-                    let delay = if ping_enabled {
-                        // If enhanced detection is enabled we will issue an ICMP echo request
-                        // The maximum waiting time for a response can be WG_KEEPALIVE + rtt
-                        // We will receive either an ICMP response or a Passive Keepalive message
-                        WG_KEEPALIVE
-                            .checked_add(cfg_max_allowed_rtt)
-                            .unwrap_or(WG_KEEPALIVE)
-                    } else {
-                        Self::POSSIBLE_DOWN_DELAY
-                    };
+                    let delay = Self::POSSIBLE_DOWN_DELAY;
 
                     self.variant = StateVariant::PossibleDown {
                         deadline: now.checked_add(delay).unwrap_or(now),
                     };
                     telio_log_debug!("Possibly down. delay={:?}", delay);
-                    if ping_enabled {
-                        return Self::build_result(StateDecision::Ping, LinkState::Up);
-                    }
                 } else {
-                    // Current link_state is Up
-                    telio_log_debug!("definitely up");
+                    telio_log_debug!("Definitely up");
                 }
+
+                // Nothing to do, delay timer have started if link down
                 Self::build_result(StateDecision::NoAction, LinkState::Up)
             }
 
             #[cfg(target_os = "windows")]
             StateVariant::NetworkChanged => {
-                telio_log_debug!("Network interfaces have changed making peer link state unreliable, will ping regardless of enhanced detection state ({})", ping_enabled);
+                telio_log_debug!("Network interfaces have changed making peer link state unreliable, will send ICMP request");
                 self.variant = StateVariant::Up;
+
                 Self::build_result(StateDecision::Ping, LinkState::Up)
             }
         }
@@ -435,6 +379,7 @@ impl State {
 
     fn build_result(state_decision: StateDecision, link_state: LinkState) -> StateUpdateResult {
         StateUpdateResult {
+            #[cfg(target_os = "windows")]
             should_ping: state_decision.should_ping(),
             link_detection_update_result: LinkDetectionUpdateResult {
                 should_notify: state_decision.should_notify(),
@@ -492,7 +437,7 @@ mod tests {
 
         time::advance(WG_KEEPALIVE).await;
 
-        state.update(Duration::ZERO, false);
+        state.update(Duration::ZERO);
         assert!(matches!(state.variant, StateVariant::Down));
 
         assert!(matches!(state.variant, StateVariant::Down));
@@ -502,7 +447,7 @@ mod tests {
         state.stats.lock().unwrap().update(1, 1, Instant::now());
         assert!(matches!(state.variant, StateVariant::Down));
 
-        state.update(Duration::ZERO, false);
+        state.update(Duration::ZERO);
         assert!(matches!(state.variant, StateVariant::Up));
     }
 
@@ -520,7 +465,7 @@ mod tests {
         state.stats.lock().unwrap().update(0, 1, Instant::now());
         time::advance(WG_KEEPALIVE).await;
 
-        state.update(Duration::ZERO, false);
+        state.update(Duration::ZERO);
         assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
     }
 
@@ -539,7 +484,7 @@ mod tests {
         assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
 
         time::advance(Duration::from_secs(3)).await;
-        state.update(Duration::ZERO, false);
+        state.update(Duration::ZERO);
         assert!(matches!(state.variant, StateVariant::Down));
     }
 
@@ -558,7 +503,7 @@ mod tests {
         assert!(matches!(state.variant, StateVariant::PossibleDown { .. }));
 
         state.stats.lock().unwrap().update(1, 1, Instant::now());
-        state.update(ONE_SECOND, false);
+        state.update(ONE_SECOND);
         assert!(matches!(state.variant, StateVariant::Up));
     }
 
