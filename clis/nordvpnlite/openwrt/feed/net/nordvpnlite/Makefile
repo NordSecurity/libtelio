@@ -47,22 +47,22 @@ define Package/nordvpnlite/install
 endef
 
 define Package/nordvpnlite/postinst
-#!/bin/sh
-# check if we are on real system
-if [ -z "$${IPKG_INSTROOT}" ]; then
-	echo "Enabling nordvpnlite service"
-	/etc/init.d/nordvpnlite enable
-fi
-exit 0
+	#!/bin/sh
+	# check if we are on real system
+	if [ -z "$${IPKG_INSTROOT}" ]; then
+		echo "Enabling nordvpnlite service"
+		/etc/init.d/nordvpnlite enable
+	fi
+	exit 0
 endef
 
 define Package/nordvpnlite/prerm
-#!/bin/sh
-if [ -z "$${IPKG_INSTROOT}" ]; then
-	echo "Disabling nordvpnlite service"
-	/etc/init.d/nordvpnlite disable
-fi
-exit 0
+	#!/bin/sh
+	if [ -z "$${IPKG_INSTROOT}" ]; then
+		echo "Disabling nordvpnlite service"
+		/etc/init.d/nordvpnlite disable
+	fi
+	exit 0
 endef
 
 $(eval $(call BuildPackage,nordvpnlite))
