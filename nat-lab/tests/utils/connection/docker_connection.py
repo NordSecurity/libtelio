@@ -9,7 +9,7 @@ from subprocess import run, DEVNULL
 from typing import List, Type, Dict, AsyncIterator
 from typing_extensions import Self
 from utils.logger import log
-from utils.process import Process, DockerProcess
+from utils.process import Process, DockerProcess, ProcessExecError
 
 DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_CONE_CLIENT_1: "cone-client-01",
@@ -39,6 +39,7 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_UDP_BLOCK_GW_2: "udp-block-gw-02",
     ConnectionTag.DOCKER_UPNP_GW_1: "upnp-gw-01",
     ConnectionTag.DOCKER_UPNP_GW_2: "upnp-gw-02",
+    ConnectionTag.DOCKER_OPENWRT_GW_1: "openwrt-gw-01",
     ConnectionTag.DOCKER_VPN_1: "vpn-01",
     ConnectionTag.DOCKER_VPN_2: "vpn-02",
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "internal-symmetric-gw-01",
@@ -94,13 +95,21 @@ class DockerConnection(Connection):
         self._container = container
 
     async def __aenter__(self):
-        await self.restore_ip_tables()
+        try:
+            await self.restore_ip_tables()
+        except ProcessExecError as e:
+            if e.stderr == "Can't open iptables_backup: No such file or directory":
+                log.warning(e)
         await self.clean_interface()
         await setup_ephemeral_ports(self)
         return self
 
     async def __aexit__(self, *_):
-        await self.restore_ip_tables()
+        try:
+            await self.restore_ip_tables()
+        except ProcessExecError as e:
+            if e.stderr == "Can't open iptables_backup: No such file or directory":
+                log.warning(e)
         await self.clean_interface()
 
     @classmethod
