@@ -9,11 +9,8 @@ from ipaddress import ip_address
 from typing import AsyncIterator, Optional
 from utils import testing
 from utils.connection import Connection, TargetOS
-from utils.process import Process
+from utils.process import Process, ProcessExecError
 from utils.router import IPProto, REG_IPV6ADDR, get_ip_address_type
-
-# This utility uses the standard OS provided `ping` binaries.
-# It should work for Linux, Windows and Mac.
 
 
 async def ping(
@@ -24,6 +21,59 @@ async def ping(
             ping_process.wait_for_any_ping(timeout),
             name=f"ping({connection}, {ip}, {timeout})",
         )
+
+
+async def ping_once(connection: Connection, ip: str) -> None:
+    ip_proto = testing.unpack_optional(get_ip_address_type(ip))
+
+    if connection.target_os == TargetOS.Windows:
+        cmd = [
+            "ping",
+            "-4" if ip_proto == IPProto.IPv4 else "-6",
+            "-n",
+            "1",
+            "-w",
+            "1000",
+            ip,
+        ]
+    elif connection.target_os == TargetOS.Mac:
+        cmd = [
+            "ping" if ip_proto == IPProto.IPv4 else "ping6",
+            "-c",
+            "1",
+            "-W",
+            "1",
+            ip,
+        ]
+    else:
+        cmd = [
+            "ping",
+            "-4" if ip_proto == IPProto.IPv4 else "-6",
+            "-c",
+            "1",
+            "-W",
+            "1",
+            ip,
+        ]
+
+    proc = connection.create_process(cmd, quiet=True)
+    try:
+        await proc.execute()
+    except ProcessExecError as e:
+        out = proc.get_stdout().lower()
+        print("================= ", datetime.datetime.now())
+        print(proc.get_stdout())
+        print(proc.get_stderr())
+        print("=================")
+
+        if (
+            "1 packets transmitted" in out
+            or "1 packet transmitted" in out
+            or "sent = 1" in out
+        ):
+            return
+
+        raise e
 
 
 class Ping:
