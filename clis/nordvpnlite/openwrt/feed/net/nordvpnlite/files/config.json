@@ -1,5 +1,5 @@
 {
-  "authentication_token": "<REPLACE_WITH_YOUR_TOKEN>",
+  "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "vpn": "recommended",
   "log_level": "error",
   "log_file_path": "/var/log/nordvpnlite.log",
