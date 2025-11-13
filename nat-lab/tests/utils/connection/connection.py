@@ -38,6 +38,7 @@ class ConnectionTag(Enum):
     DOCKER_UDP_BLOCK_GW_2 = auto()
     DOCKER_UPNP_GW_1 = auto()
     DOCKER_UPNP_GW_2 = auto()
+    DOCKER_OPENWRT_GW_1 = auto()
     VM_OPENWRT_GW_1 = auto()
     DOCKER_VPN_1 = auto()
     DOCKER_VPN_2 = auto()
