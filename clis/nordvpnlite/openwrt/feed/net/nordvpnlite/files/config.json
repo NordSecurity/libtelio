@@ -7,7 +7,7 @@
   "adapter_type": "linux-native",
   "interface": {
     "name": "nordvpnlite",
-    "start_route_priority": 6000,
+    "max_route_priority": 6000,
     "config_provider": "uci"
   }
 }
