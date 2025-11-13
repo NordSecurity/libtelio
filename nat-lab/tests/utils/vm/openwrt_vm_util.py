@@ -8,7 +8,7 @@ DIST_PATH = f"dist/openwrt/{os.getenv('TELIO_BIN_PROFILE')}/x86_64/"
 NATLAB_DATA_PATH = "nat-lab/data/"
 LOCAL_BIN_DIR = "/tmp/"
 OWR_CERT_PATH = "/etc/ssl/server_certificate/"
-NORDVPNLITE_OWR_NAME = "nordvpnlite_1.0.0-r1_x86_64.ipk"
+NORDVPNLITE_OWR_NAME = "nordvpnlite_0.1.0-r1_x86_64.ipk"
 CERT_FILE_NAME = "test.pem"
 
 
