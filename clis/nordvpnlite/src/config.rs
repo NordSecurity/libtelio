@@ -298,6 +298,7 @@ impl Default for NordVpnLiteConfig {
             interface: InterfaceConfig {
                 name: "nlx".to_string(),
                 config_provider: Default::default(),
+                max_route_priority: None,
             },
             vpn: Default::default(),
             dns: dns_default(),
@@ -438,6 +439,7 @@ mod tests {
             interface: InterfaceConfig {
                 name: "utun10".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
+                max_route_priority: None,
             },
             vpn: Default::default(),
             dns: dns_default(),

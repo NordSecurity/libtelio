@@ -70,6 +70,25 @@ fn execute_with_output(command: &mut Command) -> Result<String, NordVpnLiteError
     }
 }
 
+/// Helper to find the lower available priorities in descending order
+fn get_available_priorities(
+    count: usize,
+    start_prio: u32,
+    existing_prios: &[u32],
+) -> Result<Vec<u32>, NordVpnLiteError> {
+    let available_prios: Vec<u32> = (1..start_prio)
+        .rev()
+        .filter(|prio| !existing_prios.contains(prio))
+        .take(count)
+        .collect();
+
+    if available_prios.len() == count {
+        Ok(available_prios)
+    } else {
+        Err(NordVpnLiteError::IpRule)
+    }
+}
+
 #[derive(Default, Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum InterfaceConfigurationProvider {
@@ -84,6 +103,8 @@ pub enum InterfaceConfigurationProvider {
 pub struct InterfaceConfig {
     pub name: String,
     pub config_provider: InterfaceConfigurationProvider,
+    /// Set the maximum routing rule priority
+    pub max_route_priority: Option<u32>,
 }
 
 impl InterfaceConfig {
@@ -99,9 +120,12 @@ impl InterfaceConfig {
             }),
             InterfaceConfigurationProvider::Iproute => Box::new(Iproute {
                 interface_name: self.name.clone(),
+                max_route_priority: self.max_route_priority,
                 ..Default::default()
             }),
-            InterfaceConfigurationProvider::Uci => Box::new(Uci::new(&self.name)),
+            InterfaceConfigurationProvider::Uci => {
+                Box::new(Uci::new(&self.name, self.max_route_priority))
+            }
         }
     }
 }
@@ -239,6 +263,8 @@ pub struct Iproute {
     table: Option<String>,
     fw_rule_prio: Option<String>,
     ipv6_support_manager: Ipv6SupportManager,
+    /// Set the maximum routing rule priority
+    max_route_priority: Option<u32>,
 }
 
 impl Iproute {
@@ -304,32 +330,27 @@ impl Iproute {
     }
 
     // Iterate over existing_prios until we find the next available lower priority
-    fn find_available_lower_rule_priority() -> Result<u32, NordVpnLiteError> {
-        let (start_prio, existing_prios) = Self::find_main_and_assigned_rule_priorities()?;
-        for prio in (1..start_prio).rev() {
-            if !existing_prios.contains(&prio) {
-                return Ok(prio);
-            }
-        }
-        Err(NordVpnLiteError::IpRule)
+    fn find_available_lower_rule_priority(
+        max_route_priority: Option<u32>,
+    ) -> Result<u32, NordVpnLiteError> {
+        let (main_rule_priority, existing_prios) = Self::find_main_and_assigned_rule_priorities()?;
+        // start either from the lookup main priority or max_route_priority when given
+        let start_prio = max_route_priority.unwrap_or(main_rule_priority);
+        // this is ok because get_available_priorities()
+        // returns an error on wrong size
+        #[allow(clippy::indexing_slicing)]
+        get_available_priorities(1, start_prio, &existing_prios).map(|r| r[0])
     }
 
     // Iterate over existing_prios until we find the number of available lower priorities
     pub fn find_available_lower_rule_priorities(
         count: usize,
+        max_route_priority: Option<u32>,
     ) -> Result<Vec<u32>, NordVpnLiteError> {
-        let (start_prio, existing_prios) = Self::find_main_and_assigned_rule_priorities()?;
-        let available_prios: Vec<u32> = (1..start_prio)
-            .rev()
-            .filter(|prio| !existing_prios.contains(prio))
-            .take(count)
-            .collect();
-
-        if available_prios.len() == count {
-            Ok(available_prios)
-        } else {
-            Err(NordVpnLiteError::IpRule)
-        }
+        let (main_rule_priority, existing_prios) = Self::find_main_and_assigned_rule_priorities()?;
+        // start either from the lookup main priority or max_route_priority when given
+        let start_prio = max_route_priority.unwrap_or(main_rule_priority);
+        get_available_priorities(count, start_prio, &existing_prios)
     }
 }
 
@@ -397,7 +418,8 @@ impl ConfigureInterface for Iproute {
         #[cfg(target_os = "linux")]
         if exit_node.is_ipv4() {
             let table = Self::find_available_table()?.to_string();
-            let fw_rule_prio = Self::find_available_lower_rule_priority()?.to_string();
+            let fw_rule_prio =
+                Self::find_available_lower_rule_priority(self.max_route_priority)?.to_string();
 
             execute(Command::new("ip").args([
                 "route",
@@ -456,6 +478,9 @@ impl ConfigureInterface for Iproute {
 pub struct Uci {
     interface_name: String,
 
+    /// Set the maximum routing rule priority
+    max_route_priority: Option<u32>,
+
     /// Initial IPv6 setting on WAN interface
     ///
     /// This reflects the value of `network.wan.ipv6` at the time of loading.
@@ -511,7 +536,7 @@ impl UciBoolOption {
 }
 
 impl Uci {
-    fn new(interface_name: &str) -> Self {
+    fn new(interface_name: &str, max_route_priority: Option<u32>) -> Self {
         // TODO: LLT-6485: Add support for multiple WANs
 
         // In OpenWRT, each network interface is declared using UCI syntax like:
@@ -590,6 +615,7 @@ impl Uci {
             wan6_disabled_initial_setting,
             initial_setting_dnsmasq_noresolv,
             initial_setting_dnsmasq_server,
+            max_route_priority,
         }
     }
 
@@ -771,7 +797,8 @@ impl ConfigureInterface for Uci {
     ) -> Result<(), NordVpnLiteError> {
         let table = Iproute::find_available_table()?;
         let (vpn_rule_prio, lan_rule_prio) = {
-            let priorities = Iproute::find_available_lower_rule_priorities(2)?;
+            let priorities =
+                Iproute::find_available_lower_rule_priorities(2, self.max_route_priority)?;
             // this is ok because find_available_lower_rule_priorities()
             // returns an error on wrong size
             #[allow(clippy::indexing_slicing)]
@@ -1044,14 +1071,61 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn test_find_available_lower_rule_priority() {
-        let result = Iproute::find_available_lower_rule_priority();
+        let result = Iproute::find_available_lower_rule_priority(None);
         assert!(result.is_ok());
     }
 
     #[test]
     #[cfg(target_os = "linux")]
+    fn test_find_available_max_rule_priority() {
+        let max_rule_priority = 100;
+        let result = Iproute::find_available_lower_rule_priority(Some(max_rule_priority));
+        assert!(result.unwrap() < max_rule_priority);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_find_unavailable_max_rule_priority() {
+        let result = Iproute::find_available_lower_rule_priority(Some(0));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
     fn test_find_available_lower_rule_priorities() {
-        let result = Iproute::find_available_lower_rule_priorities(2);
+        let result = Iproute::find_available_lower_rule_priorities(2, None);
         assert_eq!(result.unwrap().len(), 2);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_find_available_max_rule_priorities() {
+        let max_rule_priority = 100;
+        let result =
+            Iproute::find_available_lower_rule_priorities(2, Some(max_rule_priority)).unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result[0] < max_rule_priority);
+        assert!(result[1] < max_rule_priority);
+    }
+
+    #[test]
+    fn test_available_priorities_skipping_existing() {
+        let existing_prios = vec![5, 3];
+        let result = get_available_priorities(3, 6, &existing_prios).unwrap();
+        assert_eq!(result, vec![4, 2, 1]);
+    }
+
+    #[test]
+    fn test_enough_priorities_existing() {
+        let existing_prios = vec![0];
+        let result = get_available_priorities(3, 5, &existing_prios).unwrap();
+        assert_eq!(result, vec![4, 3, 2]);
+    }
+
+    #[test]
+    fn test_not_enough_priorities_available() {
+        let existing_prios = vec![1, 2, 3, 4];
+        let result = get_available_priorities(2, 5, &existing_prios);
+        assert!(matches!(result, Err(NordVpnLiteError::IpRule)));
     }
 }
