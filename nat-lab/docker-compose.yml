@@ -665,8 +665,7 @@ services:
       context: .
       dockerfile: openwrt.Dockerfile
       args:
-        LIBTELIO_ENV_SEC_CONTAINER_REGISTRY: $LIBTELIO_ENV_SEC_CONTAINER_REGISTRY
-        LIBTELIO_ENV_NAT_LAB_DEPS_TAG: $LIBTELIO_ENV_NAT_LAB_DEPS_TAG
+        SEC_CONTAINER_REGISTRY: $SEC_CONTAINER_REGISTRY
     cap_drop:
       - ALL
     cap_add:
