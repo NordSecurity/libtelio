@@ -312,7 +312,7 @@ impl StatefullFirewall {
         StatefullFirewall::new_custom(LRU_CAPACITY, LRU_TIMEOUT, use_ipv6, feature)
     }
 
-    #[cfg(any(feature = "test_utils", test))]
+    #[cfg(test)]
     /// Return the size of conntrack entries for tcp and udp (for testing only).
     pub fn get_state(&self) -> (usize, usize) {
         self.conntrack.get_state()
@@ -895,7 +895,7 @@ impl Default for StatefullFirewall {
     }
 }
 
-#[cfg(any(test, feature = "test_utils"))]
+#[cfg(test)]
 #[allow(missing_docs, unused)]
 pub mod tests {
     use crate::conntrack::{Connection, ConnectionState, IpConnWithPort, TcpConnectionInfo};
@@ -930,10 +930,7 @@ pub mod tests {
     type MakeIcmpWithBody = &'static dyn Fn(&str, &str, GenericIcmpType, &[u8]) -> Vec<u8>;
 
     fn advance_time(time: Duration) {
-        #[cfg(not(feature = "test_utils"))]
         sn_fake_clock::FakeClock::advance_time(time.as_millis() as u64);
-        #[cfg(feature = "test_utils")]
-        panic!("don't use advance time when lru cache is not built with support for it")
     }
 
     impl From<StdIpAddr> for IpAddr {
