@@ -1,17 +1,24 @@
-use enhanced_detection::EnhancedDetection;
+//! Component that defines a peer link state, computing if its up/down.
+mod enhanced_detection;
+
 use std::{
     collections::HashMap,
     default,
     net::IpAddr,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
+use tokio::sync::Mutex as TokioMutex;
 
 use telio_crypto::PublicKey;
 use telio_model::{
     features::FeatureLinkDetection,
     mesh::{LinkState, NodeState},
 };
+use telio_network_monitors::monitor::LocalInterfacesObserver;
 use telio_sockets::SocketPool;
 use telio_task::io::{chan, Chan};
 use telio_utils::{
@@ -19,29 +26,80 @@ use telio_utils::{
     telio_log_warn, Instant, IpStack,
 };
 
+use self::enhanced_detection::EnhancedDetection;
 use crate::{
     uapi::UpdateReason,
     wg::{BytesAndTimestamps, WG_KEEPALIVE},
 };
 
-mod enhanced_detection;
-
+/// Component that manages the link state of each peer.
+///
+/// `LinkDetection` monitors peer connectivity by analyzing traffic patterns and when enhanced
+/// detection is enabled performing active probing through ICMP ping to determine if a peer link is up or down.
+///
+/// # Features
+/// - Passive detection based on WireGuard traffic statistics
+/// - Optional enhanced detection using ICMP pings
+/// - Network change awareness for improved reliability (windows-only, LLT-5073)
+/// - Configurable RTT thresholds and downgrade behavior
 pub struct LinkDetection {
     cfg_max_allowed_rtt: Duration,
     enhanced_detection: Option<EnhancedDetection>,
     ping_channel: chan::Tx<(Vec<IpAddr>, Option<IpStack>)>,
     peers: HashMap<PublicKey, State>,
     use_for_downgrade: bool,
+    enhanced_detection_enabled: bool,
+    #[cfg(target_os = "windows")]
+    nw_change_flag: Arc<AtomicBool>,
+}
+
+/// LocalInterfacesObserver wrapper for thread safety
+#[cfg(target_os = "windows")]
+pub struct LinkDetectionObserver(Arc<TokioMutex<LinkDetection>>);
+
+#[cfg(target_os = "windows")]
+impl LinkDetectionObserver {
+    /// Wraps Linkdetction into LinkDetectionObserver to make LocalInterfacesObserver implementation thread safe
+    pub fn new(link_detection: Arc<TokioMutex<LinkDetection>>) -> Self {
+        Self(link_detection)
+    }
+
+    /// Returns a clone of the inner value
+    pub fn inner(&self) -> Arc<TokioMutex<LinkDetection>> {
+        self.0.clone()
+    }
+}
+
+/// Observer implementation that forwards network change events to LinkDetection
+#[cfg(target_os = "windows")]
+impl LocalInterfacesObserver for LinkDetectionObserver {
+    fn notify(&self) {
+        telio_log_debug!("Notified about local interfaces change");
+        // Blocking current thread should be harmless until we have the lockguard
+        let ld = self.0.blocking_lock();
+        ld.nw_change_flag.store(true, Ordering::Release);
+        // TODO [LLT-5073]
+        // Non-blocking alternative:
+        /*
+        let arc = self.inner();
+        tokio::spawn(async move {
+            let ld = arc.lock().await;
+            ld.nw_change_flag.store(true, Ordering::Release);
+        });
+        */
+    }
 }
 
 impl LinkDetection {
+    /// Creates a new `LinkDetection` instance with the specified configuration.
     pub fn new(
         cfg: FeatureLinkDetection,
         ipv6_enabled: bool,
         socket_pool: Arc<SocketPool>,
     ) -> Self {
         let ping_channel = Chan::default();
-        let enhanced_detection = if cfg.no_of_pings != 0 {
+        let enhanced_detection_enabled = cfg.no_of_pings > 0;
+        let enhanced_detection = if enhanced_detection_enabled || cfg!(target_os = "windows") {
             EnhancedDetection::start_with(
                 ping_channel.rx,
                 cfg.no_of_pings,
@@ -65,15 +123,60 @@ impl LinkDetection {
             ping_channel: ping_channel.tx,
             peers: HashMap::default(),
             use_for_downgrade: cfg.use_for_downgrade,
+            enhanced_detection_enabled,
+            #[cfg(target_os = "windows")]
+            nw_change_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
+    /// Inserts a new peer.
+    ///
+    /// # Parameters
+    /// - `public_key`: The public key identifying the peer
+    /// - `stats`: Shared peer's traffic counters
     pub fn insert(&mut self, public_key: &PublicKey, stats: Arc<Mutex<BytesAndTimestamps>>) {
         telio_log_debug!("insert {}", public_key);
         self.peers
             .insert(*public_key, State::new(stats, self.cfg_max_allowed_rtt));
     }
 
+    /// Processes pending network change notifications.
+    ///
+    /// This method checks for network interface changes and adjusts link state tracking
+    /// accordingly, particularly on Windows where interface state changes can affect
+    /// traffic counter reliability.
+    /// This is a workaround for WireguardNT (windows): #LLT-5073
+    #[cfg(target_os = "windows")]
+    pub async fn handle_network_changes(&mut self) {
+        if self.nw_change_flag.swap(false, Ordering::AcqRel) {
+            // On WireguardNT tx counters are not increased when the interface is disabled. It's then
+            // considered that it might have happened and thus the link state detection is triggered by
+            // artificially setting the first_ts_after_rx instant and start the countdown
+            // TODO: Implement local interfaces tracking to accurately find if the relevant interface
+            // was indeed disabled.
+            for (public_key, state) in &mut self.peers {
+                state.stats.lock().map_or_else(
+                    |e| {
+                        telio_log_error!("poisoned lock - {}", e);
+                    },
+                    |mut stats| {
+                        telio_log_debug!(
+                            "Overriding first_tx_after_rx due to network change for: {}",
+                            public_key
+                        );
+                        stats.first_tx_after_rx = Some(Instant::now());
+                    },
+                );
+                state.variant = StateVariant::NetworkChanged;
+            }
+        }
+    }
+
+    /// Updates the link state for a specific peer.
+    ///
+    /// # Returns
+    /// A `LinkDetectionUpdateResult` indicating whether the link state changed and
+    /// whether a notification should be sent
     pub async fn update(
         &mut self,
         public_key: &PublicKey,
@@ -94,16 +197,17 @@ impl LinkDetection {
         }
 
         if let Some(state) = self.peers.get_mut(public_key) {
-            let ping_enabled = self.enhanced_detection.is_some();
-            let result = state.update(self.cfg_max_allowed_rtt, ping_enabled);
+            let result = state.update(self.cfg_max_allowed_rtt, self.enhanced_detection_enabled);
 
             telio_log_debug!(
-                "ping_enabled: {}, result.should_ping: {}. result.link_detection_update_result: {:?}",
-                ping_enabled,
+                "enhanced detection: {}, result.should_ping: {}. result.link_detection_update_result: {:?}",
+                self.enhanced_detection_enabled,
                 result.should_ping,
                 result.link_detection_update_result
             );
-            if ping_enabled && result.should_ping {
+            if (self.enhanced_detection_enabled || cfg!(target_os = "windows"))
+                && result.should_ping
+            {
                 if let Err(e) = self
                     .ping_channel
                     .send((node_addresses, curr_ip_stack))
@@ -123,11 +227,13 @@ impl LinkDetection {
         }
     }
 
+    /// Removes a peer.
     pub fn remove(&mut self, public_key: &PublicKey) {
         telio_log_debug!("remove {}", public_key);
         self.peers.remove(public_key);
     }
 
+    /// Gets the link state for a peer if downgrade detection is enabled.
     pub fn get_link_state_for_downgrade(&self, public_key: &PublicKey) -> Option<LinkState> {
         if self.use_for_downgrade {
             self.peers.get(public_key).map(|s| s.current_link_state())
@@ -136,6 +242,7 @@ impl LinkDetection {
         }
     }
 
+    /// Stops the link detection component, releasing any associated resources.
     pub async fn stop(self) {
         if let Some(ed) = self.enhanced_detection {
             ed.stop().await;
@@ -157,9 +264,12 @@ impl LinkDetection {
     }
 }
 
+/// Result of a link detection update operation.
 #[derive(Default, Debug)]
 pub struct LinkDetectionUpdateResult {
+    /// Whether the link state change should trigger a notification
     pub should_notify: bool,
+    /// The current link state, if available
     pub link_state: Option<LinkState>,
 }
 
@@ -181,8 +291,12 @@ pub struct LinkDetectionUpdateResult {
 #[derive(Debug)]
 enum StateVariant {
     Down,
-    PossibleDown { deadline: Instant },
+    PossibleDown {
+        deadline: Instant,
+    },
     Up,
+    #[cfg(target_os = "windows")]
+    NetworkChanged,
 }
 
 #[derive(Debug)]
@@ -296,20 +410,31 @@ impl State {
                         deadline: now.checked_add(delay).unwrap_or(now),
                     };
                     telio_log_debug!("Possibly down. delay={:?}", delay);
-                    Self::build_result(StateDecision::Ping, LinkState::Up)
+                    if ping_enabled {
+                        return Self::build_result(StateDecision::Ping, LinkState::Up);
+                    }
                 } else {
                     // Current link_state is Up
                     telio_log_debug!("definitely up");
-                    Self::build_result(StateDecision::NoAction, LinkState::Up)
                 }
+                Self::build_result(StateDecision::NoAction, LinkState::Up)
+            }
+
+            #[cfg(target_os = "windows")]
+            StateVariant::NetworkChanged => {
+                telio_log_debug!("Network interfaces have changed making peer link state unreliable, will ping regardless of enhanced detection state ({})", ping_enabled);
+                self.variant = StateVariant::Up;
+                Self::build_result(StateDecision::Ping, LinkState::Up)
             }
         }
     }
 
     fn current_link_state(&self) -> LinkState {
         match self.variant {
-            StateVariant::Up | StateVariant::PossibleDown { .. } => LinkState::Up,
             StateVariant::Down => LinkState::Down,
+            StateVariant::Up | StateVariant::PossibleDown { .. } => LinkState::Up,
+            #[cfg(target_os = "windows")]
+            StateVariant::NetworkChanged => LinkState::Up,
         }
     }
 

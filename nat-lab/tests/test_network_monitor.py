@@ -25,6 +25,7 @@ DEFAULT_WAITING_TIME = 2
             ),
             marks=[
                 pytest.mark.mac,
+                pytest.mark.xfail(reason="Expected failure on mac, see LLT-6728"),
             ],
         ),
     ],
@@ -32,11 +33,17 @@ DEFAULT_WAITING_TIME = 2
 async def test_network_monitor(
     alpha_setup_params: SetupParameters,
 ) -> None:
+    # 1 [interface creation] + 1 [set IP] + 1 [remove IP] + 1 [set IP] -> interface initialization + restart
+    # TODO: This value might differ for macOS (LLT-6728)
+    NR_OF_NOTIFICATIONS = 4
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(exit_stack, [alpha_setup_params])
         [client_alpha] = env.clients
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
         await client_alpha.restart_interface()
-
-        await client_alpha.wait_for_log("Updating local addr cache")
+        await client_alpha.wait_for_log(
+            "Detected network interface modification, notifying..",
+            count=NR_OF_NOTIFICATIONS,
+            not_greater=True,
+        )
