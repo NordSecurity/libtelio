@@ -6,24 +6,25 @@ use std::{
     io,
     net::{Ipv4Addr, Ipv6Addr, SocketAddr},
     pin::Pin,
+    time::Duration,
 };
 
 use async_trait::async_trait;
 use hickory_server::{
     authority::{
-        Authority, LookupError, LookupObject, LookupOptions, MessageRequest, UpdateResult, ZoneType,
+        Authority, LookupControlFlow, LookupError, LookupObject, LookupOptions, MessageRequest,
+        UpdateResult, ZoneType,
     },
     proto::{
         op::ResponseCode,
         rr::{LowerName, Name, Record, RecordType},
+        runtime::{RuntimeProvider, TokioRuntimeProvider},
         udp::{DnsUdpSocket, UdpSocket as ProtoUdpSocket},
+        ProtoErrorKind,
     },
     resolver::{
-        config::ResolverConfig,
-        error::ResolveErrorKind,
-        lookup::Lookup as ResolverLookup,
-        name_server::{GenericConnector, RuntimeProvider, TokioRuntimeProvider},
-        AsyncResolver,
+        config::ResolverConfig, lookup::Lookup as ResolverLookup, name_server::GenericConnector,
+        ResolveError, ResolveErrorKind, Resolver,
     },
     server::RequestInfo,
     store::forwarder::ForwardConfig,
@@ -49,8 +50,10 @@ impl RuntimeProvider for TelioRuntimeProvider {
     fn connect_tcp(
         &self,
         server_addr: SocketAddr,
+        bind_addr: Option<SocketAddr>,
+        timeout: Option<Duration>,
     ) -> Pin<Box<dyn Send + Future<Output = io::Result<Self::Tcp>>>> {
-        self.0.connect_tcp(server_addr)
+        self.0.connect_tcp(server_addr, bind_addr, timeout)
     }
 
     fn bind_udp(
@@ -66,7 +69,7 @@ impl RuntimeProvider for TelioRuntimeProvider {
     }
 }
 
-pub type TelioAsyncResolver = AsyncResolver<GenericConnector<TelioRuntimeProvider>>;
+pub type TelioAsyncResolver = Resolver<GenericConnector<TelioRuntimeProvider>>;
 
 pub struct TelioUdpSocket(UdpSocket);
 
@@ -168,7 +171,9 @@ impl ForwardAuthority {
 
         let config = ResolverConfig::from_parts(None, vec![], name_servers);
 
-        let resolver = TelioAsyncResolver::new(config, options, GenericConnector::default());
+        let resolver = TelioAsyncResolver::builder_with_config(config, GenericConnector::default())
+            .with_options(options)
+            .build();
 
         telio_log_info!("forward resolver configured: {}: ", origin);
 
@@ -178,6 +183,41 @@ impl ForwardAuthority {
             resolver,
         })
     }
+
+    fn transform_lookup_error(name: &LowerName, err: ResolveError) -> LookupError {
+        if let ResolveErrorKind::Proto(proto) = err.kind() {
+            if let ProtoErrorKind::NoRecordsFound {
+                query: _,
+                soa: _,
+                ns: _,
+                negative_ttl: _,
+                response_code,
+                trusted: _,
+                authorities: _,
+            } = proto.kind()
+            {
+                return if *response_code == ResponseCode::NoError {
+                    telio_log_debug!("Got an error response with NoError code for {name}, this should not happen so converting to ServFail");
+                    // Failed query with no error - convert that to a real error,
+                    // otherwise the LookupError::from will panic in debug builds.
+                    // If we use a number from the 'private use' range:
+                    // https://datatracker.ietf.org/doc/html/rfc2929#section-2.3 like
+                    // LookupError::from(ResponseCode::Unknown(3841))
+                    // the trust-dns will end up looping until the requests with some other error
+                    // is returned. This will make the original dns request (eg. by nslookup or dig or some app)
+                    // never complete. To avoid that, lets return ServFail which will produce
+                    // an empty respones.
+                    LookupError::from(ResponseCode::ServFail)
+                } else {
+                    LookupError::from(*response_code)
+                };
+            }
+        }
+
+        // NOTE: this is probably incorrect, and should be at least 24, most likely
+        // in range 3841-4095 ('private use' range), instead of '0'.
+        LookupError::from(ResponseCode::Unknown(0))
+    }
 }
 
 #[async_trait::async_trait]
@@ -186,7 +226,7 @@ impl Authority for ForwardAuthority {
 
     /// Always Forward
     fn zone_type(&self) -> ZoneType {
-        ZoneType::Forward
+        ZoneType::External
     }
 
     /// Always false for Forward zones
@@ -213,7 +253,7 @@ impl Authority for ForwardAuthority {
         name: &LowerName,
         rtype: RecordType,
         _lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
+    ) -> LookupControlFlow<Self::Lookup> {
         // TODO: make this an error?
         debug_assert!(self.origin.zone_of(name));
 
@@ -227,7 +267,7 @@ impl Authority for ForwardAuthority {
             //
             // Log such errors with lower logging level
             Err(ref e)
-                if matches!(e.kind(), ResolveErrorKind::NoRecordsFound { .. })
+                if e.is_no_records_found()
                     && (rtype == RecordType::AAAA || rtype == RecordType::SOA) =>
             {
                 telio_log_debug!("DNS name resolution failed with {:?}", e);
@@ -237,43 +277,17 @@ impl Authority for ForwardAuthority {
             Ok(_) => (),
         };
 
-        resolve
+        let result = resolve
             .map(ForwardLookup)
-            .map_err(|code| match code.kind() {
-                ResolveErrorKind::NoRecordsFound {
-                    query: _,
-                    soa: _,
-                    negative_ttl: _,
-                    response_code,
-                    trusted: _,
-                } => {
-                    if *response_code == ResponseCode::NoError {
-                        telio_log_debug!("Got an error response with NoError code for {name}, this should not happen so converting to ServFail");
-                        // Failed query with no error - convert that to a real error,
-                        // otherwise the LookupError::from will panic in debug builds.
-                        // If we use a number from the 'private use' range:
-                        // https://datatracker.ietf.org/doc/html/rfc2929#section-2.3 like
-                        // LookupError::from(ResponseCode::Unknown(3841))
-                        // the trust-dns will end up looping until the requests with some other error
-                        // is returned. This will make the original dns request (eg. by nslookup or dig or some app)
-                        // never complete. To avoid that, lets return ServFail which will produce
-                        // an empty respones.
-                        LookupError::from(ResponseCode::ServFail)
-                    } else {
-                        LookupError::from(*response_code)
-                    }
-                }
-                // NOTE: this is probably incorrect, and should be at least 24, most likely
-                // in range 3841-4095 ('private use' range), instead of '0'.
-                _ => LookupError::from(ResponseCode::Unknown(0)),
-            })
+            .map_err(|err| Self::transform_lookup_error(name, err));
+        LookupControlFlow::Continue(result)
     }
 
     async fn search(
         &self,
         request_info: RequestInfo<'_>,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
+    ) -> LookupControlFlow<Self::Lookup> {
         self.lookup(
             request_info.query.name(),
             request_info.query.query_type(),
@@ -286,10 +300,10 @@ impl Authority for ForwardAuthority {
         &self,
         _name: &LowerName,
         _lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
-        Err(LookupError::from(io::Error::other(
+    ) -> LookupControlFlow<Self::Lookup> {
+        LookupControlFlow::Break(Err(LookupError::from(io::Error::other(
             "Getting NSEC records is unimplemented for the forwarder",
-        )))
+        ))))
     }
 }
 
