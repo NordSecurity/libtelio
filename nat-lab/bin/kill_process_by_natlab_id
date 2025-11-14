@@ -11,7 +11,7 @@ echo "Executing kill process by natlab id script"
 
 for pid in $(ps -e -o pid=); do
     if [[ -f "/proc/${pid}/environ" ]]; then
-        if grep --null-data --text KILL_ID=${NATLAB_ID} /proc/${pid}/environ > /dev/null; then
+        if tr '\000' '\n' < /proc/${pid}/environ | grep -q "^KILL_ID=${NATLAB_ID}$"; then
             cmd=$(tr -d '\000' < /proc/${pid}/cmdline || echo "N/A")
             kill "${pid}"
             wait "${pid}" 2>/dev/null
