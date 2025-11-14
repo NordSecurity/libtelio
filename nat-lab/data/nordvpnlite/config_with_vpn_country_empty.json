@@ -1,6 +1,6 @@
 {
   "authentication_token": "48e9ef50178a68a716e38a9f9cd251e8be35e79a5c5f91464e92920425caa3d9",
-  "log_level": "trace",
+  "log_level": "debug",
   "log_file_path": "/var/log/nordvpnlite_natlab.log",
   "log_file_count": 0,
   "adapter_type": "neptun",

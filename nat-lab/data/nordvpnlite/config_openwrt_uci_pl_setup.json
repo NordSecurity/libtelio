@@ -3,7 +3,7 @@
   "vpn": {
     "country": "pl"
   },
-  "log_level": "trace",
+  "log_level": "debug",
   "log_file_path": "/var/log/nordvpnlite_natlab.log",
   "log_file_count": 0,
   "adapter_type": "linux-native",

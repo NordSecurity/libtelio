@@ -3,7 +3,7 @@
   "vpn": {
     "country": "de"
   },
-  "log_level": "trace",
+  "log_level": "info",
   "log_file_path": "/var/log/example_log_file.log",
   "log_file_count": 0,
   "adapter_type": "neptun",
