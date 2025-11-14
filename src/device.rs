@@ -195,6 +195,8 @@ pub enum Error {
     EnsFailure(#[from] Box<EnsError>),
     #[error("Exponential backoff error {0}")]
     ExponentialBackoffError(#[from] exponential_backoff::Error),
+    #[error("Firewall loading error {0}")]
+    FirewallLoadingError(#[from] libloading::Error),
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -1033,7 +1035,7 @@ impl Runtime {
         features: Features,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
-        let firewall = Arc::new(StatefullFirewall::new(features.ipv6, &features.firewall));
+        let firewall = Arc::new(StatefullFirewall::new(features.ipv6, &features.firewall)?);
 
         let firewall_filter_inbound_packets = {
             let fw = firewall.clone();
@@ -1048,9 +1050,7 @@ impl Runtime {
         let firewall_reset_connections = if features.firewall.neptun_reset_conns() {
             let fw = firewall.clone();
             let cb = move |exit_pubkey: &PublicKey, sink: &mut dyn io::Write| {
-                if let Err(err) = fw.reset_connections(exit_pubkey, sink) {
-                    telio_log_warn!("Failed to reset all connections: {err:?}");
-                }
+                fw.reset_connections(exit_pubkey, sink)
             };
             Some(Arc::new(cb) as Arc<_>)
         } else {

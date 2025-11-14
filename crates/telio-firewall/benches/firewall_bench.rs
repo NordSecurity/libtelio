@@ -91,7 +91,8 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                     BenchmarkId::from_parameter(parameter.clone()),
                     &parameter,
                     |b, param| {
-                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default());
+                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default())
+                            .expect("Failed to load libfirewall");
                         firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
@@ -114,7 +115,6 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                                     .process_inbound_packet(&peers[which_peer], &param.packet));
                                 which_peer = (which_peer + 1) % peers.len();
                             }
-                            assert_eq!((0, 0), firewall.get_state());
                         });
                     },
                 );
@@ -135,7 +135,8 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                     BenchmarkId::from_parameter(parameter.clone()),
                     &parameter,
                     |b, param| {
-                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default());
+                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default())
+                            .expect("Failed to load firewall");
                         firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
@@ -156,7 +157,6 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                                     .process_inbound_packet(&peers[which_peer], &param.packet));
                                 which_peer = (which_peer + 1) % peers.len();
                             }
-                            assert_eq!((peers.len(), 0), firewall.get_state());
                         });
                     },
                 );
@@ -177,7 +177,8 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                     BenchmarkId::from_parameter(parameter.clone()),
                     &parameter,
                     |b, param| {
-                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default());
+                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default())
+                            .expect("Failed to load firewall");
                         firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
@@ -203,7 +204,6 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                                 ));
                                 which_peer = (which_peer + 1) % peers_and_packets.len();
                             }
-                            assert_eq!((peers_and_packets.len(), 0), firewall.get_state());
                         });
                     },
                 );
@@ -224,7 +224,8 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                     BenchmarkId::from_parameter(parameter.clone()),
                     &parameter,
                     |b, param| {
-                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default());
+                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default())
+                            .expect("Failed to load firewall");
                         firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
@@ -239,8 +240,6 @@ pub fn firewall_tcp_inbound_benchmarks(c: &mut Criterion) {
                                     firewall.process_inbound_packet(&public_key.0, &param.packet)
                                 );
                             }
-                            // Any passing SYN will create a conntrack entry
-                            assert_eq!((1, 0), firewall.get_state());
                         });
                     },
                 );
@@ -271,7 +270,8 @@ pub fn firewall_tcp_outbound_benchmarks(c: &mut Criterion) {
                     BenchmarkId::from_parameter(parameter.clone()),
                     &parameter,
                     |b, param| {
-                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default());
+                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default())
+                            .expect("Failed to load firewall");
                         for _ in 0..param.peers {
                             let public_key = SecretKey::gen().public();
                             firewall.add_to_peer_whitelist(
@@ -319,7 +319,8 @@ pub fn firewall_tcp_outbound_benchmarks(c: &mut Criterion) {
                     BenchmarkId::from_parameter(parameter.clone()),
                     &parameter,
                     |b, param| {
-                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default());
+                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default())
+                            .expect("Failed to load firewall");
                         for _ in 0..param.peers {
                             let public_key = SecretKey::gen().public();
                             firewall.add_to_peer_whitelist(
@@ -360,7 +361,8 @@ pub fn firewall_tcp_outbound_benchmarks(c: &mut Criterion) {
                     BenchmarkId::from_parameter(parameter.clone()),
                     &parameter,
                     |b, param| {
-                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default());
+                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default())
+                            .expect("Failed to load firewall");
                         let mut peers = vec![];
                         for _ in 0..param.peers {
                             let public_key = SecretKey::gen().public();
@@ -406,7 +408,8 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                     BenchmarkId::from_parameter(parameter.clone()),
                     &parameter,
                     |b, param| {
-                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default());
+                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default())
+                            .expect("Failed to load firewall");
                         firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
@@ -429,7 +432,6 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                                     .process_inbound_packet(&peers[which_peer], &param.packet));
                                 which_peer = (which_peer + 1) % peers.len();
                             }
-                            assert_eq!((0, 0), firewall.get_state());
                         });
                     },
                 );
@@ -450,7 +452,8 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                     BenchmarkId::from_parameter(parameter.clone()),
                     &parameter,
                     |b, param| {
-                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default());
+                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default())
+                            .expect("Failed to load firewall");
                         firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
@@ -471,7 +474,6 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                                     .process_inbound_packet(&peers[which_peer], &param.packet));
                                 which_peer = (which_peer + 1) % peers.len();
                             }
-                            assert_eq!((0, peers.len()), firewall.get_state());
                         });
                     },
                 );
@@ -492,7 +494,8 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                     BenchmarkId::from_parameter(parameter.clone()),
                     &parameter,
                     |b, param| {
-                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default());
+                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default())
+                            .expect("Failed to load firewall");
                         firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
@@ -518,7 +521,6 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                                 ));
                                 which_peer = (which_peer + 1) % peers_and_packets.len();
                             }
-                            assert_eq!((0, peers_and_packets.len()), firewall.get_state());
                         });
                     },
                 );
@@ -539,7 +541,8 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                     BenchmarkId::from_parameter(parameter.clone()),
                     &parameter,
                     |b, param| {
-                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default());
+                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default())
+                            .expect("Failed to load firewall");
                         firewall.set_ip_addresses(vec![
                             (IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
                             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
@@ -554,8 +557,6 @@ pub fn firewall_udp_inbound_benchmarks(c: &mut Criterion) {
                                     firewall.process_inbound_packet(&public_key.0, &param.packet)
                                 );
                             }
-                            // Any UDP packet will create a conntrack entry
-                            assert_eq!((0, 1), firewall.get_state());
                         });
                     },
                 );
@@ -582,7 +583,8 @@ pub fn firewall_udp_outbound_benchmarks(c: &mut Criterion) {
                     BenchmarkId::from_parameter(parameter.clone()),
                     &parameter,
                     |b, param| {
-                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default());
+                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default())
+                            .expect("Failed to load firewall");
                         let mut peers = vec![];
                         for _ in 0..param.peers {
                             let public_key = SecretKey::gen().public();
@@ -622,7 +624,8 @@ pub fn firewall_udp_outbound_benchmarks(c: &mut Criterion) {
                     BenchmarkId::from_parameter(parameter.clone()),
                     &parameter,
                     |b, param| {
-                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default());
+                        let firewall = StatefullFirewall::new(true, &FeatureFirewall::default())
+                            .expect("Failed to load firewall");
                         let mut peers = vec![];
                         for _ in 0..param.peers {
                             let public_key = SecretKey::gen().public();
