@@ -770,3 +770,12 @@ def setup_logger(tmp_path, request):
             file_handler.close()
         else:
             pass
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    rep = outcome.get_result()
+
+    if rep.when == "call" and rep.passed and not getattr(rep, "wasxfail", False):
+        log.info("PASSED: %s in %.2fs", rep.nodeid, rep.duration)
