@@ -244,7 +244,9 @@ async def setup_check_duplicate_ip_addresses():
 
         # Detect duplicates
         for ip in ips:
-            if ip in ip_owner and ip_owner[ip] != name:
+            # 100.64.0.1 is a libtelio hardcoded address representing VPN virtual peer,
+            # common for every client
+            if ip in ip_owner and ip_owner[ip] != name and ip != "100.64.0.1":
                 duplicates[ip].update({ip_owner[ip], name})
             else:
                 ip_owner[ip] = name
