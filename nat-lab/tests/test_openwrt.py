@@ -12,6 +12,7 @@ from utils.connection_util import new_connection_raw, new_connection_by_tag
 from utils.logger import log
 from utils.openwrt import start_logread_process
 from utils.ping import ping
+from utils.process import ProcessExecError
 
 NETWORK_RESTART_LOG_LINE = "netifd: Network device 'eth1' link is up"
 OPENWRT_GW_WAN_IP = "10.0.0.0"
@@ -50,7 +51,22 @@ async def check_gateway_and_client_ip(
     Returns:
         None
     """
-    await ping(gateway_connection, PHOTO_ALBUM_IP)
+    try:
+        await ping(gateway_connection, PHOTO_ALBUM_IP)
+    except ProcessExecError:
+        dm = await gateway_connection.create_process(["dmesg"]).execute()
+        dmesg_tail = "\n".join(dm.get_stdout().splitlines()[-100:])
+        log.debug("dmesg tail:\n%s", dmesg_tail)
+
+        lr = await gateway_connection.create_process(["logread"]).execute()
+        logread_tail = "\n".join(lr.get_stdout().splitlines()[-100:])
+        log.debug("logread tail:\n%s", logread_tail)
+
+        free_out = await gateway_connection.create_process(["free"]).execute()
+        log.debug("free (snapshot):\n%s", free_out.get_stdout())
+
+        raise
+
     gw_ip = await stun.get(gateway_connection, STUN_SERVER)
     assert gw_ip == expected_ip, (
         f"OpenWRT gateway has wrong public IP when connected to VPN: {gw_ip}. "
