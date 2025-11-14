@@ -181,12 +181,12 @@ class ConnectionCountLimit(ConnTrackerEventsValidator):
         if self.max_limit is not None and count > self.max_limit:
             return ConnTrackerViolation(
                 recoverable=False,
-                reason=f"In {self.key} there has been {count} connections to {self.target} which is more than max limit of {self.max_limit}",
+                reason=f"In {self.key} there has been {count} connections; filter: {self.target}; violated max connection limit: {self.max_limit}; conntracker events: {events}",
             )
         if self.min_limit is not None and count < self.min_limit:
             return ConnTrackerViolation(
                 recoverable=True,
-                reason=f"In {self.key} there has been {count} connections to {self.target} which is less than min limit of {self.min_limit}",
+                reason=f"In {self.key} there has been {count} connections; filter: {self.target}; violated min connection limit: {self.min_limit}; conntracker events: {events}",
             )
 
         return None
@@ -432,7 +432,7 @@ class ConnectionTracker:
         if not self._validators:
             return None
 
-        log.debug("ConnectionTracker[%s] waiting for _sync_event", self.id)
+        log.debug("ConnectionTracker[%s] waiting for _sync_event (ping)", self.id)
         # wait to synchronize over a known event
         while not self._sync_event.is_set():
             # use ping helper, that returns after the first reply is received
