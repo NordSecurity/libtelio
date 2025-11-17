@@ -522,7 +522,7 @@ async def test_get_countries():
 
         response_data = await send_https_request(
             connection,
-            f"{CORE_API_URL}/v1/countries",
+            f"{CORE_API_URL}/v1/servers/countries",
             "GET",
             CORE_API_CA_CERTIFICATE_PATH,
         )

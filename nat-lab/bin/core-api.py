@@ -153,7 +153,7 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         self.machines_path = "/v1/meshnet/machines"
         self.notifications_path = "/v1/notifications/tokens"
         self.recommended_servers_path = "/v1/servers/recommendations"
-        self.countries_path = "/v1/countries"
+        self.countries_path = "/v1/servers/countries"
         self.public_key_path = "/test/public-key"
         self.service_credentials_path = "/v1/users/services/credentials"
         self.reset_credentials_path = "/test/reset-credentials"
