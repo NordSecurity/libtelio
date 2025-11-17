@@ -491,16 +491,13 @@ fn dynamic_store_callback(
             //  State:/Network/Interface/<interface>/IPConfigurationBusy
             Some("IPConfigurationBusy") => {
                 // Is an <interface> the one we actually care about?
-                match key_path.next_back() {
+                if let Some(interface) = key_path.next_back() {
                     // If it is primary, then we do.
-                    Some(interface) => {
-                        if is_primary(interface) {
-                            must_broadcast = true;
-                            break;
-                        }
+                    if is_primary(interface) {
+                        must_broadcast = true;
+                        break;
                     }
                     // Otherwise we must not broadcast the event.
-                    None => {}
                 }
             }
             // One of:
