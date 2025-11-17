@@ -21,7 +21,8 @@ from utils.bindings import (
 )
 from utils.connection import Connection, ConnectionTag, TargetOS
 from utils.connection_util import add_outgoing_packets_delay, toggle_secondary_adapter
-from utils.ping import ping
+from utils.ping import Ping, ping
+from utils.telio_log_notifier import TelioLogNotifier
 
 WG_POLLING_PERIOD_S = 1
 WG_PASSIVE_KEEPALIVE_S = 10
@@ -41,6 +42,12 @@ IDLE_TIMEOUT_S = round((LINK_STATE_TIMEOUT_S + POSSIBLE_DOWN_DELAY) * TOLERANCE)
 IDLE_TIMEOUT_ED_S = round(
     (LINK_STATE_TIMEOUT_S + POSSIBLE_DOWN_DELAY_ED) * TOLERANCE
 )  # 33s
+
+
+async def ping_until_trigger(connection, target_ip):
+    async with TelioLogNotifier(connection).run() as notifier:
+        async with Ping(connection, target_ip).run():
+            await notifier.notify_output("first_tx_after_rx=Some").wait()
 
 
 def long_persistent_keepalive_periods() -> FeatureWireguard:
@@ -415,8 +422,7 @@ async def test_event_link_state_peer_goes_offline(
         await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
 
         # Expect the link to still be UP for the duration of WG Keepalive timeout + Max. RTT Allowed
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_alpha, beta.ip_addresses[0], MAX_RTT_ALLOWED_S)
+        await ping_until_trigger(connection_alpha, beta.ip_addresses[0])
         with pytest.raises(asyncio.TimeoutError):
             await client_alpha.wait_for_link_state(
                 beta.public_key, LinkState.DOWN, WG_PASSIVE_KEEPALIVE_S
@@ -527,8 +533,7 @@ async def test_event_link_state_peer_doesnt_respond(
         # Beta won't respond to ICMP requests so that Alpha's link detection countdown is triggered (tx_ts > rx_ts)
         # Nevertheless, alpha will still receive beta's passive keepalive, maintaining the link state alive.
         async with ICMP_control(connection_beta):
-            with pytest.raises(asyncio.TimeoutError):
-                await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
+            await ping_until_trigger(connection_alpha, beta.ip_addresses[0])
 
             # If alpha doesn't receive any packet, alpha->beta DOWN link state would be detected (after 14-21s: IDLE_TIMEOUT_S + tolerance),
             # however beta is sending a keepalive after WG_PASSIVE_KEEPALIVE_S to let alpha knows that he's alive.
@@ -668,8 +673,7 @@ async def test_event_link_state_without_enhanced_detection(
 
         # Trigger Alpha's link detection countdown (tx_ts > rx_ts)
         async with ICMP_control(connection_beta):
-            with pytest.raises(asyncio.TimeoutError):
-                await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
+            await ping_until_trigger(connection_alpha, beta.ip_addresses[0])
 
             # Guarantee that the ICMP is not responded
             await asyncio.sleep(WG_POLLING_PERIOD_S)
@@ -762,8 +766,7 @@ async def test_event_link_state_enhanced_detection(
 
         # Trigger Alpha's link detection countdown (tx_ts > rx_ts)
         async with ICMP_control(connection_beta):
-            with pytest.raises(asyncio.TimeoutError):
-                await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
+            await ping_until_trigger(connection_alpha, beta.ip_addresses[0])
 
             # Guarantee that the ICMP is not responded
             await asyncio.sleep(WG_POLLING_PERIOD_S)
@@ -816,8 +819,8 @@ async def test_event_link_state_delayed_packet(
         # alpha will only receive the ICMP reply 20s after,
         # in the meantime alpha->beta link state goes DOWN.
         ping_instant = asyncio.get_event_loop().time()
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
+
+        await ping_until_trigger(connection_alpha, beta.ip_addresses[0])
 
         await client_alpha.wait_for_link_state(
             beta.public_key, LinkState.DOWN, resolve_idle_timeout(setup_params[0])
@@ -952,8 +955,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
         # will guarantee a different polling interval where tx is the only counter to be increased
         await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
 
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
+        await ping_until_trigger(connection_alpha, beta.ip_addresses[0])
 
         # On some implementations (eg: WireguardNT) TX packet counter doesn't increase when the adapter is
         # disabled, which means link state detection might fail.
@@ -1082,8 +1084,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
         # will guarantee a different polling interval where tx is the only counter to be increased
         await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
 
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
+        await ping_until_trigger(connection_alpha, beta.ip_addresses[0])
 
         # On some implementations (eg: WireguardNT) TX packet counter doesn't increase for packets unsucessfully
         # sent, which happens when the pathtype is direct and the adapter is disabled. When that happens link state detection will
@@ -1209,8 +1210,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_with_vpn(
         # will guarantee a different polling interval where tx is the only counter to be increased
         await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
 
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_alpha, config.PHOTO_ALBUM_IP, WG_POLLING_PERIOD_S)
+        await ping_until_trigger(connection_alpha, config.PHOTO_ALBUM_IP)
 
         # On some implementations (eg: WireguardNT) TX packet counter doesn't increase for packets unsucessfully
         # sent, which happens when the pathtype is direct and the adapter is disabled. When that happens link state detection will

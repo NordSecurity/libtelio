@@ -12,13 +12,24 @@ class TelioLogNotifier:
     _connection: Connection
 
     def __init__(self, connection: Connection) -> None:
-        assert (
-            connection.target_os == TargetOS.Linux
-        ), "TelioLogNotifier supported only on Linux"
+        if connection.target_os == TargetOS.Linux:
+            cmd = ["tail", "-n", "1", "-F", "/tcli.log"]
+        elif connection.target_os == TargetOS.Windows:
+            # [2025-11-14 14:27:25] chcp stdout: Active code page: 437
+            cmd = [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                "Get-Content -Path .\\tcli.log -Wait -Tail 1",
+            ]
+        else:
+            # TODO: there's no reason it wouldn't work on MacOS
+            raise AssertionError(
+                f"Unrecognized OS for notifier: {connection.target_os}"
+            )
+
         self._connection = connection
-        self._process = connection.create_process(
-            ["tail", "-n", "1", "-F", "/tcli.log"], quiet=True
-        )
+        self._process = connection.create_process(cmd, quiet=True)
         self._output_notifier = OutputNotifier()
 
     def notify_output(self, what: str) -> asyncio.Event:
