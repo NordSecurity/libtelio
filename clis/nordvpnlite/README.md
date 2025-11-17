@@ -72,6 +72,8 @@ needs be absolute, otherwise will be relative to `working-directory` when daemon
 * `interface`
   * `name` - Name of tunnel interface to connect to. Note that for macOS
   the name has to be in form `tun#` where `#` can be any integer number
+  * `max_route_priority` - Optional maximum routing rule priority value, if
+  not set the next available values before `from all lookup main` will be used
   * `config_provider` - Provider for configuring the interface address,
   possible options:
     * `manual` - do not configure interfaces automatically
