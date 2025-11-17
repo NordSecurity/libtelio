@@ -474,6 +474,68 @@ fn dynamic_store_callback(
     telio_log_info!("Force rebinding the sockets because of DynamicStore key change");
     telio_log_debug!("DynamicStore key changed: {:?}", _changed_keys);
 
+    let primary_interfaces = get_primary_interface_names();
+
+    // Returns true if the given interface is primary.
+    let is_primary = |interface: &str| -> bool {
+        let interface = interface.to_owned();
+        primary_interfaces.contains(&interface)
+    };
+
+    let mut must_broadcast = false;
+    for changed_key in &_changed_keys {
+        let changed_key = changed_key.to_string();
+        let mut key_path = changed_key.split('/');
+        match key_path.next_back() {
+            // One of:
+            //  State:/Network/Interface/<interface>/IPConfigurationBusy
+            Some("IPConfigurationBusy") => {
+                // Is an <interface> the one we actually care about?
+                match key_path.next_back() {
+                    // If it is primary, then we do.
+                    Some(interface) => {
+                        if is_primary(interface) {
+                            must_broadcast = true;
+                            break;
+                        }
+                    }
+                    // Otherwise we must not broadcast the event.
+                    None => {}
+                }
+            }
+            // One of:
+            //  State:/Network/Global/IPv4
+            //  State:/Network/Interface/<interface>/IPv4
+            //  State:/Network/Interface/<service-UUID>/IPv4
+            Some("IPv4") => {
+                // Is an <interface> the one we actually care about?
+                match key_path.next_back() {
+                    // If it is Global, then we do.
+                    Some("Global") => {
+                        must_broadcast = true;
+                        break;
+                    }
+                    // If it is primary, then we do.
+                    Some(interface) => {
+                        if is_primary(interface) {
+                            must_broadcast = true;
+                            break;
+                        }
+                    }
+                    // Otherwise we must not broadcast the event.
+                    None => {}
+                }
+            }
+            // Unknown key, don't broadcast the event.
+            _ => {}
+        }
+    }
+
+    if !must_broadcast {
+        telio_log_info!("Will not notify about DynamicStore key change");
+        return;
+    }
+
     if let Err(_e) = PROTECTOR_PATH_CHANGE_BROADCAST.send(()) {
         telio_log_warn!("Failed to notify about Dynamic Store change");
     } else {
