@@ -63,6 +63,7 @@ TASKS: List[asyncio.Task] = []
 END_TASKS: threading.Event = threading.Event()
 
 LOG_DIR = "logs"
+SESSION_VM_MARKS: set[str] = set()
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -271,8 +272,15 @@ async def setup_check_duplicate_mac_addresses():
 
     async with AsyncExitStack() as exit_stack:
         for conn_tag in ConnectionTag:
-            conn = await exit_stack.enter_async_context(new_connection_raw(conn_tag))
-
+            try:
+                conn = await exit_stack.enter_async_context(
+                    new_connection_raw(conn_tag)
+                )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                log.warning("Failed to check MAC address for %s: %s", conn_tag.name, e)
+                if os.environ.get("GITLAB_CI"):
+                    raise e
+                continue
             if conn.target_os == TargetOS.Linux:
                 cmd = ["sh", "-c", "ip link show | awk '/link\\/ether/ {print $2}'"]
             elif conn.target_os == TargetOS.Mac:
@@ -306,8 +314,12 @@ async def setup_check_arp_cache():
     Ensure all VM LAN_ADDR_MAP IPv4 addresses are present in the host ARP cache
     and are in a usable state.
     """
+    if "GITLAB_CI" not in os.environ:
+        log.info("setup_check: skipping ARP cache validation on non-CI environment")
+        return
+
     if TargetOS.local() != TargetOS.Linux:
-        print("setup_check: skipping ARP cache validation on non-Linux host")
+        log.info("setup_check: skipping ARP cache validation on non-Linux host")
         return
 
     def warm_arp(ip: str) -> None:
@@ -513,25 +525,17 @@ async def _copy_vm_binaries(tag: ConnectionTag):
         raise e
 
 
-async def _copy_vm_binaries_if_needed(items):
-    windows_bins_copied = False
-    mac_bins_copied = False
-    openwrt_bins_copied = False
-    for item in items:
-        for mark in item.own_markers:
-            if mark.name == "windows" and not windows_bins_copied:
-                await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_1)
-                await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_2)
-                windows_bins_copied = True
-            elif mark.name == "mac" and not mac_bins_copied:
-                await _copy_vm_binaries(ConnectionTag.VM_MAC)
-                mac_bins_copied = True
-            elif mark.name == "openwrt" and not openwrt_bins_copied:
-                await _copy_vm_binaries(ConnectionTag.VM_OPENWRT_GW_1)
-                openwrt_bins_copied = True
-
-            if windows_bins_copied and mac_bins_copied and openwrt_bins_copied:
-                return
+async def _copy_vm_binaries_if_needed():
+    if "windows" in SESSION_VM_MARKS:
+        await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_1)
+        try:
+            await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_2)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            log.warning("[Ignored] Couldn't copy binary to VM_WINDOWS_2: %s", e)
+    if "mac" in SESSION_VM_MARKS:
+        await _copy_vm_binaries(ConnectionTag.VM_MAC)
+    if "openwrt" in SESSION_VM_MARKS:
+        await _copy_vm_binaries(ConnectionTag.VM_OPENWRT_GW_1)
 
 
 def save_dmesg_from_host(suffix):
@@ -651,15 +655,26 @@ def pytest_collection_modifyitems(items):
             item.add_marker(pytest.mark.timeout(300))
 
 
+def _get_session_vm_marks(items):
+    global SESSION_VM_MARKS
+
+    SESSION_VM_MARKS = set()
+    for item in items:
+        for mark in item.own_markers:
+            SESSION_VM_MARKS.add(mark.name)
+
+
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
+        _get_session_vm_marks(session.items)
+
         if not asyncio.run(perform_setup_checks()):
             pytest.exit("Setup checks failed, exiting ...")
 
         if os.environ.get("NATLAB_SAVE_LOGS") is not None:
             asyncio.run(collect_kernel_logs(session.items, "before_tests"))
 
-        asyncio.run(_copy_vm_binaries_if_needed(session.items))
+        asyncio.run(_copy_vm_binaries_if_needed())
 
 
 def pytest_runtest_setup():
