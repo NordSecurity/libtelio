@@ -37,8 +37,16 @@ class Ping:
         kill_id = secrets.token_hex(8).upper()
 
         if connection.target_os == TargetOS.Windows:
+            size = 600 + (int(kill_id[:2], 16) % 200)  # size 600–799 bytes
             self._process = connection.create_process(
-                ["ping", ("-4" if self._ip_proto == IPProto.IPv4 else "-6"), "-t", ip],
+                [
+                    "ping",
+                    ("-4" if self._ip_proto == IPProto.IPv4 else "-6"),
+                    "-t",
+                    "-l",
+                    str(size),
+                    ip,
+                ],
                 quiet=True,
             )
         elif connection.target_os == TargetOS.Mac:
