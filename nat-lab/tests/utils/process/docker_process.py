@@ -76,7 +76,9 @@ class DockerProcess(Process):
                 await self._read_loop(exe_stream, stdout_callback, stderr_callback)
             except asyncio.CancelledError:
                 log.debug(
-                    "[%s] '%s' process cancelled.", self._container_name, self._command
+                    "[%s] '%s' process cancelled.",
+                    self._container_name,
+                    " ".join(self._command),
                 )
                 raise
             except:
@@ -204,7 +206,6 @@ class DockerProcess(Process):
                 self._stderr += output
                 if stderr_callback:
                     await stderr_callback(output)
-
         for stream_id, buffer in buffers.items():
             if buffer:
                 output = buffer.decode(sys.getfilesystemencoding(), errors="replace")

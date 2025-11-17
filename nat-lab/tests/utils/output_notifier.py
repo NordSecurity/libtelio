@@ -1,6 +1,8 @@
 import asyncio
+import datetime
 from contextlib import contextmanager
 from typing import List, Dict, Set, Iterator
+from utils.logger import log
 
 
 class OutputCapture:
@@ -20,6 +22,7 @@ class OutputNotifier:
         self._case_sensitive = case_sensitive
 
     def notify_output(self, what: str, event: asyncio.Event) -> None:
+        log.debug("Monitoring logs for: '[%s]'", what)
         if not self._case_sensitive:
             what = what.lower()
 
@@ -28,6 +31,7 @@ class OutputNotifier:
         else:
             self._output_events[what].append(event)
 
+    # TODO: remove
     @contextmanager
     def capture_output(self, what: str) -> Iterator[OutputCapture]:
         capture = OutputCapture(what)
@@ -38,6 +42,8 @@ class OutputNotifier:
             self._captures.remove(capture)
 
     async def handle_output(self, output: str) -> bool:
+        log.debug("[%s] recv log line: [%s]", datetime.datetime.now(), output)
+
         if not self._case_sensitive:
             output = output.lower()
 
