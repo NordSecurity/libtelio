@@ -342,7 +342,8 @@ async fn get_countries(cert_path: Option<&Path>) -> Result<Vec<Country>, Error> 
         .header(header::ACCEPT, "application/json")
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS))
         .send()
-        .await?;
+        .await
+        .inspect_err(|err| warn!("Response error: {err:?}"))?;
 
     let status = response.status();
     let resp = response.text().await?;
@@ -422,7 +423,8 @@ async fn get_recommended_servers(
         .query(&filter)
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS))
         .send()
-        .await?;
+        .await
+        .inspect_err(|err| warn!("Response error: {err:?}"))?;
 
     let status = response.status();
     let resp = response.text().await?;

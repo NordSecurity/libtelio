@@ -316,31 +316,35 @@ impl TelioTaskCmd {
 /// If the config contains a specific server, it uses that directly, otherwise if
 /// a country is provided, it queries the API to find a recommended server.
 /// Sends a `ConnectToExitNode` command via the provided channel on success.
+/// Sends a `Quit` command via the provided channel on failure.
 async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sender<TelioTaskCmd>) {
-    match get_server_endpoints_list(config).await {
+    let (response_tx, _) = oneshot::channel();
+    let command = match get_server_endpoints_list(config).await {
         Ok(endpoints) => {
             // TODO: LLT-6460 - We can store the recommended server list, just in case
             // one server fails to connect, try the next one.
             if let Some(endpoint) = endpoints.first() {
                 debug!("Selected exit node: {:#?}", endpoint);
-                // Send the command to initiate the VPN connection
-                #[allow(mpsc_blocking_send)]
-                if let Err(e) = tx
-                    .send(TelioTaskCmd::ConnectToExitNode(ExitNodeConfig {
-                        endpoint: endpoint.to_owned(),
-                        dns: config.dns.clone(),
-                    }))
-                    .await
-                {
-                    error!("Failed to send connect command to telio task: {e}");
-                }
+                // initiate the VPN connection
+                TelioTaskCmd::ConnectToExitNode(ExitNodeConfig {
+                    endpoint: endpoint.to_owned(),
+                    dns: config.dns.clone(),
+                })
             } else {
                 error!("Getting exit node endpoint failed: empty list");
+                TelioTaskCmd::Quit(response_tx)
             }
         }
         Err(e) => {
             error!("Getting exit node endpoint failed: {e}");
+            TelioTaskCmd::Quit(response_tx)
         }
+    };
+
+    // Send the command to the telio task
+    #[allow(mpsc_blocking_send)]
+    if let Err(e) = tx.send(command).await {
+        error!("Failed to send exit node command to telio task: {e}");
     }
 }
 

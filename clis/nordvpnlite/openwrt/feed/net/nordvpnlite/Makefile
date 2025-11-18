@@ -39,12 +39,31 @@ define Package/nordvpnlite/install
 	$(INSTALL_DIR) $(1)/usr/sbin
 	$(INSTALL_BIN) ${PKG_BINFILE} $(1)/usr/sbin/nordvpnlite
 
-	$(INSTALL_DIR) $(1)/etc/init.d
-	$(INSTALL_BIN) ./files/nordvpnlite.init $(1)/etc/init.d/nordvpnlite
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_DATA) ./files/nordvpnlite.conf $(1)/etc/config/nordvpnlite
 	$(INSTALL_DIR) $(1)/etc/nordvpnlite
 	$(INSTALL_DATA) ./files/config.json $(1)/etc/nordvpnlite/config.json
+	$(INSTALL_DIR) $(1)/etc/init.d
+	$(INSTALL_BIN) ./files/nordvpnlite.init $(1)/etc/init.d/nordvpnlite
+endef
+
+define Package/nordvpnlite/postinst
+	#!/bin/sh
+	# check if we are on real system
+	if [ -z "$${IPKG_INSTROOT}" ]; then
+		echo "Enabling nordvpnlite service"
+		/etc/init.d/nordvpnlite enable
+	fi
+	exit 0
+endef
+
+define Package/nordvpnlite/prerm
+	#!/bin/sh
+	if [ -z "$${IPKG_INSTROOT}" ]; then
+		echo "Disabling nordvpnlite service"
+		/etc/init.d/nordvpnlite disable
+	fi
+	exit 0
 endef
 
 $(eval $(call BuildPackage,nordvpnlite))
