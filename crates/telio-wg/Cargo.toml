@@ -36,6 +36,7 @@ telio-model.workspace = true
 telio-sockets = { workspace = true, features = ["mockall"] }
 telio-task.workspace = true
 telio-utils.workspace = true
+telio-wireguard-traceroute.workspace = true
 telio-pinger.workspace = true
 itertools.workspace = true
 widestring = "1.2.1"

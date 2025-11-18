@@ -15,6 +15,7 @@ use std::{mem, option, result};
 use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
 };
+use telio_wireguard_traceroute::traceroute;
 use tokio::time::sleep;
 use uuid::Uuid;
 use widestring::U16CStr;
@@ -38,6 +39,7 @@ pub struct WindowsNativeWg {
     server_handshake_receiver: Receiver<Instant>,
     last_server_handshake_ts: Option<Instant>,
     last_listen_port_change_ts: Option<Instant>,
+    traceroute: Option<(tokio::task::JoinHandle<()>, Instant)>,
 
     // Required for calling winipcfg API. Cannot be retrieved from the driver once the vNIC has failed / was removed.
     luid: u64,
@@ -125,6 +127,7 @@ impl WindowsNativeWg {
             server_handshake_receiver: SERVER_HANDSHAKE_NOTIFICATION.subscribe(),
             last_server_handshake_ts: None,
             last_listen_port_change_ts: None,
+            traceroute: None,
             luid,
             cleaned_up: Arc::new(Mutex::new(false)),
             watcher: watcher.clone(),
@@ -272,6 +275,65 @@ impl WindowsNativeWg {
         Ok(wg_dev)
     }
 
+    async fn spawn_traceroute(&mut self, old_itf: Interface) -> Result<(), Error> {
+        // First collect some necessary info
+        telio_log_debug!("Spawning traceroute: {old_itf:?}");
+
+        let traceroute_handle = tokio::task::spawn(async move {
+            let source_port = old_itf.listen_port;
+            let vpn_peer = if let Some(peer) = old_itf.peers.first_key_value().map(|(_, p)| p) {
+                peer
+            } else {
+                telio_log_debug!("No Peer for traceroute");
+                return;
+            };
+
+            let dest = if let Some(endpoint) = vpn_peer.endpoint {
+                endpoint
+            } else {
+                telio_log_debug!("No Endpoint for traceroute");
+                return;
+            };
+
+            let self_private_key = if let Some(sk) = old_itf.private_key {
+                sk
+            } else {
+                telio_log_debug!("No key for traceroute");
+                return;
+            };
+
+            let peer_public_key = vpn_peer.public_key;
+            let first_ttl = 1;
+            let max_ttl = 30;
+            let queries = 3;
+            let wait = Duration::from_secs(3);
+
+            let report = traceroute(
+                source_port,
+                &dest,
+                self_private_key.as_bytes(),
+                &peer_public_key.0,
+                first_ttl,
+                max_ttl,
+                queries,
+                wait,
+            )
+            .await;
+
+            match report {
+                Ok(report) => telio_log_info!("{report}"),
+                Err(e) => {
+                    telio_log_debug!("traceroute failed: {e:?}");
+                    return;
+                }
+            }
+        });
+
+        self.traceroute = Some((traceroute_handle, Instant::now()));
+
+        Ok(())
+    }
+
     async fn trigger_listen_port_change(&mut self, config: Response) -> Result<(), Error> {
         telio_log_debug!("Triggering listen_port change");
 
@@ -305,6 +367,7 @@ impl WindowsNativeWg {
         //  port.
         let ephemeral_socket = UdpSocket::bind("0.0.0.0:0")?;
         let assigned_port = ephemeral_socket.local_addr()?.port();
+        let old_itf = itf.clone();
         drop(ephemeral_socket);
 
         // Now attempt to change the listen-port in WG-NT
@@ -320,6 +383,27 @@ impl WindowsNativeWg {
             .map_err(|e| Error::Fail(format!("Adapter error: {:?}", e)))?;
 
         self.last_listen_port_change_ts = Some(Instant::now());
+
+        // If traceroute is finished or running for too long - drop it.
+        if let Some((task, ts)) = &self.traceroute {
+            if task.is_finished() {
+                telio_log_debug!(
+                    "Last traceroute info: {:?} {:?}",
+                    task.is_finished(),
+                    ts.elapsed()
+                );
+                self.traceroute.take();
+            } else if ts.elapsed() > Duration::from_secs(10 * 60) {
+                task.abort();
+                self.traceroute.take();
+            }
+        }
+
+        // Spawn new traceroute if there is non running already
+        if self.traceroute.is_none() {
+            self.spawn_traceroute(old_itf).await?;
+        }
+
         Ok(())
     }
 
