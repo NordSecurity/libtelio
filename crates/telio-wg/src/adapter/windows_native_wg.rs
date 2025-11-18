@@ -304,9 +304,9 @@ impl WindowsNativeWg {
 
             let peer_public_key = vpn_peer.public_key;
             let first_ttl = 1;
-            let max_ttl = 30;
-            let queries = 3;
-            let wait = Duration::from_secs(3);
+            let max_ttl = 20;
+            let queries = 2;
+            let wait = Duration::from_secs(5);
 
             let report = traceroute(
                 source_port,
