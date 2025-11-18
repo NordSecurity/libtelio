@@ -310,7 +310,7 @@ fn http_client(cert_path: Option<&Path>) -> Client {
         .unwrap_or_default()
 }
 
-/// Get list of all known countries from core API.
+/// Get the list of countries with VPN servers from core API.
 pub async fn get_countries_with_exp_backoff(
     cert_path: Option<&Path>,
 ) -> Result<Vec<Country>, Error> {
@@ -334,7 +334,7 @@ pub async fn get_countries_with_exp_backoff(
     }
 }
 
-/// Get list of all known countries from core API.
+/// Get the list of countries with VPN servers from core API.
 async fn get_countries(cert_path: Option<&Path>) -> Result<Vec<Country>, Error> {
     debug!("Getting countries list");
     let response = http_client(cert_path)
