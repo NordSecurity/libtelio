@@ -516,10 +516,6 @@ pub struct FeatureLinkDetection {
     #[default = 15]
     pub rtt_seconds: u64,
 
-    /// Check the link state before reporting it as down (Windows only)
-    #[default = 0]
-    pub no_of_pings: u32,
-
     /// Use link detection for downgrade logic
     #[default = false]
     pub use_for_downgrade: bool,
@@ -774,7 +770,6 @@ mod tests {
             },
             "link_detection": {
                 "rtt_seconds": 17,
-                "no_of_pings": 18,
                 "use_for_downgrade": true
             },
             "dns": {
@@ -881,7 +876,6 @@ mod tests {
                     },
                     link_detection: Some(FeatureLinkDetection {
                         rtt_seconds: 17,
-                        no_of_pings: 18,
                         use_for_downgrade: true,
                     }),
                     dns: FeatureDns {

@@ -217,8 +217,9 @@ pub struct LinkDetectionUpdateResult {
 // Transition from StateVariant::Up to StateVariant::Down is made through the StateVariant::PossibleDown state.
 // Transition from StateVariant::Up to StateVariant::PossibleDown, when the is_link_up condition is false.
 // StateVariant::PossibleDown introduces a delay of 3 seconds (State::POSSIBLE_DOWN_DELAY) until we report link state Down.
-// Note (Windows): A ICMP ping request may be triggered using the EnhancedLinkDetection module from the
-// StateVariant::Up state when a network interface change is detected.
+// Note (Windows): Whenever a network interface change is detected, an ICMP request is sent for every connected peer from the
+// StateVariant::Up state. This while the first_tx_after_rx variable is artificially set so that LinkDetection component
+// can work as usual. (LLT-5073)
 #[derive(Debug)]
 enum StateVariant {
     Down,

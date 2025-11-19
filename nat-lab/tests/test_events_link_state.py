@@ -32,18 +32,12 @@ MAX_RTT_ALLOWED_S = 1
 # The duration which after a link is considered not to be up. (ie: PossibleDown->Down)
 LINK_STATE_TIMEOUT_S = WG_PASSIVE_KEEPALIVE_S + MAX_RTT_ALLOWED_S
 POSSIBLE_DOWN_DELAY = 3
-# Enhanced detection (ED) issues a ping when there's the Up->PossibleDown link state transition,
-# if no reply is received for LINK_STATE_TIMEOUT_S the link state will transit to Down.
-POSSIBLE_DOWN_DELAY_ED = LINK_STATE_TIMEOUT_S
 # As observed, detection in practice took 20-50% beyond LINK_STATE_TIMEOUT_S, thus a 50% tolerance is enough
-# to detect down link state, with or without ED, whether on personal setup or on CI.
+# to detect down link state, whether on personal setup or on CI.
 # If the tests happen to be flaky, this value shouldn't be increased.
 TOLERANCE = 1.5
 # The time by which we would expect to emit at least one link-state event, when tx_ts > rx_ts and none rx packet for the same period.
 IDLE_TIMEOUT_S = round((LINK_STATE_TIMEOUT_S + POSSIBLE_DOWN_DELAY) * TOLERANCE)  # 21s
-IDLE_TIMEOUT_ED_S = round(
-    (LINK_STATE_TIMEOUT_S + POSSIBLE_DOWN_DELAY_ED) * TOLERANCE
-)  # 33s
 
 
 def long_persistent_keepalive_periods() -> FeatureWireguard:
@@ -64,18 +58,12 @@ def long_persistent_keepalive_periods() -> FeatureWireguard:
 
 def _generate_setup_parameter_pair(
     cfg: List[Tuple[ConnectionTag, TelioAdapterType]],
-    enhanced_detection: bool,
     direct: bool = False,
     vpn: bool = False,
 ) -> List[SetupParameters]:
-    if enhanced_detection:
-        count = 1
-    else:
-        count = 0
-
     features = default_features(enable_link_detection=False, enable_direct=direct)
     features.link_detection = FeatureLinkDetection(
-        rtt_seconds=MAX_RTT_ALLOWED_S, no_of_pings=count, use_for_downgrade=False
+        rtt_seconds=MAX_RTT_ALLOWED_S, use_for_downgrade=False
     )
     features_default_wg_persistent_keepalive = features.wireguard.persistent_keepalive
 
@@ -106,9 +94,6 @@ def _generate_setup_parameter_pair(
     ]
 
 
-# Enhanced detection must be second item in the tuple so that test names ending index refer to correct ED state.
-# ie: [<test_name>0] -> ED is disabled
-# ie: [<test_name>1] -> ED is enabled
 FEATURE_ENABLED_PARAMS_RELAY = [
     param
     for param_pair in [
@@ -122,7 +107,6 @@ FEATURE_ENABLED_PARAMS_RELAY = [
                             TelioAdapterType.NEP_TUN,
                         ),
                     ],
-                    enhanced_detection=False,
                 ),
                 marks=pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else (),
             ),
@@ -135,34 +119,6 @@ FEATURE_ENABLED_PARAMS_RELAY = [
                             TelioAdapterType.NEP_TUN,
                         ),
                     ],
-                    enhanced_detection=True,
-                ),
-                marks=pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else (),
-            ),
-        )
-        for tag, adapter in [
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.LINUX_NATIVE_TUN),
-            (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
-            (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
-        ]
-    ]
-    for param in param_pair
-]
-
-FEATURE_ENABLED_PARAMS_RELAY_ED = [
-    param
-    for param_pair in [
-        (
-            pytest.param(
-                _generate_setup_parameter_pair(
-                    [
-                        (tag, adapter),
-                        (
-                            ConnectionTag.DOCKER_CONE_CLIENT_2,
-                            TelioAdapterType.NEP_TUN,
-                        ),
-                    ],
-                    enhanced_detection=True,
                 ),
                 marks=pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else (),
             ),
@@ -191,10 +147,6 @@ FEATURE_DISABLED_PARAMS = [
 
 # Beta node sends the keepalive packets with period according with its wg implementation, impacting
 # alpha link detection mechanism.
-#
-# Enhanced detection must be second item in the tuple so that test names ending index refer to correct ED state.
-# ie: [<test_name>0] -> ED is disabled
-# ie: [<test_name>1] -> ED is enabled
 FEATURE_ENABLED_PARAMS_RELAY_PLUS_LINUX_NATIVE_TUN_AS_BETA = (
     FEATURE_ENABLED_PARAMS_RELAY
     + [
@@ -210,22 +162,6 @@ FEATURE_ENABLED_PARAMS_RELAY_PLUS_LINUX_NATIVE_TUN_AS_BETA = (
                                 TelioAdapterType.LINUX_NATIVE_TUN,
                             ),
                         ],
-                        enhanced_detection=False,
-                    ),
-                    marks=(
-                        pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else ()
-                    ),
-                ),
-                pytest.param(
-                    _generate_setup_parameter_pair(
-                        [
-                            (tag, adapter),
-                            (
-                                ConnectionTag.DOCKER_CONE_CLIENT_2,
-                                TelioAdapterType.LINUX_NATIVE_TUN,
-                            ),
-                        ],
-                        enhanced_detection=True,
                     ),
                     marks=(
                         pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else ()
@@ -250,13 +186,6 @@ async def wait_for_any_with_timeout(tasks, timeout: float):
     )
     if len(done_tasks) == 0:
         raise asyncio.TimeoutError
-
-
-def resolve_idle_timeout(params: SetupParameters) -> int:
-    assert params.features.link_detection
-    if params.features.link_detection.no_of_pings > 0:
-        return IDLE_TIMEOUT_ED_S
-    return IDLE_TIMEOUT_S
 
 
 @pytest.mark.asyncio
@@ -284,7 +213,7 @@ async def test_event_link_state_peers_idle_all_time(
                         )
                     ),
                 ],
-                timeout=resolve_idle_timeout(setup_params[0]),
+                timeout=IDLE_TIMEOUT_S,
             )
 
         assert client_alpha.get_link_state_events(beta.public_key) == [
@@ -356,7 +285,7 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
                         )
                     ),
                 ],
-                timeout=resolve_idle_timeout(setup_params[0]),
+                timeout=IDLE_TIMEOUT_S,
             )
 
         await ping(connection_alpha, beta.ip_addresses[0])
@@ -377,7 +306,7 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
                         )
                     ),
                 ],
-                timeout=resolve_idle_timeout(setup_params[0]),
+                timeout=IDLE_TIMEOUT_S,
             )
 
         # Expect the links are still UP
@@ -427,12 +356,9 @@ async def test_event_link_state_peer_goes_offline(
 
         # DOWN link state is expected after we send a packet and don't receive for more than:
         # WG Keep alive + Max. RTT allowed + Delay, where,
-        #      Delay = 3s when Enhanced detection is disabled
-        #      Delay = (WG Keep alive + Max. RTT allowed) when Enhanced detection is enabled
+        #      Delay = 3s
         await client_alpha.wait_for_link_state(
-            beta.public_key,
-            LinkState.DOWN,
-            (resolve_idle_timeout(setup_params[0]) - WG_PASSIVE_KEEPALIVE_S),
+            beta.public_key, LinkState.DOWN, (IDLE_TIMEOUT_S - WG_PASSIVE_KEEPALIVE_S)
         )
 
         assert client_alpha.get_link_state_events(beta.public_key) == [
@@ -463,7 +389,7 @@ async def test_event_link_state_feature_disabled(
         await ping(connection_alpha, beta.ip_addresses[0])
         await ping(connection_beta, alpha.ip_addresses[0])
 
-        await asyncio.sleep(IDLE_TIMEOUT_ED_S)
+        await asyncio.sleep(IDLE_TIMEOUT_S)
 
         alpha_events = client_beta.get_link_state_events(alpha.public_key)
         beta_events = client_alpha.get_link_state_events(beta.public_key)
@@ -549,248 +475,8 @@ async def test_event_link_state_peer_doesnt_respond(
                             )
                         ),
                     ],
-                    timeout=resolve_idle_timeout(setup_params[0]),
-                )
-
-
-class _BlockOutgoingUdpBySize:
-    def __init__(self, conn: Connection, packet_size_bytes: int):
-        self._connection = conn
-        self._packet_size_bytes = packet_size_bytes
-        self._rule_name = f"BlockUDP{packet_size_bytes}Bytes"
-
-    async def _apply_rule(self, add: bool):
-        if self._connection.target_os == TargetOS.Windows:
-            # Windows doesn't support packet size filtering in netsh firewall.
-            return
-        await self._connection.create_process([
-            "iptables",
-            "--append" if add else "--delete",
-            "OUTPUT",
-            "--protocol",
-            "udp",
-            "--match",
-            "length",
-            "--length",
-            str(self._packet_size_bytes),
-            "--jump",
-            "DROP",
-        ]).execute()
-
-    async def __aenter__(self):
-        await self._apply_rule(add=True)
-        return self
-
-    async def __aexit__(self, *_):
-        await self._apply_rule(add=False)
-
-
-# Blocks sending of passive keepalives on alpha.
-# BEWARE: Because the other node will stop receiving keepalives it will try to handshake
-# after the KEEPALIVE_TIMEOUT+REKEY_TIMEOUT interval.
-# Therefore handshake init packets should be blocked on other node(s).
-class Block_outgoing_passive_keepalive(_BlockOutgoingUdpBySize):
-    def __init__(self, conn: Connection):
-        super().__init__(conn, packet_size_bytes=60)
-
-
-class Block_outgoing_handshake(_BlockOutgoingUdpBySize):
-    def __init__(self, conn: Connection):
-        super().__init__(conn, packet_size_bytes=176)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "setup_params",
-    [
-        # TODO: Windows not support at the moment (keepalive/handshake packets need to be filtered)
-        #     pytest.param(
-        #         _generate_setup_parameter_pair(
-        #             [
-        #                 (
-        #                     ConnectionTag.VM_WINDOWS_1,
-        #                     TelioAdapterType.WINDOWS_NATIVE_TUN,
-        #                 ),
-        #                 (
-        #                     ConnectionTag.DOCKER_CONE_CLIENT_2,
-        #                     TelioAdapterType.NEP_TUN,
-        #                 ),
-        #             ],
-        #             enhanced_detection=True,
-        #         ),
-        #         marks=pytest.mark.windows,
-        #     ),
-        pytest.param(
-            _generate_setup_parameter_pair(
-                [
-                    (
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        TelioAdapterType.NEP_TUN,
-                    ),
-                    (
-                        ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        TelioAdapterType.NEP_TUN,
-                    ),
-                ],
-                enhanced_detection=False,
-            ),
-        ),
-        pytest.param(
-            _generate_setup_parameter_pair(
-                [
-                    (
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        TelioAdapterType.LINUX_NATIVE_TUN,
-                    ),
-                    (
-                        ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        TelioAdapterType.NEP_TUN,
-                    ),
-                ],
-                enhanced_detection=False,
-            ),
-        ),
-    ],
-)
-async def test_event_link_state_without_enhanced_detection(
-    setup_params: List[SetupParameters],
-) -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(exit_stack, setup_params)
-        _, beta = env.nodes
-        client_alpha, _ = env.clients
-        connection_alpha, connection_beta = [
-            conn.connection for conn in env.connections
-        ]
-
-        # Ping just to assert connection between peers, counters timestamps are trivial at this stage
-        await ping(connection_alpha, beta.ip_addresses[0])
-
-        # Guarantee that we advance to the next polling window
-        await asyncio.sleep(WG_POLLING_PERIOD_S)
-
-        # Trigger Alpha's link detection countdown (tx_ts > rx_ts)
-        async with ICMP_control(connection_beta):
-            with pytest.raises(asyncio.TimeoutError):
-                await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
-
-            # Guarantee that the ICMP is not responded
-            await asyncio.sleep(WG_POLLING_PERIOD_S)
-
-        # Blocking passive keepalives from beta to not impact alpha's rx counters
-        async with Block_outgoing_passive_keepalive(connection_beta):
-            async with Block_outgoing_handshake(connection_alpha):
-                await wait_for_any_with_timeout(
-                    [
-                        asyncio.create_task(
-                            client_alpha.wait_for_link_state(
-                                beta.public_key, LinkState.DOWN
-                            )
-                        ),
-                    ],
                     timeout=IDLE_TIMEOUT_S,
                 )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "setup_params",
-    [
-        # TODO: Windows not fully suported because keepalive/handshake packets need to be filtered,
-        # however it should still work because ICMP packet from beta aborts the rekeying timeout on alpha.
-        pytest.param(
-            _generate_setup_parameter_pair(
-                [
-                    (
-                        ConnectionTag.VM_WINDOWS_1,
-                        TelioAdapterType.WINDOWS_NATIVE_TUN,
-                    ),
-                    (
-                        ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        TelioAdapterType.NEP_TUN,
-                    ),
-                ],
-                enhanced_detection=True,
-            ),
-            marks=pytest.mark.windows,
-        ),
-        pytest.param(
-            _generate_setup_parameter_pair(
-                [
-                    (
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        TelioAdapterType.NEP_TUN,
-                    ),
-                    (
-                        ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        TelioAdapterType.NEP_TUN,
-                    ),
-                ],
-                enhanced_detection=True,
-            ),
-        ),
-        pytest.param(
-            _generate_setup_parameter_pair(
-                [
-                    (
-                        ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        TelioAdapterType.LINUX_NATIVE_TUN,
-                    ),
-                    (
-                        ConnectionTag.DOCKER_CONE_CLIENT_2,
-                        TelioAdapterType.NEP_TUN,
-                    ),
-                ],
-                enhanced_detection=True,
-            ),
-        ),
-    ],
-)
-async def test_event_link_state_enhanced_detection(
-    setup_params: List[SetupParameters],
-) -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(exit_stack, setup_params)
-        alpha, beta = env.nodes
-        client_alpha, client_beta = env.clients
-        connection_alpha, connection_beta = [
-            conn.connection for conn in env.connections
-        ]
-
-        # Ping just to assert connection between peers, counters timestamps are trivial at this stage
-        await ping(connection_alpha, beta.ip_addresses[0])
-
-        # Guarantee that we advance to the next polling window
-        await asyncio.sleep(WG_POLLING_PERIOD_S)
-
-        # Trigger Alpha's link detection countdown (tx_ts > rx_ts)
-        async with ICMP_control(connection_beta):
-            with pytest.raises(asyncio.TimeoutError):
-                await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
-
-            # Guarantee that the ICMP is not responded
-            await asyncio.sleep(WG_POLLING_PERIOD_S)
-
-        # Blocking passive keepalives from beta to not impact alpha's rx counters, so that the enhanced detection icmp
-        # works isolated and don't have other packets interference.
-        async with Block_outgoing_passive_keepalive(connection_beta):
-            async with Block_outgoing_handshake(connection_alpha):
-                with pytest.raises(asyncio.TimeoutError):
-                    await wait_for_any_with_timeout(
-                        [
-                            asyncio.create_task(
-                                client_alpha.wait_for_link_state(
-                                    beta.public_key, LinkState.DOWN
-                                )
-                            ),
-                            asyncio.create_task(
-                                client_beta.wait_for_link_state(
-                                    alpha.public_key, LinkState.DOWN
-                                )
-                            ),
-                        ],
-                        timeout=IDLE_TIMEOUT_ED_S,
-                    )
 
 
 @pytest.mark.asyncio
@@ -808,7 +494,7 @@ async def test_event_link_state_delayed_packet(
 
         await ping(connection_alpha, beta.ip_addresses[0])
 
-        delay_s = resolve_idle_timeout(setup_params[0])
+        delay_s = IDLE_TIMEOUT_S
         await exit_stack.enter_async_context(
             add_outgoing_packets_delay(connection_beta, f"{delay_s}s")
         )
@@ -823,15 +509,13 @@ async def test_event_link_state_delayed_packet(
             await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
 
         await client_alpha.wait_for_link_state(
-            beta.public_key, LinkState.DOWN, resolve_idle_timeout(setup_params[0])
+            beta.public_key, LinkState.DOWN, IDLE_TIMEOUT_S
         )
 
         time_elapsed_since_ping = asyncio.get_event_loop().time() - ping_instant
         time_left_for_icmp_arrival = max(0, delay_s - time_elapsed_since_ping)
         await client_alpha.wait_for_link_state(
-            beta.public_key,
-            LinkState.UP,
-            time_left_for_icmp_arrival + resolve_idle_timeout(setup_params[0]),
+            beta.public_key, LinkState.UP, time_left_for_icmp_arrival + IDLE_TIMEOUT_S
         )
 
         assert client_alpha.get_link_state_events(beta.public_key) == [
@@ -856,17 +540,6 @@ async def test_event_link_state_delayed_packet(
                     (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
                     (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
                 ],
-                enhanced_detection=False,
-                direct=False,
-            ),
-        ),
-        pytest.param(
-            _generate_setup_parameter_pair(
-                [
-                    (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
-                    (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
-                ],
-                enhanced_detection=True,
                 direct=False,
             ),
         ),
@@ -879,20 +552,6 @@ async def test_event_link_state_delayed_packet(
                     ),
                     (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
                 ],
-                enhanced_detection=False,
-                direct=False,
-            ),
-        ),
-        pytest.param(
-            _generate_setup_parameter_pair(
-                [
-                    (
-                        ConnectionTag.DOCKER_SHARED_CLIENT_1,
-                        TelioAdapterType.LINUX_NATIVE_TUN,
-                    ),
-                    (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
-                ],
-                enhanced_detection=True,
                 direct=False,
             ),
         ),
@@ -902,18 +561,6 @@ async def test_event_link_state_delayed_packet(
                     (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
                     (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
                 ],
-                enhanced_detection=False,
-                direct=False,
-            ),
-            marks=pytest.mark.windows,
-        ),
-        pytest.param(
-            _generate_setup_parameter_pair(
-                [
-                    (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
-                    (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
-                ],
-                enhanced_detection=True,
                 direct=False,
             ),
             marks=pytest.mark.windows,
@@ -961,7 +608,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
         # On some implementations (eg: WireguardNT) TX packet counter doesn't increase when the adapter is
         # disabled, which means link state detection might fail.
         await client_alpha.wait_for_link_state(
-            beta.public_key, LinkState.DOWN, resolve_idle_timeout(setup_params[0])
+            beta.public_key, LinkState.DOWN, IDLE_TIMEOUT_S
         )
         assert client_alpha.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
@@ -989,17 +636,18 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
                     (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
                     (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
                 ],
-                enhanced_detection=False,
                 direct=True,
             ),
         ),
         pytest.param(
             _generate_setup_parameter_pair(
                 [
-                    (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
+                    (
+                        ConnectionTag.DOCKER_SHARED_CLIENT_1,
+                        TelioAdapterType.LINUX_NATIVE_TUN,
+                    ),
                     (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
                 ],
-                enhanced_detection=True,
                 direct=True,
             ),
         ),
@@ -1009,18 +657,6 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
                     (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
                     (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
                 ],
-                enhanced_detection=False,
-                direct=True,
-            ),
-            marks=pytest.mark.windows,
-        ),
-        pytest.param(
-            _generate_setup_parameter_pair(
-                [
-                    (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
-                    (ConnectionTag.DOCKER_CONE_CLIENT_2, TelioAdapterType.NEP_TUN),
-                ],
-                enhanced_detection=True,
                 direct=True,
             ),
             marks=pytest.mark.windows,
@@ -1089,7 +725,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
         # from the WireguardNT perspective, because the following hop is the proxy socket at localhost (relayed peer endpoint)
         # before going to the disabled NIC.
         await client_alpha.wait_for_link_state(
-            beta.public_key, LinkState.DOWN, resolve_idle_timeout(setup_params[0])
+            beta.public_key, LinkState.DOWN, IDLE_TIMEOUT_S
         )
         assert client_alpha.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
@@ -1118,16 +754,17 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
                 [
                     (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
                 ],
-                enhanced_detection=False,
                 vpn=True,
             ),
         ),
         pytest.param(
             _generate_setup_parameter_pair(
                 [
-                    (ConnectionTag.DOCKER_SHARED_CLIENT_1, TelioAdapterType.NEP_TUN),
+                    (
+                        ConnectionTag.DOCKER_SHARED_CLIENT_1,
+                        TelioAdapterType.LINUX_NATIVE_TUN,
+                    ),
                 ],
-                enhanced_detection=True,
                 vpn=True,
             ),
         ),
@@ -1136,17 +773,6 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
                 [
                     (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
                 ],
-                enhanced_detection=False,
-                vpn=True,
-            ),
-            marks=pytest.mark.windows,
-        ),
-        pytest.param(
-            _generate_setup_parameter_pair(
-                [
-                    (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
-                ],
-                enhanced_detection=True,
                 vpn=True,
             ),
             marks=pytest.mark.windows,
@@ -1210,7 +836,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_with_vpn(
         # from the WireguardNT perspective, because the following hop is the proxy socket at localhost (relayed peer endpoint)
         # before going to the disabled interface.
         await client_alpha.wait_for_link_state(
-            vpn_public_key, LinkState.DOWN, resolve_idle_timeout(alpha_setup_params[0])
+            vpn_public_key, LinkState.DOWN, IDLE_TIMEOUT_S
         )
         assert client_alpha.get_link_state_events(vpn_public_key) == [
             LinkState.DOWN,
