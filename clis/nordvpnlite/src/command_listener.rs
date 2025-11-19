@@ -74,7 +74,7 @@ pub(crate) struct DaemonOpts {
 /// that are too resource constrained for the full NordVPN application.
 #[derive(Parser, Debug)]
 #[clap()]
-#[command(version)]
+#[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("LIBTELIO_COMMIT_SHA"), ") ", env!("BUILD_PROFILE")))]
 pub enum Cmd {
     #[clap(about = "Runs the nordvpnlite event loop")]
     Start(DaemonOpts),
