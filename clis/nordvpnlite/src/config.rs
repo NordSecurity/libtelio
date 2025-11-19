@@ -2,6 +2,7 @@ use std::{
     io::Write,
     net::Ipv4Addr,
     num::NonZeroU64,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -213,6 +214,10 @@ impl NordVpnLiteConfig {
                 };
 
                 let mut file = fs::File::create(path)?;
+                let mut permissions = file.metadata()?.permissions();
+                permissions.set_mode(0o640);
+                fs::set_permissions(path, permissions)?;
+
                 let config_json = serde_json::to_string_pretty(&default_config)?;
                 file.write_all(config_json.as_bytes())?;
 
