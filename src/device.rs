@@ -1083,7 +1083,6 @@ impl Runtime {
             #[cfg(target_os = "windows")]
             let enhanced_detection = {
                 let enhanced_detection = Arc::new(EnhancedLinkDetection::start_with(
-                    ld_config.no_of_pings,
                     features.ipv6,
                     socket_pool.clone(),
                 )?);

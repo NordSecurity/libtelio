@@ -21,6 +21,8 @@ use telio_utils::{ip_stack, telio_log_warn, DualTarget, IpStack};
 
 use telio_utils::telio_log_debug;
 
+const NR_OF_PINGS: u32 = 1;
+
 /// Observer implementation that forwards network change events to LinkDetection
 impl LocalInterfacesObserver for EnhancedLinkDetection {
     fn notify(&self) {
@@ -46,19 +48,10 @@ pub struct EnhancedLinkDetection {
 
 impl EnhancedLinkDetection {
     /// Starts the enhanced link detection component with the specified configuration.
-    pub fn start_with(
-        no_of_pings: u32,
-        ipv6_enabled: bool,
-        socket_pool: Arc<SocketPool>,
-    ) -> std::io::Result<Self> {
+    pub fn start_with(ipv6_enabled: bool, socket_pool: Arc<SocketPool>) -> std::io::Result<Self> {
         let ping_channel = Chan::default();
         Ok(Self {
-            task: Task::start(State::new(
-                ping_channel.rx,
-                no_of_pings,
-                ipv6_enabled,
-                socket_pool,
-            )?),
+            task: Task::start(State::new(ping_channel.rx, ipv6_enabled, socket_pool)?),
             pinger_tx: ping_channel.tx,
             nw_change_flag: Arc::new(AtomicBool::new(false)),
         })
@@ -78,13 +71,12 @@ pub struct State {
 impl State {
     pub fn new(
         ping_channel: chan::Rx<(Vec<IpAddr>, Option<IpStack>)>,
-        no_of_pings: u32,
         ipv6_enabled: bool,
         socket_pool: Arc<SocketPool>,
     ) -> std::io::Result<Self> {
         Ok(State {
             ping_channel,
-            pinger: Pinger::new(no_of_pings, ipv6_enabled, socket_pool, "link_detection")?,
+            pinger: Pinger::new(NR_OF_PINGS, ipv6_enabled, socket_pool, "link_detection")?,
         })
     }
 }
