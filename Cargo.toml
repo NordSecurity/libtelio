@@ -16,7 +16,7 @@ disable_ens = []
 enable_ens = ["telio-proto/enable_ens"]
 
 [dependencies]
-cfg-if = "1.0.3"
+cfg-if = "1.0.4"
 ffi_helpers = "0.3.0"
 # We need this specific version for libmoose
 
@@ -129,12 +129,12 @@ once_cell = "1"
 parking_lot = "0.12"
 pnet_packet = "0.35"
 pretty_assertions = "1"
-proptest = "1.8"
+proptest = "1.9"
 proptest-derive = "0.6"
 protobuf-codegen = "3.7.2"
 rand = "0.8.5"
 rand_core = "0.6.4"
-regex = "1.11"
+regex = "1.12"
 rstest = "0.25.0"
 rustc-hash = "2"
 rustls-platform-verifier = "0.5"
@@ -145,7 +145,7 @@ rustls = { version = "0.23", default-features = false, features = [
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10.9"
-slog = "2.7"
+slog = "2.8"
 smart-default = "0.7.1"
 sn_fake_clock = "0.4"
 socket2 = "0.5"
@@ -161,7 +161,7 @@ tracing-subscriber = { version = "0.3", features = [
 tracing-appender = "0.2"
 uniffi = "0.28.3"
 url = "2.5"
-uuid = { version = "1.17", features = ["v4"] }
+uuid = { version = "1.18", features = ["v4"] }
 winapi = { version = "0.3", features = ["netioapi", "ws2def"] }
 windows = { version = "0.61", features = [
   "Win32_Networking_WinSock",
@@ -177,7 +177,7 @@ x25519-dalek = { version = "2.0.1", features = [
   "static_secrets",
 ] }
 zeroize = { version = "1.8.2", features = ["derive"] }
-hyper-util = "0.1.17"
+hyper-util = "0.1.18"
 
 telio-crypto = { version = "0.1.0", path = "./crates/telio-crypto" }
 telio-dns = { version = "0.1.0", path = "./crates/telio-dns" }
