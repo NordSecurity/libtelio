@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 bitflags = "2.10.0"
-histogram = "0.6.9"
+histogram = "0.11.3"
 md5 = { default-features = false, version = "0.8" }
 csv = "1.4"
 
