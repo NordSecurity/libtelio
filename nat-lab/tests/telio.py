@@ -1144,7 +1144,7 @@ class Client:
         return event
 
     async def wait_for_log(
-        self, what: str, case_insensitive: bool = True, count=1
+        self, what: str, case_insensitive: bool = True, count=1, not_greater=False
     ) -> None:
         if case_insensitive:
             what = what.lower()
@@ -1152,6 +1152,10 @@ class Client:
             logs = await self.get_log()
             if case_insensitive:
                 logs = logs.lower()
+            if not_greater:
+                assert (
+                    not logs.count(what) > count
+                ), f'"{what}" appeared {logs.count(what)} times, more than the expected {count}.'
             if logs.count(what) >= count:
                 break
             await asyncio.sleep(1)

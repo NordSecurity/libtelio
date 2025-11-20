@@ -50,6 +50,9 @@ use telio_nurse::{
     MeshnetEntities as NurseMeshnetEntities, Nurse, NurseIo,
 };
 use telio_wg as wg;
+#[cfg(target_os = "windows")]
+use telio_wg::EnhancedLinkDetection;
+
 use thiserror::Error as TError;
 use tokio::{
     runtime::{Builder, Runtime as AsyncRuntime},
@@ -101,7 +104,7 @@ static CRYPTO_PROVIDER_INIT: Once = Once::new();
 
 pub use wg::{
     uapi::Event as WGEvent, uapi::Interface, AdapterType, DynamicWg, Error as AdapterError,
-    FirewallInboundCb, FirewallOutboundCb, Tun, WireGuard,
+    FirewallInboundCb, FirewallOutboundCb, LinkDetection, Tun, WireGuard,
 };
 
 #[cfg(test)]
@@ -1075,6 +1078,29 @@ impl Runtime {
             socket_pool.set_ext_if_filter(ext_if_filter);
         }
 
+        #[allow(clippy::manual_map)]
+        let link_detection = if let Some(ld_config) = features.link_detection {
+            #[cfg(target_os = "windows")]
+            let enhanced_detection = {
+                let enhanced_detection = Arc::new(EnhancedLinkDetection::start_with(
+                    features.ipv6,
+                    socket_pool.clone(),
+                )?);
+                let observer: Arc<dyn LocalInterfacesObserver> = enhanced_detection.clone();
+                network_monitor.register_local_interfaces_observer(Arc::downgrade(&observer));
+
+                enhanced_detection
+            };
+
+            Some(LinkDetection::new(
+                ld_config,
+                #[cfg(target_os = "windows")]
+                enhanced_detection,
+            ))
+        } else {
+            None
+        };
+
         let derp_events = McChan::default();
 
         let (config_update_ch, collection_trigger_ch, qos_trigger_ch) = if features.nurse.is_some()
@@ -1125,8 +1151,7 @@ impl Runtime {
                         inter_thread_channel_size : Runtime::sanitize_neptun_config(features.wireguard.inter_thread_channel_size, config.adapter),
                         max_inter_thread_batched_pkts : Runtime::sanitize_neptun_config(features.wireguard.max_inter_thread_batched_pkts, config.adapter),
                     },
-                    features.link_detection,
-                    features.ipv6,
+                    link_detection,
                     Duration::from_millis(features.wireguard.polling.wireguard_polling_period.into()),
                     Duration::from_millis(features.wireguard.polling.wireguard_polling_period_after_state_change.into()),
                 ).await?);

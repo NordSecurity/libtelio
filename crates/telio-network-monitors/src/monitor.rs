@@ -8,7 +8,7 @@ use std::{
     io,
     sync::{Arc, Weak},
 };
-use telio_utils::{telio_log_debug, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 /// Sender to notify if there is a change in OS interface order
 pub static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(10));
@@ -47,11 +47,14 @@ pub struct NetworkMonitor {
 }
 
 fn save_local_interfaces<G: GetIfAddrs>(get_if_addr: &G) -> bool {
+    telio_log_trace!("Gathering local interfaces list");
     match gather_local_interfaces(get_if_addr) {
         Ok(v) => {
-            telio_log_debug!("Updating local addr cache");
             let old_v = LOCAL_ADDRS_CACHE.lock().clone();
             if old_v != v {
+                telio_log_debug!("Gathered interfaces list differs from cached one");
+                telio_log_debug!("cached interfaces list: {old_v:?}");
+                telio_log_debug!("new interfaces list: {v:?}");
                 *(LOCAL_ADDRS_CACHE.lock()) = v;
                 true
             } else {
@@ -115,11 +118,25 @@ impl NetworkMonitor {
                                 }
                                 is_paused
                             };
+                            if is_paused {
+                                telio_log_debug!("Received OS interface change notification but the module is paused.");
+                            } else {
+                                telio_log_trace!("Received OS interface change notification");
+                            }
 
                             if !is_paused && save_local_interfaces(&get_if_addr) {
+                                telio_log_debug!(
+                                    "Notifying registered observers about OS interface change"
+                                );
                                 for observer in observers_loop_copy.lock().iter() {
+                                    telio_log_debug!(
+                                        "Processing observer at {:p}",
+                                        observer.as_ptr()
+                                    );
                                     if let Some(observer) = observer.upgrade() {
                                         observer.notify();
+                                    } else {
+                                        telio_log_debug!("Observer dropped, won't notify");
                                     }
                                 }
                             }
@@ -161,6 +178,7 @@ impl NetworkMonitor {
 
     /// Register a new listener of local addresses changes
     pub fn register_local_interfaces_observer(&self, observer: Weak<dyn LocalInterfacesObserver>) {
+        telio_log_debug!("Adding observer at: {:p}", observer.as_ptr());
         self.local_interfaces_observers.lock().push(observer);
     }
 }
