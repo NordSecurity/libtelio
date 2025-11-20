@@ -466,24 +466,22 @@ struct Context {
 #[allow(clippy::needless_pass_by_value)]
 fn dynamic_store_callback(
     _store: SCDynamicStore,
-    _changed_keys: CFArray<CFString>,
+    changed_keys: CFArray<CFString>,
     _context: &mut Context,
 ) {
     // NMACOS-8047 The callback is executed when specified keys in the DynamicStore change.
     // In such case we should force rebind the sockets to avoid no-net when `includeAllNetworks` is set.
     telio_log_info!("Force rebinding the sockets because of DynamicStore key change");
-    telio_log_debug!("DynamicStore key changed: {:?}", _changed_keys);
+    telio_log_debug!("DynamicStore key changed: {:?}", changed_keys);
 
     let primary_interfaces = get_primary_interface_names();
 
     // Returns true if the given interface is primary.
-    let is_primary = |interface: &str| -> bool {
-        let interface = interface.to_owned();
-        primary_interfaces.contains(&interface)
-    };
+    let is_primary =
+        |interface: &str| -> bool { primary_interfaces.iter().any(|x| x == interface) };
 
     let mut must_broadcast = false;
-    for changed_key in &_changed_keys {
+    for changed_key in &changed_keys {
         let changed_key = changed_key.to_string();
         let mut key_path = changed_key.split('/');
         match key_path.next_back() {
