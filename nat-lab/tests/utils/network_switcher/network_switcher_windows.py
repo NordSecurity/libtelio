@@ -9,7 +9,7 @@ from utils.connection import Connection
 from utils.logger import log
 from utils.process import ProcessExecError
 
-STATUS_CHECK_TIMEOUT_S: float = 20.0
+STATUS_CHECK_TIMEOUT_S: float = 120.0
 
 
 @dataclass
