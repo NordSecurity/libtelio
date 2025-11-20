@@ -10,6 +10,8 @@ start_service() {
   procd_set_param command /usr/sbin/nordvpnlite start --no-detach
   procd_set_param stdout 1
   procd_set_param stderr 1
+  # By default procd will try to respawn the process every 5 seconds.
+  # if in the first 3600 seconds, the process dies 5 times, procd gives up
   procd_set_param respawn
   procd_close_instance
 }
