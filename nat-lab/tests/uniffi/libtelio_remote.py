@@ -73,7 +73,7 @@ class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
         (start_ts, lock_acquired_ts, end_ts) = self._do_log(log_level, payload)
         if end_ts - start_ts > 0.5:
             self._do_log(
-                log_level,
+                libtelio.TelioLogLevel.WARN,
                 f"Dumping log line took too long: {start_ts} {lock_acquired_ts} {end_ts}",
             )
 

@@ -15,12 +15,12 @@ class TelioLogNotifier:
         if connection.target_os == TargetOS.Linux:
             cmd = ["tail", "-n", "1", "-F", "/tcli.log"]
         elif connection.target_os == TargetOS.Windows:
-            # [2025-11-14 14:27:25] chcp stdout: Active code page: 437
             cmd = [
                 "powershell",
                 "-NoProfile",
                 "-Command",
-                "Get-Content -Path .\\tcli.log -Wait -Tail 1",
+                "Get-Content -Path .\\tcli.log -Wait -Tail 1 | "
+                "ForEach-Object { \"$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff') $_\" }",
             ]
         else:
             # TODO: there's no reason it wouldn't work on MacOS
