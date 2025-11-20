@@ -94,7 +94,6 @@ fn get_available_priorities(
 pub enum InterfaceConfigurationProvider {
     #[default]
     Manual,
-    Ifconfig,
     Iproute,
     Uci,
 }
@@ -115,9 +114,6 @@ impl InterfaceConfig {
         );
         match &self.config_provider {
             InterfaceConfigurationProvider::Manual => Box::new(Manual),
-            InterfaceConfigurationProvider::Ifconfig => Box::new(Ifconfig {
-                interface_name: self.name.clone(),
-            }),
             InterfaceConfigurationProvider::Iproute => Box::new(Iproute {
                 interface_name: self.name.clone(),
                 max_route_priority: self.max_route_priority,
@@ -145,101 +141,6 @@ impl ConfigureInterface for Manual {
     /// For manual configuration, we still use ifconfig to query the interface
     /// This is a fallback for when the interface is configured manually
     fn get_ip(&self) -> Option<IpAddr> {
-        None
-    }
-
-    fn set_exit_routes(
-        &mut self,
-        _exit_node: &IpAddr,
-        _dns: &[IpAddr],
-    ) -> Result<(), NordVpnLiteError> {
-        Ok(()) // No-op implementation
-    }
-
-    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError> {
-        Ok(()) // No-op implementation
-    }
-}
-
-/// Implementation using `ifconfig`
-#[derive(Debug)]
-pub struct Ifconfig {
-    interface_name: String,
-}
-
-impl ConfigureInterface for Ifconfig {
-    fn initialize(&mut self) -> Result<(), NordVpnLiteError> {
-        execute(Command::new("ifconfig").args([&self.interface_name, "mtu", "1420"]))?;
-        execute(Command::new("ifconfig").args([&self.interface_name, "up"]))
-    }
-
-    fn set_ip(&mut self, ip_address: &IpAddr) -> Result<(), NordVpnLiteError> {
-        let ip_string = ip_address.to_string();
-        let cidr_suffix = if ip_address.is_ipv4() { "/30" } else { "/64" };
-        let cidr_string = format!("{ip_address}{cidr_suffix}");
-        let ip_type = if ip_address.is_ipv4() {
-            "inet"
-        } else {
-            "inet6"
-        };
-
-        info!(
-            "Assigning IP address for {} to {}",
-            self.interface_name, cidr_string
-        );
-
-        match std::env::consts::OS {
-            "macos" => {
-                execute(Command::new("ifconfig").args([
-                    &self.interface_name,
-                    ip_type,
-                    &cidr_string,
-                    &ip_string,
-                ]))?;
-
-                if ip_address.is_ipv4() {
-                    execute(Command::new("route").args(["-n", "add", "10.5.0.0/30", &ip_string]))?;
-                } else {
-                    execute(Command::new("route").args([
-                        "add",
-                        "-n",
-                        "-inet6",
-                        "fd74:656c:696f::/64",
-                        &ip_string,
-                    ]))?;
-                }
-            }
-            _ => {
-                execute(Command::new("ifconfig").args([
-                    &self.interface_name,
-                    "inet",
-                    "add",
-                    ip_address.to_string().as_str(),
-                    "netmask",
-                    "255.255.255.252",
-                ]))?;
-            }
-        }
-        Ok(())
-    }
-
-    fn get_ip(&self) -> Option<IpAddr> {
-        let output =
-            execute_with_output(Command::new("ifconfig").arg(&self.interface_name)).ok()?;
-
-        for line in output.lines() {
-            let line = line.trim();
-            if line.contains("inet ") && !line.contains("inet6") {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if let Some(ip_idx) = parts.iter().position(|&s| s == "inet") {
-                    if let Some(ip_str) = parts.get(ip_idx + 1) {
-                        if let Ok(ip) = ip_str.parse::<IpAddr>() {
-                            return Some(ip);
-                        }
-                    }
-                }
-            }
-        }
         None
     }
 

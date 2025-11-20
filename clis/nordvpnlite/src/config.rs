@@ -1,7 +1,6 @@
 use std::{
     io::Write,
     net::Ipv4Addr,
-    num::NonZeroU64,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     str::FromStr,
@@ -9,7 +8,6 @@ use std::{
 };
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use smart_default::SmartDefault;
 use std::fs;
 use tracing::{level_filters::LevelFilter, Level};
 
@@ -20,54 +18,6 @@ use std::net::IpAddr;
 use telio::crypto::PublicKey;
 
 pub(crate) const LOCAL_IP: Ipv4Addr = Ipv4Addr::new(10, 5, 0, 2);
-
-#[derive(PartialEq, Eq, Clone, Copy, Debug, SmartDefault)]
-#[repr(transparent)]
-pub struct Percentage(pub u8);
-
-impl std::ops::Mul<std::time::Duration> for Percentage {
-    type Output = std::time::Duration;
-
-    fn mul(self, rhs: std::time::Duration) -> Self::Output {
-        (self.0 as u32 * rhs) / 100
-    }
-}
-
-#[derive(PartialEq, Eq, Clone, Debug, Deserialize, Serialize, SmartDefault)]
-#[serde(default)]
-pub struct MqttConfig {
-    /// Starting backoff time for mqtt retry, has to be at least one. (in seconds)
-    #[default(backoff_initial_default())]
-    pub backoff_initial: NonZeroU64,
-    /// Maximum backoff time for the mqtt retry. Has to be greater than the initial value. (in seconds)
-    #[default(backoff_maximal_default())]
-    pub backoff_maximal: NonZeroU64,
-
-    /// Percentage of the expiry period after which new mqtt token will be requested
-    #[default(reconnect_after_expiry_default())]
-    #[serde(
-        deserialize_with = "deserialize_percent",
-        serialize_with = "serialize_percent"
-    )]
-    pub reconnect_after_expiry: Percentage,
-
-    /// Path to a mqtt pem certificate to be used when connecting to Notification Center
-    pub certificate_file_path: Option<PathBuf>,
-}
-
-fn backoff_initial_default() -> NonZeroU64 {
-    #[allow(clippy::unwrap_used)]
-    NonZeroU64::new(1).unwrap()
-}
-
-fn backoff_maximal_default() -> NonZeroU64 {
-    #[allow(clippy::unwrap_used)]
-    NonZeroU64::new(300).unwrap()
-}
-
-fn reconnect_after_expiry_default() -> Percentage {
-    Percentage(90)
-}
 
 // These IPs are documented but the documentation is not publicly available
 fn dns_default() -> Vec<IpAddr> {
@@ -181,9 +131,6 @@ pub struct NordVpnLiteConfig {
 
     /// Path to a http pem certificate to be used when connecting to CoreApi
     pub http_certificate_file_path: Option<PathBuf>,
-
-    #[serde(default)]
-    pub mqtt: MqttConfig,
 }
 
 impl NordVpnLiteConfig {
@@ -310,29 +257,8 @@ impl Default for NordVpnLiteConfig {
             override_default_wg_port: None,
             authentication_token: Default::default(),
             http_certificate_file_path: None,
-            mqtt: MqttConfig::default(),
         }
     }
-}
-
-fn deserialize_percent<'de, D>(deserializer: D) -> Result<Percentage, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value: u8 = de::Deserialize::deserialize(deserializer)?;
-    if value > 100 {
-        return Err(de::Error::custom(
-            "Percentage value can only be in range from 0 to 100 inclusive",
-        ));
-    }
-    Ok(Percentage(value))
-}
-
-fn serialize_percent<S>(percentage: &Percentage, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_u8(percentage.0)
 }
 
 fn deserialize_log_level<'de, D>(deserializer: D) -> Result<LevelFilter, D::Error>
@@ -397,7 +323,6 @@ mod tests {
 
     use super::*;
     use serial_test::serial;
-    use std::time::Duration;
     use temp_file::TempFile;
 
     fn temp_config(content: &str) -> TempFile {
@@ -427,14 +352,6 @@ mod tests {
     }
 
     #[test]
-    fn percentage_times_duration() {
-        let input = Duration::from_secs(86400);
-        let expected = Duration::from_secs(77760);
-        let percentage = Percentage(90);
-        assert_eq!(expected, percentage * input);
-    }
-
-    #[test]
     fn nordvpnlite_config_minimal_json() {
         let expected = NordVpnLiteConfig {
             log_level: LevelFilter::INFO,
@@ -451,12 +368,6 @@ mod tests {
             override_default_wg_port: None,
             authentication_token: Default::default(),
             http_certificate_file_path: None,
-            mqtt: MqttConfig {
-                backoff_initial: NonZeroU64::new(1).unwrap(),
-                backoff_maximal: NonZeroU64::new(300).unwrap(),
-                reconnect_after_expiry: Percentage(90),
-                certificate_file_path: None,
-            },
         };
         {
             let json = r#"{
@@ -483,8 +394,7 @@ mod tests {
                     "name": "utun10",
                     "config_provider": "manual"
                 },
-                "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-                "mqtt": {}
+                "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }"#;
 
             assert_eq!(expected, serde_json::from_str(json).unwrap());

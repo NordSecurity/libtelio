@@ -2908,7 +2908,6 @@ dependencies = [
  "serde_json",
  "serial_test",
  "signal-hook-tokio",
- "smart-default",
  "telio",
  "temp-dir",
  "temp-file",

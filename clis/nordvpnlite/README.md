@@ -77,7 +77,6 @@ needs be absolute, otherwise will be relative to `working-directory` when daemon
   * `config_provider` - Provider for configuring the interface address,
   possible options:
     * `manual` - do not configure interfaces automatically
-    * `ifconfig` - systems using ifconfig command
     * `iproute` - systems using iproute2 command
     * `uci` - OpenWRT systems using uci command
 * `dns` - Optional list of DNS server IP addresses to use. If not set, built-in safe defaults are used.
