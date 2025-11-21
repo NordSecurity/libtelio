@@ -28,8 +28,6 @@ class MulticastClient:
             _get_multicast_script_path(connection),
             f"--{protocol}",
             "-c",
-            "-t",
-            "5",
         ])
 
     async def execute(self) -> None:
@@ -49,8 +47,6 @@ class MulticastServer:
             _get_multicast_script_path(connection),
             f"--{protocol}",
             "-s",
-            "-t",
-            "10",
         ])
 
     async def on_stdout(self, stdout: str) -> None:
@@ -59,7 +55,7 @@ class MulticastServer:
                 self._server_ready_event.set()
 
     async def wait_till_ready(self) -> None:
-        await asyncio.wait_for(self._server_ready_event.wait(), timeout=10.0)
+        await asyncio.wait_for(self._server_ready_event.wait(), timeout=None)
         log.info("MulticastServer is ready")
 
     @asynccontextmanager
