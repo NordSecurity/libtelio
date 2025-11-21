@@ -15,12 +15,16 @@ import regex
 PREVIOUS_VERSION_REGEX = r"^###.+\n"
 # Regex for finding the series name right after the last version entry.
 SERIES_NAME_REGEX = r"^### \*\*([\p{L}]+)\*\*$"
+# Regex for ticket number in filename
+TICKET_NUMBER = r"(llt)[\s_-]?(\d+)"
 
 # Python automatically translates the '\n' escape character for cross platform compatibility.
 # Format use to print the version at the beginning of the new version entry in the changelog.
 HEADER_FORMAT = "### {}\n### **{}**\n---\n"
-# Format for actual every version entry.
-ENTRY_FORMAT = "* {}: {}\n"
+# Format for actual every version entry, when ticket number found.
+ENTRY_FORMAT_W_TICKET = "* {}: {}\n"
+# Same as ^^^, but when ticket number not found
+ENTRY_FORMAT_WO_TICKET = "* {}\n"
 # Format use to print the ending of the new version entry in the changelog.
 VERSION_ENDING = "\n<br>\n\n"
 
@@ -147,13 +151,29 @@ def gather_output(
     at_least_one_entry_found = False
 
     output = HEADER_FORMAT.format(out_version, out_series_name)
+    ticket_num_regex = regex.compile(TICKET_NUMBER, regex.I)
+
+    def match_ticket(input_str: str) -> Optional[str]:
+        match = ticket_num_regex.search(input_str)
+        if match:
+            letters = match.group(1).upper()  # 'llt' -> 'LLT'
+            numbers = match.group(2)  # '1234'
+            return f"{letters}-{numbers}"
+        return None
 
     for changelog_entry_file in os.scandir(unreleased_dir):
         with open(changelog_entry_file, "r", encoding="utf-8") as changelog_entry_file:
             for line in changelog_entry_file.readlines():
                 at_least_one_entry_found = True
-                entry_ticket_id = os.path.basename(changelog_entry_file.name)
-                output += ENTRY_FORMAT.format(entry_ticket_id, line.strip())
+                filename = os.path.basename(changelog_entry_file.name)
+                entry_ticket_id = match_ticket(filename)
+
+                if entry_ticket_id is not None:
+                    output += ENTRY_FORMAT_W_TICKET.format(
+                        entry_ticket_id, line.strip()
+                    )
+                else:
+                    output += ENTRY_FORMAT_WO_TICKET.format(line.strip())
         if not dry_run:
             os.remove(changelog_entry_file.name)
     output += VERSION_ENDING
