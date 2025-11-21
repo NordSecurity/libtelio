@@ -153,7 +153,7 @@ class DockerConnection(Connection):
             log_level = INFO
         else:
             log_level = DEBUG
-        log.log(log_level, "[%s] Executing %s", self.tag.name, " ".join(command))
+        log.log(log_level, "[%s] Executing '%s'", self.tag.name, " ".join(command))
 
         return process
 
