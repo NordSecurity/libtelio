@@ -466,7 +466,9 @@ class Client:
 
     @asynccontextmanager
     async def run(
-        self, meshnet_config: Optional[Config] = None
+        self,
+        meshnet_config: Optional[Config] = None,
+        run_tcpdump: Optional[bool] = True,
     ) -> AsyncIterator["Client"]:
         async def on_stdout(stdout: str) -> None:
             supress_print_list = [
@@ -516,7 +518,8 @@ class Client:
         )
 
         async with AsyncExitStack() as exit_stack:
-            await exit_stack.enter_async_context(make_tcpdump([self._connection]))
+            if run_tcpdump:
+                await exit_stack.enter_async_context(make_tcpdump([self._connection]))
             if isinstance(self._connection, DockerConnection):
                 await self.clear_core_dumps()
 

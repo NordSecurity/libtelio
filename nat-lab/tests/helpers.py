@@ -55,6 +55,7 @@ class SetupParameters:
     * is_meshnet - indicates whether the node should receive meshnet config or not (True by default)
     * derp_servers - list of the provided Derp servers (if not provided, config.DERP_SERVER is used in
                      the meshnet config)
+    * run_tcpdump - indicates whether to run tcpdump on node or not (True by default)
     """
 
     ip_stack: IPStack = field(default=IPStack.IPv4v6)
@@ -68,6 +69,7 @@ class SetupParameters:
     is_meshnet: bool = field(default=True)
     derp_servers: Optional[List[Server]] = field(default=None)
     fingerprint: str = ""
+    run_tcpdump: bool = field(default=True)
 
 
 @dataclass
@@ -167,7 +169,6 @@ async def setup_connections(
 
     A list of the Telio connection managers of the connections corresponding to the provided connection tags
     """
-
     return await asyncio.gather(*[
         (
             exit_stack.enter_async_context(new_connection_manager_by_tag(param, None))
@@ -188,6 +189,7 @@ async def setup_clients(
             Features,
             str,
             Optional[Config],
+            Optional[bool],
         ]
     ],
 ) -> List[Client]:
@@ -214,9 +216,9 @@ async def setup_clients(
                 adapter_type_override,
                 features,
                 fingerprint=fingerprint,
-            ).run(meshnet_config)
+            ).run(meshnet_config, run_tcpdump=run_tcpdump)
         )
-        for connection, node, adapter_type_override, features, fingerprint, meshnet_config in client_parameters
+        for connection, node, adapter_type_override, features, fingerprint, meshnet_config, run_tcpdump in client_parameters
     ])
 
 
@@ -329,6 +331,7 @@ async def setup_environment(
                     )
                     for idx, instance in enumerate(instances)
                 ],
+                [instance.run_tcpdump for instance in instances],
             )
         ),
     )
