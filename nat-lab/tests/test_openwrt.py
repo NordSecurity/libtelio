@@ -1,4 +1,5 @@
 import asyncio
+import asyncssh
 import pytest
 import re
 from config import WG_SERVER, WG_SERVER_2, PHOTO_ALBUM_IP, STUN_SERVER, LAN_ADDR_MAP
@@ -10,7 +11,7 @@ from utils import stun
 from utils.connection import Connection, ConnectionTag
 from utils.connection_util import new_connection_raw, new_connection_by_tag
 from utils.logger import log
-from utils.openwrt import start_logread_process
+from utils.openwrt import start_logread_process, wait_until_unreachable_after_reboot
 from utils.ping import ping
 from utils.process import ProcessExecError
 
@@ -470,3 +471,96 @@ async def test_openwrt_vpn_reconnect_different_country() -> None:
             )
         await wait_for_log_line(logread_proc)
         log.info("Network has been reloaded")
+
+
+@pytest.mark.asyncio
+@pytest.mark.openwrt
+async def test_openwrt_router_restart() -> None:
+    """
+    Check vpn connection is restored after OpenWRT router restart
+
+    Steps:
+        1. Prepare vpn servers
+        2. Send post request to core-api to save public key of vpn server we are planning to use
+        3. Start NordVPN Lite in OpenWRT container
+        4. Check ip address of OpenWrt router is equal to vpn ip address
+        5. Reboot OpenWrt router
+        6. Wait for router to get back online
+        7. Check ip address of OpenWrt router and client is equal to vpn ip address
+        8. Ping PHOTO_ALBUM_IP from both openwrt and client node
+    """
+    # wrapping into try/except as there will be connection loss after reboot
+    try:
+        async with AsyncExitStack() as exit_stack:
+            # setting up openwrt environment
+            client_connection, gateway_connection, nordvpnlite = (
+                await setup_openwrt_test_environment(
+                    IfcConfigType.VPN_OPENWRT_UCI_PL, exit_stack
+                )
+            )
+            # uploading custom config to default config.json as after reboot
+            # nordvpnlite is trying to start with default config
+            await gateway_connection.upload_file(
+                f"data/nordvpnlite/{IfcConfigType.VPN_OPENWRT_UCI_PL.value}",
+                f"/etc/nordvpnlite/{IfcConfigType.DEFAULT.value}",
+            )
+
+            # start nordvpnlite without a cleanup as we want to validate vpn connection restore
+            async with nordvpnlite.start(cleanup=False):
+                log.debug("NordVPN Lite started, waiting for connected vpn state...")
+                await nordvpnlite.wait_for_vpn_connected_state()
+                await check_gateway_and_client_ip(
+                    gateway_connection, client_connection, WG_SERVER["ipv4"]
+                )
+                await exit_stack.enter_async_context(
+                    gateway_connection.create_process(["reboot"]).run()
+                )
+                await wait_until_unreachable_after_reboot(gateway_connection)
+    except asyncssh.misc.ConnectionLost:
+        log.info("Connection lost during teardown — expected after reboot")
+    async with AsyncExitStack() as exit_stack:
+        gateway_connection_after_reboot = None
+
+        client_connection = await exit_stack.enter_async_context(
+            new_connection_by_tag(ConnectionTag.DOCKER_OPENWRT_CLIENT_1)
+        )
+
+        for attempt in range(3):
+            try:
+                gateway_connection_after_reboot = await exit_stack.enter_async_context(
+                    new_connection_by_tag(ConnectionTag.VM_OPENWRT_GW_1)
+                )
+                break
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                log.debug("OpenWrt router is still rebooting")
+                log.debug(e)
+                if attempt < 2:
+                    await asyncio.sleep(15)
+        assert (
+            gateway_connection_after_reboot is not None
+        ), "OpenWrt router didn't get back online after reboot"
+        log.info("Established new connection to the OpenWrt router")
+        config_path = Paths(exec_path=Path("nordvpnlite"))
+        nordvpnlite_after_reboot = NordVpnLite(
+            gateway_connection_after_reboot,
+            exit_stack,
+            config=Config(IfcConfigType.DEFAULT, paths=config_path),
+        )
+        # wrap into try/finally to always execute cleanup code
+        try:
+            log.info("wait for vpn connection to be re-established after reboot")
+            await nordvpnlite_after_reboot.wait_for_vpn_connected_state()
+            await check_gateway_and_client_ip(
+                gateway_connection_after_reboot, client_connection, WG_SERVER["ipv4"]
+            )
+        finally:
+            logread_proc = await start_logread_process(
+                gateway_connection_after_reboot, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+            log.info("Stop nordvpnlite with init script to disable auto reconnect")
+            await gateway_connection_after_reboot.create_process(
+                ["/etc/init.d/nordvpnlite", "stop"]
+            ).execute()
+            await nordvpnlite_after_reboot.clean_up()
+            await wait_for_log_line(logread_proc)
+            log.info("Network has been reloaded")
