@@ -58,6 +58,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
     return preshared
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -141,6 +142,7 @@ async def test_pq_vpn_connection(
         )
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -246,6 +248,7 @@ async def test_pq_vpn_rekey(
         await ping(client_conn, config.PHOTO_ALBUM_IP)
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -340,6 +343,7 @@ async def test_dns_with_pq(
         await query_dns(client_conn, "google.com")
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "setup",
     [
@@ -416,6 +420,7 @@ async def test_pq_vpn_silent_pq_upgrader(
         await ping(client_conn, config.PHOTO_ALBUM_IP)
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -473,6 +478,7 @@ async def test_pq_vpn_upgrade_from_non_pq(
 
 
 # Regression test for LLT-5884
+@pytest.mark.nlx
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize(
     "setup_params, public_ip",
@@ -573,6 +579,7 @@ async def test_pq_vpn_handshake_after_nonet(
         await ping(client_conn, config.PHOTO_ALBUM_IP)
 
 
+@pytest.mark.nlx
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize(
     "setup_params, public_ip",

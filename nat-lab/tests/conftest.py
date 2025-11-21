@@ -592,6 +592,9 @@ def save_audit_log_from_host(suffix):
 
 
 async def save_nordlynx_logs():
+    if "nlx" not in SESSION_VM_MARKS:
+        return
+
     source_log_dir_path = "/var/log"
     nlx_log_files = [
         "nlx-radius.log",
