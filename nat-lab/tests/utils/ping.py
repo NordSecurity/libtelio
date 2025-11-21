@@ -14,9 +14,12 @@ from utils.router import IPProto, REG_IPV6ADDR, get_ip_address_type
 
 
 async def ping(
-    connection: Connection, ip: str, timeout: Optional[float] = None
+    connection: Connection,
+    ip: str,
+    timeout: Optional[float] = None,
+    enable_strace: bool = False,
 ) -> None:
-    async with Ping(connection, ip).run() as ping_process:
+    async with Ping(connection, ip, enable_strace).run() as ping_process:
         await asyncio.create_task(
             ping_process.wait_for_any_ping(timeout),
             name=f"ping({connection}, {ip}, {timeout})",
@@ -30,7 +33,9 @@ class Ping:
     _next_ping_event: asyncio.Event
     _connection: Connection
 
-    def __init__(self, connection: Connection, ip: str) -> None:
+    def __init__(
+        self, connection: Connection, ip: str, enable_strace: bool = False
+    ) -> None:
         self._ip = ip
         self._connection = connection
         self._ip_proto = testing.unpack_optional(get_ip_address_type(ip))
@@ -60,14 +65,17 @@ class Ping:
                 quiet=True,
             )
         else:
+            ping_command = [
+                "ping",
+                ("-4" if self._ip_proto == IPProto.IPv4 else "-6"),
+                "-p",
+                kill_id,
+                ip,
+            ]
+            if enable_strace:
+                ping_command = ["strace"] + ping_command
             self._process = connection.create_process(
-                [
-                    "ping",
-                    ("-4" if self._ip_proto == IPProto.IPv4 else "-6"),
-                    "-p",
-                    kill_id,
-                    ip,
-                ],
+                ping_command,
                 kill_id,
                 quiet=True,
             )

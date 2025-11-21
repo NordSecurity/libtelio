@@ -1,6 +1,6 @@
 ARG SEC_CONTAINER_REGISTRY
 
-FROM ${SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/third-party-build/openwrt_image/natlab-openwrt-24.10.4-x86-64:v0.3.0
+FROM ${SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/third-party-build/openwrt_image/natlab-openwrt-24.10.4-x86-64:v0.4.0
 
 ENV QEMU_CONFIG_TIMEOUT="300"
 
