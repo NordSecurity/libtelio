@@ -245,7 +245,7 @@ mod tests {
     }
 
     // Simulate client sending command and waiting for response
-    async fn sdsds(path: &str, cmd: &str) -> std::io::Result<CommandResponse> {
+    async fn client_send_command(path: &str, cmd: &str) -> std::io::Result<CommandResponse> {
         let mut client_stream = UnixStream::connect(&Path::new(path)).await?;
         client_stream
             .write_all(format!("{}\n", cmd).as_bytes())
@@ -258,7 +258,7 @@ mod tests {
     }
 
     // Broken client, closes connection without waiting for response
-    async fn broken_csdslient_send_command(path: &str, cmd: &str) -> std::io::Result<()> {
+    async fn broken_client_send_command(path: &str, cmd: &str) -> std::io::Result<()> {
         let mut client_stream = UnixStream::connect(&Path::new(path)).await?;
         client_stream
             .write_all(format!("{}\n", cmd).as_bytes())
