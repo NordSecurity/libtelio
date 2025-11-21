@@ -15,12 +15,16 @@ import regex
 PREVIOUS_VERSION_REGEX = r"^###.+\n"
 # Regex for finding the series name right after the last version entry.
 SERIES_NAME_REGEX = r"^### \*\*([\p{L}]+)\*\*$"
+# Regexes for ticket number in filename
+TICKET_NUMBER = r"^([a-zA-Z]{1,10})[\s-_]?(\d{1,6})"
 
 # Python automatically translates the '\n' escape character for cross platform compatibility.
 # Format use to print the version at the beginning of the new version entry in the changelog.
 HEADER_FORMAT = "### {}\n### **{}**\n---\n"
-# Format for actual every version entry.
-ENTRY_FORMAT = "* {}: {}\n"
+# Format for actual every version entry, when ticket number found.
+ENTRY_FORMAT_W_TICKET = "* {}: {}\n"
+# Same as ^^^, but when ticket number not found
+ENTRY_FORMAT_WO_TICKET = "* {}\n"
 # Format use to print the ending of the new version entry in the changelog.
 VERSION_ENDING = "\n<br>\n\n"
 
@@ -28,6 +32,17 @@ VERSION_ENDING = "\n<br>\n\n"
 AUTO_GENERATION_NOTE_LINE = (
     "<!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->\n\n"
 )
+
+TICKET_NUMBER_REGEX = regex.compile(TICKET_NUMBER, regex.I)
+
+
+def _match_ticket(input_str: str) -> Optional[str]:
+    match = TICKET_NUMBER_REGEX.search(input_str)
+    if match:
+        letters = match.group(1).upper()  # e.g. 'llt' -> 'LLT'
+        numbers = match.group(2)  # e.g. '1234'
+        return f"{letters}-{numbers}"
+    return None
 
 
 def parse_args():
@@ -66,9 +81,14 @@ def parse_args():
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Runs unit tests and exit",
+    )
+    parser.add_argument(
         "--out-version",
         type=str,
-        required=True,
+        required=False,
         help="Output version number in text format.",
     )
     parser.add_argument(
@@ -95,7 +115,13 @@ Will try to find the previous series name if not provided.""",
         help="Show the changes without prepending them to the changelog file.",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.test and args.out_version is None:
+        parser.error(
+            "the argument --out_version is **required** when --test is not passed."
+        )
+
+    return args
 
 
 def get_old_series_name(out_file: str) -> str:
@@ -152,8 +178,15 @@ def gather_output(
         with open(changelog_entry_file, "r", encoding="utf-8") as changelog_entry_file:
             for line in changelog_entry_file.readlines():
                 at_least_one_entry_found = True
-                entry_ticket_id = os.path.basename(changelog_entry_file.name)
-                output += ENTRY_FORMAT.format(entry_ticket_id, line.strip())
+                filename = os.path.basename(changelog_entry_file.name)
+                entry_ticket_id = _match_ticket(filename)
+
+                if entry_ticket_id is not None:
+                    output += ENTRY_FORMAT_W_TICKET.format(
+                        entry_ticket_id, line.strip()
+                    )
+                else:
+                    output += ENTRY_FORMAT_WO_TICKET.format(line.strip())
         if not dry_run:
             os.remove(changelog_entry_file.name)
     output += VERSION_ENDING
@@ -190,6 +223,37 @@ def generate_changelog(
     return 0
 
 
+def test() -> int:
+    """Testing ticket variations, that regex should match."""
+
+    success = 0
+    input_strings = [
+        ("NMACOS-8047_blah_blah", "NMACOS-8047"),
+        ("hwin_22222_sth_sth", "HWIN-22222"),
+        ("NMACOS_2222 dgsdg", "NMACOS-2222"),
+        ("P-999999-end", "P-999999"),
+        ("PRO-JECT12_invalid_match", None),
+        ("LLT-01234_", "LLT-01234"),
+        ("llt_01234", "LLT-01234"),
+        ("llt-1234-a", "LLT-1234"),
+        ("LLT-1234", "LLT-1234"),
+        ("LlT-01", "LLT-01"),
+        ("lLt 01", "LLT-01"),
+        ("bad-pattern", None),
+        ("LLT 99", "LLT-99"),
+        ("P-999999 ", "P-999999"),
+    ]
+
+    for text in input_strings:
+        res = _match_ticket(text[0])
+        if res == text[1]:
+            print(f"Success for: {text[0]}")
+        else:
+            print(f"Failed for: {text[0]}, expected: {text[1]}, got: {res}")
+            success = 1
+    return success
+
+
 if __name__ == "__main__":
     # Get the directory where the script is located
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -205,4 +269,6 @@ if __name__ == "__main__":
             args.out_file,
             args.dry_run,
         )
+        if not args.test
+        else test()
     )

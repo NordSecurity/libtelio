@@ -99,6 +99,9 @@ format_markdown fix="false":
 diagram:
     uv run --isolated --with pyyaml==6.0.2 nat-lab/utils/generate_network_diagram.py nat-lab/docker-compose.yml nat-lab/network.md
 
+changelog_test:
+    uv run --isolated --with regex==2024.5.15 ci/generate_changelog.py --test
+
 _udeps-install: _nightly-install
     cargo +{{ nightly }} install cargo-udeps@0.1.55 --locked
 
