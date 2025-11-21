@@ -36,22 +36,29 @@ pub async fn send_probe(dest: &SocketAddr, packet: &[u8], socket: &UdpSocket) ->
 }
 
 pub async fn receive_response(socket: &UdpSocket) -> Result<Response> {
-    // Receive
-    let mut buf = [0u8; 65536]; // size is probably overkill
-    let len = socket.recv(&mut buf).await?;
-    let received = buf[..len].to_vec();
+    loop {
+        // Receive
+        let mut buf = [0u8; 65536]; // size is probably overkill
+        let len = socket.recv(&mut buf).await?;
+        let received = buf[..len].to_vec();
 
-    debug!(
-        "Received UDP packet {:?} from {:?}",
-        hex::encode(received.as_slice()),
-        socket.peer_addr()
-    );
+        debug!(
+            "Received UDP packet {:?} from {:?}",
+            hex::encode(received.as_slice()),
+            socket.peer_addr()
+        );
 
-    Ok(Response {
-        received_at: Instant::now(),
-        from: socket.peer_addr()?,
-        payload: received,
-    })
+        if buf[0] != 0x02 {
+            debug!("Recieved packet is not handshake response. Ignoring");
+            continue;
+        }
+
+        return Ok(Response {
+            received_at: Instant::now(),
+            from: socket.peer_addr()?,
+            payload: received,
+        })
+    }
 }
 
 /// Create a UDP socket with specified TTL and optional source port
