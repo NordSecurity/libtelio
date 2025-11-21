@@ -1048,9 +1048,7 @@ impl Runtime {
         let firewall_reset_connections = if features.firewall.neptun_reset_conns() {
             let fw = firewall.clone();
             let cb = move |exit_pubkey: &PublicKey, sink: &mut dyn io::Write| {
-                if let Err(err) = fw.reset_connections(exit_pubkey, sink) {
-                    telio_log_warn!("Failed to reset all connections: {err:?}");
-                }
+                fw.reset_connections(exit_pubkey, sink)
             };
             Some(Arc::new(cb) as Arc<_>)
         } else {
