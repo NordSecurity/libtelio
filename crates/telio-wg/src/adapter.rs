@@ -72,7 +72,7 @@ pub trait Adapter: Send + Sync {
     /// Send uapi command, and receive response.
     /// Look at [Cross-Platform Userspace Interface](https://www.wireguard.com/xplatform/) for
     /// details.
-    async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, Error>;
+    async fn send_uapi_cmd(&mut self, cmd: &Cmd) -> Result<Response, Error>;
 
     /// Get WireGuard adapter file descriptor. Overridable
     fn get_wg_socket(&self, _ipv6: bool) -> Result<Option<i32>, Error> {

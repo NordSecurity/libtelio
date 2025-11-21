@@ -58,6 +58,7 @@ telio-starcast.workspace = true
 telio-task.workspace = true
 telio-traversal.workspace = true
 telio-utils.workspace = true
+telio-wireguard-traceroute.workspace = true
 telio-wg.workspace = true
 telio-pinger.workspace = true
 once_cell.workspace = true
@@ -92,6 +93,7 @@ telio-pq = { workspace = true, features = ["mockall"] }
 telio-test.workspace = true
 telio-traversal = { workspace = true, features = ["mockall"] }
 telio-utils.workspace = true
+telio-wireguard-traceroute.workspace = true
 telio-wg = { workspace = true, features = ["mockall", "test-adapter"] }
 
 [build-dependencies]
@@ -193,6 +195,7 @@ telio-task = { version = "0.1.0", path = "./crates/telio-task" }
 telio-test = { version = "1.0.0", path = "./crates/telio-test" }
 telio-traversal = { version = "0.1.0",  path = "./crates/telio-traversal" }
 telio-utils = { version = "0.1.0", path = "./crates/telio-utils" }
+telio-wireguard-traceroute = { version = "0.0.2", path = "./crates/telio-wireguard-traceroute" }
 telio-wg = { version = "0.1.0", path = "./crates/telio-wg" }
 telio-pq = { version = "0.1.0", path = "./crates/telio-pq" }
 telio-pmtu = { version = "0.1.0", path = "./crates/telio-pmtu" }
