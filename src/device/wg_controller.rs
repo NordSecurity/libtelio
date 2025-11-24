@@ -202,17 +202,7 @@ async fn consolidate_wg_listen_port<W: WireGuard, P: Proxy>(
         return Ok(());
     }
 
-    // Determine WireGuard port. Prefer listen_proxy_port if it is set, otherwise - use
-    // listen_port.
-    // This is only required due to peculiarities of WireGuard-go bind. Other WireGuard
-    // implementations rely solely on `listen_port`.
-    let listen_port = wireguard_interface.get_interface().await?.listen_port;
-    let listen_proxy_port = wireguard_interface.get_interface().await?.proxy_listen_port;
-    let wg_port = match (listen_port, listen_proxy_port) {
-        (_, Some(listen_proxy_port)) => Some(listen_proxy_port),
-        (Some(listen_port), _) => Some(listen_port),
-        (None, None) => None,
-    };
+    let wg_port = wireguard_interface.get_interface().await?.listen_port;
 
     // notify about the port to required modules
     if let Some(proxy) = proxy {
