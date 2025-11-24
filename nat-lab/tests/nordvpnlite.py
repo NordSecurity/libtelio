@@ -191,7 +191,7 @@ class NordVpnLite:
         return proc
 
     @asynccontextmanager
-    async def start(self) -> AsyncIterator["NordVpnLite"]:
+    async def start(self, cleanup: bool = True) -> AsyncIterator["NordVpnLite"]:
         log.info("NordVPN Lite starting..")
         try:
             await self.remove_logs()
@@ -227,21 +227,27 @@ class NordVpnLite:
             await self.config.assert_match_daemon_start(stdout)
             yield self
         finally:
-            log.info("NordVPN Lite cleanup: exiting and removing socket (if exists)")
-            try:
-                await self.quit()
-            except ProcessExecError as exc:
-                if "Error: DaemonIsNotRunning" not in exc.stderr:
-                    log.error(exc)
-                    await self.kill()
-                else:
-                    log.info("Tried to quit but daemon is already not running")
-                if await self.socket_exists():
-                    log.debug("Dangling socket found, removing it..")
-                    await self.remove_socket()
-            finally:
-                log.info("NordVPN Lite cleanup: saving logs")
-                await self._save_logs()
+            if cleanup:
+                await self.clean_up()
+            else:
+                log.info("NordVPN Lite skipping cleanup")
+
+    async def clean_up(self) -> None:
+        log.info("NordVPN Lite cleanup: exiting and removing socket (if exists)")
+        try:
+            await self.quit()
+        except ProcessExecError as exc:
+            if "Error: DaemonIsNotRunning" not in exc.stderr:
+                log.error(exc)
+                await self.kill()
+            else:
+                log.info("Tried to quit but daemon is already not running")
+            if await self.socket_exists():
+                log.debug("Dangling socket found, removing it..")
+                await self.remove_socket()
+        finally:
+            log.info("NordVPN Lite cleanup: saving logs")
+            await self._save_logs()
 
     async def is_alive(self) -> bool:
         try:
