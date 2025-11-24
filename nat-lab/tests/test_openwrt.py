@@ -53,7 +53,8 @@ async def check_gateway_and_client_ip(
         None
     """
     try:
-        await ping(gateway_connection, PHOTO_ALBUM_IP)
+        # TODO (LLT-6844): Disable strace once problem with ping -9 is resolved
+        await ping(gateway_connection, PHOTO_ALBUM_IP, enable_strace=True)
     except ProcessExecError:
         dm = await gateway_connection.create_process(["dmesg"]).execute()
         dmesg_tail = "\n".join(dm.get_stdout().splitlines()[-100:])
