@@ -178,11 +178,6 @@ pub struct Interface {
     pub private_key: Option<SecretKey>,
     /// Listen port or `None`
     pub listen_port: Option<u16>,
-    /// Proxy listen port or `None`
-    /// Needed as wg-go impl has two listen
-    /// socket's for windows, depending if
-    /// endpoint of a peer is to localhost or not
-    pub proxy_listen_port: Option<u16>,
     /// firewall mark
     pub fwmark: u32,
     /// Dictionary of Peer-s
@@ -195,7 +190,6 @@ impl From<get::Device> for Interface {
         Self {
             private_key: item.private_key.map(|pk| SecretKey::new(*pk)),
             listen_port: Some(item.listen_port),
-            proxy_listen_port: None,
             fwmark: item.fwmark,
             peers: item
                 .peers
@@ -212,7 +206,6 @@ impl From<set::Device> for Interface {
         Self {
             private_key: item.private_key.map(|pk| SecretKey::new(*pk)),
             listen_port: item.listen_port,
-            proxy_listen_port: None,
             fwmark: item.fwmark.map_or(0, |x| x),
             peers: item
                 .peers

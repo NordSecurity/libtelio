@@ -55,10 +55,6 @@ pub trait WireGuard: Send + Sync + 'static {
     async fn get_adapter_luid(&self) -> Result<u64, Error>;
     /// wait for listen port to be assigned by the WireGuard implementation, and return it afterwards
     async fn wait_for_listen_port(&self, d: Duration) -> Result<u16, Error>;
-    /// wait for listen port that should be used by telio-proxy,
-    /// this is required becasuse wiregurad-go windows implementation
-    /// has two different ports, for local connections and external connections
-    async fn wait_for_proxy_listen_port(&self, d: Duration) -> Result<u16, Error>;
     /// Get current link state for a peer
     async fn get_link_state(&self, key: PublicKey) -> Result<Option<LinkState>, Error>;
     /// Set secret key for adapter
@@ -349,25 +345,6 @@ impl WireGuard for DynamicWg {
             if let Some(port) = self.get_interface().await?.listen_port {
                 if port > 0 {
                     telio_log_debug!("Wireguard using port:{:?}", &port.to_string());
-                    break Ok(port);
-                }
-            }
-            let elapsed_time = start.elapsed()?;
-            if elapsed_time > d {
-                break telio_err_with_log!(Error::PortAssignmentTimeoutError);
-            }
-
-            sleep(Duration::from_millis(10)).await;
-        }
-    }
-
-    async fn wait_for_proxy_listen_port(&self, d: Duration) -> Result<u16, Error> {
-        let start = std::time::SystemTime::now();
-        loop {
-            let interface = self.get_interface().await?;
-            if let Some(port) = interface.proxy_listen_port.or(interface.listen_port) {
-                if port > 0 {
-                    telio_log_debug!("Wireguard using port:{:?} for proxy", &port.to_string());
                     break Ok(port);
                 }
             }
@@ -967,7 +944,6 @@ impl State {
     fn is_same_interface(lhs: &Interface, rhs: &Interface) -> bool {
         if lhs.private_key != rhs.private_key
             || lhs.listen_port != rhs.listen_port
-            || lhs.proxy_listen_port != rhs.proxy_listen_port
             || lhs.fwmark != rhs.fwmark
         {
             false
@@ -1089,7 +1065,6 @@ pub mod tests {
         Interface {
             private_key: Some(SecretKey::gen_with(&mut rng)),
             listen_port: rng.gen(),
-            proxy_listen_port: rng.gen(),
             fwmark: rng.gen(),
             peers,
         }

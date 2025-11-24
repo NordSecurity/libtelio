@@ -1948,7 +1948,6 @@ mod tests {
             async fn get_interface(&self) -> Result<Interface, Error>;
             async fn get_adapter_luid(&self) -> Result<u64, Error>;
             async fn wait_for_listen_port(&self, d: Duration) -> Result<u16, Error>;
-            async fn wait_for_proxy_listen_port(&self, d: Duration) -> Result<u16, Error>;
             async fn get_link_state(&self, key: PublicKey) -> Result<Option<LinkState>, Error>;
             async fn set_secret_key(&self, key: SecretKey) -> Result<(), Error>;
             async fn set_fwmark(&self, fwmark: u32) -> Result<(), Error>;
