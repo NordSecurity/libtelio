@@ -130,7 +130,7 @@ impl LinkDetection {
         curr_ip_stack: Option<IpStack>,
     ) -> LinkDetectionUpdateResult {
         telio_log_debug!(
-            "update for {}, node_addresses: {:?}, reason: {:?}, curr_ip_stack: {:?}",
+            "update for {:?}, node_addresses: {:?}, reason: {:?}, curr_ip_stack: {:?}",
             public_key,
             node_addresses,
             reason,
@@ -144,7 +144,11 @@ impl LinkDetection {
         if let Some(state) = self.peers.get_mut(public_key) {
             let result = state.update(self.cfg_max_allowed_rtt);
 
-            telio_log_debug!("{:?}", result.link_detection_update_result);
+            telio_log_debug!(
+                "{:?} -> {:?}",
+                public_key,
+                result.link_detection_update_result
+            );
             #[cfg(target_os = "windows")]
             if result.should_ping {
                 self.nw_changes_observer
@@ -187,7 +191,7 @@ impl LinkDetection {
             ),
         };
 
-        telio_log_debug!("push_update: {:?}", res);
+        telio_log_debug!("push_update: {:?} -> {:?}", public_key, res);
         res
     }
 }
