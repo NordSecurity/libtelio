@@ -232,7 +232,7 @@ impl LocalNameServer {
                 _ = idle_timer.tick() => {
                     if let Some(last_sender) = last_sender {
                         telio_log_trace!("[DNS] Peer was idle, updating WG timers");
-                        update_wg_timers(&peer, &socket, last_sender).await;
+                        // update_wg_timers(&peer, &socket, last_sender).await;
                     }
                 }
                 else => {
