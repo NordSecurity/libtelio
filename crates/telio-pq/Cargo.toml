@@ -13,8 +13,8 @@ fuzzing = []
 
 [dependencies]
 # pqcrypto version is fixed, because the newer version implements incompatible kyber kem according to draft specs
-pqcrypto-kyber = { version = "=0.7.6", default-features = false }
-pqcrypto-internals = "=0.2.5"
+pqcrypto-kyber = { version = "=0.8.1", default-features = false }
+pqcrypto-internals = "=0.2.11"
 pqcrypto-traits = { default-features = false, version = "0.3.5" }
 hmac = { version = "0.12.1", default-features = false }
 blake2 = { default-features = false, version = "0.10.6" }

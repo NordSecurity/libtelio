@@ -16,8 +16,8 @@ hyper-util.workspace = true
 prost = "0.14.1"
 protobuf = "3.7.2"
 rustls = { version = "0.23", default-features = false, features = ["std"] }
-rustls-webpki = { version = "0.103.4", optional = true }
-aws-lc-rs = { version = "=1.13.3", features = ["bindgen"], optional = true }
+rustls-webpki = { version = "0.103.8", optional = true }
+aws-lc-rs = { version = "=1.15.0", features = ["bindgen"], optional = true }
 tokio-stream = "0.1.17"
 tokio-rustls = { version = "0.26.4", default-features = false }
 tonic = { version = "0.14.2" }
