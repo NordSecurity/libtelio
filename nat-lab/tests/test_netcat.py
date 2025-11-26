@@ -52,26 +52,10 @@ async def test_netcat(setup_params: list[SetupParameters], udp: bool) -> None:
             async with NetCatClient(
                 client_connection, server_ip, PORT, udp=udp
             ).run() as client:
-                if udp:
-                    # For UDP, we can't wait for connection_received on server
-                    # because UDP is connectionless and the server only knows
-                    # about the client when it receives data
-                    await client.connection_succeeded()
+                await asyncio.gather(
+                    server.connection_received(), client.connection_succeeded()
+                )
 
-                    # Send data first for UDP
-                    await client.send_data(TEST_STRING)
-
-                    # Now wait for the server to receive the connection
-                    await server.connection_received()
-                else:
-                    # For TCP, wait for both connection events
-                    await asyncio.gather(
-                        server.connection_received(), client.connection_succeeded()
-                    )
-
-                    # Then send data
-                    await client.send_data(TEST_STRING)
-
-                # Receive data on server
+                await client.send_data(TEST_STRING)
                 server_data = await server.receive_data()
                 assert TEST_STRING in server_data

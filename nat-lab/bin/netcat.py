@@ -128,20 +128,9 @@ class NetCat:
         """Handle input from stdin and send it over the socket"""
         data = sys.stdin.buffer.readline()
         if data:
-            if self.udp and self.listen and self.client_addr:
-                # For UDP server, send to the client that connected
+            if self.listen and self.client_addr:
                 self.sock.sendto(data, self.client_addr)
-            elif self.udp and not self.listen:
-                # For UDP client, use sendto with the connected address
-                try:
-                    self.sock.send(data)
-                except OSError:
-                    # If send fails, try sendto with the original address
-                    hostname = self.args.hostname
-                    port = self.args.port
-                    self.sock.sendto(data, (hostname, port))
             else:
-                # For TCP, use regular send
                 self.sock.send(data)
         else:
             # EOF on stdin
