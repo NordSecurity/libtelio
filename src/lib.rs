@@ -136,8 +136,8 @@ mod uniffi_libtelio {
         type Builtin = String;
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
-            Ok(val.parse().map_err(|_| TelioError::UnknownError {
-                inner: "Invalid IP address".to_owned(),
+            Ok(val.parse().map_err(|e| TelioError::UnknownError {
+                inner: format!("Invalid IpAddr address: '{val}': {e}"),
             })?)
         }
 
@@ -150,8 +150,8 @@ mod uniffi_libtelio {
         type Builtin = String;
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
-            Ok(val.parse().map_err(|_| TelioError::UnknownError {
-                inner: "Invalid IP address".to_owned(),
+            Ok(val.parse().map_err(|e| TelioError::UnknownError {
+                inner: format!("Invalid IpNet address: '{val}': {e}"),
             })?)
         }
 
@@ -165,7 +165,7 @@ mod uniffi_libtelio {
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
             val.parse()
-                .map_err(|_| anyhow::anyhow!("Invalid IP address".to_owned()))
+                .map_err(|e| anyhow::anyhow!(format!("Invalid Ipv4Net address '{val}': {e}")))
         }
 
         fn from_custom(obj: Self) -> Self::Builtin {
@@ -178,7 +178,7 @@ mod uniffi_libtelio {
 
         fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
             val.parse()
-                .map_err(|_| anyhow::anyhow!("Invalid IP address"))
+                .map_err(|e| anyhow::anyhow!(format!("Invalid Ipv4Addr address '{val}': {e}")))
         }
 
         fn from_custom(obj: Self) -> Self::Builtin {
