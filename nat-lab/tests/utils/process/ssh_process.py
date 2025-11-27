@@ -103,8 +103,8 @@ class SshProcess(Process):
                 err.returncode,
                 err.exit_status,
                 err.exit_signal,
-                err.stdout,
-                err.stderr,
+                err.stdout.strip(),
+                err.stderr.strip(),
             )
             raise err
 
