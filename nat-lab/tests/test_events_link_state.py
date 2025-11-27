@@ -476,13 +476,13 @@ class ICMP_control:
     async def __aenter__(self):
         proc = self._conn.create_process([
             "iptables",
-            "-I",
+            "--insert",
             "INPUT",
-            "-p",
+            "--protocol",
             "icmp",
             "--icmp-type",
             "echo-request",
-            "-j",
+            "--jump",
             "DROP",
         ])
         await proc.execute()
@@ -490,13 +490,13 @@ class ICMP_control:
     async def __aexit__(self, *_):
         proc = self._conn.create_process([
             "iptables",
-            "-D",
+            "--delete",
             "INPUT",
-            "-p",
+            "--protocol",
             "icmp",
             "--icmp-type",
             "echo-request",
-            "-j",
+            "--jump",
             "DROP",
         ])
         await proc.execute()
@@ -562,15 +562,15 @@ class _BlockOutgoingUdpBySize:
             return
         await self._connection.create_process([
             "iptables",
-            "-A" if add else "-D",
+            "--append" if add else "--delete",
             "OUTPUT",
-            "-p",
+            "--protocol",
             "udp",
-            "-m",
+            "--match",
             "length",
             "--length",
             str(self._packet_size_bytes),
-            "-j",
+            "--jump",
             "DROP",
         ]).execute()
 
