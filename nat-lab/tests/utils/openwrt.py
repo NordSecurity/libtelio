@@ -39,7 +39,13 @@ async def wait_until_unreachable_after_reboot(
     for _ in range(1, retries + 1):
         try:
             await connection.create_process(["true"]).execute()
-        except (asyncssh.misc.ConnectionLost, OSError, asyncio.TimeoutError):
+        except (
+            asyncssh.misc.ConnectionLost,
+            asyncssh.misc.ChannelOpenError,
+            asyncssh.misc.DisconnectError,
+            OSError,
+            asyncio.TimeoutError,
+        ):
             log.debug("VM became unreachable — reboot likely in progress.")
             return
         await asyncio.sleep(delay)
