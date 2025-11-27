@@ -48,7 +48,7 @@ def _generate_setup_parameters(
         [EndpointProvider.STUN, EndpointProvider.LOCAL]
     )
     features.link_detection = FeatureLinkDetection(
-        rtt_seconds=1, no_of_pings=1, use_for_downgrade=True
+        rtt_seconds=1, use_for_downgrade=True
     )
     features.batching = (
         FeatureBatching(
@@ -273,7 +273,7 @@ def proxying_peer_parameters(clients: List[ConnectionTag]):
         features = default_features(enable_direct=False, enable_nurse=False)
         features.wireguard.persistent_keepalive.proxying = 5
         features.link_detection = FeatureLinkDetection(
-            rtt_seconds=2, no_of_pings=0, use_for_downgrade=False
+            rtt_seconds=2, use_for_downgrade=False
         )
 
         features.batching = FeatureBatching(

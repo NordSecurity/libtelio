@@ -32,10 +32,10 @@ tokio = { workspace = true, features = ["full"] }
 
 telio-crypto.workspace = true
 telio-model.workspace = true
+telio-network-monitors.workspace = true
 telio-sockets = { workspace = true, features = ["mockall"] }
 telio-task.workspace = true
 telio-utils.workspace = true
-telio-pinger.workspace = true
 itertools.workspace = true
 nix.workspace = true
 
@@ -56,6 +56,7 @@ test-log = { version = "0.2.17", features = ["trace"] }
 cc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+telio-pinger.workspace = true
 sha2.workspace = true
 winapi = { workspace = true, features = ["nldef"] }
 winreg.workspace = true

@@ -1,0 +1,14 @@
+BREAKING CHANGE: Remove enhanced detection mode from link detection
+
+ Since every WG implementation libtelio uses, issues a handshake after
+  a missed keepalive, "enhanced detection" becomes trivial.
+
+ However WireGuardNT tx counters are not increased when the internet connected
+  interface is disabled, which leads to incorrect link state
+  detection.
+
+ This PR removes enhanced detection mode from link detection while keeping
+  a Windows mod that on network change monitoring trigger, it will
+  issue a ICMP to every peer in order to improve reliability of link detection
+  on WireguardNT adapters. When that happens it'll also trigger the
+  link detection countdown by artificially setting first_tx_after_rx variable.

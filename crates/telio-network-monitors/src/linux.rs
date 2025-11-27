@@ -4,7 +4,7 @@ use neli::{
     socket::{tokio::NlSocket as TokioSocket, NlSocket},
 };
 use std::io;
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
 use tokio::{io::AsyncReadExt, task::JoinHandle};
 
 const RTMGRP_LINK: u32 = 0x0001;
@@ -36,7 +36,7 @@ async fn read_event(mut sock: TokioSocket) -> Option<JoinHandle<io::Result<()>>>
             loop {
                 let _ = sock.read_buf(&mut buffer).await?;
                 {
-                    telio_log_debug!("Network path updated");
+                    telio_log_info!("Detected network interface modification, notifying..");
                     if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
                         telio_log_warn!("Failed to notify about changed path: {e}");
                     }
