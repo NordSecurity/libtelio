@@ -201,11 +201,11 @@ namespace telio {
 };
 
 dictionary WgPeer {
-    string public_key;
+    PublicKey public_key;
     string? endpoint;
-    sequence<string> ip_addresses;
+    sequence<IpAddr> ip_addresses;
     u32? persistent_keepalive_interval;
-    sequence<string> allowed_ips;
+    sequence<IpNet> allowed_ips;
     u64? rx_bytes;
     u64? time_since_last_rx_ms;
     u64? tx_bytes;

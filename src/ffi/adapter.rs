@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     convert::{TryFrom, TryInto},
+    net::IpAddr,
     str::FromStr,
     sync::Arc,
     time::Duration,
@@ -39,7 +40,7 @@ pub struct WgResponse {
 
 #[derive(Debug, Clone)]
 pub struct WgPeer {
-    pub public_key: String,
+    pub public_key: PublicKey,
     /// Peer's endpoint with `IP address` and `UDP port` number
     pub endpoint: Option<String>,
     /// Mesh's IP addresses of peer
@@ -47,7 +48,7 @@ pub struct WgPeer {
     /// Keep alive interval, `seconds` or `None`
     pub persistent_keepalive_interval: Option<u32>,
     /// Vector of allowed IPs
-    pub allowed_ips: Vec<String>,
+    pub allowed_ips: Vec<IpNet>,
     /// Number of bytes received or `None`(unused on Set)
     pub rx_bytes: Option<u64>,
     /// Time since last byte has been received from this peer. This is a synthetic
@@ -65,14 +66,14 @@ pub struct WgPeer {
 impl From<wireguard_uapi::xplatform::set::Peer> for WgPeer {
     fn from(value: wireguard_uapi::xplatform::set::Peer) -> Self {
         WgPeer {
-            public_key: PublicKey::new(value.public_key).to_string(),
+            public_key: PublicKey::new(value.public_key),
             endpoint: value.endpoint.map(|e| e.to_string()),
             ip_addresses: vec![],
             persistent_keepalive_interval: value.persistent_keepalive_interval.map(|k| k.into()),
             allowed_ips: value
                 .allowed_ips
                 .into_iter()
-                .map(|ip| format!("{}/{}", ip.ipaddr, ip.cidr_mask))
+                .flat_map(|ip| IpNet::new(ip.ipaddr, ip.cidr_mask))
                 .collect(),
             rx_bytes: None,
             time_since_last_rx_ms: None,
@@ -90,7 +91,7 @@ impl TryFrom<WgPeer> for telio_wg::uapi::Peer {
 
     fn try_from(value: WgPeer) -> Result<Self, Self::Error> {
         Ok(telio_wg::uapi::Peer {
-            public_key: value.public_key.parse()?,
+            public_key: value.public_key,
             endpoint: value.endpoint.map(|e| e.parse()).transpose()?,
             endpoint_changed_at: None,
             ip_addresses: value
@@ -114,13 +115,13 @@ impl TryFrom<WgPeer> for telio_wg::uapi::Peer {
             allowed_ips: value
                 .allowed_ips
                 .into_iter()
-                .flat_map(|ip| match ip.parse() {
-                    Ok(ip) => Some(ip),
-                    Err(e) => {
-                        telio_log_debug!("Failed to parse '{ip}' as an allowed ip: {e}");
-                        None
-                    }
-                })
+                // .flat_map(|ip| match ip.parse() {
+                //     Ok(ip) => Some(ip),
+                //     Err(e) => {
+                //         telio_log_debug!("Failed to parse '{ip}' as an allowed ip: {e}");
+                //         None
+                //     }
+                // })
                 .collect(),
             rx_bytes: value.rx_bytes,
             time_since_last_rx: value.time_since_last_rx_ms.map(Duration::from_millis),
