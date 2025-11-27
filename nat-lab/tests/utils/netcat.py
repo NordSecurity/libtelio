@@ -36,6 +36,7 @@ class NetCat:
         detached: bool = False,  # d-flag
         port_scan: bool = False,  # z-flag
         source_ip: Optional[str] = None,  # s-flag
+        log_prefix: Optional[str] = None,
     ):
         """
         Create an instance of the nc command
@@ -60,6 +61,8 @@ class NetCat:
                 Scan for listening daemons, without sending any data
             source_ip : str | None
                 Specifies the IP of the interface which is used to send the packets
+            log_prefix: str | None
+                Specifies prefix for the logs
         """
         flags = "-nv"  # don't do any dns lookups and enable vebose output
         flags += "6" if ipv6 else "4"
@@ -86,6 +89,7 @@ class NetCat:
         self._stdout_data: str = ""
         self._output_notifier: OutputNotifier = OutputNotifier()
         self._data_received: asyncio.Event = asyncio.Event()
+        self._log_prefix = log_prefix
 
     async def receive_data(self) -> str:
         """Receive data from stdout"""
@@ -102,13 +106,14 @@ class NetCat:
 
     async def on_stdout(self, stdout: str) -> None:
         """Handle incoming data"""
+        log.info("[NETCAT_%s]: %s", self._log_prefix, stdout.strip())
         self._stdout_data += stdout
         self._data_received.set()
         return None
 
     async def on_stderr(self, stderr: str) -> None:
         """Handle verbose status messages"""
-        log.error("netcat: %s", stderr.strip())
+        log.error("[NETCAT_%s]: %s", self._log_prefix, stderr.strip())
         await self._output_notifier.handle_output(stderr.strip())
         return None
 
@@ -140,7 +145,15 @@ class NetCatServer(NetCat):
         ipv6: bool = False,
         bind_ip: Optional[str] = None,
     ):
-        super().__init__(connection, bind_ip, port, listen=True, udp=udp, ipv6=ipv6)
+        super().__init__(
+            connection,
+            bind_ip,
+            port,
+            listen=True,
+            udp=udp,
+            ipv6=ipv6,
+            log_prefix="SERVER",
+        )
         self._listening_event: asyncio.Event = asyncio.Event()
         status = "Listening" if not udp else "Bound"
         address = bind_ip if bind_ip else "::" if ipv6 else "0.0.0.0"
@@ -195,11 +208,14 @@ class NetCatClient(NetCat):
             detached=detached,
             port_scan=port_scan,
             source_ip=source_ip,
+            log_prefix="CLIENT",
         )
         self._connection_event: asyncio.Event = asyncio.Event()
         protocol = "tcp" if not udp else "udp"
+        # Both TCP and UDP (udp only on port scan option -z) connections show "succeeded" message
+        # Look for the pattern "port [protocol/*] succeeded" which works for both
         self._output_notifier.notify_output(
-            f"{port} port [{protocol}/*] succeeded",
+            f"port [{protocol}/*] succeeded",
             self._connection_event,
         )
 

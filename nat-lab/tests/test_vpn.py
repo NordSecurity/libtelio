@@ -499,6 +499,7 @@ async def test_firewall_blacklist_udp(ipv4: bool) -> None:
                     alpha.get_ip_address(IPProto.IPv4 if ipv4 else IPProto.IPv6)
                 ),
                 ipv6=not ipv4,
+                port_scan=True,
             ).run()
         )
         await alpha_nc_client.connection_succeeded()
@@ -513,6 +514,7 @@ async def test_firewall_blacklist_udp(ipv4: bool) -> None:
                     beta.get_ip_address(IPProto.IPv4 if ipv4 else IPProto.IPv6)
                 ),
                 ipv6=not ipv4,
+                port_scan=True,
             ).execute()
 
 
@@ -598,6 +600,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
                 udp=True,
                 ipv6=ip_proto == IPProto.IPv6,
                 source_ip=alpha_ip,
+                port_scan=True,
             ).run()
         )
 

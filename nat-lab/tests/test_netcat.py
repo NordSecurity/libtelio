@@ -52,10 +52,17 @@ async def test_netcat(setup_params: list[SetupParameters], udp: bool) -> None:
             async with NetCatClient(
                 client_connection, server_ip, PORT, udp=udp
             ).run() as client:
-                await asyncio.gather(
-                    server.connection_received(), client.connection_succeeded()
-                )
+                if udp:
+                    await client.send_data(TEST_STRING)
+                    # on udp, connection received happens only after first datagram packet
+                    await asyncio.gather(
+                        server.connection_received(), client.connection_succeeded()
+                    )
+                else:
+                    await asyncio.gather(
+                        server.connection_received(), client.connection_succeeded()
+                    )
+                    await client.send_data(TEST_STRING)
 
-                await client.send_data(TEST_STRING)
                 server_data = await server.receive_data()
                 assert TEST_STRING in server_data
