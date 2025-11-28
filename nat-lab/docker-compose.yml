@@ -14,7 +14,7 @@ services:
   nlx-01: &common-nlx
     hostname: nlx-01
     privileged: true
-    image: ${SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
@@ -107,7 +107,7 @@ services:
 
   windows-client-01: &windows-client
     hostname: windows-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_windows:${LIBTELIO_ENV_NAT_LAB_WINDOWS_VM_TAG}
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/dockur_windows:${LIBTELIO_ENV_NAT_LAB_WINDOWS_VM_TAG}
     privileged: true
     devices:
       - "/dev/net/tun"
@@ -191,7 +191,7 @@ services:
 
   mac-client-01: &mac-client
     hostname: mac-client-01
-    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/dockur_macos:${LIBTELIO_ENV_NAT_LAB_MACOS_VM_TAG}
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/dockur_macos:${LIBTELIO_ENV_NAT_LAB_MACOS_VM_TAG}
     privileged: true
     devices:
       - "/dev/net/tun"
@@ -483,7 +483,7 @@ services:
   fullcone-gw-01: &common-fullcone-gw
     hostname: fullcone-gw-01
     privileged: true
-    image: ${SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/dockur_linux:${LIBTELIO_ENV_NAT_LAB_LINUX_VM_TAG}
     devices:
       - "/dev/net/tun"
       - "/dev/kvm"
@@ -665,7 +665,7 @@ services:
       context: .
       dockerfile: openwrt.Dockerfile
       args:
-        SEC_CONTAINER_REGISTRY: $SEC_CONTAINER_REGISTRY
+        SEC_CONTAINER_REGISTRY: $LIBTELIO_ENV_SEC_CONTAINER_REGISTRY
     cap_drop:
       - ALL
     cap_add:

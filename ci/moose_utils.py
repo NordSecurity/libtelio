@@ -116,7 +116,7 @@ def set_cargo_dependencies():
 
     MOOSELIBTELIOAPP_DEP = (
         r"\nmooselibtelioapp = { "
-        f'git = "https://{libtelio_env_sec_gitlab_repository}/low-level-hacks/moose/moose-events",'
+        f'git = "https://{libtelio_env_sec_gitlab_repository}/nord-projects/nordvpn/infra/llt/moose/moose-events",'
         f' tag = "{LIBTELIO_ENV_MOOSE_RELEASE_TAG}" }}'
     )
 
