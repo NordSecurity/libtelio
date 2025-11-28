@@ -8,6 +8,7 @@
 // ATTENTION: NOT included are DNS() and SetDNS() - functions to query and set DNS servers for a network interface.
 //
 
+use telio_utils::telio_log_debug;
 use super::netsh;
 use super::types::*;
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
@@ -167,6 +168,7 @@ impl InterfaceLuid {
     /// add_ipv4_address method adds new unicast IP address to the interface. Corresponds to CreateUnicastIpAddressEntry function
     /// (https://docs.microsoft.com/en-us/windows/desktop/api/netioapi/nf-netioapi-createunicastipaddressentry).
     pub fn add_ipv4_address(&self, address: &Ipv4Net) -> Result<(), NETIO_STATUS> {
+        telio_log_debug!("luid::set_ipv4_address: {:?}", address);
         let mut row = MIB_UNICASTIPADDRESS_ROW::default();
         unsafe { InitializeUnicastIpAddressEntry(&mut row) };
 
@@ -216,6 +218,7 @@ impl InterfaceLuid {
         &self,
         addresses: impl IntoIterator<Item = Ipv4Net>,
     ) -> Result<(), NETIO_STATUS> {
+        telio_log_debug!("luid::add_ipv4_addresses");
         for ip in addresses.into_iter().enumerate() {
             self.add_ipv4_address(&ip.1)?;
         }
@@ -239,6 +242,7 @@ impl InterfaceLuid {
         &self,
         addresses: impl IntoIterator<Item = Ipv4Net>,
     ) -> Result<(), NETIO_STATUS> {
+        telio_log_debug!("luid::set_ipv4_addresses");
         self.flush_ipv4_addresses()?;
         self.add_ipv4_addresses(addresses)?;
         Ok(())
@@ -548,6 +552,7 @@ impl InterfaceLuid {
         &self,
         routes_data: impl IntoIterator<Item = RouteDataIpv4>,
     ) -> Result<(), NETIO_STATUS> {
+        telio_log_debug!("luid::set_routes_ipv4");
         self.flush_routes_ipv4()?;
         self.add_routes_ipv4(routes_data)?;
         Ok(())
@@ -558,6 +563,7 @@ impl InterfaceLuid {
         &self,
         routes_data: impl IntoIterator<Item = RouteDataIpv6>,
     ) -> Result<(), NETIO_STATUS> {
+        telio_log_debug!("luid::set_routes_ipv6");
         self.flush_routes_ipv6()?;
         self.add_routes_ipv6(routes_data)?;
         Ok(())
@@ -570,6 +576,7 @@ impl InterfaceLuid {
         destination: &Ipv4Net,
         next_hop: &Ipv4Addr,
     ) -> Result<(), NETIO_STATUS> {
+        telio_log_debug!("luid::delete_route_ipv4: {:?}", destination);
         let mut row = MIB_IPFORWARD_ROW2::default();
         unsafe { InitializeIpForwardEntry(&mut row) };
 
@@ -633,6 +640,7 @@ impl InterfaceLuid {
     /// flush_routes method deletes all interface's routes.
     /// It continues on failures, and returns the last error afterwards.
     pub fn flush_routes(&self, address_family: ADDRESS_FAMILY) -> Result<(), NETIO_STATUS> {
+        telio_log_debug!("luid::flush_routes");
         let mut last_error: NETIO_STATUS = NO_ERROR;
 
         let mut p_table: PMIB_IPFORWARD_TABLE2 = ptr::null_mut();
