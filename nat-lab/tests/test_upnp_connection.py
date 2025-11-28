@@ -2,9 +2,9 @@ import asyncio
 import pytest
 import re
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_mesh_nodes, setup_environment
-from utils.asyncio_util import run_async_context
-from utils.bindings import (
+from tests.helpers import SetupParameters, setup_mesh_nodes, setup_environment
+from tests.utils.asyncio_util import run_async_context
+from tests.utils.bindings import (
     features_with_endpoint_providers,
     EndpointProvider,
     PathType,
@@ -12,11 +12,11 @@ from utils.bindings import (
     TelioAdapterType,
     RelayState,
 )
-from utils.connection import ConnectionTag
-from utils.logger import log
-from utils.ping import ping
-from utils.process import ProcessExecError
-from utils.router import new_router, IPStack
+from tests.utils.connection import ConnectionTag
+from tests.utils.logger import log
+from tests.utils.ping import ping
+from tests.utils.process import ProcessExecError
+from tests.utils.router import new_router, IPStack
 
 
 async def execute_upnpc_with_retry(connection, timeout=10.0):

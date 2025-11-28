@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 import enum
 import inspect
 import Pyro5.api  # type: ignore

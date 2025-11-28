@@ -1,8 +1,8 @@
 import os
-from utils.connection import Connection, TargetOS
-from utils.connection_util import get_libtelio_binary_path
-from utils.logger import log
-from utils.process import Process, ProcessExecError
+from tests.utils.connection import Connection, TargetOS
+from tests.utils.connection_util import get_libtelio_binary_path
+from tests.utils.logger import log
+from tests.utils.process import Process, ProcessExecError
 
 
 class InterDerpClient:

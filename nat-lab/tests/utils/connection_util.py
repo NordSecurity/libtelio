@@ -1,23 +1,22 @@
-import config
 from aiodocker import Docker
-from config import LAN_ADDR_MAP, LAN_ADDR_MAP_V6
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncIterator, Tuple, Optional, List, Union
-from utils.connection import Connection, TargetOS, ConnectionTag
-from utils.connection.docker_connection import (
+from tests import config
+from tests.config import LAN_ADDR_MAP, LAN_ADDR_MAP_V6
+from tests.utils.connection import Connection, TargetOS, ConnectionTag
+from tests.utils.connection.docker_connection import (
     DockerConnection,
     DOCKER_GW_MAP,
     DOCKER_SERVICE_IDS,
 )
-from utils.connection.ssh_connection import SshConnection
-from utils.connection_tracker import (
+from tests.utils.connection.ssh_connection import SshConnection
+from tests.utils.connection_tracker import (
     ConnTrackerEventsValidator,
     ConnectionTracker,
     ConnectionCountLimit,
     FiveTuple,
 )
-from utils.network_switcher import (
+from tests.utils.network_switcher import (
     Interface,
     NetworkSwitcher,
     NetworkSwitcherDocker,
@@ -26,6 +25,7 @@ from utils.network_switcher import (
     NetworkSwitcherOpenwrt,
     NetworkSwitcherLinux,
 )
+from typing import AsyncIterator, Tuple, Optional, List, Union
 
 
 @dataclass

@@ -1,33 +1,32 @@
 # pylint: disable=too-many-lines
 
 import asyncio
-import config
 import itertools
 import pytest
-import timeouts
-from config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6, LAN_ADDR_MAP
 from contextlib import AsyncExitStack
-from helpers import (
+from tests import config, timeouts
+from tests.config import LIBTELIO_DNS_IPV4, LIBTELIO_DNS_IPV6, LAN_ADDR_MAP
+from tests.helpers import (
     SetupParameters,
     setup_api,
     setup_environment,
     setup_mesh_nodes,
     string_to_compressed_ipv6,
 )
-from typing import List, Optional
-from utils.bindings import default_features, FeatureDns, TelioAdapterType
-from utils.connection import ConnectionTag
-from utils.connection_tracker import (
+from tests.utils.bindings import default_features, FeatureDns, TelioAdapterType
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_tracker import (
     ConntrackerEvent,
     ConnTrackerViolation,
     ConnTrackerEventsValidator,
     FiveTuple,
     EventType as ConnTrackerEventType,
 )
-from utils.connection_util import generate_connection_tracker_config
-from utils.dns import query_dns, query_dns_port
-from utils.process import ProcessExecError
-from utils.router import IPStack
+from tests.utils.connection_util import generate_connection_tracker_config
+from tests.utils.dns import query_dns, query_dns_port
+from tests.utils.process import ProcessExecError
+from tests.utils.router import IPStack
+from typing import List, Optional
 
 
 def get_dns_server_address(ip_stack: IPStack) -> str:

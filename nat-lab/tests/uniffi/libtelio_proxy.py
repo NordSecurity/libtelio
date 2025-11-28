@@ -2,16 +2,16 @@ import asyncio
 import os
 import Pyro5.errors  # type:ignore
 import sys
+import tests.uniffi.telio_bindings as libtelio
 import time
-import uniffi.telio_bindings as libtelio
 from functools import wraps
 from Pyro5.api import Proxy  # type: ignore
+from tests.uniffi.serialization import init_serialization  # type: ignore
 from typing import List, Optional
-from uniffi.serialization import init_serialization  # type: ignore
 
 # isort: off
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from utils.logger import log  # type: ignore # pylint: disable=wrong-import-position
+from tests.utils.logger import log  # type: ignore # pylint: disable=wrong-import-position
 
 # isort: on
 

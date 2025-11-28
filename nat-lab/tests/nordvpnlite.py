@@ -3,7 +3,11 @@ import json
 import os
 import re
 import time
-from config import (
+from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+from tests.config import (
     CORE_API_CREDENTIALS,
     LIBTELIO_BINARY_PATH_DOCKER,
     LIBTELIO_LOCAL_IP,
@@ -12,21 +16,17 @@ from config import (
     WG_SERVER,
     WG_SERVERS,
 )
-from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass
-from enum import Enum
-from helpers import send_https_request, setup_connections
-from mesh_api import API, Node
-from pathlib import Path
-from test_core_api import register_vpn_server_key
+from tests.helpers import send_https_request, setup_connections
+from tests.mesh_api import API, Node
+from tests.test_core_api import register_vpn_server_key
+from tests.uniffi.telio_bindings import generate_public_key
+from tests.utils.connection import Connection, ConnectionTag
+from tests.utils.logger import log
+from tests.utils.process import Process, ProcessExecError
+from tests.utils.router import IPStack
+from tests.utils.router.linux_router import LinuxRouter
+from tests.utils.testing import get_current_test_log_path
 from typing import AsyncIterator, Optional
-from uniffi.telio_bindings import generate_public_key
-from utils.connection import Connection, ConnectionTag
-from utils.logger import log
-from utils.process import Process, ProcessExecError
-from utils.router import IPStack
-from utils.router.linux_router import LinuxRouter
-from utils.testing import get_current_test_log_path
 
 
 class IgnoreableError(Exception):

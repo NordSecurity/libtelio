@@ -1,23 +1,21 @@
 import asyncio
 import base64
-import config
 import itertools
 import pytest
 import re
-import timeouts
 from collections import defaultdict
-from config import DERP_SERVERS
 from contextlib import AsyncExitStack, asynccontextmanager
-from helpers import (
+from tests import config, timeouts
+from tests.config import DERP_SERVERS
+from tests.helpers import (
     Environment,
     ping_between_all_nodes,
     setup_mesh_nodes,
     SetupParameters,
 )
-from mesh_api import Node
-from typing import Any, Dict, List, Tuple
-from utils.asyncio_util import run_async_context
-from utils.bindings import (
+from tests.mesh_api import Node
+from tests.utils.asyncio_util import run_async_context
+from tests.utils.bindings import (
     Features,
     default_features,
     FeatureLana,
@@ -30,10 +28,11 @@ from utils.bindings import (
     NodeState,
     RelayState,
 )
-from utils.connection import Connection, ConnectionTag
-from utils.logger import log
-from utils.ping import ping
-from utils.telio_log_notifier import TelioLogNotifier
+from tests.utils.connection import Connection, ConnectionTag
+from tests.utils.logger import log
+from tests.utils.ping import ping
+from tests.utils.telio_log_notifier import TelioLogNotifier
+from typing import Any, Dict, List, Tuple
 
 ANY_PROVIDERS = [EndpointProvider.LOCAL, EndpointProvider.STUN]
 

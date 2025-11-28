@@ -1,18 +1,16 @@
 import asyncio
-import config
 import pytest
-import timeouts
 from contextlib import AsyncExitStack
-from helpers import (
+from tests import config, timeouts
+from tests.helpers import (
     setup_connections,
     setup_environment,
     setup_mesh_nodes,
     SetupParameters,
 )
-from unittest.mock import Mock, AsyncMock, patch
-from utils import stun
-from utils.asyncio_util import run_async_contexts
-from utils.bindings import (
+from tests.utils import stun
+from tests.utils.asyncio_util import run_async_contexts
+from tests.utils.bindings import (
     features_with_endpoint_providers,
     EndpointProvider,
     PathType,
@@ -20,14 +18,15 @@ from utils.bindings import (
     NodeState,
     RelayState,
 )
-from utils.connection import TargetOS, ConnectionTag
-from utils.network_switcher.network_switcher_windows import (
+from tests.utils.connection import TargetOS, ConnectionTag
+from tests.utils.network_switcher.network_switcher_windows import (
     Interface as WinInterface,
     NetworkSwitcherWindows,
     InterfaceState,
 )
-from utils.ping import ping
-from utils.process import ProcessExecError
+from tests.utils.ping import ping
+from tests.utils.process import ProcessExecError
+from unittest.mock import Mock, AsyncMock, patch
 
 
 @pytest.mark.asyncio
@@ -633,7 +632,7 @@ Configuration for interface "Loopback Pseudo-Interface 1"
         mock_connection.create_process.return_value = mock_process
 
         with patch(
-            "utils.network_switcher.network_switcher_windows.CommandGrepper"
+            "tests.utils.network_switcher.network_switcher_windows.CommandGrepper"
         ) as mock_grepper:
             mock_grepper_instance = AsyncMock()
             mock_grepper_instance.check_exists = AsyncMock(return_value=True)
@@ -696,7 +695,7 @@ Configuration for interface "Loopback Pseudo-Interface 1"
             return mock_grepper_instance
 
         with patch(
-            "utils.network_switcher.network_switcher_windows.CommandGrepper",
+            "tests.utils.network_switcher.network_switcher_windows.CommandGrepper",
             side_effect=mock_grepper_init,
         ):
             nw_switcher = NetworkSwitcherWindows(

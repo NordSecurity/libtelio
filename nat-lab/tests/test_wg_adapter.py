@@ -1,12 +1,12 @@
 import pytest
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_environment
 from Pyro5.errors import CommunicationError  # type:ignore
-from utils.bindings import TelioAdapterType
-from utils.connection import ConnectionTag
-from utils.connection_util import new_connection_by_tag
-from utils.logger import log
-from utils.process import ProcessExecError
+from tests.helpers import SetupParameters, setup_environment
+from tests.utils.bindings import TelioAdapterType
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_util import new_connection_by_tag
+from tests.utils.logger import log
+from tests.utils.process import ProcessExecError
 
 
 @pytest.mark.windows

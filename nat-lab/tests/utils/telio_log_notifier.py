@@ -1,9 +1,9 @@
 import asyncio
 from contextlib import asynccontextmanager
+from tests.utils.connection import Connection, TargetOS
+from tests.utils.output_notifier import OutputNotifier
+from tests.utils.process import Process
 from typing import AsyncIterator
-from utils.connection import Connection, TargetOS
-from utils.output_notifier import OutputNotifier
-from utils.process import Process
 
 
 class TelioLogNotifier:

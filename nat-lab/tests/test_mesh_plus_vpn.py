@@ -1,13 +1,12 @@
 import asyncio
-import config
 import pytest
-import timeouts
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_mesh_nodes
-from mesh_api import API
-from telio import Client
-from utils import stun, asyncio_util
-from utils.bindings import (
+from tests import config, timeouts
+from tests.helpers import SetupParameters, setup_mesh_nodes
+from tests.mesh_api import API
+from tests.telio import Client
+from tests.utils import stun, asyncio_util
+from tests.utils.bindings import (
     features_with_endpoint_providers,
     EndpointProvider,
     TelioAdapterType,
@@ -15,12 +14,12 @@ from utils.bindings import (
     RelayState,
     NodeState,
 )
-from utils.connection import ConnectionTag
-from utils.connection_util import (
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
 )
-from utils.ping import ping
+from tests.utils.ping import ping
 
 
 # Marks in-tunnel stack only, exiting only through IPv4

@@ -1,13 +1,13 @@
 import asyncio
-import config
 import re
 from .network_switcher import NetworkSwitcher, InterfaceState
 from dataclasses import dataclass
+from tests import config
+from tests.utils.command_grepper import CommandGrepper
+from tests.utils.connection import Connection
+from tests.utils.logger import log
+from tests.utils.process import ProcessExecError
 from typing import List, Optional
-from utils.command_grepper import CommandGrepper
-from utils.connection import Connection
-from utils.logger import log
-from utils.process import ProcessExecError
 
 STATUS_CHECK_TIMEOUT_S: float = 120.0
 

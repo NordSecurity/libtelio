@@ -1,6 +1,6 @@
 from typing import Optional, Tuple, List
 
-from uniffi.telio_bindings import *  # pylint: disable=wildcard-import, unused-wildcard-import  # isort: skip
+from tests.uniffi.telio_bindings import *  # pylint: disable=wildcard-import, unused-wildcard-import  # isort: skip
 
 
 def features_with_endpoint_providers(
