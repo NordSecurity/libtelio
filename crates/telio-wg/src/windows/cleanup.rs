@@ -1,6 +1,7 @@
 #![cfg(windows)]
 
 use super::tunnel::winipcfg::luid::InterfaceLuid;
+use telio_utils::telio_log_debug;
 
 pub fn cleanup_network_config(luid: u64) {
     // Clean up like in InterfaceWatcher::Destroy() in /3rd-party/wireguard-go/interfacewatcher_windows.go
@@ -17,6 +18,7 @@ pub fn cleanup_network_config(luid: u64) {
 
     #[allow(unused)]
     {
+        telio_log_debug!("cleanup::lui:: flush everything");
         // Ignore Result<> of the functions below, it only has diagnostic purposes
         iface.flush_routes_ipv4();
         iface.flush_ipv4_addresses();

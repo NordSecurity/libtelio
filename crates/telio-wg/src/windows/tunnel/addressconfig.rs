@@ -18,9 +18,7 @@ use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
-use telio_utils::{
-    telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
-};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
 use winapi::shared::{
     ifdef::IfOperStatusUp,
     netioapi::*,
@@ -140,6 +138,7 @@ pub fn configure_interface(
     config: &wireguard_uapi::xplatform::set::Device,
     luid: u64,
 ) -> Result<(), u32> {
+    telio_log_debug!("luid::configure_interface");
     /*
         TODO: the code below is an extract from wireguard-windows in Go. It retries this function a couple of times
         if the machine just booted and could not configure the network stack promptly.
@@ -157,7 +156,7 @@ pub fn configure_interface(
         tryTimes++
         */
 
-    telio_log_trace!("+++ AddressConfig::configure_interface");
+    telio_log_debug!("+++ AddressConfig::configure_interface");
 
     let iface = InterfaceLuid::new(luid);
 
@@ -299,7 +298,7 @@ pub fn configure_interface(
     return nil
     */
 
-    telio_log_trace!("--- AddressConfig::configure_interface OK");
+    telio_log_debug!("--- AddressConfig::configure_interface OK");
 
     Ok(())
 }

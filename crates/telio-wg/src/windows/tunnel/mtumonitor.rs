@@ -8,9 +8,7 @@
 use super::winipcfg::luid::InterfaceLuid;
 use std::sync::{Arc, Mutex};
 use std::{mem, ptr};
-use telio_utils::{
-    telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
-};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
 use winapi::shared::{
     ifdef::IfOperStatusUp,
     netioapi::*,
@@ -98,7 +96,7 @@ impl MtuMonitor {
     }
 
     pub fn stop(&self) {
-        telio_log_trace!("+++ MtuMonitor::stop");
+        telio_log_debug!("+++ MtuMonitor::stop");
 
         if let Ok(mut route_cb_handle) = self.route_cb_handle.clone().lock() {
             unsafe {
@@ -122,7 +120,7 @@ impl MtuMonitor {
             telio_log_error!("error obtaining lock");
         }
 
-        telio_log_trace!("--- MtuMonitor::stop");
+        telio_log_debug!("--- MtuMonitor::stop");
     }
 
     #[allow(non_snake_case)]
@@ -132,7 +130,7 @@ impl MtuMonitor {
         NotificationType: MIB_NOTIFICATION_TYPE,
     ) {
         assert!(!Row.is_null());
-        telio_log_trace!(
+        telio_log_debug!(
             "+++ MtuMonitor::route_change_callback: CallerContext {:p}, Row {:p}, NotificationType {}",
             CallerContext,
             Row,
@@ -146,12 +144,12 @@ impl MtuMonitor {
             match unsafe { (*self_ptr).do_it() } {
                 Ok(_) => {}
                 Err(err) => {
-                    telio_log_trace!("MtuMonitor::do_it returned error {}", err);
+                    telio_log_debug!("MtuMonitor::do_it returned error {}", err);
                 }
             }
         }
 
-        telio_log_trace!(
+        telio_log_debug!(
             "--- MtuMonitor::route_change_callback: CallerContext {:p}, Row {:p}, NotificationType {}",
             CallerContext,
             Row,
@@ -165,7 +163,7 @@ impl MtuMonitor {
         Row: *mut MIB_IPINTERFACE_ROW,
         NotificationType: MIB_NOTIFICATION_TYPE,
     ) {
-        telio_log_trace!(
+        telio_log_debug!(
             "+++ MtuMonitor::interface_change_callback: CallerContext {:p}, Row {:p}, NotificationType {}",
             CallerContext,
             Row,
@@ -179,12 +177,12 @@ impl MtuMonitor {
             match unsafe { (*self_ptr).do_it() } {
                 Ok(_) => {}
                 Err(err) => {
-                    telio_log_trace!("MtuMonitor::do_it returned error {}", err);
+                    telio_log_debug!("MtuMonitor::do_it returned error {}", err);
                 }
             }
         }
 
-        telio_log_trace!(
+        telio_log_debug!(
             "--- MtuMonitor::interface_change_callback: CallerContext {:p}, Row {:p}, NotificationType {}",
             CallerContext,
             Row,
@@ -193,17 +191,17 @@ impl MtuMonitor {
     }
 
     fn do_it(&mut self) -> Result<(), NETIO_STATUS> {
-        telio_log_trace!("+++ MtuMonitor::do_it");
+        telio_log_debug!("+++ MtuMonitor::do_it");
 
-        telio_log_trace!("+++ MtuMonitor::do_it: find_default_luid");
+        telio_log_debug!("+++ MtuMonitor::do_it: find_default_luid");
         self.find_default_luid()?;
-        telio_log_trace!("--- MtuMonitor::do_it: find_default_luid");
+        telio_log_debug!("--- MtuMonitor::do_it: find_default_luid");
 
         let mut mtu: u32 = 0;
 
         if 0 != self.last_luid {
             let last_luid = InterfaceLuid::new(self.last_luid);
-            telio_log_trace!("+++ MtuMonitor::do_it: get_interface");
+            telio_log_debug!("+++ MtuMonitor::do_it: get_interface");
             let last_iface = last_luid.get_interface()?;
             if last_iface.Mtu > 0 {
                 mtu = last_iface.Mtu;
@@ -212,14 +210,14 @@ impl MtuMonitor {
 
         if mtu > 0 && self.last_mtu != mtu {
             let own_luid = InterfaceLuid::new(self.own_luid);
-            telio_log_trace!("+++ MtuMonitor::do_it: get_ip_interface");
+            telio_log_debug!("+++ MtuMonitor::do_it: get_ip_interface");
             let mut own_iface = own_luid.get_ip_interface(self.family)?;
             own_iface.NlMtu = mtu.saturating_sub(80);
             if own_iface.NlMtu < self.min_mtu {
                 own_iface.NlMtu = self.min_mtu;
             }
 
-            telio_log_trace!("+++ MtuMonitor::do_it: SetIpInterfaceEntry");
+            telio_log_debug!("+++ MtuMonitor::do_it: SetIpInterfaceEntry");
             let result = unsafe { SetIpInterfaceEntry(&mut own_iface) };
             if NO_ERROR != result {
                 return Err(result);
@@ -227,7 +225,7 @@ impl MtuMonitor {
             self.last_mtu = mtu;
         }
 
-        telio_log_trace!("--- MtuMonitor::do_it");
+        telio_log_debug!("--- MtuMonitor::do_it");
 
         Ok(())
     }
@@ -236,7 +234,7 @@ impl MtuMonitor {
         let mut p_table: PMIB_IPFORWARD_TABLE2 = ptr::null_mut();
         let result = unsafe { GetIpForwardTable2(self.family, &mut p_table) };
         if NO_ERROR != result {
-            telio_log_trace!(
+            telio_log_debug!(
                 "find_default_luid failed GetIpForwardTable2 with {}",
                 result
             );
@@ -298,8 +296,8 @@ impl MtuMonitor {
 #[cfg(windows)]
 impl Drop for MtuMonitor {
     fn drop(&mut self) {
-        telio_log_trace!("+++ MtuMonitor::drop");
+        telio_log_debug!("+++ MtuMonitor::drop");
         self.stop();
-        telio_log_trace!("--- MtuMonitor::drop");
+        telio_log_debug!("--- MtuMonitor::drop");
     }
 }

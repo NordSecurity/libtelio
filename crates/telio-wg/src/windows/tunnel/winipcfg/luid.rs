@@ -8,12 +8,12 @@
 // ATTENTION: NOT included are DNS() and SetDNS() - functions to query and set DNS servers for a network interface.
 //
 
-use telio_utils::telio_log_debug;
 use super::netsh;
 use super::types::*;
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::{mem, ptr};
+use telio_utils::telio_log_debug;
 use winapi::shared::{
     guiddef::GUID, ifdef::NET_LUID, netioapi::*, nldef::*, winerror::*, ws2def::*, ws2ipdef::*,
 };

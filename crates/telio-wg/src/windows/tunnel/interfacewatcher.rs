@@ -16,9 +16,7 @@ use super::mtumonitor::MtuMonitor;
 use crate::windows::cleanup::*;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{mem, option, ptr};
-use telio_utils::{
-    telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn, Hidden,
-};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, Hidden};
 use winapi::shared::{
     ifdef::IfOperStatusUp,
     netioapi::*,
@@ -86,7 +84,7 @@ impl AdapterConfiguration {
 
 impl InterfaceWatcher {
     pub fn new(enable_dynamic_wg_nt_control: bool) -> Self {
-        telio_log_trace!("InterfaceWatcher::new");
+        telio_log_debug!("InterfaceWatcher::new");
         Self {
             iface_cb_handle: Arc::new(Mutex::new(0)), // iface_cb_handle: NULL,
 
@@ -105,7 +103,7 @@ impl InterfaceWatcher {
         iw.watchdog.Stop()
         */
 
-        telio_log_trace!("+++ InterfaceWatcher::start_monitoring");
+        telio_log_debug!("+++ InterfaceWatcher::start_monitoring");
 
         if let Ok(mut iface_cb_handle) = self.iface_cb_handle.clone().lock() {
             let mut cb_handle: HANDLE = NULL;
@@ -118,7 +116,7 @@ impl InterfaceWatcher {
                     &mut cb_handle,
                 )
             };
-            telio_log_trace!("--- InterfaceWatcher::start_monitoring {}", result);
+            telio_log_debug!("--- InterfaceWatcher::start_monitoring {}", result);
             if NO_ERROR != result {
                 Err(result)
             } else {
@@ -132,7 +130,7 @@ impl InterfaceWatcher {
     }
 
     pub fn stop(&self) {
-        telio_log_trace!("+++ InterfaceWatcher::stop");
+        telio_log_debug!("+++ InterfaceWatcher::stop");
 
         if let Ok(mut iface_cb_handle) = self.iface_cb_handle.clone().lock() {
             unsafe {
@@ -155,11 +153,11 @@ impl InterfaceWatcher {
             telio_log_error!("error obtaining lock");
         }
 
-        telio_log_trace!("--- InterfaceWatcher::stop");
+        telio_log_debug!("--- InterfaceWatcher::stop");
     }
 
     pub fn configure(&mut self, adapter: Arc<wireguard_nt::Adapter>, luid: u64) {
-        telio_log_trace!("+++ InterfaceWatcher::configure");
+        telio_log_debug!("+++ InterfaceWatcher::configure");
 
         if let Ok(mut watched_adapter) = self.watched_adapter.clone().lock() {
             // TODO: restart watchdog
@@ -197,26 +195,27 @@ impl InterfaceWatcher {
             telio_log_error!("error obtaining lock");
         }
 
-        telio_log_trace!("--- InterfaceWatcher::configure");
+        telio_log_debug!("--- InterfaceWatcher::configure");
     }
 
     pub fn set_last_known_configuration(
         &mut self,
         config: &wireguard_uapi::xplatform::set::Device,
     ) {
-        telio_log_trace!("+++ InterfaceWatcher::set_last_known_configuration");
+        telio_log_debug!("+++ InterfaceWatcher::set_last_known_configuration: config = {:?}", config);
 
         if let Ok(mut watched_adapter) = self.watched_adapter.clone().lock() {
+            telio_log_debug!("+++ setting last known good config: {:?}", config);
             watched_adapter.last_known_config = Some(Arc::new(WireGuardUapiSetDevice::new(config)));
         } else {
             telio_log_error!("error obtaining lock");
         }
 
-        telio_log_trace!("--- InterfaceWatcher::set_last_known_configuration");
+        telio_log_debug!("--- InterfaceWatcher::set_last_known_configuration");
     }
 
     pub fn clear_last_known_configuration(&mut self) {
-        telio_log_trace!("+++ InterfaceWatcher::clear_last_known_configuration");
+        telio_log_debug!("+++ InterfaceWatcher::clear_last_known_configuration");
 
         if let Ok(mut watched_adapter) = self.watched_adapter.clone().lock() {
             watched_adapter.last_known_config = None;
@@ -224,11 +223,12 @@ impl InterfaceWatcher {
             telio_log_error!("error obtaining lock");
         }
 
-        telio_log_trace!("--- InterfaceWatcher::clear_last_known_configuration");
+        telio_log_debug!("--- InterfaceWatcher::clear_last_known_configuration");
     }
 
+    // In NatLab it appears to be called twice but no last known good configuration present since no setting device addresses is bisible?
     fn setup(watched_adapter: &mut AdapterConfiguration, family: ADDRESS_FAMILY) {
-        telio_log_trace!("+++ InterfaceWatcher::setup");
+        telio_log_debug!("+++ InterfaceWatcher::setup");
 
         let family_str: String = match family as i32 {
             AF_INET => "IPv4".to_string(),
@@ -250,7 +250,8 @@ impl InterfaceWatcher {
                     Ok(_) => {
                         watched_adapter.mtu_monitor.push(arc_mtu_monitor.clone());
                     }
-                    Err(_err) => {
+                    Err(e) => {
+                        telio_log_debug!("Failed to set MTU monitor: {:?}", e);
                         // TODO: collect and broadcast errors?
                         // iw.errors <- interfaceWatcherError{services.ErrorMonitorMTUChanges, err}
                     }
@@ -266,7 +267,8 @@ impl InterfaceWatcher {
                 watched_adapter.luid,
             ) {
                 Ok(_) => {}
-                Err(_err) => {
+                Err(e) => {
+                    telio_log_debug!("Failed to set device addresses : {:?}", e);
                     // TODO: collect and broadcast errors?
                     // iw.errors <- interfaceWatcherError{services.ErrorSetNetConfig, err}
                 }
@@ -281,11 +283,11 @@ impl InterfaceWatcher {
         // TODO: collect and broadcast success?
         // iw.started <- family
 
-        telio_log_trace!("--- InterfaceWatcher::setup");
+        telio_log_debug!("--- InterfaceWatcher::setup");
     }
 
     fn mib_add_instance(&mut self, iface: *const MIB_IPINTERFACE_ROW) {
-        telio_log_trace!("+++ InterfaceWatcher::mib_add_instance");
+        telio_log_debug!("+++ InterfaceWatcher::mib_add_instance");
 
         if let Ok(mut watched_adapter) = self.watched_adapter.clone().lock() {
             if 0 == watched_adapter.luid {
@@ -293,11 +295,11 @@ impl InterfaceWatcher {
                     luid: unsafe { (*iface).InterfaceLuid.Value },
                     family: unsafe { (*iface).Family },
                 });
-                telio_log_trace!("--- InterfaceWatcher::mib_add_instance 1");
+                telio_log_debug!("--- InterfaceWatcher::mib_add_instance 1");
                 return;
             }
             if unsafe { (*iface).InterfaceLuid.Value } != watched_adapter.luid {
-                telio_log_trace!("--- InterfaceWatcher::mib_add_instance 2");
+                telio_log_debug!("--- InterfaceWatcher::mib_add_instance 2");
                 return;
             }
             Self::setup(&mut watched_adapter, unsafe { (*iface).Family });
@@ -334,7 +336,7 @@ impl InterfaceWatcher {
             telio_log_error!("error obtaining lock");
         }
 
-        telio_log_trace!("--- InterfaceWatcher::mib_add_instance LAST");
+        telio_log_debug!("--- InterfaceWatcher::mib_add_instance LAST");
     }
 
     #[allow(non_snake_case, non_upper_case_globals)]
@@ -343,7 +345,7 @@ impl InterfaceWatcher {
         Row: *mut MIB_IPINTERFACE_ROW,
         NotificationType: MIB_NOTIFICATION_TYPE,
     ) {
-        telio_log_trace!(
+        telio_log_debug!(
             "+++ InterfaceWatcher::interface_change_callback: CallerContext {:p}, Row {:p}, NotificationType {}",
             CallerContext,
             Row,
@@ -359,7 +361,7 @@ impl InterfaceWatcher {
             (*self_ptr).mib_add_instance(Row);
         };
 
-        telio_log_trace!(
+        telio_log_debug!(
             "--- InterfaceWatcher::interface_change_callback: CallerContext {:p}, Row {:p}, NotificationType {}",
             CallerContext,
             Row,
@@ -370,7 +372,7 @@ impl InterfaceWatcher {
 
 impl Drop for InterfaceWatcher {
     fn drop(&mut self) {
-        telio_log_trace!("+++ InterfaceWatcher::drop");
+        telio_log_debug!("+++ InterfaceWatcher::drop");
 
         self.stop();
 
@@ -386,6 +388,6 @@ impl Drop for InterfaceWatcher {
             telio_log_error!("error obtaining lock");
         }
 
-        telio_log_trace!("--- InterfaceWatcher::drop");
+        telio_log_debug!("--- InterfaceWatcher::drop");
     }
 }
