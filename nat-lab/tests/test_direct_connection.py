@@ -171,6 +171,18 @@ async def _disable_direct_connection(env: Environment, reflexive_ips: List[str])
         pytest.param(
             *_generate_setup_parameters_with_reflexive_ips(clients),
             id=f"parameters_{i}",
+            marks=(
+                pytest.mark.fullcone
+                if any(
+                    conn_tag
+                    in [
+                        ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
+                        ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+                    ]
+                    for conn_tag, *_ in clients
+                )
+                else []
+            ),
         )
         for i, clients in enumerate(UHP_WORKING_PATHS_PARAMS)
     ],
@@ -405,6 +417,7 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
 
 
 @pytest.mark.asyncio
+@pytest.mark.fullcone
 async def test_direct_working_paths_stun_ipv6() -> None:
     setup_params = _generate_setup_parameters([
         (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN], False),
@@ -439,6 +452,7 @@ async def test_direct_working_paths_stun_ipv6() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.fullcone
 async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
     setup_params = _generate_setup_parameters([
         (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN], False),
@@ -556,6 +570,7 @@ async def test_direct_infinite_stun_loop() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.fullcone
 async def test_direct_working_paths_with_pausing_upnp_and_stun() -> None:
     setup_params = _generate_setup_parameters([
         (ConnectionTag.DOCKER_FULLCONE_CLIENT_1, [EndpointProvider.STUN], True),
@@ -687,6 +702,18 @@ UHP_FAILING_PATHS_PARAMS = [
 UHP_FAILING_PATHS = [
     pytest.param(
         _generate_setup_parameters(clients),
+        marks=(
+            pytest.mark.fullcone
+            if any(
+                conn_tag
+                in [
+                    ConnectionTag.DOCKER_FULLCONE_CLIENT_1,
+                    ConnectionTag.DOCKER_FULLCONE_CLIENT_2,
+                ]
+                for conn_tag, *_ in clients
+            )
+            else []
+        ),
     )
     for clients in UHP_FAILING_PATHS_PARAMS
 ]
