@@ -2,14 +2,18 @@ import asyncio
 import itertools
 import pytest
 from contextlib import AsyncExitStack
-from helpers import setup_api, setup_connections, SetupParameters, setup_mesh_nodes
 from scapy.layers.inet import TCP  # type: ignore
 from scapy.layers.l2 import ARP  # type: ignore
-from telio import Client
-from timeouts import TEST_BATCHING_TIMEOUT
-from typing import List
-from utils.asyncio_util import run_async_context
-from utils.bindings import (
+from tests.helpers import (
+    setup_api,
+    setup_connections,
+    SetupParameters,
+    setup_mesh_nodes,
+)
+from tests.telio import Client
+from tests.timeouts import TEST_BATCHING_TIMEOUT
+from tests.utils.asyncio_util import run_async_context
+from tests.utils.bindings import (
     default_features,
     features_with_endpoint_providers,
     FeatureLinkDetection,
@@ -22,20 +26,21 @@ from utils.bindings import (
     TelioAdapterType,
     LinkState,
 )
-from utils.connection import ConnectionTag
-from utils.connection.docker_connection import (
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection.docker_connection import (
     DockerConnection,
     container_id,
     DOCKER_GW_MAP,
 )
-from utils.logger import log
-from utils.traffic import (
+from tests.utils.logger import log
+from tests.utils.traffic import (
     capture_traffic,
     render_chart,
     generate_packet_distribution_histogram,
     generate_packet_delay_histogram,
     get_ordered_histogram_score,
 )
+from typing import List
 
 BATCHING_CAPTURE_TIME = 130
 DOCKER_CONE_GW_2_IP = "10.0.254.2"

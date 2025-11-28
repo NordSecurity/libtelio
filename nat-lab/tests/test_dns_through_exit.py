@@ -1,14 +1,14 @@
 import asyncio
-import config
 import pytest
 from contextlib import AsyncExitStack
-from helpers import setup_api, setup_mesh_nodes, SetupParameters
+from tests import config
+from tests.helpers import setup_api, setup_mesh_nodes, SetupParameters
+from tests.utils.bindings import default_features, TelioAdapterType
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_util import generate_connection_tracker_config
+from tests.utils.dns import query_dns
+from tests.utils.router import IPStack
 from typing import List, Tuple
-from utils.bindings import default_features, TelioAdapterType
-from utils.connection import ConnectionTag
-from utils.connection_util import generate_connection_tracker_config
-from utils.dns import query_dns
-from utils.router import IPStack
 
 
 # IPv6 tests are failing because we do not have IPV6 internet connection

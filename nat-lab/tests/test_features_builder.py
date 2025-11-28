@@ -1,4 +1,4 @@
-from uniffi import (
+from tests.uniffi import (
     FeaturesDefaultsBuilder,
     deserialize_feature_config,
     FirewallBlacklistTuple,

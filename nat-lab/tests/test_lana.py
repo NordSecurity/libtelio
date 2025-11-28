@@ -4,7 +4,9 @@ import asyncio
 import base64
 import os
 import pytest
-from config import (
+from contextlib import AsyncExitStack
+from pathlib import Path
+from tests.config import (
     WG_SERVER,
     STUN_SERVER,
     STUNV6_SERVER,
@@ -12,14 +14,11 @@ from config import (
     DERP_SECONDARY,
     DERP_TERTIARY,
 )
-from contextlib import AsyncExitStack
-from helpers import connectivity_stack
-from mesh_api import API, Node
-from pathlib import Path
-from telio import Client, copy_file, get_log_without_flush, find_files
-from typing import List, Optional
-from utils import testing, stun
-from utils.analytics import (
+from tests.helpers import connectivity_stack
+from tests.mesh_api import API, Node
+from tests.telio import Client, copy_file, get_log_without_flush, find_files
+from tests.utils import testing, stun
+from tests.utils.analytics import (
     fetch_moose_events,
     DERP_BIT,
     Event,
@@ -27,7 +26,7 @@ from utils.analytics import (
     IPV4_BIT,
     IPV6_BIT,
 )
-from utils.analytics.event_validator import (
+from tests.utils.analytics.event_validator import (
     CategoryValidator,
     ConnectivityMatrixValidator,
     DerpConnInfoValidator,
@@ -48,7 +47,7 @@ from utils.analytics.event_validator import (
     GAMMA_FINGERPRINT,
     NODES_FINGERPRINTS,
 )
-from utils.bindings import (
+from tests.utils.bindings import (
     default_features,
     Features,
     FeatureQoS,
@@ -59,19 +58,20 @@ from utils.bindings import (
     NodeState,
     RelayState,
 )
-from utils.connection import Connection, ConnectionTag
-from utils.connection_util import (
+from tests.utils.connection import Connection, ConnectionTag
+from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
     new_connection_by_tag,
     add_outgoing_packets_delay,
 )
-from utils.logger import log
-from utils.moose import MOOSE_DB_TIMEOUT_MS, MOOSE_LOGS_DIR
-from utils.ping import ping
-from utils.router import IPStack, IPProto
-from utils.telio_log_notifier import TelioLogNotifier
-from utils.testing import get_current_test_log_path
+from tests.utils.logger import log
+from tests.utils.moose import MOOSE_DB_TIMEOUT_MS, MOOSE_LOGS_DIR
+from tests.utils.ping import ping
+from tests.utils.router import IPStack, IPProto
+from tests.utils.telio_log_notifier import TelioLogNotifier
+from tests.utils.testing import get_current_test_log_path
+from typing import List, Optional
 
 CONTAINER_EVENT_PATH = "/event.db"
 CONTAINER_EVENT_BACKUP_PATH = "/event_backup.db"

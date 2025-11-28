@@ -1,8 +1,8 @@
 from .router import Router, IPStack, IPProto
-from config import LIBTELIO_IPV6_WG_SUBNET
 from contextlib import asynccontextmanager
+from tests.config import LIBTELIO_IPV6_WG_SUBNET
+from tests.utils.connection import Connection
 from typing import AsyncIterator, List
-from utils.connection import Connection
 
 
 class MacRouter(Router):

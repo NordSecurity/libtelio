@@ -1,11 +1,11 @@
-import config
 import secrets
 from .router import Router, IPStack, IPProto, get_ip_address_type
 from contextlib import asynccontextmanager
+from tests import config
+from tests.utils.connection import Connection
+from tests.utils.logger import log
+from tests.utils.process import ProcessExecError
 from typing import AsyncIterator, List
-from utils.connection import Connection
-from utils.logger import log
-from utils.process import ProcessExecError
 
 # An arbitrary routing table id. Must be unique on the system.
 ROUTING_TABLE_ID = "73110"  # TELIO

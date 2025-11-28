@@ -2,14 +2,14 @@ from .connection import Connection, TargetOS, ConnectionTag, setup_ephemeral_por
 from aiodocker import Docker
 from aiodocker.containers import DockerContainer
 from asyncio import to_thread
-from config import LINUX_INTERFACE_NAME
 from contextlib import asynccontextmanager
 from logging import DEBUG, INFO
 from subprocess import run, DEVNULL
+from tests.config import LINUX_INTERFACE_NAME
+from tests.utils.logger import log
+from tests.utils.process import Process, DockerProcess, ProcessExecError
 from typing import List, Type, Dict, AsyncIterator
 from typing_extensions import Self
-from utils.logger import log
-from utils.process import Process, DockerProcess, ProcessExecError
 
 DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_CONE_CLIENT_1: "cone-client-01",

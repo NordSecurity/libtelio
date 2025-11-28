@@ -2,7 +2,7 @@ from .linux_router import LinuxRouter
 from .mac_router import MacRouter
 from .router import IPStack, Router
 from .windows_router import WindowsRouter
-from utils.connection import TargetOS, Connection
+from tests.utils.connection import TargetOS, Connection
 
 
 def new_router(connection: Connection, ip_stack: IPStack) -> Router:

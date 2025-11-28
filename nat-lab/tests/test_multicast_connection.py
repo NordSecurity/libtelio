@@ -1,11 +1,11 @@
 import pytest
 from contextlib import AsyncExitStack
-from helpers import setup_mesh_nodes, SetupParameters
+from tests.helpers import setup_mesh_nodes, SetupParameters
+from tests.utils.bindings import default_features, TelioAdapterType
+from tests.utils.connection import ConnectionTag, Connection, TargetOS
+from tests.utils.multicast import MulticastClient, MulticastServer
+from tests.utils.process import ProcessExecError
 from typing import List, Tuple
-from utils.bindings import default_features, TelioAdapterType
-from utils.connection import ConnectionTag, Connection, TargetOS
-from utils.multicast import MulticastClient, MulticastServer
-from utils.process import ProcessExecError
 
 
 def generate_setup_parameter_pair(

@@ -1,12 +1,11 @@
 # pylint: disable=too-many-lines
 import asyncio
-import config
 import pytest
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_mesh_nodes, setup_environment
-from typing import List, Tuple
-from utils import stun
-from utils.bindings import (
+from tests import config
+from tests.helpers import SetupParameters, setup_mesh_nodes, setup_environment
+from tests.utils import stun
+from tests.utils.bindings import (
     default_features,
     EndpointProvider,
     FeatureLinkDetection,
@@ -19,9 +18,13 @@ from utils.bindings import (
     RelayState,
     TelioAdapterType,
 )
-from utils.connection import Connection, ConnectionTag, TargetOS
-from utils.connection_util import add_outgoing_packets_delay, toggle_secondary_adapter
-from utils.ping import ping
+from tests.utils.connection import Connection, ConnectionTag, TargetOS
+from tests.utils.connection_util import (
+    add_outgoing_packets_delay,
+    toggle_secondary_adapter,
+)
+from tests.utils.ping import ping
+from typing import List, Tuple
 
 WG_POLLING_PERIOD_S = 1
 WG_PASSIVE_KEEPALIVE_S = 10

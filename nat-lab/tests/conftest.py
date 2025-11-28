@@ -12,22 +12,22 @@ import subprocess
 import urllib.error
 import urllib.request
 from collections import defaultdict
-from config import LAN_ADDR_MAP, CORE_API_IP, CORE_API_CREDENTIALS
 from contextlib import AsyncExitStack
-from helpers import SetupParameters
 from http import HTTPStatus
-from interderp_cli import InterDerpClient
 from itertools import combinations
-from utils.bindings import TelioAdapterType
-from utils.connection import ConnectionTag, TargetOS, clear_ephemeral_setups_set
-from utils.connection.docker_connection import DockerConnection
-from utils.connection.ssh_connection import SshConnection
-from utils.connection_util import new_connection_raw
-from utils.logger import log
-from utils.process import ProcessExecError
-from utils.router import IPStack
-from utils.tcpdump import make_local_tcpdump, make_tcpdump
-from utils.testing import get_current_test_log_path
+from tests.config import LAN_ADDR_MAP, CORE_API_IP, CORE_API_CREDENTIALS
+from tests.helpers import SetupParameters
+from tests.interderp_cli import InterDerpClient
+from tests.utils.bindings import TelioAdapterType
+from tests.utils.connection import ConnectionTag, TargetOS, clear_ephemeral_setups_set
+from tests.utils.connection.docker_connection import DockerConnection
+from tests.utils.connection.ssh_connection import SshConnection
+from tests.utils.connection_util import new_connection_raw
+from tests.utils.logger import log
+from tests.utils.process import ProcessExecError
+from tests.utils.router import IPStack
+from tests.utils.tcpdump import make_local_tcpdump, make_tcpdump
+from tests.utils.testing import get_current_test_log_path
 
 DERP_SERVER_1_ADDR = "http://10.0.10.1:8765"
 DERP_SERVER_2_ADDR = "http://10.0.10.2:8765"

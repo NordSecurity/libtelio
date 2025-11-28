@@ -2,18 +2,31 @@ import asyncio
 import asyncssh
 import pytest
 import re
-from config import WG_SERVER, WG_SERVER_2, PHOTO_ALBUM_IP, STUN_SERVER, LAN_ADDR_MAP
 from contextlib import AsyncExitStack
-from helpers import print_network_state, wait_for_interface_state, wait_for_log_line
-from nordvpnlite import NordVpnLite, Config, IfcConfigType, Paths
 from pathlib import Path
-from utils import stun
-from utils.connection import Connection, ConnectionTag
-from utils.connection_util import new_connection_raw, new_connection_by_tag
-from utils.logger import log
-from utils.openwrt import start_logread_process, wait_until_unreachable_after_reboot
-from utils.ping import ping
-from utils.process import ProcessExecError
+from tests.config import (
+    WG_SERVER,
+    WG_SERVER_2,
+    PHOTO_ALBUM_IP,
+    STUN_SERVER,
+    LAN_ADDR_MAP,
+)
+from tests.helpers import (
+    print_network_state,
+    wait_for_interface_state,
+    wait_for_log_line,
+)
+from tests.nordvpnlite import NordVpnLite, Config, IfcConfigType, Paths
+from tests.utils import stun
+from tests.utils.connection import Connection, ConnectionTag
+from tests.utils.connection_util import new_connection_raw, new_connection_by_tag
+from tests.utils.logger import log
+from tests.utils.openwrt import (
+    start_logread_process,
+    wait_until_unreachable_after_reboot,
+)
+from tests.utils.ping import ping
+from tests.utils.process import ProcessExecError
 
 NETWORK_RESTART_LOG_LINE = "netifd: Network device 'eth1' link is up"
 OPENWRT_GW_WAN_IP = "10.0.0.0"
