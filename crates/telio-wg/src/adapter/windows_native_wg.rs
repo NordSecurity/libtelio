@@ -445,6 +445,10 @@ impl Adapter for WindowsNativeWg {
     async fn set_tun(&self, _tun: super::Tun) -> Result<(), AdapterError> {
         Err(AdapterError::UnsupportedAdapter)
     }
+
+    fn clone_box(&self) -> Option<Box<dyn Adapter>> {
+        None
+    }
 }
 
 #[cfg(windows)]

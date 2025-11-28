@@ -100,7 +100,7 @@ impl NordlynxKeyResponse {
     }
 }
 
-#[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone)]
+#[derive(PartialEq, Serialize, Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct NordVpnLiteConfig {
     #[serde(
@@ -120,6 +120,10 @@ pub struct NordVpnLiteConfig {
     pub log_file_path: String,
     #[serde(default = "default_log_file_count")]
     pub log_file_count: usize,
+    #[serde(
+        serialize_with = "serialize_adapter_type",
+        deserialize_with = "deserialize_adapter_type"
+    )]
     pub adapter_type: AdapterType,
     pub interface: InterfaceConfig,
     #[serde(default = "dns_default")]
@@ -259,6 +263,30 @@ impl Default for NordVpnLiteConfig {
             http_certificate_file_path: None,
         }
     }
+}
+
+fn serialize_adapter_type<S>(adapter: &AdapterType, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let name = match adapter {
+        AdapterType::NepTUN => "netpun",
+        AdapterType::LinuxNativeWg => "linux-native",
+        AdapterType::WindowsNativeWg => "wireguard-nt",
+        AdapterType::Custom(_) => "custom",
+    };
+    serializer.serialize_str(name)
+}
+
+fn deserialize_adapter_type<'de, D>(deserializer: D) -> Result<AdapterType, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Deserialize::deserialize(deserializer).and_then(|s: String| {
+        AdapterType::from_str(&s).map_err(|_| {
+            de::Error::unknown_variant(&s, &["neptun", "linux-native", "wireguard-nt", "custom"])
+        })
+    })
 }
 
 fn deserialize_log_level<'de, D>(deserializer: D) -> Result<LevelFilter, D::Error>

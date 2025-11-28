@@ -20,11 +20,11 @@ pub use mockall::automock;
 use serde::{Deserialize, Serialize};
 use std::{
     fmt, io,
-    net::{IpAddr, Ipv4Addr},
+    net::{AddrParseError, IpAddr, Ipv4Addr},
     str::FromStr,
     sync::Arc,
 };
-use telio_crypto::PublicKey;
+use telio_crypto::{KeyDecodeError, PublicKey};
 use telio_sockets::{Protect, SocketPool};
 use thiserror::Error as TError;
 
@@ -88,6 +88,11 @@ pub trait Adapter: Send + Sync {
 
     /// Set the (u)tun file descriptor to be used by the adapter
     async fn set_tun(&self, tun: Tun) -> Result<(), Error>;
+
+    /// Make a copy of this adapter.
+    ///
+    /// Only the custom adapters can be cloned this way.
+    fn clone_box(&self) -> Option<Box<dyn Adapter>>;
 }
 
 /// Enumeration of `Error` types for `Adapter` struct
@@ -164,20 +169,49 @@ pub enum Error {
     /// Internal Error
     #[error("Internal error: {0}")]
     InternalError(&'static str),
+
+    /// Key decode error
+    #[error("Failed to decode a key: {0}")]
+    KeyDecodeError(#[from] KeyDecodeError),
+
+    /// Endpoint parsing error
+    #[error("Failed to parse endpoint address: {0}")]
+    EndpointParsingError(#[from] AddrParseError),
 }
 
 /// Enumeration of types for `Adapter` struct
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone)]
 pub enum AdapterType {
     /// NepTUN
-    #[serde(rename = "neptun")]
     NepTUN,
     /// Linux Native
-    #[serde(rename = "linux-native")]
     LinuxNativeWg,
     /// Windows Native
-    #[serde(rename = "wireguard-nt")]
     WindowsNativeWg,
+    /// Custom adapter
+    Custom(Arc<dyn Adapter>),
+}
+
+impl PartialEq for AdapterType {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (AdapterType::NepTUN, AdapterType::NepTUN)
+                | (AdapterType::LinuxNativeWg, AdapterType::LinuxNativeWg)
+                | (AdapterType::WindowsNativeWg, AdapterType::WindowsNativeWg)
+        )
+    }
+}
+
+impl std::fmt::Debug for AdapterType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AdapterType::NepTUN => f.write_str("NepTUN"),
+            AdapterType::LinuxNativeWg => f.write_str("LinuxNativeWg"),
+            AdapterType::WindowsNativeWg => f.write_str("WindowsNativeWg"),
+            AdapterType::Custom(_) => f.write_str("Custom"),
+        }
+    }
 }
 
 impl Default for AdapterType {
@@ -202,10 +236,14 @@ impl FromStr for AdapterType {
         if s.is_empty() {
             return Ok(AdapterType::default());
         }
-        // use serde to deserialize the value
-        // wrap the input in quotes for a valid json format
-        serde_json::from_str(&format!("\"{s}\""))
-            .map_err(|e| Error::AdapterTypeParsingError(e.to_string()))
+        match s {
+            "neptun" => Ok(Self::NepTUN),
+            "linux-native" => Ok(Self::LinuxNativeWg),
+            "wireguard-nt" => Ok(Self::WindowsNativeWg),
+            _ => Err(Error::AdapterTypeParsingError(format!(
+                "unrecognised adapter type: {s}"
+            ))),
+        }
     }
 }
 
@@ -253,6 +291,7 @@ pub(crate) async fn start(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
                     .await?,
             ))
         }
+        AdapterType::Custom(adapter) => adapter.clone_box().ok_or(Error::UnsupportedAdapter),
     }
 }
 
