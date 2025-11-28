@@ -251,16 +251,17 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     "iptables",
-                    "-t",
+                    "--wait",  # Wait for xtables lock
+                    "--table",
                     "nat",
-                    "-A",
+                    "--append",
                     "POSTROUTING",
-                    "-s",
+                    "--source",
                     "100.64.0.0/10",
                     "!",
-                    "-o",
+                    "--out-interface",
                     self._interface_name,
-                    "-j",
+                    "--jump",
                     "MASQUERADE",
                 ],
                 quiet=True,
@@ -270,16 +271,17 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     "ip6tables",
-                    "-t",
+                    "--wait",  # Wait for xtables lock
+                    "--table",
                     "nat",
-                    "-A",
+                    "--append",
                     "POSTROUTING",
-                    "-s",
+                    "--source",
                     config.LIBTELIO_IPV6_WG_SUBNET + "::/64",
                     "!",
-                    "-o",
+                    "--out-interface",
                     self._interface_name,
-                    "-j",
+                    "--jump",
                     "MASQUERADE",
                 ],
                 quiet=True,
@@ -291,16 +293,17 @@ class LinuxRouter(Router):
                 await self._connection.create_process(
                     [
                         "iptables",
-                        "-t",
+                        "--wait",  # Wait for xtables lock
+                        "--table",
                         "nat",
-                        "-D",
+                        "--delete",
                         "POSTROUTING",
-                        "-s",
+                        "--source",
                         "100.64.0.0/10",
                         "!",
-                        "-o",
+                        "--out-interface",
                         self._interface_name,
-                        "-j",
+                        "--jump",
                         "MASQUERADE",
                     ],
                     quiet=True,
@@ -315,16 +318,17 @@ class LinuxRouter(Router):
                 await self._connection.create_process(
                     [
                         "ip6tables",
-                        "-t",
+                        "--wait",  # Wait for xtables lock
+                        "--table",
                         "nat",
-                        "-D",
+                        "--delete",
                         "POSTROUTING",
-                        "-s",
+                        "--source",
                         config.LIBTELIO_IPV6_WG_SUBNET + "::/64",
                         "!",
-                        "-o",
+                        "--out-interface",
                         self._interface_name,
-                        "-j",
+                        "--jump",
                         "MASQUERADE",
                     ],
                     quiet=True,
@@ -349,13 +353,14 @@ class LinuxRouter(Router):
         await self._connection.create_process(
             [
                 iptables_string,
-                "-t",
+                "--wait",  # Wait for xtables lock
+                "--table",
                 "filter",
-                "-A",
+                "--append",
                 "INPUT",
-                "-s",
+                "--source",
                 address,
-                "-j",
+                "--jump",
                 "DROP",
             ],
             quiet=True,
@@ -363,13 +368,14 @@ class LinuxRouter(Router):
         await self._connection.create_process(
             [
                 iptables_string,
-                "-t",
+                "--wait",  # Wait for xtables lock
+                "--table",
                 "filter",
-                "-A",
+                "--append",
                 "OUTPUT",
-                "-d",
+                "--destination",
                 address,
-                "-j",
+                "--jump",
                 "DROP",
             ],
             quiet=True,
@@ -381,13 +387,14 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     iptables_string,
-                    "-t",
+                    "--wait",  # Wait for xtables lock
+                    "--table",
                     "filter",
-                    "-D",
+                    "--delete",
                     "INPUT",
-                    "-s",
+                    "--source",
                     address,
-                    "-j",
+                    "--jump",
                     "DROP",
                 ],
                 quiet=True,
@@ -395,13 +402,14 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     iptables_string,
-                    "-t",
+                    "--wait",  # Wait for xtables lock
+                    "--table",
                     "filter",
-                    "-D",
+                    "--delete",
                     "OUTPUT",
-                    "-d",
+                    "--destination",
                     address,
-                    "-j",
+                    "--jump",
                     "DROP",
                 ],
                 quiet=True,
@@ -419,15 +427,16 @@ class LinuxRouter(Router):
         await self._connection.create_process(
             [
                 iptables_string,
-                "-t",
+                "--wait",  # Wait for xtables lock
+                "--table",
                 "filter",
-                "-A",
+                "--append",
                 "OUTPUT",
                 "--destination",
                 address,
-                "-p",
+                "--protocol",
                 "tcp",
-                "-j",
+                "--jump",
                 "REJECT",
                 "--reject-with",
                 "tcp-reset",
@@ -441,15 +450,16 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     iptables_string,
-                    "-t",
+                    "--wait",  # Wait for xtables lock
+                    "--table",
                     "filter",
-                    "-D",
+                    "--delete",
                     "OUTPUT",
                     "--destination",
                     address,
-                    "-p",
+                    "--protocol",
                     "tcp",
-                    "-j",
+                    "--jump",
                     "REJECT",
                     "--reject-with",
                     "tcp-reset",
@@ -469,15 +479,16 @@ class LinuxRouter(Router):
         await self._connection.create_process(
             [
                 iptables_string,
-                "-t",
+                "--wait",  # Wait for xtables lock
+                "--table",
                 "filter",
-                "-A",
+                "--append",
                 "OUTPUT",
                 "--destination",
                 address,
-                "-p",
+                "--protocol",
                 "udp",
-                "-j",
+                "--jump",
                 "REJECT",
                 "--reject-with",
                 "icmp-host-unreachable",
@@ -491,15 +502,16 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     iptables_string,
-                    "-t",
+                    "--wait",  # Wait for xtables lock
+                    "--table",
                     "filter",
-                    "-D",
+                    "--delete",
                     "OUTPUT",
                     "--destination",
                     address,
-                    "-p",
+                    "--protocol",
                     "udp",
-                    "-j",
+                    "--jump",
                     "REJECT",
                     "--reject-with",
                     "icmp-host-unreachable",
@@ -514,13 +526,14 @@ class LinuxRouter(Router):
         await self._connection.create_process(
             [
                 "iptables",
-                "-A",
+                "--wait",  # Wait for xtables lock
+                "--append",
                 "OUTPUT",
-                "-p",
+                "--protocol",
                 "udp",
                 "--sport",
                 str(port),
-                "-j",
+                "--jump",
                 "DROP",
             ],
             quiet=True,
@@ -532,13 +545,14 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     "iptables",
-                    "-D",
+                    "--wait",  # Wait for xtables lock
+                    "--delete",
                     "OUTPUT",
-                    "-p",
+                    "--protocol",
                     "udp",
                     "--sport",
                     str(port),
-                    "-j",
+                    "--jump",
                     "DROP",
                 ],
                 quiet=True,
@@ -549,13 +563,14 @@ class LinuxRouter(Router):
         await self._connection.create_process(
             [
                 "iptables",
-                "-A",
+                "--wait",  # Wait for xtables lock
+                "--append",
                 "OUTPUT",
-                "-p",
+                "--protocol",
                 "tcp",
                 "--dport",
                 str(port),
-                "-j",
+                "--jump",
                 "DROP",
             ],
             quiet=True,
@@ -567,13 +582,14 @@ class LinuxRouter(Router):
             await self._connection.create_process(
                 [
                     "iptables",
-                    "-D",
+                    "--wait",  # Wait for xtables lock
+                    "--delete",
                     "OUTPUT",
-                    "-p",
+                    "--protocol",
                     "tcp",
                     "--dport",
                     str(port),
-                    "-j",
+                    "--jump",
                     "DROP",
                 ],
                 quiet=True,
