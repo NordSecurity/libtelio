@@ -1,14 +1,14 @@
 import ipaddress
-import mesh_api
 import platform
 import pytest
-from config import DERP_PRIMARY, DERP_FAKE
-from mesh_api import Node, API
-from utils.bindings import Config, Peer, PeerBase
-from utils.router import IPProto
+from tests import mesh_api
+from tests.config import DERP_PRIMARY, DERP_FAKE
+from tests.mesh_api import Node, API
+from tests.utils.bindings import Config, Peer, PeerBase
+from tests.utils.router import IPProto
 
 if platform.machine() != "x86_64":
-    import pure_wg as Key
+    import tests.pure_wg as Key
 else:
     from python_wireguard import Key  # type: ignore
 

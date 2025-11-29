@@ -1,15 +1,15 @@
 import asyncio
 import pytest
-from config import PHOTO_ALBUM_IP, STUN_SERVER, WG_SERVER, WG_SERVER_2
 from contextlib import AsyncExitStack
-from helpers import setup_connections
-from nordvpnlite import NordVpnLite, IfcConfigType
 from pathlib import Path
-from utils import stun
-from utils.connection import ConnectionTag
-from utils.logger import log
-from utils.ping import ping
-from utils.process.process import ProcessExecError
+from tests.config import PHOTO_ALBUM_IP, STUN_SERVER, WG_SERVER, WG_SERVER_2
+from tests.helpers import setup_connections
+from tests.nordvpnlite import NordVpnLite, IfcConfigType
+from tests.utils import stun
+from tests.utils.connection import ConnectionTag
+from tests.utils.logger import log
+from tests.utils.ping import ping
+from tests.utils.process.process import ProcessExecError
 
 
 @pytest.mark.parametrize(

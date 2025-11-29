@@ -1,12 +1,12 @@
 import asyncio
-from config import LIBTELIO_BINARY_PATH_VM_MAC
 from contextlib import asynccontextmanager
+from tests.config import LIBTELIO_BINARY_PATH_VM_MAC
+from tests.utils.connection import Connection, TargetOS
+from tests.utils.logger import log
+from tests.utils.output_notifier import OutputNotifier
+from tests.utils.process import Process
+from tests.utils.python import get_python_binary
 from typing import Optional, AsyncIterator
-from utils.connection import Connection, TargetOS
-from utils.logger import log
-from utils.output_notifier import OutputNotifier
-from utils.process import Process
-from utils.python import get_python_binary
 
 
 def _get_netcat_base_command(connection: Connection) -> list[str]:

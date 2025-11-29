@@ -3,11 +3,11 @@ import re
 import secrets
 from contextlib import asynccontextmanager
 from ipaddress import ip_address
+from tests.utils import testing
+from tests.utils.connection import Connection, TargetOS
+from tests.utils.process import Process
+from tests.utils.router import IPProto, REG_IPV6ADDR, get_ip_address_type
 from typing import AsyncIterator, Optional
-from utils import testing
-from utils.connection import Connection, TargetOS
-from utils.process import Process
-from utils.router import IPProto, REG_IPV6ADDR, get_ip_address_type
 
 # This utility uses the standard OS provided `ping` binaries.
 # It should work for Linux, Windows and Mac.

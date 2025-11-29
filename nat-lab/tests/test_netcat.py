@@ -1,10 +1,10 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_mesh_nodes
-from utils.bindings import TelioAdapterType
-from utils.connection import ConnectionTag
-from utils.netcat import NetCatServer, NetCatClient
+from tests.helpers import SetupParameters, setup_mesh_nodes
+from tests.utils.bindings import TelioAdapterType
+from tests.utils.connection import ConnectionTag
+from tests.utils.netcat import NetCatServer, NetCatClient
 
 TEST_STRING = "test_data"
 PORT = 12345

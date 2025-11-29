@@ -1,26 +1,26 @@
 # pylint: disable=too-many-lines
 
 import asyncio
-import config
 import pytest
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_mesh_nodes, setup_api
-from mesh_api import Node
-from typing import Tuple, Optional
-from utils import testing, stun
-from utils.bindings import default_features, Features, TelioAdapterType
-from utils.connection import ConnectionTag
-from utils.connection_tracker import (
+from tests import config
+from tests.helpers import SetupParameters, setup_mesh_nodes, setup_api
+from tests.mesh_api import Node
+from tests.utils import testing, stun
+from tests.utils.bindings import default_features, Features, TelioAdapterType
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_tracker import (
     FiveTuple,
     TCPStateSequence,
     TcpState,
     ConnectionTracker,
 )
-from utils.connection_util import generate_connection_tracker_config
-from utils.logger import log
-from utils.netcat import NetCatServer, NetCatClient
-from utils.ping import ping
-from utils.router import IPProto, IPStack
+from tests.utils.connection_util import generate_connection_tracker_config
+from tests.utils.logger import log
+from tests.utils.netcat import NetCatServer, NetCatClient
+from tests.utils.ping import ping
+from tests.utils.router import IPProto, IPStack
+from typing import Tuple, Optional
 
 
 def get_ips_and_stack(alpha: Node, beta: Node) -> Tuple[IPProto, str, str]:

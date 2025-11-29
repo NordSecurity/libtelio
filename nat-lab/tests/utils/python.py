@@ -1,4 +1,4 @@
-from utils.connection import Connection, TargetOS
+from tests.utils.connection import Connection, TargetOS
 
 
 def get_python_binary(connection: Connection) -> str:

@@ -1,12 +1,12 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from helpers import setup_mesh_nodes, SetupParameters
-from utils import asyncio_util
-from utils.bindings import NodeState, RelayState, TelioAdapterType
-from utils.connection import ConnectionTag
-from utils.connection_util import generate_connection_tracker_config
-from utils.ping import ping
+from tests.helpers import setup_mesh_nodes, SetupParameters
+from tests.utils import asyncio_util
+from tests.utils.bindings import NodeState, RelayState, TelioAdapterType
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_util import generate_connection_tracker_config
+from tests.utils.ping import ping
 
 
 @pytest.mark.asyncio

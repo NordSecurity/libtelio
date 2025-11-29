@@ -1,12 +1,12 @@
 import asyncio
 import pytest
-import timeouts
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_mesh_nodes
-from utils.bindings import NodeState, TelioAdapterType
-from utils.connection import ConnectionTag
-from utils.connection_util import generate_connection_tracker_config
-from utils.ping import ping
+from tests import timeouts
+from tests.helpers import SetupParameters, setup_mesh_nodes
+from tests.utils.bindings import NodeState, TelioAdapterType
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_util import generate_connection_tracker_config
+from tests.utils.ping import ping
 
 
 @pytest.mark.asyncio

@@ -6,10 +6,9 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 from ipaddress import AddressValueError, IPv6Address
 from itertools import product, zip_longest
-from mesh_api import Node, API
-from telio import Client
-from typing import Any, AsyncIterator, List, Tuple, Optional, Union
-from utils.bindings import (
+from tests.mesh_api import Node, API
+from tests.telio import Client
+from tests.utils.bindings import (
     default_features,
     Features,
     Server,
@@ -20,18 +19,19 @@ from utils.bindings import (
     PathType,
     TelioAdapterType,
 )
-from utils.connection import Connection, ConnectionTag
-from utils.connection_tracker import ConnTrackerEventsValidator
-from utils.connection_util import (
+from tests.utils.connection import Connection, ConnectionTag
+from tests.utils.connection_tracker import ConnTrackerEventsValidator
+from tests.utils.connection_util import (
     ConnectionManager,
     new_connection_manager_by_tag,
     new_connection_raw,
 )
-from utils.logger import log
-from utils.ping import ping
-from utils.process import Process
-from utils.router import IPStack
-from utils.tcpdump import make_tcpdump
+from tests.utils.logger import log
+from tests.utils.ping import ping
+from tests.utils.process import Process
+from tests.utils.router import IPStack
+from tests.utils.tcpdump import make_tcpdump
+from typing import Any, AsyncIterator, List, Tuple, Optional, Union
 from uuid import UUID
 
 

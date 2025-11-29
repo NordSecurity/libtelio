@@ -118,6 +118,7 @@ exclude = [
     '^.*telio_bindings\.py',
     '.*ens_pb2_grpc.py',
 ]
+
 [[tool.mypy.overrides]]
 module = "protobuf.*"
 ignore_errors = true
@@ -125,6 +126,13 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = "uniffi.*"
 check_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "tests.uniffi.telio_bindings"
+ignore_errors = true
+
+[tool.pylint.'MAIN']
+init-hook="import sys, os; sys.path.insert(0, os.getcwd())"
 
 [tool.pylint]
 max-line-length = 88

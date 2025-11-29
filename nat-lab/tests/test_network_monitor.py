@@ -1,9 +1,9 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from helpers import setup_mesh_nodes, SetupParameters
-from utils.bindings import TelioAdapterType
-from utils.connection import ConnectionTag
+from tests.helpers import setup_mesh_nodes, SetupParameters
+from tests.utils.bindings import TelioAdapterType
+from tests.utils.connection import ConnectionTag
 
 DEFAULT_WAITING_TIME = 2
 

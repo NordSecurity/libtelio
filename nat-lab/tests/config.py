@@ -1,11 +1,11 @@
 import os
 import platform
+from tests.utils.bindings import Server, RelayState
+from tests.utils.connection import ConnectionTag
 from typing import Dict, Union
-from utils.bindings import Server, RelayState
-from utils.connection import ConnectionTag
 
 if platform.machine() != "x86_64":
-    import pure_wg as Key
+    import tests.pure_wg as Key
 else:
     from python_wireguard import Key  # type: ignore
 

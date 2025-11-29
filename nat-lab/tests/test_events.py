@@ -1,15 +1,18 @@
 import asyncio
-import config
 import pytest
-import timeouts
 from contextlib import AsyncExitStack
 from deepdiff import DeepDiff
-from helpers import SetupParameters, setup_environment, setup_mesh_nodes, setup_api
-from mesh_api import API
-from telio import Client
-from typing import Optional
-from utils import stun
-from utils.bindings import (
+from tests import config, timeouts
+from tests.helpers import (
+    SetupParameters,
+    setup_environment,
+    setup_mesh_nodes,
+    setup_api,
+)
+from tests.mesh_api import API
+from tests.telio import Client
+from tests.utils import stun
+from tests.utils.bindings import (
     features_with_endpoint_providers,
     default_features,
     EndpointProvider,
@@ -20,13 +23,14 @@ from utils.bindings import (
     telio_node,
     TelioAdapterType,
 )
-from utils.connection import ConnectionTag
-from utils.connection_util import (
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
 )
-from utils.ping import ping
-from utils.router import IPStack
+from tests.utils.ping import ping
+from tests.utils.router import IPStack
+from typing import Optional
 
 
 def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:

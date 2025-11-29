@@ -1,9 +1,8 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from helpers import setup_mesh_nodes, SetupParameters, connectivity_stack
-from typing import Tuple
-from utils.bindings import (
+from tests.helpers import setup_mesh_nodes, SetupParameters, connectivity_stack
+from tests.utils.bindings import (
     Features,
     default_features,
     FeatureQoS,
@@ -13,14 +12,15 @@ from utils.bindings import (
     TelioAdapterType,
     NodeState,
 )
-from utils.connection import Connection, ConnectionTag
-from utils.connection_tracker import ConnectionTracker
-from utils.connection_util import (
+from tests.utils.connection import Connection, ConnectionTag
+from tests.utils.connection_tracker import ConnectionTracker
+from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_node_tracker,
 )
-from utils.logger import log
-from utils.router import IPStack
+from tests.utils.logger import log
+from tests.utils.router import IPStack
+from typing import Tuple
 
 IP_STACKS = [
     pytest.param(

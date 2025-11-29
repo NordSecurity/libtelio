@@ -1,23 +1,23 @@
-import config
 import pytest
 from contextlib import AsyncExitStack
 from enum import Enum
-from helpers import (
+from tests import config
+from tests.helpers import (
     SetupParameters,
     setup_environment,
     setup_mesh_nodes,
     setup_connections,
 )
-from utils.bindings import (
+from tests.utils.bindings import (
     ErrorEvent,
     ErrorCode,
     ErrorLevel,
     TelioAdapterType,
     default_features,
 )
-from utils.connection import TargetOS, ConnectionTag
-from utils.connection_util import generate_connection_tracker_config
-from utils.process import ProcessExecError
+from tests.utils.connection import TargetOS, ConnectionTag
+from tests.utils.connection_util import generate_connection_tracker_config
+from tests.utils.process import ProcessExecError
 
 
 class AdapterState(Enum):

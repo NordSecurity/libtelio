@@ -2,13 +2,12 @@ import asyncio
 import json
 import pytest
 import shlex
-from config import DERP_SERVERS
 from contextlib import AsyncExitStack
-from mesh_api import API
-from telio import Client
-from typing import Any, List, Dict
-from utils import testing
-from utils.bindings import (
+from tests.config import DERP_SERVERS
+from tests.mesh_api import API
+from tests.telio import Client
+from tests.utils import testing
+from tests.utils.bindings import (
     features_with_endpoint_providers,
     EndpointProvider,
     Config,
@@ -18,15 +17,16 @@ from utils.bindings import (
     RelayState,
     NodeState,
 )
-from utils.connection import ConnectionTag
-from utils.connection_util import (
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
 )
-from utils.logger import log
-from utils.output_notifier import OutputNotifier
-from utils.ping import ping
-from utils.router import IPProto, IPStack, new_router
+from tests.utils.logger import log
+from tests.utils.output_notifier import OutputNotifier
+from tests.utils.ping import ping
+from tests.utils.router import IPProto, IPStack, new_router
+from typing import Any, List, Dict
 
 STUN_PROVIDER = [EndpointProvider.STUN]
 

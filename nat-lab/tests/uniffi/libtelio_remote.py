@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 import datetime
 import os
 import Pyro5.api  # type: ignore

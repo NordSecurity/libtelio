@@ -8,16 +8,15 @@ import time
 import uuid
 import warnings
 from collections import Counter
-from config import DERP_SERVERS
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from itertools import groupby
-from mesh_api import Node
-from typing import AsyncIterator, List, Optional, Set, Tuple
-from uniffi import VpnConnectionError
-from uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
-from utils import asyncio_util
-from utils.bindings import (
+from tests.config import DERP_SERVERS
+from tests.mesh_api import Node
+from tests.uniffi import VpnConnectionError
+from tests.uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
+from tests.utils import asyncio_util
+from tests.utils.bindings import (
     default_features,
     Features,
     Config,
@@ -31,23 +30,27 @@ from utils.bindings import (
     LinkState,
     TelioAdapterType,
 )
-from utils.command_grepper import CommandGrepper
-from utils.connection import Connection, TargetOS
-from utils.connection.docker_connection import DockerConnection, container_id
-from utils.connection_util import get_uniffi_path
-from utils.logger import log
-from utils.moose import MOOSE_DB_TIMEOUT_MS, MOOSE_LOGS_DIR
-from utils.output_notifier import OutputNotifier
-from utils.process import Process, ProcessExecError
-from utils.python import get_python_binary
-from utils.router import IPStack, Router, new_router
-from utils.router.linux_router import LinuxRouter, FWMARK_VALUE as LINUX_FWMARK_VALUE
-from utils.router.windows_router import WindowsRouter
-from utils.tcpdump import make_tcpdump
-from utils.testing import (
+from tests.utils.command_grepper import CommandGrepper
+from tests.utils.connection import Connection, TargetOS
+from tests.utils.connection.docker_connection import DockerConnection, container_id
+from tests.utils.connection_util import get_uniffi_path
+from tests.utils.logger import log
+from tests.utils.moose import MOOSE_DB_TIMEOUT_MS, MOOSE_LOGS_DIR
+from tests.utils.output_notifier import OutputNotifier
+from tests.utils.process import Process, ProcessExecError
+from tests.utils.python import get_python_binary
+from tests.utils.router import IPStack, Router, new_router
+from tests.utils.router.linux_router import (
+    LinuxRouter,
+    FWMARK_VALUE as LINUX_FWMARK_VALUE,
+)
+from tests.utils.router.windows_router import WindowsRouter
+from tests.utils.tcpdump import make_tcpdump
+from tests.utils.testing import (
     get_current_test_log_path,
     get_current_test_case_and_parameters,
 )
+from typing import AsyncIterator, List, Optional, Set, Tuple
 
 DEVICE_STOP_TIMEOUT = 30
 

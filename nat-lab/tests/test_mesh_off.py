@@ -1,17 +1,17 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_mesh_nodes
-from timeouts import TEST_MESH_STATE_AFTER_DISCONNECTING_NODE_TIMEOUT
-from utils.bindings import (
+from tests.helpers import SetupParameters, setup_mesh_nodes
+from tests.timeouts import TEST_MESH_STATE_AFTER_DISCONNECTING_NODE_TIMEOUT
+from tests.utils.bindings import (
     default_features,
     EndpointProvider,
     PathType,
     TelioAdapterType,
     NodeState,
 )
-from utils.connection import ConnectionTag
-from utils.ping import ping
+from tests.utils.connection import ConnectionTag
+from tests.utils.ping import ping
 
 
 # Marks in-tunnel stack only, exiting only through IPv4

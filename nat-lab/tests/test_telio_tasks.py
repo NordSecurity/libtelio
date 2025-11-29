@@ -1,8 +1,8 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from helpers import setup_mesh_nodes, SetupParameters
-from utils.bindings import (
+from tests.helpers import setup_mesh_nodes, SetupParameters
+from tests.utils.bindings import (
     FeatureQoS,
     FeatureExitDns,
     FeatureDns,
@@ -11,7 +11,7 @@ from utils.bindings import (
     RttType,
     default_features,
 )
-from utils.connection import ConnectionTag
+from tests.utils.connection import ConnectionTag
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-from utils.connection_tracker import parse_input, FiveTuple, EventType, TcpState
+from tests.utils.connection_tracker import parse_input, FiveTuple, EventType, TcpState
 
 
 def test_connection_tracker_parse_input():

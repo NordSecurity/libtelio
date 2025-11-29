@@ -3,16 +3,16 @@ import os
 import secrets
 import subprocess
 from asyncio import Event, wait_for, sleep
-from config import WINDUMP_BINARY_WINDOWS
 from contextlib import asynccontextmanager, AsyncExitStack
 from datetime import datetime
+from tests.config import WINDUMP_BINARY_WINDOWS
+from tests.utils.connection import TargetOS, Connection
+from tests.utils.connection_util import ConnectionTag
+from tests.utils.logger import log
+from tests.utils.output_notifier import OutputNotifier
+from tests.utils.process import Process
+from tests.utils.testing import get_current_test_log_path
 from typing import AsyncIterator, Optional
-from utils.connection import TargetOS, Connection
-from utils.connection_util import ConnectionTag
-from utils.logger import log
-from utils.output_notifier import OutputNotifier
-from utils.process import Process
-from utils.testing import get_current_test_log_path
 
 PCAP_FILE_PATH = {
     TargetOS.Linux: "/dump.pcap",

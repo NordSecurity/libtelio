@@ -5,16 +5,16 @@ import random
 import subprocess
 import time
 import uuid
-from config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
 from ipaddress import ip_address
+from tests.config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
+from tests.utils.bindings import Config, Server, Peer, PeerBase
+from tests.utils.connection import Connection, ConnectionTag
+from tests.utils.logger import log
+from tests.utils.router import IPStack, IPProto, get_ip_address_type
 from typing import Dict, Any, List, Tuple, Optional
-from utils.bindings import Config, Server, Peer, PeerBase
-from utils.connection import Connection, ConnectionTag
-from utils.logger import log
-from utils.router import IPStack, IPProto, get_ip_address_type
 
 if platform.machine() != "x86_64":
-    import pure_wg as Key
+    import tests.pure_wg as Key
 else:
     from python_wireguard import Key  # type: ignore
 

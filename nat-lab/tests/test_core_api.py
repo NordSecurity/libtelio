@@ -2,14 +2,14 @@ import base64
 import json
 import pytest
 import re
-from config import CORE_API_CA_CERTIFICATE_PATH, CORE_API_URL
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from enum import Enum
-from helpers import send_https_request, verify_uuid
+from tests.config import CORE_API_CA_CERTIFICATE_PATH, CORE_API_URL
+from tests.helpers import send_https_request, verify_uuid
+from tests.utils.connection import ConnectionTag, Connection
+from tests.utils.connection_util import new_connection_by_tag
 from typing import Optional
-from utils.connection import ConnectionTag, Connection
-from utils.connection_util import new_connection_by_tag
 
 
 @dataclass
