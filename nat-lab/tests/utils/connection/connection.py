@@ -54,6 +54,8 @@ class ConnectionTag(Enum):
     DOCKER_WINDOWS_GW_2 = auto()
     DOCKER_WINDOWS_GW_3 = auto()
     DOCKER_WINDOWS_GW_4 = auto()
+    DOCKER_WINDOWS_VM_1 = auto()
+    DOCKER_WINDOWS_VM_2 = auto()
     DOCKER_MAC_GW_1 = auto()
     DOCKER_MAC_GW_2 = auto()
 
