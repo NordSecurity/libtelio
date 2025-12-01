@@ -4815,6 +4815,7 @@ dependencies = [
  "uuid",
  "winapi",
  "winres",
+ "wireguard-uapi",
 ]
 
 [[package]]

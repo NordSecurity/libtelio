@@ -1,3 +1,4 @@
+pub mod adapter;
 pub mod defaults_builder;
 pub mod logging;
 pub mod types;
@@ -14,6 +15,7 @@ use telio_sockets::protector::make_external_protector;
 use uuid::Uuid;
 
 use std::{
+    convert::TryInto,
     net::{IpAddr, SocketAddr},
     panic::{self, AssertUnwindSafe},
     sync::{Arc, Mutex, Once},
@@ -22,6 +24,9 @@ use std::{
 
 use self::{
     logging::HIDE_THREAD_ID_IN_LOGS, logging::LOGGER_STOPPER, logging::TIMESTAMPS_IN_LOGS, types::*,
+};
+pub use crate::adapter::{
+    CustomAdapter, TelioCustomAdapter, WgCmd, WgDevice, WgInterface, WgPeer, WgResponse,
 };
 use crate::device::{Device, DeviceConfig, Result as DevResult};
 use telio_model::{
@@ -361,6 +366,36 @@ impl Telio {
             inner: "Unknown error - Telio::shutdown_hard".to_owned(),
         })
     }
+    /// Start telio with specified adapter.
+    ///
+    /// Adapter will attempt to open its own tunnel.
+    pub fn start_custom(
+        &self,
+        private_key: SecretKey,
+        adapter: Arc<dyn TelioCustomAdapter>,
+    ) -> FfiResult<()> {
+        let adapter: Arc<CustomAdapter> = Arc::new(CustomAdapter(adapter));
+        let adapter = AdapterType::Custom(adapter);
+        telio_log_info!(
+            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}",
+            self.id,
+            private_key.public(),
+            &adapter
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.start(DeviceConfig {
+                    private_key: private_key.clone(),
+                    adapter: adapter.clone(),
+                    fwmark: None,
+                    name: None,
+                    tun: None,
+                    ext_if_filter: None,
+                })
+                .log_result("Telio::start")
+            })
+        })
+    }
 
     /// Start telio with specified adapter.
     ///
@@ -376,7 +411,9 @@ impl Telio {
             self.device_op(true, |dev| {
                 dev.start(DeviceConfig {
                     private_key: private_key.clone(),
-                    adapter: adapter.into(),
+                    adapter: adapter
+                        .try_into()
+                        .map_err(|e| TelioError::UnknownError { inner: e })?,
                     fwmark: None,
                     name: None,
                     tun: None,
@@ -407,7 +444,9 @@ impl Telio {
             self.device_op(true, |dev| {
                 dev.start(DeviceConfig {
                     private_key: private_key.clone(),
-                    adapter: adapter.into(),
+                    adapter: adapter
+                        .try_into()
+                        .map_err(|e| TelioError::UnknownError { inner: e })?,
                     fwmark: None,
                     name: Some(name.clone()),
                     tun: None,
@@ -440,7 +479,9 @@ impl Telio {
             self.device_op(true, |dev| {
                 dev.start(DeviceConfig {
                     private_key: private_key.clone(),
-                    adapter: adapter.into(),
+                    adapter: adapter
+                        .try_into()
+                        .map_err(|e| TelioError::UnknownError { inner: e })?,
                     fwmark: None,
                     name: Some(name.clone()),
                     tun: None,
@@ -506,7 +547,9 @@ impl Telio {
                 let tun = None;
                 dev.start(DeviceConfig {
                     private_key: private_key.clone(),
-                    adapter: adapter.into(),
+                    adapter: adapter
+                        .try_into()
+                        .map_err(|e| TelioError::UnknownError { inner: e })?,
                     fwmark: None,
                     name: None,
                     tun,

@@ -130,4 +130,8 @@ impl Adapter for NepTUN {
         self.device.write().await.set_iface(new_tun)?;
         Ok(())
     }
+
+    fn clone_box(&self) -> Option<Box<dyn Adapter>> {
+        None
+    }
 }
