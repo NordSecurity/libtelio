@@ -604,10 +604,12 @@ async def print_network_state(connection: Connection) -> None:
         ip_r,
     )
 
-    ip_tables_log = await connection.create_process(["iptables", "-L"]).execute()
+    ip_tables_log = await connection.create_process(
+        ["iptables", "--wait", "--list"]
+    ).execute()
     ip_tables = ip_tables_log.get_stdout().strip()
     log.debug(
-        "--- Log of iptables -L command ---\n %s",
+        "--- Log of iptables --list command ---\n %s",
         ip_tables,
     )
 

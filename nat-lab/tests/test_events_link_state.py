@@ -391,13 +391,13 @@ class ICMP_control:
     async def __aenter__(self):
         proc = self._conn.create_process([
             "iptables",
-            "-I",
+            "--insert",
             "INPUT",
-            "-p",
+            "--protocol",
             "icmp",
             "--icmp-type",
             "echo-request",
-            "-j",
+            "--jump",
             "DROP",
         ])
         await proc.execute()
@@ -405,13 +405,13 @@ class ICMP_control:
     async def __aexit__(self, *_):
         proc = self._conn.create_process([
             "iptables",
-            "-D",
+            "--delete",
             "INPUT",
-            "-p",
+            "--protocol",
             "icmp",
             "--icmp-type",
             "echo-request",
-            "-j",
+            "--jump",
             "DROP",
         ])
         await proc.execute()

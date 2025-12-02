@@ -178,6 +178,13 @@ async def test_nc_register():
             payload,
             authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
+
+        # Check if the response contains an error
+        if isinstance(https_process_stdout, dict) and "errors" in https_process_stdout:
+            raise AssertionError(
+                f"API returned error: {https_process_stdout['errors']}"
+            )
+
         response = MachineResponse(**https_process_stdout)
 
         identifier = response.identifier
