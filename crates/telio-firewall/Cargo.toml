@@ -6,9 +6,6 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
-[features]
-test_utils = [] # For use in benchmarks to avoid duplication of the 'setup' code needed to create buffers with valid packets
-
 [dependencies]
 enum-map = "2.7.3"
 smallvec = "1.15.1"
@@ -33,7 +30,3 @@ mockall.workspace = true
 sn_fake_clock.workspace = true
 
 telio-utils = {workspace = true, features = ["sn_fake_clock"] }
-
-[[bench]]
-name = "firewall_bench"
-harness = false
