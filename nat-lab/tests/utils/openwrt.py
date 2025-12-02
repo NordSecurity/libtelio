@@ -1,9 +1,9 @@
 import asyncio
 import asyncssh
 from contextlib import AsyncExitStack
-from utils.connection import Connection
-from utils.logger import log
-from utils.process import Process
+from tests.utils.connection import Connection
+from tests.utils.logger import log
+from tests.utils.process import Process
 
 
 async def start_logread_process(

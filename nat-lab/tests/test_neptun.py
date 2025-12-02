@@ -1,8 +1,8 @@
 import pytest
 from contextlib import AsyncExitStack
-from helpers import setup_mesh_nodes, SetupParameters, ping_between_all_nodes
-from utils.bindings import default_features, TelioAdapterType
-from utils.connection import ConnectionTag
+from tests.helpers import setup_mesh_nodes, SetupParameters, ping_between_all_nodes
+from tests.utils.bindings import default_features, TelioAdapterType
+from tests.utils.connection import ConnectionTag
 
 BUFFER_SIZE = 1310720
 

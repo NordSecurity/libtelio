@@ -1,14 +1,14 @@
 import asyncio
 import os
 import pytest
-from config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
 from contextlib import AsyncExitStack, asynccontextmanager
 from copy import deepcopy
-from helpers import SetupParameters, setup_mesh_nodes
+from tests.config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
+from tests.helpers import SetupParameters, setup_mesh_nodes
+from tests.utils.bindings import RelayState, FeatureDerp, default_features
+from tests.utils.connection import ConnectionTag
+from tests.utils.ping import ping
 from typing import List
-from utils.bindings import RelayState, FeatureDerp, default_features
-from utils.connection import ConnectionTag
-from utils.ping import ping
 
 DERP1_IP = str(DERP_PRIMARY.ipv4)
 DERP2_IP = str(DERP_SECONDARY.ipv4)

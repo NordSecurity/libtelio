@@ -1,11 +1,11 @@
 import base64
 from abc import ABC, abstractmethod
 from hashlib import md5
-from helpers import connectivity_stack
+from tests.helpers import connectivity_stack
+from tests.utils import testing
+from tests.utils.router import IPStack
 from typing import List, Optional, Type
 from typing_extensions import Self
-from utils import testing
-from utils.router import IPStack
 
 DERP_BIT = 0b00000001
 WG_BIT = 0b00000010

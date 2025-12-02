@@ -1,8 +1,8 @@
 import asyncio
+from tests.utils.connection import Connection
+from tests.utils.logger import log
+from tests.utils.process import ProcessExecError
 from typing import List, Optional
-from utils.connection import Connection
-from utils.logger import log
-from utils.process import ProcessExecError
 
 
 class CommandGrepper:

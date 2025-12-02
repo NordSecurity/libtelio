@@ -1,14 +1,14 @@
 import asyncssh
 import os
-from config import (
+from tests.config import (
     get_root_path,
     LIBTELIO_BINARY_PATH_WINDOWS_VM,
     UNIFFI_PATH_WINDOWS_VM,
 )
+from tests.utils.connection import Connection
+from tests.utils.logger import log
+from tests.utils.process import ProcessExecError
 from typing import List
-from utils.connection import Connection
-from utils.logger import log
-from utils.process import ProcessExecError
 
 VM_TCLI_DIR = LIBTELIO_BINARY_PATH_WINDOWS_VM
 VM_UNIFFI_DIR = UNIFFI_PATH_WINDOWS_VM

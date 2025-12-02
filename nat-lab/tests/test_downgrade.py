@@ -1,9 +1,8 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from helpers import setup_mesh_nodes, SetupParameters
-from typing import List, Tuple
-from utils.bindings import (
+from tests.helpers import setup_mesh_nodes, SetupParameters
+from tests.utils.bindings import (
     default_features,
     FeatureLinkDetection,
     FeaturePersistentKeepalive,
@@ -12,8 +11,9 @@ from utils.bindings import (
     TelioAdapterType,
     NodeState,
 )
-from utils.connection import ConnectionTag
-from utils.ping import ping
+from tests.utils.connection import ConnectionTag
+from tests.utils.ping import ping
+from typing import List, Tuple
 
 
 def _generate_setup_parameter_pair(

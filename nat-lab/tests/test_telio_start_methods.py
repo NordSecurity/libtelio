@@ -1,20 +1,20 @@
 import asyncio
 import pytest
 from contextlib import asynccontextmanager, AsyncExitStack
-from helpers import SetupParameters, ping_between_all_nodes, setup_mesh_nodes
-from mesh_api import API
-from typing import AsyncIterator, List
-from utils.bindings import (
+from tests.helpers import SetupParameters, ping_between_all_nodes, setup_mesh_nodes
+from tests.mesh_api import API
+from tests.utils.bindings import (
     default_features,
     features_with_endpoint_providers,
     EndpointProvider,
     TelioAdapterType,
 )
-from utils.connection import ConnectionTag
-from utils.connection_util import get_libtelio_binary_path
-from utils.logger import log
-from utils.output_notifier import OutputNotifier
-from utils.router import new_router
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_util import get_libtelio_binary_path
+from tests.utils.logger import log
+from tests.utils.output_notifier import OutputNotifier
+from tests.utils.router import new_router
+from typing import AsyncIterator, List
 
 
 def _generate_setup_parameters(

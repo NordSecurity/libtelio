@@ -2,9 +2,9 @@ import platform
 import random
 from abc import ABC, abstractmethod
 from enum import Enum, auto
+from tests.utils.logger import log
+from tests.utils.process import Process
 from typing import List, Set
-from utils.logger import log
-from utils.process import Process
 
 
 class ConnectionTag(Enum):

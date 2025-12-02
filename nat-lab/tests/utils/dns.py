@@ -1,8 +1,8 @@
 import re
-from config import LIBTELIO_DNS_IPV4
+from tests.config import LIBTELIO_DNS_IPV4
+from tests.utils.connection import Connection
+from tests.utils.logger import log
 from typing import List, Optional
-from utils.connection import Connection
-from utils.logger import log
 
 
 async def query_dns(

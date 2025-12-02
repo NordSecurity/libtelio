@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
+from tests.utils.logger import log
 from typing import List, Tuple, Optional, Callable, Awaitable, AsyncIterator, Any
-from utils.logger import log
 
 StreamCallback = Callable[[str], Awaitable[Any]]
 

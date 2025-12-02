@@ -1,15 +1,15 @@
 import asyncssh
 import shlex
-import utils.vm.mac_vm_util as utils_mac
-import utils.vm.openwrt_vm_util as utils_openwrt
-import utils.vm.windows_vm_util as utils_win
+import tests.utils.vm.mac_vm_util as utils_mac
+import tests.utils.vm.openwrt_vm_util as utils_openwrt
+import tests.utils.vm.windows_vm_util as utils_win
 from .connection import Connection, TargetOS, ConnectionTag, setup_ephemeral_ports
 from contextlib import asynccontextmanager
 from logging import INFO, DEBUG
+from tests.utils import cmd_exe_escape
+from tests.utils.logger import log
+from tests.utils.process import Process, SshProcess
 from typing import List, AsyncIterator
-from utils import cmd_exe_escape
-from utils.logger import log
-from utils.process import Process, SshProcess
 
 
 class SshConnection(Connection):

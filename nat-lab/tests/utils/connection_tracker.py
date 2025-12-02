@@ -5,12 +5,12 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from enum import Enum
+from tests.utils.connection import Connection
+from tests.utils.connection.ssh_connection import SshConnection
+from tests.utils.logger import log
+from tests.utils.ping import ping
+from tests.utils.process import Process
 from typing import Optional, List, Dict, AsyncIterator
-from utils.connection import Connection
-from utils.connection.ssh_connection import SshConnection
-from utils.logger import log
-from utils.ping import ping
-from utils.process import Process
 
 NEXT_CONNTRACKER_ID = 0
 
