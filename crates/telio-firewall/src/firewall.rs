@@ -684,7 +684,7 @@ impl Default for StatefullFirewall {
     }
 }
 
-#[cfg(any(test, feature = "test_utils"))]
+#[cfg(test)]
 #[allow(missing_docs, unused)]
 pub mod tests {
     use crate::error::LibfwResult;
@@ -719,10 +719,7 @@ pub mod tests {
     type MakeIcmpWithBody = &'static dyn Fn(&str, &str, GenericIcmpType, &[u8]) -> Vec<u8>;
 
     fn advance_time(time: Duration) {
-        #[cfg(not(feature = "test_utils"))]
         sn_fake_clock::FakeClock::advance_time(time.as_millis() as u64);
-        #[cfg(feature = "test_utils")]
-        panic!("don't use advance time when lru cache is not built with support for it")
     }
 
     impl StatefullFirewall {

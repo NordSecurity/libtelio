@@ -275,7 +275,7 @@ impl From<&[Rule]> for FfiChainGuard {
     }
 }
 
-#[cfg(any(test, feature = "test_utils"))]
+#[cfg(test)]
 #[allow(missing_docs, unused)]
 pub mod tests {
     use std::{mem::ManuallyDrop, net::Ipv4Addr};

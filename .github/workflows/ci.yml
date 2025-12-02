@@ -17,8 +17,6 @@ jobs:
     uses: ./.github/workflows/tests.yml
   fuzzing:
     uses: ./.github/workflows/fuzzing.yml
-  benchmarks:
-    uses: ./.github/workflows/benchmarks.yml
   nagger:
     uses: ./.github/workflows/nagger.yml
 
@@ -29,7 +27,6 @@ jobs:
     - linters
     - tests
     - fuzzing
-    - benchmarks
     - nagger
     runs-on: ubuntu-22.04
     steps:
