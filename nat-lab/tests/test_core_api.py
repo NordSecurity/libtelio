@@ -106,15 +106,18 @@ async def clean_up_machines(connection: Connection):
         authorization_header=BEARER_AUTHORIZATION_HEADER,
     )
 
-    for machine in machines:
-        await send_https_request(
-            connection,
-            f"{CORE_API_URL}/v1/meshnet/machines/{machine['identifier']}",
-            "DELETE",
-            CORE_API_CA_CERTIFICATE_PATH,
-            expect_response=False,
-            authorization_header=BEARER_AUTHORIZATION_HEADER,
-        )
+    # Check if machines is a valid list response
+    if isinstance(machines, list):
+        for machine in machines:
+            if "identifier" in machine:
+                await send_https_request(
+                    connection,
+                    f"{CORE_API_URL}/v1/meshnet/machines/{machine['identifier']}",
+                    "DELETE",
+                    CORE_API_CA_CERTIFICATE_PATH,
+                    expect_response=False,
+                    authorization_header=BEARER_AUTHORIZATION_HEADER,
+                )
 
 
 async def register_vpn_server_key(
@@ -239,7 +242,10 @@ async def test_get_all_machines(registered_machines, machine_data):
         assert isinstance(response_data, list)
         assert len(response_data) == 2
 
-        for machine, data in zip(registered_machines, machine_data):
+        for machine, data in zip(response_data, machine_data):
+            assert (
+                "identifier" in machine
+            ), f"Machine response missing 'identifier': {machine}"
             verify_uuid(machine["identifier"])
             assert machine["public_key"] == data.public_key
             assert machine["os"] == data.os
@@ -299,6 +305,9 @@ async def test_delete_registered_machine(registered_machines, machine_data):
         )
 
         machine = registered_machines[0]
+        assert (
+            "identifier" in machine
+        ), f"Machine response missing 'identifier': {machine}"
 
         await send_https_request(
             connection,
