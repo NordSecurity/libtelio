@@ -1,6 +1,6 @@
 import pytest
 from scapy.layers.inet import TCP, ICMP  # type: ignore
-from utils import generate_histogram, generate_packet_delay_histogram
+from tests.utils import generate_histogram, generate_packet_delay_histogram
 
 
 @pytest.mark.utils

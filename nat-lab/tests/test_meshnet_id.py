@@ -1,9 +1,9 @@
 import pytest
 import re
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_environment
-from utils.bindings import default_features, TelioAdapterType
-from utils.connection import ConnectionTag
+from tests.helpers import SetupParameters, setup_environment
+from tests.utils.bindings import default_features, TelioAdapterType
+from tests.utils.connection import ConnectionTag
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,8 @@
-import config
 import pytest
-from utils import stun
-from utils.connection import ConnectionTag
-from utils.connection_util import new_connection_by_tag
+from tests import config
+from tests.utils import stun
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_util import new_connection_by_tag
 
 
 @pytest.mark.asyncio

@@ -2,9 +2,16 @@ import asyncio
 import copy
 import pytest
 import time
-from telio import Runtime, Events, WontHappenError
-from utils.asyncio_util import run_async_contexts, run_async_context
-from utils.bindings import NodeState, RelayState, PathType, Server, telio_node, Event
+from tests.telio import Runtime, Events, WontHappenError
+from tests.utils.asyncio_util import run_async_contexts, run_async_context
+from tests.utils.bindings import (
+    NodeState,
+    RelayState,
+    PathType,
+    Server,
+    telio_node,
+    Event,
+)
 
 
 def create_derpserver_config(state: RelayState) -> Server:

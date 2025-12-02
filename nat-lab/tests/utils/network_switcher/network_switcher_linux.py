@@ -1,6 +1,6 @@
 from .network_switcher import NetworkSwitcher
-from config import GW_ADDR_MAP
-from utils.connection import Connection
+from tests.config import GW_ADDR_MAP
+from tests.utils.connection import Connection
 
 
 class NetworkSwitcherLinux(NetworkSwitcher):

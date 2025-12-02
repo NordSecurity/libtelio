@@ -1,29 +1,29 @@
 import asyncio
-import config
 import pytest
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_environment, setup_connections
-from helpers_vpn import connect_vpn, VpnConfig
-from uniffi import FirewallBlacklistTuple, IpProtocol
-from utils import testing, stun
-from utils.bindings import (
+from tests import config
+from tests.helpers import SetupParameters, setup_environment, setup_connections
+from tests.helpers_vpn import connect_vpn, VpnConfig
+from tests.uniffi import FirewallBlacklistTuple, IpProtocol
+from tests.utils import testing, stun
+from tests.utils.bindings import (
     default_features,
     TelioAdapterType,
     generate_secret_key,
     generate_public_key,
 )
-from utils.connection import ConnectionTag
-from utils.connection_tracker import (
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_tracker import (
     ConnectionTracker,
     TCPStateSequence as ConnTrackerTCPStateSequence,
     FiveTuple,
     TcpState,
 )
-from utils.connection_util import generate_connection_tracker_config
-from utils.netcat import NetCatClient
-from utils.ping import ping
-from utils.process import ProcessExecError
-from utils.router import IPProto, IPStack
+from tests.utils.connection_util import generate_connection_tracker_config
+from tests.utils.netcat import NetCatClient
+from tests.utils.ping import ping
+from tests.utils.process import ProcessExecError
+from tests.utils.router import IPProto, IPStack
 
 
 @pytest.mark.parametrize(

@@ -1,22 +1,22 @@
 import aiohttp
 import asyncio
 import base64
-import config
 import pytest
 from contextlib import AsyncExitStack
-from helpers import SetupParameters, setup_environment, setup_connections
-from helpers_vpn import connect_vpn, VpnConfig
-from typing import cast
-from utils import stun
-from utils.bindings import (
+from tests import config
+from tests.helpers import SetupParameters, setup_environment, setup_connections
+from tests.helpers_vpn import connect_vpn, VpnConfig
+from tests.utils import stun
+from tests.utils.bindings import (
     default_features,
     PathType,
     NodeState,
     TelioAdapterType,
     VpnConnectionError,
 )
-from utils.connection import ConnectionTag
-from utils.connection_util import generate_connection_tracker_config
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_util import generate_connection_tracker_config
+from typing import cast
 
 ENS_PORT = 993
 

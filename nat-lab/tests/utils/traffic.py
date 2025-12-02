@@ -5,8 +5,8 @@ import subprocess
 import tempfile
 import typing
 from scapy.all import PcapReader  # type: ignore
+from tests.utils.logger import log
 from typing import List, Any
-from utils.logger import log
 
 
 def generate_histogram(data: list, buckets: int, bucket_size: int = 1) -> List[int]:

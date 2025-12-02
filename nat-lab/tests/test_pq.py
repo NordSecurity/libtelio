@@ -1,19 +1,19 @@
 import asyncio
-import config
 import pytest
 from contextlib import AsyncExitStack
 from datetime import datetime, timedelta
-from helpers import SetupParameters, setup_environment
-from telio import Client
-from utils import stun
-from utils.bindings import TelioAdapterType, NodeState, PathType
-from utils.connection import Connection, ConnectionTag
-from utils.connection_util import (
+from tests import config
+from tests.helpers import SetupParameters, setup_environment
+from tests.telio import Client
+from tests.utils import stun
+from tests.utils.bindings import TelioAdapterType, NodeState, PathType
+from tests.utils.connection import Connection, ConnectionTag
+from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_by_tag,
 )
-from utils.dns import query_dns
-from utils.ping import ping
+from tests.utils.dns import query_dns
+from tests.utils.ping import ping
 
 EMPTY_PRESHARED_KEY_SLOT = "(none)"
 

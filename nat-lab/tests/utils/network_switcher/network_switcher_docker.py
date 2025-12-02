@@ -1,5 +1,5 @@
 from .network_switcher import NetworkSwitcher
-from utils.connection import Connection
+from tests.utils.connection import Connection
 
 
 class NetworkSwitcherDocker(NetworkSwitcher):

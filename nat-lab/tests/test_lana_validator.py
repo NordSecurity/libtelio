@@ -1,4 +1,4 @@
-from utils import analytics
+from tests.utils import analytics
 
 TEST_EVENT = analytics.Event(
     name="heartbeat",

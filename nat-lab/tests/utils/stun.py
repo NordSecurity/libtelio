@@ -1,10 +1,10 @@
 import asyncio
 import re
-from config import STUN_BINARY_PATH_WINDOWS, STUN_BINARY_PATH_MAC
+from tests.config import STUN_BINARY_PATH_WINDOWS, STUN_BINARY_PATH_MAC
+from tests.utils import testing
+from tests.utils.connection import Connection, TargetOS
+from tests.utils.router import IPProto, REG_IPV6ADDR, get_ip_address_type
 from typing import Optional
-from utils import testing
-from utils.connection import Connection, TargetOS
-from utils.router import IPProto, REG_IPV6ADDR, get_ip_address_type
 
 # For Linux, use the standard `stunclient` available on most distributions.
 #

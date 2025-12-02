@@ -1,8 +1,8 @@
 import asyncssh
 import os
-from config import get_root_path
-from utils.connection import Connection
-from utils.process import ProcessExecError
+from tests.config import get_root_path
+from tests.utils.connection import Connection
+from tests.utils.process import ProcessExecError
 
 DIST_PATH = f"dist/openwrt/{os.getenv('TELIO_BIN_PROFILE')}/x86_64/"
 NATLAB_DATA_PATH = "nat-lab/data/"

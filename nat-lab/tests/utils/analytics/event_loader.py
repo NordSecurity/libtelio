@@ -8,7 +8,7 @@ from dataclasses_json import (
     config as json_config,
 )
 from flatten_json import flatten  # type: ignore
-from utils.logger import log
+from tests.utils.logger import log
 
 DEFAULT_TABLE_NAME = "queue_elements"
 

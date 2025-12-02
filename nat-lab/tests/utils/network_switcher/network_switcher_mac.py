@@ -1,7 +1,7 @@
-import config
 from .network_switcher import NetworkSwitcher
-from config import DERP_SERVERS, GW_ADDR_MAP, VPN_SERVER_SUBNET
-from utils.connection import Connection
+from tests import config
+from tests.config import DERP_SERVERS, GW_ADDR_MAP, VPN_SERVER_SUBNET
+from tests.utils.connection import Connection
 
 
 class NetworkSwitcherMac(NetworkSwitcher):

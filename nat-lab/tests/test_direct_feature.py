@@ -1,8 +1,8 @@
 import pytest
 from contextlib import AsyncExitStack
-from helpers import setup_mesh_nodes, SetupParameters
+from tests.helpers import setup_mesh_nodes, SetupParameters
+from tests.utils.bindings import features_with_endpoint_providers, EndpointProvider
 from typing import List
-from utils.bindings import features_with_endpoint_providers, EndpointProvider
 
 ALL_DIRECT_FEATURES = [
     EndpointProvider.UPNP,
