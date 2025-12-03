@@ -11,10 +11,8 @@ FAKEFM_PORT_DEFAULT = 7777
 
 
 async def stop_service(nlx_conn: Connection, service: str) -> None:
-    try:
-        await nlx_conn.create_process(["systemctl", "stop", service]).execute()
-    except ProcessExecError:
-        pass
+
+    await nlx_conn.create_process(["systemctl", "stop", service]).execute()
 
     try:
         proc = await nlx_conn.create_process(
