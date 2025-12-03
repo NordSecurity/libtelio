@@ -1,26 +1,9 @@
 import asyncio
 import base64
-from tests import config
 import pytest
 from contextlib import AsyncExitStack
+from tests import config
 from tests.helpers import SetupParameters, setup_environment, setup_connections
-from tests.helpers_vpn import connect_vpn, VpnConfig
-from typing import cast
-from tests.utils import stun
-from tests.utils.bindings import (
-    default_features,
-    PathType,
-    NodeState,
-    TelioAdapterType,
-    VpnConnectionError,
-    generate_secret_key,
-    generate_public_key,
-)
-from tests.utils.connection import ConnectionTag
-from tests.utils.connection_util import (
-    generate_connection_tracker_config,
-    new_connection_by_tag,
-)
 from tests.helpers_ens import (
     get_grpc_tls_fingerprint_from_server,
     get_grpc_tls_root_certificate_from_server,
@@ -32,9 +15,23 @@ from tests.helpers_ens import (
     trigger_connection_error,
     set_vpn_server_private_key,
 )
-
 from tests.helpers_fakefm import stop_service, start_service, FakeFmClient
-
+from tests.helpers_vpn import connect_vpn, VpnConfig
+from tests.utils import stun
+from tests.utils.bindings import (
+    default_features,
+    PathType,
+    NodeState,
+    TelioAdapterType,
+    VpnConnectionError,
+    generate_secret_key,
+)
+from tests.utils.connection import ConnectionTag
+from tests.utils.connection_util import (
+    generate_connection_tracker_config,
+    new_connection_by_tag,
+)
+from typing import cast
 
 ENS_PORT = 993
 
@@ -625,8 +622,10 @@ async def test_ens_connection_error_unknown(
 ) -> None:
     vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
     fingerprint = await get_grpc_tls_fingerprint()
-    root_certificate = await get_grpc_tls_root_certificate(vpn_conf.server_conf["ipv4"])
-    root_certificate = base64.b64decode(root_certificate)
+    root_certificate_b64 = await get_grpc_tls_root_certificate(
+        str(vpn_conf.server_conf["ipv4"])
+    )
+    root_certificate: bytes = base64.b64decode(root_certificate_b64)
 
     error_code = VpnConnectionError.UNKNOWN
 
@@ -866,7 +865,7 @@ async def test_ens_not_working(
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
-        vpn_connection, *_ = await setup_connections(exit_stack, [vpn_conf.conn_tag])
+        await setup_connections(exit_stack, [vpn_conf.conn_tag])
         await exit_stack.enter_async_context(
             client_alpha.get_router().block_tcp_port(ENS_PORT)
         )
@@ -878,4 +877,3 @@ async def test_ens_not_working(
             alpha.ip_addresses[0],
             vpn_conf.server_conf,
         )
-

@@ -399,7 +399,9 @@ class API:
                 if conn.tag != ConnectionTag.VM_LINUX_NLX_1:
                     continue
 
-                get_pub_cmd = "nlx | awk '$1==\"public\" && $2==\"key:\" {print $3; exit}'"
+                get_pub_cmd = (
+                    'nlx | awk \'$1=="public" && $2=="key:" {print $3; exit}\''
+                )
                 proc = await conn.create_process(["bash", "-lc", get_pub_cmd]).execute()
                 pub_key = proc.get_stdout().strip()
 
@@ -416,7 +418,7 @@ class API:
 
                 get_priv_cmd = (
                     "nlx showconf nordlynx0 | "
-                    "awk '$1==\"PrivateKey\" && $2==\"=\" {print $3; exit}'"
+                    'awk \'$1=="PrivateKey" && $2=="=" {print $3; exit}\''
                 )
 
                 proc_priv = await conn.create_process(

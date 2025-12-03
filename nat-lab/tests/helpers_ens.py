@@ -1,18 +1,16 @@
+import aiohttp
 import base64
 import hashlib
 import json
-from typing import List, Any, Dict, cast
-
-import aiohttp
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
-from cryptography.x509.oid import ExtensionOID
-
-from utils.connection import Connection, ConnectionTag
-from helpers_vpn import VpnConfig
-from helpers_fakefm import wait_for_service_active
-import config
-from utils.process import ProcessExecError
+from cryptography.x509 import BasicConstraints
+from tests import config
+from tests.helpers_fakefm import wait_for_service_active
+from tests.helpers_vpn import VpnConfig
+from tests.utils.connection import Connection, ConnectionTag
+from tests.utils.process import ProcessExecError
+from typing import List, Any, Dict, cast
 
 CERT_PATH = "/etc/ca-certificates/server-cert.pem.test"
 NS_INFO_ADDRESS = "127.0.0.1"
@@ -21,9 +19,8 @@ NS_INFO_TOKEN = "elephant"
 
 JsonDict = Dict[str, Any]
 
-"""
-Real ENS helpers
-"""
+
+# Real ENS helpers
 
 
 async def _read_remote_file(nlx_conn: Connection, path: str) -> str:
@@ -60,8 +57,8 @@ def _load_pem_chain(pem_data: str) -> List[x509.Certificate]:
 def _find_root_cert(certs: List[x509.Certificate]) -> x509.Certificate:
     for cert in certs:
         try:
-            bc = cert.extensions.get_extension_for_oid(
-                ExtensionOID.BASIC_CONSTRAINTS
+            bc: BasicConstraints = cert.extensions.get_extension_for_class(
+                x509.BasicConstraints
             ).value
             is_ca = bc.ca
         except x509.ExtensionNotFound:
@@ -144,9 +141,7 @@ async def ns_set_maintenance_off(nlx_conn: Connection) -> None:
     await wait_for_service_active(nlx_conn, "nlx-ns")
 
 
-"""
-Python stub helpers
-"""
+# Python stub helpers
 
 
 async def _request_json(method: str, url: str, **kwargs: Any) -> JsonDict:

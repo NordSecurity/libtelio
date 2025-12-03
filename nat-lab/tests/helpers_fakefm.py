@@ -1,10 +1,9 @@
 import asyncio
 import json
+from tests.utils.connection import Connection
+from tests.utils.process import ProcessExecError
 from typing import Any
 from urllib.parse import quote
-
-from utils.connection import Connection
-from utils.process import ProcessExecError
 
 FAKEFM_HOST_DEFAULT = "127.0.0.1"
 FAKEFM_PORT_DEFAULT = 7777
@@ -129,10 +128,7 @@ class FakeFmClient:
         return data
 
     async def add_allowed_user(self, username: str, password: str) -> None:
-        cmd = "addAllowedUser?username={}&password={}".format(
-            quote(username),
-            password,
-        )
+        cmd = f"addAllowedUser?username={quote(username)}&password={password}"
         await self._api_call(cmd)
 
     async def set_users_limits(self, limit: int) -> None:
