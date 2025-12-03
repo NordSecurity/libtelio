@@ -4,7 +4,6 @@ import hashlib
 import json
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
-from cryptography.x509 import BasicConstraints
 from tests import config
 from tests.helpers_fakefm import wait_for_service_active
 from tests.helpers_vpn import VpnConfig
@@ -56,15 +55,7 @@ def _load_pem_chain(pem_data: str) -> List[x509.Certificate]:
 
 def _find_root_cert(certs: List[x509.Certificate]) -> x509.Certificate:
     for cert in certs:
-        try:
-            bc: BasicConstraints = cert.extensions.get_extension_for_class(
-                x509.BasicConstraints
-            ).value
-            is_ca = bc.ca
-        except x509.ExtensionNotFound:
-            is_ca = False
-
-        if is_ca and cert.issuer == cert.subject:
+        if cert.issuer == cert.subject:
             return cert
     raise ValueError("No root certificate found in the provided chain")
 
