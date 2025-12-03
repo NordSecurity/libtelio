@@ -124,9 +124,7 @@ class FakeFmClient:
                 f"FakeFm API returned invalid JSON for endpoint {endpoint}: {stdout!r}"
             ) from exc
 
-        assert (
-            data.get("success") is True
-        ), f"FakeFm API call '{endpoint}' failed: {data!r}"
+        assert data.get("success"), f"FakeFm API call '{endpoint}' failed: {data!r}"
 
         return data
 
