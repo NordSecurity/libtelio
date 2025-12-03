@@ -69,7 +69,7 @@ def _find_root_cert(certs: List[x509.Certificate]) -> x509.Certificate:
 
         if is_ca and cert.issuer == cert.subject:
             return cert
-    return certs[-1]
+    raise ValueError("No root certificate found in the provided chain")
 
 
 async def get_grpc_tls_fingerprint_from_server(
