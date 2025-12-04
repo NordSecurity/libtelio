@@ -1122,6 +1122,7 @@ impl Runtime {
                         skt_buffer_size : Runtime::sanitize_neptun_config(features.wireguard.skt_buffer_size, config.adapter.clone()),
                         inter_thread_channel_size : Runtime::sanitize_neptun_config(features.wireguard.inter_thread_channel_size, config.adapter.clone()),
                         max_inter_thread_batched_pkts : Runtime::sanitize_neptun_config(features.wireguard.max_inter_thread_batched_pkts, config.adapter.clone()),
+                        enable_ipv6: features.ipv6,
                     },
                     features.link_detection,
                     features.ipv6,
@@ -1150,6 +1151,7 @@ impl Runtime {
                             skt_buffer_size: features.wireguard.skt_buffer_size,
                             inter_thread_channel_size: features.wireguard.inter_thread_channel_size,
                             max_inter_thread_batched_pkts: features.wireguard.max_inter_thread_batched_pkts,
+                            enable_ipv6: features.ipv6,
                         }
                     ).await;
 

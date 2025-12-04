@@ -81,7 +81,7 @@ mod tests {
 
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        tokio::spawn({
+        let _ = tokio::spawn({
             async move {
                 assert!(unsafe { CancelMibChangeNotify2(handle.0) } == NO_ERROR);
             }

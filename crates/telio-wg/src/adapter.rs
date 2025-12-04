@@ -272,6 +272,7 @@ pub(crate) async fn start(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
                 cfg.skt_buffer_size,
                 cfg.inter_thread_channel_size,
                 cfg.max_inter_thread_batched_pkts,
+                cfg.enable_ipv6,
             )?))
         }
         AdapterType::LinuxNativeWg => {

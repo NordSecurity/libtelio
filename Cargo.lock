@@ -2801,7 +2801,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "2.2.3"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v2.2.5#b888a5786101f3996afb2409212a0be176cdfc92"
+source = "git+https://github.com/NordSecurity/neptun.git?branch=LLT-6371_disable_ipv6_when_not_needed#5a019ec63f9f14c8f5d7a773f6961579e237f880"
 dependencies = [
  "aead",
  "base64 0.13.1",

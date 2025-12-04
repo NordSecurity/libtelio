@@ -171,7 +171,7 @@ windows = { version = "0.61", features = [
 ] }
 winreg = "0.50.0"
 
-neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v2.2.5", features = [
+neptun = { git = "https://github.com/NordSecurity/neptun.git", branch = "LLT-6371_disable_ipv6_when_not_needed", features = [
   "device",
 ] }
 x25519-dalek = { version = "2.0.1", features = [
