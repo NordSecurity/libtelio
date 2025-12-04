@@ -179,8 +179,11 @@ log_date_format = "%Y-%m-%d %H:%M:%S"
 markers = [
     "nat: the test only passes once, before environment needs to be restarted",
     "windows: tests that require Windows VM to be running",
+    "windows2: tests that require a second Windows VM to be running",
     "mac: tests that require Mac VM to be running",
     "linux_native: tests that use linux native WG implementation",
+    "fullcone: tests that require fullcone containers to be running",
+    "nlx: tests that require nlx VM to be running",
     "long: tests that take a lot of time to run",
     "moose: test that requires build with full moose",
     "ipv4: tests only ipv4 WG connectivity",
