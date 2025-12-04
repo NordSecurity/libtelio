@@ -134,6 +134,8 @@ const MAX_UAPI_CMD_GAP: Duration = Duration::from_secs(30);
 
 pub use telio_utils::{BytesAndTimestamps, Instant};
 
+/// Used to mitigate transient WireGuardNT adapter disappearance
+/// issues, where UAPI failures may not indicate a persistent fault.
 #[derive(Debug)]
 struct UAPIErrorTracker {
     // Minimum required time between first error and later ones to consider returning critical verdict.
@@ -150,9 +152,11 @@ struct UAPIErrorTracker {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-enum UAPIErrorVerdict {
-    Ignore,
-    Critical,
+enum UAPIErrorTrackerVerdict {
+    /// No critical error pattern detected.
+    OK,
+    /// Multiple failures detected and interface is gone.
+    CriticalAdapterGone,
 }
 
 impl UAPIErrorTracker {
@@ -165,12 +169,12 @@ impl UAPIErrorTracker {
         }
     }
 
-    fn consume_response(&mut self, errno: i32, inst: Instant) -> UAPIErrorVerdict {
+    fn update(&mut self, resp: &Response, inst: Instant) -> UAPIErrorTrackerVerdict {
         let prev_uapi_cmd_time = self.last_uapi_cmd_at.replace(inst);
 
-        if errno == 0 {
+        if resp.errno == 0 {
             self.first_error_at = None;
-            return UAPIErrorVerdict::Ignore;
+            return UAPIErrorTrackerVerdict::OK;
         }
 
         let uapi_within_allowed_window =
@@ -182,15 +186,17 @@ impl UAPIErrorTracker {
 
         match self.first_error_at {
             Some(t) => {
-                if inst.duration_since(t) >= self.required_critical_error_gap {
+                if inst.duration_since(t) >= self.required_critical_error_gap
+                    && resp.interface.is_none()
+                {
                     self.first_error_at = None;
-                    return UAPIErrorVerdict::Critical;
+                    return UAPIErrorTrackerVerdict::CriticalAdapterGone;
                 }
             }
             None => self.first_error_at = Some(inst),
         }
 
-        UAPIErrorVerdict::Ignore
+        UAPIErrorTrackerVerdict::OK
     }
 }
 
@@ -574,18 +580,16 @@ impl State {
     // TODO (LLT-6859): uapi error logic targets WireguardNT but is applied to all adapters
     async fn uapi_request(&mut self, cmd: &Cmd) -> Result<Response, Error> {
         let ret = self.adapter.send_uapi_cmd(cmd).await?;
-        let uapi_error_verdict = self
-            .uapi_error_tracker
-            .consume_response(ret.errno, Instant::now());
+        let verdict = self.uapi_error_tracker.update(&ret, Instant::now());
 
         telio_log_debug!(
-            "UAPI request: {}, response: {:?}, uapi_error_verdict: {:?}",
+            "UAPI request: {}, response: {:?}, verdict: {:?}",
             &cmd,
             &ret,
-            uapi_error_verdict
+            verdict
         );
 
-        if uapi_error_verdict == UAPIErrorVerdict::Critical {
+        if verdict == UAPIErrorTrackerVerdict::CriticalAdapterGone {
             if let Some(libtelio_event) = &self.libtelio_event {
                 let err_event = LibtelioEvent::builder::<LibtelioError>()
                     .set(EventMsg::from("Interface gone"))
@@ -2065,55 +2069,90 @@ pub mod tests {
 
     #[test]
     fn test_uapi_error_tracker_verdicts() {
-        let mut tracker = UAPIErrorTracker::new(REQUIRED_CRITICAL_ERROR_GAP, MAX_UAPI_CMD_GAP);
+        let err_resp = Response {
+            errno: 1,
+            interface: None,
+        };
 
+        let ok_resp = Response {
+            errno: 0,
+            interface: Some(Interface::default()),
+        };
+
+        let mut tracker = UAPIErrorTracker::new(REQUIRED_CRITICAL_ERROR_GAP, MAX_UAPI_CMD_GAP);
         let mut now = Instant::now();
 
         // Initially, no error: should Ignore
-        let verdict = tracker.consume_response(0, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+        let verdict = tracker.update(&ok_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
 
         // First failure: should Ignore (not enough time elapsed)
         now += Duration::from_secs(1);
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+        let verdict = tracker.update(&err_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
 
         // After threshold duration, should Ignore (gap too big between uapi calls)
         now += MAX_UAPI_CMD_GAP;
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+        let verdict = tracker.update(&err_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
 
         // Trigger errors every second, until just before the threshold, should Ignore
         for _ in 1..REQUIRED_CRITICAL_ERROR_GAP.as_secs() {
             now += Duration::from_secs(1);
-            let verdict = tracker.consume_response(1, now);
-            assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+            let verdict = tracker.update(&err_resp, now);
+            assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
         }
 
         // Trigger error just after the threshold, should be Critical
         now += Duration::from_secs(1);
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Critical);
+        let verdict = tracker.update(&err_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::CriticalAdapterGone);
 
         // Trigger error again, should be Ignore (implicit reset)
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+        let verdict = tracker.update(&err_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
 
         // Trigger errors every second, until just before the threshold, should Ignore
         for _ in 1..REQUIRED_CRITICAL_ERROR_GAP.as_secs() {
             now += Duration::from_secs(1);
-            let verdict = tracker.consume_response(1, now);
-            assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+            let verdict = tracker.update(&err_resp, now);
+            assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
         }
 
         // Trigger success just after the threshold, should be Ignore
         now += Duration::from_secs(1);
-        let verdict = tracker.consume_response(0, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+        let verdict = tracker.update(&ok_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
 
         // Trigger error after threshold, should be Ignore (success must reset the streak)
         now += Duration::from_secs(1);
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+        let verdict = tracker.update(&err_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
+
+        // Trigger errors repeatedly with big time gaps in between, should be Ignore
+        for _ in 0..50 {
+            now += MAX_UAPI_CMD_GAP;
+            let verdict = tracker.update(&err_resp, now);
+            assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
+        }
+
+        // Trigger successes repeatedly, should Ignore
+        for _ in 0..50 {
+            now += Duration::from_secs(1);
+            let verdict = tracker.update(&ok_resp, now);
+            assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
+        }
+
+        // Trigger error but adapter is present, should Ignore
+        let ok_resp = Response {
+            errno: 2,
+            interface: Some(Interface::default()),
+        };
+
+        for _ in 0..50 {
+            now += Duration::from_secs(1);
+            let verdict = tracker.update(&ok_resp, now);
+            assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
+        }
     }
 }
