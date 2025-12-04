@@ -835,8 +835,6 @@ dictionary FeatureFirewall {
 dictionary FeatureLinkDetection {
     /// Configurable rtt in seconds
     u64 rtt_seconds;
-    /// Check the link state before reporting it as down
-    u32 no_of_pings;
     /// Use link detection for downgrade logic
     boolean use_for_downgrade;
 };

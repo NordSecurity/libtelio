@@ -24,7 +24,7 @@ def _generate_setup_parameter_pair(
         proxying=3600, direct=3600, vpn=3600, stun=3600
     )
     features.link_detection = FeatureLinkDetection(
-        rtt_seconds=1, no_of_pings=1, use_for_downgrade=True
+        rtt_seconds=1, use_for_downgrade=True
     )
     assert features.direct
     features.direct.providers = [EndpointProvider.STUN, EndpointProvider.LOCAL]

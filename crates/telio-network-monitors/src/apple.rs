@@ -50,11 +50,10 @@ extern "C" {
 /// - [Apple Network.framework Documentation](https://developer.apple.com/documentation/network)
 pub fn setup_network_monitor() {
     let update_handler = block::ConcreteBlock::new(|_path: nw_path_t| {
+        telio_log_info!("Detected network interface modification, notifying..");
         if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
-            telio_log_warn!("Failed to notify about changed path, error: {e}");
+            telio_log_warn!("Failed to notify about changed path: {e}");
         }
-
-        telio_log_info!("Path change notification sent");
     })
     .copy();
 

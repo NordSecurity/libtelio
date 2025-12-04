@@ -5287,6 +5287,7 @@ dependencies = [
  "telio-crypto",
  "telio-firewall",
  "telio-model",
+ "telio-network-monitors",
  "telio-pinger",
  "telio-sockets",
  "telio-task",

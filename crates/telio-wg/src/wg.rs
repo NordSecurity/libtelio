@@ -19,6 +19,7 @@ use telio_utils::{
 };
 use thiserror::Error as TError;
 use tokio::sync::watch;
+use tokio::sync::Mutex as TokioMutex;
 use tokio::time::{self, sleep, Interval, MissedTickBehavior};
 use wireguard_uapi::xplatform::set;
 
@@ -202,7 +203,7 @@ struct State {
     event: Tx<Box<Event>>,
     analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
     uapi_error_tracker: UAPIErrorTracker,
-    // Link detection mechanism
+
     link_detection: Option<LinkDetection>,
 
     libtelio_event: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
@@ -290,7 +291,6 @@ impl DynamicWg {
     ///             max_inter_thread_batched_pkts: None,
     ///         },
     ///         None,
-    ///         true,
     ///         Duration::from_millis(1000),
     ///         Duration::from_millis(50)
     ///     );
@@ -299,15 +299,13 @@ impl DynamicWg {
     pub async fn start(
         io: Io,
         cfg: Config,
-        link_detection: Option<FeatureLinkDetection>,
-        ipv6_enabled: bool,
+        link_detection: Option<LinkDetection>,
         polling_period: Duration,
         polling_period_after_update: Duration,
     ) -> Result<Self, Error>
     where
         Self: Sized,
     {
-        let socket_pool = cfg.socket_pool.clone();
         let adapter = Self::start_adapter(cfg.try_clone()?).await?;
         #[cfg(unix)]
         return Ok(Self::start_with(
@@ -315,33 +313,26 @@ impl DynamicWg {
             adapter,
             link_detection,
             cfg,
-            ipv6_enabled,
             polling_period,
             polling_period_after_update,
-            socket_pool,
         ));
         #[cfg(windows)]
         return Ok(Self::start_with(
             io,
             adapter,
             link_detection,
-            ipv6_enabled,
             polling_period,
             polling_period_after_update,
-            socket_pool,
         ));
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn start_with(
         io: Io,
         adapter: Box<dyn Adapter>,
-        link_detection: Option<FeatureLinkDetection>,
+        link_detection: Option<LinkDetection>,
         #[cfg(unix)] cfg: Config,
-        ipv6_enabled: bool,
         polling_period: Duration,
         polling_period_after_update: Duration,
-        socket_pool: Arc<SocketPool>,
     ) -> Self {
         let interval = interval(polling_period);
         Self {
@@ -357,8 +348,7 @@ impl DynamicWg {
                     REQUIRED_CRITICAL_ERROR_GAP,
                     MAX_UAPI_CMD_GAP,
                 ),
-                link_detection: link_detection
-                    .map(|ld| LinkDetection::new(ld, ipv6_enabled, socket_pool)),
+                link_detection,
                 libtelio_event: io.libtelio_wide_event_publisher,
                 stats: HashMap::new(),
                 ip_stack: None,
@@ -422,9 +412,10 @@ impl WireGuard for DynamicWg {
 
     async fn get_link_state(&self, key: PublicKey) -> Result<Option<LinkState>, Error> {
         Ok(task_exec!(&self.task, async move |s| {
-            Ok(s.link_detection
-                .as_ref()
-                .and_then(|ld| ld.get_link_state_for_downgrade(&key)))
+            Ok(match s.link_detection.as_ref() {
+                Some(ld) => ld.get_link_state_for_downgrade(&key),
+                None => None,
+            })
         })
         .await?)
     }
@@ -697,8 +688,8 @@ impl State {
                 "Disconnected peer missing from old list",
             ))?;
 
-            // Remove all disconnected peers from no link detection mechanism
-            if let Some(link_detection) = self.link_detection.as_mut() {
+            // Remove all disconnected peers from link detection mechanism
+            if let Some(link_detection) = &mut self.link_detection {
                 link_detection.remove(key);
             }
 
@@ -724,7 +715,7 @@ impl State {
                 .ok_or(Error::InternalError("No stats available for peer"))?;
 
             // Node is new and default LinkState is down. Save it before sending the event
-            if let Some(link_detection) = self.link_detection.as_mut() {
+            if let Some(link_detection) = &mut self.link_detection {
                 link_detection.insert(key, stats.clone());
             }
 
@@ -753,8 +744,8 @@ impl State {
                 let old_state = old.state();
                 let new_state = new.state();
                 let node_addresses = new.ip_addresses.clone();
-                let link_detection_update_result = {
-                    if let Some(link_detection) = self.link_detection.as_mut() {
+                let link_detection_update_result =
+                    if let Some(link_detection) = &mut self.link_detection {
                         link_detection
                             .update(key, node_addresses, reason, self.ip_stack.clone())
                             .await
@@ -762,8 +753,7 @@ impl State {
                         LinkDetectionUpdateResult {
                             ..Default::default()
                         }
-                    }
-                };
+                    };
 
                 if !old.is_same_event(new)
                     || old_state != new_state
@@ -910,6 +900,13 @@ impl State {
         self.stats.retain(|pk, _| to.peers.contains_key(pk));
 
         // Diff and report events
+
+        // This is a workaround for WireguardNT (windows): #LLT-5073
+        // Manipulate first_tx_after_rx indicator on any interface change
+        #[cfg(target_os = "windows")]
+        if let Some(link_detection) = &mut self.link_detection {
+            link_detection.handle_network_changes().await;
+        }
 
         // Adapter doesn't keep track of mesh addresses, or endpoint changes,
         // therefore they are not retrieved from UAPI requests
@@ -1059,9 +1056,6 @@ impl Runtime for State {
 
     async fn stop(self) {
         self.adapter.stop().await;
-        if let Some(link_detection) = self.link_detection {
-            link_detection.stop().await;
-        }
     }
 }
 
@@ -1241,8 +1235,6 @@ pub mod tests {
                 })
             });
 
-        let socket_pool = Arc::new(SocketPool::new(MockProtector::default()));
-
         let wg = DynamicWg::start_with(
             Io {
                 events: events_ch.tx.clone(),
@@ -1255,10 +1247,8 @@ pub mod tests {
             Config::new().unwrap(),
             #[cfg(all(unix, not(test)))]
             cfg,
-            true,
             Duration::from_millis(DEFAULT_POLLING_PERIOD_MS),
             Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS),
-            socket_pool,
         );
         time::advance(Duration::from_millis(0)).await;
         adapter.lock().await.checkpoint();
