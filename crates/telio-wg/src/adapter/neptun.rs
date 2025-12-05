@@ -39,6 +39,7 @@ impl NepTUN {
         skt_buffer_size: Option<u32>,
         inter_thread_channel_size: Option<u32>,
         max_inter_thread_batched_pkts: Option<u32>,
+        enable_ipv6: bool,
     ) -> Result<Self, AdapterError> {
         use std::os::fd::RawFd;
 
@@ -73,6 +74,7 @@ impl NepTUN {
             skt_buffer_size: skt_buffer_size.map(|v| v as usize),
             inter_thread_channel_size: inter_thread_channel_size.map(|v| v as usize),
             max_inter_thread_batched_pkts: max_inter_thread_batched_pkts.map(|v| v as usize),
+            enable_ipv6,
         };
 
         let device = match tun {

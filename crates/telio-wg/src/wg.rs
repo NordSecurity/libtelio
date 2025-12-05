@@ -109,6 +109,8 @@ pub struct Config {
     pub inter_thread_channel_size: Option<u32>,
     /// Configurable socket buffer size, if None doesn't modify default OS set values
     pub max_inter_thread_batched_pkts: Option<u32>,
+    /// Enable IPv6 on NepTUN
+    pub enable_ipv6: bool,
 }
 
 /// Events and analytics transmission channels
@@ -289,6 +291,7 @@ impl DynamicWg {
     ///             skt_buffer_size: None,
     ///             inter_thread_channel_size: None,
     ///             max_inter_thread_batched_pkts: None,
+    ///             enable_ipv6: true,
     ///         },
     ///         None,
     ///         Duration::from_millis(1000),
@@ -551,6 +554,7 @@ impl Config {
             skt_buffer_size: self.skt_buffer_size,
             inter_thread_channel_size: self.inter_thread_channel_size,
             max_inter_thread_batched_pkts: self.max_inter_thread_batched_pkts,
+            enable_ipv6: self.enable_ipv6,
         })
     }
 }
@@ -1157,6 +1161,7 @@ pub mod tests {
                 skt_buffer_size: None,
                 inter_thread_channel_size: None,
                 max_inter_thread_batched_pkts: None,
+                enable_ipv6: true,
             })
         }
     }
