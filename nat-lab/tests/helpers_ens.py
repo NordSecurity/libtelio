@@ -4,11 +4,11 @@ import hashlib
 import json
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
+from http import HTTPStatus
 from tests import config
 from tests.helpers_fakefm import wait_for_service_active
 from tests.helpers_vpn import VpnConfig
 from tests.utils.connection import Connection, ConnectionTag
-from tests.utils.process import ProcessExecError
 from typing import List, Any, Dict, cast
 
 CERT_PATH = "/etc/ca-certificates/server-cert.pem.test"
@@ -23,9 +23,8 @@ JsonDict = Dict[str, Any]
 
 
 async def _read_remote_file(nlx_conn: Connection, path: str) -> str:
-    proc = nlx_conn.create_process(["cat", path])
-    output = await proc.execute()
-    return output.get_stdout()
+    proc = await nlx_conn.create_process(["cat", path]).execute()
+    return proc.get_stdout()
 
 
 def _load_pem_chain(pem_data: str) -> List[x509.Certificate]:
@@ -99,18 +98,12 @@ async def _ns_call_api(
         url,
     ]
 
-    proc = nlx_conn.create_process(cmd)
-    try:
-        result = await proc.execute()
-        stdout = result.get_stdout()
-    except ProcessExecError as e:
-        print(e.stderr)
-        print(e.stdout)
-        raise e
+    proc = await nlx_conn.create_process(cmd).execute()
+    output = proc.get_stdout()
 
-    assert stdout.strip(), f"NS api returned empty response for endpoint {endpoint}"
+    assert output.strip(), f"NS api returned empty response for endpoint {endpoint}"
 
-    return json.loads(stdout)
+    return json.loads(output)
 
 
 async def ns_set_maintenance_on(nlx_conn: Connection) -> None:
@@ -139,7 +132,7 @@ async def _request_json(method: str, url: str, **kwargs: Any) -> JsonDict:
     async with aiohttp.ClientSession() as session:
         http_method = getattr(session, method.lower())
         async with http_method(url, **kwargs) as response:
-            if response.status != 200:
+            if response.status != HTTPStatus.OK:
                 body = await response.text()
                 raise RuntimeError(
                     f"{method} {url} failed with status {response.status}: {body}"
