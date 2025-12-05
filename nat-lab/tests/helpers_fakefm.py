@@ -8,6 +8,8 @@ from urllib.parse import quote
 FAKEFM_HOST_DEFAULT = "127.0.0.1"
 FAKEFM_PORT_DEFAULT = 7777
 
+SYSTEMCTL_UNIT_NOT_ACTIVE = 3  # LSB return code: "program is not running"
+
 
 async def stop_service(nlx_conn: Connection, service: str) -> None:
 
@@ -22,8 +24,8 @@ async def stop_service(nlx_conn: Connection, service: str) -> None:
         if state != "inactive":
             raise RuntimeError(f"Service '{service}' did not stop, state={state}")
     except ProcessExecError as e:
-        state = (e.stdout or "").strip()
-        if e.returncode == 3 and state == "inactive":
+        state = e.stdout.strip()
+        if e.returncode == SYSTEMCTL_UNIT_NOT_ACTIVE and state == "inactive":
             return
 
         raise RuntimeError(
@@ -48,7 +50,7 @@ async def wait_for_service_active(
             ).execute()
             state = proc.get_stdout().strip()
         except ProcessExecError as e:
-            state = (e.stdout or "").strip() or "unknown"
+            state = e.stdout.strip() or "unknown"
 
         last_state = state
 
@@ -61,7 +63,7 @@ async def wait_for_service_active(
                 f"{timeout:.1f}s (last state={last_state})"
             )
 
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(1)
 
 
 async def start_service(
