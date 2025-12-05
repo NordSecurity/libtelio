@@ -53,6 +53,8 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_WINDOWS_GW_2: "windows-gw-02",
     ConnectionTag.DOCKER_WINDOWS_GW_3: "windows-gw-03",
     ConnectionTag.DOCKER_WINDOWS_GW_4: "windows-gw-04",
+    ConnectionTag.DOCKER_WINDOWS_VM_1: "windows-client-01",
+    ConnectionTag.DOCKER_WINDOWS_VM_2: "windows-client-02",
     ConnectionTag.DOCKER_MAC_GW_1: "mac-gw-01",
     ConnectionTag.DOCKER_MAC_GW_2: "mac-gw-02",
 }
@@ -84,6 +86,11 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: (
         ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW
     ),
+}
+
+DOCKER_VM_MAP: Dict[ConnectionTag, ConnectionTag] = {
+    ConnectionTag.VM_WINDOWS_1: ConnectionTag.DOCKER_WINDOWS_VM_1,
+    ConnectionTag.VM_WINDOWS_2: ConnectionTag.DOCKER_WINDOWS_VM_2,
 }
 
 

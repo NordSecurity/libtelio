@@ -1,5 +1,6 @@
 import asyncssh
 import shlex
+import tests.utils.connection_util  # pylint: disable=cyclic-import
 import tests.utils.vm.mac_vm_util as utils_mac
 import tests.utils.vm.openwrt_vm_util as utils_openwrt
 import tests.utils.vm.windows_vm_util as utils_win
@@ -7,6 +8,7 @@ from .connection import Connection, TargetOS, ConnectionTag, setup_ephemeral_por
 from contextlib import asynccontextmanager
 from logging import INFO, DEBUG
 from tests.utils import cmd_exe_escape
+from tests.utils.connection.docker_connection import DOCKER_VM_MAP
 from tests.utils.logger import log
 from tests.utils.process import Process, SshProcess
 from typing import List, AsyncIterator
@@ -65,28 +67,67 @@ class SshConnection(Connection):
         elif tag is ConnectionTag.VM_OPENWRT_GW_1:
             password = None
 
-        async with asyncssh.connect(
-            ip,
-            username=username,
-            password=password,
-            known_hosts=None,
-            agent_path=None,
-            connect_timeout=15,
-            login_timeout=15,
-        ) as ssh_connection:
-            async with cls(ssh_connection, tag) as connection:
-                if copy_binaries:
-                    await connection.copy_binaries()
+        try:
+            async with asyncssh.connect(
+                ip,
+                username=username,
+                password=password,
+                known_hosts=None,
+                agent_path=None,
+                connect_timeout=15,
+                login_timeout=15,
+            ) as ssh_connection:
+                async with cls(ssh_connection, tag) as connection:
+                    if copy_binaries:
+                        await connection.copy_binaries()
 
-                if connection.target_os is TargetOS.Windows:
-                    keys = await utils_win.get_network_interface_tunnel_keys(connection)
-                    for key in keys:
-                        await connection.create_process(
-                            ["reg", "delete", key, "/F"],
-                            quiet=True,
-                        ).execute()
+                    if connection.target_os is TargetOS.Windows:
+                        keys = await utils_win.get_network_interface_tunnel_keys(
+                            connection
+                        )
+                        for key in keys:
+                            await connection.create_process(
+                                ["reg", "delete", key, "/F"],
+                                quiet=True,
+                            ).execute()
 
-                yield connection
+                    yield connection
+        except OSError:
+            if tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
+                try:
+                    async with tests.utils.connection_util.new_connection_raw(
+                        DOCKER_VM_MAP[tag]
+                    ) as conn:
+                        async with conn.create_process(
+                            ["nc", "-q", "5", "-w", "5", "localhost", "7100"]
+                        ).run() as nc:
+                            await nc.wait_stdin_ready()
+                            await nc.write_stdin("info status\n")
+                            await nc.is_done()
+                            log.error("Windows VM status: %s", tag)
+                            log.error(nc.get_stdout())
+                            log.error(nc.get_stderr())
+
+                        async def print_event_log(log_name: str):
+                            qga = await conn.create_process([
+                                "python3",
+                                "/run/qga.py",
+                                "powershell",
+                                "-Command",
+                                f"Get-EventLog -LogName {log_name} -Newest 40 | format-table -wrap",
+                            ]).execute()
+                            log.error("Windows VM {%s} Event Log: {%s}:", log_name, tag)
+                            log.error(qga.get_stdout())
+                            log.error(qga.get_stderr())
+
+                        await print_event_log("Application")
+                        await print_event_log("System")
+                        await print_event_log("Security")
+
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    log.error("An error occurred when querying Windows VM status")
+                    log.error(e)
+            raise
 
     def create_process(
         self, command: List[str], kill_id=None, term_type=None, quiet=False
