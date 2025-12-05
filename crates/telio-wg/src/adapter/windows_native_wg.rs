@@ -458,3 +458,27 @@ impl Drop for WindowsNativeWg {
         telio_log_info!("wg-nt: deleting adapter: done");
     }
 }
+
+
+mod tests {
+    use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn test_wireguard_nt_create_destroy_loop() {
+        for _ in 0..10 {
+            let adapter = WindowsNativeWg::start("test_adapter", false);
+            drop(adapter);
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_wireguard_nt_start_stop_loop() {
+        let adapter = WindowsNativeWg::start("test_adapter", false);
+        for _ in 0..10 {
+            adapter.up();
+            adapter.down();
+        }
+    }
+}
