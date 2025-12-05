@@ -530,7 +530,13 @@ async def test_openwrt_router_restart() -> None:
                     gateway_connection.create_process(["reboot"]).run()
                 )
                 await wait_until_unreachable_after_reboot(gateway_connection)
-    except asyncssh.misc.ConnectionLost:
+    except (
+        asyncssh.misc.ConnectionLost,
+        asyncssh.misc.ChannelOpenError,
+        asyncssh.misc.DisconnectError,
+        OSError,
+        asyncio.TimeoutError,
+    ):
         log.info("Connection lost during teardown — expected after reboot")
     async with AsyncExitStack() as exit_stack:
         gateway_connection_after_reboot = None
