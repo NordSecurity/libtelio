@@ -53,6 +53,8 @@ def long_persistent_keepalive_periods() -> FeatureWireguard:
         skt_buffer_size=None,
         inter_thread_channel_size=None,
         max_inter_thread_batched_pkts=None,
+        adapter_gone_error_threshold_secs=None,
+        adapter_gone_max_uapi_inerval_secs=None,
     )
 
 

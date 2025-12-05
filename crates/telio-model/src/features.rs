@@ -93,8 +93,9 @@ pub struct FeatureBatching {
 }
 
 /// Configurable features for Wireguard peers
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, SmartDefault, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[serde(default)]
 pub struct FeatureWireguard {
     /// Configurable persistent keepalive periods for wireguard peers
     #[serde(default)]
@@ -114,6 +115,12 @@ pub struct FeatureWireguard {
     /// Configurable socket buffer size for NepTUN
     #[serde(default)]
     pub max_inter_thread_batched_pkts: Option<u32>,
+    /// Configure time needed to emit critical error when adapter is gone
+    #[default(Some(15))]
+    pub adapter_gone_error_threshold_secs: Option<u32>,
+    /// /// Configure the expected time between uapi calls to consider critical error
+    #[default(Some(30))]
+    pub adapter_gone_max_uapi_inerval_secs: Option<u32>,
 }
 
 impl FeatureWireguard {
@@ -701,7 +708,9 @@ mod tests {
                 "enable_dynamic_wg_nt_control": true,
                 "skt_buffer_size": 123456,
                 "inter_thread_channel_size": 123456,
-                "max_inter_thread_batched_pkts": 123456
+                "max_inter_thread_batched_pkts": 123456,
+                "adapter_gone_error_threshold_secs": 123,
+                "adapter_gone_max_uapi_inerval_secs": 456
             },
             "nurse": {
                 "fingerprint": "test_fingerprint",
@@ -805,6 +814,8 @@ mod tests {
                         skt_buffer_size: Some(123456),
                         inter_thread_channel_size: Some(123456),
                         max_inter_thread_batched_pkts: Some(123456),
+                        adapter_gone_error_threshold_secs: Some(123),
+                        adapter_gone_max_uapi_inerval_secs: Some(456)
                     },
                     nurse: Some(FeatureNurse {
                         heartbeat_interval: 5,
