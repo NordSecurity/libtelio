@@ -4,6 +4,12 @@ set -euxo pipefail
 
 /libtelio/nat-lab/bin/configure_route.sh primary windows
 
+#Disable Windows Defender after reboot
+python3 /run/qga.py powershell -Command 'Set-MpPreference -DisableRealtimeMonitoring $true -DisableScriptScanning $true -DisableBehaviorMonitoring $true -DisableIOAVProtection $true -DisableIntrusionPreventionSystem $true'
+
+#Disable Windows Updates Services that can be restored after reboot
+python3 /run/qga.py powershell -Command 'cd C:\workspace\update-disabler; & "./disable updates.bat"'
+
 # Wait up to 60 seconds for OpenSSH SSH Server (sshd) to be running
 timeout_secs=60
 interval_secs=2
