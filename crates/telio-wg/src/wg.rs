@@ -125,24 +125,20 @@ pub struct Io {
 pub const KEEPALIVE_PACKET_SIZE: u64 = 32;
 /// Default wireguard keepalive duration
 pub const WG_KEEPALIVE: Duration = Duration::from_secs(10);
-/// Used to ensure uapi errors happen for at least this long before considering critical error event.
-/// The failures are usually transient and observed during power transitions when using WireguardNT.
-const REQUIRED_CRITICAL_ERROR_GAP: Duration = Duration::from_secs(15);
-/// Used to detect long gaps between UAPI commands that suggest the device might have been suspended.
-/// Usually libtelio should poll every second.
-const MAX_UAPI_CMD_GAP: Duration = Duration::from_secs(30);
 
 pub use telio_utils::{BytesAndTimestamps, Instant};
 
+/// Used to mitigate transient WireGuardNT adapter disappearance
+/// issues, where UAPI failures may not indicate a persistent fault.
 #[derive(Debug)]
 struct UAPIErrorTracker {
     // Minimum required time between first error and later ones to consider returning critical verdict.
-    required_critical_error_gap: Duration,
+    adapter_gone_error_threshold: Duration,
 
     // Maximum time allowed between uapi commands.
-    max_uapi_cmd_gap: Duration,
+    adapter_gone_max_uapi_inerval: Duration,
 
-    // Timestamp of the first error from which the required_critical_error_gap is measured.
+    // Timestamp of the first error from which the adapter_gone_error_threshold is measured.
     first_error_at: Option<Instant>,
 
     // Timestamp of the most recent UAPI command.
@@ -150,31 +146,36 @@ struct UAPIErrorTracker {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-enum UAPIErrorVerdict {
-    Ignore,
-    Critical,
+enum UAPIErrorTrackerVerdict {
+    /// No critical error pattern detected.
+    OK,
+    /// Multiple failures detected and interface is gone.
+    CriticalAdapterGone,
 }
 
 impl UAPIErrorTracker {
-    fn new(required_critical_error_gap: Duration, max_uapi_cmd_gap: Duration) -> Self {
+    fn new(
+        adapter_gone_error_threshold: Duration,
+        adapter_gone_max_uapi_inerval: Duration,
+    ) -> Self {
         UAPIErrorTracker {
-            required_critical_error_gap,
-            max_uapi_cmd_gap,
+            adapter_gone_error_threshold,
+            adapter_gone_max_uapi_inerval,
             first_error_at: None,
             last_uapi_cmd_at: None,
         }
     }
 
-    fn consume_response(&mut self, errno: i32, inst: Instant) -> UAPIErrorVerdict {
+    fn update(&mut self, resp: &Response, inst: Instant) -> UAPIErrorTrackerVerdict {
         let prev_uapi_cmd_time = self.last_uapi_cmd_at.replace(inst);
 
-        if errno == 0 {
+        if resp.errno == 0 {
             self.first_error_at = None;
-            return UAPIErrorVerdict::Ignore;
+            return UAPIErrorTrackerVerdict::OK;
         }
 
-        let uapi_within_allowed_window =
-            prev_uapi_cmd_time.is_none_or(|t| inst.duration_since(t) < self.max_uapi_cmd_gap);
+        let uapi_within_allowed_window = prev_uapi_cmd_time
+            .is_none_or(|t| inst.duration_since(t) < self.adapter_gone_max_uapi_inerval);
 
         if !uapi_within_allowed_window {
             self.first_error_at = Some(inst);
@@ -182,15 +183,17 @@ impl UAPIErrorTracker {
 
         match self.first_error_at {
             Some(t) => {
-                if inst.duration_since(t) >= self.required_critical_error_gap {
+                if inst.duration_since(t) >= self.adapter_gone_error_threshold
+                    && resp.interface.is_none()
+                {
                     self.first_error_at = None;
-                    return UAPIErrorVerdict::Critical;
+                    return UAPIErrorTrackerVerdict::CriticalAdapterGone;
                 }
             }
             None => self.first_error_at = Some(inst),
         }
 
-        UAPIErrorVerdict::Ignore
+        UAPIErrorTrackerVerdict::OK
     }
 }
 
@@ -292,7 +295,9 @@ impl DynamicWg {
     ///         },
     ///         None,
     ///         Duration::from_millis(1000),
-    ///         Duration::from_millis(50)
+    ///         Duration::from_millis(50),
+    ///         Duration::from_secs(15),
+    ///         Duration::from_secs(30),
     ///     );
     /// }
     /// ```
@@ -302,6 +307,8 @@ impl DynamicWg {
         link_detection: Option<LinkDetection>,
         polling_period: Duration,
         polling_period_after_update: Duration,
+        adapter_gone_error_duration: Duration,
+        adapter_gone_error_max_uapi_interval: Duration,
     ) -> Result<Self, Error>
     where
         Self: Sized,
@@ -315,6 +322,8 @@ impl DynamicWg {
             cfg,
             polling_period,
             polling_period_after_update,
+            adapter_gone_error_duration,
+            adapter_gone_error_max_uapi_interval,
         ));
         #[cfg(windows)]
         return Ok(Self::start_with(
@@ -323,9 +332,12 @@ impl DynamicWg {
             link_detection,
             polling_period,
             polling_period_after_update,
+            adapter_gone_error_duration,
+            adapter_gone_error_max_uapi_interval,
         ));
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn start_with(
         io: Io,
         adapter: Box<dyn Adapter>,
@@ -333,6 +345,8 @@ impl DynamicWg {
         #[cfg(unix)] cfg: Config,
         polling_period: Duration,
         polling_period_after_update: Duration,
+        adapter_gone_error_duration: Duration,
+        adapter_gone_error_max_uapi_interval: Duration,
     ) -> Self {
         let interval = interval(polling_period);
         Self {
@@ -345,8 +359,8 @@ impl DynamicWg {
                 event: io.events,
                 analytics_tx: io.analytics_tx,
                 uapi_error_tracker: UAPIErrorTracker::new(
-                    REQUIRED_CRITICAL_ERROR_GAP,
-                    MAX_UAPI_CMD_GAP,
+                    adapter_gone_error_duration,
+                    adapter_gone_error_max_uapi_interval,
                 ),
                 link_detection,
                 libtelio_event: io.libtelio_wide_event_publisher,
@@ -574,18 +588,16 @@ impl State {
     // TODO (LLT-6859): uapi error logic targets WireguardNT but is applied to all adapters
     async fn uapi_request(&mut self, cmd: &Cmd) -> Result<Response, Error> {
         let ret = self.adapter.send_uapi_cmd(cmd).await?;
-        let uapi_error_verdict = self
-            .uapi_error_tracker
-            .consume_response(ret.errno, Instant::now());
+        let verdict = self.uapi_error_tracker.update(&ret, Instant::now());
 
         telio_log_debug!(
-            "UAPI request: {}, response: {:?}, uapi_error_verdict: {:?}",
+            "UAPI request: {}, response: {:?}, verdict: {:?}",
             &cmd,
             &ret,
-            uapi_error_verdict
+            verdict
         );
 
-        if uapi_error_verdict == UAPIErrorVerdict::Critical {
+        if verdict == UAPIErrorTrackerVerdict::CriticalAdapterGone {
             if let Some(libtelio_event) = &self.libtelio_event {
                 let err_event = LibtelioEvent::builder::<LibtelioError>()
                     .set(EventMsg::from("Interface gone"))
@@ -1091,6 +1103,8 @@ pub mod tests {
 
     const DEFAULT_POLLING_PERIOD_MS: u64 = 1000;
     const DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS: u64 = 50;
+    const ADAPTER_GONE_ERROR_THRESHOLD_S: u64 = 15;
+    const ADAPTER_GONE_MAX_UAPI_INERVAL_S: u64 = 30;
 
     fn random_interface() -> Interface {
         let mut rng = rand::thread_rng();
@@ -1249,6 +1263,8 @@ pub mod tests {
             cfg,
             Duration::from_millis(DEFAULT_POLLING_PERIOD_MS),
             Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS),
+            Duration::from_secs(ADAPTER_GONE_ERROR_THRESHOLD_S),
+            Duration::from_secs(ADAPTER_GONE_MAX_UAPI_INERVAL_S),
         );
         time::advance(Duration::from_millis(0)).await;
         adapter.lock().await.checkpoint();
@@ -1269,6 +1285,138 @@ pub mod tests {
         let Env { adapter, wg, .. } = setup().await;
 
         adapter.lock().await.expect_stop().return_once(|| ());
+        wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wg_test_uapi_critical_error() {
+        struct ErrorReturningAdapter {}
+
+        #[async_trait]
+        impl Adapter for ErrorReturningAdapter {
+            async fn send_uapi_cmd(&self, _cmd: &Cmd) -> Result<Response, AdapterError> {
+                return Ok(Response {
+                    errno: 2,
+                    interface: None,
+                });
+            }
+
+            async fn stop(&self) {}
+            fn get_adapter_luid(&self) -> u64 {
+                0
+            }
+            async fn set_tun(&self, _tun: Tun) -> Result<(), Error> {
+                Ok(())
+            }
+            fn clone_box(&self) -> Option<Box<dyn Adapter>> {
+                None
+            }
+        }
+
+        let events_ch = Chan::default();
+        let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(256);
+
+        let analytics_ch = Some(McChan::default().tx);
+        let wg = DynamicWg::start_with(
+            Io {
+                events: events_ch.tx,
+                analytics_tx: analytics_ch.clone(),
+                libtelio_wide_event_publisher: Some(event_tx),
+            },
+            Box::new(ErrorReturningAdapter {}),
+            None,
+            #[cfg(all(unix, test))]
+            Config::new().unwrap(),
+            #[cfg(all(unix, not(test)))]
+            cfg,
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_MS),
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS),
+            Duration::from_secs(ADAPTER_GONE_ERROR_THRESHOLD_S),
+            Duration::from_secs(ADAPTER_GONE_MAX_UAPI_INERVAL_S),
+        );
+
+        // Now lets advance time and eventually expect critical error since adapter is gone
+        for _ in 0..ADAPTER_GONE_ERROR_THRESHOLD_S {
+            tokio::time::advance(Duration::from_secs(1)).await;
+            tokio::task::yield_now().await;
+        }
+
+        assert_eq!(event_rx.len(), 0);
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+
+        assert!(matches!(
+            *event_rx.try_recv().unwrap(),
+            telio_model::event::Event::Error { body }
+                if body.code == ErrorCode::Unknown
+                && body.level == ErrorLevel::Critical
+                && body.msg == "Interface gone"
+        ));
+
+        wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wg_test_uapi_no_critical_error() {
+        struct ErrorReturningAdapter {}
+
+        #[async_trait]
+        impl Adapter for ErrorReturningAdapter {
+            async fn send_uapi_cmd(&self, _cmd: &Cmd) -> Result<Response, AdapterError> {
+                return Ok(Response {
+                    errno: 2,
+                    interface: Some(Interface::default()),
+                });
+            }
+
+            async fn stop(&self) {}
+            fn get_adapter_luid(&self) -> u64 {
+                0
+            }
+            async fn set_tun(&self, _tun: Tun) -> Result<(), Error> {
+                Ok(())
+            }
+            fn clone_box(&self) -> Option<Box<dyn Adapter>> {
+                None
+            }
+        }
+
+        let events_ch = Chan::default();
+        let (event_tx, event_rx) = tokio::sync::broadcast::channel(256);
+
+        let analytics_ch = Some(McChan::default().tx);
+        let wg = DynamicWg::start_with(
+            Io {
+                events: events_ch.tx,
+                analytics_tx: analytics_ch.clone(),
+                libtelio_wide_event_publisher: Some(event_tx),
+            },
+            Box::new(ErrorReturningAdapter {}),
+            None,
+            #[cfg(all(unix, test))]
+            Config::new().unwrap(),
+            #[cfg(all(unix, not(test)))]
+            cfg,
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_MS),
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS),
+            Duration::from_secs(ADAPTER_GONE_ERROR_THRESHOLD_S),
+            Duration::from_secs(ADAPTER_GONE_MAX_UAPI_INERVAL_S),
+        );
+
+        // Now lets advance time and since adapter is present, no critical event should be there
+        for _ in 0..ADAPTER_GONE_ERROR_THRESHOLD_S {
+            tokio::time::advance(Duration::from_secs(1)).await;
+            tokio::task::yield_now().await;
+        }
+
+        assert_eq!(event_rx.len(), 0);
+
+        tokio::time::advance(Duration::from_secs(1)).await;
+        tokio::task::yield_now().await;
+
+        assert_eq!(event_rx.len(), 0);
+
         wg.stop().await;
     }
 
@@ -2065,55 +2213,95 @@ pub mod tests {
 
     #[test]
     fn test_uapi_error_tracker_verdicts() {
-        let mut tracker = UAPIErrorTracker::new(REQUIRED_CRITICAL_ERROR_GAP, MAX_UAPI_CMD_GAP);
+        let err_resp = Response {
+            errno: 1,
+            interface: None,
+        };
 
+        let ok_resp = Response {
+            errno: 0,
+            interface: Some(Interface::default()),
+        };
+
+        use super::*;
+
+        let mut tracker = UAPIErrorTracker::new(
+            Duration::from_secs(ADAPTER_GONE_ERROR_THRESHOLD_S),
+            Duration::from_secs(ADAPTER_GONE_MAX_UAPI_INERVAL_S),
+        );
         let mut now = Instant::now();
 
         // Initially, no error: should Ignore
-        let verdict = tracker.consume_response(0, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+        let verdict = tracker.update(&ok_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
 
         // First failure: should Ignore (not enough time elapsed)
         now += Duration::from_secs(1);
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+        let verdict = tracker.update(&err_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
 
         // After threshold duration, should Ignore (gap too big between uapi calls)
-        now += MAX_UAPI_CMD_GAP;
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+        now += Duration::from_secs(ADAPTER_GONE_MAX_UAPI_INERVAL_S);
+        let verdict = tracker.update(&err_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
 
         // Trigger errors every second, until just before the threshold, should Ignore
-        for _ in 1..REQUIRED_CRITICAL_ERROR_GAP.as_secs() {
+        for _ in 1..ADAPTER_GONE_ERROR_THRESHOLD_S {
             now += Duration::from_secs(1);
-            let verdict = tracker.consume_response(1, now);
-            assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+            let verdict = tracker.update(&err_resp, now);
+            assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
         }
 
         // Trigger error just after the threshold, should be Critical
         now += Duration::from_secs(1);
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Critical);
+        let verdict = tracker.update(&err_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::CriticalAdapterGone);
 
         // Trigger error again, should be Ignore (implicit reset)
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+        let verdict = tracker.update(&err_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
 
         // Trigger errors every second, until just before the threshold, should Ignore
-        for _ in 1..REQUIRED_CRITICAL_ERROR_GAP.as_secs() {
+        for _ in 1..ADAPTER_GONE_ERROR_THRESHOLD_S {
             now += Duration::from_secs(1);
-            let verdict = tracker.consume_response(1, now);
-            assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+            let verdict = tracker.update(&err_resp, now);
+            assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
         }
 
         // Trigger success just after the threshold, should be Ignore
         now += Duration::from_secs(1);
-        let verdict = tracker.consume_response(0, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+        let verdict = tracker.update(&ok_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
 
         // Trigger error after threshold, should be Ignore (success must reset the streak)
         now += Duration::from_secs(1);
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
+        let verdict = tracker.update(&err_resp, now);
+        assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
+
+        // Trigger errors repeatedly with big time gaps in between, should be Ignore
+        for _ in 0..50 {
+            now += Duration::from_secs(ADAPTER_GONE_MAX_UAPI_INERVAL_S);
+            let verdict = tracker.update(&err_resp, now);
+            assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
+        }
+
+        // Trigger successes repeatedly, should Ignore
+        for _ in 0..50 {
+            now += Duration::from_secs(1);
+            let verdict = tracker.update(&ok_resp, now);
+            assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
+        }
+
+        // Trigger error but adapter is present, should Ignore
+        let ok_resp = Response {
+            errno: 2,
+            interface: Some(Interface::default()),
+        };
+
+        for _ in 0..50 {
+            now += Duration::from_secs(1);
+            let verdict = tracker.update(&ok_resp, now);
+            assert_eq!(verdict, UAPIErrorTrackerVerdict::OK);
+        }
     }
 }

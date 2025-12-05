@@ -1152,6 +1152,8 @@ impl Runtime {
                     link_detection,
                     Duration::from_millis(features.wireguard.polling.wireguard_polling_period.into()),
                     Duration::from_millis(features.wireguard.polling.wireguard_polling_period_after_state_change.into()),
+                    Duration::from_secs(features.wireguard.adapter_gone_error_threshold_secs.unwrap_or_default().into()),
+                    Duration::from_secs(features.wireguard.adapter_gone_max_uapi_inerval_secs.unwrap_or_default().into())
                 ).await?);
                 let wg_events = wg_events.rx;
             } else {
