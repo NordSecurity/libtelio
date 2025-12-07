@@ -125,74 +125,8 @@ pub struct Io {
 pub const KEEPALIVE_PACKET_SIZE: u64 = 32;
 /// Default wireguard keepalive duration
 pub const WG_KEEPALIVE: Duration = Duration::from_secs(10);
-/// Used to ensure uapi errors happen for at least this long before considering critical error event.
-/// The failures are usually transient and observed during power transitions when using WireguardNT.
-const REQUIRED_CRITICAL_ERROR_GAP: Duration = Duration::from_secs(15);
-/// Used to detect long gaps between UAPI commands that suggest the device might have been suspended.
-/// Usually libtelio should poll every second.
-const MAX_UAPI_CMD_GAP: Duration = Duration::from_secs(30);
 
 pub use telio_utils::{BytesAndTimestamps, Instant};
-
-#[derive(Debug)]
-struct UAPIErrorTracker {
-    // Minimum required time between first error and later ones to consider returning critical verdict.
-    required_critical_error_gap: Duration,
-
-    // Maximum time allowed between uapi commands.
-    max_uapi_cmd_gap: Duration,
-
-    // Timestamp of the first error from which the required_critical_error_gap is measured.
-    first_error_at: Option<Instant>,
-
-    // Timestamp of the most recent UAPI command.
-    last_uapi_cmd_at: Option<Instant>,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-enum UAPIErrorVerdict {
-    Ignore,
-    Critical,
-}
-
-impl UAPIErrorTracker {
-    fn new(required_critical_error_gap: Duration, max_uapi_cmd_gap: Duration) -> Self {
-        UAPIErrorTracker {
-            required_critical_error_gap,
-            max_uapi_cmd_gap,
-            first_error_at: None,
-            last_uapi_cmd_at: None,
-        }
-    }
-
-    fn consume_response(&mut self, errno: i32, inst: Instant) -> UAPIErrorVerdict {
-        let prev_uapi_cmd_time = self.last_uapi_cmd_at.replace(inst);
-
-        if errno == 0 {
-            self.first_error_at = None;
-            return UAPIErrorVerdict::Ignore;
-        }
-
-        let uapi_within_allowed_window =
-            prev_uapi_cmd_time.is_none_or(|t| inst.duration_since(t) < self.max_uapi_cmd_gap);
-
-        if !uapi_within_allowed_window {
-            self.first_error_at = Some(inst);
-        }
-
-        match self.first_error_at {
-            Some(t) => {
-                if inst.duration_since(t) >= self.required_critical_error_gap {
-                    self.first_error_at = None;
-                    return UAPIErrorVerdict::Critical;
-                }
-            }
-            None => self.first_error_at = Some(inst),
-        }
-
-        UAPIErrorVerdict::Ignore
-    }
-}
 
 struct State {
     #[cfg(unix)]
@@ -202,8 +136,11 @@ struct State {
     interface: Interface,
     event: Tx<Box<Event>>,
     analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
-    uapi_error_tracker: UAPIErrorTracker,
+    // Detecting unexpected driver failures, such as a malicious removal
+    // We won't be notified of any errors, but a periodic call to get_config_uapi() will return a Win32 error code != 0.
+    uapi_fail_counter: i32,
 
+    // Link detection mechanism
     link_detection: Option<LinkDetection>,
 
     libtelio_event: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
@@ -216,6 +153,8 @@ struct State {
     polling_period_after_update: Duration,
     last_update: Instant,
 }
+
+const MAX_UAPI_FAIL_COUNT: i32 = 10;
 
 impl DynamicWg {
     /// Starts the WireGuard adapter with the given parameters.
@@ -344,11 +283,8 @@ impl DynamicWg {
                 interface: Default::default(),
                 event: io.events,
                 analytics_tx: io.analytics_tx,
-                uapi_error_tracker: UAPIErrorTracker::new(
-                    REQUIRED_CRITICAL_ERROR_GAP,
-                    MAX_UAPI_CMD_GAP,
-                ),
                 link_detection,
+                uapi_fail_counter: 0,
                 libtelio_event: io.libtelio_wide_event_publisher,
                 stats: HashMap::new(),
                 ip_stack: None,
@@ -571,21 +507,22 @@ impl State {
         Ok(())
     }
 
-    // TODO (LLT-6859): uapi error logic targets WireguardNT but is applied to all adapters
     async fn uapi_request(&mut self, cmd: &Cmd) -> Result<Response, Error> {
         let ret = self.adapter.send_uapi_cmd(cmd).await?;
-        let uapi_error_verdict = self
-            .uapi_error_tracker
-            .consume_response(ret.errno, Instant::now());
+        telio_log_debug!("UAPI request: {}, response: {:?}", &cmd.to_string(), &ret);
 
-        telio_log_debug!(
-            "UAPI request: {}, response: {:?}, uapi_error_verdict: {:?}",
-            &cmd,
-            &ret,
-            uapi_error_verdict
-        );
+        // Count continuous adapter failures.
+        // As observed on Windows, a vNIC driver might fail a call right after wake-up,
+        // but will properly resume work after that. In order to determine a non-recoverable failure
+        // such as a malicious removal, we need to count the successive failed calls.
+        // If a certain threshold is reached, cleanup the network config and notify the app about connection loss.
+        if 0 == ret.errno {
+            self.uapi_fail_counter = 0;
+        } else {
+            self.uapi_fail_counter += 1;
+        }
 
-        if uapi_error_verdict == UAPIErrorVerdict::Critical {
+        if self.uapi_fail_counter >= MAX_UAPI_FAIL_COUNT && ret.interface.is_none() {
             if let Some(libtelio_event) = &self.libtelio_event {
                 let err_event = LibtelioEvent::builder::<LibtelioError>()
                     .set(EventMsg::from("Interface gone"))
@@ -596,7 +533,6 @@ impl State {
                     let _ = libtelio_event.send(Box::new(err_event));
                 }
             }
-
             return Err(Error::InternalError("Interface gone"));
         }
 
@@ -2061,59 +1997,5 @@ pub mod tests {
                 &i1_with_modified_other_field
             ));
         }
-    }
-
-    #[test]
-    fn test_uapi_error_tracker_verdicts() {
-        let mut tracker = UAPIErrorTracker::new(REQUIRED_CRITICAL_ERROR_GAP, MAX_UAPI_CMD_GAP);
-
-        let mut now = Instant::now();
-
-        // Initially, no error: should Ignore
-        let verdict = tracker.consume_response(0, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
-
-        // First failure: should Ignore (not enough time elapsed)
-        now += Duration::from_secs(1);
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
-
-        // After threshold duration, should Ignore (gap too big between uapi calls)
-        now += MAX_UAPI_CMD_GAP;
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
-
-        // Trigger errors every second, until just before the threshold, should Ignore
-        for _ in 1..REQUIRED_CRITICAL_ERROR_GAP.as_secs() {
-            now += Duration::from_secs(1);
-            let verdict = tracker.consume_response(1, now);
-            assert_eq!(verdict, UAPIErrorVerdict::Ignore);
-        }
-
-        // Trigger error just after the threshold, should be Critical
-        now += Duration::from_secs(1);
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Critical);
-
-        // Trigger error again, should be Ignore (implicit reset)
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
-
-        // Trigger errors every second, until just before the threshold, should Ignore
-        for _ in 1..REQUIRED_CRITICAL_ERROR_GAP.as_secs() {
-            now += Duration::from_secs(1);
-            let verdict = tracker.consume_response(1, now);
-            assert_eq!(verdict, UAPIErrorVerdict::Ignore);
-        }
-
-        // Trigger success just after the threshold, should be Ignore
-        now += Duration::from_secs(1);
-        let verdict = tracker.consume_response(0, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
-
-        // Trigger error after threshold, should be Ignore (success must reset the streak)
-        now += Duration::from_secs(1);
-        let verdict = tracker.consume_response(1, now);
-        assert_eq!(verdict, UAPIErrorVerdict::Ignore);
     }
 }
