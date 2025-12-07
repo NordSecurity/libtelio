@@ -106,6 +106,7 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
         client.allow_errors([
             "neptun::device.*Fatal read error on tun interface",
             "telio_wg::adapter::linux_native_wg.*LinuxNativeWg: \\[GET01\\] Unable to get interface from WireGuard. Make sure it exists and you have permissions to access it.",
+            "wireguard_nt.*The system cannot find the file specified. (Code 0x00000002)",
         ])
 
 
