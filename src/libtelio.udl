@@ -191,7 +191,7 @@ namespace telio {
     /// Utility function to create a `Config` object from a json-string
     [Throws=TelioError]
     Config deserialize_meshnet_config(string cfg_str);
-    
+
     /// Utility function to create a json-string from a Features instance
     [Throws=TelioError]
     string serialize_feature_config([ByRef] Features features);
@@ -228,7 +228,7 @@ dictionary WgResponse {
 dictionary WgDevice {
     string? private_key;
     u16? listen_port;
-    u32? fwmark;  
+    u32? fwmark;
     boolean? replace_peers;
     sequence<WgPeer> peers;
 };
@@ -284,7 +284,7 @@ interface Telio {
     /// Adapter will attempt to open its own tunnel.
     [Throws=TelioError]
     void start_custom(SecretKey secret_key, TelioCustomAdapter adapter);
-    
+
     /// Start telio with specified adapter.
     ///
     /// Adapter will attempt to open its own tunnel.
@@ -676,6 +676,8 @@ dictionary FeatureWireguard {
     FeaturePersistentKeepalive persistent_keepalive;
     /// Configurable WireGuard polling periods
     FeaturePolling polling;
+    /// Configurable interface health monitor
+    FeatureInterfaceHealth interface_health;
     /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
     boolean enable_dynamic_wg_nt_control;
     /// Configurable socket buffer size for NepTUN
@@ -684,6 +686,16 @@ dictionary FeatureWireguard {
     u32? inter_thread_channel_size;
     /// Configurable socket buffer size for NepTUN
     u32? max_inter_thread_batched_pkts;
+};
+
+/// Configurable interface health monitoring
+dictionary FeatureInterfaceHealth {
+    /// Minimum duration of a continuous UAPI failure period (in seconds) [default: 10]
+    u32 sustained_failure_threshold;
+
+    /// Max UAPI poll gap expected to detect libtelio(device) suspension. Must be
+    /// higher than FeaturePolling.wireguard_polling_period (in seconds) [default 2s]
+    u32 suspension_detection_gap;
 };
 
 /// Configurable persistent keepalive periods for different types of peers
@@ -873,7 +885,7 @@ dictionary FeatureErrorNotificationService {
 
     /// Configuration of the backoff algorithm used by ENS
     Backoff backoff;
-    
+
     /// DER encoded root certificate to be used for verification of all TLS connections
     /// to gRPC ENS endpoint in place of the hardcoded one
     bytes? root_certificate_override;
