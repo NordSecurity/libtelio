@@ -102,6 +102,9 @@ pub struct FeatureWireguard {
     /// Configurable wireguard polling period
     #[serde(default)]
     pub polling: FeaturePolling,
+    /// Configurable wireguard interface health monitor
+    #[serde(default)]
+    pub interface_health: FeatureInterfaceHealth,
     /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
     #[serde(default)]
     pub enable_dynamic_wg_nt_control: bool,
@@ -146,6 +149,28 @@ pub struct FeaturePersistentKeepalive {
     /// Persistent keepalive period for stun peers (in seconds) [default 25s]
     #[default(Some(25))]
     pub stun: Option<u32>,
+}
+
+/// Configurable interface health monitoring
+///
+/// Accounts for WireguardNT-specific behavior which
+/// produces transient errors around power transitions of the device.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
+#[serde(default)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct FeatureInterfaceHealth {
+    /// Minimum duration of a continuous UAPI failure period required to
+    /// classify the failure as non-transient. (in seconds) [default: 10]
+    #[default(10)]
+    pub sustained_failure_threshold: u32,
+
+    /// Max UAPI poll gap expected, used to detect libtelio suspension.
+    /// Without suspension detection sustained_failure_threshold would be
+    /// triggered after power-resume due to errors registered on power-suspend.
+    /// Recommended to be slightly higher than twice the
+    /// FeaturePolling.wireguard_polling_period. (in seconds) [default 5s]
+    #[default(5)]
+    pub suspension_detection_gap: u32,
 }
 
 /// Configurable Wireguard polling period
@@ -698,6 +723,10 @@ mod tests {
                     "wireguard_polling_period": 1000,
                     "wireguard_polling_period_after_state_change": 50
                 },
+                "interface_health": {
+                    "sustained_failure_threshold": 44,
+                    "suspension_detection_gap": 55
+                },
                 "enable_dynamic_wg_nt_control": true,
                 "skt_buffer_size": 123456,
                 "inter_thread_channel_size": 123456,
@@ -800,6 +829,10 @@ mod tests {
                         polling: FeaturePolling {
                             wireguard_polling_period: 1000,
                             wireguard_polling_period_after_state_change: 50
+                        },
+                        interface_health: FeatureInterfaceHealth {
+                            sustained_failure_threshold: 44,
+                            suspension_detection_gap: 55
                         },
                         enable_dynamic_wg_nt_control: true,
                         skt_buffer_size: Some(123456),
