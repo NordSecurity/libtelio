@@ -150,13 +150,16 @@ pub async fn consolidate_wg_state(
         .as_ref()
         .map(|resolver| resolver.public_key());
 
-    consolidate_firewall(
-        requested_state,
-        &*entities.firewall,
-        starcast_pub_key,
-        dns_pubkey,
-    )
-    .await?;
+    if let Some(firewall) = entities.firewall.as_ref() {
+        consolidate_firewall(
+            requested_state,
+            (*firewall).as_ref(),
+            starcast_pub_key,
+            dns_pubkey,
+        )
+        .await?;
+    }
+
     Ok(())
 }
 
