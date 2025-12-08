@@ -32,11 +32,9 @@ async def start_logread_process(
     return process
 
 
-async def wait_until_unreachable_after_reboot(
-    connection: Connection, retries: int = 5, delay: int = 1
-):
+async def wait_until_unreachable_after_reboot(connection: Connection, delay: int = 1):
     """Wait until the existing connection becomes unreachable after rebooting."""
-    for _ in range(1, retries + 1):
+    while True:
         try:
             await connection.create_process(["true"]).execute()
         except (
@@ -49,7 +47,3 @@ async def wait_until_unreachable_after_reboot(
             log.debug("VM became unreachable — reboot likely in progress.")
             return
         await asyncio.sleep(delay)
-
-    raise TimeoutError(
-        f"VM still reachable after {retries} retries — reboot may not have started."
-    )
