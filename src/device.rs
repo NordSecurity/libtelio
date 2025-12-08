@@ -327,7 +327,7 @@ pub struct Entities {
     dns: Arc<Mutex<DNS>>,
 
     // Internal firewall
-    firewall: Arc<StatefullFirewall>,
+    firewall: Option<Arc<StatefullFirewall>>,
 
     // Entities for meshnet connections
     meshnet: MeshnetState,
@@ -1036,31 +1036,38 @@ impl Runtime {
         features: Features,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
-        let firewall = Arc::new(StatefullFirewall::new(features.ipv6, &features.firewall));
+        let firewall = Some(Arc::new(StatefullFirewall::new(
+            features.ipv6,
+            &features.firewall,
+        )));
 
-        let firewall_filter_inbound_packets = {
-            let fw = firewall.clone();
-            move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)
-        };
-        let firewall_filter_outbound_packets = {
-            let fw = firewall.clone();
-            move |peer: &[u8; 32], packet: &[u8], sink: &mut dyn io::Write| {
-                fw.process_outbound_packet(peer, packet, sink)
-            }
-        };
+        let firewall_process_inbound_callback = firewall.clone().map(|fw| {
+            Arc::new(move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet))
+                as Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>
+        });
+        let firewall_process_outbound_callback = firewall.clone().map(|fw| {
+            Arc::new(
+                move |peer: &[u8; 32], packet: &[u8], sink: &mut dyn io::Write| {
+                    fw.process_outbound_packet(peer, packet, sink)
+                },
+            ) as Arc<dyn Fn(&[u8; 32], &[u8], &mut dyn io::Write) -> bool + Send + Sync>
+        });
         let firewall_reset_connections = if features.firewall.neptun_reset_conns() {
-            let fw = firewall.clone();
-            let cb = move |exit_pubkey: &PublicKey, sink: &mut dyn io::Write| {
-                fw.reset_connections(exit_pubkey, sink)
-            };
-            Some(Arc::new(cb) as Arc<_>)
+            firewall.clone().map(|fw| {
+                Arc::new(move |exit_pubkey: &PublicKey, sink: &mut dyn io::Write| {
+                    fw.reset_connections(exit_pubkey, sink)
+                }) as Arc<dyn Fn(&PublicKey, &mut dyn io::Write) + Send + Sync>
+            })
         } else {
             None
         };
 
         let network_monitor = NetworkMonitor::new(SystemGetIfAddrs).await?;
-        let firewall_observer_ptr: Arc<dyn LocalInterfacesObserver> = firewall.clone();
-        network_monitor.register_local_interfaces_observer(Arc::downgrade(&firewall_observer_ptr));
+        if let Some(firewall) = firewall.as_ref() {
+            let firewall_observer_ptr: Arc<dyn LocalInterfacesObserver> = firewall.clone();
+            network_monitor
+                .register_local_interfaces_observer(Arc::downgrade(&firewall_observer_ptr));
+        }
 
         let socket_pool = Arc::new({
             if let Some(protect) = protect.clone() {
@@ -1139,10 +1146,8 @@ impl Runtime {
                         name: config.name.clone(),
                         tun: config.tun,
                         socket_pool: socket_pool.clone(),
-                        firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
-                        firewall_process_outbound_callback: Some(Arc::new(
-                            firewall_filter_outbound_packets,
-                        )),
+                        firewall_process_inbound_callback,
+                        firewall_process_outbound_callback,
                         firewall_reset_connections,
                         enable_dynamic_wg_nt_control: features.wireguard.enable_dynamic_wg_nt_control,
                         skt_buffer_size : Runtime::sanitize_neptun_config(features.wireguard.skt_buffer_size, config.adapter.clone()),
@@ -1166,10 +1171,8 @@ impl Runtime {
                             name: config.name.clone(),
                             tun: config.tun,
                             socket_pool: socket_pool.clone(),
-                            firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
-                            firewall_process_outbound_callback: Some(Arc::new(
-                                firewall_filter_outbound_packets,
-                            )),
+                            firewall_process_inbound_callback,
+                            firewall_process_outbound_callback,
                             firewall_reset_connections,
                             enable_dynamic_wg_nt_control: features.wireguard.enable_dynamic_wg_nt_control,
                             skt_buffer_size: features.wireguard.skt_buffer_size,
@@ -2153,7 +2156,9 @@ impl Runtime {
     async fn disconnect_exit_node(&mut self, node_key: &PublicKey) -> Result {
         match self.requested_state.exit_node.as_ref() {
             Some(exit_node) if &exit_node.public_key == node_key => {
-                self.entities.firewall.remove_vpn_peer();
+                if let Some(fw) = self.entities.firewall.as_mut() {
+                    fw.remove_vpn_peer();
+                }
                 self.disconnect_exit_nodes().boxed().await
             }
             _ => Err(Error::InvalidNode),
