@@ -1,0 +1,65 @@
+name: Scheduled GitLab Performance Tests Pipeline
+on:
+  schedule:
+    # Avoid running on 0 since a lot of other workflows on github start at that
+    # time and this can cause delays or even dropping of jobs:
+    # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
+    - cron: "17 11 * * 6,0"
+permissions: {}
+
+jobs:
+  read-triggered-ref:
+    uses: ./.github/workflows/read_dotenv.yml
+    with:
+      key: TRIGGERED_REF
+
+  prepare-sha:
+    runs-on: ubuntu-22.04
+    outputs:
+      recorded_sha: ${{ steps.get-sha.outputs.recorded_sha }}
+    steps:
+      - name: Generate schedule date key
+        id: date-key
+        run: |
+          CURRENT_HOUR=$(date -u "+%H")
+          CURRENT_HOUR=$((10#$CURRENT_HOUR))
+          if [[ "$CURRENT_HOUR" -ge 17 ]]; then
+            DATESTAMP=$(date -u "+%Y-%m-%d")
+          else
+            DATESTAMP=$(date -u -d "yesterday" "+%Y-%m-%d")
+          fi
+          echo "datestamp=${DATESTAMP}" >> $GITHUB_OUTPUT
+
+      - name: Get cached SHA
+        id: sha-cache
+        uses: actions/cache@v3
+        with:
+          path: sha-${{ steps.date-key.outputs.datestamp }}.txt
+          key: sha-cache-key-${{ steps.date-key.outputs.datestamp }}
+
+      - name: Record SHA in cache file (first run only)
+        if: steps.sha-cache.outputs.cache-hit != 'true'
+        run: |
+          echo "${{ github.sha }}" > sha-${{ steps.date-key.outputs.datestamp }}.txt
+
+      - name: Read cached SHA file
+        id: get-sha
+        run: |
+          RECORDED_SHA=$(cat sha-${{ steps.date-key.outputs.datestamp }}.txt)
+          echo "RECORDED_SHA=$RECORDED_SHA" >> $GITHUB_OUTPUT
+          echo "::notice::Using commit SHA: $RECORDED_SHA"
+
+  trigger-gitlab-pipeline:
+    needs: [read-triggered-ref, prepare-sha]
+    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@7dab9b208879945245bb24ef140ef4b8a5d6c6ef
+    secrets:
+      ci-api-v4-url: ${{ secrets.CODEHUB_CI_API_V4_URL }}
+      access-token: ${{ secrets.CODEHUB_GITLAB_API_TOKEN }}
+      trigger-token: ${{ secrets.CODEHUB_TOKEN }}
+      project-id: ${{ secrets.CODEHUB_PROJECT_ID }}
+    with:
+      schedule: true
+      pipeline-type: "performance-tests"
+      cancel-outdated-pipelines: false
+      triggered-ref: ${{ needs.read-triggered-ref.outputs.value }} # defined in .env file
+      github-sha-override: ${{ needs.prepare-sha.outputs.recorded_sha }}
