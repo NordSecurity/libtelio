@@ -53,6 +53,7 @@ use telio_wg as wg;
 #[cfg(target_os = "windows")]
 use telio_wg::LinkDetectionObserver;
 
+use telio_wg::TUNHealthMonitor;
 use thiserror::Error as TError;
 use tokio::{
     runtime::{Builder, Runtime as AsyncRuntime},
@@ -1120,6 +1121,22 @@ impl Runtime {
 
         let requested_device_config = RequestedDeviceConfig::from(&config);
 
+        let health_monitor = TUNHealthMonitor::new(
+            Duration::from_secs(
+                features
+                    .wireguard
+                    .interface_health
+                    .transient_failure_separation_threshold
+                    .into(),
+            ),
+            Duration::from_secs(
+                features
+                    .wireguard
+                    .interface_health
+                    .uapi_poll_suspension_threshold
+                    .into(),
+            ),
+        );
         // tests runtime use wg::MockedAdapter
         cfg_if! {
             if #[cfg(not(test))] {
@@ -1150,6 +1167,7 @@ impl Runtime {
                         max_inter_thread_batched_pkts : Runtime::sanitize_neptun_config(features.wireguard.max_inter_thread_batched_pkts, config.adapter.clone()),
                     },
                     link_detection,
+                    health_monitor,
                     Duration::from_millis(features.wireguard.polling.wireguard_polling_period.into()),
                     Duration::from_millis(features.wireguard.polling.wireguard_polling_period_after_state_change.into()),
                 ).await?);
