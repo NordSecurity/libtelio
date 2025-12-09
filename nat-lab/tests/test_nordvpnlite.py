@@ -10,6 +10,7 @@ from tests.utils.connection import ConnectionTag
 from tests.utils.logger import log
 from tests.utils.ping import ping
 from tests.utils.process.process import ProcessExecError
+from tests.utils.testing import log_test_passed
 
 
 @pytest.mark.parametrize(
@@ -27,6 +28,7 @@ async def test_nordvpnlite_start(no_detach) -> None:
             assert await nordvpnlite_client.is_alive()
 
         await nordvpnlite.quit()
+        log_test_passed()
 
 
 async def test_nordvpnlite_logs() -> None:
@@ -56,6 +58,7 @@ async def test_nordvpnlite_logs() -> None:
                     done = True
             except ProcessExecError:
                 await asyncio.sleep(1)
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -81,6 +84,7 @@ async def test_nordvpnlite_vpn_connection(config_type: IfcConfigType) -> None:
             assert (
                 ip == WG_SERVER["ipv4"]
             ), f"wrong public IP when connected to VPN {ip}"
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -125,6 +129,7 @@ async def test_nordvpnlite_vpn_country_connection(country: IfcConfigType) -> Non
                     hostname in report
                     for hostname in ["pl128.nordvpn.com", "de1263.nordvpn.com"]
                 ), report
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -164,3 +169,4 @@ async def test_nordvpnlite_config_created(
             ), "Default config was not created"
         finally:
             await nordvpnlite.remove_config(config_path)
+        log_test_passed()

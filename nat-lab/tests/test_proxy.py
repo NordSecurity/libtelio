@@ -5,6 +5,7 @@ from tests.helpers import SetupParameters, setup_mesh_nodes
 from tests.utils.bindings import TelioNode
 from tests.utils.connection import ConnectionTag
 from tests.utils.ping import ping
+from tests.utils.testing import log_test_passed
 from typing import Optional
 
 
@@ -44,6 +45,7 @@ async def test_proxy_endpoint_map_update() -> None:
         alpha_client.allow_errors(
             ["telio_proxy::proxy.*Unable to send. Operation not permitted"]
         )
+        log_test_passed()
 
 
 def node_port(peer_info: Optional[TelioNode]) -> int:

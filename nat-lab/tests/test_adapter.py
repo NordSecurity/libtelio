@@ -18,6 +18,7 @@ from tests.utils.bindings import (
 from tests.utils.connection import TargetOS, ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.process import ProcessExecError
+from tests.utils.testing import log_test_passed
 
 
 class AdapterState(Enum):
@@ -107,6 +108,7 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
             "neptun::device.*Fatal read error on tun interface",
             "telio_wg::adapter::linux_native_wg.*LinuxNativeWg: \\[GET01\\] Unable to get interface from WireGuard. Make sure it exists and you have permissions to access it.",
         ])
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -162,6 +164,7 @@ async def test_adapter_service_loading(
 
     async with AsyncExitStack() as exit_stack:
         _ = await setup_mesh_nodes(exit_stack, [alpha_setup_params, beta_setup_params])
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -243,6 +246,7 @@ async def test_adapter_state_for_vpn_and_dns(
 
         state = await get_interface_state(client_conn, client_alpha)
         assert state == expected_idle_state
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -308,3 +312,4 @@ async def test_adapter_state_for_meshnet(alpha_setup_params: SetupParameters) ->
 
         state = await get_interface_state(client_conn, client_alpha)
         assert state == expected_idle_state
+        log_test_passed()

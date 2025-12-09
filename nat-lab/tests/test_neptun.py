@@ -3,6 +3,7 @@ from contextlib import AsyncExitStack
 from tests.helpers import setup_mesh_nodes, SetupParameters, ping_between_all_nodes
 from tests.utils.bindings import default_features, TelioAdapterType
 from tests.utils.connection import ConnectionTag
+from tests.utils.testing import log_test_passed
 
 BUFFER_SIZE = 1310720
 
@@ -30,3 +31,4 @@ async def test_custom_socket_buffers_on_neptun() -> None:
         )
         # Ping to check connection works both ways
         await ping_between_all_nodes(env)
+        log_test_passed()

@@ -26,6 +26,7 @@ from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.dns import query_dns, query_dns_port
 from tests.utils.process import ProcessExecError
 from tests.utils.router import IPStack
+from tests.utils.testing import log_test_passed
 from typing import List, Optional
 
 
@@ -183,6 +184,7 @@ async def test_dns(
             await query_dns(
                 connection_beta, "google.com", dns_server=dns_server_address_beta
             )
+        log_test_passed()
 
 
 # TODO: Linux native has to be removed
@@ -323,6 +325,7 @@ async def test_dns_port(
 
         # LLT-5532: To be cleaned up...
         client_alpha.allow_errors(["telio_dns::nameserver.*Invalid DNS port"])
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -402,6 +405,7 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
         )
 
         await query_dns(connection, "google.com", dns_server=dns_server_address)
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -477,6 +481,7 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
             )
         except ProcessExecError as e:
             assert "server can't find beta.nord" in e.stdout
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -566,6 +571,7 @@ async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
             string_to_compressed_ipv6(alpha.ip_addresses),
             dns_server_address,
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -634,6 +640,7 @@ async def test_set_meshnet_config_dns_update(
             string_to_compressed_ipv6([beta.ip_addresses[0]]),
             dns_server_address,
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -700,6 +707,7 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
         client_alpha.allow_errors([
             "telio_dns::nameserver.*Lookup failed Error performing lookup: Unknown response code"
         ])
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -775,6 +783,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
         await query_dns(
             connection_alpha, "google.com", options=["-timeout=1", "-type=a"]
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -792,6 +801,7 @@ async def test_dns_aaaa_records() -> None:
         await query_dns(
             connection_alpha, "beta.nord", string_to_compressed_ipv6(beta.ip_addresses)
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -850,6 +860,7 @@ async def test_dns_nickname() -> None:
         await query_dns(
             connection_beta, "yOKo.nord", string_to_compressed_ipv6(beta.ip_addresses)
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -948,6 +959,7 @@ async def test_dns_change_nickname() -> None:
 
         with pytest.raises(ProcessExecError):
             await query_dns(connection_beta, "ono.nord")
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -1019,6 +1031,7 @@ async def test_dns_wildcarded_records() -> None:
             "hisservice.johnny.nord",
             string_to_compressed_ipv6(alpha.ip_addresses),
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -1079,6 +1092,7 @@ async def test_dns_ttl_value() -> None:
         assert (
             actual_ttl_value == EXPECTED_TTL_VALUE
         ), f"dig stdout:\n{dig_stdout}\ndig stderr:\n{dig_stderr}"
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -1110,6 +1124,7 @@ async def test_dns_nickname_in_any_case() -> None:
         ]
 
         await asyncio.gather(*queries)
+        log_test_passed()
 
 
 def all_cases(name: str) -> List[str]:
@@ -1153,3 +1168,4 @@ async def test_dns_no_error_return_code() -> None:
         await client_alpha.wait_for_log(
             "Got an error response with NoError code for error-with-noerror-return-code.com., this should not happen so converting to ServFail"
         )
+        log_test_passed()
