@@ -2,12 +2,12 @@ mod wg_controller;
 
 use async_trait::async_trait;
 use telio_crypto::{PublicKey, SecretKey};
+#[cfg(feature = "enable_firewall")]
 use telio_firewall::firewall::{Firewall, StatefullFirewall};
 use telio_lana::init_lana;
-use telio_network_monitors::{
-    local_interfaces::SystemGetIfAddrs,
-    monitor::{LocalInterfacesObserver, NetworkMonitor},
-};
+#[cfg(feature = "enable_firewall")]
+use telio_network_monitors::monitor::LocalInterfacesObserver;
+use telio_network_monitors::{local_interfaces::SystemGetIfAddrs, monitor::NetworkMonitor};
 use telio_pq::PostQuantum;
 use telio_proto::{ConnectionError, Error as EnsError, ErrorNotificationService, HeartbeatMessage};
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
@@ -68,11 +68,14 @@ use wg::uapi::{self, PeerState};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     future::Future,
-    io::{self, Error as IoError},
+    io::Error as IoError,
     net::{IpAddr, Ipv4Addr},
     sync::{Arc, Once},
     time::Duration,
 };
+
+#[cfg(feature = "enable_firewall")]
+use std::io;
 
 use cfg_if::cfg_if;
 use futures::FutureExt;
@@ -329,6 +332,7 @@ pub struct Entities {
     dns: Arc<Mutex<DNS>>,
 
     // Internal firewall
+    #[cfg(feature = "enable_firewall")]
     firewall: Option<Arc<StatefullFirewall>>,
 
     // Entities for meshnet connections
@@ -1038,6 +1042,7 @@ impl Runtime {
         features: Features,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
+        #[cfg(feature = "enable_firewall")]
         let firewall = if let Some(feature_firewall) = features.firewall.as_ref() {
             Some(Arc::new(StatefullFirewall::new(
                 features.ipv6,
@@ -1047,10 +1052,15 @@ impl Runtime {
             None
         };
 
+        #[cfg(feature = "enable_firewall")]
         let firewall_process_inbound_callback = firewall.clone().map(|fw| {
             Arc::new(move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet))
                 as Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>
         });
+        #[cfg(not(feature = "enable_firewall"))]
+        let firewall_process_inbound_callback = None;
+
+        #[cfg(feature = "enable_firewall")]
         let firewall_process_outbound_callback = firewall.clone().map(|fw| {
             Arc::new(
                 move |peer: &[u8; 32], packet: &[u8], sink: &mut dyn io::Write| {
@@ -1058,6 +1068,10 @@ impl Runtime {
                 },
             ) as Arc<dyn Fn(&[u8; 32], &[u8], &mut dyn io::Write) -> bool + Send + Sync>
         });
+        #[cfg(not(feature = "enable_firewall"))]
+        let firewall_process_outbound_callback = None;
+
+        #[cfg(feature = "enable_firewall")]
         let firewall_reset_connections = if features
             .firewall
             .as_ref()
@@ -1072,8 +1086,12 @@ impl Runtime {
         } else {
             None
         };
+        #[cfg(not(feature = "enable_firewall"))]
+        let firewall_reset_connections = None;
 
         let network_monitor = NetworkMonitor::new(SystemGetIfAddrs).await?;
+
+        #[cfg(feature = "enable_firewall")]
         if let Some(firewall) = firewall.as_ref() {
             let firewall_observer_ptr: Arc<dyn LocalInterfacesObserver> = firewall.clone();
             network_monitor
@@ -1304,6 +1322,7 @@ impl Runtime {
             entities: Entities {
                 wireguard_interface: wireguard_interface.clone(),
                 dns,
+                #[cfg(feature = "enable_firewall")]
                 firewall,
                 meshnet: MeshnetState::LastState(Default::default()),
                 socket_pool,
@@ -2167,6 +2186,7 @@ impl Runtime {
     async fn disconnect_exit_node(&mut self, node_key: &PublicKey) -> Result {
         match self.requested_state.exit_node.as_ref() {
             Some(exit_node) if &exit_node.public_key == node_key => {
+                #[cfg(feature = "enable_firewall")]
                 if let Some(fw) = self.entities.firewall.as_mut() {
                     fw.remove_vpn_peer();
                 }
@@ -2784,13 +2804,13 @@ fn convert_connection_error(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use io::ErrorKind;
     use rstest::*;
     use std::net::Ipv6Addr;
     use telio_model::config::{Peer, PeerBase};
     use telio_model::features::FeatureDirect;
     use telio_sockets::native::NativeSocket;
     use telio_sockets::Protector;
+    use tokio::io::ErrorKind;
 
     fn build_peer_base(
         hostname: String,
@@ -3652,12 +3672,12 @@ mod tests {
     struct MakeInternalFailingProtector;
 
     impl Protector for MakeInternalFailingProtector {
-        fn make_external(&self, _socket: NativeSocket) -> io::Result<()> {
+        fn make_external(&self, _socket: NativeSocket) -> tokio::io::Result<()> {
             Ok(())
         }
 
-        fn make_internal(&self, _socket: NativeSocket) -> io::Result<()> {
-            Err(io::Error::from(ErrorKind::PermissionDenied))
+        fn make_internal(&self, _socket: NativeSocket) -> tokio::io::Result<()> {
+            Err(tokio::io::Error::from(ErrorKind::PermissionDenied))
         }
 
         fn clean(&self, _socket: NativeSocket) {}

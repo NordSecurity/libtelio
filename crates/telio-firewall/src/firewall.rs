@@ -213,9 +213,8 @@ impl StatefullFirewall {
         let lib_name = "libfirewall.dylib";
 
         #[cfg(target_os = "windows")]
-        let lib_name = "libfirewall.dll";
+        let lib_name = "firewall.dll";
 
-        //#[cfg(any(target_os = "linux", target_os = "android"))]
         #[cfg(not(any(
             target_os = "macos",
             target_os = "ios",
