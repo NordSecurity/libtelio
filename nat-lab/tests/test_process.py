@@ -5,6 +5,7 @@ from tests import config
 from tests.utils.connection import Connection, TargetOS, ConnectionTag
 from tests.utils.connection_util import new_connection_by_tag
 from tests.utils.process import ProcessExecError
+from tests.utils.testing import log_test_passed
 
 
 async def _get_running_process_list(connection: Connection) -> str:
@@ -37,6 +38,7 @@ async def test_process_execute_success(
         )
         await connection.create_process(command).execute()
         assert " ".join(command) not in await _get_running_process_list(connection)
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -57,6 +59,7 @@ async def test_process_execute_fail(connection_tag: ConnectionTag):
             await connection.create_process([command]).execute()
         assert e.value.cmd == [command]
         assert command not in await _get_running_process_list(connection)
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -94,6 +97,7 @@ async def test_process_run_success(
                 await asyncio.sleep(0.1)
             assert " ".join(ping_command) in await _get_running_process_list(connection)
         assert " ".join(ping_command) not in await _get_running_process_list(connection)
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -126,6 +130,7 @@ async def test_process_run_fail(connection_tag: ConnectionTag, command: list[str
         assert e.value.cmd == command
         assert e.value.returncode == 77
         assert " ".join(command) not in await _get_running_process_list(connection)
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -155,6 +160,7 @@ async def test_process_run_not_found(connection_tag: ConnectionTag):
                 await process.is_done()
         assert e.value.cmd == [command]
         assert command not in await _get_running_process_list(connection)
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -196,6 +202,7 @@ async def test_process_run_cancel(
                 )
                 raise asyncio.CancelledError
         assert " ".join(ping_command) not in await _get_running_process_list(connection)
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -237,3 +244,4 @@ async def test_process_run_general_exception(
                 )
                 raise Exception
         assert " ".join(ping_command) not in await _get_running_process_list(connection)
+        log_test_passed()

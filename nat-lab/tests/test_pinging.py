@@ -20,6 +20,7 @@ from tests.utils.connection_util import (
 )
 from tests.utils.logger import log
 from tests.utils.router import IPStack
+from tests.utils.testing import log_test_passed
 from typing import Tuple
 
 IP_STACKS = [
@@ -199,6 +200,7 @@ async def test_session_keeper(
             ),
             wait_for_conntracker(),
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -294,3 +296,4 @@ async def test_qos(
             ),
             wait_for_conntracker(),
         )
+        log_test_passed()

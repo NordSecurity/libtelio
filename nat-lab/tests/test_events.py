@@ -30,6 +30,7 @@ from tests.utils.connection_util import (
 )
 from tests.utils.ping import ping
 from tests.utils.router import IPStack
+from tests.utils.testing import log_test_passed
 from typing import Optional
 
 
@@ -211,6 +212,7 @@ async def test_event_content_meshnet(
             )
             is None
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -357,6 +359,7 @@ async def test_event_content_vpn_connection(
             )
             is None
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -497,6 +500,7 @@ async def test_event_content_exit_through_peer(
             )
             is None
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -759,3 +763,4 @@ async def test_event_content_meshnet_node_upgrade_direct(
 
         assert await alpha_conn_tracker.find_conntracker_violations() is None
         assert await beta_conn_tracker.find_conntracker_violations() is None
+        log_test_passed()

@@ -7,6 +7,7 @@ from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import new_connection_by_tag
 from tests.utils.logger import log
 from tests.utils.process import ProcessExecError
+from tests.utils.testing import log_test_passed
 
 
 @pytest.mark.windows
@@ -76,3 +77,4 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
             "WireGuard" in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
         )
         assert "Removed orphaned adapter" in client.get_stderr()
+        log_test_passed()
