@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_dns::DnsResolver;
+#[cfg(feature = "enable_firewall")]
 use telio_firewall::firewall::{Firewall, Permissions, FILE_SEND_PORT};
 use telio_model::constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
 use telio_model::features::Features;
@@ -135,12 +136,14 @@ pub async fn consolidate_wg_state(
     )
     .await?;
 
+    #[cfg(feature = "enable_firewall")]
     let starcast_pub_key = if let Some(starcast_vpeer) = entities.starcast_vpeer() {
         Some(starcast_vpeer.get_peer().await?.public_key)
     } else {
         None
     };
 
+    #[cfg(feature = "enable_firewall")]
     let dns_pubkey = entities
         .dns
         .as_ref()
@@ -150,13 +153,17 @@ pub async fn consolidate_wg_state(
         .as_ref()
         .map(|resolver| resolver.public_key());
 
-    consolidate_firewall(
-        requested_state,
-        &*entities.firewall,
-        starcast_pub_key,
-        dns_pubkey,
-    )
-    .await?;
+    #[cfg(feature = "enable_firewall")]
+    if let Some(firewall) = entities.firewall.as_ref() {
+        consolidate_firewall(
+            requested_state,
+            (*firewall).as_ref(),
+            starcast_pub_key,
+            dns_pubkey,
+        )
+        .await?;
+    }
+
     Ok(())
 }
 
@@ -614,6 +621,7 @@ fn check_allowed_ips_correctness(peers: &BTreeMap<PublicKey, RequestedPeer>) -> 
         .ok_or_else(|| Error::BadAllowedIps.into())
 }
 
+#[cfg(feature = "enable_firewall")]
 fn iter_peers(
     requested_state: &RequestedState,
 ) -> impl Iterator<Item = &telio_model::config::Peer> {
@@ -624,6 +632,7 @@ fn iter_peers(
         .flatten()
 }
 
+#[cfg(feature = "enable_firewall")]
 fn upsert_peer_whitelist<F: Firewall>(
     requested_state: &RequestedState,
     firewall: &F,
@@ -656,6 +665,7 @@ fn upsert_peer_whitelist<F: Firewall>(
     }
 }
 
+#[cfg(feature = "enable_firewall")]
 async fn consolidate_firewall<F: Firewall>(
     requested_state: &RequestedState,
     firewall: &F,
@@ -1538,6 +1548,7 @@ mod tests {
         requested_state
     }
 
+    #[cfg(feature = "enable_firewall")]
     fn expect_add_to_peer_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
         firewall
             .expect_add_to_peer_whitelist()
@@ -1546,6 +1557,7 @@ mod tests {
             .return_const(());
     }
 
+    #[cfg(feature = "enable_firewall")]
     fn expect_add_to_vpeer_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
         firewall
             .expect_add_to_peer_whitelist()
@@ -1559,6 +1571,7 @@ mod tests {
             .return_const(());
     }
 
+    #[cfg(feature = "enable_firewall")]
     fn expect_remove_from_peer_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
         for permission in Permissions::VALUES {
             firewall
@@ -1568,6 +1581,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "enable_firewall")]
     fn expect_add_to_port_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
         firewall
             .expect_add_to_port_whitelist()
@@ -1576,6 +1590,7 @@ mod tests {
             .return_const(());
     }
 
+    #[cfg(feature = "enable_firewall")]
     fn expect_remove_from_port_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
         firewall
             .expect_remove_from_port_whitelist()
@@ -1584,6 +1599,7 @@ mod tests {
             .return_const(());
     }
 
+    #[cfg(feature = "enable_firewall")]
     fn expect_get_peer_whitelist(firewall: &mut MockFirewall, pub_keys: Vec<PublicKey>) {
         firewall
             .expect_get_peer_whitelist()
@@ -1591,12 +1607,14 @@ mod tests {
             .returning(move |_| pub_keys.clone().into_iter().collect());
     }
 
+    #[cfg(feature = "enable_firewall")]
     fn expect_get_port_whitelist(firewall: &mut MockFirewall, pub_keys: Vec<PublicKey>) {
         firewall
             .expect_get_port_whitelist()
             .return_once(move || pub_keys.into_iter().map(|k| (k, FILE_SEND_PORT)).collect());
     }
 
+    #[cfg(feature = "enable_firewall")]
     #[tokio::test]
     async fn add_newly_requested_peers_to_firewall() {
         let mut firewall = MockFirewall::new();
@@ -1643,6 +1661,7 @@ mod tests {
         .unwrap();
     }
 
+    #[cfg(feature = "enable_firewall")]
     #[tokio::test]
     async fn update_permissions_for_requested_peers_in_firewall() {
         let mut firewall = MockFirewall::new();
@@ -1694,6 +1713,7 @@ mod tests {
         .unwrap();
     }
 
+    #[cfg(feature = "enable_firewall")]
     #[tokio::test]
     async fn add_vpn_exit_node_to_firewall() {
         let mut firewall = MockFirewall::new();
@@ -1730,6 +1750,7 @@ mod tests {
         .unwrap();
     }
 
+    #[cfg(feature = "enable_firewall")]
     #[tokio::test]
     async fn do_not_add_meshnet_exit_node_to_firewall_if_it_does_not_allow_incoming_connections() {
         let mut firewall = MockFirewall::new();
@@ -1761,6 +1782,7 @@ mod tests {
         .unwrap();
     }
 
+    #[cfg(feature = "enable_firewall")]
     #[tokio::test]
     async fn remove_meshnet_exit_node_from_firewall_if_it_does_not_allow_incoming_connections_anymore(
     ) {
