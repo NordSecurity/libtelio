@@ -94,15 +94,6 @@ pub struct LibfwAssociatedData {
     #[doc = " Associated data length"]
     pub associated_data_len: usize,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of LibfwAssociatedData"][::std::mem::size_of::<LibfwAssociatedData>() - 16usize];
-    ["Alignment of LibfwAssociatedData"][::std::mem::align_of::<LibfwAssociatedData>() - 8usize];
-    ["Offset of field: LibfwAssociatedData::associated_data"]
-        [::std::mem::offset_of!(LibfwAssociatedData, associated_data) - 0usize];
-    ["Offset of field: LibfwAssociatedData::associated_data_len"]
-        [::std::mem::offset_of!(LibfwAssociatedData, associated_data_len) - 8usize];
-};
 #[doc = " IP data\n"]
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -112,15 +103,6 @@ pub union LibfwIpData {
     #[doc = " Data for IPv6"]
     pub ipv6_bytes: [u8; 16usize],
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of LibfwIpData"][::std::mem::size_of::<LibfwIpData>() - 16usize];
-    ["Alignment of LibfwIpData"][::std::mem::align_of::<LibfwIpData>() - 1usize];
-    ["Offset of field: LibfwIpData::ipv4_bytes"]
-        [::std::mem::offset_of!(LibfwIpData, ipv4_bytes) - 0usize];
-    ["Offset of field: LibfwIpData::ipv6_bytes"]
-        [::std::mem::offset_of!(LibfwIpData, ipv6_bytes) - 0usize];
-};
 #[doc = " IP representation\n"]
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -130,15 +112,6 @@ pub struct LibfwIpAddr {
     #[doc = " Data for the IP packet"]
     pub ip_data: LibfwIpData,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of LibfwIpAddr"][::std::mem::size_of::<LibfwIpAddr>() - 17usize];
-    ["Alignment of LibfwIpAddr"][::std::mem::align_of::<LibfwIpAddr>() - 1usize];
-    ["Offset of field: LibfwIpAddr::ip_type"]
-        [::std::mem::offset_of!(LibfwIpAddr, ip_type) - 0usize];
-    ["Offset of field: LibfwIpAddr::ip_data"]
-        [::std::mem::offset_of!(LibfwIpAddr, ip_data) - 1usize];
-};
 #[doc = " Filter by subnet and port range\n"]
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -152,19 +125,6 @@ pub struct LibfwNetworkFilter {
     #[doc = " Maximum port accepted by the filter"]
     pub port_range_end: u16,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of LibfwNetworkFilter"][::std::mem::size_of::<LibfwNetworkFilter>() - 22usize];
-    ["Alignment of LibfwNetworkFilter"][::std::mem::align_of::<LibfwNetworkFilter>() - 2usize];
-    ["Offset of field: LibfwNetworkFilter::network_addr"]
-        [::std::mem::offset_of!(LibfwNetworkFilter, network_addr) - 0usize];
-    ["Offset of field: LibfwNetworkFilter::network_prefix"]
-        [::std::mem::offset_of!(LibfwNetworkFilter, network_prefix) - 17usize];
-    ["Offset of field: LibfwNetworkFilter::port_range_start"]
-        [::std::mem::offset_of!(LibfwNetworkFilter, port_range_start) - 18usize];
-    ["Offset of field: LibfwNetworkFilter::port_range_end"]
-        [::std::mem::offset_of!(LibfwNetworkFilter, port_range_end) - 20usize];
-};
 #[doc = " Data for the certain filter type\n"]
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -184,25 +144,6 @@ pub union LibfwFilterData {
     #[doc = " Checked ICMP types, only ICMP packets can match this filter\n Use when filter_type = LibfwFilterConntrackState"]
     pub icmp_type: u8,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of LibfwFilterData"][::std::mem::size_of::<LibfwFilterData>() - 24usize];
-    ["Alignment of LibfwFilterData"][::std::mem::align_of::<LibfwFilterData>() - 8usize];
-    ["Offset of field: LibfwFilterData::associated_data_filter"]
-        [::std::mem::offset_of!(LibfwFilterData, associated_data_filter) - 0usize];
-    ["Offset of field: LibfwFilterData::conntrack_state_filter"]
-        [::std::mem::offset_of!(LibfwFilterData, conntrack_state_filter) - 0usize];
-    ["Offset of field: LibfwFilterData::network_filter"]
-        [::std::mem::offset_of!(LibfwFilterData, network_filter) - 0usize];
-    ["Offset of field: LibfwFilterData::direction_filter"]
-        [::std::mem::offset_of!(LibfwFilterData, direction_filter) - 0usize];
-    ["Offset of field: LibfwFilterData::next_level_protocol"]
-        [::std::mem::offset_of!(LibfwFilterData, next_level_protocol) - 0usize];
-    ["Offset of field: LibfwFilterData::tcp_flags"]
-        [::std::mem::offset_of!(LibfwFilterData, tcp_flags) - 0usize];
-    ["Offset of field: LibfwFilterData::icmp_type"]
-        [::std::mem::offset_of!(LibfwFilterData, icmp_type) - 0usize];
-};
 #[doc = " Struct describing a single Libfw filter\n"]
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -214,16 +155,6 @@ pub struct LibfwFilter {
     #[doc = " Contains corresponding filter data"]
     pub filter: LibfwFilterData,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of LibfwFilter"][::std::mem::size_of::<LibfwFilter>() - 32usize];
-    ["Alignment of LibfwFilter"][::std::mem::align_of::<LibfwFilter>() - 8usize];
-    ["Offset of field: LibfwFilter::inverted"]
-        [::std::mem::offset_of!(LibfwFilter, inverted) - 0usize];
-    ["Offset of field: LibfwFilter::filter_type"]
-        [::std::mem::offset_of!(LibfwFilter, filter_type) - 1usize];
-    ["Offset of field: LibfwFilter::filter"][::std::mem::offset_of!(LibfwFilter, filter) - 8usize];
-};
 #[doc = " A definition of firewall rule it consists of filters which determine whether rule\n applies to packet being processed and action, which determins what to do with the packet"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -235,15 +166,6 @@ pub struct LibfwRule {
     #[doc = " Defines an action to be taken when filter matches packet. Generally either accept\n and stop processing rule chain or drop and stop processing rule chain.\n\n Should have one of the LIBFW_VERDICT_* values:\n  - LIBFW_VERDICT_ACCEPT - packet matching the rule will be accepted\n  - LIBFW_VERDICT_DROP - packet matching the rule will be dropped\n  - LIBFW_VERDICT_REJECT - packet matching the rule should be dropped and reject\n    packet will be sent to the packet source"]
     pub action: u8,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of LibfwRule"][::std::mem::size_of::<LibfwRule>() - 24usize];
-    ["Alignment of LibfwRule"][::std::mem::align_of::<LibfwRule>() - 8usize];
-    ["Offset of field: LibfwRule::filters"][::std::mem::offset_of!(LibfwRule, filters) - 0usize];
-    ["Offset of field: LibfwRule::filter_count"]
-        [::std::mem::offset_of!(LibfwRule, filter_count) - 8usize];
-    ["Offset of field: LibfwRule::action"][::std::mem::offset_of!(LibfwRule, action) - 16usize];
-};
 #[doc = " A chain of rules.\n\n Rules are processed in order specified in the chain.\n If _some_ rule in the chain matches and a verdict is\n determined - the chain processing terminated."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -253,14 +175,6 @@ pub struct LibfwChain {
     #[doc = " List of the rules"]
     pub rules: *const LibfwRule,
 }
-#[allow(clippy::unnecessary_operation, clippy::identity_op)]
-const _: () = {
-    ["Size of LibfwChain"][::std::mem::size_of::<LibfwChain>() - 16usize];
-    ["Alignment of LibfwChain"][::std::mem::align_of::<LibfwChain>() - 8usize];
-    ["Offset of field: LibfwChain::rule_count"]
-        [::std::mem::offset_of!(LibfwChain, rule_count) - 0usize];
-    ["Offset of field: LibfwChain::rules"][::std::mem::offset_of!(LibfwChain, rules) - 8usize];
-};
 #[doc = " A callback type to enable libfirewall to\n inject packets into VPN tunnel interface\n\n Normally only called when stale connection\n closing is triggered.\n\n @param data - The same pointer as passed in @ref libfw_init. It is meant to\n              provide facilities for callback implementors to add context\n              information to the callback itself. If integrators of libfirewall\n              does not need context information - `null` may be passed in\n              @ref libfw_init\n @param packet - byte array of IP packet\n @param packet_len - length in bytes of IP packet in @param packet\n @param associated_data - if associated data was passed in inbound\n                          and outbound packet processing function\n                          this field will provide the same associated\n                          data. Inteded to be used as peer identifier\n                          in case of nordlynx\n @param associated_data_len - the length in bytes of associated data\n"]
 pub type LibfwInjectPacketCallback = ::std::option::Option<
     unsafe extern "C" fn(
