@@ -19,7 +19,7 @@ def log_test_passed() -> None:
     # Use the full test ID from pytest (including file path) to ensure uniqueness
     # PYTEST_CURRENT_TEST format: "tests/path/test_file.py::test_name[params] (call)"
     full_test_id = os.environ.get("PYTEST_CURRENT_TEST", "unknown").split(" (")[0]
-    log.info(f"TEST CASE PASSED: {full_test_id}")
+    log.info("TEST CASE PASSED: %s", full_test_id)
 
 
 def unpack_optional(opt: Optional[T]) -> T:
