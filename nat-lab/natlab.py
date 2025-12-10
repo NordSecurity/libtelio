@@ -40,7 +40,7 @@ def run_command_with_output(command, hide_output=False):
     return result
 
 
-def start(skip_keywords=None, force_recreate=False):
+def start(skip_keywords=None, force_recreate=False, services_to_start=None):
     if skip_keywords is None:
         skip_keywords = []
 
@@ -93,9 +93,16 @@ def start(skip_keywords=None, force_recreate=False):
             )
         )
 
-        services_to_start = [
-            service for service in all_services if service not in exclude_services
-        ]
+        if services_to_start is not None:
+            services_to_start = [
+                service
+                for service in services_to_start
+                if service not in exclude_services
+            ]
+        else:
+            services_to_start = [
+                service for service in all_services if service not in exclude_services
+            ]
 
         if exclude_services:
             print(f"Skipping services: {sorted(exclude_services)}")
@@ -112,9 +119,9 @@ def start(skip_keywords=None, force_recreate=False):
             command, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
         )
     except subprocess.CalledProcessError:
-        manage_containers(exclude_services)
+        manage_containers(services_to_start)
     else:
-        manage_containers(exclude_services)
+        manage_containers(services_to_start)
 
 
 def stop():
@@ -160,19 +167,7 @@ def quick_restart_container(names: List[str], env=None):
         )
 
 
-def check_containers(exclude_containers=None, check_only=False) -> List[str]:
-    if exclude_containers is None:
-        exclude_containers = []
-
-    services = run_command_with_output(
-        ["docker", "compose", "config", "--services"], hide_output=True
-    )
-    services = [service.strip() for service in services.splitlines()]
-
-    services_to_check = [
-        service for service in services if service not in exclude_containers
-    ]
-
+def check_containers(services_to_start, check_only=False) -> List[str]:
     docker_status = run_command_with_output(
         ["docker", "ps", "--filter", "status=running"]
     )
@@ -180,7 +175,7 @@ def check_containers(exclude_containers=None, check_only=False) -> List[str]:
 
     missing_services: List[str] = []
 
-    for service in services_to_check:
+    for service in services_to_start:
         if not find_container(service, docker_status):
             missing_services.append(service)
             continue
@@ -224,11 +219,11 @@ def check_containers(exclude_containers=None, check_only=False) -> List[str]:
     return missing_services
 
 
-def manage_containers(exclude_containers=None) -> None:
+def manage_containers(services_to_start) -> None:
     restart_attempts = 0
     missing = []
     while restart_attempts < NATLAB_CONTAINER_RESTART_ATTEMPTS:
-        missing = check_containers(exclude_containers, False)
+        missing = check_containers(services_to_start, False)
         if missing:
             print("Missing services: ", missing)
             quick_restart_container(
@@ -327,6 +322,10 @@ def recreate_all():
 
 
 def main():
+    all_services = run_command_with_output(
+        ["docker", "compose", "config", "--services"], hide_output=True
+    )
+    valid_services = [service.strip() for service in all_services.splitlines()]
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -373,6 +372,13 @@ def main():
         help="Skip all heavy containers (windows, mac, fullcone and nlx)",
     )
 
+    start_parser.add_argument(
+        "--services-to-start",
+        nargs="+",
+        choices=valid_services,
+        help="List of services to start",
+    )
+
     subparsers.add_parser("restart", help="Restart (already existing) containers")
     subparsers.add_parser("recreate", help="Recreate (already existing) containers")
     subparsers.add_parser("recreate-all", help="Recreate all containers")
@@ -410,7 +416,11 @@ def main():
                 skip_keywords.add("nlx")
             if args.skip_openwrt:
                 skip_keywords.add("openwrt")
-        start(skip_keywords)
+        if args.services_to_start:
+            services_to_start = args.services_to_start
+            start(skip_keywords, services_to_start=services_to_start)
+        else:
+            start(skip_keywords)
     elif args.command == "restart":
         restart()
     elif args.command == "recreate":
@@ -422,7 +432,7 @@ def main():
     elif args.command == "kill":
         kill()
     elif args.command == "check-containers":
-        check_containers(check_only=True)
+        check_containers(services_to_start=valid_services, check_only=True)
 
 
 if __name__ == "__main__":

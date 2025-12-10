@@ -79,6 +79,11 @@ def main() -> int:
         action="store_true",
         help="Use libtelio debug build binaries",
     )
+    parser.add_argument(
+        "--perf-tests",
+        action="store_true",
+        help="Run performance tests instead of functional tests",
+    )
     args = parser.parse_args()
 
     if not args.no_verify_setup_correctness:
@@ -146,6 +151,9 @@ def main() -> int:
         ]
 
         pytest_cmd += get_pytest_arguments(args)
+
+        test_dir = "performance_tests" if args.perf_tests else "tests"
+        pytest_cmd.append(test_dir)
 
         run_command(pytest_cmd)
 
