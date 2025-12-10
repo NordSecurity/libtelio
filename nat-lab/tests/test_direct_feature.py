@@ -2,6 +2,7 @@ import pytest
 from contextlib import AsyncExitStack
 from tests.helpers import setup_mesh_nodes, SetupParameters
 from tests.utils.bindings import features_with_endpoint_providers, EndpointProvider
+from tests.utils.testing import log_test_passed
 from typing import List
 
 ALL_DIRECT_FEATURES = [
@@ -23,6 +24,7 @@ async def test_default_direct_features() -> None:
         assert "UpnpEndpointProvider" not in started_tasks
         assert "LocalInterfacesEndpointProvider" in started_tasks
         assert "StunEndpointProvider" in started_tasks
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -40,6 +42,7 @@ async def test_enable_all_direct_features() -> None:
         assert "UpnpEndpointProvider" in started_tasks
         assert "LocalInterfacesEndpointProvider" in started_tasks
         assert "StunEndpointProvider" in started_tasks
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -57,3 +60,4 @@ async def test_check_features_with_empty_direct_providers() -> None:
         assert "UpnpEndpointProvider" not in started_tasks
         assert "LocalInterfacesEndpointProvider" not in started_tasks
         assert "StunEndpointProvider" not in started_tasks
+        log_test_passed()

@@ -20,6 +20,7 @@ from tests.utils.logger import log
 from tests.utils.netcat import NetCatServer, NetCatClient
 from tests.utils.ping import ping
 from tests.utils.router import IPProto, IPStack
+from tests.utils.testing import log_test_passed
 from typing import Tuple, Optional
 
 
@@ -156,6 +157,7 @@ async def test_mesh_firewall_successful_passthrough(
                     testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
                     15,
                 )
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -247,6 +249,7 @@ async def test_mesh_firewall_reject_packet(
                     testing.unpack_optional(alpha.get_ip_address(IPProto.IPv6)),
                     15,
                 )
+        log_test_passed()
 
 
 # This test uses 'stun' and our stun client does not IPv6
@@ -358,6 +361,7 @@ async def test_blocking_incoming_connections_from_exit_node() -> None:
 
         (ip_alpha, ip_exit_node) = await get_external_ips()
         assert ip_alpha == ip_exit_node
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -493,6 +497,7 @@ async def test_mesh_firewall_file_share_port(
                         await asyncio.wait_for(listener.connection_received(), 5)
             log.info("Teardown client")
         log.info("Teardown server")
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -595,6 +600,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
             # if everything is correct -> conntrack should show LAST_ACK -> TIME_WAIT
             # if something goes wrong, it will be stuck at LAST_ACK state
             await conntrack.wait_for_no_violations()
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -698,3 +704,4 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
                 # if everything is correct -> conntrack should show LAST_ACK -> TIME_WAIT
                 # if something goes wrong, it will be stuck at LAST_ACK state
                 await conntrack.wait_for_no_violations()
+        log_test_passed()

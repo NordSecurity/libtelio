@@ -16,6 +16,7 @@ from tests.utils.bindings import (
 )
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
+from tests.utils.testing import log_test_passed
 from typing import cast
 
 ENS_PORT = 993
@@ -139,6 +140,7 @@ async def test_ens(
         )
         await client_alpha.wait_for_log(additional_info)
         await client_alpha.wait_for_log(fingerprint)
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -257,6 +259,7 @@ async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
                 await client_alpha.wait_for_log(additional_info)
         await client_alpha.wait_for_log(fingerprint)
         await client_alpha.wait_for_log("InvalidCertificate(UnknownIssuer)")
+        log_test_passed()
 
 
 async def trigger_connection_error(vpn_ip, error_code, additional_info):
@@ -396,3 +399,4 @@ async def test_ens_not_working(
             alpha.ip_addresses[0],
             vpn_conf.server_conf,
         )
+        log_test_passed()

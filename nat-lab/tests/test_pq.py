@@ -14,6 +14,7 @@ from tests.utils.connection_util import (
 )
 from tests.utils.dns import query_dns
 from tests.utils.ping import ping
+from tests.utils.testing import log_test_passed
 
 EMPTY_PRESHARED_KEY_SLOT = "(none)"
 
@@ -139,6 +140,7 @@ async def test_pq_vpn_connection(
             client_conn,
             client_alpha,
         )
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -244,6 +246,7 @@ async def test_pq_vpn_rekey(
         ), f"wrong public IP when connected to VPN {ip}"
 
         await ping(client_conn, config.PHOTO_ALBUM_IP)
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -338,6 +341,7 @@ async def test_dns_with_pq(
 
         # Expect this to work as well after the secret key change
         await query_dns(client_conn, "google.com")
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -414,6 +418,7 @@ async def test_pq_vpn_silent_pq_upgrader(
         # now connect to a good behaving PQ server
         await _connect_vpn_pq(client_conn, client)
         await ping(client_conn, config.PHOTO_ALBUM_IP)
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -470,6 +475,7 @@ async def test_pq_vpn_upgrade_from_non_pq(
 
         preshared = await read_preshared_key_slot(nlx_conn)
         assert preshared != EMPTY_PRESHARED_KEY_SLOT
+        log_test_passed()
 
 
 # Regression test for LLT-5884
@@ -571,6 +577,7 @@ async def test_pq_vpn_handshake_after_nonet(
         )
 
         await ping(client_conn, config.PHOTO_ALBUM_IP)
+        log_test_passed()
 
 
 @pytest.mark.timeout(240)
@@ -625,3 +632,4 @@ async def test_pq_no_false_restart(
         assert (
             occurrences == 0
         ), "Found PQ restart log even though PQ should not have been restarted"
+        log_test_passed()

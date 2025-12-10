@@ -26,6 +26,7 @@ from tests.utils.logger import log
 from tests.utils.output_notifier import OutputNotifier
 from tests.utils.ping import ping
 from tests.utils.router import IPProto, IPStack, new_router
+from tests.utils.testing import log_test_passed
 from typing import Any, List, Dict
 
 STUN_PROVIDER = [EndpointProvider.STUN]
@@ -203,3 +204,4 @@ async def test_connect_different_telio_version_through_relay(
 
         assert await alpha_conn_tracker.find_conntracker_violations() is None
         assert await beta_conn_tracker.find_conntracker_violations() is None
+        log_test_passed()

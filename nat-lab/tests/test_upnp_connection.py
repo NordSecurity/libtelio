@@ -17,6 +17,7 @@ from tests.utils.logger import log
 from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
 from tests.utils.router import new_router, IPStack
+from tests.utils.testing import log_test_passed
 
 
 async def execute_upnpc_with_retry(connection, timeout=10.0):
@@ -123,6 +124,7 @@ async def test_upnp_route_removed(
         beta_client.allow_errors(
             ["telio_proxy::proxy.*Unable to send. WG Address not available"]
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -209,6 +211,7 @@ async def test_upnp_without_support(
 
         await ping(beta_conn_mgr.connection, alpha_node.ip_addresses[0])
         await ping(alpha_conn_mgr.connection, beta_node.ip_addresses[0])
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -284,3 +287,4 @@ async def test_upnp_port_lease_duration(
         # upnpn mappings should have expired
         upnpc_cmd = await execute_upnpc_with_retry(alpha_conn)
         assert re.search("^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE) is None
+        log_test_passed()

@@ -5,6 +5,7 @@ from tests.helpers import SetupParameters, setup_mesh_nodes
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.netcat import NetCatServer, NetCatClient
+from tests.utils.testing import log_test_passed
 
 TEST_STRING = "test_data"
 PORT = 12345
@@ -59,3 +60,4 @@ async def test_netcat(setup_params: list[SetupParameters], udp: bool) -> None:
                 await client.send_data(TEST_STRING)
                 server_data = await server.receive_data()
                 assert TEST_STRING in server_data
+        log_test_passed()
