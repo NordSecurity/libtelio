@@ -26,10 +26,16 @@ async def copy_binaries(
     DIST_PATH = f"dist/darwin/macos/{os.getenv('TELIO_BIN_PROFILE')}/x86_64/"
     LOCAL_UNIFFI_PATH = "nat-lab/tests/uniffi/"
     LOCAL_BIN_DIR = "nat-lab/bin/"
+    NATLAB_CWD = "/private/var/root"
     files_to_copy = [
         (
             f"{DIST_PATH}libtelio.dylib",
             f"{VM_UNIFFI_DIR}libtelio.dylib",
+            True,
+        ),
+        (
+            f"{DIST_PATH}libfirewall.dylib",
+            f"{NATLAB_CWD}/libfirewall.dylib",
             True,
         ),
         (

@@ -1044,6 +1044,10 @@ impl Runtime {
     ) -> Result<Self> {
         #[cfg(feature = "enable_firewall")]
         let firewall = StatefullFirewall::new(features.ipv6, &features.firewall)
+            .map_err(|err| {
+                telio_log_warn!("Failed to create StatefullFirewall: {:?}", err);
+                err
+            })
             .ok()
             .map(Arc::new);
 
