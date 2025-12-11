@@ -249,13 +249,10 @@ WG_SERVER_2: Dict[str, Union[str, int]] = {
 }
 
 # nlx-01
+# Private and public keys are set during VPN preparation
 NLX_SERVER: Dict[str, Union[str, int]] = {
     "ipv4": "10.0.100.51",
     "port": 1023,  # Select some port in non-ephemeral port range to avoid clashes
-    **dict(
-        (key, str(val))
-        for key, val in zip(("private_key", "public_key"), Key.key_pair())
-    ),
     "container": "nat-lab-nlx-01-1",
     "type": "nordlynx",
 }

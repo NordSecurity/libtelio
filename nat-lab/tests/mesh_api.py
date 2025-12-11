@@ -386,56 +386,82 @@ class API:
                 f"[Peer]\nPublicKey = {node.public_key}\nAllowedIPs = {allowed_ips}\n\n"
             )
 
+        if server_config.get("type") == "nordlynx":
+            if "public_key" in server_config and "private_key" in server_config:
+                return
+
+            if not connections:
+                return
+
+            container = server_config.get("container")
+
+            for conn in connections:
+                if conn.tag != ConnectionTag.VM_LINUX_NLX_1:
+                    continue
+
+                get_pub_cmd = (
+                    'nlx | awk \'$1=="public" && $2=="key:" {print $3; exit}\''
+                )
+                proc = await conn.create_process(["bash", "-lc", get_pub_cmd]).execute()
+                pub_key = proc.get_stdout().strip()
+
+                if not pub_key:
+                    raise RuntimeError(
+                        f"Could not obtain NordLynx public key from nlx on {container}"
+                    )
+                server_config["public_key"] = pub_key
+                log.debug(
+                    "NordLynx public key for %s: %s",
+                    server_config.get("container"),
+                    pub_key,
+                )
+
+                get_priv_cmd = (
+                    "nlx showconf nordlynx0 | "
+                    'awk \'$1=="PrivateKey" && $2=="=" {print $3; exit}\''
+                )
+
+                proc_priv = await conn.create_process(
+                    ["bash", "-lc", get_priv_cmd]
+                ).execute()
+                priv_key = proc_priv.get_stdout().strip()
+
+                if not priv_key:
+                    raise RuntimeError(
+                        f"Could not obtain NordLynx private key from nlx showconf on {container}"
+                    )
+
+                server_config["private_key"] = priv_key
+
+            return
+
         wg_conf = (
             f"[Interface]\nPrivateKey = {server_config['private_key']}\nListenPort ="
             f" {server_config['port']}\nAddress = 100.64.0.1/10\n\n"
         )
 
         for node in node_list:
-            if "type" in server_config and server_config["type"] == "nordlynx":
-                if connections:
-                    for conn in connections:
-                        if conn.tag != ConnectionTag.VM_LINUX_NLX_1:
-                            continue
-                        priv_key = server_config["private_key"]
-                        commands = [
-                            f"echo {priv_key} > /etc/nordlynx/private.key",
-                            f"nlx set nordlynx0 private-key /etc/nordlynx/private.key && nlx set nordlynx0 listen-port {server_config['port']}",
-                        ]
+            wg_conf += generate_peer_config(
+                node, ", ".join(cls.get_allowed_ip_list(node.ip_addresses))
+            )
 
-                        for cmd in commands:
-                            proc = await conn.create_process(
-                                ["bash", "-c", cmd]
-                            ).execute()
-                            log.debug(
-                                "Executing %s on %s with result stdout: %s / stderr: %s",
-                                cmd,
-                                server_config["container"],
-                                proc.get_stdout(),
-                                proc.get_stderr(),
-                            )
-
-            else:
-                wg_conf += generate_peer_config(
-                    node, ", ".join(cls.get_allowed_ip_list(node.ip_addresses))
-                )
-                cmd = (
-                    f"docker exec --privileged {server_config['container']} bash -c"
-                    f' \'echo "{wg_conf}" > /etc/wireguard/wg0.conf; wg-quick down'
-                    " /etc/wireguard/wg0.conf; wg-quick up /etc/wireguard/wg0.conf'"
-                )
-                ret = subprocess.run(
-                    cmd,
-                    shell=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                log.debug(
-                    "Executing %s on %s with result %s",
-                    cmd,
-                    server_config["container"],
-                    ret,
-                )
+        cmd = (
+            f"docker exec --privileged {server_config['container']} bash -c"
+            f' \'echo "{wg_conf}" > /etc/wireguard/wg0.conf; wg-quick down'
+            " /etc/wireguard/wg0.conf; wg-quick up /etc/wireguard/wg0.conf'"
+        )
+        ret = subprocess.run(
+            cmd,
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        log.debug(
+            "Executing %s on %s with result %s",
+            cmd,
+            server_config["container"],
+            ret,
+        )
 
     def config_dynamic_nodes(
         self, node_configs: List[Tuple[bool, IPStack]]

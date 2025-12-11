@@ -464,6 +464,10 @@ class Client:
     def get_proxy_port(self):
         return self._proxy_port
 
+    @property
+    def node(self) -> Node:
+        return self._node
+
     @asynccontextmanager
     async def run(
         self,
