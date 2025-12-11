@@ -1,9 +1,11 @@
+import aiohttp
 import asyncio
 import itertools
 import json
 import pytest
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
+from http import HTTPStatus
 from ipaddress import AddressValueError, IPv6Address
 from itertools import product, zip_longest
 from tests.mesh_api import Node, API
@@ -31,7 +33,7 @@ from tests.utils.ping import ping
 from tests.utils.process import Process
 from tests.utils.router import IPStack
 from tests.utils.tcpdump import make_tcpdump
-from typing import Any, AsyncIterator, List, Tuple, Optional, Union
+from typing import Any, AsyncIterator, List, Tuple, Optional, Union, Dict
 from uuid import UUID
 
 
@@ -634,3 +636,35 @@ async def wait_for_log_line(log_process: Process) -> None:
         if log_line:
             log.info("Expected log line captured: %s ", log_line)
             return
+
+
+async def request_json(method: str, url: str, **kwargs: Any) -> Dict[str, Any]:
+    """
+    Perform an HTTP request and parse the response body as JSON.
+
+    Args:
+        method:
+            HTTP method name, e.g. "GET", "POST", "PUT".
+        url:
+            Absolute URL to send the request to.
+        **kwargs:
+            Additional keyword arguments passed directly to `aiohttp.ClientSession`'s
+            HTTP method (e.g. `headers=...`, `json=...`, `params=...`, `timeout=...`).
+
+    Returns:
+        dict
+            The decoded JSON object from the response body.
+
+    Raises:
+        RuntimeError
+            If the response status is not 200 OK, or if the body cannot be parsed as JSON.
+    """
+    async with aiohttp.ClientSession() as session:
+        http_method = getattr(session, method.lower())
+        async with http_method(url, **kwargs) as response:
+            if response.status != HTTPStatus.OK:
+                body = await response.text()
+                raise RuntimeError(
+                    f"{method} {url} failed with status {response.status}: {body}"
+                )
+            return await response.json()

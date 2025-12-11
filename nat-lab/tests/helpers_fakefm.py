@@ -1,24 +1,21 @@
 import asyncio
-import json
+from tests.helpers import request_json
 from tests.utils.connection import Connection
 from tests.utils.process import ProcessExecError
 from typing import Any
 from urllib.parse import quote
 
-FAKEFM_HOST_DEFAULT = "127.0.0.1"
 FAKEFM_PORT_DEFAULT = 7777
 
 SYSTEMCTL_UNIT_NOT_ACTIVE = 3  # LSB return code: "program is not running"
 
 
-async def stop_service(nlx_conn: Connection, service: str) -> None:
+async def stop_service(conn: Connection, service: str) -> None:
 
-    await nlx_conn.create_process(["systemctl", "stop", service]).execute()
+    await conn.create_process(["systemctl", "stop", service]).execute()
 
     try:
-        proc = await nlx_conn.create_process(
-            ["systemctl", "is-active", service]
-        ).execute()
+        proc = await conn.create_process(["systemctl", "is-active", service]).execute()
         state = proc.get_stdout().strip()
 
         if state != "inactive":
@@ -35,7 +32,7 @@ async def stop_service(nlx_conn: Connection, service: str) -> None:
 
 
 async def wait_for_service_active(
-    nlx_conn: Connection,
+    conn: Connection,
     service: str,
     timeout: float = 10.0,
 ) -> None:
@@ -45,7 +42,7 @@ async def wait_for_service_active(
 
     while True:
         try:
-            proc = await nlx_conn.create_process(
+            proc = await conn.create_process(
                 ["systemctl", "is-active", service]
             ).execute()
             state = proc.get_stdout().strip()
@@ -67,10 +64,10 @@ async def wait_for_service_active(
 
 
 async def start_service(
-    nlx_conn: Connection,
+    conn: Connection,
     service: str,
 ) -> None:
-    await nlx_conn.create_process(["systemctl", "start", service]).execute()
+    await conn.create_process(["systemctl", "start", service]).execute()
 
 
 class FakeFmError(RuntimeError):
@@ -78,8 +75,7 @@ class FakeFmError(RuntimeError):
 
 
 class FakeFmClient:
-    def __init__(self, nlx_conn: Connection, host: str, port: int) -> None:
-        self._nlx_conn = nlx_conn
+    def __init__(self, host: str, port: int) -> None:
         self.host = host
         self.port = port
         self.address = f"http://{self.host}:{self.port}"
@@ -87,42 +83,22 @@ class FakeFmClient:
     @classmethod
     async def create(
         cls,
-        nlx_conn: Connection,
-        host: str = FAKEFM_HOST_DEFAULT,
+        host: str,
         port: int = FAKEFM_PORT_DEFAULT,
     ) -> "FakeFmClient":
-        inst = cls(nlx_conn, host, port)
+        inst = cls(host, port)
         await inst._api_call("help")  # Verify that api works
         return inst
 
     async def _api_call(self, endpoint: str) -> dict[str, Any]:
         url = f"{self.address}/{endpoint}"
-        cmd = [
-            "curl",
-            url,
-        ]
-
-        proc = self._nlx_conn.create_process(cmd)
         try:
-            result = await proc.execute()
-            stdout = result.get_stdout()
-        except ProcessExecError as e:
-            print(e.stderr)
-            print(e.stdout)
-            raise e
+            data = await request_json("GET", url)
+        except Exception as exc:
+            raise FakeFmError(f"FakeFm API call '{endpoint}' failed: {exc}") from exc
 
-        assert (
-            stdout.strip()
-        ), f"FakeFm API returned empty response for endpoint {endpoint}"
-
-        try:
-            data = json.loads(stdout)
-        except json.JSONDecodeError as exc:
-            raise FakeFmError(
-                f"FakeFm API returned invalid JSON for endpoint {endpoint}: {stdout!r}"
-            ) from exc
-
-        assert data.get("success"), f"FakeFm API call '{endpoint}' failed: {data!r}"
+        if not data.get("success"):
+            raise FakeFmError(f"FakeFm API call '{endpoint}' failed: {data!r}")
 
         return data
 

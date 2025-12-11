@@ -130,7 +130,7 @@ async def test_ens_server_maintenance(
             nlx_server_public_key,
         )
 
-        async with ens_maintenance(nlx_conn):
+        async with ens_maintenance(nlx_conn, nlx_server_ip):
             await client_alpha.wait_for_state_peer(
                 nlx_server_public_key,
                 [NodeState.CONNECTED],
@@ -337,7 +337,7 @@ async def test_ens_connection_limit_reached(
         await stop_service(nlx_conn, "fakefm.service")
         await start_service(nlx_conn, "fakefm_dynamic_api.service")
 
-        fakefm = await FakeFmClient.create(nlx_conn)
+        fakefm = await FakeFmClient.create(cast(str, vpn_conf.server_conf["ipv4"]))
         await fakefm.set_users_limits(1)  # Set user limits to 1
 
         try:
@@ -610,18 +610,21 @@ async def test_ens_connection_error_unknown(
     public_ip: str,
 ) -> None:
     vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
-    fingerprint = await get_grpc_tls_fingerprint()
-    root_certificate_b64 = await get_grpc_tls_root_certificate(
-        str(vpn_conf.server_conf["ipv4"])
-    )
-    root_certificate: bytes = base64.b64decode(root_certificate_b64)
+    vpn_ip = str(vpn_conf.server_conf["ipv4"])
+    vpn_port = cast(int, vpn_conf.server_conf["port"])
+    vpn_public_key = str(vpn_conf.server_conf["public_key"])
+    vpn_private_key = str(vpn_conf.server_conf["private_key"])
 
     error_code = VpnConnectionError.UNKNOWN
 
+    fingerprint = await get_grpc_tls_fingerprint(vpn_ip)
+    root_certificate_b64 = await get_grpc_tls_root_certificate(vpn_ip)
+    root_certificate: bytes = base64.b64decode(root_certificate_b64)
+
     async with AsyncExitStack() as exit_stack:
         await set_vpn_server_private_key(
-            vpn_conf.server_conf["ipv4"],
-            vpn_conf.server_conf["private_key"],
+            vpn_ip,
+            vpn_private_key,
         )
 
         alpha_setup_params.connection_tracker_config = (
@@ -653,15 +656,13 @@ async def test_ens_connection_error_unknown(
         await setup_connections(exit_stack, [vpn_conf.conn_tag])
 
         await client_alpha.connect_to_vpn(
-            cast(str, vpn_conf.server_conf["ipv4"]),
-            cast(int, vpn_conf.server_conf["port"]),
-            cast(str, vpn_conf.server_conf["public_key"]),
+            vpn_ip,
+            vpn_port,
+            vpn_public_key,
         )
 
         additional_info = "some additional info"
-        await trigger_connection_error(
-            vpn_conf.server_conf["ipv4"], error_code.value, additional_info
-        )
+        await trigger_connection_error(vpn_ip, error_code.value, additional_info)
         await client_alpha.wait_for_state_peer(
             vpn_conf.server_conf["public_key"],
             [NodeState.CONNECTED],
@@ -727,7 +728,9 @@ async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
             new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1)
         )
         fingerprint = await get_grpc_tls_fingerprint_from_server(nlx_conn)
-        root_certificate = await generate_incorrect_certificate()
+        root_certificate = await generate_incorrect_certificate(
+            str(config.WG_SERVER["ipv4"])
+        )  # take incorrect certificate from WG server
 
         alpha_setup_params.connection_tracker_config = (
             generate_connection_tracker_config(

@@ -1,20 +1,15 @@
-import aiohttp
 import base64
 import hashlib
-import json
 from contextlib import asynccontextmanager
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
-from http import HTTPStatus
-from tests import config
+from tests.helpers import request_json
 from tests.helpers_fakefm import wait_for_service_active
-from tests.helpers_vpn import VpnConfig
-from tests.utils.connection import Connection, ConnectionTag
-from typing import List, Any, Dict, cast
+from tests.utils.connection import Connection
+from typing import List, Any, Dict
 
 CERT_PATH = "/etc/ca-certificates/server-cert.pem.test"
-ENS_INFO_ADDRESS = "127.0.0.1"
-ENS_NS_INFO_PORT = "6969"
+ENS_INFO_PORT = "6969"
 ENS_INFO_TOKEN = "elephant"
 
 JsonDict = Dict[str, Any]
@@ -23,8 +18,8 @@ JsonDict = Dict[str, Any]
 # Real ENS helpers
 
 
-async def _read_remote_file(nlx_conn: Connection, path: str) -> str:
-    proc = await nlx_conn.create_process(["cat", path]).execute()
+async def _read_remote_file(conn: Connection, path: str) -> str:
+    proc = await conn.create_process(["cat", path]).execute()
     return proc.get_stdout()
 
 
@@ -61,10 +56,10 @@ def _find_root_cert(certs: List[x509.Certificate]) -> x509.Certificate:
 
 
 async def get_grpc_tls_fingerprint_from_server(
-    nlx_conn: Connection,
+    conn: Connection,
     cert_path: str = CERT_PATH,
 ) -> str:
-    pem = await _read_remote_file(nlx_conn, cert_path)
+    pem = await _read_remote_file(conn, cert_path)
     certs = _load_pem_chain(pem)
 
     leaf_cert = certs[0]
@@ -74,10 +69,10 @@ async def get_grpc_tls_fingerprint_from_server(
 
 
 async def get_grpc_tls_root_certificate_from_server(
-    nlx_conn: Connection,
+    conn: Connection,
     cert_path: str = CERT_PATH,
 ) -> str:
-    pem = await _read_remote_file(nlx_conn, cert_path)
+    pem = await _read_remote_file(conn, cert_path)
     certs = _load_pem_chain(pem)
 
     root_cert = _find_root_cert(certs)
@@ -87,29 +82,19 @@ async def get_grpc_tls_root_certificate_from_server(
     return encoded
 
 
-async def _ens_call_api(
-    nlx_conn: Connection,
-    endpoint: str,
-) -> Any:
-    url = f"http://{ENS_INFO_ADDRESS}:{ENS_NS_INFO_PORT}/api/v1/{endpoint}"
-    cmd = [
-        "curl",
-        "-H",
-        f"Authorization: Bearer {ENS_INFO_TOKEN}",
-        url,
-    ]
-
-    proc = await nlx_conn.create_process(cmd).execute()
-    output = proc.get_stdout()
-
-    assert output.strip(), f"NS api returned empty response for endpoint {endpoint}"
-
-    return json.loads(output)
+async def _ens_call_api(vpn_ip: str, endpoint: str) -> Any:
+    url = f"http://{vpn_ip}:{ENS_INFO_PORT}/api/v1/{endpoint}"
+    headers = {"Authorization": f"Bearer {ENS_INFO_TOKEN}"}
+    return await request_json("GET", url, headers=headers)
 
 
-async def ens_set_maintenance(nlx_conn: Connection, maintenance: bool) -> None:
+async def ens_set_maintenance(
+    conn: Connection,
+    vpn_ip: str,
+    maintenance: bool,
+) -> None:
     endpoint = "maintenance/on" if maintenance else "maintenance/off"
-    data = await _ens_call_api(nlx_conn, endpoint)
+    data = await _ens_call_api(vpn_ip, endpoint)
     state = data.get("state")
 
     if maintenance:
@@ -124,44 +109,30 @@ async def ens_set_maintenance(nlx_conn: Connection, maintenance: bool) -> None:
         assert (
             message == "Removing server from maintenance"
         ), f"Unexpected NS state when disabling maintenance: {data}"
-        await wait_for_service_active(nlx_conn, "nlx-ns")
+        await wait_for_service_active(conn, "nlx-ns")
 
 
 @asynccontextmanager
-async def ens_maintenance(nlx_conn: Connection):
-    await ens_set_maintenance(nlx_conn, maintenance=True)
+async def ens_maintenance(conn: Connection, vpn_ip: str):
+    await ens_set_maintenance(conn, vpn_ip, maintenance=True)
     try:
         yield
     finally:
-        await ens_set_maintenance(nlx_conn, maintenance=False)
+        await ens_set_maintenance(conn, vpn_ip, maintenance=False)
 
 
 # Python stub helpers
 
 
-async def _request_json(method: str, url: str, **kwargs: Any) -> JsonDict:
-    async with aiohttp.ClientSession() as session:
-        http_method = getattr(session, method.lower())
-        async with http_method(url, **kwargs) as response:
-            if response.status != HTTPStatus.OK:
-                body = await response.text()
-                raise RuntimeError(
-                    f"{method} {url} failed with status {response.status}: {body}"
-                )
-            return await response.json()
-
-
 async def make_post(url: str, data: Any) -> JsonDict:
-    return await _request_json("POST", url, json=data)
+    return await request_json("POST", url, json=data)
 
 
 async def make_get_json(url: str) -> JsonDict:
-    return await _request_json("GET", url)
+    return await request_json("GET", url)
 
 
-async def get_grpc_tls_fingerprint() -> str:
-    wg_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
-    vpn_ip = str(wg_conf.server_conf["ipv4"])
+async def get_grpc_tls_fingerprint(vpn_ip: str) -> str:
     url = f"http://{vpn_ip}:8000/api/grpc_tls_fingerprint"
     data = await make_get_json(url)
     return data["fingerprint"]
@@ -179,21 +150,25 @@ async def get_incorrect_grpc_tls_root_certificate(vpn_ip: str) -> str:
     return data["root_certificate"]
 
 
-async def generate_incorrect_certificate() -> bytes:
-    wg_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
-    vpn_ip = cast(str, wg_conf.server_conf["ipv4"])
-
+async def generate_incorrect_certificate(vpn_ip: str) -> bytes:
     root_certificate_b64 = await get_incorrect_grpc_tls_root_certificate(vpn_ip)
     return base64.b64decode(root_certificate_b64)
 
 
-async def trigger_connection_error(vpn_ip, error_code, additional_info):
+async def trigger_connection_error(
+    vpn_ip: str,
+    error_code: int,
+    additional_info: str,
+) -> None:
     data = {"code": error_code, "additional_info": additional_info}
     url = f"http://{vpn_ip}:8000/api/connection_error"
     await make_post(url, data)
 
 
-async def set_vpn_server_private_key(vpn_ip, vpn_server_private_key):
+async def set_vpn_server_private_key(
+    vpn_ip: str,
+    vpn_server_private_key: str,
+) -> None:
     data = {"vpn_server_private_key": vpn_server_private_key}
     url = f"http://{vpn_ip}:8000/api/vpn_server_private_key"
     await make_post(url, data)
