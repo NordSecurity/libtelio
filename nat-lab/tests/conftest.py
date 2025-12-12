@@ -543,6 +543,30 @@ def save_dmesg_from_host(suffix):
             f.write(result)
 
 
+async def save_dmesg_from_remote_vm(conn_tag: ConnectionTag, suffix: str) -> None:
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+
+    file_suffix = f"{conn_tag.name.lower()}-{suffix}"
+    log_path = os.path.join(log_dir, f"dmesg-{file_suffix}.txt")
+
+    async with new_connection_raw(conn_tag) as conn:
+        dmesg_cmd = ["dmesg", "-d", "-T"]
+        try:
+            proc = await conn.create_process(dmesg_cmd, quiet=True).execute()
+            stdout = proc.get_stdout() or ""
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(stdout)
+        except ProcessExecError as e:
+            log.warning(
+                "Failed to collect remote dmesg from %s. Return code=%s, stderr=%r, stdout=%r",
+                conn_tag,
+                e.returncode,
+                e.stderr,
+                e.stdout,
+            )
+
+
 def save_audit_log_from_host(suffix):
     try:
         source_path = "/var/log/audit/audit.log"
@@ -570,13 +594,6 @@ async def save_nordlynx_logs():
             remote_path = os.path.join(source_log_dir_path, log_file)
             local_path = os.path.join(local_log_dir, log_file)
             try:
-                check_proc = await conn.create_process(
-                    ["test", "-f", remote_path]
-                ).execute()
-
-                if check_proc.get_returncode() != 0:
-                    print(f"Source log file {remote_path} does not exist, skipping.")
-                    continue
                 cat_proc = await conn.create_process(["cat", remote_path]).execute()
                 stdout = cat_proc.get_stdout()
                 with open(local_path, "w", encoding="utf-8") as f:
@@ -584,7 +601,9 @@ async def save_nordlynx_logs():
                         f.write(stdout)
 
             except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"An error occurred when processing fakefm log: {e}")
+                log.warning(
+                    "An error occurred when processing %s log: %s", remote_path, e
+                )
 
 
 async def _save_macos_logs(conn, suffix):
@@ -604,6 +623,7 @@ async def collect_kernel_logs(items, suffix):
 
     save_dmesg_from_host(suffix)
     save_audit_log_from_host(suffix)
+    await save_dmesg_from_remote_vm(ConnectionTag.VM_LINUX_NLX_1, suffix)
 
     for item in items:
         if any(mark.name == "mac" for mark in item.own_markers):
