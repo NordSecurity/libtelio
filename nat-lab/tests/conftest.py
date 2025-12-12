@@ -543,6 +543,24 @@ def save_dmesg_from_host(suffix):
             f.write(result)
 
 
+async def save_dmesg_from_remote_vm(conn_tag: ConnectionTag) -> None:
+    suffix = conn_tag.name.lower()
+
+    log_dir = "logs"
+    log_path = os.path.join(log_dir, f"dmesg-{suffix}.txt")
+
+    async with new_connection_raw(conn_tag) as conn:
+        dmesg_cmd = ["dmesg", "-d", "-T"]
+        try:
+            proc = await conn.create_process(dmesg_cmd, quiet=True).execute()
+            stdout = proc.get_stdout() or ""
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write(stdout)
+        except subprocess.CalledProcessError as e:
+            log.error("Error executing dmesg: %s", e)
+            return
+
+
 def save_audit_log_from_host(suffix):
     try:
         source_path = "/var/log/audit/audit.log"
@@ -570,9 +588,7 @@ async def save_nordlynx_logs():
             remote_path = os.path.join(source_log_dir_path, log_file)
             local_path = os.path.join(local_log_dir, log_file)
             try:
-                await conn.create_process(
-                    ["test", "-f", remote_path]
-                ).execute()
+                await conn.create_process(["test", "-f", remote_path]).execute()
                 cat_proc = await conn.create_process(["cat", remote_path]).execute()
                 stdout = cat_proc.get_stdout()
                 with open(local_path, "w", encoding="utf-8") as f:
@@ -660,6 +676,7 @@ def pytest_sessionfinish(session, exitstatus):
         asyncio.run(collect_kernel_logs(session.items, "after_tests"))
         asyncio.run(collect_mac_diagnostic_reports())
         asyncio.run(save_nordlynx_logs())
+        asyncio.run(save_dmesg_from_remote_vm(ConnectionTag.VM_LINUX_NLX_1))
 
 
 def collect_nordderper_logs():
