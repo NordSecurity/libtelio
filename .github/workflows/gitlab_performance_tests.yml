@@ -5,6 +5,9 @@ on:
     # time and this can cause delays or even dropping of jobs:
     # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
     - cron: "17 11 * * 6,0"
+  push:
+    branches:
+      - LLT-6849_add_performance_pipeline
 permissions: {}
 
 jobs:
@@ -51,7 +54,7 @@ jobs:
 
   trigger-gitlab-pipeline:
     needs: [read-triggered-ref, prepare-sha]
-    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@c5bfbe7bb07e0504c1b1e0ffa25f632cebd0057d
+    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@08734e63112a29be2a096cd5e40ef1ce44ebd5af
     secrets:
       ci-api-v4-url: ${{ secrets.CODEHUB_CI_API_V4_URL }}
       access-token: ${{ secrets.CODEHUB_GITLAB_API_TOKEN }}
@@ -59,7 +62,7 @@ jobs:
       project-id: ${{ secrets.CODEHUB_PROJECT_ID }}
     with:
       schedule: true
-      performance-tests: true
+      pipeline-type: "performance-tests"
       cancel-outdated-pipelines: false
       triggered-ref: ${{ needs.read-triggered-ref.outputs.value }} # defined in .env file
       github-sha-override: ${{ needs.prepare-sha.outputs.recorded_sha }}
