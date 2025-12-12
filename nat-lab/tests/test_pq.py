@@ -141,6 +141,7 @@ async def test_pq_vpn_connection(
         )
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -416,6 +417,7 @@ async def test_pq_vpn_silent_pq_upgrader(
         await ping(client_conn, config.PHOTO_ALBUM_IP)
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [

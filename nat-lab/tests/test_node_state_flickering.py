@@ -116,7 +116,16 @@ CFG = [
 @pytest.mark.parametrize(
     "alpha_adapter_type,beta_adapter_type",
     [
-        pytest.param(alpha_cfg[0], beta_cfg[0], marks=alpha_cfg[1] + beta_cfg[1])
+        pytest.param(
+            alpha_cfg[0],
+            beta_cfg[0],
+            marks=(
+                [pytest.mark.windows2]
+                if alpha_cfg[1] == [pytest.mark.windows]
+                and beta_cfg[1] == [pytest.mark.windows]
+                else alpha_cfg[1] + beta_cfg[1]
+            ),
+        )
         for alpha_cfg, beta_cfg in itertools.combinations_with_replacement(CFG, 2)
     ],
 )
