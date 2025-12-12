@@ -20,6 +20,8 @@ ip6tables-save -f ip6tables_backup
 
 /libtelio/nat-lab/bin/configure_route.sh primary
 
+cp /libtelio/nat-lab/tests/uniffi/libfirewall.so /usr/lib/libfirewall.so
+
 touch /ready
 
 sleep infinity
