@@ -11,10 +11,10 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - run: cargo test --all -- --nocapture
+      - run: cargo test --all --lib --bins --examples -- --nocapture
         env:
           RUST_BACKTRACE: full
-      - run: cargo test --all --features pretend_to_be_macos -- --nocapture
+      - run: cargo test --all --lib --bins --examples --features pretend_to_be_macos -- --nocapture
         env:
           RUST_BACKTRACE: full
 
@@ -161,7 +161,7 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - run: cargo test --release -- --ignored
+      - run: cargo test --release --lib --bins --examples -- --ignored
         env:
           RUST_BACKTRACE: full
 
