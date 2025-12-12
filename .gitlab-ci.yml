@@ -1,3 +1,8 @@
+default:
+  tags:
+    - docker
+    - linux
+
 prepare-trigger-env:
   stage: .pre
   script:
