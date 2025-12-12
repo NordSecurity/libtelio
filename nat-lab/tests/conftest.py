@@ -570,13 +570,9 @@ async def save_nordlynx_logs():
             remote_path = os.path.join(source_log_dir_path, log_file)
             local_path = os.path.join(local_log_dir, log_file)
             try:
-                check_proc = await conn.create_process(
+                await conn.create_process(
                     ["test", "-f", remote_path]
                 ).execute()
-
-                if check_proc.get_returncode() != 0:
-                    print(f"Source log file {remote_path} does not exist, skipping.")
-                    continue
                 cat_proc = await conn.create_process(["cat", remote_path]).execute()
                 stdout = cat_proc.get_stdout()
                 with open(local_path, "w", encoding="utf-8") as f:
@@ -584,7 +580,7 @@ async def save_nordlynx_logs():
                         f.write(stdout)
 
             except Exception as e:  # pylint: disable=broad-exception-caught
-                print(f"An error occurred when processing fakefm log: {e}")
+                print(f"An error occurred when processing {remote_path} log: {e}")
 
 
 async def _save_macos_logs(conn, suffix):
