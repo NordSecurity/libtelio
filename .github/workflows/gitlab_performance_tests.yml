@@ -5,7 +5,9 @@ on:
     # time and this can cause delays or even dropping of jobs:
     # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
     - cron: "17 11 * * 6,0"
-  workflow_dispatch:
+  push:
+    branches:
+      - LLT-6849_add_performance_pipeline
 permissions: {}
 
 jobs:
@@ -63,4 +65,4 @@ jobs:
       pipeline-type: "performance-tests"
       cancel-outdated-pipelines: false
       triggered-ref: ${{ needs.read-triggered-ref.outputs.value }} # defined in .env file
-      github-sha-override: ${{ needs.prepare-sha.outputs.recorded_sha }}
+      github-sha-override: b675397fcaa0a55299779a59d69e29fdc2994dcd
