@@ -1,4 +1,4 @@
-name: Scheduled GitLab CI Pipeline
+name: Scheduled GitLab Performance Tests Pipeline
 on:
   schedule:
     # Avoid running on 0 since a lot of other workflows on github start at that
