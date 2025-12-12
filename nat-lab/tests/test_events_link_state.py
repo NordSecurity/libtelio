@@ -8,6 +8,7 @@ from tests.utils import stun
 from tests.utils.bindings import (
     default_features,
     EndpointProvider,
+    FeatureInterfaceHealth,
     FeatureLinkDetection,
     FeatureWireguard,
     FeaturePersistentKeepalive,
@@ -48,6 +49,10 @@ def long_persistent_keepalive_periods() -> FeatureWireguard:
         polling=FeaturePolling(
             wireguard_polling_period=1000,
             wireguard_polling_period_after_state_change=50,
+        ),
+        interface_health=FeatureInterfaceHealth(
+            transient_failure_separation_threshold=10,
+            uapi_poll_suspension_threshold=5,
         ),
         enable_dynamic_wg_nt_control=False,
         skt_buffer_size=None,
