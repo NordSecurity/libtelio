@@ -554,15 +554,37 @@ def save_audit_log_from_host(suffix):
         log.warning("An error occurred when processing audit log: %s", e)
 
 
-async def save_fakefm_logs():
+async def save_nordlynx_logs():
+    source_log_dir_path = "/var/log"
+    local_log_dir = "logs"
+    nlx_log_files = [
+        "nlx-radius.log",
+        "pq-upgrader.log",
+        "fakefm.log",
+        "nlx-ns.log",
+        "dynamic_api_fakefm.log",
+    ]
+
     async with new_connection_raw(ConnectionTag.VM_LINUX_NLX_1) as conn:
-        try:
-            source_path = "/var/log/fakefm.log"
-            cat_proc = await conn.create_process(["cat", source_path]).execute()
-            with open(os.path.join("logs", "fakefm.log"), "w", encoding="utf-8") as f:
-                f.write(cat_proc.get_stdout())
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            print(f"An error occurred when processing fakefm log: {e}")
+        for log_file in nlx_log_files:
+            remote_path = os.path.join(source_log_dir_path, log_file)
+            local_path = os.path.join(local_log_dir, log_file)
+            try:
+                check_proc = await conn.create_process(
+                    ["test", "-f", remote_path]
+                ).execute()
+
+                if check_proc.get_returncode() != 0:
+                    print(f"Source log file {remote_path} does not exist, skipping.")
+                    continue
+                cat_proc = await conn.create_process(["cat", remote_path]).execute()
+                stdout = cat_proc.get_stdout()
+                with open(local_path, "w", encoding="utf-8") as f:
+                    if stdout:
+                        f.write(stdout)
+
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                print(f"An error occurred when processing fakefm log: {e}")
 
 
 async def _save_macos_logs(conn, suffix):
@@ -641,7 +663,7 @@ def pytest_sessionfinish(session, exitstatus):
         collect_core_api_server_logs()
         asyncio.run(collect_kernel_logs(session.items, "after_tests"))
         asyncio.run(collect_mac_diagnostic_reports())
-        asyncio.run(save_fakefm_logs())
+        asyncio.run(save_nordlynx_logs())
 
 
 def collect_nordderper_logs():
