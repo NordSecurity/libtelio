@@ -48,8 +48,8 @@ pub struct Features {
     pub ipv6: bool,
     /// Nicknames support
     pub nicknames: bool,
-    /// Flag to turn on connection reset upon VPN server change for NepTUN adapter
-    pub firewall: FeatureFirewall,
+    /// Flag to turn on connection reset upon VPN server change for NepTUN adapter, if none is provided, firewall will be disabled
+    pub firewall: Option<FeatureFirewall>,
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     pub flush_events_on_stop_timeout_seconds: Option<u64>,
     /// Post quantum VPN tunnel configuration
@@ -856,7 +856,7 @@ mod tests {
                     validate_keys: FeatureValidateKeys(false),
                     ipv6: true,
                     nicknames: true,
-                    firewall: FeatureFirewall {
+                    firewall: Some(FeatureFirewall {
                         neptun_reset_conns: true,
                         boringtun_reset_conns: true,
                         exclude_private_ip_range: Some(Ipv4Net(
@@ -867,7 +867,7 @@ mod tests {
                             ip: IpAddr::from_str("8.8.4.4").unwrap(),
                             port: 30,
                         }],
-                    },
+                    }),
                     flush_events_on_stop_timeout_seconds: Some(15),
                     post_quantum_vpn: FeaturePostQuantumVPN {
                         handshake_retry_interval_s: 15,
@@ -988,7 +988,11 @@ mod tests {
 
         #[test]
         fn test_empty_firewall() {
-            assert_json!(r#"{"firewall": {}}"#, FeatureFirewall::default(), firewall);
+            assert_json!(
+                r#"{"firewall": {}}"#,
+                Some(FeatureFirewall::default()),
+                firewall
+            );
         }
 
         #[test]

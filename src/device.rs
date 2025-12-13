@@ -1036,10 +1036,14 @@ impl Runtime {
         features: Features,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
-        let firewall = Some(Arc::new(StatefullFirewall::new(
-            features.ipv6,
-            &features.firewall,
-        )));
+        let firewall = if let Some(feature_firewall) = features.firewall.as_ref() {
+            Some(Arc::new(StatefullFirewall::new(
+                features.ipv6,
+                feature_firewall,
+            )))
+        } else {
+            None
+        };
 
         let firewall_process_inbound_callback = firewall.clone().map(|fw| {
             Arc::new(move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet))
@@ -1052,7 +1056,12 @@ impl Runtime {
                 },
             ) as Arc<dyn Fn(&[u8; 32], &[u8], &mut dyn io::Write) -> bool + Send + Sync>
         });
-        let firewall_reset_connections = if features.firewall.neptun_reset_conns() {
+        let firewall_reset_connections = if features
+            .firewall
+            .as_ref()
+            .map(|fw| fw.neptun_reset_conns())
+            .unwrap_or(false)
+        {
             firewall.clone().map(|fw| {
                 Arc::new(move |exit_pubkey: &PublicKey, sink: &mut dyn io::Write| {
                     fw.reset_connections(exit_pubkey, sink)

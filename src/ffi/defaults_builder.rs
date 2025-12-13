@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
-use telio_model::features::{FeatureDerp, FeatureLana, FeatureValidateKeys, Features};
+use telio_model::features::{
+    FeatureDerp, FeatureFirewall, FeatureLana, FeatureValidateKeys, Features,
+};
 
 pub struct FeaturesDefaultsBuilder {
     config: Mutex<Features>,
@@ -65,7 +67,14 @@ impl FeaturesDefaultsBuilder {
 
     /// Enable firewall connection resets when NepTUN is enabled
     pub fn enable_firewall_connection_reset(self: Arc<Self>) -> Arc<Self> {
-        self.config.lock().firewall.neptun_reset_conns = true;
+        if let Some(firewall) = self.config.lock().firewall.as_mut() {
+            firewall.neptun_reset_conns = true;
+        } else {
+            self.config.lock().firewall = Some(FeatureFirewall {
+                neptun_reset_conns: true,
+                ..Default::default()
+            });
+        }
         self
     }
 
