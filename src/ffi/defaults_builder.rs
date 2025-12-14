@@ -14,7 +14,7 @@ impl FeaturesDefaultsBuilder {
         let config = Features {
             wireguard: default(),
             validate_keys: default(),
-            firewall: default(),
+            firewall: None,
             post_quantum_vpn: default(),
             dns: default(),
             nurse: None,
