@@ -67,14 +67,17 @@ def default_features(
     features.hide_user_data = False
     features.hide_thread_id = False
     features.dns.exit_dns = FeatureExitDns(auto_switch_dns_ips=True)
+
+    # Default to empty firewall to avoid hanging tests if neptun blocks on None
+    if features.firewall is None:
+        features.firewall = FeatureFirewall(
+            neptun_reset_conns=False,
+            boringtun_reset_conns=False,
+            exclude_private_ip_range=None,
+            outgoing_blacklist=[],
+        )
+
     if enable_firewall_exclusion_range is not None:
-        if features.firewall is None:
-            features.firewall = FeatureFirewall(
-                neptun_reset_conns=False,
-                boringtun_reset_conns=False,
-                exclude_private_ip_range=None,
-                outgoing_blacklist=[],
-            )
         features.firewall.exclude_private_ip_range = enable_firewall_exclusion_range
     return features
 
