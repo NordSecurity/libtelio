@@ -51,6 +51,8 @@ SETUP_CHECK_DUPLICATE_IP_RETRIES = 1
 RUNNER: asyncio.Runner | None = None
 SESSION_SCOPE_EXIT_STACK: AsyncExitStack | None = None
 
+LOG_DIR = "logs"
+
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
     to_cancel = asyncio.tasks.all_tasks(loop)
@@ -538,17 +540,16 @@ def save_dmesg_from_host(suffix):
 
     if result:
         with open(
-            os.path.join("logs", f"dmesg-{suffix}.txt"), "w", encoding="utf-8"
+            os.path.join(LOG_DIR, f"dmesg-{suffix}.txt"), "w", encoding="utf-8"
         ) as f:
             f.write(result)
 
 
 async def save_dmesg_from_remote_vm(conn_tag: ConnectionTag, suffix: str) -> None:
-    log_dir = "logs"
-    os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
 
     file_suffix = f"{conn_tag.name.lower()}-{suffix}"
-    log_path = os.path.join(log_dir, f"dmesg-{file_suffix}.txt")
+    log_path = os.path.join(LOG_DIR, f"dmesg-{file_suffix}.txt")
 
     async with new_connection_raw(conn_tag) as conn:
         dmesg_cmd = ["dmesg", "-d", "-T"]
@@ -571,7 +572,7 @@ def save_audit_log_from_host(suffix):
     try:
         source_path = "/var/log/audit/audit.log"
         if os.path.exists(source_path):
-            shutil.copy2(source_path, f"logs/audit_{suffix}.log")
+            shutil.copy2(source_path, f"{LOG_DIR}/audit_{suffix}.log")
         else:
             log.warning("The audit file %s", source_path)
     except Exception as e:  # pylint: disable=broad-exception-caught
@@ -580,7 +581,6 @@ def save_audit_log_from_host(suffix):
 
 async def save_nordlynx_logs():
     source_log_dir_path = "/var/log"
-    local_log_dir = "logs"
     nlx_log_files = [
         "nlx-radius.log",
         "pq-upgrader.log",
@@ -592,7 +592,7 @@ async def save_nordlynx_logs():
     async with new_connection_raw(ConnectionTag.VM_LINUX_NLX_1) as conn:
         for log_file in nlx_log_files:
             remote_path = os.path.join(source_log_dir_path, log_file)
-            local_path = os.path.join(local_log_dir, log_file)
+            local_path = os.path.join(LOG_DIR, log_file)
             try:
                 cat_proc = await conn.create_process(["cat", remote_path]).execute()
                 stdout = cat_proc.get_stdout()
@@ -610,7 +610,7 @@ async def _save_macos_logs(conn, suffix):
     try:
         dmesg_proc = await conn.create_process(["dmesg"], quiet=True).execute()
         with open(
-            os.path.join("logs", f"dmesg-macos-{suffix}.txt"), "w", encoding="utf-8"
+            os.path.join(LOG_DIR, f"dmesg-macos-{suffix}.txt"), "w", encoding="utf-8"
         ) as f:
             f.write(dmesg_proc.get_stdout())
     except ProcessExecError as e:
@@ -618,8 +618,7 @@ async def _save_macos_logs(conn, suffix):
 
 
 async def collect_kernel_logs(items, suffix):
-    log_dir = "logs"
-    os.makedirs(log_dir, exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
 
     save_dmesg_from_host(suffix)
     save_audit_log_from_host(suffix)
@@ -691,7 +690,7 @@ def collect_nordderper_logs():
 
     for i in range(1, num_containers + 1):
         container_name = f"nat-lab-derp-{i:02d}-1"
-        destination_path = f"logs/derp_{i:02d}_relay.log"
+        destination_path = f"{LOG_DIR}/derp_{i:02d}_relay.log"
 
         copy_file_from_container(
             container_name, "/etc/nordderper/relay.log", destination_path
@@ -703,15 +702,15 @@ def collect_dns_server_logs():
 
     for i in range(1, num_containers + 1):
         container_name = f"nat-lab-dns-server-{i}-1"
-        destination_path = f"logs/dns_server_{i}.log"
+        destination_path = f"{LOG_DIR}/dns_server_{i}.log"
 
         copy_file_from_container(container_name, "/dns-server.log", destination_path)
 
 
 def collect_core_api_server_logs():
     container_name = "nat-lab-core-api-1"
-    os.makedirs("logs", exist_ok=True)
-    out_path = os.path.join("logs", "core_api.log")
+    os.makedirs(LOG_DIR, exist_ok=True)
+    out_path = os.path.join(LOG_DIR, "core_api.log")
     with open(out_path, "w", encoding="utf-8") as f:
         subprocess.run(
             ["docker", "logs", container_name],
@@ -751,10 +750,12 @@ async def collect_mac_diagnostic_reports():
             LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
         ) as connection:
             await connection.download(
-                "/Library/Logs/DiagnosticReports", "logs/system_diagnostic_reports"
+                "/Library/Logs/DiagnosticReports",
+                f"{LOG_DIR}/system_diagnostic_reports",
             )
             await connection.download(
-                "/root/Library/Logs/DiagnosticReports", "logs/user_diagnostic_reports"
+                "/root/Library/Logs/DiagnosticReports",
+                f"{LOG_DIR}/user_diagnostic_reports",
             )
     except Exception as e:  # pylint: disable=broad-exception-caught
         log.error("Failed to connect to the mac VM: %s", e)
