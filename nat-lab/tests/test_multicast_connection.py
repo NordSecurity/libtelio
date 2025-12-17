@@ -5,6 +5,7 @@ from tests.utils.bindings import default_features, TelioAdapterType
 from tests.utils.connection import ConnectionTag, Connection, TargetOS
 from tests.utils.multicast import MulticastClient, MulticastServer
 from tests.utils.process import ProcessExecError
+from tests.utils.testing import log_test_passed
 from typing import List, Tuple
 
 
@@ -102,6 +103,7 @@ async def test_multicast(setup_params: List[SetupParameters], protocol: str) -> 
         async with MulticastServer(beta_connection, protocol).run() as server:
             await server.wait_till_ready()
             await MulticastClient(alpha_connection, protocol).execute()
+        log_test_passed()
 
 
 MUILTICAST_DISALLOWED_TEST_PARAMS = [
@@ -158,3 +160,4 @@ async def test_multicast_disallowed(
             with pytest.raises(ProcessExecError):
                 await server.wait_till_ready()
                 await MulticastClient(alpha_connection, protocol).execute()
+        log_test_passed()

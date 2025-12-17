@@ -5,6 +5,7 @@ from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.ping import ping
+from tests.utils.testing import log_test_passed
 
 
 @pytest.mark.asyncio
@@ -93,3 +94,4 @@ async def test_connected_state_after_routing(
         client_beta.allow_errors([
             "neptun::device.*Decapsulate error error=UnexpectedPacket public_key=.*",
         ])
+        log_test_passed()

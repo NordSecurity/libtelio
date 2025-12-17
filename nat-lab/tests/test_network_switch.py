@@ -26,6 +26,7 @@ from tests.utils.network_switcher.network_switcher_windows import (
 )
 from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
+from tests.utils.testing import log_test_passed
 from unittest.mock import Mock, AsyncMock, patch
 
 
@@ -62,6 +63,7 @@ async def test_network_switcher(
         assert conn_mngr.network_switcher
         await conn_mngr.network_switcher.switch_to_secondary_network()
         assert await stun.get(conn_mngr.connection, config.STUN_SERVER) == secondary_ip
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -127,6 +129,7 @@ async def test_mesh_network_switch(
         await client_alpha.notify_network_change()
 
         await ping(alpha_conn_mngr.connection, beta.ip_addresses[0])
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -202,6 +205,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
 
         ip = await stun.get(alpha_connection, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -307,6 +311,7 @@ async def test_mesh_network_switch_direct(
         beta_client.allow_errors([
             "telio_traversal::endpoint_providers::stun.*Starting session failed.*A socket operation was attempted to an unreachable network"
         ])
+        log_test_passed()
 
 
 class TestInterfaceWindows:

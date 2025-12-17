@@ -9,6 +9,7 @@ from tests.config import CORE_API_CA_CERTIFICATE_PATH, CORE_API_URL
 from tests.helpers import send_https_request, verify_uuid
 from tests.utils.connection import ConnectionTag, Connection
 from tests.utils.connection_util import new_connection_by_tag
+from tests.utils.testing import log_test_passed
 from typing import Optional
 
 
@@ -185,6 +186,7 @@ async def fixture_register_machine(machine_data):
             )
             registered_machines.append(response_data)
 
+        log_test_passed()
         return registered_machines
 
 
@@ -244,6 +246,7 @@ async def test_get_all_machines(registered_machines, machine_data):
             assert machine["public_key"] == data.public_key
             assert machine["os"] == data.os
             assert machine["os_version"] == data.os_version
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -283,6 +286,7 @@ async def test_update_registered_machine_data(registered_machines, machine_data)
 
             assert response_data["public_key"] == original_data.public_key
             assert response_data["os"] == original_data.os
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -318,6 +322,7 @@ async def test_delete_registered_machine(registered_machines, machine_data):
         )
 
         assert len(get_response_data) == 0
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -354,6 +359,7 @@ async def test_get_mesh_map(registered_machines, machine_data):
             assert isinstance(response_data["derp_servers"], list)
             for derp_server in response_data["derp_servers"]:
                 validate_dict_structure(derp_server, derp_structure)
+        log_test_passed()
 
 
 async def test_not_able_to_register_same_machine_twice():
@@ -392,6 +398,7 @@ async def test_not_able_to_register_same_machine_twice():
             response_data["errors"]["message"]
             == "Machine with this public key already exists"
         )
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -434,6 +441,7 @@ async def test_endpoints_requires_authorization_header(endpoint, method):
             == CoreApiErrorCode.AUTHORIZATION_HEADER_NOT_PROVIDED.value
         )
         assert response_data["errors"]["message"] == "Authorization header not provided"
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -480,6 +488,7 @@ async def test_not_able_to_pass_authorization_with_invalid_bearer_token(
             == CoreApiErrorCode.INVALID_CREDENTIALS.value
         )
         assert response_data["errors"]["message"] == "Invalid credentials"
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -511,6 +520,7 @@ async def test_not_able_to_pass_authorization_with_invalid_basic_auth_credential
             == CoreApiErrorCode.INVALID_CREDENTIALS.value
         )
         assert response_data["errors"]["message"] == "Invalid credentials"
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -535,6 +545,7 @@ async def test_get_countries():
         assert poland["code"] == "PL"
         assert germany["name"] == "Germany"
         assert germany["code"] == "DE"
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -563,6 +574,7 @@ async def test_get_servers_no_filters():
         assert server_name == "Poland #128", (
             f"Returned server name is {server_name}, " f"expected is Poland #128"
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -591,6 +603,7 @@ async def test_get_servers_with_filters():
         assert server_name == "Germany #1263", (
             f"Returned server name is {server_name}, " f"expected is Germany #1263"
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -617,6 +630,7 @@ async def test_get_nonexisting_servers():
             response_data["errors"]["message"]
             == "No vpn servers found for provided filters"
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -654,6 +668,7 @@ async def test_service_credentials_success():
         timestamp_pattern = r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$"
         assert re.match(timestamp_pattern, response_data["created_at"])
         assert re.match(timestamp_pattern, response_data["updated_at"])
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -675,6 +690,7 @@ async def test_service_credentials_no_auth_header():
             == CoreApiErrorCode.AUTHORIZATION_HEADER_NOT_PROVIDED.value
         )
         assert response_data["errors"]["message"] == "Authorization header not provided"
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -703,3 +719,4 @@ async def test_service_credentials_invalid_credentials():
             == CoreApiErrorCode.INVALID_CREDENTIALS.value
         )
         assert response_data["errors"]["message"] == "Invalid credentials"
+        log_test_passed()
