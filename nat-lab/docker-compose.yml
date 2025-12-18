@@ -1005,7 +1005,6 @@ networks:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: 'false'
-      com.docker.network.bridge.gateway_mode_ipv4: "nat-unprotected"
     ipam:
       driver: default
       config:
