@@ -111,7 +111,7 @@ impl TcpParams {
 
         // Setting TCP nodelay
         if let Some(nodelay_enable) = self.nodelay_enable {
-            if socket.set_nodelay(nodelay_enable).is_err() {
+            if socket.set_tcp_nodelay(nodelay_enable).is_err() {
                 telio_log_warn!(
                     "Cannot set TCP_NODELAY={} for {:?} socket: {}",
                     nodelay_enable,

@@ -24,8 +24,6 @@ telio-model.workspace = true
 telio-network-monitors.workspace = true
 
 [dev-dependencies]
-criterion = "0.7"
-
 mockall.workspace = true
 sn_fake_clock.workspace = true
 
