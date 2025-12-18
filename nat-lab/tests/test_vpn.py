@@ -78,6 +78,7 @@ from tests.utils.router import IPProto, IPStack
         pytest.param(
             VpnConfig(config.NLX_SERVER, ConnectionTag.VM_LINUX_NLX_1, False),
             id="nlx_server",
+            marks=pytest.mark.nlx,
         ),
     ],
 )
