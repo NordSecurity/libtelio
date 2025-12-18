@@ -418,6 +418,7 @@ mod tests {
     const KEY_MSG_SIZE: usize = 106;
 
     #[rstest]
+    #[tokio::test]
     #[case(&[1, 0, 0, 0, 0], FrameType::ServerKey, "", false)]
     #[case(&[1, 0, 0, 0, 5, b'h', b'e', b'l', b'l', b'o'], FrameType::ServerKey, "hello", false)]
     #[case(&[2, 0, 0, 0, 0, b'h', b'e', b'l', b'l', b'o'], FrameType::ClientInfo, "", false)]
@@ -445,6 +446,7 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
     #[case(FrameType::ServerKey, "", &[1, 0, 0, 0, 0], false)]
     #[case(FrameType::ServerKey, "hello", &[1, 0, 0, 0, 5, b'h', b'e', b'l', b'l', b'o'], false)]
     async fn test_write_frame(
@@ -473,6 +475,7 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
     #[case(PublicKey([1_u8; KEY_SIZE]), [vec![1, 0, 0, 0, 40], MAGIC.to_vec(), vec![1_u8; KEY_SIZE]].concat(), false)]
     #[case(PublicKey([2_u8; KEY_SIZE]), [vec![1, 0, 0, 0, 40], MAGIC.to_vec(), vec![2_u8; KEY_SIZE]].concat(), false)]
     #[case(PublicKey([1_u8; KEY_SIZE]), [vec![2, 0, 0, 0, 40], MAGIC.to_vec(), vec![1_u8; KEY_SIZE]].concat(), true)]
@@ -494,6 +497,7 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
     async fn test_write_client_key() {
         let mut buf1 = Vec::new();
         let mut buf2 = Vec::new();
@@ -522,6 +526,7 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
     async fn write_client_key_example() {
         let mut rng = CryptoStepRng(StepRng::new(0, 1));
         let local_sk = SecretKey::gen_with(&mut rng);
@@ -553,6 +558,7 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
     #[case([vec![1, 0, 0, 0, 40], MAGIC.to_vec(), vec![0_u8; KEY_SIZE]].concat(), [0_u8; KEY_SIZE], false)]
     #[case([vec![1, 0, 0, 0, 40], vec![0_u8; 8], vec![0_u8; KEY_SIZE]].concat(), [0_u8; KEY_SIZE], true)]
     async fn test_exchange_keys(

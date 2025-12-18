@@ -16,7 +16,7 @@ alias d := deny
 [private]
 alias p := prepush
 
-nightly := "nightly-2025-03-26"
+nightly := "nightly-2025-08-07" # Matching stable version below, see: https://releases.rs/docs/1.89.0/
 rust_stable := "1.89.0"
 
 # Run all rust tests
@@ -109,7 +109,7 @@ _unused-install: _rust_stable-install _rust-from-toolchain-file-install
     cargo +{{ rust_stable }} install --version 0.2.0 cargo-unused-features --locked
 
 _deny-install:
-    cargo install --locked cargo-deny@0.15.1
+    cargo install --locked cargo-deny@0.18.9
 
 _nightly-install:
     rustup toolchain add {{ nightly }}
