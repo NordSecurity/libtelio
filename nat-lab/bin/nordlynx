@@ -14,6 +14,13 @@ up() {
   fi
 }
 
+# Enable debug logs for wireguard
+if modprobe wireguard 2>/dev/null; then
+  echo 'module wireguard +p' > /sys/kernel/debug/dynamic_debug/control || true
+else
+  echo "Wireguard module not found; skipping dynamic debug enable"
+fi
+
 # This is a workaround for 6.x kernel bug, which can cause NULL-deref when
 # iptables are executed too early at boot.
 # More details:
