@@ -99,9 +99,9 @@ async def test_multicast(setup_params: List[SetupParameters], protocol: str) -> 
         await add_multicast_route(alpha_connection)
         await add_multicast_route(beta_connection)
 
-        async with MulticastServer(beta_connection, protocol).run() as server:
+        async with MulticastServer(beta_connection, protocol, None).run() as server:
             await server.wait_till_ready()
-            await MulticastClient(alpha_connection, protocol).execute()
+            await MulticastClient(alpha_connection, protocol, None).execute()
 
 
 MUILTICAST_DISALLOWED_TEST_PARAMS = [
@@ -154,7 +154,7 @@ async def test_multicast_disallowed(
         await add_multicast_route(alpha_connection)
         await add_multicast_route(beta_connection)
 
-        async with MulticastServer(beta_connection, protocol).run() as server:
+        async with MulticastServer(beta_connection, protocol, None).run() as server:
             with pytest.raises(ProcessExecError):
                 await server.wait_till_ready()
-                await MulticastClient(alpha_connection, protocol).execute()
+                await MulticastClient(alpha_connection, protocol, 10).execute()
