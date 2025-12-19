@@ -22,7 +22,7 @@ macro_rules! report_event {
 }
 
 /// Error levels. Used for app to decide what to do with `telio` device when error happens.
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ErrorLevel {
     /// The error level is critical (highest priority)
@@ -37,7 +37,7 @@ pub enum ErrorLevel {
 }
 
 /// Error code. Common error code representation (for statistics).
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum ErrorCode {
     /// There is no error in the execution

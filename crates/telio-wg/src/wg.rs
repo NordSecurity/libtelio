@@ -6,9 +6,10 @@ use std::{
     collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
 };
+
 use telio_model::{
     event::{Error as LibtelioError, ErrorCode, ErrorLevel, Event as LibtelioEvent, EventMsg, Set},
-    features::{FeatureBatching, FeatureLinkDetection},
+    features::FeatureInterfaceHealth,
     mesh::{ExitNode, NodeState},
 };
 use telio_sockets::{NativeProtector, SocketPool};
@@ -128,6 +129,83 @@ pub const WG_KEEPALIVE: Duration = Duration::from_secs(10);
 
 pub use telio_utils::{BytesAndTimestamps, Instant};
 
+/// Configurable interface health monitoring
+///
+/// Accounts for WireguardNT-specific behavior which
+/// produces transient errors around power transitions of the device.
+pub struct TUNHealthMonitor {
+    /// Minimum duration of a continuous UAPI failure period required to
+    /// classify the failure as non-transient
+    sustained_failure_threshold: Duration,
+
+    /// First failure after success
+    first_failure_after_success: Option<Instant>,
+
+    /// Max UAPI poll gap expected, used to detect libtelio suspension.
+    /// Without suspension detection sustained_failure_threshold would be
+    /// triggered after power-resume due to errors registered on power-suspend.
+    suspension_detection_gap: Duration,
+
+    /// Timestamp of the most recent UAPI poll. Used to detect device suspension
+    last_update_time: Option<Instant>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum TUNHealthStatus {
+    /// Healthy
+    Healthy,
+    /// Interface is gone
+    InterfaceGone,
+}
+
+impl TUNHealthMonitor {
+    /// Tunnel interface health monitor
+    pub fn new(f: &FeatureInterfaceHealth) -> Self {
+        TUNHealthMonitor {
+            sustained_failure_threshold: Duration::from_secs(f.sustained_failure_threshold.into()),
+            suspension_detection_gap: Duration::from_secs(f.suspension_detection_gap.into()),
+            first_failure_after_success: None,
+            last_update_time: None,
+        }
+    }
+
+    fn update(&mut self, resp: &Response) -> TUNHealthStatus {
+        let now = Instant::now();
+        let prev_update = self.last_update_time.replace(now);
+
+        if resp.errno == 0 {
+            self.first_failure_after_success = None;
+            return TUNHealthStatus::Healthy;
+        }
+
+        // UAPI is expected to be polled periodically when telio is started. If the gap is bigger
+        // than expected, it indicates that libtelio(or device) might have been suspended. Since
+        // WireguardNT produces transient errors around device suspension, we must filter
+        // out those errors or else we will exceed sustained_failure_threshold
+        // and produce incorrect status after power-resume.
+        let suspend_detected =
+            prev_update.is_none_or(|t| now.duration_since(t) >= self.suspension_detection_gap);
+
+        if suspend_detected {
+            self.first_failure_after_success = Some(now);
+            return TUNHealthStatus::Healthy;
+        }
+
+        match self.first_failure_after_success {
+            Some(t) => {
+                if now.duration_since(t) >= self.sustained_failure_threshold
+                    && resp.interface.is_none()
+                {
+                    return TUNHealthStatus::InterfaceGone;
+                }
+            }
+            None => self.first_failure_after_success = Some(now),
+        }
+
+        TUNHealthStatus::Healthy
+    }
+}
+
 struct State {
     #[cfg(unix)]
     cfg: Config,
@@ -136,9 +214,7 @@ struct State {
     interface: Interface,
     event: Tx<Box<Event>>,
     analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
-    // Detecting unexpected driver failures, such as a malicious removal
-    // We won't be notified of any errors, but a periodic call to get_config_uapi() will return a Win32 error code != 0.
-    uapi_fail_counter: i32,
+    health_monitor: TUNHealthMonitor,
 
     // Link detection mechanism
     link_detection: Option<LinkDetection>,
@@ -153,8 +229,6 @@ struct State {
     polling_period_after_update: Duration,
     last_update: Instant,
 }
-
-const MAX_UAPI_FAIL_COUNT: i32 = 10;
 
 impl DynamicWg {
     /// Starts the WireGuard adapter with the given parameters.
@@ -173,10 +247,10 @@ impl DynamicWg {
     /// use std::os::fd::FromRawFd;
     /// use std::{sync::Arc, io, time::Duration};
     /// use telio_firewall::firewall::{StatefullFirewall, Firewall};
-    /// use telio_model::features::FeatureFirewall;
+    /// use telio_model::features::{FeatureFirewall, FeatureInterfaceHealth};
     /// use telio_sockets::{native::NativeSocket, Protector, SocketPool, Protect};
     /// use telio_task::io::Chan;
-    /// pub use telio_wg::{AdapterType, DynamicWg, Tun, Io, Config};
+    /// pub use telio_wg::{AdapterType, DynamicWg, Tun, Io, Config, TUNHealthMonitor};
     /// use tokio::runtime::Runtime;
     /// use mockall::mock;
     ///
@@ -194,7 +268,7 @@ impl DynamicWg {
     ///         fn set_ext_if_filter(&self, list: &[String]);
     ///         }
     ///     }
-    ///     let firewall = Arc::new(StatefullFirewall::new(true,  &FeatureFirewall::default(),));
+    ///     let firewall = Arc::new(StatefullFirewall::new(true, &FeatureFirewall::default(),));
     ///     let firewall_filter_inbound_packets = {
     ///         let fw = firewall.clone();
     ///         move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)
@@ -230,6 +304,7 @@ impl DynamicWg {
     ///             max_inter_thread_batched_pkts: None,
     ///         },
     ///         None,
+    ///         TUNHealthMonitor::new(&FeatureInterfaceHealth::default()),
     ///         Duration::from_millis(1000),
     ///         Duration::from_millis(50)
     ///     );
@@ -239,6 +314,7 @@ impl DynamicWg {
         io: Io,
         cfg: Config,
         link_detection: Option<LinkDetection>,
+        health_monitor: TUNHealthMonitor,
         polling_period: Duration,
         polling_period_after_update: Duration,
     ) -> Result<Self, Error>
@@ -252,6 +328,7 @@ impl DynamicWg {
             adapter,
             link_detection,
             cfg,
+            health_monitor,
             polling_period,
             polling_period_after_update,
         ));
@@ -260,6 +337,7 @@ impl DynamicWg {
             io,
             adapter,
             link_detection,
+            health_monitor,
             polling_period,
             polling_period_after_update,
         ));
@@ -270,6 +348,7 @@ impl DynamicWg {
         adapter: Box<dyn Adapter>,
         link_detection: Option<LinkDetection>,
         #[cfg(unix)] cfg: Config,
+        health_monitor: TUNHealthMonitor,
         polling_period: Duration,
         polling_period_after_update: Duration,
     ) -> Self {
@@ -284,13 +363,13 @@ impl DynamicWg {
                 event: io.events,
                 analytics_tx: io.analytics_tx,
                 link_detection,
-                uapi_fail_counter: 0,
                 libtelio_event: io.libtelio_wide_event_publisher,
                 stats: HashMap::new(),
                 ip_stack: None,
                 polling_period,
                 polling_period_after_update,
                 last_update: Instant::now(),
+                health_monitor,
             }),
         }
     }
@@ -509,20 +588,16 @@ impl State {
 
     async fn uapi_request(&mut self, cmd: &Cmd) -> Result<Response, Error> {
         let ret = self.adapter.send_uapi_cmd(cmd).await?;
-        telio_log_debug!("UAPI request: {}, response: {:?}", &cmd.to_string(), &ret);
+        let status = self.health_monitor.update(&ret);
 
-        // Count continuous adapter failures.
-        // As observed on Windows, a vNIC driver might fail a call right after wake-up,
-        // but will properly resume work after that. In order to determine a non-recoverable failure
-        // such as a malicious removal, we need to count the successive failed calls.
-        // If a certain threshold is reached, cleanup the network config and notify the app about connection loss.
-        if 0 == ret.errno {
-            self.uapi_fail_counter = 0;
-        } else {
-            self.uapi_fail_counter += 1;
-        }
+        telio_log_debug!(
+            "UAPI request: {}, response: {:?}, status: {:?}",
+            &cmd,
+            &ret,
+            status
+        );
 
-        if self.uapi_fail_counter >= MAX_UAPI_FAIL_COUNT && ret.interface.is_none() {
+        if status == TUNHealthStatus::InterfaceGone {
             if let Some(libtelio_event) = &self.libtelio_event {
                 let err_event = LibtelioEvent::builder::<LibtelioError>()
                     .set(EventMsg::from("Interface gone"))
@@ -1011,6 +1086,7 @@ pub mod tests {
     use mockall::predicate;
     use rand::{Rng, RngCore, SeedableRng};
     use telio_crypto::PresharedKey;
+    use telio_model::features::FeaturePolling;
     use telio_sockets::protector::MockProtector;
     use telio_utils::Hidden;
     use tokio::{runtime::Handle, sync::Mutex, task, time::sleep};
@@ -1157,6 +1233,7 @@ pub mod tests {
         let events_ch = Chan::default();
         let analytics_ch = Some(McChan::default().tx);
         let adapter = Arc::new(Mutex::new(MockAdapter::new()));
+        let health_monitor = TUNHealthMonitor::new(&FeatureInterfaceHealth::default());
 
         adapter
             .lock()
@@ -1183,6 +1260,7 @@ pub mod tests {
             Config::new().unwrap(),
             #[cfg(all(unix, not(test)))]
             cfg,
+            health_monitor,
             Duration::from_millis(DEFAULT_POLLING_PERIOD_MS),
             Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS),
         );
@@ -1200,11 +1278,145 @@ pub mod tests {
         }
     }
 
+    // Advance simulated time and give the executor a chance
+    // to run any tasks that depend on it. One yield might not be enough.
+    // https://docs.rs/tokio/latest/tokio/task/fn.yield_now.html
+    async fn advance_time_and_yield(d: Duration) {
+        tokio::time::advance(d).await;
+        tokio::task::yield_now().await;
+    }
+
     #[tokio::test(start_paused = true)]
     async fn wg_setup() {
         let Env { adapter, wg, .. } = setup().await;
 
         adapter.lock().await.expect_stop().return_once(|| ());
+        wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn health_monitor_interface_gone() {
+        let feature_health = FeatureInterfaceHealth::default();
+        let health_monitor = TUNHealthMonitor::new(&feature_health);
+
+        struct InterfaceGoneAdapter {}
+
+        #[async_trait]
+        impl Adapter for InterfaceGoneAdapter {
+            async fn send_uapi_cmd(&self, _cmd: &Cmd) -> Result<Response, AdapterError> {
+                return Ok(Response {
+                    errno: 2,
+                    interface: None,
+                });
+            }
+
+            async fn stop(&self) {}
+            fn get_adapter_luid(&self) -> u64 {
+                0
+            }
+            async fn set_tun(&self, _tun: Tun) -> Result<(), Error> {
+                Ok(())
+            }
+            fn clone_box(&self) -> Option<Box<dyn Adapter>> {
+                None
+            }
+        }
+
+        let events_ch = Chan::default();
+        let (event_tx, mut event_rx) = tokio::sync::broadcast::channel(256);
+
+        let analytics_ch = Some(McChan::default().tx);
+        let wg = DynamicWg::start_with(
+            Io {
+                events: events_ch.tx,
+                analytics_tx: analytics_ch.clone(),
+                libtelio_wide_event_publisher: Some(event_tx),
+            },
+            Box::new(InterfaceGoneAdapter {}),
+            None,
+            #[cfg(all(unix, test))]
+            Config::new().unwrap(),
+            #[cfg(all(unix, not(test)))]
+            cfg,
+            health_monitor,
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_MS),
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS),
+        );
+
+        // Errors within transient-error window
+        for _ in 0..feature_health.sustained_failure_threshold {
+            advance_time_and_yield(Duration::from_secs(1)).await;
+        }
+        assert_eq!(event_rx.len(), 0);
+
+        // Pass the transient-error threshold, expect critical event
+        advance_time_and_yield(Duration::from_secs(1)).await;
+        assert!(matches!(
+            *event_rx.try_recv().unwrap(),
+            telio_model::event::Event::Error { body }
+                if body.code == ErrorCode::Unknown
+                && body.level == ErrorLevel::Critical
+                && body.msg == "Interface gone"
+        ));
+
+        wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn health_monitor_healthy() {
+        let feature_health = FeatureInterfaceHealth::default();
+        let health_monitor = TUNHealthMonitor::new(&feature_health);
+
+        struct HealthyAdapter {}
+
+        #[async_trait]
+        impl Adapter for HealthyAdapter {
+            async fn send_uapi_cmd(&self, _cmd: &Cmd) -> Result<Response, AdapterError> {
+                return Ok(Response {
+                    errno: 0,
+                    interface: Some(Interface::default()),
+                });
+            }
+
+            async fn stop(&self) {}
+            fn get_adapter_luid(&self) -> u64 {
+                0
+            }
+            async fn set_tun(&self, _tun: Tun) -> Result<(), Error> {
+                Ok(())
+            }
+            fn clone_box(&self) -> Option<Box<dyn Adapter>> {
+                None
+            }
+        }
+
+        let events_ch = Chan::default();
+        let (event_tx, event_rx) = tokio::sync::broadcast::channel(256);
+
+        let analytics_ch = Some(McChan::default().tx);
+        let wg = DynamicWg::start_with(
+            Io {
+                events: events_ch.tx,
+                analytics_tx: analytics_ch.clone(),
+                libtelio_wide_event_publisher: Some(event_tx),
+            },
+            Box::new(HealthyAdapter {}),
+            None,
+            #[cfg(all(unix, test))]
+            Config::new().unwrap(),
+            #[cfg(all(unix, not(test)))]
+            cfg,
+            health_monitor,
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_MS),
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS),
+        );
+
+        // No error within and after transient-error window
+        for _ in 0..feature_health.sustained_failure_threshold * 2 {
+            advance_time_and_yield(Duration::from_secs(1)).await;
+        }
+
+        assert_eq!(event_rx.len(), 0);
         wg.stop().await;
     }
 
@@ -1997,5 +2209,76 @@ pub mod tests {
                 &i1_with_modified_other_field
             ));
         }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_wg_health_monitor() {
+        let err_resp = Response {
+            errno: 1,
+            interface: None,
+        };
+
+        let ok_resp = Response {
+            errno: 0,
+            interface: Some(Interface::default()),
+        };
+
+        let feature_health = FeatureInterfaceHealth::default();
+        let mut tracker = TUNHealthMonitor::new(&feature_health);
+
+        // Healthy (no failure)
+        assert_eq!(tracker.update(&ok_resp), TUNHealthStatus::Healthy);
+
+        // Healthy (first failure is considered transient)
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(tracker.update(&err_resp), TUNHealthStatus::Healthy);
+
+        // Healthy (suspend detected)
+        tokio::time::advance(Duration::from_secs(
+            feature_health.suspension_detection_gap.into(),
+        ))
+        .await;
+        assert_eq!(tracker.update(&err_resp), TUNHealthStatus::Healthy);
+
+        // Healthy (failures within transient failure window)
+        for _ in 1..feature_health.sustained_failure_threshold {
+            tokio::time::advance(Duration::from_secs(1)).await;
+            assert_eq!(tracker.update(&err_resp), TUNHealthStatus::Healthy);
+        }
+
+        // Failure (Failures exceed transient failure window)
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(tracker.update(&err_resp), TUNHealthStatus::InterfaceGone);
+
+        // Failure (No success in between last one to reset the streak)
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(tracker.update(&err_resp), TUNHealthStatus::InterfaceGone);
+
+        // Healthy (success resets the state)
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(tracker.update(&ok_resp), TUNHealthStatus::Healthy);
+
+        // Healthy (errors happen infrequently causing suspend detection to reset the streak)
+        for _ in 0..50 {
+            tokio::time::advance(Duration::from_secs(
+                feature_health.suspension_detection_gap.into(),
+            ))
+            .await;
+            assert_eq!(tracker.update(&err_resp), TUNHealthStatus::Healthy);
+        }
+
+        // Healthy (no failures)
+        for _ in 0..50 {
+            tokio::time::advance(Duration::from_secs(1)).await;
+            assert_eq!(tracker.update(&ok_resp), TUNHealthStatus::Healthy);
+        }
+
+        // Healthy (There's an error but adapter is present. We do not handle such case for now)
+        let ok_resp = Response {
+            errno: 2,
+            interface: Some(Interface::default()),
+        };
+        tokio::time::advance(Duration::from_secs(1)).await;
+        assert_eq!(tracker.update(&ok_resp), TUNHealthStatus::Healthy);
     }
 }
