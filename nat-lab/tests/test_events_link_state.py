@@ -8,11 +8,7 @@ from tests.utils import stun
 from tests.utils.bindings import (
     default_features,
     EndpointProvider,
-    FeatureInterfaceHealth,
     FeatureLinkDetection,
-    FeatureWireguard,
-    FeaturePersistentKeepalive,
-    FeaturePolling,
     LinkState,
     NodeState,
     PathType,
@@ -41,26 +37,6 @@ TOLERANCE = 1.5
 IDLE_TIMEOUT_S = round((LINK_STATE_TIMEOUT_S + POSSIBLE_DOWN_DELAY) * TOLERANCE)  # 21s
 
 
-def long_persistent_keepalive_periods() -> FeatureWireguard:
-    return FeatureWireguard(
-        persistent_keepalive=FeaturePersistentKeepalive(
-            proxying=3600, direct=3600, vpn=3600, stun=3600
-        ),
-        polling=FeaturePolling(
-            wireguard_polling_period=1000,
-            wireguard_polling_period_after_state_change=50,
-        ),
-        interface_health=FeatureInterfaceHealth(
-            transient_failure_separation_threshold=10,
-            uapi_poll_suspension_threshold=5,
-        ),
-        enable_dynamic_wg_nt_control=False,
-        skt_buffer_size=None,
-        inter_thread_channel_size=None,
-        max_inter_thread_batched_pkts=None,
-    )
-
-
 def _generate_setup_parameter_pair(
     cfg: List[Tuple[ConnectionTag, TelioAdapterType]],
     direct: bool = False,
@@ -70,22 +46,12 @@ def _generate_setup_parameter_pair(
     features.link_detection = FeatureLinkDetection(
         rtt_seconds=MAX_RTT_ALLOWED_S, use_for_downgrade=False
     )
-    features_default_wg_persistent_keepalive = features.wireguard.persistent_keepalive
 
     if direct and features.direct:
         features.direct.providers = [EndpointProvider.STUN]
-        # Required to trigger direct connection renewal after network switch
-        features.wireguard.persistent_keepalive.direct = (
-            features_default_wg_persistent_keepalive.direct
-        )
     elif vpn:
         # TODO: Remove this if you're adding a "vpn with mesh" test
         assert len(cfg) == 1
-        features.wireguard.persistent_keepalive.vpn = (
-            features_default_wg_persistent_keepalive.vpn
-        )
-    else:
-        features.wireguard = long_persistent_keepalive_periods()
 
     return [
         SetupParameters(
