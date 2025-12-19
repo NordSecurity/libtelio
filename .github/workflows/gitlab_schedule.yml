@@ -9,11 +9,6 @@ on:
 permissions: {}
 
 jobs:
-  read-triggered-ref:
-    uses: ./.github/workflows/read_dotenv.yml
-    with:
-      key: TRIGGERED_REF
-
   prepare-sha:
     runs-on: ubuntu-22.04
     outputs:
@@ -50,8 +45,15 @@ jobs:
           echo "RECORDED_SHA=$RECORDED_SHA" >> $GITHUB_OUTPUT
           echo "::notice::Using commit SHA: $RECORDED_SHA"
 
+  read-triggered-ref:
+    needs: prepare-sha
+    uses: ./.github/workflows/read_dotenv.yml
+    with:
+      key: TRIGGERED_REF
+      sha: ${{ needs.prepare-sha.outputs.recorded_sha }}
+
   trigger-gitlab-pipeline:
-    needs: [read-triggered-ref, prepare-sha]
+    needs: [prepare-sha, read-triggered-ref]
     uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@25e94a4be8c887376dc98ec536132594738ec32a
     secrets:
       ci-api-v4-url: ${{ secrets.CODEHUB_CI_API_V4_URL }}
