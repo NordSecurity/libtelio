@@ -6,7 +6,7 @@ from tests.utils.connection import Connection, TargetOS
 from tests.utils.logger import log
 from tests.utils.process import Process
 from tests.utils.python import get_python_binary
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 
 
 def _get_multicast_script_path(connection: Connection) -> str:
@@ -21,16 +21,22 @@ class MulticastClient:
     _process: Process
     _connection: Connection
 
-    def __init__(self, connection: Connection, protocol: str) -> None:
+    def __init__(
+        self, connection: Connection, protocol: str, timeout: Optional[int]
+    ) -> None:
         self._connection = connection
-        self._process = connection.create_process([
+
+        cmd = [
             get_python_binary(connection),
             _get_multicast_script_path(connection),
             f"--{protocol}",
             "-c",
-            "-t",
-            "5",
-        ])
+        ]
+
+        if timeout is not None:
+            cmd.extend(["-t", str(timeout)])
+
+        self._process = connection.create_process(cmd)
 
     async def execute(self) -> None:
         await self._process.execute()
@@ -41,17 +47,23 @@ class MulticastServer:
     _connection: Connection
     _server_ready_event: Event
 
-    def __init__(self, connection: Connection, protocol: str) -> None:
+    def __init__(
+        self, connection: Connection, protocol: str, timeout: Optional[int]
+    ) -> None:
         self._connection = connection
         self._server_ready_event = Event()
-        self._process = connection.create_process([
+
+        cmd = [
             get_python_binary(connection),
             _get_multicast_script_path(connection),
             f"--{protocol}",
             "-s",
-            "-t",
-            "10",
-        ])
+        ]
+
+        if timeout is not None:
+            cmd.extend(["-t", str(timeout)])
+
+        self._process = connection.create_process(cmd)
 
     async def on_stdout(self, stdout: str) -> None:
         for line in stdout.splitlines():
@@ -59,7 +71,7 @@ class MulticastServer:
                 self._server_ready_event.set()
 
     async def wait_till_ready(self) -> None:
-        await asyncio.wait_for(self._server_ready_event.wait(), timeout=10.0)
+        await self._server_ready_event.wait()
         log.info("MulticastServer is ready")
 
     @asynccontextmanager

@@ -12,7 +12,7 @@ MDNS_REQ: bytes = b"MDNS_REQUEST"
 MDNS_RESP: bytes = b"MDNS_RESPONSE"
 
 
-def ssdp_client(timeout: int):
+def ssdp_client(timeout: int | None):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(timeout)
     s.bind(("0.0.0.0", 0))
@@ -21,7 +21,7 @@ def ssdp_client(timeout: int):
     assert buf == SSDP_RESP
 
 
-def ssdp_server(timeout: int):
+def ssdp_server(timeout: int | None):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(timeout)
     if sys.platform == "darwin":
@@ -45,7 +45,7 @@ def ssdp_server(timeout: int):
             break
 
 
-def mdns_client(timeout: int):
+def mdns_client(timeout: int | None):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(timeout)
     if sys.platform == "darwin":
@@ -64,7 +64,7 @@ def mdns_client(timeout: int):
             break
 
 
-def mdns_server(timeout: int):
+def mdns_server(timeout: int | None):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(timeout)
     if sys.platform == "darwin":
@@ -104,7 +104,7 @@ def main():
     side_group.add_argument("-s", "--server", action="store_true", help="act as server")
 
     parser.add_argument(
-        "-t", "--timeout", type=int, required=True, help="timeout for socket operations"
+        "-t", "--timeout", type=int, help="timeout for socket operations"
     )
 
     args = parser.parse_args()
