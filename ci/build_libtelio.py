@@ -201,6 +201,7 @@ LIBTELIO_CONFIG = {
         "archs": {
             "x86_64": {},
             "mipsel": {},
+            "mips": {},
             "aarch64": {},
         },
         "packages": {
