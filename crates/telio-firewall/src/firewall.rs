@@ -168,8 +168,8 @@ struct Whitelist {
     vpn_peer: Option<PublicKey>,
 }
 
-/// Statefull packet-filter firewall.
-pub struct StatefullFirewall {
+/// Stateful packet-filter firewall.
+pub struct StatefulFirewall {
     /// Firewall loaded library
     firewall_lib: Libfirewall,
     /// Libfirewall instance
@@ -189,16 +189,16 @@ pub struct StatefullFirewall {
 }
 
 // Access to internal firewall structs is guarded by locks, so that should be fine
-unsafe impl Sync for StatefullFirewall {}
-unsafe impl Send for StatefullFirewall {}
+unsafe impl Sync for StatefulFirewall {}
+unsafe impl Send for StatefulFirewall {}
 
-impl LocalInterfacesObserver for StatefullFirewall {
+impl LocalInterfacesObserver for StatefulFirewall {
     fn notify(&self) {
         self.recreate_chain();
     }
 }
 
-impl Drop for StatefullFirewall {
+impl Drop for StatefulFirewall {
     fn drop(&mut self) {
         unsafe {
             (self.firewall_lib.libfw_deinit)(self.firewall);
@@ -206,7 +206,7 @@ impl Drop for StatefullFirewall {
     }
 }
 
-impl StatefullFirewall {
+impl StatefulFirewall {
     /// Constructs firewall with libfw structure pointer
     pub fn new(use_ipv6: bool, feature: &FeatureFirewall) -> Result<Self, ::libloading::Error> {
         let firewall_lib = unsafe { Libfirewall::new(library_filename("firewall"))? };
@@ -573,7 +573,7 @@ extern "C" fn log_callback(level: LibfwLogLevel, log_line: *const std::ffi::c_ch
     }
 }
 
-impl Firewall for StatefullFirewall {
+impl Firewall for StatefulFirewall {
     fn clear_port_whitelist(&self) {
         telio_log_debug!("Clearing firewall port whitelist");
         self.whitelist.write().port_whitelist.clear();

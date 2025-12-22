@@ -3,7 +3,7 @@ mod wg_controller;
 use async_trait::async_trait;
 use telio_crypto::{PublicKey, SecretKey};
 #[cfg(feature = "enable_firewall")]
-use telio_firewall::firewall::{Firewall, StatefullFirewall};
+use telio_firewall::firewall::{Firewall, StatefulFirewall};
 use telio_lana::init_lana;
 #[cfg(feature = "enable_firewall")]
 use telio_network_monitors::monitor::LocalInterfacesObserver;
@@ -333,7 +333,7 @@ pub struct Entities {
 
     // Internal firewall
     #[cfg(feature = "enable_firewall")]
-    firewall: Option<Arc<StatefullFirewall>>,
+    firewall: Option<Arc<StatefulFirewall>>,
 
     // Entities for meshnet connections
     meshnet: MeshnetState,
@@ -1043,9 +1043,9 @@ impl Runtime {
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
         #[cfg(feature = "enable_firewall")]
-        let firewall = StatefullFirewall::new(features.ipv6, &features.firewall)
+        let firewall = StatefulFirewall::new(features.ipv6, &features.firewall)
             .map_err(|err| {
-                telio_log_warn!("Failed to create StatefullFirewall: {:?}", err);
+                telio_log_warn!("Failed to create StatefulFirewall: {:?}", err);
                 err
             })
             .ok()
