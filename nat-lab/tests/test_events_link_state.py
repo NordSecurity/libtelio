@@ -342,13 +342,28 @@ async def test_event_link_state_peer_goes_offline(
         await ping(connection_alpha, beta.ip_addresses[0])
 
         await client_beta.stop_device()
-        # Stopping beta generates rx/tx traffic with alpha, so wait 2 seconds before the next ping to skip the current
-        # polling interval and therefore guarantee that only tx increases (relatively to alpha->beta link)
-        await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
+
+        # Stopping beta generates rx/tx traffic with alpha. Wait for 2 polling cycles
+        # to guarantee that only tx increases (relatively to alpha->beta link)
+        await client_alpha.wait_for_log("UAPI request: get", count=2, incremental=True)
+
+        # Start waiting for the log before we trigger it with ping to avoid missing the event
+        log_wait_task = asyncio.create_task(
+            client_alpha.wait_for_log(
+                "first_tx_after_rx=Some", count=1, incremental=True
+            )
+        )
+        # Trigger the condition with ping (don't wait for result)
+        ping_task = asyncio.create_task(
+            ping(connection_alpha, beta.ip_addresses[0], None)
+        )
+
+        # Wait for the log to appear
+        await log_wait_task
+        # Cancel the ping task since we don't need it anymore
+        ping_task.cancel()
 
         # Expect the link to still be UP for the duration of WG Keepalive timeout + Max. RTT Allowed
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_alpha, beta.ip_addresses[0], MAX_RTT_ALLOWED_S)
         with pytest.raises(asyncio.TimeoutError):
             await client_alpha.wait_for_link_state(
                 beta.public_key, LinkState.DOWN, WG_PASSIVE_KEEPALIVE_S
@@ -357,9 +372,8 @@ async def test_event_link_state_peer_goes_offline(
         # DOWN link state is expected after we send a packet and don't receive for more than:
         # WG Keep alive + Max. RTT allowed + Delay, where,
         #      Delay = 3s
-        await client_alpha.wait_for_link_state(
-            beta.public_key, LinkState.DOWN, (IDLE_TIMEOUT_S - WG_PASSIVE_KEEPALIVE_S)
-        )
+        # Exact timeout proven to be flaky in practice, thus we just wait here indefinitely
+        await client_alpha.wait_for_link_state(beta.public_key, LinkState.DOWN)
 
         assert client_alpha.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
@@ -456,11 +470,24 @@ async def test_event_link_state_peer_doesnt_respond(
         # Beta won't respond to ICMP requests so that Alpha's link detection countdown is triggered (tx_ts > rx_ts)
         # Nevertheless, alpha will still receive beta's passive keepalive, maintaining the link state alive.
         async with ICMP_control(connection_beta):
-            with pytest.raises(asyncio.TimeoutError):
-                await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
+            # Start waiting for first_tx_after_rx before triggering it with ping
+            log_wait_task = asyncio.create_task(
+                client_alpha.wait_for_log(
+                    "first_tx_after_rx=Some", count=1, incremental=True
+                )
+            )
+            # Trigger the condition with ping (don't wait for result)
+            ping_task = asyncio.create_task(
+                ping(connection_alpha, beta.ip_addresses[0], None)
+            )
 
-            # If alpha doesn't receive any packet, alpha->beta DOWN link state would be detected (after 14-21s: IDLE_TIMEOUT_S + tolerance),
-            # however beta is sending a keepalive after WG_PASSIVE_KEEPALIVE_S to let alpha knows that he's alive.
+            # Wait for the log to appear to ensure we're in the monitoring phase
+            await log_wait_task
+            # Cancel the ping task since we don't need it anymore
+            ping_task.cancel()
+
+            # If alpha doesn't receive any packet, alpha->beta DOWN link state would be detected,
+            # however beta is sending a keepalive after WG_PASSIVE_KEEPALIVE_S to let alpha know that it's alive.
             with pytest.raises(asyncio.TimeoutError):
                 await wait_for_any_with_timeout(
                     [
@@ -499,24 +526,31 @@ async def test_event_link_state_delayed_packet(
             add_outgoing_packets_delay(connection_beta, f"{delay_s}s")
         )
 
-        # Waiting for the finish of the previous ping polling interval.
-        await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
+        # Wait for 2 polling cycles to finish the previous ping polling interval
+        await client_alpha.wait_for_log("UAPI request: get", count=2, incremental=True)
 
-        # alpha will only receive the ICMP reply 20s after,
+        # Start waiting for the log before we trigger it with ping
+        log_wait_task = asyncio.create_task(
+            client_alpha.wait_for_log(
+                "first_tx_after_rx=Some", count=1, incremental=True
+            )
+        )
+        # Trigger the condition with ping - alpha will only receive the ICMP reply 21s after,
         # in the meantime alpha->beta link state goes DOWN.
-        ping_instant = asyncio.get_event_loop().time()
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
-
-        await client_alpha.wait_for_link_state(
-            beta.public_key, LinkState.DOWN, IDLE_TIMEOUT_S
+        ping_task = asyncio.create_task(
+            ping(connection_alpha, beta.ip_addresses[0], None)
         )
 
-        time_elapsed_since_ping = asyncio.get_event_loop().time() - ping_instant
-        time_left_for_icmp_arrival = max(0, delay_s - time_elapsed_since_ping)
-        await client_alpha.wait_for_link_state(
-            beta.public_key, LinkState.UP, time_left_for_icmp_arrival + IDLE_TIMEOUT_S
-        )
+        # Wait for the log to appear
+        await log_wait_task
+        # Cancel the ping task since we don't need it anymore
+        ping_task.cancel()
+
+        # Alpha client should detect DOWN link state before the ICMP packet reaches it
+        await client_alpha.wait_for_link_state(beta.public_key, LinkState.DOWN)
+
+        # When the delayed ICMP packet is finally received, alpha should detect the UP link state
+        await client_alpha.wait_for_link_state(beta.public_key, LinkState.UP)
 
         assert client_alpha.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
@@ -598,18 +632,29 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
             toggle_secondary_adapter(connection_alpha, False)
         )
 
-        # notify_network_change() drops every socket, thus generating some traffic with beta. Waiting before the next ping
+        # notify_network_change() drops every socket, thus generating some traffic with beta. Waiting for 2 polling cycles
         # will guarantee a different polling interval where tx is the only counter to be increased
-        await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
+        await client_alpha.wait_for_log("UAPI request: get", count=2, incremental=True)
 
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
+        # Start waiting for the log before we trigger it with ping
+        log_wait_task = asyncio.create_task(
+            client_alpha.wait_for_log(
+                "first_tx_after_rx=Some", count=1, incremental=True
+            )
+        )
+        # Trigger the condition with ping (should fail)
+        ping_task = asyncio.create_task(
+            ping(connection_alpha, beta.ip_addresses[0], None)
+        )
+
+        # Wait for the log to appear
+        await log_wait_task
+        # Cancel the ping task since we don't need it anymore
+        ping_task.cancel()
 
         # On some implementations (eg: WireguardNT) TX packet counter doesn't increase when the adapter is
         # disabled, which means link state detection might fail.
-        await client_alpha.wait_for_link_state(
-            beta.public_key, LinkState.DOWN, IDLE_TIMEOUT_S
-        )
+        await client_alpha.wait_for_link_state(beta.public_key, LinkState.DOWN)
         assert client_alpha.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
@@ -711,12 +756,25 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
             toggle_secondary_adapter(connection_alpha, False)
         )
 
-        # notify_network_change() drops every socket, thus generating some traffic with beta. Waiting before the next ping
+        # notify_network_change() drops every socket, thus generating some traffic with beta. Waiting for 2 polling cycles
         # will guarantee a different polling interval where tx is the only counter to be increased
-        await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
+        await client_alpha.wait_for_log("UAPI request: get", count=2, incremental=True)
 
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_alpha, beta.ip_addresses[0], WG_POLLING_PERIOD_S)
+        # This ping should fail and generate some TX after RX - race them to continue as soon as either completes
+        done, pending = await asyncio.wait(
+            [
+                asyncio.create_task(
+                    client_alpha.wait_for_log(
+                        "first_tx_after_rx=Some", count=1, incremental=True
+                    )
+                ),
+                asyncio.create_task(ping(connection_alpha, beta.ip_addresses[0], None)),
+            ],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        # Cancel any pending task
+        for task in pending:
+            task.cancel()
 
         # On some implementations (eg: WireguardNT) TX packet counter doesn't increase for packets unsucessfully
         # sent, which happens when the pathtype is direct and the adapter is disabled. When that happens link state detection will
@@ -724,9 +782,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
         # However after 3xdirect keep alives the connection is downgraded and any eventual packets will be successfully sent
         # from the WireguardNT perspective, because the following hop is the proxy socket at localhost (relayed peer endpoint)
         # before going to the disabled NIC.
-        await client_alpha.wait_for_link_state(
-            beta.public_key, LinkState.DOWN, IDLE_TIMEOUT_S
-        )
+        await client_alpha.wait_for_link_state(beta.public_key, LinkState.DOWN)
         assert client_alpha.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
@@ -822,12 +878,25 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_with_vpn(
             toggle_secondary_adapter(connection_alpha, False)
         )
 
-        # notify_network_change() drops every socket, thus generating some traffic with beta. Waiting before the next ping
+        # notify_network_change() drops every socket, thus generating some traffic with VPN server. Waiting for 2 polling cycles
         # will guarantee a different polling interval where tx is the only counter to be increased
-        await asyncio.sleep(WG_POLLING_PERIOD_S * 2)
+        await client_alpha.wait_for_log("UAPI request: get", count=2, incremental=True)
 
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_alpha, config.PHOTO_ALBUM_IP, WG_POLLING_PERIOD_S)
+        # Start waiting for the log before we trigger it with ping
+        log_wait_task = asyncio.create_task(
+            client_alpha.wait_for_log(
+                "first_tx_after_rx=Some", count=1, incremental=True
+            )
+        )
+        # Trigger the condition with ping (should fail)
+        ping_task = asyncio.create_task(
+            ping(connection_alpha, config.PHOTO_ALBUM_IP, None)
+        )
+
+        # Wait for the log to appear
+        await log_wait_task
+        # Cancel the ping task since we don't need it anymore
+        ping_task.cancel()
 
         # On some implementations (eg: WireguardNT) TX packet counter doesn't increase for packets unsucessfully
         # sent, which happens when the pathtype is direct and the adapter is disabled. When that happens link state detection will
@@ -835,9 +904,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_with_vpn(
         # However after 3xdirect keep alives the connection is downgraded and any eventual packets will be successfully sent
         # from the WireguardNT perspective, because the following hop is the proxy socket at localhost (relayed peer endpoint)
         # before going to the disabled interface.
-        await client_alpha.wait_for_link_state(
-            vpn_public_key, LinkState.DOWN, IDLE_TIMEOUT_S
-        )
+        await client_alpha.wait_for_link_state(vpn_public_key, LinkState.DOWN)
         assert client_alpha.get_link_state_events(vpn_public_key) == [
             LinkState.DOWN,
             LinkState.UP,

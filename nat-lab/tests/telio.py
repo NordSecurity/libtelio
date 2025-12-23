@@ -1154,19 +1154,34 @@ class Client:
         return event
 
     async def wait_for_log(
-        self, what: str, case_insensitive: bool = True, count=1, not_greater=False
+        self,
+        what: str,
+        case_insensitive: bool = True,
+        count=1,
+        not_greater=False,
+        incremental=False,
     ) -> None:
         if case_insensitive:
             what = what.lower()
+
+        target_count = count
+        if incremental:
+            # Get initial log content to establish baseline
+            initial_logs = await self.get_log()
+            if case_insensitive:
+                initial_logs = initial_logs.lower()
+
+            target_count = initial_logs.count(what) + count
+
         while True:
             logs = await self.get_log()
             if case_insensitive:
                 logs = logs.lower()
             if not_greater:
                 assert (
-                    not logs.count(what) > count
-                ), f'"{what}" appeared {logs.count(what)} times, more than the expected {count}.'
-            if logs.count(what) >= count:
+                    not logs.count(what) > target_count
+                ), f'"{what}" appeared {logs.count(what)} times, more than the expected {target_count}.'
+            if logs.count(what) >= target_count:
                 break
             await asyncio.sleep(1)
 
