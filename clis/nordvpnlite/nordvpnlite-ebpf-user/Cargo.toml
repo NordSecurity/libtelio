@@ -1,0 +1,14 @@
+[package]
+name = "nordvpnlite-ebpf-user"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aya = { version = "0.12", features = ["async_tokio"] }
+aya-log = "0.2"
+nordvpnlite-ebpf-common = { path = "../nordvpnlite-ebpf-common", features = ["user"] }
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+log = "0.4"
+env_logger = "0.11"
+bytes = "1"
