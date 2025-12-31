@@ -68,6 +68,7 @@ winapi = { workspace = true, features = ["ntdef", "winerror"] }
 
 
 [dev-dependencies]
+criterion = "0.8.1"
 maplit.workspace = true
 
 mockall.workspace = true
@@ -82,6 +83,10 @@ telio-pq = { workspace = true, features = ["mockall"] }
 telio-traversal = { workspace = true, features = ["mockall"] }
 telio-utils.workspace = true
 telio-wg = { workspace = true, features = ["mockall", "test-adapter"] }
+
+[[bench]]
+name = "device_bench"
+harness = false
 
 [build-dependencies]
 anyhow.workspace = true
@@ -211,6 +216,19 @@ debug = "full"
 [profile.dev]
 debug = 0
 strip = "debuginfo"
+
+[profile.bench]
+opt-level = 0
+debug = true
+split-debuginfo = '...'  # Platform-specific.
+strip = "none"
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = 'unwind'
+incremental = true
+codegen-units = 256
+rpath = false
 
 #TODO: remove this when anyone starts using telio-starcast
 [workspace.metadata.cargo-udeps.ignore]

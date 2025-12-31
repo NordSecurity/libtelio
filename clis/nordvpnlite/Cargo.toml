@@ -38,9 +38,16 @@ base64 = "0.22.1"
 daemonize = "0.5.0"
 rand.workspace = true
 
+[[bin]]
+name = "perf_monitor"
+path = "src/bin/perf_monitor.rs"
+
 [dev-dependencies]
 serial_test = "3.2.0"
 temp-dir = "0.1.16"
 temp-file = "0.1.9"
 visibility = "0.1.1"
 assert_matches = "1.5.0"
+sha2 = "0.10"
+telio-crypto = { path = "../../crates/telio-crypto" }
+telio-model = { path = "../../crates/telio-model" }

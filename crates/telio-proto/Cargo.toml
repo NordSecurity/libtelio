@@ -15,7 +15,7 @@ llt-proto = { git = "https://github.com/NordSecurity/llt-proto.git", tag = "v1.0
 hyper-util.workspace = true
 prost = "0.14.1"
 protobuf = "3.7.2"
-rustls = { version = "0.23", default-features = false, features = ["std"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 rustls-webpki = { version = "0.103.4", optional = true }
 aws-lc-rs = { version = "=1.13.3", features = ["bindgen"], optional = true }
 tokio-stream = "0.1.17"
@@ -48,11 +48,16 @@ protobuf-codegen.workspace = true
 
 [dev-dependencies]
 async-channel = "2.5.0"
+criterion = "0.5"
 rcgen = "0.14.6"
 telio-utils = { workspace = true, features = ["mockall"] }
 test-log = { version = "0.2.19", features = ["trace"] }
 tokio = { workspace = true, features = ["sync"] }
 tonic = { version = "0.14.2", features = ["tls-aws-lc"] }
+
+[[bench]]
+name = "proto_bench"
+harness = false
 
 [package.metadata.cargo-machete]
 ignored = ["prost", "tonic-prost"]

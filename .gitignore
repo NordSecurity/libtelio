@@ -45,3 +45,4 @@ report.json
 /contrib/http_root/cgi-bin/builder
 *_pb2*.py
 /nat-lab/bin/*.ipk
+benchmark_results

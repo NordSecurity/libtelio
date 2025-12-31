@@ -29,3 +29,11 @@ x25519-dalek.workspace = true
 
 [dev-dependencies]
 bstr = "1.12"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "crypto_bench"
+harness = false
+
+[profile.bench]
+debug = true
