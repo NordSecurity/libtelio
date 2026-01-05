@@ -1,0 +1,1 @@
+Fix StatefulFirewall::set_ip_addresses method, so the internal IP address vector (and thus firewall chain) won't grow indefinitely
