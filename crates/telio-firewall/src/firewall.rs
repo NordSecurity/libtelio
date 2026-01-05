@@ -672,8 +672,10 @@ impl Firewall for StatefullFirewall {
     }
 
     fn set_ip_addresses(&self, ip_addrs: Vec<StdIpAddr>) {
-        self.ip_addresses.write().extend_from_slice(&ip_addrs);
-        self.recreate_chain();
+        if ip_addrs != *self.ip_addresses.read() {
+            *self.ip_addresses.write().as_mut() = ip_addrs;
+            self.recreate_chain();
+        }
     }
 }
 
