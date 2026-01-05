@@ -19,6 +19,7 @@ class UploadMetrics:
     min_rtt: float
     max_rtt: float
     mean_rtt: float
+    transmitted_packets: int
 
 
 @dataclass(frozen=True)
@@ -259,6 +260,29 @@ class IperfClient:
         max_rtt = sender.get("max_rtt", 0) / 1000.0
         mean_rtt = sender.get("mean_rtt", 0) / 1000.0
         return min_rtt, max_rtt, mean_rtt
+
+    def get_transmitted_packets(self) -> int:
+        if not self._json_enabled:
+            raise RuntimeError(
+                "Transmitted packets calculation is only supported in JSON mode."
+            )
+
+        if self._json_data is None:
+            raise RuntimeError("JSON output not parsed yet. Call done() first.")
+
+        try:
+            total_bytes_sent = self._json_data["end"]["sum_sent"]["bytes"]
+            tcp_mss = self._json_data["start"]["tcp_mss_default"]
+        except KeyError as e:
+            raise RuntimeError(f"Missing expected key in JSON output: {e}") from e
+
+        if tcp_mss == 0:
+            raise RuntimeError(
+                "TCP_MSS value is zero, cannot calculate transmitted packets."
+            )
+
+        number_of_packets = total_bytes_sent / tcp_mss
+        return int(number_of_packets)
 
     async def on_stdout(self, stdout: str) -> None:
         await self._output_notifier.handle_output(stdout)

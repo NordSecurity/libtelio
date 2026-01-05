@@ -63,6 +63,8 @@ async def collect_upload_metrics(
                 Maximum RTT in milliseconds.
             mean_rtt : float
                 Mean RTT in milliseconds.
+            transmitted_packets: int
+                Number of transmitted packets.
 
     Raises
     ------
@@ -99,12 +101,15 @@ async def collect_upload_metrics(
     log.info("Retransmits: %s", retransmits)
     min_rtt, max_rtt, mean_rtt = client.get_rtt_stats()
     log.info("RTT: %s, %s, %s", min_rtt, max_rtt, mean_rtt)
+    transmitted_packets = client.get_transmitted_packets()
+    log.info("Transmitted Packets: %s", transmitted_packets)
     return UploadMetrics(
         upload_speed=upload_speed,
         retransmits=retransmits,
         min_rtt=min_rtt,
         max_rtt=max_rtt,
         mean_rtt=mean_rtt,
+        transmitted_packets=transmitted_packets,
     )
 
 
