@@ -182,6 +182,7 @@ markers = [
     "windows2: tests that require a second Windows VM to be running",
     "mac: tests that require Mac VM to be running",
     "linux_native: tests that use linux native WG implementation",
+    "fullcone: tests that require fullcone VM to be running",
     "long: tests that take a lot of time to run",
     "moose: test that requires build with full moose",
     "ipv4: tests only ipv4 WG connectivity",
