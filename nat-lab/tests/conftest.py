@@ -696,25 +696,29 @@ def pytest_sessionstart(session):
 
 # pylint: disable=unused-argument
 def pytest_sessionfinish(session, exitstatus):
-    if os.environ.get("NATLAB_SAVE_LOGS") is None:
+    if os.environ.get("NATLAB_SAVE_LOGS") is None or session.config.option.collectonly:
         return
 
     END_TASKS.set()
 
-    if not session.config.option.collectonly:
-        if RUNNER is not None and SESSION_SCOPE_EXIT_STACK is not None:
-            try:
-                RUNNER.run(SESSION_SCOPE_EXIT_STACK.aclose())
-            finally:
-                RUNNER.close()
-        elif RUNNER is not None:
+    if RUNNER is not None and SESSION_SCOPE_EXIT_STACK is not None:
+        try:
+            RUNNER.run(SESSION_SCOPE_EXIT_STACK.aclose())
+        finally:
             RUNNER.close()
-        collect_nordderper_logs()
-        collect_dns_server_logs()
-        collect_core_api_server_logs()
-        asyncio.run(collect_kernel_logs(session.items, "after_tests"))
-        asyncio.run(collect_mac_diagnostic_reports())
-        asyncio.run(save_nordlynx_logs())
+    elif RUNNER is not None:
+        RUNNER.close()
+
+    asyncio.run(collect_logs())
+
+
+async def collect_logs():
+    collect_nordderper_logs()
+    collect_dns_server_logs()
+    collect_core_api_server_logs()
+    await collect_kernel_logs("after_tests")
+    await collect_mac_diagnostic_reports()
+    await save_nordlynx_logs()
 
 
 def collect_nordderper_logs():
