@@ -204,7 +204,11 @@ async def test_adapter_state_for_vpn_and_dns(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.DOCKER_VPN_1],
+            )
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]

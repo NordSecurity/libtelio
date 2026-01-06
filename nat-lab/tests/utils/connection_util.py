@@ -27,6 +27,8 @@ from tests.utils.network_switcher import (
 )
 from typing import AsyncIterator, Tuple, Optional, List, Union
 
+IS_VM_RUNNING_PING_TIMEOUT = 10.0
+
 
 @dataclass
 class ConnectionManager:

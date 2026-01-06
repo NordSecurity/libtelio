@@ -360,7 +360,7 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
                         is_meshnet=False,
                     )
                 ],
-                prepare_vpn=True,
+                vpn=[ConnectionTag.DOCKER_VPN_1],
             )
         )
         api = env.api
@@ -671,7 +671,7 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
                         is_meshnet=False,
                     )
                 ],
-                prepare_vpn=True,
+                vpn=[ConnectionTag.DOCKER_VPN_1],
             )
         )
         connection, *_ = [conn.connection for conn in env.connections]
