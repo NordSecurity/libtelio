@@ -282,7 +282,7 @@ async def test_adapter_state_for_meshnet(alpha_setup_params: SetupParameters) ->
     async with AsyncExitStack() as exit_stack:
         # Creates and enables meshnet without any nodes
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(exit_stack, [alpha_setup_params])
         )
 
         api = env.api
