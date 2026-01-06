@@ -629,23 +629,22 @@ async def _save_macos_logs(conn, suffix):
         log.warning("Failed to collect dmesg logs %s", e)
 
 
-async def collect_kernel_logs(items, suffix):
+async def collect_kernel_logs(suffix):
     os.makedirs(LOG_DIR, exist_ok=True)
 
     save_dmesg_from_host(suffix)
     save_audit_log_from_host(suffix)
     await save_dmesg_from_remote_vm(ConnectionTag.VM_LINUX_NLX_1, suffix)
 
-    for item in items:
-        if any(mark.name == "mac" for mark in item.own_markers):
-            try:
-                async with SshConnection.new_connection(
-                    LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
-                ) as conn:
-                    await _save_macos_logs(conn, suffix)
-            except OSError as e:
-                if os.environ.get("GITLAB_CI"):
-                    raise e
+    if "mac" in SESSION_VM_MARKS:
+        try:
+            async with SshConnection.new_connection(
+                LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
+            ) as conn:
+                await _save_macos_logs(conn, suffix)
+        except OSError as e:
+            if os.environ.get("GITLAB_CI"):
+                raise e
 
 
 def pytest_collection_modifyitems(items):
@@ -672,7 +671,7 @@ def pytest_runtestloop(session):
             pytest.exit("Setup checks failed, exiting ...")
 
         if os.environ.get("NATLAB_SAVE_LOGS") is not None:
-            asyncio.run(collect_kernel_logs(session.items, "before_tests"))
+            asyncio.run(collect_kernel_logs("before_tests"))
 
         asyncio.run(_copy_vm_binaries_if_needed())
 
@@ -775,25 +774,24 @@ def copy_file_from_container(container_name, src_path, dst_path):
 
 async def collect_mac_diagnostic_reports():
     is_ci = "GITLAB_CI" in os.environ
-    if not (is_ci or "NATLAB_COLLECT_MAC_DIAGNOSTIC_LOGS" in os.environ):
+    if not (
+        is_ci
+        or "NATLAB_COLLECT_MAC_DIAGNOSTIC_LOGS" in os.environ
+        or "mac" in SESSION_VM_MARKS
+    ):
         return
     log.info("Collect mac diagnostic reports")
-    try:
-        async with SshConnection.new_connection(
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
-        ) as connection:
-            await connection.download(
-                "/Library/Logs/DiagnosticReports",
-                f"{LOG_DIR}/system_diagnostic_reports",
-            )
-            await connection.download(
-                "/root/Library/Logs/DiagnosticReports",
-                f"{LOG_DIR}/user_diagnostic_reports",
-            )
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        log.error("Failed to connect to the mac VM: %s", e)
-        if is_ci:
-            raise e
+    async with SshConnection.new_connection(
+        LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
+    ) as connection:
+        await connection.download(
+            "/Library/Logs/DiagnosticReports",
+            f"{LOG_DIR}/system_diagnostic_reports",
+        )
+        await connection.download(
+            "/root/Library/Logs/DiagnosticReports",
+            f"{LOG_DIR}/user_diagnostic_reports",
+        )
 
 
 async def start_tcpdump_processes():
