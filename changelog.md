@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v6.2.1
+### ****
+---
+* LLT-6935: Fix StatefulFirewall::set_ip_addresses method, so the internal IP address vector (and thus firewall chain) won't grow indefinitely
+
+<br>
+
 ### v6.2.0-rc0
 ### **Pink Soup**
 ---

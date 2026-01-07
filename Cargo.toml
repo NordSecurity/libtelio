@@ -1,6 +1,6 @@
 [package]
 name = "telio"
-version = "6.1.0"
+version = "6.2.1"
 authors = ["info@nordvpn.com"]
 edition = "2018"
 license = "GPL-3.0-only"
