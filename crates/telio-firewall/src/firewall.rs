@@ -883,8 +883,10 @@ impl Firewall for StatefullFirewall {
     }
 
     fn set_ip_addresses(&self, ip_addrs: Vec<StdIpAddr>) {
-        self.ip_addresses.write().extend_from_slice(&ip_addrs);
-        self.recreate_chain();
+        if ip_addrs != *self.ip_addresses.read() {
+            *self.ip_addresses.write().as_mut() = ip_addrs;
+            self.recreate_chain();
+        }
     }
 }
 
@@ -1448,6 +1450,33 @@ pub mod tests {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(dst2, src1, TcpFlags::SYN)), false);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &make_tcp(src1, dst1, TcpFlags::SYN)), false);
         }
+    }
+
+    fn ip_address_set_multiple_times() {
+        let ip_vec = vec![
+            StdIpAddr::V4(StdIpv4Addr::new(127, 0, 0, 1)),
+            StdIpAddr::V6(StdIpv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+        ];
+        let new_ip_vec = vec![
+            StdIpAddr::V4(StdIpv4Addr::new(192, 168, 1, 1)),
+            StdIpAddr::V6(StdIpv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 1)),
+        ];
+
+        let fw = StatefullFirewall::new(false, &FeatureFirewall::default());
+
+        assert_eq!(fw.ip_addresses.read().len(), 0);
+
+        fw.set_ip_addresses(ip_vec.clone());
+        assert_eq!(fw.ip_addresses.read().len(), 2);
+        assert_eq!(*fw.ip_addresses.read(), ip_vec);
+
+        fw.set_ip_addresses(ip_vec.clone());
+        assert_eq!(fw.ip_addresses.read().len(), 2);
+        assert_eq!(*fw.ip_addresses.read(), ip_vec);
+
+        fw.set_ip_addresses(new_ip_vec.clone());
+        assert_eq!(fw.ip_addresses.read().len(), 2);
+        assert_eq!(*fw.ip_addresses.read(), new_ip_vec);
     }
 
     #[rustfmt::skip]
