@@ -12,7 +12,7 @@ class WindowsRouter(Router):
     _connection: Connection
     _interface_name: str
     # The average time it takes to set up an interface on Windows is ~3 seconds
-    _status_check_timeout_s: float = 10.0
+    _status_check_timeout_s: float = 30.0
 
     def __init__(self, connection: Connection, ip_stack: IPStack):
         super().__init__(ip_stack)
