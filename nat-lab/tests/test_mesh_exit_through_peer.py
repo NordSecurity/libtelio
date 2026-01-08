@@ -20,6 +20,7 @@ from tests.utils.connection_util import (
 )
 from tests.utils.ping import ping
 from tests.utils.router import IPProto, IPStack
+from tests.utils.testing import log_test_passed
 
 
 # Marks in-tunnel stack only, exiting only through IPv4
@@ -190,6 +191,7 @@ async def test_mesh_exit_through_peer(
             await client_alpha.wait_for_event_peer(
                 beta.public_key, list(NodeState), list(PathType), timeout=5
             )
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -299,3 +301,4 @@ async def test_ipv6_exit_node(
 
         assert await alpha_conn_tracker.find_conntracker_violations() is None
         assert await beta_conn_tracker.find_conntracker_violations() is None
+        log_test_passed()

@@ -4,6 +4,7 @@ from contextlib import AsyncExitStack
 from tests.helpers import setup_mesh_nodes, SetupParameters
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag
+from tests.utils.testing import log_test_passed
 
 DEFAULT_WAITING_TIME = 2
 
@@ -47,3 +48,4 @@ async def test_network_monitor(
             count=NR_OF_NOTIFICATIONS,
             not_greater=True,
         )
+        log_test_passed()

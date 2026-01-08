@@ -26,6 +26,7 @@ from tests.utils.network_switcher.network_switcher_windows import (
 )
 from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
+from tests.utils.testing import log_test_passed
 from unittest.mock import Mock, AsyncMock, patch
 
 
@@ -62,6 +63,8 @@ async def test_network_switcher(
         assert conn_mngr.network_switcher
         await conn_mngr.network_switcher.switch_to_secondary_network()
         assert await stun.get(conn_mngr.connection, config.STUN_SERVER) == secondary_ip
+
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -127,6 +130,8 @@ async def test_mesh_network_switch(
         await client_alpha.notify_network_change()
 
         await ping(alpha_conn_mngr.connection, beta.ip_addresses[0])
+
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -202,6 +207,8 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
 
         ip = await stun.get(alpha_connection, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
+
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -308,6 +315,8 @@ async def test_mesh_network_switch_direct(
             "telio_traversal::endpoint_providers::stun.*Starting session failed.*A socket operation was attempted to an unreachable network"
         ])
 
+        log_test_passed()
+
 
 class TestInterfaceWindows:
     @pytest.mark.asyncio
@@ -372,6 +381,8 @@ Configuration for interface "Loopback Pseudo-Interface 1"
         assert await ifc.get_state(mock_connection) is InterfaceState.Enabled
         assert ifc.ipv4 == config.LAN_ADDR_MAP[ConnectionTag.VM_WINDOWS_1]["primary"]
 
+        log_test_passed()
+
     @pytest.mark.asyncio
     async def test_delete_route_fails(self):
         mock_connection = Mock()
@@ -410,6 +421,8 @@ Configuration for interface "Loopback Pseudo-Interface 1"
                 "Ethernet Instance 0", InterfaceState.Enabled
             ).delete_route(mock_connection)
 
+        log_test_passed()
+
     @pytest.mark.asyncio
     async def test_interface_enable_with_slow_startup(self):
         mock_connection = Mock()
@@ -442,6 +455,8 @@ Configuration for interface "Loopback Pseudo-Interface 1"
                 await ifc.enable(mock_connection)
                 assert attempt_count == 10
 
+        log_test_passed()
+
 
 class TestNetworkSwitcherWindows:
     @pytest.mark.asyncio
@@ -469,6 +484,8 @@ class TestNetworkSwitcherWindows:
             # pylint: disable=protected-access
             assert nw_switcher._primary_interface == test_interfaces[0]
             assert nw_switcher._secondary_interface == test_interfaces[1]
+
+        log_test_passed()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -503,6 +520,8 @@ class TestNetworkSwitcherWindows:
         ):
             with pytest.raises(AssertionError, match=strerr):
                 await NetworkSwitcherWindows.create(mock_connection)
+
+        log_test_passed()
 
     @pytest.mark.asyncio
     async def test_create_with_disabled_interface_with_ip_assigned(self):
@@ -553,6 +572,8 @@ Configuration for interface "Loopback Pseudo-Interface 1"
         ):
             await NetworkSwitcherWindows.create(mock_connection)
 
+        log_test_passed()
+
     @pytest.mark.asyncio
     async def test_create_with_enabled_interface_without_ip_assigned(self):
         mock_connection = Mock()
@@ -600,6 +621,8 @@ Configuration for interface "Loopback Pseudo-Interface 1"
             AssertionError, match=r"Couldn't find secondary VM interface"
         ):
             await NetworkSwitcherWindows.create(mock_connection)
+
+        log_test_passed()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -666,6 +689,8 @@ Configuration for interface "Loopback Pseudo-Interface 1"
                 f"nexthop={gateway}",
             ])
 
+        log_test_passed()
+
     @pytest.mark.asyncio
     async def test_switch_network_failure(self):
         mock_primary = Mock(
@@ -709,3 +734,5 @@ Configuration for interface "Loopback Pseudo-Interface 1"
                 Exception, match="Failed to switch to secondary network"
             ):
                 await nw_switcher.switch_to_secondary_network()
+
+        log_test_passed()

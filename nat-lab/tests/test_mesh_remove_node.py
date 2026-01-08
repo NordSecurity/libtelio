@@ -7,6 +7,7 @@ from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.ping import ping
+from tests.utils.testing import log_test_passed
 
 
 @pytest.mark.asyncio
@@ -129,3 +130,4 @@ async def test_mesh_remove_node(
             await ping(connection_beta, gamma.ip_addresses[0], 5)
         with pytest.raises(asyncio.TimeoutError):
             await ping(connection_gamma, alpha.ip_addresses[0], 5)
+        log_test_passed()

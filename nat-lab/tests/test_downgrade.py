@@ -13,6 +13,7 @@ from tests.utils.bindings import (
 )
 from tests.utils.connection import ConnectionTag
 from tests.utils.ping import ping
+from tests.utils.testing import log_test_passed
 from typing import List, Tuple
 
 
@@ -98,6 +99,7 @@ async def test_downgrade_using_link_detection(
         # Check the relayed connection
         await ping(alpha_connection, beta.ip_addresses[0], 15)
         await ping(beta_connection, alpha.ip_addresses[0], 15)
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -179,3 +181,4 @@ async def test_downgrade_using_link_detection_with_silent_connection(
         # Check the relayed connection
         await ping(alpha_connection, beta.ip_addresses[0], 15)
         await ping(beta_connection, alpha.ip_addresses[0], 15)
+        log_test_passed()

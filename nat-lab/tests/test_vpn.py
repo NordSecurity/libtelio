@@ -24,6 +24,7 @@ from tests.utils.netcat import NetCatClient
 from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
 from tests.utils.router import IPProto, IPStack
+from tests.utils.testing import log_test_passed
 
 
 @pytest.mark.parametrize(
@@ -133,6 +134,7 @@ async def test_vpn_connection(
                 alpha.ip_addresses[0],
                 vpn_conf.server_conf,
             )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -241,6 +243,7 @@ async def test_vpn_reconnect(
             alpha.ip_addresses[0],
             config.WG_SERVER_2,
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -358,6 +361,7 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             # But our connection killing mechanism will reset connection resulting in CLOSE output.
             # Wait for close on both clients
             await conntrack.wait_for_no_violations()
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -438,6 +442,7 @@ async def test_firewall_blacklist_tcp(ipv4: bool) -> None:
                 await beta_connection.create_process(["curl", serv_ip]).execute()
 
             await conntrack.wait_for_no_violations()
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -514,6 +519,7 @@ async def test_firewall_blacklist_udp(ipv4: bool) -> None:
                 ),
                 ipv6=not ipv4,
             ).execute()
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -610,6 +616,7 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
 
         # nc client should be closed by the reset mechanism
         await nc_client.is_done()
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -720,3 +727,4 @@ async def test_vpn_connection_private_key_change(
         assert (
             ip == config.WG_SERVER["ipv4"]
         ), f"wrong public IP when connected to VPN {ip}"
+        log_test_passed()

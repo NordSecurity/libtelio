@@ -4,6 +4,7 @@ from tests.uniffi import (
     FirewallBlacklistTuple,
     IpProtocol,
 )
+from tests.utils.testing import log_test_passed
 
 
 def test_telio_features_builder_empty():
@@ -24,6 +25,8 @@ def test_telio_features_builder_empty():
     expect = deserialize_feature_config(json)
 
     assert expect == built
+
+    log_test_passed()
 
 
 def test_telio_features_builder_firewall():
@@ -59,6 +62,8 @@ def test_telio_features_builder_firewall():
 
     assert expect == built
 
+    log_test_passed()
+
 
 def test_telio_features_builder_lana():
     built = FeaturesDefaultsBuilder().enable_lana("some/path", False).build()
@@ -81,6 +86,8 @@ def test_telio_features_builder_lana():
     expect = deserialize_feature_config(json)
 
     assert expect == built
+
+    log_test_passed()
 
 
 def test_telio_features_builder_all_defaults():
@@ -128,3 +135,5 @@ def test_telio_features_builder_all_defaults():
     expect = deserialize_feature_config(json)
 
     assert expect == built, f"json:\n{expect}\n\nbuilt:\n{built}"
+
+    log_test_passed()

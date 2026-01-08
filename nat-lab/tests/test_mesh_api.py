@@ -6,6 +6,7 @@ from tests.config import DERP_PRIMARY, DERP_FAKE
 from tests.mesh_api import Node, API
 from tests.utils.bindings import Config, Peer, PeerBase
 from tests.utils.router import IPProto
+from tests.utils.testing import log_test_passed
 
 if platform.machine() != "x86_64":
     import tests.pure_wg as Key
@@ -24,6 +25,8 @@ class TestNode:
 
         expected = {"name": "aa", "id": "bb", "sk": sk, "pk": pk}
         assert node.to_client_config() == expected
+
+        log_test_passed()
 
     def test_to_peer_config(self) -> None:
         node = Node()
@@ -63,6 +66,8 @@ class TestNode:
         assert node.to_peer_config_for_node(node).allow_incoming_connections
         assert not node.to_peer_config_for_node(node).allow_peer_send_files
 
+        log_test_passed()
+
 
 class TestMeshApi:
     def test_register_node(self) -> None:
@@ -74,6 +79,8 @@ class TestMeshApi:
         assert node.private_key == sk
         assert node.public_key == pk
 
+        log_test_passed()
+
     def test_register_duplicate_node(self) -> None:
         api = API()
         api.register(name="aa", node_id="bb", private_key="cc", public_key="dd")
@@ -83,11 +90,15 @@ class TestMeshApi:
 
         assert e.value.node_id == "bb"
 
+        log_test_passed()
+
     def test_get_meshnet_config_missing_node(self) -> None:
         api = API()
         with pytest.raises(mesh_api.MissingNodeError) as e:
             api.get_meshnet_config(node_id="aa")
         assert e.value.node_id == "aa"
+
+        log_test_passed()
 
     def test_get_meshnet_config(self) -> None:
         api = API()
@@ -126,6 +137,8 @@ class TestMeshApi:
 
         assert meshnet_config == expected
 
+        log_test_passed()
+
     def test_get_meshnet_config_derp_servers(self):
         api = API()
         api.register(name="name", node_id="id", private_key="sk", public_key="pk")
@@ -133,6 +146,8 @@ class TestMeshApi:
         derp_servers = [DERP_FAKE, DERP_PRIMARY]
         meshnet_config = api.get_meshnet_config("id", derp_servers=derp_servers)
         assert meshnet_config.derp_servers == derp_servers
+
+        log_test_passed()
 
     def test_assign_ip(self):
         api = API()
@@ -161,6 +176,8 @@ class TestMeshApi:
             ipaddress.ip_address(node2.ip_addresses[2]), ipaddress.IPv4Address
         )
 
+        log_test_passed()
+
     def test_assign_nickname(self):
         api = API()
         alpha = api.register(
@@ -183,6 +200,8 @@ class TestMeshApi:
 
         assert alpha.nickname is None
         assert beta.nickname is None
+
+        log_test_passed()
 
     def test_assign_invalid_nickname(self):
         api = API()
@@ -211,6 +230,8 @@ class TestMeshApi:
 
         assert alpha.nickname is None
 
+        log_test_passed()
+
     def test_assign_duplicated_nickname(self):
         api = API()
         alpha = api.register(
@@ -227,3 +248,5 @@ class TestMeshApi:
         assert e.value.node_id == "id1"
         assert alpha.nickname == "john"
         assert beta.nickname is None
+
+        log_test_passed()

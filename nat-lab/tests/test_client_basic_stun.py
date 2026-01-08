@@ -3,6 +3,7 @@ from tests import config
 from tests.utils import stun
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import new_connection_by_tag
+from tests.utils.testing import log_test_passed
 
 
 @pytest.mark.asyncio
@@ -20,3 +21,4 @@ async def test_client_basic_stun(connection_tag: ConnectionTag, public_ip: str) 
     async with new_connection_by_tag(connection_tag) as connection:
         ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public ip for the client {ip}"
+        log_test_passed()

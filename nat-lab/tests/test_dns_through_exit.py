@@ -8,6 +8,7 @@ from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.dns import query_dns
 from tests.utils.router import IPStack
+from tests.utils.testing import log_test_passed
 from typing import List, Tuple
 
 
@@ -205,3 +206,4 @@ async def test_dns_through_exit(
         client_exit.allow_errors(
             ["telio_dns::nameserver.*Invalid protocol for DNS request"]
         )
+        log_test_passed()

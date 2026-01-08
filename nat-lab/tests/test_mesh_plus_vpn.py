@@ -20,6 +20,7 @@ from tests.utils.connection_util import (
     new_connection_with_conn_tracker,
 )
 from tests.utils.ping import ping
+from tests.utils.testing import log_test_passed
 
 
 # Marks in-tunnel stack only, exiting only through IPv4
@@ -118,6 +119,7 @@ async def test_mesh_plus_vpn_one_peer(
         assert (
             public_ip == wg_server["ipv4"]
         ), f"wrong public IP when connected to VPN {public_ip}"
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -230,6 +232,7 @@ async def test_mesh_plus_vpn_both_peers(
             assert (
                 public_ip == wg_server["ipv4"]
             ), f"wrong public IP when connected to VPN {public_ip}"
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -342,6 +345,7 @@ async def test_vpn_plus_mesh(
 
         assert await alpha_conn_tracker.find_conntracker_violations() is None
         assert await beta_conn_tracker.find_conntracker_violations() is None
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -485,6 +489,7 @@ async def test_vpn_plus_mesh_over_direct(
         client_beta.allow_errors(
             ["telio_proxy::proxy.*Unable to send. WG Address not available"]
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -654,3 +659,4 @@ async def test_vpn_plus_mesh_over_different_connection_types(
         client_beta.allow_errors(
             ["telio_proxy::proxy.*Unable to send. WG Address not available"]
         )
+        log_test_passed()

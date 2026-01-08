@@ -33,6 +33,7 @@ from tests.utils.connection.docker_connection import (
     DOCKER_GW_MAP,
 )
 from tests.utils.logger import log
+from tests.utils.testing import log_test_passed
 from tests.utils.traffic import (
     capture_traffic,
     render_chart,
@@ -271,6 +272,7 @@ async def test_batching(
             log.info(delay_chart)
 
             log.info("Score: %s", get_ordered_histogram_score(delay_hs))
+        log_test_passed()
 
 
 def proxying_peer_parameters(clients: List[ConnectionTag]):
@@ -343,3 +345,4 @@ async def test_proxying_peer_batched_keepalive(
             timeout=30,
             link_state=LinkState.DOWN,
         )
+        log_test_passed()

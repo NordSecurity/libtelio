@@ -24,6 +24,7 @@ from tests.utils.connection_util import (
     toggle_secondary_adapter,
 )
 from tests.utils.ping import ping
+from tests.utils.testing import log_test_passed
 from typing import List, Tuple
 
 WG_POLLING_PERIOD_S = 1
@@ -224,6 +225,7 @@ async def test_event_link_state_peers_idle_all_time(
             LinkState.DOWN,
             LinkState.UP,
         ]
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -252,6 +254,7 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
             LinkState.DOWN,
             LinkState.UP,
         ]
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -318,6 +321,7 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
             LinkState.DOWN,
             LinkState.UP,
         ]
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -371,6 +375,7 @@ async def test_event_link_state_peer_goes_offline(
             LinkState.DOWN,
             LinkState.UP,
         ]
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -396,6 +401,7 @@ async def test_event_link_state_feature_disabled(
 
         assert len(alpha_events) == 0
         assert len(beta_events) == 0
+        log_test_passed()
 
 
 class ICMP_control:
@@ -477,6 +483,7 @@ async def test_event_link_state_peer_doesnt_respond(
                     ],
                     timeout=IDLE_TIMEOUT_S,
                 )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -528,6 +535,7 @@ async def test_event_link_state_delayed_packet(
             LinkState.DOWN,
             LinkState.UP,
         ]
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -624,6 +632,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
         #     LinkState.DOWN,
         #     LinkState.UP,
         # ]
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -743,6 +752,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
         #     LinkState.DOWN,
         #     LinkState.UP,
         # ]
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -843,3 +853,4 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_with_vpn(
             LinkState.UP,
             LinkState.DOWN,
         ]
+        log_test_passed()

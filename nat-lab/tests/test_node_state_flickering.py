@@ -14,6 +14,7 @@ from tests.utils.bindings import (
 )
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
+from tests.utils.testing import log_test_passed
 
 
 @pytest.mark.asyncio
@@ -102,6 +103,7 @@ async def test_node_state_flickering_relay(
                 client_alpha.wait_for_event_on_any_derp(list(RelayState), timeout=120),
                 client_beta.wait_for_event_on_any_derp(list(RelayState), timeout=120),
             )
+        log_test_passed()
 
 
 CFG = [
@@ -179,3 +181,4 @@ async def test_node_state_flickering_direct(
                 client_alpha.wait_for_event_on_any_derp(list(RelayState), timeout=120),
                 client_beta.wait_for_event_on_any_derp(list(RelayState), timeout=120),
             )
+        log_test_passed()

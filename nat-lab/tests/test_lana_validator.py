@@ -1,4 +1,5 @@
 from tests.utils import analytics
+from tests.utils.testing import log_test_passed
 
 TEST_EVENT = analytics.Event(
     name="heartbeat",
@@ -53,19 +54,27 @@ def check_validator(validator, true_event, false_event) -> None:
 def test_existance_validator() -> None:
     check_validator(analytics.ExistanceValidator(), "test", "")
 
+    log_test_passed()
+
 
 def test_inexistance_validator() -> None:
     check_validator(analytics.InexistanceValidator(), "", "test")
 
+    log_test_passed()
+
 
 def test_string_equals_validator() -> None:
     check_validator(analytics.StringEqualsValidator("test"), "test", "apple")
+
+    log_test_passed()
 
 
 def test_string_containment_validator() -> None:
     check_validator(
         analytics.StringContainmentValidator("test"), "truetestapple", "trueapple"
     )
+
+    log_test_passed()
 
 
 def test_string_occurences_validator() -> None:
@@ -75,17 +84,25 @@ def test_string_occurences_validator() -> None:
         "testappletrue",
     )
 
+    log_test_passed()
+
 
 def test_integer_equals_validator() -> None:
     check_validator(analytics.IntegerEqualityValidator(7), 7, 5)
+
+    log_test_passed()
 
 
 def test_integer_not_equals_validator() -> None:
     check_validator(analytics.IntegerEqualityValidator(5, False), 7, 5)
 
+    log_test_passed()
+
 
 def test_connection_count_validator() -> None:
     check_validator(analytics.ConnectionCountValidator(2), "gamma, beta", "beta")
+
+    log_test_passed()
 
 
 def test_connection_state_validator() -> None:
@@ -118,6 +135,8 @@ def test_connection_state_validator() -> None:
         DUMMY_EVENT.external_links,
     )
 
+    log_test_passed()
+
 
 def test_string_validator() -> None:
     check_validator(
@@ -131,15 +150,21 @@ def test_string_validator() -> None:
         "appletest",
     )
 
+    log_test_passed()
+
 
 def test_name_validator() -> None:
     check_validator(analytics.NameValidator("heartbeat"), TEST_EVENT, DUMMY_EVENT)
+
+    log_test_passed()
 
 
 def test_category_validator() -> None:
     check_validator(
         analytics.CategoryValidator("service_quality"), TEST_EVENT, DUMMY_EVENT
     )
+
+    log_test_passed()
 
 
 def test_external_links_validator() -> None:
@@ -180,6 +205,8 @@ def test_external_links_validator() -> None:
         DUMMY_EVENT,
     )
 
+    log_test_passed()
+
 
 def test_connectivity_matrix_validator() -> None:
     check_validator(
@@ -209,11 +236,15 @@ def test_connectivity_matrix_validator() -> None:
         DUMMY_EVENT,
     )
 
+    log_test_passed()
+
 
 def test_fingerprint_validator() -> None:
     check_validator(
         analytics.FingerprintValidator(equals="86bee206-9082"), TEST_EVENT, DUMMY_EVENT
     )
+
+    log_test_passed()
 
 
 def test_members_validator() -> None:
@@ -227,37 +258,55 @@ def test_members_validator() -> None:
         DUMMY_EVENT,
     )
 
+    log_test_passed()
+
 
 def test_connection_duration_validator() -> None:
     check_validator(analytics.ConnectionDurationValidator(), TEST_EVENT, DUMMY_EVENT)
+
+    log_test_passed()
 
 
 def test_heartbeat_interval_validator() -> None:
     check_validator(analytics.HeartbeatIntervalValidator(3600), TEST_EVENT, DUMMY_EVENT)
 
+    log_test_passed()
+
 
 def test_recieved_data_validator() -> None:
     check_validator(analytics.ReceivedDataValidator(), TEST_EVENT, DUMMY_EVENT)
+
+    log_test_passed()
 
 
 def test_rtt_validator() -> None:
     check_validator(analytics.RttValidator(), TEST_EVENT, DUMMY_EVENT)
 
+    log_test_passed()
+
 
 def test_rtt_loss_validator() -> None:
     check_validator(analytics.RttLossValidator(), TEST_EVENT, DUMMY_EVENT)
+
+    log_test_passed()
 
 
 def test_rtt6_validator() -> None:
     check_validator(analytics.Rtt6Validator(), TEST_EVENT, DUMMY_EVENT)
 
+    log_test_passed()
+
 
 def test_rtt6_loss_validator() -> None:
     check_validator(analytics.Rtt6LossValidator(), TEST_EVENT, DUMMY_EVENT)
 
+    log_test_passed()
+
 
 def test_sent_data_validator() -> None:
     check_validator(analytics.SentDataValidator(), TEST_EVENT, DUMMY_EVENT)
+
+    log_test_passed()
 
 
 def test_nat_traversal_conn_info() -> None:
@@ -269,9 +318,13 @@ def test_nat_traversal_conn_info() -> None:
         DUMMY_EVENT,
     )
 
+    log_test_passed()
+
 
 def test_derp_conn_info() -> None:
     check_validator(analytics.DerpConnInfoValidator(), TEST_EVENT, DUMMY_EVENT)
+
+    log_test_passed()
 
 
 def test_lana_event_validator() -> None:
@@ -300,3 +353,5 @@ def test_lana_event_validator() -> None:
     assert res[0], res[1]
     res = test_validator.validate(DUMMY_EVENT)
     assert not res[0], res[1]
+
+    log_test_passed()

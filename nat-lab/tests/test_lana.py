@@ -70,7 +70,7 @@ from tests.utils.moose import MOOSE_DB_TIMEOUT_MS, MOOSE_LOGS_DIR
 from tests.utils.ping import ping
 from tests.utils.router import IPStack, IPProto
 from tests.utils.telio_log_notifier import TelioLogNotifier
-from tests.utils.testing import get_current_test_log_path
+from tests.utils.testing import get_current_test_log_path, log_test_passed
 from typing import List, Optional
 
 CONTAINER_EVENT_PATH = "/event.db"
@@ -719,6 +719,7 @@ async def test_lana_with_same_meshnet(
         assert res[0], res[1]
         res = gamma_validator.validate(gamma_events[0])
         assert res[0], res[1]
+        log_test_passed()
 
 
 @pytest.mark.moose
@@ -883,6 +884,7 @@ async def test_lana_with_external_node(
         # Validate alpha and beta have the same meshent id which is different from gamma's
         assert alpha_events[0].fp == beta_events[0].fp
         assert alpha_events[0].fp != gamma_events[0].fp
+        log_test_passed()
 
 
 @pytest.mark.moose
@@ -1044,6 +1046,7 @@ async def test_lana_all_external(
         assert alpha_events[0].fp != beta_events[0].fp
         assert alpha_events[0].fp != gamma_events[0].fp
         assert beta_events[0].fp != gamma_events[0].fp
+        log_test_passed()
 
 
 @pytest.mark.moose
@@ -1214,6 +1217,7 @@ async def test_lana_with_vpn_connection(
         assert res[0], res[1]
         res = gamma_validator.validate(gamma_events[0])
         assert res[0], res[1]
+        log_test_passed()
 
 
 @pytest.mark.moose
@@ -1437,6 +1441,7 @@ async def test_lana_with_meshnet_exit_node(
         client_beta.allow_errors(
             ["telio_proxy::proxy.*Unable to send. WG Address not available"]
         )
+        log_test_passed()
 
 
 @pytest.mark.moose
@@ -1834,6 +1839,7 @@ async def test_lana_with_disconnected_node(
         )
         assert await alpha_conn_tracker.find_conntracker_violations() is None
         assert await beta_conn_tracker.find_conntracker_violations() is None
+        log_test_passed()
 
 
 @pytest.mark.moose
@@ -1937,6 +1943,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         client_beta.allow_errors(
             ["telio_proxy::proxy.*Unable to send. WG Address not available"]
         )
+        log_test_passed()
 
 
 @pytest.mark.moose
@@ -2016,6 +2023,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
         second_beta_meshnet_id = beta_events[2].fp
 
         assert initial_beta_meshnet_id == second_beta_meshnet_id
+        log_test_passed()
 
 
 @pytest.mark.moose
@@ -2055,6 +2063,7 @@ async def test_lana_initial_heartbeat_no_trigger(
             assert not await wait_for_event_dump(
                 connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
             )
+        log_test_passed()
 
 
 @pytest.mark.moose
@@ -2094,6 +2103,7 @@ async def test_lana_initial_heartbeat_count_since_meshnet_start(
         assert await wait_for_event_dump(
             connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
         )
+        log_test_passed()
 
 
 @pytest.mark.moose
@@ -2135,6 +2145,7 @@ async def test_lana_initial_heartbeat_count_since_meshnet_restart(
         assert await wait_for_event_dump(
             connection_alpha, ALPHA_EVENTS_PATH, nr_events=2
         )
+    log_test_passed()
 
 
 @pytest.mark.moose
@@ -2213,3 +2224,4 @@ async def test_lana_rtt_interval_controls_periodic_qos_collection():
         assert res[0], res[1]
         res = beta_validator.validate(beta_events[0])
         assert res[0], res[1]
+        log_test_passed()

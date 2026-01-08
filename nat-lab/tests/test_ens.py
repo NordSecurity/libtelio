@@ -30,6 +30,7 @@ from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_by_tag,
 )
+from tests.utils.testing import log_test_passed
 from typing import cast
 
 ENS_PORT = 993
@@ -144,6 +145,8 @@ async def test_ens_server_maintenance(
             await client_alpha.wait_for_log(
                 "(ConnectionError { code: ServerMaintenance, additional_info: None })"
             )
+
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -265,6 +268,8 @@ async def test_ens_unauthenticated(
         finally:
             await stop_service(nlx_conn, "fakefm_dynamic_api.service")
             await start_service(nlx_conn, "fakefm.service")
+
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -422,6 +427,8 @@ async def test_ens_connection_limit_reached(
             await stop_service(nlx_conn, "fakefm_dynamic_api.service")
             await start_service(nlx_conn, "fakefm.service")
 
+        log_test_passed()
+
 
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
@@ -562,6 +569,8 @@ async def test_ens_superseded(
             vpn_connection_error=VpnConnectionError.SUPERSEDED,
         )
 
+        log_test_passed()
+
 
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
@@ -674,6 +683,8 @@ async def test_ens_connection_error_unknown(
         await client_alpha.wait_for_log(additional_info)
         await client_alpha.wait_for_log(fingerprint)
 
+        log_test_passed()
+
 
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
@@ -783,6 +794,8 @@ async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
         await client_alpha.wait_for_log(fingerprint)
         await client_alpha.wait_for_log("InvalidCertificate(UnknownIssuer)")
 
+        log_test_passed()
+
 
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
@@ -869,3 +882,5 @@ async def test_ens_not_working(
             alpha.ip_addresses[0],
             vpn_conf.server_conf,
         )
+
+        log_test_passed()

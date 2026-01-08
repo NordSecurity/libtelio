@@ -12,6 +12,7 @@ from tests.utils.bindings import (
     telio_node,
     Event,
 )
+from tests.utils.testing import log_test_passed
 
 
 def create_derpserver_config(state: RelayState) -> Server:
@@ -55,6 +56,8 @@ class TestRuntime:
 
             for future in future_list:
                 await future
+
+        log_test_passed()
 
     @pytest.mark.asyncio
     async def test_set_peer_state(self) -> None:
@@ -103,6 +106,8 @@ class TestRuntime:
                 0.1,
             )
 
+        log_test_passed()
+
     @pytest.mark.asyncio
     async def test_set_peer_event(self) -> None:
         runtime = Runtime()
@@ -127,6 +132,8 @@ class TestRuntime:
                 0.1,
             )
 
+        log_test_passed()
+
     @pytest.mark.asyncio
     async def test_notify_peer_event_in_duration(self) -> None:
         runtime = Runtime()
@@ -143,6 +150,8 @@ class TestRuntime:
             await runtime.notify_peer_event_in_duration(
                 "AAA", [NodeState.CONNECTED], 5, [PathType.RELAY]
             )
+
+        log_test_passed()
 
     @pytest.mark.asyncio
     async def test_set_derp_state(self) -> None:
@@ -168,6 +177,8 @@ class TestRuntime:
                 runtime.notify_derp_state("1.1.1.2", [RelayState.CONNECTED]), 0.1
             )
 
+        log_test_passed()
+
     @pytest.mark.asyncio
     async def test_set_derp_event(self) -> None:
         runtime = Runtime()
@@ -184,6 +195,8 @@ class TestRuntime:
             await asyncio.wait_for(
                 runtime.notify_derp_event("1.1.1.1", [RelayState.CONNECTED]), 0.1
             )
+
+        log_test_passed()
 
     @pytest.mark.asyncio
     async def test_handle_derp_event(self) -> None:
@@ -207,6 +220,8 @@ class TestRuntime:
 
         await runtime.notify_derp_state("1.1.1.1", [RelayState.CONNECTED])
 
+        log_test_passed()
+
     @pytest.mark.asyncio
     async def test_handle_node_event(self) -> None:
         runtime = Runtime()
@@ -225,6 +240,8 @@ class TestRuntime:
         await runtime.notify_peer_state(
             "AAA", [NodeState.CONNECTED], [PathType.RELAY], is_exit=True, is_vpn=True
         )
+
+        log_test_passed()
 
 
 class TestEvents:
@@ -273,6 +290,8 @@ class TestEvents:
                 "AAA", [NodeState.CONNECTED], [PathType.DIRECT], timeout=0.1
             )
 
+        log_test_passed()
+
     @pytest.mark.asyncio
     async def test_peer_change_state(self) -> None:
         runtime = Runtime()
@@ -318,6 +337,8 @@ class TestEvents:
             await events.wait_for_state_peer(
                 "AAA", [NodeState.DISCONNECTED], [PathType.DIRECT], timeout=0.1
             )
+
+        log_test_passed()
 
     @pytest.mark.asyncio
     async def test_peer_event(self) -> None:
@@ -370,6 +391,8 @@ class TestEvents:
             await events.wait_for_event_peer(
                 "AAA", [NodeState.CONNECTED], [PathType.RELAY], timeout=0.1
             )
+
+        log_test_passed()
 
     @pytest.mark.asyncio
     async def test_peer_with_multiple_events(self) -> None:
@@ -457,6 +480,8 @@ class TestEvents:
             for future in futures:
                 await future
 
+        log_test_passed()
+
     @pytest.mark.asyncio
     async def test_derp_state(self) -> None:
         runtime = Runtime()
@@ -484,6 +509,8 @@ class TestEvents:
                 "1.1.1.2", [RelayState.CONNECTED], timeout=0.1
             )
 
+        log_test_passed()
+
     @pytest.mark.asyncio
     async def test_derp_change_state(self) -> None:
         runtime = Runtime()
@@ -503,6 +530,8 @@ class TestEvents:
             [RelayState.CONNECTED, RelayState.CONNECTING, RelayState.DISCONNECTED],
             timeout=0.1,
         )
+
+        log_test_passed()
 
     @pytest.mark.asyncio
     async def test_derp_event(self) -> None:
@@ -541,6 +570,8 @@ class TestEvents:
             await events.wait_for_event_derp(
                 "1.1.1.1", [RelayState.CONNECTED], timeout=0.1
             )
+
+        log_test_passed()
 
     @pytest.mark.asyncio
     async def test_derp_with_multiple_events(self) -> None:
@@ -593,3 +624,5 @@ class TestEvents:
 
             for future in futures:
                 await future
+
+        log_test_passed()

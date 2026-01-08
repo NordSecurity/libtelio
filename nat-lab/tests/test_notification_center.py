@@ -9,6 +9,7 @@ from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import new_connection_by_tag
 from tests.utils.logger import log
 from tests.utils.output_notifier import OutputNotifier
+from tests.utils.testing import log_test_passed
 
 
 @dataclass
@@ -241,3 +242,4 @@ async def test_nc_register():
         ]  # The last item in the buffer is expected to be a message from the meshnet topic
         assert mqtt_payload
         verify_mqtt_payload(mqtt_payload)
+        log_test_passed()

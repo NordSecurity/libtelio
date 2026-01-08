@@ -1,4 +1,5 @@
 from tests.utils.connection_tracker import parse_input, FiveTuple, EventType, TcpState
+from tests.utils.testing import log_test_passed
 
 
 def test_connection_tracker_parse_input():
@@ -143,3 +144,5 @@ def test_connection_tracker_parse_input():
     )
     assert updated_tcp.event_type == EventType.UPDATE
     assert updated_tcp.tcp_state == TcpState.SYN_RECV
+
+    log_test_passed()

@@ -7,6 +7,7 @@ from tests.utils.bindings import NodeState, TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.ping import ping
+from tests.utils.testing import log_test_passed
 
 
 @pytest.mark.asyncio
@@ -54,3 +55,4 @@ async def test_fire_connecting_event(
             await ping(connection_alpha, beta.ip_addresses[0], 15)
 
         await client_alpha.wait_for_event_peer(beta.public_key, [NodeState.CONNECTING])
+        log_test_passed()

@@ -27,6 +27,7 @@ from tests.utils.openwrt import (
 )
 from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
+from tests.utils.testing import log_test_passed
 
 NETWORK_RESTART_LOG_LINE = "netifd: Network device 'eth1' link is up"
 OPENWRT_GW_WAN_IP = "10.0.0.0"
@@ -228,6 +229,7 @@ async def test_openwrt_vpn_connection(openwrt_config: IfcConfigType) -> None:
         assert "daemon.info dnsmasq[1]: using nameserver 10.0.80.82" in ns_lines[0]
         assert "daemon.info dnsmasq[1]: using nameserver 10.0.80.83" in ns_lines[1]
         assert "daemon.info dnsmasq[1]: using nameserver 10.0.80.82" in ns_lines[2]
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -312,6 +314,7 @@ async def test_openwrt_ip_leaks() -> None:
             )
         await wait_for_log_line(logread_proc)
         log.info("Network has been reloaded")
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -362,6 +365,7 @@ async def test_openwrt_simulate_network_down() -> None:
             )
         await wait_for_log_line(logread_proc)
         log.info("Network has been reloaded")
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -418,6 +422,7 @@ async def test_openwrt_vpn_reconnect() -> None:
             )
         await wait_for_log_line(logread_proc)
         log.info("Network has been reloaded")
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -485,6 +490,7 @@ async def test_openwrt_vpn_reconnect_different_country() -> None:
             )
         await wait_for_log_line(logread_proc)
         log.info("Network has been reloaded")
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -585,3 +591,4 @@ async def test_openwrt_router_restart() -> None:
             await nordvpnlite_after_reboot.clean_up()
             await wait_for_log_line(logread_proc)
             log.info("Network has been reloaded")
+            log_test_passed()

@@ -12,6 +12,7 @@ from tests.utils.bindings import (
     default_features,
 )
 from tests.utils.connection import ConnectionTag
+from tests.utils.testing import log_test_passed
 
 
 @pytest.mark.asyncio
@@ -50,3 +51,4 @@ async def test_telio_tasks_with_all_features() -> None:
         # let's wait some seconds for everything to start
         await asyncio.sleep(5)
         await env.clients[0].stop_device()
+        log_test_passed()

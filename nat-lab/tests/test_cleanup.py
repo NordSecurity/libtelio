@@ -4,6 +4,7 @@ from tests.helpers import SetupParameters, setup_environment
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import new_connection_raw
+from tests.utils.testing import log_test_passed
 from tests.utils.vm.windows_vm_util import get_network_interface_tunnel_keys
 
 
@@ -53,3 +54,4 @@ async def test_get_network_interface_tunnel_keys(adapter_type, name) -> None:
                 ).execute()
             ).get_stdout()
         )
+        log_test_passed()

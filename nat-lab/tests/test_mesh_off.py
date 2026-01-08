@@ -12,6 +12,7 @@ from tests.utils.bindings import (
 )
 from tests.utils.connection import ConnectionTag
 from tests.utils.ping import ping
+from tests.utils.testing import log_test_passed
 
 
 # Marks in-tunnel stack only, exiting only through IPv4
@@ -94,6 +95,7 @@ async def test_mesh_off(direct) -> None:
         client_beta.allow_errors(
             ["telio_proxy::proxy.*Unable to send. WG Address not available"]
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -156,3 +158,4 @@ async def test_mesh_state_after_disconnecting_node() -> None:
         client_beta.allow_errors(
             ["neptun::noise::timers.*CONNECTION_EXPIRED\\(REKEY_ATTEMPT_TIME\\)"]
         )
+        log_test_passed()

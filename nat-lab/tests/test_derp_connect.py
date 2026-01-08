@@ -8,6 +8,7 @@ from tests.helpers import SetupParameters, setup_mesh_nodes
 from tests.utils.bindings import RelayState, FeatureDerp, default_features
 from tests.utils.connection import ConnectionTag
 from tests.utils.ping import ping
+from tests.utils.testing import log_test_passed
 from typing import List
 
 DERP1_IP = str(DERP_PRIMARY.ipv4)
@@ -102,6 +103,7 @@ async def test_derp_reconnect_2clients(setup_params: List[SetupParameters]) -> N
 
         # Ping peer to check if connection truly works
         await ping(alpha_connection, beta.ip_addresses[0])
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -254,6 +256,7 @@ async def test_derp_reconnect_3clients(setup_params: List[SetupParameters]) -> N
 
         # Ping GAMMA --> BETA
         await ping(gamma_connection, beta.ip_addresses[0])
+        log_test_passed()
 
 
 @asynccontextmanager
@@ -444,7 +447,7 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
 
         # Ping GAMMA --> BETA
         await ping(gamma_connection, beta.ip_addresses[0])
-
+        log_test_passed()
         # ==============================================================
         # Final state:
         #
@@ -493,6 +496,7 @@ async def test_derp_server_list_exhaustion(setup_params: List[SetupParameters]) 
 
         # Ping peer to check if connection truly works
         await ping(alpha_connection, beta.ip_addresses[0])
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -521,3 +525,4 @@ async def test_derp_reconnect_1client(setup_params: List[SetupParameters]) -> No
         )
 
         await alpha_client.wait_for_state_derp(DERP2_IP, [RelayState.CONNECTED])
+        log_test_passed()

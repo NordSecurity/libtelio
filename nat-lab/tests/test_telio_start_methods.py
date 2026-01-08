@@ -14,6 +14,7 @@ from tests.utils.connection_util import get_libtelio_binary_path
 from tests.utils.logger import log
 from tests.utils.output_notifier import OutputNotifier
 from tests.utils.router import new_router
+from tests.utils.testing import log_test_passed
 from typing import AsyncIterator, List
 
 
@@ -48,6 +49,7 @@ async def test_start_with_tun() -> None:
         await alpha_client.start_with_tun(tun, "tun11")
         await alpha_client.set_meshnet_config(env.api.get_meshnet_config(alpha.id))
         await ping_between_all_nodes(env)
+        log_test_passed()
 
 
 @pytest.mark.parametrize(
@@ -66,7 +68,6 @@ async def test_start_with_tun_and_switch_it_at_runtime(alpha_tag) -> None:
     tun_name_prefix = "utun" if alpha_tag == ConnectionTag.VM_MAC else "tun"
 
     async with AsyncExitStack() as exit_stack:
-
         env = await setup_mesh_nodes(exit_stack, setup_params)
         alpha_client, _ = env.clients
         alpha, _ = env.nodes
@@ -85,6 +86,7 @@ async def test_start_with_tun_and_switch_it_at_runtime(alpha_tag) -> None:
         await alpha_client.restart_interface(new_name=tun_name_prefix + "12")
         await alpha_client.get_router().delete_interface(tun_name_prefix + "11")
         await ping_between_all_nodes(env)
+        log_test_passed()
 
 
 @pytest.mark.windows
@@ -167,3 +169,4 @@ async def test_start_named_ext_if_filter() -> None:
             alpha_client.wait_for_log(f"Interface {interface} is not default!")
             for interface in ext_if_filter
         ])
+        log_test_passed()

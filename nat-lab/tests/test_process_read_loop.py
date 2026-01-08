@@ -2,6 +2,7 @@ import pytest
 from contextlib import AsyncExitStack
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import new_connection_by_tag
+from tests.utils.testing import log_test_passed
 
 
 @pytest.mark.asyncio
@@ -18,6 +19,7 @@ async def test_docker_process_read_loop() -> None:
         ])
         await process.execute()
         assert process.get_stdout().count(TESTING_STRING) == 1000001
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -35,3 +37,4 @@ async def test_docker_process_read_loop_invalid_utf() -> None:
         await process.execute()
         assert process.get_stdout().count(VALID_UTF) == 1000001
         assert process.get_stdout().count("\\xF8") == 0
+        log_test_passed()

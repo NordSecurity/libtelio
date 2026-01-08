@@ -1,6 +1,7 @@
 import pytest
 from scapy.layers.inet import TCP, ICMP  # type: ignore
 from tests.utils import generate_histogram, generate_packet_delay_histogram
+from tests.utils.testing import log_test_passed
 
 
 @pytest.mark.utils
@@ -16,6 +17,7 @@ async def test_histogram():
     data.append(9)
 
     assert generate_histogram(data, 10, 1) == [0, 0, 10, 10, 50, 0, 0, 0, 0, 1]
+    log_test_passed()
 
 
 @pytest.mark.utils
@@ -47,3 +49,4 @@ def test_stats_and_filters_delay(filter_name, filter_func, expected_hs):
         pcap_path, 30, [(filter_name, filter_func)]
     )
     assert expected_hs == delay_hs
+    log_test_passed()

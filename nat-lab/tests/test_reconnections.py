@@ -7,6 +7,7 @@ from tests.utils.bindings import NodeState, RelayState, TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.ping import ping
+from tests.utils.testing import log_test_passed
 
 
 @pytest.mark.asyncio
@@ -116,3 +117,4 @@ async def test_mesh_reconnect(
 
         await ping(alpha_connection, beta.ip_addresses[0])
         await ping(beta_connection, alpha.ip_addresses[0])
+        log_test_passed()

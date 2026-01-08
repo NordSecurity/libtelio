@@ -4,6 +4,7 @@ from contextlib import AsyncExitStack
 from tests.helpers import SetupParameters, setup_environment
 from tests.utils.bindings import default_features, TelioAdapterType
 from tests.utils.connection import ConnectionTag
+from tests.utils.testing import log_test_passed
 
 
 @pytest.mark.asyncio
@@ -44,3 +45,4 @@ async def test_meshnet_id_generated_only_when_meshnet_starts() -> None:
             r"Meshnet ID: Some\(([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)",
             logs,
         )
+        log_test_passed()

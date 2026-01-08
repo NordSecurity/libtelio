@@ -32,6 +32,7 @@ from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.logger import log
 from tests.utils.ping import ping
 from tests.utils.telio_log_notifier import TelioLogNotifier
+from tests.utils.testing import log_test_passed
 from typing import Any, Dict, List, Tuple
 
 ANY_PROVIDERS = [EndpointProvider.LOCAL, EndpointProvider.STUN]
@@ -159,7 +160,7 @@ async def _disable_direct_connection(env: Environment, reflexive_ips: List[str])
             conn.connection.create_process(["conntrack", "-F"]).execute()
             for conn in env.connections
         ])
-
+        log_test_passed()
         yield
 
 
@@ -270,6 +271,7 @@ async def test_direct_working_paths(
 
         log.info("Re-enable direct connection and wait for pings")
         await ping_between_all_nodes(env)
+        log_test_passed()
 
 
 @pytest.mark.moose
@@ -401,6 +403,7 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
         beta_client.allow_errors(
             ["telio_proxy::proxy.*Unable to send. WG Address not available"]
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -435,6 +438,7 @@ async def test_direct_working_paths_stun_ipv6() -> None:
         beta_client.allow_errors(
             ["telio_proxy::proxy.*Unable to send. WG Address not available"]
         )
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -507,6 +511,7 @@ async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
         # This is expected. Alpha client can still receive messages from
         # the previous session from beta after the restart.
         alpha_client.allow_errors(["neptun::device.*Decapsulate error"])
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -552,6 +557,7 @@ async def test_direct_infinite_stun_loop() -> None:
         # while being high enough to prevent false-positivies.
         # The actual number of requests will be lower given the time frame that is being measured.
         assert len(stun_requests) < 20
+        log_test_passed()
 
 
 @pytest.mark.asyncio
@@ -642,6 +648,7 @@ async def test_direct_working_paths_with_pausing_upnp_and_stun() -> None:
         ]
 
         assert len(stun_upnp_requests) == 0
+        log_test_passed()
 
 
 UHP_FAILING_PATHS_PARAMS = [
@@ -719,3 +726,4 @@ async def test_direct_failing_paths(setup_params: List[SetupParameters]) -> None
 
         with pytest.raises(asyncio.TimeoutError):
             await ping(alpha_connection, beta.ip_addresses[0], 15)
+        log_test_passed()
