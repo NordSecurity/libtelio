@@ -166,6 +166,10 @@ class ArtifactsDownloader:
             )
 
     def _is_relevant_job(self, job: Dict) -> bool:
+        artifacts = job.get("artifacts_file")
+        if not artifacts or not artifacts.get("filename"):
+            return False
+
         stage = job.get("stage")
         name = job.get("name", "")
 
