@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from enum import Enum
@@ -8,6 +9,7 @@ from tests.helpers import (
     setup_mesh_nodes,
     setup_connections,
 )
+from tests.utils import asyncio_util
 from tests.utils.bindings import (
     ErrorEvent,
     ErrorCode,
@@ -74,34 +76,36 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
         conn, *_ = [conn.connection for conn in env.connections]
         client, *_ = env.clients
 
-        if conn.target_os == TargetOS.Linux:
-            await conn.create_process([
-                "ip",
-                "link",
-                "delete",
-                client.get_router().get_interface_name(),
-            ]).execute()
-        elif conn.target_os == TargetOS.Windows:
-            try:
-                await conn.create_process([
-                    "netsh",
-                    "interface",
-                    "set",
-                    "interface",
-                    client.get_router().get_interface_name(),
-                    "disable",
-                ]).execute()
-            except ProcessExecError as e:
-                if e.returncode != 1:
-                    raise
-        else:
-            raise RuntimeError("unsupported os")
-
-        await client.wait_for_event_error(
-            ErrorEvent(
-                level=ErrorLevel.CRITICAL, code=ErrorCode.UNKNOWN, msg="Interface gone"
-            )
+        expected_event = ErrorEvent(
+            level=ErrorLevel.CRITICAL,
+            code=ErrorCode.UNKNOWN,
+            msg="Interface gone",
         )
+
+        async def delete_adapter() -> None:
+            iface = client.get_router().get_interface_name()
+
+            if conn.target_os == TargetOS.Linux:
+                await conn.create_process(["ip", "link", "delete", iface]).execute()
+
+            elif conn.target_os == TargetOS.Windows:
+                try:
+                    await conn.create_process(
+                        ["netsh", "interface", "set", "interface", iface, "disable"]
+                    ).execute()
+                except ProcessExecError as e:
+                    if e.returncode != 1:
+                        raise
+            else:
+                raise RuntimeError("unsupported os")
+
+        async with asyncio_util.run_async_context(
+            client.wait_for_event_error(expected_event)
+        ) as event:
+            await asyncio.gather(
+                delete_adapter(),
+                event,
+            )
 
         client.allow_errors([
             "neptun::device.*Fatal read error on tun interface",
