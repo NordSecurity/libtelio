@@ -180,7 +180,7 @@ impl LocalInterfacesObserver for StatefullFirewall {
     fn notify(&self) {
         // When local interfaces change, reconfigure the firewall with the current config
         let config = self.config.read().clone();
-        configure_chain(self.firewall, self.allow_ipv6, &config);
+        self.apply_config(config);
     }
 }
 
@@ -230,13 +230,16 @@ impl StatefullFirewall {
         };
 
         let firewall = libfw_init();
-        configure_chain(firewall, use_ipv6, &config);
 
-        Self {
+        let result = Self {
             firewall,
             allow_ipv6: use_ipv6,
-            config: RwLock::new(config),
-        }
+            config: RwLock::new(config.clone()),
+        };
+
+        result.apply_config(config);
+
+        result
     }
 }
 
@@ -306,8 +309,7 @@ fn get_local_area_networks_filters(exclude_ip_range: Option<Ipv4Net>) -> Vec<Vec
 }
 
 /// Configures the firewall chain based on the provided configuration.
-/// This function generates all firewall rules from the config and applies them.
-pub fn configure_chain(firewall: *mut LibfwFirewall, allow_ipv6: bool, config: &FirewallConfig) {
+pub(crate) fn configure_chain(allow_ipv6: bool, config: &FirewallConfig) -> FfiChainGuard {
     let mut rules = vec![];
 
     // Drop all IPv6 packets when we don't allow ipv6 traffic
@@ -490,8 +492,7 @@ pub fn configure_chain(firewall: *mut LibfwFirewall, allow_ipv6: bool, config: &
         });
     }
 
-    let ffi_chain_guard: FfiChainGuard = (rules.as_slice()).into();
-    unsafe { libfw_configure_chain(firewall, (&ffi_chain_guard.ffi_chain) as *const LibfwChain) };
+    (rules.as_slice()).into()
 }
 
 extern "C" fn write_to_sink(
@@ -528,13 +529,17 @@ extern "C" fn log_callback(level: LibfwLogLevel, log_line: *const std::ffi::c_ch
 
 impl Firewall for StatefullFirewall {
     fn apply_config(&self, new_config: FirewallConfig) {
+        if *self.config.read() == new_config {
+            return;
+        }
+
+        let ffi_chain = configure_chain(self.allow_ipv6, &new_config);
+
+        // Let's keep this lock until we update the chain and the state is consistent again
         let mut config = self.config.write();
-        if *config != new_config {
-            telio_log_debug!("Applying new firewall configuration");
-            *config = new_config;
-            drop(config); // Release the lock before configure_chain
-            let config = self.config.read().clone();
-            configure_chain(self.firewall, self.allow_ipv6, &config);
+        *config = new_config.clone();
+        unsafe {
+            libfw_configure_chain(self.firewall, (&ffi_chain.ffi_chain) as *const LibfwChain);
         }
     }
 
