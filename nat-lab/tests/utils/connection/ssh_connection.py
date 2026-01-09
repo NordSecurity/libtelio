@@ -74,8 +74,6 @@ class SshConnection(Connection):
                 password=password,
                 known_hosts=None,
                 agent_path=None,
-                connect_timeout=15,
-                login_timeout=15,
             ) as ssh_connection:
                 async with cls(ssh_connection, tag) as connection:
                     if copy_binaries:
