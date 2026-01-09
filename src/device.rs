@@ -2153,7 +2153,6 @@ impl Runtime {
     async fn disconnect_exit_node(&mut self, node_key: &PublicKey) -> Result {
         match self.requested_state.exit_node.as_ref() {
             Some(exit_node) if &exit_node.public_key == node_key => {
-                self.entities.firewall.remove_vpn_peer();
                 self.disconnect_exit_nodes().boxed().await
             }
             _ => Err(Error::InvalidNode),
