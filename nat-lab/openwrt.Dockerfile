@@ -1,6 +1,6 @@
-ARG LIBTELIO_ENV_SEC_CONTAINER_REGISTRY
+ARG SEC_CONTAINER_REGISTRY
 
-FROM ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/low-level-hacks/third-party-build/openwrt_image/natlab-openwrt-24.10.2-x86-64:v0.0.2
+FROM ${SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/third-party-build/openwrt_image/natlab-openwrt-24.10.4-x86-64:v0.3.0
 
 ENV QEMU_CONFIG_TIMEOUT="300"
 
@@ -13,7 +13,7 @@ RUN mkdir -p /var/lib/qemu-image
 WORKDIR /var/lib/qemu-image
 
 RUN mkdir -p /var/lib/qemu && \
-    gunzip -c openwrt-24.10.2-x86-64-generic-ext4-combined.img.gz > /var/lib/qemu/image.raw
+    gunzip -c openwrt-24.10.4-x86-64-generic-ext4-combined.img.gz > /var/lib/qemu/image.raw
 
 RUN mkdir -p /usr/local/share/vmconfig/container.d /usr/local/share/vmconfig/vm.d
 RUN mkdir -p /var/lib/vmconfig/container.d /var/lib/vmconfig/vm.d

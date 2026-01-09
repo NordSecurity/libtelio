@@ -106,7 +106,7 @@ _unused-install: _rust_stable-install _rust-from-toolchain-file-install
     cargo +{{ rust_stable }} install --version 0.2.0 cargo-unused-features --locked
 
 _deny-install:
-    cargo install --locked cargo-deny@0.15.1
+    cargo install --locked cargo-deny@0.18.9
 
 _nightly-install:
     rustup toolchain add {{ nightly }}

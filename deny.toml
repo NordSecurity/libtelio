@@ -5,15 +5,19 @@ targets = []
 [advisories]
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
-vulnerability = "deny"
-unmaintained = "warn"
 yanked = "warn"
-notice = "warn"
-ignore = []
+ignore = [
+    "RUSTSEC-2024-0370", # proc-macro-error is unmaintained
+    "RUSTSEC-2024-0381", # pqcrypto-kyber is unmaintained
+    "RUSTSEC-2024-0436", # paste is unmaintained
+    "RUSTSEC-2024-0375", # atty is unmaintained
+    "RUSTSEC-2025-0052", # async-std is unmaintained
+    "RUSTSEC-2021-0145", # atty has potential unaligned read
+    "RUSTSEC-2025-0141", # bincode is unmaintained
+]
 
 
 [licenses]
-unlicensed = "deny"
 allow = [
     "BSD-2-Clause",
     "MPL-2.0",
@@ -21,15 +25,16 @@ allow = [
     "Unicode-DFS-2016",
     "Unicode-3.0",
     "OpenSSL",
+    "Apache-2.0",
+    "MIT",
+    "ISC",
+    "BSD-3-Clause",
+    "Zlib"
 ]
-deny = []
-copyleft = "deny"
-allow-osi-fsf-free = "both"
-default = "deny"
 confidence-threshold = 0.8
 exceptions = [
-    { allow = ["GPL-3.0"], name = "telio", version = "*" },
-    { allow = ["GPL-3.0"], name = "llt-proto", version = "*" },
+    { allow = ["GPL-3.0-only"], name = "telio", version = "*" },
+    { allow = ["GPL-3.0-only"], name = "llt-proto", version = "*" },
 ]
 
 [licenses.private]
