@@ -1720,6 +1720,54 @@ mod tests {
         .unwrap();
     }
 
+    #[tokio::test]
+    async fn consolidate_firewall_is_idempotent() {
+        let mut firewall = MockFirewall::new();
+
+        let pub_key_starcast_vpeer = SecretKey::gen().public();
+        let pub_key_1 = SecretKey::gen().public();
+        let pub_key_2 = SecretKey::gen().public();
+
+        let requested_state = create_requested_state(vec![
+            (pub_key_1, vec![], true, false, false, true),
+            (pub_key_2, vec![], false, true, false, false),
+        ]);
+
+        let expected_config = FirewallConfig {
+            whitelist: Whitelist {
+                peer_whitelists: enum_map! {
+                    Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_1, pub_key_starcast_vpeer].iter().cloned()),
+                    Permissions::RoutingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
+                    Permissions::LocalAreaConnections => FwHashSet::from_iter([pub_key_2].iter().cloned()),
+                },
+                port_whitelist: [(pub_key_1, FILE_SEND_PORT)].iter().cloned().collect(),
+            },
+            ip_addresses: vec![
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                IpAddr::V6(Ipv6Addr::LOCALHOST),
+            ],
+            ..Default::default()
+        };
+
+        // Calling consolidate_firewall multiple times with same state should produce same config
+        firewall
+            .expect_apply_config()
+            .times(3)
+            .with(eq(expected_config))
+            .returning(|_| ());
+
+        for _ in 0..3 {
+            consolidate_firewall(
+                &requested_state,
+                &firewall,
+                Some(pub_key_starcast_vpeer),
+                None,
+            )
+            .await
+            .unwrap();
+        }
+    }
+
     struct Fixture {
         requested_state: RequestedState,
         wireguard_interface: MockWireGuard,
