@@ -15,7 +15,7 @@ use std::{
     ffi::c_void,
     fmt::Debug,
     io::{self},
-    net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr, SocketAddr},
+    net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr},
 };
 
 use telio_model::features::{FeatureFirewall, IpProtocol};
@@ -78,11 +78,11 @@ impl Icmp for Icmpv6Type {
 /// Firewall trait.
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 pub trait Firewall {
-    /// Applies a new firewall configuration and updates the chain if it differs from current config
-    fn apply_config(&self, config: FirewallConfig);
+    /// Applies a new firewall state and updates the chain if it differs from current state
+    fn apply_state(&self, state: FirewallState);
 
-    /// Returns a clone of the current firewall configuration
-    fn get_config(&self) -> FirewallConfig;
+    /// Returns a clone of the current firewall state
+    fn get_state(&self) -> FirewallState;
 
     /// For new connections it opens a pinhole for incoming connection
     /// If connection is already cached, it resets its timer and extends its lifetime
@@ -142,34 +142,37 @@ pub struct Whitelist {
     pub port_whitelist: HashMap<PublicKey, u16>,
     /// Whitelisted peers of different permissions
     pub peer_whitelists: EnumMap<Permissions, HashSet<PublicKey>>,
-}
-
-/// Configuration for firewall rules.
-/// This struct holds all the state needed to configure firewall chains.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct FirewallConfig {
-    /// Whitelist configuration
-    pub whitelist: Whitelist,
     /// Public key of vpn peer
     pub vpn_peer: Option<PublicKey>,
+}
+
+/// Runtime state for firewall rules that can be updated dynamically.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FirewallState {
+    /// Whitelist configuration
+    pub whitelist: Whitelist,
     /// Local node ip addresses
     pub ip_addresses: Vec<StdIpAddr>,
-    /// Custom IPv4 range to check against
-    pub exclude_ip_range: Option<Ipv4Net>,
-    /// Blacklist for outgoing TCP connections
-    pub outgoing_tcp_blacklist: Vec<SocketAddr>,
-    /// Blacklist for outgoing UDP connections
-    pub outgoing_udp_blacklist: Vec<SocketAddr>,
+}
+
+/// Configuration for firewall initialization.
+/// These parameters are set once during firewall creation and cannot be changed.
+#[derive(Clone, Debug)]
+pub struct FirewallConfig {
+    /// Whether IPv6 traffic is allowed
+    pub allow_ipv6: bool,
+    /// Feature firewall configuration
+    pub feature: FeatureFirewall,
 }
 
 /// Statefull packet-filter firewall.
 pub struct StatefullFirewall {
     /// Libfirewall instance
     firewall: *mut LibfwFirewall,
-    /// Whether IPv6 traffic is allowed
-    allow_ipv6: bool,
-    /// Current firewall configuration
-    config: RwLock<FirewallConfig>,
+    /// Firewall configuration set at initialization
+    config: FirewallConfig,
+    /// Current firewall state
+    state: RwLock<FirewallState>,
 }
 
 // Access to internal firewall structs is guarded by locks, so that should be fine
@@ -178,9 +181,9 @@ unsafe impl Send for StatefullFirewall {}
 
 impl LocalInterfacesObserver for StatefullFirewall {
     fn notify(&self) {
-        // When local interfaces change, reconfigure the firewall with the current config
-        let config = self.config.read().clone();
-        self.apply_config(config);
+        // When local interfaces change, reconfigure the firewall with the current state
+        let state = self.state.read().clone();
+        self.apply_state(state);
     }
 }
 
@@ -201,43 +204,24 @@ impl StatefullFirewall {
         libfw_set_log_callback(LibfwLogLevel::LibfwLogLevelTrace, Some(log_callback));
 
         let config = FirewallConfig {
+            allow_ipv6: use_ipv6,
+            feature: feature.clone(),
+        };
+
+        let state = FirewallState {
             whitelist: Whitelist::default(),
-            vpn_peer: None,
             ip_addresses: Vec::new(),
-            exclude_ip_range: feature.exclude_private_ip_range.map(Into::into),
-            outgoing_tcp_blacklist: feature
-                .outgoing_blacklist
-                .iter()
-                .filter_map(|i| {
-                    if i.protocol == IpProtocol::TCP {
-                        Some(SocketAddr::new(i.ip, i.port))
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
-            outgoing_udp_blacklist: feature
-                .outgoing_blacklist
-                .iter()
-                .filter_map(|i| {
-                    if i.protocol == IpProtocol::UDP {
-                        Some(SocketAddr::new(i.ip, i.port))
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
         };
 
         let firewall = libfw_init();
 
         let result = Self {
             firewall,
-            allow_ipv6: use_ipv6,
-            config: RwLock::new(config.clone()),
+            config,
+            state: RwLock::new(state.clone()),
         };
 
-        result.apply_config(config);
+        result.apply_state(state);
 
         result
     }
@@ -309,12 +293,12 @@ fn get_local_area_networks_filters(exclude_ip_range: Option<Ipv4Net>) -> Vec<Vec
 }
 
 /// Configures the firewall chain based on the provided configuration.
-pub(crate) fn configure_chain(allow_ipv6: bool, config: &FirewallConfig) -> FfiChainGuard {
+pub(crate) fn configure_chain(config: &FirewallConfig, state: &FirewallState) -> FfiChainGuard {
     let mut rules = vec![];
 
     // Drop all IPv6 packets when we don't allow ipv6 traffic
     const ALL_IP_V6_ADDRS: IpNet = IpNet::V6(Ipv6Net::new_assert(StdIpv6Addr::UNSPECIFIED, 0));
-    if !allow_ipv6 {
+    if !config.allow_ipv6 {
         rules.push(Rule {
             filters: vec![dst_net_all_ports_filter(ALL_IP_V6_ADDRS, false)],
             action: LibfwVerdict::LibfwVerdictDrop,
@@ -322,7 +306,10 @@ pub(crate) fn configure_chain(allow_ipv6: bool, config: &FirewallConfig) -> FfiC
     }
 
     // Drop packets from UDP blacklist
-    for peer in &config.outgoing_udp_blacklist {
+    for blacklist_entry in &config.feature.outgoing_blacklist {
+        if blacklist_entry.protocol != IpProtocol::UDP {
+            continue;
+        }
         rules.push(Rule {
             filters: vec![
                 Filter {
@@ -333,14 +320,17 @@ pub(crate) fn configure_chain(allow_ipv6: bool, config: &FirewallConfig) -> FfiC
                     filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Udp),
                     inverted: false,
                 },
-                dst_net_all_ports_filter(IpNet::from(peer.ip()), false),
+                dst_net_all_ports_filter(IpNet::from(blacklist_entry.ip), false),
             ],
             action: LibfwVerdict::LibfwVerdictReject,
         });
     }
 
     // Drop packets from TCP blacklist
-    for peer in &config.outgoing_tcp_blacklist {
+    for blacklist_entry in &config.feature.outgoing_blacklist {
+        if blacklist_entry.protocol != IpProtocol::TCP {
+            continue;
+        }
         rules.push(Rule {
             filters: vec![
                 Filter {
@@ -351,7 +341,7 @@ pub(crate) fn configure_chain(allow_ipv6: bool, config: &FirewallConfig) -> FfiC
                     filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Tcp),
                     inverted: false,
                 },
-                dst_net_all_ports_filter(IpNet::from(peer.ip()), false),
+                dst_net_all_ports_filter(IpNet::from(blacklist_entry.ip), false),
             ],
             action: LibfwVerdict::LibfwVerdictReject,
         });
@@ -366,7 +356,7 @@ pub(crate) fn configure_chain(allow_ipv6: bool, config: &FirewallConfig) -> FfiC
     });
 
     // Add VPN rule
-    if let Some(vpn_pk) = config.vpn_peer {
+    if let Some(vpn_pk) = state.whitelist.vpn_peer {
         rules.push(Rule {
             filters: vec![Filter {
                 filter_data: FilterData::AssociatedData(Some(vpn_pk.to_smallvec())),
@@ -376,10 +366,11 @@ pub(crate) fn configure_chain(allow_ipv6: bool, config: &FirewallConfig) -> FfiC
         });
     }
 
-    let local_network_filters = get_local_area_networks_filters(config.exclude_ip_range);
+    let local_network_filters =
+        get_local_area_networks_filters(config.feature.exclude_private_ip_range.map(Into::into));
 
     #[allow(clippy::indexing_slicing)]
-    for peer in config.whitelist.peer_whitelists[Permissions::LocalAreaConnections].iter() {
+    for peer in state.whitelist.peer_whitelists[Permissions::LocalAreaConnections].iter() {
         for local_net in local_network_filters.iter() {
             let mut filters = vec![Filter {
                 filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
@@ -402,10 +393,10 @@ pub(crate) fn configure_chain(allow_ipv6: bool, config: &FirewallConfig) -> FfiC
     }
 
     // Rules for incoming connections
-    for ip in &config.ip_addresses {
+    for ip in &state.ip_addresses {
         // Accept packets for whitelisted peers
         #[allow(clippy::indexing_slicing)]
-        for peer in config.whitelist.peer_whitelists[Permissions::IncomingConnections].iter() {
+        for peer in state.whitelist.peer_whitelists[Permissions::IncomingConnections].iter() {
             rules.push(Rule {
                 filters: vec![
                     Filter {
@@ -450,7 +441,7 @@ pub(crate) fn configure_chain(allow_ipv6: bool, config: &FirewallConfig) -> FfiC
 
         // Accept packets for whitelisted ports
         for proto in [NextLevelProtocol::Tcp, NextLevelProtocol::Udp] {
-            for (peer, &port) in &config.whitelist.port_whitelist {
+            for (peer, &port) in &state.whitelist.port_whitelist {
                 rules.push(Rule {
                     filters: vec![
                         Filter {
@@ -482,7 +473,7 @@ pub(crate) fn configure_chain(allow_ipv6: bool, config: &FirewallConfig) -> FfiC
     }
 
     #[allow(clippy::indexing_slicing)]
-    for peer in config.whitelist.peer_whitelists[Permissions::RoutingConnections].iter() {
+    for peer in state.whitelist.peer_whitelists[Permissions::RoutingConnections].iter() {
         rules.push(Rule {
             filters: vec![Filter {
                 filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
@@ -528,23 +519,23 @@ extern "C" fn log_callback(level: LibfwLogLevel, log_line: *const std::ffi::c_ch
 }
 
 impl Firewall for StatefullFirewall {
-    fn apply_config(&self, new_config: FirewallConfig) {
-        if *self.config.read() == new_config {
+    fn apply_state(&self, new_state: FirewallState) {
+        if *self.state.read() == new_state {
             return;
         }
 
-        let ffi_chain = configure_chain(self.allow_ipv6, &new_config);
+        let ffi_chain = configure_chain(&self.config, &new_state);
 
         // Let's keep this lock until we update the chain and the state is consistent again
-        let mut config = self.config.write();
-        *config = new_config.clone();
+        let mut state = self.state.write();
+        *state = new_state.clone();
         unsafe {
             libfw_configure_chain(self.firewall, (&ffi_chain.ffi_chain) as *const LibfwChain);
         }
     }
 
-    fn get_config(&self) -> FirewallConfig {
-        self.config.read().clone()
+    fn get_state(&self) -> FirewallState {
+        self.state.read().clone()
     }
 
     fn process_outbound_packet(

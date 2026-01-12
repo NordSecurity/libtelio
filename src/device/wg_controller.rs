@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_dns::DnsResolver;
-use telio_firewall::firewall::{Firewall, FirewallConfig, Permissions, FILE_SEND_PORT};
+use telio_firewall::firewall::{Firewall, FirewallState, Permissions, FILE_SEND_PORT};
 use telio_model::constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
 use telio_model::features::Features;
 use telio_model::mesh::{LinkState, NodeState};
@@ -630,15 +630,15 @@ async fn consolidate_firewall<F: Firewall>(
     starcast_vpeer_pubkey: Option<PublicKey>,
     dns_pubkey: Option<PublicKey>,
 ) -> Result {
-    let mut config = FirewallConfig::default();
+    let mut state = FirewallState::default();
 
-    config.whitelist.port_whitelist = iter_peers(requested_state)
+    state.whitelist.port_whitelist = iter_peers(requested_state)
         .filter(|p| p.allow_peer_send_files)
         .map(|p| (p.public_key, FILE_SEND_PORT))
         .collect();
 
     for permission in Permissions::VALUES {
-        config.whitelist.peer_whitelists[permission] = iter_peers(requested_state)
+        state.whitelist.peer_whitelists[permission] = iter_peers(requested_state)
             .filter(|p| match permission {
                 Permissions::IncomingConnections => p.allow_incoming_connections,
                 Permissions::LocalAreaConnections => p.allow_peer_local_network_access,
@@ -649,12 +649,12 @@ async fn consolidate_firewall<F: Firewall>(
     }
 
     if let Some(key) = starcast_vpeer_pubkey {
-        config.whitelist.peer_whitelists[Permissions::RoutingConnections].insert(key);
-        config.whitelist.peer_whitelists[Permissions::IncomingConnections].insert(key);
+        state.whitelist.peer_whitelists[Permissions::RoutingConnections].insert(key);
+        state.whitelist.peer_whitelists[Permissions::IncomingConnections].insert(key);
     }
 
     if let Some(key) = dns_pubkey {
-        config.whitelist.peer_whitelists[Permissions::RoutingConnections].insert(key);
+        state.whitelist.peer_whitelists[Permissions::RoutingConnections].insert(key);
     }
 
     if let Some(exit_node) = &requested_state.exit_node {
@@ -662,19 +662,19 @@ async fn consolidate_firewall<F: Firewall>(
             !iter_peers(requested_state).any(|p| p.public_key == exit_node.public_key);
 
         if is_vpn_exit_node {
-            config.vpn_peer = Some(exit_node.public_key);
+            state.whitelist.vpn_peer = Some(exit_node.public_key);
         }
     }
 
     if let Some(meshnet_config) = &requested_state.meshnet_config {
-        config.ip_addresses = meshnet_config
+        state.ip_addresses = meshnet_config
             .this
             .ip_addresses
             .clone()
             .ok_or(Error::IpNotSet)?;
     }
 
-    firewall.apply_config(config);
+    firewall.apply_state(state);
 
     Ok(())
 }
@@ -1521,9 +1521,9 @@ mod tests {
         ]);
 
         firewall
-            .expect_apply_config()
+            .expect_apply_state()
             .once()
-            .with(eq(FirewallConfig {
+            .with(eq(FirewallState {
                 whitelist: Whitelist {
                     peer_whitelists: enum_map! {
                         Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_1, pub_key_2, pub_key_starcast_vpeer].iter().cloned()),
@@ -1531,6 +1531,7 @@ mod tests {
                         Permissions::LocalAreaConnections => FwHashSet::default(),
                     },
                     port_whitelist: [(pub_key_1, FILE_SEND_PORT), (pub_key_3, FILE_SEND_PORT)].iter().cloned().collect(),
+                    vpn_peer: None,
                 },
                 ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
                 ..Default::default()
@@ -1565,9 +1566,9 @@ mod tests {
         ]);
 
         firewall
-            .expect_apply_config()
+            .expect_apply_state()
             .once()
-            .with(eq(FirewallConfig {
+            .with(eq(FirewallState {
                 whitelist: Whitelist {
                     peer_whitelists: enum_map! {
                         Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_1, pub_key_2, pub_key_starcast_vpeer].iter().cloned()),
@@ -1575,6 +1576,7 @@ mod tests {
                         Permissions::LocalAreaConnections => FwHashSet::from_iter([pub_key_1, pub_key_2].iter().cloned()),
                     },
                     port_whitelist: [(pub_key_1, FILE_SEND_PORT), (pub_key_3, FILE_SEND_PORT)].iter().cloned().collect(),
+                    vpn_peer: None,
                 },
                 ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
                 ..Default::default()
@@ -1608,9 +1610,9 @@ mod tests {
         });
 
         firewall
-            .expect_apply_config()
+            .expect_apply_state()
             .once()
-            .with(eq(FirewallConfig {
+            .with(eq(FirewallState {
                 whitelist: Whitelist {
                     peer_whitelists: enum_map! {
                         Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
@@ -1618,8 +1620,8 @@ mod tests {
                         Permissions::LocalAreaConnections => FwHashSet::default(),
                     },
                     port_whitelist: Default::default(),
+                    vpn_peer: Some(pub_key_2),
                 },
-                vpn_peer: Some(pub_key_2),
                 ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
                 ..Default::default()
             }))
@@ -1651,9 +1653,9 @@ mod tests {
         });
 
         firewall
-            .expect_apply_config()
+            .expect_apply_state()
             .once()
-            .with(eq(FirewallConfig {
+            .with(eq(FirewallState {
                 whitelist: Whitelist {
                     peer_whitelists: enum_map! {
                         Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
@@ -1661,6 +1663,7 @@ mod tests {
                         Permissions::LocalAreaConnections => FwHashSet::default(),
                     },
                     port_whitelist: Default::default(),
+                    vpn_peer: None,
                 },
                 ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
                 ..Default::default()
@@ -1694,9 +1697,9 @@ mod tests {
         });
 
         firewall
-            .expect_apply_config()
+            .expect_apply_state()
             .once()
-            .with(eq(FirewallConfig {
+            .with(eq(FirewallState {
                 whitelist: Whitelist {
                     peer_whitelists: enum_map! {
                         Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
@@ -1704,6 +1707,7 @@ mod tests {
                         Permissions::LocalAreaConnections => FwHashSet::default(),
                     },
                     port_whitelist: Default::default(),
+                    vpn_peer: None,
                 },
                 ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
                 ..Default::default()
@@ -1733,7 +1737,7 @@ mod tests {
             (pub_key_2, vec![], false, true, false, false),
         ]);
 
-        let expected_config = FirewallConfig {
+        let expected_state = FirewallState {
             whitelist: Whitelist {
                 peer_whitelists: enum_map! {
                     Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_1, pub_key_starcast_vpeer].iter().cloned()),
@@ -1741,6 +1745,7 @@ mod tests {
                     Permissions::LocalAreaConnections => FwHashSet::from_iter([pub_key_2].iter().cloned()),
                 },
                 port_whitelist: [(pub_key_1, FILE_SEND_PORT)].iter().cloned().collect(),
+                vpn_peer: None,
             },
             ip_addresses: vec![
                 IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -1751,9 +1756,9 @@ mod tests {
 
         // Calling consolidate_firewall multiple times with same state should produce same config
         firewall
-            .expect_apply_config()
+            .expect_apply_state()
             .times(3)
-            .with(eq(expected_config))
+            .with(eq(expected_state))
             .returning(|_| ());
 
         for _ in 0..3 {
