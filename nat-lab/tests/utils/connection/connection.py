@@ -58,6 +58,10 @@ class ConnectionTag(Enum):
     DOCKER_WINDOWS_VM_2 = auto()
     DOCKER_MAC_GW_1 = auto()
     DOCKER_MAC_GW_2 = auto()
+    DOCKER_CORE_API_1 = auto()
+    DOCKER_MQTT_BROKER_1 = auto()
+    DOCKER_STUN_1 = auto()
+    DOCKER_UDP_SERVER = auto()
 
     def __repr__(self):
         return f"{self.name}"

@@ -110,6 +110,7 @@ LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
         "secondary": "",
     },
     ConnectionTag.DOCKER_VPN_1: {"primary": "10.0.100.1", "secondary": ""},
+    ConnectionTag.DOCKER_VPN_2: {"primary": "10.0.100.2", "secondary": ""},
     ConnectionTag.VM_LINUX_NLX_1: {"primary": "10.0.100.51", "secondary": ""},
     ConnectionTag.DOCKER_PHOTO_ALBUM: {"primary": "10.0.80.80", "secondary": ""},
     ConnectionTag.VM_OPENWRT_GW_1: {
@@ -118,6 +119,42 @@ LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
     },
     ConnectionTag.DOCKER_OPENWRT_CLIENT_1: {
         "primary": "192.168.115.100",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_CORE_API_1: {
+        "primary": "10.0.80.86",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_MQTT_BROKER_1: {
+        "primary": "10.0.80.85",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_DERP_1: {
+        "primary": "10.0.10.1",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_DERP_2: {
+        "primary": "10.0.10.2",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_DERP_3: {
+        "primary": "10.0.10.3",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_DNS_SERVER_1: {
+        "primary": "10.0.80.82",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_DNS_SERVER_2: {
+        "primary": "10.0.80.83",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_STUN_1: {
+        "primary": "10.0.80.83",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_UDP_SERVER: {
+        "primary": "10.0.80.81",
         "secondary": "",
     },
 }
