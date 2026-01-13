@@ -1,3 +1,4 @@
+use base64::prelude::{Engine, BASE64_STANDARD};
 use reqwest::{
     blocking::{Client, Response},
     header,
@@ -92,6 +93,11 @@ struct MeshDev {
 }
 
 impl Nord {
+    fn format_auth_token(token: &String) -> String {
+        let creds = format!("token:{}", token);
+        format!("Basic {}", BASE64_STANDARD.encode(creds))
+    }
+
     pub fn start_login() -> Result<OAuth, Error> {
         let chalenge = b"asdfasdf".to_vec();
         let sha256 = hex::encode(Sha256::digest(&chalenge));
@@ -120,7 +126,7 @@ impl Nord {
             .json()?;
         let creds: Creds = client
             .get(&format!("{}/users/services/credentials", API_BASE))
-            .header(header::AUTHORIZATION, format!("token:{}", &login.token))
+            .header(header::AUTHORIZATION, Self::format_auth_token(&login.token))
             .send()?
             .checked()?
             .json()?;
@@ -143,7 +149,7 @@ impl Nord {
 
         let creds: Creds = client
             .get(&format!("{}/users/services/credentials", API_BASE))
-            .header(header::AUTHORIZATION, format!("token:{}", &login.token))
+            .header(header::AUTHORIZATION, Self::format_auth_token(&login.token))
             .send()?
             .checked()?
             .json()?;
@@ -159,10 +165,11 @@ impl Nord {
         let login = LoginInfo {
             token: token.to_string(),
         };
+
         let client = Client::new();
         let creds: Creds = client
             .get(&format!("{}/users/services/credentials", API_BASE))
-            .header(header::AUTHORIZATION, format!("token:{}", &login.token))
+            .header(header::AUTHORIZATION, Self::format_auth_token(&login.token))
             .send()?
             .checked()?
             .json()?;
@@ -221,7 +228,7 @@ impl Nord {
             .post(&format!("{}/meshnet/machines", API_BASE))
             .header(
                 header::AUTHORIZATION,
-                format!("Bearer token:{}", &self.login.token),
+                Self::format_auth_token(&self.login.token),
             )
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json")
@@ -245,7 +252,7 @@ impl Nord {
             .get(&format!("{}/meshnet/machines/{}/map", API_BASE, id))
             .header(
                 header::AUTHORIZATION,
-                format!("Bearer token:{}", &self.login.token),
+                Self::format_auth_token(&self.login.token),
             )
             .header(header::ACCEPT, "application/json")
             .send()?
