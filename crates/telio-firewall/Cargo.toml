@@ -28,3 +28,8 @@ mockall.workspace = true
 sn_fake_clock.workspace = true
 
 telio-utils = {workspace = true, features = ["sn_fake_clock"] }
+
+[[test]]
+name = "firewall_integration_tests"
+path = "tests/firewall_integration_tests.rs"
+test = false
