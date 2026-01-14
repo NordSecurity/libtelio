@@ -194,7 +194,7 @@ impl DynamicWg {
     ///         fn set_ext_if_filter(&self, list: &[String]);
     ///         }
     ///     }
-    ///     let firewall = Arc::new(StatefullFirewall::new(true,  &FeatureFirewall::default(),));
+    ///     let firewall = Arc::new(StatefullFirewall::new(true,  FeatureFirewall::default(),));
     ///     let firewall_filter_inbound_packets = {
     ///         let fw = firewall.clone();
     ///         move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)

@@ -347,7 +347,7 @@ fn ipv6_blocked() {
         },
     ];
     for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_udp , is_ipv4} in test_inputs {
-        let fw = StatefullFirewall::new(false, &FeatureFirewall::default(),);
+        let fw = StatefullFirewall::new(false, FeatureFirewall::default(),);
         fw.apply_state(FirewallState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
@@ -404,7 +404,7 @@ fn outgoing_blacklist() {
     ];
 
     for TestInput { src, dst, make_udp, make_tcp } in test_inputs {
-        let fw = StatefullFirewall::new(true, &FeatureFirewall {
+        let fw = StatefullFirewall::new(true, FeatureFirewall {
             outgoing_blacklist: blacklist.clone(),
             ..Default::default()
         },);
@@ -470,7 +470,7 @@ fn firewall_whitelist() {
     for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_udp, make_tcp, make_icmp } in &test_inputs {
         let mut feature = FeatureFirewall::default();
         feature.neptun_reset_conns = true;
-        let fw = StatefullFirewall::new(true, &feature);
+        let fw = StatefullFirewall::new(true, feature);
         let mut state = fw.get_state();
         state.ip_addresses = vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))];
         fw.apply_state(state.clone());
@@ -534,7 +534,7 @@ fn firewall_vpn_peer() {
     let syn : u8 = TcpFlags::SYN;
         for TestInput { src1, src2, dst1, make_udp, make_tcp } in &test_inputs {
             let feature = FeatureFirewall::default();
-            let fw = StatefullFirewall::new(true, &feature);
+            let fw = StatefullFirewall::new(true, feature);
             let mut state = fw.get_state();
             state.ip_addresses = vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))];
             fw.apply_state(state.clone());
@@ -581,7 +581,7 @@ fn firewall_whitelist_change_icmp() {
     for TestInput { us, them, make_icmp, is_v4 } in &test_inputs {
         let feature = FeatureFirewall::default();
         // Set number of conntrack entries to 0 to test only the whitelist
-        let fw = StatefullFirewall::new(true, &feature);
+        let fw = StatefullFirewall::new(true, feature);
         fw.apply_state(FirewallState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
@@ -620,7 +620,7 @@ fn firewall_whitelist_change_udp_allow() {
     ];
 
     for TestInput { us, them, make_udp } in test_inputs {
-        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),);
+        let fw = StatefullFirewall::new(true, FeatureFirewall::default(),);
         fw.apply_state(FirewallState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
@@ -653,7 +653,7 @@ fn firewall_whitelist_change_udp_block() {
     ];
 
     for TestInput { us, them, make_udp } in test_inputs {
-        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),);
+        let fw = StatefullFirewall::new(true, FeatureFirewall::default(),);
         fw.apply_state(FirewallState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
@@ -683,7 +683,7 @@ fn firewall_whitelist_change_tcp_allow() {
         TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6, },
     ];
     for TestInput { us, them, make_tcp } in test_inputs {
-        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),);
+        let fw = StatefullFirewall::new(true, FeatureFirewall::default(),);
         let mut state = fw.get_state();
         state.ip_addresses = vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))];
         fw.apply_state(state.clone());
@@ -715,7 +715,7 @@ fn firewall_whitelist_change_tcp_block() {
         TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6, },
     ];
     for TestInput { us, them, make_tcp } in test_inputs {
-        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),);
+        let fw = StatefullFirewall::new(true, FeatureFirewall::default(),);
         let mut state = fw.get_state();
         state.ip_addresses = vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))];
         fw.apply_state(state.clone());
@@ -768,7 +768,7 @@ fn firewall_whitelist_peer() {
     ];
         for TestInput { src1, src2, dst, make_udp, make_tcp, make_icmp } in &test_inputs {
             let feature = FeatureFirewall::default();
-            let fw = StatefullFirewall::new(true, &feature);
+            let fw = StatefullFirewall::new(true, feature);
             fw.apply_state(FirewallState {
                 ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
                 ..Default::default()
@@ -841,7 +841,7 @@ fn firewall_test_permissions() {
     {
         let mut feature = FeatureFirewall::default();
         feature.neptun_reset_conns = true;
-        let fw = StatefullFirewall::new(true, &feature);
+        let fw = StatefullFirewall::new(true, feature);
         let mut state = fw.get_state();
         state.ip_addresses = vec![
             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
@@ -989,7 +989,7 @@ fn firewall_whitelist_port() {
         }
     ];
     for test_input @ TestInput { src: _, dst: _, make_udp, make_tcp, make_icmp } in test_inputs {
-        let fw = StatefullFirewall::new(true, &FeatureFirewall::default(),);
+        let fw = StatefullFirewall::new(true, FeatureFirewall::default(),);
         fw.apply_state(FirewallState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()

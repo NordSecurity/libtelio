@@ -101,7 +101,7 @@ pub trait Firewall {
     fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool;
 
     /// Creates packets that are supposed to kill the existing connections.
-    /// The end goal here is to fore the client app sockets to reconnect.
+    /// The end goal here is to force the client app sockets to reconnect.
     fn reset_connections(&self, pubkey: &PublicKey, sink: &mut dyn io::Write);
 }
 
@@ -198,7 +198,7 @@ impl Drop for StatefullFirewall {
 
 impl StatefullFirewall {
     /// Constructs firewall with libfw structure pointer
-    pub fn new(use_ipv6: bool, feature: &FeatureFirewall) -> Self {
+    pub fn new(use_ipv6: bool, feature: FeatureFirewall) -> Self {
         // Let's initialize libfirewall logging first.
         // We use TRACE level, which will be telio's level in pracice,
         // as we use telio logging macros inside.
@@ -206,14 +206,12 @@ impl StatefullFirewall {
 
         let config = FirewallConfig {
             allow_ipv6: use_ipv6,
-            feature: feature.clone(),
+            feature,
         };
 
-        let state = FirewallState {
-            whitelist: Whitelist::default(),
-            ip_addresses: Vec::new(),
-        };
+        let state = FirewallState::default();
 
+        // TODO: handle libfw_init failure - this should be done in LLT-6647 PR
         let firewall = libfw_init();
 
         let initial_local_ifs_addrs = LOCAL_ADDRS_CACHE
@@ -227,10 +225,10 @@ impl StatefullFirewall {
             firewall,
             config,
             local_ifs_addrs: RwLock::new(initial_local_ifs_addrs),
-            state: RwLock::new(state.clone()),
+            state: RwLock::new(state),
         };
 
-        result.apply_state(state);
+        result.refresh_chain();
 
         result
     }
@@ -330,11 +328,12 @@ pub(crate) fn configure_chain(
         });
     }
 
-    // Drop packets from UDP blacklist
+    // Reject packets from blacklist
     for blacklist_entry in &config.feature.outgoing_blacklist {
-        if blacklist_entry.protocol != IpProtocol::UDP {
-            continue;
-        }
+        let next_level_protocol = match blacklist_entry.protocol {
+            IpProtocol::UDP => NextLevelProtocol::Udp,
+            IpProtocol::TCP => NextLevelProtocol::Tcp,
+        };
         rules.push(Rule {
             filters: vec![
                 Filter {
@@ -342,28 +341,7 @@ pub(crate) fn configure_chain(
                     inverted: false,
                 },
                 Filter {
-                    filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Udp),
-                    inverted: false,
-                },
-                dst_net_all_ports_filter(IpNet::from(blacklist_entry.ip), false),
-            ],
-            action: LibfwVerdict::LibfwVerdictReject,
-        });
-    }
-
-    // Drop packets from TCP blacklist
-    for blacklist_entry in &config.feature.outgoing_blacklist {
-        if blacklist_entry.protocol != IpProtocol::TCP {
-            continue;
-        }
-        rules.push(Rule {
-            filters: vec![
-                Filter {
-                    filter_data: FilterData::Direction(Direction::Outbound),
-                    inverted: false,
-                },
-                Filter {
-                    filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Tcp),
+                    filter_data: FilterData::NextLevelProtocol(next_level_protocol),
                     inverted: false,
                 },
                 dst_net_all_ports_filter(IpNet::from(blacklist_entry.ip), false),
@@ -550,7 +528,7 @@ impl Firewall for StatefullFirewall {
         if *self.state.read() == new_state {
             return;
         }
-        *self.state.write() = new_state.clone();
+        *self.state.write() = new_state;
 
         self.refresh_chain();
     }
@@ -618,6 +596,6 @@ impl Firewall for StatefullFirewall {
 /// The default initialization of Firewall object
 impl Default for StatefullFirewall {
     fn default() -> Self {
-        Self::new(true, &FeatureFirewall::default())
+        Self::new(true, FeatureFirewall::default())
     }
 }
