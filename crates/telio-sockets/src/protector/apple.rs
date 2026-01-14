@@ -466,18 +466,163 @@ struct Context {
 #[allow(clippy::needless_pass_by_value)]
 fn dynamic_store_callback(
     _store: SCDynamicStore,
-    _changed_keys: CFArray<CFString>,
+    changed_keys: CFArray<CFString>,
     _context: &mut Context,
 ) {
     // NMACOS-8047 The callback is executed when specified keys in the DynamicStore change.
     // In such case we should force rebind the sockets to avoid no-net when `includeAllNetworks` is set.
     telio_log_info!("Force rebinding the sockets because of DynamicStore key change");
-    telio_log_debug!("DynamicStore key changed: {:?}", _changed_keys);
+    telio_log_debug!("DynamicStore key changed: {:?}", changed_keys);
+
+    let primary_interfaces = get_primary_interface_names();
+
+    let must_broadcast = must_broadcast_path_change(changed_keys, primary_interfaces);
+
+    if !must_broadcast {
+        telio_log_info!("Will not notify about DynamicStore key change");
+        return;
+    }
 
     if let Err(_e) = PROTECTOR_PATH_CHANGE_BROADCAST.send(()) {
         telio_log_warn!("Failed to notify about Dynamic Store change");
     } else {
         telio_log_info!("Notify about DynamicStore key change");
+    }
+}
+
+/// Given a set of keys changed in Dynamic Store and a set of primary network interafaces, returns whether the path
+/// change broadcast must happen.
+fn must_broadcast_path_change(
+    changed_keys: CFArray<CFString>,
+    primary_interfaces: Vec<String>,
+) -> bool {
+    // Returns true if the given interface is primary.
+    let is_primary =
+        |interface: &str| -> bool { primary_interfaces.iter().any(|x| x == interface) };
+
+    let mut must_broadcast = false;
+    for changed_key in &changed_keys {
+        let changed_key = changed_key.to_string();
+        let mut key_path = changed_key.split('/');
+        match key_path.next_back() {
+            // One of:
+            //  State:/Network/Interface/<interface>/IPConfigurationBusy
+            Some("IPConfigurationBusy") => {
+                // Is an <interface> the one we actually care about?
+                if let Some(interface) = key_path.next_back() {
+                    // If it is primary, then we do.
+                    if is_primary(interface) {
+                        must_broadcast = true;
+                        break;
+                    }
+                    // Otherwise we must not broadcast the event.
+                }
+            }
+            // One of:
+            //  State:/Network/Global/IPv4
+            //  State:/Network/Interface/<interface>/IPv4
+            //  State:/Network/Interface/<service-UUID>/IPv4
+            Some("IPv4") => {
+                // Is an <interface> the one we actually care about?
+                match key_path.next_back() {
+                    // If it is Global, then we do.
+                    Some("Global") => {
+                        must_broadcast = true;
+                        break;
+                    }
+                    // If it is primary, then we do.
+                    Some(interface) => {
+                        if is_primary(interface) {
+                            must_broadcast = true;
+                            break;
+                        }
+                    }
+                    // Otherwise we must not broadcast the event.
+                    None => {}
+                }
+            }
+            // Unknown key, don't broadcast the event.
+            _ => {}
+        }
+    }
+    must_broadcast
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(target_os = "macos")]
+    mod broadcasting_path_change_notifications {
+        use system_configuration::core_foundation::{array::CFArray, string::CFString};
+
+        use crate::protector::platform::must_broadcast_path_change;
+
+        #[test]
+        fn broadcast_when_primary_network_interface_is_being_configured() {
+            let changed_keys = vec![CFString::new(
+                "State:/Network/Interface/en0/IPConfigurationBusy",
+            )];
+            let primary_interfaces = vec![String::from("en0")];
+            assert_eq!(
+                must_broadcast_path_change(
+                    CFArray::from_CFTypes(&changed_keys),
+                    primary_interfaces
+                ),
+                true
+            );
+        }
+
+        #[test]
+        fn dont_broadcast_when_secondary_network_interface_is_being_configured() {
+            let changed_keys = vec![CFString::new(
+                "State:/Network/Interface/en1/IPConfigurationBusy",
+            )];
+            let primary_interfaces = vec![String::from("en0")];
+            assert_eq!(
+                must_broadcast_path_change(
+                    CFArray::from_CFTypes(&changed_keys),
+                    primary_interfaces
+                ),
+                false
+            );
+        }
+
+        #[test]
+        fn broadcast_when_systemwide_ipv4_routing_is_being_changed() {
+            let changed_keys = vec![CFString::new("State:/Network/Global/IPv4")];
+            assert_eq!(
+                must_broadcast_path_change(
+                    CFArray::from_CFTypes(&changed_keys),
+                    vec![] // The information about primary interfaces is irrelevant for this case.
+                ),
+                true
+            );
+        }
+
+        #[test]
+        fn broadcast_when_ipv4_primary_network_interface_is_being_configured() {
+            let changed_keys = vec![CFString::new("State:/Network/Interface/en0/IPv4")];
+            let primary_interfaces = vec![String::from("en0")];
+            assert_eq!(
+                must_broadcast_path_change(
+                    CFArray::from_CFTypes(&changed_keys),
+                    primary_interfaces
+                ),
+                true
+            );
+        }
+
+        #[test]
+        fn dont_broadcast_when_ipv4_secondary_network_interface_is_being_configured() {
+            let changed_keys = vec![CFString::new("State:/Network/Interface/en0/IPv4")];
+            let primary_interfaces = vec![String::from("en1")];
+            assert_eq!(
+                must_broadcast_path_change(
+                    CFArray::from_CFTypes(&changed_keys),
+                    primary_interfaces
+                ),
+                false
+            );
+        }
     }
 }
 
