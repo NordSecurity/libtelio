@@ -6,6 +6,7 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::{
     io,
+    net::IpAddr,
     sync::{Arc, Weak},
 };
 use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
@@ -29,7 +30,7 @@ struct PausedState {
 /// Trait which should be implemented to receive local address change notifications
 pub trait LocalInterfacesObserver: Sync + Send {
     /// Callback which allows to take certain actions when local interfaces changed
-    fn notify(&self);
+    fn notify(&self, new_addresses: Vec<IpAddr>);
 }
 
 #[derive(Debug)]
@@ -46,7 +47,7 @@ pub struct NetworkMonitor {
     local_interfaces_observers: Arc<Mutex<Vec<Weak<dyn LocalInterfacesObserver>>>>,
 }
 
-fn save_local_interfaces<G: GetIfAddrs>(get_if_addr: &G) -> bool {
+fn save_local_interfaces<G: GetIfAddrs>(get_if_addr: &G) -> Option<Vec<if_addrs::Interface>> {
     telio_log_trace!("Gathering local interfaces list");
     match gather_local_interfaces(get_if_addr) {
         Ok(v) => {
@@ -55,15 +56,15 @@ fn save_local_interfaces<G: GetIfAddrs>(get_if_addr: &G) -> bool {
                 telio_log_debug!("Gathered interfaces list differs from cached one");
                 telio_log_debug!("cached interfaces list: {old_v:?}");
                 telio_log_debug!("new interfaces list: {v:?}");
-                *(LOCAL_ADDRS_CACHE.lock()) = v;
-                true
+                *(LOCAL_ADDRS_CACHE.lock()) = v.clone();
+                Some(v)
             } else {
-                false
+                None
             }
         }
         Err(e) => {
             telio_log_warn!("Unable to get local interfaces {e}");
-            false
+            None
         }
     }
 }
@@ -124,19 +125,23 @@ impl NetworkMonitor {
                                 telio_log_trace!("Received OS interface change notification");
                             }
 
-                            if !is_paused && save_local_interfaces(&get_if_addr) {
-                                telio_log_debug!(
-                                    "Notifying registered observers about OS interface change"
-                                );
-                                for observer in observers_loop_copy.lock().iter() {
+                            if !is_paused {
+                                if let Some(new_ifs) = save_local_interfaces(&get_if_addr) {
                                     telio_log_debug!(
-                                        "Processing observer at {:p}",
-                                        observer.as_ptr()
+                                        "Notifying registered observers about OS interface change"
                                     );
-                                    if let Some(observer) = observer.upgrade() {
-                                        observer.notify();
-                                    } else {
-                                        telio_log_debug!("Observer dropped, won't notify");
+                                    let new_addresses: Vec<IpAddr> =
+                                        new_ifs.iter().map(|iface| iface.addr.ip()).collect();
+                                    for observer in observers_loop_copy.lock().iter() {
+                                        telio_log_debug!(
+                                            "Processing observer at {:p}",
+                                            observer.as_ptr()
+                                        );
+                                        if let Some(observer) = observer.upgrade() {
+                                            observer.notify(new_addresses.clone());
+                                        } else {
+                                            telio_log_debug!("Observer dropped, won't notify");
+                                        }
                                     }
                                 }
                             }
