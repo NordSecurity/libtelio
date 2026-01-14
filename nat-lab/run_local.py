@@ -28,10 +28,12 @@ from typing import List, Optional, Dict, Any
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/../..")
 
 # Add path for local modules
-sys.path.append(os.path.join(PROJECT_ROOT, "libtelio", "nat-lab"))
+# Adjust Python path to include current directory and parent directory
+# Add current directory to Python path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Import distributed duration tracker
-from ci.distributed_duration_tracker import DistributedDurationTracker
+from distributed_duration_tracker import DistributedDurationTracker
 
 TEST_TIMEOUT = 180
 
@@ -93,6 +95,18 @@ def main() -> int:
     parser.add_argument("--reruns", type=int, default=0, help="Pass `reruns` to pytest")
     parser.add_argument("--count", type=int, default=1, help="Pass `count` to pytest")
     parser.add_argument("--moose", action="store_true", help="Build with moose")
+    parser.add_argument(
+        "--splits", type=int, default=1,
+        help="Number of test splitting groups"
+    )
+    parser.add_argument(
+        "--group", type=int, default=0,
+        help="Current group for test splitting (0-indexed)"
+    )
+    parser.add_argument(
+        "--splits-duration", type=str,
+        help="Path to JSON file with test duration data for balanced splitting"
+    )
     parser.add_argument(
         "--no-verify-setup-correctness",
         action="store_true",
@@ -217,15 +231,19 @@ def main() -> int:
                 ])
 
         pytest_cmd += get_pytest_arguments(args)
-
+        
+        # Add test splitting arguments if specified
+        # Note: Don't adjust for group index here, as it should be passed as-is
+        if hasattr(args, 'splits') and args.splits > 1:
+            pytest_cmd.extend([
+                f"--splits={args.splits}",
+                f"--group={args.group}"
+            ])
+            if args.splits_duration:
+                pytest_cmd.append(f"--splits-duration={args.splits_duration}")
+        
         test_dir = "performance_tests" if args.perf_tests else "tests"
         pytest_cmd.append(test_dir)
-
-        # Ensure PYTHONPATH is set correctly
-        env = os.environ.copy()
-        env["PYTHONPATH"] = "."
-
-        run_command(pytest_cmd, env=env)
 
         # Handle duration tracking for CI environment
         if os.environ.get("GITLAB_CI") == "true":
