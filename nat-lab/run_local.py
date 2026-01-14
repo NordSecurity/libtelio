@@ -108,6 +108,21 @@ def main() -> int:
         action="store_true",
         help="Run performance tests instead of functional tests",
     )
+    parser.add_argument(
+        "--save-node-durations",
+        action="store_true",
+        help="Save test duration data to a node-specific JSON file"
+    )
+    parser.add_argument(
+        "--compile-durations",
+        action="store_true",
+        help="Compile test duration data from all node files"
+    )
+    parser.add_argument(
+        "--ci-mode",
+        action="store_true",
+        help="Enable additional CI-specific test running behaviors"
+    )
     args = parser.parse_args()
 
     # Enhanced setup verification control
