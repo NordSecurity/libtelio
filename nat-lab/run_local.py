@@ -1,13 +1,37 @@
 #!/usr/bin/env python3
 
+"""
+NAT Lab Test Runner
+
+This script provides a flexible and configurable way to run NAT lab tests with
+support for various modes of execution, including:
+- CI environment handling
+- Test duration tracking
+- Distributed test splitting
+- Performance test support
+
+Key improvements:
+- Centralized test running logic
+- Enhanced CI environment detection
+- Dynamic test splitting and duration tracking
+- Simplified test configuration
+"""
+
 import argparse
 import os
 import subprocess
 import sys
 import time
+import json
 from typing import List, Optional, Dict, Any
 
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/../..")
+
+# Add path for local modules
+sys.path.append(os.path.join(PROJECT_ROOT, "libtelio", "nat-lab"))
+
+# Import distributed duration tracker
+from ci.distributed_duration_tracker import DistributedDurationTracker
 
 TEST_TIMEOUT = 180
 
@@ -86,8 +110,26 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not args.no_verify_setup_correctness:
+    # Enhanced setup verification control
+    if args.verify_setup or not args.no_verify_setup_correctness:
         verify_setup_correctness()
+    
+    # Additional CI mode checks
+    if args.ci_mode:
+        # Validate CI-specific environment requirements
+        if os.environ.get("GITLAB_CI") == "true":
+            required_env_vars = [
+                "CI_NODE_INDEX",
+                "CI_NODE_TOTAL",
+                "CI_REGISTRY_USER",
+                "CI_JOB_TOKEN",
+                "CI_REGISTRY"
+            ]
+            missing_vars = [var for var in required_env_vars if not os.environ.get(var)]
+            
+            if missing_vars:
+                print(f"Warning: Missing CI environment variables: {', '.join(missing_vars)}", file=sys.stderr)
+                # Optionally raise an exception or handle gracefully
 
     if not args.nobuild:
         print("\u001b[33m")
@@ -150,12 +192,58 @@ def main() -> int:
             "timeout_func_only=true",
         ]
 
+        # Add JSON report generation if in CI environment
+        if os.environ.get("GITLAB_CI") == "true":
+            json_report_file = os.environ.get("PYTEST_OUTPUT_FILE")
+            if json_report_file:
+                pytest_cmd.extend([
+                    "--json-report",
+                    f"--json-report-file={json_report_file}"
+                ])
+
         pytest_cmd += get_pytest_arguments(args)
 
         test_dir = "performance_tests" if args.perf_tests else "tests"
         pytest_cmd.append(test_dir)
 
-        run_command(pytest_cmd)
+        # Ensure PYTHONPATH is set correctly
+        env = os.environ.copy()
+        env["PYTHONPATH"] = "."
+
+        run_command(pytest_cmd, env=env)
+
+        # Handle duration tracking for CI environment
+        if os.environ.get("GITLAB_CI") == "true":
+            duration_tracker = DistributedDurationTracker()
+            
+            # Save node durations if flag is set or in the last node of a CI run
+            if args.save_node_durations or (
+                os.environ.get("CI_NODE_INDEX") == os.environ.get("CI_NODE_TOTAL")
+            ):
+                try:
+                    # Try to read the JSON report file
+                    report_file = os.environ.get("PYTEST_OUTPUT_FILE", "pytest_report.json")
+                    with open(report_file, 'r') as f:
+                        report = json.load(f)
+                    
+                    # Extract test durations from the report
+                    test_durations = {
+                        test.get('nodeid', 'unknown'): test.get('duration', 0.0)
+                        for test in report.get('tests', [])
+                    }
+                    
+                    # Save node-specific durations
+                    duration_tracker.save_node_durations(test_durations)
+                    print("Node-specific test durations saved successfully.")
+                except (IOError, json.JSONDecodeError, KeyError) as e:
+                    print(f"Warning: Failed to save test durations: {e}", file=sys.stderr)
+            
+            # Compile durations if flag is set or on the last node
+            if args.compile_durations or (
+                os.environ.get("CI_NODE_INDEX") == os.environ.get("CI_NODE_TOTAL")
+            ):
+                compiled_durations = duration_tracker.compile_durations()
+                print("Test durations compiled successfully.")
 
     return 0
 
