@@ -227,7 +227,7 @@ def main() -> int:
             "timeout_func_only=true",
         ]
 
-        # Validate and adjust test splitting arguments
+        # Validate and add test splitting arguments
         if args.splits > 1:
             # Adjust group index for pytest-split's 1-based indexing
             group_index = args.group + 1
@@ -235,10 +235,13 @@ def main() -> int:
                 f"--splits={args.splits}",
                 f"--group={group_index}"
             ])
-            
-            # Only add splits-duration if the file exists
-            if args.splits_duration and os.path.exists(args.splits_duration):
-                pytest_cmd.append(f"--splits-duration={args.splits_duration}")
+        
+        # Add duration storage option if requested
+        if args.store_durations:
+            pytest_cmd.extend([
+                "--store-durations",
+                f"--durations-path={args.durations_path}"
+            ])
 
         # Add base arguments and marks
         pytest_cmd += get_pytest_arguments(args)
