@@ -227,21 +227,28 @@ def main() -> int:
             "timeout_func_only=true",
         ]
 
-        report_file = "report.json"
-        if os.environ.get("GITLAB_CI") == "true":
-            pytest_cmd.extend(["--json-report", f"--json-report-file={report_file}"])
-
-        pytest_cmd += get_pytest_arguments(args)
-
-        # Add test splitting arguments if specified
-        # Note: Don't adjust for group index here, as it should be passed as-is
-        if hasattr(args, "splits") and args.splits > 1:
-            pytest_cmd.extend([f"--splits={args.splits}", f"--group={args.group}"])
-            if args.splits_duration:
+        # Validate and adjust test splitting arguments
+        if args.splits > 1:
+            # Adjust group index for pytest-split's 1-based indexing
+            group_index = args.group + 1
+            pytest_cmd.extend([
+                f"--splits={args.splits}",
+                f"--group={group_index}"
+            ])
+            
+            # Only add splits-duration if the file exists
+            if args.splits_duration and os.path.exists(args.splits_duration):
                 pytest_cmd.append(f"--splits-duration={args.splits_duration}")
 
+        # Add base arguments and marks
+        pytest_cmd += get_pytest_arguments(args)
+
+        # Select test directory
         test_dir = "performance_tests" if args.perf_tests else "tests"
         pytest_cmd.append(test_dir)
+
+        # Prepare report file
+        report_file = os.environ.get("PYTEST_OUTPUT_FILE", "pytest_report.json")
 
         run_command(pytest_cmd)
 
