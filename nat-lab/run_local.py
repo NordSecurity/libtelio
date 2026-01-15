@@ -140,7 +140,7 @@ def main() -> int:
     args = parser.parse_args()
 
     # Enhanced setup verification control
-    if args.verify_setup or not args.no_verify_setup_correctness:
+    if not args.no_verify_setup_correctness:
         verify_setup_correctness()
     
     # Additional CI mode checks
