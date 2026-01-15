@@ -18,11 +18,14 @@ Key improvements:
 """
 
 import argparse
+import json
 import os
 import subprocess
 import sys
 import time
-import json
+
+# Import distributed duration tracker
+from distributed_duration_tracker import DistributedDurationTracker
 from typing import List, Optional, Dict, Any
 
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/../..")
@@ -32,8 +35,6 @@ PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/
 # Add current directory to Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Import distributed duration tracker
-from distributed_duration_tracker import DistributedDurationTracker
 
 TEST_TIMEOUT = 180
 
@@ -96,16 +97,18 @@ def main() -> int:
     parser.add_argument("--count", type=int, default=1, help="Pass `count` to pytest")
     parser.add_argument("--moose", action="store_true", help="Build with moose")
     parser.add_argument(
-        "--splits", type=int, default=1,
-        help="Number of test splitting groups"
+        "--splits", type=int, default=1, help="Number of test splitting groups"
     )
     parser.add_argument(
-        "--group", type=int, default=0,
-        help="Current group for test splitting (0-indexed)"
+        "--group",
+        type=int,
+        default=0,
+        help="Current group for test splitting (0-indexed)",
     )
     parser.add_argument(
-        "--splits-duration", type=str,
-        help="Path to JSON file with test duration data for balanced splitting"
+        "--splits-duration",
+        type=str,
+        help="Path to JSON file with test duration data for balanced splitting",
     )
     parser.add_argument(
         "--no-verify-setup-correctness",
@@ -125,24 +128,24 @@ def main() -> int:
     parser.add_argument(
         "--save-node-durations",
         action="store_true",
-        help="Save test duration data to a node-specific JSON file"
+        help="Save test duration data to a node-specific JSON file",
     )
     parser.add_argument(
         "--compile-durations",
         action="store_true",
-        help="Compile test duration data from all node files"
+        help="Compile test duration data from all node files",
     )
     parser.add_argument(
         "--ci-mode",
         action="store_true",
-        help="Enable additional CI-specific test running behaviors"
+        help="Enable additional CI-specific test running behaviors",
     )
     args = parser.parse_args()
 
     # Enhanced setup verification control
     if not args.no_verify_setup_correctness:
         verify_setup_correctness()
-    
+
     # Additional CI mode checks
     if args.ci_mode:
         # Validate CI-specific environment requirements
@@ -152,12 +155,15 @@ def main() -> int:
                 "CI_NODE_TOTAL",
                 "CI_REGISTRY_USER",
                 "CI_JOB_TOKEN",
-                "CI_REGISTRY"
+                "CI_REGISTRY",
             ]
             missing_vars = [var for var in required_env_vars if not os.environ.get(var)]
-            
+
             if missing_vars:
-                print(f"Warning: Missing CI environment variables: {', '.join(missing_vars)}", file=sys.stderr)
+                print(
+                    f"Warning: Missing CI environment variables: {', '.join(missing_vars)}",
+                    file=sys.stderr,
+                )
                 # Optionally raise an exception or handle gracefully
 
     if not args.nobuild:
@@ -221,92 +227,90 @@ def main() -> int:
             "timeout_func_only=true",
         ]
 
-        # Add JSON report generation if in CI environment
+        report_file = "report.json"
         if os.environ.get("GITLAB_CI") == "true":
-            json_report_file = os.environ.get("PYTEST_OUTPUT_FILE")
-            if json_report_file:
-                pytest_cmd.extend([
-                    "--json-report",
-                    f"--json-report-file={json_report_file}"
-                ])
+            pytest_cmd.extend(["--json-report", f"--json-report-file={report_file}"])
 
         pytest_cmd += get_pytest_arguments(args)
-        
+
         # Add test splitting arguments if specified
         # Note: Don't adjust for group index here, as it should be passed as-is
-        if hasattr(args, 'splits') and args.splits > 1:
-            pytest_cmd.extend([
-                f"--splits={args.splits}",
-                f"--group={args.group}"
-            ])
+        if hasattr(args, "splits") and args.splits > 1:
+            pytest_cmd.extend([f"--splits={args.splits}", f"--group={args.group}"])
             if args.splits_duration:
                 pytest_cmd.append(f"--splits-duration={args.splits_duration}")
-        
+
         test_dir = "performance_tests" if args.perf_tests else "tests"
         pytest_cmd.append(test_dir)
+
+        run_command(pytest_cmd)
 
         # Handle duration tracking for CI environment or explicit save request
         if os.environ.get("GITLAB_CI") == "true" or args.save_node_durations:
             # Initialize duration tracker
             duration_tracker = DistributedDurationTracker()
-            
+
             # Always define test_durations as an empty dict
             test_durations: Dict[str, float] = {}
-            
+
             # Attempt to save node durations
             try:
-                # Determine report file path
-                report_file = os.environ.get("PYTEST_OUTPUT_FILE", "pytest_report.json")
-                
                 # Check if file exists and is not empty
                 if os.path.exists(report_file) and os.path.getsize(report_file) > 0:
-                    with open(report_file, 'r') as f:
+                    with open(report_file, "r") as f:
                         # Use a safe parsing method
                         report = json.load(f)
-                        
+
                         # Extract test durations from the report
                         test_durations = {
-                            str(test.get('nodeid', 'unknown')): float(test.get('duration', 0.0))
-                            for test in report.get('tests', [])
-                            if test.get('duration') is not None
+                            str(test.get("nodeid", "unknown")): float(
+                                test.get("duration", 0.0)
+                            )
+                            for test in report.get("tests", [])
+                            if test.get("duration") is not None
                         }
                 else:
-                    print(f"No test duration report found at {report_file}", file=sys.stderr)
-                
+                    print(
+                        f"No test duration report found at {report_file}",
+                        file=sys.stderr,
+                    )
+
                 # Attempt to save node durations
                 if test_durations:
                     duration_tracker.save_node_durations(test_durations)
                     print("Node-specific test durations saved.")
                 else:
                     print("No test durations to save.", file=sys.stderr)
-            
+
             except Exception as e:
                 print(f"Error processing test durations: {e}", file=sys.stderr)
                 # Always attempt to save, even with an empty dict
                 duration_tracker.save_node_durations(test_durations)
-            
+
             # Compile durations if requested or on the last node
             if args.compile_durations or (
-                os.environ.get("GITLAB_CI") == "true" and
-                os.environ.get("CI_NODE_INDEX") == os.environ.get("CI_NODE_TOTAL")
+                os.environ.get("GITLAB_CI") == "true"
+                and os.environ.get("CI_NODE_INDEX") == os.environ.get("CI_NODE_TOTAL")
             ):
                 try:
-                    compiled_durations = duration_tracker.compile_durations()
+                    duration_tracker.compile_durations()
                     print("Test durations compiled successfully.")
                 except Exception as e:
                     print(f"Error compiling test durations: {e}", file=sys.stderr)
-                    
+
                     # Save node-specific durations
                     duration_tracker.save_node_durations(test_durations)
                     print("Node-specific test durations saved successfully.")
                 except (IOError, json.JSONDecodeError, KeyError) as e:
-                    print(f"Warning: Failed to save test durations: {e}", file=sys.stderr)
-            
+                    print(
+                        f"Warning: Failed to save test durations: {e}", file=sys.stderr
+                    )
+
             # Compile durations if flag is set or on the last node
             if args.compile_durations or (
                 os.environ.get("CI_NODE_INDEX") == os.environ.get("CI_NODE_TOTAL")
             ):
-                compiled_durations = duration_tracker.compile_durations()
+                duration_tracker.compile_durations()
                 print("Test durations compiled successfully.")
 
     return 0
