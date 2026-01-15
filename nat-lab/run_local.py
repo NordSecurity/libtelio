@@ -231,16 +231,10 @@ def main() -> int:
         if args.splits > 1:
             # Adjust group index for pytest-split's 1-based indexing
             group_index = args.group + 1
-            pytest_cmd.extend([
-                f"--splits={args.splits}",
-                f"--group={group_index}"
-            ])
-        
-        # Add duration storage option if requested
-        if args.store_durations:
+            pytest_cmd.extend([f"--splits={args.splits}", f"--group={group_index}"])
             pytest_cmd.extend([
                 "--store-durations",
-                f"--durations-path={args.durations_path}"
+                f"--durations-path=node_{os.environ.get('CI_NODE_INDEX', 1)}_durations.json",
             ])
 
         # Add base arguments and marks
