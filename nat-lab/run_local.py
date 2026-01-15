@@ -245,25 +245,56 @@ def main() -> int:
         test_dir = "performance_tests" if args.perf_tests else "tests"
         pytest_cmd.append(test_dir)
 
-        # Handle duration tracking for CI environment
-        if os.environ.get("GITLAB_CI") == "true":
+        # Handle duration tracking for CI environment or explicit save request
+        if os.environ.get("GITLAB_CI") == "true" or args.save_node_durations:
+            # Initialize duration tracker
             duration_tracker = DistributedDurationTracker()
             
-            # Save node durations if flag is set or in the last node of a CI run
-            if args.save_node_durations or (
+            # Always define test_durations as an empty dict
+            test_durations: Dict[str, float] = {}
+            
+            # Attempt to save node durations
+            try:
+                # Determine report file path
+                report_file = os.environ.get("PYTEST_OUTPUT_FILE", "pytest_report.json")
+                
+                # Check if file exists and is not empty
+                if os.path.exists(report_file) and os.path.getsize(report_file) > 0:
+                    with open(report_file, 'r') as f:
+                        # Use a safe parsing method
+                        report = json.load(f)
+                        
+                        # Extract test durations from the report
+                        test_durations = {
+                            str(test.get('nodeid', 'unknown')): float(test.get('duration', 0.0))
+                            for test in report.get('tests', [])
+                            if test.get('duration') is not None
+                        }
+                else:
+                    print(f"No test duration report found at {report_file}", file=sys.stderr)
+                
+                # Attempt to save node durations
+                if test_durations:
+                    duration_tracker.save_node_durations(test_durations)
+                    print("Node-specific test durations saved.")
+                else:
+                    print("No test durations to save.", file=sys.stderr)
+            
+            except Exception as e:
+                print(f"Error processing test durations: {e}", file=sys.stderr)
+                # Always attempt to save, even with an empty dict
+                duration_tracker.save_node_durations(test_durations)
+            
+            # Compile durations if requested or on the last node
+            if args.compile_durations or (
+                os.environ.get("GITLAB_CI") == "true" and
                 os.environ.get("CI_NODE_INDEX") == os.environ.get("CI_NODE_TOTAL")
             ):
                 try:
-                    # Try to read the JSON report file
-                    report_file = os.environ.get("PYTEST_OUTPUT_FILE", "pytest_report.json")
-                    with open(report_file, 'r') as f:
-                        report = json.load(f)
-                    
-                    # Extract test durations from the report
-                    test_durations = {
-                        test.get('nodeid', 'unknown'): test.get('duration', 0.0)
-                        for test in report.get('tests', [])
-                    }
+                    compiled_durations = duration_tracker.compile_durations()
+                    print("Test durations compiled successfully.")
+                except Exception as e:
+                    print(f"Error compiling test durations: {e}", file=sys.stderr)
                     
                     # Save node-specific durations
                     duration_tracker.save_node_durations(test_durations)
