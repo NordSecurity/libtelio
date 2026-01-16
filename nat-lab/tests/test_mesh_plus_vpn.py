@@ -95,7 +95,9 @@ async def test_mesh_plus_vpn_one_peer(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params], prepare_vpn=True
+            exit_stack,
+            [alpha_setup_params, beta_setup_params],
+            prepare_vpn=[ConnectionTag.DOCKER_VPN_1],
         )
 
         _, beta = env.nodes
@@ -193,7 +195,9 @@ async def test_mesh_plus_vpn_both_peers(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params], prepare_vpn=True
+            exit_stack,
+            [alpha_setup_params, beta_setup_params],
+            prepare_vpn=[ConnectionTag.DOCKER_VPN_1],
         )
 
         alpha, beta = env.nodes
@@ -439,7 +443,9 @@ async def test_vpn_plus_mesh_over_direct(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params], prepare_vpn=True
+            exit_stack,
+            [alpha_setup_params, beta_setup_params],
+            prepare_vpn=[ConnectionTag.DOCKER_VPN_1],
         )
 
         alpha, beta = env.nodes
@@ -599,7 +605,7 @@ async def test_vpn_plus_mesh_over_different_connection_types(
         env = await setup_mesh_nodes(
             exit_stack,
             [alpha_setup_params, beta_setup_params, gamma_setup_params],
-            prepare_vpn=True,
+            prepare_vpn=[ConnectionTag.DOCKER_VPN_1],
         )
 
         connection_alpha, connection_beta, connection_gamma = [

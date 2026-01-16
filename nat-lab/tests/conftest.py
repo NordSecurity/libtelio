@@ -52,6 +52,7 @@ RUNNER: asyncio.Runner | None = None
 SESSION_SCOPE_EXIT_STACK: AsyncExitStack | None = None
 
 LOG_DIR = "logs"
+SESSION_VM_MARKS: set[str] = set()
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -238,7 +239,7 @@ async def setup_check_duplicate_ip_addresses():
 
         # Detect duplicates
         for ip in ips:
-            if ip in ip_owner and ip_owner[ip] != name:
+            if ip in ip_owner and ip_owner[ip] != name and ip != "100.64.0.1":
                 duplicates[ip].update({ip_owner[ip], name})
             else:
                 ip_owner[ip] = name
@@ -263,8 +264,15 @@ async def setup_check_duplicate_mac_addresses():
 
     async with AsyncExitStack() as exit_stack:
         for conn_tag in ConnectionTag:
-            conn = await exit_stack.enter_async_context(new_connection_raw(conn_tag))
-
+            try:
+                conn = await exit_stack.enter_async_context(
+                    new_connection_raw(conn_tag)
+                )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                log.warning("Failed to check MAC address for %s: %s", conn_tag.name, e)
+                if os.environ.get("GITLAB_CI"):
+                    raise e
+                continue
             if conn.target_os == TargetOS.Linux:
                 cmd = ["sh", "-c", "ip link show | awk '/link\\/ether/ {print $2}'"]
             elif conn.target_os == TargetOS.Mac:
@@ -298,8 +306,12 @@ async def setup_check_arp_cache():
     Ensure all VM LAN_ADDR_MAP IPv4 addresses are present in the host ARP cache
     and are in a usable state.
     """
+    if "GITLAB_CI" not in os.environ:
+        log.info("setup_check: skipping ARP cache validation on non-CI environment")
+        return
+
     if TargetOS.local() != TargetOS.Linux:
-        print("setup_check: skipping ARP cache validation on non-Linux host")
+        log.info("setup_check: skipping ARP cache validation on non-Linux host")
         return
 
     def warm_arp(ip: str) -> None:
@@ -505,25 +517,17 @@ async def _copy_vm_binaries(tag: ConnectionTag):
         raise e
 
 
-async def _copy_vm_binaries_if_needed(items):
-    windows_bins_copied = False
-    mac_bins_copied = False
-    openwrt_bins_copied = False
-    for item in items:
-        for mark in item.own_markers:
-            if mark.name == "windows" and not windows_bins_copied:
-                await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_1)
-                await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_2)
-                windows_bins_copied = True
-            elif mark.name == "mac" and not mac_bins_copied:
-                await _copy_vm_binaries(ConnectionTag.VM_MAC)
-                mac_bins_copied = True
-            elif mark.name == "openwrt" and not openwrt_bins_copied:
-                await _copy_vm_binaries(ConnectionTag.VM_OPENWRT_GW_1)
-                openwrt_bins_copied = True
-
-            if windows_bins_copied and mac_bins_copied and openwrt_bins_copied:
-                return
+async def _copy_vm_binaries_if_needed():
+    if "windows" in SESSION_VM_MARKS:
+        await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_1)
+        try:
+            await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_2)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            log.warning("[Ignored] Couldn't copy binary to VM_WINDOWS_2: %s", e)
+    if "mac" in SESSION_VM_MARKS:
+        await _copy_vm_binaries(ConnectionTag.VM_MAC)
+    if "openwrt" in SESSION_VM_MARKS:
+        await _copy_vm_binaries(ConnectionTag.VM_OPENWRT_GW_1)
 
 
 def save_dmesg_from_host(suffix):
@@ -580,6 +584,9 @@ def save_audit_log_from_host(suffix):
 
 
 async def save_nordlynx_logs():
+    if "nlx" not in SESSION_VM_MARKS:
+        return
+
     source_log_dir_path = "/var/log"
     nlx_log_files = [
         "nlx-radius.log",
@@ -617,34 +624,44 @@ async def _save_macos_logs(conn, suffix):
         log.warning("Failed to collect dmesg logs %s", e)
 
 
-async def collect_kernel_logs(items, suffix):
+async def collect_kernel_logs(suffix):
     os.makedirs(LOG_DIR, exist_ok=True)
 
     save_dmesg_from_host(suffix)
     save_audit_log_from_host(suffix)
     await save_dmesg_from_remote_vm(ConnectionTag.VM_LINUX_NLX_1, suffix)
 
+    if "mac" in SESSION_VM_MARKS:
+        try:
+            async with SshConnection.new_connection(
+                LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
+            ) as conn:
+                await _save_macos_logs(conn, suffix)
+        except OSError as e:
+            if os.environ.get("GITLAB_CI"):
+                raise e
+
+
+def _get_session_vm_marks(items):
+    global SESSION_VM_MARKS
+
+    SESSION_VM_MARKS = set()
     for item in items:
-        if any(mark.name == "mac" for mark in item.own_markers):
-            try:
-                async with SshConnection.new_connection(
-                    LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
-                ) as conn:
-                    await _save_macos_logs(conn, suffix)
-            except OSError as e:
-                if os.environ.get("GITLAB_CI"):
-                    raise e
+        for mark in item.own_markers:
+            SESSION_VM_MARKS.add(mark.name)
 
 
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
+        _get_session_vm_marks(session.items)
+
         if not asyncio.run(perform_setup_checks()):
             pytest.exit("Setup checks failed, exiting ...")
 
         if os.environ.get("NATLAB_SAVE_LOGS") is not None:
-            asyncio.run(collect_kernel_logs(session.items, "before_tests"))
+            asyncio.run(collect_kernel_logs("before_tests"))
 
-        asyncio.run(_copy_vm_binaries_if_needed(session.items))
+        asyncio.run(_copy_vm_binaries_if_needed())
 
 
 def pytest_runtest_setup():
@@ -666,23 +683,27 @@ def pytest_sessionstart(session):
 
 # pylint: disable=unused-argument
 def pytest_sessionfinish(session, exitstatus):
-    if os.environ.get("NATLAB_SAVE_LOGS") is None:
+    if os.environ.get("NATLAB_SAVE_LOGS") is None or session.config.option.collectonly:
         return
 
-    if not session.config.option.collectonly:
-        if RUNNER is not None and SESSION_SCOPE_EXIT_STACK is not None:
-            try:
-                RUNNER.run(SESSION_SCOPE_EXIT_STACK.aclose())
-            finally:
-                RUNNER.close()
-        elif RUNNER is not None:
+    if RUNNER is not None and SESSION_SCOPE_EXIT_STACK is not None:
+        try:
+            RUNNER.run(SESSION_SCOPE_EXIT_STACK.aclose())
+        finally:
             RUNNER.close()
-        collect_nordderper_logs()
-        collect_dns_server_logs()
-        collect_core_api_server_logs()
-        asyncio.run(collect_kernel_logs(session.items, "after_tests"))
-        asyncio.run(collect_mac_diagnostic_reports())
-        asyncio.run(save_nordlynx_logs())
+    elif RUNNER is not None:
+        RUNNER.close()
+
+    asyncio.run(collect_logs())
+
+
+async def collect_logs():
+    collect_nordderper_logs()
+    collect_dns_server_logs()
+    collect_core_api_server_logs()
+    await collect_kernel_logs("after_tests")
+    await collect_mac_diagnostic_reports()
+    await save_nordlynx_logs()
 
 
 def collect_nordderper_logs():
@@ -742,25 +763,24 @@ def copy_file_from_container(container_name, src_path, dst_path):
 
 async def collect_mac_diagnostic_reports():
     is_ci = "GITLAB_CI" in os.environ
-    if not (is_ci or "NATLAB_COLLECT_MAC_DIAGNOSTIC_LOGS" in os.environ):
+    if not (
+        is_ci
+        or "NATLAB_COLLECT_MAC_DIAGNOSTIC_LOGS" in os.environ
+        or "mac" in SESSION_VM_MARKS
+    ):
         return
     log.info("Collect mac diagnostic reports")
-    try:
-        async with SshConnection.new_connection(
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
-        ) as connection:
-            await connection.download(
-                "/Library/Logs/DiagnosticReports",
-                f"{LOG_DIR}/system_diagnostic_reports",
-            )
-            await connection.download(
-                "/root/Library/Logs/DiagnosticReports",
-                f"{LOG_DIR}/user_diagnostic_reports",
-            )
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        log.error("Failed to connect to the mac VM: %s", e)
-        if is_ci:
-            raise e
+    async with SshConnection.new_connection(
+        LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
+    ) as connection:
+        await connection.download(
+            "/Library/Logs/DiagnosticReports",
+            f"{LOG_DIR}/system_diagnostic_reports",
+        )
+        await connection.download(
+            "/root/Library/Logs/DiagnosticReports",
+            f"{LOG_DIR}/user_diagnostic_reports",
+        )
 
 
 async def start_tcpdump_processes():
