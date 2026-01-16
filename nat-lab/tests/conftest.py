@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import itertools
 import json
 import logging
 import os
@@ -9,10 +10,12 @@ import re
 import shutil
 import ssl
 import subprocess
+import threading
 import urllib.error
 import urllib.request
 from collections import defaultdict
 from contextlib import AsyncExitStack
+from datetime import datetime
 from http import HTTPStatus
 from itertools import combinations
 from tests.config import LAN_ADDR_MAP, CORE_API_IP, CORE_API_CREDENTIALS
@@ -20,7 +23,11 @@ from tests.helpers import SetupParameters
 from tests.interderp_cli import InterDerpClient
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag, TargetOS, clear_ephemeral_setups_set
-from tests.utils.connection.docker_connection import DockerConnection
+from tests.utils.connection.docker_connection import (
+    DockerConnection,
+    container_id,
+    is_running,
+)
 from tests.utils.connection.ssh_connection import SshConnection
 from tests.utils.connection_util import new_connection_raw
 from tests.utils.logger import log
@@ -28,6 +35,7 @@ from tests.utils.process import ProcessExecError
 from tests.utils.router import IPStack
 from tests.utils.tcpdump import make_local_tcpdump, make_tcpdump
 from tests.utils.testing import get_current_test_log_path
+from typing import List
 
 DERP_SERVER_1_ADDR = "http://10.0.10.1:8765"
 DERP_SERVER_2_ADDR = "http://10.0.10.2:8765"
@@ -50,6 +58,8 @@ SETUP_CHECK_DUPLICATE_IP_RETRIES = 1
 
 RUNNER: asyncio.Runner | None = None
 SESSION_SCOPE_EXIT_STACK: AsyncExitStack | None = None
+TASKS: List[asyncio.Task] = []
+END_TASKS: threading.Event = threading.Event()
 
 LOG_DIR = "logs"
 
@@ -662,12 +672,15 @@ def pytest_sessionstart(session):
         if not RUNNER.run(check_gateway_connectivity()):
             pytest.exit("Gateway nodes connectivity check failed, exiting ...")
         RUNNER.run(start_tcpdump_processes())
+        RUNNER.run(start_windows_vms_resource_monitoring())
 
 
 # pylint: disable=unused-argument
 def pytest_sessionfinish(session, exitstatus):
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
         return
+
+    END_TASKS.set()
 
     if not session.config.option.collectonly:
         if RUNNER is not None and SESSION_SCOPE_EXIT_STACK is not None:
@@ -787,6 +800,51 @@ async def start_tcpdump_processes():
         make_tcpdump(connections, session=True)
     )
     await SESSION_SCOPE_EXIT_STACK.enter_async_context(make_local_tcpdump())
+
+
+async def start_windows_vms_resource_monitoring():
+    vms = [ConnectionTag.DOCKER_WINDOWS_VM_1, ConnectionTag.DOCKER_WINDOWS_VM_2]
+    for vm_tag in vms:
+        is_vm_running = await is_running(vm_tag)
+        if is_vm_running:
+            start_windows_vm_resource_monitoring(vm_tag)
+
+
+def start_windows_vm_resource_monitoring(vm_tag: ConnectionTag):
+    def aux():
+        output_filename = f"logs/cpu_usage_{vm_tag}.csv"
+        log.info(
+            "Starting VM resource monitoring for %s in %s", vm_tag, output_filename
+        )
+        with open(output_filename, "a", encoding="utf-8") as output_file:
+            while not END_TASKS.is_set():
+                # This command takes usually ~5s to complete, so I've decided not to add any
+                # additional explicit sleep
+                result = subprocess.run(
+                    [
+                        "docker",
+                        "exec",
+                        container_id(vm_tag),
+                        "python3",
+                        "/run/qga.py",
+                        "--powershell",
+                        "(Get-Counter '\\Processor(*)\\% Processor Time').CounterSamples.CookedValue",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                lines = result.stdout.splitlines()
+                lines = list(itertools.dropwhile(lambda x: "STDOUT:" not in x, lines))[
+                    1:
+                ]
+                lines = [x.strip() for x in lines if x != ""]
+                current_time_iso = datetime.now().isoformat()
+                output_file.write(f"{current_time_iso}, {', '.join(lines)}\n")
+
+    global TASKS
+    TASKS += [
+        asyncio.create_task(asyncio.to_thread(aux))
+    ]  # Storing the task to keep it alive
 
 
 @pytest.fixture(autouse=True)
