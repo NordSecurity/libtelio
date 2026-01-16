@@ -4706,6 +4706,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "cfg-if",
+ "enum-map",
  "ffi_helpers",
  "futures",
  "ipnet",

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_dns::DnsResolver;
-use telio_firewall::firewall::{Firewall, Permissions, FILE_SEND_PORT};
+use telio_firewall::firewall::{Firewall, FirewallState, Permissions, FILE_SEND_PORT};
 use telio_model::constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
 use telio_model::features::Features;
 use telio_model::mesh::{LinkState, NodeState};
@@ -624,94 +624,58 @@ fn iter_peers(
         .flatten()
 }
 
-fn upsert_peer_whitelist<F: Firewall>(
-    requested_state: &RequestedState,
-    firewall: &F,
-    permission: Permissions,
-) {
-    let from_keys_peer_whitelist: HashSet<PublicKey> = firewall
-        .get_peer_whitelist(permission)
-        .iter()
-        .copied()
-        .collect();
-
-    // Build a list of peers expected to be peer-whitelisted
-    let to_keys_peer_whitelist: HashSet<PublicKey> = iter_peers(requested_state)
-        .filter(|p| match permission {
-            Permissions::IncomingConnections => p.allow_incoming_connections,
-            Permissions::LocalAreaConnections => p.allow_peer_local_network_access,
-            Permissions::RoutingConnections => p.allow_peer_traffic_routing,
-        })
-        .map(|p| p.public_key)
-        .collect();
-
-    // Consolidate peer-whitelist
-    let delete_keys = &from_keys_peer_whitelist - &to_keys_peer_whitelist;
-    let add_keys = &to_keys_peer_whitelist - &from_keys_peer_whitelist;
-    for key in delete_keys {
-        firewall.remove_from_peer_whitelist(key, permission);
-    }
-    for key in add_keys {
-        firewall.add_to_peer_whitelist(key, permission);
-    }
-}
-
 async fn consolidate_firewall<F: Firewall>(
     requested_state: &RequestedState,
     firewall: &F,
     starcast_vpeer_pubkey: Option<PublicKey>,
     dns_pubkey: Option<PublicKey>,
 ) -> Result {
-    let from_keys_ports_whitelist: HashSet<PublicKey> =
-        firewall.get_port_whitelist().into_keys().collect();
+    let mut state = FirewallState::default();
 
-    // VPN peer must always be peer-whitelisted
+    state.whitelist.port_whitelist = iter_peers(requested_state)
+        .filter(|p| p.allow_peer_send_files)
+        .map(|p| (p.public_key, FILE_SEND_PORT))
+        .collect();
+
+    for permission in Permissions::VALUES {
+        state.whitelist.peer_whitelists[permission] = iter_peers(requested_state)
+            .filter(|p| match permission {
+                Permissions::IncomingConnections => p.allow_incoming_connections,
+                Permissions::LocalAreaConnections => p.allow_peer_local_network_access,
+                Permissions::RoutingConnections => p.allow_peer_traffic_routing,
+            })
+            .map(|p| p.public_key)
+            .collect();
+    }
+
+    if let Some(key) = starcast_vpeer_pubkey {
+        state.whitelist.peer_whitelists[Permissions::RoutingConnections].insert(key);
+        state.whitelist.peer_whitelists[Permissions::IncomingConnections].insert(key);
+    }
+
+    if let Some(key) = dns_pubkey {
+        state.whitelist.peer_whitelists[Permissions::RoutingConnections].insert(key);
+    }
+
     if let Some(exit_node) = &requested_state.exit_node {
         let is_vpn_exit_node =
             !iter_peers(requested_state).any(|p| p.public_key == exit_node.public_key);
 
         if is_vpn_exit_node {
-            firewall.add_vpn_peer(exit_node.public_key);
+            state.whitelist.vpn_peer = Some(exit_node.public_key);
         }
     }
 
-    // Build a list of peers expected to be port-whitelisted according
-    // to allow_peer_send_files permission
-    let to_keys_ports_whitelist: HashSet<PublicKey> = iter_peers(requested_state)
-        .filter(|p| p.allow_peer_send_files)
-        .map(|p| p.public_key)
-        .collect();
-
-    // Upsert peer-whitelists
-    for permission in Permissions::VALUES {
-        upsert_peer_whitelist(requested_state, firewall, permission);
+    if let Some(meshnet_config) = &requested_state.meshnet_config {
+        state.ip_addresses = meshnet_config
+            .this
+            .ip_addresses
+            .clone()
+            .ok_or(Error::IpNotSet)?;
     }
 
-    if let Some(key) = starcast_vpeer_pubkey {
-        firewall.add_to_peer_whitelist(key, Permissions::RoutingConnections);
-        firewall.add_to_peer_whitelist(key, Permissions::IncomingConnections);
-    }
+    firewall.apply_state(state);
 
-    if let Some(key) = dns_pubkey {
-        firewall.add_to_peer_whitelist(key, Permissions::RoutingConnections);
-    }
-
-    // Consolidate port-whitelist
-    let delete_keys = &from_keys_ports_whitelist - &to_keys_ports_whitelist;
-    let add_keys = &to_keys_ports_whitelist - &from_keys_ports_whitelist;
-    for key in delete_keys {
-        firewall.remove_from_port_whitelist(key);
-    }
-    for key in add_keys {
-        firewall.add_to_port_whitelist(key, FILE_SEND_PORT);
-    }
-
-    // Meshnet config can be None in the beginning when this method
-    // is called.
-    if let Some(config) = &requested_state.meshnet_config {
-        // Save local node ip addresses
-        firewall.set_ip_addresses(config.this.ip_addresses.clone().ok_or(Error::IpNotSet)?);
-    }
     Ok(())
 }
 
@@ -1337,11 +1301,12 @@ mod tests {
     use rstest::*;
     use telio_nurse::config::AggregatorConfig;
 
+    use enum_map::enum_map;
     use std::net::{Ipv4Addr, Ipv6Addr, SocketAddrV4};
 
     use telio_crypto::SecretKey;
     use telio_dns::MockDnsResolver;
-    use telio_firewall::firewall::{MockFirewall, FILE_SEND_PORT};
+    use telio_firewall::firewall::{HashSet as FwHashSet, MockFirewall, Whitelist, FILE_SEND_PORT};
     use telio_model::config::{Config, PeerBase, Server};
     use telio_model::features::{
         EndpointProvider as ApiEndpointProvider, FeatureBatching, FeatureDns, TtlValue,
@@ -1538,65 +1503,6 @@ mod tests {
         requested_state
     }
 
-    fn expect_add_to_peer_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
-        firewall
-            .expect_add_to_peer_whitelist()
-            .with(eq(pub_key), eq(Permissions::IncomingConnections))
-            .once()
-            .return_const(());
-    }
-
-    fn expect_add_to_vpeer_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
-        firewall
-            .expect_add_to_peer_whitelist()
-            .with(eq(pub_key), eq(Permissions::IncomingConnections))
-            .once()
-            .return_const(());
-        firewall
-            .expect_add_to_peer_whitelist()
-            .with(eq(pub_key), eq(Permissions::RoutingConnections))
-            .once()
-            .return_const(());
-    }
-
-    fn expect_remove_from_peer_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
-        for permission in Permissions::VALUES {
-            firewall
-                .expect_remove_from_peer_whitelist()
-                .with(eq(pub_key), eq(permission))
-                .return_const(());
-        }
-    }
-
-    fn expect_add_to_port_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
-        firewall
-            .expect_add_to_port_whitelist()
-            .with(eq(pub_key), eq(FILE_SEND_PORT))
-            .once()
-            .return_const(());
-    }
-
-    fn expect_remove_from_port_whitelist(firewall: &mut MockFirewall, pub_key: PublicKey) {
-        firewall
-            .expect_remove_from_port_whitelist()
-            .with(eq(pub_key))
-            .once()
-            .return_const(());
-    }
-
-    fn expect_get_peer_whitelist(firewall: &mut MockFirewall, pub_keys: Vec<PublicKey>) {
-        firewall
-            .expect_get_peer_whitelist()
-            .times(3)
-            .returning(move |_| pub_keys.clone().into_iter().collect());
-    }
-
-    fn expect_get_port_whitelist(firewall: &mut MockFirewall, pub_keys: Vec<PublicKey>) {
-        firewall
-            .expect_get_port_whitelist()
-            .return_once(move || pub_keys.into_iter().map(|k| (k, FILE_SEND_PORT)).collect());
-    }
-
     #[tokio::test]
     async fn add_newly_requested_peers_to_firewall() {
         let mut firewall = MockFirewall::new();
@@ -1615,23 +1521,22 @@ mod tests {
         ]);
 
         firewall
-            .expect_get_peer_whitelist()
-            .times(3)
-            .returning(|_| Default::default());
-
-        firewall
-            .expect_get_port_whitelist()
-            .return_once(Default::default);
-
-        expect_add_to_vpeer_whitelist(&mut firewall, pub_key_starcast_vpeer);
-        firewall.expect_set_ip_addresses().once().return_const(());
-
-        expect_add_to_peer_whitelist(&mut firewall, pub_key_1);
-        expect_add_to_port_whitelist(&mut firewall, pub_key_1);
-
-        expect_add_to_peer_whitelist(&mut firewall, pub_key_2);
-
-        expect_add_to_port_whitelist(&mut firewall, pub_key_3);
+            .expect_apply_state()
+            .once()
+            .with(eq(FirewallState {
+                whitelist: Whitelist {
+                    peer_whitelists: enum_map! {
+                        Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_1, pub_key_2, pub_key_starcast_vpeer].iter().cloned()),
+                        Permissions::RoutingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
+                        Permissions::LocalAreaConnections => FwHashSet::default(),
+                    },
+                    port_whitelist: [(pub_key_1, FILE_SEND_PORT), (pub_key_3, FILE_SEND_PORT)].iter().cloned().collect(),
+                    vpn_peer: None,
+                },
+                ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
+                ..Default::default()
+            }))
+            .return_const(());
 
         consolidate_firewall(
             &requested_state,
@@ -1660,30 +1565,24 @@ mod tests {
             (pub_key_4, vec![], false, false, false, false),
         ]);
 
-        expect_get_peer_whitelist(
-            &mut firewall,
-            vec![pub_key_1, pub_key_2, pub_key_3, pub_key_4],
-        );
-
-        expect_get_port_whitelist(
-            &mut firewall,
-            vec![pub_key_1, pub_key_2, pub_key_3, pub_key_4],
-        );
-
         firewall
-            .expect_get_port_whitelist()
-            .return_once(Default::default);
+            .expect_apply_state()
+            .once()
+            .with(eq(FirewallState {
+                whitelist: Whitelist {
+                    peer_whitelists: enum_map! {
+                        Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_1, pub_key_2, pub_key_starcast_vpeer].iter().cloned()),
+                        Permissions::RoutingConnections => FwHashSet::from_iter([pub_key_1, pub_key_2, pub_key_starcast_vpeer].iter().cloned()),
+                        Permissions::LocalAreaConnections => FwHashSet::from_iter([pub_key_1, pub_key_2].iter().cloned()),
+                    },
+                    port_whitelist: [(pub_key_1, FILE_SEND_PORT), (pub_key_3, FILE_SEND_PORT)].iter().cloned().collect(),
+                    vpn_peer: None,
+                },
+                ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
+                ..Default::default()
+            }))
+            .return_const(());
 
-        expect_add_to_vpeer_whitelist(&mut firewall, pub_key_starcast_vpeer);
-
-        expect_remove_from_port_whitelist(&mut firewall, pub_key_2);
-
-        expect_remove_from_peer_whitelist(&mut firewall, pub_key_3);
-
-        expect_remove_from_peer_whitelist(&mut firewall, pub_key_4);
-        expect_remove_from_port_whitelist(&mut firewall, pub_key_4);
-
-        firewall.expect_set_ip_addresses().once().return_const(());
         consolidate_firewall(
             &requested_state,
             &firewall,
@@ -1710,15 +1609,23 @@ mod tests {
             ..Default::default()
         });
 
-        expect_add_to_vpeer_whitelist(&mut firewall, pub_key_starcast_vpeer);
-
-        firewall.expect_set_ip_addresses().once().return_const(());
-
-        expect_get_peer_whitelist(&mut firewall, vec![pub_key_1]);
-        expect_get_port_whitelist(&mut firewall, vec![]);
-
-        expect_remove_from_peer_whitelist(&mut firewall, pub_key_1);
-        firewall.expect_add_vpn_peer().once().return_const(());
+        firewall
+            .expect_apply_state()
+            .once()
+            .with(eq(FirewallState {
+                whitelist: Whitelist {
+                    peer_whitelists: enum_map! {
+                        Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
+                        Permissions::RoutingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
+                        Permissions::LocalAreaConnections => FwHashSet::default(),
+                    },
+                    port_whitelist: Default::default(),
+                    vpn_peer: Some(pub_key_2),
+                },
+                ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
+                ..Default::default()
+            }))
+            .return_const(());
 
         consolidate_firewall(
             &requested_state,
@@ -1745,11 +1652,23 @@ mod tests {
             ..Default::default()
         });
 
-        firewall.expect_set_ip_addresses().once().return_const(());
-        expect_add_to_vpeer_whitelist(&mut firewall, pub_key_starcast_vpeer);
-
-        expect_get_peer_whitelist(&mut firewall, vec![]);
-        expect_get_port_whitelist(&mut firewall, vec![]);
+        firewall
+            .expect_apply_state()
+            .once()
+            .with(eq(FirewallState {
+                whitelist: Whitelist {
+                    peer_whitelists: enum_map! {
+                        Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
+                        Permissions::RoutingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
+                        Permissions::LocalAreaConnections => FwHashSet::default(),
+                    },
+                    port_whitelist: Default::default(),
+                    vpn_peer: None,
+                },
+                ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
+                ..Default::default()
+            }))
+            .return_const(());
 
         consolidate_firewall(
             &requested_state,
@@ -1777,14 +1696,23 @@ mod tests {
             ..Default::default()
         });
 
-        expect_add_to_vpeer_whitelist(&mut firewall, pub_key_starcast_vpeer);
-
-        expect_get_peer_whitelist(&mut firewall, vec![pub_key_1]);
-        expect_get_port_whitelist(&mut firewall, vec![]);
-
-        expect_remove_from_peer_whitelist(&mut firewall, pub_key_1);
-
-        firewall.expect_set_ip_addresses().once().return_const(());
+        firewall
+            .expect_apply_state()
+            .once()
+            .with(eq(FirewallState {
+                whitelist: Whitelist {
+                    peer_whitelists: enum_map! {
+                        Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
+                        Permissions::RoutingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
+                        Permissions::LocalAreaConnections => FwHashSet::default(),
+                    },
+                    port_whitelist: Default::default(),
+                    vpn_peer: None,
+                },
+                ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
+                ..Default::default()
+            }))
+            .return_const(());
 
         consolidate_firewall(
             &requested_state,
@@ -1794,6 +1722,55 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn consolidate_firewall_is_idempotent() {
+        let mut firewall = MockFirewall::new();
+
+        let pub_key_starcast_vpeer = SecretKey::gen().public();
+        let pub_key_1 = SecretKey::gen().public();
+        let pub_key_2 = SecretKey::gen().public();
+
+        let requested_state = create_requested_state(vec![
+            (pub_key_1, vec![], true, false, false, true),
+            (pub_key_2, vec![], false, true, false, false),
+        ]);
+
+        let expected_state = FirewallState {
+            whitelist: Whitelist {
+                peer_whitelists: enum_map! {
+                    Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_1, pub_key_starcast_vpeer].iter().cloned()),
+                    Permissions::RoutingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
+                    Permissions::LocalAreaConnections => FwHashSet::from_iter([pub_key_2].iter().cloned()),
+                },
+                port_whitelist: [(pub_key_1, FILE_SEND_PORT)].iter().cloned().collect(),
+                vpn_peer: None,
+            },
+            ip_addresses: vec![
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                IpAddr::V6(Ipv6Addr::LOCALHOST),
+            ],
+            ..Default::default()
+        };
+
+        // Calling consolidate_firewall multiple times with same state should produce same config
+        firewall
+            .expect_apply_state()
+            .times(3)
+            .with(eq(expected_state))
+            .returning(|_| ());
+
+        for _ in 0..3 {
+            consolidate_firewall(
+                &requested_state,
+                &firewall,
+                Some(pub_key_starcast_vpeer),
+                None,
+            )
+            .await
+            .unwrap();
+        }
     }
 
     struct Fixture {

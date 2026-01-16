@@ -40,7 +40,7 @@ pub struct LinkDetectionObserver {
 }
 
 impl LocalInterfacesObserver for LinkDetectionObserver {
-    fn notify(&self) {
+    fn notify(&self, _addrs: Vec<IpAddr>) {
         telio_log_debug!("Notified about local interfaces change");
         self.occurred.store(true, Ordering::Release);
     }
