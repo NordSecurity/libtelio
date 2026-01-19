@@ -120,11 +120,6 @@ def pytest_make_parametrize_id(config, val):
         ):
             for provider in val.features.direct.providers:
                 param_id += f"-{provider.name}"
-
-        if val.features.batching is not None:
-            param_id += (
-                f"-batch-{str(val.features.batching.direct_connection_threshold)}"
-            )
     elif isinstance(val, (ConnectionTag,)):
         param_id = val.name.removeprefix("DOCKER_")
     elif isinstance(val, (TelioAdapterType,)):

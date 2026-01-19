@@ -8,7 +8,7 @@ use std::{
 };
 use telio_model::{
     event::{Error as LibtelioError, ErrorCode, ErrorLevel, Event as LibtelioEvent, EventMsg, Set},
-    features::{FeatureBatching, FeatureLinkDetection},
+    features::FeatureLinkDetection,
     mesh::{ExitNode, NodeState},
 };
 use telio_sockets::{NativeProtector, SocketPool};

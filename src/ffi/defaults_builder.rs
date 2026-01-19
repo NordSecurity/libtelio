@@ -31,7 +31,6 @@ impl FeaturesDefaultsBuilder {
             multicast: false,
             ipv6: false,
             nicknames: false,
-            batching: None,
             error_notification_service: None,
         };
 
@@ -124,11 +123,6 @@ impl FeaturesDefaultsBuilder {
     /// Eanable multicast with defaults
     pub fn enable_multicast(self: Arc<Self>) -> Arc<Self> {
         self.config.lock().multicast = true;
-        self
-    }
-
-    pub fn enable_batching(self: Arc<Self>) -> Arc<Self> {
-        self.config.lock().batching = Some(default());
         self
     }
 

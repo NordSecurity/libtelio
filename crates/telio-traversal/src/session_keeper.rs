@@ -46,21 +46,17 @@ pub trait SessionKeeperTrait {
         interval: Duration,
     ) -> Result<()>;
     async fn remove_node(&self, key: &PublicKey) -> Result<()>;
-    async fn get_interval(&self, key: &PublicKey) -> Option<u32>;
 }
 
 pub struct SessionKeeper {
-    batch_all: bool,
     task: Task<State>,
 }
 
 impl SessionKeeper {
-    pub fn start(sock_pool: Arc<SocketPool>, batch_all: bool) -> Result<Self> {
-        telio_log_debug!("Starting with batch_all({})", batch_all);
+    pub fn start(sock_pool: Arc<SocketPool>) -> Result<Self> {
         let pinger = Pinger::new(1, true, sock_pool, "session_keeper")?;
 
         Ok(Self {
-            batch_all,
             task: Task::start(State {
                 pinger,
                 actions: RepeatedActions::default(),
@@ -90,21 +86,11 @@ impl SessionKeeperTrait for SessionKeeper {
     ) -> Result<()> {
         let dual_target = DualTarget::new(target).map_err(Error::DualTargetError)?;
 
-        let batch_all = self.batch_all;
-        telio_log_debug!(
-            "Add action for {} and interval {:?}. batch_all({})",
-            public_key,
-            interval,
-            batch_all
-        );
+        telio_log_debug!("Add peer: {} with interval: {:?}", public_key, interval);
 
         task_exec!(&self.task, async move |s| {
             if s.actions.contains_action(&public_key) {
                 let _ = s.actions.remove_action(&public_key);
-            }
-
-            if batch_all {
-                s.actions.set_all_immediate();
             }
 
             Ok(s.actions.add_action(
@@ -141,15 +127,6 @@ impl SessionKeeperTrait for SessionKeeper {
         .await?;
 
         Ok(())
-    }
-
-    async fn get_interval(&self, key: &PublicKey) -> Option<u32> {
-        let pk = *key;
-        task_exec!(&self.task, async move |s| {
-            Ok(s.actions.get_interval(&pk))
-        })
-        .await
-        .unwrap_or(None)
     }
 }
 
@@ -210,7 +187,7 @@ mod tests {
             )
             .unwrap(),
         ));
-        let sess_keep = SessionKeeper::start(socket_pool, false).unwrap();
+        let sess_keep = SessionKeeper::start(socket_pool).unwrap();
 
         let pk = "REjdn4zY2TFx2AMujoNGPffo9vDiRDXpGG4jHPtx2AY="
             .parse::<PublicKey>()

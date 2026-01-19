@@ -194,7 +194,6 @@ Markers are defined in [pyproject.toml](pyproject.toml). Useful ones:
 - long          long-running tests
 - moose         requires build with “moose”
 - ipv4 / ipv6 / ipv4v6
-- batching
 - utils
 
 ### To include a marker
