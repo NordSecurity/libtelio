@@ -38,7 +38,7 @@ pub type LibfwLogCallback = Option<extern "C" fn(level: LibfwLogLevel, log_line:
 
 pub(crate) static LOG_CALLBACK: RwLock<LibfwLogCallback> = RwLock::const_new(RawRwLock::INIT, None);
 pub(crate) static MIN_LOG_LEVEL: RwLock<LibfwLogLevel> =
-    RwLock::const_new(RawRwLock::INIT, LibfwLogLevel::LibfwLogLevelInfo);
+    RwLock::const_new(RawRwLock::INIT, LibfwLogLevel::LibfwLogLevelTrace);
 
 macro_rules! libfw_log {
     ($level:expr, $text:literal) => {
