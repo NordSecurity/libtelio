@@ -173,7 +173,6 @@ pub struct StatefullFirewall {
     config: FirewallConfig,
     /// Current firewall state
     state: RwLock<FirewallState>,
-    local_ifs_addrs: RwLock<Vec<StdIpAddr>>,
 }
 
 // Access to internal firewall structs is guarded by locks, so that should be fine
@@ -181,10 +180,10 @@ unsafe impl Sync for StatefullFirewall {}
 unsafe impl Send for StatefullFirewall {}
 
 impl LocalInterfacesObserver for StatefullFirewall {
-    fn notify(&self, new_addresses: Vec<StdIpAddr>) {
-        *self.local_ifs_addrs.write() = new_addresses;
-
-        self.refresh_chain();
+    fn notify(&self) {
+        // When local interfaces change, reconfigure the firewall with the current state
+        let state = self.state.read().clone();
+        self.apply_state(state);
     }
 }
 
@@ -214,32 +213,15 @@ impl StatefullFirewall {
         // TODO: handle libfw_init failure - this should be done in LLT-6647 PR
         let firewall = libfw_init();
 
-        let initial_local_ifs_addrs = LOCAL_ADDRS_CACHE
-            .lock()
-            .clone()
-            .iter()
-            .map(|iface| iface.addr.ip())
-            .collect();
-
         let result = Self {
             firewall,
             config,
-            local_ifs_addrs: RwLock::new(initial_local_ifs_addrs),
-            state: RwLock::new(state),
+            state: RwLock::new(state.clone()),
         };
 
         result.refresh_chain();
 
         result
-    }
-
-    fn refresh_chain(&self) {
-        let state = self.state.read().clone();
-        let local_ifs_addrs = self.local_ifs_addrs.read().clone();
-        let ffi_chain = configure_chain(&self.config, &state, &local_ifs_addrs);
-        unsafe {
-            libfw_configure_chain(self.firewall, (&ffi_chain.ffi_chain) as *const LibfwChain);
-        }
     }
 }
 
@@ -253,10 +235,7 @@ fn dst_net_all_ports_filter(net: IpNet, inverted: bool) -> Filter {
     }
 }
 
-fn get_local_area_networks_filters(
-    exclude_ip_range: Option<Ipv4Net>,
-    local_ifs_addrs: &[StdIpAddr],
-) -> Vec<Vec<Filter>> {
+fn get_local_area_networks_filters(exclude_ip_range: Option<Ipv4Net>) -> Vec<Vec<Filter>> {
     // Create rules for peers with LocalAreaConnection permissions
     let ipv4_local_area_networks = [
         Ipv4Net::new_assert(StdIpv4Addr::new(10, 0, 0, 0), 8),
@@ -296,13 +275,13 @@ fn get_local_area_networks_filters(
         ),
     ];
 
-    for ip in local_ifs_addrs.iter() {
+    for ip in LOCAL_ADDRS_CACHE.lock().iter().map(|peer| peer.ip()) {
         if ip.is_ipv4() {
             for local_network_filters in ipv4_local_area_network_filters.iter_mut() {
-                local_network_filters.push(dst_net_all_ports_filter(IpNet::from(*ip), true));
+                local_network_filters.push(dst_net_all_ports_filter(IpNet::from(ip), true));
             }
         } else {
-            ipv6_local_area_network_filters.push(dst_net_all_ports_filter(IpNet::from(*ip), true));
+            ipv6_local_area_network_filters.push(dst_net_all_ports_filter(IpNet::from(ip), true));
         }
     }
 
@@ -312,11 +291,7 @@ fn get_local_area_networks_filters(
 }
 
 /// Configures the firewall chain based on the provided configuration.
-pub(crate) fn configure_chain(
-    config: &FirewallConfig,
-    state: &FirewallState,
-    local_ifs_addrs: &[StdIpAddr],
-) -> FfiChainGuard {
+pub(crate) fn configure_chain(config: &FirewallConfig, state: &FirewallState) -> FfiChainGuard {
     let mut rules = vec![];
 
     // Drop all IPv6 packets when we don't allow ipv6 traffic
@@ -369,10 +344,8 @@ pub(crate) fn configure_chain(
         });
     }
 
-    let local_network_filters = get_local_area_networks_filters(
-        config.feature.exclude_private_ip_range.map(Into::into),
-        local_ifs_addrs,
-    );
+    let local_network_filters =
+        get_local_area_networks_filters(config.feature.exclude_private_ip_range.map(Into::into));
 
     #[allow(clippy::indexing_slicing)]
     for peer in state.whitelist.peer_whitelists[Permissions::LocalAreaConnections].iter() {
@@ -530,7 +503,14 @@ impl Firewall for StatefullFirewall {
         }
         *self.state.write() = new_state;
 
-        self.refresh_chain();
+        let ffi_chain = configure_chain(&self.config, &new_state);
+
+        // Let's keep this lock until we update the chain and the state is consistent again
+        let mut state = self.state.write();
+        *state = new_state.clone();
+        unsafe {
+            libfw_configure_chain(self.firewall, (&ffi_chain.ffi_chain) as *const LibfwChain);
+        }
     }
 
     fn get_state(&self) -> FirewallState {
