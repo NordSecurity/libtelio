@@ -514,6 +514,8 @@ impl StatefullFirewall {
             });
         }
 
+        telio_log_info!("Recreating firewall chain with rules: {:?}", rules);
+
         let ffi_chain_guard: FfiChainGuard = (rules.as_slice()).into();
         unsafe {
             libfw_configure_chain(
