@@ -100,7 +100,6 @@ services:
       - "api.nordvpn.com:10.0.80.86"
     volumes:
       - ../:/libtelio
-      - ./data/nordvpnlite:/etc/nordvpnlite
       - ./data/core_api/test.pem:/etc/ssl/server_certificate/test.pem
     healthcheck:
       test: "ls /ready"
