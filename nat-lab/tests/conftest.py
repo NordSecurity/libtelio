@@ -646,6 +646,13 @@ async def collect_kernel_logs(items, suffix):
                     raise e
 
 
+def pytest_collection_modifyitems(items):
+    for item in items:
+        # Apply 5 minutes timeout to windows tests (due to constant lag)
+        if item.get_closest_marker("windows"):
+            item.add_marker(pytest.mark.timeout(300))
+
+
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
         if not asyncio.run(perform_setup_checks()):
