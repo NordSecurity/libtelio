@@ -11,6 +11,7 @@ import shutil
 import ssl
 import subprocess
 import threading
+import time
 import urllib.error
 import urllib.request
 from collections import defaultdict
@@ -814,8 +815,89 @@ async def start_windows_vms_resource_monitoring():
     for vm_tag in vms:
         is_vm_running = await is_running(vm_tag)
         if is_vm_running:
-            start_windows_vm_cpu_monitoring(vm_tag)
-            start_windows_vm_memory_monitoring(vm_tag)
+            funcs = [
+                start_windows_vm_cpu_monitoring(vm_tag),
+                start_windows_vm_memory_monitoring(vm_tag),
+                start_windows_vm_top10_cpu_usage_monitoring(vm_tag),
+                start_windows_vm_top10_memory_usage_monitoring(vm_tag),
+            ]
+            run_windows_vm_monitoring_funcs(vm_tag, funcs)
+
+
+def run_windows_vm_monitoring_funcs(vm_tag, funcs):
+    def aux():
+        while not END_TASKS.is_set():
+            for func in funcs:
+                func()
+
+    global TASKS
+    TASKS += [
+        asyncio.create_task(asyncio.to_thread(aux))
+    ]  # Storing the task to keep it alive
+
+
+def start_windows_vm_top10_cpu_usage_monitoring(vm_tag):
+    powershell_cmd = r"""
+    Get-Counter '\Process(*)\% Processor Time' -ErrorAction SilentlyContinue |
+    Select-Object -ExpandProperty CounterSamples |
+    Where-Object {$_.InstanceName -ne '_total' -and $_.InstanceName -ne 'idle'} |
+    Sort-Object CookedValue -Descending |
+    Select-Object -First 10 InstanceName, @{Name='CPU%';Expression={[math]::Round($_.CookedValue,2)}}
+    """
+    return start_windows_vm_top10_usage_monitoring(vm_tag, "cpu", powershell_cmd)
+
+
+def start_windows_vm_top10_memory_usage_monitoring(vm_tag):
+    powershell_cmd = (
+        "ps | sort ws -desc | select -first 10 name,@{n='MB';e={[int]($_.ws/1mb)}}"
+    )
+    return start_windows_vm_top10_usage_monitoring(vm_tag, "memory", powershell_cmd)
+
+
+def start_windows_vm_top10_usage_monitoring(
+    vm_tag: ConnectionTag, resource_name: str, powershell_cmd: str
+):
+    def aux():
+        output_filename = f"logs/top10_{resource_name}_usage_{vm_tag}.txt"
+        first = True
+        with open(output_filename, "a", encoding="utf-8") as output_file:
+            # This command takes usually ~5s to complete, so I've decided not to add any
+            # additional explicit sleep
+
+            result = subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    container_id(vm_tag),
+                    "python3",
+                    "/run/qga.py",
+                    "--powershell",
+                    powershell_cmd,
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                log.warning(
+                    "powershell command for top10 %s failed on %s: %s",
+                    resource_name,
+                    vm_tag,
+                    result.stderr,
+                )
+                time.sleep(1)
+                return
+            lines = result.stdout.splitlines()
+            lines = list(itertools.dropwhile(lambda x: "STDOUT:" not in x, lines))[1:]
+            lines = [x.strip() for x in lines if x != ""]
+            current_time_iso = datetime.now().isoformat()
+            top10 = "\n".join(lines)
+            if first:
+                first = False
+            else:
+                output_file.write("\n")
+            output_file.write(f"{current_time_iso}{top10}\n")
+
+    return aux
 
 
 def start_windows_vm_monitoring(
@@ -823,41 +905,38 @@ def start_windows_vm_monitoring(
 ):
     def aux():
         output_filename = f"logs/{resource_name}_usage_{vm_tag}.csv"
-        log.info(
-            "Starting VM %s monitoring for %s in %s",
-            resource_name,
-            vm_tag,
-            output_filename,
-        )
         with open(output_filename, "a", encoding="utf-8") as output_file:
-            while not END_TASKS.is_set():
-                # This command takes usually ~5s to complete, so I've decided not to add any
-                # additional explicit sleep
-                result = subprocess.run(
-                    [
-                        "docker",
-                        "exec",
-                        container_id(vm_tag),
-                        "python3",
-                        "/run/qga.py",
-                        "--powershell",
-                        powershell_cmd,
-                    ],
-                    capture_output=True,
-                    text=True,
+            # This command takes usually ~5s to complete, so I've decided not to add any
+            # additional explicit sleep
+            result = subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    container_id(vm_tag),
+                    "python3",
+                    "/run/qga.py",
+                    "--powershell",
+                    powershell_cmd,
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                log.warning(
+                    "powershell command for %s failed on %s: %s",
+                    resource_name,
+                    vm_tag,
+                    result.stderr,
                 )
-                lines = result.stdout.splitlines()
-                lines = list(itertools.dropwhile(lambda x: "STDOUT:" not in x, lines))[
-                    1:
-                ]
-                lines = [x.strip() for x in lines if x != ""]
-                current_time_iso = datetime.now().isoformat()
-                output_file.write(f"{current_time_iso}, {', '.join(lines)}\n")
+                time.sleep(1)
+                return
+            lines = result.stdout.splitlines()
+            lines = list(itertools.dropwhile(lambda x: "STDOUT:" not in x, lines))[1:]
+            lines = [x.strip() for x in lines if x != ""]
+            current_time_iso = datetime.now().isoformat()
+            output_file.write(f"{current_time_iso}, {', '.join(lines)}\n")
 
-    global TASKS
-    TASKS += [
-        asyncio.create_task(asyncio.to_thread(aux))
-    ]  # Storing the task to keep it alive
+    return aux
 
 
 def start_windows_vm_memory_monitoring(vm_tag: ConnectionTag):
@@ -870,12 +949,12 @@ def start_windows_vm_memory_monitoring(vm_tag: ConnectionTag):
 
     Write-Host "$totalRAM, $usedRAM, $freeRAM, $percentUsed"
     """
-    start_windows_vm_monitoring(vm_tag, "memory", cmd)
+    return start_windows_vm_monitoring(vm_tag, "memory", cmd)
 
 
 def start_windows_vm_cpu_monitoring(vm_tag: ConnectionTag):
     cmd = "(Get-Counter '\\Processor(*)\\% Processor Time').CounterSamples.CookedValue"
-    start_windows_vm_monitoring(vm_tag, "cpu", cmd)
+    return start_windows_vm_monitoring(vm_tag, "cpu", cmd)
 
 
 @pytest.fixture(autouse=True)
