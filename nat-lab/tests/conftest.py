@@ -814,14 +814,20 @@ async def start_windows_vms_resource_monitoring():
     for vm_tag in vms:
         is_vm_running = await is_running(vm_tag)
         if is_vm_running:
-            start_windows_vm_resource_monitoring(vm_tag)
+            start_windows_vm_cpu_monitoring(vm_tag)
+            start_windows_vm_memory_monitoring(vm_tag)
 
 
-def start_windows_vm_resource_monitoring(vm_tag: ConnectionTag):
+def start_windows_vm_monitoring(
+    vm_tag: ConnectionTag, resource_name: str, powershell_cmd: str
+):
     def aux():
-        output_filename = f"logs/cpu_usage_{vm_tag}.csv"
+        output_filename = f"logs/{resource_name}_usage_{vm_tag}.csv"
         log.info(
-            "Starting VM resource monitoring for %s in %s", vm_tag, output_filename
+            "Starting VM %s monitoring for %s in %s",
+            resource_name,
+            vm_tag,
+            output_filename,
         )
         with open(output_filename, "a", encoding="utf-8") as output_file:
             while not END_TASKS.is_set():
@@ -835,7 +841,7 @@ def start_windows_vm_resource_monitoring(vm_tag: ConnectionTag):
                         "python3",
                         "/run/qga.py",
                         "--powershell",
-                        "(Get-Counter '\\Processor(*)\\% Processor Time').CounterSamples.CookedValue",
+                        powershell_cmd,
                     ],
                     capture_output=True,
                     text=True,
@@ -852,6 +858,24 @@ def start_windows_vm_resource_monitoring(vm_tag: ConnectionTag):
     TASKS += [
         asyncio.create_task(asyncio.to_thread(aux))
     ]  # Storing the task to keep it alive
+
+
+def start_windows_vm_memory_monitoring(vm_tag: ConnectionTag):
+    cmd = """
+    $os = Get-CimInstance Win32_OperatingSystem
+    $totalRAM = [math]::Round($os.TotalVisibleMemorySize/1MB, 2)
+    $freeRAM = [math]::Round($os.FreePhysicalMemory/1MB, 2)
+    $usedRAM = $totalRAM - $freeRAM
+    $percentUsed = [math]::Round(($usedRAM/$totalRAM)*100, 2)
+
+    Write-Host "$totalRAM, $usedRAM, $freeRAM, $percentUsed"
+    """
+    start_windows_vm_monitoring(vm_tag, "memory", cmd)
+
+
+def start_windows_vm_cpu_monitoring(vm_tag: ConnectionTag):
+    cmd = "(Get-Counter '\\Processor(*)\\% Processor Time').CounterSamples.CookedValue"
+    start_windows_vm_monitoring(vm_tag, "cpu", cmd)
 
 
 @pytest.fixture(autouse=True)
