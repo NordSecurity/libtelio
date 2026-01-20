@@ -24,6 +24,7 @@ telio-model.workspace = true
 telio-network-monitors.workspace = true
 
 [dev-dependencies]
+if-addrs.workspace = true
 mockall.workspace = true
 sn_fake_clock.workspace = true
 

@@ -62,6 +62,10 @@ const ICMPV6_BLOCKED_TYPES: [u8; 4] = [
 /// File sending port
 pub const FILE_SEND_PORT: u16 = 49111;
 
+/// Type for chain configuration function
+pub(crate) type ConfigureChainFn =
+    Box<dyn Fn(&FirewallConfig, &FirewallState, &[StdIpAddr]) -> FfiChainGuard + Send + Sync>;
+
 #[allow(dead_code)]
 pub(crate) trait Icmp: Sized {
     const BLOCKED_TYPES: [u8; 4];
@@ -157,7 +161,7 @@ pub struct FirewallState {
 
 /// Configuration for firewall initialization.
 /// These parameters are set once during firewall creation and cannot be changed.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FirewallConfig {
     /// Whether IPv6 traffic is allowed
     pub allow_ipv6: bool,
@@ -173,6 +177,8 @@ pub struct StatefullFirewall {
     config: FirewallConfig,
     /// Current firewall state
     state: RwLock<FirewallState>,
+    /// Chain configuration function
+    configure_chain_fn: ConfigureChainFn,
 }
 
 // Access to internal firewall structs is guarded by locks, so that should be fine
@@ -197,6 +203,15 @@ impl Drop for StatefullFirewall {
 impl StatefullFirewall {
     /// Constructs firewall with libfw structure pointer
     pub fn new(use_ipv6: bool, feature: FeatureFirewall) -> Self {
+        Self::new_with_fn(use_ipv6, feature, Box::new(configure_chain))
+    }
+
+    /// Constructs firewall with a custom chain configuration function
+    pub(crate) fn new_with_fn(
+        use_ipv6: bool,
+        feature: FeatureFirewall,
+        configure_chain_fn: ConfigureChainFn,
+    ) -> Self {
         // Let's initialize libfirewall logging first.
         // We use TRACE level, which will be telio's level in pracice,
         // as we use telio logging macros inside.
@@ -212,10 +227,11 @@ impl StatefullFirewall {
         // TODO: handle libfw_init failure - this should be done in LLT-6647 PR
         let firewall = libfw_init();
 
-        let result = Self {
+        let result = StatefullFirewall {
             firewall,
             config,
             state: RwLock::new(state.clone()),
+            configure_chain_fn,
         };
 
         result.refresh_chain();
@@ -230,7 +246,7 @@ impl StatefullFirewall {
             .collect::<Vec<StdIpAddr>>();
 
         let state = self.state.read().clone();
-        let ffi_chain = configure_chain(&self.config, &state, &local_ifs_addrs);
+        let ffi_chain = (self.configure_chain_fn)(&self.config, &state, &local_ifs_addrs);
         unsafe {
             libfw_configure_chain(self.firewall, (&ffi_chain.ffi_chain) as *const LibfwChain);
         }
@@ -591,5 +607,150 @@ impl Firewall for StatefullFirewall {
 impl Default for StatefullFirewall {
     fn default() -> Self {
         Self::new(true, FeatureFirewall::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use if_addrs;
+    use parking_lot::Mutex as ParkingLotMutex;
+    use std::net::Ipv4Addr;
+    use std::sync::Arc;
+
+    /// Mock network monitor that can change LOCAL_ADDRS_CACHE and notify observers
+    struct MockNetworkMonitor {
+        observers: Arc<ParkingLotMutex<Vec<std::sync::Weak<dyn LocalInterfacesObserver>>>>,
+    }
+
+    impl MockNetworkMonitor {
+        fn new() -> Self {
+            let monitor = Self {
+                observers: Arc::new(ParkingLotMutex::new(Vec::new())),
+            };
+
+            // Initialize with default loopback interface, similar to real network monitor
+            monitor.update_interfaces(vec![if_addrs::Interface {
+                name: "lo".to_string(),
+                addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
+                    ip: Ipv4Addr::new(127, 0, 0, 1),
+                    netmask: Ipv4Addr::new(255, 0, 0, 0),
+                    prefixlen: 8,
+                    broadcast: None,
+                }),
+                index: Some(1),
+                oper_status: if_addrs::IfOperStatus::Up,
+                #[cfg(windows)]
+                adapter_name: "some_adapter".to_string(),
+            }]);
+
+            monitor
+        }
+
+        fn register_observer(&self, observer: std::sync::Weak<dyn LocalInterfacesObserver>) {
+            self.observers.lock().push(observer);
+        }
+
+        /// Update LOCAL_ADDRS_CACHE with new interfaces and notify all observers
+        fn update_interfaces(&self, interfaces: Vec<if_addrs::Interface>) {
+            // Update the global cache
+            let mut cache = LOCAL_ADDRS_CACHE.lock();
+            *cache = interfaces;
+            drop(cache);
+
+            // Notify all registered observers
+            let observers = self.observers.lock();
+            for observer_weak in observers.iter() {
+                if let Some(observer) = observer_weak.upgrade() {
+                    observer.notify();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_firewall_with_network_monitor_integration() {
+        // Let's cleanup stuff first
+        LOCAL_ADDRS_CACHE.lock().clear();
+
+        // Create mock function that captures addresses for each call
+        let captured_addrs = Arc::new(ParkingLotMutex::new(Vec::<Vec<StdIpAddr>>::new()));
+        let addrs_clone = captured_addrs.clone();
+        let spy_fn =
+            move |_config: &FirewallConfig, _state: &FirewallState, addrs: &[StdIpAddr]| {
+                addrs_clone.lock().push(addrs.to_vec());
+                (Vec::<Rule>::new().as_slice()).into()
+            };
+
+        // Create StatefulFirewall with spy
+        let firewall: Arc<StatefullFirewall> = Arc::new(StatefullFirewall::new_with_fn(
+            true,
+            FeatureFirewall::default(),
+            Box::new(spy_fn),
+        ));
+
+        // Verify initial configure_chain was called with empty local addresses
+        assert_eq!(captured_addrs.lock().len(), 1,);
+        assert_eq!(captured_addrs.lock()[0], Vec::<StdIpAddr>::new(),);
+
+        // Create mock network monitor (initializes LOCAL_ADDRS_CACHE with loopback)
+        let mock_monitor = MockNetworkMonitor::new();
+
+        // Register StatefulFirewall as LocalInterfaceObserver
+        mock_monitor.register_observer(
+            Arc::downgrade(&firewall) as std::sync::Weak<dyn LocalInterfacesObserver>
+        );
+
+        // Apply a new config to StatefulFirewall (should use current LOCAL_ADDRS_CACHE which now has loopback)
+        let new_state = FirewallState {
+            ip_addresses: vec![StdIpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))],
+            ..Default::default()
+        };
+        firewall.apply_state(new_state.clone());
+
+        // Verify configure_chain was called with loopback address from mock monitor initialization
+        assert_eq!(captured_addrs.lock().len(), 2,);
+        assert_eq!(
+            captured_addrs.lock()[1],
+            vec![StdIpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))],
+        );
+
+        // Simulate network interface change via mock monitor
+        mock_monitor.update_interfaces(vec![if_addrs::Interface {
+            name: "eth0".to_string(),
+            addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
+                ip: Ipv4Addr::new(192, 168, 1, 100),
+                netmask: Ipv4Addr::new(255, 255, 255, 0),
+                prefixlen: 24,
+                broadcast: Some(Ipv4Addr::new(192, 168, 1, 255)),
+            }),
+            index: Some(1),
+            oper_status: if_addrs::IfOperStatus::Up,
+            #[cfg(windows)]
+            adapter_name: "some_adapter".to_string(),
+        }]);
+
+        // Verify configure_chain was called with updated local addresses
+        assert_eq!(captured_addrs.lock().len(), 3,);
+        assert_eq!(
+            captured_addrs.lock()[2],
+            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))],
+        );
+
+        // Apply another state change
+        let final_state = FirewallState {
+            whitelist: Whitelist {
+                vpn_peer: Some(PublicKey::from(&[42; 32])),
+                ..Default::default()
+            },
+            ip_addresses: vec![StdIpAddr::V4(Ipv4Addr::new(10, 0, 0, 2))],
+        };
+        firewall.apply_state(final_state.clone());
+
+        assert_eq!(captured_addrs.lock().len(), 4,);
+        assert_eq!(
+            captured_addrs.lock()[2],
+            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))],
+        );
     }
 }
