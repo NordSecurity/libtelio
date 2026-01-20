@@ -61,12 +61,17 @@ sha2.workspace = true
 winapi = { workspace = true, features = ["nldef"] }
 winreg.workspace = true
 uuid.workspace = true
+get_adapters_addresses.workspace = true
 
-wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", tag = "v1.2.0" }
+wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", branch = "matislovas/wg-nt_fallback" }
 
 windows = { workspace = true, features = [
     "Win32_Security",
     "Win32_System",
     "Win32_System_Services",
-    "Win32_Foundation"
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
+    "Win32_System_Registry",
 ]}

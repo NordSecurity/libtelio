@@ -72,7 +72,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -83,7 +83,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1316,7 +1316,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1464,7 +1464,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1705,6 +1705,16 @@ dependencies = [
  "typenum",
  "version_check",
  "zeroize",
+]
+
+[[package]]
+name = "get_adapters_addresses"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa6d768b8f11cc8995f5c3f3f51660a50f8fa807eaeb83632d9afb4d42b0e493"
+dependencies = [
+ "thiserror 1.0.69",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -3979,7 +3989,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5197,6 +5207,7 @@ dependencies = [
  "async-trait",
  "cc",
  "futures",
+ "get_adapters_addresses",
  "hex",
  "ipnet",
  "itertools 0.14.0",
@@ -5259,7 +5270,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6671,7 +6682,7 @@ dependencies = [
 [[package]]
 name = "wireguard-nt"
 version = "1.0.0"
-source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper?tag=v1.2.0#f6c5684fc8cb49958b99ad5178cc61ace3e8a4c1"
+source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper?branch=matislovas%2Fwg-nt_fallback#f693f68e53bada48e0ac99054047f1cdb82402a8"
 dependencies = [
  "bitflags 2.10.0",
  "getrandom 0.2.16",

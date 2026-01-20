@@ -6,7 +6,10 @@ use crate::windows::service;
 use crate::windows::tunnel::interfacewatcher::InterfaceWatcher;
 use async_trait::async_trait;
 #[cfg(windows)]
+use get_adapters_addresses::{AdaptersAddresses, Family, Flags, Result as AdaptersAddressesResult};
+#[cfg(windows)]
 use sha2::{Digest, Sha256};
+use std::ffi::c_void;
 use std::io::Error as IOError;
 use std::slice::Windows;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -19,12 +22,32 @@ use tokio::time::sleep;
 #[cfg(windows)]
 use uuid::Uuid;
 #[cfg(windows)]
+use windows::{Win32::Foundation::*, Win32::NetworkManagement::IpHelper::*};
+#[cfg(windows)]
 use winreg::{enums::*, RegKey, HKEY};
 #[cfg(windows)]
 use wireguard_nt::{
-    self, set_logger, Error as WireGuardNTError, SetInterface, SetPeer, WIREGUARD_STATE_UP,
+    self, set_logger, Error as WireGuardNTError, SetInterface, SetPeer,
+    Wireguard as WireGuardHandle, WIREGUARD_STATE_UP,
 };
 use wireguard_uapi::xplatform;
+
+macro_rules! form_wgnt_adapter {
+    ($raw_adapter:expr, $watcher:expr, $enable_dynamic_wg_nt_control:expr) => {{
+        let adapter = Arc::new(($raw_adapter));
+        let luid = adapter.get_luid();
+        let wgnt = WindowsNativeWg::new(&adapter, luid, &($watcher), $enable_dynamic_wg_nt_control);
+
+        if let Ok(mut watcher_guard) = ($watcher).lock() {
+            watcher_guard.configure(wgnt.adapter.clone(), luid);
+            Ok(wgnt)
+        } else {
+            Err(AdapterError::WindowsNativeWg(Error::Fail(
+                "error obtaining lock".into(),
+            )))
+        }
+    }};
+}
 
 /// Telio wrapper around wireguard-nt
 #[cfg(windows)]
@@ -91,6 +114,108 @@ impl WindowsNativeWg {
         guid
     }
 
+    fn get_driver_info(adapter_guid: &str) -> (Option<String>, Option<String>, Option<String>) {
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        let net_class_path =
+            r"SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}";
+        if let Ok(net_class) = hklm.open_subkey(net_class_path) {
+            for key_name in net_class.enum_keys().filter_map(|k| k.ok()) {
+                if let Ok(subkey) = net_class.open_subkey(&key_name) {
+                    // Check if this is our adapter
+                    if let Ok(guid) = subkey.get_value::<String, _>("NetCfgInstanceId") {
+                        if guid.eq_ignore_ascii_case(adapter_guid) {
+                            return (
+                                subkey.get_value("DriverDesc").ok(),
+                                subkey.get_value("DriverVersion").ok(),
+                                subkey.get_value("ProviderName").ok(),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        (None, None, None)
+    }
+
+    fn fallback_retry(
+        name: &str,
+        path: &str,
+        guid: u128,
+        current_lib: &mut WireGuardHandle,
+        watcher: Arc<Mutex<InterfaceWatcher>>,
+        enable_dynamic_wg_nt_control: bool,
+    ) -> result::Result<Self, AdapterError> {
+        // Logic for the failure:
+        // 1. Print all the adapter names in the system currently
+        // 2. Match, which ones are using wireguard.dll
+        // 3. Try to open() and close() all of them
+        // 4. Try to delete the driver
+        // 5. Try to load_library once again
+
+        match AdaptersAddresses::try_new(Family::Unspec, *Flags::default().include_gateways()) {
+            Ok(addrs) => {
+                for adapter in &addrs {
+                    let adapter_guid = adapter.adapter_name();
+                    let (driver_desc, driver_version, provider_name) =
+                        Self::get_driver_info(&adapter_guid);
+                    telio_log_info!("adapter name: {:?}", adapter_guid);
+                    telio_log_info!("friendly name: {:?}", adapter.friendly_name());
+                    telio_log_info!("description: {:?}", adapter.description());
+                    telio_log_info!("interface_type {:?}", adapter.interface_type());
+                    telio_log_info!("driver description {:?}", driver_desc);
+                    telio_log_info!("driver version {:?}", driver_version);
+                    telio_log_info!("provider name {:?}", provider_name);
+
+                    if provider_name == Some("WireGuard LLC".to_string()) {
+                        match wireguard_nt::Adapter::open(current_lib, name) {
+                            Ok(a) => {
+                                telio_log_info!(
+                                    "Opened and closing wg adapter with luid: {:?}",
+                                    a.get_luid()
+                                );
+                                drop(a);
+                            }
+                            Err(e) => {
+                                telio_log_info!(
+                                    "Failed to open() wg adapter, guid: {:?}, name: {:?}, error {:?}",
+                                    adapter_guid,
+                                    adapter.friendly_name(),
+                                    e,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                telio_log_error!("Error while getting adapters addresses: {e}");
+            }
+        };
+
+        if wireguard_nt::unload(current_lib.clone()) {
+            match unsafe { wireguard_nt::load_from_path(path) } {
+                Ok(wg_dll) => *current_lib = wg_dll,
+                Err(e) => {
+                    telio_log_error!("Failed to re-load wireguard dll: {e:?}");
+                }
+            }
+        } else {
+            telio_log_error!("Failed to unload wireguard dll ...");
+        }
+
+        match wireguard_nt::Adapter::create(current_lib, name, name, Some(guid)) {
+            Ok(raw_adapter) => {
+                form_wgnt_adapter!(raw_adapter, watcher, enable_dynamic_wg_nt_control)
+            }
+            Err(e) => {
+                telio_log_error!("Failed to create adapter on second try");
+                Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                    "Failed to create adapter: {e:?}",
+                ))))
+            }
+        }
+    }
+
     /// Returns a wireguard adapter with name `name`, loading dll from path 'path'
     ///
     /// # Errors
@@ -100,10 +225,10 @@ impl WindowsNativeWg {
         name: &str,
         path: &str,
         enable_dynamic_wg_nt_control: bool,
-    ) -> Result<Self, AdapterError> {
+    ) -> result::Result<Self, AdapterError> {
         // try to load dll
         match unsafe { wireguard_nt::load_from_path(path) } {
-            Ok(wg_dll) => {
+            Ok(mut wg_dll) => {
                 // Someone to watch over me while I sleep
                 let watcher = Arc::new(Mutex::new(InterfaceWatcher::new(
                     enable_dynamic_wg_nt_control,
@@ -138,26 +263,21 @@ impl WindowsNativeWg {
                 // tests won't be able to find this adapter and the tests will fail.
                 match wireguard_nt::Adapter::create(&wg_dll, name, name, Some(adapter_guid)) {
                     Ok(raw_adapter) => {
-                        let adapter = Arc::new(raw_adapter);
-                        let luid = adapter.get_luid();
-                        let wgnt = WindowsNativeWg::new(
-                            &adapter,
-                            luid,
-                            &watcher,
-                            enable_dynamic_wg_nt_control,
-                        );
-                        if let Ok(mut watcher) = watcher.lock() {
-                            watcher.configure(wgnt.adapter.clone(), luid);
-                            Ok(wgnt)
-                        } else {
-                            Err(AdapterError::WindowsNativeWg(Error::Fail(
-                                "error obtaining lock".into(),
-                            )))
-                        }
+                        form_wgnt_adapter!(raw_adapter, watcher, enable_dynamic_wg_nt_control)
                     }
-                    Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                        "Failed to create adapter: {e:?}",
-                    )))),
+                    Err(e) => {
+                        telio_log_warn!(
+                            "Failed to create adapter on first run: {e:?}, retrying ..."
+                        );
+                        Self::fallback_retry(
+                            name,
+                            path,
+                            adapter_guid,
+                            &mut wg_dll,
+                            watcher,
+                            enable_dynamic_wg_nt_control,
+                        )
+                    }
                 }
             }
             Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
