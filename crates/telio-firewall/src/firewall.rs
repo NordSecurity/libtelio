@@ -62,6 +62,10 @@ const ICMPV6_BLOCKED_TYPES: [u8; 4] = [
 /// File sending port
 pub const FILE_SEND_PORT: u16 = 49111;
 
+/// Type for chain configuration function
+pub(crate) type ConfigureChainFn =
+    Box<dyn Fn(&FirewallConfig, &FirewallState, &[StdIpAddr]) -> FfiChainGuard + Send + Sync>;
+
 #[allow(dead_code)]
 pub(crate) trait Icmp: Sized {
     const BLOCKED_TYPES: [u8; 4];
@@ -157,7 +161,7 @@ pub struct FirewallState {
 
 /// Configuration for firewall initialization.
 /// These parameters are set once during firewall creation and cannot be changed.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FirewallConfig {
     /// Whether IPv6 traffic is allowed
     pub allow_ipv6: bool,
@@ -173,7 +177,8 @@ pub struct StatefullFirewall {
     config: FirewallConfig,
     /// Current firewall state
     state: RwLock<FirewallState>,
-    local_ifs_addrs: RwLock<Vec<StdIpAddr>>,
+    /// Chain configuration function
+    configure_chain_fn: ConfigureChainFn,
 }
 
 // Access to internal firewall structs is guarded by locks, so that should be fine
@@ -181,9 +186,8 @@ unsafe impl Sync for StatefullFirewall {}
 unsafe impl Send for StatefullFirewall {}
 
 impl LocalInterfacesObserver for StatefullFirewall {
-    fn notify(&self, new_addresses: Vec<StdIpAddr>) {
-        *self.local_ifs_addrs.write() = new_addresses;
-
+    fn notify(&self) {
+        // When local interfaces change, reconfigure the firewall
         self.refresh_chain();
     }
 }
@@ -199,6 +203,15 @@ impl Drop for StatefullFirewall {
 impl StatefullFirewall {
     /// Constructs firewall with libfw structure pointer
     pub fn new(use_ipv6: bool, feature: FeatureFirewall) -> Self {
+        Self::new_with_fn(use_ipv6, feature, Box::new(configure_chain))
+    }
+
+    /// Constructs firewall with a custom chain configuration function
+    pub(crate) fn new_with_fn(
+        use_ipv6: bool,
+        feature: FeatureFirewall,
+        configure_chain_fn: ConfigureChainFn,
+    ) -> Self {
         // Let's initialize libfirewall logging first.
         // We use TRACE level, which will be telio's level in pracice,
         // as we use telio logging macros inside.
@@ -214,29 +227,26 @@ impl StatefullFirewall {
         // TODO: handle libfw_init failure - this should be done in LLT-6647 PR
         let firewall = libfw_init();
 
-        let initial_local_ifs_addrs = LOCAL_ADDRS_CACHE
-            .lock()
-            .clone()
-            .iter()
-            .map(|iface| iface.addr.ip())
-            .collect();
-
-        let result = Self {
+        let result = StatefullFirewall {
             firewall,
             config,
-            local_ifs_addrs: RwLock::new(initial_local_ifs_addrs),
-            state: RwLock::new(state),
+            state: RwLock::new(state.clone()),
+            configure_chain_fn,
         };
 
         result.refresh_chain();
 
         result
     }
-
     fn refresh_chain(&self) {
+        let local_ifs_addrs = LOCAL_ADDRS_CACHE
+            .lock()
+            .iter()
+            .map(|addr| addr.ip())
+            .collect::<Vec<StdIpAddr>>();
+
         let state = self.state.read().clone();
-        let local_ifs_addrs = self.local_ifs_addrs.read().clone();
-        let ffi_chain = configure_chain(&self.config, &state, &local_ifs_addrs);
+        let ffi_chain = (self.configure_chain_fn)(&self.config, &state, &local_ifs_addrs);
         unsafe {
             libfw_configure_chain(self.firewall, (&ffi_chain.ffi_chain) as *const LibfwChain);
         }
@@ -597,5 +607,116 @@ impl Firewall for StatefullFirewall {
 impl Default for StatefullFirewall {
     fn default() -> Self {
         Self::new(true, FeatureFirewall::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use if_addrs::{self, IfOperStatus};
+    use parking_lot::Mutex as ParkingLotMutex;
+    use serial_test::serial;
+    use std::net::Ipv4Addr;
+    use std::sync::Arc;
+    use telio_network_monitors::local_interfaces::MockGetIfAddrs;
+    use telio_network_monitors::monitor::{NetworkMonitor, PATH_CHANGE_BROADCAST};
+
+    async fn setup_mock_monitor() -> NetworkMonitor {
+        let mut get_if_addrs_mock = MockGetIfAddrs::new();
+        let mut ip_part = 0;
+        get_if_addrs_mock.expect_get().returning(move || {
+            ip_part += 1;
+            Ok(vec![if_addrs::Interface {
+                name: "correct".to_owned(),
+                addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
+                    ip: Ipv4Addr::new(192, 168, 0, ip_part),
+                    netmask: Ipv4Addr::new(255, 255, 255, 0),
+                    prefixlen: 24,
+                    broadcast: None,
+                }),
+                index: None,
+                oper_status: IfOperStatus::Testing,
+                #[cfg(windows)]
+                adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
+            }])
+        });
+        NetworkMonitor::new(get_if_addrs_mock).await.unwrap()
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_firewall_with_network_monitor_integration() {
+        // Let's cleanup stuff first
+        LOCAL_ADDRS_CACHE.lock().clear();
+
+        // Create mock function that captures addresses for each call
+        let captured_addrs = Arc::new(ParkingLotMutex::new(Vec::<Vec<StdIpAddr>>::new()));
+        let addrs_clone = captured_addrs.clone();
+        let spy_fn =
+            move |_config: &FirewallConfig, _state: &FirewallState, addrs: &[StdIpAddr]| {
+                addrs_clone.lock().push(addrs.to_vec());
+                println!(
+                    "addresses => {:?} after pushing addrs: {:?}",
+                    addrs_clone.lock(),
+                    addrs
+                );
+                (Vec::<Rule>::new().as_slice()).into()
+            };
+
+        // Create StatefulFirewall with spy
+        let firewall: Arc<StatefullFirewall> = Arc::new(StatefullFirewall::new_with_fn(
+            true,
+            FeatureFirewall::default(),
+            Box::new(spy_fn),
+        ));
+
+        // Verify initial configure_chain was called with empty local addresses
+        assert_eq!(captured_addrs.lock().len(), 1,);
+        assert_eq!(captured_addrs.lock()[0], Vec::<StdIpAddr>::new(),);
+
+        let mock_monitor = setup_mock_monitor().await;
+        mock_monitor.register_local_interfaces_observer(
+            Arc::downgrade(&firewall) as std::sync::Weak<dyn LocalInterfacesObserver>
+        );
+
+        let new_state = FirewallState {
+            ip_addresses: vec![StdIpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))],
+            ..Default::default()
+        };
+        firewall.apply_state(new_state);
+
+        assert_eq!(captured_addrs.lock().len(), 2,);
+        assert_eq!(
+            captured_addrs.lock()[1],
+            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 1))],
+        );
+
+        // Simulate network interface
+        PATH_CHANGE_BROADCAST.send(()).unwrap();
+        // give a chance to react to PATH_CHANGE_BROADCAST
+        tokio::task::yield_now().await;
+
+        // Verify configure_chain was called with updated local addresses
+        assert_eq!(captured_addrs.lock().len(), 3);
+        assert_eq!(
+            captured_addrs.lock()[2],
+            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 2))],
+        );
+
+        // Apply another state change
+        let final_state = FirewallState {
+            whitelist: Whitelist {
+                vpn_peer: Some(PublicKey::from(&[42; 32])),
+                ..Default::default()
+            },
+            ip_addresses: vec![StdIpAddr::V4(Ipv4Addr::new(10, 0, 0, 2))],
+        };
+        firewall.apply_state(final_state.clone());
+
+        assert_eq!(captured_addrs.lock().len(), 4,);
+        assert_eq!(
+            captured_addrs.lock()[2],
+            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 2))],
+        );
     }
 }
