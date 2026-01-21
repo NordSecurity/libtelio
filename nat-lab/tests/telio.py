@@ -6,7 +6,6 @@ import platform
 import re
 import time
 import uuid
-import warnings
 from collections import Counter
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
@@ -1286,8 +1285,7 @@ class Client:
                 if not self._allowed_errors or not any(
                     allowed.search(line) for allowed in self._allowed_errors
                 ):
-                    # TODO: convert back to `raise Exception()` once we are ready to investigate
-                    warnings.warn(
+                    raise Exception(
                         f"Unexpected error found in {self._node.name} log: {line}"
                     )
 
