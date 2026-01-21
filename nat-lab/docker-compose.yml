@@ -143,7 +143,7 @@ services:
       USERNAME: "bill"
       PASSWORD: "gates"
       NETWORK: "bridge"
-      RAM_SIZE: "2G"
+      RAM_SIZE: "4G"
       CPU_CORES: "1"
       EXTRA_SCRIPT: "/libtelio/nat-lab/bin/windows-client"
       CLIENT_GATEWAY_PRIMARY: 192.168.150.254
@@ -171,7 +171,7 @@ services:
       USERNAME: "bill"
       PASSWORD: "gates"
       NETWORK: "bridge"
-      RAM_SIZE: "2G"
+      RAM_SIZE: "4G"
       CPU_CORES: "1"
       EXTRA_SCRIPT: "/libtelio/nat-lab/bin/windows-client"
       CLIENT_GATEWAY_PRIMARY: 192.168.152.254
