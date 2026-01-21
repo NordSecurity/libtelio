@@ -613,63 +613,39 @@ impl Default for StatefullFirewall {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use if_addrs;
+    use if_addrs::{self, IfOperStatus};
     use parking_lot::Mutex as ParkingLotMutex;
+    use serial_test::serial;
     use std::net::Ipv4Addr;
     use std::sync::Arc;
+    use telio_network_monitors::local_interfaces::MockGetIfAddrs;
+    use telio_network_monitors::monitor::{NetworkMonitor, PATH_CHANGE_BROADCAST};
 
-    /// Mock network monitor that can change LOCAL_ADDRS_CACHE and notify observers
-    struct MockNetworkMonitor {
-        observers: Arc<ParkingLotMutex<Vec<std::sync::Weak<dyn LocalInterfacesObserver>>>>,
-    }
-
-    impl MockNetworkMonitor {
-        fn new() -> Self {
-            let monitor = Self {
-                observers: Arc::new(ParkingLotMutex::new(Vec::new())),
-            };
-
-            // Initialize with default loopback interface, similar to real network monitor
-            monitor.update_interfaces(vec![if_addrs::Interface {
-                name: "lo".to_string(),
+    async fn setup_mock_monitor() -> NetworkMonitor {
+        let mut get_if_addrs_mock = MockGetIfAddrs::new();
+        let mut ip_part = 0;
+        get_if_addrs_mock.expect_get().returning(move || {
+            ip_part += 1;
+            Ok(vec![if_addrs::Interface {
+                name: "correct".to_owned(),
                 addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
-                    ip: Ipv4Addr::new(127, 0, 0, 1),
-                    netmask: Ipv4Addr::new(255, 0, 0, 0),
-                    prefixlen: 8,
+                    ip: Ipv4Addr::new(192, 168, 0, ip_part),
+                    netmask: Ipv4Addr::new(255, 255, 255, 0),
+                    prefixlen: 24,
                     broadcast: None,
                 }),
-                index: Some(1),
-                oper_status: if_addrs::IfOperStatus::Up,
+                index: None,
+                oper_status: IfOperStatus::Testing,
                 #[cfg(windows)]
-                adapter_name: "some_adapter".to_string(),
-            }]);
-
-            monitor
-        }
-
-        fn register_observer(&self, observer: std::sync::Weak<dyn LocalInterfacesObserver>) {
-            self.observers.lock().push(observer);
-        }
-
-        /// Update LOCAL_ADDRS_CACHE with new interfaces and notify all observers
-        fn update_interfaces(&self, interfaces: Vec<if_addrs::Interface>) {
-            // Update the global cache
-            let mut cache = LOCAL_ADDRS_CACHE.lock();
-            *cache = interfaces;
-            drop(cache);
-
-            // Notify all registered observers
-            let observers = self.observers.lock();
-            for observer_weak in observers.iter() {
-                if let Some(observer) = observer_weak.upgrade() {
-                    observer.notify();
-                }
-            }
-        }
+                adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
+            }])
+        });
+        NetworkMonitor::new(get_if_addrs_mock).await.unwrap()
     }
 
-    #[test]
-    fn test_firewall_with_network_monitor_integration() {
+    #[tokio::test]
+    #[serial]
+    async fn test_firewall_with_network_monitor_integration() {
         // Let's cleanup stuff first
         LOCAL_ADDRS_CACHE.lock().clear();
 
@@ -679,6 +655,11 @@ mod tests {
         let spy_fn =
             move |_config: &FirewallConfig, _state: &FirewallState, addrs: &[StdIpAddr]| {
                 addrs_clone.lock().push(addrs.to_vec());
+                println!(
+                    "addresses => {:?} after pushing addrs: {:?}",
+                    addrs_clone.lock(),
+                    addrs
+                );
                 (Vec::<Rule>::new().as_slice()).into()
             };
 
@@ -693,48 +674,33 @@ mod tests {
         assert_eq!(captured_addrs.lock().len(), 1,);
         assert_eq!(captured_addrs.lock()[0], Vec::<StdIpAddr>::new(),);
 
-        // Create mock network monitor (initializes LOCAL_ADDRS_CACHE with loopback)
-        let mock_monitor = MockNetworkMonitor::new();
-
-        // Register StatefulFirewall as LocalInterfaceObserver
-        mock_monitor.register_observer(
+        let mock_monitor = setup_mock_monitor().await;
+        mock_monitor.register_local_interfaces_observer(
             Arc::downgrade(&firewall) as std::sync::Weak<dyn LocalInterfacesObserver>
         );
 
-        // Apply a new config to StatefulFirewall (should use current LOCAL_ADDRS_CACHE which now has loopback)
         let new_state = FirewallState {
             ip_addresses: vec![StdIpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))],
             ..Default::default()
         };
-        firewall.apply_state(new_state.clone());
+        firewall.apply_state(new_state);
 
-        // Verify configure_chain was called with loopback address from mock monitor initialization
         assert_eq!(captured_addrs.lock().len(), 2,);
         assert_eq!(
             captured_addrs.lock()[1],
-            vec![StdIpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))],
+            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 1))],
         );
 
-        // Simulate network interface change via mock monitor
-        mock_monitor.update_interfaces(vec![if_addrs::Interface {
-            name: "eth0".to_string(),
-            addr: if_addrs::IfAddr::V4(if_addrs::Ifv4Addr {
-                ip: Ipv4Addr::new(192, 168, 1, 100),
-                netmask: Ipv4Addr::new(255, 255, 255, 0),
-                prefixlen: 24,
-                broadcast: Some(Ipv4Addr::new(192, 168, 1, 255)),
-            }),
-            index: Some(1),
-            oper_status: if_addrs::IfOperStatus::Up,
-            #[cfg(windows)]
-            adapter_name: "some_adapter".to_string(),
-        }]);
+        // Simulate network interface
+        PATH_CHANGE_BROADCAST.send(()).unwrap();
+        // give a chance to react to PATH_CHANGE_BROADCAST
+        tokio::task::yield_now().await;
 
         // Verify configure_chain was called with updated local addresses
-        assert_eq!(captured_addrs.lock().len(), 3,);
+        assert_eq!(captured_addrs.lock().len(), 3);
         assert_eq!(
             captured_addrs.lock()[2],
-            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))],
+            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 2))],
         );
 
         // Apply another state change
@@ -750,7 +716,7 @@ mod tests {
         assert_eq!(captured_addrs.lock().len(), 4,);
         assert_eq!(
             captured_addrs.lock()[2],
-            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 1, 100))],
+            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 2))],
         );
     }
 }
