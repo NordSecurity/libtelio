@@ -4809,12 +4809,14 @@ dependencies = [
  "pnet_packet 0.35.0",
  "rand 0.8.5",
  "rustc-hash 2.1.1",
+ "serial_test",
  "smallvec",
  "sn_fake_clock",
  "telio-crypto",
  "telio-model",
  "telio-network-monitors",
  "telio-utils",
+ "tokio",
  "tracing",
 ]
 
