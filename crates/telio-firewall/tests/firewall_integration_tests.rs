@@ -15,7 +15,7 @@ use std::{
 };
 use telio_crypto::SecretKey;
 use telio_firewall::firewall::{
-    Firewall, FirewallState, Permissions, StatefullFirewall, FILE_SEND_PORT,
+    Firewall, FirewallState, Permissions, StatefulFirewall, FILE_SEND_PORT,
 };
 use telio_model::{
     features::{FeatureFirewall, FirewallBlacklistTuple, IpProtocol},
@@ -306,7 +306,7 @@ trait FirewallExt {
     fn process_outbound_packet_sink(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool;
 }
 
-impl FirewallExt for StatefullFirewall {
+impl FirewallExt for StatefulFirewall {
     fn process_outbound_packet_sink(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
         Firewall::process_outbound_packet(self, public_key, buffer, &mut &io::sink())
     }
@@ -347,7 +347,7 @@ fn ipv6_blocked() {
         },
     ];
     for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_udp , is_ipv4} in test_inputs {
-        let fw = StatefullFirewall::new(false, FeatureFirewall::default(),);
+        let fw = StatefulFirewall::new(false, FeatureFirewall::default(),).expect("Failed to load libfirewall");
         fw.apply_state(FirewallState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
@@ -404,10 +404,10 @@ fn outgoing_blacklist() {
     ];
 
     for TestInput { src, dst, make_udp, make_tcp } in test_inputs {
-        let fw = StatefullFirewall::new(true, FeatureFirewall {
+        let fw = StatefulFirewall::new(true, FeatureFirewall {
             outgoing_blacklist: blacklist.clone(),
             ..Default::default()
-        },);
+        },).expect("Failed to load libfirewall");
         fw.apply_state(FirewallState {
             ip_addresses: vec![
                 IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
@@ -470,7 +470,7 @@ fn firewall_whitelist() {
     for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_udp, make_tcp, make_icmp } in &test_inputs {
         let mut feature = FeatureFirewall::default();
         feature.neptun_reset_conns = true;
-        let fw = StatefullFirewall::new(true, feature);
+        let fw = StatefulFirewall::new(true, feature).expect("Failed to load libfirewall");
         let mut state = fw.get_state();
         state.ip_addresses = vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))];
         fw.apply_state(state.clone());
@@ -534,10 +534,11 @@ fn firewall_vpn_peer() {
     let syn : u8 = TcpFlags::SYN;
         for TestInput { src1, src2, dst1, make_udp, make_tcp } in &test_inputs {
             let feature = FeatureFirewall::default();
-            let fw = StatefullFirewall::new(true, feature);
+            let fw = StatefulFirewall::new(true, feature).expect("Failed to load libfirewall");
             let mut state = fw.get_state();
             state.ip_addresses = vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))];
             fw.apply_state(state.clone());
+
             let peer1 = make_random_peer();
             let peer2 = make_random_peer();
 
@@ -581,7 +582,7 @@ fn firewall_whitelist_change_icmp() {
     for TestInput { us, them, make_icmp, is_v4 } in &test_inputs {
         let feature = FeatureFirewall::default();
         // Set number of conntrack entries to 0 to test only the whitelist
-        let fw = StatefullFirewall::new(true, feature);
+        let fw = StatefulFirewall::new(true, feature).expect("Failed to load libfirewall");
         fw.apply_state(FirewallState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
@@ -620,7 +621,7 @@ fn firewall_whitelist_change_udp_allow() {
     ];
 
     for TestInput { us, them, make_udp } in test_inputs {
-        let fw = StatefullFirewall::new(true, FeatureFirewall::default(),);
+        let fw = StatefulFirewall::new(true, FeatureFirewall::default(),).expect("Failed to load libfirewall");
         fw.apply_state(FirewallState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
@@ -653,7 +654,7 @@ fn firewall_whitelist_change_udp_block() {
     ];
 
     for TestInput { us, them, make_udp } in test_inputs {
-        let fw = StatefullFirewall::new(true, FeatureFirewall::default(),);
+        let fw = StatefulFirewall::new(true, FeatureFirewall::default(),).expect("Failed to load libfirewall");
         fw.apply_state(FirewallState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
@@ -683,7 +684,7 @@ fn firewall_whitelist_change_tcp_allow() {
         TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6, },
     ];
     for TestInput { us, them, make_tcp } in test_inputs {
-        let fw = StatefullFirewall::new(true, FeatureFirewall::default(),);
+        let fw = StatefulFirewall::new(true, FeatureFirewall::default(),).expect("Failed to load libfirewall");
         let mut state = fw.get_state();
         state.ip_addresses = vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))];
         fw.apply_state(state.clone());
@@ -715,7 +716,7 @@ fn firewall_whitelist_change_tcp_block() {
         TestInput{ us: "[::1]:1111",     them: "[2001:4860:4860::8888]:8888",  make_tcp: &make_tcp6, },
     ];
     for TestInput { us, them, make_tcp } in test_inputs {
-        let fw = StatefullFirewall::new(true, FeatureFirewall::default(),);
+        let fw = StatefulFirewall::new(true, FeatureFirewall::default(),).expect("Failed to load libfirewall");
         let mut state = fw.get_state();
         state.ip_addresses = vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))];
         fw.apply_state(state.clone());
@@ -768,7 +769,7 @@ fn firewall_whitelist_peer() {
     ];
         for TestInput { src1, src2, dst, make_udp, make_tcp, make_icmp } in &test_inputs {
             let feature = FeatureFirewall::default();
-            let fw = StatefullFirewall::new(true, feature);
+            let fw = StatefulFirewall::new(true, feature).expect("Failed to load libfirewall");
             fw.apply_state(FirewallState {
                 ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
                 ..Default::default()
@@ -841,7 +842,7 @@ fn firewall_test_permissions() {
     {
         let mut feature = FeatureFirewall::default();
         feature.neptun_reset_conns = true;
-        let fw = StatefullFirewall::new(true, feature);
+        let fw = StatefulFirewall::new(true, feature).expect("Failed to load libfirewall");
         let mut state = fw.get_state();
         state.ip_addresses = vec![
             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
@@ -989,14 +990,14 @@ fn firewall_whitelist_port() {
         }
     ];
     for test_input @ TestInput { src: _, dst: _, make_udp, make_tcp, make_icmp } in test_inputs {
-        let fw = StatefullFirewall::new(true, FeatureFirewall::default(),);
+        let fw = StatefulFirewall::new(true, FeatureFirewall::default(),).expect("Failed to load libfirewall");
         fw.apply_state(FirewallState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
         });
         let mut state = fw.get_state();
-        assert!(state.whitelist.peer_whitelists[Permissions::IncomingConnections].is_empty());
-        assert!(state.whitelist.port_whitelist.is_empty());
+        assert!(fw.get_state().whitelist.peer_whitelists[Permissions::IncomingConnections].is_empty());
+        assert!(fw.get_state().whitelist.port_whitelist.is_empty());
 
         assert_eq!(fw.process_inbound_packet(&make_peer(), &make_udp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT))), false);
         assert_eq!(fw.process_inbound_packet(&make_peer(), &make_icmp(&test_input.src, &test_input.dst, IcmpTypes::EchoRequest.into())), false);

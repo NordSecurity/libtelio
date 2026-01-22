@@ -1,9 +1,9 @@
 use std::pin::Pin;
-use std::{fmt::Debug, mem::ManuallyDrop, net::IpAddr};
+use std::{fmt::Debug, net::IpAddr};
 
 use ipnet::IpNet;
 
-use crate::ffi_chain::{
+use crate::libfirewall::{
     LibfwAssociatedData, LibfwChain, LibfwFilter, LibfwFilterData, LibfwIpAddr, LibfwIpData,
     LibfwNetworkFilter, LibfwRule, LibfwVerdict, LIBFW_CONTRACK_STATE_CLOSED,
     LIBFW_CONTRACK_STATE_ESTABLISHED, LIBFW_CONTRACK_STATE_INVALID, LIBFW_CONTRACK_STATE_NEW,
@@ -16,10 +16,8 @@ use crate::ffi_chain::{
     LIBFW_ICMP_TYPE_ROUTER_SOLICITATION, LIBFW_ICMP_TYPE_TIMESTAMP,
     LIBFW_ICMP_TYPE_TIMESTAMP_REPLY, LIBFW_ICMP_TYPE_TIME_EXCEEDED, LIBFW_IP_TYPE_V4,
     LIBFW_IP_TYPE_V6, LIBFW_NEXT_PROTO_ICMP, LIBFW_NEXT_PROTO_ICMPV6, LIBFW_NEXT_PROTO_TCP,
-    LIBFW_NEXT_PROTO_UDP,
+    LIBFW_NEXT_PROTO_UDP, LIBFW_VERDICT_ACCEPT, LIBFW_VERDICT_DROP, LIBFW_VERDICT_REJECT,
 };
-
-use crate::conntrack::AssociatedData;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct NetworkFilterData {
@@ -82,7 +80,7 @@ pub(crate) enum ConnectionState {
 #[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum FilterData {
-    AssociatedData(AssociatedData),
+    AssociatedData(Option<Vec<u8>>),
     ConntrackState(ConnectionState),
     #[allow(dead_code)]
     SrcNetwork(NetworkFilterData),
@@ -146,10 +144,10 @@ impl From<&Filter> for (LibfwFilter, Option<PinnedAssocData>) {
                     let cloned_assoc_data = Box::pin(assoc_data.to_vec());
                     (
                         LibfwFilterData {
-                            associated_data_filter: ManuallyDrop::new(LibfwAssociatedData {
+                            associated_data_filter: LibfwAssociatedData {
                                 associated_data: cloned_assoc_data.as_ptr(),
                                 associated_data_len: cloned_assoc_data.len(),
-                            }),
+                            },
                         },
                         LIBFW_FILTER_ASSOCIATED_DATA,
                         Some(cloned_assoc_data),
@@ -157,10 +155,10 @@ impl From<&Filter> for (LibfwFilter, Option<PinnedAssocData>) {
                 } else {
                     (
                         LibfwFilterData {
-                            associated_data_filter: ManuallyDrop::new(LibfwAssociatedData {
+                            associated_data_filter: LibfwAssociatedData {
                                 associated_data: std::ptr::null_mut(),
                                 associated_data_len: 0,
-                            }),
+                            },
                         },
                         LIBFW_FILTER_ASSOCIATED_DATA,
                         None,
@@ -243,7 +241,11 @@ impl From<&Rule> for (LibfwRule, (PinnedFilters, Vec<Option<PinnedAssocData>>)) 
             LibfwRule {
                 filters: ffi_filters.as_ptr(),
                 filter_count: ffi_filters.len(),
-                action: value.action as u8,
+                action: match value.action {
+                    LibfwVerdict::LibfwVerdictAccept => LIBFW_VERDICT_ACCEPT,
+                    LibfwVerdict::LibfwVerdictDrop => LIBFW_VERDICT_DROP,
+                    LibfwVerdict::LibfwVerdictReject => LIBFW_VERDICT_REJECT,
+                },
             },
             (ffi_filters, additional_data),
         )
@@ -289,7 +291,7 @@ pub mod tests {
             ConnectionState, Direction, FfiChainGuard, Filter, FilterData, IcmpType,
             NetworkFilterData, NextLevelProtocol, Rule,
         },
-        ffi_chain::{
+        libfirewall::{
             LibfwAssociatedData, LibfwChain, LibfwFilter, LibfwFilterData, LibfwIpAddr,
             LibfwIpData, LibfwNetworkFilter, LibfwRule, LibfwVerdict,
             LIBFW_CONTRACK_STATE_ESTABLISHED, LIBFW_DIRECTION_INBOUND, LIBFW_DIRECTION_OUTBOUND,
@@ -350,7 +352,7 @@ pub mod tests {
             Rule {
                 filters: vec![
                     Filter {
-                        filter_data: FilterData::AssociatedData(Some([1; 32].to_smallvec())),
+                        filter_data: FilterData::AssociatedData(Some([1; 32].to_vec())),
                         inverted: true,
                     },
                     Filter {
@@ -370,10 +372,10 @@ pub mod tests {
                 inverted: false,
                 filter_type: LIBFW_FILTER_ASSOCIATED_DATA,
                 filter: LibfwFilterData {
-                    associated_data_filter: ManuallyDrop::new(LibfwAssociatedData {
+                    associated_data_filter: LibfwAssociatedData {
                         associated_data: std::ptr::null_mut(),
                         associated_data_len: 0,
-                    }),
+                    },
                 },
             },
             LibfwFilter {
@@ -439,10 +441,10 @@ pub mod tests {
                 inverted: true,
                 filter_type: LIBFW_FILTER_ASSOCIATED_DATA,
                 filter: LibfwFilterData {
-                    associated_data_filter: ManuallyDrop::new(LibfwAssociatedData {
+                    associated_data_filter: LibfwAssociatedData {
                         associated_data_len: assoc_data.len(),
                         associated_data: assoc_data.as_ptr(),
-                    }),
+                    },
                 },
             },
             LibfwFilter {

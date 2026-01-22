@@ -53,6 +53,7 @@ pub use telio_utils;
 /// cbindgen:ignore
 pub use telio_lana;
 
+#[cfg(feature = "enable_firewall")]
 /// cbindgen:ignore
 pub use telio_firewall;
 
