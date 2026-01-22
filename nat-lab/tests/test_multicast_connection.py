@@ -5,6 +5,7 @@ from tests.utils.bindings import default_features, TelioAdapterType
 from tests.utils.connection import ConnectionTag, Connection, TargetOS
 from tests.utils.multicast import MulticastClient, MulticastServer
 from tests.utils.process import ProcessExecError
+from tests.utils.router import IPProto, get_ip_address_type
 from typing import List, Tuple
 
 
@@ -92,6 +93,15 @@ async def test_multicast(setup_params: List[SetupParameters], protocol: str) -> 
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(exit_stack, setup_params)
 
+        alpha, beta = env.nodes
+
+        alpha_ip = [
+            ip for ip in alpha.ip_addresses if get_ip_address_type(ip) == IPProto.IPv4
+        ][0]
+        beta_ip = [
+            ip for ip in beta.ip_addresses if get_ip_address_type(ip) == IPProto.IPv4
+        ][0]
+
         alpha_connection, beta_connection = [
             conn.connection for conn in env.connections
         ]
@@ -99,9 +109,11 @@ async def test_multicast(setup_params: List[SetupParameters], protocol: str) -> 
         await add_multicast_route(alpha_connection)
         await add_multicast_route(beta_connection)
 
-        async with MulticastServer(beta_connection, protocol, None).run() as server:
+        async with MulticastServer(
+            beta_connection, protocol, None, beta_ip
+        ).run() as server:
             await server.wait_till_ready()
-            await MulticastClient(alpha_connection, protocol, None).execute()
+            await MulticastClient(alpha_connection, protocol, None, alpha_ip).execute()
 
 
 MUILTICAST_DISALLOWED_TEST_PARAMS = [
@@ -137,6 +149,14 @@ async def test_multicast_disallowed(
         client_alpha, client_beta = env.clients
 
         alpha, beta = env.nodes
+
+        alpha_ip = [
+            ip for ip in alpha.ip_addresses if get_ip_address_type(ip) == IPProto.IPv4
+        ][0]
+        beta_ip = [
+            ip for ip in beta.ip_addresses if get_ip_address_type(ip) == IPProto.IPv4
+        ][0]
+
         mesh_config_alpha = env.api.get_meshnet_config(alpha.id)
         if mesh_config_alpha.peers is not None:
             for peer in mesh_config_alpha.peers:
@@ -154,7 +174,11 @@ async def test_multicast_disallowed(
         await add_multicast_route(alpha_connection)
         await add_multicast_route(beta_connection)
 
-        async with MulticastServer(beta_connection, protocol, None).run() as server:
+        async with MulticastServer(
+            beta_connection, protocol, None, beta_ip
+        ).run() as server:
             with pytest.raises(ProcessExecError):
                 await server.wait_till_ready()
-                await MulticastClient(alpha_connection, protocol, 10).execute()
+                await MulticastClient(
+                    alpha_connection, protocol, 10, alpha_ip
+                ).execute()

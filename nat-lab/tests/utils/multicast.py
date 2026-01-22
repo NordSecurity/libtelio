@@ -22,7 +22,7 @@ class MulticastClient:
     _connection: Connection
 
     def __init__(
-        self, connection: Connection, protocol: str, timeout: Optional[int]
+        self, connection: Connection, protocol: str, timeout: Optional[int], ip: str
     ) -> None:
         self._connection = connection
 
@@ -31,6 +31,8 @@ class MulticastClient:
             _get_multicast_script_path(connection),
             f"--{protocol}",
             "-c",
+            "--ip",
+            ip,
         ]
 
         if timeout is not None:
@@ -48,7 +50,7 @@ class MulticastServer:
     _server_ready_event: Event
 
     def __init__(
-        self, connection: Connection, protocol: str, timeout: Optional[int]
+        self, connection: Connection, protocol: str, timeout: Optional[int], ip: str
     ) -> None:
         self._connection = connection
         self._server_ready_event = Event()
@@ -58,6 +60,8 @@ class MulticastServer:
             _get_multicast_script_path(connection),
             f"--{protocol}",
             "-s",
+            "--ip",
+            ip,
         ]
 
         if timeout is not None:
