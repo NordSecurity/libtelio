@@ -1153,3 +1153,7 @@ async def test_dns_no_error_return_code() -> None:
         await client_alpha.wait_for_log(
             "Got an error response with NoError code for error-with-noerror-return-code.com., this should not happen so converting to ServFail"
         )
+
+        await client_alpha.wait_for_log(
+            'DNS name resolution failed (no records): ResolveError { kind: NoRecordsFound { query: Query { name: Name("error-with-noerror-return-code.com."), query_type: A, query_class: IN }, soa: None, negative_ttl: None, response_code: NoError, trusted: true } }'
+        )
