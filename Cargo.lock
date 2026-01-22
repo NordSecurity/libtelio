@@ -4806,6 +4806,7 @@ dependencies = [
  "ipnet",
  "libloading",
  "mockall",
+ "mockall_double",
  "num_enum",
  "parking_lot",
  "pnet_packet 0.35.0",

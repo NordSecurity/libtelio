@@ -172,7 +172,7 @@ impl DynamicWg {
     /// ```
     /// use std::os::fd::FromRawFd;
     /// use std::{sync::Arc, io, time::Duration};
-    /// use telio_firewall::firewall::{StatefullFirewall, Firewall};
+    /// use telio_firewall::firewall::{MockFirewall, Firewall};
     /// use telio_model::features::FeatureFirewall;
     /// use telio_sockets::{native::NativeSocket, Protector, SocketPool, Protect};
     /// use telio_task::io::Chan;
@@ -194,7 +194,7 @@ impl DynamicWg {
     ///         fn set_ext_if_filter(&self, list: &[String]);
     ///         }
     ///     }
-    ///     let firewall = Arc::new(StatefullFirewall::new(true,  FeatureFirewall::default(),));
+    ///     let firewall = Arc::new(MockFirewall::new());
     ///     let firewall_filter_inbound_packets = {
     ///         let fw = firewall.clone();
     ///         move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)

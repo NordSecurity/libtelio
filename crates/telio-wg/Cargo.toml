@@ -45,7 +45,7 @@ ntest.workspace = true
 pretty_assertions.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
-telio-firewall.workspace = true
+telio-firewall = { workspace = true, features = ["mockall"] }
 telio-task = { workspace = true, features = ["test-util"] }
 telio-test.workspace = true
 proptest.workspace = true

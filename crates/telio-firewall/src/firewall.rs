@@ -32,8 +32,11 @@ use crate::{
         ConnectionState, Direction, FfiChainGuard, Filter, FilterData, NetworkFilterData,
         NextLevelProtocol, Rule,
     },
-    libfirewall::{Libfirewall, LibfwChain, LibfwFirewall, LibfwLogLevel, LibfwVerdict},
+    libfirewall::{LibfwChain, LibfwFirewall, LibfwLogLevel, LibfwVerdict},
 };
+
+#[mockall_double::double]
+use crate::libfirewall::Libfirewall;
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
 pub type HashSet<V> = rustc_hash::FxHashSet<V>;
@@ -76,7 +79,7 @@ impl Icmp for Icmpv6Type {
 
 /// Firewall trait.
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
-pub trait Firewall {
+pub trait Firewall: Sync + Send {
     /// Applies a new firewall state and updates the chain if it differs from current state
     fn apply_state(&self, state: FirewallState);
 
@@ -164,8 +167,8 @@ pub struct FirewallConfig {
     pub feature: FeatureFirewall,
 }
 
-/// Statefull packet-filter firewall.
-pub struct StatefullFirewall {
+/// Stateful packet-filter firewall.
+pub struct StatefulFirewall {
     /// Firewall loaded library
     firewall_lib: Libfirewall,
     /// Libfirewall instance
@@ -179,20 +182,20 @@ pub struct StatefullFirewall {
 }
 
 // Access to internal firewall structs is guarded by locks, so that should be fine
-unsafe impl Sync for StatefullFirewall {}
-unsafe impl Send for StatefullFirewall {}
+unsafe impl Sync for StatefulFirewall {}
+unsafe impl Send for StatefulFirewall {}
 
-impl LocalInterfacesObserver for StatefullFirewall {
+impl LocalInterfacesObserver for StatefulFirewall {
     fn notify(&self) {
         // When local interfaces change, reconfigure the firewall
         self.refresh_chain();
     }
 }
 
-impl Drop for StatefullFirewall {
+impl Drop for StatefulFirewall {
     fn drop(&mut self) {
         unsafe {
-            (self.firewall_lib.libfw_deinit)(self.firewall);
+            self.firewall_lib.libfw_deinit(self.firewall);
         }
     }
 }
@@ -208,7 +211,7 @@ pub enum Error {
     FirewallInitFailed,
 }
 
-impl StatefullFirewall {
+impl StatefulFirewall {
     /// Constructs firewall with libfw structure pointer
     pub fn new(use_ipv6: bool, feature: FeatureFirewall) -> Result<Self, Error> {
         Self::new_with_fn(use_ipv6, feature, Box::new(configure_chain))
@@ -221,8 +224,7 @@ impl StatefullFirewall {
         configure_chain_fn: ConfigureChainFn,
     ) -> Result<Self, Error> {
         let firewall_lib = unsafe {
-            Libfirewall::new(library_filename("firewall"))
-                .map_err(|ll_err| Error::LibfirewallLoadFailed(ll_err))?
+            Libfirewall::new(library_filename("firewall")).map_err(Error::LibfirewallLoadFailed)?
         };
 
         // Let's initialize libfirewall logging first.
@@ -258,6 +260,7 @@ impl StatefullFirewall {
 
         Ok(result)
     }
+
     fn refresh_chain(&self) {
         let local_ifs_addrs = LOCAL_ADDRS_CACHE
             .lock()
@@ -566,7 +569,7 @@ extern "C" fn log_callback(level: LibfwLogLevel, log_line: *const std::ffi::c_ch
     }
 }
 
-impl Firewall for StatefullFirewall {
+impl Firewall for StatefulFirewall {
     fn apply_state(&self, new_state: FirewallState) {
         if *self.state.read() == new_state {
             return;
@@ -647,6 +650,41 @@ mod tests {
     use telio_network_monitors::local_interfaces::MockGetIfAddrs;
     use telio_network_monitors::monitor::{NetworkMonitor, PATH_CHANGE_BROADCAST};
 
+    impl StatefulFirewall {
+        /// Creates a mock firewall for testing with provided mock library
+        fn new_mock(
+            use_ipv6: bool,
+            feature: FeatureFirewall,
+            configure_chain_fn: ConfigureChainFn,
+        ) -> Self {
+            let mut result = Self {
+                firewall: 0x1 as *mut crate::libfirewall::LibfwFirewall,
+                firewall_lib: crate::libfirewall::MockLibfirewall::default(),
+                state: RwLock::new(FirewallState::default()),
+                config: FirewallConfig {
+                    allow_ipv6: use_ipv6,
+                    feature,
+                },
+                configure_chain_fn,
+            };
+
+            result
+                .get_libfirewall_mock()
+                .expect_libfw_configure_chain()
+                .once()
+                .returning(|_, _| crate::libfirewall::LibfwResult::LibfwSuccess);
+
+            result.refresh_chain();
+
+            result
+        }
+
+        /// Get mutable reference to mock library for setting expectations
+        fn get_libfirewall_mock(&mut self) -> &mut crate::libfirewall::MockLibfirewall {
+            &mut self.firewall_lib
+        }
+    }
+
     async fn setup_mock_monitor() -> NetworkMonitor {
         let mut get_if_addrs_mock = MockGetIfAddrs::new();
         let mut ip_part = 0;
@@ -675,7 +713,7 @@ mod tests {
         // Let's cleanup stuff first
         LOCAL_ADDRS_CACHE.lock().clear();
 
-        // Create mock function that captures addresses for each call
+        // Create spy function that captures addresses for each configure_chain call
         let captured_addrs = Arc::new(ParkingLotMutex::new(Vec::<Vec<StdIpAddr>>::new()));
         let addrs_clone = captured_addrs.clone();
         let spy_fn =
@@ -689,15 +727,27 @@ mod tests {
                 (Vec::<Rule>::new().as_slice()).into()
             };
 
-        // Create StatefulFirewall with spy
-        let firewall: Arc<StatefullFirewall> = Arc::new(
-            StatefullFirewall::new_with_fn(true, FeatureFirewall::default(), Box::new(spy_fn))
-                .expect("Failed to create StatefulFirewall instance"),
-        );
+        // Create StatefulFirewall with mock Libfirewall
+        let mut firewall =
+            StatefulFirewall::new_mock(true, FeatureFirewall::default(), Box::new(spy_fn));
 
-        // Verify initial configure_chain was called with empty local addresses
-        assert_eq!(captured_addrs.lock().len(), 1,);
-        assert_eq!(captured_addrs.lock()[0], Vec::<StdIpAddr>::new(),);
+        firewall
+            .get_libfirewall_mock()
+            .expect_libfw_configure_chain()
+            .times(3)
+            .returning(|_, _| crate::libfirewall::LibfwResult::LibfwSuccess);
+
+        firewall
+            .get_libfirewall_mock()
+            .expect_libfw_deinit()
+            .once()
+            .returning(|_| {});
+
+        let firewall: Arc<StatefulFirewall> = Arc::new(firewall);
+
+        // Verify initial configure_chain was called with empty LOCAL_ADDRS_CACHE
+        assert_eq!(captured_addrs.lock().len(), 1);
+        assert_eq!(captured_addrs.lock()[0], Vec::<StdIpAddr>::new());
 
         let mock_monitor = setup_mock_monitor().await;
         mock_monitor.register_local_interfaces_observer(

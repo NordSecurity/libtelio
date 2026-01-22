@@ -2,12 +2,12 @@ mod wg_controller;
 
 use async_trait::async_trait;
 use telio_crypto::{PublicKey, SecretKey};
-use telio_firewall::firewall::{Firewall, StatefullFirewall};
+#[cfg(feature = "enable_firewall")]
+use telio_firewall::firewall::{Firewall, StatefulFirewall};
 use telio_lana::init_lana;
-use telio_network_monitors::{
-    local_interfaces::SystemGetIfAddrs,
-    monitor::{LocalInterfacesObserver, NetworkMonitor},
-};
+#[cfg(feature = "enable_firewall")]
+use telio_network_monitors::monitor::LocalInterfacesObserver;
+use telio_network_monitors::{local_interfaces::SystemGetIfAddrs, monitor::NetworkMonitor};
 use telio_pq::PostQuantum;
 use telio_proto::{ConnectionError, Error as EnsError, ErrorNotificationService, HeartbeatMessage};
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
@@ -68,11 +68,14 @@ use wg::uapi::{self, PeerState};
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     future::Future,
-    io::{self, Error as IoError},
+    io::Error as IoError,
     net::{IpAddr, Ipv4Addr},
     sync::{Arc, Once},
     time::Duration,
 };
+
+#[cfg(feature = "enable_firewall")]
+use std::io;
 
 use cfg_if::cfg_if;
 use futures::FutureExt;
@@ -198,6 +201,7 @@ pub enum Error {
     EnsFailure(#[from] Box<EnsError>),
     #[error("Exponential backoff error {0}")]
     ExponentialBackoffError(#[from] exponential_backoff::Error),
+    #[cfg(feature = "enable_firewall")]
     #[error("Firewall init error: {0:?}")]
     FirewallError(#[from] telio_firewall::firewall::Error),
 }
@@ -329,7 +333,8 @@ pub struct Entities {
     dns: Arc<Mutex<DNS>>,
 
     // Internal firewall
-    firewall: Arc<StatefullFirewall>,
+    #[cfg(feature = "enable_firewall")]
+    firewall: Option<Arc<StatefulFirewall>>,
 
     // Entities for meshnet connections
     meshnet: MeshnetState,
@@ -1038,34 +1043,55 @@ impl Runtime {
         features: Features,
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
-        let firewall = Arc::new(StatefullFirewall::new(
-            features.ipv6,
-            features.firewall.clone(),
-        )?);
+        #[cfg(feature = "enable_firewall")]
+        let firewall = StatefulFirewall::new(features.ipv6, features.firewall.clone())
+            .map_err(|err| {
+                telio_log_warn!("Failed to create StatefulFirewall: {:?}", err);
+                err
+            })
+            .ok()
+            .map(Arc::new);
 
-        let firewall_filter_inbound_packets = {
-            let fw = firewall.clone();
-            move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)
-        };
-        let firewall_filter_outbound_packets = {
-            let fw = firewall.clone();
-            move |peer: &[u8; 32], packet: &[u8], sink: &mut dyn io::Write| {
-                fw.process_outbound_packet(peer, packet, sink)
-            }
-        };
+        #[cfg(feature = "enable_firewall")]
+        let firewall_process_inbound_callback = firewall.clone().map(|fw| {
+            Arc::new(move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet))
+                as Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>
+        });
+        #[cfg(not(feature = "enable_firewall"))]
+        let firewall_process_inbound_callback = None;
+
+        #[cfg(feature = "enable_firewall")]
+        let firewall_process_outbound_callback = firewall.clone().map(|fw| {
+            Arc::new(
+                move |peer: &[u8; 32], packet: &[u8], sink: &mut dyn io::Write| {
+                    fw.process_outbound_packet(peer, packet, sink)
+                },
+            ) as Arc<dyn Fn(&[u8; 32], &[u8], &mut dyn io::Write) -> bool + Send + Sync>
+        });
+        #[cfg(not(feature = "enable_firewall"))]
+        let firewall_process_outbound_callback = None;
+
+        #[cfg(feature = "enable_firewall")]
         let firewall_reset_connections = if features.firewall.neptun_reset_conns() {
-            let fw = firewall.clone();
-            let cb = move |exit_pubkey: &PublicKey, sink: &mut dyn io::Write| {
-                fw.reset_connections(exit_pubkey, sink)
-            };
-            Some(Arc::new(cb) as Arc<_>)
+            firewall.clone().map(|fw| {
+                Arc::new(move |exit_pubkey: &PublicKey, sink: &mut dyn io::Write| {
+                    fw.reset_connections(exit_pubkey, sink)
+                }) as Arc<dyn Fn(&PublicKey, &mut dyn io::Write) + Send + Sync>
+            })
         } else {
             None
         };
+        #[cfg(not(feature = "enable_firewall"))]
+        let firewall_reset_connections = None;
 
         let network_monitor = NetworkMonitor::new(SystemGetIfAddrs).await?;
-        let firewall_observer_ptr: Arc<dyn LocalInterfacesObserver> = firewall.clone();
-        network_monitor.register_local_interfaces_observer(Arc::downgrade(&firewall_observer_ptr));
+
+        #[cfg(feature = "enable_firewall")]
+        if let Some(firewall) = firewall.as_ref() {
+            let firewall_observer_ptr: Arc<dyn LocalInterfacesObserver> = firewall.clone();
+            network_monitor
+                .register_local_interfaces_observer(Arc::downgrade(&firewall_observer_ptr));
+        }
 
         let socket_pool = Arc::new({
             if let Some(protect) = protect.clone() {
@@ -1144,10 +1170,8 @@ impl Runtime {
                         name: config.name.clone(),
                         tun: config.tun,
                         socket_pool: socket_pool.clone(),
-                        firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
-                        firewall_process_outbound_callback: Some(Arc::new(
-                            firewall_filter_outbound_packets,
-                        )),
+                        firewall_process_inbound_callback,
+                        firewall_process_outbound_callback,
                         firewall_reset_connections,
                         enable_dynamic_wg_nt_control: features.wireguard.enable_dynamic_wg_nt_control,
                         skt_buffer_size : Runtime::sanitize_neptun_config(features.wireguard.skt_buffer_size, config.adapter.clone()),
@@ -1171,10 +1195,8 @@ impl Runtime {
                             name: config.name.clone(),
                             tun: config.tun,
                             socket_pool: socket_pool.clone(),
-                            firewall_process_inbound_callback: Some(Arc::new(firewall_filter_inbound_packets)),
-                            firewall_process_outbound_callback: Some(Arc::new(
-                                firewall_filter_outbound_packets,
-                            )),
+                            firewall_process_inbound_callback,
+                            firewall_process_outbound_callback,
                             firewall_reset_connections,
                             enable_dynamic_wg_nt_control: features.wireguard.enable_dynamic_wg_nt_control,
                             skt_buffer_size: features.wireguard.skt_buffer_size,
@@ -1295,6 +1317,7 @@ impl Runtime {
             entities: Entities {
                 wireguard_interface: wireguard_interface.clone(),
                 dns,
+                #[cfg(feature = "enable_firewall")]
                 firewall,
                 meshnet: MeshnetState::LastState(Default::default()),
                 socket_pool,
@@ -2772,13 +2795,13 @@ fn convert_connection_error(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use io::ErrorKind;
     use rstest::*;
     use std::net::Ipv6Addr;
     use telio_model::config::{Peer, PeerBase};
     use telio_model::features::FeatureDirect;
     use telio_sockets::native::NativeSocket;
     use telio_sockets::Protector;
+    use tokio::io::ErrorKind;
 
     fn build_peer_base(
         hostname: String,
@@ -3640,12 +3663,12 @@ mod tests {
     struct MakeInternalFailingProtector;
 
     impl Protector for MakeInternalFailingProtector {
-        fn make_external(&self, _socket: NativeSocket) -> io::Result<()> {
+        fn make_external(&self, _socket: NativeSocket) -> tokio::io::Result<()> {
             Ok(())
         }
 
-        fn make_internal(&self, _socket: NativeSocket) -> io::Result<()> {
-            Err(io::Error::from(ErrorKind::PermissionDenied))
+        fn make_internal(&self, _socket: NativeSocket) -> tokio::io::Result<()> {
+            Err(tokio::io::Error::from(ErrorKind::PermissionDenied))
         }
 
         fn clean(&self, _socket: NativeSocket) {}

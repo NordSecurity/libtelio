@@ -10,10 +10,11 @@ repository = "https://github.com/NordSecurity/libtelio"
 crate-type = ["cdylib", "lib"]
 
 [features]
-default = ["enable_ens"]
+default = ["enable_ens", "enable_firewall"]
 pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
 disable_ens = []
 enable_ens = ["telio-proto/enable_ens"]
+enable_firewall = ["telio-firewall"]
 
 [dependencies]
 cfg-if = "1.0.4"
@@ -42,7 +43,7 @@ wireguard-uapi.workspace = true
 telio-crypto.workspace = true
 telio-dns.workspace = true
 telio-network-monitors.workspace = true
-telio-firewall.workspace = true
+telio-firewall = { workspace = true, optional = true }
 telio-lana.workspace = true
 telio-model.workspace = true
 telio-nurse.workspace = true

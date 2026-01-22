@@ -25,6 +25,7 @@ telio-model.workspace = true
 telio-network-monitors.workspace = true
 libloading = "0.8.9"
 thiserror.workspace = true
+mockall_double.workspace = true
 
 [dev-dependencies]
 if-addrs.workspace = true

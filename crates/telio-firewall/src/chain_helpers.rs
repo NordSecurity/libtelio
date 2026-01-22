@@ -16,7 +16,7 @@ use crate::libfirewall::{
     LIBFW_ICMP_TYPE_ROUTER_SOLICITATION, LIBFW_ICMP_TYPE_TIMESTAMP,
     LIBFW_ICMP_TYPE_TIMESTAMP_REPLY, LIBFW_ICMP_TYPE_TIME_EXCEEDED, LIBFW_IP_TYPE_V4,
     LIBFW_IP_TYPE_V6, LIBFW_NEXT_PROTO_ICMP, LIBFW_NEXT_PROTO_ICMPV6, LIBFW_NEXT_PROTO_TCP,
-    LIBFW_NEXT_PROTO_UDP,
+    LIBFW_NEXT_PROTO_UDP, LIBFW_VERDICT_ACCEPT, LIBFW_VERDICT_DROP, LIBFW_VERDICT_REJECT,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -241,7 +241,11 @@ impl From<&Rule> for (LibfwRule, (PinnedFilters, Vec<Option<PinnedAssocData>>)) 
             LibfwRule {
                 filters: ffi_filters.as_ptr(),
                 filter_count: ffi_filters.len(),
-                action: value.action as u8,
+                action: match value.action {
+                    LibfwVerdict::LibfwVerdictAccept => LIBFW_VERDICT_ACCEPT,
+                    LibfwVerdict::LibfwVerdictDrop => LIBFW_VERDICT_DROP,
+                    LibfwVerdict::LibfwVerdictReject => LIBFW_VERDICT_REJECT,
+                },
             },
             (ffi_filters, additional_data),
         )
