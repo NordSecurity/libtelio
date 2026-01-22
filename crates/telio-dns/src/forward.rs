@@ -226,14 +226,17 @@ impl Authority for ForwardAuthority {
             // For example: no IPs associated with domain especially for AAAA queries
             //
             // Log such errors with lower logging level
-            Err(ref e)
-                if matches!(e.kind(), ResolveErrorKind::NoRecordsFound { .. })
-                    && (rtype == RecordType::AAAA || rtype == RecordType::SOA) =>
-            {
-                telio_log_debug!("DNS name resolution failed with {:?}", e);
+            Err(ref e) if matches!(e.kind(), ResolveErrorKind::NoRecordsFound { .. }) => {
+                telio_log_debug!("DNS name resolution failed (no records): {:?}", e);
             }
 
-            Err(ref e) => telio_log_warn!("DNS name resolution failed with {:?}", e),
+            Err(ref e) => {
+                #[cfg(debug_assertions)]
+                telio_log_debug!("DNS name resolution failed: {:?}", e);
+
+                #[cfg(not(debug_assertions))]
+                telio_log_warn!("DNS name resolution failed");
+            }
             Ok(_) => (),
         };
 
