@@ -4,7 +4,7 @@ on:
     # Avoid running on 0 since a lot of other workflows on github start at that
     # time and this can cause delays or even dropping of jobs:
     # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
-    - cron: "17 11 * * 6,0"
+    - cron: "27 6 * * *"
 permissions: {}
 
 jobs:
