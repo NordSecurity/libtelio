@@ -23,6 +23,7 @@ from itertools import combinations
 from tests.config import LAN_ADDR_MAP, CORE_API_IP, CORE_API_CREDENTIALS
 from tests.helpers import SetupParameters
 from tests.interderp_cli import InterDerpClient
+from tests.log_collector import LOG_COLLECTORS
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag, TargetOS, clear_ephemeral_setups_set
 from tests.utils.connection.docker_connection import DockerConnection, container_id
@@ -58,6 +59,7 @@ RUNNER: asyncio.Runner | None = None
 SESSION_SCOPE_EXIT_STACK: AsyncExitStack | None = None
 TASKS: List[asyncio.Task] = []
 END_TASKS: threading.Event = threading.Event()
+CURRENT_TEST_LOG_FILE = None
 
 LOG_DIR = "logs"
 SESSION_VM_MARKS: set[str] = set()
@@ -738,6 +740,51 @@ def pytest_runtest_setup():
     asyncio.run(perform_pretest_cleanups())
 
 
+def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
+    if os.environ.get("NATLAB_SAVE_LOGS") is None:
+        return
+
+    log.info(
+        "Running post-test log collection for %s, tasks: %d",
+        item.reportinfo()[2],
+        len(LOG_COLLECTORS),
+    )
+
+    assert RUNNER
+
+    async def collect_all_logs():
+        async with AsyncExitStack() as stack:
+            for log_collector in LOG_COLLECTORS:
+                log.info(
+                    "[%s] Will run post-test log collection for %s",
+                    log_collector.node_name,
+                    log_collector.tag,
+                )
+                connection = await stack.enter_async_context(
+                    new_connection_raw(log_collector.tag)
+                )
+                await log_collector.cleanup(connection)
+                log.info(
+                    "[%s] Done running post-test log collection for %s",
+                    log_collector.node_name,
+                    log_collector.tag,
+                )
+
+    RUNNER.run(collect_all_logs())
+
+    LOG_COLLECTORS.clear()
+    global CURRENT_TEST_LOG_FILE
+
+    if CURRENT_TEST_LOG_FILE:
+        CURRENT_TEST_LOG_FILE.flush()
+        log.removeHandler(CURRENT_TEST_LOG_FILE)
+        CURRENT_TEST_LOG_FILE.close()
+
+    CURRENT_TEST_LOG_FILE = None
+
+    log.info("Post-test log collection completed for %s", item.reportinfo()[2])
+
+
 # Session-long AsyncExitStack is created at session start and closed at session finish.
 # pylint: disable=unused-argument
 def pytest_sessionstart(session):
@@ -1047,15 +1094,12 @@ def setup_logger(tmp_path, request):
         )
         log.addHandler(file_handler)
 
+        global CURRENT_TEST_LOG_FILE
+        CURRENT_TEST_LOG_FILE = file_handler
     try:
         yield
     finally:
-        if file_handler:
-            file_handler.flush()
-            log.removeHandler(file_handler)
-            file_handler.close()
-        else:
-            pass
+        pass
 
 
 def get_required_vm_containers_from_marks():
