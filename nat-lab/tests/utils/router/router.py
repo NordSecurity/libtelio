@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from enum import Enum, auto
 from ipaddress import ip_address, IPv4Address
+from tests.utils.connection import Connection
 from typing import AsyncIterator, List, Optional
 
 # fmt: off
@@ -116,6 +117,10 @@ class Router(ABC):
 
     @abstractmethod
     async def delete_exit_node_route(self) -> None:
+        pass
+
+    @abstractmethod
+    def change_connection(self, connection: Connection) -> None:
         pass
 
     @abstractmethod

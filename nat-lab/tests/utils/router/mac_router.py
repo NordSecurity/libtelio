@@ -207,6 +207,9 @@ class MacRouter(Router):
     async def delete_exit_node_route(self) -> None:
         pass
 
+    def change_connection(self, connection: Connection):
+        self._connection = connection
+
     @asynccontextmanager
     async def disable_path(
         self, address: str  # pylint: disable=unused-argument

@@ -343,6 +343,9 @@ class LinuxRouter(Router):
                     raise exception
                 log.warning(exception.stderr)
 
+    def change_connection(self, connection: Connection) -> None:
+        self._connection = connection
+
     @asynccontextmanager
     async def disable_path(self, address: str) -> AsyncIterator:
         addr_proto = get_ip_address_type(address)
