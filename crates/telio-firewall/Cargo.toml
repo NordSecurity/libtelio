@@ -18,6 +18,7 @@ rustc-hash.workspace = true
 parking_lot.workspace = true
 rand.workspace = true
 num_enum.workspace = true
+serde_json.workspace = true
 
 telio-crypto.workspace = true
 telio-utils.workspace = true

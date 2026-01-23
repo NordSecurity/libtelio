@@ -32,7 +32,7 @@ use crate::uapi::{self, Cmd, Response};
 use crate::wg::Config;
 
 /// Function pointer to Firewall Inbound Callback
-pub type FirewallInboundCb = Option<Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>>;
+pub type FirewallInboundCb = Option<Arc<dyn Fn(&[u8; 32], &mut [u8]) -> bool + Send + Sync>>;
 
 /// Function pointer to Firewall Outbound Callback
 pub type FirewallOutboundCb =

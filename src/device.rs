@@ -94,6 +94,7 @@ use telio_model::{
     event::{Event, Set},
     features::{FeaturePersistentKeepalive, Features, PathType},
     mesh::{ExitNode, LinkState, Node, NodeState},
+    tp_lite_stats::{TpLiteStatsCallback, TpLiteStatsOptions},
     validation::validate_nickname,
     EndpointMap,
 };
@@ -204,6 +205,10 @@ pub enum Error {
     #[cfg(feature = "enable_firewall")]
     #[error("Firewall init error: {0:?}")]
     FirewallError(#[from] telio_firewall::firewall::Error),
+    #[error("Firewall loading error {0}")]
+    FirewallLoadingError(#[from] libloading::Error),
+    #[error("FirewallDisabled")]
+    FirewallDisabled,
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -739,6 +744,34 @@ impl Device {
         })
     }
 
+    /// Register callback to get metrics and domains blocked by TP-Lite
+    ///
+    /// Requires firewall to be enabled through enable_firewall()
+    ///
+    /// Passing empty list of IPs will disable the collection of TP-Lite stats
+    pub fn enable_tp_lite_stats_collection(
+        &self,
+        config: TpLiteStatsOptions,
+        collect_stats_cb: Box<dyn TpLiteStatsCallback>,
+    ) -> Result {
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| {
+                Ok(rt.enable_tp_lite_stats_collection(config, collect_stats_cb))
+            })
+            .await?
+        })
+    }
+
+    /// Disable collection of TP-Lite stats
+    pub fn disable_tp_lite_stats_collection(&self) -> Result {
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| {
+                Ok(rt.disable_tp_lite_stats_collection())
+            })
+            .await?
+        })
+    }
+
     /// Notify device about network change event
     ///
     /// In some cases integrators may have better knowledge of the network state or state changes,
@@ -1054,8 +1087,9 @@ impl Runtime {
 
         #[cfg(feature = "enable_firewall")]
         let firewall_process_inbound_callback = firewall.clone().map(|fw| {
-            Arc::new(move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet))
-                as Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>
+            Arc::new(move |peer: &[u8; 32], packet: &mut [u8]| {
+                fw.process_inbound_packet(peer, packet)
+            }) as Arc<dyn Fn(&[u8; 32], &mut [u8]) -> bool + Send + Sync>
         });
         #[cfg(not(feature = "enable_firewall"))]
         let firewall_process_inbound_callback = None;
@@ -2053,6 +2087,36 @@ impl Runtime {
             }
         }
 
+        Ok(())
+    }
+
+    /// Register callback to get metrics and domains blocked by TP-Lite
+    ///
+    /// Requires firewall to be enabled through enable_firewall()
+    ///
+    /// Passing empty list of IPs will disable the collection of TP-Lite stats
+    pub fn enable_tp_lite_stats_collection(
+        &self,
+        #[allow(unused_variables)] config: TpLiteStatsOptions,
+        #[allow(unused_variables)] collect_stats_cb: Box<dyn TpLiteStatsCallback>,
+    ) -> Result {
+        #[cfg(feature = "enable_firewall")]
+        match &self.entities.firewall {
+            Some(fw) => fw
+                .enable_tp_lite_stats_collection(config, collect_stats_cb)
+                .map_err(Error::FirewallError),
+            None => Err(Error::FirewallDisabled),
+        }
+        #[cfg(not(feature = "enable_firewall"))]
+        Ok(())
+    }
+
+    /// Disable collection of TP-Lite stats
+    pub fn disable_tp_lite_stats_collection(&self) -> Result {
+        #[cfg(feature = "enable_firewall")]
+        if let Some(fw) = &self.entities.firewall {
+            fw.disable_tp_lite_stats_collection();
+        }
         Ok(())
     }
 
