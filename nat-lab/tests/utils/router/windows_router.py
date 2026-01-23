@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from tests.config import LIBTELIO_IPV6_WG_SUBNET
 from tests.utils.command_grepper import CommandGrepper
 from tests.utils.connection import Connection
+from tests.utils.logger import log
 from tests.utils.process import ProcessExecError
 from typing import AsyncIterator, List
 
@@ -23,15 +24,23 @@ class WindowsRouter(Router):
         return self._interface_name
 
     async def _dump_netsh_state(self) -> None:
-        await self._connection.create_process(
-            ["netsh", "interface", "show", "interface"],
-            quiet=False,
-        ).execute()
+        log.debug(
+            "[%s]: %s",
+            self._connection.tag,
+            "Dumping netsh interface state after failure",
+        )
 
-        await self._connection.create_process(
-            ["netsh", "interface", "ipv4", "show", "addresses"],
-            quiet=False,
+        show_iface_process = await self._connection.create_process(
+            ["netsh", "interface", "show", "interface"],
+            quiet=True,
         ).execute()
+        log.debug("[%s]: %s", self._connection.tag, show_iface_process.get_stdout())
+
+        show_addr_process = await self._connection.create_process(
+            ["netsh", "interface", "ipv4", "show", "addresses"],
+            quiet=True,
+        ).execute()
+        log.debug("[%s]: %s", self._connection.tag, show_addr_process.get_stdout())
 
     async def _run_netsh(self, args: List[str], quiet: bool = True):
         try:
