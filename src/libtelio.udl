@@ -191,7 +191,7 @@ namespace telio {
     /// Utility function to create a `Config` object from a json-string
     [Throws=TelioError]
     Config deserialize_meshnet_config(string cfg_str);
-    
+
     /// Utility function to create a json-string from a Features instance
     [Throws=TelioError]
     string serialize_feature_config([ByRef] Features features);
@@ -228,7 +228,7 @@ dictionary WgResponse {
 dictionary WgDevice {
     string? private_key;
     u16? listen_port;
-    u32? fwmark;  
+    u32? fwmark;
     boolean? replace_peers;
     sequence<WgPeer> peers;
 };
@@ -284,7 +284,7 @@ interface Telio {
     /// Adapter will attempt to open its own tunnel.
     [Throws=TelioError]
     void start_custom(SecretKey secret_key, TelioCustomAdapter adapter);
-    
+
     /// Start telio with specified adapter.
     ///
     /// Adapter will attempt to open its own tunnel.
@@ -590,10 +590,6 @@ interface FeaturesDefaultsBuilder {
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_multicast();
 
-    /// Enable keepalive batching feature
-    [Self=ByArc]
-    FeaturesDefaultsBuilder enable_batching();
-
     /// Enable dynamic WireGuard-NT control as per RFC LLT-0089
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_dynamic_wg_nt_control();
@@ -653,21 +649,8 @@ dictionary Features {
     FeaturePostQuantumVPN post_quantum_vpn;
     /// Multicast support
     boolean multicast;
-    /// Batching
-    FeatureBatching? batching;
 
     FeatureErrorNotificationService? error_notification_service;
-};
-
-dictionary FeatureBatching {
-    /// direct connection threshold for batching
-    u32 direct_connection_threshold;
-
-    /// effective trigger period
-    u32 trigger_effective_duration;
-
-    //// cooldown after trigger was used
-    u32 trigger_cooldown_duration;
 };
 
 /// Configurable features for Wireguard peers
@@ -873,7 +856,7 @@ dictionary FeatureErrorNotificationService {
 
     /// Configuration of the backoff algorithm used by ENS
     Backoff backoff;
-    
+
     /// DER encoded root certificate to be used for verification of all TLS connections
     /// to gRPC ENS endpoint in place of the hardcoded one
     bytes? root_certificate_override;

@@ -193,7 +193,6 @@ telio-model = { version = "0.1.0", path = "./crates/telio-model" }
 telio-network-monitors = { version = "0.1.0", path = "./crates/telio-network-monitors" }
 telio-nurse = { version = "0.1.0", path = "./crates/telio-nurse" }
 telio-proto = { version = "0.1.0", path = "./crates/telio-proto" }
-telio-batcher = { version = "0.1.0", path = "./crates/telio-batcher" }
 telio-proxy = { version = "0.1.0", path = "./crates/telio-proxy" }
 telio-relay = { version = "0.1.0", path = "./crates/telio-relay" }
 telio-sockets = { version = "0.1.0", path = "./crates/telio-sockets" }

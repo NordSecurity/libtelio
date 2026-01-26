@@ -60,7 +60,6 @@ struct EndpointState {
 #[derive(Debug, PartialEq, Eq, Clone)]
 struct RequestedPeer {
     peer: Peer,
-    batching_keepalive_interval: Option<u32>,
     endpoint: Option<EndpointState>,
 }
 
@@ -442,25 +441,8 @@ async fn consolidate_wg_peers<
     for key in insert_keys {
         telio_log_info!("Inserting peer: {:?}", requested_peers.get(key));
         let peer = requested_peers.get(key).ok_or(Error::PeerNotFound)?;
-        let ip_addresses = peer.peer.ip_addresses.clone();
 
         wireguard_interface.add_peer(peer.peer.clone()).await?;
-
-        // Add peer to session keeper if needed
-        match (session_keeper, peer.batching_keepalive_interval) {
-            (Some(sk), Some(keepalive_interval)) => {
-                telio_log_debug!("Adding to SessionKeeper");
-                let target = build_ping_endpoint(&ip_addresses, features.ipv6);
-                if target.0.is_some() || target.1.is_some() {
-                    sk.add_node(*key, target, Duration::from_secs(keepalive_interval as u64))
-                        .await?;
-                } else {
-                    telio_log_warn!("Peer {:?} has no ip address", key);
-                }
-            }
-            (None, _) => telio_log_debug!("The session keeper is missing!"),
-            _ => {}
-        }
 
         if let Some(stun) = stun_ep_provider {
             if let Some(wg_stun_server) = requested_state.wg_stun_server.as_ref() {
@@ -493,25 +475,8 @@ async fn consolidate_wg_peers<
         let is_requested_peer_proxying = is_peer_proxying(&requested_peer.peer, &proxy_endpoints);
 
         if let Some(sk) = session_keeper {
-            if !is_actual_peer_proxying && is_requested_peer_proxying && features.batching.is_none()
-            {
+            if !is_actual_peer_proxying && is_requested_peer_proxying {
                 sk.remove_node(key).await?;
-            } else if let Some(interval) = requested_peer.batching_keepalive_interval {
-                if let Some(sk) = session_keeper {
-                    if sk.get_interval(key).await != Some(interval)
-                        || (requested_peer.peer.ip_addresses != actual_peer.ip_addresses)
-                        || (is_actual_peer_proxying != is_requested_peer_proxying)
-                    {
-                        let target =
-                            build_ping_endpoint(&requested_peer.peer.ip_addresses, features.ipv6);
-                        if target.0.is_some() || target.1.is_some() {
-                            sk.add_node(*key, target, Duration::from_secs(interval as u64))
-                                .await?;
-                        } else {
-                            telio_log_warn!("Peer {:?} has no ip address", key);
-                        }
-                    }
-                }
             }
         }
 
@@ -568,26 +533,23 @@ async fn consolidate_wg_peers<
                 .await?;
             }
 
-            if features.batching.is_none() {
-                if let Some(sk) = session_keeper {
-                    let target =
-                        build_ping_endpoint(&requested_peer.peer.ip_addresses, features.ipv6);
-                    if target.0.is_some() || target.1.is_some() {
-                        sk.add_node(
-                            requested_peer.peer.public_key,
-                            target,
-                            Duration::from_secs(
-                                requested_peer
-                                    .peer
-                                    .persistent_keepalive_interval
-                                    .unwrap_or(requested_state.keepalive_periods.direct)
-                                    .into(),
-                            ),
-                        )
-                        .await?;
-                    } else {
-                        telio_log_warn!("Peer {:?} has no ip address", key);
-                    }
+            if let Some(sk) = session_keeper {
+                let target = build_ping_endpoint(&requested_peer.peer.ip_addresses, features.ipv6);
+                if target.0.is_some() || target.1.is_some() {
+                    sk.add_node(
+                        requested_peer.peer.public_key,
+                        target,
+                        Duration::from_secs(
+                            requested_peer
+                                .peer
+                                .persistent_keepalive_interval
+                                .unwrap_or(requested_state.keepalive_periods.direct)
+                                .into(),
+                        ),
+                    )
+                    .await?;
+                } else {
+                    telio_log_warn!("Peer {:?} has no ip address", key);
                 }
             }
         }
@@ -750,12 +712,6 @@ async fn build_requested_peers_list<
                 ip_addresses.push(VPN_INTERNAL_IPV6.into());
             }
             ip_addresses.push(VPN_EXTERNAL_IPV4.into());
-            let (persistent_keepalive_interval, batching_keepalive_interval) =
-                if features.batching.is_some() {
-                    (None, requested_state.keepalive_periods.vpn)
-                } else {
-                    (requested_state.keepalive_periods.vpn, None)
-                };
 
             // If the PQ VPN is set up we need to configure the preshared key
             match (post_quantum_vpn.is_rotating_keys(), post_quantum_vpn.keys()) {
@@ -773,12 +729,13 @@ async fn build_requested_peers_list<
                                 public_key,
                                 endpoint,
                                 ip_addresses,
-                                persistent_keepalive_interval,
+                                persistent_keepalive_interval: requested_state
+                                    .keepalive_periods
+                                    .vpn,
                                 allowed_ips,
                                 preshared_key,
                                 ..Default::default()
                             },
-                            batching_keepalive_interval,
                             endpoint: None,
                         },
                     );
@@ -805,7 +762,6 @@ async fn build_requested_peers_list<
         let dns_peer_public_key = dns_peer.public_key;
         let requested_peer = RequestedPeer {
             peer: dns_peer,
-            batching_keepalive_interval: None,
             endpoint: None,
         };
         requested_peers.insert(dns_peer_public_key, requested_peer);
@@ -816,7 +772,6 @@ async fn build_requested_peers_list<
         let starcast_peer_public_key = starcast_peer.public_key;
         let requested_starcast_peer = RequestedPeer {
             peer: starcast_peer,
-            batching_keepalive_interval: None,
             endpoint: None,
         };
         requested_peers.insert(starcast_peer_public_key, requested_starcast_peer);
@@ -829,12 +784,6 @@ async fn build_requested_peers_list<
             let endpoint =
                 SocketAddr::new(IpAddr::V4(wg_stun_server.ipv4), wg_stun_server.stun_port);
             telio_log_debug!("Configuring wg-stun peer: {}, at {}", public_key, endpoint);
-            let (persistent_keepalive_interval, batching_keepalive_interval) =
-                if features.batching.is_some() {
-                    (None, requested_state.keepalive_periods.stun)
-                } else {
-                    (requested_state.keepalive_periods.stun, None)
-                };
 
             let allowed_ips = if features.ipv6 {
                 vec![
@@ -852,11 +801,10 @@ async fn build_requested_peers_list<
                         public_key,
                         endpoint: Some(endpoint),
                         ip_addresses,
-                        persistent_keepalive_interval,
+                        persistent_keepalive_interval: requested_state.keepalive_periods.stun,
                         allowed_ips,
                         ..Default::default()
                     },
-                    batching_keepalive_interval,
                     endpoint: None,
                 },
             );
@@ -905,13 +853,6 @@ async fn build_requested_meshnet_peers_list<
         .map(|p| {
             // Retrieve public key
             let public_key = p.base.public_key;
-            let (persistent_keepalive_interval, batching_keepalive_interval) =
-                if features.batching.is_some() {
-                    (None, requested_state.keepalive_periods.proxying)
-                } else {
-                    (requested_state.keepalive_periods.proxying, None)
-                };
-
             let endpoint = proxy_endpoints
                 .get(&public_key)
                 .and_then(|eps| eps.first())
@@ -949,11 +890,10 @@ async fn build_requested_meshnet_peers_list<
                         public_key,
                         endpoint,
                         ip_addresses,
-                        persistent_keepalive_interval,
+                        persistent_keepalive_interval: requested_state.keepalive_periods.proxying,
                         allowed_ips,
                         ..Default::default()
                     },
-                    batching_keepalive_interval,
                     endpoint: None,
                 },
             )
@@ -1041,27 +981,20 @@ async fn build_requested_meshnet_peers_list<
         requested_peer.endpoint = selected_local_endpoint;
 
         // Adjust keepalive for direct and offline peers
-        let keepalive_interval = if is_peer_proxying(&requested_peer.peer, proxy_endpoints) {
-            if matches!(
-                remote_peer_states.get(&requested_peer.peer.public_key),
-                Some(false)
-            ) {
-                // If peer is offline according to derp, we turn off keepalives.
-                None
+        requested_peer.peer.persistent_keepalive_interval =
+            if is_peer_proxying(&requested_peer.peer, proxy_endpoints) {
+                if matches!(
+                    remote_peer_states.get(&requested_peer.peer.public_key),
+                    Some(false)
+                ) {
+                    // If peer is offline according to derp, we turn off keepalives.
+                    None
+                } else {
+                    requested_state.keepalive_periods.proxying
+                }
             } else {
-                requested_state.keepalive_periods.proxying
-            }
-        } else {
-            Some(requested_state.keepalive_periods.direct)
-        };
-
-        if features.batching.is_some() {
-            requested_peer.peer.persistent_keepalive_interval = None;
-            requested_peer.batching_keepalive_interval = keepalive_interval;
-        } else {
-            requested_peer.peer.persistent_keepalive_interval = keepalive_interval;
-            requested_peer.batching_keepalive_interval = None;
-        }
+                Some(requested_state.keepalive_periods.direct)
+            };
     }
 
     Ok(requested_peers)
@@ -1307,7 +1240,6 @@ mod tests {
 
     use crate::device::{RequestedDeviceConfig, DNS};
     use mockall::predicate::{self, eq};
-    use rstest::*;
     use telio_nurse::config::AggregatorConfig;
 
     use enum_map::enum_map;
@@ -1317,9 +1249,7 @@ mod tests {
     use telio_dns::MockDnsResolver;
     use telio_firewall::firewall::{HashSet as FwHashSet, MockFirewall, Whitelist, FILE_SEND_PORT};
     use telio_model::config::{Config, PeerBase, Server};
-    use telio_model::features::{
-        EndpointProvider as ApiEndpointProvider, FeatureBatching, FeatureDns, TtlValue,
-    };
+    use telio_model::features::{EndpointProvider as ApiEndpointProvider, FeatureDns, TtlValue};
     use telio_model::mesh::ExitNode;
     use telio_pq::MockPostQuantum;
     use telio_proto::Session;
@@ -1846,7 +1776,6 @@ mod tests {
                         ttl_value: TtlValue(60),
                     },
                     multicast: false,
-                    batching: None,
                     error_notification_service: None,
                 },
                 post_quantum: MockPostQuantum::new(),
@@ -2160,16 +2089,6 @@ mod tests {
             }
         }
 
-        fn then_keeper_del_node(&mut self, input: Vec<PublicKey>) {
-            for pk in input {
-                self.session_keeper
-                    .expect_remove_node()
-                    .once()
-                    .with(eq(pk))
-                    .return_once(|_| Ok(()));
-            }
-        }
-
         fn then_notify_successfull_wg_connection_upgrade(&mut self, input: Vec<PublicKey>) {
             for i in input {
                 self.cross_ping_check
@@ -2240,14 +2159,8 @@ mod tests {
     }
 
     #[tokio::test]
-    #[rstest]
-    #[case(true)]
-    #[case(false)]
-    async fn when_fresh_start_then_proxy_endpoint_is_added(#[case] batching: bool) {
+    async fn when_fresh_start_then_proxy_endpoint_is_added() {
         let mut f = Fixture::new();
-        if batching {
-            f.features.batching = Some(FeatureBatching::default());
-        }
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
@@ -2271,32 +2184,18 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             proxy_endpoint,
-            if batching {
-                None
-            } else {
-                Some(proxying_keepalive_time)
-            },
+            Some(proxying_keepalive_time),
             allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
             allowed_ips,
         )]);
-
-        if batching {
-            f.then_keeper_add_node(vec![(pub_key, ip1, Some(ip1v6), proxying_keepalive_time)]);
-        }
 
         f.consolidate_peers().await;
     }
 
     #[tokio::test]
-    #[rstest]
-    #[case(true)]
-    #[case(false)]
-    async fn when_upgrade_requested_by_peer_then_upgrade(#[case] batching: bool) {
+    async fn when_upgrade_requested_by_peer_then_upgrade() {
         let mut f = Fixture::new();
         f.features.ipv6 = true;
-        if batching {
-            f.features.batching = Some(Default::default());
-        }
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
@@ -2331,20 +2230,12 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             remote_wg_endpoint,
-            if batching {
-                None
-            } else {
-                Some(direct_keepalive_period)
-            },
+            Some(direct_keepalive_period),
             allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
             allowed_ips,
         )]);
 
         f.then_keeper_add_node(vec![(pub_key, ip1, Some(ip1v6), direct_keepalive_period)]);
-
-        f.session_keeper
-            .expect_get_interval()
-            .return_const(Some(direct_keepalive_period));
 
         f.then_proxy_mute(vec![(
             pub_key,
@@ -2610,18 +2501,9 @@ mod tests {
     }
 
     #[tokio::test]
-    #[rstest]
-    #[case(true)]
-    #[case(false)]
-    async fn when_cross_check_validated_is_old_but_set_by_telio_then_upgrade(
-        #[case] batching: bool,
-    ) {
+    async fn when_cross_check_validated_is_old_but_set_by_telio_then_upgrade() {
         let mut f = Fixture::new();
         f.features.ipv6 = true;
-
-        if batching {
-            f.features.batching = Some(FeatureBatching::default());
-        }
 
         let pub_key = SecretKey::gen().public();
         let ip1 = IpAddr::from([1, 2, 3, 4]);
@@ -2663,16 +2545,11 @@ mod tests {
             cpc_endpoint_at,
         )]);
         f.when_upgrade_requests(vec![]);
-        f.session_keeper.expect_get_interval().return_const(None);
 
         f.then_add_peer(vec![(
             pub_key,
             remote_wg_endpoint,
-            if batching {
-                None
-            } else {
-                Some(direct_keepalive_period)
-            },
+            Some(direct_keepalive_period),
             allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
             allowed_ips,
         )]);
@@ -2757,10 +2634,13 @@ mod tests {
         f.when_time_since_last_rx(vec![]);
         f.when_cross_check_validated_endpoints(vec![]);
         f.when_upgrade_requests(vec![]);
-        f.session_keeper.expect_remove_node().returning(|_| Ok(()));
+        f.session_keeper
+            .expect_remove_node()
+            .once()
+            .with(eq(pub_key.clone()))
+            .returning(|_| Ok(()));
 
         f.then_del_peer(vec![pub_key]);
-
         f.consolidate_peers().await;
     }
 
@@ -2789,7 +2669,6 @@ mod tests {
         f.when_time_since_last_rx(vec![(pub_key, 4)]);
         f.when_cross_check_validated_endpoints(vec![]);
         f.when_upgrade_requests(vec![]);
-        f.session_keeper.expect_get_interval().return_const(None);
         // then nothing happens
 
         f.consolidate_peers().await;
@@ -2821,21 +2700,14 @@ mod tests {
         f.when_time_since_last_rx(vec![(pub_key, 5)]);
         f.when_cross_check_validated_endpoints(vec![]);
         f.when_upgrade_requests(vec![]);
-        f.session_keeper.expect_get_interval().return_const(None);
         f.then_notify_successfull_wg_connection_upgrade(vec![pub_key]);
 
         f.consolidate_peers().await;
     }
 
     #[tokio::test]
-    #[rstest]
-    #[case(true)]
-    #[case(false)]
-    async fn when_proxy_endpoint_present_direct_peer_downgraded(#[case] batching: bool) {
+    async fn when_proxy_endpoint_present_direct_peer_downgraded() {
         let mut f = Fixture::new();
-        if batching {
-            f.features.batching = Some(FeatureBatching::default());
-        }
 
         let pub_key = SecretKey::gen().public();
         let allowed_ips = vec![IpAddr::from([1, 2, 3, 4])];
@@ -2877,44 +2749,23 @@ mod tests {
         f.then_add_peer(vec![(
             pub_key,
             proxy_endpoint,
-            if batching {
-                None
-            } else {
-                Some(proxying_keepalive_period)
-            },
+            Some(proxying_keepalive_period),
             allowed_ips.iter().copied().map(|ip| ip.into()).collect(),
             allowed_ips.clone(),
         )]);
 
-        if batching {
-            f.session_keeper
-                .expect_get_interval()
-                .once()
-                .with(eq(pub_key))
-                .return_const(Some(proxying_keepalive_period));
-
-            f.then_keeper_add_node(vec![(
-                pub_key,
-                allowed_ips[0],
-                None,
-                proxying_keepalive_period,
-            )]);
-        } else {
-            f.then_keeper_del_node(vec![(pub_key)]);
-        }
+        f.session_keeper
+            .expect_remove_node()
+            .once()
+            .with(eq(pub_key))
+            .returning(|_| Ok(()));
 
         f.consolidate_peers().await;
     }
 
     #[tokio::test]
-    #[rstest]
-    #[case(true)]
-    #[case(false)]
-    async fn when_vpn_peer_is_added(#[case] batching: bool) {
+    async fn when_vpn_peer_is_added() {
         let mut f = Fixture::new();
-        if batching {
-            f.features.batching = Some(FeatureBatching::default());
-        }
 
         let public_key = SecretKey::gen().public();
         let allowed_ips = vec![
@@ -2954,25 +2805,12 @@ mod tests {
         f.then_add_peer(vec![(
             public_key,
             endpoint_raw,
-            if batching {
-                None
-            } else {
-                Some(vpn_persistent_keepalive)
-            },
+            Some(vpn_persistent_keepalive),
             allowed_ips,
             ip_addresses,
         )]);
 
         f.then_post_quantum_is_checked();
-
-        if batching {
-            f.then_keeper_add_node(vec![(
-                public_key,
-                IpAddr::from(VPN_INTERNAL_IPV4),
-                Some(IpAddr::from(VPN_INTERNAL_IPV6)),
-                vpn_persistent_keepalive,
-            )]);
-        }
 
         f.consolidate_peers().await;
     }
@@ -3062,14 +2900,8 @@ mod tests {
     }
 
     #[tokio::test]
-    #[rstest]
-    #[case(true)]
-    #[case(false)]
-    async fn when_stun_peer_is_added(#[case] batching: bool) {
+    async fn when_stun_peer_is_added() {
         let mut f = Fixture::new();
-        if batching {
-            f.features.batching = Some(FeatureBatching::default());
-        }
 
         let public_key = SecretKey::gen().public();
 
@@ -3106,23 +2938,10 @@ mod tests {
         f.then_add_peer(vec![(
             public_key,
             endpoint_raw,
-            if batching {
-                None
-            } else {
-                Some(stun_persistent_keepalive)
-            },
+            Some(stun_persistent_keepalive),
             allowed_ips,
             ip_addresses,
         )]);
-
-        if batching {
-            f.then_keeper_add_node(vec![(
-                public_key,
-                IpAddr::from([100, 64, 0, 4]),
-                Some(IpAddr::from([0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 4])),
-                stun_persistent_keepalive,
-            )]);
-        }
 
         f.consolidate_peers().await;
     }
@@ -3180,7 +2999,6 @@ mod tests {
             pub_key,
             Some(Duration::from_secs(DEFAULT_PEER_UPGRADE_WINDOW)),
         )]);
-        f.session_keeper.expect_get_interval().return_const(None);
         f.then_keeper_add_node(vec![(
             pub_key,
             ip1,

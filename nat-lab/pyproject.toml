@@ -186,7 +186,6 @@ markers = [
     "ipv4: tests only ipv4 WG connectivity",
     "ipv6: tests only ipv6 WG connectivity",
     "ipv4v6: tests dual stack WG connectivity",
-    "batching: tests packet batching",
     "utils: tests the natlab utilities",
     "openwrt: tests that require OpenWrt VM to be running",
 ]
