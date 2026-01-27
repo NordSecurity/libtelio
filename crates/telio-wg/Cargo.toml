@@ -63,6 +63,8 @@ winreg.workspace = true
 uuid.workspace = true
 get_adapters_addresses.workspace = true
 
+
+
 wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", branch = "matislovas/wg-nt_fallback" }
 
 windows = { workspace = true, features = [
@@ -74,4 +76,5 @@ windows = { workspace = true, features = [
     "Win32_NetworkManagement_Ndis",
     "Win32_Networking_WinSock",
     "Win32_System_Registry",
+    "Win32_Devices_DeviceAndDriverInstallation",
 ]}
