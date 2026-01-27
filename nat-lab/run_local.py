@@ -291,31 +291,11 @@ def main() -> int:
                 # Always attempt to save, even with an empty dict
                 duration_tracker.save_node_durations(test_durations)
 
-            # Compile durations if requested or on the last node
-            if args.compile_durations or (
-                os.environ.get("GITLAB_CI") == "true"
-                and os.environ.get("CI_NODE_INDEX") == os.environ.get("CI_NODE_TOTAL")
-            ):
-                try:
-                    duration_tracker.compile_durations()
-                    print("Test durations compiled successfully.")
-                except Exception as e:
-                    print(f"Error compiling test durations: {e}", file=sys.stderr)
-
-                    # Save node-specific durations
+            # Simplified duration compilation logic
+            if os.environ.get("GITLAB_CI") == "true":
+                # Always save node-specific durations in CI environment
+                if test_durations:
                     duration_tracker.save_node_durations(test_durations)
-                    print("Node-specific test durations saved successfully.")
-                except (IOError, json.JSONDecodeError, KeyError) as e:
-                    print(
-                        f"Warning: Failed to save test durations: {e}", file=sys.stderr
-                    )
-
-            # Compile durations if flag is set or on the last node
-            if args.compile_durations or (
-                os.environ.get("CI_NODE_INDEX") == os.environ.get("CI_NODE_TOTAL")
-            ):
-                duration_tracker.compile_durations()
-                print("Test durations compiled successfully.")
 
     return 0
 
