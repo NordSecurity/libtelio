@@ -170,10 +170,32 @@ impl WindowsNativeWg {
                         match wireguard_nt::Adapter::open(current_lib, name) {
                             Ok(a) => {
                                 telio_log_info!(
-                                    "Opened and closing wg adapter with luid: {:?}",
-                                    a.get_luid()
+                                    "Opened and closing wg adapter with luid: {:?} {:?}",
+                                    a.get_luid(), a.is_up()
                                 );
+                                telio_log_info!("a.down() {:?}", a.down());
                                 drop(a);
+                                
+                                telio_log_info!("Listing adapters after drop:");
+                                match AdaptersAddresses::try_new(Family::Unspec, *Flags::default().include_gateways()) {
+                                    Ok(addrs) => {
+                                        for adapter in &addrs {
+                                            let adapter_guid = adapter.adapter_name();
+                                            let (driver_desc, driver_version, provider_name) =
+                                                Self::get_driver_info(&adapter_guid);
+                                            telio_log_info!("adapter name: {:?}", adapter_guid);
+                                            telio_log_info!("friendly name: {:?}", adapter.friendly_name());
+                                            telio_log_info!("description: {:?}", adapter.description());
+                                            telio_log_info!("interface_type {:?}", adapter.interface_type());
+                                            telio_log_info!("driver description {:?}", driver_desc);
+                                            telio_log_info!("driver version {:?}", driver_version);
+                                            telio_log_info!("provider name {:?}", provider_name);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        telio_log_error!("Error while getting adapters addresses 2: {e}");
+                                    }
+                                }
                             }
                             Err(e) => {
                                 telio_log_info!(
