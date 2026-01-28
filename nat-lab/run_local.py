@@ -1,13 +1,40 @@
 #!/usr/bin/env python3
 
+"""
+NAT Lab Test Runner
+
+This script provides a flexible and configurable way to run NAT lab tests with
+support for various modes of execution, including:
+- CI environment handling
+- Test duration tracking
+- Distributed test splitting
+- Performance test support
+
+Key improvements:
+- Centralized test running logic
+- Enhanced CI environment detection
+- Dynamic test splitting and duration tracking
+- Simplified test configuration
+"""
+
 import argparse
+import json
 import os
 import subprocess
 import sys
 import time
+
+# Import distributed duration tracker
+from distributed_duration_tracker import DistributedDurationTracker
 from typing import List, Optional, Dict, Any
 
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/../..")
+
+# Add path for local modules
+# Adjust Python path to include current directory and parent directory
+# Add current directory to Python path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 
 TEST_TIMEOUT = 180
 
@@ -70,6 +97,20 @@ def main() -> int:
     parser.add_argument("--count", type=int, default=1, help="Pass `count` to pytest")
     parser.add_argument("--moose", action="store_true", help="Build with moose")
     parser.add_argument(
+        "--splits", type=int, default=1, help="Number of test splitting groups"
+    )
+    parser.add_argument(
+        "--group",
+        type=int,
+        default=0,
+        help="Current group for test splitting (0-indexed)",
+    )
+    parser.add_argument(
+        "--splits-duration",
+        type=str,
+        help="Path to JSON file with test duration data for balanced splitting",
+    )
+    parser.add_argument(
         "--no-verify-setup-correctness",
         action="store_true",
         help="Disable verification of setup correctness",
@@ -84,10 +125,46 @@ def main() -> int:
         action="store_true",
         help="Run performance tests instead of functional tests",
     )
+    parser.add_argument(
+        "--save-node-durations",
+        action="store_true",
+        help="Save test duration data to a node-specific JSON file",
+    )
+    parser.add_argument(
+        "--compile-durations",
+        action="store_true",
+        help="Compile test duration data from all node files",
+    )
+    parser.add_argument(
+        "--ci-mode",
+        action="store_true",
+        help="Enable additional CI-specific test running behaviors",
+    )
     args = parser.parse_args()
 
+    # Enhanced setup verification control
     if not args.no_verify_setup_correctness:
         verify_setup_correctness()
+
+    # Additional CI mode checks
+    if args.ci_mode:
+        # Validate CI-specific environment requirements
+        if os.environ.get("GITLAB_CI") == "true":
+            required_env_vars = [
+                "CI_NODE_INDEX",
+                "CI_NODE_TOTAL",
+                "CI_REGISTRY_USER",
+                "CI_JOB_TOKEN",
+                "CI_REGISTRY",
+            ]
+            missing_vars = [var for var in required_env_vars if not os.environ.get(var)]
+
+            if missing_vars:
+                print(
+                    f"Warning: Missing CI environment variables: {', '.join(missing_vars)}",
+                    file=sys.stderr,
+                )
+                # Optionally raise an exception or handle gracefully
 
     if not args.nobuild:
         print("\u001b[33m")
@@ -150,8 +227,23 @@ def main() -> int:
             "timeout_func_only=true",
         ]
 
+        # Prepare report file
+        report_file = f"node_{os.environ.get('CI_NODE_INDEX', 1)}_durations.json"
+
+        # Validate and add test splitting arguments
+        if args.splits > 1:
+            # Adjust group index for pytest-split's 1-based indexing
+            group_index = args.group + 1
+            pytest_cmd.extend([f"--splits={args.splits}", f"--group={group_index}"])
+            pytest_cmd.extend([
+                "--store-durations",
+                f"--durations-path={report_file}",
+            ])
+
+        # Add base arguments and marks
         pytest_cmd += get_pytest_arguments(args)
 
+        # Select test directory
         test_dir = "performance_tests" if args.perf_tests else "tests"
         pytest_cmd.append(test_dir)
 
