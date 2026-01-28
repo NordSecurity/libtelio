@@ -24,6 +24,9 @@ once_cell.workspace = true
 mockall.workspace = true
 rstest.workspace = true
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+nix = { workspace = true, features = ["user"] }
+
 [target.'cfg(any(target_os = "ios", target_os = "tvos"))'.dependencies]
 objc = "0.2.7"
 objc-foundation = "0.1.1"
