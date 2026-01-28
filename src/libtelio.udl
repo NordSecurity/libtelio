@@ -496,6 +496,18 @@ interface Telio {
     void set_meshnet_off();
 
 
+    /// Register callback to get metrics and domains blocked by TP-Lite
+    ///
+    /// Requires firewall to be enabled through VnicOptions::enable_firewall()
+    ///
+    /// Passing empty list of IPs will disable the collection of TP-Lite stats
+    [Throws=TelioError]
+    void enable_tp_lite_stats_collection(TpLiteStatsOptions config, TpLiteStatsCallback collect_stats_cb);
+    
+    // Disable collection of TP-Lite stats
+    [Throws=TelioError]
+    void disable_tp_lite_stats_collection();
+
     sequence<TelioNode> get_status_map();
 
     /// Get last error's message length, including trailing null
@@ -1060,4 +1072,73 @@ enum VpnConnectionError {
     "Unauthenticated",
     /// There is a newer connection to this VPN server
     "Superseded"
+};
+
+/// Simple metrics about TP-Lite DNS activity
+dictionary DnsMetrics {
+    /// Number of DNS requests that have been made 
+    u32 num_requests;
+    /// Number of received DNS responses
+    u32 num_responses;
+    /// Number of requests that had some parsing issue
+    u32 num_malformed_requests;
+    /// Number of responses that had some parsing issue
+    u32 num_malformed_responses;
+    /// Number of DNS requests that were caught by libfirewall's cache of blocked domains
+    u32 num_cache_hits;
+    /// Number of requests per record type
+    record<u16, u32> record_type_distribution;
+    /// Number of responses per response type
+    record<u8, u32> response_type_distribution;
+};
+
+/// Information about a domain blocked by TP-Lite
+dictionary BlockedDomain {
+ 	/// The domain name that was blocked 
+	string domain_name;
+	/// The DNS record type
+	u16 record_type;
+	/// When the request occurred
+	u64 timestamp;
+	/// The category, represented by the "authority" from the SOA record
+	string category;
+};
+
+/// A callback for getting TP-Lite stats from libfirewall
+callback interface TpLiteStatsCallback {
+    /// Get the blocked domains that have been buffered so far
+    /// Blocking this callback can result in losing blocked domains from subsequent calls
+    void collect(sequence<BlockedDomain> domains, DnsMetrics metrics);
+};
+
+/// Config options for the collection of TP-Lite stats
+dictionary TpLiteStatsOptions {
+    /// The IP addresses of the TP-Lite DNS servers
+    sequence<IpAddr> dns_server_ips;
+
+    /// How many blocked domains libfirewall can store between passing them through the callback 
+    /// If the buffer fills up and new blocked domains arrive, data will be lost 
+    ///
+    /// Default value: 100
+    u64? blocked_domains_buffer_size;
+
+    /// After how long stats will be passed to the callback, in seconds
+    ///
+    /// Default value: 5
+    u64? callback_interval_s;
+
+    /// libfirewall disables OS/client-level caching of blocked domains when stats collection is enabled
+    /// To not make extra DNS requests libfirewall has it's own DNS cache for blocked domains
+    ///
+    /// How many entries the libfirewall-specific DNS cache can hold
+    ///
+    /// Default value: 512
+    u64? cache_size;
+
+    /// When TP-Lite stats collection is enabled libfirewall keeps track of open DNS requests
+    ///
+    /// How many requests libfirewall can keep track of
+    ///
+    /// Default value: same as blocked_domains_buffer_size
+    u64? max_open_requests;
 };
