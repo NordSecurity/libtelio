@@ -66,6 +66,8 @@ class DistributedDurationTracker:
             if f.startswith("node_") and f.endswith("_durations.json")
         ]
 
+        print(f"node files: {node_files}")
+
         # Merged duration tracking
         merged_durations: Dict[str, float] = {}
         node_counts: Dict[str, int] = {}
@@ -75,6 +77,7 @@ class DistributedDurationTracker:
             try:
                 with open(file_path, "r") as f:
                     node_durations = json.load(f)
+                    print(f"file: {file_path}, node durations: {node_durations}")
 
                 for test_name, duration in node_durations.items():
                     if test_name not in merged_durations:

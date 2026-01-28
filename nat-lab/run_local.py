@@ -249,56 +249,6 @@ def main() -> int:
 
         run_command(pytest_cmd)
 
-        # Handle duration tracking for CI environment or explicit save request
-        if os.environ.get("GITLAB_CI") == "true" or args.save_node_durations:
-            # Initialize duration tracker
-            duration_tracker = DistributedDurationTracker()
-
-            # Always define test_durations as an empty dict
-            test_durations: Dict[str, float] = {}
-
-            # Attempt to save node durations
-            try:
-                # Check if file exists and is not empty
-                if os.path.exists(report_file) and os.path.getsize(report_file) > 0:
-                    with open(report_file, "r") as f:
-                        # Use a safe parsing method
-                        report = json.load(f)
-
-                        print(report)
-
-                        # Extract test durations from the report
-                        test_durations = {
-                            str(test.get("nodeid", "unknown")): float(
-                                test.get("duration", 0.0)
-                            )
-                            for test in report.get("tests", [])
-                            if test.get("duration") is not None
-                        }
-                else:
-                    print(
-                        f"No test duration report found at {report_file}",
-                        file=sys.stderr,
-                    )
-
-                # Attempt to save node durations
-                if test_durations:
-                    duration_tracker.save_node_durations(test_durations)
-                    print("Node-specific test durations saved.")
-                else:
-                    print("No test durations to save.", file=sys.stderr)
-
-            except Exception as e:
-                print(f"Error processing test durations: {e}", file=sys.stderr)
-                # Always attempt to save, even with an empty dict
-                duration_tracker.save_node_durations(test_durations)
-
-            # Simplified duration compilation logic
-            if os.environ.get("GITLAB_CI") == "true":
-                # Always save node-specific durations in CI environment
-                if test_durations:
-                    duration_tracker.save_node_durations(test_durations)
-
     return 0
 
 
