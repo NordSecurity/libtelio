@@ -15,8 +15,9 @@ from tests.config import (
     DERP_TERTIARY,
 )
 from tests.helpers import connectivity_stack
+from tests.log_collector import copy_file, find_files, get_log_without_flush
 from tests.mesh_api import API, Node
-from tests.telio import Client, copy_file, get_log_without_flush, find_files
+from tests.telio import Client
 from tests.utils import testing, stun
 from tests.utils.analytics import (
     fetch_moose_events,
