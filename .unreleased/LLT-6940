@@ -1,0 +1,1 @@
+When failing to create wg-nt adapter, cleanup all interfaces, re-load the driver and try to create once again.

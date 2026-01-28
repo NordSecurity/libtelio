@@ -6,7 +6,10 @@ use crate::windows::service;
 use crate::windows::tunnel::interfacewatcher::InterfaceWatcher;
 use async_trait::async_trait;
 #[cfg(windows)]
+use get_adapters_addresses::{AdaptersAddresses, Family, Flags, Result as AdaptersAddressesResult};
+#[cfg(windows)]
 use sha2::{Digest, Sha256};
+use std::ffi::c_void;
 use std::io::Error as IOError;
 use std::slice::Windows;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -19,12 +22,32 @@ use tokio::time::sleep;
 #[cfg(windows)]
 use uuid::Uuid;
 #[cfg(windows)]
+use windows::{Win32::Foundation::*, Win32::NetworkManagement::IpHelper::*};
+#[cfg(windows)]
 use winreg::{enums::*, RegKey, HKEY};
 #[cfg(windows)]
 use wireguard_nt::{
-    self, set_logger, Error as WireGuardNTError, SetInterface, SetPeer, WIREGUARD_STATE_UP,
+    self, set_logger, Error as WireGuardNTError, SetInterface, SetPeer,
+    Wireguard as WireGuardHandle, WIREGUARD_STATE_UP,
 };
 use wireguard_uapi::xplatform;
+
+macro_rules! form_wgnt_adapter {
+    ($raw_adapter:expr, $watcher:expr, $enable_dynamic_wg_nt_control:expr) => {{
+        let adapter = Arc::new(($raw_adapter));
+        let luid = adapter.get_luid();
+        let wgnt = WindowsNativeWg::new(&adapter, luid, &($watcher), $enable_dynamic_wg_nt_control);
+
+        if let Ok(mut watcher_guard) = ($watcher).lock() {
+            watcher_guard.configure(wgnt.adapter.clone(), luid);
+            Ok(wgnt)
+        } else {
+            Err(AdapterError::WindowsNativeWg(Error::Fail(
+                "error obtaining lock".into(),
+            )))
+        }
+    }};
+}
 
 /// Telio wrapper around wireguard-nt
 #[cfg(windows)]
@@ -59,6 +82,524 @@ enum AdapterState {
     Down,
 }
 
+use std::ptr;
+use windows::{
+    core::{GUID, PCWSTR, PWSTR},
+    Win32::{
+        Devices::DeviceAndDriverInstallation::{
+            CM_Uninstall_DevNode, SetupDiCallClassInstaller, SetupDiDestroyDeviceInfoList,
+            SetupDiEnumDeviceInfo, SetupDiGetClassDevsW, SetupDiGetDeviceRegistryPropertyW,
+            SetupDiSetClassInstallParamsW, CR_SUCCESS, DIF_REMOVE, DIGCF_ALLCLASSES, DIGCF_PRESENT,
+            DI_REMOVEDEVICE_GLOBAL, HDEVINFO, SETUP_DI_REGISTRY_PROPERTY, SPDRP_DEVICEDESC,
+            SPDRP_FRIENDLYNAME, SPDRP_HARDWAREID, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA,
+            SP_REMOVEDEVICE_PARAMS,
+        },
+        Foundation::{GetLastError, ERROR_NO_MORE_ITEMS, WIN32_ERROR},
+        System::Registry::{
+            RegCloseKey, RegDeleteTreeW, RegEnumKeyExW, RegOpenKeyExW, RegQueryValueExW,
+            HKEY as WindowsHKEY, HKEY_LOCAL_MACHINE as WindowsHKEYLM, KEY_ALL_ACCESS, KEY_READ,
+            REG_VALUE_TYPE,
+        },
+    },
+};
+
+// GUID_DEVCLASS_NET definition - Network adapter device class GUID
+const GUID_DEVCLASS_NET: GUID = GUID::from_u128(0x4d36e972_e325_11ce_bfc1_08002be10318);
+
+/// Removes a network adapter by its friendly name or description
+pub fn remove_network_adapter_by_name(adapter_name: &str) -> Result<(), String> {
+    unsafe {
+        // Get a handle to the device information set for network adapters
+        let dev_info: HDEVINFO = SetupDiGetClassDevsW(
+            Some(&GUID_DEVCLASS_NET),
+            PCWSTR::null(),
+            None,
+            DIGCF_PRESENT,
+        )
+        .map_err(|e| format!("Failed to get device info set: {:?}", e))?;
+
+        if dev_info.is_invalid() {
+            return Err("Invalid device info handle".to_string());
+        }
+
+        // Ensure we clean up the device info set when done
+        let _cleanup = DevInfoCleanup(dev_info);
+
+        let mut device_index: u32 = 0;
+        let mut found = false;
+
+        loop {
+            let mut dev_info_data = SP_DEVINFO_DATA {
+                cbSize: std::mem::size_of::<SP_DEVINFO_DATA>() as u32,
+                ClassGuid: GUID::zeroed(),
+                DevInst: 0,
+                Reserved: 0,
+            };
+
+            // Enumerate each device
+            let result = SetupDiEnumDeviceInfo(dev_info, device_index, &mut dev_info_data);
+
+            if let Err(_) = result {
+                let error = GetLastError();
+                if error == ERROR_NO_MORE_ITEMS {
+                    break; // No more devices
+                }
+                return Err(format!("Failed to enumerate devices: {:?}", error));
+            }
+
+            // Try to get the device friendly name first, then fall back to description
+            let device_name = get_device_property(dev_info, &dev_info_data, SPDRP_FRIENDLYNAME)
+                .or_else(|| get_device_property(dev_info, &dev_info_data, SPDRP_DEVICEDESC));
+
+            if let Some(name) = device_name {
+                if name.to_lowercase().contains(&adapter_name.to_lowercase()) {
+                    telio_log_info!("Found adapter: {}", name);
+
+                    // Set up removal parameters
+                    let remove_params = SP_REMOVEDEVICE_PARAMS {
+                        ClassInstallHeader: SP_CLASSINSTALL_HEADER {
+                            cbSize: std::mem::size_of::<SP_CLASSINSTALL_HEADER>() as u32,
+                            InstallFunction: DIF_REMOVE,
+                        },
+                        Scope: DI_REMOVEDEVICE_GLOBAL,
+                        HwProfile: 0,
+                    };
+
+                    // Set the class install parameters
+                    SetupDiSetClassInstallParamsW(
+                        dev_info,
+                        Some(&dev_info_data),
+                        Some(&remove_params.ClassInstallHeader),
+                        std::mem::size_of::<SP_REMOVEDEVICE_PARAMS>() as u32,
+                    )
+                    .map_err(|e| format!("Failed to set install params: {:?}", e))?;
+
+                    // Call the class installer to remove the device
+                    SetupDiCallClassInstaller(DIF_REMOVE, dev_info, Some(&dev_info_data))
+                        .map_err(|e| format!("Failed to remove device: {:?}", e))?;
+
+                    telio_log_info!("Successfully removed adapter: {}", name);
+
+                    // TODO check registry if the cleanup actually happened
+                    found = true;
+                    break;
+                }
+            }
+
+            device_index += 1;
+        }
+
+        if !found {
+            return Err(format!("Adapter '{}' not found", adapter_name));
+        }
+
+        Ok(())
+    }
+}
+
+/// Remove adapter using Configuration Manager API (CM_Uninstall_DevNode)
+fn remove_adapter_via_cfgmgr(adapter_name: &str) -> Result<bool, String> {
+    unsafe {
+        let dev_info: HDEVINFO = SetupDiGetClassDevsW(
+            Some(&GUID_DEVCLASS_NET),
+            PCWSTR::null(),
+            None,
+            DIGCF_PRESENT,
+        )
+        .map_err(|e| format!("Failed to get device info set: {:?}", e))?;
+
+        if dev_info.is_invalid() {
+            return Err("Invalid device info handle".to_string());
+        }
+
+        let _cleanup = DevInfoCleanup(dev_info);
+
+        let mut device_index: u32 = 0;
+        let mut found = false;
+
+        loop {
+            let mut dev_info_data = SP_DEVINFO_DATA {
+                cbSize: std::mem::size_of::<SP_DEVINFO_DATA>() as u32,
+                ClassGuid: GUID::zeroed(),
+                DevInst: 0,
+                Reserved: 0,
+            };
+
+            if SetupDiEnumDeviceInfo(dev_info, device_index, &mut dev_info_data).is_err() {
+                let error = GetLastError();
+                if error == ERROR_NO_MORE_ITEMS {
+                    break;
+                }
+                return Err(format!("Failed to enumerate devices: {:?}", error));
+            }
+
+            // Check if this is a WireGuard device
+            let hardware_id = get_device_property(dev_info, &dev_info_data, SPDRP_HARDWAREID);
+            let is_wireguard = hardware_id
+                .as_ref()
+                .map(|id| id.to_lowercase().contains("wireguard"))
+                .unwrap_or(false);
+
+            if !is_wireguard {
+                device_index += 1;
+                continue;
+            }
+
+            // Get device name
+            let device_name = get_device_property(dev_info, &dev_info_data, SPDRP_FRIENDLYNAME)
+                .or_else(|| get_device_property(dev_info, &dev_info_data, SPDRP_DEVICEDESC));
+
+            if let Some(name) = device_name {
+                if name.to_lowercase().contains(&adapter_name.to_lowercase()) {
+                    telio_log_info!("Found WireGuard adapter: {}", name);
+
+                    // Use CM_Uninstall_DevNode for complete removal
+                    // Pass 0 as flags (no CM_UNINSTALL_DEVNODE type needed)
+                    let result = CM_Uninstall_DevNode(dev_info_data.DevInst, 0);
+
+                    if result == CR_SUCCESS {
+                        telio_log_info!("Successfully uninstalled device node for: {}", name);
+                        found = true;
+                    } else {
+                        telio_log_info!("CM_Uninstall_DevNode returned: {:?}", result);
+                    }
+                    break;
+                }
+            }
+
+            device_index += 1;
+        }
+
+        Ok(found)
+    }
+}
+
+/// Also search for and remove ghost devices (devices not currently present)
+pub fn remove_ghost_wireguard_adapters(adapter_name: &str) -> Result<bool, String> {
+    unsafe {
+        // DIGCF_ALLCLASSES without DIGCF_PRESENT will include ghost devices
+        let dev_info: HDEVINFO = SetupDiGetClassDevsW(
+            Some(&GUID_DEVCLASS_NET),
+            PCWSTR::null(),
+            None,
+            DIGCF_ALLCLASSES,
+        )
+        .map_err(|e| format!("Failed to get device info set: {:?}", e))?;
+
+        if dev_info.is_invalid() {
+            return Err("Invalid device info handle".to_string());
+        }
+
+        let _cleanup = DevInfoCleanup(dev_info);
+
+        let mut device_index: u32 = 0;
+        let mut found = false;
+
+        loop {
+            let mut dev_info_data = SP_DEVINFO_DATA {
+                cbSize: std::mem::size_of::<SP_DEVINFO_DATA>() as u32,
+                ClassGuid: GUID::zeroed(),
+                DevInst: 0,
+                Reserved: 0,
+            };
+
+            if SetupDiEnumDeviceInfo(dev_info, device_index, &mut dev_info_data).is_err() {
+                break;
+            }
+
+            let hardware_id = get_device_property(dev_info, &dev_info_data, SPDRP_HARDWAREID);
+            let is_wireguard = hardware_id
+                .as_ref()
+                .map(|id| id.to_lowercase().contains("wireguard"))
+                .unwrap_or(false);
+
+            if is_wireguard {
+                let device_name = get_device_property(dev_info, &dev_info_data, SPDRP_FRIENDLYNAME)
+                    .or_else(|| get_device_property(dev_info, &dev_info_data, SPDRP_DEVICEDESC));
+
+                if let Some(name) = &device_name {
+                    if name.to_lowercase().contains(&adapter_name.to_lowercase()) {
+                        telio_log_info!("Found ghost WireGuard adapter: {}", name);
+
+                        let result = CM_Uninstall_DevNode(dev_info_data.DevInst, 0);
+
+                        if result == CR_SUCCESS {
+                            telio_log_info!("Removed ghost device: {}", name);
+                            found = true;
+                        }
+                    }
+                }
+            }
+
+            device_index += 1;
+        }
+
+        Ok(found)
+    }
+}
+
+/// Clean up orphaned WireGuard registry entries
+fn cleanup_wireguard_registry_entries(adapter_name: &str) -> Result<(), String> {
+    unsafe {
+        // Clean up HKLM\SYSTEM\CurrentControlSet\Enum\SWD\WireGuard
+        let wireguard_enum_path: Vec<u16> = "SYSTEM\\CurrentControlSet\\Enum\\SWD\\WireGuard"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let mut hkey: WindowsHKEY = WindowsHKEY::default();
+        let result = RegOpenKeyExW(
+            WindowsHKEYLM,
+            PCWSTR::from_raw(wireguard_enum_path.as_ptr()),
+            Some(0),
+            KEY_ALL_ACCESS,
+            &mut hkey as *mut WindowsHKEY,
+        );
+
+        if result.is_ok() {
+            // Enumerate subkeys and find matching adapter
+            let subkeys = enumerate_registry_subkeys(hkey);
+
+            for subkey in subkeys {
+                // Check if this subkey corresponds to our adapter
+                if should_delete_subkey(hkey, &subkey, adapter_name) {
+                    let subkey_wide: Vec<u16> =
+                        subkey.encode_utf16().chain(std::iter::once(0)).collect();
+                    let delete_result =
+                        RegDeleteTreeW(hkey, PCWSTR::from_raw(subkey_wide.as_ptr()));
+
+                    if delete_result.is_ok() {
+                        telio_log_info!("Deleted registry key: SWD\\WireGuard\\{}", subkey);
+                    } else {
+                        telio_log_info!("Failed to delete registry key: SWD\\WireGuard\\{}", subkey);
+                    }
+                }
+            }
+
+            let _ = RegCloseKey(hkey);
+        }
+
+        // Also clean up DeviceClasses entries
+        cleanup_device_classes_registry()?;
+
+        Ok(())
+    }
+}
+
+/// Clean up DeviceClasses registry entries for WireGuard
+fn cleanup_device_classes_registry() -> Result<(), String> {
+    unsafe {
+        // WireGuard uses this interface GUID: {CAC88484-7515-4C03-82E6-71A87ABAC361}
+        let device_classes_path: Vec<u16> =
+            "SYSTEM\\CurrentControlSet\\Control\\DeviceClasses\\{CAC88484-7515-4C03-82E6-71A87ABAC361}"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let mut hkey: WindowsHKEY = WindowsHKEY::default();
+        let result = RegOpenKeyExW(
+            WindowsHKEYLM,
+            PCWSTR::from_raw(device_classes_path.as_ptr()),
+            Some(0),
+            KEY_ALL_ACCESS,
+            &mut hkey as *mut WindowsHKEY,
+        );
+
+        if result.is_ok() {
+            let subkeys = enumerate_registry_subkeys(hkey);
+
+            for subkey in subkeys {
+                // Look for WireGuard entries (they contain "WireGuard" in the path)
+                if subkey.to_lowercase().contains("wireguard") {
+                    let subkey_wide: Vec<u16> =
+                        subkey.encode_utf16().chain(std::iter::once(0)).collect();
+                    let delete_result =
+                        RegDeleteTreeW(hkey, PCWSTR::from_raw(subkey_wide.as_ptr()));
+
+                    if delete_result.is_ok() {
+                        telio_log_info!("Deleted DeviceClasses registry key: {}", subkey);
+                    }
+                }
+            }
+
+            let _ = RegCloseKey(hkey);
+        }
+
+        Ok(())
+    }
+}
+
+/// Enumerate subkeys of a registry key
+unsafe fn enumerate_registry_subkeys(hkey: WindowsHKEY) -> Vec<String> {
+    let mut subkeys = Vec::new();
+    let mut index: u32 = 0;
+
+    loop {
+        let mut name_buffer: [u16; 256] = [0; 256];
+        let mut name_len = name_buffer.len() as u32;
+
+        let result = RegEnumKeyExW(
+            hkey,
+            index,
+            Some(PWSTR::from_raw(name_buffer.as_mut_ptr())),
+            &mut name_len,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        if result.is_err() {
+            break;
+        }
+
+        let name = String::from_utf16_lossy(&name_buffer[..name_len as usize]);
+        subkeys.push(name);
+        index += 1;
+    }
+
+    subkeys
+}
+
+/// Check if a registry subkey should be deleted based on adapter name
+unsafe fn should_delete_subkey(parent_hkey: WindowsHKEY, subkey: &str, adapter_name: &str) -> bool {
+    let subkey_wide: Vec<u16> = subkey.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut hkey: WindowsHKEY = WindowsHKEY::default();
+
+    let result = RegOpenKeyExW(
+        parent_hkey,
+        PCWSTR::from_raw(subkey_wide.as_ptr()),
+        Some(0),
+        KEY_READ,
+        &mut hkey as *mut WindowsHKEY,
+    );
+
+    if result.is_err() {
+        return false;
+    }
+
+    let _cleanup = RegKeyCleanup(hkey);
+
+    // Check FriendlyName and DeviceDesc
+    for value_name in &["FriendlyName", "DeviceDesc"] {
+        let value_name_wide: Vec<u16> = value_name
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut data_type: REG_VALUE_TYPE = REG_VALUE_TYPE::default();
+        let mut data_size: u32 = 0;
+
+        // Get size first
+        let _ = RegQueryValueExW(
+            hkey,
+            PCWSTR::from_raw(value_name_wide.as_ptr()),
+            None,
+            Some(&mut data_type as *mut REG_VALUE_TYPE),
+            None,
+            Some(&mut data_size),
+        );
+
+        if data_size > 0 {
+            let mut buffer: Vec<u8> = vec![0u8; data_size as usize];
+            let result = RegQueryValueExW(
+                hkey,
+                PCWSTR::from_raw(value_name_wide.as_ptr()),
+                None,
+                Some(&mut data_type as *mut REG_VALUE_TYPE),
+                Some(buffer.as_mut_ptr()),
+                Some(&mut data_size),
+            );
+
+            if result.is_ok() {
+                let wide_chars: Vec<u16> = buffer
+                    .chunks_exact(2)
+                    .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+                    .take_while(|&c| c != 0)
+                    .collect();
+
+                if let Ok(value) = String::from_utf16(&wide_chars) {
+                    if value.to_lowercase().contains(&adapter_name.to_lowercase()) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    false
+}
+
+/// Helper function to get a device property as a String
+unsafe fn get_device_property(
+    dev_info: HDEVINFO,
+    dev_info_data: &SP_DEVINFO_DATA,
+    property: SETUP_DI_REGISTRY_PROPERTY,
+) -> Option<String> {
+    let mut required_size: u32 = 0;
+    let mut property_type: u32 = 0;
+
+    // First call to get the required buffer size
+    let _ = SetupDiGetDeviceRegistryPropertyW(
+        dev_info,
+        dev_info_data,
+        property,
+        Some(&mut property_type),
+        None,
+        Some(&mut required_size),
+    );
+
+    if required_size == 0 {
+        return None;
+    }
+
+    // Allocate buffer and get the actual property value
+    let mut buffer: Vec<u8> = vec![0u8; required_size as usize];
+
+    let result = SetupDiGetDeviceRegistryPropertyW(
+        dev_info,
+        dev_info_data,
+        property,
+        Some(&mut property_type),
+        Some(&mut buffer),
+        None,
+    );
+
+    if result.is_err() {
+        return None;
+    }
+
+    // Convert the buffer to a UTF-16 string
+    let wide_chars: Vec<u16> = buffer
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .take_while(|&c| c != 0)
+        .collect();
+
+    String::from_utf16(&wide_chars).ok()
+}
+
+/// RAII cleanup helper for HDEVINFO
+struct DevInfoCleanup(HDEVINFO);
+
+impl Drop for DevInfoCleanup {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = SetupDiDestroyDeviceInfoList(self.0);
+        }
+    }
+}
+
+/// RAII cleanup helper for registry key
+struct RegKeyCleanup(WindowsHKEY);
+
+impl Drop for RegKeyCleanup {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = RegCloseKey(self.0);
+        }
+    }
+}
+
 // Windows native associated functions
 #[cfg(windows)]
 impl WindowsNativeWg {
@@ -91,6 +632,154 @@ impl WindowsNativeWg {
         guid
     }
 
+    fn get_driver_info(adapter_guid: &str) -> (Option<String>, Option<String>, Option<String>) {
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        let net_class_path =
+            r"SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}";
+        if let Ok(net_class) = hklm.open_subkey(net_class_path) {
+            for key_name in net_class.enum_keys().filter_map(|k| k.ok()) {
+                if let Ok(subkey) = net_class.open_subkey(&key_name) {
+                    // Check if this is our adapter
+                    if let Ok(guid) = subkey.get_value::<String, _>("NetCfgInstanceId") {
+                        if guid.eq_ignore_ascii_case(adapter_guid) {
+                            return (
+                                subkey.get_value("DriverDesc").ok(),
+                                subkey.get_value("DriverVersion").ok(),
+                                subkey.get_value("ProviderName").ok(),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        (None, None, None)
+    }
+
+    fn fallback_retry(
+        name: &str,
+        path: &str,
+        guid: u128,
+        current_lib: &mut WireGuardHandle,
+        watcher: Arc<Mutex<InterfaceWatcher>>,
+        enable_dynamic_wg_nt_control: bool,
+    ) -> result::Result<Self, AdapterError> {
+        // Logic for the failure:
+        // 1. Print all the adapter names in the system currently
+        // 2. Match, which ones are using wireguard.dll
+        // 3. Try to open() and close() all of them
+        // 4. Try to delete the driver
+        // 5. Try to load_library once again
+
+        match AdaptersAddresses::try_new(Family::Unspec, *Flags::default().include_gateways()) {
+            Ok(addrs) => {
+                for adapter in &addrs {
+                    let adapter_guid = adapter.adapter_name();
+                    let (driver_desc, driver_version, provider_name) =
+                        Self::get_driver_info(&adapter_guid);
+                    telio_log_info!("adapter name: {:?}", adapter_guid);
+                    telio_log_info!("friendly name: {:?}", adapter.friendly_name());
+                    telio_log_info!("description: {:?}", adapter.description());
+                    telio_log_info!("interface_type {:?}", adapter.interface_type());
+                    telio_log_info!("driver description {:?}", driver_desc);
+                    telio_log_info!("driver version {:?}", driver_version);
+                    telio_log_info!("provider name {:?}", provider_name);
+
+                    if provider_name == Some("WireGuard LLC".to_string()) {
+                        // match wireguard_nt::Adapter::open(current_lib, name) {
+                        // Ok(a) => {
+                        telio_log_info!("Opened and closing wg adapter");
+
+                        // Step 1: Remove via Configuration Manager
+                        let res = remove_network_adapter_by_name(name);
+                        telio_log_info!("remove_network_adapter_by_name {:?}", res);
+                        std::thread::sleep(std::time::Duration::from_millis(2000));
+
+                        // Step 1.5: Remove via Configuration Manager (DO WE NEED THIS)
+                        let res = remove_adapter_via_cfgmgr(name);
+                        telio_log_info!("remove_adapter_via_cfgmgr {:?}", res);
+                        std::thread::sleep(std::time::Duration::from_millis(2000));
+
+                        // Step 2: Remove ghost devices
+                        let res = remove_ghost_wireguard_adapters(name);
+                        telio_log_info!("remove_ghost_wireguard_adapters {:?}", res);
+                        std::thread::sleep(std::time::Duration::from_millis(2000));
+
+                        // Step 3: Clean up registry
+                        let res = cleanup_wireguard_registry_entries(name);
+                        telio_log_info!("cleanup_wireguard_registry_entries {:?}", res);
+
+                        std::thread::sleep(std::time::Duration::from_millis(2000));
+
+                        // drop(a);
+
+                        telio_log_info!("Listing adapters after drop:");
+                        match AdaptersAddresses::try_new(
+                            Family::Unspec,
+                            *Flags::default().include_gateways(),
+                        ) {
+                            Ok(addrs) => {
+                                for adapter in &addrs {
+                                    let adapter_guid = adapter.adapter_name();
+                                    let (driver_desc, driver_version, provider_name) =
+                                        Self::get_driver_info(&adapter_guid);
+                                    telio_log_info!("adapter name: {:?}", adapter_guid);
+                                    telio_log_info!("friendly name: {:?}", adapter.friendly_name());
+                                    telio_log_info!("description: {:?}", adapter.description());
+                                    telio_log_info!(
+                                        "interface_type {:?}",
+                                        adapter.interface_type()
+                                    );
+                                    telio_log_info!("driver description {:?}", driver_desc);
+                                    telio_log_info!("driver version {:?}", driver_version);
+                                    telio_log_info!("provider name {:?}", provider_name);
+                                }
+                            }
+                            Err(e) => {
+                                telio_log_error!("Error while getting adapters addresses 2: {e}");
+                            }
+                        }
+                        // }
+                        // Err(e) => {
+                        //     telio_log_info!(
+                        //         "Failed to open() wg adapter, guid: {:?}, name: {:?}, error {:?}",
+                        //         adapter_guid,
+                        //         adapter.friendly_name(),
+                        //         e,
+                        //     );
+                        // }
+                        // }
+                    }
+                }
+            }
+            Err(e) => {
+                telio_log_error!("Error while getting adapters addresses: {e}");
+            }
+        };
+
+        if wireguard_nt::unload(current_lib.clone()) {
+            match unsafe { wireguard_nt::load_from_path(path) } {
+                Ok(wg_dll) => *current_lib = wg_dll,
+                Err(e) => {
+                    telio_log_error!("Failed to re-load wireguard dll: {e:?}");
+                }
+            }
+        } else {
+            telio_log_error!("Failed to unload wireguard dll ...");
+        }
+
+        match wireguard_nt::Adapter::create(current_lib, name, name, Some(guid)) {
+            Ok(raw_adapter) => {
+                form_wgnt_adapter!(raw_adapter, watcher, enable_dynamic_wg_nt_control)
+            }
+            Err(e) => {
+                telio_log_error!("Failed to create adapter on second try");
+                Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                    "Failed to create adapter: {e:?}",
+                ))))
+            }
+        }
+    }
+
     /// Returns a wireguard adapter with name `name`, loading dll from path 'path'
     ///
     /// # Errors
@@ -100,10 +789,10 @@ impl WindowsNativeWg {
         name: &str,
         path: &str,
         enable_dynamic_wg_nt_control: bool,
-    ) -> Result<Self, AdapterError> {
+    ) -> result::Result<Self, AdapterError> {
         // try to load dll
         match unsafe { wireguard_nt::load_from_path(path) } {
-            Ok(wg_dll) => {
+            Ok(mut wg_dll) => {
                 // Someone to watch over me while I sleep
                 let watcher = Arc::new(Mutex::new(InterfaceWatcher::new(
                     enable_dynamic_wg_nt_control,
@@ -138,26 +827,21 @@ impl WindowsNativeWg {
                 // tests won't be able to find this adapter and the tests will fail.
                 match wireguard_nt::Adapter::create(&wg_dll, name, name, Some(adapter_guid)) {
                     Ok(raw_adapter) => {
-                        let adapter = Arc::new(raw_adapter);
-                        let luid = adapter.get_luid();
-                        let wgnt = WindowsNativeWg::new(
-                            &adapter,
-                            luid,
-                            &watcher,
-                            enable_dynamic_wg_nt_control,
-                        );
-                        if let Ok(mut watcher) = watcher.lock() {
-                            watcher.configure(wgnt.adapter.clone(), luid);
-                            Ok(wgnt)
-                        } else {
-                            Err(AdapterError::WindowsNativeWg(Error::Fail(
-                                "error obtaining lock".into(),
-                            )))
-                        }
+                        form_wgnt_adapter!(raw_adapter, watcher, enable_dynamic_wg_nt_control)
                     }
-                    Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                        "Failed to create adapter: {e:?}",
-                    )))),
+                    Err(e) => {
+                        telio_log_warn!(
+                            "Failed to create adapter on first run: {e:?}, retrying ..."
+                        );
+                        Self::fallback_retry(
+                            name,
+                            path,
+                            adapter_guid,
+                            &mut wg_dll,
+                            watcher,
+                            enable_dynamic_wg_nt_control,
+                        )
+                    }
                 }
             }
             Err(e) => Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
