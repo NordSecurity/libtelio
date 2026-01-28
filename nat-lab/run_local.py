@@ -227,6 +227,9 @@ def main() -> int:
             "timeout_func_only=true",
         ]
 
+        # Prepare report file
+        report_file = f"node_{os.environ.get('CI_NODE_INDEX', 1)}_durations.json"
+
         # Validate and add test splitting arguments
         if args.splits > 1:
             # Adjust group index for pytest-split's 1-based indexing
@@ -234,7 +237,7 @@ def main() -> int:
             pytest_cmd.extend([f"--splits={args.splits}", f"--group={group_index}"])
             pytest_cmd.extend([
                 "--store-durations",
-                f"--durations-path=node_{os.environ.get('CI_NODE_INDEX', 1)}_durations.json",
+                f"--durations-path={report_file}",
             ])
 
         # Add base arguments and marks
@@ -243,9 +246,6 @@ def main() -> int:
         # Select test directory
         test_dir = "performance_tests" if args.perf_tests else "tests"
         pytest_cmd.append(test_dir)
-
-        # Prepare report file
-        report_file = os.environ.get("PYTEST_OUTPUT_FILE", "pytest_report.json")
 
         run_command(pytest_cmd)
 
@@ -264,6 +264,8 @@ def main() -> int:
                     with open(report_file, "r") as f:
                         # Use a safe parsing method
                         report = json.load(f)
+
+                        print(report)
 
                         # Extract test durations from the report
                         test_durations = {

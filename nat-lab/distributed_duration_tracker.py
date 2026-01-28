@@ -3,16 +3,20 @@
 import json
 import os
 import sys
-from typing import Dict
+from typing import Dict, Optional
 
 
 class DistributedDurationTracker:
-    def __init__(self, base_path: str = "/images/codehub/test_durations"):
+    def __init__(self, base_path: Optional[str] = None):
         """
         Initialize the distributed duration tracker
 
         :param base_path: Base directory for storing duration files
         """
+        if base_path is None:
+            # Use project directory for artifact storage
+            base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "test_durations"))
+        
         self.base_path = base_path
         os.makedirs(base_path, exist_ok=True)
 
