@@ -6,9 +6,6 @@ rustdocflags = [
   "--html-after-content", "./rustdoc/footer.html",
 ]
 
-[target.'cfg(unix)']
-runner = './test_runner.sh'
-
 [net]
 git-fetch-with-cli = true
 

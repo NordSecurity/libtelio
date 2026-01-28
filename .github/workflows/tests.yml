@@ -14,6 +14,10 @@ jobs:
       - run: cargo test --all -- --nocapture
         env:
           RUST_BACKTRACE: full
+      - run: sudo -E $(which cargo) test --package telio-sockets -- --nocapture --ignored
+        env:
+          RUST_BACKTRACE: full
+          PROTOC: /opt/hostedtoolcache/protoc/v23.4/x64/bin/protoc
       - run: cargo test --all --features pretend_to_be_macos -- --nocapture
         env:
           RUST_BACKTRACE: full
