@@ -707,6 +707,17 @@ mod tests {
         NetworkMonitor::new(get_if_addrs_mock).await.unwrap()
     }
 
+    /// Test observer that signals through a channel when notified
+    struct NotifySignaler {
+        tx: tokio::sync::mpsc::UnboundedSender<()>,
+    }
+
+    impl LocalInterfacesObserver for NotifySignaler {
+        fn notify(&self) {
+            let _ = self.tx.send(());
+        }
+    }
+
     #[tokio::test]
     #[serial]
     async fn test_firewall_with_network_monitor_integration() {
@@ -754,6 +765,13 @@ mod tests {
             Arc::downgrade(&firewall) as std::sync::Weak<dyn LocalInterfacesObserver>
         );
 
+        // Create a signaler to know when the broadcast has been processed
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let signaler = Arc::new(NotifySignaler { tx });
+        mock_monitor.register_local_interfaces_observer(
+            Arc::downgrade(&signaler) as std::sync::Weak<dyn LocalInterfacesObserver>
+        );
+
         let new_state = FirewallState {
             ip_addresses: vec![StdIpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))],
             ..Default::default()
@@ -766,10 +784,14 @@ mod tests {
             vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 1))],
         );
 
-        // Simulate network interface
+        // Simulate network interface change
         PATH_CHANGE_BROADCAST.send(()).unwrap();
-        // give a chance to react to PATH_CHANGE_BROADCAST
-        tokio::task::yield_now().await;
+
+        // Wait for the broadcast to be processed via the signaler
+        tokio::time::timeout(tokio::time::Duration::from_secs(30), rx.recv())
+            .await
+            .expect("Timeout waiting for network change notification")
+            .expect("Channel closed unexpectedly");
 
         // Verify configure_chain was called with updated local addresses
         assert_eq!(captured_addrs.lock().len(), 3);
