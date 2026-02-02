@@ -76,8 +76,6 @@ class MulticastServer:
 
     async def wait_till_ready(self) -> None:
         await self._server_ready_event.wait()
-        # TODO remove this, if test_multicast with wg-nt still fails
-        await asyncio.sleep(2.0)
         log.info("MulticastServer is ready")
 
     @asynccontextmanager
