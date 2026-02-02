@@ -6,7 +6,7 @@ from tests.utils.command_grepper import CommandGrepper
 from tests.utils.connection import Connection
 from tests.utils.logger import log
 from tests.utils.process import ProcessExecError
-from typing import AsyncIterator, List
+from typing import AsyncIterator, List, Optional
 
 
 class WindowsRouter(Router):
@@ -15,10 +15,19 @@ class WindowsRouter(Router):
     # The average time it takes to set up an interface on Windows is ~3 seconds
     _status_check_timeout_s: float = 30.0
 
-    def __init__(self, connection: Connection, ip_stack: IPStack):
+    def __init__(
+        self,
+        connection: Connection,
+        ip_stack: IPStack,
+        interface_name: Optional[str] = None,
+    ):
         super().__init__(ip_stack)
         self._connection = connection
-        self._interface_name = "wintun10_" + str(random.randint(0, 256))
+        self._interface_name = (
+            "wintun10_" + str(random.randint(0, 256))
+            if not interface_name
+            else interface_name
+        )
 
     def get_interface_name(self) -> str:
         return self._interface_name
