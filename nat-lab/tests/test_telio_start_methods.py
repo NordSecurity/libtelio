@@ -13,7 +13,7 @@ from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import get_libtelio_binary_path
 from tests.utils.logger import log
 from tests.utils.output_notifier import OutputNotifier
-from tests.utils.router import new_router
+from tests.utils.router.windows_router import WindowsRouter
 from typing import AsyncIterator, List
 
 
@@ -148,7 +148,8 @@ async def test_start_named_ext_if_filter() -> None:
         alpha_client, *_ = env.clients
         alpha_node, *_ = env.nodes
 
-        fake_router = new_router(alpha_conn, fake_node.ip_stack)
+        curr_interface_name = alpha_client.get_router().get_interface_name() + "_0"
+        fake_router = WindowsRouter(alpha_conn, fake_node.ip_stack, curr_interface_name)
         ext_if_filter.append(fake_router.get_interface_name())
         await exit_stack.enter_async_context(
             start_tcli(fake_node, alpha_conn, fake_router)
