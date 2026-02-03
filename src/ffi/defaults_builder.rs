@@ -64,7 +64,11 @@ impl FeaturesDefaultsBuilder {
 
     /// Enable firewall connection resets when NepTUN is enabled
     pub fn enable_firewall_connection_reset(self: Arc<Self>) -> Arc<Self> {
-        self.config.lock().firewall.neptun_reset_conns = true;
+        self.config
+            .lock()
+            .firewall
+            .get_or_insert_with(Default::default)
+            .neptun_reset_conns = true;
         self
     }
 

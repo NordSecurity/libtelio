@@ -637,8 +637,8 @@ dictionary Features {
     boolean ipv6;
     /// Nicknames support
     boolean nicknames;
-    /// Feature config for firewall
-    FeatureFirewall firewall;
+    /// Feature config for firewall. When null, the firewall is disabled.
+    FeatureFirewall? firewall;
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     u64? flush_events_on_stop_timeout_seconds;
     /// Link detection mechanism

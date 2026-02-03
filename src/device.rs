@@ -1044,12 +1044,17 @@ impl Runtime {
         protect: Option<Arc<dyn Protector>>,
     ) -> Result<Self> {
         #[cfg(feature = "enable_firewall")]
-        let firewall = Some(Arc::new(
-            StatefulFirewall::new(features.ipv6, features.firewall.clone()).map_err(|err| {
-                telio_log_warn!("Failed to create StatefulFirewall: {:?}", err);
-                err
-            })?,
-        ));
+        let firewall = features
+            .firewall
+            .as_ref()
+            .map(|fw_config| {
+                StatefulFirewall::new(features.ipv6, fw_config.clone()).map_err(|err| {
+                    telio_log_warn!("Failed to create StatefulFirewall: {:?}", err);
+                    err
+                })
+            })
+            .transpose()?
+            .map(Arc::new);
 
         #[cfg(feature = "enable_firewall")]
         let firewall_process_inbound_callback = firewall.clone().map(|fw| {
@@ -1071,7 +1076,11 @@ impl Runtime {
         let firewall_process_outbound_callback = None;
 
         #[cfg(feature = "enable_firewall")]
-        let firewall_reset_connections = if features.firewall.neptun_reset_conns() {
+        let firewall_reset_connections = if features
+            .firewall
+            .as_ref()
+            .is_some_and(|fw| fw.neptun_reset_conns())
+        {
             firewall.clone().map(|fw| {
                 Arc::new(move |exit_pubkey: &PublicKey, sink: &mut dyn io::Write| {
                     fw.reset_connections(exit_pubkey, sink)
