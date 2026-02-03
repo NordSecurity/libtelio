@@ -68,7 +68,15 @@ def default_features(
     features.hide_thread_id = False
     features.dns.exit_dns = FeatureExitDns(auto_switch_dns_ips=True)
     if enable_firewall_exclusion_range is not None:
-        features.firewall.exclude_private_ip_range = enable_firewall_exclusion_range
+        if features.firewall is None:
+            features.firewall = FeatureFirewall(
+                neptun_reset_conns=False,
+                boringtun_reset_conns=False,
+                exclude_private_ip_range=enable_firewall_exclusion_range,
+                outgoing_blacklist=[],
+            )
+        else:
+            features.firewall.exclude_private_ip_range = enable_firewall_exclusion_range
     return features
 
 

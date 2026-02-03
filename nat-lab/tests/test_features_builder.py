@@ -1,4 +1,5 @@
 from tests.uniffi import (
+    FeatureFirewall,
     FeaturesDefaultsBuilder,
     deserialize_feature_config,
     FirewallBlacklistTuple,
@@ -28,10 +29,14 @@ def test_telio_features_builder_empty():
 
 def test_telio_features_builder_firewall():
     built = FeaturesDefaultsBuilder().build()
-    built.firewall.exclude_private_ip_range = "1.2.3.4/10"
-    built.firewall.outgoing_blacklist = [
-        FirewallBlacklistTuple(protocol=IpProtocol.UDP, ip="8.8.4.4", port=30)
-    ]
+    built.firewall = FeatureFirewall(
+        neptun_reset_conns=False,
+        boringtun_reset_conns=False,
+        exclude_private_ip_range="1.2.3.4/10",
+        outgoing_blacklist=[
+            FirewallBlacklistTuple(protocol=IpProtocol.UDP, ip="8.8.4.4", port=30)
+        ],
+    )
 
     json = """
     {
