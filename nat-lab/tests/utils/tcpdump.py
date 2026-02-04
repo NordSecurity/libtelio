@@ -91,7 +91,7 @@ class TcpDump:
         return self.stderr
 
     async def on_stdout(self, output: str) -> None:
-        log.info("tcpdump: %s", output)
+        log.debug("tcpdump: %s", output)
         self.stdout += output
         await self.output_notifier.handle_output(output)
 
