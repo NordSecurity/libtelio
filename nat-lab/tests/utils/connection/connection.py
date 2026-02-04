@@ -127,6 +127,7 @@ class Connection(ABC):
     async def upload_file(self, local_file_path: str, remote_file_path: str) -> None:
         pass
 
+    @abstractmethod
     async def get_ip_address(self) -> tuple[str, str]:
         ip = "127.0.0.1"
         return (ip, ip)

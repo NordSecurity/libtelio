@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 import asyncio
 import base64
 import itertools
@@ -24,13 +25,9 @@ from tests.helpers import SetupParameters
 from tests.interderp_cli import InterDerpClient
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag, TargetOS, clear_ephemeral_setups_set
-from tests.utils.connection.docker_connection import (
-    DockerConnection,
-    container_id,
-    is_running,
-)
+from tests.utils.connection.docker_connection import DockerConnection, container_id
 from tests.utils.connection.ssh_connection import SshConnection
-from tests.utils.connection_util import new_connection_raw
+from tests.utils.connection_util import new_connection_raw, is_running
 from tests.utils.logger import log, setup_log
 from tests.utils.process import ProcessExecError
 from tests.utils.router import IPStack
@@ -64,6 +61,18 @@ END_TASKS: threading.Event = threading.Event()
 
 LOG_DIR = "logs"
 SESSION_VM_MARKS: set[str] = set()
+SESSION_IS_CONTAINER_RUNNING: dict[ConnectionTag, bool] = {}
+SESSION_MARK_TO_CONTAINERS = {
+    "fullcone": [
+        ConnectionTag.VM_LINUX_FULLCONE_GW_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_2,
+    ],
+    "mac": [ConnectionTag.VM_MAC],
+    "nlx": [ConnectionTag.VM_LINUX_NLX_1],
+    "openwrt": [ConnectionTag.VM_OPENWRT_GW_1],
+    "windows": [ConnectionTag.VM_WINDOWS_1],
+    "windows2": [ConnectionTag.VM_WINDOWS_2],
+}
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -276,6 +285,13 @@ async def setup_check_duplicate_mac_addresses():
 
     async with AsyncExitStack() as exit_stack:
         for conn_tag in ConnectionTag:
+            if not SESSION_IS_CONTAINER_RUNNING[conn_tag]:
+                setup_log.debug(
+                    "%s is not running, skipping duplicate MAC address check..",
+                    conn_tag.name,
+                )
+                continue
+
             try:
                 conn = await exit_stack.enter_async_context(
                     new_connection_raw(conn_tag)
@@ -319,10 +335,6 @@ async def setup_check_arp_cache():
     Ensure all VM LAN_ADDR_MAP IPv4 addresses are present in the host ARP cache
     and are in a usable state.
     """
-    if "GITLAB_CI" not in os.environ:
-        log.info("setup_check: skipping ARP cache validation on non-CI environment")
-        return
-
     if TargetOS.local() != TargetOS.Linux:
         setup_log.info("setup_check: skipping ARP cache validation on non-Linux host")
         return
@@ -353,8 +365,7 @@ async def setup_check_arp_cache():
     acceptable_states = {"REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT"}
     failures: list[str] = []
 
-    vm_tags = [tag for tag in ConnectionTag if tag.name.startswith("VM_")]
-    for tag in vm_tags:
+    for tag in get_required_vm_containers_from_marks():
         if tag == ConnectionTag.VM_OPENWRT_GW_1:
             continue
         for ip in LAN_ADDR_MAP[tag].values():
@@ -415,9 +426,6 @@ SETUP_CHECKS = [
 
 
 async def perform_setup_checks() -> bool:
-    if "NATLAB_SKIP_SETUP_CHECKS" in os.environ:
-        return True
-
     for target, timeout, retries in SETUP_CHECKS:
         while retries > 0:
             try:
@@ -443,6 +451,8 @@ async def check_gateway_connectivity() -> bool:
         try:
             for gw_tag in ConnectionTag:
                 if "_GW" in gw_tag.name:
+                    if not await is_running(gw_tag):
+                        continue
                     current_gateway = gw_tag
                     await SESSION_SCOPE_EXIT_STACK.enter_async_context(
                         new_connection_raw(gw_tag)
@@ -672,7 +682,7 @@ def pytest_collection_modifyitems(items):
             item.add_marker(pytest.mark.timeout(300))
 
 
-def _get_session_vm_marks(items):
+def get_session_vm_marks(items):
     global SESSION_VM_MARKS
 
     SESSION_VM_MARKS = set()
@@ -681,17 +691,47 @@ def _get_session_vm_marks(items):
             SESSION_VM_MARKS.add(mark.name)
 
 
+async def check_all_containers_running():
+    global SESSION_IS_CONTAINER_RUNNING
+    SESSION_IS_CONTAINER_RUNNING = {}
+
+    setup_log.info("Checking running containers..")
+
+    tags = list(ConnectionTag)
+    is_running_results = await asyncio.gather(
+        *[is_running(conn_tag) for conn_tag in tags]
+    )
+
+    for conn_tag, is_running_res in zip(tags, is_running_results):
+        SESSION_IS_CONTAINER_RUNNING[conn_tag] = is_running_res
+
+    running = [
+        tag.name for tag, status in SESSION_IS_CONTAINER_RUNNING.items() if status
+    ]
+    setup_log.debug("Running (%s): %s", len(running), ", ".join(running).lower())
+
+    not_running = [
+        tag.name for tag, status in SESSION_IS_CONTAINER_RUNNING.items() if not status
+    ]
+    setup_log.debug(
+        "Not running (%s): %s", len(not_running), ", ".join(not_running).lower()
+    )
+
+
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
-        _get_session_vm_marks(session.items)
+        get_session_vm_marks(session.items)
+
+    if "NATLAB_SKIP_SETUP_CHECKS" not in os.environ:
+        asyncio.run(check_all_containers_running())
 
         if not asyncio.run(perform_setup_checks()):
             pytest.exit("Setup checks failed, exiting ...")
 
-        if os.environ.get("NATLAB_SAVE_LOGS") is not None:
-            asyncio.run(collect_kernel_logs("before_tests"))
+    if "NATLAB_SAVE_LOGS" in os.environ:
+        asyncio.run(collect_kernel_logs("before_tests"))
 
-        asyncio.run(_copy_vm_binaries_if_needed())
+    asyncio.run(_copy_vm_binaries_if_needed())
 
 
 def pytest_runtest_setup():
@@ -719,13 +759,12 @@ def pytest_sessionfinish(session, exitstatus):
 
     END_TASKS.set()
 
-    if RUNNER is not None and SESSION_SCOPE_EXIT_STACK is not None:
+    if RUNNER is not None:
         try:
-            RUNNER.run(SESSION_SCOPE_EXIT_STACK.aclose())
+            if SESSION_SCOPE_EXIT_STACK is not None:
+                RUNNER.run(SESSION_SCOPE_EXIT_STACK.aclose())
         finally:
             RUNNER.close()
-    elif RUNNER is not None:
-        RUNNER.close()
 
     asyncio.run(collect_logs())
 
@@ -824,17 +863,21 @@ async def start_tcpdump_processes():
         if gw_tag is ConnectionTag.VM_OPENWRT_GW_1:
             continue
         if "_GW" in gw_tag.name:
+            if not await is_running(gw_tag):
+                continue
             connection = await SESSION_SCOPE_EXIT_STACK.enter_async_context(
                 new_connection_raw(gw_tag)
             )
             connections.append(connection)
-    connections += [
-        await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(conn_tag))
-        for conn_tag in [
-            ConnectionTag.DOCKER_DNS_SERVER_1,
-            ConnectionTag.DOCKER_DNS_SERVER_2,
-        ]
-    ]
+    for conn_tag in [
+        ConnectionTag.DOCKER_DNS_SERVER_1,
+        ConnectionTag.DOCKER_DNS_SERVER_2,
+    ]:
+        if await is_running(conn_tag):
+            connection = await SESSION_SCOPE_EXIT_STACK.enter_async_context(
+                new_connection_raw(conn_tag)
+            )
+            connections.append(connection)
 
     await SESSION_SCOPE_EXIT_STACK.enter_async_context(
         make_tcpdump(connections, session=True)
@@ -1013,3 +1056,10 @@ def setup_logger(tmp_path, request):
             file_handler.close()
         else:
             pass
+
+
+def get_required_vm_containers_from_marks():
+    containers = set()
+    for mark in SESSION_VM_MARKS:
+        containers.update(SESSION_MARK_TO_CONTAINERS.get(mark, []))
+    return containers

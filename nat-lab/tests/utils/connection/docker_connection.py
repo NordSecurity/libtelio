@@ -218,14 +218,3 @@ def container_id(tag: ConnectionTag) -> str:
     if tag in DOCKER_SERVICE_IDS:
         return f"nat-lab-{DOCKER_SERVICE_IDS[tag]}-1"
     assert False, f"tag {tag} not a docker container"
-
-
-async def is_running(tag: ConnectionTag) -> bool:
-    cid = container_id(tag)
-    async with Docker() as docker:
-        clist = await docker.containers.list()
-        for c in clist:
-            name = (await c.show())["Name"]
-            if name == f"/{cid}":
-                return True
-    return False
