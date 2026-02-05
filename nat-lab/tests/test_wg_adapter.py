@@ -20,7 +20,7 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
         "/f",
         "DeviceInstanceID",
     ]
-    # Run libtelio and kill it dirty so it would leave hanging wintun adapter
+    # Run libtelio and kill it dirty so it would leave hanging wg-nt adapter
     try:
         async with AsyncExitStack() as exit_stack:
             env = await exit_stack.enter_async_context(
@@ -47,7 +47,7 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
     except (CommunicationError, ConnectionRefusedError, ProcessExecError) as e:
         log.warning("First libtelio failed with %s", e)
 
-    # Check if libtelio left hanging wintun adapter, might now always happen, so we just leave test
+    # Check if libtelio left hanging wg-nt adapter, might now always happen, so we just leave test
     async with new_connection_by_tag(conn_tag) as conn:
         if (
             "WireGuard"
@@ -55,7 +55,7 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
         ):
             return
 
-    # Try to start libtelio and see if it properly cleans up orphaned wintun adapter and starts normaly
+    # Try to start libtelio and see if it properly cleans up orphaned wg-nt adapter and starts normaly
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
             setup_environment(

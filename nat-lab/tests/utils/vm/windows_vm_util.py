@@ -96,7 +96,6 @@ async def copy_binaries(
         (f"{DIST_DIR}telio.dll", f"{VM_UNIFFI_DIR}", False),
         (f"{DIST_DIR}sqlite3.dll", VM_UNIFFI_DIR, True),
         (f"{DIST_DIR}wireguard.dll", VM_UNIFFI_DIR, False),
-        (f"{DIST_DIR}wintun.dll", VM_SYSTEM32, False),
         (f"{LOCAL_BIN_DIR}multicast.py", VM_TCLI_DIR, False),
     ]
 
