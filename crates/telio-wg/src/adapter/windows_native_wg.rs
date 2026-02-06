@@ -332,6 +332,8 @@ impl WindowsNativeWg {
         telio_log_debug!("Print registry before adapter creation!");
         Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, service::GUID_DEVINTERFACE_NET_STR);
         Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
+        // Best-effort cleanup of any orphaned WireGuard-NT devices before creating a new one.
+        Self::cleanup_orphaned_devices();
 
         // Cleaning orphaned WireGuard-NT adapters inside the driver can be racey,
         // so we do it in a separate step, before creating a new adapter
