@@ -19,6 +19,24 @@ use tokio::time::sleep;
 #[cfg(windows)]
 use uuid::Uuid;
 #[cfg(windows)]
+use winapi::um::cfgmgr32::{CM_Get_DevNode_Status, CR_SUCCESS, DN_HAS_PROBLEM};
+#[cfg(windows)]
+use windows::{
+    core::GUID,
+    Win32::{
+        Devices::{
+            DeviceAndDriverInstallation::{
+                SetupDiCallClassInstaller, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo,
+                SetupDiGetClassDevsExW, SetupDiGetDevicePropertyW, SetupDiSetClassInstallParamsW,
+                GUID_DEVCLASS_NET, HDEVINFO, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA,
+                SP_REMOVEDEVICE_PARAMS,
+            },
+            Properties::{DEVPROPID_FIRST_USABLE, DEVPROPKEY, DEVPROP_TYPE_STRING},
+        },
+        Foundation::{ERROR_NO_MORE_ITEMS, HANDLE},
+    },
+};
+#[cfg(windows)]
 use winreg::{enums::*, RegKey, HKEY};
 #[cfg(windows)]
 use wireguard_nt::{
@@ -166,6 +184,150 @@ impl WindowsNativeWg {
         }
     }
 
+    /// Remove orphaned WireGuard-NT devices from the system device list.
+    ///
+    /// This is a partial Rust port of `AdapterCleanupOrphanedDevices` from
+    /// WireGuard-NT's `api/adapter.c`. It enumerates all `GUID_DEVCLASS_NET`
+    /// devices created by the WireGuard software enumerator and removes any
+    /// whose devnode has `DN_HAS_PROBLEM` set.
+    #[cfg(windows)]
+    fn cleanup_orphaned_devices() {
+        use std::ptr::{null, null_mut};
+        use std::time::Duration;
+        use windows::core::PCWSTR;
+        use windows::Win32::Devices::DeviceAndDriverInstallation::{
+            DIF_REMOVE, DI_REMOVEDEVICE_GLOBAL,
+        };
+
+        const WIREGUARD_ENUMERATOR: &str = "SWD\\WireGuard";
+        const MAX_ADAPTER_NAME: usize = 256;
+
+        // DEVPROPKEY DEVPKEY_WireGuard_Name =
+        // { {65726957-7547-7261-644E-616D654B6579}, DEVPROPID_FIRST_USABLE + 1 };
+        const DEVPKEY_WIREGUARD_NAME: DEVPROPKEY = DEVPROPKEY {
+            fmtid: GUID::from_u128(0x65726957_7547_7261_644e_616d654b6579),
+            pid: DEVPROPID_FIRST_USABLE + 1,
+        };
+
+        unsafe {
+            let mut removed_any = false;
+
+            // Get list of all WireGuard network adapters.
+            let enumerator_utf16: Vec<u16> = WIREGUARD_ENUMERATOR
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+
+            let dev_info: HDEVINFO = SetupDiGetClassDevsExW(
+                &GUID_DEVCLASS_NET,
+                PCWSTR(enumerator_utf16.as_ptr()),
+                None,
+                0,
+                HDEVINFO::default(),
+                PCWSTR(null()),
+                None,
+            );
+
+            if dev_info.is_invalid() {
+                telio_log_warn!("Failed to get adapters for orphaned device cleanup");
+                return;
+            }
+
+            let mut dev_info_data = SP_DEVINFO_DATA {
+                cbSize: std::mem::size_of::<SP_DEVINFO_DATA>() as u32,
+                ..Default::default()
+            };
+
+            let mut index: u32 = 0;
+            loop {
+                if !SetupDiEnumDeviceInfo(dev_info, index, &mut dev_info_data).as_bool() {
+                    let err = IOError::last_os_error();
+                    if err.raw_os_error() == Some(ERROR_NO_MORE_ITEMS.0 as i32) {
+                        break;
+                    }
+                    index += 1;
+                    continue;
+                }
+
+                // Skip devices that are not marked as having problems.
+                let mut status: u32 = 0;
+                let mut code: u32 = 0;
+                if CM_Get_DevNode_Status(&mut status, &mut code, dev_info_data.DevInst, 0)
+                    == CR_SUCCESS
+                    && (status & DN_HAS_PROBLEM) == 0
+                {
+                    index += 1;
+                    continue;
+                }
+
+                // Try to read friendly WireGuard adapter name (best-effort).
+                let mut name_buf = [0u16; MAX_ADAPTER_NAME];
+                let mut prop_type = 0u32;
+                let _ = SetupDiGetDevicePropertyW(
+                    dev_info,
+                    &mut dev_info_data,
+                    &DEVPKEY_WIREGUARD_NAME,
+                    &mut prop_type,
+                    name_buf.as_mut_ptr().cast(),
+                    (MAX_ADAPTER_NAME * std::mem::size_of::<u16>()) as u32,
+                    null_mut(),
+                    0,
+                );
+                let name = String::from_utf16_lossy(
+                    &name_buf[..name_buf
+                        .iter()
+                        .position(|c| *c == 0)
+                        .unwrap_or(MAX_ADAPTER_NAME)],
+                );
+
+                // Rust reimplementation of AdapterRemoveInstance from adapter.c.
+                let mut remove_params = SP_REMOVEDEVICE_PARAMS {
+                    ClassInstallHeader: SP_CLASSINSTALL_HEADER {
+                        cbSize: std::mem::size_of::<SP_CLASSINSTALL_HEADER>() as u32,
+                        InstallFunction: DIF_REMOVE,
+                    },
+                    Scope: DI_REMOVEDEVICE_GLOBAL,
+                    HwProfile: 0,
+                };
+
+                let set_ok = SetupDiSetClassInstallParamsW(
+                    dev_info,
+                    &mut dev_info_data,
+                    &mut remove_params.ClassInstallHeader,
+                    std::mem::size_of::<SP_REMOVEDEVICE_PARAMS>() as u32,
+                )
+                .as_bool();
+
+                let call_ok = set_ok
+                    && SetupDiCallClassInstaller(DIF_REMOVE, dev_info, &mut dev_info_data)
+                        .as_bool();
+
+                if !call_ok {
+                    telio_log_warn!(
+                        "Failed to remove orphaned WireGuard adapter \"{}\": {:?}",
+                        name,
+                        IOError::last_os_error()
+                    );
+                    index += 1;
+                    continue;
+                }
+
+                telio_log_info!("Removed orphaned WireGuard adapter \"{}\"", name);
+                removed_any = true;
+                index += 1;
+            }
+
+            let _ = SetupDiDestroyDeviceInfoList(dev_info);
+
+            if removed_any {
+                telio_log_info!(
+                    "Orphaned WireGuard-NT adapters were removed; sleeping 2 seconds for system to settle"
+                );
+                std::thread::sleep(Duration::from_secs(2));
+            }
+        }
+    }
+
     /// Start adapter with name `name`
     ///
     ///
@@ -181,6 +343,8 @@ impl WindowsNativeWg {
         telio_log_debug!("Print registry before adapter creation!");
         Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, GUID_DEVINTERFACE_NET);
         Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
+        // Best-effort cleanup of any orphaned WireGuard-NT devices before creating a new one.
+        Self::cleanup_orphaned_devices();
 
         let dll_path = "wireguard.dll";
         let tmp_wg_dev = Self::create(name, dll_path, enable_dynamic_wg_nt_control);
