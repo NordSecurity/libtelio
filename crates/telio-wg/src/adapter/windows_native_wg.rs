@@ -1,51 +1,46 @@
 use super::{Adapter, Error as AdapterError, Tun as NativeTun};
-use crate::uapi::{Cmd, Cmd::Get, Cmd::Set, Interface, Peer, Response};
-#[cfg(windows)]
-use crate::windows::service;
-#[cfg(windows)]
-use crate::windows::tunnel::interfacewatcher::InterfaceWatcher;
+use crate::{
+    uapi::{Cmd, Cmd::Get, Cmd::Set, Interface, Peer, Response},
+    windows::{service, tunnel::interfacewatcher::InterfaceWatcher},
+};
 use async_trait::async_trait;
-#[cfg(windows)]
 use sha2::{Digest, Sha256};
-use std::io::Error as IOError;
-use std::slice::Windows;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
-use std::{mem, option, result};
+use std::{
+    collections::HashMap,
+    io::Error as IOError,
+    mem, option,
+    ptr::{self, null},
+    result,
+    slice::Windows,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+
 use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
 };
 use tokio::time::sleep;
-#[cfg(windows)]
+use utf16_lit::utf16_null;
 use uuid::Uuid;
-#[cfg(windows)]
-use winapi::um::cfgmgr32::{CM_Get_DevNode_Status, CR_SUCCESS, DN_HAS_PROBLEM};
-#[cfg(windows)]
-use windows::{
-    core::GUID,
-    Win32::{
-        Devices::{
-            DeviceAndDriverInstallation::{
-                SetupDiCallClassInstaller, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo,
-                SetupDiGetClassDevsExW, SetupDiGetDevicePropertyW, SetupDiSetClassInstallParamsW,
-                GUID_DEVCLASS_NET, HDEVINFO, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA,
-                SP_REMOVEDEVICE_PARAMS,
-            },
-            Properties::{DEVPROPID_FIRST_USABLE, DEVPROPKEY, DEVPROP_TYPE_STRING},
-        },
-        Foundation::{ERROR_NO_MORE_ITEMS, HANDLE},
-    },
+use windows::core::GUID;
+use windows::core::PCWSTR;
+use windows::Win32::Devices::DeviceAndDriverInstallation::GUID_DEVCLASS_NET;
+use windows::Win32::Devices::DeviceAndDriverInstallation::{
+    CM_Get_DevNode_Status, SetupDiCallClassInstaller, SetupDiEnumDeviceInfo,
+    SetupDiGetDeviceRegistryPropertyW, SetupDiSetClassInstallParamsW, CM_DEVNODE_STATUS_FLAGS,
+    CM_PROB, CR_SUCCESS, DIF_REMOVE, DI_REMOVEDEVICE_GLOBAL, DN_HAS_PROBLEM, SPDRP_FRIENDLYNAME,
+    SP_CLASSINSTALL_HEADER, SP_REMOVEDEVICE_PARAMS,
 };
-#[cfg(windows)]
+use windows::Win32::NetworkManagement::Ndis::GUID_DEVINTERFACE_NET;
 use winreg::{enums::*, RegKey, HKEY};
-#[cfg(windows)]
 use wireguard_nt::{
     self, set_logger, Error as WireGuardNTError, SetInterface, SetPeer, WIREGUARD_STATE_UP,
 };
 use wireguard_uapi::xplatform;
 
+const REMOVAL_SLEEP_SECS: u64 = 2;
+
 /// Telio wrapper around wireguard-nt
-#[cfg(windows)]
 pub struct WindowsNativeWg {
     // Object holding the adapter handle and associated wireguard functionality
     adapter: Arc<wireguard_nt::Adapter>,
@@ -63,7 +58,6 @@ pub struct WindowsNativeWg {
 }
 
 /// Error type implementation for wg-nt
-/// #[cfg(any(windows, doc))]
 #[cfg_attr(docsrs, doc(cfg(windows)))]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -78,7 +72,6 @@ enum AdapterState {
 }
 
 // Windows native associated functions
-#[cfg(windows)]
 impl WindowsNativeWg {
     pub fn new(
         adapter: &Arc<wireguard_nt::Adapter>,
@@ -118,7 +111,7 @@ impl WindowsNativeWg {
         name: &str,
         path: &str,
         enable_dynamic_wg_nt_control: bool,
-    ) -> Result<Self, AdapterError> {
+    ) -> std::result::Result<Self, AdapterError> {
         // try to load dll
         match unsafe { wireguard_nt::load_from_path(path) } {
             Ok(wg_dll) => {
@@ -190,98 +183,92 @@ impl WindowsNativeWg {
     /// WireGuard-NT's `api/adapter.c`. It enumerates all `GUID_DEVCLASS_NET`
     /// devices created by the WireGuard software enumerator and removes any
     /// whose devnode has `DN_HAS_PROBLEM` set.
-    #[cfg(windows)]
-    fn cleanup_orphaned_devices() {
-        use std::ptr::{null, null_mut};
-        use std::time::Duration;
-        use windows::core::PCWSTR;
-        use windows::Win32::Devices::DeviceAndDriverInstallation::{
-            DIF_REMOVE, DI_REMOVEDEVICE_GLOBAL,
-        };
-
-        const WIREGUARD_ENUMERATOR: &str = "SWD\\WireGuard";
-        const MAX_ADAPTER_NAME: usize = 256;
-
-        // DEVPROPKEY DEVPKEY_WireGuard_Name =
-        // { {65726957-7547-7261-644E-616D654B6579}, DEVPROPID_FIRST_USABLE + 1 };
-        const DEVPKEY_WIREGUARD_NAME: DEVPROPKEY = DEVPROPKEY {
-            fmtid: GUID::from_u128(0x65726957_7547_7261_644e_616d654b6579),
-            pid: DEVPROPID_FIRST_USABLE + 1,
-        };
-
+    async fn cleanup_orphaned_devices() {
         unsafe {
-            let mut removed_any = false;
-
             // Get list of all WireGuard network adapters.
-            let enumerator_utf16: Vec<u16> = WIREGUARD_ENUMERATOR
-                .encode_utf16()
-                .chain(std::iter::once(0))
-                .collect();
+            let enumerator_utf16 = utf16_null!(service::WIREGUARD_ENUMERATOR);
 
-            let dev_info: HDEVINFO = SetupDiGetClassDevsExW(
-                &GUID_DEVCLASS_NET,
+            let mut dev_info_set = match service::ScopedDeviceInfoSet::from_class_devs_ex(
+                Some(&GUID_DEVCLASS_NET),
                 PCWSTR(enumerator_utf16.as_ptr()),
+                Default::default(),
                 None,
-                0,
-                HDEVINFO::default(),
-                PCWSTR(null()),
-                None,
-            );
+            ) {
+                Ok(dev_info_set) => dev_info_set,
+                Err(e) => {
+                    telio_log_warn!("Failed to get adapters for orphaned device cleanup: {e:?}");
+                    return;
+                }
+            };
 
-            if dev_info.is_invalid() {
-                telio_log_warn!("Failed to get adapters for orphaned device cleanup");
-                return;
-            }
-
-            let mut dev_info_data = SP_DEVINFO_DATA {
-                cbSize: std::mem::size_of::<SP_DEVINFO_DATA>() as u32,
-                ..Default::default()
+            let dev_info_handle = match dev_info_set.handle {
+                Some(h) => h,
+                None => {
+                    telio_log_warn!("Device info set handle is None");
+                    return;
+                }
             };
 
             let mut index: u32 = 0;
+            const FRIENDLY_NAME_BUF_WCHARS: usize = 260;
+            let mut name_buf = [0u8; FRIENDLY_NAME_BUF_WCHARS * 2];
+            let mut removed = false;
+
             loop {
-                if !SetupDiEnumDeviceInfo(dev_info, index, &mut dev_info_data).as_bool() {
-                    let err = IOError::last_os_error();
-                    if err.raw_os_error() == Some(ERROR_NO_MORE_ITEMS.0 as i32) {
-                        break;
-                    }
-                    index += 1;
-                    continue;
+                if SetupDiEnumDeviceInfo(dev_info_handle, index, &mut dev_info_set.dev_info_data)
+                    .is_err()
+                {
+                    break;
                 }
 
                 // Skip devices that are not marked as having problems.
-                let mut status: u32 = 0;
-                let mut code: u32 = 0;
-                if CM_Get_DevNode_Status(&mut status, &mut code, dev_info_data.DevInst, 0)
-                    == CR_SUCCESS
-                    && (status & DN_HAS_PROBLEM) == 0
+                let mut status = CM_DEVNODE_STATUS_FLAGS(0);
+                let mut code = CM_PROB(0);
+                if CM_Get_DevNode_Status(
+                    &mut status,
+                    &mut code,
+                    dev_info_set.dev_info_data.DevInst,
+                    0,
+                ) == CR_SUCCESS
+                    && (status.0 & DN_HAS_PROBLEM.0) == 0
                 {
                     index += 1;
                     continue;
                 }
 
-                // Try to read friendly WireGuard adapter name (best-effort).
-                let mut name_buf = [0u16; MAX_ADAPTER_NAME];
-                let mut prop_type = 0u32;
-                let _ = SetupDiGetDevicePropertyW(
-                    dev_info,
-                    &mut dev_info_data,
-                    &DEVPKEY_WIREGUARD_NAME,
-                    &mut prop_type,
-                    name_buf.as_mut_ptr().cast(),
-                    (MAX_ADAPTER_NAME * std::mem::size_of::<u16>()) as u32,
-                    null_mut(),
-                    0,
-                );
-                let name = String::from_utf16_lossy(
-                    &name_buf[..name_buf
+                // Best-effort: fetch device friendly name for logging.
+                let name = if SetupDiGetDeviceRegistryPropertyW(
+                    dev_info_handle,
+                    &dev_info_set.dev_info_data,
+                    SPDRP_FRIENDLYNAME,
+                    None,
+                    Some(&mut name_buf),
+                    None,
+                )
+                .is_ok()
+                {
+                    let w = std::slice::from_raw_parts(
+                        name_buf.as_ptr() as *const u16,
+                        FRIENDLY_NAME_BUF_WCHARS,
+                    );
+                    let end = w
                         .iter()
-                        .position(|c| *c == 0)
-                        .unwrap_or(MAX_ADAPTER_NAME)],
-                );
+                        .position(|&c| c == 0)
+                        .unwrap_or(FRIENDLY_NAME_BUF_WCHARS);
+                    let s = w
+                        .get(..end)
+                        .map(|s| String::from_utf16_lossy(s).trim().to_string())
+                        .unwrap_or_default();
+                    if s.is_empty() {
+                        format!("devinst {}", dev_info_set.dev_info_data.DevInst)
+                    } else {
+                        s
+                    }
+                } else {
+                    format!("devinst {}", dev_info_set.dev_info_data.DevInst)
+                };
 
-                // Rust reimplementation of AdapterRemoveInstance from adapter.c.
-                let mut remove_params = SP_REMOVEDEVICE_PARAMS {
+                let remove_params = SP_REMOVEDEVICE_PARAMS {
                     ClassInstallHeader: SP_CLASSINSTALL_HEADER {
                         cbSize: std::mem::size_of::<SP_CLASSINSTALL_HEADER>() as u32,
                         InstallFunction: DIF_REMOVE,
@@ -291,16 +278,20 @@ impl WindowsNativeWg {
                 };
 
                 let set_ok = SetupDiSetClassInstallParamsW(
-                    dev_info,
-                    &mut dev_info_data,
-                    &mut remove_params.ClassInstallHeader,
+                    dev_info_handle,
+                    Some(&dev_info_set.dev_info_data),
+                    Some(&remove_params.ClassInstallHeader),
                     std::mem::size_of::<SP_REMOVEDEVICE_PARAMS>() as u32,
                 )
-                .as_bool();
+                .is_ok();
 
                 let call_ok = set_ok
-                    && SetupDiCallClassInstaller(DIF_REMOVE, dev_info, &mut dev_info_data)
-                        .as_bool();
+                    && SetupDiCallClassInstaller(
+                        DIF_REMOVE,
+                        dev_info_handle,
+                        Some(&dev_info_set.dev_info_data),
+                    )
+                    .is_ok();
 
                 if !call_ok {
                     telio_log_warn!(
@@ -311,19 +302,18 @@ impl WindowsNativeWg {
                     index += 1;
                     continue;
                 }
+                removed = true;
 
                 telio_log_info!("Removed orphaned WireGuard adapter \"{}\"", name);
-                removed_any = true;
                 index += 1;
             }
 
-            let _ = SetupDiDestroyDeviceInfoList(dev_info);
-
-            if removed_any {
-                telio_log_info!(
-                    "Orphaned WireGuard-NT adapters were removed; sleeping 2 seconds for system to settle"
-                );
-                std::thread::sleep(Duration::from_secs(2));
+            if removed {
+                // TODO: Remove this sleep once we have a better way to track device removal/insertion
+                // Note: windows messages (e.g. WM_DEVICECHANGE) cannot be used to track removal,
+                // since those  messages does not arrive,
+                // when we trigger removal and wait for messages on same thread
+                std::thread::sleep(Duration::from_secs(REMOVAL_SLEEP_SECS));
             }
         }
     }
@@ -337,20 +327,21 @@ impl WindowsNativeWg {
     pub async fn start(
         name: &str,
         enable_dynamic_wg_nt_control: bool,
-    ) -> Result<Self, AdapterError> {
-        const GUID_DEVINTERFACE_NET: &str = r"SYSTEM\CurrentControlSet\Control\DeviceClasses\{CAC88484-7515-4C03-82E6-71A87ABAC361}";
+    ) -> std::result::Result<Self, AdapterError> {
         const SWD_WIREGUARD: &str = r"SYSTEM\CurrentControlSet\Enum\SWD\WireGuard";
         telio_log_debug!("Print registry before adapter creation!");
-        Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, GUID_DEVINTERFACE_NET);
+        Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, service::GUID_DEVINTERFACE_NET_STR);
         Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
-        // Best-effort cleanup of any orphaned WireGuard-NT devices before creating a new one.
-        Self::cleanup_orphaned_devices();
+
+        // Cleaning orphaned WireGuard-NT adapters inside the driver can be racey,
+        // so we do it in a separate step, before creating a new adapter
+        Self::cleanup_orphaned_devices().await;
 
         let dll_path = "wireguard.dll";
         let tmp_wg_dev = Self::create(name, dll_path, enable_dynamic_wg_nt_control);
 
         telio_log_debug!("Print registry after adapter creation!");
-        Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, GUID_DEVINTERFACE_NET);
+        Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, service::GUID_DEVINTERFACE_NET_STR);
         Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
 
         let wg_dev = tmp_wg_dev?;
@@ -372,6 +363,18 @@ impl WindowsNativeWg {
             return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
                 "Failed to set logging for adapter, last error: {os_error:?}",
             ))));
+        }
+
+        if !service::wait_for_adapter_interface_ready(
+            wg_dev.get_adapter_luid(),
+            service::DEFAULT_SERVICE_WAIT_TIMEOUT,
+        )
+        .await
+        {
+            // TODO: Should we fail here if adapter interface is not ready?
+            return Err(AdapterError::WindowsNativeWg(Error::Fail(
+                "Adapter interface not ready".to_string(),
+            )));
         }
 
         if !wg_dev.enable_dynamic_wg_nt_control {
@@ -414,7 +417,7 @@ impl WindowsNativeWg {
     async fn ensure_adapter_state(
         &self,
         want_adapter_state: AdapterState,
-    ) -> Result<(), AdapterError> {
+    ) -> std::result::Result<(), AdapterError> {
         // We have seen a few cases where single attempt to bring
         // The adapter up caused some issues. Especially if performed
         // Early after driver installation.
@@ -545,10 +548,9 @@ impl WindowsNativeWg {
     }
 }
 
-#[cfg(windows)]
 #[async_trait::async_trait]
 impl Adapter for WindowsNativeWg {
-    async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, AdapterError> {
+    async fn send_uapi_cmd(&self, cmd: &Cmd) -> std::result::Result<Response, AdapterError> {
         match cmd {
             Get => Ok(self.get_config_uapi()),
             Set(set_cfg) => {
@@ -606,7 +608,7 @@ impl Adapter for WindowsNativeWg {
         self.cleanup();
     }
 
-    async fn set_tun(&self, _tun: super::Tun) -> Result<(), AdapterError> {
+    async fn set_tun(&self, _tun: super::Tun) -> std::result::Result<(), AdapterError> {
         Err(AdapterError::UnsupportedAdapter)
     }
 
@@ -615,7 +617,6 @@ impl Adapter for WindowsNativeWg {
     }
 }
 
-#[cfg(windows)]
 impl Drop for WindowsNativeWg {
     fn drop(&mut self) {
         self.cleanup();

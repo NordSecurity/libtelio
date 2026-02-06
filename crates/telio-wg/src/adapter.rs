@@ -7,7 +7,7 @@ mod neptun;
 #[cfg_attr(docsrs, doc(cfg(target_os = "linux")))]
 mod linux_native_wg;
 
-#[cfg(any(windows, doc))]
+#[cfg(windows)]
 #[cfg_attr(docsrs, doc(cfg(windows)))]
 mod windows_native_wg;
 
@@ -110,7 +110,7 @@ pub enum Error {
     LinuxNativeWg(#[from] linux_native_wg::Error),
 
     /// Error types from Windows native implementation
-    #[cfg(any(windows, doc))]
+    #[cfg(windows)]
     #[cfg_attr(docsrs, doc(cfg(windows)))]
     #[error("WindowsNativeWg adapter error {0}")]
     WindowsNativeWg(#[from] windows_native_wg::Error),

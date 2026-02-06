@@ -5239,6 +5239,7 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "tracing",
+ "utf16_lit",
  "uuid",
  "winapi",
  "windows",
@@ -5950,6 +5951,12 @@ dependencies = [
  "percent-encoding",
  "serde",
 ]
+
+[[package]]
+name = "utf16_lit"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14706d2a800ee8ff38c1d3edb873cd616971ea59eb7c0d046bb44ef59b06a1ae"
 
 [[package]]
 name = "utf8_iter"
