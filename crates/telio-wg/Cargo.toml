@@ -68,5 +68,7 @@ windows = { workspace = true, features = [
     "Win32_Security",
     "Win32_System",
     "Win32_System_Services",
-    "Win32_Foundation"
+    "Win32_Foundation",
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Devices_Properties",
 ]}
