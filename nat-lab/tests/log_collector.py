@@ -29,21 +29,15 @@ async def find_files(
         return []
 
 
-def copy_file(
+async def copy_file(
     from_connection: Connection, from_path: str, destination_path: str
 ) -> None:
     """Copy a file from within the docker container connection to the destination path"""
     if isinstance(from_connection, DockerConnection):
-        container_name = container_id(from_connection.tag)
-
         file_name = os.path.basename(from_path)
         core_dump_destination = os.path.join(destination_path, file_name)
 
-        cmd = (
-            f"docker container cp {container_name}:{from_path} {core_dump_destination}"
-        )
-        log.info(cmd)
-        os.system(cmd)
+        await from_connection.download(from_path, core_dump_destination)
     else:
         raise Exception(f"Copying files from {from_connection} is not supported")
 
@@ -195,7 +189,7 @@ async def save_logs(connection: Connection) -> None:
 
     moose_traces = await find_files(connection, MOOSE_LOGS_DIR, "moose_trace.log*")
     for trace_path in moose_traces:
-        copy_file(connection, trace_path, log_dir)
+        await copy_file(connection, trace_path, log_dir)
         file_name = os.path.basename(trace_path)
         os.rename(
             os.path.join(log_dir, file_name),
