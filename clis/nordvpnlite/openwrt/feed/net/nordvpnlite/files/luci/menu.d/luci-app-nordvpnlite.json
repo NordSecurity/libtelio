@@ -1,0 +1,14 @@
+{
+	"admin/services/nordvpnlite": {
+		"title": "NordVPN Lite",
+		"order": 90,
+		"action": {
+			"type": "view",
+			"path": "nordvpnlite/settings"
+		},
+		"depends": {
+			"acl": ["nordvpnlite"],
+			"uci": {}
+		}
+	}
+}
