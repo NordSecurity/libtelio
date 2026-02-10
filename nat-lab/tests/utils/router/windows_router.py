@@ -24,7 +24,7 @@ class WindowsRouter(Router):
         super().__init__(ip_stack)
         self._connection = connection
         self._interface_name = (
-            "wintun10_" + str(random.randint(0, 256))
+            "wgnt10_" + str(random.randint(0, 256))
             if not interface_name
             else interface_name
         )
