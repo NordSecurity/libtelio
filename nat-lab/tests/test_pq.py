@@ -58,6 +58,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
     return preshared
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -126,7 +127,11 @@ async def test_pq_vpn_connection(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.VM_LINUX_NLX_1],
+            )
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -141,6 +146,7 @@ async def test_pq_vpn_connection(
         )
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -212,7 +218,11 @@ async def test_pq_vpn_rekey(
 
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.VM_LINUX_NLX_1],
+            )
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -246,6 +256,7 @@ async def test_pq_vpn_rekey(
         await ping(client_conn, config.PHOTO_ALBUM_IP)
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -305,7 +316,11 @@ async def test_dns_with_pq(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.VM_LINUX_NLX_1],
+            )
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -340,6 +355,7 @@ async def test_dns_with_pq(
         await query_dns(client_conn, "google.com")
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "setup",
     [
@@ -364,7 +380,7 @@ async def test_pq_vpn_silent_pq_upgrader(
         setup.features.post_quantum_vpn.handshake_retry_interval_s = 1
 
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [setup], prepare_vpn=True)
+            setup_environment(exit_stack, [setup], vpn=[ConnectionTag.VM_LINUX_NLX_1])
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -416,6 +432,7 @@ async def test_pq_vpn_silent_pq_upgrader(
         await ping(client_conn, config.PHOTO_ALBUM_IP)
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -439,7 +456,11 @@ async def test_pq_vpn_upgrade_from_non_pq(
         alpha_setup_params.features.post_quantum_vpn.handshake_retry_interval_s = 1
 
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.VM_LINUX_NLX_1],
+            )
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -473,6 +494,7 @@ async def test_pq_vpn_upgrade_from_non_pq(
 
 
 # Regression test for LLT-5884
+@pytest.mark.nlx
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize(
     "setup_params, public_ip",
@@ -530,7 +552,7 @@ async def test_pq_vpn_handshake_after_nonet(
             setup_environment(
                 exit_stack,
                 [setup_params],
-                prepare_vpn=True,
+                vpn=[ConnectionTag.VM_LINUX_NLX_1],
             )
         )
 
@@ -573,6 +595,7 @@ async def test_pq_vpn_handshake_after_nonet(
         await ping(client_conn, config.PHOTO_ALBUM_IP)
 
 
+@pytest.mark.nlx
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize(
     "setup_params, public_ip",
@@ -601,7 +624,7 @@ async def test_pq_no_false_restart(
             setup_environment(
                 exit_stack,
                 [setup_params],
-                prepare_vpn=True,
+                vpn=[ConnectionTag.VM_LINUX_NLX_1],
             )
         )
 

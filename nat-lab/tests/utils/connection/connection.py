@@ -58,6 +58,10 @@ class ConnectionTag(Enum):
     DOCKER_WINDOWS_VM_2 = auto()
     DOCKER_MAC_GW_1 = auto()
     DOCKER_MAC_GW_2 = auto()
+    DOCKER_CORE_API_1 = auto()
+    DOCKER_MQTT_BROKER_1 = auto()
+    DOCKER_STUN_1 = auto()
+    DOCKER_UDP_SERVER = auto()
 
     def __repr__(self):
         return f"{self.name}"
@@ -123,6 +127,7 @@ class Connection(ABC):
     async def upload_file(self, local_file_path: str, remote_file_path: str) -> None:
         pass
 
+    @abstractmethod
     async def get_ip_address(self) -> tuple[str, str]:
         ip = "127.0.0.1"
         return (ip, ip)

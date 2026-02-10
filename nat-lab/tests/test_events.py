@@ -285,7 +285,11 @@ async def test_event_content_vpn_connection(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.DOCKER_VPN_1],
+            )
         )
         connection, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients

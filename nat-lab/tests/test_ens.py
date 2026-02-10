@@ -35,6 +35,7 @@ from typing import cast
 ENS_PORT = 993
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -109,7 +110,11 @@ async def test_ens_server_maintenance(
         )
 
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.VM_LINUX_NLX_1, ConnectionTag.DOCKER_VPN_1],
+            )
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -146,6 +151,7 @@ async def test_ens_server_maintenance(
             )
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -226,7 +232,14 @@ async def test_ens_unauthenticated(
             )
 
             env = await exit_stack.enter_async_context(
-                setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+                setup_environment(
+                    exit_stack,
+                    [alpha_setup_params],
+                    vpn=[
+                        ConnectionTag.VM_LINUX_NLX_1,
+                        ConnectionTag.DOCKER_VPN_1,
+                    ],
+                )
             )
 
             client_conn, *_ = [conn.connection for conn in env.connections]
@@ -267,6 +280,7 @@ async def test_ens_unauthenticated(
             await start_service(nlx_conn, "fakefm.service")
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -370,7 +384,10 @@ async def test_ens_connection_limit_reached(
                 setup_environment(
                     exit_stack,
                     [alpha_setup_params, beta_setup_params],
-                    prepare_vpn=True,
+                    vpn=[
+                        ConnectionTag.VM_LINUX_NLX_1,
+                        ConnectionTag.DOCKER_VPN_1,
+                    ],
                 )
             )
 
@@ -423,6 +440,7 @@ async def test_ens_connection_limit_reached(
             await start_service(nlx_conn, "fakefm.service")
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -515,7 +533,7 @@ async def test_ens_superseded(
             setup_environment(
                 exit_stack,
                 [alpha_setup_params, beta_setup_params],
-                prepare_vpn=True,
+                vpn=[ConnectionTag.VM_LINUX_NLX_1, ConnectionTag.DOCKER_VPN_1],
             )
         )
 
@@ -644,7 +662,11 @@ async def test_ens_connection_error_unknown(
             root_certificate
         )
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.VM_LINUX_NLX_1, ConnectionTag.DOCKER_VPN_1],
+            )
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -675,6 +697,7 @@ async def test_ens_connection_error_unknown(
         await client_alpha.wait_for_log(fingerprint)
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -749,7 +772,11 @@ async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
             root_certificate
         )
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.VM_LINUX_NLX_1, ConnectionTag.DOCKER_VPN_1],
+            )
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -784,6 +811,7 @@ async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
         await client_alpha.wait_for_log("InvalidCertificate(UnknownIssuer)")
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -847,7 +875,11 @@ async def test_ens_not_working(
         assert alpha_setup_params.features.error_notification_service
         alpha_setup_params.features.error_notification_service.allow_only_pq = False
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.VM_LINUX_NLX_1, ConnectionTag.DOCKER_VPN_1],
+            )
         )
 
         alpha, *_ = env.nodes

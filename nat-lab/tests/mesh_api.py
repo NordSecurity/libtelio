@@ -489,9 +489,7 @@ class API:
 
         return tuple(list(self.nodes.values())[current_node_list_len:])
 
-    async def prepare_all_vpn_servers(
-        self, connections: Optional[List[Connection]] = None
-    ):
+    async def prepare_vpn_servers(self, connections: Optional[List[Connection]] = None):
         for wg_server in WG_SERVERS:
             await self.setup_vpn_servers(
                 list(self.nodes.values()), wg_server, connections

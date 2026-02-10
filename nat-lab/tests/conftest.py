@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 import asyncio
 import base64
 import itertools
@@ -24,14 +25,10 @@ from tests.helpers import SetupParameters
 from tests.interderp_cli import InterDerpClient
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag, TargetOS, clear_ephemeral_setups_set
-from tests.utils.connection.docker_connection import (
-    DockerConnection,
-    container_id,
-    is_running,
-)
+from tests.utils.connection.docker_connection import DockerConnection, container_id
 from tests.utils.connection.ssh_connection import SshConnection
-from tests.utils.connection_util import new_connection_raw
-from tests.utils.logger import log
+from tests.utils.connection_util import new_connection_raw, is_running
+from tests.utils.logger import log, setup_log
 from tests.utils.process import ProcessExecError
 from tests.utils.router import IPStack
 from tests.utils.tcpdump import make_local_tcpdump, make_tcpdump
@@ -63,6 +60,19 @@ TASKS: List[asyncio.Task] = []
 END_TASKS: threading.Event = threading.Event()
 
 LOG_DIR = "logs"
+SESSION_VM_MARKS: set[str] = set()
+SESSION_IS_CONTAINER_RUNNING: dict[ConnectionTag, bool] = {}
+SESSION_MARK_TO_CONTAINERS = {
+    "fullcone": [
+        ConnectionTag.VM_LINUX_FULLCONE_GW_1,
+        ConnectionTag.VM_LINUX_FULLCONE_GW_2,
+    ],
+    "mac": [ConnectionTag.VM_MAC],
+    "nlx": [ConnectionTag.VM_LINUX_NLX_1],
+    "openwrt": [ConnectionTag.VM_OPENWRT_GW_1],
+    "windows": [ConnectionTag.VM_WINDOWS_1],
+    "windows2": [ConnectionTag.VM_WINDOWS_2],
+}
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -142,6 +152,7 @@ def pytest_make_parametrize_id(config, val):
 
 
 async def setup_check_interderp():
+    setup_log.info("Running interderp checks..")
     async with AsyncExitStack() as exit_stack:
         connections = [
             await exit_stack.enter_async_context(new_connection_raw(conn_tag))
@@ -180,18 +191,19 @@ async def setup_check_duplicate_ip_addresses():
     and fail if any IPv4 address is used by more than one container.
     Converted from nat-lab/check_ip.sh.
     """
+    setup_log.info("Running duplicate IP addresses check..")
     try:
         containers_out = subprocess.check_output(
             ["docker", "ps", "-q"], text=True
         ).strip()
     except Exception as e:  # pylint: disable=broad-exception-caught
-        print(
-            f"setup_check: cannot execute 'docker ps -q': {e}; skipping duplicate IP check"
+        setup_log.error(
+            f"cannot execute 'docker ps -q': {e}; skipping duplicate IP check"
         )
         return
 
     if not containers_out:
-        print("setup_check: No running containers found.")
+        setup_log.error("No running containers found.")
         return
 
     containers = [c for c in containers_out.splitlines() if c.strip()]
@@ -234,31 +246,35 @@ async def setup_check_duplicate_ip_addresses():
         ]
 
         # Print container name and IPs (for debugging parity with the original script)
-        print(f"========== {name} ({cid}) ==========")
+        setup_log.debug("========== %s (%s) ==========", name, cid)
         if not ips:
-            print("No IPs found")
+            setup_log.debug("No IPs found")
         else:
             for ip in ips:
-                print(f"IP: {ip}")
-        print()
+                setup_log.debug(f"IP: {ip}")
 
         # Detect duplicates
         for ip in ips:
-            if ip in ip_owner and ip_owner[ip] != name:
+            # 100.64.0.1 is a libtelio hardcoded address representing VPN virtual peer,
+            # common for every client
+            if ip in ip_owner and ip_owner[ip] != name and ip != "100.64.0.1":
                 duplicates[ip].update({ip_owner[ip], name})
             else:
                 ip_owner[ip] = name
 
     if duplicates:
         for ip, owners in sorted(duplicates.items()):
-            print(
-                f"  -> Duplicate IP {ip} found! Used by containers: {', '.join(sorted(owners))}"
+            setup_log.warning(
+                "  -> Duplicate IP %s found! Used by containers: %s",
+                ip,
+                ", ".join(sorted(owners)),
             )
         details = {ip: sorted(list(owners)) for ip, owners in duplicates.items()}
         raise Exception(f"Found duplicate container IPv4 addresses: {details}")
 
 
 async def setup_check_duplicate_mac_addresses():
+    setup_log.info("Running duplicate MAC addresses check..")
     mac_re = re.compile(r"(?:[0-9a-f]{2}[:\-]){5}[0-9a-f]{2}", re.IGNORECASE)
     seen = defaultdict(set)  # mac -> set of ConnectionTag
 
@@ -269,7 +285,22 @@ async def setup_check_duplicate_mac_addresses():
 
     async with AsyncExitStack() as exit_stack:
         for conn_tag in ConnectionTag:
-            conn = await exit_stack.enter_async_context(new_connection_raw(conn_tag))
+            if not SESSION_IS_CONTAINER_RUNNING[conn_tag]:
+                setup_log.debug(
+                    "%s is not running, skipping duplicate MAC address check..",
+                    conn_tag.name,
+                )
+                continue
+
+            try:
+                conn = await exit_stack.enter_async_context(
+                    new_connection_raw(conn_tag)
+                )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                setup_log.warning(
+                    "Failed to check MAC address for %s: %s", conn_tag.name, e
+                )
+                raise e
 
             if conn.target_os == TargetOS.Linux:
                 cmd = ["sh", "-c", "ip link show | awk '/link\\/ether/ {print $2}'"]
@@ -280,7 +311,7 @@ async def setup_check_duplicate_mac_addresses():
             else:
                 raise Exception("unknown target os")
 
-            proc = await conn.create_process(cmd).execute()
+            proc = await conn.create_process(cmd, quiet=True).execute()
             output = proc.get_stdout()
 
             # extract MACs (handles both ":" and "-" formats)
@@ -295,7 +326,7 @@ async def setup_check_duplicate_mac_addresses():
     }
     if duplicates:
         for mac, tags in duplicates.items():
-            print(f"{mac} -> {', '.join(tags)}")
+            setup_log.error("%s -> %s", mac, ", ".join(tags))
         raise Exception(f"Found duplicate MACs: {duplicates}")
 
 
@@ -305,8 +336,10 @@ async def setup_check_arp_cache():
     and are in a usable state.
     """
     if TargetOS.local() != TargetOS.Linux:
-        print("setup_check: skipping ARP cache validation on non-Linux host")
+        setup_log.info("setup_check: skipping ARP cache validation on non-Linux host")
         return
+
+    setup_log.info("Running ARP cache check..")
 
     def warm_arp(ip: str) -> None:
         subprocess.call(
@@ -317,16 +350,22 @@ async def setup_check_arp_cache():
 
     def read_arp_entries() -> list[dict]:
         return json.loads(
-            subprocess.check_output(["ip", "-j", "neigh", "show"], text=True).strip()
+            subprocess.check_output(
+                ["ip", "-j", "neigh", "show"],
+                text=True,
+            ).strip()
         )
 
-    subprocess.call(["sudo", "ip", "-s", "-s", "neigh", "flush", "all"])
+    subprocess.call(
+        ["sudo", "ip", "-s", "-s", "neigh", "flush", "all"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
     acceptable_states = {"REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT"}
     failures: list[str] = []
 
-    vm_tags = [tag for tag in ConnectionTag if tag.name.startswith("VM_")]
-    for tag in vm_tags:
+    for tag in get_required_vm_containers_from_marks():
         if tag == ConnectionTag.VM_OPENWRT_GW_1:
             continue
         for ip in LAN_ADDR_MAP[tag].values():
@@ -387,18 +426,15 @@ SETUP_CHECKS = [
 
 
 async def perform_setup_checks() -> bool:
-    if "NATLAB_SKIP_SETUP_CHECKS" in os.environ:
-        return True
-
     for target, timeout, retries in SETUP_CHECKS:
         while retries > 0:
             try:
                 await asyncio.wait_for(asyncio.shield(target()), timeout)
                 break
             except asyncio.TimeoutError:
-                log.warning("%s() timeout, retrying...", target)
+                setup_log.warning("%s() timeout, retrying...", target)
             except ProcessExecError as e:
-                log.warning("%s() process exec error %s, retrying...", target, e)
+                setup_log.warning("%s() process exec error %s, retrying...", target, e)
             retries -= 1
         else:
             return False
@@ -407,6 +443,7 @@ async def perform_setup_checks() -> bool:
 
 
 async def check_gateway_connectivity() -> bool:
+    setup_log.info("Checking gateways connectivity..")
     if SESSION_SCOPE_EXIT_STACK is None:
         raise RuntimeError("SESSION_SCOPE_EXIT_STACK is not initialized")
     current_gateway = None
@@ -414,6 +451,8 @@ async def check_gateway_connectivity() -> bool:
         try:
             for gw_tag in ConnectionTag:
                 if "_GW" in gw_tag.name:
+                    if not await is_running(gw_tag):
+                        continue
                     current_gateway = gw_tag
                     await SESSION_SCOPE_EXIT_STACK.enter_async_context(
                         new_connection_raw(gw_tag)
@@ -421,8 +460,8 @@ async def check_gateway_connectivity() -> bool:
             return True
         except Exception as e:  # pylint: disable=broad-exception-caught
             gw_name = getattr(current_gateway, "name", "unknown")
-            log.error("Failed to connect to %s", gw_name)
-            log.error("Exception error: %s", e)
+            setup_log.error("Failed to connect to %s", gw_name)
+            setup_log.error("Exception error: %s", e)
             await asyncio.sleep(GW_CHECK_CONNECTIVITY_TIMEOUT)
     # ignore connection failure in case of OpenWrt Gateway
     if current_gateway and current_gateway in [ConnectionTag.VM_OPENWRT_GW_1]:
@@ -471,19 +510,19 @@ async def reset_service_credentials_cache():
     try:
         with urllib.request.urlopen(request, context=ssl_context) as response:
             if response.status == HTTPStatus.OK:
-                log.debug("Service credentials cache reset successfully")
+                setup_log.debug("Service credentials cache reset successfully")
             else:
-                log.warning(
+                setup_log.warning(
                     "Failed to reset service credentials cache: HTTP %s",
                     response.status,
                 )
     except urllib.error.HTTPError as e:
-        log.warning(
+        setup_log.warning(
             "Failed to reset service credentials cache: HTTP %s - %s", e.code, e.reason
         )
         raise
     except Exception as e:  # pylint: disable=broad-exception-caught
-        log.warning("Error resetting service credentials cache: %s", e)
+        setup_log.warning("Error resetting service credentials cache: %s", e)
         raise
 
 
@@ -501,35 +540,27 @@ async def perform_pretest_cleanups():
 
 async def _copy_vm_binaries(tag: ConnectionTag):
     try:
-        log.info("Copying binaries for %s", tag)
+        setup_log.info("Copying binaries for %s", tag)
         async with SshConnection.new_connection(
             LAN_ADDR_MAP[tag]["primary"], tag, copy_binaries=True
         ):
             pass
     except OSError as e:
-        log.error(e)
+        setup_log.error(e)
         raise e
 
 
-async def _copy_vm_binaries_if_needed(items):
-    windows_bins_copied = False
-    mac_bins_copied = False
-    openwrt_bins_copied = False
-    for item in items:
-        for mark in item.own_markers:
-            if mark.name == "windows" and not windows_bins_copied:
-                await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_1)
-                await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_2)
-                windows_bins_copied = True
-            elif mark.name == "mac" and not mac_bins_copied:
-                await _copy_vm_binaries(ConnectionTag.VM_MAC)
-                mac_bins_copied = True
-            elif mark.name == "openwrt" and not openwrt_bins_copied:
-                await _copy_vm_binaries(ConnectionTag.VM_OPENWRT_GW_1)
-                openwrt_bins_copied = True
-
-            if windows_bins_copied and mac_bins_copied and openwrt_bins_copied:
-                return
+async def _copy_vm_binaries_if_needed():
+    if "windows" in SESSION_VM_MARKS:
+        await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_1)
+        try:
+            await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_2)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            setup_log.warning("[Ignored] Couldn't copy binary to VM_WINDOWS_2: %s", e)
+    if "mac" in SESSION_VM_MARKS:
+        await _copy_vm_binaries(ConnectionTag.VM_MAC)
+    if "openwrt" in SESSION_VM_MARKS:
+        await _copy_vm_binaries(ConnectionTag.VM_OPENWRT_GW_1)
 
 
 def save_dmesg_from_host(suffix):
@@ -541,7 +572,7 @@ def save_dmesg_from_host(suffix):
             check=True,
         ).stdout
     except subprocess.CalledProcessError as e:
-        log.error("Error executing dmesg: %s", e)
+        setup_log.error("Error executing dmesg: %s", e)
         return
 
     if result:
@@ -565,7 +596,7 @@ async def save_dmesg_from_remote_vm(conn_tag: ConnectionTag, suffix: str) -> Non
             with open(log_path, "w", encoding="utf-8") as f:
                 f.write(stdout)
         except ProcessExecError as e:
-            log.warning(
+            setup_log.warning(
                 "Failed to collect remote dmesg from %s. Return code=%s, stderr=%r, stdout=%r",
                 conn_tag,
                 e.returncode,
@@ -580,12 +611,15 @@ def save_audit_log_from_host(suffix):
         if os.path.exists(source_path):
             shutil.copy2(source_path, f"{LOG_DIR}/audit_{suffix}.log")
         else:
-            log.warning("The audit file %s", source_path)
+            setup_log.warning("The audit file %s", source_path)
     except Exception as e:  # pylint: disable=broad-exception-caught
-        log.warning("An error occurred when processing audit log: %s", e)
+        setup_log.warning("An error occurred when processing audit log: %s", e)
 
 
 async def save_nordlynx_logs():
+    if "nlx" not in SESSION_VM_MARKS:
+        return
+
     source_log_dir_path = "/var/log"
     nlx_log_files = [
         "nlx-radius.log",
@@ -607,7 +641,7 @@ async def save_nordlynx_logs():
                         f.write(stdout)
 
             except Exception as e:  # pylint: disable=broad-exception-caught
-                log.warning(
+                setup_log.warning(
                     "An error occurred when processing %s log: %s", remote_path, e
                 )
 
@@ -620,26 +654,25 @@ async def _save_macos_logs(conn, suffix):
         ) as f:
             f.write(dmesg_proc.get_stdout())
     except ProcessExecError as e:
-        log.warning("Failed to collect dmesg logs %s", e)
+        setup_log.warning("Failed to collect dmesg logs %s", e)
 
 
-async def collect_kernel_logs(items, suffix):
+async def collect_kernel_logs(suffix):
     os.makedirs(LOG_DIR, exist_ok=True)
 
     save_dmesg_from_host(suffix)
     save_audit_log_from_host(suffix)
     await save_dmesg_from_remote_vm(ConnectionTag.VM_LINUX_NLX_1, suffix)
 
-    for item in items:
-        if any(mark.name == "mac" for mark in item.own_markers):
-            try:
-                async with SshConnection.new_connection(
-                    LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
-                ) as conn:
-                    await _save_macos_logs(conn, suffix)
-            except OSError as e:
-                if os.environ.get("GITLAB_CI"):
-                    raise e
+    if "mac" in SESSION_VM_MARKS:
+        try:
+            async with SshConnection.new_connection(
+                LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
+            ) as conn:
+                await _save_macos_logs(conn, suffix)
+        except OSError as e:
+            if os.environ.get("GITLAB_CI"):
+                raise e
 
 
 def pytest_collection_modifyitems(items):
@@ -649,15 +682,56 @@ def pytest_collection_modifyitems(items):
             item.add_marker(pytest.mark.timeout(300))
 
 
+def get_session_vm_marks(items):
+    global SESSION_VM_MARKS
+
+    SESSION_VM_MARKS = set()
+    for item in items:
+        for mark in item.own_markers:
+            SESSION_VM_MARKS.add(mark.name)
+
+
+async def check_all_containers_running():
+    global SESSION_IS_CONTAINER_RUNNING
+    SESSION_IS_CONTAINER_RUNNING = {}
+
+    setup_log.info("Checking running containers..")
+
+    tags = list(ConnectionTag)
+    is_running_results = await asyncio.gather(
+        *[is_running(conn_tag) for conn_tag in tags]
+    )
+
+    for conn_tag, is_running_res in zip(tags, is_running_results):
+        SESSION_IS_CONTAINER_RUNNING[conn_tag] = is_running_res
+
+    running = [
+        tag.name for tag, status in SESSION_IS_CONTAINER_RUNNING.items() if status
+    ]
+    setup_log.debug("Running (%s): %s", len(running), ", ".join(running).lower())
+
+    not_running = [
+        tag.name for tag, status in SESSION_IS_CONTAINER_RUNNING.items() if not status
+    ]
+    setup_log.debug(
+        "Not running (%s): %s", len(not_running), ", ".join(not_running).lower()
+    )
+
+
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
+        get_session_vm_marks(session.items)
+
+    if "NATLAB_SKIP_SETUP_CHECKS" not in os.environ:
+        asyncio.run(check_all_containers_running())
+
         if not asyncio.run(perform_setup_checks()):
             pytest.exit("Setup checks failed, exiting ...")
 
-        if os.environ.get("NATLAB_SAVE_LOGS") is not None:
-            asyncio.run(collect_kernel_logs(session.items, "before_tests"))
+    if "NATLAB_SAVE_LOGS" in os.environ:
+        asyncio.run(collect_kernel_logs("before_tests"))
 
-        asyncio.run(_copy_vm_binaries_if_needed(session.items))
+    asyncio.run(_copy_vm_binaries_if_needed())
 
 
 def pytest_runtest_setup():
@@ -680,25 +754,28 @@ def pytest_sessionstart(session):
 
 # pylint: disable=unused-argument
 def pytest_sessionfinish(session, exitstatus):
-    if os.environ.get("NATLAB_SAVE_LOGS") is None:
+    if os.environ.get("NATLAB_SAVE_LOGS") is None or session.config.option.collectonly:
         return
 
     END_TASKS.set()
 
-    if not session.config.option.collectonly:
-        if RUNNER is not None and SESSION_SCOPE_EXIT_STACK is not None:
-            try:
+    if RUNNER is not None:
+        try:
+            if SESSION_SCOPE_EXIT_STACK is not None:
                 RUNNER.run(SESSION_SCOPE_EXIT_STACK.aclose())
-            finally:
-                RUNNER.close()
-        elif RUNNER is not None:
+        finally:
             RUNNER.close()
-        collect_nordderper_logs()
-        collect_dns_server_logs()
-        collect_core_api_server_logs()
-        asyncio.run(collect_kernel_logs(session.items, "after_tests"))
-        asyncio.run(collect_mac_diagnostic_reports())
-        asyncio.run(save_nordlynx_logs())
+
+    asyncio.run(collect_logs())
+
+
+async def collect_logs():
+    collect_nordderper_logs()
+    collect_dns_server_logs()
+    collect_core_api_server_logs()
+    await collect_kernel_logs("after_tests")
+    await collect_mac_diagnostic_reports()
+    await save_nordlynx_logs()
 
 
 def collect_nordderper_logs():
@@ -741,14 +818,14 @@ def copy_file_from_container(container_name, src_path, dst_path):
     docker_cp_command = f"docker cp {container_name}:{src_path} {dst_path}"
     try:
         subprocess.run(docker_cp_command, shell=True, check=True)
-        log.info(
+        setup_log.info(
             "Log file %s copied successfully from %s to %s",
             src_path,
             container_name,
             dst_path,
         )
     except subprocess.CalledProcessError:
-        log.warning(
+        setup_log.warning(
             "Error copying log file %s from %s to %s",
             src_path,
             container_name,
@@ -758,25 +835,24 @@ def copy_file_from_container(container_name, src_path, dst_path):
 
 async def collect_mac_diagnostic_reports():
     is_ci = "GITLAB_CI" in os.environ
-    if not (is_ci or "NATLAB_COLLECT_MAC_DIAGNOSTIC_LOGS" in os.environ):
+    if not (
+        is_ci
+        or "NATLAB_COLLECT_MAC_DIAGNOSTIC_LOGS" in os.environ
+        or "mac" in SESSION_VM_MARKS
+    ):
         return
-    log.info("Collect mac diagnostic reports")
-    try:
-        async with SshConnection.new_connection(
-            LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
-        ) as connection:
-            await connection.download(
-                "/Library/Logs/DiagnosticReports",
-                f"{LOG_DIR}/system_diagnostic_reports",
-            )
-            await connection.download(
-                "/root/Library/Logs/DiagnosticReports",
-                f"{LOG_DIR}/user_diagnostic_reports",
-            )
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        log.error("Failed to connect to the mac VM: %s", e)
-        if is_ci:
-            raise e
+    setup_log.info("Collect mac diagnostic reports")
+    async with SshConnection.new_connection(
+        LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"], ConnectionTag.VM_MAC
+    ) as connection:
+        await connection.download(
+            "/Library/Logs/DiagnosticReports",
+            f"{LOG_DIR}/system_diagnostic_reports",
+        )
+        await connection.download(
+            "/root/Library/Logs/DiagnosticReports",
+            f"{LOG_DIR}/user_diagnostic_reports",
+        )
 
 
 async def start_tcpdump_processes():
@@ -787,17 +863,21 @@ async def start_tcpdump_processes():
         if gw_tag is ConnectionTag.VM_OPENWRT_GW_1:
             continue
         if "_GW" in gw_tag.name:
+            if not await is_running(gw_tag):
+                continue
             connection = await SESSION_SCOPE_EXIT_STACK.enter_async_context(
                 new_connection_raw(gw_tag)
             )
             connections.append(connection)
-    connections += [
-        await SESSION_SCOPE_EXIT_STACK.enter_async_context(new_connection_raw(conn_tag))
-        for conn_tag in [
-            ConnectionTag.DOCKER_DNS_SERVER_1,
-            ConnectionTag.DOCKER_DNS_SERVER_2,
-        ]
-    ]
+    for conn_tag in [
+        ConnectionTag.DOCKER_DNS_SERVER_1,
+        ConnectionTag.DOCKER_DNS_SERVER_2,
+    ]:
+        if await is_running(conn_tag):
+            connection = await SESSION_SCOPE_EXIT_STACK.enter_async_context(
+                new_connection_raw(conn_tag)
+            )
+            connections.append(connection)
 
     await SESSION_SCOPE_EXIT_STACK.enter_async_context(
         make_tcpdump(connections, session=True)
@@ -873,7 +953,7 @@ def start_windows_vm_top10_usage_monitoring(
                 text=True,
             )
             if result.returncode != 0:
-                log.warning(
+                setup_log.warning(
                     "powershell command for top10 %s failed on %s: %s",
                     resource_name,
                     vm_tag,
@@ -917,7 +997,7 @@ def start_windows_vm_monitoring(
                 text=True,
             )
             if result.returncode != 0:
-                log.warning(
+                setup_log.warning(
                     "powershell command for %s failed on %s: %s",
                     resource_name,
                     vm_tag,
@@ -976,3 +1056,10 @@ def setup_logger(tmp_path, request):
             file_handler.close()
         else:
             pass
+
+
+def get_required_vm_containers_from_marks():
+    containers = set()
+    for mark in SESSION_VM_MARKS:
+        containers.update(SESSION_MARK_TO_CONTAINERS.get(mark, []))
+    return containers

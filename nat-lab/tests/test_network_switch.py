@@ -171,7 +171,11 @@ async def test_mesh_network_switch(
 async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.DOCKER_VPN_1],
+            )
         )
         client_alpha, *_ = env.clients
         alpha_conn_mngr, *_ = env.connections

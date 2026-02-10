@@ -1,3 +1,4 @@
+import asyncio
 from aiodocker import Docker
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ from tests.utils.connection.docker_connection import (
     DockerConnection,
     DOCKER_GW_MAP,
     DOCKER_SERVICE_IDS,
+    container_id,
 )
 from tests.utils.connection.ssh_connection import SshConnection
 from tests.utils.connection_tracker import (
@@ -16,6 +18,7 @@ from tests.utils.connection_tracker import (
     ConnectionCountLimit,
     FiveTuple,
 )
+from tests.utils.logger import log
 from tests.utils.network_switcher import (
     Interface,
     NetworkSwitcher,
@@ -26,6 +29,8 @@ from tests.utils.network_switcher import (
     NetworkSwitcherLinux,
 )
 from typing import AsyncIterator, Tuple, Optional, List, Union
+
+IS_VM_RUNNING_PING_TIMEOUT = 10.0
 
 
 @dataclass
@@ -404,3 +409,58 @@ async def toggle_secondary_adapter(connection: Connection, enable: bool):
         yield
     finally:
         await set_secondary_ifc_state(connection, not enable, secondary_ifc)
+
+
+async def is_running(tag: ConnectionTag) -> bool:
+    if tag in DOCKER_SERVICE_IDS:
+        cid = container_id(tag)
+        async with Docker() as docker:
+            clist = await docker.containers.list()
+            for c in clist:
+                name = (await c.show())["Name"]
+                if name == f"/{cid}":
+                    return True
+    else:
+        primary_ip = LAN_ADDR_MAP[tag]["primary"]
+        assert primary_ip != ""
+        proc = await asyncio.wait_for(
+            asyncio.create_subprocess_exec(
+                "ping",
+                "-c",
+                "1",
+                "-W",
+                "1",
+                primary_ip,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            ),
+            timeout=IS_VM_RUNNING_PING_TIMEOUT,
+        )
+        returncode = await asyncio.wait_for(proc.wait(), timeout=2.0)
+        if returncode == 0:
+            return True
+        else:
+            log.debug("%s haven't replied to ICMP request at %s", tag, primary_ip)
+
+        secondary_ip = LAN_ADDR_MAP[tag]["secondary"]
+        if secondary_ip != "":
+            proc = await asyncio.wait_for(
+                asyncio.create_subprocess_exec(
+                    "ping",
+                    "-c",
+                    "1",
+                    "-W",
+                    "1",
+                    secondary_ip,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                ),
+                timeout=IS_VM_RUNNING_PING_TIMEOUT,
+            )
+            returncode = await asyncio.wait_for(proc.wait(), timeout=2.0)
+            if returncode == 0:
+                return True
+            else:
+                log.debug("%s haven't replied to ICMP request at %s", tag, primary_ip)
+
+    return False

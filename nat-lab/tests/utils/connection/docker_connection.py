@@ -57,6 +57,10 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_WINDOWS_VM_2: "windows-client-02",
     ConnectionTag.DOCKER_MAC_GW_1: "mac-gw-01",
     ConnectionTag.DOCKER_MAC_GW_2: "mac-gw-02",
+    ConnectionTag.DOCKER_CORE_API_1: "core-api",
+    ConnectionTag.DOCKER_MQTT_BROKER_1: "mqtt-broker",
+    ConnectionTag.DOCKER_STUN_1: "stun-01",
+    ConnectionTag.DOCKER_UDP_SERVER: "udp-server",
 }
 
 DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
@@ -93,6 +97,13 @@ DOCKER_VM_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.VM_WINDOWS_2: ConnectionTag.DOCKER_WINDOWS_VM_2,
 }
 
+DOCKER_SERVICE_SKIP_IPTABLES: list[ConnectionTag] = [
+    ConnectionTag.DOCKER_UDP_SERVER,
+    ConnectionTag.DOCKER_CORE_API_1,
+    ConnectionTag.DOCKER_MQTT_BROKER_1,
+    ConnectionTag.DOCKER_STUN_1,
+]
+
 
 class DockerConnection(Connection):
     _container: DockerContainer
@@ -102,20 +113,20 @@ class DockerConnection(Connection):
         self._container = container
 
     async def __aenter__(self):
-        try:
-            await self.restore_ip_tables()
-        except ProcessExecError as e:
-            if e.stderr == "Can't open iptables_backup: No such file or directory":
+        if self.tag not in DOCKER_SERVICE_SKIP_IPTABLES:
+            try:
+                await self.restore_ip_tables()
+            except ProcessExecError as e:
                 log.warning(e)
         await self.clean_interface()
         await setup_ephemeral_ports(self)
         return self
 
     async def __aexit__(self, *_):
-        try:
-            await self.restore_ip_tables()
-        except ProcessExecError as e:
-            if e.stderr == "Can't open iptables_backup: No such file or directory":
+        if self.tag not in DOCKER_SERVICE_SKIP_IPTABLES:
+            try:
+                await self.restore_ip_tables()
+            except ProcessExecError as e:
                 log.warning(e)
         await self.clean_interface()
 
@@ -207,14 +218,3 @@ def container_id(tag: ConnectionTag) -> str:
     if tag in DOCKER_SERVICE_IDS:
         return f"nat-lab-{DOCKER_SERVICE_IDS[tag]}-1"
     assert False, f"tag {tag} not a docker container"
-
-
-async def is_running(tag: ConnectionTag) -> bool:
-    cid = container_id(tag)
-    async with Docker() as docker:
-        clist = await docker.containers.list()
-        for c in clist:
-            name = (await c.show())["Name"]
-            if name == f"/{cid}":
-                return True
-    return False

@@ -18,4 +18,10 @@ class Logger:
             self.logger.addHandler(console_handler)
 
 
+class SetupLoggerAdapter(logging.LoggerAdapter):
+    def process(self, msg, kwargs):
+        return f"[SETUP] {msg}", kwargs
+
+
 log = Logger(level=LOG_LEVEL).logger
+setup_log = SetupLoggerAdapter(log, {})

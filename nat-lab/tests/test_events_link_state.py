@@ -808,7 +808,9 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_with_vpn(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, alpha_setup_params, prepare_vpn=True)
+            setup_environment(
+                exit_stack, alpha_setup_params, vpn=[ConnectionTag.DOCKER_VPN_1]
+            )
         )
         client_alpha = env.clients[0]
         conn_mgr_alpha, connection_alpha = (

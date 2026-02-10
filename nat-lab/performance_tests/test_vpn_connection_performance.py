@@ -226,7 +226,7 @@ async def test_vpn_connection_performance() -> None:
         performance_results["baseline_metrics"] = baseline_metrics
 
         # Connect to vpn server
-        await env.api.prepare_all_vpn_servers([vpn_connection])
+        await env.api.prepare_vpn_servers([vpn_connection])
         await connect_vpn(
             client_conn,
             None,
