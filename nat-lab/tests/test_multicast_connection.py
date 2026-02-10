@@ -29,6 +29,7 @@ MUILTICAST_TEST_PARAMS = [
             (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, TelioAdapterType.NEP_TUN),
         ]),
         "ssdp",
+        marks=pytest.mark.fullcone,
     ),
     pytest.param(
         generate_setup_parameter_pair([
@@ -123,6 +124,7 @@ MUILTICAST_DISALLOWED_TEST_PARAMS = [
             (ConnectionTag.DOCKER_FULLCONE_CLIENT_2, TelioAdapterType.NEP_TUN),
         ]),
         "ssdp",
+        marks=pytest.mark.fullcone,
     ),
     pytest.param(
         generate_setup_parameter_pair([

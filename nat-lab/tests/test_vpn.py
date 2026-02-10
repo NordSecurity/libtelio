@@ -78,6 +78,7 @@ from tests.utils.router import IPProto, IPStack
         pytest.param(
             VpnConfig(config.NLX_SERVER, ConnectionTag.VM_LINUX_NLX_1, False),
             id="nlx_server",
+            marks=pytest.mark.nlx,
         ),
     ],
 )
@@ -104,7 +105,7 @@ async def test_vpn_connection(
             )
         )
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(exit_stack, [alpha_setup_params], vpn=[vpn_conf.conn_tag])
         )
 
         alpha, *_ = env.nodes
@@ -207,7 +208,11 @@ async def test_vpn_reconnect(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2],
+            )
         )
 
         alpha, *_ = env.nodes
@@ -283,7 +288,11 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
 
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [setup_params],
+                vpn=[ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2],
+            )
         )
 
         alpha, *_ = env.nodes
@@ -392,7 +401,9 @@ async def test_firewall_blacklist_tcp(ipv4: bool) -> None:
 
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, setup_params, prepare_vpn=True)
+            setup_environment(
+                exit_stack, setup_params, vpn=[ConnectionTag.DOCKER_VPN_1]
+            )
         )
 
         alpha_connection, beta_connection, *_ = [
@@ -472,7 +483,9 @@ async def test_firewall_blacklist_udp(ipv4: bool) -> None:
 
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, setup_params, prepare_vpn=True)
+            setup_environment(
+                exit_stack, setup_params, vpn=[ConnectionTag.DOCKER_VPN_1]
+            )
         )
 
         alpha, beta, *_ = env.nodes
@@ -565,7 +578,11 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
 
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [setup_params],
+                vpn=[ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2],
+            )
         )
 
         alpha, *_ = env.nodes
@@ -680,7 +697,11 @@ async def test_vpn_connection_private_key_change(
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.DOCKER_VPN_1],
+            )
         )
 
         alpha, *_ = env.nodes

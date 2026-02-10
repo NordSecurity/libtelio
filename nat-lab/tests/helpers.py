@@ -229,7 +229,7 @@ async def setup_environment(
     exit_stack: AsyncExitStack,
     instances: List[SetupParameters],
     provided_api: Optional[API] = None,
-    prepare_vpn: bool = False,
+    vpn: Optional[List[ConnectionTag]] = None,
 ) -> AsyncIterator[Environment]:
     """Sets up the basic environment based on the given parameters.
 
@@ -237,7 +237,7 @@ async def setup_environment(
     * `setup_api` (creates mocked core API (if not provided)),
     * `setup_connections` (sets up the connections to the docker containers) and
     * `setup_clients` (creates clients using the given configuration)
-    * `prepare_vpn` - Indicates whether VPN containers are needed for the test.
+    * `vpn` - List of VPN container tags to prepare for the test.
     which results in the fully prepared test configuration.
     It also checks whether the number of connections is correct with the conntrackers.
 
@@ -279,7 +279,8 @@ async def setup_environment(
     * `exit_stack` - contextlib.AsyncExitStack instance to manage the async context managers execution
     * `instances` - list of the parameters for each meshnet node to be created
     * `provided_api` - optional mocked Core API instance, if provided a new one won't be created
-    * `prepare_vpn` - Indicates whether VPN containers are needed for the test.
+    * `vpn` - Optional list of VPN container tags to prepare (e.g. [ConnectionTag.DOCKER_VPN_1, ConnectionTag.VM_LINUX_NLX_1]).
+                      If None, no VPN containers are prepared.
 
     # Returns
 
@@ -304,17 +305,13 @@ async def setup_environment(
         ],
     )
 
-    if prepare_vpn:
+    if vpn:
         connections = [
             await exit_stack.enter_async_context(new_connection_raw(conn_tag))
-            for conn_tag in [
-                ConnectionTag.VM_LINUX_NLX_1,
-                ConnectionTag.DOCKER_VPN_1,
-                ConnectionTag.DOCKER_VPN_2,
-            ]
+            for conn_tag in vpn
         ]
         await exit_stack.enter_async_context(make_tcpdump(connections))
-        await api.prepare_all_vpn_servers(connections)
+        await api.prepare_vpn_servers(connections)
 
     clients = await setup_clients(
         exit_stack,
@@ -355,7 +352,7 @@ async def setup_mesh_nodes(
     instances: List[SetupParameters],
     is_timeout_expected: bool = False,
     provided_api: Optional[API] = None,
-    prepare_vpn: bool = False,
+    vpn: Optional[List[ConnectionTag]] = None,
 ) -> Environment:
     """The default way of setting up the test environment.
 
@@ -372,7 +369,8 @@ async def setup_mesh_nodes(
     * `instances` - list of the parameters for each meshnet node to be created
     * `is_timeout_expected` - indicates whether the nodes connection should timeout
     * `provided_api` - optional mocked Core API instance, if provided a new one won't be created
-    * `prepare_vpn` - Indicates whether VPN containers needs to be configured
+    * `vpn` - Optional list of VPN container tags to prepare (e.g. [ConnectionTag.DOCKER_VPN_1, ConnectionTag.VM_LINUX_NLX_1]).
+                      If None, no VPN containers are prepared.
 
     # Returns
 
@@ -380,7 +378,7 @@ async def setup_mesh_nodes(
     """
 
     env = await exit_stack.enter_async_context(
-        setup_environment(exit_stack, instances, provided_api, prepare_vpn)
+        setup_environment(exit_stack, instances, provided_api, vpn)
     )
 
     await asyncio.gather(*[

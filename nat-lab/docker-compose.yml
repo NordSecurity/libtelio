@@ -904,6 +904,8 @@ services:
     entrypoint: "/usr/bin/nc -unkl46 2000"
     cap_drop:
       - ALL
+    cap_add:
+      - NET_ADMIN
     security_opt:
       - no-new-privileges:true
     networks:
@@ -976,6 +978,8 @@ services:
     entrypoint: /opt/bin/core-api.py
     environment:
       PYTHONUNBUFFERED: 1
+    cap_add:
+      - NET_ADMIN
     healthcheck:
       test: "curl --cacert /etc/ssl/server_certificate/test.pem https://api.nordvpn.com/v1/health"
       interval: 10s
