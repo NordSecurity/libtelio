@@ -2736,7 +2736,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "2.2.3"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v2.2.5#b888a5786101f3996afb2409212a0be176cdfc92"
+source = "git+https://github.com/NordSecurity/neptun.git?tag=v2.3.0#faa23c9b02b3ce1cd27aa1fc65c8baae1a2fcf5d"
 dependencies = [
  "aead",
  "base64 0.13.1",
@@ -4812,6 +4812,7 @@ dependencies = [
  "pnet_packet 0.35.0",
  "rand 0.8.5",
  "rustc-hash 2.1.1",
+ "serde_json",
  "serial_test",
  "smallvec",
  "sn_fake_clock",

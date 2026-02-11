@@ -197,7 +197,7 @@ impl DynamicWg {
     ///     let firewall = Arc::new(MockFirewall::new());
     ///     let firewall_filter_inbound_packets = {
     ///         let fw = firewall.clone();
-    ///         move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)
+    ///         move |peer: &[u8; 32], packet: &mut [u8]| fw.process_inbound_packet(peer, packet)
     ///     };
     ///     let firewall_filter_outbound_packets = {
     ///         let fw = firewall.clone();
