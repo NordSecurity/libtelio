@@ -719,8 +719,10 @@ async def check_all_containers_running():
 
 
 def pytest_runtestloop(session):
-    if not session.config.option.collectonly:
-        get_session_vm_marks(session.items)
+    if session.config.option.collectonly:
+        return
+
+    get_session_vm_marks(session.items)
 
     if "NATLAB_SKIP_SETUP_CHECKS" not in os.environ:
         asyncio.run(check_all_containers_running())
