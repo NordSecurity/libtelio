@@ -12,14 +12,17 @@ use pnet_packet::{
     tcp::TcpFlags,
 };
 use std::{
-    ffi::c_void,
+    ffi::{c_void, CString},
     fmt::Debug,
     io::{self},
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr},
 };
 use thiserror::Error;
 
-use telio_model::features::{FeatureFirewall, IpProtocol};
+use telio_model::{
+    features::{FeatureFirewall, IpProtocol},
+    tp_lite_stats::{TpLiteStatsCallback, TpLiteStatsOptions},
+};
 use telio_network_monitors::monitor::{LocalInterfacesObserver, LOCAL_ADDRS_CACHE};
 
 use telio_crypto::PublicKey;
@@ -32,7 +35,8 @@ use crate::{
         ConnectionState, Direction, FfiChainGuard, Filter, FilterData, NetworkFilterData,
         NextLevelProtocol, Rule,
     },
-    libfirewall::{LibfwChain, LibfwFirewall, LibfwLogLevel, LibfwVerdict},
+    libfirewall::{LibfwChain, LibfwFirewall, LibfwLogLevel, LibfwResult, LibfwVerdict},
+    tp_lite_stats::{collect_stats, CallbackManager},
 };
 
 #[mockall_double::double]
@@ -100,7 +104,7 @@ pub trait Firewall: Sync + Send {
     /// Does not extend pinhole lifetime on success
     /// Adds new connection to cache only if ip is whitelisted
     /// Allows all icmp packets except for request types
-    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool;
+    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &mut [u8]) -> bool;
 
     /// Creates packets that are supposed to kill the existing connections.
     /// The end goal here is to force the client app sockets to reconnect.
@@ -179,6 +183,8 @@ pub struct StatefulFirewall {
     state: RwLock<FirewallState>,
     /// Chain configuration function
     configure_chain_fn: ConfigureChainFn,
+    /// Callback for TP-Lite stats
+    tp_lite_stats_cb: CallbackManager,
 }
 
 // Access to internal firewall structs is guarded by locks, so that should be fine
@@ -209,6 +215,12 @@ pub enum Error {
     /// Failed to initialize firewall
     #[error("Firewall initialization failed")]
     FirewallInitFailed,
+    /// Invalid TP-Lite stats collection config
+    #[error("Invalid TP-Lite stats collection config")]
+    InvalidTpLiteConfig,
+    /// Failed to initialize TP-Lite stats collection
+    #[error("TP-Lite stats collection initialization failed with error code {0}")]
+    TpLiteInitFailed(LibfwResult::Type),
 }
 
 impl StatefulFirewall {
@@ -254,6 +266,7 @@ impl StatefulFirewall {
             config,
             state: RwLock::new(state.clone()),
             configure_chain_fn,
+            tp_lite_stats_cb: CallbackManager::new(),
         };
 
         result.refresh_chain();
@@ -274,6 +287,54 @@ impl StatefulFirewall {
             self.firewall_lib
                 .libfw_configure_chain(self.firewall, (&ffi_chain.ffi_chain) as *const LibfwChain);
         }
+    }
+
+    /// Register callback to get metrics and domains blocked by TP-Lite
+    ///
+    /// Requires firewall to be enabled through enable_firewall()
+    ///
+    /// Passing empty list of IPs will disable the collection of TP-Lite stats
+    pub fn enable_tp_lite_stats_collection(
+        &self,
+        config: TpLiteStatsOptions,
+        collect_stats_cb: Box<dyn TpLiteStatsCallback>,
+    ) -> Result<(), Error> {
+        let config = serde_json::to_string(&config).map_err(|err| {
+            telio_log_warn!("Failed to convert TP-Lite config to json. {err:?}");
+            Error::InvalidTpLiteConfig
+        })?;
+        let config = CString::new(config).map_err(|err| {
+            telio_log_warn!("Failed to convert TP-Lite config to FFI string. {err:?}");
+            Error::InvalidTpLiteConfig
+        })?;
+        // We need to pass the callback to libfw before we assing it to the CallbackManager.
+        // Otherwise there could be a scenario where the old callback gets dropped, but libfw
+        // tries to invoke it before we set the new callback in libfw.
+        let collect_stats_cb = Box::new(collect_stats_cb);
+        let res = unsafe {
+            self.firewall_lib.libfw_enable_tp_lite_stats_collection(
+                self.firewall,
+                config.as_ptr(),
+                self.tp_lite_stats_cb.as_raw_ptr(),
+                Some(collect_stats),
+            )
+        };
+        *self.tp_lite_stats_cb.callback.write() = collect_stats_cb;
+        match res {
+            LibfwResult::LibfwSuccess => Ok(()),
+            _ => {
+                telio_log_warn!("Failed to init TP-Lite stats collection. Error code: {res:?}");
+                Err(Error::TpLiteInitFailed(res))
+            }
+        }
+    }
+
+    /// Disable collection of TP-Lite stats
+    pub fn disable_tp_lite_stats_collection(&self) {
+        unsafe {
+            self.firewall_lib
+                .libfw_disable_tp_lite_stats_collection(self.firewall)
+        };
     }
 }
 
@@ -608,12 +669,12 @@ impl Firewall for StatefulFirewall {
     /// Does not extend pinhole lifetime on success
     /// Adds new connection to cache only if ip is whitelisted
     /// Allows all icmp packets except for request types
-    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
+    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &mut [u8]) -> bool {
         LibfwVerdict::LibfwVerdictAccept
             == unsafe {
                 self.firewall_lib.libfw_process_inbound_packet(
                     self.firewall,
-                    buffer.as_ptr(),
+                    buffer.as_mut_ptr(),
                     buffer.len(),
                     public_key as *const u8,
                     public_key.len(),
@@ -666,6 +727,7 @@ mod tests {
                     feature,
                 },
                 configure_chain_fn,
+                tp_lite_stats_cb: CallbackManager::new(),
             };
 
             result

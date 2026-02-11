@@ -6,3 +6,4 @@
 pub(crate) mod chain_helpers;
 pub mod firewall;
 pub(crate) mod libfirewall;
+pub mod tp_lite_stats;
