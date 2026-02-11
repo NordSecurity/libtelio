@@ -15,8 +15,9 @@ from tests.config import (
     DERP_TERTIARY,
 )
 from tests.helpers import connectivity_stack
+from tests.log_collector import copy_file, find_files, get_log_without_flush
 from tests.mesh_api import API, Node
-from tests.telio import Client, copy_file, get_log_without_flush, find_files
+from tests.telio import Client
 from tests.utils import testing, stun
 from tests.utils.analytics import (
     fetch_moose_events,
@@ -1986,7 +1987,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
                 connection_beta, MOOSE_LOGS_DIR, "moose_trace.log*"
             )
             for trace_path in moose_traces:
-                copy_file(connection_beta, trace_path, log_dir)
+                await copy_file(connection_beta, trace_path, log_dir)
                 file_name = os.path.basename(trace_path)
                 new_file_name = f"beta_before_restart_{file_name}"
                 os.rename(

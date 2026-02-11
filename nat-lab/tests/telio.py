@@ -1,55 +1,54 @@
 # pylint: disable=too-many-lines
 import asyncio
-import glob
-import os
 import platform
 import re
 import time
 import uuid
-import warnings
 from collections import Counter
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from itertools import groupby
 from tests.config import DERP_SERVERS
+from tests.log_collector import (
+    LOG_COLLECTORS,
+    LogCollector,
+    clear_core_dumps,
+    get_log_without_flush,
+)
 from tests.mesh_api import Node
 from tests.uniffi import VpnConnectionError
 from tests.uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
 from tests.utils import asyncio_util
 from tests.utils.bindings import (
-    default_features,
-    Features,
     Config,
-    TelioNode,
-    Server,
     ErrorEvent,
     Event,
-    PathType,
-    NodeState,
-    RelayState,
+    Features,
     LinkState,
+    NodeState,
+    PathType,
+    RelayState,
+    Server,
     TelioAdapterType,
+    TelioNode,
+    default_features,
 )
 from tests.utils.command_grepper import CommandGrepper
 from tests.utils.connection import Connection, TargetOS
-from tests.utils.connection.docker_connection import DockerConnection, container_id
+from tests.utils.connection.docker_connection import DockerConnection
 from tests.utils.connection_util import get_uniffi_path
 from tests.utils.logger import log
-from tests.utils.moose import MOOSE_DB_TIMEOUT_MS, MOOSE_LOGS_DIR
+from tests.utils.moose import MOOSE_DB_TIMEOUT_MS
 from tests.utils.output_notifier import OutputNotifier
-from tests.utils.process import Process, ProcessExecError
+from tests.utils.process import Process
 from tests.utils.python import get_python_binary
 from tests.utils.router import IPStack, Router, new_router
 from tests.utils.router.linux_router import (
-    LinuxRouter,
     FWMARK_VALUE as LINUX_FWMARK_VALUE,
+    LinuxRouter,
 )
 from tests.utils.router.windows_router import WindowsRouter
 from tests.utils.tcpdump import make_tcpdump
-from tests.utils.testing import (
-    get_current_test_log_path,
-    get_current_test_case_and_parameters,
-)
 from typing import AsyncIterator, List, Optional, Set, Tuple
 
 DEVICE_STOP_TIMEOUT = 30
@@ -525,7 +524,7 @@ class Client:
             if run_tcpdump:
                 await exit_stack.enter_async_context(make_tcpdump([self._connection]))
             if isinstance(self._connection, DockerConnection):
-                await self.clear_core_dumps()
+                await clear_core_dumps(self._connection)
 
             await self.clear_system_log()
 
@@ -571,92 +570,77 @@ class Client:
                 async with asyncio_util.run_async_context(self._event_request_loop()):
                     if meshnet_config:
                         await self.set_meshnet_config(meshnet_config)
+                    log_collector = LogCollector(self)
+                    LOG_COLLECTORS.append(log_collector)
                     yield self
             finally:
-                # Stopping the instance might fail, but we don't want that to prevent us from doing the cleanup
-                stop_exception = None
-                log.info(
-                    "[%s] Test cleanup: Stopping tcpdump and collecting core dumps",
-                    self._node.name,
-                )
-                if isinstance(self._connection, DockerConnection):
-                    await self.collect_core_dumps()
+                await self.cleanup()
 
-                log.info(
-                    "[%s] Test cleanup: Saving MacOS network info",
-                    self._node.name,
-                )
-                await self.save_mac_network_info()
+    async def cleanup(self):
+        assert self._process
 
+        stop_exception = None
+
+        log.info(
+            "[%s] Test cleanup: Stopping device",
+            self._node.name,
+        )
+        if self._process.is_executing():
+            log.info(
+                "[%s] Test cleanup: process is still executing",
+                self._node.name,
+            )
+            if self._libtelio_proxy:
                 log.info(
-                    "[%s] Test cleanup: Stopping device",
+                    "[%s] Test cleanup: will stop the device",
                     self._node.name,
                 )
-                if self._process.is_executing():
-                    log.info(
-                        "[%s] Test cleanup: process is still executing",
+                try:
+                    async with asyncio.timeout(DEVICE_STOP_TIMEOUT):
+                        await self.stop_device()
+                        self._quit = True
+                # pylint: disable=broad-except
+                except Exception as e:
+                    log.exception(
+                        "[%s] Exception while stopping device: %s. Will ignore until the end of the cleanup",
                         self._node.name,
+                        e,
                     )
-                    if self._libtelio_proxy:
-                        log.info(
-                            "[%s] Test cleanup: will stop the device",
-                            self._node.name,
-                        )
-                        try:
-                            async with asyncio.timeout(DEVICE_STOP_TIMEOUT):
-                                await self.stop_device()
-                                self._quit = True
-                        # pylint: disable=broad-except
-                        except Exception as e:
-                            log.exception(
-                                "[%s] Exception while stopping device: %s. Will ignore until the end of the cleanup",
-                                self._node.name,
-                                e,
-                            )
-                            stop_exception = e
-                    else:
-                        log.info(
-                            "[%s] Test cleanup: We don't have LibtelioProxy instance, Stop() not called.",
-                            self._node.name,
-                        )
+                    stop_exception = e
+            else:
+                log.info(
+                    "[%s] Test cleanup: We don't have LibtelioProxy instance, Stop() not called.",
+                    self._node.name,
+                )
 
-                log.info("[%s]  Test cleanup: Shutting down", self._node.name)
-                if self._libtelio_proxy:
-                    # flush_logs() is allowed to fail here:
-                    try:
-                        await self.get_proxy().flush_logs()
-                    # Since this is clean up code, catching general exceptions is fine:
-                    except Exception as e:  # pylint: disable=broad-exception-caught
-                        log.info(
-                            "[%s] Test cleanup: Exception while flushing logs: %s",
-                            self._node.name,
-                            e,
-                        )
+        log.info("[%s]  Test cleanup: Shutting down", self._node.name)
+        if self._libtelio_proxy:
+            # flush_logs() is allowed to fail here:
+            try:
+                await self.get_proxy().flush_logs()
+            # Since this is clean up code, catching general exceptions is fine:
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                log.info(
+                    "[%s] Test cleanup: Exception while flushing logs: %s",
+                    self._node.name,
+                    e,
+                )
 
-                    await self.get_proxy().shutdown(self._connection.tag.name)
-                else:
-                    log.info(
-                        "[%s] We don't have LibtelioProxy instance, Shutdown() not called.",
-                        self._node.name,
-                    )
+            await self.get_proxy().shutdown(self._connection.tag.name)
+        else:
+            log.info(
+                "[%s] We don't have LibtelioProxy instance, Shutdown() not called.",
+                self._node.name,
+            )
 
-                log.info("[%s] Test cleanup: Clearing up routes", self._node.name)
-                await self._router.delete_vpn_route()
-                await self._router.delete_exit_node_route()
-                await self._router.delete_interface()
+        log.info("[%s] Test cleanup: Clearing up routes", self._node.name)
+        await self._router.delete_vpn_route()
+        await self._router.delete_exit_node_route()
+        await self._router.delete_interface()
 
-                log.info("[%s] Test cleanup: Saving moose dbs", self._node.name)
-                await self.save_moose_db()
-
-                log.info("[%s] Test cleanup: Checking logs", self._node.name)
-                await self._check_logs_for_errors()
-
-                log.info("[%s] Test cleanup: Saving logs", self._node.name)
-                await self._save_logs()
-
-                log.info("[%s] Test cleanup complete", self._node.name)
-                if stop_exception is not None:
-                    raise stop_exception
+        log.info("[%s] Test cleanup complete", self._node.name)
+        if stop_exception is not None:
+            raise stop_exception
 
     async def simple_start(self):
         await self.get_proxy().start_named(
@@ -1187,37 +1171,7 @@ class Client:
 
     async def get_log(self) -> str:
         await self.flush_logs()
-        return await self._get_log_without_flush()
-
-    async def _get_log_without_flush(self) -> str:
         return await get_log_without_flush(self._connection)
-
-    async def get_system_log(self) -> Optional[str]:
-        """
-        Get the system log on the target machine
-        Windows only for now
-        """
-        if self._connection.target_os == TargetOS.Windows:
-            logs = ""
-            for log_name in ["Application", "System"]:
-                try:
-                    log_output = await self._connection.create_process(
-                        [
-                            "powershell",
-                            "-Command",
-                            (
-                                f"Get-EventLog -LogName {log_name} -Newest 100 |"
-                                " format-table -wrap"
-                            ),
-                        ],
-                        quiet=True,
-                    ).execute()
-                    logs += log_output.get_stdout()
-                except ProcessExecError:
-                    # ignore exec error, since it happens if no events were found
-                    pass
-            return logs
-        return None
 
     async def clear_system_log(self) -> None:
         """
@@ -1235,276 +1189,5 @@ class Client:
                     quiet=True,
                 ).execute()
 
-    async def get_network_info(self) -> str:
-        if self._connection.target_os == TargetOS.Mac:
-            interface_info = self._connection.create_process(
-                ["ifconfig", "-a"], quiet=True
-            )
-            await interface_info.execute()
-            routing_table_info = self._connection.create_process(
-                ["netstat", "-rn"], quiet=True
-            )
-            await routing_table_info.execute()
-            # syslog does not provide a way to filter events by timestamp, so only using the last 20 lines.
-            syslog_info = self._connection.create_process(["syslog"], quiet=True)
-            await syslog_info.execute()
-            start_time_str = self._start_time.strftime("%Y-%m-%d %H:%M:%S")
-            log_info = self._connection.create_process(
-                ["log", "show", "--start", start_time_str], quiet=True
-            )
-            await log_info.execute()
-            return (
-                start_time_str
-                + "\n"
-                + "\n"
-                + routing_table_info.get_stdout()
-                + "\n"
-                + interface_info.get_stdout()
-                + "\n"
-                + "\n".join(syslog_info.get_stdout().splitlines()[-20:])
-                + "\n"
-                + "\n"
-                + log_info.get_stdout()
-                + "\n"
-                + "\n"
-            )
-        return ""
-
-    async def _check_logs_for_errors(self) -> None:
-        """
-        Check logs for error and raise error/warning if unexpected errors
-        has been found
-
-        In order to check all of the logs this function must be called
-        after process running libtelio has already exited. Or in worst case
-        at least after logs has been flushed.
-        """
-
-        log_content = await self._get_log_without_flush()
-        for line in log_content.splitlines():
-            if "TelioLogLevel.ERROR" in line:
-                if not self._allowed_errors or not any(
-                    allowed.search(line) for allowed in self._allowed_errors
-                ):
-                    # TODO: convert back to `raise Exception()` once we are ready to investigate
-                    warnings.warn(
-                        f"Unexpected error found in {self._node.name} log: {line}"
-                    )
-
-    async def _save_logs(self) -> None:
-        """
-        Save the logs from libtelio.
-        In order to collect all of the logs this function must be called
-        after process running libtelio has already exited. Or in worst case
-        at least after logs has been flushed.
-        """
-
-        if os.environ.get("NATLAB_SAVE_LOGS") is None:
-            return
-
-        log_dir = get_current_test_log_path()
-        os.makedirs(log_dir, exist_ok=True)
-
-        try:
-            log_content = await self._get_log_without_flush()
-        except ProcessExecError as err:
-            err.print()
-            return
-
-        system_log_content = await self.get_system_log()
-
-        filename = self._connection.tag.name.lower() + ".log"
-        if len(filename.encode("utf-8")) > 256:
-            filename = f"{filename[:251]}.log"
-
-            i = 0
-            while os.path.exists(os.path.join(log_dir, filename)):
-                filename = f"{filename[:249]}_{i}.log"
-                i += 1
-
-        with open(
-            os.path.join(log_dir, filename),
-            "w",
-            encoding="utf-8",
-        ) as f:
-            f.write(log_content)
-            if system_log_content:
-                f.write("\n\n\n\n--- SYSTEM LOG ---\n\n")
-                f.write(system_log_content)
-
-        moose_traces = await find_files(
-            self._connection, MOOSE_LOGS_DIR, "moose_trace.log*"
-        )
-        for trace_path in moose_traces:
-            copy_file(self._connection, trace_path, log_dir)
-            file_name = os.path.basename(trace_path)
-            os.rename(
-                os.path.join(log_dir, file_name),
-                os.path.join(
-                    log_dir, f"{self._connection.tag.name.lower()}-{file_name}"
-                ),
-            )
-
-        if self._connection.target_os == TargetOS.Windows:
-            await self._connection.download(
-                "C:\\Windows\\INF\\setupapi.dev.log", log_dir
-            )
-            await self._connection.download(
-                "C:\\Windows\\INF\\setupapi.setup.log", log_dir
-            )
-
-    async def save_moose_db(self) -> None:
-        """
-        Check if any the moose db files exists ("*-events.db"),
-        rename them to "str(test_name) + "_" + original_filename, and save them to "./logs",
-        delete the original file.
-        """
-        if os.environ.get("NATLAB_SAVE_LOGS") is None:
-            return
-
-        log_dir = get_current_test_log_path()
-        os.makedirs(log_dir, exist_ok=True)
-
-        moose_db_files = glob.glob("*-events.db", recursive=False)
-
-        for original_filename in moose_db_files:
-            new_filepath = os.path.join(log_dir, original_filename)
-            os.rename(original_filename, new_filepath)
-
-    async def save_mac_network_info(self) -> None:
-        if os.environ.get("NATLAB_SAVE_LOGS") is None:
-            return
-
-        if self._connection.target_os != TargetOS.Mac:
-            return
-
-        log_dir = get_current_test_log_path()
-        os.makedirs(log_dir, exist_ok=True)
-
-        network_info_info = await self.get_network_info()
-
-        filename = self._connection.tag.name.lower() + "_network_info.log"
-        if len(filename.encode("utf-8")) > 256:
-            filename = f"{filename[:251]}.log"
-
-            i = 0
-            while os.path.exists(os.path.join(log_dir, filename)):
-                filename = f"{filename[:249]}_{i}.log"
-                i += 1
-
-        with open(
-            os.path.join(log_dir, filename),
-            "w",
-            encoding="utf-8",
-        ) as f:
-            f.write(network_info_info)
-
     async def flush_logs(self) -> None:
         await self.get_proxy().flush_logs()
-
-    # This is where natlab expects coredumps to be placed
-    # For CI and our internal linux VM, this path is set in our provisioning scripts
-    # If you're running locally without the aforementioned linux VM, you are expected to configure this yourself
-    # However, this only needs to be set iff you're:
-    #  - running a test targeting a docker image
-    #  - have set the NATLAB_SAVE_LOGS environment variable
-    #  - want to have natlab automatically collect core dumps for you
-    def get_coredump_folder(self) -> tuple[str, str]:
-        return "/var/crash", "core-"
-
-    def should_skip_core_dump_collection(self) -> bool:
-        return (
-            os.environ.get("NATLAB_SAVE_LOGS") is None
-            or self._connection.target_os != TargetOS.Linux
-        )
-
-    async def clear_core_dumps(self):
-        if self.should_skip_core_dump_collection():
-            return
-
-        coredump_folder, _ = self.get_coredump_folder()
-
-        # clear the existing system core dumps
-        await self._connection.create_process(
-            ["rm", "-rf", coredump_folder], quiet=True
-        ).execute()
-        # make sure we have the path where the new cores will be dumped
-        await self._connection.create_process(
-            ["mkdir", "-p", coredump_folder], quiet=True
-        ).execute()
-
-    async def collect_core_dumps(self):
-        if self.should_skip_core_dump_collection():
-            return
-
-        coredump_folder, file_prefix = self.get_coredump_folder()
-
-        dump_files = await find_files(
-            self._connection, coredump_folder, f"{file_prefix}*"
-        )
-
-        coredump_dir = "coredumps"
-        os.makedirs(coredump_dir, exist_ok=True)
-
-        should_copy_coredumps = len(dump_files) > 0
-
-        # if we collected some core dumps, copy them
-        if isinstance(self._connection, DockerConnection) and should_copy_coredumps:
-            container_name = container_id(self._connection.tag)
-            test_name = get_current_test_case_and_parameters()[0] or ""
-            for i, file_path in enumerate(dump_files):
-                file_name = file_path.rsplit("/", 1)[-1]
-                core_dump_destination = (
-                    f"{coredump_dir}/{test_name}_{file_name}_{i}.core"
-                )
-                cmd = (
-                    "docker container cp"
-                    f" {container_name}:{file_path} {core_dump_destination}"
-                )
-                os.system(cmd)
-
-
-async def find_files(connection, where, name_pattern):
-    """Wrapper for 'find' command over the connection"""
-
-    try:
-        process = await connection.create_process(
-            ["find", where, "-maxdepth", "1", "-name", name_pattern], quiet=True
-        ).execute()
-        return process.get_stdout().strip().split()
-    except ProcessExecError:
-        # Expected when 'where' doesn't exist
-        return []
-
-
-def copy_file(from_connection, from_path, destination_path):
-    """Copy a file from within the docker container connection to the destination path"""
-    if isinstance(from_connection, DockerConnection):
-        container_name = container_id(from_connection.tag)
-
-        file_name = os.path.basename(from_path)
-        core_dump_destination = os.path.join(destination_path, file_name)
-
-        cmd = (
-            "docker container cp"
-            f" {container_name}:{from_path} {core_dump_destination}"
-        )
-        log.info(cmd)
-        os.system(cmd)
-    else:
-        raise Exception(f"Copying files from {from_connection} is not supported")
-
-
-async def get_log_without_flush(connection) -> str:
-    """
-    This function retrieves telio logs without flushing them. It may be needed to do that
-    if log retrieval is requested after process has already exited. In such a case there is
-    nothing to flush and attempting to do so will cause errors.
-    """
-    process = (
-        connection.create_process(["type", "tcli.log"], quiet=True)
-        if connection.target_os == TargetOS.Windows
-        else connection.create_process(["cat", "./tcli.log"], quiet=True)
-    )
-    await process.execute()
-    return process.get_stdout()
