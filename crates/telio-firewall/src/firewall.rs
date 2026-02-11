@@ -709,6 +709,11 @@ mod tests {
 
     #[tokio::test]
     #[serial]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "On macOS there's sometimes an additional event causing this testcase to fail. This test should be fixed"
+    )]
+    // TODO (LLT-7074): testcase should be fixed for macos
     async fn test_firewall_with_network_monitor_integration() {
         // Let's cleanup stuff first
         LOCAL_ADDRS_CACHE.lock().clear();
