@@ -4,6 +4,7 @@
 use core::fmt;
 use enum_map::{Enum, EnumMap};
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
+#[cfg(not(target_vendor = "apple"))]
 use libloading::library_filename;
 use parking_lot::RwLock;
 use pnet_packet::{
@@ -235,9 +236,7 @@ impl StatefulFirewall {
         feature: FeatureFirewall,
         configure_chain_fn: ConfigureChainFn,
     ) -> Result<Self, Error> {
-        let firewall_lib = unsafe {
-            Libfirewall::new(library_filename("firewall")).map_err(Error::LibfirewallLoadFailed)?
-        };
+        let firewall_lib = Self::load_fw_module().map_err(Error::LibfirewallLoadFailed)?;
 
         // Let's initialize libfirewall logging first.
         // We use TRACE level, which will be telio's level in pracice,
@@ -272,6 +271,38 @@ impl StatefulFirewall {
         result.refresh_chain();
 
         Ok(result)
+    }
+
+    #[cfg(not(target_vendor = "apple"))]
+    fn load_fw_module() -> Result<Libfirewall, libloading::Error> {
+        unsafe { Libfirewall::new(library_filename("firewall")) }
+    }
+
+    #[cfg(target_vendor = "apple")]
+    fn load_fw_module() -> Result<Libfirewall, libloading::Error> {
+        const EXPECTED_PATH: &str = "@rpath/firewallFFI.framework/firewallFFI";
+        const FALLBACK_PATH: &str = "libfirewall.dylib";
+
+        unsafe {
+            match Libfirewall::new(EXPECTED_PATH) {
+                Ok(lib) => Ok(lib),
+                Err(err) => {
+                    telio_log_warn!(
+                    "Failed to load firewall module from: {EXPECTED_PATH}, trying from: {FALLBACK_PATH}"
+                );
+
+                    // try fallback path
+                    if let Ok(lib) = Libfirewall::new(FALLBACK_PATH) {
+                        telio_log_warn!(
+                            "Using firewall module from fallback path: {FALLBACK_PATH}"
+                        );
+                        return Ok(lib);
+                    }
+
+                    Err(err)
+                }
+            }
+        }
     }
 
     fn refresh_chain(&self) {
