@@ -216,6 +216,25 @@ impl CrossPingCheck {
     pub async fn stop(self) {
         let _ = self.task.stop().await.resume_unwind();
     }
+
+    fn compare_candidate_preference(
+        a: &WireGuardEndpointCandidateChangeEvent,
+        b: &WireGuardEndpointCandidateChangeEvent,
+    ) -> std::cmp::Ordering {
+        let ep_preference_score = |ep| match ep {
+            ApiEndpointProvider::Local => 4,
+            ApiEndpointProvider::Upnp => 2,
+            ApiEndpointProvider::Stun => 1,
+        };
+
+        let ep_pair_preference_score =
+            |ep1, ep2| ep_preference_score(ep1) + ep_preference_score(ep2);
+
+        let a_score = ep_pair_preference_score(a.remote_endpoint.1, a.local_endpoint.1);
+        let b_score = ep_pair_preference_score(b.remote_endpoint.1, b.local_endpoint.1);
+
+        a_score.cmp(&b_score)
+    }
 }
 
 #[async_trait]
@@ -225,27 +244,45 @@ impl CrossPingCheckTrait for CrossPingCheck {
     ) -> Result<HashMap<PublicKey, WireGuardEndpointCandidateChangeEvent>, Error> {
         let res: Result<HashMap<PublicKey, WireGuardEndpointCandidateChangeEvent>, Error> =
             task_exec!(&self.task, async move |s| {
-                // TODO: update logic to maintain all endpoints instead of last one
-                Ok(s.endpoint_connectivity_check_state
-                    .iter()
-                    .filter_map(
-                        |(session, v)| match (v.state.get(), v.last_validated_endpoint) {
-                            (EndpointState::Published, Some(ep)) => Some((
-                                v.public_key,
-                                WireGuardEndpointCandidateChangeEvent {
-                                    public_key: v.public_key,
-                                    remote_endpoint: ep,
-                                    local_endpoint: (
-                                        v.local_endpoint_candidate.wg,
-                                        v.provider_type,
-                                    ),
-                                    session: *session,
-                                    changed_at: v.last_state_transition,
-                                },
-                            )),
-                            _ => None,
+                // Gather all validated endpoints per peer
+                let validated_candidates_per_peer =
+                    s.endpoint_connectivity_check_state.iter().fold(
+                        HashMap::new(),
+                        |mut acc: HashMap<
+                            PublicKey,
+                            Vec<WireGuardEndpointCandidateChangeEvent>,
+                        >,
+                         v| {
+                            if let (EndpointState::Published, Some(ep)) =
+                                (v.1.state.get(), v.1.last_validated_endpoint)
+                            {
+                                acc.entry(v.1.public_key).or_default().push(
+                                    WireGuardEndpointCandidateChangeEvent {
+                                        public_key: v.1.public_key,
+                                        remote_endpoint: ep,
+                                        local_endpoint: (
+                                            v.1.local_endpoint_candidate.wg,
+                                            v.1.provider_type,
+                                        ),
+                                        session: *v.0,
+                                        changed_at: v.1.last_state_transition,
+                                    },
+                                );
+                            }
+                            acc
                         },
-                    )
+                    );
+
+                // Select most prefered endpoint candidate according to
+                // preference defined by compare_candidate_preference()
+                Ok(validated_candidates_per_peer
+                    .into_iter()
+                    .filter_map(|(pubkey, events)| {
+                        events
+                            .into_iter()
+                            .max_by(Self::compare_candidate_preference)
+                            .map(|event| (pubkey, event))
+                    })
                     .collect())
             })
             .await
@@ -989,7 +1026,10 @@ mod tests {
         time::Duration,
     };
 
+    use itertools::Itertools;
     use mockall::predicate::eq;
+    use rand::seq::SliceRandom;
+    use rand::thread_rng;
     use rstest::rstest;
     use tokio::{
         sync::mpsc::{Receiver, Sender},
@@ -1066,11 +1106,13 @@ mod tests {
         channels: &mut TestChannels,
         endpoint: SocketAddr,
         original_pub_key: PublicKey,
+        local_ep_provider: EndpointProviderType,
+        remote_ep_provider: EndpointProviderType,
     ) {
         channels
             .endpoint_change_subscriber
             .send((
-                EndpointProviderType::LocalInterfaces,
+                local_ep_provider,
                 vec![EndpointCandidate {
                     wg: endpoint,
                     udp: endpoint,
@@ -1091,11 +1133,7 @@ mod tests {
         wait_for_tick().await;
         let endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
         let msg = PingerMsg::ping(WGPort(2), cmm_init.get_session(), 10_u64)
-            .pong(
-                WGPort(2),
-                &endpoint.ip(),
-                telio_model::features::EndpointProvider::Local,
-            )
+            .pong(WGPort(2), &endpoint.ip(), remote_ep_provider.into())
             .unwrap();
         channels
             .pong_rx_events
@@ -1138,6 +1176,7 @@ mod tests {
     async fn get_validated_endpoints() {
         let (checker, mut channels) = prepare_checker_test().unwrap();
         let endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
+        let lower_prio_endpoint = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2)), 8080);
         let mut peer = Peer::default();
         let original_pub_key = PublicKey(*b"ABBBBBBBBBBBBBBBBBBBAAAAAAAAAAAA");
         peer.base.public_key = original_pub_key;
@@ -1153,7 +1192,22 @@ mod tests {
             .unwrap();
 
         assert!(checker.get_validated_endpoints().await.unwrap().is_empty());
-        validate_endpoint(&mut channels, endpoint, original_pub_key).await;
+        validate_endpoint(
+            &mut channels,
+            endpoint,
+            original_pub_key,
+            EndpointProviderType::LocalInterfaces,
+            EndpointProviderType::LocalInterfaces,
+        )
+        .await;
+        validate_endpoint(
+            &mut channels,
+            lower_prio_endpoint,
+            original_pub_key,
+            EndpointProviderType::Upnp,
+            EndpointProviderType::Upnp,
+        )
+        .await;
         let change_event = &checker.get_validated_endpoints().await.unwrap()[&original_pub_key];
 
         assert_eq!(change_event.public_key, original_pub_key);
@@ -1183,7 +1237,14 @@ mod tests {
             .unwrap();
 
         assert!(checker.get_validated_endpoints().await.unwrap().is_empty());
-        validate_endpoint(&mut channels, endpoint, original_pub_key).await;
+        validate_endpoint(
+            &mut channels,
+            endpoint,
+            original_pub_key,
+            EndpointProviderType::LocalInterfaces,
+            EndpointProviderType::LocalInterfaces,
+        )
+        .await;
         assert!(!checker.get_validated_endpoints().await.unwrap().is_empty());
         checker
             .notify_failed_wg_connection(original_pub_key)
@@ -1636,5 +1697,64 @@ mod tests {
             .check_if_upgrade_is_allowed(session, other_pub_key)
             .await
             .unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_endpoint_candidate_preference() {
+        let mut session_counter = 0;
+        let mut make_ep_cand = |local_ep, remote_ep| {
+            session_counter += 1;
+            WireGuardEndpointCandidateChangeEvent {
+                public_key: PublicKey(*b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+                remote_endpoint: ("127.0.0.1:1234".parse().unwrap(), remote_ep),
+                local_endpoint: ("127.0.0.1:4321".parse().unwrap(), local_ep),
+                session: session_counter,
+                changed_at: Instant::now(),
+            }
+        };
+
+        // Define useful shorthands
+        use ApiEndpointProvider::Local as epLocal;
+        use ApiEndpointProvider::Stun as epStun;
+        use ApiEndpointProvider::Upnp as epUpnp;
+
+        let expected_candidates = vec![
+            make_ep_cand(epStun, epStun),
+            make_ep_cand(epStun, epUpnp),
+            make_ep_cand(epUpnp, epUpnp),
+            make_ep_cand(epStun, epLocal),
+            make_ep_cand(epUpnp, epLocal),
+            make_ep_cand(epLocal, epLocal),
+        ];
+
+        // Verify all possible permutations are sorted in defined order
+        for mut candidate_permutation in expected_candidates
+            .iter()
+            .permutations(expected_candidates.len())
+        {
+            let mut candidates: Vec<_> = candidate_permutation.into_iter().cloned().collect();
+            candidates.sort_by(CrossPingCheck::compare_candidate_preference);
+            assert_eq!(expected_candidates, candidates);
+        }
+
+        // And now check the same, but with reversed candidate list
+        let expected_candidates = vec![
+            make_ep_cand(epStun, epStun),
+            make_ep_cand(epUpnp, epStun),
+            make_ep_cand(epUpnp, epUpnp),
+            make_ep_cand(epLocal, epStun),
+            make_ep_cand(epLocal, epUpnp),
+            make_ep_cand(epLocal, epLocal),
+        ];
+
+        // Verify all possible permutations are sorted in defined order again
+        for mut candidate_permutation in expected_candidates
+            .iter()
+            .permutations(expected_candidates.len())
+        {
+            let mut candidates: Vec<_> = candidate_permutation.into_iter().cloned().collect();
+            candidates.sort_by(CrossPingCheck::compare_candidate_preference);
+            assert_eq!(expected_candidates, candidates);
+        }
     }
 }
