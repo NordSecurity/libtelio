@@ -636,12 +636,8 @@ async def save_nordlynx_logs():
             remote_path = os.path.join(source_log_dir_path, log_file)
             local_path = os.path.join(LOG_DIR, log_file)
             try:
-                cat_proc = await conn.create_process(["cat", remote_path]).execute()
-                stdout = cat_proc.get_stdout()
-                with open(local_path, "w", encoding="utf-8") as f:
-                    if stdout:
-                        f.write(stdout)
-
+                await conn.download(remote_path, local_path)
+                log.info("Downloaded '%s' to '%s'", remote_path, local_path)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 setup_log.warning(
                     "An error occurred when processing %s log: %s", remote_path, e
