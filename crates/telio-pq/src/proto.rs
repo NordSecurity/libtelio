@@ -118,7 +118,7 @@ pub async fn fetch_keys(
     peers_pubkey: &telio_crypto::PublicKey,
     pq_version: u32,
 ) -> super::Result<KeySet> {
-    telio_log_debug!("Fetching keys");
+    telio_log_debug!("Fetching keys, pq version: {pq_version}");
     let TunnelSock { mut tunn, sock } =
         handshake(sock_pool, endpoint, secret, peers_pubkey).await?;
     telio_log_debug!("Initial WG handshake done");
@@ -138,6 +138,7 @@ pub async fn fetch_keys(
         &wg_secret,
         &wg_public,
         &pq_public,
+        secret,
         local_port,
         pq_version,
     ); // 4 KiB
@@ -519,6 +520,7 @@ fn create_get_packet(
     wg_client_secret: &telio_crypto::SecretKey,
     wg_client_public: &telio_crypto::PublicKey,
     pq_public: &kyber768::PublicKey,
+    device_private_key: &telio_crypto::SecretKey,
     local_port: u16,
     pq_version: u32,
 ) -> Vec<u8> {
@@ -536,15 +538,69 @@ fn create_get_packet(
     let to_hash = &pkgbuf[IPV4_HEADER_LEN + UDP_HEADER_LEN..];
 
     let tag = {
-        type HmacSha256 = hmac::Hmac<sha2::Sha256>;
+        if pq_version == 2 {
+            /*
+            From the RFC LLT-0107:
+            long_term_server_private_key, long_term_server_public_key = Curve25519 private or public key used by NordLynx server.
+            long_term_device_private_key, long_term_device_public_key = A Curve25519 device private or public key which is either
+                                                                        distributed via service credentials API or (public-key part)
+                                                                        registered via meshnet API
+            short_term_device_private_key, short_term_device_public_key = A Curve25519 device private or public key which is generated for the relevant PostQuantum session only
+            */
 
-        let shared_secret = x25519_dalek::x25519(*wg_client_secret.as_bytes(), wg_server_public.0);
+            let long_term_server_public_key = wg_server_public;
+            let (long_term_device_private_key, long_term_device_public_key) =
+                (device_private_key.clone(), device_private_key.public());
+            let (short_term_device_private_key, short_term_device_public_key) =
+                (wg_client_secret, wg_client_public);
 
-        #[allow(clippy::expect_used)]
-        let mut hmac =
-            HmacSha256::new_from_slice(&shared_secret).expect("HMAC can take key of any size");
-        hmac.update(&blake2::Blake2s256::digest(to_hash));
-        hmac.finalize().into_bytes()
+            /*
+            From the RFC LLT-0107:
+            initial_short_term_key_material = DH(short_term_device_private_key, long_term_server_public_key)
+            initial_long_term_key_material = DH(long_term_device_private_key, long_term_server_public_key)
+            */
+
+            let initial_short_term_key_material =
+                short_term_device_private_key.ecdh(long_term_server_public_key);
+            let initial_long_term_key_material =
+                long_term_device_private_key.ecdh(long_term_server_public_key);
+
+            // From the RFC LLT-0107:
+            // derived_key = Blake3::derive_key(context: "pq-initial-auth-v2", key_material: initial_short_term_key_material || initial_long_term_key_material || short_term_pubkey_bytes || long_term_pubkey_bytes || server_public_key_bytes))
+
+            let mut key_material = Vec::with_capacity(
+                initial_short_term_key_material.len()
+                    + initial_long_term_key_material.len()
+                    + short_term_device_public_key.len()
+                    + long_term_device_public_key.len()
+                    + long_term_server_public_key.len(),
+            );
+            key_material.extend_from_slice(&initial_short_term_key_material);
+            key_material.extend_from_slice(&initial_long_term_key_material);
+            key_material.extend_from_slice(short_term_device_public_key);
+            key_material.extend_from_slice(&long_term_device_public_key);
+            key_material.extend_from_slice(long_term_server_public_key);
+            let derived_key = blake3::derive_key("pq-initial-auth-v2", &key_material);
+
+            // From the RFC LLT-0107:
+            // auth_tag = Blake3:keyed_hash(key=derived_key, message = version || method || timestamp || wg_pubkey_len || wg_pubkey_bytes || kyber_pubkey_len || kyber_pubkey_bytes)
+
+            let auth_tag = blake3::keyed_hash(&derived_key, to_hash);
+
+            *auth_tag.as_bytes()
+        } else {
+            type HmacSha256 = hmac::Hmac<sha2::Sha256>;
+
+            let shared_secret =
+                x25519_dalek::x25519(*wg_client_secret.as_bytes(), wg_server_public.0);
+
+            #[allow(clippy::expect_used)]
+            let mut hmac =
+                HmacSha256::new_from_slice(&shared_secret).expect("HMAC can take key of any size");
+            hmac.update(&blake2::Blake2s256::digest(to_hash));
+            let auth_tag: [u8; 32] = hmac.finalize().into_bytes().into();
+            auth_tag
+        }
     };
     pkgbuf.extend_from_slice(&tag);
 
@@ -725,8 +781,6 @@ fn timestamp() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use core::time;
-
     use crate::{
         proto::{PqProtoV1Status, PqProtoV2Status},
         Error,

@@ -36,7 +36,6 @@ async def _connect_vpn_pq(
     connected = datetime.now()
 
     await ping(client_conn, config.PHOTO_ALBUM_IP)
-
     ip = await stun.get(client_conn, config.STUN_SERVER)
     assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
@@ -121,10 +120,17 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
         ),
     ],
 )
+@pytest.mark.parametrize(
+    "pq_version",
+    [pytest.param(1), pytest.param(2)],
+)
 async def test_pq_vpn_connection(
     alpha_setup_params: SetupParameters,
     public_ip: str,
+    pq_version: int,
 ) -> None:
+    alpha_setup_params.features.post_quantum_vpn.version = pq_version
+
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
             setup_environment(
@@ -209,12 +215,18 @@ async def test_pq_vpn_connection(
         ),
     ],
 )
+@pytest.mark.parametrize(
+    "pq_version",
+    [pytest.param(1), pytest.param(2)],
+)
 async def test_pq_vpn_rekey(
     alpha_setup_params: SetupParameters,
     public_ip: str,
+    pq_version: int,
 ) -> None:
     # Set rekey interval to some small value
     alpha_setup_params.features.post_quantum_vpn.rekey_interval_s = 2
+    alpha_setup_params.features.post_quantum_vpn.version = pq_version
 
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
@@ -311,9 +323,16 @@ async def test_pq_vpn_rekey(
         ),
     ],
 )
+@pytest.mark.parametrize(
+    "pq_version",
+    [pytest.param(1), pytest.param(2)],
+)
 async def test_dns_with_pq(
     alpha_setup_params: SetupParameters,
+    pq_version: int,
 ) -> None:
+    alpha_setup_params.features.post_quantum_vpn.version = pq_version
+
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
             setup_environment(
@@ -373,9 +392,15 @@ async def test_dns_with_pq(
         ),
     ],
 )
+@pytest.mark.parametrize(
+    "pq_version",
+    [pytest.param(1), pytest.param(2)],
+)
 async def test_pq_vpn_silent_pq_upgrader(
     setup: SetupParameters,
+    pq_version: int,
 ) -> None:
+    setup.features.post_quantum_vpn.version = pq_version
     async with AsyncExitStack() as exit_stack:
         setup.features.post_quantum_vpn.handshake_retry_interval_s = 1
 
@@ -449,11 +474,17 @@ async def test_pq_vpn_silent_pq_upgrader(
         ),
     ],
 )
+@pytest.mark.parametrize(
+    "pq_version",
+    [pytest.param(1), pytest.param(2)],
+)
 async def test_pq_vpn_upgrade_from_non_pq(
     alpha_setup_params: SetupParameters,
+    pq_version: int,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         alpha_setup_params.features.post_quantum_vpn.handshake_retry_interval_s = 1
+        alpha_setup_params.features.post_quantum_vpn.version = pq_version
 
         env = await exit_stack.enter_async_context(
             setup_environment(
