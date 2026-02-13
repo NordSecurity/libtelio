@@ -4,7 +4,7 @@ from contextlib import AsyncExitStack
 from tests import config
 from tests.helpers import SetupParameters, setup_environment, setup_connections
 from tests.helpers_vpn import connect_vpn, VpnConfig
-from tests.uniffi import FirewallBlacklistTuple, IpProtocol
+from tests.uniffi import FeatureFirewall, FirewallBlacklistTuple, IpProtocol
 from tests.utils import testing, stun
 from tests.utils.bindings import (
     default_features,
@@ -395,9 +395,14 @@ async def test_firewall_blacklist_tcp(ipv4: bool) -> None:
         ),
     ]
 
-    setup_params[1].features.firewall.outgoing_blacklist = [
-        FirewallBlacklistTuple(protocol=IpProtocol.TCP, ip=serv_ip, port=serv_port)
-    ]
+    setup_params[1].features.firewall = FeatureFirewall(
+        neptun_reset_conns=False,
+        boringtun_reset_conns=False,
+        exclude_private_ip_range=None,
+        outgoing_blacklist=[
+            FirewallBlacklistTuple(protocol=IpProtocol.TCP, ip=serv_ip, port=serv_port)
+        ],
+    )
 
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
@@ -477,9 +482,14 @@ async def test_firewall_blacklist_udp(ipv4: bool) -> None:
         ),
     ]
 
-    setup_params[1].features.firewall.outgoing_blacklist = [
-        FirewallBlacklistTuple(protocol=IpProtocol.UDP, ip=serv_ip, port=serv_port)
-    ]
+    setup_params[1].features.firewall = FeatureFirewall(
+        neptun_reset_conns=False,
+        boringtun_reset_conns=False,
+        exclude_private_ip_range=None,
+        outgoing_blacklist=[
+            FirewallBlacklistTuple(protocol=IpProtocol.UDP, ip=serv_ip, port=serv_port)
+        ],
+    )
 
     async with AsyncExitStack() as exit_stack:
         env = await exit_stack.enter_async_context(
