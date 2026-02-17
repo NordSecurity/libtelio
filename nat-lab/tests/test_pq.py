@@ -43,9 +43,7 @@ async def _connect_vpn_pq(
 
 
 async def read_preshared_key_slot(nlx_conn: Connection) -> str:
-    output = await nlx_conn.create_process(
-        ["nlx", "show", "nordlynx0", "dump"]
-    ).execute()
+    output = await nlx_conn.create_process(["nlx", "show", "nlx0", "dump"]).execute()
     last = output.get_stdout().splitlines()[-1]
     return last.split()[1]
 
