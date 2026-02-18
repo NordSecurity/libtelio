@@ -10,6 +10,7 @@ from tests.utils.logger import log
 from tests.utils.process import Process, DockerProcess, ProcessExecError
 from typing import List, Type, Dict, AsyncIterator
 from typing_extensions import Self
+from uuid import uuid4
 
 DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_CONE_CLIENT_1: "cone-client-01",
@@ -107,12 +108,19 @@ DOCKER_SERVICE_SKIP_IPTABLES: list[ConnectionTag] = [
 
 class DockerConnection(Connection):
     _container: DockerContainer
+    _connection_id: str
 
     def __init__(self, container: DockerContainer, tag: ConnectionTag):
         super().__init__(TargetOS.Linux, tag)
         self._container = container
+        self._connection_id = str(uuid4())
 
     async def __aenter__(self):
+        log.info(
+            "[%s] Docker connection opened (conn_id=%s)",
+            self.tag.name,
+            self._connection_id,
+        )
         if self.tag not in DOCKER_SERVICE_SKIP_IPTABLES:
             try:
                 await self.restore_ip_tables()
@@ -123,6 +131,11 @@ class DockerConnection(Connection):
         return self
 
     async def __aexit__(self, *_):
+        log.info(
+            "[%s] Docker connection closed (conn_id=%s)",
+            self.tag.name,
+            self._connection_id,
+        )
         if self.tag not in DOCKER_SERVICE_SKIP_IPTABLES:
             try:
                 await self.restore_ip_tables()

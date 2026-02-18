@@ -12,10 +12,12 @@ from tests.utils.connection.docker_connection import DOCKER_VM_MAP
 from tests.utils.logger import log
 from tests.utils.process import Process, SshProcess
 from typing import List, AsyncIterator
+from uuid import uuid4
 
 
 class SshConnection(Connection):
     _connection: asyncssh.SSHClientConnection
+    _connection_id: str
 
     def __init__(
         self,
@@ -40,13 +42,23 @@ class SshConnection(Connection):
 
         super().__init__(target_os, tag)
         self._connection = connection
+        self._connection_id = str(uuid4())
 
     async def __aenter__(self):
+        log.info(
+            "[%s] SSH connection opened (conn_id=%s)",
+            self.tag.name,
+            self._connection_id,
+        )
         await setup_ephemeral_ports(self)
         return self
 
     async def __aexit__(self, *_):
-        pass
+        log.info(
+            "[%s] SSH connection closed (conn_id=%s)",
+            self.tag.name,
+            self._connection_id,
+        )
 
     @classmethod
     @asynccontextmanager
