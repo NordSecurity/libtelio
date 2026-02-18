@@ -80,6 +80,7 @@ dependencies = [
     "yarl==1.17.0",
     "pytest-shard>=0.1.2",
     "aiofiles>=24.1.0",
+    "pytest-split>=0.10.0",
 ]
 
 [tool.black]
@@ -161,7 +162,8 @@ disable = [
     "global-statement",
     "bare-except",
     "too-many-branches",
-    "duplicate-code"
+    "duplicate-code",
+    "too-many-lines"
 ]
 
 [tool.pytest.ini_options]

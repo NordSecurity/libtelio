@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import argparse
+import json
 import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/../..")
@@ -12,15 +14,51 @@ PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/
 TEST_TIMEOUT = 180
 
 
+def load_json(file_path: Path) -> Dict:
+    """Safely load JSON file."""
+    if not file_path.exists():
+        return {}
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+def save_json(file_path: Path, data: Dict) -> None:
+    """Safely save JSON file."""
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def calculate_duration_delta(original: Dict, merged: Dict) -> Dict:
+    """
+    Calculate what's new/changed between original and merged durations.
+    Returns only tests that are new or have different durations.
+    """
+    new_data = {}
+    for test_name, duration in merged.items():
+        if test_name not in original or original[test_name] != duration:
+            new_data[test_name] = duration
+    return new_data
+
+
 # Runs the command with stdout and stderr piped back to executing shell (this results
 # in real time log messages that are properly color coded)
-def run_command(command: List[str], env: Optional[Dict[str, Any]] = None) -> None:
+def run_command(
+    command: List[str],
+    env: Optional[Dict[str, Any]] = None,
+    allow_failure: bool = False,
+) -> int:
     if env:
         env = {**os.environ.copy(), **env}
 
     print(f"|EXECUTE| {' '.join(command)}")
-    subprocess.check_call(command, env=env)
+    result = subprocess.run(command, env=env)
     print("")
+    if result.returncode != 0 and not allow_failure:
+        raise subprocess.CalledProcessError(result.returncode, command)
+    return result.returncode
 
 
 def main() -> int:
@@ -69,6 +107,16 @@ def main() -> int:
     parser.add_argument("--reruns", type=int, default=0, help="Pass `reruns` to pytest")
     parser.add_argument("--count", type=int, default=1, help="Pass `count` to pytest")
     parser.add_argument("--moose", action="store_true", help="Build with moose")
+    parser.add_argument(
+        "--input-durations",
+        type=str,
+        help="Path to input duration file (read-only reference for splitting)",
+    )
+    parser.add_argument(
+        "--output-durations",
+        type=str,
+        help="Path to output duration file (where new durations are stored)",
+    )
     parser.add_argument(
         "--no-verify-setup-correctness",
         action="store_true",
@@ -150,12 +198,46 @@ def main() -> int:
             "timeout_func_only=true",
         ]
 
+        pytest_opts = os.environ.get("PYTEST_ADDOPTS", "")
+        original_durations_data = {}
+        input_path = None
+
+        if "splits" in pytest_opts:
+            if args.input_durations:
+                input_path = Path(args.input_durations)
+                original_durations_data = load_json(input_path)
+                pytest_cmd.extend([
+                    "--store-durations",
+                    f"--durations-path={input_path.absolute()}",
+                    "--splitting-algorithm=least_duration",
+                ])
+            elif args.output_durations:
+                output_path = Path(args.output_durations)
+                pytest_cmd.extend([
+                    "--store-durations",
+                    f"--durations-path={output_path.absolute()}",
+                    "--splitting-algorithm=least_duration",
+                ])
+
         pytest_cmd += get_pytest_arguments(args)
 
         test_dir = "performance_tests" if args.perf_tests else "tests"
         pytest_cmd.append(test_dir)
 
-        run_command(pytest_cmd)
+        pytest_result = run_command(pytest_cmd, allow_failure=True)
+
+        if "splits" in pytest_opts and args.output_durations and args.input_durations:
+            output_path = Path(args.output_durations)
+            if input_path:
+                merged_data = load_json(input_path)
+                new_data = calculate_duration_delta(
+                    original_durations_data, merged_data
+                )
+                save_json(output_path, new_data)
+                save_json(input_path, original_durations_data)
+
+        if pytest_result != 0:
+            raise subprocess.CalledProcessError(pytest_result, pytest_cmd)
 
     return 0
 
