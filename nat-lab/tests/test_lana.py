@@ -219,7 +219,7 @@ async def wait_for_event_dump(
             )
             return events
         await asyncio.sleep(DEFAULT_CHECK_INTERVAL)
-    log.critical(
+    log.warning(
         "Failed looking db from %s, expected %s but %s were found.",
         connection.tag.name,
         nr_events,
