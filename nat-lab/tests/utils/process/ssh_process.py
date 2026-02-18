@@ -84,7 +84,8 @@ class SshProcess(Process):
         exit_signal = self._process.exit_signal
 
         # 0 success
-        if returncode and returncode != 0:
+        # suppress -9 sigkill, since we kill those processes
+        if returncode and returncode not in [0, -9]:
             err = ProcessExecError(
                 returncode,
                 self._vm_name,
