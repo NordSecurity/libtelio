@@ -502,7 +502,6 @@ impl RequestInfo {
                         ip_response.set_next_header(IpNextHeaderProtocols::Tcp)
                     }
                 }
-                ip_response.set_next_header(IpNextHeaderProtocols::Udp);
                 ip_response.set_hop_limit(255);
                 ip_response.set_source(*destination_ip);
                 ip_response.set_destination(*source_ip);
@@ -558,8 +557,8 @@ impl RequestInfo {
                     String::from("Failed to build MutableTcpPacket for response packet")
                 })?;
 
-                tcp_response.set_source(source_port);
-                tcp_response.set_destination(destination_port);
+                tcp_response.set_source(destination_port);
+                tcp_response.set_destination(source_port);
                 tcp_response.set_sequence(next_sequence);
                 tcp_response.set_flags(TcpFlags::RST);
                 tcp_response.set_checksum(0);
