@@ -31,7 +31,7 @@ from tests.utils.connection.ssh_connection import SshConnection
 from tests.utils.connection_util import new_connection_raw, is_running
 from tests.utils.logger import log, setup_log
 from tests.utils.process import ProcessExecError
-from tests.utils.router import IPStack
+from tests.utils.router import IPStack, new_router
 from tests.utils.tcpdump import make_local_tcpdump, make_tcpdump
 from tests.utils.testing import get_current_test_log_path
 from typing import List
@@ -528,10 +528,67 @@ async def reset_service_credentials_cache():
         raise
 
 
+async def reset_upnpd_on_upnp_gateways():
+    setup_log.info("Resetting miniupnpd on UPNP gateways..")
+    async with AsyncExitStack() as exit_stack:
+        for gw_tag in ConnectionTag:
+            if "UPNP_GW" not in gw_tag.name:
+                continue
+            try:
+                if not await is_running(gw_tag):
+                    continue
+                conn = await exit_stack.enter_async_context(new_connection_raw(gw_tag))
+                router = new_router(conn, IPStack.IPv4v6)
+                # Briefly stop and restart miniupnpd to purge any stale mappings
+                async with router.reset_upnpd():
+                    pass
+                setup_log.debug("miniupnpd reset on %s", gw_tag.name)
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                setup_log.warning("Failed to reset miniupnpd on %s: %s", gw_tag.name, e)
+
+
+async def reset_machines_cache():
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    credentials = (
+        f"{CORE_API_CREDENTIALS['username']}:{CORE_API_CREDENTIALS['password']}"
+    )
+    encoded_credentials = base64.b64encode(credentials.encode()).decode()
+    headers = {
+        "Authorization": f"Basic {encoded_credentials}",
+        "Content-Type": "application/json",
+        "Content-Length": "0",
+    }
+    request = urllib.request.Request(
+        f"https://{CORE_API_IP}/test/reset-machines",
+        data=b"",
+        method="POST",
+        headers=headers,
+    )
+    try:
+        with urllib.request.urlopen(
+            request, context=ssl_context, timeout=5
+        ) as response:
+            if response.status == HTTPStatus.OK:
+                log.debug("Machines cache reset successfully")
+            else:
+                log.warning(
+                    "Failed to reset machines cache: HTTP %s",
+                    response.status,
+                )
+    except urllib.error.HTTPError as e:
+        log.debug("Failed to reset machines cache: HTTP %s - %s", e.code, e.reason)
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        log.debug("Could not reset machines cache (server may not be running): %s", e)
+
+
 PRETEST_CLEANUPS = [
     kill_natlab_processes,
     clear_ephemeral_setups_set,
     reset_service_credentials_cache,
+    reset_upnpd_on_upnp_gateways,
+    reset_machines_cache,
 ]
 
 

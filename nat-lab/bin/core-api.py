@@ -140,6 +140,9 @@ class CoreServer(HTTPServer):
             return True
         return False
 
+    def clear_machines(self):
+        self._known_machines = {}
+
     def get_machines(self):
         return self._known_machines
 
@@ -157,6 +160,7 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         self.public_key_path = "/test/public-key"
         self.service_credentials_path = "/v1/users/services/credentials"
         self.reset_credentials_path = "/test/reset-credentials"
+        self.reset_machines_path = "/test/reset-machines"
         super().__init__(request, client_address, server)
 
     def _set_headers(
@@ -286,6 +290,8 @@ class CoreApiHandler(BaseHTTPRequestHandler):
             self.handle_public_key()
         elif self.path == self.reset_credentials_path:
             self.handle_reset_credentials()
+        elif self.path == self.reset_machines_path:
+            self.handle_reset_machines()
         else:
             print(f"unsupported endpoint '{self.path}'")
 
@@ -528,6 +534,12 @@ class CoreApiHandler(BaseHTTPRequestHandler):
         _SERVICE_CREDENTIALS_CACHE = {}
         self._set_headers(status_code=HTTPStatus.OK)
         self.wfile.write(b"Credentials cache cleared")
+
+    @requires_basic_authentication
+    def handle_reset_machines(self):
+        self.server.clear_machines()
+        self._set_headers(status_code=HTTPStatus.OK)
+        self.wfile.write(b"Machines cache cleared")
 
 
 def run(mqttc, port=443):
