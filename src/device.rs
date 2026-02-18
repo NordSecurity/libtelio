@@ -5,7 +5,6 @@ use telio_crypto::{PublicKey, SecretKey};
 #[cfg(feature = "enable_firewall")]
 use telio_firewall::firewall::{Firewall, StatefulFirewall};
 use telio_lana::init_lana;
-#[cfg(feature = "enable_firewall")]
 use telio_network_monitors::monitor::LocalInterfacesObserver;
 use telio_network_monitors::{local_interfaces::SystemGetIfAddrs, monitor::NetworkMonitor};
 use telio_pq::PostQuantum;
@@ -70,7 +69,7 @@ use std::{
     future::Future,
     io::Error as IoError,
     net::{IpAddr, Ipv4Addr},
-    sync::{Arc, Once},
+    sync::{Arc, Once, Weak},
     time::Duration,
 };
 
@@ -1126,15 +1125,6 @@ impl Runtime {
         #[cfg(not(feature = "enable_firewall"))]
         let firewall_reset_connections = None;
 
-        let network_monitor = NetworkMonitor::new(SystemGetIfAddrs).await?;
-
-        #[cfg(feature = "enable_firewall")]
-        if let Some(firewall) = firewall.as_ref() {
-            let firewall_observer_ptr: Arc<dyn LocalInterfacesObserver> = firewall.clone();
-            network_monitor
-                .register_local_interfaces_observer(Arc::downgrade(&firewall_observer_ptr));
-        }
-
         let socket_pool = Arc::new({
             if let Some(protect) = protect.clone() {
                 SocketPool::new(protect)
@@ -1149,6 +1139,14 @@ impl Runtime {
             socket_pool.set_ext_if_filter(ext_if_filter);
         }
 
+        #[allow(unused_mut)]
+        let mut local_interfaces_observers: Vec<Weak<dyn LocalInterfacesObserver>> = Vec::new();
+        #[cfg(feature = "enable_firewall")]
+        if let Some(firewall) = firewall.as_ref() {
+            let firewall_observer: Arc<dyn LocalInterfacesObserver> = firewall.clone();
+            local_interfaces_observers.push(Arc::downgrade(&firewall_observer));
+        }
+
         #[allow(clippy::manual_map)]
         let link_detection = if let Some(ld_config) = features.link_detection {
             #[cfg(target_os = "windows")]
@@ -1158,7 +1156,7 @@ impl Runtime {
                     socket_pool.clone(),
                 )?);
                 let observer: Arc<dyn LocalInterfacesObserver> = ld_observer.clone();
-                network_monitor.register_local_interfaces_observer(Arc::downgrade(&observer));
+                local_interfaces_observers.push(Arc::downgrade(&observer));
 
                 ld_observer
             };
@@ -1171,6 +1169,9 @@ impl Runtime {
         } else {
             None
         };
+
+        let network_monitor =
+            NetworkMonitor::new(SystemGetIfAddrs, local_interfaces_observers).await?;
 
         let derp_events = McChan::default();
 
