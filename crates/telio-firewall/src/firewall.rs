@@ -338,10 +338,14 @@ impl StatefulFirewall {
             telio_log_warn!("Failed to convert TP-Lite config to FFI string. {err:?}");
             Error::InvalidTpLiteConfig
         })?;
-        // We need to pass the callback to libfw before we assing it to the CallbackManager.
-        // Otherwise there could be a scenario where the old callback gets dropped, but libfw
-        // tries to invoke it before we set the new callback in libfw.
-        let collect_stats_cb = Box::new(collect_stats_cb);
+        // There can be a scenario where the old callback gets dropped, but libfw
+        // tries to invoke it before we set the new callback.
+        // To prevent that from happening we keep the old callback around until libfw has been updated.
+        let mut old_cb = Box::new(collect_stats_cb);
+        {
+            let mut cb = self.tp_lite_stats_cb.callback.write();
+            std::mem::swap(&mut old_cb, &mut cb);
+        }
         let res = unsafe {
             self.firewall_lib.libfw_enable_tp_lite_stats_collection(
                 self.firewall,
@@ -350,7 +354,6 @@ impl StatefulFirewall {
                 Some(collect_stats),
             )
         };
-        *self.tp_lite_stats_cb.callback.write() = collect_stats_cb;
         match res {
             LibfwResult::LibfwSuccess => Ok(()),
             _ => {
