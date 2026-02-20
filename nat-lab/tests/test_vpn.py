@@ -1,8 +1,7 @@
 import asyncio
 import pytest
-from contextlib import AsyncExitStack
 from tests import config
-from tests.helpers import SetupParameters, setup_environment, setup_connections
+from tests.helpers import SetupParameters
 from tests.helpers_vpn import connect_vpn, VpnConfig
 from tests.uniffi import FeatureFirewall, FirewallBlacklistTuple, IpProtocol
 from tests.utils import testing, stun
@@ -24,6 +23,8 @@ from tests.utils.netcat import NetCatClient
 from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
 from tests.utils.router import IPProto, IPStack
+
+pytest_plugins = ["tests.helpers_fixtures"]
 
 
 @pytest.mark.parametrize(
@@ -83,57 +84,24 @@ from tests.utils.router import IPProto, IPStack
     ],
 )
 async def test_vpn_connection(
-    alpha_setup_params: SetupParameters,
+    alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
     vpn_conf: VpnConfig,
     public_ip: str,
+    alpha_node,
+    client_conn,
+    client_alpha,
+    vpn_server_connection,
 ) -> None:
-    async with AsyncExitStack() as exit_stack:
-        alpha_setup_params.connection_tracker_config = (
-            generate_connection_tracker_config(
-                alpha_setup_params.connection_tag,
-                stun_limits=(1, 1),
-                nlx_1_limits=(
-                    (1, 1)
-                    if vpn_conf.conn_tag == ConnectionTag.VM_LINUX_NLX_1
-                    else (0, 0)
-                ),
-                vpn_1_limits=(
-                    (1, 1)
-                    if vpn_conf.conn_tag == ConnectionTag.DOCKER_VPN_1
-                    else (0, 0)
-                ),
-            )
-        )
-        env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], vpn=[vpn_conf.conn_tag])
-        )
+    ip = await stun.get(client_conn, config.STUN_SERVER)
+    assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
-        alpha, *_ = env.nodes
-        client_conn, *_ = [conn.connection for conn in env.connections]
-        client_alpha, *_ = env.clients
-
-        ip = await stun.get(client_conn, config.STUN_SERVER)
-        assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
-
-        if vpn_conf.should_ping_client:
-            vpn_connection, *_ = await setup_connections(
-                exit_stack, [vpn_conf.conn_tag]
-            )
-            await connect_vpn(
-                client_conn,
-                vpn_connection.connection,
-                client_alpha,
-                alpha.ip_addresses[0],
-                vpn_conf.server_conf,
-            )
-        else:
-            await connect_vpn(
-                client_conn,
-                None,
-                client_alpha,
-                alpha.ip_addresses[0],
-                vpn_conf.server_conf,
-            )
+    await connect_vpn(
+        client_conn,
+        vpn_server_connection.connection if vpn_server_connection is not None else None,
+        client_alpha,
+        alpha_node.ip_addresses[0],
+        vpn_conf.server_conf,
+    )
 
 
 @pytest.mark.asyncio
@@ -204,48 +172,47 @@ async def test_vpn_connection(
     ],
 )
 async def test_vpn_reconnect(
-    alpha_setup_params: SetupParameters, public_ip: str
+    alpha_setup_params: SetupParameters,
+    public_ip: str,
+    setup_environment_factory,
+    setup_connections_factory,
 ) -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [alpha_setup_params],
-                vpn=[ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2],
-            )
-        )
+    env = await setup_environment_factory(
+        [alpha_setup_params],
+        vpn=[ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2],
+    )
 
-        alpha, *_ = env.nodes
-        connection, *_ = [conn.connection for conn in env.connections]
-        client_alpha, *_ = env.clients
+    alpha, *_ = env.nodes
+    connection, *_ = [conn.connection for conn in env.connections]
+    client_alpha, *_ = env.clients
 
-        vpn_1_connection, vpn_2_connection = await setup_connections(
-            exit_stack, [ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2]
-        )
+    vpn_1_connection, vpn_2_connection = await setup_connections_factory(
+        [ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2]
+    )
 
-        ip = await stun.get(connection, config.STUN_SERVER)
-        assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
+    ip = await stun.get(connection, config.STUN_SERVER)
+    assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
-        await connect_vpn(
-            connection,
-            vpn_1_connection.connection,
-            client_alpha,
-            alpha.ip_addresses[0],
-            config.WG_SERVER,
-        )
+    await connect_vpn(
+        connection,
+        vpn_1_connection.connection,
+        client_alpha,
+        alpha.ip_addresses[0],
+        config.WG_SERVER,
+    )
 
-        await client_alpha.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
+    await client_alpha.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
-        ip = await stun.get(connection, config.STUN_SERVER)
-        assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
+    ip = await stun.get(connection, config.STUN_SERVER)
+    assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
-        await connect_vpn(
-            connection,
-            vpn_2_connection.connection,
-            client_alpha,
-            alpha.ip_addresses[0],
-            config.WG_SERVER_2,
-        )
+    await connect_vpn(
+        connection,
+        vpn_2_connection.connection,
+        client_alpha,
+        alpha.ip_addresses[0],
+        config.WG_SERVER_2,
+    )
 
 
 @pytest.mark.asyncio
@@ -279,6 +246,7 @@ async def test_vpn_reconnect(
 )
 async def test_kill_external_tcp_conn_on_vpn_reconnect(
     setup_params: SetupParameters,
+    setup_environment_factory,
 ) -> None:
     serv_ip = (
         config.PHOTO_ALBUM_IPV6
@@ -286,87 +254,64 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
         else config.PHOTO_ALBUM_IP
     )
 
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [setup_params],
-                vpn=[ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2],
-            )
+    env = await setup_environment_factory(
+        [setup_params],
+        vpn=[ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2],
+    )
+
+    alpha, *_ = env.nodes
+    connection, *_ = [conn.connection for conn in env.connections]
+    client, *_ = env.clients
+
+    async def connect(wg_server: dict):
+        await client.connect_to_vpn(
+            wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
         )
+        await ping(connection, serv_ip)
 
-        alpha, *_ = env.nodes
-        connection, *_ = [conn.connection for conn in env.connections]
-        client, *_ = env.clients
+    await connect(config.WG_SERVER)
 
-        async def connect(
-            wg_server: dict,
-        ):
-            await client.connect_to_vpn(
-                wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+    async with ConnectionTracker(
+        connection,
+        [
+            ConnTrackerTCPStateSequence(
+                "telio-kill-connection",
+                FiveTuple(protocol="tcp", dst_ip=serv_ip, dst_port=80),
+                [TcpState.CLOSE],
             )
-
-            await ping(connection, serv_ip)
-
-        await connect(
-            config.WG_SERVER,
+        ],
+    ).run() as conntrack:
+        ip_proto = (
+            IPProto.IPv6 if setup_params.ip_stack == IPStack.IPv6 else IPProto.IPv4
         )
+        alpha_ip: str = testing.unpack_optional(alpha.get_ip_address(ip_proto))
 
-        async with ConnectionTracker(
+        async with NetCatClient(
             connection,
-            [
-                ConnTrackerTCPStateSequence(
-                    "telio-kill-connection",
-                    FiveTuple(protocol="tcp", dst_ip=serv_ip, dst_port=80),
-                    [TcpState.CLOSE],
+            serv_ip,
+            80,
+            ipv6=ip_proto == IPProto.IPv6,
+            source_ip=alpha_ip,
+        ).run() as nc_client_1:
+            async with NetCatClient(
+                connection,
+                serv_ip,
+                80,
+                ipv6=ip_proto == IPProto.IPv6,
+                source_ip=alpha_ip,
+            ).run() as nc_client_2:
+                await asyncio.gather(
+                    nc_client_1.connection_succeeded(),
+                    nc_client_2.connection_succeeded(),
                 )
-            ],
-        ).run() as conntrack:
-            ip_proto = (
-                IPProto.IPv6 if setup_params.ip_stack == IPStack.IPv6 else IPProto.IPv4
-            )
-            alpha_ip = testing.unpack_optional(alpha.get_ip_address(ip_proto))
 
-            nc_client_1 = await exit_stack.enter_async_context(
-                NetCatClient(
-                    connection,
-                    serv_ip,
-                    80,
-                    ipv6=ip_proto == IPProto.IPv6,
-                    source_ip=alpha_ip,
-                ).run()
-            )
+                await nc_client_2.send_data("GET")
 
-            # Second client, this time sending some data to check proper TCP sequence number generation
-            nc_client_2 = await exit_stack.enter_async_context(
-                NetCatClient(
-                    connection,
-                    serv_ip,
-                    80,
-                    ipv6=ip_proto == IPProto.IPv6,
-                    source_ip=alpha_ip,
-                ).run()
-            )
+                await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
-            # Wait for both netcat processes
-            await asyncio.gather(
-                nc_client_1.connection_succeeded(), nc_client_2.connection_succeeded()
-            )
+                await connect(config.WG_SERVER_2)
 
-            # exchange some data
-            await nc_client_2.send_data("GET")
-
-            # the key is generated uniquely each time natlab runs
-            await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
-
-            await connect(
-                config.WG_SERVER_2,
-            )
-
-            # under normal circumstances -> conntrack should show FIN_WAIT -> CLOSE_WAIT
-            # But our connection killing mechanism will reset connection resulting in CLOSE output.
-            # Wait for close on both clients
-            await conntrack.wait_for_no_violations()
+                await conntrack.wait_for_no_violations()
 
 
 @pytest.mark.asyncio
@@ -377,7 +322,10 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
         pytest.param(False),
     ],
 )
-async def test_firewall_blacklist_tcp(ipv4: bool) -> None:
+async def test_firewall_blacklist_tcp(
+    ipv4: bool,
+    setup_environment_factory,
+) -> None:
     serv_ip = config.PHOTO_ALBUM_IP if ipv4 else config.PHOTO_ALBUM_IPV6
     serv_port = 80
     wg_server: dict = config.WG_SERVER
@@ -404,56 +352,53 @@ async def test_firewall_blacklist_tcp(ipv4: bool) -> None:
         ],
     )
 
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack, setup_params, vpn=[ConnectionTag.DOCKER_VPN_1]
+    env = await setup_environment_factory(
+        setup_params, vpn=[ConnectionTag.DOCKER_VPN_1]
+    )
+
+    alpha_connection, beta_connection, *_ = [
+        conn.connection for conn in env.connections
+    ]
+    alpha, beta, *_ = env.clients
+
+    await alpha.connect_to_vpn(
+        wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+    )
+
+    await beta.connect_to_vpn(
+        wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+    )
+
+    async with ConnectionTracker(
+        alpha_connection,
+        [
+            ConnTrackerTCPStateSequence(
+                "telio-kill-blacklisted-connection",
+                FiveTuple(protocol="tcp", dst_ip=serv_ip, dst_port=serv_port),
+                [TcpState.FIN_WAIT, TcpState.LAST_ACK, TcpState.TIME_WAIT],
+                trailing_state=TcpState.CLOSE,
             )
-        )
+        ],
+    ).run() as conntrack:
+        serv_ip = serv_ip if ipv4 else "[" + serv_ip + "]"
+        await alpha_connection.create_process(["curl", serv_ip]).execute()
+        await conntrack.wait_for_no_violations()
 
-        alpha_connection, beta_connection, *_ = [
-            conn.connection for conn in env.connections
-        ]
-        alpha, beta, *_ = env.clients
+    async with ConnectionTracker(
+        beta_connection,
+        [
+            ConnTrackerTCPStateSequence(
+                "telio-kill-blacklisted-connection",
+                FiveTuple(protocol="tcp", dst_ip=serv_ip, dst_port=serv_port),
+                [TcpState.SYN_SENT, TcpState.CLOSE],
+            )
+        ],
+    ).run() as conntrack:
 
-        await alpha.connect_to_vpn(
-            wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-        )
+        with pytest.raises(ProcessExecError):
+            await beta_connection.create_process(["curl", serv_ip]).execute()
 
-        await beta.connect_to_vpn(
-            wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-        )
-
-        async with ConnectionTracker(
-            alpha_connection,
-            [
-                ConnTrackerTCPStateSequence(
-                    "telio-kill-blacklisted-connection",
-                    FiveTuple(protocol="tcp", dst_ip=serv_ip, dst_port=serv_port),
-                    [TcpState.FIN_WAIT, TcpState.LAST_ACK, TcpState.TIME_WAIT],
-                    trailing_state=TcpState.CLOSE,
-                )
-            ],
-        ).run() as conntrack:
-            serv_ip = serv_ip if ipv4 else "[" + serv_ip + "]"
-            await alpha_connection.create_process(["curl", serv_ip]).execute()
-            await conntrack.wait_for_no_violations()
-
-        async with ConnectionTracker(
-            beta_connection,
-            [
-                ConnTrackerTCPStateSequence(
-                    "telio-kill-blacklisted-connection",
-                    FiveTuple(protocol="tcp", dst_ip=serv_ip, dst_port=serv_port),
-                    [TcpState.SYN_SENT, TcpState.CLOSE],
-                )
-            ],
-        ).run() as conntrack:
-
-            with pytest.raises(ProcessExecError):
-                await beta_connection.create_process(["curl", serv_ip]).execute()
-
-            await conntrack.wait_for_no_violations()
+        await conntrack.wait_for_no_violations()
 
 
 @pytest.mark.asyncio
@@ -464,7 +409,10 @@ async def test_firewall_blacklist_tcp(ipv4: bool) -> None:
         pytest.param(False),
     ],
 )
-async def test_firewall_blacklist_udp(ipv4: bool) -> None:
+async def test_firewall_blacklist_udp(
+    ipv4: bool,
+    setup_environment_factory,
+) -> None:
     serv_ip = config.UDP_SERVER_IP4 if ipv4 else config.UDP_SERVER_IP6
     serv_port = 2000
     wg_server: dict = config.WG_SERVER
@@ -491,39 +439,34 @@ async def test_firewall_blacklist_udp(ipv4: bool) -> None:
         ],
     )
 
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack, setup_params, vpn=[ConnectionTag.DOCKER_VPN_1]
-            )
-        )
+    env = await setup_environment_factory(
+        setup_params, vpn=[ConnectionTag.DOCKER_VPN_1]
+    )
 
-        alpha, beta, *_ = env.nodes
-        alpha_connection, beta_connection, *_ = [
-            conn.connection for conn in env.connections
-        ]
-        alpha_client, beta_client, *_ = env.clients
+    alpha, beta, *_ = env.nodes
+    alpha_connection, beta_connection, *_ = [
+        conn.connection for conn in env.connections
+    ]
+    alpha_client, beta_client, *_ = env.clients
 
-        await alpha_client.connect_to_vpn(
-            wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-        )
+    await alpha_client.connect_to_vpn(
+        wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+    )
 
-        await beta_client.connect_to_vpn(
-            wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-        )
+    await beta_client.connect_to_vpn(
+        wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+    )
 
-        alpha_nc_client = await exit_stack.enter_async_context(
-            NetCatClient(
-                alpha_connection,
-                serv_ip,
-                serv_port,
-                udp=True,
-                source_ip=testing.unpack_optional(
-                    alpha.get_ip_address(IPProto.IPv4 if ipv4 else IPProto.IPv6)
-                ),
-                ipv6=not ipv4,
-            ).run()
-        )
+    async with NetCatClient(
+        alpha_connection,
+        serv_ip,
+        serv_port,
+        udp=True,
+        source_ip=testing.unpack_optional(
+            alpha.get_ip_address(IPProto.IPv4 if ipv4 else IPProto.IPv6)
+        ),
+        ipv6=not ipv4,
+    ).run() as alpha_nc_client:
         await alpha_nc_client.connection_succeeded()
 
         with pytest.raises(ProcessExecError):
@@ -579,6 +522,7 @@ async def test_firewall_blacklist_udp(ipv4: bool) -> None:
 )
 async def test_kill_external_udp_conn_on_vpn_reconnect(
     setup_params: SetupParameters,
+    setup_environment_factory,
 ) -> None:
     serv_ip = (
         config.UDP_SERVER_IP6
@@ -586,54 +530,38 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
         else config.UDP_SERVER_IP4
     )
 
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [setup_params],
-                vpn=[ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2],
-            )
+    env = await setup_environment_factory(
+        [setup_params],
+        vpn=[ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2],
+    )
+
+    alpha, *_ = env.nodes
+    connection, *_ = [conn.connection for conn in env.connections]
+    client, *_ = env.clients
+
+    async def connect(wg_server: dict):
+        await client.connect_to_vpn(
+            wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
         )
+        await ping(connection, serv_ip)
 
-        alpha, *_ = env.nodes
-        connection, *_ = [conn.connection for conn in env.connections]
-        client, *_ = env.clients
+    await connect(config.WG_SERVER)
 
-        async def connect(
-            wg_server: dict,
-        ):
-            await client.connect_to_vpn(
-                wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-            )
+    ip_proto = IPProto.IPv6 if setup_params.ip_stack == IPStack.IPv6 else IPProto.IPv4
+    alpha_ip: str = testing.unpack_optional(alpha.get_ip_address(ip_proto))
 
-            await ping(connection, serv_ip)
-
-        await connect(
-            config.WG_SERVER,
-        )
-
-        ip_proto = (
-            IPProto.IPv6 if setup_params.ip_stack == IPStack.IPv6 else IPProto.IPv4
-        )
-        alpha_ip = testing.unpack_optional(alpha.get_ip_address(ip_proto))
-
-        nc_client = await exit_stack.enter_async_context(
-            NetCatClient(
-                connection,
-                serv_ip,
-                2000,
-                udp=True,
-                ipv6=ip_proto == IPProto.IPv6,
-                source_ip=alpha_ip,
-            ).run()
-        )
-
+    async with NetCatClient(
+        connection,
+        serv_ip,
+        2000,
+        udp=True,
+        ipv6=ip_proto == IPProto.IPv6,
+        source_ip=alpha_ip,
+    ).run() as nc_client:
         await nc_client.connection_succeeded()
         await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
-        await connect(
-            config.WG_SERVER_2,
-        )
+        await connect(config.WG_SERVER_2)
 
         # nc client should be closed by the reset mechanism
         await nc_client.is_done()
@@ -704,50 +632,44 @@ async def test_kill_external_udp_conn_on_vpn_reconnect(
 async def test_vpn_connection_private_key_change(
     alpha_setup_params: SetupParameters,
     public_ip: str,
+    setup_environment_factory,
+    setup_connections_factory,
 ) -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [alpha_setup_params],
-                vpn=[ConnectionTag.DOCKER_VPN_1],
-            )
-        )
+    env = await setup_environment_factory(
+        [alpha_setup_params],
+        vpn=[ConnectionTag.DOCKER_VPN_1],
+    )
 
-        alpha, *_ = env.nodes
-        client_conn, *_ = [conn.connection for conn in env.connections]
-        client_alpha, *_ = env.clients
+    alpha, *_ = env.nodes
+    client_conn, *_ = [conn.connection for conn in env.connections]
+    client_alpha, *_ = env.clients
 
-        ip = await stun.get(client_conn, config.STUN_SERVER)
-        assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
+    ip = await stun.get(client_conn, config.STUN_SERVER)
+    assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
-        # connect to vpn as usually
-        vpn_connection, *_ = await setup_connections(
-            exit_stack, [ConnectionTag.DOCKER_VPN_1]
-        )
-        await connect_vpn(
-            client_conn,
-            vpn_connection.connection,
-            client_alpha,
-            alpha.ip_addresses[0],
-            config.WG_SERVER,
-        )
+    # connect to vpn as usually
+    vpn_connection, *_ = await setup_connections_factory([ConnectionTag.DOCKER_VPN_1])
+    await connect_vpn(
+        client_conn,
+        vpn_connection.connection,
+        client_alpha,
+        alpha.ip_addresses[0],
+        config.WG_SERVER,
+    )
 
-        new_secret_key = generate_secret_key()
-        new_public_key = generate_public_key(new_secret_key)
+    new_secret_key = generate_secret_key()
+    new_public_key = generate_public_key(new_secret_key)
 
-        # change public key on server
-        await vpn_connection.connection.create_process(
-            ["./opt/bin/update_wg_peer_key", alpha.public_key, new_public_key]
-        ).execute()
+    # change public key on server
+    await vpn_connection.connection.create_process(
+        ["./opt/bin/update_wg_peer_key", alpha.public_key, new_public_key]
+    ).execute()
 
-        # change key
-        await client_alpha.set_secret_key(new_secret_key)
+    # change key
+    await client_alpha.set_secret_key(new_secret_key)
 
-        # ping again
-        await ping(client_conn, config.PHOTO_ALBUM_IP, 5)
+    # ping again
+    await ping(client_conn, config.PHOTO_ALBUM_IP, 5)
 
-        ip = await stun.get(client_conn, config.STUN_SERVER)
-        assert (
-            ip == config.WG_SERVER["ipv4"]
-        ), f"wrong public IP when connected to VPN {ip}"
+    ip = await stun.get(client_conn, config.STUN_SERVER)
+    assert ip == config.WG_SERVER["ipv4"], f"wrong public IP when connected to VPN {ip}"
