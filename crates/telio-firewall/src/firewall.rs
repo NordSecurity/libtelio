@@ -5,7 +5,7 @@ use core::fmt;
 use enum_map::{Enum, EnumMap};
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use libloading::library_filename;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use pnet_packet::{
     icmp::{IcmpType, IcmpTypes},
     icmpv6::{Icmpv6Type, Icmpv6Types},
@@ -16,6 +16,7 @@ use std::{
     fmt::Debug,
     io::{self},
     net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr},
+    sync::Arc,
 };
 use thiserror::Error;
 
@@ -169,10 +170,8 @@ pub struct FirewallConfig {
 
 /// Stateful packet-filter firewall.
 pub struct StatefulFirewall {
-    /// Firewall loaded library
-    firewall_lib: Libfirewall,
-    /// Libfirewall instance
-    firewall: *mut LibfwFirewall,
+    /// Serialized libfirewall handle and instance pointer.
+    libfirewall: Arc<Mutex<LibfirewallInstance>>,
     /// Firewall configuration set at initialization
     config: FirewallConfig,
     /// Current firewall state
@@ -185,6 +184,11 @@ pub struct StatefulFirewall {
 unsafe impl Sync for StatefulFirewall {}
 unsafe impl Send for StatefulFirewall {}
 
+struct LibfirewallInstance {
+    firewall_lib: Libfirewall,
+    firewall: *mut LibfwFirewall,
+}
+
 impl LocalInterfacesObserver for StatefulFirewall {
     fn notify(&self) {
         // When local interfaces change, reconfigure the firewall
@@ -194,8 +198,9 @@ impl LocalInterfacesObserver for StatefulFirewall {
 
 impl Drop for StatefulFirewall {
     fn drop(&mut self) {
+        let libfirewall = self.libfirewall.lock();
         unsafe {
-            self.firewall_lib.libfw_deinit(self.firewall);
+            libfirewall.firewall_lib.libfw_deinit(libfirewall.firewall);
         }
     }
 }
@@ -249,8 +254,10 @@ impl StatefulFirewall {
         let state = FirewallState::default();
 
         let result = Self {
-            firewall_lib,
-            firewall,
+            libfirewall: Arc::new(Mutex::new(LibfirewallInstance {
+                firewall_lib,
+                firewall,
+            })),
             config,
             state: RwLock::new(state.clone()),
             configure_chain_fn,
@@ -270,9 +277,12 @@ impl StatefulFirewall {
 
         let state = self.state.read().clone();
         let ffi_chain = (self.configure_chain_fn)(&self.config, &state, &local_ifs_addrs);
+        let libfirewall = self.libfirewall.lock();
         unsafe {
-            self.firewall_lib
-                .libfw_configure_chain(self.firewall, (&ffi_chain.ffi_chain) as *const LibfwChain);
+            libfirewall.firewall_lib.libfw_configure_chain(
+                libfirewall.firewall,
+                (&ffi_chain.ffi_chain) as *const LibfwChain,
+            );
         }
     }
 }
@@ -590,10 +600,11 @@ impl Firewall for StatefulFirewall {
         sink: &mut dyn io::Write,
     ) -> bool {
         let sink_ptr = &sink as *const &mut dyn io::Write;
+        let libfirewall = self.libfirewall.lock();
         LibfwVerdict::LibfwVerdictAccept
             == unsafe {
-                self.firewall_lib.libfw_process_outbound_packet(
-                    self.firewall,
+                libfirewall.firewall_lib.libfw_process_outbound_packet(
+                    libfirewall.firewall,
                     buffer.as_ptr(),
                     buffer.len(),
                     public_key as *const u8,
@@ -609,10 +620,11 @@ impl Firewall for StatefulFirewall {
     /// Adds new connection to cache only if ip is whitelisted
     /// Allows all icmp packets except for request types
     fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
+        let libfirewall = self.libfirewall.lock();
         LibfwVerdict::LibfwVerdictAccept
             == unsafe {
-                self.firewall_lib.libfw_process_inbound_packet(
-                    self.firewall,
+                libfirewall.firewall_lib.libfw_process_inbound_packet(
+                    libfirewall.firewall,
                     buffer.as_ptr(),
                     buffer.len(),
                     public_key as *const u8,
@@ -626,15 +638,18 @@ impl Firewall for StatefulFirewall {
     fn reset_connections(&self, pubkey: &PublicKey, sink: &mut dyn io::Write) {
         telio_log_debug!("Constructing connetion reset packets");
         let sink_ptr = &sink as *const &mut dyn io::Write;
+        let libfirewall = self.libfirewall.lock();
         unsafe {
-            self.firewall_lib.libfw_trigger_stale_connection_close(
-                self.firewall,
-                pubkey.as_ptr(),
-                pubkey.len(),
-                sink_ptr as *mut c_void,
-                Some(write_to_sink),
-                None,
-            );
+            libfirewall
+                .firewall_lib
+                .libfw_trigger_stale_connection_close(
+                    libfirewall.firewall,
+                    pubkey.as_ptr(),
+                    pubkey.len(),
+                    sink_ptr as *mut c_void,
+                    Some(write_to_sink),
+                    None,
+                );
         }
     }
 }
@@ -658,8 +673,10 @@ mod tests {
             configure_chain_fn: ConfigureChainFn,
         ) -> Self {
             let mut result = Self {
-                firewall: 0x1 as *mut crate::libfirewall::LibfwFirewall,
-                firewall_lib: crate::libfirewall::MockLibfirewall::default(),
+                libfirewall: Arc::new(Mutex::new(LibfirewallInstance {
+                    firewall: 0x1 as *mut crate::libfirewall::LibfwFirewall,
+                    firewall_lib: crate::libfirewall::MockLibfirewall::default(),
+                })),
                 state: RwLock::new(FirewallState::default()),
                 config: FirewallConfig {
                     allow_ipv6: use_ipv6,
@@ -680,8 +697,12 @@ mod tests {
         }
 
         /// Get mutable reference to mock library for setting expectations
-        fn get_libfirewall_mock(&mut self) -> &mut crate::libfirewall::MockLibfirewall {
-            &mut self.firewall_lib
+        fn get_libfirewall_mock(
+            &self,
+        ) -> parking_lot::MappedMutexGuard<'_, crate::libfirewall::MockLibfirewall> {
+            parking_lot::MutexGuard::map(self.libfirewall.lock(), |libfirewall| {
+                &mut libfirewall.firewall_lib
+            })
         }
     }
 
