@@ -2,9 +2,6 @@
 //!
 //! This module provides a layer for constructing minimal DNS responses for meshnet nord domains
 
-// TODO: LLT-7050 Remove after merging integration
-#![allow(dead_code)]
-
 use crate::packet_decoder::normalize_qname;
 use pnet_packet::dns::{
     DnsClasses, DnsQuery, DnsType, DnsTypes, MutableDnsPacket, MutableDnsResponsePacket, Opcode,
@@ -114,7 +111,7 @@ pub(crate) enum DnsBuildError {
 /// Response option for the nord resolver
 ///
 /// Use [`DnsResponseBuilder`] to construct a complete DNS response packet
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ResponseKind {
     /// Successful answer with IPv4 addresses
     AnswerA { addresses: Vec<Ipv4Addr> },
@@ -181,6 +178,8 @@ impl DnsResponseBuilder {
         }
     }
 
+    // TODO: LLT-7054: remove if not needed after complete regression testing
+    #[cfg(test)]
     /// Set if the resolver is the authority for the domain
     ///
     /// Sets AA flag
@@ -190,6 +189,8 @@ impl DnsResponseBuilder {
         self
     }
 
+    // TODO: LLT-7054: remove if not needed after complete regression testing
+    #[cfg(test)]
     /// Set if the resolver can handle recursive queries
     ///
     /// Sets RA flag if recursion is available
@@ -199,6 +200,8 @@ impl DnsResponseBuilder {
         self
     }
 
+    // TODO: LLT-7054: remove if not needed after complete regression testing
+    #[cfg(test)]
     /// Set cap for UDP response size
     ///
     /// Sets TC flag if truncation occurs
