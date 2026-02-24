@@ -1,5 +1,5 @@
 use base64::DecodeError;
-use rand::prelude::*;
+use rand::seq::SliceRandom;
 use reqwest::{header, Certificate, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -491,7 +491,7 @@ pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec
     .map(Endpoint::try_from)
     .collect::<Result<Vec<_>, _>>()?;
 
-    servers.shuffle(&mut rand::thread_rng());
+    servers.shuffle(&mut rand::rng());
 
     trace!("Servers {:#?}", servers);
     Ok(servers)
