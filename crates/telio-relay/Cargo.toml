@@ -10,7 +10,6 @@ publish = false
 enable_ens = ["telio-proto/enable_ens"]
 
 [dependencies]
-rand_core = { workspace = true, default-features = false }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-util = "0.7.17"
 tokio-stream = { default-features = false, version = "0.1.17" }
