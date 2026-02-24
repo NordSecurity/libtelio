@@ -70,7 +70,7 @@ use atomic_counter::{AtomicCounter, RelaxedCounter};
 use base64::prelude::*;
 use conf::StressConfig;
 use metrics::Metrics;
-use rand::{thread_rng, Rng};
+use rand::RngExt;
 use std::{
     io::{self, Write},
     net::SocketAddr,
@@ -201,14 +201,14 @@ async fn connect_client(
 
                 let (interval_len, payload_len) = {
                     let s = stress_cfg.read().await;
-                    let mut rng = thread_rng();
+                    let mut rng = rand::rng();
                     let interval_len = if s.interval_min < s.interval_max {
-                        rng.gen_range(s.interval_min..s.interval_max)
+                        rng.random_range(s.interval_min..s.interval_max)
                     } else {
                         s.interval_min
                     };
                     let payload_len = if s.payload_min < s.payload_max {
-                        rng.gen_range(s.payload_min..s.payload_max)
+                        rng.random_range(s.payload_min..s.payload_max)
                     } else {
                         s.payload_min
                     };

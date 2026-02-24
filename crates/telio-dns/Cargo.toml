@@ -7,7 +7,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-rand = { workspace = true, default-features = false }
+rand.workspace = true
 hickory-server = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v3.0.1", features = ["hickory-resolver"], default-features = false }
 async-trait.workspace = true
 neptun.workspace = true
@@ -27,5 +27,6 @@ telio-wg.workspace = true
 
 [dev-dependencies]
 dns-parser = "0.8.0"
+rand_core_compat.workspace = true
 
 mockall.workspace = true
