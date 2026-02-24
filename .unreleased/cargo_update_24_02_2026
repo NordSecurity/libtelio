@@ -1,0 +1,1 @@
+Updated Rust workspace dependencies via `cargo update`, bringing in the latest transitive updates and manual major bumps (including `rand` 0.10.0, `if-addrs` 0.15.0, `windows` 0.62.2, `strum` 0.28.0, `libloading` 0.9.0, `nix` 0.31.1, `proptest-derive` 0.8.0, `rustls-platform-verifier` 0.6.2, and `winreg` 0.55.0). `uniffi` was not updated.
