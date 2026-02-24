@@ -22,6 +22,7 @@ httparse.workspace = true
 mockall_double.workspace = true
 num_enum.workspace = true
 rand.workspace = true
+rand_core_compat.workspace = true
 rustls-platform-verifier.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "sync"] }

@@ -527,7 +527,7 @@ mod tests {
                 telio_model::features::EndpointProvider::Local,
             )
             .unwrap();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let encrypt_transform =
             |b: &[u8]| Ok(encrypt_response(b, &mut rng, &remote_sk, &local_sk.public()).unwrap());
 
@@ -587,7 +587,7 @@ mod tests {
                 telio_model::features::EndpointProvider::Local,
             )
             .unwrap();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let encrypt_transform =
             |b: &[u8]| Ok(encrypt_response(b, &mut rng, &remote_sk, &local_sk.public()).unwrap());
 
@@ -632,13 +632,10 @@ mod tests {
         let ping = PingerMsg::ping(WGPort(wg_port), 2, 3);
         let local_sk = SecretKey::gen();
         let encrypt_transform = |b: &[u8]| {
-            Ok(encrypt_request(
-                b,
-                &mut rand::thread_rng(),
-                &local_sk.clone(),
-                &remote_sk.public(),
+            Ok(
+                encrypt_request(b, &mut rand::rng(), &local_sk.clone(), &remote_sk.public())
+                    .unwrap(),
             )
-            .unwrap())
         };
         let encrypted_buf = ping.clone().encode_and_encrypt(encrypt_transform).unwrap();
 
@@ -698,10 +695,7 @@ mod tests {
         let ping = PingerMsg::ping(WGPort(wg_port), 2, 3);
         let local_sk = SecretKey::gen();
         let encrypt_transform = |b: &[u8]| {
-            Ok(
-                encrypt_request(b, &mut rand::thread_rng(), &local_sk, &remote_sk.public())
-                    .unwrap(),
-            )
+            Ok(encrypt_request(b, &mut rand::rng(), &local_sk, &remote_sk.public()).unwrap())
         };
         let encrypted_buf = ping.clone().encode_and_encrypt(encrypt_transform).unwrap();
 

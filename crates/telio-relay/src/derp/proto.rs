@@ -319,15 +319,21 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
     telio_log_trace!("DERP starting with {}", public_key);
 
     #[cfg(not(test))]
-    let mut rng = rand::rngs::OsRng;
+    let mut rng = rand_core_compat::TryRng09(rand_core_compat::rand_core_0_9::OsRng);
     #[cfg(not(test))]
     let nonce = SalsaBox::generate_nonce(&mut rng);
 
     #[cfg(test)]
     let nonce = if let Some(mut rng) = rng_mock {
-        SalsaBox::generate_nonce(&mut rng)
+        // Manually generate nonce to avoid rand_core version mismatch between
+        // rand 0.10 (rand_core 0.10) and crypto_box (rand_core 0.6).
+        // This is test-only code using a deterministic mock RNG.
+        use crypto_box::aead::generic_array::GenericArray;
+        let mut nonce = GenericArray::default();
+        rand::Rng::fill_bytes(&mut rng, nonce.as_mut_slice());
+        nonce
     } else {
-        let mut rng = rand::rngs::OsRng;
+        let mut rng = rand_core_compat::TryRng09(rand_core_compat::rand_core_0_9::OsRng);
         SalsaBox::generate_nonce(&mut rng)
     };
 
@@ -414,9 +420,9 @@ async fn write_frame<W: AsyncWrite + Unpin>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::mock::StepRng;
     use rstest::*;
     use telio_utils::test::CryptoStepRng;
+    use telio_utils::test::StepRng;
 
     const KEY_MSG_SIZE: usize = 106;
 

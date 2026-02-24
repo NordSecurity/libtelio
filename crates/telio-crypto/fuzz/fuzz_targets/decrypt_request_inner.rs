@@ -9,7 +9,7 @@ static REMOTE_SK: Lazy<SecretKey> = Lazy::new(SecretKey::gen);
 static EPHEMERAL_SK: Lazy<SecretKey> = Lazy::new(SecretKey::gen);
 static EPHEMERAL_PK: Lazy<PublicKey> = Lazy::new(|| EPHEMERAL_SK.public());
 static OUTER_NONCE: Lazy<[u8; 24]> =
-    Lazy::new(|| ChaChaBox::generate_nonce(&mut rand::thread_rng()).into());
+    Lazy::new(|| ChaChaBox::generate_nonce(&mut rand::rng()).into());
 static SECRET_BOX: Lazy<ChaChaBox> =
     Lazy::new(|| ChaChaBox::new(&REMOTE_SK.public(), &(*EPHEMERAL_SK)));
 

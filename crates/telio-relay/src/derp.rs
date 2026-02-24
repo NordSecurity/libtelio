@@ -44,7 +44,7 @@ use crypto_box::aead::{
 };
 use telio_crypto::chachabox::ChaChaBox;
 
-use rand::{rngs::StdRng, SeedableRng};
+use rand::rngs::StdRng;
 use smart_default::SmartDefault;
 
 use self::{http::connect_http_and_start, http::DerpConnection};
@@ -301,7 +301,7 @@ impl DerpRelay {
         aggregator: Option<Arc<ConnectivityDataAggregator>>,
     ) -> Self {
         // generate random number used to encrypt control messages
-        let rng = StdRng::from_entropy();
+        let rng: StdRng = rand::make_rng();
 
         Self {
             task: Task::start(State {

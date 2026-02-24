@@ -1028,8 +1028,6 @@ mod tests {
 
     use itertools::Itertools;
     use mockall::predicate::eq;
-    use rand::seq::SliceRandom;
-    use rand::thread_rng;
     use rstest::rstest;
     use tokio::{
         sync::mpsc::{Receiver, Sender},

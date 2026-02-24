@@ -1009,7 +1009,7 @@ pub mod tests {
     use ipnet::Ipv4Net;
     use lazy_static::lazy_static;
     use mockall::predicate;
-    use rand::{Rng, RngCore, SeedableRng};
+    use rand::{Rng, RngExt, SeedableRng};
     use telio_crypto::PresharedKey;
     use telio_sockets::protector::MockProtector;
     use telio_utils::Hidden;
@@ -1029,36 +1029,38 @@ pub mod tests {
     const DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS: u64 = 50;
 
     fn random_interface() -> Interface {
-        let mut rng = rand::thread_rng();
-        let peers_len = rng.gen_range(1..=3);
+        let mut rng = rand::rng();
+        let peers_len = rng.random_range(1..=3);
         let mut peers = BTreeMap::default();
         for _ in 0..peers_len {
             let key = SecretKey::gen_with(&mut rng).public();
             let peer = Peer {
                 public_key: SecretKey::gen_with(&mut rng).public(),
                 endpoint: Some(SocketAddr::V4(SocketAddrV4::new(
-                    rng.gen::<u32>().into(),
-                    rng.gen(),
+                    rng.random::<u32>().into(),
+                    rng.random(),
                 ))),
                 endpoint_changed_at: Some((Instant::now(), UpdateReason::Push)),
                 ip_addresses: vec![
-                    IpAddr::V4(rng.gen::<u32>().into()),
-                    IpAddr::V4(rng.gen::<u32>().into()),
+                    IpAddr::V4(rng.random::<u32>().into()),
+                    IpAddr::V4(rng.random::<u32>().into()),
                 ],
-                persistent_keepalive_interval: Some(rng.gen()),
-                allowed_ips: vec![IpNet::V4(Ipv4Net::new(rng.gen::<u32>().into(), 0).unwrap())],
-                rx_bytes: Some(rng.gen()),
-                time_since_last_rx: Some(Duration::from_millis(rng.gen())),
-                tx_bytes: Some(rng.gen()),
-                time_since_last_handshake: Some(Duration::from_millis(rng.gen())),
-                preshared_key: Some(PresharedKey(Hidden(rng.gen()))),
+                persistent_keepalive_interval: Some(rng.random()),
+                allowed_ips: vec![IpNet::V4(
+                    Ipv4Net::new(rng.random::<u32>().into(), 0).unwrap(),
+                )],
+                rx_bytes: Some(rng.random()),
+                time_since_last_rx: Some(Duration::from_millis(rng.random())),
+                tx_bytes: Some(rng.random()),
+                time_since_last_handshake: Some(Duration::from_millis(rng.random())),
+                preshared_key: Some(PresharedKey(Hidden(rng.random()))),
             };
             peers.insert(key, peer);
         }
         Interface {
             private_key: Some(SecretKey::gen_with(&mut rng)),
-            listen_port: rng.gen(),
-            fwmark: rng.gen(),
+            listen_port: Some(rng.random::<u16>()),
+            fwmark: rng.random(),
             peers,
         }
     }
