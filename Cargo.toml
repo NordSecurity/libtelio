@@ -155,7 +155,7 @@ slog = "2.8"
 smart-default = "0.7.1"
 sn_fake_clock = "0.4"
 socket2 = "0.6"
-strum = { version = "0.27", features = ["derive"] }
+strum = { version = "0.28.0", features = ["derive"] }
 surge-ping = { version = "0.8" }
 thiserror = "2"
 time = { version = "0.3", features = ["formatting"] }
