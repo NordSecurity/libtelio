@@ -65,6 +65,8 @@ services:
       - NET_BIND_SERVICE
       - SETUID
       - SETGID
+      - PERFMON
+      - SYS_PTRACE
     sysctls:
       # Disable return path filter. It blocks inbound traffic when using fwmark routing policy.
       # net.ipv4.conf.all.rp_filter.src_valid_mark=1 is supposed to fix this, but it doesn't
@@ -76,6 +78,7 @@ services:
       - net.ipv6.conf.default.disable_ipv6=0
       - net.ipv6.conf.all.forwarding=1
     security_opt:
+      - seccomp=unconfined
       - no-new-privileges:true
     networks:
       cone-net-01:

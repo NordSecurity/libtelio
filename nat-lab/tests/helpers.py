@@ -72,6 +72,7 @@ class SetupParameters:
     derp_servers: Optional[List[Server]] = field(default=None)
     fingerprint: str = ""
     run_tcpdump: bool = field(default=True)
+    enable_perf: bool = field(default=False)
 
 
 @dataclass
@@ -192,6 +193,7 @@ async def setup_clients(
             str,
             Optional[Config],
             Optional[bool],
+            bool,
         ]
     ],
 ) -> List[Client]:
@@ -218,9 +220,9 @@ async def setup_clients(
                 adapter_type_override,
                 features,
                 fingerprint=fingerprint,
-            ).run(meshnet_config, run_tcpdump=run_tcpdump)
+            ).run(meshnet_config, run_tcpdump=run_tcpdump, enable_perf=enable_perf)
         )
-        for connection, node, adapter_type_override, features, fingerprint, meshnet_config, run_tcpdump in client_parameters
+        for connection, node, adapter_type_override, features, fingerprint, meshnet_config, run_tcpdump, enable_perf in client_parameters
     ])
 
 
@@ -331,6 +333,7 @@ async def setup_environment(
                     for idx, instance in enumerate(instances)
                 ],
                 [instance.run_tcpdump for instance in instances],
+                [instance.enable_perf for instance in instances],
             )
         ),
     )

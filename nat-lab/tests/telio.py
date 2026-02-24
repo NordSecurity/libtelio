@@ -40,6 +40,7 @@ from tests.utils.connection_util import get_uniffi_path
 from tests.utils.logger import log
 from tests.utils.moose import MOOSE_DB_TIMEOUT_MS
 from tests.utils.output_notifier import OutputNotifier
+from tests.utils.perf_profiling import PERF_CMD, PerfProfiler
 from tests.utils.process import Process
 from tests.utils.python import get_python_binary
 from tests.utils.router import IPStack, Router, new_router
@@ -472,6 +473,7 @@ class Client:
         self,
         meshnet_config: Optional[Config] = None,
         run_tcpdump: Optional[bool] = True,
+        enable_perf: Optional[bool] = False,
     ) -> AsyncIterator["Client"]:
         async def on_stdout(stdout: str) -> None:
             supress_print_list = [
@@ -508,19 +510,28 @@ class Client:
 
         python_cmd = get_python_binary(self._connection)
         uniffi_path = get_uniffi_path(self._connection)
+        base_cmd = [
+            python_cmd,
+            uniffi_path,
+            object_name,
+            container_ip,
+            container_port,
+        ]
+        if enable_perf:
+            cmd = PERF_CMD + base_cmd
+        else:
+            cmd = base_cmd
 
         self._process = self._connection.create_process(
-            [
-                python_cmd,
-                uniffi_path,
-                object_name,
-                container_ip,
-                container_port,
-            ],
+            cmd,
             quiet=True,
         )
 
         async with AsyncExitStack() as exit_stack:
+            if enable_perf:
+                await exit_stack.enter_async_context(
+                    PerfProfiler(connection=self._connection)
+                )
             if run_tcpdump:
                 await exit_stack.enter_async_context(make_tcpdump([self._connection]))
             if isinstance(self._connection, DockerConnection):
