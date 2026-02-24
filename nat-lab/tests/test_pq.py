@@ -69,7 +69,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -82,7 +82,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -96,7 +96,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.VM_WINDOWS_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -112,7 +112,7 @@ async def inspect_preshared_key(nlx_conn: Connection) -> str:
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.VM_MAC,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -157,7 +157,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -170,7 +170,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -184,7 +184,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.VM_WINDOWS_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -200,7 +200,7 @@ async def test_pq_vpn_connection(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.VM_MAC,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -266,7 +266,7 @@ async def test_pq_vpn_rekey(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -277,7 +277,7 @@ async def test_pq_vpn_rekey(
                 adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -289,7 +289,7 @@ async def test_pq_vpn_rekey(
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.VM_WINDOWS_1,
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -303,7 +303,7 @@ async def test_pq_vpn_rekey(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.VM_MAC,
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -366,7 +366,7 @@ async def test_dns_with_pq(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     vpn_1_limits=(1, None),
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -442,7 +442,7 @@ async def test_pq_vpn_silent_pq_upgrader(
                 adapter_type_override=TelioAdapterType.NEP_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    nlx_1_limits=(1, 2),
+                    nlx_1_limits=(2, 2),
                 ),
                 is_meshnet=False,
             ),
@@ -506,7 +506,7 @@ async def test_pq_vpn_upgrade_from_non_pq(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 4),
+                    nlx_1_limits=(4, 4),
                 ),
                 is_meshnet=False,
             ),
@@ -519,7 +519,7 @@ async def test_pq_vpn_upgrade_from_non_pq(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 4),
+                    nlx_1_limits=(4, 4),
                 ),
                 is_meshnet=False,
             ),
@@ -607,7 +607,7 @@ async def test_pq_vpn_handshake_after_nonet(
                 connection_tracker_config=generate_connection_tracker_config(
                     ConnectionTag.DOCKER_CONE_CLIENT_1,
                     stun_limits=(1, 1),
-                    nlx_1_limits=(1, 4),
+                    nlx_1_limits=(2, 4),
                 ),
                 is_meshnet=False,
             ),
