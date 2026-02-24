@@ -285,6 +285,14 @@ impl Libfirewall {
     where
         P: AsRef<::std::ffi::OsStr> + 'static,
     {
+        #[cfg(unix)]
+        let library = ::libloading::os::unix::Library::open(
+            Some(path),
+            ::libloading::os::unix::RTLD_LAZY
+                | ::libloading::os::unix::RTLD_LOCAL
+                | libc::RTLD_NODELETE,
+        )?;
+        #[cfg(not(unix))]
         let library = ::libloading::Library::new(path)?;
         Self::from_library(library)
     }
