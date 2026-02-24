@@ -319,7 +319,7 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
     telio_log_trace!("DERP starting with {}", public_key);
 
     #[cfg(not(test))]
-    let mut rng = rand_core::OsRng;
+    let mut rng = rand::rngs::OsRng;
     #[cfg(not(test))]
     let nonce = SalsaBox::generate_nonce(&mut rng);
 
@@ -327,7 +327,7 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
     let nonce = if let Some(mut rng) = rng_mock {
         SalsaBox::generate_nonce(&mut rng)
     } else {
-        let mut rng = rand_core::OsRng;
+        let mut rng = rand::rngs::OsRng;
         SalsaBox::generate_nonce(&mut rng)
     };
 
