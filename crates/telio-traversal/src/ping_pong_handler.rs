@@ -1,5 +1,5 @@
 use crate::endpoint_providers::Error;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::rngs::StdRng;
 use std::{
     collections::{HashMap, HashSet},
     net::SocketAddr,
@@ -38,7 +38,7 @@ impl PingPongHandler {
             secret_key,
             known_keys: Default::default(),
             known_sessions: Default::default(),
-            rng: Mutex::new(StdRng::from_entropy()),
+            rng: Mutex::new(rand::make_rng()),
         }
     }
 

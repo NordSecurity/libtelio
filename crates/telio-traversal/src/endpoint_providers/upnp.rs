@@ -10,7 +10,7 @@ use igd::{
     PortMappingProtocol,
 };
 use ipnet::Ipv4Net;
-use rand::Rng;
+use rand::RngExt;
 use std::fmt::Debug;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::pin::Pin;
@@ -564,9 +564,9 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
     }
 
     fn create_random_endpoint_ports(&mut self) {
-        self.wg_port_mapping.external = rand::thread_rng().gen_range(EPHEMERAL_PORT_RANGE);
+        self.wg_port_mapping.external = rand::rng().random_range(EPHEMERAL_PORT_RANGE);
         self.proxy_port_mapping.external = loop {
-            let rand = rand::thread_rng().gen_range(EPHEMERAL_PORT_RANGE);
+            let rand = rand::rng().random_range(EPHEMERAL_PORT_RANGE);
             if rand != self.wg_port_mapping.external {
                 break rand;
             }

@@ -6,7 +6,6 @@ pub mod types;
 use anyhow::anyhow;
 use ffi_helpers::{error_handling, panic as panic_handling};
 use ipnet::IpNet;
-use rand::Rng;
 use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::AdapterType;
 use tracing::{error, trace};
@@ -297,7 +296,10 @@ impl Telio {
             )?;
             Ok(Self {
                 inner: Mutex::new(Some(device)),
-                id: rand::thread_rng().gen::<usize>(),
+                id: {
+                    use rand::Rng;
+                    rand::rng().next_u64() as usize
+                },
             })
         })
     }

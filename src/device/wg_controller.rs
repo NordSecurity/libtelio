@@ -1961,7 +1961,7 @@ mod tests {
         }
 
         fn when_upgrade_requests(&mut self, input: Vec<(PublicKey, SocketAddr, Instant)>) {
-            use rand::RngCore;
+            use rand::Rng;
             let map: HashMap<PublicKey, UpgradeRequest> = input
                 .iter()
                 .map(|i| {
@@ -1970,7 +1970,7 @@ mod tests {
                         UpgradeRequest {
                             endpoint: i.1,
                             requested_at: i.2,
-                            session: rand::thread_rng().next_u64(),
+                            session: rand::rng().next_u64(),
                         },
                     )
                 })

@@ -976,7 +976,7 @@ mod stun_msg {
     use std::{io, net::SocketAddr};
 
     use bytecodec::{DecodeExt, EncodeExt};
-    use rand::Rng;
+    use rand::RngExt;
     use stun_codec::{
         rfc5389::{
             attributes::{Fingerprint, MappedAddress, Software, XorMappedAddress},
@@ -989,7 +989,7 @@ mod stun_msg {
     use super::STUN_SOFTWARE;
 
     pub fn new_request() -> bytecodec::Result<(TransactionId, Vec<u8>)> {
-        let tid = TransactionId::new(rand::thread_rng().gen::<[u8; 12]>());
+        let tid = TransactionId::new(rand::rng().random::<[u8; 12]>());
         let mut msg = Message::<Attribute>::new(MessageClass::Request, BINDING, tid);
 
         msg.add_attribute(Attribute::Software(Software::new(
@@ -1458,7 +1458,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             let encrypt_transform = |b: &[u8]| {
                 Ok(encrypt_response(b, &mut rng, &remote_sk, &env.local_sk.public()).unwrap())
             };
@@ -1524,7 +1524,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             let encrypt_transform = |b: &[u8]| {
                 Ok(encrypt_response(b, &mut rng, &remote_sk, &env.local_sk.public()).unwrap())
             };
@@ -1565,10 +1565,7 @@ mod tests {
         let local_sk = SecretKey::gen();
         let remote_sk = env.local_sk.clone();
         let transform = |b: &[u8]| {
-            Ok(
-                encrypt_request(b, &mut rand::thread_rng(), &local_sk, &remote_sk.public())
-                    .unwrap(),
-            )
+            Ok(encrypt_request(b, &mut rand::rng(), &local_sk, &remote_sk.public()).unwrap())
         };
         let encrypted_buf = ping.clone().encode_and_encrypt(transform).unwrap();
 
@@ -1625,10 +1622,7 @@ mod tests {
 
         let ping = PingerMsg::ping(wg_port, session_id, 6969);
         let encrypt_transform = |b: &[u8]| {
-            Ok(
-                encrypt_request(b, &mut rand::thread_rng(), &local_sk, &remote_sk.public())
-                    .unwrap(),
-            )
+            Ok(encrypt_request(b, &mut rand::rng(), &local_sk, &remote_sk.public()).unwrap())
         };
         let encrypted_buf = ping.clone().encode_and_encrypt(encrypt_transform).unwrap();
 

@@ -6,7 +6,6 @@ use chacha20::{cipher::generic_array::GenericArray, hchacha};
 use chacha20poly1305::consts::U10;
 use chacha20poly1305::XChaCha20Poly1305;
 use curve25519_dalek::{scalar::clamp_integer, MontgomeryPoint, Scalar};
-use rand::{CryptoRng, RngCore};
 use zeroize::Zeroizing;
 
 use crate::{PublicKey, SecretKey};
@@ -38,9 +37,16 @@ impl ChaChaBox {
         )))
     }
 
-    /// Generate nonce bytes
-    pub fn generate_nonce(rng: impl CryptoRng + RngCore) -> Nonce {
-        XChaCha20Poly1305::generate_nonce(rng)
+    /// Generate a random nonce for use with XChaCha20Poly1305.
+    ///
+    /// Equivalent to `aead::AeadCore::generate_nonce` but uses `rand_core` 0.10
+    /// to avoid a version mismatch with the `aead` crate's bundled `rand_core`.
+    /// The implementation is identical: fill a zero-initialised nonce array with
+    /// random bytes from a cryptographically-secure RNG.
+    pub fn generate_nonce(mut rng: impl rand::CryptoRng) -> Nonce {
+        let mut nonce = Nonce::default();
+        rng.fill_bytes(&mut nonce);
+        nonce
     }
 
     /// Encrypt the data for the given nonce

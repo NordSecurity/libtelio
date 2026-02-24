@@ -10,7 +10,6 @@ publish = false
 enable_ens = ["telio-proto/enable_ens"]
 
 [dependencies]
-rand_core = { workspace = true, default-features = false }
 tokio-rustls = { version = "0.26.4", default-features = false }
 tokio-util = "0.7.17"
 tokio-stream = { default-features = false, version = "0.1.17" }
@@ -23,6 +22,7 @@ httparse.workspace = true
 mockall_double.workspace = true
 num_enum.workspace = true
 rand.workspace = true
+rand_core_compat.workspace = true
 rustls-platform-verifier.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "sync"] }

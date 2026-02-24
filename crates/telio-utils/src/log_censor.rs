@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 use regex::{Captures, Match, Regex, RegexBuilder};
 use std::{
     net::{Ipv4Addr, Ipv6Addr},
@@ -63,7 +63,7 @@ impl Default for LogCensor {
         .ignore_whitespace(true)
         .build()
         .map(|re| LogCensor {
-            mask_seed: rand::thread_rng().gen::<[u8; 32]>(),
+            mask_seed: rand::rng().random::<[u8; 32]>(),
             regex: re,
             hide_data_regex: hide_data_re,
             is_enabled: AtomicBool::new(true),

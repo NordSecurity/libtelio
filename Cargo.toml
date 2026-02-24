@@ -60,7 +60,7 @@ telio-wg.workspace = true
 once_cell.workspace = true
 nat-detect.workspace = true
 time.workspace = true
-libloading = "0.8.9"
+libloading = "0.9.0"
 itertools.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
@@ -113,7 +113,7 @@ futures = "0.3.31"
 hashlink = "0.11"
 hex = "0.4.3"
 httparse = "1.10"
-if-addrs = "0.14"
+if-addrs = "0.15.0"
 ipnet = { version = "2.11", features = ["serde"] }
 itertools = "0.14"
 lazy_static = "1.5"
@@ -127,7 +127,7 @@ mockall = "0.14"
 mockall_double = "0.3.1"
 modifier = "0.1.0"
 nat-detect = { git = "https://github.com/NordSecurity/nat-detect.git", tag = "v0.1.8" }
-nix = { version = "0.30.1", features = ["fs", "socket", "uio", "net"] }
+nix = { version = "0.31.1", features = ["fs", "socket", "uio", "net"] }
 ntest = "0.9"
 num_cpus = "1"
 num_enum = "0.7"
@@ -136,14 +136,15 @@ parking_lot = "0.12"
 pnet_packet = "0.35"
 pretty_assertions = "1"
 proptest = "1.9"
-proptest-derive = "0.7"
+proptest-derive = "0.8.0"
 protobuf-codegen = "3.7.2"
-rand = "0.8.5"
-rand_core = "0.6.4"
+rand = "0.10.0"
+rand_core = "0.10.0"
+rand_core_compat = { version = "0.1.0", features = ["rand_core_0_6", "rand_core_0_9"] }
 regex = "1.12"
 rstest = "0.26.1"
 rustc-hash = "2"
-rustls-platform-verifier = "0.5"
+rustls-platform-verifier = "0.6.2"
 rustls = { version = "0.23", default-features = false, features = [
   "ring",
   "std",
@@ -155,7 +156,7 @@ slog = "2.8"
 smart-default = "0.7.1"
 sn_fake_clock = "0.4"
 socket2 = "0.6"
-strum = { version = "0.27", features = ["derive"] }
+strum = { version = "0.28.0", features = ["derive"] }
 surge-ping = { version = "0.8" }
 thiserror = "2"
 time = { version = "0.3", features = ["formatting"] }
@@ -170,11 +171,11 @@ url = "2.5"
 uuid = { version = "1.19", features = ["v4"] }
 wireguard-uapi = { git = "https://github.com/NordSecurity/wireguard-uapi-rs.git", rev = "5f5d9952ced4faf10f56d98153e4a8e560102e5c", features = ["xplatform", "zeroize"], default-features = false  }
 winapi = { version = "0.3", features = ["netioapi", "ws2def"] }
-windows = { version = "0.61", features = [
+windows = { version = "0.62.2", features = [
   "Win32_Networking_WinSock",
   "Win32_NetworkManagement_IpHelper",
 ] }
-winreg = "0.50.0"
+winreg = "0.55.0"
 
 neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v2.3.0", features = [
   "device",

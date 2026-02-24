@@ -18,7 +18,7 @@ use pnet_packet::{
 };
 use pqcrypto_kyber::{ffi::PQCLEAN_KYBER768_CLEAN_CRYPTO_SECRETKEYBYTES, kyber768};
 use pqcrypto_traits::kem::{Ciphertext, PublicKey, SecretKey, SharedSecret};
-use rand::{prelude::Distribution, rngs::OsRng};
+use rand::{rand_core::UnwrapErr, rngs::SysRng};
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn, Hidden};
 use tokio::net::{ToSocketAddrs, UdpSocket};
 
@@ -123,7 +123,7 @@ pub async fn fetch_keys(
         handshake(sock_pool, endpoint, secret, peers_pubkey).await?;
     telio_log_debug!("Initial WG handshake done");
 
-    let mut rng = OsRng;
+    let mut rng = UnwrapErr(SysRng);
 
     // Generate keys
     let wg_secret = telio_crypto::SecretKey::gen_with(&mut rng);
@@ -687,9 +687,8 @@ fn fill_get_packet_headers(pkgbuf: &mut [u8], local_port: u16) {
     ippkg.set_checksum(ipv4::checksum(&ippkg.to_immutable()));
 }
 
-fn random_port(rng: &mut impl rand::Rng) -> u16 {
-    rand::distributions::Uniform::new_inclusive(LOCAL_PORT_RANGE.start(), LOCAL_PORT_RANGE.end())
-        .sample(rng)
+fn random_port(rng: &mut impl rand::RngExt) -> u16 {
+    rng.random_range(*LOCAL_PORT_RANGE.start()..=*LOCAL_PORT_RANGE.end())
 }
 
 fn timestamp() -> u64 {
@@ -701,7 +700,6 @@ fn timestamp() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use core::time;
 
     use crate::{
         proto::{PqProtoV1Status, PqProtoV2Status},
