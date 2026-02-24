@@ -1054,8 +1054,8 @@ impl Runtime {
 
         #[cfg(feature = "enable_firewall")]
         let firewall_process_inbound_callback = firewall.clone().map(|fw| {
-            Arc::new(move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet))
-                as Arc<dyn Fn(&[u8; 32], &[u8]) -> bool + Send + Sync>
+            Arc::new(move |peer: &[u8; 32], packet: &mut [u8]| fw.process_inbound_packet(peer, packet))
+                as Arc<dyn Fn(&[u8; 32], &mut [u8]) -> bool + Send + Sync>
         });
         #[cfg(not(feature = "enable_firewall"))]
         let firewall_process_inbound_callback = None;
