@@ -153,6 +153,9 @@ pub enum Error {
     /// Unable to send relayed message
     #[error("Unable to send relayed message: {0}")]
     RelayedMsgSendError(#[from] SendError<(PublicKey, Vec<u8>)>),
+    /// TLS setup error
+    #[error("TLS error: {0}")]
+    TlsError(#[from] tokio_rustls::rustls::Error),
     /// Url parse error
     #[error("Url parse error: {0}")]
     UrlParseError(#[from] url::ParseError),
