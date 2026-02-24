@@ -193,6 +193,7 @@ markers = [
     "ipv4v6: tests dual stack WG connectivity",
     "utils: tests the natlab utilities",
     "openwrt: tests that require OpenWrt VM to be running",
+    "perf_profiling: tests that profile execution with perf",
 ]
 
 [tool.pyright]
