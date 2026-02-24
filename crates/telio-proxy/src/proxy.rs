@@ -676,7 +676,7 @@ mod tests {
     /// Helper utils for tests
     mod helper {
         use futures::future::join_all;
-        use rand::seq::SliceRandom;
+        use rand::seq::IndexedRandom;
         use std::{panic, thread, time::Duration};
         use tokio::{
             sync::{mpsc::Receiver, mpsc::Sender, Mutex},
@@ -790,7 +790,7 @@ mod tests {
             pub async fn test_data_muted(&mut self, relay_to_wg: &[&[(DataMsg, &[u8])]]) {
                 let peers = relay_to_wg.len().max(relay_to_wg.len());
                 let pks = self.create_peers(peers).await;
-                let pk_to_mute = pks.choose(&mut rand::thread_rng()).unwrap();
+                let pk_to_mute = pks.choose(&mut rand::rng()).unwrap();
                 let (relay_to_wg, expect_relay_to_wg) = flatten_tests(&pks, relay_to_wg);
 
                 let advance_by_secs_and_yield = |secs| async move {
