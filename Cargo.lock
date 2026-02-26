@@ -1708,6 +1708,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "get_adapters_addresses"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa6d768b8f11cc8995f5c3f3f51660a50f8fa807eaeb83632d9afb4d42b0e493"
+dependencies = [
+ "thiserror 1.0.69",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.2.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5207,6 +5217,7 @@ dependencies = [
  "async-trait",
  "cc",
  "futures",
+ "get_adapters_addresses",
  "hex",
  "ipnet",
  "itertools 0.14.0",
@@ -6681,7 +6692,7 @@ dependencies = [
 [[package]]
 name = "wireguard-nt"
 version = "1.0.0"
-source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper?tag=v1.2.0#f6c5684fc8cb49958b99ad5178cc61ace3e8a4c1"
+source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper?branch=matislovas%2Fwg-nt_fallback#f693f68e53bada48e0ac99054047f1cdb82402a8"
 dependencies = [
  "bitflags 2.10.0",
  "getrandom 0.2.16",
