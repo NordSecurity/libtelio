@@ -39,6 +39,21 @@ def run_command_with_output(command, hide_output=False):
     return result
 
 
+def dump_docker_logs(service_name):
+    """Dump the last 200 lines of docker compose logs for a failing service."""
+    print(f"\n=== Docker logs for {service_name} ===")
+    result = subprocess.run(
+        ["docker", "compose", "logs", "--tail", "200", service_name],
+        capture_output=True,
+        text=True,
+    )
+    if result.stdout:
+        print(result.stdout)
+    if result.stderr:
+        print(result.stderr)
+    print(f"=== End of docker logs for {service_name} ===\n")
+
+
 def start(skip_keywords=None, force_recreate=False, services_to_start=None):
     if skip_keywords is None:
         skip_keywords = []
@@ -107,6 +122,10 @@ def start(skip_keywords=None, force_recreate=False, services_to_start=None):
             command, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
         )
     except subprocess.CalledProcessError:
+        print("Initial 'docker compose up' failed, dumping container logs...")
+        if services_to_start:
+            for service in services_to_start:
+                dump_docker_logs(service)
         manage_containers(services_to_start)
     else:
         manage_containers(services_to_start)
@@ -140,19 +159,23 @@ def quick_restart_container(names: List[str], env=None):
             run_command(["docker", "container", "kill", container], env=env)
     for name in names:
         print("Restarting service: ", name)
-        run_command(
-            [
-                "docker",
-                "compose",
-                "up",
-                "-d",
-                "--wait",
-                "--force-recreate",
-                name,
-                "--quiet-pull",
-            ],
-            env=env,
-        )
+        try:
+            run_command(
+                [
+                    "docker",
+                    "compose",
+                    "up",
+                    "-d",
+                    "--wait",
+                    "--force-recreate",
+                    name,
+                    "--quiet-pull",
+                ],
+                env=env,
+            )
+        except subprocess.CalledProcessError:
+            print(f"Restart of service '{name}' failed, dumping container logs...")
+            dump_docker_logs(name)
 
 
 def check_containers(services_to_start, check_only=False) -> List[str]:
@@ -214,6 +237,8 @@ def manage_containers(services_to_start) -> None:
         missing = check_containers(services_to_start, False)
         if missing:
             print("Missing services: ", missing)
+            for service in missing:
+                dump_docker_logs(service)
             quick_restart_container(
                 missing, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
             )

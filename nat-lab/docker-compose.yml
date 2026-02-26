@@ -679,6 +679,7 @@ services:
     entrypoint: /opt/bin/openwrt/entrypoint.sh
     devices:
       - "/dev/net/tun"
+      - "/dev/kvm"
     networks:
       internet:
         ipv4_address: 10.0.254.14
