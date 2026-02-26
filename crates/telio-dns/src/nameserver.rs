@@ -90,6 +90,8 @@ async fn update_wg_timers(
 /// Local name server.
 #[derive(Default)]
 pub struct LocalNameServer {
+    nord_zones: Records,
+    ttl: u32,
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
 }
@@ -99,6 +101,8 @@ impl LocalNameServer {
     /// configured for zone `.`.
     pub async fn new(forward_ips: &[IpAddr]) -> Result<Arc<RwLock<Self>>, String> {
         let ns = Arc::new(RwLock::new(LocalNameServer {
+            nord_zones: Records::new(),
+            ttl: 60,
             zones: Arc::new(ClonableZones::new()),
             task_handle: None,
         }));
@@ -258,19 +262,42 @@ impl LocalNameServer {
             return ResponseKind::NoData;
         }
 
-        // TODO: LLT-7051 Fill with response from local zone
-        match query.qtype {
-            DnsTypes::A => {
-                return ResponseKind::AnswerA {
-                    addresses: vec![Ipv4Addr::new(100, 100, 100, 100)],
+        if let Some(addresses) = self.nord_zones.get(&qname) {
+            match query.qtype {
+                DnsTypes::A => {
+                    let addresses: Vec<Ipv4Addr> = addresses
+                        .iter()
+                        .filter_map(|ip| {
+                            if let IpAddr::V4(v4) = ip {
+                                Some(*v4)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !addresses.is_empty() {
+                        return ResponseKind::AnswerA { addresses };
+                    }
                 }
-            }
-            DnsTypes::AAAA => {
-                return ResponseKind::AnswerAAAA {
-                    addresses: vec![Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xc00a, 0x2ff)],
+                DnsTypes::AAAA => {
+                    let addresses: Vec<Ipv6Addr> = addresses
+                        .iter()
+                        .filter_map(|ip| {
+                            if let IpAddr::V6(v6) = ip {
+                                Some(*v6)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if !addresses.is_empty() {
+                        return ResponseKind::AnswerAAAA { addresses };
+                    }
                 }
+                _ => {}
             }
-            _ => {}
+        } else {
+            return ResponseKind::NxDomain;
         }
 
         // Didn't match anything so we respond with NoData
@@ -300,14 +327,13 @@ impl LocalNameServer {
         let dns_response = match dns_request {
             DnsUdpPayloadTarget::Local { id, query } => {
                 // lookup local zone for response
-                let response_kind = nameserver
-                    .clone()
-                    .read()
-                    .await
-                    .lookup_local_response(&query);
+                let (response_kind, ttl) = {
+                    let ns = nameserver.read().await;
+                    (ns.lookup_local_response(&query), ns.ttl)
+                };
 
                 // build response
-                let response = DnsResponseBuilder::new(id, query, 60, response_kind)
+                let response = DnsResponseBuilder::new(id, query, ttl, response_kind)
                     .build()
                     .map_err(|e| format!("Failed building DNS response packet: {e:?}"))?;
                 response
@@ -775,6 +801,16 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
         ttl_value: TtlValue,
     ) -> Result<(), String> {
         let azone = Arc::new(AuthoritativeZone::new(zone, records, ttl_value).await?);
+
+        {
+            let mut ns = self.write().await;
+            ns.nord_zones = records
+                .iter()
+                .filter(|(_, v)| !v.is_empty())
+                .map(|(k, v)| (normalize_qname(k), v.clone()))
+                .collect();
+            ns.ttl = ttl_value.0;
+        };
 
         self.zones_mut()
             .await
