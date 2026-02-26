@@ -400,8 +400,20 @@ fn validate_get_response_udp(
 
 /// The response looks as follows:
 ///
+/// V1 format:
 /// ---------------------------------
 ///  version           , u32le, = 1
+/// ---------------------------------
+///  Ciphertext len    , u32le, = 1088
+/// ---------------------------------
+///  Ciphertext bytes  , [u8]
+/// ---------------------------------
+///
+/// V2 format:
+/// ---------------------------------
+///  version           , u32le, = 2
+/// ---------------------------------
+///  method            , u32le, = 0 (GetKey) or 1 (ReKey)
 /// ---------------------------------
 ///  Ciphertext len    , u32le, = 1088
 /// ---------------------------------
@@ -442,13 +454,25 @@ pub fn parse_response_payload(
             }
         }
         2 => {
-            // v2 reports error as a single(5th) byte with no further payload.
-            #[allow(clippy::comparison_chain)]
-            if payload.len() < 5 {
+            // v2 format includes a method field and reports errors as:
+            // version: u32 || method: u32 (= 2 for error) || code: u32
+            // Total error response size is 12 bytes.
+            // See LLT RFC-0102 for details.
+            if payload.len() < 12 {
                 return Err(super::Error::ServerV2(PqProtoV2Status::NoData));
-            } else if payload.len() == 5 {
-                #[allow(clippy::indexing_slicing)]
-                let error_code = payload[4];
+            }
+
+            // Read method field
+            let mut method = [0u8; 4];
+            data.read_exact(&mut method)?;
+            let method = u32::from_le_bytes(method);
+
+            // Method 2 indicates an error response
+            const MESSAGE_TYPE_ERROR: u32 = 2;
+            if method == MESSAGE_TYPE_ERROR {
+                let mut error_code = [0u8; 4];
+                data.read_exact(&mut error_code)?;
+                let error_code = u32::from_le_bytes(error_code) as u8;
                 let status = PqProtoV2Status::from(error_code);
                 telio_log_error!(
                     "PQ upgrader v2 responded with: {}: {:?}",
@@ -913,47 +937,50 @@ mod tests {
 
     #[test]
     fn parse_response_error_v2() {
+        // V2 error format: version (4) + method (4, = 2 for error) + code (4) = 12 bytes
+        // Method 2 = MessageTypeError
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x01", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x01\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::ServerError))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x02", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x02\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::DeviceError))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x03", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::PeerOrDeviceNotFound))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x04", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::CouldNotReadTimestamp))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x05", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x05\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::CouldNotReadVersion))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x06", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x06\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::CouldNotReadMessageType))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x07", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x07\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::Failure))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x08", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x08\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::AuthenticationFailed))
         ));
 
         // Pass unknown errors
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x10", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x10\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::UnhandledError))
         ));
 
+        // Too short payload (less than 12 bytes)
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::NoData))
         ));
     }
