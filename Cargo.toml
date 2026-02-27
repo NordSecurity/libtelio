@@ -169,10 +169,11 @@ uniffi = "0.28.3"
 url = "2.5"
 uuid = { version = "1.19", features = ["v4"] }
 wireguard-uapi = { git = "https://github.com/NordSecurity/wireguard-uapi-rs.git", rev = "5f5d9952ced4faf10f56d98153e4a8e560102e5c", features = ["xplatform", "zeroize"], default-features = false  }
-winapi = { version = "0.3", features = ["netioapi", "ws2def"] }
+winapi = { version = "0.3", features = ["netioapi", "ws2def", "cfgmgr32", "setupapi", "winreg", "iphlpapi", "errhandlingapi", "ifdef"] }
 windows = { version = "0.61", features = [
   "Win32_Networking_WinSock",
   "Win32_NetworkManagement_IpHelper",
+  "Win32_NetworkManagement_Ndis",
 ] }
 winreg = "0.50.0"
 

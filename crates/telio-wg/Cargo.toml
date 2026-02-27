@@ -58,9 +58,10 @@ cc.workspace = true
 [target.'cfg(windows)'.dependencies]
 telio-pinger.workspace = true
 sha2.workspace = true
-winapi = { workspace = true, features = ["nldef"] }
+winapi = { workspace = true, features = ["nldef", "dbt"] }
 winreg.workspace = true
 uuid.workspace = true
+utf16_lit = "2.0.2"
 
 wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", tag = "v1.2.0" }
 
@@ -68,5 +69,11 @@ windows = { workspace = true, features = [
     "Win32_Security",
     "Win32_System",
     "Win32_System_Services",
-    "Win32_Foundation"
+    "Win32_System_Registry",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_Foundation",
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Devices_Properties",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_NetworkManagement_IpHelper",
 ]}
