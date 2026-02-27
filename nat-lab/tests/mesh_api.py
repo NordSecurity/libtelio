@@ -417,7 +417,7 @@ class API:
                 )
 
                 get_priv_cmd = (
-                    "nlx showconf nordlynx0 | "
+                    "nlx showconf nlx0 | "
                     'awk \'$1=="PrivateKey" && $2=="=" {print $3; exit}\''
                 )
 
