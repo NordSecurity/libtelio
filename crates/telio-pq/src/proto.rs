@@ -7,6 +7,7 @@ use std::{
 };
 
 use blake2::Digest;
+use byteorder::{LittleEndian, ReadBytesExt};
 use hmac::Mac;
 use neptun::noise;
 use pnet_packet::{
@@ -399,6 +400,70 @@ fn validate_get_response_udp(
     Ok(())
 }
 
+fn parse_method(
+    data: &mut io::Cursor<&[u8]>,
+    data_len: usize,
+    expected_version: u32,
+) -> super::Result<Option<u32>> {
+    let version = data.read_u32::<LittleEndian>()?;
+    if version != expected_version {
+        return Err(super::Error::Io(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Server responded with invalid PQ handshake version",
+        )));
+    }
+
+    match expected_version {
+        1 => {
+            // v1 reports error as a single(5th) byte with no further payload.
+            #[allow(clippy::comparison_chain)]
+            if data_len < 5 {
+                return Err(super::Error::ServerV1(PqProtoV1Status::NoData));
+            } else if data_len == 5 {
+                let error_code = data.read_u8()?;
+                let status = PqProtoV1Status::from(error_code);
+                telio_log_error!(
+                    "PQ upgrader v1 responded with: {}: {:?}",
+                    error_code,
+                    status
+                );
+                return Err(super::Error::ServerV1(status));
+            }
+            Ok(None)
+        }
+        2 => {
+            // v2 format includes a method field and reports errors as:
+            // version: u32 || method: u32 (= 2 for error) || code: u32
+            // Total error response size is 12 bytes.
+            // See LLT RFC-0102 for details.
+            if data_len < 12 {
+                return Err(super::Error::ServerV2(PqProtoV2Status::NoData));
+            }
+
+            let method = data.read_u32::<LittleEndian>()?;
+
+            // Method 2 indicates an error response
+            const MESSAGE_TYPE_ERROR: u32 = 2;
+            if method == MESSAGE_TYPE_ERROR {
+                let error_code = data.read_u32::<LittleEndian>()?;
+                let status = PqProtoV2Status::from(error_code as u8);
+                telio_log_debug!(
+                    "PQ upgrader v2 responded with: {}: {:?}",
+                    error_code,
+                    status
+                );
+                return Err(super::Error::ServerV2(status));
+            }
+
+            Ok(Some(method))
+        }
+        _ => Err(super::Error::Io(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Unsupported PQ version: {expected_version}"),
+        ))),
+    }
+}
+
 /// The response looks as follows:
 ///
 /// V1 format:
@@ -426,74 +491,13 @@ pub fn parse_response_payload(
 ) -> super::Result<kyber768::Ciphertext> {
     let mut data = io::Cursor::new(payload);
 
-    let mut version = [0u8; 4];
-    data.read_exact(&mut version)?;
-    let version = u32::from_le_bytes(version);
-    if version != expected_version {
-        return Err(super::Error::Io(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "Server responded with invalid PQ handshake version",
-        )));
-    }
+    let method = parse_method(&mut data, payload.len(), expected_version)?;
+    telio_log_debug!("Received pq v{expected_version} message for method {method:?}");
 
-    match expected_version {
-        1 => {
-            // v1 reports error as a single(5th) byte with no further payload.
-            #[allow(clippy::comparison_chain)]
-            if payload.len() < 5 {
-                return Err(super::Error::ServerV1(PqProtoV1Status::NoData));
-            } else if payload.len() == 5 {
-                #[allow(clippy::indexing_slicing)]
-                let error_code = payload[4];
-                let status = PqProtoV1Status::from(error_code);
-                telio_log_error!(
-                    "PQ upgrader v1 responded with: {}: {:?}",
-                    error_code,
-                    status
-                );
-                return Err(super::Error::ServerV1(status));
-            }
-        }
-        2 => {
-            // v2 format includes a method field and reports errors as:
-            // version: u32 || method: u32 (= 2 for error) || code: u32
-            // Total error response size is 12 bytes.
-            // See LLT RFC-0102 for details.
-            if payload.len() < 12 {
-                return Err(super::Error::ServerV2(PqProtoV2Status::NoData));
-            }
+    // In both cases (get-key and rekey) the stucture of the respones after the method field
+    // is the same.
 
-            // Read method field
-            let mut method = [0u8; 4];
-            data.read_exact(&mut method)?;
-            let method = u32::from_le_bytes(method);
-
-            // Method 2 indicates an error response
-            const MESSAGE_TYPE_ERROR: u32 = 2;
-            if method == MESSAGE_TYPE_ERROR {
-                let mut error_code = [0u8; 4];
-                data.read_exact(&mut error_code)?;
-                let error_code = u32::from_le_bytes(error_code) as u8;
-                let status = PqProtoV2Status::from(error_code);
-                telio_log_error!(
-                    "PQ upgrader v2 responded with: {}: {:?}",
-                    error_code,
-                    status
-                );
-                return Err(super::Error::ServerV2(status));
-            }
-        }
-        _ => {
-            return Err(super::Error::Io(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Unsupported PQ version: {expected_version}"),
-            )));
-        }
-    }
-
-    let mut ciphertext_len = [0u8; 4];
-    data.read_exact(&mut ciphertext_len)?;
-    let ciphertext_len = u32::from_le_bytes(ciphertext_len);
+    let ciphertext_len = data.read_u32::<LittleEndian>()?;
 
     if ciphertext_len != CIPHERTEXT_LEN {
         return Err(super::Error::Io(io::Error::new(

@@ -4939,6 +4939,7 @@ dependencies = [
  "base64 0.22.1",
  "blake2",
  "blake3",
+ "byteorder",
  "hmac",
  "mockall",
  "neptun",
