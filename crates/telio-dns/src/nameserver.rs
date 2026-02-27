@@ -1,4 +1,6 @@
 use crate::{
+    packet_decoder::DnsQuestion,
+    packet_encoder::{DnsResponseBuilder, ResponseKind},
     resolver::Resolver,
     zone::{AuthoritativeZone, ClonableZones, ForwardZone, Records},
 };
@@ -262,17 +264,36 @@ impl LocalNameServer {
                 .ok_or_else(|| String::from("Inexistent DNS request"))?,
             _ => return Ok(Vec::new()),
         };
-        let dns_request = Request::new(dns_request, request_info.dns_source(), Protocol::Udp);
-        telio_log_debug!("DNS request: {:?}", &dns_request);
 
-        zones
-            .lookup(&dns_request, resolver.clone())
-            .await
-            .map_err(|e| format!("Lookup failed {e}"))?;
+        let dns_response = match dns_request {
+            DnsUdpPayloadTarget::Local(question) => {
+                // TODO: LLT-7051 Fill with response from local resolver
+                // let response_kind = zones.lookup_local_response(&question)?;
+                let response_kind = ResponseKind::AnswerA {
+                    addresses: vec![Ipv4Addr::new(100, 100, 100, 100)],
+                };
 
-        let dns_response = resolver.0.lock().await;
-        telio_log_debug!("Nameserver response: {:?}", &dns_response);
-        Ok(dns_response.to_vec())
+                let response = DnsResponseBuilder::new(&question, 60, response_kind)
+                    .build()
+                    .map_err(|e| format!("DNS build failed: {e:?}"))?;
+                response
+            }
+            DnsUdpPayloadTarget::Forward(question) => {
+                let dns_request = Request::new(question, request_info.dns_source(), Protocol::Udp);
+                telio_log_debug!("DNS request: {:?}", &dns_request);
+
+                zones
+                    .lookup(&dns_request, resolver.clone())
+                    .await
+                    .map_err(|e| format!("Lookup failed {e}"))?;
+
+                let dns_response = resolver.0.lock().await;
+                telio_log_debug!("Nameserver response: {:?}", &dns_response);
+                dns_response.to_vec()
+            }
+        };
+
+        Ok(dns_response)
     }
 
     async fn process_packet(
@@ -347,13 +368,27 @@ impl LocalNameServer {
             return Err(String::from("Invalid DNS port"));
         }
 
-        let dns_request = MessageRequest::from_bytes(udp_request.payload())
-            .map_err(|_| String::from("Failed to build MessageRequest from request packet"))?;
+        let payload = udp_request.payload();
+
+        let dns_request = match DnsQuestion::parse(payload) {
+            Ok(question) if question.is_nord_tld() => Some(DnsUdpPayloadTarget::Local(question)),
+            Ok(_) => {
+                // not .nord, forward unchanged
+                let forward = MessageRequest::from_bytes(payload).map_err(|_| {
+                    String::from("Failed to build MessageRequest from request packet")
+                })?;
+                Some(DnsUdpPayloadTarget::Forward(forward))
+            }
+            Err(_) => {
+                // malformed DNS
+                return Err(String::from("Failed to parse DNS payload"));
+            }
+        };
 
         Ok(PayloadRequestInfo::Udp {
             source_port: udp_request.get_source(),
             destination_port: udp_request.get_destination(),
-            dns_request: Some(dns_request),
+            dns_request,
         })
     }
 }
@@ -398,11 +433,17 @@ impl IpRequestInfo {
 }
 
 #[allow(clippy::large_enum_variant)]
+enum DnsUdpPayloadTarget {
+    Local(DnsQuestion),
+    Forward(MessageRequest),
+}
+
+#[allow(clippy::large_enum_variant)]
 enum PayloadRequestInfo {
     Udp {
         source_port: u16,
         destination_port: u16,
-        dns_request: Option<MessageRequest>,
+        dns_request: Option<DnsUdpPayloadTarget>,
     },
     Tcp {
         source_port: u16,
