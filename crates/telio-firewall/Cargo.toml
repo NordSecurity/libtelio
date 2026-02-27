@@ -10,6 +10,7 @@ publish = false
 smallvec = "1.15.1"
 enum-map.workspace = true
 ipnet.workspace = true
+libc.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 mockall = { workspace = true, optional = true }
