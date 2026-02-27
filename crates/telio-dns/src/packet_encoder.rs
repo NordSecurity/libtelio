@@ -6,7 +6,10 @@
 #![allow(dead_code)]
 
 use crate::packet_decoder::{DnsQuestion, DNS_HEADER_OFFSET};
-use pnet_packet::dns::{DnsClasses, DnsTypes, MutableDnsPacket, MutableDnsResponsePacket, Retcode};
+use pnet_packet::dns::{
+    DnsClasses, DnsType, DnsTypes, MutableDnsPacket, MutableDnsQueryPacket,
+    MutableDnsResponsePacket, Opcode, Retcode,
+};
 use std::convert::TryFrom;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use thiserror::Error;
@@ -132,16 +135,18 @@ impl<'a> DnsResponseBuilder<'a> {
         }
     }
 
-    /// If this response is for forwarded or upstream results
-    pub fn authoritative(mut self, authoritative: bool) -> Self {
+    /// Set if this response is for forwarded or upstream results
+    ///
+    /// Sets AA flag
+    pub fn set_authoritative(mut self, authoritative: bool) -> Self {
         self.authoritative = authoritative;
         self
     }
 
-    /// Cap for UDP response size
+    /// Set cap for UDP response size
     ///
-    /// Sets TC=1 if truncation occurs
-    pub fn max_size(mut self, max_size: usize) -> Self {
+    /// Sets TC flag if truncation occurs
+    pub fn set_max_size(mut self, max_size: usize) -> Self {
         self.max_size = max_size.max(DNS_HEADER_OFFSET);
         self
     }
@@ -152,16 +157,23 @@ impl<'a> DnsResponseBuilder<'a> {
     pub fn build(self) -> Result<Vec<u8>, DnsBuildError> {
         let mut bytes = Vec::with_capacity(DEFAULT_MAX_UDP_SIZE);
 
-        // Make space for the header
-        bytes.resize(DNS_HEADER_OFFSET, 0);
-        // Add the query bytes
-        bytes.extend_from_slice(&self.question.query_bytes);
-
         let mut answer_count: u16 = 0;
         let mut authority_count: u16 = 0;
         let mut truncated = false;
 
-        match self.kind {
+        // Make space for the header
+        bytes.resize(DNS_HEADER_OFFSET, 0);
+
+        // Add the query bytes
+        try_push_query(
+            &mut bytes,
+            &self.question.record_type,
+            &self.question.name,
+            self.max_size,
+            &mut truncated,
+        )?;
+
+        let rcode = match self.kind {
             ResponseKind::AnswerA { addresses } => {
                 for ip in addresses {
                     try_push_rr_a(
@@ -186,16 +198,7 @@ impl<'a> DnsResponseBuilder<'a> {
                         &mut answer_count,
                     )?;
                 }
-
-                write_header(
-                    &mut bytes,
-                    self.question,
-                    self.authoritative,
-                    truncated,
-                    Retcode::NoError,
-                    answer_count,
-                    authority_count,
-                )?;
+                Retcode::NoError
             }
             ResponseKind::AnswerAAAA { addresses } => {
                 for ip in addresses {
@@ -209,6 +212,7 @@ impl<'a> DnsResponseBuilder<'a> {
                     )?;
                 }
 
+                // NODATA for AAAA query: NOERROR + SOA in authority
                 if answer_count == 0 {
                     try_push_rr_soa(
                         &mut bytes,
@@ -220,16 +224,7 @@ impl<'a> DnsResponseBuilder<'a> {
                         &mut answer_count,
                     )?;
                 }
-
-                write_header(
-                    &mut bytes,
-                    self.question,
-                    self.authoritative,
-                    truncated,
-                    Retcode::NoError,
-                    answer_count,
-                    authority_count,
-                )?;
+                Retcode::NoError
             }
             ResponseKind::NoData => {
                 try_push_rr_soa(
@@ -241,15 +236,7 @@ impl<'a> DnsResponseBuilder<'a> {
                     false,
                     &mut answer_count,
                 )?;
-                write_header(
-                    &mut bytes,
-                    self.question,
-                    self.authoritative,
-                    truncated,
-                    Retcode::NoError,
-                    answer_count,
-                    authority_count,
-                )?;
+                Retcode::NoError
             }
             ResponseKind::NxDomain => {
                 try_push_rr_soa(
@@ -261,15 +248,7 @@ impl<'a> DnsResponseBuilder<'a> {
                     false,
                     &mut answer_count,
                 )?;
-                write_header(
-                    &mut bytes,
-                    self.question,
-                    self.authoritative,
-                    truncated,
-                    Retcode::RecordNotExists,
-                    answer_count,
-                    authority_count,
-                )?;
+                Retcode::RecordNotExists
             }
             ResponseKind::SoaAnswer => {
                 try_push_rr_soa(
@@ -281,17 +260,19 @@ impl<'a> DnsResponseBuilder<'a> {
                     true,
                     &mut answer_count,
                 )?;
-                write_header(
-                    &mut bytes,
-                    self.question,
-                    self.authoritative,
-                    truncated,
-                    Retcode::NoError,
-                    answer_count,
-                    authority_count,
-                )?;
+                Retcode::NoError
             }
-        }
+        };
+
+        write_header(
+            &mut bytes,
+            self.question,
+            self.authoritative,
+            truncated,
+            rcode,
+            answer_count,
+            authority_count,
+        )?;
 
         Ok(bytes)
     }
@@ -318,6 +299,38 @@ fn try_reserve_tail<'a>(
 
     out.resize(cur + needed, 0);
     out.get_mut(cur..cur + needed)
+}
+
+/// Append a query back to the response
+fn try_push_query(
+    out: &mut Vec<u8>,
+    qtype: &DnsType,
+    qname: &str,
+    max_size: usize,
+    truncated: &mut bool,
+) -> Result<(), DnsBuildError> {
+    let mut qname_wire = Vec::with_capacity(qname.len() + 2);
+    encode_name(&mut qname_wire, qname);
+
+    // qname + qtype + qclass
+    let qlen = qname_wire.len() + 4;
+
+    let Some(qbuf) = try_reserve_tail(out, qlen, max_size, truncated) else {
+        return Ok(());
+    };
+
+    // We need to first manually copy the qname into the buffer.
+    // `MutableDnsQueryPacket` infers QNAME length from the existing bytes.
+    qbuf.get_mut(..qname_wire.len())
+        .ok_or(DnsBuildError::RecordBufferTooShort)?
+        .copy_from_slice(&qname_wire);
+
+    let mut p = MutableDnsQueryPacket::new(qbuf).ok_or(DnsBuildError::RecordBufferTooShort)?;
+
+    p.set_qtype(qtype.to_owned());
+    p.set_qclass(DnsClasses::IN);
+
+    Ok(())
 }
 
 /// Append an A record to the response
@@ -425,10 +438,10 @@ fn write_header(
 
     header.set_id(question.id);
     header.set_is_response(1);
-    header.set_opcode(question.opcode);
+    header.set_opcode(Opcode::StandardQuery);
     header.set_is_authoriative(if authoritative { 1 } else { 0 });
     header.set_is_truncated(if truncated { 1 } else { 0 });
-    header.set_is_recursion_desirable(if question.recursion_desired { 1 } else { 0 });
+    header.set_is_recursion_desirable(0);
     header.set_is_recursion_available(0);
     header.set_zero_reserved(0);
     header.set_is_answer_authenticated(0);
@@ -692,7 +705,7 @@ mod tests {
         let addrs = (0..200).map(|i| Ipv4Addr::new(10, 0, 0, i as u8)).collect();
         let bytes =
             DnsResponseBuilder::new(&question, 60, ResponseKind::AnswerA { addresses: addrs })
-                .max_size(100)
+                .set_max_size(100)
                 .build()
                 .unwrap();
 
