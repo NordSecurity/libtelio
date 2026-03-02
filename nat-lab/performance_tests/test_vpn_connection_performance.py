@@ -8,7 +8,7 @@ from tests.helpers import SetupParameters, setup_environment
 from tests.helpers_vpn import connect_vpn, VpnConfig
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import Connection, ConnectionTag
-from tests.utils.connection_util import new_connection_raw, new_connection_by_tag
+from tests.utils.connection_util import new_connection_raw
 from tests.utils.iperf3 import (
     IperfServer,
     IperfClient,
@@ -203,9 +203,7 @@ async def test_vpn_connection_performance() -> None:
         alpha, *_ = env.nodes
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
-        vpn_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_VPN_1)
-        )
+
         photo_album_connection = await exit_stack.enter_async_context(
             new_connection_raw(ConnectionTag.DOCKER_PHOTO_ALBUM)
         )
@@ -226,7 +224,7 @@ async def test_vpn_connection_performance() -> None:
         performance_results["baseline_metrics"] = baseline_metrics
 
         # Connect to vpn server
-        await env.api.prepare_vpn_servers([vpn_connection])
+        await env.api.prepare_vpn_servers()
         await connect_vpn(
             client_conn,
             None,
