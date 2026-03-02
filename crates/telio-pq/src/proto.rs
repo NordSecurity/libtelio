@@ -7,6 +7,7 @@ use std::{
 };
 
 use blake2::Digest;
+use byteorder::{LittleEndian, ReadBytesExt};
 use hmac::Mac;
 use neptun::noise;
 use pnet_packet::{
@@ -118,7 +119,7 @@ pub async fn fetch_keys(
     peers_pubkey: &telio_crypto::PublicKey,
     pq_version: u32,
 ) -> super::Result<KeySet> {
-    telio_log_debug!("Fetching keys");
+    telio_log_debug!("Fetching keys, pq version: {pq_version}");
     let TunnelSock { mut tunn, sock } =
         handshake(sock_pool, endpoint, secret, peers_pubkey).await?;
     telio_log_debug!("Initial WG handshake done");
@@ -138,6 +139,7 @@ pub async fn fetch_keys(
         &wg_secret,
         &wg_public,
         &pq_public,
+        secret,
         local_port,
         pq_version,
     ); // 4 KiB
@@ -398,24 +400,12 @@ fn validate_get_response_udp(
     Ok(())
 }
 
-/// The response looks as follows:
-///
-/// ---------------------------------
-///  version           , u32le, = 1
-/// ---------------------------------
-///  Ciphertext len    , u32le, = 1088
-/// ---------------------------------
-///  Ciphertext bytes  , [u8]
-/// ---------------------------------
-pub fn parse_response_payload(
-    payload: &[u8],
+fn parse_method(
+    data: &mut io::Cursor<&[u8]>,
+    data_len: usize,
     expected_version: u32,
-) -> super::Result<kyber768::Ciphertext> {
-    let mut data = io::Cursor::new(payload);
-
-    let mut version = [0u8; 4];
-    data.read_exact(&mut version)?;
-    let version = u32::from_le_bytes(version);
+) -> super::Result<Option<u32>> {
+    let version = data.read_u32::<LittleEndian>()?;
     if version != expected_version {
         return Err(super::Error::Io(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -427,11 +417,10 @@ pub fn parse_response_payload(
         1 => {
             // v1 reports error as a single(5th) byte with no further payload.
             #[allow(clippy::comparison_chain)]
-            if payload.len() < 5 {
+            if data_len < 5 {
                 return Err(super::Error::ServerV1(PqProtoV1Status::NoData));
-            } else if payload.len() == 5 {
-                #[allow(clippy::indexing_slicing)]
-                let error_code = payload[4];
+            } else if data_len == 5 {
+                let error_code = data.read_u8()?;
                 let status = PqProtoV1Status::from(error_code);
                 telio_log_error!(
                     "PQ upgrader v1 responded with: {}: {:?}",
@@ -440,35 +429,75 @@ pub fn parse_response_payload(
                 );
                 return Err(super::Error::ServerV1(status));
             }
+            Ok(None)
         }
         2 => {
-            // v2 reports error as a single(5th) byte with no further payload.
-            #[allow(clippy::comparison_chain)]
-            if payload.len() < 5 {
+            // v2 format includes a method field and reports errors as:
+            // version: u32 || method: u32 (= 2 for error) || code: u32
+            // Total error response size is 12 bytes.
+            // See LLT RFC-0102 for details.
+            if data_len < 12 {
                 return Err(super::Error::ServerV2(PqProtoV2Status::NoData));
-            } else if payload.len() == 5 {
-                #[allow(clippy::indexing_slicing)]
-                let error_code = payload[4];
-                let status = PqProtoV2Status::from(error_code);
-                telio_log_error!(
+            }
+
+            let method = data.read_u32::<LittleEndian>()?;
+
+            // Method 2 indicates an error response
+            const MESSAGE_TYPE_ERROR: u32 = 2;
+            if method == MESSAGE_TYPE_ERROR {
+                let error_code = data.read_u32::<LittleEndian>()?;
+                let status = PqProtoV2Status::from(error_code as u8);
+                telio_log_debug!(
                     "PQ upgrader v2 responded with: {}: {:?}",
                     error_code,
                     status
                 );
                 return Err(super::Error::ServerV2(status));
             }
-        }
-        _ => {
-            return Err(super::Error::Io(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("Unsupported PQ version: {expected_version}"),
-            )));
-        }
-    }
 
-    let mut ciphertext_len = [0u8; 4];
-    data.read_exact(&mut ciphertext_len)?;
-    let ciphertext_len = u32::from_le_bytes(ciphertext_len);
+            Ok(Some(method))
+        }
+        _ => Err(super::Error::Io(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Unsupported PQ version: {expected_version}"),
+        ))),
+    }
+}
+
+/// The response looks as follows:
+///
+/// V1 format:
+/// ---------------------------------
+///  version           , u32le, = 1
+/// ---------------------------------
+///  Ciphertext len    , u32le, = 1088
+/// ---------------------------------
+///  Ciphertext bytes  , [u8]
+/// ---------------------------------
+///
+/// V2 format:
+/// ---------------------------------
+///  version           , u32le, = 2
+/// ---------------------------------
+///  method            , u32le, = 0 (GetKey) or 1 (ReKey)
+/// ---------------------------------
+///  Ciphertext len    , u32le, = 1088
+/// ---------------------------------
+///  Ciphertext bytes  , [u8]
+/// ---------------------------------
+pub fn parse_response_payload(
+    payload: &[u8],
+    expected_version: u32,
+) -> super::Result<kyber768::Ciphertext> {
+    let mut data = io::Cursor::new(payload);
+
+    let method = parse_method(&mut data, payload.len(), expected_version)?;
+    telio_log_debug!("Received pq v{expected_version} message for method {method:?}");
+
+    // In both cases (get-key and rekey) the stucture of the respones after the method field
+    // is the same.
+
+    let ciphertext_len = data.read_u32::<LittleEndian>()?;
 
     if ciphertext_len != CIPHERTEXT_LEN {
         return Err(super::Error::Io(io::Error::new(
@@ -495,6 +524,7 @@ fn create_get_packet(
     wg_client_secret: &telio_crypto::SecretKey,
     wg_client_public: &telio_crypto::PublicKey,
     pq_public: &kyber768::PublicKey,
+    device_private_key: &telio_crypto::SecretKey,
     local_port: u16,
     pq_version: u32,
 ) -> Vec<u8> {
@@ -512,15 +542,69 @@ fn create_get_packet(
     let to_hash = &pkgbuf[IPV4_HEADER_LEN + UDP_HEADER_LEN..];
 
     let tag = {
-        type HmacSha256 = hmac::Hmac<sha2::Sha256>;
+        if pq_version == 2 {
+            /*
+            From the RFC LLT-0107:
+            long_term_server_private_key, long_term_server_public_key = Curve25519 private or public key used by NordLynx server.
+            long_term_device_private_key, long_term_device_public_key = A Curve25519 device private or public key which is either
+                                                                        distributed via service credentials API or (public-key part)
+                                                                        registered via meshnet API
+            short_term_device_private_key, short_term_device_public_key = A Curve25519 device private or public key which is generated for the relevant PostQuantum session only
+            */
 
-        let shared_secret = x25519_dalek::x25519(*wg_client_secret.as_bytes(), wg_server_public.0);
+            let long_term_server_public_key = wg_server_public;
+            let (long_term_device_private_key, long_term_device_public_key) =
+                (device_private_key.clone(), device_private_key.public());
+            let (short_term_device_private_key, short_term_device_public_key) =
+                (wg_client_secret, wg_client_public);
 
-        #[allow(clippy::expect_used)]
-        let mut hmac =
-            HmacSha256::new_from_slice(&shared_secret).expect("HMAC can take key of any size");
-        hmac.update(&blake2::Blake2s256::digest(to_hash));
-        hmac.finalize().into_bytes()
+            /*
+            From the RFC LLT-0107:
+            initial_short_term_key_material = DH(short_term_device_private_key, long_term_server_public_key)
+            initial_long_term_key_material = DH(long_term_device_private_key, long_term_server_public_key)
+            */
+
+            let initial_short_term_key_material =
+                short_term_device_private_key.ecdh(long_term_server_public_key);
+            let initial_long_term_key_material =
+                long_term_device_private_key.ecdh(long_term_server_public_key);
+
+            // From the RFC LLT-0107:
+            // derived_key = Blake3::derive_key(context: "pq-initial-auth-v2", key_material: initial_short_term_key_material || initial_long_term_key_material || short_term_pubkey_bytes || long_term_pubkey_bytes || server_public_key_bytes))
+
+            let mut key_material = Vec::with_capacity(
+                initial_short_term_key_material.len()
+                    + initial_long_term_key_material.len()
+                    + short_term_device_public_key.len()
+                    + long_term_device_public_key.len()
+                    + long_term_server_public_key.len(),
+            );
+            key_material.extend_from_slice(&initial_short_term_key_material);
+            key_material.extend_from_slice(&initial_long_term_key_material);
+            key_material.extend_from_slice(short_term_device_public_key);
+            key_material.extend_from_slice(&long_term_device_public_key);
+            key_material.extend_from_slice(long_term_server_public_key);
+            let derived_key = blake3::derive_key("pq-initial-auth-v2", &key_material);
+
+            // From the RFC LLT-0107:
+            // auth_tag = Blake3:keyed_hash(key=derived_key, message = version || method || timestamp || wg_pubkey_len || wg_pubkey_bytes || kyber_pubkey_len || kyber_pubkey_bytes)
+
+            let auth_tag = blake3::keyed_hash(&derived_key, to_hash);
+
+            *auth_tag.as_bytes()
+        } else {
+            type HmacSha256 = hmac::Hmac<sha2::Sha256>;
+
+            let shared_secret =
+                x25519_dalek::x25519(*wg_client_secret.as_bytes(), wg_server_public.0);
+
+            #[allow(clippy::expect_used)]
+            let mut hmac =
+                HmacSha256::new_from_slice(&shared_secret).expect("HMAC can take key of any size");
+            hmac.update(&blake2::Blake2s256::digest(to_hash));
+            let auth_tag: [u8; 32] = hmac.finalize().into_bytes().into();
+            auth_tag
+        }
     };
     pkgbuf.extend_from_slice(&tag);
 
@@ -701,8 +785,6 @@ fn timestamp() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use core::time;
-
     use crate::{
         proto::{PqProtoV1Status, PqProtoV2Status},
         Error,
@@ -913,47 +995,50 @@ mod tests {
 
     #[test]
     fn parse_response_error_v2() {
+        // V2 error format: version (4) + method (4, = 2 for error) + code (4) = 12 bytes
+        // Method 2 = MessageTypeError
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x01", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x01\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::ServerError))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x02", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x02\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::DeviceError))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x03", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::PeerOrDeviceNotFound))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x04", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::CouldNotReadTimestamp))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x05", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x05\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::CouldNotReadVersion))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x06", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x06\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::CouldNotReadMessageType))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x07", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x07\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::Failure))
         ));
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x08", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x08\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::AuthenticationFailed))
         ));
 
         // Pass unknown errors
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00\x10", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00\x10\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::UnhandledError))
         ));
 
+        // Too short payload (less than 12 bytes)
         assert!(matches!(
-            super::parse_response_payload(b"\x02\x00\x00\x00", 2),
+            super::parse_response_payload(b"\x02\x00\x00\x00\x02\x00\x00\x00", 2),
             Err(Error::ServerV2(PqProtoV2Status::NoData))
         ));
     }
