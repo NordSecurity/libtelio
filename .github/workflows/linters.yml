@@ -115,10 +115,9 @@ jobs:
           with:
             just-version: '1.38.0'
         - name: Install uv
-          uses: astral-sh/setup-uv@4db96194c378173c656ce18a155ffc14a9fc4355 # v5.2.2
+          uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
           with:
-            # Install a specific version of uv.
-            version: "0.5.11"
+            version: "0.10.7"
         - run: just black
   python-format-isort:
       runs-on: ubuntu-24.04
@@ -128,10 +127,9 @@ jobs:
           with:
             just-version: '1.38.0'
         - name: Install uv
-          uses: astral-sh/setup-uv@4db96194c378173c656ce18a155ffc14a9fc4355 # v5.2.2
+          uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
           with:
-            # Install a specific version of uv.
-            version: "0.5.11"
+            version: "0.10.7"
         - run: just isort
   python-format-autoflake:
       runs-on: ubuntu-24.04
@@ -141,10 +139,9 @@ jobs:
           with:
             just-version: '1.38.0'
         - name: Install uv
-          uses: astral-sh/setup-uv@4db96194c378173c656ce18a155ffc14a9fc4355 # 5.2.2
+          uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
           with:
-            # Install a specific version of uv.
-            version: "0.5.11"
+            version: "0.10.7"
         - run: just autoflake
   python-lint:
       needs: uniffi-bindings
@@ -160,10 +157,9 @@ jobs:
           with:
             just-version: '1.38.0'
         - name: Install uv
-          uses: astral-sh/setup-uv@4db96194c378173c656ce18a155ffc14a9fc4355 # 5.2.2
+          uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
           with:
-            # Install a specific version of uv.
-            version: "0.5.11"
+            version: "0.10.7"
         - run: just pylint
   natlab-typecheck:
       needs: uniffi-bindings
@@ -180,10 +176,9 @@ jobs:
           with:
             just-version: '1.38.0'
         - name: Install uv
-          uses: astral-sh/setup-uv@4db96194c378173c656ce18a155ffc14a9fc4355 # 5.2.2
+          uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7.3.1
           with:
-            # Install a specific version of uv.
-            version: "0.5.11"
+            version: "0.10.7"
         - run: just mypy
   unused-features:
     runs-on: ubuntu-22.04
