@@ -9,7 +9,7 @@ import subprocess
 import sys
 import warnings
 from packaging import version
-from typing import List
+from typing import List, Tuple
 
 # isort: off
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/..")
@@ -37,6 +37,83 @@ def run_command_with_output(command, hide_output=False):
         print(result)
         print("")
     return result
+
+
+def dump_docker_logs(service_name):
+    """Dump the last 200 lines of docker compose logs for a failing service."""
+    print(f"\n=== Docker logs for {service_name} ===")
+    result = subprocess.run(
+        ["docker", "compose", "logs", "--tail", "200", service_name],
+        capture_output=True,
+        text=True,
+    )
+    if result.stdout:
+        print(result.stdout)
+    if result.stderr:
+        print(result.stderr)
+    print(f"=== End of docker logs for {service_name} ===\n")
+
+
+def dump_journal_logs(service_name):
+    """Dump the last 200 lines of systemd journal logs from inside the container(s) for a service."""
+    try:
+        result = subprocess.run(
+            ["docker", "compose", "ps", "-q", service_name],
+            capture_output=True,
+            text=True,
+        )
+        container_ids = [
+            cid.strip() for cid in result.stdout.splitlines() if cid.strip()
+        ]
+    except (subprocess.SubprocessError, OSError) as e:
+        print(f"Could not retrieve container IDs for {service_name}: {e}")
+        return
+
+    for container_id in container_ids:
+        # Check if journalctl exists in the container
+        try:
+            check_result = subprocess.run(
+                ["docker", "exec", container_id, "sh", "-c", "command -v journalctl"],
+                capture_output=True,
+                text=True,
+            )
+            if check_result.returncode != 0:
+                print(
+                    f"journalctl not found in container {container_id} for service {service_name}, skipping journal log dump"
+                )
+                continue
+        except (subprocess.SubprocessError, OSError) as e:
+            print(f"Could not check for journalctl in container {container_id}: {e}")
+            continue
+
+        print(
+            f"\n=== Systemd journal logs for {service_name} (container {container_id}) ==="
+        )
+        try:
+            result = subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    container_id,
+                    "journalctl",
+                    "--no-pager",
+                    "-n",
+                    "200",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if result.stdout:
+                print(result.stdout)
+            if result.stderr:
+                print(result.stderr)
+        except (subprocess.SubprocessError, OSError) as e:
+            print(
+                f"Could not retrieve journal logs for {service_name} (container {container_id}): {e}"
+            )
+        print(
+            f"=== End of systemd journal logs for {service_name} (container {container_id}) ===\n"
+        )
 
 
 def start(skip_keywords=None, force_recreate=False, services_to_start=None):
@@ -68,48 +145,49 @@ def start(skip_keywords=None, force_recreate=False, services_to_start=None):
     )
 
     exclude_services = set()
+    all_services = run_command_with_output(
+        ["docker", "compose", "config", "--services"], hide_output=True
+    )
+    all_services = [service.strip() for service in all_services.splitlines()]
+
+    exclude_services = set(
+        filter(
+            lambda service: any(keyword in service for keyword in skip_keywords),
+            all_services,
+        )
+    )
+
+    if services_to_start is not None:
+        services_to_start = [
+            service for service in services_to_start if service not in exclude_services
+        ]
+    else:
+        services_to_start = [
+            service for service in all_services if service not in exclude_services
+        ]
+
+    if exclude_services:
+        print(f"Skipping services: {sorted(exclude_services)}")
+
+    command = ["docker", "compose", "up", "-d", "--wait"]
+    if force_recreate:
+        command += ["--force-recreate"]
+
+    command += services_to_start
+
+    if "GITLAB_CI" in os.environ:
+        command.append("--quiet-pull")
     try:
-        all_services = run_command_with_output(
-            ["docker", "compose", "config", "--services"], hide_output=True
-        )
-        all_services = [service.strip() for service in all_services.splitlines()]
-
-        exclude_services = set(
-            filter(
-                lambda service: any(keyword in service for keyword in skip_keywords),
-                all_services,
-            )
-        )
-
-        if services_to_start is not None:
-            services_to_start = [
-                service
-                for service in services_to_start
-                if service not in exclude_services
-            ]
-        else:
-            services_to_start = [
-                service for service in all_services if service not in exclude_services
-            ]
-
-        if exclude_services:
-            print(f"Skipping services: {sorted(exclude_services)}")
-
-        command = ["docker", "compose", "up", "-d", "--wait"]
-        if force_recreate:
-            command += ["--force-recreate"]
-
-        command += services_to_start
-
-        if "GITLAB_CI" in os.environ:
-            command.append("--quiet-pull")
         run_command(
             command, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
         )
-    except subprocess.CalledProcessError:
-        manage_containers(services_to_start)
-    else:
-        manage_containers(services_to_start)
+    except subprocess.CalledProcessError as e:
+        print(
+            f"WARNING: 'docker compose up --wait' failed with exit code {e.returncode}"
+        )
+        print("Will attempt to diagnose and recover via manage_containers()...")
+
+    manage_containers(services_to_start)
 
 
 def stop():
@@ -138,8 +216,8 @@ def quick_restart_container(names: List[str], env=None):
         if any(name for name in names if name in container):
             print("Killing container: ", container)
             run_command(["docker", "container", "kill", container], env=env)
-    for name in names:
-        print("Restarting service: ", name)
+    print("Restarting services: ", names)
+    try:
         run_command(
             [
                 "docker",
@@ -148,26 +226,36 @@ def quick_restart_container(names: List[str], env=None):
                 "-d",
                 "--wait",
                 "--force-recreate",
-                name,
-                "--quiet-pull",
-            ],
+            ]
+            + names
+            + ["--quiet-pull"],
             env=env,
         )
+    except subprocess.CalledProcessError:
+        print(f"Restart of services '{names}' failed...")
 
 
-def check_containers(services_to_start, check_only=False) -> List[str]:
+def check_containers(
+    services_to_start, check_only=False
+) -> Tuple[List[str], List[str]]:
     docker_status = run_command_with_output(
         ["docker", "ps", "--filter", "status=running"]
     )
     docker_status = [line.strip() for line in docker_status.splitlines()]
 
     missing_services: List[str] = []
+    unhealthy_services: List[str] = []
 
+    # Identify missing containers
+    running_services = []
     for service in services_to_start:
         if not find_container(service, docker_status):
             missing_services.append(service)
-            continue
+        else:
+            running_services.append(service)
 
+    # Check health status of running containers
+    for service in running_services:
         container_ids_raw = run_command_with_output(
             ["docker", "compose", "ps", "-q", service], hide_output=True
         ).strip()
@@ -195,40 +283,65 @@ def check_containers(services_to_start, check_only=False) -> List[str]:
                 if status == "unhealthy":
                     logs = container_state_json.get("Log") or []
                     print(f"Container {cid} is unhealthy.\nLogs: {logs}")
+                    if service not in unhealthy_services:
+                        unhealthy_services.append(service)
+                    break
 
     # Used to call from cli
-    if check_only and missing_services:
-        for service in missing_services:
-            run_command(["docker", "compose", "logs", service])
-        raise Exception(
-            f"Containers failed to start: {missing_services}; see docker logs above"
-        )
+    if check_only:
+        failed = missing_services + [
+            s for s in unhealthy_services if s not in missing_services
+        ]
+        if failed:
+            # Dump logs at the end for CLI check
+            for service in missing_services:
+                dump_docker_logs(service)
+            for service in unhealthy_services:
+                dump_docker_logs(service)
+                dump_journal_logs(service)
+            raise Exception(
+                f"Containers failed to start: {failed}; see docker logs above"
+            )
 
-    return missing_services
+    return missing_services, unhealthy_services
 
 
 def manage_containers(services_to_start) -> None:
     restart_attempts = 0
-    missing = []
+    missing: List[str] = []
+    unhealthy: List[str] = []
     while restart_attempts < NATLAB_CONTAINER_RESTART_ATTEMPTS:
-        missing = check_containers(services_to_start, False)
-        if missing:
+        missing, unhealthy = check_containers(services_to_start, False)
+        failed = missing + [s for s in unhealthy if s not in missing]
+        if failed:
             print("Missing services: ", missing)
+            print("Unhealthy services: ", unhealthy)
             quick_restart_container(
-                missing, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
+                failed, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
             )
         else:
             return
         restart_attempts += 1
 
-    for service in missing:
-        run_command(["docker", "compose", "logs", service])
-    raise Exception(f"Containers failed to start: {missing}; see docker logs above")
+    # Final check after all restart attempts exhausted
+    missing, unhealthy = check_containers(services_to_start, False)
+    failed = missing + [s for s in unhealthy if s not in missing]
+
+    print(f"missing services: {missing}, unhealthy services: {unhealthy}")
+
+    if failed:
+        # Dump logs only at the very end, only for still-failing containers
+        for service in missing:
+            dump_docker_logs(service)
+        for service in unhealthy:
+            dump_docker_logs(service)
+            dump_journal_logs(service)
+        raise Exception(f"Containers failed to start: {failed}; see docker logs above")
 
 
 def find_container(service: str, docker_status: List[str]) -> bool:
     for line in docker_status:
-        if (service in line) and ("unhealthy" not in line):
+        if service in line:
             return True
 
     return False
