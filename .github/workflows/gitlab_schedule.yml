@@ -5,7 +5,7 @@ on:
     # time and this can cause delays or even dropping of jobs:
     # https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
     - cron: 18,48 17-23 * * *
-    - cron: 17,47 0-4 * * *
+    - cron: 22,52 0-4 * * *
 permissions: {}
 
 jobs:
