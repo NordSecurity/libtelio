@@ -76,6 +76,7 @@ class MulticastServer:
 
     async def wait_till_ready(self) -> None:
         await self._server_ready_event.wait()
+        await asyncio.sleep(2.0)
         log.info("MulticastServer is ready")
 
     @asynccontextmanager
