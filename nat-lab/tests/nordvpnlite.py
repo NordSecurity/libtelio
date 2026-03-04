@@ -528,9 +528,10 @@ class NordVpnLite:
 
         await self._api.prepare_vpn_servers()
         for country_id, server_config in enumerate(WG_SERVERS, start=1):
-            await register_vpn_server_key(
-                self.connection, str(server_config["public_key"]), country_id
-            )
+            if (public_key := server_config.get("public_key", None)) is not None:
+                await register_vpn_server_key(
+                    self.connection, str(public_key), country_id
+                )
 
     async def _save_logs(self) -> None:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:

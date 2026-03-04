@@ -12,6 +12,7 @@ import re
 import shutil
 import ssl
 import subprocess
+import tests.config
 import threading
 import time
 import urllib.error
@@ -408,6 +409,46 @@ async def setup_check_arp_cache():
         raise Exception("ARP cache not ready for VMs: " + ", ".join(failures))
 
 
+async def setup_nlx_vpn_server() -> None:
+    """Populate NLX_SERVER keys in tests.config (global, survives between tests)."""
+    async with AsyncExitStack() as exit_stack:
+        conn = await exit_stack.enter_async_context(
+            new_connection_raw(ConnectionTag.VM_LINUX_NLX_1)
+        )
+        nlx_server = tests.config.NLX_SERVER
+        container = nlx_server.get("container")
+
+        get_pub_cmd = 'nlx | awk \'$1=="public" && $2=="key:" {print $3; exit}\''
+        proc = await conn.create_process(["bash", "-lc", get_pub_cmd]).execute()
+        pub_key = proc.get_stdout().strip()
+
+        if not pub_key:
+            raise RuntimeError(
+                f"Could not obtain NordLynx public key from nlx on {container}"
+            )
+        nlx_server["public_key"] = pub_key
+        log.debug(
+            "NordLynx public key for %s: %s",
+            container,
+            pub_key,
+        )
+
+        get_priv_cmd = (
+            "nlx showconf nlx0 | "
+            'awk \'$1=="PrivateKey" && $2=="=" {print $3; exit}\''
+        )
+
+        proc_priv = await conn.create_process(["bash", "-lc", get_priv_cmd]).execute()
+        priv_key = proc_priv.get_stdout().strip()
+
+        if not priv_key:
+            raise RuntimeError(
+                f"Could not obtain NordLynx private key from nlx showconf on {container}"
+            )
+
+        nlx_server["private_key"] = priv_key
+
+
 SETUP_CHECKS = [
     (
         setup_check_duplicate_ip_addresses,
@@ -425,6 +466,7 @@ SETUP_CHECKS = [
         SETUP_CHECK_MAC_COLLISION_RETRIES,
     ),
     (setup_check_interderp, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
+    (setup_nlx_vpn_server, SETUP_CHECK_TIMEOUT_S, SETUP_CHECK_RETRIES),
 ]
 
 

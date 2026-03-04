@@ -586,11 +586,12 @@ impl<E: Backoff> State<E> {
                 target,
                 ep.name()
             );
-            if ep.send_ping(target, session_id, public_key).await.is_err() {
+            if let Err(e) = ep.send_ping(target, session_id, public_key).await {
                 telio_log_warn!(
-                    "Endpoint provider {:?} failed to ping via {:?}. Will retry later",
+                    "Endpoint provider {:?} failed to ping via {:?}, error: {:?}. Will retry later ...",
                     ep.name(),
-                    target
+                    target,
+                    e
                 );
             }
         }

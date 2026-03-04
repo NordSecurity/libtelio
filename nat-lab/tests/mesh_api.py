@@ -8,7 +8,6 @@ import uuid
 from ipaddress import ip_address
 from tests.config import DERP_SERVERS, LIBTELIO_IPV6_WG_SUBNET, WG_SERVERS
 from tests.utils.bindings import Config, Server, Peer, PeerBase
-from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.logger import log
 from tests.utils.router import IPStack, IPProto, get_ip_address_type
 from typing import Dict, Any, List, Tuple, Optional
@@ -379,7 +378,6 @@ class API:
         cls,
         node_list: List[Node],
         server_config: Dict[str, Any],
-        connections: Optional[List[Connection]] = None,
     ):
         def generate_peer_config(node: Node, allowed_ips: str) -> str:
             return (
@@ -387,52 +385,7 @@ class API:
             )
 
         if server_config.get("type") == "nordlynx":
-            if "public_key" in server_config and "private_key" in server_config:
-                return
-
-            if not connections:
-                return
-
-            container = server_config.get("container")
-
-            for conn in connections:
-                if conn.tag != ConnectionTag.VM_LINUX_NLX_1:
-                    continue
-
-                get_pub_cmd = (
-                    'nlx | awk \'$1=="public" && $2=="key:" {print $3; exit}\''
-                )
-                proc = await conn.create_process(["bash", "-lc", get_pub_cmd]).execute()
-                pub_key = proc.get_stdout().strip()
-
-                if not pub_key:
-                    raise RuntimeError(
-                        f"Could not obtain NordLynx public key from nlx on {container}"
-                    )
-                server_config["public_key"] = pub_key
-                log.debug(
-                    "NordLynx public key for %s: %s",
-                    server_config.get("container"),
-                    pub_key,
-                )
-
-                get_priv_cmd = (
-                    "nlx showconf nlx0 | "
-                    'awk \'$1=="PrivateKey" && $2=="=" {print $3; exit}\''
-                )
-
-                proc_priv = await conn.create_process(
-                    ["bash", "-lc", get_priv_cmd]
-                ).execute()
-                priv_key = proc_priv.get_stdout().strip()
-
-                if not priv_key:
-                    raise RuntimeError(
-                        f"Could not obtain NordLynx private key from nlx showconf on {container}"
-                    )
-
-                server_config["private_key"] = priv_key
-
+            # This is handled by the conftest.py file
             return
 
         wg_conf = (
@@ -489,8 +442,6 @@ class API:
 
         return tuple(list(self.nodes.values())[current_node_list_len:])
 
-    async def prepare_vpn_servers(self, connections: Optional[List[Connection]] = None):
+    async def prepare_vpn_servers(self):
         for wg_server in WG_SERVERS:
-            await self.setup_vpn_servers(
-                list(self.nodes.values()), wg_server, connections
-            )
+            await self.setup_vpn_servers(list(self.nodes.values()), wg_server)

@@ -313,7 +313,7 @@ async def setup_environment(
             for conn_tag in vpn
         ]
         await exit_stack.enter_async_context(make_tcpdump(connections))
-        await api.prepare_vpn_servers(connections)
+        await api.prepare_vpn_servers()
 
     clients = await setup_clients(
         exit_stack,
