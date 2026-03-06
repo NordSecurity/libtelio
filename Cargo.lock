@@ -4972,7 +4972,7 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a13f3d0daba03132c0aa9767f98351b3488edc2c100cda2d2ec2b04f3d8d3c8b"
 dependencies = [
- "bitflags 2.10.0",
+ "bitflags 2.11.0",
  "core-foundation 0.9.4",
  "system-configuration-sys",
 ]
@@ -5200,7 +5200,7 @@ version = "0.1.0"
 dependencies = [
  "assert_matches",
  "block",
- "core-foundation 0.10.1",
+ "core-foundation 0.9.4",
  "dispatch",
  "if-addrs",
  "ipnet",
