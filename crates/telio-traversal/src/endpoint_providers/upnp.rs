@@ -669,11 +669,11 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
         }
 
         tokio::select! {
-            Ok((len, addr)) = self.udp_socket.recv_from(&mut self.rx_buff) => {
+            Ok((len, addr)) = self.udp_socket.recv_from(&mut self.rx_buff), if !self.is_endpoint_provider_paused => {
                 let buff = self.rx_buff.clone();
                 let _ = self.handle_ping_rx(&buff[..len], &addr).await;
             }
-            result = self.igd_gw.ensure_igd_gateway(), if !self.igd_gw.has_igd_gateway() => {
+            result = self.igd_gw.ensure_igd_gateway(), if !self.igd_gw.has_igd_gateway() && !self.is_endpoint_provider_paused => {
                 if result.is_ok() {
                     if let Err(e) = self.create_endpoint_candidate().await {
                         telio_log_warn!("Error creating UPnP endpoint: {}", e);
@@ -686,9 +686,11 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
             _ = &mut self.upnp_interval => {
                 self.upnp_interval =  PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
 
-                match self.check_endpoint_candidate().await {
-                    Ok (_) => self.exponential_backoff.reset(),
-                    Err(_) => self.exponential_backoff.next_backoff(),
+                if !self.is_endpoint_provider_paused {
+                    match self.check_endpoint_candidate().await {
+                        Ok (_) => self.exponential_backoff.reset(),
+                        Err(_) => self.exponential_backoff.next_backoff(),
+                    }
                 }
             }
             // Incoming task
