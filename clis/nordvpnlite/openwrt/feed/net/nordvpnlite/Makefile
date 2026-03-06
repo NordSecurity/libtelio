@@ -14,7 +14,7 @@ define Package/nordvpnlite
 	SECTION:=net
 	CATEGORY:=Network
 	TITLE:=NordVPN Lite
-	DEPENDS:=+kmod-tun +kmod-wireguard
+	DEPENDS:=+kmod-tun +kmod-wireguard +luci-base
 	URL:=https://www.nordsecurity.com
 endef
 
@@ -45,6 +45,16 @@ define Package/nordvpnlite/install
 	$(INSTALL_DATA) -m 0640 ./files/config.json $(1)/etc/nordvpnlite/config.json
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/nordvpnlite.init $(1)/etc/init.d/nordvpnlite
+
+	# LuCI integration
+	$(INSTALL_DIR) $(1)/usr/share/rpcd/ucode
+	$(INSTALL_DATA) ./files/luci/ucode/nordvpnlite.uc $(1)/usr/share/rpcd/ucode/nordvpnlite.uc
+	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
+	$(INSTALL_DATA) ./files/luci/acl.d/luci-app-nordvpnlite.json $(1)/usr/share/rpcd/acl.d/luci-app-nordvpnlite.json
+	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
+	$(INSTALL_DATA) ./files/luci/menu.d/luci-app-nordvpnlite.json $(1)/usr/share/luci/menu.d/luci-app-nordvpnlite.json
+	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/nordvpnlite
+	$(INSTALL_DATA) ./files/luci/view/nordvpnlite/settings.js $(1)/www/luci-static/resources/view/nordvpnlite/settings.js
 endef
 
 define Package/nordvpnlite/postinst
@@ -53,6 +63,8 @@ define Package/nordvpnlite/postinst
 	if [ -z "$${IPKG_INSTROOT}" ]; then
 		echo "Enabling nordvpnlite service"
 		/etc/init.d/nordvpnlite enable
+		echo "Restarting rpcd for LuCI integration"
+		/etc/init.d/rpcd restart
 	fi
 	exit 0
 endef
