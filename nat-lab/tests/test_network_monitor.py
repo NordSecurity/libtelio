@@ -25,7 +25,6 @@ DEFAULT_WAITING_TIME = 2
             ),
             marks=[
                 pytest.mark.mac,
-                pytest.mark.xfail(reason="Expected failure on mac, see LLT-6728"),
             ],
         ),
     ],
@@ -34,20 +33,14 @@ async def test_network_monitor(
     alpha_setup_params: SetupParameters,
 ) -> None:
     # 1 [interface creation] + 1 [set IP] + 1 [remove IP] + 1 [set IP] -> interface initialization + restart
-
-    # TODO: This value might differ for macOS (LLT-6728)
-    NR_OF_NOTIFICATIONS = 12
     async with AsyncExitStack() as exit_stack:
         env = await setup_mesh_nodes(exit_stack, [alpha_setup_params])
         [client_alpha] = env.clients
 
+        NR_OF_NOTIFICATIONS = (
+            12 if client_alpha.get_connection().target_os == TargetOS.Linux else 4
+        )
         PLATFORM_AGNOSTIC_MESSAGE = "Detected network interface modification"
-        PREFIX = "Received netfilter message: "
-        LINK_NEW = f"{PREFIX}NewLink(LinkMessage "
-        IPV4_IFADDR_NEW = f"{PREFIX}NewAddress(AddressMessage "
-        IPV4_IFADDR_DEL = f"{PREFIX}DelAddress(AddressMessage "
-        IPV4_ROUTE_NEW = f"{PREFIX}NewRoute(RouteMessage "
-        IPV4_ROUTE_DEL = f"{PREFIX}DelRoute(RouteMessage "
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
         await client_alpha.restart_interface()
@@ -58,6 +51,12 @@ async def test_network_monitor(
         await check_logs(PLATFORM_AGNOSTIC_MESSAGE, NR_OF_NOTIFICATIONS)
 
         if client_alpha.get_connection().target_os == TargetOS.Linux:
+            PREFIX = "Received netfilter message: "
+            LINK_NEW = f"{PREFIX}NewLink(LinkMessage "
+            IPV4_IFADDR_NEW = f"{PREFIX}NewAddress(AddressMessage "
+            IPV4_IFADDR_DEL = f"{PREFIX}DelAddress(AddressMessage "
+            IPV4_ROUTE_NEW = f"{PREFIX}NewRoute(RouteMessage "
+            IPV4_ROUTE_DEL = f"{PREFIX}DelRoute(RouteMessage "
             await check_logs(LINK_NEW, 4)
             await check_logs(IPV4_IFADDR_NEW, 2)
             await check_logs(IPV4_ROUTE_NEW, 4)
