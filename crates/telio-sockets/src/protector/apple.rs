@@ -415,7 +415,11 @@ fn get_service_order(store: &SCDynamicStore) -> Option<Vec<String>> {
 
 fn get_primary_interface_names() -> Vec<String> {
     let mut primary_ipv4_interface_names = Vec::new();
-    let store = dynamic_store::SCDynamicStoreBuilder::new("primary-service-store").build();
+    let Some(store) = dynamic_store::SCDynamicStoreBuilder::new("primary-service-store").build()
+    else {
+        telio_log_warn!("Failed to get SCDynamicStore instance");
+        return vec![];
+    };
 
     if let Some(service_order) = get_service_order(&store) {
         for service in service_order {
@@ -626,14 +630,15 @@ mod tests {
     }
 }
 
-fn get_dynamic_store(sockets: Weak<Mutex<Sockets>>) -> SCDynamicStore {
+fn get_dynamic_store(sockets: Weak<Mutex<Sockets>>) -> Option<SCDynamicStore> {
     let callback_context = dynamic_store::SCDynamicStoreCallBackContext {
         callout: dynamic_store_callback,
         info: Context { sockets },
     };
     let store = dynamic_store::SCDynamicStoreBuilder::new("primary-service-update-store")
         .callback_context(callback_context)
-        .build();
+        .build()?;
+
     let watch_keys: CFArray<CFString> =
         CFArray::from_CFTypes(&[CFString::from("State:/Network/Global/IPv4")]);
     let watch_patterns = CFArray::from_CFTypes(&[CFString::from(
@@ -643,13 +648,19 @@ fn get_dynamic_store(sockets: Weak<Mutex<Sockets>>) -> SCDynamicStore {
         debug_panic!("Unable to register notifications for primary service update dynamic store");
     }
 
-    store
+    Some(store)
 }
 
 fn spawn_dynamic_store_loop(sockets: Weak<Mutex<Sockets>>) {
     std::thread::spawn(|| {
-        let store = get_dynamic_store(sockets);
-        let run_loop_source = store.create_run_loop_source();
+        let Some(store) = get_dynamic_store(sockets) else {
+            telio_log_warn!("Failed to get SCDynamicStore instance");
+            return;
+        };
+        let Some(run_loop_source) = store.create_run_loop_source() else {
+            telio_log_warn!("Failed to get run loop source");
+            return;
+        };
         let run_loop = core_foundation::runloop::CFRunLoop::get_current();
         run_loop.add_source(&run_loop_source, unsafe {
             core_foundation::runloop::kCFRunLoopCommonModes
