@@ -6,6 +6,8 @@
 
 mod dns;
 mod nameserver;
+mod packet_decoder;
+mod packet_encoder;
 mod resolver;
 mod zone;
 
