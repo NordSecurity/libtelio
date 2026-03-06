@@ -1,11 +1,19 @@
 //! Module to monitor network changes in Apple
 
+use core_foundation::runloop::{
+    kCFRunLoopDefaultMode, CFRunLoopAddSource, CFRunLoopGetCurrent, CFRunLoopRun,
+};
 use network_framework_sys::{
     nw_path_monitor_create, nw_path_monitor_set_queue, nw_path_monitor_start, nw_path_monitor_t,
     nw_path_t,
 };
 use std::ffi::{c_long, c_void};
-use telio_utils::{telio_log_info, telio_log_warn};
+#[cfg(target_os = "macos")]
+use system_configuration::{
+    core_foundation::{array::CFArray, base::TCFType, string::CFString},
+    dynamic_store::{SCDynamicStore, SCDynamicStoreBuilder, SCDynamicStoreCallBackContext},
+};
+use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
 
 use crate::monitor::PATH_CHANGE_BROADCAST;
 
@@ -49,13 +57,10 @@ extern "C" {
 /// For more details on Apple's `Network.framework` see:
 /// - [Apple Network.framework Documentation](https://developer.apple.com/documentation/network)
 pub fn setup_network_monitor() {
-    let update_handler = block::ConcreteBlock::new(|_path: nw_path_t| {
-        telio_log_info!("Detected network interface modification, notifying..");
-        if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
-            telio_log_warn!("Failed to notify about changed path: {e}");
-        }
-    })
-    .copy();
+    #[cfg(target_os = "macos")]
+    std::thread::spawn(start_sc_dynamic_store_monitor);
+
+    let update_handler = block::ConcreteBlock::new(|_path: nw_path_t| notify()).copy();
 
     let monitor = unsafe { nw_path_monitor_create() };
     if monitor.is_null() {
@@ -84,4 +89,67 @@ pub fn setup_network_monitor() {
         );
         nw_path_monitor_start(monitor);
     }
+}
+
+fn notify() {
+    telio_log_info!("Detected network interface modification, notifying..");
+    if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
+        telio_log_warn!("Failed to notify about changed path: {e}");
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn start_sc_dynamic_store_monitor() {
+    fn callout(_store: SCDynamicStore, changed_keys: CFArray<CFString>, _info: &mut ()) {
+        for key in changed_keys.iter() {
+            telio_log_debug!("changed key: {}", *key);
+        }
+        notify();
+    }
+
+    telio_log_info!("Starting registration in SCDynamicStore");
+
+    let callback_context = SCDynamicStoreCallBackContext { callout, info: () };
+    let Some(store) = SCDynamicStoreBuilder::new("telio-network-monitors")
+        .callback_context(callback_context)
+        .build()
+    else {
+        telio_log_warn!("Failed to create SCDynamicStore instance");
+        return;
+    };
+
+    let keys: CFArray<CFString> = CFArray::from_CFTypes(&[]);
+
+    // The pattern is a result of:
+    // SCDynamicStoreKeyCreateNetworkInterfaceEntity(nil, kSCDynamicStoreDomainState, kSCCompAnyRegex, kSCEntNetIPv4)
+    // The SCDynamicStoreKeyCreateNetworkInterfaceEntity is not exported in
+    // system-configuration-rs
+    let patterns: CFArray<CFString> =
+        CFArray::from_CFTypes(&[CFString::new("State:/Network/Interface/[^/]+/IPv4")]);
+
+    let result = store.set_notification_keys(&keys, &patterns);
+
+    if !result {
+        // Debug output for CFArray is multiline, which is why we 'flatten' it
+        // into one line
+        telio_log_warn!(
+            "Failed to add patterns '{}' to the store",
+            format!("{patterns:?}").replace('\n', "")
+        );
+        return;
+    }
+
+    let Some(run_loop_source) = store.create_run_loop_source() else {
+        telio_log_warn!("Failed to create CFRunLoopSource");
+        return;
+    };
+    unsafe {
+        CFRunLoopAddSource(
+            CFRunLoopGetCurrent(),
+            run_loop_source.as_concrete_TypeRef(),
+            kCFRunLoopDefaultMode,
+        );
+    }
+    telio_log_info!("Completed registration in SCDynamicStore");
+    unsafe { CFRunLoopRun() };
 }
