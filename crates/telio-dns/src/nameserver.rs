@@ -1,4 +1,6 @@
 use crate::{
+    packet_decoder::{find_nord_query, normalize_qname, parse_dns_packet},
+    packet_encoder::{DnsResponseBuilder, ResponseKind},
     resolver::Resolver,
     zone::{AuthoritativeZone, ClonableZones, ForwardZone, Records},
 };
@@ -10,6 +12,7 @@ use hickory_server::{
 };
 use neptun::noise::{Tunn, TunnResult};
 use pnet_packet::{
+    dns::{DnsQuery, DnsTypes},
     ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
     ipv4::{checksum, Ipv4Packet, MutableIpv4Packet},
     ipv6::{Ipv6Packet, MutableIpv6Packet},
@@ -243,6 +246,37 @@ impl LocalNameServer {
         }
     }
 
+    fn lookup_local_response(&self, query: &DnsQuery) -> ResponseKind {
+        if query.qtype == DnsTypes::SOA {
+            return ResponseKind::SoaAnswer;
+        }
+
+        let qname = normalize_qname(&query.get_qname_parsed());
+
+        // Query for nord TLD
+        if qname == "nord" {
+            return ResponseKind::NoData;
+        }
+
+        // TODO: LLT-7051 Fill with response from local zone
+        match query.qtype {
+            DnsTypes::A => {
+                return ResponseKind::AnswerA {
+                    addresses: vec![Ipv4Addr::new(100, 100, 100, 100)],
+                }
+            }
+            DnsTypes::AAAA => {
+                return ResponseKind::AnswerAAAA {
+                    addresses: vec![Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0xc00a, 0x2ff)],
+                }
+            }
+            _ => {}
+        }
+
+        // Didn't match anything so we respond with NoData
+        ResponseKind::NoData
+    }
+
     async fn resolve_dns_request(
         nameserver: Arc<RwLock<LocalNameServer>>,
         request_info: &mut RequestInfo,
@@ -262,17 +296,38 @@ impl LocalNameServer {
                 .ok_or_else(|| String::from("Inexistent DNS request"))?,
             _ => return Ok(Vec::new()),
         };
-        let dns_request = Request::new(dns_request, request_info.dns_source(), Protocol::Udp);
-        telio_log_debug!("DNS request: {:?}", &dns_request);
 
-        zones
-            .lookup(&dns_request, resolver.clone())
-            .await
-            .map_err(|e| format!("Lookup failed {e}"))?;
+        let dns_response = match dns_request {
+            DnsUdpPayloadTarget::Local { id, query } => {
+                // lookup local zone for response
+                let response_kind = nameserver
+                    .clone()
+                    .read()
+                    .await
+                    .lookup_local_response(&query);
 
-        let dns_response = resolver.0.lock().await;
-        telio_log_debug!("Nameserver response: {:?}", &dns_response);
-        Ok(dns_response.to_vec())
+                // build response
+                let response = DnsResponseBuilder::new(id, query, 60, response_kind)
+                    .build()
+                    .map_err(|e| format!("Failed building DNS response packet: {e:?}"))?;
+                response
+            }
+            DnsUdpPayloadTarget::Forward(question) => {
+                let dns_request = Request::new(question, request_info.dns_source(), Protocol::Udp);
+                telio_log_debug!("DNS request: {:?}", &dns_request);
+
+                zones
+                    .lookup(&dns_request, resolver.clone())
+                    .await
+                    .map_err(|e| format!("Lookup failed {e}"))?;
+
+                let dns_response = resolver.0.lock().await;
+                telio_log_debug!("Nameserver response: {:?}", &dns_response);
+                dns_response.to_vec()
+            }
+        };
+
+        Ok(dns_response)
     }
 
     async fn process_packet(
@@ -347,13 +402,34 @@ impl LocalNameServer {
             return Err(String::from("Invalid DNS port"));
         }
 
-        let dns_request = MessageRequest::from_bytes(udp_request.payload())
-            .map_err(|_| String::from("Failed to build MessageRequest from request packet"))?;
+        let payload = udp_request.payload();
+
+        let dns_request = match parse_dns_packet(payload) {
+            Ok(packet) => {
+                if let Some(query) = find_nord_query(&packet) {
+                    // query for local .nord domain
+                    Some(DnsUdpPayloadTarget::Local {
+                        id: packet.get_id(),
+                        query,
+                    })
+                } else {
+                    // not .nord, forward unchanged
+                    let forward = MessageRequest::from_bytes(payload).map_err(|_| {
+                        String::from("Failed to build MessageRequest from request packet")
+                    })?;
+                    Some(DnsUdpPayloadTarget::Forward(forward))
+                }
+            }
+            Err(_) => {
+                // malformed DNS
+                return Err(String::from("Failed to parse DNS payload"));
+            }
+        };
 
         Ok(PayloadRequestInfo::Udp {
             source_port: udp_request.get_source(),
             destination_port: udp_request.get_destination(),
-            dns_request: Some(dns_request),
+            dns_request,
         })
     }
 }
@@ -398,11 +474,17 @@ impl IpRequestInfo {
 }
 
 #[allow(clippy::large_enum_variant)]
+enum DnsUdpPayloadTarget {
+    Local { id: u16, query: DnsQuery },
+    Forward(MessageRequest),
+}
+
+#[allow(clippy::large_enum_variant)]
 enum PayloadRequestInfo {
     Udp {
         source_port: u16,
         destination_port: u16,
-        dns_request: Option<MessageRequest>,
+        dns_request: Option<DnsUdpPayloadTarget>,
     },
     Tcp {
         source_port: u16,

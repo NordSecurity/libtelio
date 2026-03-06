@@ -2,9 +2,6 @@
 //!
 //! This module provides a layer for parsisng a single DNS question from raw UDP bytes
 
-// TODO: Remove after merging integration
-#![allow(dead_code)]
-
 use pnet_packet::{
     dns::{DnsClasses, DnsPacket, DnsQuery, Opcode},
     FromPacket,
