@@ -250,6 +250,26 @@ impl LocalNameServer {
         }
     }
 
+    // Find record in nord zones
+    //
+    // Handles matching subdomains
+    // www.test.nord -> test.nord
+    fn find_matching_nord_record(&self, qname: &str) -> Option<&Vec<IpAddr>> {
+        // check formatch
+        if let Some(addresses) = self.nord_zones.get(qname) {
+            return Some(addresses);
+        }
+
+        // Strip leftmost label
+        if let Some((_, rest)) = qname.split_once('.') {
+            if let Some(addresses) = self.nord_zones.get(rest) {
+                return Some(addresses);
+            }
+        }
+
+        None
+    }
+
     fn lookup_local_response(&self, query: &DnsQuery) -> ResponseKind {
         if query.qtype == DnsTypes::SOA {
             return ResponseKind::SoaAnswer;
@@ -262,44 +282,43 @@ impl LocalNameServer {
             return ResponseKind::NoData;
         }
 
-        if let Some(addresses) = self.nord_zones.get(&qname) {
-            match query.qtype {
-                DnsTypes::A => {
-                    let addresses: Vec<Ipv4Addr> = addresses
-                        .iter()
-                        .filter_map(|ip| {
-                            if let IpAddr::V4(v4) = ip {
-                                Some(*v4)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    if !addresses.is_empty() {
-                        return ResponseKind::AnswerA { addresses };
-                    }
-                }
-                DnsTypes::AAAA => {
-                    let addresses: Vec<Ipv6Addr> = addresses
-                        .iter()
-                        .filter_map(|ip| {
-                            if let IpAddr::V6(v6) = ip {
-                                Some(*v6)
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    if !addresses.is_empty() {
-                        return ResponseKind::AnswerAAAA { addresses };
-                    }
-                }
-                _ => {}
-            }
-        } else {
+        let Some(addresses) = self.find_matching_nord_record(&qname) else {
             return ResponseKind::NxDomain;
-        }
+        };
 
+        match query.qtype {
+            DnsTypes::A => {
+                let addresses: Vec<Ipv4Addr> = addresses
+                    .iter()
+                    .filter_map(|ip| {
+                        if let IpAddr::V4(v4) = ip {
+                            Some(*v4)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if !addresses.is_empty() {
+                    return ResponseKind::AnswerA { addresses };
+                }
+            }
+            DnsTypes::AAAA => {
+                let addresses: Vec<Ipv6Addr> = addresses
+                    .iter()
+                    .filter_map(|ip| {
+                        if let IpAddr::V6(v6) = ip {
+                            Some(*v6)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if !addresses.is_empty() {
+                    return ResponseKind::AnswerAAAA { addresses };
+                }
+            }
+            _ => {}
+        }
         // Didn't match anything so we respond with NoData
         ResponseKind::NoData
     }
