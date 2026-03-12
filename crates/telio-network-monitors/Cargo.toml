@@ -31,12 +31,6 @@ netlink-packet-route = "0.29.0"
 netlink-packet-core = "0.8.1"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { workspace = true, features = [
-  "iphlpapi",
-  "netioapi",
-  "winnt",
-  "ws2def",
-] }
 windows.workspace = true
 
 [dev-dependencies]

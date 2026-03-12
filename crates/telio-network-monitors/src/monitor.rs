@@ -208,7 +208,7 @@ impl Drop for NetworkMonitor {
             handle.abort();
         }
         #[cfg(target_os = "windows")]
-        if !self.monitor_handle.0.is_null() {
+        if !self.monitor_handle.is_null() {
             crate::windows::deregister_network_monitor(self.monitor_handle.clone());
         }
     }
