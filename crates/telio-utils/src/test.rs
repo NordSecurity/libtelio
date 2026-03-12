@@ -35,25 +35,4 @@ impl TryRng for StepRng {
     }
 }
 
-/// Mocked random number generator for creating not-random results.
-/// Wraps [`StepRng`] and marks it as cryptographically suitable (for testing only).
-pub struct CryptoStepRng(pub StepRng);
-
-impl TryRng for CryptoStepRng {
-    type Error = Infallible;
-
-    fn try_next_u32(&mut self) -> Result<u32, Infallible> {
-        self.0.try_next_u32()
-    }
-
-    fn try_next_u64(&mut self) -> Result<u64, Infallible> {
-        self.0.try_next_u64()
-    }
-
-    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), Infallible> {
-        self.0.try_fill_bytes(dest)
-    }
-}
-
-impl TryCryptoRng for CryptoStepRng {}
-// CryptoRng is blanket-implemented for any TryCryptoRng + TryRng<Error=Infallible>
+impl TryCryptoRng for StepRng {}

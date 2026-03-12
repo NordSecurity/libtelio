@@ -32,7 +32,7 @@ use tokio::{
 };
 
 #[cfg(test)]
-use telio_utils::test::CryptoStepRng;
+use telio_utils::test::StepRng;
 
 #[cfg(windows)]
 use static_assertions::const_assert;
@@ -312,7 +312,7 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
     writer: &mut W,
     secret_key: SecretKey,
     server_key: PublicKey,
-    #[cfg(test)] rng_mock: Option<CryptoStepRng>,
+    #[cfg(test)] rng_mock: Option<StepRng>,
 ) -> Result<(), Error> {
     let public_key = secret_key.public();
 
@@ -420,7 +420,6 @@ async fn write_frame<W: AsyncWrite + Unpin>(
 mod tests {
     use super::*;
     use rstest::*;
-    use telio_utils::test::CryptoStepRng;
     use telio_utils::test::StepRng;
 
     const KEY_MSG_SIZE: usize = 106;
@@ -536,7 +535,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn write_client_key_example() {
-        let mut rng = CryptoStepRng(StepRng::new(0, 1));
+        let mut rng = StepRng::new(0, 1);
         let local_sk = SecretKey::gen_with(&mut rng);
         let remote_sk = SecretKey::gen_with(&mut rng);
         let remote_pk = remote_sk.public();

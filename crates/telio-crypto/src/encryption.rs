@@ -178,13 +178,13 @@ mod tests {
 
     use super::*;
     use bstr::ByteSlice;
-    use telio_utils::test::{CryptoStepRng, StepRng};
+    use telio_utils::test::StepRng;
 
     const MSG: &[u8] = b"test message";
 
     #[test]
     fn encrypt_request_example() -> Result<(), Error> {
-        let mut rng = CryptoStepRng(StepRng::new(0, 1));
+        let mut rng = StepRng::new(0, 1);
         let local_sk = SecretKey::gen_with(&mut rng);
         let remote_sk = SecretKey::gen_with(&mut rng);
         let remote_pk = remote_sk.public();
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn encrypt_response_example() -> Result<(), Error> {
-        let mut rng = CryptoStepRng(StepRng::new(0, 1));
+        let mut rng = StepRng::new(0, 1);
         let local_sk = SecretKey::gen_with(&mut rng);
         let remote_sk = SecretKey::gen_with(&mut rng);
         let remote_pk = remote_sk.public();
