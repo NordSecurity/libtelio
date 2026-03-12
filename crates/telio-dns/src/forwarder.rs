@@ -106,6 +106,7 @@ impl RawForwarder {
         Ok(())
     }
 
+    #[allow(dead_code)]
     /// Update the timeout for upstream DNS queries
     pub async fn set_timeout(&self, timeout: Duration) {
         *self.timeout.lock().await = timeout;
@@ -200,7 +201,6 @@ mod tests {
 
     enum StubBehavior {
         Reply(Vec<u8>),
-        DelayedReply { delay: Duration, response: Vec<u8> },
         BlackHole,
     }
 
@@ -215,10 +215,6 @@ mod tests {
 
             match behavior {
                 StubBehavior::Reply(response) => {
-                    socket.send_to(&response, src).await.unwrap();
-                }
-                StubBehavior::DelayedReply { delay, response } => {
-                    tokio::time::sleep(delay).await;
                     socket.send_to(&response, src).await.unwrap();
                 }
                 StubBehavior::BlackHole => {}
