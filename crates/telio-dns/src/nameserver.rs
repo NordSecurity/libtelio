@@ -43,6 +43,7 @@ pub(crate) const NORD_ZONE: &str = "nord.";
 pub(crate) const NORD_ZONE_SUFFIX: &str = ".nord.";
 const MAX_CONCURRENT_QUERIES: usize = 256;
 const IDLE_TIME: Duration = Duration::from_secs(1);
+const DNS_PORT: u16 = 53;
 
 /// NameServer is a server that stores the DNS records.
 #[async_trait]
@@ -56,6 +57,8 @@ pub trait NameServer {
     async fn stop(&self);
     /// Configure list of forward DNS servers for zone '.'.
     async fn forward(&self, to: &[IpAddr]) -> Result<(), String>;
+    /// Configure list of forward DNS servers with explicit socket addresses.
+    async fn forward_to_addrs(&self, to: &[SocketAddr]) -> Result<(), String>;
     /// Insert or update zone records used by the server.
     async fn upsert(
         &self,
@@ -458,7 +461,7 @@ impl LocalNameServer {
         }
 
         // Validate DNS port
-        if udp_request.get_destination() != 53 {
+        if udp_request.get_destination() != DNS_PORT {
             return Err(String::from("Invalid DNS port"));
         }
 
@@ -871,11 +874,13 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
             LowerName::from_str(".")?,
             Box::new(Arc::new(ForwardZone::new(".", to).await?)),
         );
-        let upstreams: Vec<std::net::SocketAddr> = to
-            .iter()
-            .map(|ip| std::net::SocketAddr::new(*ip, 53))
-            .collect();
+        let upstreams: Vec<SocketAddr> =
+            to.iter().map(|ip| SocketAddr::new(*ip, DNS_PORT)).collect();
 
+        self.forward_to_addrs(&upstreams).await
+    }
+
+    async fn forward_to_addrs(&self, to: &[SocketAddr]) -> Result<(), String> {
         let mut ns = self.write().await;
 
         if ns.forwarder.is_none() {
@@ -888,7 +893,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
 
         if let Some(forwarder) = &ns.forwarder {
             forwarder
-                .set_upstreams(upstreams)
+                .set_upstreams(to.to_vec())
                 .await
                 .map_err(|e| format!("Failed to set upstreams: {e:?}"))?;
         }
