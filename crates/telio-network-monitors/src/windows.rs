@@ -1,13 +1,12 @@
 use crate::monitor::PATH_CHANGE_BROADCAST;
 use std::ptr;
-use telio_utils::{telio_log_error, telio_log_trace, telio_log_warn};
-pub use winapi::shared::netioapi::MIB_NOTIFICATION_TYPE;
-use winapi::shared::{
-    netioapi::{CancelMibChangeNotify2, NotifyIpInterfaceChange, MIB_IPINTERFACE_ROW},
-    ntdef::{HANDLE, PVOID},
-    winerror::NO_ERROR,
-    ws2def::AF_UNSPEC,
+use telio_utils::{telio_log_error, telio_log_info, telio_log_trace, telio_log_warn};
+use windows::Win32::NetworkManagement::IpHelper::{
+    CancelMibChangeNotify2, NotifyIpInterfaceChange, MIB_IPINTERFACE_ROW, MIB_NOTIFICATION_TYPE,
 };
+use windows::Win32::{Foundation::HANDLE, Networking::WinSock::AF_UNSPEC};
+
+type PVOID = *const core::ffi::c_void;
 
 #[derive(Clone, Debug)]
 /// Wrapper around HANDLE to pass between threads
@@ -20,15 +19,15 @@ unsafe impl Sync for SafeHandle {}
 
 unsafe extern "system" fn callback(
     context: PVOID,
-    _row: *mut MIB_IPINTERFACE_ROW,
+    _row: *const MIB_IPINTERFACE_ROW,
     notification_type: MIB_NOTIFICATION_TYPE,
 ) {
     telio_log_trace!(
-        "Windows IP interface monitor received a {} (NotificationType) for {} (CallerContext).",
-        notification_type,
+        "Windows IP interface monitor received a {notification_type:?} (NotificationType) for {} (CallerContext).",
         context as usize
     );
 
+    telio_log_info!("Detected network interface modification, notifying..");
     if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
         telio_log_warn!("Failed to notify about changed path {e}");
     }
@@ -36,21 +35,14 @@ unsafe extern "system" fn callback(
 
 /// Method to setup network monitoring for Windows
 pub fn setup_network_monitor() -> SafeHandle {
-    let mut handle: HANDLE = ptr::null_mut();
+    let mut handle = HANDLE(ptr::null_mut());
 
-    let result = unsafe {
-        NotifyIpInterfaceChange(
-            AF_UNSPEC as u16,
-            Some(callback),
-            ptr::null_mut(),
-            0,
-            &mut handle,
-        )
-    };
+    let result =
+        unsafe { NotifyIpInterfaceChange(AF_UNSPEC, Some(callback), None, false, &mut handle) };
 
-    if result != NO_ERROR {
+    if result.is_err() {
         telio_log_error!(
-            "NotifyIpInterfaceChange call failed with error code: {}",
+            "NotifyIpInterfaceChange call failed with error code: {:?}",
             result
         );
     }
@@ -65,12 +57,11 @@ pub fn deregister_network_monitor(safe_handle: SafeHandle) {
     tokio::task::spawn_blocking({
         move || {
             let cancel_result = unsafe { CancelMibChangeNotify2(safe_handle.0) };
-            if cancel_result == NO_ERROR {
+            if cancel_result.is_ok() {
                 telio_log_trace!("Notification cancelled successfully.");
             } else {
                 telio_log_error!(
-                    "Failed to cancel notification with error code: {}",
-                    cancel_result
+                    "Failed to cancel notification with error code: {cancel_result:?}"
                 );
             }
         }
