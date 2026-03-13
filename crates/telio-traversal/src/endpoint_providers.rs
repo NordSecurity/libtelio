@@ -60,6 +60,8 @@ pub enum Error {
     /// Component was not configured for operation
     #[error("Component was not configured for operation")]
     NotConfigured,
+    #[error("Endpoint provider is paused")]
+    EndpointProviderPaused,
     /// Stun peer does not exist in wireguard
     #[error("Stun peer does not exist in wireguard")]
     NoStunPeer,
