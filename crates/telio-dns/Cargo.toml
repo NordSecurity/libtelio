@@ -18,6 +18,8 @@ tracing.workspace = true
 mockall = { workspace = true, optional = true }
 nix.workspace = true
 pnet_packet.workspace = true
+pnet_macros_support = "0.35.0"
+thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "net", "sync", "macros"] }
 
 telio-crypto.workspace = true
