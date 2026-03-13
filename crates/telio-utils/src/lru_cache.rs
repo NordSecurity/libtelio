@@ -317,8 +317,7 @@ impl<Key: Clone + Eq + Hash, Value> LruCache<Key, Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::distributions::{Distribution, Standard};
-    use rand::thread_rng;
+    use rand::distr::{Distribution, StandardUniform};
     use std::time::Duration;
 
     fn advance_time_by_ms(time: u64) {
@@ -429,9 +428,12 @@ mod tests {
 
     fn generate_random_vec<T>(len: usize) -> Vec<T>
     where
-        Standard: Distribution<T>,
+        StandardUniform: Distribution<T>,
     {
-        Standard.sample_iter(&mut thread_rng()).take(len).collect()
+        StandardUniform
+            .sample_iter(&mut rand::rng())
+            .take(len)
+            .collect()
     }
 
     #[derive(PartialEq, PartialOrd, Ord, Clone, Eq, Hash)]

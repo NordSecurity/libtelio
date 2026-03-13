@@ -155,7 +155,7 @@ async fn try_connect(
 
                 TlsConnector::from(Arc::new(config))
             } else {
-                TlsConnector::from(Arc::new(ClientConfig::with_platform_verifier()))
+                TlsConnector::from(Arc::new(ClientConfig::with_platform_verifier()?))
             };
 
             let server_name =

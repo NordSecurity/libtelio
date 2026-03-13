@@ -240,6 +240,7 @@ mod tests {
             }),
             index: None,
             oper_status: IfOperStatus::Testing,
+            is_p2p: false,
             #[cfg(windows)]
             adapter_name: "{78f73923-a518-4936-ba87-2a30427b1f63}".to_string(),
         }
