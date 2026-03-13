@@ -1,14 +1,14 @@
 use crate::monitor::PATH_CHANGE_BROADCAST;
 use neli::{
-    consts::socket::NlFamily::Route,
-    socket::{tokio::NlSocket as TokioSocket, NlSocket},
+    consts::{netfilter::NetfilterMsg, socket::NlFamily::Route},
+    socket::asynchronous::NlSocketHandle as TokioSocket,
+    utils::Groups,
 };
+use netlink_packet_core::{NetlinkDeserializable, NetlinkHeader};
+use netlink_packet_route::RouteNetlinkMessage;
 use std::io;
 use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
-use tokio::{io::AsyncReadExt, task::JoinHandle};
-
-const RTMGRP_LINK: u32 = 0x0001;
-const RTMGRP_IPV4_IFADDR: u32 = 0x0010;
+use tokio::task::JoinHandle;
 
 /// Sets up linux network monitoring task
 pub async fn setup_network_monitor() -> Option<JoinHandle<io::Result<()>>> {
@@ -22,28 +22,73 @@ pub async fn setup_network_monitor() -> Option<JoinHandle<io::Result<()>>> {
 }
 
 async fn open_netlink_socket() -> Result<TokioSocket, io::Error> {
-    let s = NlSocket::connect(Route, None, &[RTMGRP_LINK, RTMGRP_IPV4_IFADDR])?;
-    let sock = TokioSocket::new(s)?;
+    let mut group = Groups::empty();
+
+    // See: https://github.com/torvalds/linux/blob/c107785c7e8dbabd1c18301a1c362544b5786282/include/uapi/linux/rtnetlink.h#L692-L699
+    const RTMGRP_LINK: u32 = 0x0001;
+    const RTMGRP_IPV4_IFADDR: u32 = 0x0010;
+    const RTMGRP_IPV4_ROUTE: u32 = 0x0040;
+
+    group.add_bitmask(RTMGRP_LINK);
+    group.add_bitmask(RTMGRP_IPV4_IFADDR);
+    group.add_bitmask(RTMGRP_IPV4_ROUTE);
+
+    let s = TokioSocket::connect(Route, None, group).map_err(io::Error::other)?;
     telio_log_debug!("Network monitor socket opened");
-    Ok(sock)
+    Ok(s)
 }
 
-async fn read_event(mut sock: TokioSocket) -> Option<JoinHandle<io::Result<()>>> {
+async fn read_event(sock: TokioSocket) -> Option<JoinHandle<io::Result<()>>> {
     Some(tokio::spawn({
-        let mut buffer: Vec<u8> = vec![0; 4096]; // Might not matter, read_buf returns 0 when network interfaces change
-
         async move {
             loop {
-                let _ = sock.read_buf(&mut buffer).await?;
-                {
-                    telio_log_info!("Detected network interface modification, notifying..");
-                    if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
-                        telio_log_warn!("Failed to notify about changed path: {e}");
-                    }
+                let (known_kinds, unknowns) = recv_netfilter_messages(&sock).await;
+
+                telio_log_info!("Detected network interface modification (known {known_kinds:?}, unknown {unknowns}), notifying..");
+
+                if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
+                    telio_log_warn!("Failed to notify about changed path: {e}");
                 }
             }
         }
     }))
+}
+
+async fn recv_netfilter_messages(sock: &TokioSocket) -> (Vec<u16>, usize) {
+    let mut known_kinds = vec![];
+    let mut unknowns = 0;
+    match sock.recv_all::<NetfilterMsg, Vec<u8>>().await {
+        Ok((messages, _groups)) => {
+            for m in messages {
+                let mut h = NetlinkHeader::default();
+                h.length = *m.nl_len();
+                h.message_type = m.nl_type().into();
+                h.flags = m.nl_flags().bits();
+                h.sequence_number = *m.nl_seq();
+                h.port_number = *m.nl_pid();
+
+                let rtnetlink_msg = m
+                    .get_payload()
+                    .and_then(|payload| RouteNetlinkMessage::deserialize(&h, payload).ok());
+
+                match rtnetlink_msg {
+                    Some(msg) => {
+                        telio_log_debug!("Received netfilter message: {msg:?}");
+                        known_kinds.push(msg.message_type());
+                    }
+                    None => {
+                        telio_log_debug!("Received unknown netfilter message: {m:?}");
+                        unknowns += 1;
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            telio_log_warn!("Failed to receive incomming netlink message: {e}");
+        }
+    }
+
+    (known_kinds, unknowns)
 }
 
 #[cfg(test)]
