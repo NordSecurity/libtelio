@@ -2,9 +2,6 @@
 //!
 //! This module provides a layer for constructing minimal DNS responses for meshnet donrd domains
 
-// TODO: Remove after merging integration
-#![allow(dead_code)]
-
 use pnet_packet::dns::{
     DnsClasses, DnsQuery, DnsType, DnsTypes, MutableDnsPacket, MutableDnsResponsePacket, Opcode,
     Retcode,
@@ -82,7 +79,7 @@ pub enum DnsBuildError {
 /// Response option for the nord resolver
 ///
 /// Use [`DnsResponseBuilder`] to construct a complete DNS response packet
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ResponseKind {
     /// Successful answer with IPv4 addresses
     AnswerA { addresses: Vec<Ipv4Addr> },
@@ -125,14 +122,8 @@ impl DnsResponseBuilder {
         }
     }
 
-    /// Set if this response is for forwarded or upstream results
-    ///
-    /// Sets AA flag
-    pub fn set_authoritative(mut self, authoritative: bool) -> Self {
-        self.authoritative = authoritative;
-        self
-    }
-
+    // TODO: LLT-7054: remove if not neededed after complete regression testing
+    #[cfg(test)]
     /// Set cap for UDP response size
     ///
     /// Sets TC flag if truncation occurs
