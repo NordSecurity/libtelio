@@ -489,6 +489,9 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
         session_id: Session,
         public_key: &PublicKey,
     ) -> Result<()> {
+        if self.is_endpoint_provider_paused {
+            return Err(Error::EndpointProviderPaused);
+        }
         let wg_port = if let Some(port) = self.get_wg_port() {
             port
         } else {
@@ -659,7 +662,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
 
         if !self.igd_gw.lease_needs_renew() && self.is_endpoint_provider_paused {
             let d = self.igd_gw.should_renew_lease_after();
-            telio_log_debug!("Skipping getting endpoint via UPNP endpoint provider(ModulePaused), lease renw after {d:?}");
+            telio_log_debug!("Skipping getting endpoint via UPNP endpoint provider(ModulePaused), lease renew after {d:?}");
             tokio::select! {
                 _ = sleep(d.unwrap_or(FAR_FUTURE)) => {},
                 update = &mut updated => {
@@ -669,12 +672,12 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
         }
 
         tokio::select! {
-            Ok((len, addr)) = self.udp_socket.recv_from(&mut self.rx_buff) => {
+            Ok((len, addr)) = self.udp_socket.recv_from(&mut self.rx_buff), if !self.is_endpoint_provider_paused => {
                 let buff = self.rx_buff.clone();
                 let _ = self.handle_ping_rx(&buff[..len], &addr).await;
             }
             result = self.igd_gw.ensure_igd_gateway(), if !self.igd_gw.has_igd_gateway() => {
-                if result.is_ok() {
+                if result.is_ok() && !self.is_endpoint_provider_paused {
                     if let Err(e) = self.create_endpoint_candidate().await {
                         telio_log_warn!("Error creating UPnP endpoint: {}", e);
                         self.igd_gw.drop_igd_gateway();
