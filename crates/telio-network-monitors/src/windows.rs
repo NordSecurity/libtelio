@@ -1,13 +1,10 @@
-use crate::monitor::PATH_CHANGE_BROADCAST;
 use std::ptr;
-use telio_utils::{
-    telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
-};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
+use windows::Win32::Foundation::NO_ERROR;
 use windows::Win32::NetworkManagement::IpHelper::{
     CancelMibChangeNotify2, GetIpInterfaceEntry, NotifyIpInterfaceChange, MIB_IPINTERFACE_ROW,
     MIB_NOTIFICATION_TYPE,
 };
-use windows::Win32::Foundation::NO_ERROR;
 use windows::Win32::{Foundation::HANDLE, Networking::WinSock::AF_UNSPEC};
 
 #[derive(Clone, Debug)]
@@ -73,10 +70,7 @@ unsafe extern "system" fn callback(
         );
     }
 
-    telio_log_info!("Detected network interface modification, notifying..");
-    if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
-        telio_log_warn!("Failed to notify about changed path {e}");
-    }
+    crate::monitor::notify();
 }
 
 /// Method to setup network monitoring for Windows

@@ -10,7 +10,7 @@ use std::{
     net::IpAddr,
     sync::{Arc, Weak},
 };
-use telio_utils::{telio_log_debug, telio_log_trace, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn};
 use tokio::{sync::broadcast::Sender, task::JoinHandle};
 /// Sender to notify if there is a change in OS interface order
 pub static PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(10));
@@ -211,6 +211,13 @@ impl Drop for NetworkMonitor {
         if !self.monitor_handle.is_null() {
             crate::windows::deregister_network_monitor(self.monitor_handle.clone());
         }
+    }
+}
+
+pub(crate) fn notify() {
+    telio_log_info!("Detected network interface modification, notifying..");
+    if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
+        telio_log_warn!("Failed to notify about changed path: {e}");
     }
 }
 

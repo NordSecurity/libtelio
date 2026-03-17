@@ -1,4 +1,3 @@
-use crate::monitor::PATH_CHANGE_BROADCAST;
 use neli::{
     consts::{netfilter::NetfilterMsg, socket::NlFamily::Route},
     socket::asynchronous::NlSocketHandle as TokioSocket,
@@ -7,7 +6,7 @@ use neli::{
 use netlink_packet_core::{NetlinkDeserializable, NetlinkHeader};
 use netlink_packet_route::RouteNetlinkMessage;
 use std::io;
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_info, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn};
 use tokio::task::JoinHandle;
 
 /// Sets up linux network monitoring task
@@ -42,13 +41,8 @@ async fn read_event(sock: TokioSocket) -> Option<JoinHandle<io::Result<()>>> {
     Some(tokio::spawn({
         async move {
             loop {
-                let (known_kinds, unknowns) = recv_netfilter_messages(&sock).await;
-
-                telio_log_info!("Detected network interface modification (known {known_kinds:?}, unknown {unknowns}), notifying..");
-
-                if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
-                    telio_log_warn!("Failed to notify about changed path: {e}");
-                }
+                recv_netfilter_messages(&sock).await;
+                crate::monitor::notify();
             }
         }
     }))
