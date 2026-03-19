@@ -20,6 +20,13 @@ DEFAULT_WAITING_TIME = 2
         ),
         pytest.param(
             SetupParameters(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+            ),
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            SetupParameters(
                 connection_tag=ConnectionTag.VM_MAC,
                 adapter_type_override=TelioAdapterType.NEP_TUN,
             ),
@@ -37,16 +44,24 @@ async def test_network_monitor(
         env = await setup_mesh_nodes(exit_stack, [alpha_setup_params])
         [client_alpha] = env.clients
 
-        NR_OF_NOTIFICATIONS = (
-            12 if client_alpha.get_connection().target_os == TargetOS.Linux else 4
-        )
+        target_os = client_alpha.get_connection().target_os
+        if target_os == TargetOS.Linux:
+            NR_OF_NOTIFICATIONS = 12
+            NOT_GREATER = True
+        elif target_os == TargetOS.Windows:
+            NR_OF_NOTIFICATIONS = 10
+            NOT_GREATER = False
+        else:
+            NR_OF_NOTIFICATIONS = 4
+            NOT_GREATER = True
+
         PLATFORM_AGNOSTIC_MESSAGE = "Detected network interface modification"
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
         await client_alpha.restart_interface()
 
         async def check_logs(msg, count):
-            await client_alpha.wait_for_log(msg, count=count, not_greater=True)
+            await client_alpha.wait_for_log(msg, count=count, not_greater=NOT_GREATER)
 
         await check_logs(PLATFORM_AGNOSTIC_MESSAGE, NR_OF_NOTIFICATIONS)
 

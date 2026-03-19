@@ -7,8 +7,6 @@ use network_framework_sys::{
 use std::ffi::{c_long, c_void};
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
 
-use crate::monitor::PATH_CHANGE_BROADCAST;
-
 /// Dispatch queue priority as high priority queue
 pub const DISPATCH_QUEUE_PRIORITY_HIGH: c_long = 2;
 /// Dispatch queue priority as default queue
@@ -52,7 +50,8 @@ pub fn setup_network_monitor() {
     #[cfg(target_os = "macos")]
     std::thread::spawn(start_sc_dynamic_store_monitor);
 
-    let update_handler = block::ConcreteBlock::new(|_path: nw_path_t| notify()).copy();
+    let update_handler =
+        block::ConcreteBlock::new(|_path: nw_path_t| crate::monitor::notify()).copy();
 
     let monitor = unsafe { nw_path_monitor_create() };
     if monitor.is_null() {
@@ -83,13 +82,6 @@ pub fn setup_network_monitor() {
     }
 }
 
-fn notify() {
-    telio_log_info!("Detected network interface modification, notifying..");
-    if let Err(e) = PATH_CHANGE_BROADCAST.send(()) {
-        telio_log_warn!("Failed to notify about changed path: {e}");
-    }
-}
-
 #[cfg(target_os = "macos")]
 fn start_sc_dynamic_store_monitor() {
     use core_foundation::runloop::{kCFRunLoopDefaultMode, CFRunLoop};
@@ -102,7 +94,7 @@ fn start_sc_dynamic_store_monitor() {
         for key in changed_keys.iter() {
             telio_log_debug!("changed key: {}", *key);
         }
-        notify();
+        crate::monitor::notify();
     }
 
     telio_log_info!("Starting registration in SCDynamicStore");

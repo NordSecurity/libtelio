@@ -5217,7 +5217,6 @@ dependencies = [
  "telio-utils",
  "tokio",
  "tracing",
- "winapi",
  "windows",
 ]
 
