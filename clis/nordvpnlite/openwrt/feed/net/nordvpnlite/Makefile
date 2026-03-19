@@ -16,6 +16,7 @@ define Package/nordvpnlite
 	TITLE:=NordVPN Lite
 	DEPENDS:=+kmod-tun +kmod-wireguard +luci-base +ucode-mod-log
 	URL:=https://www.nordsecurity.com
+	SOURCE:=nordvpnlite
 endef
 
 define Package/nordvpnlite/description
