@@ -1735,6 +1735,9 @@ impl Runtime {
             nurse.set_private_key(private_key.clone()).await;
         }
 
+        // Clear event dedup cache so re-connection events are not suppressed.
+        self.last_transmitted_event.clear();
+
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
             .boxed()
             .await?;
