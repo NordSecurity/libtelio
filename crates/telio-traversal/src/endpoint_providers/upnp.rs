@@ -659,6 +659,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
         F: Future<Output = BoxAction<Self, std::result::Result<(), Self::Err>>> + Send,
     {
         pin!(updated);
+        telio_log_debug!("wait_with_update starts...");
 
         if !self.igd_gw.lease_needs_renew() && self.is_endpoint_provider_paused {
             let d = self.igd_gw.should_renew_lease_after();
@@ -671,12 +672,15 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
             }
         }
 
+        telio_log_debug!("wait_with_update select starts...");
         tokio::select! {
             Ok((len, addr)) = self.udp_socket.recv_from(&mut self.rx_buff), if !self.is_endpoint_provider_paused => {
+                telio_log_debug!("recv_from upd_socket");
                 let buff = self.rx_buff.clone();
                 let _ = self.handle_ping_rx(&buff[..len], &addr).await;
             }
             result = self.igd_gw.ensure_igd_gateway(), if !self.igd_gw.has_igd_gateway() => {
+                telio_log_debug!("result: {result:?}, is_endpoint_provider_paused: {}", self.is_endpoint_provider_paused);
                 if result.is_ok() && !self.is_endpoint_provider_paused {
                     if let Err(e) = self.create_endpoint_candidate().await {
                         telio_log_warn!("Error creating UPnP endpoint: {}", e);
@@ -687,6 +691,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
                 }
             }
             _ = &mut self.upnp_interval => {
+                telio_log_debug!("upnp_interval");
                 self.upnp_interval =  PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
 
                 match self.check_endpoint_candidate().await {
@@ -696,6 +701,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
             }
             // Incoming task
             update = updated => {
+                telio_log_debug!("incomming task");
                 return update(self).await;
             }
             else => {
@@ -713,6 +719,7 @@ mod tests {
         async_trait, EndpointCandidate, MockUpnpEpCommands, UpnpEndpointProvider,
         EPHEMERAL_PORT_RANGE,
     };
+    use crate::endpoint_providers::upnp::{IgdGateway, UpnpEpCommands};
     use crate::endpoint_providers::Error;
     use crate::ping_pong_handler::PingPongHandler;
     use lazy_static::lazy_static;
@@ -729,9 +736,11 @@ mod tests {
     use telio_sockets::{NativeProtector, SocketPool};
     use telio_utils::exponential_backoff::MockBackoff;
     use telio_utils::ip_stack::IpStack;
+    use telio_utils::telio_log_debug;
     use telio_wg::uapi::{Interface, Peer};
     use telio_wg::Error as wgError;
     use telio_wg::WireGuard;
+    use tokio::net::UdpSocket;
     use tokio::sync::Mutex as TMutex;
 
     type Result<T> = std::result::Result<T, Error>;
@@ -952,5 +961,43 @@ mod tests {
         // Wait Upnp to invalidate corrupted port
         tokio::time::sleep(Duration::from_millis(200 + 20)).await;
         assert!(ENDPOINT.lock().wg.port() == old_port);
+    }
+
+    async fn start_fake_upnp_gateway() {
+        let resp = b"HTTP/1.1 200 OK 
+EXT: ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1
+USN: unique:id
+LOCATION: http://1.1.1.1/foo.xml
+SERVER: dummy CACHE-CONTROL: max-age=1800";
+        let sock = UdpSocket::bind((std::net::Ipv4Addr::UNSPECIFIED, 1900))
+            .await
+            .unwrap();
+        // sock.set_broadcast(true).unwrap();
+
+        sock.join_multicast_v4("239.255.255.250".parse().unwrap(), Ipv4Addr::UNSPECIFIED)
+            .unwrap();
+
+        telio_log_debug!("Will listen of socket: {sock:?}");
+        loop {
+            let mut buf = [0u8; 1024 * 16];
+            let (n, from) = sock.recv_from(&mut buf).await.unwrap();
+            let buf = &buf[..n];
+            telio_log_debug!("Got {n} bytes: {buf:?}");
+            if let Ok(str) = std::str::from_utf8(buf) {
+                telio_log_debug!("utf8: '{str}'");
+                sock.send_to(resp, from).await.unwrap();
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn test_foo() {
+        tokio::spawn(start_fake_upnp_gateway());
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let mut igd_gateway = IgdGateway::default();
+        igd_gateway.ensure_igd_gateway().await.unwrap();
     }
 }
