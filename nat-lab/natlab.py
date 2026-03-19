@@ -176,7 +176,15 @@ def start(skip_keywords=None, force_recreate=False, services_to_start=None):
     command += services_to_start
 
     if "GITLAB_CI" in os.environ:
+        try:
+            run_command(
+                ["sudo", "sh", "-c", "echo 'module wireguard +p' > /sys/kernel/debug/dynamic_debug/control"]
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"Enabling WireGuard dynamic debug failed: {e}")
+
         command.append("--quiet-pull")
+    
     try:
         run_command(
             command, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
@@ -193,6 +201,13 @@ def start(skip_keywords=None, force_recreate=False, services_to_start=None):
 def stop():
     run_command(["docker", "compose", "down"])
 
+    if "GITLAB_CI" in os.environ:
+        try:
+            run_command(
+                ["sudo", "sh", "-c", "echo 'module wireguard -p' > /sys/kernel/debug/dynamic_debug/control"]
+            )
+        except subprocess.CalledProcessError as e:
+            print("Could not disable WireGuard dynamic debug: {e}")
 
 def kill():
     run_command(["docker", "compose", "kill"])
