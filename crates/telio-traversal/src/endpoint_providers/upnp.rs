@@ -181,10 +181,12 @@ impl UpnpEpCommands for IgdGateway {
     }
 
     async fn ensure_igd_gateway(&mut self) -> Result<()> {
+        telio_log_debug!("Ensuring IGD gateway");
         if self.gw.is_some() {
             return Ok(());
         }
 
+        telio_log_debug!("Searching for IGD gateway");
         if self.search.is_none() {
             self.search = Some(Box::pin(
                 search_gateway(Default::default()).map_err(|e| e.into()),
@@ -221,10 +223,12 @@ impl UpnpEpCommands for IgdGateway {
     }
 
     fn has_igd_gateway(&self) -> bool {
+        telio_log_debug!("Checking if IGD gateway exists: {:?}", self.gw.is_some());
         self.gw.is_some()
     }
 
     fn drop_igd_gateway(&mut self) {
+        telio_log_debug!("Dropping IGD gateway");
         self.gw = None;
     }
 }
@@ -513,6 +517,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
     }
 
     async fn check_endpoint_candidate(&mut self) -> Result<()> {
+        telio_log_debug!("Checking endpoint candidate");
         if self.endpoint_candidate.is_none() {
             self.igd_gw.drop_igd_gateway();
 
@@ -677,7 +682,9 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
                 let _ = self.handle_ping_rx(&buff[..len], &addr).await;
             }
             result = self.igd_gw.ensure_igd_gateway(), if !self.igd_gw.has_igd_gateway() => {
+                telio_log_debug!("Ensuring IGD gateway: {:?}, current endpoint candidate: {:?}", result, self.endpoint_candidate);
                 if result.is_ok() && !self.is_endpoint_provider_paused {
+                    telio_log_debug!("Trying to create endpoint candidate");
                     if let Err(e) = self.create_endpoint_candidate().await {
                         telio_log_warn!("Error creating UPnP endpoint: {}", e);
                         self.igd_gw.drop_igd_gateway();
@@ -688,6 +695,8 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
             }
             _ = &mut self.upnp_interval => {
                 self.upnp_interval =  PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
+
+                telio_log_debug!("Endpoint candidate: {:?}", self.endpoint_candidate);
 
                 match self.check_endpoint_candidate().await {
                     Ok (_) => self.exponential_backoff.reset(),
