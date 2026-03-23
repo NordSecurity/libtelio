@@ -76,6 +76,18 @@ impl ExponentialBackoff {
             current_backoff: bounds.initial,
         })
     }
+
+    /// TODO
+    pub fn fallback() -> Self {
+        let bounds = ExponentialBackoffBounds {
+            initial: Duration::from_secs(1),
+            maximal: None,
+        };
+        Self {
+            bounds,
+            current_backoff: bounds.initial,
+        }
+    }
 }
 
 impl Backoff for ExponentialBackoff {

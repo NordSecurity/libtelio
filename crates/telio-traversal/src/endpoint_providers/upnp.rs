@@ -40,7 +40,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[cfg_attr(test, automock)]
 #[async_trait]
-pub trait UpnpEpCommands: Send + Default + 'static {
+pub trait UpnpEpCommands: Send + Sync + 'static {
     async fn check_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<bool>;
     async fn add_endpoint_routes(
         &self,
@@ -88,6 +88,21 @@ impl Debug for IgdGateway {
 }
 
 impl IgdGateway {
+    fn new(lease_duration: Duration) -> Result<Self> {
+        let bounds = ExponentialBackoffBounds {
+            initial: Duration::from_secs(1),
+            maximal: None,
+        };
+        ExponentialBackoff::new(bounds)?;
+
+        Ok(IgdGateway {
+            search: Default::default(),
+            gw: Default::default(),
+            lease_duration,
+            needs_lease_renew_at: parking_lot::Mutex::new(None),
+        })
+    }
+
     fn maybe_gw(&self) -> Result<&Gateway> {
         match &self.gw {
             Some(gw) => Ok(gw),
@@ -229,6 +244,123 @@ impl UpnpEpCommands for IgdGateway {
     }
 }
 
+/// The backoff time between successful calls to ensure_igd_gateway is zero.
+/// After the first failure, the backoff time is controlled by `backoff` initially
+/// built from `bounds`. Each consequent failure doubles the wait time. Each
+/// success zeroes the backoff time.
+struct EnsureIgdGatewayWithBackoff<I: UpnpEpCommands + Send + 'static> {
+    igd_gw: I,
+    bounds: ExponentialBackoffBounds,
+    backoff: Option<ExponentialBackoff>,
+}
+
+impl<I: UpnpEpCommands + Send + 'static> EnsureIgdGatewayWithBackoff<I> {
+    async fn wait_before_ensure_igd_gateway(&self) {
+        let backoff_time = self.backoff.as_ref().map(|b| b.get_backoff());
+        telio_log_debug!("wait before ensure_igd_gateway: {backoff_time:?}");
+
+        if let Some(backoff_time) = backoff_time {
+            tokio::time::sleep(backoff_time).await;
+        }
+    }
+
+    fn ensure_igd_gateway_failed(&mut self) -> Result<()> {
+        match &mut self.backoff {
+            None => {
+                match ExponentialBackoff::new(self.bounds) {
+                    Ok(backoff) => {
+                        self.backoff = Some(backoff);
+                    }
+                    Err(e) => {
+                        self.backoff = Some(ExponentialBackoff::fallback());
+                        return Err(e.into());
+                    }
+                };
+            }
+            Some(v) => {
+                v.next_backoff();
+            }
+        }
+        Ok(())
+    }
+
+    fn ensure_igd_gateway_succeeded(&mut self) {
+        self.backoff = None
+    }
+}
+
+#[async_trait]
+impl<I: UpnpEpCommands + Send + 'static> UpnpEpCommands for EnsureIgdGatewayWithBackoff<I> {
+    async fn check_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<bool> {
+        self.igd_gw.check_endpoint_routes(proxy_port, wg_port).await
+    }
+    async fn add_endpoint_routes(
+        &self,
+        ip_addr: Ipv4Addr,
+        proxy_port_internal: u16,
+        proxy_port_external: u16,
+        wg_port_internal: u16,
+        wg_port_external: u16,
+    ) -> Result<()> {
+        self.igd_gw
+            .add_endpoint_routes(
+                ip_addr,
+                proxy_port_internal,
+                proxy_port_external,
+                wg_port_internal,
+                wg_port_external,
+            )
+            .await
+    }
+    async fn extend_endpoint_duration(
+        &self,
+        ip_addr: Ipv4Addr,
+        proxy_port: PortMapping,
+        wg_port: PortMapping,
+    ) -> Result<()> {
+        self.igd_gw
+            .extend_endpoint_duration(ip_addr, proxy_port, wg_port)
+            .await
+    }
+    async fn delete_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<()> {
+        self.igd_gw
+            .delete_endpoint_routes(proxy_port, wg_port)
+            .await
+    }
+    async fn get_external_ip(&self) -> Result<Ipv4Addr> {
+        self.igd_gw.get_external_ip().await
+    }
+    async fn ensure_igd_gateway(&mut self) -> Result<()> {
+        self.wait_before_ensure_igd_gateway().await;
+        match self.igd_gw.ensure_igd_gateway().await {
+            Ok(()) => {
+                self.ensure_igd_gateway_succeeded();
+                Ok(())
+            }
+            Err(e) => {
+                if let Err(e) = self.ensure_igd_gateway_failed() {
+                    telio_log_warn!(
+                        "Failed to create a backoff with configured values, using a ballback: {e}"
+                    );
+                }
+                Err(e)
+            }
+        }
+    }
+    fn lease_needs_renew(&self) -> bool {
+        self.igd_gw.lease_needs_renew()
+    }
+    fn should_renew_lease_after(&self) -> Option<Duration> {
+        self.igd_gw.should_renew_lease_after()
+    }
+    fn has_igd_gateway(&self) -> bool {
+        self.igd_gw.has_igd_gateway()
+    }
+    fn drop_igd_gateway(&mut self) {
+        self.igd_gw.drop_igd_gateway();
+    }
+}
+
 pub struct UpnpEndpointProvider<
     Wg: WireGuard = DynamicWg,
     I: UpnpEpCommands = IgdGateway,
@@ -286,12 +418,7 @@ impl<Wg: WireGuard> UpnpEndpointProvider<Wg> {
             wg,
             ExponentialBackoff::new(exponential_backoff_bounds)?,
             ping_pong_handler,
-            IgdGateway {
-                search: Default::default(),
-                gw: Default::default(),
-                lease_duration,
-                needs_lease_renew_at: parking_lot::Mutex::new(None),
-            },
+            IgdGateway::new(lease_duration)?,
             is_battery_optimization_on,
         ))
     }
@@ -309,6 +436,14 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
         let udp_socket = Arc::new(udp_socket);
         let rx_buff = vec![0u8; MAX_SUPPORTED_PACKET_SIZE];
         let initial_upnp_interval = exponential_backoff.get_backoff();
+        let tmp = EnsureIgdGatewayWithBackoff {
+            igd_gw,
+            bounds: ExponentialBackoffBounds {
+                initial: Duration::from_secs(1),
+                maximal: None,
+            },
+            backoff: None,
+        };
         Self {
             task: Task::start(State {
                 udp_socket,
@@ -324,7 +459,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
                 is_battery_optimization_on,
                 is_endpoint_provider_paused: false,
                 rx_buff,
-                igd_gw,
+                igd_gw: tmp,
                 ping_pong_handler,
             }),
         }
@@ -478,7 +613,7 @@ struct State<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> {
     is_battery_optimization_on: bool,
     is_endpoint_provider_paused: bool,
     rx_buff: Vec<u8>,
-    igd_gw: I,
+    igd_gw: EnsureIgdGatewayWithBackoff<I>,
     ping_pong_handler: Arc<Mutex<PingPongHandler>>,
 }
 
@@ -659,7 +794,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
         F: Future<Output = BoxAction<Self, std::result::Result<(), Self::Err>>> + Send,
     {
         pin!(updated);
-        telio_log_debug!("wait_with_update starts...");
+        // telio_log_debug!("wait_with_update starts...");
 
         if !self.igd_gw.lease_needs_renew() && self.is_endpoint_provider_paused {
             let d = self.igd_gw.should_renew_lease_after();
@@ -672,7 +807,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
             }
         }
 
-        telio_log_debug!("wait_with_update select starts...");
+        // telio_log_debug!("wait_with_update select starts...");
         tokio::select! {
             Ok((len, addr)) = self.udp_socket.recv_from(&mut self.rx_buff), if !self.is_endpoint_provider_paused => {
                 telio_log_debug!("recv_from upd_socket");
@@ -680,7 +815,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
                 let _ = self.handle_ping_rx(&buff[..len], &addr).await;
             }
             result = self.igd_gw.ensure_igd_gateway(), if !self.igd_gw.has_igd_gateway() => {
-                telio_log_debug!("result: {result:?}, is_endpoint_provider_paused: {}", self.is_endpoint_provider_paused);
+                // telio_log_debug!("result: {result:?}, is_endpoint_provider_paused: {}", self.is_endpoint_provider_paused);
                 if result.is_ok() && !self.is_endpoint_provider_paused {
                     if let Err(e) = self.create_endpoint_candidate().await {
                         telio_log_warn!("Error creating UPnP endpoint: {}", e);
@@ -728,13 +863,16 @@ mod tests {
     use std::cell::RefCell;
     use std::net::{IpAddr, Ipv4Addr, SocketAddr};
     use std::rc::Rc;
+    use std::sync::atomic::AtomicUsize;
     use std::sync::Arc;
     use std::time::Duration;
     use telio_crypto::PublicKey;
     use telio_crypto::SecretKey;
     use telio_model::mesh::LinkState;
     use telio_sockets::{NativeProtector, SocketPool};
-    use telio_utils::exponential_backoff::MockBackoff;
+    use telio_utils::exponential_backoff::{
+        ExponentialBackoff, ExponentialBackoffBounds, MockBackoff,
+    };
     use telio_utils::ip_stack::IpStack;
     use telio_utils::telio_log_debug;
     use telio_wg::uapi::{Interface, Peer};
@@ -998,6 +1136,99 @@ SERVER: dummy CACHE-CONTROL: max-age=1800";
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         let mut igd_gateway = IgdGateway::default();
-        igd_gateway.ensure_igd_gateway().await.unwrap();
+        assert!(matches!(
+            dbg!(igd_gateway.ensure_igd_gateway().await),
+            Err(Error::IGDSearchError(igd::SearchError::SpoofedIp { .. }))
+        ));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[test_log::test]
+    async fn test_bar() {
+        let spool = SocketPool::new(
+            NativeProtector::new(
+                #[cfg(target_os = "macos")]
+                false,
+            )
+            .unwrap(),
+        );
+        let udp_socket = spool
+            .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
+            .await
+            .unwrap();
+
+        // Set to default ports
+        let mut epc = ENDPOINT.lock();
+        epc.wg.set_port(1000);
+        epc.udp.set_port(2000);
+
+        // These are not properly used yet, just dummy variables
+        let mut wg = MockWg::default();
+        let wg_port = 55345;
+        let wg_peers = Vec::<(PublicKey, Peer)>::new();
+
+        wg.expect_get_interface().returning(move || {
+            Ok(Interface {
+                listen_port: Some(wg_port),
+                peers: wg_peers.clone().into_iter().collect(),
+                ..Default::default()
+            })
+        });
+        wg.expect_wait_for_listen_port()
+            .returning(move |_| Ok(wg_port));
+        wg.expect_get_link_state().returning(|_| Ok(None));
+
+        let mut mock = MockUpnpEpCommands::new();
+        mock.expect_add_endpoint_routes()
+            .returning(move |_, proxy_port_int, _, wg_port_int, _| {
+                add_endpoint(wg_port_int, proxy_port_int)
+            });
+        mock.expect_delete_endpoint_routes()
+            .returning(move |_, _| delete_endpoint_routes());
+        mock.expect_has_igd_gateway().returning(has_igd_gateway);
+        mock.expect_drop_igd_gateway().returning(drop_igd_gateway);
+
+        let igd_search_counter = Arc::new(AtomicUsize::new(0));
+        let igd_search_counter_clone = igd_search_counter.clone();
+        mock.expect_ensure_igd_gateway().returning(move || {
+            igd_search_counter_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+            Err(Error::IGDSearchError(igd::SearchError::SpoofedIp {
+                src_ip: "1.2.3.4".parse().unwrap(),
+                url_ip: "5.6.7.8".parse().unwrap(),
+            }))
+        });
+
+        mock.expect_get_external_ip().returning(get_external_ip);
+        mock.expect_check_endpoint_routes()
+            .returning(check_endpoint_route);
+        mock.expect_lease_needs_renew().return_const(false);
+
+        let backoff = ExponentialBackoff::new(ExponentialBackoffBounds {
+            initial: Duration::from_secs(1),
+            maximal: None,
+        })
+        .unwrap();
+
+        let _upnp_provider = UpnpEndpointProvider::start_with(
+            udp_socket,
+            Arc::new(wg),
+            backoff,
+            Arc::new(TMutex::new(PingPongHandler::new(SecretKey::gen()))),
+            mock,
+            false,
+        );
+
+        println!("#####");
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        println!("#####2");
+        let igd_search_count = igd_search_counter.load(std::sync::atomic::Ordering::Relaxed);
+        assert!(
+            igd_search_count <= 4, // TODO: should this be exactly eqaul to 4?
+            "igd search call count: {}",
+            igd_search_count // TODO: migrate to 2024 edition
+        );
+        println!("#####3");
     }
 }
