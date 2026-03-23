@@ -126,7 +126,7 @@ async def setup_openwrt_test_environment(
     mock data for a third-party API used during tests.
 
     Args:
-        country_config (ConfigPresetName):
+        country_config (ConfigPresetName)Test:
             Country config for which the OpenWrt environment
             should be configured.
         exit_stack (AsyncExitStack)
