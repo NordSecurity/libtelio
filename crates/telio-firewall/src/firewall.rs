@@ -575,10 +575,6 @@ pub(crate) fn configure_chain(
         rules.push(Rule {
             filters: vec![
                 Filter {
-                    filter_data: FilterData::ConntrackState(ConnectionState::Closed),
-                    inverted: false,
-                },
-                Filter {
                     filter_data: FilterData::TcpFlags(
                         TcpFlags::ACK | TcpFlags::FIN | TcpFlags::RST,
                     ),
