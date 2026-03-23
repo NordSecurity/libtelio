@@ -624,8 +624,7 @@ mod tests {
     // Root CA and a leaf cert issued by it
     #[derive(Debug)]
     struct TlsConfig {
-        ca_cert_der: Vec<u8>,
-        leaf_cert_pem: String,
+        ca_cert: Certificate,
         leaf_cert: Certificate,
         leaf_key_pem: String,
     }
@@ -656,13 +655,10 @@ mod tests {
             let leaf_key_pair = KeyPair::generate().unwrap();
             let leaf_cert = leaf_params.signed_by(&leaf_key_pair, &issuer).unwrap();
 
-            let ca_cert_der = ca_cert.der().to_vec();
-            let leaf_cert_pem = leaf_cert.pem();
             let leaf_key_pem = leaf_key_pair.serialize_pem();
 
             TlsConfig {
-                ca_cert_der,
-                leaf_cert_pem,
+                ca_cert,
                 leaf_key_pem,
                 leaf_cert,
             }
@@ -773,7 +769,7 @@ mod tests {
         let (port_tx, port_rx) = oneshot::channel();
         let tls_config = TlsConfig::new();
 
-        let cert_pem = tls_config.leaf_cert_pem.clone();
+        let cert_pem = tls_config.leaf_cert.pem().clone();
         let key_pem = tls_config.leaf_key_pem.clone();
         tokio::spawn({
             let cert_pem = cert_pem.clone();
@@ -839,7 +835,7 @@ mod tests {
             10,
             make_socket_pool(),
             allow_only_mlkem,
-            Some(server_config.tls_config.ca_cert_der.clone()),
+            Some(server_config.tls_config.ca_cert.der().to_vec()),
         );
 
         ens.start_monitor_on_port(
@@ -914,7 +910,7 @@ mod tests {
             10,
             make_socket_pool(),
             allow_only_mlkem,
-            Some(server_config.tls_config.ca_cert_der.clone()),
+            Some(server_config.tls_config.ca_cert.der().to_vec()),
         );
 
         let mut backoff = MockBackoff::new();
@@ -1079,7 +1075,7 @@ mod tests {
         };
 
         let tls = TlsConfig::new();
-        let verifier = make_trusted_root_cert_verifier(&tls.ca_cert_der).unwrap();
+        let verifier = make_trusted_root_cert_verifier(&tls.ca_cert.der()).unwrap();
         let leaf_cert = tls.leaf_cert.der();
 
         // DigitallySignedStruct with incorrect signature bytes
@@ -1110,6 +1106,73 @@ mod tests {
             tls13_result,
             Err(rustls::Error::InvalidCertificate(
                 rustls::CertificateError::BadSignature
+            ))
+        );
+    }
+
+    #[cfg(feature = "enable_ens")]
+    #[test]
+    fn test_cert_verification_accepts_correct_request() {
+        use rustls::{
+            client::danger::ServerCertVerified,
+            pki_types::{ServerName, UnixTime},
+        };
+
+        let tls = TlsConfig::new();
+        let verifier = make_trusted_root_cert_verifier(&tls.ca_cert.der()).unwrap();
+
+        assert_matches!(
+            verifier.verify_server_cert(
+                tls.leaf_cert.der(),
+                &[tls.ca_cert.der().clone()],
+                &ServerName::DnsName("localhost".try_into().unwrap()),
+                &[],
+                UnixTime::now(),
+            ),
+            Ok(ServerCertVerified { .. })
+        );
+    }
+
+    #[cfg(feature = "enable_ens")]
+    #[test]
+    fn test_cert_verification_rejects_incorrect_request() {
+        use rustls::pki_types::{ServerName, UnixTime};
+
+        let tls = TlsConfig::new();
+        let verifier = make_trusted_root_cert_verifier(&tls.ca_cert.der()).unwrap();
+
+        assert_matches!(
+            verifier.verify_server_cert(
+                tls.leaf_cert.der(),
+                &[tls.ca_cert.der().clone()],
+                &ServerName::DnsName("some-other-name".try_into().unwrap()),
+                &[],
+                UnixTime::now(),
+            ),
+            Err(rustls::Error::InvalidCertificate(
+                rustls::CertificateError::NotValidForNameContext {
+                    expected,
+                    presented
+                }
+            ))
+            if
+                expected == ServerName::DnsName("some-other-name".try_into().unwrap()) &&
+                presented == vec![ "DnsName(\"localhost\")", "IpAddress(127.0.0.1)" ]
+        );
+
+        let random_leaf_cert =
+            rcgen::generate_simple_self_signed(SUBJECT_ALT_NAMES.clone()).unwrap();
+
+        assert_matches!(
+            verifier.verify_server_cert(
+                random_leaf_cert.cert.der(),
+                &[tls.ca_cert.der().clone()],
+                &ServerName::DnsName("localhost".try_into().unwrap()),
+                &[],
+                UnixTime::now(),
+            ),
+            Err(rustls::Error::InvalidCertificate(
+                rustls::CertificateError::UnknownIssuer
             ))
         );
     }
