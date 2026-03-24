@@ -399,10 +399,9 @@ fn make_tls_connector(
 }
 
 #[cfg(feature = "enable_ens")]
-fn make_tls_connector(
-    allow_only_mlkem: bool,
+fn make_trusted_root_cert_verifier(
     root_certificate: &[u8],
-) -> std::io::Result<TlsConnector> {
+) -> std::io::Result<Arc<impl ServerCertVerifier>> {
     use rustls::RootCertStore;
 
     #[derive(Debug)]
@@ -511,6 +510,15 @@ fn make_tls_connector(
         }
     }
 
+    Ok(Arc::new(TrustedRootCertVerifier::new(root_certificate)?))
+}
+
+#[cfg(feature = "enable_ens")]
+fn make_tls_connector(
+    allow_only_mlkem: bool,
+    root_certificate: &[u8],
+) -> std::io::Result<TlsConnector> {
+    let verifier = make_trusted_root_cert_verifier(root_certificate)?;
     let mut provider = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider();
 
     if allow_only_mlkem {
@@ -522,7 +530,7 @@ fn make_tls_connector(
         .with_safe_default_protocol_versions()
         .map_err(|e| std::io::Error::other(format!("{e}")))?
         .dangerous()
-        .with_custom_certificate_verifier(Arc::new(TrustedRootCertVerifier::new(root_certificate)?))
+        .with_custom_certificate_verifier(verifier)
         .with_no_client_auth();
 
     tls_config.alpn_protocols = vec![b"h2".to_vec()];
@@ -565,6 +573,7 @@ mod tests {
         time::Duration,
     };
 
+    use assert_matches::assert_matches;
     use async_channel::{self, unbounded, Receiver, Sender};
     use llt_proto::ens::{
         ens_server::{self, EnsServer},
@@ -572,8 +581,8 @@ mod tests {
         ChallengeResponse, ConnectionError,
     };
     use rcgen::{
-        generate_simple_self_signed, BasicConstraints, CertificateParams, CertifiedKey,
-        DistinguishedName, DnType, IsCa, Issuer, KeyPair,
+        generate_simple_self_signed, BasicConstraints, Certificate, CertificateParams,
+        CertifiedKey, DistinguishedName, DnType, IsCa, Issuer, KeyPair,
     };
     use telio_crypto::SecretKey;
     use telio_sockets::NativeProtector;
@@ -617,6 +626,7 @@ mod tests {
     struct TlsConfig {
         ca_cert_der: Vec<u8>,
         leaf_cert_pem: String,
+        leaf_cert: Certificate,
         leaf_key_pem: String,
     }
 
@@ -654,6 +664,7 @@ mod tests {
                 ca_cert_der,
                 leaf_cert_pem,
                 leaf_key_pem,
+                leaf_cert,
             }
         }
     }
@@ -1056,5 +1067,50 @@ mod tests {
             )
             .unwrap(),
         ))
+    }
+
+    #[cfg(feature = "enable_ens")]
+    #[test]
+    fn test_cert_verification_rejects_invalid_request() {
+        use rustls::{
+            client::danger::ServerCertVerifier,
+            internal::msgs::codec::{Codec, Reader},
+            DigitallySignedStruct, SignatureScheme,
+        };
+
+        let tls = TlsConfig::new();
+        let verifier = make_trusted_root_cert_verifier(&tls.ca_cert_der).unwrap();
+        let leaf_cert = tls.leaf_cert.der();
+
+        // DigitallySignedStruct with incorrect signature bytes
+        // Wire format: 2 bytes scheme (big-endian u16) + 2 bytes length + signature bytes
+        let scheme_u16: u16 = SignatureScheme::ECDSA_NISTP256_SHA256.into();
+        let garbage_signature = vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02, 0x03];
+        let mut wire_bytes = Vec::new();
+        wire_bytes.extend_from_slice(&scheme_u16.to_be_bytes());
+        wire_bytes.extend_from_slice(&(garbage_signature.len() as u16).to_be_bytes());
+        wire_bytes.extend_from_slice(&garbage_signature);
+
+        let mut reader = Reader::init(&wire_bytes);
+        let dss = DigitallySignedStruct::read(&mut reader).expect("Failed to parse DSS");
+        assert_eq!(dss.scheme, SignatureScheme::ECDSA_NISTP256_SHA256);
+
+        let message = b"this is a TLS handshake message that was NOT signed by the cert's key";
+
+        let tls12_result = verifier.verify_tls12_signature(message, &leaf_cert, &dss);
+        assert_matches!(
+            tls12_result,
+            Err(rustls::Error::InvalidCertificate(
+                rustls::CertificateError::BadSignature
+            ))
+        );
+
+        let tls13_result = verifier.verify_tls13_signature(message, &leaf_cert, &dss);
+        assert_matches!(
+            tls13_result,
+            Err(rustls::Error::InvalidCertificate(
+                rustls::CertificateError::BadSignature
+            ))
+        );
     }
 }
