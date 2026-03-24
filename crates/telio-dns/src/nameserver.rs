@@ -30,6 +30,8 @@ use tokio::{net::UdpSocket, sync::Mutex};
 
 use telio_utils::{format_hex, telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 
+use thiserror::Error;
+
 const IPV4_HEADER: usize = 20; // bytes
 const IPV6_HEADER: usize = 40; // bytes
 const MAX_PACKET: usize = 2048;
@@ -37,6 +39,61 @@ const UDP_HEADER: usize = 8;
 const TCP_MIN_HEADER: usize = 20;
 const MAX_CONCURRENT_QUERIES: usize = 256;
 const IDLE_TIME: Duration = Duration::from_secs(1);
+
+#[derive(Debug, Error)]
+#[non_exhaustive]
+enum PacketError {
+    #[error("Empty request packet")]
+    EmptyPacket,
+
+    #[error("Invalid IP version: {0}")]
+    InvalidIpVersion(u8),
+
+    #[error("Invalid IP packet")]
+    InvalidIpPacket,
+
+    #[error("Unsupported protocol for DNS request")]
+    InvalidProtocol,
+
+    #[error("Invalid UDP checksum")]
+    InvalidUdpChecksum,
+
+    #[error("Invalid DNS port: {0}")]
+    InvalidDnsPort(u16),
+
+    #[error("Failed to build IP packet")]
+    IpPacketCreationFailed,
+
+    #[error("Failed to build UDP packet")]
+    UdpPacketCreationFailed,
+
+    #[error("Failed to build TCP packet from request packet")]
+    TcpPacketCreationFailed,
+
+    #[error("Failed to decode DNS request")]
+    DecodeMessageRequestFailed,
+
+    #[error("Missing DNS request payload")]
+    MissingDnsRequest,
+
+    #[error("DNS lookup failed: {0}")]
+    LookupFailed(String),
+
+    #[error("Out of bounds on response packet buffer")]
+    ResponseBufferOverflow,
+
+    #[error("Failed to build MutableUdpPacket for response packet")]
+    MutableUdpPacketCreationFailed,
+
+    #[error("Failed to build MutableTcpPacket for response packet")]
+    MutableTcpPacketCreationFailed,
+
+    #[error("Failed to build MutableIpv4Packet for response packet")]
+    MutableIpv4PacketCreationFailed,
+
+    #[error("Failed to build MutableIpv6Packet for response packet")]
+    MutableIpv6PacketCreationFailed,
+}
 
 /// NameServer is a server that stores the DNS records.
 #[async_trait]
@@ -246,7 +303,7 @@ impl LocalNameServer {
     async fn resolve_dns_request(
         nameserver: Arc<RwLock<LocalNameServer>>,
         request_info: &mut RequestInfo,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, PacketError> {
         telio_log_debug!("Resolving dns");
         let resolver = Resolver::new();
         telio_log_debug!("Getting DNS zones");
@@ -257,9 +314,7 @@ impl LocalNameServer {
             PayloadRequestInfo::Udp {
                 ref mut dns_request,
                 ..
-            } => dns_request
-                .take()
-                .ok_or_else(|| String::from("Inexistent DNS request"))?,
+            } => dns_request.take().ok_or(PacketError::MissingDnsRequest)?,
             _ => return Ok(Vec::new()),
         };
         let dns_request = Request::new(dns_request, request_info.dns_source(), Protocol::Udp);
@@ -268,7 +323,7 @@ impl LocalNameServer {
         zones
             .lookup(&dns_request, resolver.clone())
             .await
-            .map_err(|e| format!("Lookup failed {e}"))?;
+            .map_err(|e| PacketError::LookupFailed(e.to_string()))?;
 
         let dns_response = resolver.0.lock().await;
         telio_log_debug!("Nameserver response: {:?}", &dns_response);
@@ -279,14 +334,14 @@ impl LocalNameServer {
         nameserver: Arc<RwLock<LocalNameServer>>,
         request_packet: &[u8],
         response_packet: &mut [u8],
-    ) -> Result<usize, String> {
+    ) -> Result<usize, PacketError> {
         let mut request_info = request_packet
             .first()
-            .ok_or_else(|| String::from("Empty request packet"))
+            .ok_or(PacketError::EmptyPacket)
             .and_then(|first_byte| match first_byte >> 4 {
                 4 => LocalNameServer::process_ip_packet::<Ipv4Packet>(request_packet),
                 6 => LocalNameServer::process_ip_packet::<Ipv6Packet>(request_packet),
-                _ => Err(String::from("Invalid IP version")),
+                _ => Err(PacketError::InvalidIpVersion(first_byte >> 4)),
             })?;
 
         let dns_response =
@@ -297,25 +352,24 @@ impl LocalNameServer {
 
     fn process_ip_packet<'a, P: IpPacket<'a>>(
         request_packet: &'a [u8],
-    ) -> Result<RequestInfo, String> {
-        let ip = P::try_from(request_packet)
-            .ok_or_else(|| String::from("Failed to build IpPacket from request packet"))?;
+    ) -> Result<RequestInfo, PacketError> {
+        let ip = P::try_from(request_packet).ok_or(PacketError::IpPacketCreationFailed)?;
 
         if !ip.check_valid() {
-            return Err(String::from("Invalid IpPacket"));
+            return Err(PacketError::InvalidIpPacket);
         }
 
         let payload = match ip.next_level_protocol() {
             IpNextHeaderProtocols::Udp => {
-                let udp_request = UdpPacket::new(ip.payload())
-                    .ok_or_else(|| String::from("Failed to build UdpPacket from request packet"))?;
+                let udp_request =
+                    UdpPacket::new(ip.payload()).ok_or(PacketError::UdpPacketCreationFailed)?;
                 LocalNameServer::process_udp_packet(&udp_request, |udp_packet| {
                     ip.udp_checksum(udp_packet)
                 })?
             }
             IpNextHeaderProtocols::Tcp => {
-                let tcp_request = TcpPacket::new(ip.payload())
-                    .ok_or_else(|| String::from("Failed to build TcpPacket from request packet"))?;
+                let tcp_request =
+                    TcpPacket::new(ip.payload()).ok_or(PacketError::TcpPacketCreationFailed)?;
                 PayloadRequestInfo::Tcp {
                     source_port: tcp_request.get_source(),
                     destination_port: tcp_request.get_destination(),
@@ -323,7 +377,7 @@ impl LocalNameServer {
                 }
             }
             _ => {
-                return Err(String::from("Invalid protocol for DNS request"));
+                return Err(PacketError::InvalidProtocol);
             }
         };
 
@@ -336,19 +390,19 @@ impl LocalNameServer {
     fn process_udp_packet<F: Fn(&UdpPacket) -> u16>(
         udp_request: &UdpPacket,
         get_checksum: F,
-    ) -> Result<PayloadRequestInfo, String> {
+    ) -> Result<PayloadRequestInfo, PacketError> {
         // Validate UDP checksum
         if get_checksum(udp_request) != udp_request.get_checksum() {
-            return Err(String::from("Invalid UDP checksum"));
+            return Err(PacketError::InvalidUdpChecksum);
         }
 
         // Validate DNS port
         if udp_request.get_destination() != 53 {
-            return Err(String::from("Invalid DNS port"));
+            return Err(PacketError::InvalidDnsPort(udp_request.get_destination()));
         }
 
         let dns_request = MessageRequest::from_bytes(udp_request.payload())
-            .map_err(|_| String::from("Failed to build MessageRequest from request packet"))?;
+            .map_err(|_| PacketError::DecodeMessageRequestFailed)?;
 
         Ok(PayloadRequestInfo::Udp {
             source_port: udp_request.get_source(),
@@ -429,7 +483,7 @@ impl RequestInfo {
         &self,
         dns_response: &[u8],
         response_packet: &mut [u8],
-    ) -> Result<usize, String> {
+    ) -> Result<usize, PacketError> {
         let payload_header = match self.payload {
             PayloadRequestInfo::Udp { .. } => UDP_HEADER,
             PayloadRequestInfo::Tcp { .. } => TCP_MIN_HEADER,
@@ -444,7 +498,7 @@ impl RequestInfo {
         &self,
         payload_length: usize,
         response_packet: &mut [u8],
-    ) -> Result<usize, String> {
+    ) -> Result<usize, PacketError> {
         match &self.ip {
             IpRequestInfo::V4 {
                 source_ip,
@@ -454,9 +508,8 @@ impl RequestInfo {
                 ttl,
                 identification,
             } => {
-                let mut ip_response = MutableIpv4Packet::new(response_packet).ok_or_else(|| {
-                    String::from("Failed to build MutableIpv4Packet for response packet")
-                })?;
+                let mut ip_response = MutableIpv4Packet::new(response_packet)
+                    .ok_or(PacketError::MutableIpv4PacketCreationFailed)?;
 
                 ip_response.set_version(4);
                 ip_response.set_header_length((IPV4_HEADER / 4) as u8);
@@ -486,9 +539,8 @@ impl RequestInfo {
                 source_ip,
                 destination_ip,
             } => {
-                let mut ip_response = MutableIpv6Packet::new(response_packet).ok_or_else(|| {
-                    String::from("Failed to build MutableIpv6Packet for response packet")
-                })?;
+                let mut ip_response = MutableIpv6Packet::new(response_packet)
+                    .ok_or(PacketError::MutableIpv6PacketCreationFailed)?;
 
                 ip_response.set_version(6);
                 ip_response.set_traffic_class(0);
@@ -517,7 +569,7 @@ impl RequestInfo {
         ihl: usize,
         dns_response: &[u8],
         response_packet: &mut [u8],
-    ) -> Result<usize, String> {
+    ) -> Result<usize, PacketError> {
         match self.payload {
             PayloadRequestInfo::Udp {
                 source_port,
@@ -527,11 +579,10 @@ impl RequestInfo {
                 let length = ihl + UDP_HEADER + dns_response.len();
                 let buffer_slice = response_packet
                     .get_mut(ihl..length)
-                    .ok_or_else(|| String::from("Out of bounds on response packet buffer"))?;
+                    .ok_or(PacketError::ResponseBufferOverflow)?;
 
-                let mut udp_response = MutableUdpPacket::new(buffer_slice).ok_or_else(|| {
-                    String::from("Failed to build MutableUdpPacket for response packet")
-                })?;
+                let mut udp_response = MutableUdpPacket::new(buffer_slice)
+                    .ok_or(PacketError::MutableUdpPacketCreationFailed)?;
 
                 udp_response.set_source(destination_port);
                 udp_response.set_destination(source_port);
@@ -552,10 +603,9 @@ impl RequestInfo {
                 let length = ihl + TCP_MIN_HEADER;
                 let buffer_slice = response_packet
                     .get_mut(ihl..length)
-                    .ok_or_else(|| String::from("Out of bounds on response packet buffer"))?;
-                let mut tcp_response = MutableTcpPacket::new(buffer_slice).ok_or_else(|| {
-                    String::from("Failed to build MutableTcpPacket for response packet")
-                })?;
+                    .ok_or(PacketError::ResponseBufferOverflow)?;
+                let mut tcp_response = MutableTcpPacket::new(buffer_slice)
+                    .ok_or(PacketError::MutableTcpPacketCreationFailed)?;
 
                 tcp_response.set_source(destination_port);
                 tcp_response.set_destination(source_port);
