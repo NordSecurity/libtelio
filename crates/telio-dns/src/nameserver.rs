@@ -304,12 +304,16 @@ impl LocalNameServer {
                         .clone()
                         .ok_or_else(|| String::from("No forwarder configured"))?
                 };
-                // telio_log_debug!("DNS request: {:?}", &dns_request);
+                telio_log_debug!("Forwarding DNS request: {:?}", &raw_query);
 
-                forwarder
+                let response = forwarder
                     .query(&raw_query)
                     .await
-                    .map_err(|e| format!("Forward failed: {e:?}"))?
+                    .map_err(|e| format!("Forward failed: {e:?}"))?;
+
+                telio_log_debug!("Forwarder responded: {:?}", &response);
+
+                response
             }
         };
 
