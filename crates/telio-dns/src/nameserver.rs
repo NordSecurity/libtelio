@@ -304,7 +304,11 @@ impl LocalNameServer {
                         .clone()
                         .ok_or_else(|| String::from("No forwarder configured"))?
                 };
-                telio_log_debug!("Forwarding DNS request: {:?}", &raw_query);
+                telio_log_debug!(
+                    "Forwarding DNS request from port {:?}: {:?}",
+                    request_info.dns_source_port(),
+                    &raw_query
+                );
 
                 let response = forwarder
                     .query(&raw_query)
@@ -443,13 +447,6 @@ enum IpRequestInfo {
 }
 
 impl IpRequestInfo {
-    fn source_ip(&self) -> IpAddr {
-        match self {
-            IpRequestInfo::V4 { source_ip, .. } => IpAddr::V4(*source_ip),
-            IpRequestInfo::V6 { source_ip, .. } => IpAddr::V6(*source_ip),
-        }
-    }
-
     fn compute_udp_checksum(&self, packet: &UdpPacket) -> u16 {
         match &self {
             IpRequestInfo::V4 {
@@ -466,7 +463,6 @@ impl IpRequestInfo {
     }
 }
 
-#[allow(clippy::large_enum_variant)]
 enum PayloadDestination {
     Local {
         id: u16,
@@ -476,7 +472,6 @@ enum PayloadDestination {
     Forward(Vec<u8>),
 }
 
-#[allow(clippy::large_enum_variant)]
 enum PayloadRequestInfo {
     Udp {
         source_port: u16,
@@ -496,12 +491,11 @@ struct RequestInfo {
 }
 
 impl RequestInfo {
-    fn dns_source(&self) -> SocketAddr {
-        let source_port = match self.payload {
+    fn dns_source_port(&self) -> u16 {
+        match self.payload {
             PayloadRequestInfo::Udp { source_port, .. }
             | PayloadRequestInfo::Tcp { source_port, .. } => source_port,
-        };
-        SocketAddr::new(self.ip.source_ip(), source_port)
+        }
     }
 
     fn build_response_packet(
