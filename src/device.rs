@@ -745,7 +745,8 @@ impl Device {
 
     /// Register callback to get metrics and domains blocked by TP-Lite
     ///
-    /// Requires firewall to be enabled through enable_firewall()
+    /// Requires firewall to be enabled through setting firewall field of Features object
+    /// to a non-null value
     ///
     /// Passing empty list of IPs will disable the collection of TP-Lite stats
     pub fn enable_tp_lite_stats_collection(
@@ -2101,7 +2102,8 @@ impl Runtime {
 
     /// Register callback to get metrics and domains blocked by TP-Lite
     ///
-    /// Requires firewall to be enabled through enable_firewall()
+    /// Requires firewall to be enabled through setting firewall field of Features object
+    /// to a non-null value
     ///
     /// Passing empty list of IPs will disable the collection of TP-Lite stats
     pub fn enable_tp_lite_stats_collection(
