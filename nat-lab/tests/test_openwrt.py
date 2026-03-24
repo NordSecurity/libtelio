@@ -123,7 +123,7 @@ async def setup_openwrt_test_environment(
     This function establishes SSH connections to the OpenWrt gateway and client
     virtual machines, uploads configuration files to the gateway, initializes
     the VpnLite daemon interface for managing the VPN service, and prepares
-    mock data for a third-party API used during tests.
+    mock data for a third-party used during tests.
 
     Args:
         country_config (ConfigPresetName)Tes:
