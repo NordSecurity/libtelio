@@ -131,7 +131,7 @@ async def setup_openwrt_test_environment(
             should be configured.
         exit_stack (AsyncExitStack)
         config_path (Optional[Path], optional):
-            Custom path to save nordvpnlite config file. Defaults to None.
+            Custom path to save nordvpnlite config files. Defaults to None.
 
     Returns:
         tuple[Connection, Connection, VpnLite]:
