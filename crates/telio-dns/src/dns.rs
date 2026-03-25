@@ -1,4 +1,4 @@
-use crate::{bind_tun, LocalNameServer, NameServer, Records};
+use crate::{bind_tun, LocalNameServer, NameServer, Records, error::Error};
 use async_trait::async_trait;
 use ipnet::IpNet;
 use neptun::noise::Tunn;
@@ -30,9 +30,9 @@ pub trait DnsResolver {
         zone: &str,
         records: &Records,
         ttl_value: TtlValue,
-    ) -> Result<(), String>;
+    ) -> crate::error::Result<()>;
     /// Configure list of forward DNS servers for zone '.'.
-    async fn forward(&self, to: &[IpAddr]) -> Result<(), String>;
+    async fn forward(&self, to: &[IpAddr]) -> crate::error::Result<()>;
     /// Get public key of this DNS server.
     fn public_key(&self) -> PublicKey;
     /// Get Peer of this DNS server with selected allowed IPs.
@@ -66,25 +66,25 @@ impl LocalDnsResolver {
         forward_ips: &[IpAddr],
         tun: Option<&Tun>,
         exit_dns: Option<FeatureExitDns>,
-    ) -> Result<Self, String> {
+    ) -> crate::error::Result<Self> {
         let socket = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
             .await
             .map_err(|e| {
                 telio_log_error!("Failed to bind dns socket: {:?}", e);
-                format!("Failed to bind dns socket: {e:?}")
+                Error::BindDnsSocket(e)
             })?;
 
         let socket_port = socket
             .local_addr()
             .map_err(|e| {
                 telio_log_error!("Failed to get socket port: {:?}", e);
-                format!("Failed to get socket port: {e:?}",)
+                Error::GetDnsSocketLocalAddr(e)
             })?
             .port();
 
         bind_tun::set_tun(tun).map_err(|e| {
             telio_log_debug!("Failing setting tun: {:?}", e);
-            format!("{e}")
+            Error::ConfigureTunnel(e)
         })?;
 
         // DNS secret key
@@ -108,7 +108,8 @@ impl LocalDnsResolver {
                 None,
                 0,
                 None,
-            )?)),
+            ).map_err(|e| Error::CreateTunnel(e.to_string()))?,
+            )),
             socket_port,
             nameserver,
             auto_switch_ips,
@@ -134,14 +135,14 @@ impl DnsResolver for LocalDnsResolver {
         zone: &str,
         records: &Records,
         ttl_value: TtlValue,
-    ) -> Result<(), String> {
+    ) -> crate::error::Result<()> {
         telio_log_debug!("Dns - upsert {:?} {:?}", zone, records);
-        Ok(self.nameserver.upsert(zone, records, ttl_value).await?)
+        self.nameserver.upsert(zone, records, ttl_value).await
     }
 
-    async fn forward(&self, to: &[IpAddr]) -> Result<(), String> {
+    async fn forward(&self, to: &[IpAddr]) -> crate::error::Result<()> {
         telio_log_debug!("Dns - forward {:?}", to);
-        Ok(self.nameserver.forward(to).await?)
+        self.nameserver.forward(to).await
     }
 
     fn public_key(&self) -> PublicKey {

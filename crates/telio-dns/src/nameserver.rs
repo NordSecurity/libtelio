@@ -77,7 +77,7 @@ enum PacketError {
     MissingDnsRequest,
 
     #[error("DNS lookup failed: {0}")]
-    LookupFailed(String),
+    LookupFailed(Box<dyn std::error::Error + Send + Sync>),
 
     #[error("Out of bounds on response packet buffer")]
     ResponseBufferOverflow,
@@ -106,14 +106,14 @@ pub trait NameServer {
     /// Stop the server.
     async fn stop(&self);
     /// Configure list of forward DNS servers for zone '.'.
-    async fn forward(&self, to: &[IpAddr]) -> Result<(), String>;
+    async fn forward(&self, to: &[IpAddr]) -> crate::error::Result<()>;
     /// Insert or update zone records used by the server.
     async fn upsert(
         &self,
         zone: &str,
         records: &Records,
         ttl_value: TtlValue,
-    ) -> Result<(), String>;
+    ) -> crate::error::Result<()>;
 }
 
 /// Helper to update wg timers
@@ -151,7 +151,7 @@ pub struct LocalNameServer {
 impl LocalNameServer {
     /// Create a new `LocalNameServer` with forwarding dns servers from `forward_ips`
     /// configured for zone `.`.
-    pub async fn new(forward_ips: &[IpAddr]) -> Result<Arc<RwLock<Self>>, String> {
+    pub async fn new(forward_ips: &[IpAddr]) -> crate::error::Result<Arc<RwLock<Self>>> {
         let ns = Arc::new(RwLock::new(LocalNameServer {
             zones: Arc::new(ClonableZones::new()),
             task_handle: None,
@@ -325,7 +325,7 @@ impl LocalNameServer {
         zones
             .lookup(&dns_request, resolver.clone())
             .await
-            .map_err(|e| PacketError::LookupFailed(e.to_string()))?;
+            .map_err(|e| PacketError::LookupFailed(Box::new(e)))?;
 
         let dns_response = resolver.0.lock().await;
         telio_log_debug!("Nameserver response: {:?}", &dns_response);
@@ -746,7 +746,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
         zone: &str,
         records: &Records,
         ttl_value: TtlValue,
-    ) -> Result<(), String> {
+    ) -> crate::error::Result<()> {
         let azone = Arc::new(AuthoritativeZone::new(zone, records, ttl_value).await?);
 
         self.zones_mut()
@@ -755,7 +755,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
         Ok(())
     }
 
-    async fn forward(&self, to: &[IpAddr]) -> Result<(), String> {
+    async fn forward(&self, to: &[IpAddr]) -> crate::error::Result<()> {
         self.zones_mut().await.upsert(
             LowerName::from_str(".")?,
             Box::new(Arc::new(ForwardZone::new(".", to).await?)),
