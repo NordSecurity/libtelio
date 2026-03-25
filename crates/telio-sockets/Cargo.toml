@@ -28,8 +28,8 @@ rstest.workspace = true
 nix = { workspace = true, features = ["user"] }
 
 [target.'cfg(any(target_os = "ios", target_os = "tvos"))'.dependencies]
-objc = "0.2.7"
-objc-foundation = "0.1.1"
+objc2 = "0.6"
+objc2-foundation = "0.3"
 version-compare = "0.2"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))'.dependencies]

@@ -1,4 +1,2 @@
-
 [patch.crates-io]
 block = { git = 'https://github.com/nordsecurity/rust-block.git', branch = 'add_apple_tvos_support' }
-objc = { git = 'https://github.com/nordsecurity/rust-objc.git', branch = 'add_apple_tvos_support' }

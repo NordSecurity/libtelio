@@ -65,9 +65,9 @@ static INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER: Mutex<Vec<String>> = Mutex::new(V
 static PROTECTOR_PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(1));
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
-use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+use objc2::{class, msg_send, runtime::Object};
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
-use objc_foundation::{INSString, NSString};
+use objc2_foundation::NSString;
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
 use version_compare::{compare_to, Cmp};
 
@@ -190,7 +190,7 @@ impl NativeProtector {
             &*(system_version as *const NSString)
         };
 
-        system_version_unsafe_str.as_str().to_owned()
+        system_version_unsafe_str.to_string()
     }
 }
 
