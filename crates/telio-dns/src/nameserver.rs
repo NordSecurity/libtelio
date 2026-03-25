@@ -1,3 +1,4 @@
+use crate::error::Result as DnsResult;
 use crate::{
     forwarder::RawForwarder,
     packet_decoder::{find_nord_query, normalize_qname, parse_dns_query_packet, DnsParseError},
@@ -116,16 +117,11 @@ pub trait NameServer {
     /// Stop the server.
     async fn stop(&self);
     /// Configure list of forward DNS servers for zone '.'.
-    async fn forward(&self, to: &[IpAddr]) -> Result<(), String>;
+    async fn forward(&self, to: &[IpAddr]) -> DnsResult<()>;
     /// Configure list of forward DNS servers with explicit socket addresses.
-    async fn forward_to_addrs(&self, to: &[SocketAddr]) -> Result<(), String>;
+    async fn forward_to_addrs(&self, to: &[SocketAddr]) -> DnsResult<()>;
     /// Insert or update zone records used by the server.
-    async fn upsert(
-        &self,
-        zone: &str,
-        records: &Records,
-        ttl_value: TtlValue,
-    ) -> Result<(), String>;
+    async fn upsert(&self, zone: &str, records: &Records, ttl_value: TtlValue) -> DnsResult<()>;
 }
 
 /// Helper to update wg timers
@@ -169,13 +165,9 @@ impl LocalNameServer {
     pub async fn new(
         forward_ips: &[IpAddr],
         use_raw_forwarder: bool,
-    ) -> Result<Arc<RwLock<Self>>, String> {
+    ) -> DnsResult<Arc<RwLock<Self>>> {
         let raw_forwarder: Option<RawForwarder> = if use_raw_forwarder {
-            Some(
-                RawForwarder::new()
-                    .await
-                    .map_err(|e| format!("Failed to create forwarder: {e:?}"))?,
-            )
+            Some(RawForwarder::new().await?)
         } else {
             None
         };
@@ -403,7 +395,7 @@ impl LocalNameServer {
                     let response = forwarder
                         .query(&raw_query)
                         .await
-                        .map_err(|e| format!("Forward failed: {e:?}"))?;
+                        .map_err(|e| PacketError::LookupFailed(Box::new(e)))?;
 
                     telio_log_debug!("Forwarder responded");
                     if let Some(dns_packet) = DnsPacket::new(&response) {
@@ -416,9 +408,8 @@ impl LocalNameServer {
                     let resolver = Resolver::new();
                     let zones = nameserver.zones().await;
 
-                    let forward = MessageRequest::from_bytes(&raw_query).map_err(|_| {
-                        String::from("Failed to build MessageRequest from request packet")
-                    })?;
+                    let forward = MessageRequest::from_bytes(&raw_query)
+                        .map_err(|_| PacketError::DecodeMessageRequestFailed)?;
                     let dns_request =
                         Request::new(forward, request_info.dns_source(), Protocol::Udp);
                     telio_log_debug!("DNS request: {:?}", &dns_request);
@@ -426,7 +417,7 @@ impl LocalNameServer {
                     zones
                         .lookup(&dns_request, resolver.clone())
                         .await
-                        .map_err(|e| format!("Lookup failed {e}"))?;
+                        .map_err(|e| PacketError::LookupFailed(Box::new(e)))?;
 
                     let dns_response = resolver.0.lock().await;
                     telio_log_debug!("Nameserver response: {:?}", &dns_response);
@@ -902,7 +893,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
         Ok(())
     }
 
-    async fn forward(&self, to: &[IpAddr]) -> Result<(), String> {
+    async fn forward(&self, to: &[IpAddr]) -> DnsResult<()> {
         self.zones_mut().await.upsert(
             LowerName::from_str(".")?,
             Box::new(Arc::new(ForwardZone::new(".", to).await?)),
@@ -915,7 +906,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
         Ok(())
     }
 
-    async fn forward_to_addrs(&self, to: &[SocketAddr]) -> Result<(), String> {
+    async fn forward_to_addrs(&self, to: &[SocketAddr]) -> DnsResult<()> {
         let ns = self.read().await;
         if let Some(forwarder) = &ns.forwarder {
             forwarder.set_upstreams(to.to_vec()).await;
@@ -1087,7 +1078,7 @@ mod tests {
         let ns = nameserver.read().await;
         assert!(ns.forwarder.is_none());
     }
-    
+
     // PacketError internal unit tests
 
     const SRC_IPV4: Ipv4Addr = Ipv4Addr::new(10, 0, 0, 1);
@@ -1131,7 +1122,7 @@ mod tests {
 
     /// Helper to create local NameServer (used to test packet processing)
     async fn test_nameserver() -> Arc<RwLock<LocalNameServer>> {
-        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
+        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], false)
             .await
             .unwrap()
     }
