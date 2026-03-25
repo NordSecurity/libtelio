@@ -1,4 +1,8 @@
-use crate::{bind_tun, LocalNameServer, NameServer, Records};
+use crate::{
+    bind_tun,
+    error::{Error, Result},
+    LocalNameServer, NameServer, Records,
+};
 use async_trait::async_trait;
 use ipnet::IpNet;
 use neptun::noise::Tunn;
@@ -25,14 +29,9 @@ pub trait DnsResolver {
     /// Stop the server.
     async fn stop(&self);
     /// Insert or update zone records used by the server.
-    async fn upsert(
-        &self,
-        zone: &str,
-        records: &Records,
-        ttl_value: TtlValue,
-    ) -> Result<(), String>;
+    async fn upsert(&self, zone: &str, records: &Records, ttl_value: TtlValue) -> Result<()>;
     /// Configure list of forward DNS servers for zone '.'.
-    async fn forward(&self, to: &[IpAddr]) -> Result<(), String>;
+    async fn forward(&self, to: &[IpAddr]) -> Result<()>;
     /// Get public key of this DNS server.
     fn public_key(&self) -> PublicKey;
     /// Get Peer of this DNS server with selected allowed IPs.
@@ -66,26 +65,15 @@ impl LocalDnsResolver {
         forward_ips: &[IpAddr],
         tun: Option<&Tun>,
         exit_dns: Option<FeatureExitDns>,
-    ) -> Result<Self, String> {
-        let socket = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
-            .await
-            .map_err(|e| {
-                telio_log_error!("Failed to bind dns socket: {:?}", e);
-                format!("Failed to bind dns socket: {e:?}")
-            })?;
+    ) -> Result<Self> {
+        let socket = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await?;
 
         let socket_port = socket
             .local_addr()
-            .map_err(|e| {
-                telio_log_error!("Failed to get socket port: {:?}", e);
-                format!("Failed to get socket port: {e:?}",)
-            })?
+            .map_err(Error::GetDnsSocketLocalAddr)?
             .port();
 
-        bind_tun::set_tun(tun).map_err(|e| {
-            telio_log_debug!("Failing setting tun: {:?}", e);
-            format!("{e}")
-        })?;
+        bind_tun::set_tun(tun).map_err(Error::ConfigureTunnel)?;
 
         // DNS secret key
         let dns_secret_key = SecretKey::gen();
@@ -101,14 +89,17 @@ impl LocalDnsResolver {
         Ok(LocalDnsResolver {
             socket: Arc::new(socket),
             secret_key: dns_secret_key.clone(),
-            peer: Arc::new(Mutex::new(Tunn::new(
-                StaticSecret::from(dns_secret_key.into_bytes()),
-                telio_public_key,
-                None,
-                None,
-                0,
-                None,
-            )?)),
+            peer: Arc::new(Mutex::new(
+                Tunn::new(
+                    StaticSecret::from(dns_secret_key.into_bytes()),
+                    telio_public_key,
+                    None,
+                    None,
+                    0,
+                    None,
+                )
+                .map_err(|e| Error::CreateTunnel(e.to_string()))?,
+            )),
             socket_port,
             nameserver,
             auto_switch_ips,
@@ -129,19 +120,14 @@ impl DnsResolver for LocalDnsResolver {
         self.nameserver.stop().await;
     }
 
-    async fn upsert(
-        &self,
-        zone: &str,
-        records: &Records,
-        ttl_value: TtlValue,
-    ) -> Result<(), String> {
+    async fn upsert(&self, zone: &str, records: &Records, ttl_value: TtlValue) -> Result<()> {
         telio_log_debug!("Dns - upsert {:?} {:?}", zone, records);
-        Ok(self.nameserver.upsert(zone, records, ttl_value).await?)
+        self.nameserver.upsert(zone, records, ttl_value).await
     }
 
-    async fn forward(&self, to: &[IpAddr]) -> Result<(), String> {
+    async fn forward(&self, to: &[IpAddr]) -> Result<()> {
         telio_log_debug!("Dns - forward {:?}", to);
-        Ok(self.nameserver.forward(to).await?)
+        self.nameserver.forward(to).await
     }
 
     fn public_key(&self) -> PublicKey {
