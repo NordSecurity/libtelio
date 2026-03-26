@@ -1289,9 +1289,9 @@ The following dependencies are licensed under the MIT license.
 
 - [num_threads](https://github.com/jhpratt/num_threads) *(also available under: Apache-2.0)*
 
-- [objc](http://github.com/SSheldon/rust-objc)
+- [objc2](https://github.com/madsmtm/objc2)
 
-- [objc-foundation](http://github.com/SSheldon/rust-objc-foundation)
+- [objc2-foundation](https://github.com/madsmtm/objc2)
 
 - [objc_id](http://github.com/SSheldon/rust-objc-id)
 
