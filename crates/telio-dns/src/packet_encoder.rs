@@ -14,7 +14,7 @@ use thiserror::Error;
 /// Maximum size of UDP DNS packet
 const DEFAULT_MAX_UDP_SIZE: usize = 512;
 /// Size of DNS packet header
-const DNS_HEADER_OFFSET: usize = 12;
+pub(crate) const DNS_HEADER_OFFSET: usize = 12;
 /// Fixed-size portion of a DNS resource record: NAME(ptr) + TYPE + CLASS + TTL + RDLENGTH
 const RR_HEADER_SIZE: usize = 12;
 
