@@ -5,6 +5,7 @@
 //! Easily create and run in process dns resolver.
 
 mod dns;
+mod forwarder;
 mod nameserver;
 mod packet_decoder;
 mod packet_encoder;

@@ -19,6 +19,7 @@ use std::{
 };
 use telio_dns::{LocalNameServer, NameServer, Records};
 use telio_model::features::TtlValue;
+use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio::{
     self,
@@ -597,6 +598,56 @@ async fn init_client_and_server(
     nameserver.start(server_peer.clone(), server_socket).await;
 
     (client, server_peer)
+}
+
+enum UpstreamStubBehavior {
+    Reply(Ipv4Addr),
+    BlackHole,
+}
+
+// Helper to build query response bytes
+fn build_upstream_dns_response(query_bytes: &[u8], answer_ip: Ipv4Addr) -> Vec<u8> {
+    let parsed = dns_parser::Packet::parse(query_bytes).expect("Failed to parse incoming query");
+    let qname = parsed.questions[0].qname.to_string();
+
+    let mut builder = Builder::new_query(parsed.header.id, true);
+    builder.add_question(&qname, false, QueryType::A, QueryClass::IN);
+    let mut buf = builder.build().unwrap();
+
+    buf[2] = 0x81;
+    buf[3] = 0x80;
+    buf[6..8].copy_from_slice(&1_u16.to_be_bytes());
+
+    buf.extend_from_slice(&[0xC0, 0x0C]);
+    buf.extend_from_slice(&1_u16.to_be_bytes());
+    buf.extend_from_slice(&1_u16.to_be_bytes());
+    buf.extend_from_slice(&300_u32.to_be_bytes());
+    buf.extend_from_slice(&4_u16.to_be_bytes());
+    buf.extend_from_slice(&answer_ip.octets());
+
+    buf
+}
+
+// Helper for stub upstream resolver
+async fn spawn_upstream_dns_stub(behavior: UpstreamStubBehavior) -> (SocketAddr, JoinHandle<()>) {
+    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind stub socket");
+    let addr = socket.local_addr().unwrap();
+
+    let handle = tokio::spawn(async move {
+        let mut buf = vec![0u8; 4096];
+        let (n, src) = socket.recv_from(&mut buf).await.unwrap();
+        match behavior {
+            UpstreamStubBehavior::Reply(answer_ip) => {
+                let response = build_upstream_dns_response(&buf[..n], answer_ip);
+                socket.send_to(&response, src).await.unwrap();
+            }
+            UpstreamStubBehavior::BlackHole => {}
+        }
+    });
+
+    (addr, handle)
 }
 
 macro_rules! assert_no_data {
@@ -1230,4 +1281,129 @@ async fn test_timers_updated() {
         !client.tunnel.lock().await.is_expired(),
         "Client should not expire due to keepalives"
     );
+}
+
+#[tokio::test]
+async fn dns_request_forward_to_stub_upstream() {
+    let expected_ip = Ipv4Addr::new(93, 184, 216, 34);
+    let (stub_addr, _stub_handle) =
+        spawn_upstream_dns_stub(UpstreamStubBehavior::Reply(expected_ip)).await;
+
+    let nameserver = LocalNameServer::new(&[])
+        .await
+        .expect("Failed to create a LocalNameServer");
+    nameserver
+        .forward_to_addrs(&[stub_addr])
+        .await
+        .expect("Failed to set stub upstream");
+
+    let response = timeout(
+        Duration::from_secs(60),
+        dns_test_with_server(
+            "example.com",
+            DnsTestType::CorrectIpv4,
+            None,
+            nameserver,
+            TtlValue(60),
+        ),
+    )
+    .await
+    .expect("Test timeout")
+    .expect("Expected some DNS response");
+
+    assert!(response.no_error());
+    assert_eq!(response.a_addrs(), vec![expected_ip]);
+}
+
+#[tokio::test]
+async fn dns_request_forward_fallback_to_second_stub() {
+    let expected_ip = Ipv4Addr::new(10, 0, 0, 1);
+    let (blackhole_addr, _bh_handle) =
+        spawn_upstream_dns_stub(UpstreamStubBehavior::BlackHole).await;
+    let (stub_addr, _stub_handle) =
+        spawn_upstream_dns_stub(UpstreamStubBehavior::Reply(expected_ip)).await;
+
+    let nameserver = LocalNameServer::new(&[])
+        .await
+        .expect("Failed to create a LocalNameServer");
+    nameserver
+        .forward_to_addrs(&[blackhole_addr, stub_addr])
+        .await
+        .expect("Failed to set stub upstreams");
+
+    let response = timeout(
+        Duration::from_secs(60),
+        dns_test_with_server(
+            "example.com",
+            DnsTestType::CorrectIpv4,
+            None,
+            nameserver,
+            TtlValue(60),
+        ),
+    )
+    .await
+    .expect("Test timeout")
+    .expect("Expected some DNS response");
+
+    assert!(response.no_error());
+    assert_eq!(response.a_addrs(), vec![expected_ip]);
+}
+
+#[tokio::test]
+async fn dns_request_forward_timeout_returns_no_response() {
+    let (blackhole_addr, _bh_handle) =
+        spawn_upstream_dns_stub(UpstreamStubBehavior::BlackHole).await;
+
+    let nameserver = LocalNameServer::new(&[])
+        .await
+        .expect("Failed to create a LocalNameServer");
+    nameserver
+        .forward_to_addrs(&[blackhole_addr])
+        .await
+        .expect("Failed to set stub upstream");
+
+    let result = dns_test_with_server(
+        "example.com",
+        DnsTestType::NonRespondingForwardServer,
+        None,
+        nameserver,
+        TtlValue(60),
+    )
+    .await;
+
+    assert!(result.is_none());
+}
+
+#[tokio::test]
+async fn dns_request_nord_bypasses_forwarder() {
+    let (blackhole_addr, _bh_handle) =
+        spawn_upstream_dns_stub(UpstreamStubBehavior::BlackHole).await;
+
+    let nameserver = LocalNameServer::new(&[])
+        .await
+        .expect("Failed to create a LocalNameServer");
+    nameserver
+        .forward_to_addrs(&[blackhole_addr])
+        .await
+        .expect("Failed to set stub upstream");
+
+    let mut records = Records::new();
+    let expected_ip = Ipv4Addr::new(100, 64, 0, 1);
+    records.insert(String::from("test.nord."), vec![IpAddr::V4(expected_ip)]);
+
+    let response = timeout(
+        Duration::from_secs(60),
+        dns_test_with_server(
+            "test.nord",
+            DnsTestType::CorrectIpv4,
+            Some(("nord".into(), records)),
+            nameserver,
+            TtlValue(60),
+        ),
+    )
+    .await
+    .expect("Test timeout")
+    .expect("Expected some DNS response");
+
+    assert_a_records!(response, vec![IpAddr::V4(expected_ip)]);
 }
