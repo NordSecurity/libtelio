@@ -1,20 +1,12 @@
 //! Module to monitor network changes in Apple
 
+use block2::RcBlock;
+use dispatch2::{DispatchQoS, GlobalQueueIdentifier};
 use network_framework_sys::{
     nw_path_monitor_create, nw_path_monitor_set_queue, nw_path_monitor_start, nw_path_monitor_t,
-    nw_path_t,
 };
-use std::ffi::{c_long, c_void};
+use std::ffi::c_void;
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_warn};
-
-/// Dispatch queue priority as high priority queue
-pub const DISPATCH_QUEUE_PRIORITY_HIGH: c_long = 2;
-/// Dispatch queue priority as default queue
-pub const DISPATCH_QUEUE_PRIORITY_DEFAULT: c_long = 0;
-/// Dispatch queue priority as low priority queue
-pub const DISPATCH_QUEUE_PRIORITY_LOW: c_long = -2;
-/// Dispatch queue priority as background queue
-pub const DISPATCH_QUEUE_PRIORITY_BACKGROUND: c_long = -1 << 15;
 
 extern "C" {
     /// Obj-c signature:
@@ -24,10 +16,6 @@ extern "C" {
         monitor: nw_path_monitor_t,
         update_handler: *const c_void,
     );
-    /// Obj-c signature:
-    /// void nw_path_enumerate_interfaces(nw_path_t path, nw_path_enumerate_interfaces_block_t enumerate_block);
-    /// typedef bool (^nw_path_enumerate_interfaces_block_t)(nw_interface_t interface);
-    pub fn nw_path_enumerate_interfaces(path: nw_path_t, enumerate_block: *const c_void);
 }
 
 /// This function configuresa a network path monitor using Apple's networking framework that tracks
@@ -50,8 +38,7 @@ pub fn setup_network_monitor() {
     #[cfg(target_os = "macos")]
     std::thread::spawn(start_sc_dynamic_store_monitor);
 
-    let update_handler =
-        block::ConcreteBlock::new(|_path: nw_path_t| crate::monitor::notify()).copy();
+    let update_handler = RcBlock::new(|_path: *mut c_void| crate::monitor::notify());
 
     let monitor = unsafe { nw_path_monitor_create() };
     if monitor.is_null() {
@@ -59,24 +46,21 @@ pub fn setup_network_monitor() {
         return;
     }
 
-    let queue =
-        unsafe { dispatch::ffi::dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0) };
-    if queue.is_null() {
-        telio_log_warn!("Failed to get global background queue");
-        return;
-    }
+    let queue = dispatch2::DispatchQueue::global_queue(GlobalQueueIdentifier::QualityOfService(
+        DispatchQoS::Background,
+    ));
+
     unsafe {
         nw_path_monitor_set_queue(
             monitor,
-            std::mem::transmute::<
-                *mut dispatch::ffi::dispatch_object_s,
-                *mut network_framework_sys::dispatch_queue,
-            >(queue),
+            std::ptr::from_ref::<dispatch2::DispatchQueue>(&queue)
+                .cast_mut()
+                .cast::<network_framework_sys::dispatch_queue>(),
         );
 
         nw_path_monitor_set_update_handler(
             monitor,
-            &*update_handler as *const block::Block<_, _> as *const c_void,
+            &*update_handler as *const block2::Block<dyn Fn(*mut c_void)> as *const c_void,
         );
         nw_path_monitor_start(monitor);
     }

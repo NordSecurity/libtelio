@@ -5141,9 +5141,9 @@ name = "telio-network-monitors"
 version = "0.1.0"
 dependencies = [
  "assert_matches",
- "block",
+ "block2",
  "core-foundation 0.9.4",
- "dispatch",
+ "dispatch2",
  "if-addrs",
  "ipnet",
  "lazy_static",
