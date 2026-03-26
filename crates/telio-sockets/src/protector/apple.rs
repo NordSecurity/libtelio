@@ -4,7 +4,7 @@ use parking_lot::{Mutex, RwLock};
 
 use std::{
     cell::RefCell,
-    ffi::{c_long, c_void, CStr},
+    ffi::{c_void, CStr},
     io,
     num::NonZeroU32,
     os::fd::BorrowedFd,
@@ -55,11 +55,6 @@ extern "C" {
     // typedef bool (^nw_path_enumerate_interfaces_block_t)(nw_interface_t interface);
     pub fn nw_path_enumerate_interfaces(path: nw_path_t, enumerate_block: *const c_void);
 }
-
-pub const DISPATCH_QUEUE_PRIORITY_HIGH: c_long = 2;
-pub const DISPATCH_QUEUE_PRIORITY_DEFAULT: c_long = 0;
-pub const DISPATCH_QUEUE_PRIORITY_LOW: c_long = -2;
-pub const DISPATCH_QUEUE_PRIORITY_BACKGROUND: c_long = -1 << 15;
 
 static INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static PROTECTOR_PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(1));
@@ -671,12 +666,14 @@ fn spawn_dynamic_store_loop(sockets: Weak<Mutex<Sockets>>) {
 }
 
 pub fn setup_network_path_monitor() {
-    let update_handler = block::ConcreteBlock::new(|path: nw_path_t| {
+    let update_handler = block2::RcBlock::new(|path: *mut c_void| {
+        let path: nw_path_t = path.cast();
         let names = Rc::new(RefCell::new(vec![]));
         let names_copy = names.clone();
 
         let enumerate_callback =
-            block::ConcreteBlock::new(move |interface: nw_interface_t| -> bool {
+            block2::RcBlock::new(move |interface: *mut c_void| -> objc2::runtime::Bool {
+                let interface: nw_interface_t = interface.cast();
                 let c_name = unsafe { nw_interface_get_name(interface) };
                 if !c_name.is_null() {
                     let name = unsafe { CStr::from_ptr(c_name) };
@@ -684,14 +681,15 @@ pub fn setup_network_path_monitor() {
                         names_copy.borrow_mut().push(name.to_owned());
                     }
                 }
-                true
-            })
-            .copy();
+                objc2::runtime::Bool::YES
+            });
 
         unsafe {
             nw_path_enumerate_interfaces(
                 path,
-                &*enumerate_callback as *const block::Block<_, _> as *const c_void,
+                &*enumerate_callback
+                    as *const block2::Block<dyn Fn(*mut c_void) -> objc2::runtime::Bool>
+                    as *const c_void,
             )
         };
 
@@ -714,8 +712,7 @@ pub fn setup_network_path_monitor() {
             "Path change notification sent, current network path in os preference order: {:?}",
             names.borrow()
         );
-    })
-    .copy();
+    });
 
     let monitor = unsafe { nw_path_monitor_create() };
     if monitor.is_null() {
@@ -723,24 +720,21 @@ pub fn setup_network_path_monitor() {
         return;
     }
 
-    let queue =
-        unsafe { dispatch::ffi::dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0) };
-    if queue.is_null() {
-        telio_log_warn!("Failed to get global background queue");
-        return;
-    }
+    let queue = dispatch2::DispatchQueue::global_queue(
+        dispatch2::GlobalQueueIdentifier::QualityOfService(dispatch2::DispatchQoS::Background),
+    );
+
     unsafe {
         nw_path_monitor_set_queue(
             monitor,
-            std::mem::transmute::<
-                *mut dispatch::ffi::dispatch_object_s,
-                *mut network_framework_sys::dispatch_queue,
-            >(queue),
+            std::ptr::from_ref::<dispatch2::DispatchQueue>(&queue)
+                .cast_mut()
+                .cast::<network_framework_sys::dispatch_queue>(),
         );
 
         nw_path_monitor_set_update_handler(
             monitor,
-            &*update_handler as *const block::Block<_, _> as *const c_void,
+            &*update_handler as *const block2::Block<dyn Fn(*mut c_void)> as *const c_void,
         );
         nw_path_monitor_start(monitor);
     }
