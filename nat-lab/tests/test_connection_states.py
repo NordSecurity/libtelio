@@ -1,10 +1,11 @@
 import pytest
-from contextlib import AsyncExitStack
-from tests.helpers import SetupParameters, setup_mesh_nodes
+from tests.helpers import SetupParameters, Environment
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.ping import ping
+
+pytest_plugins = ["tests.helpers_fixtures"]
 
 
 @pytest.mark.asyncio
@@ -71,25 +72,24 @@ from tests.utils.ping import ping
     ],
 )
 async def test_connected_state_after_routing(
-    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
+    alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+    beta_setup_params: SetupParameters,  # pylint: disable=unused-argument
+    env_mesh: Environment,
 ) -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
-        )
+    env = env_mesh
 
-        _, beta = env.nodes
-        client_alpha, client_beta = env.clients
-        conn_alpha, _ = env.connections
+    _, beta = env.nodes
+    client_alpha, client_beta = env.clients
+    conn_alpha, _ = env.connections
 
-        await client_beta.get_router().create_exit_node_route()
+    await client_beta.get_router().create_exit_node_route()
 
-        await client_alpha.connect_to_exit_node(beta.public_key)
-        await client_alpha.disconnect_from_exit_node(beta.public_key)
+    await client_alpha.connect_to_exit_node(beta.public_key)
+    await client_alpha.disconnect_from_exit_node(beta.public_key)
 
-        await ping(conn_alpha.connection, beta.ip_addresses[0])
+    await ping(conn_alpha.connection, beta.ip_addresses[0])
 
-        # LLT-5532: To be cleaned up...
-        client_beta.allow_errors([
-            "neptun::device.*Decapsulate error error=UnexpectedPacket public_key=.*",
-        ])
+    # LLT-5532: To be cleaned up...
+    client_beta.allow_errors([
+        "neptun::device.*Decapsulate error error=UnexpectedPacket public_key=.*",
+    ])
