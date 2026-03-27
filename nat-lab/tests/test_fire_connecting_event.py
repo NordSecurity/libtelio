@@ -1,12 +1,13 @@
 import asyncio
 import pytest
-from contextlib import AsyncExitStack
 from tests import timeouts
-from tests.helpers import SetupParameters, setup_mesh_nodes
+from tests.helpers import SetupParameters, Environment
 from tests.utils.bindings import NodeState, TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.ping import ping
+
+pytest_plugins = ["tests.helpers_fixtures"]
 
 
 @pytest.mark.asyncio
@@ -36,21 +37,20 @@ from tests.utils.ping import ping
     ],
 )
 async def test_fire_connecting_event(
-    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
+    alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+    beta_setup_params: SetupParameters,  # pylint: disable=unused-argument
+    env_mesh: Environment,
 ) -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
-        )
-        _, beta = env.nodes
-        connection_alpha, _ = [conn.connection for conn in env.connections]
-        client_alpha, client_beta = env.clients
+    env = env_mesh
+    _, beta = env.nodes
+    connection_alpha, _ = [conn.connection for conn in env.connections]
+    client_alpha, client_beta = env.clients
 
-        await ping(connection_alpha, beta.ip_addresses[0])
+    await ping(connection_alpha, beta.ip_addresses[0])
 
-        await client_beta.stop_device()
+    await client_beta.stop_device()
 
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_alpha, beta.ip_addresses[0], 15)
+    with pytest.raises(asyncio.TimeoutError):
+        await ping(connection_alpha, beta.ip_addresses[0], 15)
 
-        await client_alpha.wait_for_event_peer(beta.public_key, [NodeState.CONNECTING])
+    await client_alpha.wait_for_event_peer(beta.public_key, [NodeState.CONNECTING])
