@@ -1,13 +1,13 @@
 import asyncio
 import pytest
-from contextlib import AsyncExitStack
 from tests import config
-from tests.helpers import SetupParameters, setup_environment, setup_connections
+from tests.helpers import SetupParameters
 from tests.helpers_vpn import connect_vpn, VpnConfig
 from tests.uniffi import FeatureFirewall, FirewallBlacklistTuple, IpProtocol
 from tests.utils import testing, stun
 from tests.utils.bindings import (
     default_features,
+    Features,
     TelioAdapterType,
     generate_secret_key,
     generate_public_key,
@@ -25,69 +25,20 @@ from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
 from tests.utils.router import IPProto, IPStack
 
+pytest_plugins = ["tests.helpers_fixtures"]
 
-@pytest.mark.parametrize(
-    "alpha_setup_params, public_ip",
-    [
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                is_meshnet=False,
-            ),
-            "10.0.254.1",
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
-                is_meshnet=False,
-            ),
-            "10.0.254.1",
-            marks=pytest.mark.linux_native,
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                is_meshnet=False,
-            ),
-            "10.0.254.15",
-            marks=[
-                pytest.mark.windows,
-            ],
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_MAC,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                is_meshnet=False,
-            ),
-            "10.0.254.19",
-            marks=pytest.mark.mac,
-        ),
-    ],
-)
-@pytest.mark.parametrize(
-    "vpn_conf",
-    [
-        pytest.param(
-            VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True),
-            id="wg_server",
-        ),
-        pytest.param(
-            VpnConfig(config.NLX_SERVER, ConnectionTag.VM_LINUX_NLX_1, False),
-            id="nlx_server",
-            marks=pytest.mark.nlx,
-        ),
-    ],
-)
-async def test_vpn_connection(
-    alpha_setup_params: SetupParameters,
-    vpn_conf: VpnConfig,
-    public_ip: str,
-) -> None:
-    async with AsyncExitStack() as exit_stack:
+
+class TestVpnConnection:
+    """Tests for basic VPN connection (previously test_vpn_connection)."""
+
+    @pytest.fixture(name="vpn_tags")
+    def _vpn_tags(self, vpn_conf: VpnConfig) -> list:
+        return [vpn_conf.conn_tag]
+
+    @pytest.fixture(autouse=True)
+    def _mutate_conntracker(
+        self, alpha_setup_params: SetupParameters, vpn_conf: VpnConfig
+    ):
         alpha_setup_params.connection_tracker_config = (
             generate_connection_tracker_config(
                 alpha_setup_params.connection_tag,
@@ -104,124 +55,196 @@ async def test_vpn_connection(
                 ),
             )
         )
-        env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], vpn=[vpn_conf.conn_tag])
+
+    @pytest.mark.parametrize(
+        "alpha_setup_params, public_ip",
+        [
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    is_meshnet=False,
+                ),
+                "10.0.254.1",
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                    is_meshnet=False,
+                ),
+                "10.0.254.1",
+                marks=pytest.mark.linux_native,
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_WINDOWS_1,
+                    adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                    is_meshnet=False,
+                ),
+                "10.0.254.15",
+                marks=[
+                    pytest.mark.windows,
+                ],
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_MAC,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    is_meshnet=False,
+                ),
+                "10.0.254.19",
+                marks=pytest.mark.mac,
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "vpn_conf",
+        [
+            pytest.param(
+                VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True),
+                id="wg_server",
+            ),
+            pytest.param(
+                VpnConfig(config.NLX_SERVER, ConnectionTag.VM_LINUX_NLX_1, False),
+                id="nlx_server",
+                marks=pytest.mark.nlx,
+            ),
+        ],
+    )
+    async def test_vpn_connection(
+        self,
+        vpn_conf: VpnConfig,
+        public_ip: str,
+        env,
+        vpn_server_connection,
+    ) -> None:
+        alpha_node, alpha_conn, alpha_client = (
+            env.nodes[0],
+            env.connections[0].connection,
+            env.clients[0],
         )
 
-        alpha, *_ = env.nodes
-        client_conn, *_ = [conn.connection for conn in env.connections]
-        client_alpha, *_ = env.clients
-
-        ip = await stun.get(client_conn, config.STUN_SERVER)
+        ip = await stun.get(alpha_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
-        if vpn_conf.should_ping_client:
-            vpn_connection, *_ = await setup_connections(
-                exit_stack, [vpn_conf.conn_tag]
-            )
-            await connect_vpn(
-                client_conn,
-                vpn_connection.connection,
-                client_alpha,
-                alpha.ip_addresses[0],
-                vpn_conf.server_conf,
-            )
-        else:
-            await connect_vpn(
-                client_conn,
-                None,
-                client_alpha,
-                alpha.ip_addresses[0],
-                vpn_conf.server_conf,
-            )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "alpha_setup_params, public_ip",
-    [
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=(1, 1),
-                    vpn_2_limits=(1, 1),
-                    stun_limits=(1, 2),
-                ),
-                is_meshnet=False,
+        await connect_vpn(
+            alpha_conn,
+            (
+                vpn_server_connection.connection
+                if vpn_server_connection is not None
+                else None
             ),
-            "10.0.254.1",
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    vpn_1_limits=(1, 1),
-                    vpn_2_limits=(1, 1),
-                    stun_limits=(1, 2),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.1",
-            marks=pytest.mark.linux_native,
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_WINDOWS_1,
-                    vpn_1_limits=(1, 1),
-                    vpn_2_limits=(1, 1),
-                    stun_limits=(1, 2),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.15",
-            marks=[
-                pytest.mark.windows,
-            ],
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_MAC,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_MAC,
-                    vpn_1_limits=(1, 1),
-                    vpn_2_limits=(1, 1),
-                    stun_limits=(1, 2),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.19",
-            marks=pytest.mark.mac,
-        ),
-    ],
-)
-async def test_vpn_reconnect(
-    alpha_setup_params: SetupParameters, public_ip: str
-) -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [alpha_setup_params],
-                vpn=[ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2],
-            )
+            alpha_client,
+            alpha_node.ip_addresses[0],
+            vpn_conf.server_conf,
         )
 
-        alpha, *_ = env.nodes
-        connection, *_ = [conn.connection for conn in env.connections]
-        client_alpha, *_ = env.clients
 
-        vpn_1_connection, vpn_2_connection = await setup_connections(
-            exit_stack, [ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2]
+def _make_blacklist_features(protocol: IpProtocol, ip: str, port: int) -> Features:
+    """Build default features with a firewall outgoing blacklist entry."""
+    features = default_features()
+    features.firewall = FeatureFirewall(
+        neptun_reset_conns=False,
+        boringtun_reset_conns=False,
+        exclude_private_ip_range=None,
+        outgoing_blacklist=[
+            FirewallBlacklistTuple(protocol=protocol, ip=ip, port=port)
+        ],
+    )
+    return features
+
+
+class TestDualVpn:
+    """Tests requiring dual VPN servers (DOCKER_VPN_1 + DOCKER_VPN_2)."""
+
+    @pytest.fixture(name="vpn_tags")
+    def _vpn_tags(self) -> list:
+        return [ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "alpha_setup_params, public_ip",
+        [
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        vpn_1_limits=(1, 1),
+                        vpn_2_limits=(1, 1),
+                        stun_limits=(1, 2),
+                    ),
+                    is_meshnet=False,
+                ),
+                "10.0.254.1",
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        vpn_1_limits=(1, 1),
+                        vpn_2_limits=(1, 1),
+                        stun_limits=(1, 2),
+                    ),
+                    is_meshnet=False,
+                ),
+                "10.0.254.1",
+                marks=pytest.mark.linux_native,
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_WINDOWS_1,
+                    adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.VM_WINDOWS_1,
+                        vpn_1_limits=(1, 1),
+                        vpn_2_limits=(1, 1),
+                        stun_limits=(1, 2),
+                    ),
+                    is_meshnet=False,
+                ),
+                "10.0.254.15",
+                marks=[
+                    pytest.mark.windows,
+                ],
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_MAC,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.VM_MAC,
+                        vpn_1_limits=(1, 1),
+                        vpn_2_limits=(1, 1),
+                        stun_limits=(1, 2),
+                    ),
+                    is_meshnet=False,
+                ),
+                "10.0.254.19",
+                marks=pytest.mark.mac,
+            ),
+        ],
+    )
+    async def test_vpn_reconnect(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        public_ip: str,
+        env,
+        dual_vpn_server_connections,
+    ) -> None:
+        alpha_node, alpha_conn, alpha_client = (
+            env.nodes[0],
+            env.connections[0].connection,
+            env.clients[0],
         )
+        alpha = alpha_node
+        connection = alpha_conn
+        client_alpha = alpha_client
+        vpn_1_connection, vpn_2_connection = dual_vpn_server_connections
 
         ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
@@ -247,70 +270,63 @@ async def test_vpn_reconnect(
             config.WG_SERVER_2,
         )
 
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "setup_params",
-    [
-        # IPv4 public server
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                ip_stack=IPStack.IPv4,
-                features=default_features(
-                    enable_firewall_connection_reset=True,
-                    enable_firewall_exclusion_range="10.0.0.0/8",
-                ),
-            )
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                ip_stack=IPStack.IPv6,
-                features=default_features(
-                    enable_firewall_connection_reset=True,
-                    enable_firewall_exclusion_range="10.0.0.0/8",
-                ),
-            )
-        ),
-    ],
-)
-async def test_kill_external_tcp_conn_on_vpn_reconnect(
-    setup_params: SetupParameters,
-) -> None:
-    serv_ip = (
-        config.PHOTO_ALBUM_IPV6
-        if setup_params.ip_stack == IPStack.IPv6
-        else config.PHOTO_ALBUM_IP
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [
+            # IPv4 public server
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv4,
+                    features=default_features(
+                        enable_firewall_connection_reset=True,
+                        enable_firewall_exclusion_range="10.0.0.0/8",
+                    ),
+                )
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv6,
+                    features=default_features(
+                        enable_firewall_connection_reset=True,
+                        enable_firewall_exclusion_range="10.0.0.0/8",
+                    ),
+                )
+            ),
+        ],
     )
-
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [setup_params],
-                vpn=[ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2],
-            )
+    async def test_kill_external_tcp_conn_on_vpn_reconnect(
+        self,
+        alpha_setup_params: SetupParameters,
+        env,
+    ) -> None:
+        alpha_node, alpha_conn, alpha_client = (
+            env.nodes[0],
+            env.connections[0].connection,
+            env.clients[0],
         )
 
-        alpha, *_ = env.nodes
-        connection, *_ = [conn.connection for conn in env.connections]
-        client, *_ = env.clients
+        serv_ip = (
+            config.PHOTO_ALBUM_IPV6
+            if alpha_setup_params.ip_stack == IPStack.IPv6
+            else config.PHOTO_ALBUM_IP
+        )
 
-        async def connect(
-            wg_server: dict,
-        ):
+        alpha = alpha_node
+        connection = alpha_conn
+        client = alpha_client
+
+        async def connect(wg_server: dict):
             await client.connect_to_vpn(
                 wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
             )
-
             await ping(connection, serv_ip)
 
-        await connect(
-            config.WG_SERVER,
-        )
+        await connect(config.WG_SERVER)
 
         async with ConnectionTracker(
             connection,
@@ -323,98 +339,192 @@ async def test_kill_external_tcp_conn_on_vpn_reconnect(
             ],
         ).run() as conntrack:
             ip_proto = (
-                IPProto.IPv6 if setup_params.ip_stack == IPStack.IPv6 else IPProto.IPv4
+                IPProto.IPv6
+                if alpha_setup_params.ip_stack == IPStack.IPv6
+                else IPProto.IPv4
             )
-            alpha_ip = testing.unpack_optional(alpha.get_ip_address(ip_proto))
+            alpha_ip: str = testing.unpack_optional(alpha.get_ip_address(ip_proto))
 
-            nc_client_1 = await exit_stack.enter_async_context(
-                NetCatClient(
+            async with NetCatClient(
+                connection,
+                serv_ip,
+                80,
+                ipv6=ip_proto == IPProto.IPv6,
+                source_ip=alpha_ip,
+            ).run() as nc_client_1:
+                async with NetCatClient(
                     connection,
                     serv_ip,
                     80,
                     ipv6=ip_proto == IPProto.IPv6,
                     source_ip=alpha_ip,
-                ).run()
-            )
+                ).run() as nc_client_2:
+                    await asyncio.gather(
+                        nc_client_1.connection_succeeded(),
+                        nc_client_2.connection_succeeded(),
+                    )
 
-            # Second client, this time sending some data to check proper TCP sequence number generation
-            nc_client_2 = await exit_stack.enter_async_context(
-                NetCatClient(
-                    connection,
-                    serv_ip,
-                    80,
-                    ipv6=ip_proto == IPProto.IPv6,
-                    source_ip=alpha_ip,
-                ).run()
-            )
+                    await nc_client_2.send_data("GET")
 
-            # Wait for both netcat processes
-            await asyncio.gather(
-                nc_client_1.connection_succeeded(), nc_client_2.connection_succeeded()
-            )
+                    await client.disconnect_from_vpn(
+                        str(config.WG_SERVER["public_key"])
+                    )
 
-            # exchange some data
-            await nc_client_2.send_data("GET")
+                    await connect(config.WG_SERVER_2)
 
-            # the key is generated uniquely each time natlab runs
-            await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
+                    await conntrack.wait_for_no_violations()
 
-            await connect(
-                config.WG_SERVER_2,
-            )
-
-            # under normal circumstances -> conntrack should show FIN_WAIT -> CLOSE_WAIT
-            # But our connection killing mechanism will reset connection resulting in CLOSE output.
-            # Wait for close on both clients
-            await conntrack.wait_for_no_violations()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "ipv4",
-    [
-        pytest.param(True),
-        pytest.param(False),
-    ],
-)
-async def test_firewall_blacklist_tcp(ipv4: bool) -> None:
-    serv_ip = config.PHOTO_ALBUM_IP if ipv4 else config.PHOTO_ALBUM_IPV6
-    serv_port = 80
-    wg_server: dict = config.WG_SERVER
-
-    setup_params = [
-        SetupParameters(
-            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-            adapter_type_override=TelioAdapterType.NEP_TUN,
-            ip_stack=IPStack.IPv4 if ipv4 else IPStack.IPv6,
-        ),
-        SetupParameters(
-            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-            adapter_type_override=TelioAdapterType.NEP_TUN,
-            ip_stack=IPStack.IPv4 if ipv4 else IPStack.IPv6,
-        ),
-    ]
-
-    setup_params[1].features.firewall = FeatureFirewall(
-        neptun_reset_conns=False,
-        boringtun_reset_conns=False,
-        exclude_private_ip_range=None,
-        outgoing_blacklist=[
-            FirewallBlacklistTuple(protocol=IpProtocol.TCP, ip=serv_ip, port=serv_port)
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [
+            # IPv4 public server
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv4,
+                    features=default_features(
+                        enable_firewall_connection_reset=True,
+                        enable_firewall_exclusion_range="10.0.0.0/8",
+                    ),
+                )
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_MAC,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv4,
+                    features=default_features(
+                        enable_firewall_connection_reset=True,
+                        enable_firewall_exclusion_range="10.0.0.0/8",
+                    ),
+                ),
+                marks=pytest.mark.mac,
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv6,
+                    features=default_features(enable_firewall_connection_reset=True),
+                )
+            ),
         ],
     )
-
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack, setup_params, vpn=[ConnectionTag.DOCKER_VPN_1]
-            )
+    async def test_kill_external_udp_conn_on_vpn_reconnect(
+        self,
+        alpha_setup_params: SetupParameters,
+        env,
+    ) -> None:
+        alpha_node, alpha_conn, alpha_client = (
+            env.nodes[0],
+            env.connections[0].connection,
+            env.clients[0],
         )
 
-        alpha_connection, beta_connection, *_ = [
-            conn.connection for conn in env.connections
-        ]
-        alpha, beta, *_ = env.clients
+        serv_ip = (
+            config.UDP_SERVER_IP6
+            if alpha_setup_params.ip_stack == IPStack.IPv6
+            else config.UDP_SERVER_IP4
+        )
+
+        alpha = alpha_node
+        connection = alpha_conn
+        client = alpha_client
+
+        async def connect(wg_server: dict):
+            await client.connect_to_vpn(
+                wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
+            )
+            await ping(connection, serv_ip)
+
+        await connect(config.WG_SERVER)
+
+        ip_proto = (
+            IPProto.IPv6
+            if alpha_setup_params.ip_stack == IPStack.IPv6
+            else IPProto.IPv4
+        )
+        alpha_ip: str = testing.unpack_optional(alpha.get_ip_address(ip_proto))
+
+        async with NetCatClient(
+            connection,
+            serv_ip,
+            2000,
+            udp=True,
+            ipv6=ip_proto == IPProto.IPv6,
+            source_ip=alpha_ip,
+        ).run() as nc_client:
+            await nc_client.connection_succeeded()
+            await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
+
+            await connect(config.WG_SERVER_2)
+
+            # nc client should be closed by the reset mechanism
+            await nc_client.is_done()
+
+
+class TestSingleVpn2Node:
+    """Tests requiring single VPN with 2-node non-mesh (env)."""
+
+    @pytest.fixture(name="vpn_tags")
+    def _vpn_tags(self) -> list:
+        return [ConnectionTag.DOCKER_VPN_1]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "alpha_setup_params, beta_setup_params",
+        [
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv4,
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv4,
+                    features=_make_blacklist_features(
+                        IpProtocol.TCP, config.PHOTO_ALBUM_IP, 80
+                    ),
+                ),
+                id="ipv4",
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv6,
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv6,
+                    features=_make_blacklist_features(
+                        IpProtocol.TCP, config.PHOTO_ALBUM_IPV6, 80
+                    ),
+                ),
+                id="ipv6",
+            ),
+        ],
+    )
+    async def test_firewall_blacklist_tcp(
+        self,
+        alpha_setup_params: SetupParameters,
+        beta_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env,
+    ) -> None:
+        ipv4 = alpha_setup_params.ip_stack == IPStack.IPv4
+        serv_ip = config.PHOTO_ALBUM_IP if ipv4 else config.PHOTO_ALBUM_IPV6
+        serv_port = 80
+        wg_server: dict = config.WG_SERVER
+
+        alpha_connection = env.connections[0].connection
+        beta_connection = env.connections[1].connection
+        alpha = env.clients[0]
+        beta = env.clients[1]
 
         await alpha.connect_to_vpn(
             wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
@@ -455,54 +565,61 @@ async def test_firewall_blacklist_tcp(ipv4: bool) -> None:
 
             await conntrack.wait_for_no_violations()
 
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "ipv4",
-    [
-        pytest.param(True),
-        pytest.param(False),
-    ],
-)
-async def test_firewall_blacklist_udp(ipv4: bool) -> None:
-    serv_ip = config.UDP_SERVER_IP4 if ipv4 else config.UDP_SERVER_IP6
-    serv_port = 2000
-    wg_server: dict = config.WG_SERVER
-
-    setup_params = [
-        SetupParameters(
-            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-            adapter_type_override=TelioAdapterType.NEP_TUN,
-            ip_stack=IPStack.IPv4 if ipv4 else IPStack.IPv6,
-        ),
-        SetupParameters(
-            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-            adapter_type_override=TelioAdapterType.NEP_TUN,
-            ip_stack=IPStack.IPv4 if ipv4 else IPStack.IPv6,
-        ),
-    ]
-
-    setup_params[1].features.firewall = FeatureFirewall(
-        neptun_reset_conns=False,
-        boringtun_reset_conns=False,
-        exclude_private_ip_range=None,
-        outgoing_blacklist=[
-            FirewallBlacklistTuple(protocol=IpProtocol.UDP, ip=serv_ip, port=serv_port)
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "alpha_setup_params, beta_setup_params",
+        [
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv4,
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv4,
+                    features=_make_blacklist_features(
+                        IpProtocol.UDP, config.UDP_SERVER_IP4, 2000
+                    ),
+                ),
+                id="ipv4",
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv6,
+                ),
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv6,
+                    features=_make_blacklist_features(
+                        IpProtocol.UDP, config.UDP_SERVER_IP6, 2000
+                    ),
+                ),
+                id="ipv6",
+            ),
         ],
     )
+    async def test_firewall_blacklist_udp(
+        self,
+        alpha_setup_params: SetupParameters,
+        beta_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env,
+    ) -> None:
+        ipv4 = alpha_setup_params.ip_stack == IPStack.IPv4
+        serv_ip = config.UDP_SERVER_IP4 if ipv4 else config.UDP_SERVER_IP6
+        serv_port = 2000
+        wg_server: dict = config.WG_SERVER
 
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack, setup_params, vpn=[ConnectionTag.DOCKER_VPN_1]
-            )
-        )
-
-        alpha, beta, *_ = env.nodes
-        alpha_connection, beta_connection, *_ = [
-            conn.connection for conn in env.connections
-        ]
-        alpha_client, beta_client, *_ = env.clients
+        alpha = env.nodes[0]
+        beta = env.nodes[1]
+        alpha_connection = env.connections[0].connection
+        beta_connection = env.connections[1].connection
+        alpha_client = env.clients[0]
+        beta_client = env.clients[1]
 
         await alpha_client.connect_to_vpn(
             wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
@@ -512,219 +629,121 @@ async def test_firewall_blacklist_udp(ipv4: bool) -> None:
             wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
         )
 
-        alpha_nc_client = await exit_stack.enter_async_context(
-            NetCatClient(
-                alpha_connection,
-                serv_ip,
-                serv_port,
-                udp=True,
-                source_ip=testing.unpack_optional(
-                    alpha.get_ip_address(IPProto.IPv4 if ipv4 else IPProto.IPv6)
-                ),
-                ipv6=not ipv4,
-            ).run()
-        )
-        await alpha_nc_client.connection_succeeded()
-
-        with pytest.raises(ProcessExecError):
-            await NetCatClient(
-                beta_connection,
-                serv_ip,
-                serv_port,
-                udp=True,
-                source_ip=testing.unpack_optional(
-                    beta.get_ip_address(IPProto.IPv4 if ipv4 else IPProto.IPv6)
-                ),
-                ipv6=not ipv4,
-            ).execute()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "setup_params",
-    [
-        # IPv4 public server
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                ip_stack=IPStack.IPv4,
-                features=default_features(
-                    enable_firewall_connection_reset=True,
-                    enable_firewall_exclusion_range="10.0.0.0/8",
-                ),
-            )
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_MAC,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                ip_stack=IPStack.IPv4,
-                features=default_features(
-                    enable_firewall_connection_reset=True,
-                    enable_firewall_exclusion_range="10.0.0.0/8",
-                ),
+        async with NetCatClient(
+            alpha_connection,
+            serv_ip,
+            serv_port,
+            udp=True,
+            source_ip=testing.unpack_optional(
+                alpha.get_ip_address(IPProto.IPv4 if ipv4 else IPProto.IPv6)
             ),
-            marks=pytest.mark.mac,
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_DUAL_STACK,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                ip_stack=IPStack.IPv6,
-                features=default_features(enable_firewall_connection_reset=True),
-            )
-        ),
-    ],
-)
-async def test_kill_external_udp_conn_on_vpn_reconnect(
-    setup_params: SetupParameters,
-) -> None:
-    serv_ip = (
-        config.UDP_SERVER_IP6
-        if setup_params.ip_stack == IPStack.IPv6
-        else config.UDP_SERVER_IP4
+            ipv6=not ipv4,
+        ).run() as alpha_nc_client:
+            await alpha_nc_client.connection_succeeded()
+
+            with pytest.raises(ProcessExecError):
+                await NetCatClient(
+                    beta_connection,
+                    serv_ip,
+                    serv_port,
+                    udp=True,
+                    source_ip=testing.unpack_optional(
+                        beta.get_ip_address(IPProto.IPv4 if ipv4 else IPProto.IPv6)
+                    ),
+                    ipv6=not ipv4,
+                ).execute()
+
+
+class TestSingleVpn1Node:
+    """Tests requiring single VPN with 1-node non-mesh (env)."""
+
+    @pytest.fixture(name="vpn_tags")
+    def _vpn_tags(self) -> list:
+        return [ConnectionTag.DOCKER_VPN_1]
+
+    @pytest.mark.parametrize(
+        "alpha_setup_params, public_ip",
+        [
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        stun_limits=(1, 1),
+                        vpn_1_limits=(1, 1),
+                    ),
+                    is_meshnet=False,
+                ),
+                "10.0.254.1",
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        stun_limits=(1, 1),
+                        vpn_1_limits=(1, 1),
+                    ),
+                    is_meshnet=False,
+                ),
+                "10.0.254.1",
+                marks=pytest.mark.linux_native,
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_WINDOWS_1,
+                    adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.VM_WINDOWS_1,
+                        stun_limits=(1, 1),
+                        vpn_1_limits=(1, 1),
+                    ),
+                    is_meshnet=False,
+                ),
+                "10.0.254.15",
+                marks=[
+                    pytest.mark.windows,
+                ],
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_MAC,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.VM_MAC,
+                        stun_limits=(1, 1),
+                        vpn_1_limits=(1, 1),
+                    ),
+                    is_meshnet=False,
+                ),
+                "10.0.254.19",
+                marks=pytest.mark.mac,
+            ),
+        ],
     )
-
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [setup_params],
-                vpn=[ConnectionTag.DOCKER_VPN_1, ConnectionTag.DOCKER_VPN_2],
-            )
+    async def test_vpn_connection_private_key_change(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        public_ip: str,
+        env,
+        single_vpn_server_connection,
+    ) -> None:
+        alpha_node, alpha_conn, alpha_client = (
+            env.nodes[0],
+            env.connections[0].connection,
+            env.clients[0],
         )
-
-        alpha, *_ = env.nodes
-        connection, *_ = [conn.connection for conn in env.connections]
-        client, *_ = env.clients
-
-        async def connect(
-            wg_server: dict,
-        ):
-            await client.connect_to_vpn(
-                wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
-            )
-
-            await ping(connection, serv_ip)
-
-        await connect(
-            config.WG_SERVER,
-        )
-
-        ip_proto = (
-            IPProto.IPv6 if setup_params.ip_stack == IPStack.IPv6 else IPProto.IPv4
-        )
-        alpha_ip = testing.unpack_optional(alpha.get_ip_address(ip_proto))
-
-        nc_client = await exit_stack.enter_async_context(
-            NetCatClient(
-                connection,
-                serv_ip,
-                2000,
-                udp=True,
-                ipv6=ip_proto == IPProto.IPv6,
-                source_ip=alpha_ip,
-            ).run()
-        )
-
-        await nc_client.connection_succeeded()
-        await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
-
-        await connect(
-            config.WG_SERVER_2,
-        )
-
-        # nc client should be closed by the reset mechanism
-        await nc_client.is_done()
-
-
-@pytest.mark.parametrize(
-    "alpha_setup_params, public_ip",
-    [
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    stun_limits=(1, 1),
-                    vpn_1_limits=(1, 1),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.1",
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.DOCKER_CONE_CLIENT_1,
-                    stun_limits=(1, 1),
-                    vpn_1_limits=(1, 1),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.1",
-            marks=pytest.mark.linux_native,
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_WINDOWS_1,
-                    stun_limits=(1, 1),
-                    vpn_1_limits=(1, 1),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.15",
-            marks=[
-                pytest.mark.windows,
-            ],
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_MAC,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
-                    ConnectionTag.VM_MAC,
-                    stun_limits=(1, 1),
-                    vpn_1_limits=(1, 1),
-                ),
-                is_meshnet=False,
-            ),
-            "10.0.254.19",
-            marks=pytest.mark.mac,
-        ),
-    ],
-)
-async def test_vpn_connection_private_key_change(
-    alpha_setup_params: SetupParameters,
-    public_ip: str,
-) -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [alpha_setup_params],
-                vpn=[ConnectionTag.DOCKER_VPN_1],
-            )
-        )
-
-        alpha, *_ = env.nodes
-        client_conn, *_ = [conn.connection for conn in env.connections]
-        client_alpha, *_ = env.clients
+        alpha = alpha_node
+        client_conn = alpha_conn
+        client_alpha = alpha_client
+        vpn_connection = single_vpn_server_connection
 
         ip = await stun.get(client_conn, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
 
         # connect to vpn as usually
-        vpn_connection, *_ = await setup_connections(
-            exit_stack, [ConnectionTag.DOCKER_VPN_1]
-        )
         await connect_vpn(
             client_conn,
             vpn_connection.connection,
