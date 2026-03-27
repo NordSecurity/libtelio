@@ -1,4 +1,6 @@
 use crate::{
+    packet_decoder::{find_nord_query, normalize_qname, parse_dns_query_packet, DnsParseError},
+    packet_encoder::{DnsResponseBuilder, ResponseKind},
     resolver::Resolver,
     zone::{AuthoritativeZone, ClonableZones, ForwardZone, Records},
 };
@@ -10,6 +12,7 @@ use hickory_server::{
 };
 use neptun::noise::{Tunn, TunnResult};
 use pnet_packet::{
+    dns::{DnsQuery, DnsTypes},
     ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
     ipv4::{checksum, Ipv4Packet, MutableIpv4Packet},
     ipv6::{Ipv6Packet, MutableIpv6Packet},
@@ -35,6 +38,8 @@ const IPV6_HEADER: usize = 40; // bytes
 const MAX_PACKET: usize = 2048;
 const UDP_HEADER: usize = 8;
 const TCP_MIN_HEADER: usize = 20;
+pub(crate) const NORD_ZONE: &str = "nord.";
+pub(crate) const NORD_ZONE_SUFFIX: &str = ".nord.";
 const MAX_CONCURRENT_QUERIES: usize = 256;
 const IDLE_TIME: Duration = Duration::from_secs(1);
 
@@ -87,6 +92,10 @@ async fn update_wg_timers(
 /// Local name server.
 #[derive(Default)]
 pub struct LocalNameServer {
+    /// .nord peers zone
+    nord_zone: Records,
+    /// TTL used to populate local nord zone replies
+    ttl: TtlValue,
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
 }
@@ -96,6 +105,8 @@ impl LocalNameServer {
     /// configured for zone `.`.
     pub async fn new(forward_ips: &[IpAddr]) -> Result<Arc<RwLock<Self>>, String> {
         let ns = Arc::new(RwLock::new(LocalNameServer {
+            nord_zone: Records::new(),
+            ttl: TtlValue::default(),
             zones: Arc::new(ClonableZones::new()),
             task_handle: None,
         }));
@@ -243,15 +254,85 @@ impl LocalNameServer {
         }
     }
 
+    /// Helper to find the matching local .nord record
+    ///
+    /// Handles subdomains so that `a.b.test.nord.` matches
+    /// a record stored under `test.nord.`
+    fn find_matching_nord_record(&self, qname: &str) -> Option<&[IpAddr]> {
+        if let Some(addresses) = self.nord_zone.get(qname) {
+            return Some(addresses);
+        }
+        let mut remaining = qname;
+        while let Some((_, rest)) = remaining.split_once('.') {
+            if rest == NORD_ZONE || !rest.ends_with(NORD_ZONE_SUFFIX) {
+                break;
+            }
+            if let Some(addresses) = self.nord_zone.get(rest) {
+                return Some(addresses);
+            }
+            remaining = rest;
+        }
+        None
+    }
+
+    /// Resolve the local .nord request
+    fn lookup_local_response(&self, query: &DnsQuery) -> ResponseKind {
+        if query.qtype == DnsTypes::SOA {
+            return ResponseKind::SoaAnswer;
+        }
+
+        let qname = normalize_qname(&query.get_qname_parsed());
+
+        // Query for .nord TLD
+        if qname == NORD_ZONE {
+            return ResponseKind::NoData;
+        }
+
+        let Some(addresses) = self.find_matching_nord_record(&qname) else {
+            // No records exist
+            return ResponseKind::NxDomain;
+        };
+
+        match query.qtype {
+            DnsTypes::A => {
+                let addresses: Vec<Ipv4Addr> = addresses
+                    .iter()
+                    .filter_map(|ip| {
+                        if let IpAddr::V4(v4) = ip {
+                            Some(*v4)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if !addresses.is_empty() {
+                    return ResponseKind::AnswerA { addresses };
+                }
+            }
+            DnsTypes::AAAA => {
+                let addresses: Vec<Ipv6Addr> = addresses
+                    .iter()
+                    .filter_map(|ip| {
+                        if let IpAddr::V6(v6) = ip {
+                            Some(*v6)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if !addresses.is_empty() {
+                    return ResponseKind::AnswerAAAA { addresses };
+                }
+            }
+            _ => {}
+        }
+        ResponseKind::NoData
+    }
+
     async fn resolve_dns_request(
         nameserver: Arc<RwLock<LocalNameServer>>,
         request_info: &mut RequestInfo,
     ) -> Result<Vec<u8>, String> {
-        telio_log_debug!("Resolving dns");
-        let resolver = Resolver::new();
-        telio_log_debug!("Getting DNS zones");
-        let zones = nameserver.zones().await;
-
         telio_log_debug!("Preparing DNS request");
         let dns_request = match &mut request_info.payload {
             PayloadRequestInfo::Udp {
@@ -262,17 +343,52 @@ impl LocalNameServer {
                 .ok_or_else(|| String::from("Inexistent DNS request"))?,
             _ => return Ok(Vec::new()),
         };
-        let dns_request = Request::new(dns_request, request_info.dns_source(), Protocol::Udp);
-        telio_log_debug!("DNS request: {:?}", &dns_request);
 
-        zones
-            .lookup(&dns_request, resolver.clone())
-            .await
-            .map_err(|e| format!("Lookup failed {e}"))?;
+        let dns_response = match dns_request {
+            PayloadDestination::Local {
+                id,
+                recursion_desired,
+                query,
+            } => {
+                telio_log_debug!(
+                    "Local query for: {:?} {:?}",
+                    query.qtype,
+                    query.get_qname_parsed()
+                );
+                // lookup local zone for response
+                let (response_kind, ttl) = {
+                    let ns = nameserver.read().await;
+                    (ns.lookup_local_response(&query), ns.ttl)
+                };
 
-        let dns_response = resolver.0.lock().await;
-        telio_log_debug!("Nameserver response: {:?}", &dns_response);
-        Ok(dns_response.to_vec())
+                telio_log_debug!("Local response: {:?}", response_kind);
+
+                // build response packet bytes
+                DnsResponseBuilder::new(id, query, ttl.0, response_kind, recursion_desired)
+                    .build()
+                    .map_err(|e| format!("Failed building DNS response packet: {e:?}"))?
+            }
+            PayloadDestination::Forward(question) => {
+                telio_log_debug!("Forwarding request dns");
+                let resolver = Resolver::new();
+                telio_log_debug!("Getting DNS zones");
+                let zones = nameserver.zones().await;
+
+                let dns_request = Request::new(question, request_info.dns_source(), Protocol::Udp);
+                telio_log_debug!("DNS request: {:?}", &dns_request);
+
+                zones
+                    .lookup(&dns_request, resolver.clone())
+                    .await
+                    .map_err(|e| format!("Lookup failed {e}"))?;
+
+                let dns_response = resolver.0.lock().await;
+                telio_log_debug!("Nameserver response: {:?}", &dns_response);
+                dns_response.to_vec()
+            }
+        };
+
+        Ok(dns_response)
     }
 
     async fn process_packet(
@@ -347,13 +463,43 @@ impl LocalNameServer {
             return Err(String::from("Invalid DNS port"));
         }
 
-        let dns_request = MessageRequest::from_bytes(udp_request.payload())
-            .map_err(|_| String::from("Failed to build MessageRequest from request packet"))?;
+        let payload = udp_request.payload();
+
+        let dns_request = match parse_dns_query_packet(payload) {
+            Ok(packet) => {
+                if let Some(query) = find_nord_query(&packet) {
+                    // query for local .nord domain
+                    Some(PayloadDestination::Local {
+                        id: packet.get_id(),
+                        recursion_desired: packet.get_is_recursion_desirable() == 1,
+                        query,
+                    })
+                } else {
+                    // not .nord, forward unchanged
+                    let forward = MessageRequest::from_bytes(payload).map_err(|_| {
+                        String::from("Failed to build MessageRequest from request packet")
+                    })?;
+                    Some(PayloadDestination::Forward(forward))
+                }
+            }
+            Err(DnsParseError::UnsupportedOpcode(c)) => {
+                telio_log_warn!("Unsupported DNS query Opcode: {c:?}");
+                // still forward it as a fallback
+                let forward = MessageRequest::from_bytes(payload).map_err(|_| {
+                    String::from("Failed to build MessageRequest from request packet")
+                })?;
+                Some(PayloadDestination::Forward(forward))
+            }
+            Err(e) => {
+                // malformed DNS query
+                return Err(format!("Failed to parse DNS payload: {e}"));
+            }
+        };
 
         Ok(PayloadRequestInfo::Udp {
             source_port: udp_request.get_source(),
             destination_port: udp_request.get_destination(),
-            dns_request: Some(dns_request),
+            dns_request,
         })
     }
 }
@@ -398,11 +544,21 @@ impl IpRequestInfo {
 }
 
 #[allow(clippy::large_enum_variant)]
+enum PayloadDestination {
+    Local {
+        id: u16,
+        recursion_desired: bool,
+        query: DnsQuery,
+    },
+    Forward(MessageRequest),
+}
+
+#[allow(clippy::large_enum_variant)]
 enum PayloadRequestInfo {
     Udp {
         source_port: u16,
         destination_port: u16,
-        dns_request: Option<MessageRequest>,
+        dns_request: Option<PayloadDestination>,
     },
     Tcp {
         source_port: u16,
@@ -692,7 +848,24 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
         records: &Records,
         ttl_value: TtlValue,
     ) -> Result<(), String> {
+        // TODO: LLT-7054: Remove AuthoritativeZone once migration is fully validated
         let azone = Arc::new(AuthoritativeZone::new(zone, records, ttl_value).await?);
+
+        if normalize_qname(zone) == NORD_ZONE {
+            let nord_zone = records
+                .iter()
+                .filter_map(|(k, v)| {
+                    let normalized = normalize_qname(k);
+                    (normalized.ends_with(NORD_ZONE_SUFFIX) && !v.is_empty())
+                        .then(|| (normalized, v.clone()))
+                })
+                .collect();
+            telio_log_debug!("Nord zone resolver upsert with {:?}", nord_zone);
+
+            let mut ns = self.write().await;
+            ns.nord_zone = nord_zone;
+            ns.ttl = ttl_value;
+        }
 
         self.zones_mut()
             .await
@@ -741,6 +914,19 @@ mod tests {
 
     use super::*;
 
+    macro_rules! records {
+        ($($domain:expr => [$($ip:expr),+ $(,)?]),+ $(,)?) => {{
+            let mut r = Records::new();
+            $(r.insert(String::from($domain), vec![$($ip),+]);)+
+            r
+        }};
+        ($($domain:expr => []),+ $(,)?) => {{
+            let mut r = Records::new();
+            $(r.insert(String::from($domain), vec![]);)+
+            r
+        }};
+    }
+
     fn dns_request(host: String) -> Request {
         let mut question = Message::new();
         let mut query = Query::new();
@@ -755,6 +941,31 @@ mod tests {
         )
     }
 
+    fn make_dns_query(name: &str, qtype: pnet_packet::dns::DnsType) -> DnsQuery {
+        let mut qname = Vec::new();
+        let trimmed = name.trim_end_matches('.');
+        for label in trimmed.split('.') {
+            qname.push(label.len() as u8);
+            qname.extend_from_slice(label.as_bytes());
+        }
+        qname.push(0);
+        DnsQuery {
+            qname,
+            qtype,
+            qclass: pnet_packet::dns::DnsClasses::IN,
+            payload: vec![],
+        }
+    }
+
+    async fn upsert_nord_records(records: &Records) -> Arc<RwLock<LocalNameServer>> {
+        let nameserver = LocalNameServer::new(&[]).await.unwrap();
+        nameserver
+            .upsert(NORD_ZONE, records, TtlValue(60))
+            .await
+            .unwrap();
+        nameserver
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     async fn dns_lookup() {
         let entry_name = String::from("pashka.nord.");
@@ -767,7 +978,7 @@ mod tests {
             .await
             .unwrap();
         nameserver
-            .upsert("nord", &records, TtlValue(60))
+            .upsert(NORD_ZONE, &records, TtlValue(60))
             .await
             .unwrap();
         let request = dns_request(entry_name.clone());
@@ -803,7 +1014,7 @@ mod tests {
             .unwrap();
         let raw_read_ptr1 = Arc::as_ptr(&nameserver.zones().await);
         nameserver
-            .upsert("nord", &records, TtlValue(60))
+            .upsert(NORD_ZONE, &records, TtlValue(60))
             .await
             .unwrap();
         let raw_read_ptr2 = Arc::as_ptr(&nameserver.zones().await);
@@ -818,7 +1029,7 @@ mod tests {
 
         let read_ptr3 = nameserver.zones().await;
         nameserver
-            .upsert("nord2", &records, TtlValue(60))
+            .upsert("nord2.", &records, TtlValue(60))
             .await
             .unwrap();
         let raw_read_ptr4 = Arc::as_ptr(&nameserver.zones().await);
@@ -841,12 +1052,343 @@ mod tests {
             .await
             .unwrap();
         nameserver
-            .upsert("nord.", &records, TtlValue(60))
+            .upsert(NORD_ZONE, &records, TtlValue(60))
             .await
             .unwrap();
 
         let zones = nameserver.zones().await;
         assert!(zones.contains(&LowerName::from_str(".").unwrap()));
         assert!(zones.contains(&LowerName::from_str("nord").unwrap()));
+    }
+
+    #[tokio::test]
+    async fn nord_zone_only_contains_nord_domains() {
+        let records = records! {
+            "alice.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))],
+            "not-nord.example.com." => [IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))],
+            "sneaky.nord.com." => [IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2))],
+        };
+
+        let nameserver = LocalNameServer::new(&[]).await.unwrap();
+        nameserver
+            .upsert(NORD_ZONE, &records, TtlValue(60))
+            .await
+            .unwrap();
+
+        let ns = nameserver.read().await;
+        assert_eq!(ns.nord_zone.len(), 1);
+        assert!(ns.nord_zone.contains_key("alice.nord."));
+        assert!(!ns.nord_zone.contains_key("not-nord.example.com."));
+        assert!(!ns.nord_zone.contains_key("sneaky.nord.com."));
+    }
+
+    #[tokio::test]
+    async fn upsert_same_domain_replaces_ip() {
+        let nameserver = LocalNameServer::new(&[]).await.unwrap();
+
+        let records = records! {
+            "alice.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))],
+        };
+        nameserver
+            .upsert(NORD_ZONE, &records, TtlValue(60))
+            .await
+            .unwrap();
+
+        {
+            let ns = nameserver.read().await;
+            assert_eq!(
+                ns.nord_zone.get("alice.nord.").unwrap(),
+                &vec![IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))]
+            );
+        }
+
+        let records = records! {
+            "alice.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 99))],
+        };
+        nameserver
+            .upsert(NORD_ZONE, &records, TtlValue(60))
+            .await
+            .unwrap();
+
+        let ns = nameserver.read().await;
+        assert_eq!(ns.nord_zone.len(), 1);
+        assert_eq!(
+            ns.nord_zone.get("alice.nord.").unwrap(),
+            &vec![IpAddr::V4(Ipv4Addr::new(100, 64, 0, 99))]
+        );
+    }
+
+    #[tokio::test]
+    async fn find_matching_nord_record_subdomains() {
+        let records = records! {
+            "test.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))],
+        };
+        let nameserver = upsert_nord_records(&records).await;
+        let ns = nameserver.read().await;
+
+        assert_eq!(
+            ns.find_matching_nord_record("a.b.test.nord."),
+            Some([IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))].as_slice())
+        );
+        assert_eq!(
+            ns.find_matching_nord_record("x.y.z.test.nord."),
+            Some([IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))].as_slice())
+        );
+        assert_eq!(ns.find_matching_nord_record("other.nord."), None);
+    }
+
+    #[tokio::test]
+    async fn find_matching_nord_record_exact_preferred() {
+        let records = records! {
+            "test.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))],
+            "sub.test.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2))],
+        };
+        let nameserver = upsert_nord_records(&records).await;
+        let ns = nameserver.read().await;
+
+        assert_eq!(
+            ns.find_matching_nord_record("sub.test.nord."),
+            Some([IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2))].as_slice())
+        );
+        assert_eq!(
+            ns.find_matching_nord_record("test.nord."),
+            Some([IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))].as_slice())
+        );
+        assert_eq!(
+            ns.find_matching_nord_record("other.sub.test.nord."),
+            Some([IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2))].as_slice())
+        );
+    }
+
+    #[tokio::test]
+    async fn find_matching_nord_record_nested_subdomain() {
+        let records = records! {
+            "alice.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))],
+            "evil.nord." => [IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))],
+        };
+        let nameserver = upsert_nord_records(&records).await;
+        let ns = nameserver.read().await;
+
+        assert_eq!(
+            ns.find_matching_nord_record("evil.nord.alice.nord."),
+            Some([IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))].as_slice())
+        );
+        assert_eq!(
+            ns.find_matching_nord_record("nord.alice.nord."),
+            Some([IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))].as_slice())
+        );
+        assert_eq!(ns.find_matching_nord_record("evil.nord.alice."), None);
+        assert_eq!(ns.find_matching_nord_record("nord.example.com."), None);
+        assert_eq!(ns.find_matching_nord_record("alice.nord.com."), None);
+    }
+
+    #[tokio::test]
+    async fn find_matching_nord_record_empty_boundary() {
+        let records = records! {
+            "alice.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))],
+        };
+        let nameserver = upsert_nord_records(&records).await;
+        let ns = nameserver.read().await;
+
+        assert_eq!(ns.find_matching_nord_record(""), None);
+        assert_eq!(ns.find_matching_nord_record("."), None);
+        assert_eq!(ns.find_matching_nord_record("nord"), None);
+        assert_eq!(ns.find_matching_nord_record("nord."), None);
+        assert_eq!(ns.find_matching_nord_record(".nord."), None);
+        assert_eq!(ns.find_matching_nord_record("..nord."), None);
+    }
+
+    #[tokio::test]
+    async fn lookup_local_response_soa() {
+        let nameserver = upsert_nord_records(&Records::new()).await;
+        let ns = nameserver.read().await;
+        let query = make_dns_query("test.nord", DnsTypes::SOA);
+        assert_eq!(ns.lookup_local_response(&query), ResponseKind::SoaAnswer);
+    }
+
+    #[tokio::test]
+    async fn lookup_local_response_nord_tld() {
+        let records = records! {
+            "test.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))],
+        };
+        let nameserver = upsert_nord_records(&records).await;
+        let ns = nameserver.read().await;
+        let query = make_dns_query("nord", DnsTypes::A);
+        assert_eq!(ns.lookup_local_response(&query), ResponseKind::NoData);
+    }
+
+    #[tokio::test]
+    async fn lookup_local_response_a_record() {
+        let records = records! {
+            "test.nord." => [
+                IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)),
+                IpAddr::V6(Ipv6Addr::new(1, 2, 3, 4, 5, 6, 7, 8)),
+            ],
+        };
+        let nameserver = upsert_nord_records(&records).await;
+        let ns = nameserver.read().await;
+        let query = make_dns_query("test.nord", DnsTypes::A);
+        assert_eq!(
+            ns.lookup_local_response(&query),
+            ResponseKind::AnswerA {
+                addresses: vec![Ipv4Addr::new(100, 64, 0, 1)]
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn lookup_local_response_aaaa_record() {
+        let records = records! {
+            "test.nord." => [
+                IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)),
+                IpAddr::V6(Ipv6Addr::new(1, 2, 3, 4, 5, 6, 7, 8)),
+            ],
+        };
+        let nameserver = upsert_nord_records(&records).await;
+        let ns = nameserver.read().await;
+        let query = make_dns_query("test.nord", DnsTypes::AAAA);
+        assert_eq!(
+            ns.lookup_local_response(&query),
+            ResponseKind::AnswerAAAA {
+                addresses: vec![Ipv6Addr::new(1, 2, 3, 4, 5, 6, 7, 8)]
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn lookup_local_response_nxdomain() {
+        let records = records! {
+            "test.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))],
+        };
+        let nameserver = upsert_nord_records(&records).await;
+        let ns = nameserver.read().await;
+        let query = make_dns_query("unknown.nord", DnsTypes::A);
+        assert_eq!(ns.lookup_local_response(&query), ResponseKind::NxDomain);
+    }
+
+    #[tokio::test]
+    async fn lookup_local_response_only_aaaa_exists() {
+        let records = records! {
+            "test.nord." => [IpAddr::V6(Ipv6Addr::new(1, 2, 3, 4, 5, 6, 7, 8))],
+        };
+        let nameserver = upsert_nord_records(&records).await;
+        let ns = nameserver.read().await;
+        let query = make_dns_query("test.nord", DnsTypes::A);
+        assert_eq!(ns.lookup_local_response(&query), ResponseKind::NoData);
+    }
+
+    #[tokio::test]
+    async fn upsert_empty_addresses_filtered() {
+        let nameserver = LocalNameServer::new(&[]).await.unwrap();
+
+        let mut records = records! {
+            "alice.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))],
+        };
+        records.insert(String::from("empty.nord."), vec![]);
+        nameserver
+            .upsert(NORD_ZONE, &records, TtlValue(60))
+            .await
+            .unwrap();
+
+        let ns = nameserver.read().await;
+        assert_eq!(ns.nord_zone.len(), 1);
+        assert!(ns.nord_zone.contains_key("alice.nord."));
+        assert!(!ns.nord_zone.contains_key("empty.nord."));
+    }
+
+    #[tokio::test]
+    async fn upsert_preserves_nord_zone() {
+        let nameserver = LocalNameServer::new(&[]).await.unwrap();
+
+        let records = records! {
+            "alice.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))],
+        };
+        nameserver
+            .upsert(NORD_ZONE, &records, TtlValue(60))
+            .await
+            .unwrap();
+
+        let other_records = records! {
+            "test.example." => [IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))],
+        };
+        nameserver
+            .upsert("example.", &other_records, TtlValue(60))
+            .await
+            .unwrap();
+
+        let ns = nameserver.read().await;
+        assert_eq!(ns.nord_zone.len(), 1);
+        assert!(ns.nord_zone.contains_key("alice.nord."));
+    }
+
+    #[tokio::test]
+    async fn upsert_removes_old_domains() {
+        let nameserver = LocalNameServer::new(&[]).await.unwrap();
+
+        let records = records! {
+            "alice.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))],
+            "bob.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2))],
+        };
+        nameserver
+            .upsert(NORD_ZONE, &records, TtlValue(60))
+            .await
+            .unwrap();
+
+        {
+            let ns = nameserver.read().await;
+            assert_eq!(ns.nord_zone.len(), 2);
+            assert!(ns.nord_zone.contains_key("alice.nord."));
+            assert!(ns.nord_zone.contains_key("bob.nord."));
+        }
+
+        let records = records! {
+            "charlie.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3))],
+        };
+        nameserver
+            .upsert(NORD_ZONE, &records, TtlValue(60))
+            .await
+            .unwrap();
+
+        let ns = nameserver.read().await;
+        assert_eq!(ns.nord_zone.len(), 1);
+        assert!(!ns.nord_zone.contains_key("alice.nord."));
+        assert!(!ns.nord_zone.contains_key("bob.nord."));
+        assert!(ns.nord_zone.contains_key("charlie.nord."));
+        assert_eq!(
+            ns.nord_zone.get("charlie.nord.").unwrap(),
+            &vec![IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3))]
+        );
+    }
+
+    #[tokio::test]
+    async fn upsert_empty_clears_domains() {
+        let nameserver = LocalNameServer::new(&[]).await.unwrap();
+
+        let records = records! {
+            "alice.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))],
+            "bob.nord." => [IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2))],
+        };
+        nameserver
+            .upsert(NORD_ZONE, &records, TtlValue(60))
+            .await
+            .unwrap();
+
+        {
+            let ns = nameserver.read().await;
+            assert_eq!(ns.nord_zone.len(), 2);
+            assert!(ns.nord_zone.contains_key("alice.nord."));
+            assert!(ns.nord_zone.contains_key("bob.nord."));
+        }
+
+        let records = Records::new();
+        nameserver
+            .upsert(NORD_ZONE, &records, TtlValue(60))
+            .await
+            .unwrap();
+
+        let ns = nameserver.read().await;
+        assert_eq!(ns.nord_zone.len(), 0);
+        assert!(!ns.nord_zone.contains_key("alice.nord."));
+        assert!(!ns.nord_zone.contains_key("bob.nord."));
     }
 }
