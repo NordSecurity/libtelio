@@ -28,7 +28,6 @@ pub const LIBFW_CONTRACK_STATE_NEW: u8 = 0;
 pub const LIBFW_CONTRACK_STATE_ESTABLISHED: u8 = 1;
 pub const LIBFW_CONTRACK_STATE_INVALID: u8 = 2;
 pub const LIBFW_CONTRACK_STATE_RELATED: u8 = 3;
-pub const LIBFW_CONTRACK_STATE_CLOSED: u8 = 4;
 pub const LIBFW_DIRECTION_OUTBOUND: u8 = 0;
 pub const LIBFW_DIRECTION_INBOUND: u8 = 1;
 pub const LIBFW_IP_TYPE_V4: u8 = 0;
@@ -41,7 +40,6 @@ pub const LIBFW_FILTER_DIRECTION: u8 = 4;
 pub const LIBFW_FILTER_NEXT_LVL_PROTO: u8 = 5;
 pub const LIBFW_FILTER_TCP_FLAGS: u8 = 6;
 pub const LIBFW_FILTER_ICMP_TYPE: u8 = 7;
-
 #[repr(u32)]
 #[doc = " Log levels used in LibfwLogCallback\n"]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -52,7 +50,6 @@ pub enum LibfwLogLevel {
     LibfwLogLevelWarn = 3,
     LibfwLogLevelErr = 4,
 }
-
 pub mod LibfwResult {
     #[doc = " Possible FW results\n"]
     pub type Type = ::std::os::raw::c_uint;
@@ -69,7 +66,6 @@ pub mod LibfwResult {
     pub const LibfwErrorInvalidChain: Type = 10;
     pub const LibfwErrorInvalidConfig: Type = 11;
 }
-
 #[repr(u32)]
 #[doc = " Possible verdicts for packets.\n\n Note: From the libfw integrators perspective, LibfwVerdictReject is the same as\n packet injection + drop. Reject is here just for informational purposes, therefore\n anytime libfw returns LibfwVerdictReject - relevant packet should be dropped in the\n same manner as LibfwVerdictDrop. But differentiating these two may be useful for\n logging or metrics or similar kind of purposes.\n"]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -92,23 +88,8 @@ pub type LibfwLogCallback = ::std::option::Option<
 #[derive(Debug, Copy, Clone)]
 pub struct LibfwBlockedDomain {
     pub domain_name: *const ::std::os::raw::c_char,
-    pub record_type: u16,
     pub timestamp: u64,
     pub category: *const ::std::os::raw::c_char,
-}
-#[doc = " Count of some \"thing\". Intended to hold counts for record and response types\n"]
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct LibfwRRTypeCount_u16 {
-    pub rr_type: u16,
-    pub count: u32,
-}
-#[doc = " Count of some \"thing\". Intended to hold counts for record and response types\n"]
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct LibfwRRTypeCount_u8 {
-    pub rr_type: u8,
-    pub count: u32,
 }
 #[doc = " General metrics about DNS traffic\n"]
 #[repr(C)]
@@ -116,13 +97,7 @@ pub struct LibfwRRTypeCount_u8 {
 pub struct LibfwDnsMetrics {
     pub num_requests: u32,
     pub num_responses: u32,
-    pub num_malformed_requests: u32,
-    pub num_malformed_responses: u32,
     pub num_cache_hits: u32,
-    pub record_type_distribution: *const LibfwRRTypeCount_u16,
-    pub num_record_types: usize,
-    pub response_code_distribution: *const LibfwRRTypeCount_u8,
-    pub num_response_codes: usize,
 }
 #[doc = " Callback used by integrating libraries/apps for getting the collected TP-Lite stats\n\n @param data - A pointer meant to provide facilities for callback implementors\n               to add context information to the callback itself. If integrators\n               of libfirewall does not need context information - `null` may be passed.\n @param domains - list of domains that were blocked by TP-Lite DNS servers\n @param num_blocked_domains - number of elements in @ref domains\n @param metrics - general metrics about DNS traffic\n"]
 pub type LibfwCollectTpLiteStatsCallback = ::std::option::Option<
@@ -233,7 +208,6 @@ pub type LibfwInjectPacketCallback = ::std::option::Option<
         associated_data_len: usize,
     ),
 >;
-
 pub struct Libfirewall {
     __library: ::libloading::Library,
     pub libfw_set_log_callback:
@@ -273,8 +247,8 @@ pub struct Libfirewall {
         packet_len: usize,
         associated_data: *const u8,
         associated_data_len: usize,
-        _inject_packet_cb_data: *mut ::std::os::raw::c_void,
-        _inject_inbound_packet_cb: LibfwInjectPacketCallback,
+        inject_packet_cb_data: *mut ::std::os::raw::c_void,
+        inject_inbound_packet_cb: LibfwInjectPacketCallback,
     ) -> LibfwVerdict,
     pub libfw_deinit: unsafe extern "C" fn(firewall: *mut LibfwFirewall),
 }
@@ -420,8 +394,8 @@ impl Libfirewall {
         packet_len: usize,
         associated_data: *const u8,
         associated_data_len: usize,
-        _inject_packet_cb_data: *mut ::std::os::raw::c_void,
-        _inject_inbound_packet_cb: LibfwInjectPacketCallback,
+        inject_packet_cb_data: *mut ::std::os::raw::c_void,
+        inject_inbound_packet_cb: LibfwInjectPacketCallback,
     ) -> LibfwVerdict {
         (self.libfw_process_outbound_packet)(
             firewall,
@@ -429,8 +403,8 @@ impl Libfirewall {
             packet_len,
             associated_data,
             associated_data_len,
-            _inject_packet_cb_data,
-            _inject_inbound_packet_cb,
+            inject_packet_cb_data,
+            inject_inbound_packet_cb,
         )
     }
     #[doc = " Destructs firewall instance.\n\n After this function returns it is guaranteed that no callbacks will\n be called anymore.\n\n @param fw - pointer returned by @ref libfw_init\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init`."]
