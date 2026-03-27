@@ -28,7 +28,6 @@ rstest.workspace = true
 nix = { workspace = true, features = ["user"] }
 
 [target.'cfg(any(target_os = "ios", target_os = "tvos"))'.dependencies]
-objc2 = "0.6"
 objc2-foundation = "0.3"
 version-compare = "0.2"
 
@@ -36,8 +35,9 @@ version-compare = "0.2"
 debug_panic = "0.2.1"
 system-configuration = "0.7"
 network-framework-sys = "0.1"
-block = "0.1"
-dispatch = { git = "https://github.com/NordSecurity/rust-dispatch.git", rev = "13447cd7221a74ebcce1277ae0cfc9a421a28ec5" }
+block2 = "0.6"
+dispatch2 = "0.3"
+objc2 = "0.6"
 
 
 [target.'cfg(windows)'.dependencies]

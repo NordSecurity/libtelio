@@ -973,7 +973,7 @@ The following dependencies are licensed under the MIT license.
 
 - [blake2](https://github.com/RustCrypto/hashes) *(also available under: Apache-2.0)*
 
-- [block](http://github.com/SSheldon/rust-block)
+- [block2](https://github.com/madsmtm/objc2)
 
 - [block-buffer](https://github.com/RustCrypto/utils) *(also available under: Apache-2.0)*
 
@@ -1071,7 +1071,7 @@ The following dependencies are licensed under the MIT license.
 
 - [digest](https://github.com/RustCrypto/traits) *(also available under: Apache-2.0)*
 
-- [dispatch](http://github.com/SSheldon/rust-dispatch)
+- [dispatch2](https://github.com/madsmtm/objc2)
 
 - [displaydoc](https://github.com/yaahc/displaydoc) *(also available under: Apache-2.0)*
 
