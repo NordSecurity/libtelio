@@ -1,14 +1,8 @@
 import asyncio
 import pytest
-from contextlib import AsyncExitStack
 from enum import Enum
 from tests import config
-from tests.helpers import (
-    SetupParameters,
-    setup_environment,
-    setup_mesh_nodes,
-    setup_connections,
-)
+from tests.helpers import SetupParameters, Environment
 from tests.utils import asyncio_util
 from tests.utils.bindings import (
     ErrorEvent,
@@ -18,8 +12,14 @@ from tests.utils.bindings import (
     default_features,
 )
 from tests.utils.connection import TargetOS, ConnectionTag
-from tests.utils.connection_util import generate_connection_tracker_config
+from tests.utils.connection_util import (
+    generate_connection_tracker_config,
+    ConnectionManager,
+)
 from tests.utils.process import ProcessExecError
+from typing import Awaitable, Callable, List
+
+pytest_plugins = ["tests.helpers_fixtures"]
 
 
 class AdapterState(Enum):
@@ -70,47 +70,49 @@ async def get_interface_state(client_conn, client):
         ),
     ],
 )
-async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(exit_stack, [alpha_setup_params])
-        conn, *_ = [conn.connection for conn in env.connections]
-        client, *_ = env.clients
+async def test_adapter_gone_event(
+    alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+    env_mesh: Environment,
+) -> None:
+    env = env_mesh
+    conn, *_ = [conn.connection for conn in env.connections]
+    client, *_ = env.clients
 
-        expected_event = ErrorEvent(
-            level=ErrorLevel.CRITICAL,
-            code=ErrorCode.UNKNOWN,
-            msg="Interface gone",
+    expected_event = ErrorEvent(
+        level=ErrorLevel.CRITICAL,
+        code=ErrorCode.UNKNOWN,
+        msg="Interface gone",
+    )
+
+    async def delete_adapter() -> None:
+        iface = client.get_router().get_interface_name()
+
+        if conn.target_os == TargetOS.Linux:
+            await conn.create_process(["ip", "link", "delete", iface]).execute()
+
+        elif conn.target_os == TargetOS.Windows:
+            try:
+                await conn.create_process(
+                    ["netsh", "interface", "set", "interface", iface, "disable"]
+                ).execute()
+            except ProcessExecError as e:
+                if e.returncode != 1:
+                    raise
+        else:
+            raise RuntimeError("unsupported os")
+
+    async with asyncio_util.run_async_context(
+        client.wait_for_event_error(expected_event)
+    ) as event:
+        await asyncio.gather(
+            delete_adapter(),
+            event,
         )
 
-        async def delete_adapter() -> None:
-            iface = client.get_router().get_interface_name()
-
-            if conn.target_os == TargetOS.Linux:
-                await conn.create_process(["ip", "link", "delete", iface]).execute()
-
-            elif conn.target_os == TargetOS.Windows:
-                try:
-                    await conn.create_process(
-                        ["netsh", "interface", "set", "interface", iface, "disable"]
-                    ).execute()
-                except ProcessExecError as e:
-                    if e.returncode != 1:
-                        raise
-            else:
-                raise RuntimeError("unsupported os")
-
-        async with asyncio_util.run_async_context(
-            client.wait_for_event_error(expected_event)
-        ) as event:
-            await asyncio.gather(
-                delete_adapter(),
-                event,
-            )
-
-        client.allow_errors([
-            "neptun::device.*Fatal read error on tun interface",
-            "telio_wg::adapter::linux_native_wg.*LinuxNativeWg: \\[GET01\\] Unable to get interface from WireGuard. Make sure it exists and you have permissions to access it.",
-        ])
+    client.allow_errors([
+        "neptun::device.*Fatal read error on tun interface",
+        "telio_wg::adapter::linux_native_wg.*LinuxNativeWg: \\[GET01\\] Unable to get interface from WireGuard. Make sure it exists and you have permissions to access it.",
+    ])
 
 
 @pytest.mark.parametrize(
@@ -136,81 +138,81 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
     ],
 )
 async def test_adapter_service_loading(
-    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
+    alpha_setup_params: SetupParameters,
+    beta_setup_params: SetupParameters,
+    setup_connections_factory: Callable[..., Awaitable[List[ConnectionManager]]],
+    setup_mesh_nodes_factory: Callable[..., Awaitable[Environment]],
 ) -> None:
     """
     Windows-only test that verifies that the adapter service can be loaded, even if it was un-loaded before.
     """
-    async with AsyncExitStack() as exit_stack:
-        connection = (
-            await setup_connections(exit_stack, [alpha_setup_params.connection_tag])
-        )[0].connection
+    managers = await setup_connections_factory([alpha_setup_params.connection_tag])
+    connection = managers[0].connection
 
-        try:
-            await connection.create_process([
-                "sc",
-                "delete",
-                "WireGuard",
-            ]).execute()
-        except ProcessExecError:
-            pass
+    try:
+        await connection.create_process([
+            "sc",
+            "delete",
+            "WireGuard",
+        ]).execute()
+    except ProcessExecError:
+        pass
 
-        try:
-            await connection.create_process([
-                "sc",
-                "delete",
-                "Wintun",
-            ]).execute()
-        except ProcessExecError:
-            pass
+    try:
+        await connection.create_process([
+            "sc",
+            "delete",
+            "Wintun",
+        ]).execute()
+    except ProcessExecError:
+        pass
 
-    async with AsyncExitStack() as exit_stack:
-        _ = await setup_mesh_nodes(exit_stack, [alpha_setup_params, beta_setup_params])
+    _ = await setup_mesh_nodes_factory([alpha_setup_params, beta_setup_params])
 
 
-@pytest.mark.parametrize(
-    "alpha_setup_params",
-    [
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
+class TestAdapterStateForVpnAndDns:
+    """Tests requiring single VPN with 1-node non-mesh (env)."""
+
+    @pytest.fixture(name="vpn_tags")
+    def _vpn_tags(self) -> list:
+        return [ConnectionTag.DOCKER_VPN_1]
+
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [
+            pytest.param(
+                SetupParameters(
                     connection_tag=ConnectionTag.VM_WINDOWS_1,
-                    vpn_1_limits=(1, 1),
+                    adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        connection_tag=ConnectionTag.VM_WINDOWS_1,
+                        vpn_1_limits=(1, 1),
+                    ),
+                    is_meshnet=False,
+                    features=default_features(enable_dynamic_wg_nt_control=True),
                 ),
-                is_meshnet=False,
-                features=default_features(enable_dynamic_wg_nt_control=True),
+                marks=[pytest.mark.windows],
             ),
-            marks=[pytest.mark.windows],
-        ),
-        pytest.param(
-            SetupParameters(
-                connection_tag=ConnectionTag.VM_WINDOWS_1,
-                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
-                connection_tracker_config=generate_connection_tracker_config(
+            pytest.param(
+                SetupParameters(
                     connection_tag=ConnectionTag.VM_WINDOWS_1,
-                    vpn_1_limits=(1, 1),
+                    adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        connection_tag=ConnectionTag.VM_WINDOWS_1,
+                        vpn_1_limits=(1, 1),
+                    ),
+                    is_meshnet=False,
+                    features=default_features(enable_dynamic_wg_nt_control=False),
                 ),
-                is_meshnet=False,
-                features=default_features(enable_dynamic_wg_nt_control=False),
+                marks=[pytest.mark.windows],
             ),
-            marks=[pytest.mark.windows],
-        ),
-    ],
-)
-async def test_adapter_state_for_vpn_and_dns(
-    alpha_setup_params: SetupParameters,
-) -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [alpha_setup_params],
-                vpn=[ConnectionTag.DOCKER_VPN_1],
-            )
-        )
-
+        ],
+    )
+    async def test_adapter_state_for_vpn_and_dns(
+        self,
+        alpha_setup_params: SetupParameters,
+        env: Environment,
+    ) -> None:
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
 
@@ -282,37 +284,35 @@ async def test_adapter_state_for_vpn_and_dns(
         ),
     ],
 )
-async def test_adapter_state_for_meshnet(alpha_setup_params: SetupParameters) -> None:
-    async with AsyncExitStack() as exit_stack:
-        # Creates and enables meshnet without any nodes
-        env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params])
-        )
+async def test_adapter_state_for_meshnet(
+    alpha_setup_params: SetupParameters,
+    env: Environment,
+) -> None:
+    # Creates and enables meshnet without any nodes
+    api = env.api
+    client_conn, *_ = [conn.connection for conn in env.connections]
+    client_alpha, *_ = env.clients
 
-        api = env.api
-        client_conn, *_ = [conn.connection for conn in env.connections]
-        client_alpha, *_ = env.clients
+    expected_idle_state = (
+        AdapterState.DOWN
+        if alpha_setup_params.features.wireguard.enable_dynamic_wg_nt_control
+        else AdapterState.UP
+    )
 
-        expected_idle_state = (
-            AdapterState.DOWN
-            if alpha_setup_params.features.wireguard.enable_dynamic_wg_nt_control
-            else AdapterState.UP
-        )
+    state = await get_interface_state(client_conn, client_alpha)
+    assert state == expected_idle_state
 
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == expected_idle_state
+    # Add node to meshnet
+    api.default_config_two_nodes()
+    first_node_id = next(iter(api.nodes))
+    await client_alpha.set_meshnet_config(
+        api.get_meshnet_config(first_node_id, derp_servers=[config.DERP_PRIMARY])
+    )
 
-        # Add node to meshnet
-        api.default_config_two_nodes()
-        first_node_id = next(iter(api.nodes))
-        await client_alpha.set_meshnet_config(
-            api.get_meshnet_config(first_node_id, derp_servers=[config.DERP_PRIMARY])
-        )
+    state = await get_interface_state(client_conn, client_alpha)
+    assert state == AdapterState.UP
 
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == AdapterState.UP
+    await client_alpha.set_mesh_off()
 
-        await client_alpha.set_mesh_off()
-
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == expected_idle_state
+    state = await get_interface_state(client_conn, client_alpha)
+    assert state == expected_idle_state
