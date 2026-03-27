@@ -3,7 +3,7 @@ import itertools
 import pytest
 from contextlib import AsyncExitStack
 from tests import timeouts
-from tests.helpers import SetupParameters, setup_mesh_nodes
+from tests.helpers import SetupParameters, setup_mesh_nodes, Environment
 from tests.utils.bindings import (
     features_with_endpoint_providers,
     EndpointProvider,
@@ -14,6 +14,8 @@ from tests.utils.bindings import (
 )
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
+
+pytest_plugins = ["tests.helpers_fixtures"]
 
 
 @pytest.mark.asyncio
@@ -82,26 +84,25 @@ from tests.utils.connection_util import generate_connection_tracker_config
     ],
 )
 async def test_node_state_flickering_relay(
-    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
+    alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+    beta_setup_params: SetupParameters,  # pylint: disable=unused-argument
+    env_mesh: Environment,
 ) -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
-        )
-        alpha, beta = env.nodes
-        client_alpha, client_beta = env.clients
+    env = env_mesh
+    alpha, beta = env.nodes
+    client_alpha, client_beta = env.clients
 
-        with pytest.raises(asyncio.TimeoutError):
-            await asyncio.gather(
-                client_alpha.wait_for_event_peer(
-                    beta.public_key, list(NodeState), timeout=120
-                ),
-                client_beta.wait_for_event_peer(
-                    alpha.public_key, list(NodeState), timeout=120
-                ),
-                client_alpha.wait_for_event_on_any_derp(list(RelayState), timeout=120),
-                client_beta.wait_for_event_on_any_derp(list(RelayState), timeout=120),
-            )
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.gather(
+            client_alpha.wait_for_event_peer(
+                beta.public_key, list(NodeState), timeout=120
+            ),
+            client_beta.wait_for_event_peer(
+                alpha.public_key, list(NodeState), timeout=120
+            ),
+            client_alpha.wait_for_event_on_any_derp(list(RelayState), timeout=120),
+            client_beta.wait_for_event_on_any_derp(list(RelayState), timeout=120),
+        )
 
 
 CFG = [
