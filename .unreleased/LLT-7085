@@ -1,0 +1,1 @@
+Refactor error handling in telio-dns: remove simple String and replace it with enums for both: public (public API) and private (internal) errors

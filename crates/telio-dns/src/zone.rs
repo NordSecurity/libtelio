@@ -19,6 +19,7 @@ use telio_model::features::TtlValue;
 use telio_utils::telio_log_warn;
 
 use crate::forward::ForwardAuthority;
+use crate::error::{Error, Result};
 
 /// Zone is a portion of the DNS namespace that is managed by a specific
 /// organization or administrator.
@@ -41,11 +42,11 @@ impl AuthoritativeZone {
         name: &str,
         records: &Records,
         ttl_value: TtlValue,
-    ) -> Result<Self, String> {
+    ) -> Result<Self> {
         // TODO: rewrite code so that this assert is not needed.
         for domain in records.keys() {
             if !domain.contains(name) {
-                return Err(format!("{domain} does not end with {name}"));
+                return Err(Error::record_outside_zone(domain, name));
             }
         }
         let zone_name = Name::from_str(name)?;
@@ -145,7 +146,7 @@ impl Authority for AuthoritativeZone {
         name: &LowerName,
         rtype: RecordType,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
+    ) -> std::result::Result<Self::Lookup, LookupError> {
         self.zone.lookup(name, rtype, lookup_options).await
     }
 
@@ -153,7 +154,7 @@ impl Authority for AuthoritativeZone {
         &self,
         request_info: RequestInfo<'_>,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
+    ) -> std::result::Result<Self::Lookup, LookupError> {
         self.zone.search(request_info, lookup_options).await
     }
 
@@ -161,7 +162,7 @@ impl Authority for AuthoritativeZone {
         &self,
         name: &LowerName,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
+    ) -> std::result::Result<Self::Lookup, LookupError> {
         self.zone.get_nsec_records(name, lookup_options).await
     }
 }
@@ -174,7 +175,7 @@ pub(crate) struct ForwardZone {
 }
 
 impl ForwardZone {
-    pub(crate) async fn new(name: &str, ips: &[IpAddr]) -> Result<Self, String> {
+    pub(crate) async fn new(name: &str, ips: &[IpAddr]) -> Result<Self> {
         let mut options = ResolverOpts::default();
         // Some tools and browsers do not accept responses without intermediates preserved
         options.preserve_intermediates = true;
@@ -224,7 +225,7 @@ impl Authority for ForwardZone {
         name: &LowerName,
         rtype: RecordType,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
+    ) -> std::result::Result<Self::Lookup, LookupError> {
         self.zone.lookup(name, rtype, lookup_options).await
     }
 
@@ -232,7 +233,7 @@ impl Authority for ForwardZone {
         &self,
         request_info: RequestInfo<'_>,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
+    ) -> std::result::Result<Self::Lookup, LookupError> {
         self.zone.search(request_info, lookup_options).await
     }
 
@@ -240,7 +241,7 @@ impl Authority for ForwardZone {
         &self,
         name: &LowerName,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
+    ) -> std::result::Result<Self::Lookup, LookupError> {
         self.zone.get_nsec_records(name, lookup_options).await
     }
 }
@@ -265,7 +266,7 @@ impl ClonableZones {
         &self,
         request: &Request,
         response_handle: R,
-    ) -> Result<ResponseInfo, LookupError> {
+    ) -> std::result::Result<ResponseInfo, LookupError> {
         self.zones.lookup(request, None, response_handle).await
     }
 

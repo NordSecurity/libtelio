@@ -141,7 +141,7 @@ impl ForwardAuthority {
         origin: Name,
         _zone_type: ZoneType,
         config: ForwardConfig,
-    ) -> Result<Self, String> {
+    ) -> crate::error::Result<Self> {
         telio_log_info!("loading forwarder config: {}", origin);
 
         let name_servers = config.name_servers;
