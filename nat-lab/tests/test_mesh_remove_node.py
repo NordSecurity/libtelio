@@ -1,12 +1,12 @@
 import asyncio
 import pytest
-from contextlib import AsyncExitStack
-from tests.helpers import SetupParameters, setup_mesh_nodes
-from tests.mesh_api import API
+from tests.helpers import SetupParameters, Environment
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.ping import ping
+
+pytest_plugins = ["tests.helpers_fixtures"]
 
 
 @pytest.mark.asyncio
@@ -91,41 +91,28 @@ from tests.utils.ping import ping
     ],
 )
 async def test_mesh_remove_node(
-    alpha_setup_params: SetupParameters,
-    beta_setup_params: SetupParameters,
-    gamma_setup_params: SetupParameters,
+    env_mesh_3node_ring_fw: Environment,
 ) -> None:
-    async with AsyncExitStack() as exit_stack:
-        api = API()
+    env = env_mesh_3node_ring_fw
+    api = env.api
+    alpha, beta, gamma = env.nodes
 
-        (alpha, beta, gamma) = api.default_config_three_nodes()
+    connection_alpha, connection_beta, connection_gamma = [
+        conn.connection for conn in env.connections
+    ]
+    client_alpha, client_beta, _ = env.clients
 
-        alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=False)
-        beta.set_peer_firewall_settings(gamma.id, allow_incoming_connections=False)
-        gamma.set_peer_firewall_settings(alpha.id, allow_incoming_connections=False)
+    await ping(connection_alpha, beta.ip_addresses[0])
+    await ping(connection_beta, gamma.ip_addresses[0])
+    await ping(connection_gamma, alpha.ip_addresses[0])
 
-        env = await setup_mesh_nodes(
-            exit_stack,
-            [alpha_setup_params, beta_setup_params, gamma_setup_params],
-            provided_api=api,
-        )
+    api.remove(gamma.id)
 
-        connection_alpha, connection_beta, connection_gamma = [
-            conn.connection for conn in env.connections
-        ]
-        client_alpha, client_beta, _ = env.clients
+    await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
+    await client_beta.set_meshnet_config(api.get_meshnet_config(beta.id))
 
-        await ping(connection_alpha, beta.ip_addresses[0])
-        await ping(connection_beta, gamma.ip_addresses[0])
-        await ping(connection_gamma, alpha.ip_addresses[0])
-
-        api.remove(gamma.id)
-
-        await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
-        await client_beta.set_meshnet_config(api.get_meshnet_config(beta.id))
-
-        await ping(connection_alpha, beta.ip_addresses[0])
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_beta, gamma.ip_addresses[0], 5)
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(connection_gamma, alpha.ip_addresses[0], 5)
+    await ping(connection_alpha, beta.ip_addresses[0])
+    with pytest.raises(asyncio.TimeoutError):
+        await ping(connection_beta, gamma.ip_addresses[0], 5)
+    with pytest.raises(asyncio.TimeoutError):
+        await ping(connection_gamma, alpha.ip_addresses[0], 5)
