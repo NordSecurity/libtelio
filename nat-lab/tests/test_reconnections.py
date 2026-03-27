@@ -1,12 +1,13 @@
 import asyncio
 import pytest
-from contextlib import AsyncExitStack
-from tests.helpers import setup_mesh_nodes, SetupParameters
+from tests.helpers import SetupParameters, Environment
 from tests.utils import asyncio_util
 from tests.utils.bindings import NodeState, RelayState, TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.ping import ping
+
+pytest_plugins = ["tests.helpers_fixtures"]
 
 
 @pytest.mark.asyncio
@@ -75,44 +76,39 @@ from tests.utils.ping import ping
     ],
 )
 async def test_mesh_reconnect(
-    alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
+    alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+    beta_setup_params: SetupParameters,  # pylint: disable=unused-argument
+    env_mesh: Environment,
 ) -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
-        )
-        api = env.api
-        alpha, beta = env.nodes
-        alpha_connection, beta_connection = [
-            conn.connection for conn in env.connections
-        ]
-        client_alpha, client_beta = env.clients
+    env = env_mesh
+    api = env.api
+    alpha, beta = env.nodes
+    alpha_connection, beta_connection = [conn.connection for conn in env.connections]
+    client_alpha, client_beta = env.clients
 
-        await ping(alpha_connection, beta.ip_addresses[0])
-        await ping(beta_connection, alpha.ip_addresses[0])
+    await ping(alpha_connection, beta.ip_addresses[0])
+    await ping(beta_connection, alpha.ip_addresses[0])
 
-        await client_alpha.stop_device()
+    await client_alpha.stop_device()
 
-        with pytest.raises(asyncio.TimeoutError):
-            await ping(beta_connection, alpha.ip_addresses[0], 15)
+    with pytest.raises(asyncio.TimeoutError):
+        await ping(beta_connection, alpha.ip_addresses[0], 15)
 
-        await client_alpha.simple_start()
+    await client_alpha.simple_start()
 
-        async with asyncio_util.run_async_context(
-            asyncio.gather(
-                client_alpha.wait_for_event_peer(
-                    beta.public_key, [NodeState.CONNECTED]
-                ),
-                client_alpha.wait_for_event_on_any_derp([RelayState.CONNECTED]),
-            ),
-        ) as event:
-            await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
-            await event
+    async with asyncio_util.run_async_context(
+        asyncio.gather(
+            client_alpha.wait_for_event_peer(beta.public_key, [NodeState.CONNECTED]),
+            client_alpha.wait_for_event_on_any_derp([RelayState.CONNECTED]),
+        ),
+    ) as event:
+        await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
+        await event
 
-        await asyncio.gather(
-            client_alpha.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
-            client_beta.wait_for_state_peer(alpha.public_key, [NodeState.CONNECTED]),
-        )
+    await asyncio.gather(
+        client_alpha.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
+        client_beta.wait_for_state_peer(alpha.public_key, [NodeState.CONNECTED]),
+    )
 
-        await ping(alpha_connection, beta.ip_addresses[0])
-        await ping(beta_connection, alpha.ip_addresses[0])
+    await ping(alpha_connection, beta.ip_addresses[0])
+    await ping(beta_connection, alpha.ip_addresses[0])
