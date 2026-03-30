@@ -6,8 +6,8 @@ use crate::ping_pong_handler::PingPongHandler;
 use async_trait::async_trait;
 use futures::prelude::*;
 use igd::{
-    aio::{search_gateway, Gateway},
     PortMappingProtocol,
+    aio::{Gateway, search_gateway},
 };
 use ipnet::Ipv4Net;
 use rand::RngExt;
@@ -19,10 +19,11 @@ use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_proto::{Session, WGPort};
 use telio_sockets::External;
-use telio_task::{io::chan::Tx, task_exec, BoxAction, Runtime, Task};
+use telio_task::{BoxAction, Runtime, Task, io::chan::Tx, task_exec};
 use telio_utils::{
+    Instant, PinnedSleep,
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    telio_log_debug, telio_log_info, telio_log_warn, Instant, PinnedSleep,
+    telio_log_debug, telio_log_info, telio_log_warn,
 };
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::time::sleep;
@@ -272,7 +273,7 @@ impl<I: UpnpEpCommands + Send + 'static> EnsureIgdGatewayWithBackoff<I> {
                     }
                     Err(e) => {
                         telio_log_warn!(
-                            "Failed to build backoff using pre-configured bounds, fallbacking: {e}"
+                            "Failed to build backoff using pre-configured bounds, falling back: {e}"
                         );
                         self.backoff = Some(ExponentialBackoff::fallback());
                     }
@@ -407,7 +408,9 @@ impl<Wg: WireGuard> UpnpEndpointProvider<Wg> {
         lease_duration: Duration,
     ) -> Result<Self> {
         if lease_duration.saturating_sub(exponential_backoff_bounds.initial) == Duration::ZERO {
-            telio_log_warn!("Lease duration is smaller than endpoint validation period, this may result in undefined behaviour!");
+            telio_log_warn!(
+                "Lease duration is smaller than endpoint validation period, this may result in undefined behaviour!"
+            );
         }
         Ok(Self::start_with(
             udp_socket,
@@ -739,20 +742,21 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
             udp: SocketAddr::new(IpAddr::V4(ext_ip), self.proxy_port_mapping.external),
         });
 
-        if let Some(epc) = self.endpoint_candidate.clone() {
-            if let Some(epc_tx) = &self.epc_event_tx {
-                telio_log_debug!("Got UpnpEndpointCanditate: {:?}", epc);
-                let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
-            }
+        if let Some(epc) = self.endpoint_candidate.clone()
+            && let Some(epc_tx) = &self.epc_event_tx
+        {
+            telio_log_debug!("Got UpnpEndpointCandidate: {:?}", epc);
+            let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
         }
+
         Ok(())
     }
 
     async fn send_endpoint_candidate(&self) {
-        if let Some(epc) = self.endpoint_candidate.clone() {
-            if let Some(epc_tx) = &self.epc_event_tx {
-                let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
-            }
+        if let Some(epc) = self.endpoint_candidate.clone()
+            && let Some(epc_tx) = &self.epc_event_tx
+        {
+            let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
         }
     }
 
@@ -793,7 +797,9 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
 
         if !self.igd_gw.lease_needs_renew() && self.is_endpoint_provider_paused {
             let d = self.igd_gw.should_renew_lease_after();
-            telio_log_debug!("Skipping getting endpoint via UPNP endpoint provider(ModulePaused), lease renew after {d:?}");
+            telio_log_debug!(
+                "Skipping getting endpoint via UPNP endpoint provider(ModulePaused), lease renew after {d:?}"
+            );
             tokio::select! {
                 _ = sleep(d.unwrap_or(FAR_FUTURE)) => {},
                 update = &mut updated => {
@@ -841,15 +847,15 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
 #[cfg(test)]
 mod tests {
     use super::{
-        async_trait, EndpointCandidate, MockUpnpEpCommands, UpnpEndpointProvider,
-        EPHEMERAL_PORT_RANGE,
+        EPHEMERAL_PORT_RANGE, EndpointCandidate, MockUpnpEpCommands, UpnpEndpointProvider,
+        async_trait,
     };
 
     use std::{
         cell::RefCell,
         net::{IpAddr, Ipv4Addr, SocketAddr},
         rc::Rc,
-        sync::{atomic::AtomicUsize, Arc},
+        sync::{Arc, atomic::AtomicUsize},
         time::Duration,
     };
 
@@ -867,8 +873,8 @@ mod tests {
     };
     use telio_utils::ip_stack::IpStack;
     use telio_wg::{
-        uapi::{Interface, Peer},
         Error as wgError, WireGuard,
+        uapi::{Interface, Peer},
     };
     use tokio::sync::Mutex as TMutex;
 
@@ -943,8 +949,8 @@ mod tests {
         *IGD_IS_AVAILABLE.lock() = false;
     }
 
-    pub async fn prepare_test_setup(
-    ) -> UpnpEndpointProvider<MockWg, MockUpnpEpCommands, MockBackoff> {
+    pub async fn prepare_test_setup()
+    -> UpnpEndpointProvider<MockWg, MockUpnpEpCommands, MockBackoff> {
         let spool = SocketPool::new(
             NativeProtector::new(
                 #[cfg(target_os = "macos")]
@@ -1013,7 +1019,7 @@ mod tests {
                 });
                 result
             },
-            Arc::new(TMutex::new(PingPongHandler::new(SecretKey::gen()))),
+            Arc::new(TMutex::new(PingPongHandler::new(SecretKey::r#gen()))),
             mock,
             false,
         )
@@ -1162,7 +1168,7 @@ mod tests {
             udp_socket,
             Arc::new(wg),
             backoff,
-            Arc::new(TMutex::new(PingPongHandler::new(SecretKey::gen()))),
+            Arc::new(TMutex::new(PingPongHandler::new(SecretKey::r#gen()))),
             mock,
             false,
         );
@@ -1172,8 +1178,7 @@ mod tests {
         let igd_search_count = igd_search_counter.load(std::sync::atomic::Ordering::Relaxed);
         assert!(
             igd_search_count <= 4,
-            "igd search call count: {}",
-            igd_search_count // TODO: migrate to 2024 edition
+            "igd search call count: {igd_search_count}",
         );
     }
 }
