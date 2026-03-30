@@ -5,11 +5,11 @@ use std::hash::Hash;
 use std::net::SocketAddr;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
-use telio_crypto::{smaller_key_in_meshnet_canonical_order, PublicKey};
+use telio_crypto::{PublicKey, smaller_key_in_meshnet_canonical_order};
 use telio_model::features::EndpointProvider;
 use telio_proto::{Decision, Session, UpgradeDecisionMsg, UpgradeMsg};
-use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
-use telio_utils::{interval, telio_log_debug, telio_log_info, telio_log_warn, Instant, LruCache};
+use telio_task::{BoxAction, Runtime, Task, io::Chan, io::chan, task_exec};
+use telio_utils::{Instant, LruCache, interval, telio_log_debug, telio_log_info, telio_log_warn};
 use tokio::{sync::mpsc::error::SendError, time::Interval};
 
 use crate::cross_ping_check::UpgradeController;
@@ -217,15 +217,16 @@ impl State {
         );
 
         if let Some(upgrade_request) = self.upgrade_requests.get(&Direction::Received(*public_key))
+            && !Self::is_expired(self.expiration_period, upgrade_request)
         {
-            if !Self::is_expired(self.expiration_period, upgrade_request) {
-                // We have just accepted an upgrade request from that peer, so
-                // there is no point sending in our own request for upgrade. If
-                // we send it now, we can cause other side to accept if they have
-                // a losing key.
-                telio_log_debug!("Upgrade request accepted recently from {public_key:?}, will not send an upgrade request to it now");
-                return Ok(false);
-            }
+            // We have just accepted an upgrade request from that peer, so
+            // there is no point sending in our own request for upgrade. If
+            // we send it now, we can cause other side to accept if they have
+            // a losing key.
+            telio_log_debug!(
+                "Upgrade request accepted recently from {public_key:?}, will not send an upgrade request to it now"
+            );
+            return Ok(false);
         }
 
         // Send message to remote end
@@ -508,8 +509,8 @@ mod tests {
     use telio_proto::Decision;
     use tokio::{
         sync::{
-            mpsc::{channel, Receiver, Sender},
             Mutex,
+            mpsc::{Receiver, Sender, channel},
         },
         time,
     };
@@ -584,7 +585,7 @@ mod tests {
         } = Chan::default();
         let (upg_decision_them, upg_decision_us) = Chan::pipe();
 
-        let our_public_key = SecretKey::gen().public();
+        let our_public_key = SecretKey::r#gen().public();
 
         let upg_sync = UpgradeSync::new(
             upg_rq_tx,
@@ -871,9 +872,11 @@ mod tests {
             telio_model::features::EndpointProvider::Upnp,
         );
         let session: Session = 42;
-        assert!(!upg_sync
-            .request_upgrade(&public_key, endpoint, endpoint, session)
-            .await
-            .unwrap());
+        assert!(
+            !upg_sync
+                .request_upgrade(&public_key, endpoint, endpoint, session)
+                .await
+                .unwrap()
+        );
     }
 }
