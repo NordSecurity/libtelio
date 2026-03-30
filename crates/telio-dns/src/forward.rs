@@ -31,7 +31,7 @@ use hickory_server::{
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn};
 use tokio::net::UdpSocket;
 
-use crate::bind_tun;
+use crate::{bind_tun, error::Result as TelioResult};
 
 #[derive(Default, Clone)]
 pub struct TelioRuntimeProvider(TokioRuntimeProvider);
@@ -141,7 +141,7 @@ impl ForwardAuthority {
         origin: Name,
         _zone_type: ZoneType,
         config: ForwardConfig,
-    ) -> Result<Self, String> {
+    ) -> TelioResult<Self> {
         telio_log_info!("loading forwarder config: {}", origin);
 
         let name_servers = config.name_servers;

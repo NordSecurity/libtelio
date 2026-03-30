@@ -12,6 +12,8 @@ mod resolver;
 mod zone;
 
 pub mod bind_tun;
+/// Error types used by the telio-dns crate.
+pub mod error;
 
 pub(crate) mod forward;
 
