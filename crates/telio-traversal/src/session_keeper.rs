@@ -6,9 +6,9 @@ use surge_ping::SurgeError;
 use telio_crypto::PublicKey;
 use telio_pinger::Pinger;
 use telio_sockets::SocketPool;
-use telio_task::{task_exec, BoxAction, Runtime, Task};
+use telio_task::{BoxAction, Runtime, Task, task_exec};
 use telio_utils::{
-    dual_target, repeated_actions, telio_log_debug, telio_log_warn, DualTarget, RepeatedActions,
+    DualTarget, RepeatedActions, dual_target, repeated_actions, telio_log_debug, telio_log_warn,
 };
 
 /// Possible [SessionKeeper] errors.

@@ -357,7 +357,9 @@ impl<Wg: WireGuard> UpnpEndpointProvider<Wg> {
         lease_duration: Duration,
     ) -> Result<Self> {
         if lease_duration.saturating_sub(exponential_backoff_bounds.initial) == Duration::ZERO {
-            telio_log_warn!("Lease duration is smaller than endpoint validation period, this may result in undefined behaviour!");
+            telio_log_warn!(
+                "Lease duration is smaller than endpoint validation period, this may result in undefined behaviour!"
+            );
         }
         Ok(Self::start_with(
             udp_socket,
@@ -688,20 +690,21 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
             udp: SocketAddr::new(IpAddr::V4(ext_ip), self.proxy_port_mapping.external),
         });
 
-        if let Some(epc) = self.endpoint_candidate.clone() {
-            if let Some(epc_tx) = &self.epc_event_tx {
-                telio_log_debug!("Got UpnpEndpointCanditate: {:?}", epc);
-                let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
-            }
+        if let Some(epc) = self.endpoint_candidate.clone()
+            && let Some(epc_tx) = &self.epc_event_tx
+        {
+            telio_log_debug!("Got UpnpEndpointCandidate: {:?}", epc);
+            let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
         }
+
         Ok(())
     }
 
     async fn send_endpoint_candidate(&self) {
-        if let Some(epc) = self.endpoint_candidate.clone() {
-            if let Some(epc_tx) = &self.epc_event_tx {
-                let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
-            }
+        if let Some(epc) = self.endpoint_candidate.clone()
+            && let Some(epc_tx) = &self.epc_event_tx
+        {
+            let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
         }
     }
 
@@ -742,7 +745,9 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
 
         if !self.igd_gw.lease_needs_renew() && self.is_endpoint_provider_paused {
             let d = self.igd_gw.should_renew_lease_after();
-            telio_log_debug!("Skipping getting endpoint via UPNP endpoint provider(ModulePaused), lease renew after {d:?}");
+            telio_log_debug!(
+                "Skipping getting endpoint via UPNP endpoint provider(ModulePaused), lease renew after {d:?}"
+            );
             tokio::select! {
                 _ = sleep(d.unwrap_or(FAR_FUTURE)) => {},
                 update = &mut updated => {
@@ -962,7 +967,7 @@ mod tests {
                 });
                 result
             },
-            Arc::new(TMutex::new(PingPongHandler::new(SecretKey::gen()))),
+            Arc::new(TMutex::new(PingPongHandler::new(SecretKey::r#gen()))),
             mock,
             false,
         )
@@ -1111,7 +1116,7 @@ mod tests {
             udp_socket,
             Arc::new(wg),
             backoff,
-            Arc::new(TMutex::new(PingPongHandler::new(SecretKey::gen()))),
+            Arc::new(TMutex::new(PingPongHandler::new(SecretKey::r#gen()))),
             mock,
             false,
         );
@@ -1125,8 +1130,7 @@ mod tests {
         // being executed in between.
         assert!(
             igd_search_count <= 4,
-            "igd search call count: {}",
-            igd_search_count // TODO: migrate to 2024 edition
+            "igd search call count: {igd_search_count}",
         );
     }
 }
