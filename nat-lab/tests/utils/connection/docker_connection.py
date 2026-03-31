@@ -62,6 +62,7 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_MQTT_BROKER_1: "mqtt-broker",
     ConnectionTag.DOCKER_STUN_1: "stun-01",
     ConnectionTag.DOCKER_UDP_SERVER: "udp-server",
+    ConnectionTag.DOCKER_OPENWRT_CDN: "openwrt-cdn",
 }
 
 DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
@@ -103,6 +104,7 @@ DOCKER_SERVICE_SKIP_IPTABLES: list[ConnectionTag] = [
     ConnectionTag.DOCKER_CORE_API_1,
     ConnectionTag.DOCKER_MQTT_BROKER_1,
     ConnectionTag.DOCKER_STUN_1,
+    ConnectionTag.DOCKER_OPENWRT_CDN,
 ]
 
 

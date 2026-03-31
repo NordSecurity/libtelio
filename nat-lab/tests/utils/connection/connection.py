@@ -62,6 +62,7 @@ class ConnectionTag(Enum):
     DOCKER_MQTT_BROKER_1 = auto()
     DOCKER_STUN_1 = auto()
     DOCKER_UDP_SERVER = auto()
+    DOCKER_OPENWRT_CDN = auto()
 
     def __repr__(self):
         return f"{self.name}"
