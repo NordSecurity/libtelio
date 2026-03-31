@@ -46,6 +46,8 @@ graph LR
     core-api("core-api
         10.0.80.86
         2001:db8:85a4::adda:edde:b")
+    openwrt-cdn("openwrt-cdn
+        10.0.254.21")
   end
 
   %% Network cone-net-03
