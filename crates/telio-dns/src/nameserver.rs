@@ -13,13 +13,13 @@ use hickory_server::{
 };
 use neptun::noise::{Tunn, TunnResult};
 use pnet_packet::{
-    dns::DnsQuery,
+    dns::{DnsPacket, DnsQuery, DnsTypes},
     ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
     ipv4::{checksum, Ipv4Packet, MutableIpv4Packet},
     ipv6::{Ipv6Packet, MutableIpv6Packet},
     tcp::{MutableTcpPacket, TcpFlags, TcpPacket},
     udp::{ipv4_checksum, ipv6_checksum, MutableUdpPacket, UdpPacket},
-    Packet,
+    FromPacket, Packet,
 };
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
@@ -304,18 +304,27 @@ impl LocalNameServer {
                         .clone()
                         .ok_or_else(|| String::from("No forwarder configured"))?
                 };
+
                 telio_log_debug!(
-                    "Forwarding DNS request from port {:?}: {:?}",
+                    "Forwarding DNS request from port {:?}",
                     request_info.dns_source_port(),
-                    &raw_query
                 );
+                if let Some(dns_packet) = DnsPacket::new(&raw_query) {
+                    telio_log_debug!("Request: {:?}", dns_packet);
+                    for query in dns_packet.get_queries() {
+                        telio_log_debug!("  {}", query.get_qname_parsed());
+                    }
+                }
 
                 let response = forwarder
                     .query(&raw_query)
                     .await
                     .map_err(|e| format!("Forward failed: {e:?}"))?;
 
-                telio_log_debug!("Forwarder responded: {:?}", &response);
+                telio_log_debug!("Forwarder responded");
+                if let Some(dns_packet) = DnsPacket::new(&response) {
+                    telio_log_debug!("Response: {:#?}", dns_packet);
+                }
 
                 response
             }
