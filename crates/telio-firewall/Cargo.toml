@@ -25,7 +25,7 @@ telio-crypto.workspace = true
 telio-utils.workspace = true
 telio-model.workspace = true
 telio-network-monitors.workspace = true
-libloading = "0.8.9"
+libloading = { default-features = false, version = "0.8.9" }
 thiserror.workspace = true
 mockall_double.workspace = true
 

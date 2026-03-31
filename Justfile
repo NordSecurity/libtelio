@@ -106,7 +106,7 @@ _udeps-install: _nightly-install
     cargo +{{ nightly }} install cargo-udeps@0.1.55 --locked
 
 _unused-install: _rust_stable-install _rust-from-toolchain-file-install
-    cargo +{{ rust_stable }} install --version 0.2.0 cargo-unused-features --locked
+    cargo +1.92.0 install --git https://github.com/MTaliancich/cargo-unused-features.git --rev bc66e21323cbfd4cd21bb09a03298b592632e8e7
 
 _deny-install:
     cargo install --locked cargo-deny@0.18.9
