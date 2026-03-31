@@ -19,7 +19,7 @@ hashlink.workspace = true
 ipnet.workspace = true
 mockall = { workspace = true, optional = true }
 parking_lot.workspace = true
-proptest = { workspace = true, optional = true }
+proptest = { workspace = true, optional = true , default-features = false }
 proptest-derive = { workspace = true, optional = true }
 rand.workspace = true
 regex.workspace = true
@@ -30,7 +30,7 @@ sn_fake_clock = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
-zeroize = { workspace = true, features = ["derive"] }
+zeroize = { workspace = true, default-features = false }
 
 [dev-dependencies]
 lru_time_cache = { version = "0.11.11", features = ["sn_fake_clock"] }
