@@ -4,10 +4,10 @@ use crate::endpoint_providers::{
 };
 use crate::ping_pong_handler::PingPongHandler;
 use async_trait::async_trait;
-use futures::{prelude::*, FutureExt};
+use futures::{FutureExt, prelude::*};
 use igd::{
-    aio::{search_gateway, Gateway},
     PortMappingProtocol,
+    aio::{Gateway, search_gateway},
 };
 use ipnet::Ipv4Net;
 use rand::RngExt;
@@ -19,10 +19,11 @@ use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_proto::{Session, WGPort};
 use telio_sockets::External;
-use telio_task::{io::chan::Tx, task_exec, BoxAction, Runtime, Task};
+use telio_task::{BoxAction, Runtime, Task, io::chan::Tx, task_exec};
 use telio_utils::{
+    Instant, PinnedSleep,
     exponential_backoff::{Backoff, CallWithBackoff, ExponentialBackoff, ExponentialBackoffBounds},
-    telio_log_debug, telio_log_info, telio_log_warn, Instant, PinnedSleep,
+    telio_log_debug, telio_log_info, telio_log_warn,
 };
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::time::sleep;
@@ -795,15 +796,15 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
 #[cfg(test)]
 mod tests {
     use super::{
-        async_trait, EndpointCandidate, MockUpnpEpCommands, UpnpEndpointProvider,
-        EPHEMERAL_PORT_RANGE,
+        EPHEMERAL_PORT_RANGE, EndpointCandidate, MockUpnpEpCommands, UpnpEndpointProvider,
+        async_trait,
     };
 
     use std::{
         cell::RefCell,
         net::{IpAddr, Ipv4Addr, SocketAddr},
         rc::Rc,
-        sync::{atomic::AtomicUsize, Arc},
+        sync::{Arc, atomic::AtomicUsize},
         time::Duration,
     };
 
@@ -821,8 +822,8 @@ mod tests {
     };
     use telio_utils::ip_stack::IpStack;
     use telio_wg::{
-        uapi::{Interface, Peer},
         Error as wgError, WireGuard,
+        uapi::{Interface, Peer},
     };
     use tokio::sync::Mutex as TMutex;
 
@@ -897,8 +898,8 @@ mod tests {
         *IGD_IS_AVAILABLE.lock() = false;
     }
 
-    pub async fn prepare_test_setup(
-    ) -> UpnpEndpointProvider<MockWg, MockUpnpEpCommands, MockBackoff> {
+    pub async fn prepare_test_setup()
+    -> UpnpEndpointProvider<MockWg, MockUpnpEpCommands, MockBackoff> {
         let spool = SocketPool::new(
             NativeProtector::new(
                 #[cfg(target_os = "macos")]
