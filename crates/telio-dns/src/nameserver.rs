@@ -306,8 +306,9 @@ impl LocalNameServer {
                 };
 
                 telio_log_debug!(
-                    "Forwarding DNS request from port {:?}",
+                    "Forwarding DNS request from port {:?}: {:?}",
                     request_info.dns_source_port(),
+                    raw_query
                 );
                 if let Some(dns_packet) = DnsPacket::new(&raw_query) {
                     telio_log_debug!("Request: {:?}", dns_packet);
