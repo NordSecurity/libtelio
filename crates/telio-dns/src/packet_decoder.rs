@@ -22,9 +22,6 @@ pub(crate) enum DnsParseError {
     /// The packet has no DNS queries
     #[error("no DNS queries")]
     NoQueries,
-    /// Opcode is not supported
-    #[error("unsupported opcode: {0:?}")]
-    UnsupportedOpcode(Opcode),
 }
 
 /// Check if `name` is in the `.nord` top-level domain
@@ -58,11 +55,6 @@ pub(crate) fn parse_dns_query_packet(packet_bytes: &[u8]) -> Result<DnsPacket<'_
         return Err(DnsParseError::NoQueries);
     }
 
-    let opcode = dns_packet.get_opcode();
-    if opcode != Opcode::StandardQuery {
-        return Err(DnsParseError::UnsupportedOpcode(opcode));
-    }
-
     Ok(dns_packet)
 }
 
@@ -72,6 +64,12 @@ pub(crate) fn parse_dns_query_packet(packet_bytes: &[u8]) -> Result<DnsPacket<'_
 /// DNS spec in theory makes it possible to have multiple query per packet
 /// but in practice this is never implemented
 pub(crate) fn find_nord_query(dns_packet: &DnsPacket) -> Option<DnsQuery> {
+    let opcode = dns_packet.get_opcode();
+    if opcode != Opcode::StandardQuery {
+        telio_log_warn!("Unsupported Opcode for nord query: {opcode:?}");
+        return None;
+    }
+
     if dns_packet.get_query_count() > 1 {
         telio_log_warn!(
             "DNS packet contains multiple queries: {}",
@@ -166,12 +164,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_unsupported_opcode() {
+    fn parse_opcode() {
         let mut bytes = build_dns_query_bytes(&["test.nord"], QueryType::A);
         // Set opcode to 2 (Status) while keeping QR=0
         bytes[2] = (bytes[2] & 0x80) | (2 << 3);
-        let err = parse_dns_query_packet(&bytes).unwrap_err();
-        assert!(matches!(err, DnsParseError::UnsupportedOpcode(_)));
+        let packet = parse_dns_query_packet(&bytes).unwrap();
+        assert_eq!(packet.get_opcode(), Opcode::ServerStatusRequest);
     }
 
     #[test]

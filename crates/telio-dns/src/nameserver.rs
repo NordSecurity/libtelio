@@ -422,11 +422,6 @@ impl LocalNameServer {
                     Some(PayloadDestination::Forward(payload.to_vec()))
                 }
             }
-            Err(DnsParseError::UnsupportedOpcode(c)) => {
-                telio_log_warn!("Unsupported DNS query Opcode: {c:?}");
-                // still forward it as a fallback
-                Some(PayloadDestination::Forward(payload.to_vec()))
-            }
             Err(e) => {
                 // malformed DNS query
                 return Err(format!("Failed to parse DNS payload: {e}"));
