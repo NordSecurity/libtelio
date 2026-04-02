@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 bytecodec = "0.5.0"
-igd = { git = "https://github.com/NordSecurity/rust-igd.git", tag = "v0.13.1", features = ["aio"], default-features = false }
+igd = { git = "https://github.com/NordSecurity/rust-igd.git", tag = "v0.13.2", features = ["aio"], default-features = false }
 stun_codec = "0.4"
 
 async-trait.workspace = true

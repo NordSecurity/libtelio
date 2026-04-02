@@ -2326,8 +2326,13 @@ dependencies = [
 [[package]]
 name = "igd"
 version = "0.12.1"
-source = "git+https://github.com/NordSecurity/rust-igd.git?tag=v0.13.1#4ade34656729c2ce1fd93d9399488e5b8a2eeacb"
+source = "git+https://github.com/NordSecurity/rust-igd.git?tag=v0.13.2#d45266b27d01748c661d5e4f0e6da7782eda33b5"
 dependencies = [
+ "bytes",
+ "http",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "log",
  "rand 0.8.5",
  "reqwest",
