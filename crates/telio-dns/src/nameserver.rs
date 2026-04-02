@@ -1,6 +1,8 @@
 use crate::{
+    packet_decoder::{find_nord_query, normalize_qname, parse_dns_query_packet, DnsParseError},
+    packet_encoder::DnsResponseBuilder,
     resolver::Resolver,
-    zone::{AuthoritativeZone, ClonableZones, ForwardZone, Records},
+    zone::{AuthoritativeZone, ClonableZones, ForwardZone, NordZone, Records, NORD_ZONE},
 };
 use async_trait::async_trait;
 use hickory_server::{
@@ -10,6 +12,7 @@ use hickory_server::{
 };
 use neptun::noise::{Tunn, TunnResult};
 use pnet_packet::{
+    dns::DnsQuery,
     ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
     ipv4::{checksum, Ipv4Packet, MutableIpv4Packet},
     ipv6::{Ipv6Packet, MutableIpv6Packet},
@@ -87,6 +90,8 @@ async fn update_wg_timers(
 /// Local name server.
 #[derive(Default)]
 pub struct LocalNameServer {
+    /// .nord peers zone
+    nord_zone: NordZone,
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
 }
@@ -96,6 +101,7 @@ impl LocalNameServer {
     /// configured for zone `.`.
     pub async fn new(forward_ips: &[IpAddr]) -> Result<Arc<RwLock<Self>>, String> {
         let ns = Arc::new(RwLock::new(LocalNameServer {
+            nord_zone: NordZone::new(),
             zones: Arc::new(ClonableZones::new()),
             task_handle: None,
         }));
@@ -247,11 +253,6 @@ impl LocalNameServer {
         nameserver: Arc<RwLock<LocalNameServer>>,
         request_info: &mut RequestInfo,
     ) -> Result<Vec<u8>, String> {
-        telio_log_debug!("Resolving dns");
-        let resolver = Resolver::new();
-        telio_log_debug!("Getting DNS zones");
-        let zones = nameserver.zones().await;
-
         telio_log_debug!("Preparing DNS request");
         let dns_request = match &mut request_info.payload {
             PayloadRequestInfo::Udp {
@@ -262,17 +263,55 @@ impl LocalNameServer {
                 .ok_or_else(|| String::from("Inexistent DNS request"))?,
             _ => return Ok(Vec::new()),
         };
-        let dns_request = Request::new(dns_request, request_info.dns_source(), Protocol::Udp);
-        telio_log_debug!("DNS request: {:?}", &dns_request);
 
-        zones
-            .lookup(&dns_request, resolver.clone())
-            .await
-            .map_err(|e| format!("Lookup failed {e}"))?;
+        let dns_response = match dns_request {
+            PayloadDestination::Local {
+                id,
+                recursion_desired,
+                query,
+            } => {
+                telio_log_debug!(
+                    "Local query for: {:?} {:?}",
+                    query.qtype,
+                    query.get_qname_parsed()
+                );
+                // lookup local zone for response
+                let (response_kind, ttl) = {
+                    let ns = nameserver.read().await;
+                    (
+                        ns.nord_zone.resolve_local_response(&query),
+                        ns.nord_zone.ttl(),
+                    )
+                };
 
-        let dns_response = resolver.0.lock().await;
-        telio_log_debug!("Nameserver response: {:?}", &dns_response);
-        Ok(dns_response.to_vec())
+                telio_log_debug!("Local response: {:?}", response_kind);
+
+                // build response packet bytes
+                DnsResponseBuilder::new(id, query, ttl.0, response_kind, recursion_desired)
+                    .build()
+                    .map_err(|e| format!("Failed building DNS response packet: {e:?}"))?
+            }
+            PayloadDestination::Forward(question) => {
+                telio_log_debug!("Forwarding request dns");
+                let resolver = Resolver::new();
+                telio_log_debug!("Getting DNS zones");
+                let zones = nameserver.zones().await;
+
+                let dns_request = Request::new(question, request_info.dns_source(), Protocol::Udp);
+                telio_log_debug!("DNS request: {:?}", &dns_request);
+
+                zones
+                    .lookup(&dns_request, resolver.clone())
+                    .await
+                    .map_err(|e| format!("Lookup failed {e}"))?;
+
+                let dns_response = resolver.0.lock().await;
+                telio_log_debug!("Nameserver response: {:?}", &dns_response);
+                dns_response.to_vec()
+            }
+        };
+
+        Ok(dns_response)
     }
 
     async fn process_packet(
@@ -347,13 +386,43 @@ impl LocalNameServer {
             return Err(String::from("Invalid DNS port"));
         }
 
-        let dns_request = MessageRequest::from_bytes(udp_request.payload())
-            .map_err(|_| String::from("Failed to build MessageRequest from request packet"))?;
+        let payload = udp_request.payload();
+
+        let dns_request = match parse_dns_query_packet(payload) {
+            Ok(packet) => {
+                if let Some(query) = find_nord_query(&packet) {
+                    // query for local .nord domain
+                    Some(PayloadDestination::Local {
+                        id: packet.get_id(),
+                        recursion_desired: packet.get_is_recursion_desirable() == 1,
+                        query,
+                    })
+                } else {
+                    // not .nord, forward unchanged
+                    let forward = MessageRequest::from_bytes(payload).map_err(|_| {
+                        String::from("Failed to build MessageRequest from request packet")
+                    })?;
+                    Some(PayloadDestination::Forward(forward))
+                }
+            }
+            Err(DnsParseError::UnsupportedOpcode(c)) => {
+                telio_log_warn!("Unsupported DNS query Opcode: {c:?}");
+                // still forward it as a fallback
+                let forward = MessageRequest::from_bytes(payload).map_err(|_| {
+                    String::from("Failed to build MessageRequest from request packet")
+                })?;
+                Some(PayloadDestination::Forward(forward))
+            }
+            Err(e) => {
+                // malformed DNS query
+                return Err(format!("Failed to parse DNS payload: {e}"));
+            }
+        };
 
         Ok(PayloadRequestInfo::Udp {
             source_port: udp_request.get_source(),
             destination_port: udp_request.get_destination(),
-            dns_request: Some(dns_request),
+            dns_request,
         })
     }
 }
@@ -398,11 +467,21 @@ impl IpRequestInfo {
 }
 
 #[allow(clippy::large_enum_variant)]
+enum PayloadDestination {
+    Local {
+        id: u16,
+        recursion_desired: bool,
+        query: DnsQuery,
+    },
+    Forward(MessageRequest),
+}
+
+#[allow(clippy::large_enum_variant)]
 enum PayloadRequestInfo {
     Udp {
         source_port: u16,
         destination_port: u16,
-        dns_request: Option<MessageRequest>,
+        dns_request: Option<PayloadDestination>,
     },
     Tcp {
         source_port: u16,
@@ -692,11 +771,19 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
         records: &Records,
         ttl_value: TtlValue,
     ) -> Result<(), String> {
-        let azone = Arc::new(AuthoritativeZone::new(zone, records, ttl_value).await?);
+        if normalize_qname(zone) == NORD_ZONE {
+            let mut ns = self.write().await;
+            ns.nord_zone
+                .upsert(records, ttl_value)
+                .map_err(|e| format!("Upsert failed: {e}"))?;
+        }
 
+        // TODO: LLT-7054: Remove AuthoritativeZone once migration is fully validated
+        let azone = Arc::new(AuthoritativeZone::new(zone, records, ttl_value).await?);
         self.zones_mut()
             .await
             .upsert(LowerName::from_str(zone)?, Box::new(azone));
+
         Ok(())
     }
 
@@ -727,7 +814,8 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
 
 #[cfg(test)]
 mod tests {
-    use crate::zone::Records;
+    use super::*;
+    use crate::zone::{Records, NORD_ZONE};
     use hickory_server::{
         authority::MessageRequest,
         proto::{
@@ -738,8 +826,6 @@ mod tests {
         server::Request,
     };
     use std::{net::Ipv4Addr, str::FromStr};
-
-    use super::*;
 
     fn dns_request(host: String) -> Request {
         let mut question = Message::new();
@@ -767,7 +853,7 @@ mod tests {
             .await
             .unwrap();
         nameserver
-            .upsert("nord", &records, TtlValue(60))
+            .upsert(NORD_ZONE, &records, TtlValue(60))
             .await
             .unwrap();
         let request = dns_request(entry_name.clone());
@@ -803,7 +889,7 @@ mod tests {
             .unwrap();
         let raw_read_ptr1 = Arc::as_ptr(&nameserver.zones().await);
         nameserver
-            .upsert("nord", &records, TtlValue(60))
+            .upsert(NORD_ZONE, &records, TtlValue(60))
             .await
             .unwrap();
         let raw_read_ptr2 = Arc::as_ptr(&nameserver.zones().await);
@@ -818,7 +904,7 @@ mod tests {
 
         let read_ptr3 = nameserver.zones().await;
         nameserver
-            .upsert("nord2", &records, TtlValue(60))
+            .upsert("nord2.", &records, TtlValue(60))
             .await
             .unwrap();
         let raw_read_ptr4 = Arc::as_ptr(&nameserver.zones().await);
@@ -841,7 +927,7 @@ mod tests {
             .await
             .unwrap();
         nameserver
-            .upsert("nord.", &records, TtlValue(60))
+            .upsert(NORD_ZONE, &records, TtlValue(60))
             .await
             .unwrap();
 

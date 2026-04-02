@@ -2,9 +2,7 @@
 //!
 //! This module provides a layer for parsing a single DNS question from raw UDP bytes
 
-// TODO: LLT-7050 Remove after merging integration
-#![allow(dead_code)]
-
+use crate::zone::{NORD_ZONE, NORD_ZONE_SUFFIX};
 use pnet_packet::{
     dns::{DnsClasses, DnsPacket, DnsQuery, Opcode},
     FromPacket,
@@ -35,7 +33,7 @@ fn is_nord_name(name: &str) -> bool {
     if normalized.is_empty() {
         return false;
     }
-    normalized == "nord." || normalized.ends_with(".nord.")
+    normalized == NORD_ZONE || normalized.ends_with(NORD_ZONE_SUFFIX)
 }
 
 /// Normalize the name, converting to lowercase and appending trailing dot
