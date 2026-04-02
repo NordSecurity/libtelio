@@ -1,1 +1,1 @@
-Fix possible DoS triggered by failed SSDP Search request
+Fix possible DoS triggered by failed SSDP Search request and by large http get body
