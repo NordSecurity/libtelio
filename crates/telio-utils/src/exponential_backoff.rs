@@ -76,6 +76,20 @@ impl ExponentialBackoff {
             current_backoff: bounds.initial,
         })
     }
+
+    /// An ExponentialBackoff that can always be constructed.
+    ///
+    /// Starts from 1 second and has no upper bound.
+    pub fn fallback() -> Self {
+        let bounds = ExponentialBackoffBounds {
+            initial: Duration::from_secs(1),
+            maximal: None,
+        };
+        Self {
+            bounds,
+            current_backoff: bounds.initial,
+        }
+    }
 }
 
 impl Backoff for ExponentialBackoff {

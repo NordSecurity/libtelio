@@ -5437,6 +5437,7 @@ dependencies = [
  "telio-test",
  "telio-utils",
  "telio-wg",
+ "test-log",
  "thiserror 2.0.18",
  "tokio",
  "tracing",

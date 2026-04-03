@@ -11,11 +11,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_network_monitors::local_interfaces::{
-    gather_local_interfaces, GetIfAddrs, SystemGetIfAddrs,
+    GetIfAddrs, SystemGetIfAddrs, gather_local_interfaces,
 };
 use telio_proto::{Session, WGPort};
 use telio_sockets::External;
-use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
+use telio_task::{BoxAction, Runtime, Task, io::chan, task_exec};
 use telio_utils::{interval, telio_log_debug, telio_log_info, telio_log_warn};
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::net::UdpSocket;
@@ -165,7 +165,10 @@ impl<T: WireGuard, G: GetIfAddrs> State<T, G> {
             let udp_port = match self.udp_socket.local_addr() {
                 Ok(addr) => addr.port(),
                 Err(e) => {
-                    telio_log_warn!("Skipping local interfaces poll due to failure to retrieve udp socket addr {:?}", e);
+                    telio_log_warn!(
+                        "Skipping local interfaces poll due to failure to retrieve udp socket addr {:?}",
+                        e
+                    );
                     return Err(e.into());
                 }
             };
@@ -272,15 +275,15 @@ mod tests {
     use maplit::hashmap;
     use std::net::Ipv4Addr;
     use telio_crypto::{
-        encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
         SecretKey,
+        encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
     };
     use telio_network_monitors::local_interfaces::MockGetIfAddrs;
-    use telio_proto::{CodecError, PartialPongerMsg, PingerMsg, MAX_PACKET_SIZE};
+    use telio_proto::{CodecError, MAX_PACKET_SIZE, PartialPongerMsg, PingerMsg};
     use telio_sockets::NativeProtector;
     use telio_sockets::SocketPool;
     use telio_task::io::Chan;
-    use telio_wg::{uapi::Interface, MockWireGuard};
+    use telio_wg::{MockWireGuard, uapi::Interface};
     use tokio::time::timeout;
 
     async fn create_localhost_socket(pool: &SocketPool) -> (External<UdpSocket>, SocketAddr) {
@@ -300,7 +303,7 @@ mod tests {
         SecretKey,
         Arc<Mutex<PingPongHandler>>,
     ) {
-        let secret_key = SecretKey::gen();
+        let secret_key = SecretKey::r#gen();
         let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key.clone())));
         (
             State {
@@ -340,7 +343,7 @@ mod tests {
         SecretKey,
         Arc<Mutex<PingPongHandler>>,
     ) {
-        let secret_key = SecretKey::gen();
+        let secret_key = SecretKey::r#gen();
         let socket_pool = SocketPool::new(
             NativeProtector::new(
                 #[cfg(target_os = "macos")]
@@ -499,7 +502,7 @@ mod tests {
         ) = prepare_local_provider_test(wg_mock, get_if_addrs_mock).await;
 
         let session_id = 456;
-        let remote_sk = SecretKey::gen();
+        let remote_sk = SecretKey::r#gen();
         let remote_pk = remote_sk.public();
 
         ping_pong_handler
@@ -564,7 +567,7 @@ mod tests {
             prepare_local_provider_test(wg_mock, get_if_addrs_mock).await;
 
         let session_id = 456;
-        let remote_sk = SecretKey::gen();
+        let remote_sk = SecretKey::r#gen();
         let remote_pk = remote_sk.public();
 
         local_provider
@@ -630,7 +633,7 @@ mod tests {
 
         let (provider_socket, provider_addr) = create_localhost_socket(&socket_pool).await;
         let ping = PingerMsg::ping(WGPort(wg_port), 2, 3);
-        let local_sk = SecretKey::gen();
+        let local_sk = SecretKey::r#gen();
         let encrypt_transform = |b: &[u8]| {
             Ok(
                 encrypt_request(b, &mut rand::rng(), &local_sk.clone(), &remote_sk.public())
@@ -693,7 +696,7 @@ mod tests {
 
         let (provider_socket, provider_addr) = create_localhost_socket(&socket_pool).await;
         let ping = PingerMsg::ping(WGPort(wg_port), 2, 3);
-        let local_sk = SecretKey::gen();
+        let local_sk = SecretKey::r#gen();
         let encrypt_transform = |b: &[u8]| {
             Ok(encrypt_request(b, &mut rand::rng(), &local_sk, &remote_sk.public()).unwrap())
         };
