@@ -384,36 +384,48 @@ class LinuxRouter(Router):
         try:
             yield
         finally:
-            await self._connection.create_process(
-                [
-                    iptables_string,
-                    "--wait",  # Wait for xtables lock
-                    "--table",
-                    "filter",
-                    "--delete",
-                    "INPUT",
-                    "--source",
+            try:
+                await self._connection.create_process(
+                    [
+                        iptables_string,
+                        "--wait",  # Wait for xtables lock
+                        "--table",
+                        "filter",
+                        "--delete",
+                        "INPUT",
+                        "--source",
+                        address,
+                        "--jump",
+                        "DROP",
+                    ],
+                    quiet=True,
+                ).execute()
+            except ProcessExecError:
+                log.warning(
+                    "disable_path cleanup: INPUT rule for %s already removed",
                     address,
-                    "--jump",
-                    "DROP",
-                ],
-                quiet=True,
-            ).execute()
-            await self._connection.create_process(
-                [
-                    iptables_string,
-                    "--wait",  # Wait for xtables lock
-                    "--table",
-                    "filter",
-                    "--delete",
-                    "OUTPUT",
-                    "--destination",
+                )
+            try:
+                await self._connection.create_process(
+                    [
+                        iptables_string,
+                        "--wait",  # Wait for xtables lock
+                        "--table",
+                        "filter",
+                        "--delete",
+                        "OUTPUT",
+                        "--destination",
+                        address,
+                        "--jump",
+                        "DROP",
+                    ],
+                    quiet=True,
+                ).execute()
+            except ProcessExecError:
+                log.warning(
+                    "disable_path cleanup: OUTPUT rule for %s already removed",
                     address,
-                    "--jump",
-                    "DROP",
-                ],
-                quiet=True,
-            ).execute()
+                )
 
     @asynccontextmanager
     async def break_tcp_conn_to_host(self, address: str) -> AsyncIterator:
@@ -447,25 +459,31 @@ class LinuxRouter(Router):
         try:
             yield
         finally:
-            await self._connection.create_process(
-                [
-                    iptables_string,
-                    "--wait",  # Wait for xtables lock
-                    "--table",
-                    "filter",
-                    "--delete",
-                    "OUTPUT",
-                    "--destination",
+            try:
+                await self._connection.create_process(
+                    [
+                        iptables_string,
+                        "--wait",  # Wait for xtables lock
+                        "--table",
+                        "filter",
+                        "--delete",
+                        "OUTPUT",
+                        "--destination",
+                        address,
+                        "--protocol",
+                        "tcp",
+                        "--jump",
+                        "REJECT",
+                        "--reject-with",
+                        "tcp-reset",
+                    ],
+                    quiet=True,
+                ).execute()
+            except ProcessExecError:
+                log.warning(
+                    "break_tcp_conn_to_host cleanup: rule for %s already removed",
                     address,
-                    "--protocol",
-                    "tcp",
-                    "--jump",
-                    "REJECT",
-                    "--reject-with",
-                    "tcp-reset",
-                ],
-                quiet=True,
-            ).execute()
+                )
 
     @asynccontextmanager
     async def break_udp_conn_to_host(self, address: str) -> AsyncIterator:
@@ -499,25 +517,31 @@ class LinuxRouter(Router):
         try:
             yield
         finally:
-            await self._connection.create_process(
-                [
-                    iptables_string,
-                    "--wait",  # Wait for xtables lock
-                    "--table",
-                    "filter",
-                    "--delete",
-                    "OUTPUT",
-                    "--destination",
+            try:
+                await self._connection.create_process(
+                    [
+                        iptables_string,
+                        "--wait",  # Wait for xtables lock
+                        "--table",
+                        "filter",
+                        "--delete",
+                        "OUTPUT",
+                        "--destination",
+                        address,
+                        "--protocol",
+                        "udp",
+                        "--jump",
+                        "REJECT",
+                        "--reject-with",
+                        "icmp-host-unreachable",
+                    ],
+                    quiet=True,
+                ).execute()
+            except ProcessExecError:
+                log.warning(
+                    "break_udp_conn_to_host cleanup: rule for %s already removed",
                     address,
-                    "--protocol",
-                    "udp",
-                    "--jump",
-                    "REJECT",
-                    "--reject-with",
-                    "icmp-host-unreachable",
-                ],
-                quiet=True,
-            ).execute()
+                )
 
     # This function blocks outgoing data for a specific port to simulate permission denied error for the socket bound to that port.
     # It was added for LLT-4980, to test a specific code path in proxy.rs
@@ -542,21 +566,27 @@ class LinuxRouter(Router):
         try:
             yield
         finally:
-            await self._connection.create_process(
-                [
-                    "iptables",
-                    "--wait",  # Wait for xtables lock
-                    "--delete",
-                    "OUTPUT",
-                    "--protocol",
-                    "udp",
-                    "--sport",
-                    str(port),
-                    "--jump",
-                    "DROP",
-                ],
-                quiet=True,
-            ).execute()
+            try:
+                await self._connection.create_process(
+                    [
+                        "iptables",
+                        "--wait",  # Wait for xtables lock
+                        "--delete",
+                        "OUTPUT",
+                        "--protocol",
+                        "udp",
+                        "--sport",
+                        str(port),
+                        "--jump",
+                        "DROP",
+                    ],
+                    quiet=True,
+                ).execute()
+            except ProcessExecError:
+                log.warning(
+                    "block_udp_port cleanup: rule for port %d already removed",
+                    port,
+                )
 
     @asynccontextmanager
     async def block_tcp_port(self, port: int) -> AsyncIterator:
@@ -579,21 +609,27 @@ class LinuxRouter(Router):
         try:
             yield
         finally:
-            await self._connection.create_process(
-                [
-                    "iptables",
-                    "--wait",  # Wait for xtables lock
-                    "--delete",
-                    "OUTPUT",
-                    "--protocol",
-                    "tcp",
-                    "--dport",
-                    str(port),
-                    "--jump",
-                    "DROP",
-                ],
-                quiet=True,
-            ).execute()
+            try:
+                await self._connection.create_process(
+                    [
+                        "iptables",
+                        "--wait",  # Wait for xtables lock
+                        "--delete",
+                        "OUTPUT",
+                        "--protocol",
+                        "tcp",
+                        "--dport",
+                        str(port),
+                        "--jump",
+                        "DROP",
+                    ],
+                    quiet=True,
+                ).execute()
+            except ProcessExecError:
+                log.warning(
+                    "block_tcp_port cleanup: rule for port %d already removed",
+                    port,
+                )
 
     @asynccontextmanager
     async def reset_upnpd(self) -> AsyncIterator:

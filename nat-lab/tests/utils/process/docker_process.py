@@ -84,26 +84,44 @@ class DockerProcess(Process):
                 raise
             finally:
                 if self._execute:
-                    inspect = await self._execute.inspect()
-                    while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
+                    try:
                         inspect = await self._execute.inspect()
-                        await asyncio.sleep(0.01)
-                    if inspect["ExitCode"] is None:
-                        subprocess.run(
-                            [
-                                "docker",
-                                "exec",
-                                "--privileged",
-                                self._container.id,
-                                "/opt/bin/kill_process_by_natlab_id",
-                                self._kill_id,
-                            ],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
+                        while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
+                            inspect = await self._execute.inspect()
+                            await asyncio.sleep(0.01)
+                        if inspect["ExitCode"] is None:
+                            subprocess.run(
+                                [
+                                    "docker",
+                                    "exec",
+                                    "--privileged",
+                                    self._container.id,
+                                    "/opt/bin/kill_process_by_natlab_id",
+                                    self._kill_id,
+                                ],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                            )
+                    except RuntimeError as e:
+                        if "Session is closed" in str(e):
+                            log.debug(
+                                "[%s] Docker session closed during cleanup",
+                                self._container_name,
+                            )
+                        else:
+                            raise
                 self._stream = None
 
-        inspect = await self._execute.inspect()
+        try:
+            inspect = await self._execute.inspect()
+        except RuntimeError as e:
+            if "Session is closed" in str(e):
+                log.debug(
+                    "[%s] Docker session closed during cleanup",
+                    self._container_name,
+                )
+                return self
+            raise
         exit_code = inspect["ExitCode"]
 
         # 0 success
@@ -137,30 +155,39 @@ class DockerProcess(Process):
                 yield self
             finally:
                 if self._execute:
-                    inspect = await self._execute.inspect()
-                    while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
+                    try:
                         inspect = await self._execute.inspect()
-                        await asyncio.sleep(0.01)
-                    if inspect["ExitCode"] is None:
-                        proc = subprocess.run(
-                            [
-                                "docker",
-                                "exec",
-                                "--privileged",
-                                self._container.id,
-                                "/opt/bin/kill_process_by_natlab_id",
-                                self._kill_id,
-                            ],
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            text=True,
-                        )
-                        if proc.returncode != 0:
-                            log.warning(
-                                "[%s] Cleanup failed: %s",
-                                self._container_name,
-                                proc.stdout + proc.stderr,
+                        while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
+                            inspect = await self._execute.inspect()
+                            await asyncio.sleep(0.01)
+                        if inspect["ExitCode"] is None:
+                            proc = subprocess.run(
+                                [
+                                    "docker",
+                                    "exec",
+                                    "--privileged",
+                                    self._container.id,
+                                    "/opt/bin/kill_process_by_natlab_id",
+                                    self._kill_id,
+                                ],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True,
                             )
+                            if proc.returncode != 0:
+                                log.warning(
+                                    "[%s] Cleanup failed: %s",
+                                    self._container_name,
+                                    proc.stdout + proc.stderr,
+                                )
+                    except RuntimeError as e:
+                        if "Session is closed" in str(e):
+                            log.debug(
+                                "[%s] Docker session closed during cleanup",
+                                self._container_name,
+                            )
+                        else:
+                            raise
 
     async def _read_loop(
         self,
