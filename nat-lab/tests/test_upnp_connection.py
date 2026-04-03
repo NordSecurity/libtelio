@@ -267,7 +267,13 @@ async def test_upnp_port_lease_duration(
         mappings_search = re.findall(
             "^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE
         )
-        assert len(mappings_search) == 2
+
+        # With battery optimization disabled, the uPnP pause() is inactive, so
+        # the port mappings can be created, even with paused provider
+        if not battery_optimization:
+            assert 2 <= len(mappings_search) <= 4
+        else:
+            assert len(mappings_search) == 2
 
         await asyncio.sleep(lease_duration_s)
 
@@ -276,7 +282,11 @@ async def test_upnp_port_lease_duration(
         mappings_search = re.findall(
             "^ [0-9]+ UDP", upnpc_cmd.get_stdout(), re.MULTILINE
         )
-        assert len(mappings_search) == 2
+
+        if not battery_optimization:
+            assert (len(mappings_search) <= 4) and (len(mappings_search) >= 2)
+        else:
+            assert len(mappings_search) == 2
 
         await alpha_client.stop_device()
         await asyncio.sleep(lease_duration_s)
