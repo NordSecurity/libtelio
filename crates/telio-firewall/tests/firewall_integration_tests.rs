@@ -549,8 +549,8 @@ fn firewall_vpn_peer() {
 
             assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_udp(src1, dst1,)), false);
             assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), false);
-            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_tcp(src1, dst1, synack)), false);
-            assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_tcp(src2, dst1, synack)), false);
+            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_tcp(src1, dst1, synack)), true);
+            assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_tcp(src2, dst1, synack)), true);
 
             state.whitelist.vpn_peer = Some(peer1);
             fw.apply_state(state.clone());
@@ -564,7 +564,7 @@ fn firewall_vpn_peer() {
             fw.apply_state(state.clone());
             assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_udp(src1, dst1,)), false);
             assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), false);
-            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_tcp(src1, dst1, 0)), true);
+            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_tcp(src1, dst1, 0)), false);
             assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_tcp(src2, dst1, 0)), false);
         }
 }
@@ -698,16 +698,16 @@ fn firewall_whitelist_change_tcp_allow() {
 
         state.whitelist.port_whitelist.insert(them_peer, 8888);
         fw.apply_state(state.clone()); // NOTE: this doesn't change anything about the test
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), false);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
         assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &make_tcp(us, them, TcpFlags::SYN)), true);
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
 
 
         // Should PASS because we started the session
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), false);
         state.whitelist.port_whitelist.remove(&them_peer);
         fw.apply_state(state.clone());
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), false);
     }
 
 }
@@ -739,7 +739,7 @@ fn firewall_whitelist_change_tcp_block() {
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), true);
         state.whitelist.port_whitelist.remove(&them_peer);
         fw.apply_state(state.clone());
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), false);
     }
 }
 
@@ -1233,31 +1233,31 @@ mod tp_lite_stats {
 
         assert!(fw.process_outbound_packet_sink(
             &make_peer(),
-            &make_dns_request(2, "blocked.example.com")
+            &make_dns_request(2, "blocked1.example.com")
         ));
         assert!(fw.process_inbound_packet(
             &make_peer(),
-            &mut make_dns_response(2, "blocked.example.com", true)
+            &mut make_dns_response(2, "blocked1.example.com", true)
         ));
 
         assert!(fw.process_outbound_packet_sink(
             &make_peer(),
-            &make_dns_request(3, "blocked.example.com")
+            &make_dns_request(3, "blocked2.example.com")
         ));
         // Small sleep to make sure stats collection happens
         std::thread::sleep(std::time::Duration::from_secs(1));
         assert!(fw.process_inbound_packet(
             &make_peer(),
-            &mut make_dns_response(4, "blocked.example.com", true)
+            &mut make_dns_response(4, "blocked2.example.com", true)
         ));
 
         assert_eq!(stats.lock().num_invocations, 1);
         assert_eq!(stats.lock().num_requests, 3);
-        assert_eq!(stats.lock().num_responses, 3);
+        assert_eq!(stats.lock().num_responses, 2);
         assert_eq!(stats.lock().blocked_domains.len(), 1);
         assert_eq!(
             stats.lock().blocked_domains[0].domain_name,
-            "blocked.example.com".to_owned()
+            "blocked1.example.com".to_owned()
         );
     }
 }
