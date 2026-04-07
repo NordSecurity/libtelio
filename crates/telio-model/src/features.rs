@@ -683,7 +683,6 @@ mod tests {
                 "max_inter_thread_batched_pkts": 123456
             },
             "nurse": {
-                "fingerprint": "test_fingerprint",
                 "heartbeat_interval": 5,
                 "initial_heartbeat_interval": 6,
                 "qos": {
@@ -889,17 +888,13 @@ mod tests {
 
         #[test]
         fn test_empty_nurse() {
-            assert_json!(
-                r#"{"nurse": {"fingerprint": ""}}"#,
-                FeatureNurse::default(),
-                nurse.unwrap()
-            );
+            assert_json!(r#"{"nurse": {}}"#, FeatureNurse::default(), nurse.unwrap());
         }
 
         #[test]
         fn test_empty_nurse_qos() {
             assert_json!(
-                r#"{"nurse": {"fingerprint": "", "qos": {}}}"#,
+                r#"{"nurse": {"qos": {}}}"#,
                 FeatureQoS::default(),
                 nurse.unwrap().qos.unwrap()
             );
