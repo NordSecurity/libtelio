@@ -184,7 +184,7 @@ class SshConnection(Connection):
             self.target_os is TargetOS.Linux  # type: ignore[redundant-expr]
             and self.tag is ConnectionTag.VM_OPENWRT_GW_1
         ):
-            await utils_openwrt.copy_binaries(self._connection, self)
+            await utils_openwrt.copy_binaries(self)
 
     async def upload_file(self, local_file_path: str, remote_file_path: str) -> None:
         """Upload file from 'local_file_path' to 'remote_file_path' on the connected node"""

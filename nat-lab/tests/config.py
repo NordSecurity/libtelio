@@ -157,6 +157,10 @@ LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
         "primary": "10.0.80.81",
         "secondary": "",
     },
+    ConnectionTag.DOCKER_OPENWRT_CDN: {
+        "primary": "10.0.254.21",
+        "secondary": "",
+    },
 }
 
 GW_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
