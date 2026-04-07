@@ -1,7 +1,7 @@
 [package]
 name = "telio-traversal"
 version = "0.1.0"
-edition = "2018"
+edition = "2024"
 license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
@@ -42,6 +42,8 @@ maplit.workspace = true
 mockall.workspace = true
 ntest.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+test-log = { version = "0.2.19", features = ["trace"] }
+
 
 telio-task = { workspace = true, features = ["test-util"] }
 telio-test.workspace = true

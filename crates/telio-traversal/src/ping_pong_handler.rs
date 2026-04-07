@@ -6,8 +6,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use telio_crypto::{
-    encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
     PublicKey, SecretKey,
+    encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
 };
 use telio_model::features::EndpointProvider;
 use telio_proto::{

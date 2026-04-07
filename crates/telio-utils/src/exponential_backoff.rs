@@ -76,6 +76,36 @@ impl ExponentialBackoff {
             current_backoff: bounds.initial,
         })
     }
+
+    /// Given the bounds for exponential backoff returns an instance of
+    /// `ExponentialBackoff`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if maximal bound is defined and is smaller than the initial one.
+    pub fn new_allow_zero(bounds: ExponentialBackoffBounds) -> Result<Self, Error> {
+        if bounds.maximal.is_some_and(|t| t < bounds.initial) {
+            return Err(Error::InvalidExponentialBackoffBounds);
+        }
+        Ok(Self {
+            bounds,
+            current_backoff: bounds.initial,
+        })
+    }
+
+    /// An ExponentialBackoff that can always be constructed.
+    ///
+    /// Starts from 1 second and has no upper bound.
+    pub fn fallback() -> Self {
+        let bounds = ExponentialBackoffBounds {
+            initial: Duration::from_secs(1),
+            maximal: None,
+        };
+        Self {
+            bounds,
+            current_backoff: bounds.initial,
+        }
+    }
 }
 
 impl Backoff for ExponentialBackoff {

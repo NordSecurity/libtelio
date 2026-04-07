@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use enum_map::Enum;
 use ipnet::PrefixLenError;
 use std::time::Duration;
-use telio_crypto::{encryption, PublicKey};
+use telio_crypto::{PublicKey, encryption};
 use telio_utils::exponential_backoff;
 use thiserror::Error as TError;
 
