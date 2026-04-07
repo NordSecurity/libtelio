@@ -64,6 +64,7 @@ END_TASKS: threading.Event = threading.Event()
 CURRENT_TEST_LOG_FILE = None
 
 LOG_DIR = "logs"
+OPENWRT_VM_TAGS = [ConnectionTag.VM_OPENWRT_GW_1, ConnectionTag.VM_OPENWRT_GW_2]
 SESSION_VM_MARKS: set[str] = set()
 SESSION_IS_CONTAINER_RUNNING: dict[ConnectionTag, bool] = {}
 SESSION_MARK_TO_CONTAINERS = {
@@ -73,7 +74,7 @@ SESSION_MARK_TO_CONTAINERS = {
     ],
     "mac": [ConnectionTag.VM_MAC],
     "nlx": [ConnectionTag.VM_LINUX_NLX_1],
-    "openwrt": [ConnectionTag.VM_OPENWRT_GW_1],
+    "openwrt": OPENWRT_VM_TAGS,
     "windows": [ConnectionTag.VM_WINDOWS_1],
     "windows2": [ConnectionTag.VM_WINDOWS_2],
 }
@@ -370,7 +371,7 @@ async def setup_check_arp_cache():
     failures: list[str] = []
 
     for tag in get_required_vm_containers_from_marks():
-        if tag == ConnectionTag.VM_OPENWRT_GW_1:
+        if tag in OPENWRT_VM_TAGS:
             continue
         for ip in LAN_ADDR_MAP[tag].values():
             success = False
@@ -509,7 +510,7 @@ async def check_gateway_connectivity() -> bool:
             setup_log.error("Exception error: %s", e)
             await asyncio.sleep(GW_CHECK_CONNECTIVITY_TIMEOUT)
     # ignore connection failure in case of OpenWrt Gateway
-    if current_gateway and current_gateway in [ConnectionTag.VM_OPENWRT_GW_1]:
+    if current_gateway and current_gateway in OPENWRT_VM_TAGS:
         return True
     return False
 
@@ -663,6 +664,7 @@ async def _copy_vm_binaries_if_needed():
         await _copy_vm_binaries(ConnectionTag.VM_MAC)
     if "openwrt" in SESSION_VM_MARKS:
         await _copy_vm_binaries(ConnectionTag.VM_OPENWRT_GW_1)
+        await _copy_vm_binaries(ConnectionTag.VM_OPENWRT_GW_2)
 
 
 def save_dmesg_from_host(suffix):
@@ -1005,7 +1007,7 @@ async def start_tcpdump_processes():
         raise RuntimeError("SESSION_SCOPE_EXIT_STACK is not initialized")
     connections = []
     for gw_tag in ConnectionTag:
-        if gw_tag is ConnectionTag.VM_OPENWRT_GW_1:
+        if gw_tag in OPENWRT_VM_TAGS:
             continue
         if "_GW" in gw_tag.name:
             if not await is_running(gw_tag):

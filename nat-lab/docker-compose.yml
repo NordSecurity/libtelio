@@ -418,6 +418,18 @@ services:
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.115.254
 
+  openwrt-client-25-12:
+    hostname: openwrt-client-25-12
+    <<: *common-client
+    depends_on:
+      openwrt-gw-25-12:
+        condition: service_healthy
+    networks:
+      openwrt-net-25-12:
+        ipv4_address: 192.168.116.100
+    environment:
+      CLIENT_GATEWAY_PRIMARY: 192.168.116.254
+
   ###########################################################
   #                        GATEWAYS                         #
   ###########################################################
@@ -687,6 +699,58 @@ services:
           com.docker.network.endpoint.ifname: 'eth0'
       openwrt-net-01:
         ipv4_address: 192.168.115.254
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth1'
+    depends_on:
+      core-api:
+        condition: service_healthy
+      openwrt-cdn:
+        condition: service_healthy
+    dns:
+      - 10.0.80.82
+      - 10.0.80.83
+    healthcheck:
+      test: /opt/bin/openwrt/openwrt-qemu-healthcheck.sh
+      interval: 15s
+      timeout: 5s
+      start_period: 45s
+      retries: 5
+
+  openwrt-gw-25-12:
+    hostname: openwrt-gw-25-12
+    build:
+      context: .
+      dockerfile: openwrt.Dockerfile
+      args:
+        SEC_CONTAINER_REGISTRY: $LIBTELIO_ENV_SEC_CONTAINER_REGISTRY
+        OPENWRT_IMAGE: natlab-openwrt-25.12.2-x86-64:temp_version_25
+        OPENWRT_IMG_GZ: openwrt-25.12.2-x86-64-generic-ext4-combined.img.gz
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    entrypoint: /opt/bin/openwrt/entrypoint.sh
+    devices:
+      - "/dev/net/tun"
+      - "/dev/kvm"
+    environment:
+      OPENWRT_WAN_IP: "10.0.254.22/16"
+      OPENWRT_LAN_BRIDGE_IP: "192.168.116.253/24"
+      OPENWRT_VM_LAN_IP: "192.168.116.254"
+      OPENWRT_VM_WAN_IP: "10.0.0.3"
+      OPENWRT_VM_MAC0: "52:54:9B:96:2F:00"
+      OPENWRT_VM_MAC1: "52:54:9B:96:2F:01"
+    networks:
+      internet:
+        ipv4_address: 10.0.254.22
+        driver_opts:
+          com.docker.network.endpoint.ifname: 'eth0'
+      openwrt-net-25-12:
+        ipv4_address: 192.168.116.254
         driver_opts:
           com.docker.network.endpoint.ifname: 'eth1'
     depends_on:
@@ -1140,6 +1204,13 @@ networks:
       driver: default
       config:
         - subnet: 192.168.115.0/24
+
+  openwrt-net-25-12:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.116.0/24
 
   windows-net-01:
     driver: bridge

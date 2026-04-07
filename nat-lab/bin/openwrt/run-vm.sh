@@ -1,6 +1,9 @@
 #!/bin/sh
 set -ex
 
+VM_MAC0="${OPENWRT_VM_MAC0:-52:54:9B:96:1F:00}"
+VM_MAC1="${OPENWRT_VM_MAC1:-52:54:9B:96:1F:01}"
+
 rm -f /tmp/qemu-monitor.sock /tmp/qemu-console.sock /tmp/qmp.sock /tmp/qga.sock
 
 exec /usr/bin/qemu-system-x86_64 \
@@ -10,8 +13,8 @@ exec /usr/bin/qemu-system-x86_64 \
     -smp 2 \
     -netdev tap,id=hostnet0,ifname=qemu1,script=no,downscript=no \
     -netdev tap,id=hostnet1,ifname=qemu0,script=no,downscript=no \
-    -device virtio-net-pci,romfile=,netdev=hostnet0,mac=52:54:9B:96:1F:00,id=net0 \
-    -device virtio-net-pci,romfile=,netdev=hostnet1,mac=52:54:9B:96:1F:01,id=net1 \
+    -device virtio-net-pci,romfile=,netdev=hostnet0,mac=${VM_MAC0},id=net0 \
+    -device virtio-net-pci,romfile=,netdev=hostnet1,mac=${VM_MAC1},id=net1 \
     -chardev socket,id=chr0,path=/tmp/qemu-console.sock,mux=on,signal=off,server=on,wait=off \
     -serial chardev:chr0 \
     -monitor unix:/tmp/qemu-monitor.sock,server=on,wait=off \

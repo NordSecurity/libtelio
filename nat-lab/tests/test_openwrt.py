@@ -36,13 +36,30 @@ from tests.utils.process import ProcessExecError
 from typing import Optional
 
 NETWORK_RESTART_LOG_LINE = "netifd: Network device 'eth1' link is up"
-OPENWRT_GW_WAN_IP = "10.0.0.0"
+OPENWRT_GW_WAN_IP = {
+    ConnectionTag.VM_OPENWRT_GW_1: "10.0.0.2",
+    ConnectionTag.VM_OPENWRT_GW_2: "10.0.0.3",
+}
+
+OPENWRT_TAGS = [
+    pytest.param(
+        ConnectionTag.DOCKER_OPENWRT_CLIENT_1,
+        ConnectionTag.VM_OPENWRT_GW_1,
+        id="openwrt-24.10",
+    ),
+    pytest.param(
+        ConnectionTag.DOCKER_OPENWRT_CLIENT_2,
+        ConnectionTag.VM_OPENWRT_GW_2,
+        id="openwrt-25.12",
+    ),
+]
 
 
 async def check_gateway_and_client_ip(
     gateway_connection: Connection,
     client_connection: Connection,
     expected_ip: str | int,
+    gw_tag: ConnectionTag = ConnectionTag.VM_OPENWRT_GW_1,
 ) -> None:
     """
     Verify that both the OpenWRT gateway and the client device obtain the expected
@@ -64,6 +81,9 @@ async def check_gateway_and_client_ip(
         expected_ip (str):
             The public IP address that both the gateway and client are expected to have
             when connected to or disconnected from the VPN.
+        gw_tag (ConnectionTag):
+            The connection tag identifying the OpenWRT gateway version,
+            used to look up the LuCI UI address.
 
     Raises:
         AssertionError:
@@ -104,7 +124,7 @@ async def check_gateway_and_client_ip(
     luci_ui_response = await client_connection.create_process([
         "sh",
         "-c",
-        f'curl -s -o /dev/null -w "%{{http_code}}" http://{LAN_ADDR_MAP[ConnectionTag.VM_OPENWRT_GW_1]["primary"]}/',
+        f'curl -s -o /dev/null -w "%{{http_code}}" http://{LAN_ADDR_MAP[gw_tag]["primary"]}/',
     ]).execute()
     luci_ui_response_status = luci_ui_response.get_stdout().strip()
     assert (
@@ -116,6 +136,8 @@ async def setup_openwrt_test_environment(
     country_config: ConfigPresetName,
     exit_stack: AsyncExitStack,
     config_path: Optional[Path] = None,
+    client_tag: ConnectionTag = ConnectionTag.DOCKER_OPENWRT_CLIENT_1,
+    gw_tag: ConnectionTag = ConnectionTag.VM_OPENWRT_GW_1,
 ) -> tuple[Connection, Connection, NordVpnLite]:
     """
     Set up the OpenWrt test environment.
@@ -132,6 +154,10 @@ async def setup_openwrt_test_environment(
         exit_stack (AsyncExitStack)
         config_path (Optional[Path], optional):
             Custom path to save nordvpnlite config file. Defaults to None.
+        client_tag (ConnectionTag):
+            The connection tag for the OpenWrt client container.
+        gw_tag (ConnectionTag):
+            The connection tag for the OpenWrt gateway VM.
 
     Returns:
         tuple[Connection, Connection, VpnLite]:
@@ -141,10 +167,10 @@ async def setup_openwrt_test_environment(
             - `nordvpnlite`: Instance of `NordVpnLite` class used to manage the daemon.
     """
     client_connection = await exit_stack.enter_async_context(
-        new_connection_by_tag(ConnectionTag.DOCKER_OPENWRT_CLIENT_1)
+        new_connection_by_tag(client_tag)
     )
     gateway_connection = await exit_stack.enter_async_context(
-        new_connection_by_tag(ConnectionTag.VM_OPENWRT_GW_1)
+        new_connection_by_tag(gw_tag)
     )
     # printing networking state before test execution
     await print_network_state(gateway_connection)
@@ -168,13 +194,18 @@ async def setup_openwrt_test_environment(
 
 @pytest.mark.asyncio
 @pytest.mark.openwrt
+@pytest.mark.parametrize("client_tag,gw_tag", OPENWRT_TAGS)
 @pytest.mark.parametrize(
     "openwrt_config",
     [
         ConfigPresetName.VPN_OPENWRT_UCI_PL,
     ],
 )
-async def test_openwrt_vpn_connection(openwrt_config: ConfigPresetName) -> None:
+async def test_openwrt_vpn_connection(
+    openwrt_config: ConfigPresetName,
+    client_tag: ConnectionTag,
+    gw_tag: ConnectionTag,
+) -> None:
     """
     Connect to vpn from OpenWRT router
 
@@ -188,7 +219,9 @@ async def test_openwrt_vpn_connection(openwrt_config: ConfigPresetName) -> None:
     async with AsyncExitStack() as exit_stack:
         # setting up openwrt environment
         client_connection, gateway_connection, nordvpnlite = (
-            await setup_openwrt_test_environment(openwrt_config, exit_stack)
+            await setup_openwrt_test_environment(
+                openwrt_config, exit_stack, client_tag=client_tag, gw_tag=gw_tag
+            )
         )
 
         async def grep_logread(s: str) -> list[str]:
@@ -220,7 +253,7 @@ async def test_openwrt_vpn_connection(openwrt_config: ConfigPresetName) -> None:
             log.debug("NordVPN Lite started, waiting for connected vpn state...")
             await nordvpnlite.wait_for_vpn_connected_state()
             await check_gateway_and_client_ip(
-                gateway_connection, client_connection, WG_SERVER["ipv4"]
+                gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
             )
             logread_proc = await start_logread_process(
                 gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
@@ -241,7 +274,11 @@ async def test_openwrt_vpn_connection(openwrt_config: ConfigPresetName) -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.openwrt
-async def test_openwrt_ip_leaks() -> None:
+@pytest.mark.parametrize("client_tag,gw_tag", OPENWRT_TAGS)
+async def test_openwrt_ip_leaks(
+    client_tag: ConnectionTag,
+    gw_tag: ConnectionTag,
+) -> None:
     """
     Check all the traffic goes through the vpn after connection
 
@@ -259,7 +296,10 @@ async def test_openwrt_ip_leaks() -> None:
         # setting up openwrt environment
         client_connection, gateway_connection, nordvpnlite = (
             await setup_openwrt_test_environment(
-                ConfigPresetName.VPN_OPENWRT_UCI_PL, exit_stack
+                ConfigPresetName.VPN_OPENWRT_UCI_PL,
+                exit_stack,
+                client_tag=client_tag,
+                gw_tag=gw_tag,
             )
         )
         photo_album_connection = await exit_stack.enter_async_context(
@@ -304,9 +344,9 @@ async def test_openwrt_ip_leaks() -> None:
                 lines = re.split(pattern, tcp_dump.get_stdout())
                 tcp_dump_lines = [line.strip() for line in lines if line.strip()]
                 leak_ips = [
-                    OPENWRT_GW_WAN_IP,
-                    LAN_ADDR_MAP[ConnectionTag.DOCKER_OPENWRT_CLIENT_1]["primary"],
-                    LAN_ADDR_MAP[ConnectionTag.VM_OPENWRT_GW_1]["primary"],
+                    OPENWRT_GW_WAN_IP[gw_tag],
+                    LAN_ADDR_MAP[client_tag]["primary"],
+                    LAN_ADDR_MAP[gw_tag]["primary"],
                 ]
 
                 errors = [
@@ -325,7 +365,11 @@ async def test_openwrt_ip_leaks() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.openwrt
-async def test_openwrt_simulate_network_down() -> None:
+@pytest.mark.parametrize("client_tag,gw_tag", OPENWRT_TAGS)
+async def test_openwrt_simulate_network_down(
+    client_tag: ConnectionTag,
+    gw_tag: ConnectionTag,
+) -> None:
     """
     Check vpn connection is restored after network disconnect
 
@@ -343,7 +387,10 @@ async def test_openwrt_simulate_network_down() -> None:
         # setting up openwrt environment
         client_connection, gateway_connection, nordvpnlite = (
             await setup_openwrt_test_environment(
-                ConfigPresetName.VPN_OPENWRT_UCI_PL, exit_stack
+                ConfigPresetName.VPN_OPENWRT_UCI_PL,
+                exit_stack,
+                client_tag=client_tag,
+                gw_tag=gw_tag,
             )
         )
 
@@ -351,7 +398,7 @@ async def test_openwrt_simulate_network_down() -> None:
             log.debug("NordVPN Lite started, waiting for connected vpn state...")
             await nordvpnlite.wait_for_vpn_connected_state()
             await check_gateway_and_client_ip(
-                gateway_connection, client_connection, WG_SERVER["ipv4"]
+                gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
             )
             # simulating network interface down
             await gateway_connection.create_process(["ifdown", "wan"]).execute()
@@ -364,7 +411,7 @@ async def test_openwrt_simulate_network_down() -> None:
                 raise Exception("Failed to set interface eth1 UP")
             # check vpn connection is working after interface is UP
             await check_gateway_and_client_ip(
-                gateway_connection, client_connection, WG_SERVER["ipv4"]
+                gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
             )
             logread_proc = await start_logread_process(
                 gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
@@ -375,7 +422,11 @@ async def test_openwrt_simulate_network_down() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.openwrt
-async def test_openwrt_vpn_reconnect() -> None:
+@pytest.mark.parametrize("client_tag,gw_tag", OPENWRT_TAGS)
+async def test_openwrt_vpn_reconnect(
+    client_tag: ConnectionTag,
+    gw_tag: ConnectionTag,
+) -> None:
     """
     Test re-connect to vpn from OpenWRT router
 
@@ -395,7 +446,10 @@ async def test_openwrt_vpn_reconnect() -> None:
         # setting up openwrt environment
         client_connection, gateway_connection, nordvpnlite = (
             await setup_openwrt_test_environment(
-                ConfigPresetName.VPN_OPENWRT_UCI_PL, exit_stack
+                ConfigPresetName.VPN_OPENWRT_UCI_PL,
+                exit_stack,
+                client_tag=client_tag,
+                gw_tag=gw_tag,
             )
         )
 
@@ -403,7 +457,7 @@ async def test_openwrt_vpn_reconnect() -> None:
             log.debug("NordVPN Lite started, waiting for connected vpn state...")
             await nordvpnlite.wait_for_vpn_connected_state()
             await check_gateway_and_client_ip(
-                gateway_connection, client_connection, WG_SERVER["ipv4"]
+                gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
             )
             logread_proc = await start_logread_process(
                 gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
@@ -413,14 +467,14 @@ async def test_openwrt_vpn_reconnect() -> None:
 
         log.debug("Check connection after disconnect from vpn")
         await check_gateway_and_client_ip(
-            gateway_connection, client_connection, OPENWRT_GW_WAN_IP
+            gateway_connection, client_connection, OPENWRT_GW_WAN_IP[gw_tag], gw_tag
         )
 
         async with nordvpnlite.start():
             log.debug("Reconnect to VPN...")
             await nordvpnlite.wait_for_vpn_connected_state()
             await check_gateway_and_client_ip(
-                gateway_connection, client_connection, WG_SERVER["ipv4"]
+                gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
             )
             logread_proc = await start_logread_process(
                 gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
@@ -431,7 +485,11 @@ async def test_openwrt_vpn_reconnect() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.openwrt
-async def test_openwrt_vpn_reconnect_different_country() -> None:
+@pytest.mark.parametrize("client_tag,gw_tag", OPENWRT_TAGS)
+async def test_openwrt_vpn_reconnect_different_country(
+    client_tag: ConnectionTag,
+    gw_tag: ConnectionTag,
+) -> None:
     """
     Test re-connect to vpn server of another country
 
@@ -451,7 +509,10 @@ async def test_openwrt_vpn_reconnect_different_country() -> None:
         # setting up openwrt environment
         client_connection, gateway_connection, nordvpnlite = (
             await setup_openwrt_test_environment(
-                ConfigPresetName.VPN_OPENWRT_UCI_PL, exit_stack
+                ConfigPresetName.VPN_OPENWRT_UCI_PL,
+                exit_stack,
+                client_tag=client_tag,
+                gw_tag=gw_tag,
             )
         )
 
@@ -459,7 +520,7 @@ async def test_openwrt_vpn_reconnect_different_country() -> None:
             log.debug("NordVPN Lite started, waiting for connected vpn state...")
             await nordvpnlite.wait_for_vpn_connected_state()
             await check_gateway_and_client_ip(
-                gateway_connection, client_connection, WG_SERVER["ipv4"]
+                gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
             )
             logread_proc = await start_logread_process(
                 gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
@@ -469,7 +530,7 @@ async def test_openwrt_vpn_reconnect_different_country() -> None:
 
         log.debug("Check connection after disconnect from vpn")
         await check_gateway_and_client_ip(
-            gateway_connection, client_connection, OPENWRT_GW_WAN_IP
+            gateway_connection, client_connection, OPENWRT_GW_WAN_IP[gw_tag], gw_tag
         )
 
         config_path = Paths(exec_path=Path("nordvpnlite"))
@@ -486,7 +547,7 @@ async def test_openwrt_vpn_reconnect_different_country() -> None:
             log.debug("Reconnect to VPN DE...")
             await nordvpnlite_de.wait_for_vpn_connected_state()
             await check_gateway_and_client_ip(
-                gateway_connection, client_connection, WG_SERVER_2["ipv4"]
+                gateway_connection, client_connection, WG_SERVER_2["ipv4"], gw_tag
             )
             logread_proc = await start_logread_process(
                 gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
@@ -497,7 +558,11 @@ async def test_openwrt_vpn_reconnect_different_country() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.openwrt
-async def test_openwrt_router_restart() -> None:
+@pytest.mark.parametrize("client_tag,gw_tag", OPENWRT_TAGS)
+async def test_openwrt_router_restart(
+    client_tag: ConnectionTag,
+    gw_tag: ConnectionTag,
+) -> None:
     """
     Check vpn connection is restored after OpenWRT router restart
 
@@ -522,6 +587,8 @@ async def test_openwrt_router_restart() -> None:
                     ConfigPresetName.VPN_OPENWRT_UCI_PL,
                     exit_stack,
                     config_path=Path("/etc/nordvpnlite/config.json"),
+                    client_tag=client_tag,
+                    gw_tag=gw_tag,
                 )
             )
             await gateway_connection.create_process(
@@ -533,7 +600,7 @@ async def test_openwrt_router_restart() -> None:
                 log.debug("NordVPN Lite started, waiting for connected vpn state...")
                 await nordvpnlite.wait_for_vpn_connected_state()
                 await check_gateway_and_client_ip(
-                    gateway_connection, client_connection, WG_SERVER["ipv4"]
+                    gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
                 )
                 await exit_stack.enter_async_context(
                     gateway_connection.create_process(["reboot"]).run()
@@ -552,13 +619,13 @@ async def test_openwrt_router_restart() -> None:
         gateway_connection_after_reboot = None
 
         client_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_OPENWRT_CLIENT_1)
+            new_connection_by_tag(client_tag)
         )
 
         for attempt in range(3):
             try:
                 gateway_connection_after_reboot = await exit_stack.enter_async_context(
-                    new_connection_by_tag(ConnectionTag.VM_OPENWRT_GW_1)
+                    new_connection_by_tag(gw_tag)
                 )
                 break
             except Exception as e:  # pylint: disable=broad-exception-caught
@@ -581,7 +648,10 @@ async def test_openwrt_router_restart() -> None:
             log.info("wait for vpn connection to be re-established after reboot")
             await nordvpnlite_after_reboot.wait_for_vpn_connected_state()
             await check_gateway_and_client_ip(
-                gateway_connection_after_reboot, client_connection, WG_SERVER["ipv4"]
+                gateway_connection_after_reboot,
+                client_connection,
+                WG_SERVER["ipv4"],
+                gw_tag,
             )
         finally:
             logread_proc = await start_logread_process(

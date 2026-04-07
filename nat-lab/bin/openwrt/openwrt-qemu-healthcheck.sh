@@ -2,7 +2,7 @@
 
 set -eu
 
-OPENWRT_GW_IP=192.168.115.254
+OPENWRT_GW_IP=${OPENWRT_VM_LAN_IP:-192.168.115.254}
 
 [ -S /tmp/qmp.sock ] || exit 1
 
