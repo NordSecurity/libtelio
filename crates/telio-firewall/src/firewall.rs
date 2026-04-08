@@ -10,7 +10,6 @@ use parking_lot::RwLock;
 use pnet_packet::{
     icmp::{IcmpType, IcmpTypes},
     icmpv6::{Icmpv6Type, Icmpv6Types},
-    tcp::TcpFlags,
 };
 use std::{
     ffi::{c_void, CString},
@@ -565,24 +564,6 @@ pub(crate) fn configure_chain(
             filters: vec![
                 Filter {
                     filter_data: FilterData::ConntrackState(ConnectionState::Related),
-                    inverted: false,
-                },
-                dst_net_all_ports_filter(IpNet::from(*ip), false),
-            ],
-            action: LibfwVerdict::LibfwVerdictAccept,
-        });
-
-        // Accept certain TCP packets for finished connections
-        rules.push(Rule {
-            filters: vec![
-                Filter {
-                    filter_data: FilterData::ConntrackState(ConnectionState::Closed),
-                    inverted: false,
-                },
-                Filter {
-                    filter_data: FilterData::TcpFlags(
-                        TcpFlags::ACK | TcpFlags::FIN | TcpFlags::RST,
-                    ),
                     inverted: false,
                 },
                 dst_net_all_ports_filter(IpNet::from(*ip), false),
