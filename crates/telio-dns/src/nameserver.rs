@@ -306,14 +306,26 @@ impl LocalNameServer {
                 };
 
                 telio_log_debug!(
-                    "Forwarding DNS request from port {:?}: {:?}",
+                    "Forwarding DNS request from port {:?}",
                     request_info.dns_source_port(),
-                    raw_query
                 );
                 if let Some(dns_packet) = DnsPacket::new(&raw_query) {
-                    telio_log_debug!("Request: {:?}", dns_packet);
+                    telio_log_debug!(
+                        "Request: id: {} is_resposne: {} opcode: {:?} recursion_desired: {} query_count: {} rcode: {:?}",
+                        dns_packet.get_id(),
+                        dns_packet.get_is_response(),
+                        dns_packet.get_opcode(),
+                        dns_packet.get_is_recursion_desirable(),
+                        dns_packet.get_query_count(),
+                        dns_packet.get_rcode(),
+                    );
                     for query in dns_packet.get_queries() {
-                        telio_log_debug!("  {}", query.get_qname_parsed());
+                        telio_log_debug!(
+                            "  qtype: {} qclass: {} qname: {}",
+                            query.qtype,
+                            query.qclass,
+                            query.get_qname_parsed()
+                        );
                     }
                 }
 
