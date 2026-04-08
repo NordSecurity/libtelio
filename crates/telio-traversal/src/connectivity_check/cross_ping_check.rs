@@ -6,7 +6,7 @@ use crate::{
         Error as EndPointError, PongEvent,
     },
     endpoint_state::{EndpointState, EndpointStateMachine, Event},
-    last_rx_time_provider::{is_peer_alive, TimeSinceLastRxProvider},
+    last_rx_time_provider::{TimeSinceLastRxProvider, is_peer_alive},
     ping_pong_handler::PingPongHandler,
 };
 use async_trait::async_trait;
@@ -20,12 +20,13 @@ use std::{
     fmt::Formatter,
 };
 use telio_crypto::PublicKey;
-use telio_model::{config::Config, features::EndpointProvider as ApiEndpointProvider, SocketAddr};
+use telio_model::{SocketAddr, config::Config, features::EndpointProvider as ApiEndpointProvider};
 use telio_proto::{CallMeMaybeMsg, CallMeMaybeType, Session};
-use telio_task::{io::chan, io::Chan, task_exec, BoxAction, Runtime, Task};
+use telio_task::{BoxAction, Runtime, Task, io::Chan, io::chan, task_exec};
 use telio_utils::{
+    Instant, LruCache,
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    interval, telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn, Instant, LruCache,
+    interval, telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn,
 };
 use tokio::sync::Mutex;
 use tokio::time::Interval;
@@ -633,12 +634,12 @@ impl UpgradeController for CrossPingCheck {
                 session.handle_endpoint_gone_notification().await?;
 
                 for e in s.endpoint_providers.iter() {
-                    if let Some(current_endpoints) = e.get_current_endpoints().await {
-                        if current_endpoints.iter().any(|current_endpoint| {
+                    if let Some(current_endpoints) = e.get_current_endpoints().await
+                        && current_endpoints.iter().any(|current_endpoint| {
                             *current_endpoint == session.local_endpoint_candidate
-                        }) {
-                            e.handle_endpoint_gone_notification().await;
-                        }
+                        })
+                    {
+                        e.handle_endpoint_gone_notification().await;
                     }
                 }
             }
@@ -826,7 +827,11 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                 do_state_transition!(self, Event::ReceiveCallMeMaybeResponse);
             }
             _ => {
-                telio_log_warn!("Received a CMM response for session {:?} during non-gather state {:?}. Ignoring", message.get_session(), self.state);
+                telio_log_warn!(
+                    "Received a CMM response for session {:?} during non-gather state {:?}. Ignoring",
+                    message.get_session(),
+                    self.state
+                );
             }
         };
         Ok(())
@@ -871,8 +876,12 @@ impl<E: Backoff> EndpointConnectivityCheckState<E> {
                             session: self.local_session,
                             changed_at: self.last_state_transition,
                         };
-                        telio_log_info!("Publishing validated WG endpoint: {:?}, local ep type: {:?}, remote ep type: {:?}",
-                            wg_publish_event, self.provider_type, event.msg.get_ponging_ep_provider());
+                        telio_log_info!(
+                            "Publishing validated WG endpoint: {:?}, local ep type: {:?}, remote ep type: {:?}",
+                            wg_publish_event,
+                            self.provider_type,
+                            event.msg.get_ponging_ep_provider()
+                        );
                         self.last_validated_endpoint =
                             Some((remote_endpoint, remote_endpoint_type));
                         wg_ep_publisher
@@ -1037,8 +1046,8 @@ mod tests {
 
     use telio_crypto::{PublicKey, SecretKey};
     use telio_model::{
-        config::{Config, Peer, PeerBase},
         SocketAddr,
+        config::{Config, Peer, PeerBase},
     };
     use telio_proto::{PingerMsg, WGPort};
 
@@ -1087,7 +1096,7 @@ mod tests {
             vec![Arc::new(endpoint_provider_mock)],
             Some(Arc::new(MockTimeSinceLastRxProvider::new())),
             Duration::from_secs(2),
-            Arc::new(Mutex::new(PingPongHandler::new(SecretKey::gen()))),
+            Arc::new(Mutex::new(PingPongHandler::new(SecretKey::r#gen()))),
             ExponentialBackoffBounds::default(),
         );
 
@@ -1609,10 +1618,12 @@ mod tests {
         let addrs = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
         let session: Session = 42;
         let pub_key = PublicKey(*b"ABBBBBBBBBBBBBBBBBBBAAAAAAAAAAAA");
-        assert!(!checker
-            .check_if_upgrade_is_allowed(session, pub_key)
-            .await
-            .unwrap());
+        assert!(
+            !checker
+                .check_if_upgrade_is_allowed(session, pub_key)
+                .await
+                .unwrap()
+        );
         channels
             .endpoint_change_subscriber
             .send((
@@ -1644,10 +1655,12 @@ mod tests {
         let msg = CallMeMaybeMsg::new(true, [addrs].iter().cloned(), session);
         channels.intercoms.tx.send((pub_key, msg)).await.unwrap();
         wait_for_tick().await;
-        assert!(checker
-            .check_if_upgrade_is_allowed(session, pub_key)
-            .await
-            .unwrap());
+        assert!(
+            checker
+                .check_if_upgrade_is_allowed(session, pub_key)
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
@@ -1656,10 +1669,12 @@ mod tests {
         let addrs = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 8080);
         let session: Session = 42;
         let pub_key = PublicKey(*b"ABBBBBBBBBBBBBBBBBBBAAAAAAAAAAAA");
-        assert!(!checker
-            .check_if_upgrade_is_allowed(session, pub_key)
-            .await
-            .unwrap());
+        assert!(
+            !checker
+                .check_if_upgrade_is_allowed(session, pub_key)
+                .await
+                .unwrap()
+        );
         channels
             .endpoint_change_subscriber
             .send((
@@ -1692,10 +1707,12 @@ mod tests {
         channels.intercoms.tx.send((pub_key, msg)).await.unwrap();
         wait_for_tick().await;
         let other_pub_key = PublicKey(*b"CCCCBBBBBBBBBBBBBBBBAAAAAAAAAAAA");
-        assert!(!checker
-            .check_if_upgrade_is_allowed(session, other_pub_key)
-            .await
-            .unwrap());
+        assert!(
+            !checker
+                .check_if_upgrade_is_allowed(session, other_pub_key)
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]

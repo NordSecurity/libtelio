@@ -6,6 +6,8 @@ use std::time::Duration;
 use smart_default::SmartDefault;
 use thiserror::Error as TError;
 
+use crate::telio_log_warn;
+
 const EXPONENTIAL_BACKOFF_MULTIPLIER: u32 = 2;
 
 /// Enumeration of `Error` types for the exponential backoff implementiation
@@ -76,6 +78,20 @@ impl ExponentialBackoff {
             current_backoff: bounds.initial,
         })
     }
+
+    /// An ExponentialBackoff that can always be constructed.
+    ///
+    /// Starts from 1 second and has no upper bound.
+    pub fn fallback() -> Self {
+        let bounds = ExponentialBackoffBounds {
+            initial: Duration::from_secs(1),
+            maximal: None,
+        };
+        Self {
+            bounds,
+            current_backoff: bounds.initial,
+        }
+    }
 }
 
 impl Backoff for ExponentialBackoff {
@@ -95,6 +111,60 @@ impl Backoff for ExponentialBackoff {
 
     fn reset(&mut self) {
         self.current_backoff = self.bounds.initial;
+    }
+}
+
+/// Wraps a fallible async callback with exponential backoff on failure.
+pub struct CallWithBackoff {
+    bounds: ExponentialBackoffBounds,
+    backoff: Option<ExponentialBackoff>,
+}
+
+impl CallWithBackoff {
+    /// Create a new instance with `bounds` stored for later exponential backoff
+    /// use.
+    pub fn new(bounds: ExponentialBackoffBounds) -> Self {
+        Self {
+            bounds,
+            backoff: None,
+        }
+    }
+
+    /// Run the callback to completion.
+    ///
+    /// If it succeeds, future calls to `call` will run the callback immediately.
+    /// If it returns an error, the next time `call` is invoked, it will wait
+    /// according to the configured backoff bounds before retrying.
+    pub async fn call<T, E: std::error::Error>(
+        &mut self,
+        callback: impl std::future::Future<Output = std::result::Result<T, E>>,
+    ) -> std::result::Result<T, E> {
+        if let Some(b) = &self.backoff {
+            tokio::time::sleep(b.get_backoff()).await
+        }
+
+        match callback.await {
+            v @ Ok(_) => {
+                self.backoff = None;
+                v
+            }
+            e @ Err(_) => {
+                match &mut self.backoff {
+                    Some(b) => b.next_backoff(),
+                    None => {
+                        let backoff = match ExponentialBackoff::new(self.bounds) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                telio_log_warn!("Failed to build backoff using pre-configured bounds, falling back: {e}");
+                                ExponentialBackoff::fallback()
+                            }
+                        };
+                        self.backoff = Some(backoff);
+                    }
+                }
+                e
+            }
+        }
     }
 }
 
