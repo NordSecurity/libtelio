@@ -937,7 +937,8 @@ mod tests {
         rr::Name,
         serialize::binary::{BinDecoder, BinEncodable},
     };
-    use std::{net::Ipv4Addr, str::FromStr};
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::str::FromStr;
 
     const USE_RAW_FORWARDER: bool = true;
 
@@ -1072,5 +1073,242 @@ mod tests {
 
         let ns = nameserver.read().await;
         assert!(ns.forwarder.is_none());
+    }
+    
+    // PacketError internal unit tests
+
+    const SRC_IPV4: Ipv4Addr = Ipv4Addr::new(10, 0, 0, 1);
+    const DST_IPV4: Ipv4Addr = Ipv4Addr::new(10, 0, 0, 2);
+
+    /// Helper: build IPv4 packet with the given next-level protocol and payload.
+    fn build_ipv4_packet(protocol: IpNextHeaderProtocol, payload: &[u8]) -> Vec<u8> {
+        let total_len = IPV4_HEADER + payload.len();
+        let mut buf = vec![0u8; total_len];
+        {
+            let mut ip = MutableIpv4Packet::new(&mut buf).unwrap();
+            ip.set_version(4);
+            ip.set_header_length(5);
+            ip.set_total_length(total_len as u16);
+            ip.set_ttl(64);
+            ip.set_next_level_protocol(protocol);
+            ip.set_source(SRC_IPV4);
+            ip.set_destination(DST_IPV4);
+            ip.set_payload(payload);
+            ip.set_checksum(0);
+            ip.set_checksum(checksum(&ip.to_immutable()));
+        }
+        buf
+    }
+
+    /// Helper: build UDP segment with correct IPv4 checksum for SRC_IPV4 / DST_IPV4.
+    fn build_udp_segment(src_port: u16, dst_port: u16, data: &[u8]) -> Vec<u8> {
+        let len = UDP_HEADER + data.len();
+        let mut buf = vec![0u8; len];
+        {
+            let mut udp = MutableUdpPacket::new(&mut buf).unwrap();
+            udp.set_source(src_port);
+            udp.set_destination(dst_port);
+            udp.set_length(len as u16);
+            udp.set_payload(data);
+            udp.set_checksum(0);
+            udp.set_checksum(ipv4_checksum(&udp.to_immutable(), &SRC_IPV4, &DST_IPV4));
+        }
+        buf
+    }
+
+    /// Helper to create local NameServer (used to test packet processing)
+    async fn test_nameserver() -> Arc<RwLock<LocalNameServer>> {
+        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
+            .await
+            .unwrap()
+    }
+
+    // Tests PacketError::EmptyPacket
+    #[tokio::test]
+    async fn packet_error_empty_packet() {
+        let ns = test_nameserver().await;
+        let mut response = vec![0u8; MAX_PACKET];
+        let result = LocalNameServer::process_packet(ns, &[], &mut response).await;
+        assert!(matches!(result, Err(PacketError::EmptyPacket)));
+    }
+
+    // Tests PacketError::InvalidIpVersion
+    #[tokio::test]
+    async fn packet_error_invalid_ip_version() {
+        let ns = test_nameserver().await;
+        let mut response = vec![0u8; MAX_PACKET];
+        // Version 3: first byte 0x30, 0x30 >> 4 == 3
+        let result = LocalNameServer::process_packet(ns, &[0x30], &mut response).await;
+        assert!(matches!(result, Err(PacketError::InvalidIpVersion(3))));
+    }
+
+    // Tests PacketError::IpPacketCreationFailed
+    #[test]
+    fn packet_error_ip_packet_creation_failed() {
+        // Buffer too short for a 20-byte IPv4 header
+        let short = [0x45; 4];
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&short);
+        assert!(matches!(result, Err(PacketError::IpPacketCreationFailed)));
+    }
+
+    // Tests PacketError::InvalidIpPacket
+    #[test]
+    fn packet_error_invalid_ip_packet() {
+        let mut packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &[0; UDP_HEADER]);
+        // Corrupt TTL (byte 8) so the IP checksum no longer matches
+        packet[8] ^= 0xFF;
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(result, Err(PacketError::InvalidIpPacket)));
+    }
+
+    // Tests PacketError::InvalidProtocol
+    #[test]
+    fn packet_error_invalid_protocol() {
+        let packet = build_ipv4_packet(IpNextHeaderProtocols::Icmp, &[0; 8]);
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(result, Err(PacketError::InvalidProtocol)));
+    }
+
+    // Tests PacketError::UdpPacketCreationFailed
+    #[test]
+    fn packet_error_udp_packet_creation_failed() {
+        // Valid IPv4 header with UDP protocol, but only 2 bytes of payload (need 8)
+        let packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &[0; 2]);
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(result, Err(PacketError::UdpPacketCreationFailed)));
+    }
+
+    // Tests PacketError::TcpPacketCreationFailed
+    #[test]
+    fn packet_error_tcp_packet_creation_failed() {
+        // Valid IPv4 header with TCP protocol, but only 2 bytes of payload (need 20)
+        let packet = build_ipv4_packet(IpNextHeaderProtocols::Tcp, &[0; 2]);
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(result, Err(PacketError::TcpPacketCreationFailed)));
+    }
+
+    // Tests PacketError::InvalidUdpChecksum
+    #[test]
+    fn packet_error_invalid_udp_checksum() {
+        let mut udp_seg = build_udp_segment(12345, 53, &[0; 4]);
+        // Corrupt UDP checksum (bytes 6-7)
+        udp_seg[6] ^= 0xFF;
+        let packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &udp_seg);
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(result, Err(PacketError::InvalidUdpChecksum)));
+    }
+
+    // Tests PacketError::InvalidDnsPort
+    #[test]
+    fn packet_error_invalid_dns_port() {
+        let udp_seg = build_udp_segment(12345, 80, &[0; 4]);
+        let packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &udp_seg);
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(result, Err(PacketError::InvalidDnsPort(80))));
+    }
+
+    // Tests PacketError::DecodeMessageRequestFailed
+    #[test]
+    fn packet_error_decode_message_request_failed() {
+        // A DNS payload that passes parse_dns_query_packet() (pnet is lenient) but fails
+        // MessageRequest::from_bytes() (hickory-dns is stricter).
+        //
+        // DNS header: ID=0x1234, flags=0x0100 (standard query, RD=1),
+        // QDCOUNT=1, all other counts=0.
+        // Question section: a valid label "a" (0x01, 0x61) followed by root (0x00),
+        // but QTYPE and QCLASS are missing — pnet reads query_count from header and
+        // doesn't validate the question body, but hickory requires complete QTYPE+QCLASS.
+        #[rustfmt::skip]
+        let dns_payload: &[u8] = &[
+            0x12, 0x34, // ID
+            0x01, 0x00, // flags: QR=0 (query), opcode=0 (standard), RD=1
+            0x00, 0x01, // QDCOUNT = 1
+            0x00, 0x00, // ANCOUNT = 0
+            0x00, 0x00, // NSCOUNT = 0
+            0x00, 0x00, // ARCOUNT = 0
+            // Question name: "a." (label len=1, 'a', root terminator)
+            0x01, b'a', 0x00,
+            // QTYPE and QCLASS intentionally missing → hickory fails to decode
+        ];
+        let udp_seg = build_udp_segment(12345, 53, dns_payload);
+        let packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &udp_seg);
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(
+            result,
+            Err(PacketError::DecodeMessageRequestFailed)
+        ));
+    }
+
+    // Tests PacketError::MutableIpv4PacketCreationFailed
+    #[test]
+    fn packet_error_mutable_ipv4_packet_creation_failed() {
+        let info = RequestInfo {
+            ip: IpRequestInfo::V4 {
+                source_ip: SRC_IPV4,
+                destination_ip: DST_IPV4,
+                dscp: 0,
+                ecn: 0,
+                ttl: 64,
+                identification: 0,
+            },
+            payload: PayloadRequestInfo::Udp {
+                source_port: 12345,
+                destination_port: 53,
+                dns_request: None,
+            },
+        };
+        let mut buf = vec![0u8; 4]; // too small for 20-byte IPv4 header
+        let result = info.build_ip_header(0, &mut buf);
+        assert!(matches!(
+            result,
+            Err(PacketError::MutableIpv4PacketCreationFailed)
+        ));
+    }
+
+    // Tests PacketError::MutableIpv6PacketCreationFailed
+    #[test]
+    fn packet_error_mutable_ipv6_packet_creation_failed() {
+        let info = RequestInfo {
+            ip: IpRequestInfo::V6 {
+                source_ip: Ipv6Addr::LOCALHOST,
+                destination_ip: Ipv6Addr::LOCALHOST,
+            },
+            payload: PayloadRequestInfo::Udp {
+                source_port: 12345,
+                destination_port: 53,
+                dns_request: None,
+            },
+        };
+        let mut buf = vec![0u8; 4]; // too small for 40-byte IPv6 header
+        let result = info.build_ip_header(0, &mut buf);
+        assert!(matches!(
+            result,
+            Err(PacketError::MutableIpv6PacketCreationFailed)
+        ));
+    }
+
+    // Tests PacketError::ResponseBufferOverflow
+    #[test]
+    fn packet_error_response_buffer_overflow() {
+        let info = RequestInfo {
+            ip: IpRequestInfo::V4 {
+                source_ip: SRC_IPV4,
+                destination_ip: DST_IPV4,
+                dscp: 0,
+                ecn: 0,
+                ttl: 64,
+                identification: 0,
+            },
+            payload: PayloadRequestInfo::Udp {
+                source_port: 12345,
+                destination_port: 53,
+                dns_request: None,
+            },
+        };
+        let dns_response = vec![0u8; 100];
+        // Too small buffer: here is a room for IP header but not for UDP header + 100-byte payload
+        let mut buf = vec![0u8; IPV4_HEADER + 4];
+        let result = info.build_payload(IPV4_HEADER, &dns_response, &mut buf);
+        assert!(matches!(result, Err(PacketError::ResponseBufferOverflow)));
     }
 }
