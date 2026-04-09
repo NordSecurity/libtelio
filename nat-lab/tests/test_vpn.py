@@ -5,9 +5,11 @@ from tests import config
 from tests.helpers import SetupParameters, setup_environment, setup_connections
 from tests.helpers_vpn import connect_vpn, VpnConfig
 from tests.uniffi import FeatureFirewall, FirewallBlacklistTuple, IpProtocol
-from tests.utils import testing, stun
+from tests.utils import asyncio_util, testing, stun  
 from tests.utils.bindings import (
     default_features,
+    NodeState,
+    PathType,
     TelioAdapterType,
     generate_secret_key,
     generate_public_key,
@@ -741,8 +743,21 @@ async def test_vpn_connection_private_key_change(
             ["./opt/bin/update_wg_peer_key", alpha.public_key, new_public_key]
         ).execute()
 
-        # change key
-        await client_alpha.set_secret_key(new_secret_key)
+        # wait for the client to disconnect and reconnect with new key
+        async with asyncio_util.run_async_context(
+            client_alpha.wait_for_event_peer(
+                str(config.WG_SERVER["public_key"]),
+                [NodeState.CONNECTED],
+                list(PathType),
+                is_exit=True,
+                is_vpn=True,
+                timeout=30,
+            )
+        ) as event:
+            # change key
+            await client_alpha.set_secret_key(new_secret_key)
+            # wait for the NEW connected event after re-handshake
+            await event
 
         # ping again
         await ping(client_conn, config.PHOTO_ALBUM_IP, 5)
