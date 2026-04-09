@@ -116,3 +116,33 @@ impl Error {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test helper: creates io::Error with given message.
+    fn fake_io_error(msg: &str) -> io::Error {
+        io::Error::other(msg)
+    }
+
+    // Tests DnsIoError display format: "{context}: {source}" from thiserror::Error implementation
+    #[test]
+    fn dns_io_error_display() {
+        let err = DnsIoError::new(DnsIoContext::BindDnsSocket, fake_io_error("port busy"));
+        assert_eq!(err.to_string(), "Failed to bind DNS socket: port busy");
+    }
+
+    // Tests Error::Io — conversion from DnsIoError via #[from] from thiserror::Error implementation
+    #[test]
+    fn error_io_from_dns_io_error() {
+        let io_err = DnsIoError::new(DnsIoContext::GetSocketAddr, fake_io_error("no address"));
+        let err = Error::from(io_err);
+        assert!(matches!(err, Error::Io(_)));
+        // transparent display should show inner DnsIoError message
+        assert_eq!(
+            err.to_string(),
+            "Failed to get DNS socket local address: no address"
+        );
+    }
+}
