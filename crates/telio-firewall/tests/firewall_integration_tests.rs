@@ -94,6 +94,9 @@ pub fn make_udp_with_body(src: &str, dst: &str, body: &[u8]) -> Vec<u8> {
     udp.set_length((UDP_HEADER + body_len) as u16);
     udp.set_checksum(0);
     udp.payload_mut().copy_from_slice(body);
+    let checksum =
+        pnet_packet::udp::ipv4_checksum(&udp.to_immutable(), source.ip(), destination.ip());
+    udp.set_checksum(checksum);
 
     raw
 }
@@ -128,6 +131,9 @@ pub fn make_udp6(src: &str, dst: &str) -> Vec<u8> {
     udp.set_length((UDP_HEADER + msg_len) as u16);
     udp.set_checksum(0);
     udp.payload_mut().copy_from_slice(msg.as_bytes());
+    let checksum =
+        pnet_packet::udp::ipv6_checksum(&udp.to_immutable(), source.ip(), destination.ip());
+    udp.set_checksum(checksum);
 
     raw
 }
@@ -155,6 +161,9 @@ pub fn make_tcp(src: &str, dst: &str, flags: u8) -> Vec<u8> {
     tcp.set_checksum(0);
     tcp.payload_mut().copy_from_slice(msg.as_bytes());
     tcp.set_flags(flags);
+    let checksum =
+        pnet_packet::tcp::ipv4_checksum(&tcp.to_immutable(), source.ip(), destination.ip());
+    tcp.set_checksum(checksum);
 
     raw
 }
@@ -182,6 +191,9 @@ pub fn make_tcp6(src: &str, dst: &str, flags: u8) -> Vec<u8> {
     tcp.set_checksum(0);
     tcp.payload_mut().copy_from_slice(msg.as_bytes());
     tcp.set_flags(flags);
+    let checksum =
+        pnet_packet::tcp::ipv6_checksum(&tcp.to_immutable(), source.ip(), destination.ip());
+    tcp.set_checksum(checksum);
 
     raw
 }
@@ -422,7 +434,7 @@ fn outgoing_blacklist() {
         });
 
         assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(src, dst)), false);
-        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_tcp(src, dst, 0)), false);
+        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_tcp(src, dst, TcpFlags::ACK)), false);
     }
 }
 
@@ -564,8 +576,8 @@ fn firewall_vpn_peer() {
             fw.apply_state(state.clone());
             assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_udp(src1, dst1,)), false);
             assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), false);
-            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_tcp(src1, dst1, 0)), true);
-            assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_tcp(src2, dst1, 0)), false);
+            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_tcp(src1, dst1, TcpFlags::ACK)), true);
+            assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_tcp(src2, dst1, TcpFlags::ACK)), false);
         }
 }
 
@@ -704,10 +716,10 @@ fn firewall_whitelist_change_tcp_allow() {
 
 
         // Should PASS because we started the session
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::ACK)), true);
         state.whitelist.port_whitelist.remove(&them_peer);
         fw.apply_state(state.clone());
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::ACK)), true);
     }
 
 }
@@ -736,10 +748,10 @@ fn firewall_whitelist_change_tcp_block() {
 
 
         // Firewall allows already established connections
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::ACK)), true);
         state.whitelist.port_whitelist.remove(&them_peer);
         fw.apply_state(state.clone());
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, 0)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::ACK)), true);
     }
 }
 
@@ -1233,31 +1245,31 @@ mod tp_lite_stats {
 
         assert!(fw.process_outbound_packet_sink(
             &make_peer(),
-            &make_dns_request(2, "blocked.example.com")
+            &make_dns_request(2, "blocked1.example.com")
         ));
         assert!(fw.process_inbound_packet(
             &make_peer(),
-            &mut make_dns_response(2, "blocked.example.com", true)
+            &mut make_dns_response(2, "blocked1.example.com", true)
         ));
 
         assert!(fw.process_outbound_packet_sink(
             &make_peer(),
-            &make_dns_request(3, "blocked.example.com")
+            &make_dns_request(3, "blocked2.example.com")
         ));
         // Small sleep to make sure stats collection happens
         std::thread::sleep(std::time::Duration::from_secs(1));
         assert!(fw.process_inbound_packet(
             &make_peer(),
-            &mut make_dns_response(4, "blocked.example.com", true)
+            &mut make_dns_response(4, "blocked2.example.com", true)
         ));
 
         assert_eq!(stats.lock().num_invocations, 1);
         assert_eq!(stats.lock().num_requests, 3);
-        assert_eq!(stats.lock().num_responses, 3);
+        assert_eq!(stats.lock().num_responses, 2);
         assert_eq!(stats.lock().blocked_domains.len(), 1);
         assert_eq!(
             stats.lock().blocked_domains[0].domain_name,
-            "blocked.example.com".to_owned()
+            "blocked1.example.com".to_owned()
         );
     }
 }

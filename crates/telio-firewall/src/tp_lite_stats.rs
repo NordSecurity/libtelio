@@ -1,7 +1,6 @@
 //! Code related to TP-Lite stats collection
 
-use core::slice;
-use std::{collections::HashMap, ffi::c_void};
+use std::ffi::c_void;
 
 use parking_lot::RwLock;
 use telio_model::tp_lite_stats::{BlockedDomain, DnsMetrics, NoopCallback, TpLiteStatsCallback};
@@ -56,24 +55,7 @@ impl From<LibfwDnsMetrics> for DnsMetrics {
         Self {
             num_requests: metrics.num_requests,
             num_responses: metrics.num_responses,
-            num_malformed_requests: metrics.num_malformed_requests,
-            num_malformed_responses: metrics.num_malformed_responses,
             num_cache_hits: metrics.num_cache_hits,
-            record_type_distribution: unsafe {
-                slice::from_raw_parts(metrics.record_type_distribution, metrics.num_record_types)
-                    .iter()
-                    .map(|count| (count.rr_type, count.count))
-                    .collect::<HashMap<u16, u32>>()
-            },
-            response_type_distribution: unsafe {
-                slice::from_raw_parts(
-                    metrics.response_code_distribution,
-                    metrics.num_response_codes,
-                )
-                .iter()
-                .map(|count| (count.rr_type, count.count))
-                .collect::<HashMap<u8, u32>>()
-            },
         }
     }
 }
@@ -84,7 +66,6 @@ impl From<&LibfwBlockedDomain> for BlockedDomain {
             domain_name: unsafe { std::ffi::CStr::from_ptr(domain.domain_name) }
                 .to_string_lossy()
                 .into_owned(),
-            record_type: domain.record_type,
             timestamp: domain.timestamp,
             category: unsafe { std::ffi::CStr::from_ptr(domain.category) }
                 .to_string_lossy()
