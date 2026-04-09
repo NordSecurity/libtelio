@@ -5,19 +5,22 @@ import Pyro5  # type: ignore
 import pytest
 import threading
 from contextlib import AsyncExitStack
-from tests.helpers import SetupParameters
-from tests.helpers_log_collection import collect_logs, collect_kernel_logs
-from tests.helpers_pretest import perform_pretest_cleanups, copy_vm_binaries_if_needed
-from tests.helpers_setup_checks import (
+from tests.conftest_helpers.log_collection import collect_logs, collect_kernel_logs
+from tests.conftest_helpers.pretest import (
+    perform_pretest_cleanups,
+    copy_vm_binaries_if_needed,
+)
+from tests.conftest_helpers.setup_checks import (
     perform_setup_checks,
     check_gateway_connectivity,
     check_all_containers_running,
     get_session_vm_marks,
 )
-from tests.helpers_windows_monitoring import (
+from tests.conftest_helpers.windows_monitoring import (
     start_tcpdump_processes,
     start_windows_vms_resource_monitoring,
 )
+from tests.helpers import SetupParameters
 from tests.log_collector import LOG_COLLECTORS
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag
