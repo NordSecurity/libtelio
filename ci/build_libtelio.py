@@ -202,6 +202,7 @@ LIBTELIO_CONFIG = {
             "x86_64": {},
             "mipsel": {},
             "aarch64": {},
+            "armv7hf": {},
         },
         "packages": {
             "nordvpnlite": {"nordvpnlite": "nordvpnlite"},

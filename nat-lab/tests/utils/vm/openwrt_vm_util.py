@@ -4,7 +4,7 @@ from tests.config import get_root_path, LAN_ADDR_MAP
 from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.process import ProcessExecError
 
-DIST_PATH = f"dist/openwrt/{os.getenv('TELIO_BIN_PROFILE')}/x86_64/"
+DIST_PATH = f"dist/openwrt/{os.getenv('TELIO_BIN_PROFILE')}/x86_64/{os.getenv('LIBTELIO_ENV_OPENWRT_RELEASE_BUILD_TAG')}/"
 NATLAB_DATA_PATH = "nat-lab/data/"
 OWR_CERT_PATH = "/etc/ssl/server_certificate/"
 CERT_FILE_NAME = "test.pem"
