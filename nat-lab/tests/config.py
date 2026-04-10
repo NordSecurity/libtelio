@@ -105,6 +105,7 @@ LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
     ConnectionTag.DOCKER_UPNP_GW_1: {"primary": "192.168.105.254", "secondary": ""},
     ConnectionTag.DOCKER_UPNP_GW_2: {"primary": "192.168.112.254", "secondary": ""},
     ConnectionTag.DOCKER_OPENWRT_GW_1: {"primary": "192.168.115.254", "secondary": ""},
+    ConnectionTag.DOCKER_OPENWRT_GW_2: {"primary": "192.168.116.254", "secondary": ""},
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: {
         "primary": "192.168.114.254",
         "secondary": "",
@@ -117,8 +118,16 @@ LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
         "primary": "192.168.115.254",
         "secondary": "10.0.254.14",
     },
+    ConnectionTag.VM_OPENWRT_GW_2: {
+        "primary": "192.168.116.254",
+        "secondary": "10.0.254.22",
+    },
     ConnectionTag.DOCKER_OPENWRT_CLIENT_1: {
         "primary": "192.168.115.100",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_OPENWRT_CLIENT_2: {
+        "primary": "192.168.116.100",
         "secondary": "",
     },
     ConnectionTag.DOCKER_CORE_API_1: {

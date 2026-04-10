@@ -30,6 +30,7 @@ class SshConnection(Connection):
             target_os = TargetOS.Mac
         elif tag in [
             ConnectionTag.VM_OPENWRT_GW_1,
+            ConnectionTag.VM_OPENWRT_GW_2,
             ConnectionTag.VM_LINUX_NLX_1,
             ConnectionTag.VM_LINUX_FULLCONE_GW_1,
             ConnectionTag.VM_LINUX_FULLCONE_GW_2,
@@ -76,7 +77,7 @@ class SshConnection(Connection):
         elif tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
             username = "bill"
             password = "gates"
-        elif tag is ConnectionTag.VM_OPENWRT_GW_1:
+        elif tag in [ConnectionTag.VM_OPENWRT_GW_1, ConnectionTag.VM_OPENWRT_GW_2]:
             password = None
 
         try:
@@ -182,9 +183,10 @@ class SshConnection(Connection):
             await utils_mac.copy_binaries(self._connection, self)
         elif (
             self.target_os is TargetOS.Linux  # type: ignore[redundant-expr]
-            and self.tag is ConnectionTag.VM_OPENWRT_GW_1
+            and self.tag
+            in [ConnectionTag.VM_OPENWRT_GW_1, ConnectionTag.VM_OPENWRT_GW_2]
         ):
-            await utils_openwrt.copy_binaries(self)
+            await utils_openwrt.copy_binaries(self, self.tag)
 
     async def upload_file(self, local_file_path: str, remote_file_path: str) -> None:
         """Upload file from 'local_file_path' to 'remote_file_path' on the connected node"""
