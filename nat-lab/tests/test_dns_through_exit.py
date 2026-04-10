@@ -2,13 +2,15 @@ import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from tests import config
-from tests.helpers import setup_api, setup_mesh_nodes, SetupParameters
+from tests.helpers import SetupParameters, setup_api, Environment
 from tests.utils.bindings import default_features, TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.dns import query_dns
 from tests.utils.router import IPStack
-from typing import List, Tuple
+from typing import List, Tuple, Callable, Awaitable
+
+pytest_plugins = ["tests.helpers_fixtures"]
 
 
 # IPv6 tests are failing because we do not have IPV6 internet connection
@@ -110,98 +112,96 @@ from typing import List, Tuple
     ],
 )
 async def test_dns_through_exit(
+    exit_stack: AsyncExitStack,
+    setup_mesh_nodes_factory: Callable[..., Awaitable[Environment]],
     alpha_setup_params: SetupParameters,
     beta_setup_params: SetupParameters,
     alpha_info: Tuple[IPStack, List[str]],
     exit_info: Tuple[IPStack, List[str]],
 ) -> None:
-    async with AsyncExitStack() as exit_stack:
-        if (alpha_info[0] == IPStack.IPv4 and exit_info[0] == IPStack.IPv6) or (
-            alpha_info[0] == IPStack.IPv6 and exit_info[0] == IPStack.IPv4
-        ):
-            # Incompatible configurations
-            pytest.skip()
+    if (alpha_info[0] == IPStack.IPv4 and exit_info[0] == IPStack.IPv6) or (
+        alpha_info[0] == IPStack.IPv6 and exit_info[0] == IPStack.IPv4
+    ):
+        # Incompatible configurations
+        pytest.skip()
 
-        dns_server_address_exit = (
-            config.LIBTELIO_DNS_IPV4
-            if exit_info[0] in [IPStack.IPv4, IPStack.IPv4v6]
-            else config.LIBTELIO_DNS_IPV6
-        )
-        dns_server_address_local = (
-            config.LIBTELIO_DNS_IPV4
-            if alpha_info[0] in [IPStack.IPv4, IPStack.IPv4v6]
-            else config.LIBTELIO_DNS_IPV6
-        )
+    dns_server_address_exit = (
+        config.LIBTELIO_DNS_IPV4
+        if exit_info[0] in [IPStack.IPv4, IPStack.IPv4v6]
+        else config.LIBTELIO_DNS_IPV6
+    )
+    dns_server_address_local = (
+        config.LIBTELIO_DNS_IPV4
+        if alpha_info[0] in [IPStack.IPv4, IPStack.IPv4v6]
+        else config.LIBTELIO_DNS_IPV6
+    )
 
-        api, (alpha, beta) = setup_api(
-            [(False, alpha_setup_params.ip_stack), (False, beta_setup_params.ip_stack)]
-        )
-        beta.set_peer_firewall_settings(
-            alpha.id, allow_incoming_connections=True, allow_peer_traffic_routing=True
-        )
+    api, (alpha, beta) = setup_api(
+        [(False, alpha_setup_params.ip_stack), (False, beta_setup_params.ip_stack)]
+    )
+    beta.set_peer_firewall_settings(
+        alpha.id, allow_incoming_connections=True, allow_peer_traffic_routing=True
+    )
 
-        env = await setup_mesh_nodes(
-            exit_stack,
-            [alpha_setup_params, beta_setup_params],
-            provided_api=api,
-        )
+    env = await setup_mesh_nodes_factory(
+        [alpha_setup_params, beta_setup_params],
+        provided_api=api,
+    )
 
-        _, exit_node = env.nodes
-        client_alpha, client_exit = env.clients
-        connection_alpha, _ = [conn.connection for conn in env.connections]
+    _, exit_node = env.nodes
+    client_alpha, client_exit = env.clients
+    connection_alpha, _ = [conn.connection for conn in env.connections]
 
-        # entry connects to exit
-        await client_exit.get_router().create_exit_node_route()
+    # entry connects to exit
+    await client_exit.get_router().create_exit_node_route()
 
-        await client_alpha.connect_to_exit_node(exit_node.public_key)
+    await client_alpha.connect_to_exit_node(exit_node.public_key)
 
-        await client_exit.enable_magic_dns(exit_info[1])
+    await client_exit.enable_magic_dns(exit_info[1])
 
-        # if this times out dns forwarder failed to start
-        await query_dns(
-            connection_alpha, "google.com", dns_server=dns_server_address_exit
-        )
+    # if this times out dns forwarder failed to start
+    await query_dns(connection_alpha, "google.com", dns_server=dns_server_address_exit)
 
-        # sending dns straight to exit peer's dns forwarder(as will be done on linux/windows)
-        await query_dns(
-            connection_alpha,
-            "google.com",
-            dns_server=dns_server_address_exit,
-            expected_output=["Name:.*google.com.*Address"],
-        )
+    # sending dns straight to exit peer's dns forwarder(as will be done on linux/windows)
+    await query_dns(
+        connection_alpha,
+        "google.com",
+        dns_server=dns_server_address_exit,
+        expected_output=["Name:.*google.com.*Address"],
+    )
 
-        await client_alpha.enable_magic_dns(alpha_info[1])
+    await client_alpha.enable_magic_dns(alpha_info[1])
 
-        async def disable_path(addr):
-            await exit_stack.enter_async_context(
-                client_exit.get_router().disable_path(addr)
-            )
-
-        # blocking dns-server-1 and its ipv6 counterpart, to make sure requests go to dns-server-2
-        await asyncio.gather(*[disable_path(addr) for addr in alpha_info[1]])
-
-        # sending dns to local forwarder, which should forward it to exit dns forwarder(apple/android way)
-        await query_dns(
-            connection_alpha,
-            "google.com",
-            dns_server=dns_server_address_local,
-            expected_output=["Name:.*google.com.*Address"],
-            options=["-timeout=5"],
-        )
-        await client_alpha.disconnect_from_exit_node(exit_node.public_key)
-
-        # local forwarder should resolve this, checking if forward ips are changed back correctly
-        await query_dns(
-            connection_alpha,
-            "google.com",
-            dns_server=dns_server_address_local,
-            expected_output=["Name:.*google.com.*Address"],
+    async def disable_path(addr):
+        await exit_stack.enter_async_context(
+            client_exit.get_router().disable_path(addr)
         )
 
-        # LLT-5532: To be cleaned up...
-        client_alpha.allow_errors(
-            ["telio_dns::nameserver.*Invalid protocol for DNS request"]
-        )
-        client_exit.allow_errors(
-            ["telio_dns::nameserver.*Invalid protocol for DNS request"]
-        )
+    # blocking dns-server-1 and its ipv6 counterpart, to make sure requests go to dns-server-2
+    await asyncio.gather(*[disable_path(addr) for addr in alpha_info[1]])
+
+    # sending dns to local forwarder, which should forward it to exit dns forwarder(apple/android way)
+    await query_dns(
+        connection_alpha,
+        "google.com",
+        dns_server=dns_server_address_local,
+        expected_output=["Name:.*google.com.*Address"],
+        options=["-timeout=5"],
+    )
+    await client_alpha.disconnect_from_exit_node(exit_node.public_key)
+
+    # local forwarder should resolve this, checking if forward ips are changed back correctly
+    await query_dns(
+        connection_alpha,
+        "google.com",
+        dns_server=dns_server_address_local,
+        expected_output=["Name:.*google.com.*Address"],
+    )
+
+    # LLT-5532: To be cleaned up...
+    client_alpha.allow_errors(
+        ["telio_dns::nameserver.*Invalid protocol for DNS request"]
+    )
+    client_exit.allow_errors(
+        ["telio_dns::nameserver.*Invalid protocol for DNS request"]
+    )

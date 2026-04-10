@@ -1,46 +1,48 @@
 import pytest
 import re
-from contextlib import AsyncExitStack
-from tests.helpers import SetupParameters, setup_environment
+from tests.helpers import SetupParameters, Environment
 from tests.utils.bindings import default_features, TelioAdapterType
 from tests.utils.connection import ConnectionTag
 
+pytest_plugins = ["tests.helpers_fixtures"]
 
-@pytest.mark.asyncio
-async def test_meshnet_id_generated_only_when_meshnet_starts() -> None:
-    async with AsyncExitStack() as exit_stack:
-        alpha_setup_params = SetupParameters(
-            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-            adapter_type_override=TelioAdapterType.NEP_TUN,
-            features=default_features(
-                enable_nurse=True,
-                enable_lana=("path.db", False),
+
+@pytest.mark.parametrize(
+    "alpha_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                features=default_features(
+                    enable_nurse=True,
+                    enable_lana=("path.db", False),
+                ),
+                is_meshnet=False,
             ),
-            is_meshnet=False,
-        )
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_meshnet_id_generated_only_when_meshnet_starts(
+    alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+    env: Environment,
+) -> None:
+    client_alpha = env.clients[0]
+    # Wait for everything to get set up
+    await client_alpha.wait_for_log("Telio::start_named: Ok(())")
 
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [alpha_setup_params],
-            )
-        )
+    logs = await client_alpha.get_log()
+    # There should be no meshnet ID generation
+    assert logs.count("Meshnet ID:") == 0
 
-        [client_alpha] = env.clients
-        # Wait for everything to get set up
-        await client_alpha.wait_for_log("Telio::start_named: Ok(())")
+    config = env.api.get_meshnet_config(env.nodes[0].id)
+    await client_alpha.set_meshnet_config(config)
 
-        logs = await client_alpha.get_log()
-        # There should be no meshnet ID generation
-        assert logs.count("Meshnet ID:") == 0
+    await client_alpha.wait_for_log("Meshnet ID:")
 
-        config = env.api.get_meshnet_config(env.nodes[0].id)
-        await client_alpha.set_meshnet_config(config)
-
-        await client_alpha.wait_for_log("Meshnet ID:")
-
-        logs = await client_alpha.get_log()
-        assert re.search(
-            r"Meshnet ID: Some\(([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)",
-            logs,
-        )
+    logs = await client_alpha.get_log()
+    assert re.search(
+        r"Meshnet ID: Some\(([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)",
+        logs,
+    )
