@@ -225,7 +225,7 @@ async def test_register_multiple_machines(registered_machines, machine_data):
     ]],
     indirect=True,
 )
-async def test_get_all_machines(registered_machines, machine_data):
+async def test_get_all_machines(machine_data):
     async with AsyncExitStack() as exit_stack:
         connection = await exit_stack.enter_async_context(
             new_connection_by_tag(ConnectionTag.DOCKER_CONE_CLIENT_1)
