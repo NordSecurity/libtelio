@@ -1,6 +1,5 @@
 import asyncssh
 import shlex
-import tests.utils.connection_util  # pylint: disable=cyclic-import
 import tests.utils.vm.mac_vm_util as utils_mac
 import tests.utils.vm.openwrt_vm_util as utils_openwrt
 import tests.utils.vm.windows_vm_util as utils_win
@@ -105,6 +104,8 @@ class SshConnection(Connection):
         except OSError:
             if tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
                 try:
+                    import tests.utils.connection_util  # pylint: disable=import-outside-toplevel
+
                     async with tests.utils.connection_util.new_connection_raw(
                         DOCKER_VM_MAP[tag]
                     ) as conn:
