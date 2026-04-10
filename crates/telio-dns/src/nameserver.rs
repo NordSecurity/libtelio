@@ -1,4 +1,5 @@
 use crate::{
+    forwarder::RawForwarder,
     packet_decoder::{find_nord_query, normalize_qname, parse_dns_query_packet, DnsParseError},
     packet_encoder::DnsResponseBuilder,
     resolver::Resolver,
@@ -12,13 +13,13 @@ use hickory_server::{
 };
 use neptun::noise::{Tunn, TunnResult};
 use pnet_packet::{
-    dns::DnsQuery,
+    dns::{DnsPacket, DnsQuery, DnsTypes},
     ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
     ipv4::{checksum, Ipv4Packet, MutableIpv4Packet},
     ipv6::{Ipv6Packet, MutableIpv6Packet},
     tcp::{MutableTcpPacket, TcpFlags, TcpPacket},
     udp::{ipv4_checksum, ipv6_checksum, MutableUdpPacket, UdpPacket},
-    Packet,
+    FromPacket, Packet,
 };
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
@@ -40,6 +41,7 @@ const UDP_HEADER: usize = 8;
 const TCP_MIN_HEADER: usize = 20;
 const MAX_CONCURRENT_QUERIES: usize = 256;
 const IDLE_TIME: Duration = Duration::from_secs(1);
+const DNS_PORT: u16 = 53;
 
 /// NameServer is a server that stores the DNS records.
 #[async_trait]
@@ -53,6 +55,8 @@ pub trait NameServer {
     async fn stop(&self);
     /// Configure list of forward DNS servers for zone '.'.
     async fn forward(&self, to: &[IpAddr]) -> Result<(), String>;
+    /// Configure list of forward DNS servers with explicit socket addresses.
+    async fn forward_to_addrs(&self, to: &[SocketAddr]) -> Result<(), String>;
     /// Insert or update zone records used by the server.
     async fn upsert(
         &self,
@@ -94,6 +98,7 @@ pub struct LocalNameServer {
     nord_zone: NordZone,
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
+    forwarder: Option<RawForwarder>,
 }
 
 impl LocalNameServer {
@@ -104,6 +109,7 @@ impl LocalNameServer {
             nord_zone: NordZone::new(),
             zones: Arc::new(ClonableZones::new()),
             task_handle: None,
+            forwarder: None,
         }));
         ns.forward(forward_ips).await?;
         Ok(ns)
@@ -291,23 +297,49 @@ impl LocalNameServer {
                     .build()
                     .map_err(|e| format!("Failed building DNS response packet: {e:?}"))?
             }
-            PayloadDestination::Forward(question) => {
-                telio_log_debug!("Forwarding request dns");
-                let resolver = Resolver::new();
-                telio_log_debug!("Getting DNS zones");
-                let zones = nameserver.zones().await;
+            PayloadDestination::Forward(raw_query) => {
+                let forwarder = {
+                    let ns = nameserver.read().await;
+                    ns.forwarder
+                        .clone()
+                        .ok_or_else(|| String::from("No forwarder configured"))?
+                };
 
-                let dns_request = Request::new(question, request_info.dns_source(), Protocol::Udp);
-                telio_log_debug!("DNS request: {:?}", &dns_request);
+                telio_log_debug!(
+                    "Forwarding DNS request from port {:?}",
+                    request_info.dns_source_port(),
+                );
+                if let Some(dns_packet) = DnsPacket::new(&raw_query) {
+                    telio_log_debug!(
+                        "Request: id: {} is_resposne: {} opcode: {:?} recursion_desired: {} query_count: {} rcode: {:?}",
+                        dns_packet.get_id(),
+                        dns_packet.get_is_response(),
+                        dns_packet.get_opcode(),
+                        dns_packet.get_is_recursion_desirable(),
+                        dns_packet.get_query_count(),
+                        dns_packet.get_rcode(),
+                    );
+                    for query in dns_packet.get_queries() {
+                        telio_log_debug!(
+                            "  qtype: {} qclass: {} qname: {}",
+                            query.qtype,
+                            query.qclass,
+                            query.get_qname_parsed()
+                        );
+                    }
+                }
 
-                zones
-                    .lookup(&dns_request, resolver.clone())
+                let response = forwarder
+                    .query(&raw_query)
                     .await
-                    .map_err(|e| format!("Lookup failed {e}"))?;
+                    .map_err(|e| format!("Forward failed: {e:?}"))?;
 
-                let dns_response = resolver.0.lock().await;
-                telio_log_debug!("Nameserver response: {:?}", &dns_response);
-                dns_response.to_vec()
+                telio_log_debug!("Forwarder responded");
+                if let Some(dns_packet) = DnsPacket::new(&response) {
+                    telio_log_debug!("Response: {:#?}", dns_packet);
+                }
+
+                response
             }
         };
 
@@ -382,7 +414,7 @@ impl LocalNameServer {
         }
 
         // Validate DNS port
-        if udp_request.get_destination() != 53 {
+        if udp_request.get_destination() != DNS_PORT {
             return Err(String::from("Invalid DNS port"));
         }
 
@@ -399,19 +431,8 @@ impl LocalNameServer {
                     })
                 } else {
                     // not .nord, forward unchanged
-                    let forward = MessageRequest::from_bytes(payload).map_err(|_| {
-                        String::from("Failed to build MessageRequest from request packet")
-                    })?;
-                    Some(PayloadDestination::Forward(forward))
+                    Some(PayloadDestination::Forward(payload.to_vec()))
                 }
-            }
-            Err(DnsParseError::UnsupportedOpcode(c)) => {
-                telio_log_warn!("Unsupported DNS query Opcode: {c:?}");
-                // still forward it as a fallback
-                let forward = MessageRequest::from_bytes(payload).map_err(|_| {
-                    String::from("Failed to build MessageRequest from request packet")
-                })?;
-                Some(PayloadDestination::Forward(forward))
             }
             Err(e) => {
                 // malformed DNS query
@@ -443,13 +464,6 @@ enum IpRequestInfo {
 }
 
 impl IpRequestInfo {
-    fn source_ip(&self) -> IpAddr {
-        match self {
-            IpRequestInfo::V4 { source_ip, .. } => IpAddr::V4(*source_ip),
-            IpRequestInfo::V6 { source_ip, .. } => IpAddr::V6(*source_ip),
-        }
-    }
-
     fn compute_udp_checksum(&self, packet: &UdpPacket) -> u16 {
         match &self {
             IpRequestInfo::V4 {
@@ -466,17 +480,15 @@ impl IpRequestInfo {
     }
 }
 
-#[allow(clippy::large_enum_variant)]
 enum PayloadDestination {
     Local {
         id: u16,
         recursion_desired: bool,
         query: DnsQuery,
     },
-    Forward(MessageRequest),
+    Forward(Vec<u8>),
 }
 
-#[allow(clippy::large_enum_variant)]
 enum PayloadRequestInfo {
     Udp {
         source_port: u16,
@@ -496,12 +508,11 @@ struct RequestInfo {
 }
 
 impl RequestInfo {
-    fn dns_source(&self) -> SocketAddr {
-        let source_port = match self.payload {
+    fn dns_source_port(&self) -> u16 {
+        match self.payload {
             PayloadRequestInfo::Udp { source_port, .. }
             | PayloadRequestInfo::Tcp { source_port, .. } => source_port,
-        };
-        SocketAddr::new(self.ip.source_ip(), source_port)
+        }
     }
 
     fn build_response_packet(
@@ -792,6 +803,30 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
             LowerName::from_str(".")?,
             Box::new(Arc::new(ForwardZone::new(".", to).await?)),
         );
+        let upstreams: Vec<SocketAddr> =
+            to.iter().map(|ip| SocketAddr::new(*ip, DNS_PORT)).collect();
+
+        self.forward_to_addrs(&upstreams).await
+    }
+
+    async fn forward_to_addrs(&self, to: &[SocketAddr]) -> Result<(), String> {
+        let mut ns = self.write().await;
+
+        if ns.forwarder.is_none() {
+            ns.forwarder = Some(
+                RawForwarder::new()
+                    .await
+                    .map_err(|e| format!("Failed to create forwarder: {e:?}"))?,
+            );
+        }
+
+        if let Some(forwarder) = &ns.forwarder {
+            forwarder
+                .set_upstreams(to.to_vec())
+                .await
+                .map_err(|e| format!("Failed to set upstreams: {e:?}"))?;
+        }
+
         Ok(())
     }
 
@@ -934,5 +969,15 @@ mod tests {
         let zones = nameserver.zones().await;
         assert!(zones.contains(&LowerName::from_str(".").unwrap()));
         assert!(zones.contains(&LowerName::from_str("nord").unwrap()));
+    }
+
+    #[tokio::test]
+    async fn nameserver_creates_forwarder() {
+        let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
+            .await
+            .unwrap();
+
+        let ns = nameserver.read().await;
+        assert!(ns.forwarder.is_some());
     }
 }

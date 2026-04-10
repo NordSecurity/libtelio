@@ -1148,12 +1148,5 @@ async def test_dns_no_error_return_code() -> None:
             "53",
             "error-with-noerror-return-code.com",
             dns_server=LIBTELIO_DNS_IPV4,
-        )
-
-        await client_alpha.wait_for_log(
-            "Got an error response with NoError code for error-with-noerror-return-code.com., this should not happen so converting to ServFail"
-        )
-
-        await client_alpha.wait_for_log(
-            'DNS name resolution failed (no records): ResolveError { kind: NoRecordsFound { query: Query { name: Name("error-with-noerror-return-code.com."), query_type: A, query_class: IN }, soa: None, negative_ttl: None, response_code: NoError, trusted: true } }'
+            expected_output=["status: NOERROR", "ANSWER: 0"],
         )
