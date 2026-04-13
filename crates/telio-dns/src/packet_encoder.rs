@@ -979,4 +979,64 @@ mod tests {
         assert_eq!(response.answers.len(), 1);
         assert_eq!(response.answers[0].ttl, custom_ttl);
     }
+
+    /// Test that `encode_name` correctly encodes various domain names into DNS wire format
+    #[test]
+    fn encode_name_binary_correctness() {
+        // Simple domain
+        let mut buf = Vec::new();
+        encode_name(&mut buf, "mesh.nordsec.com").unwrap();
+        // Expected: [4]m e s h [7]n o r d s e c [3]c o m [0]
+        let expected = [
+            4u8, b'm', b'e', b's', b'h', 7, b'n', b'o', b'r', b'd', b's', b'e', b'c', 3, b'c',
+            b'o', b'm', 0,
+        ];
+        assert_eq!(buf, expected);
+
+        // FQDN with trailing dot
+        let mut buf = Vec::new();
+        encode_name(&mut buf, "mesh.nordsec.com.").unwrap();
+        assert_eq!(buf, expected);
+
+        // Single label
+        let mut buf = Vec::new();
+        encode_name(&mut buf, "foo").unwrap();
+        let expected = [3u8, b'f', b'o', b'o', 0];
+        assert_eq!(buf, expected);
+
+        // Max label size (63 'a's)
+        let label = "a".repeat(SOA_MAX_LABEL_SIZE);
+        let name = format!("{}.nord", label);
+        let mut buf = Vec::new();
+        encode_name(&mut buf, &name).unwrap();
+        let mut expected = vec![SOA_MAX_LABEL_SIZE as u8];
+        expected.extend(label.as_bytes());
+        expected.extend([4, b'n', b'o', b'r', b'd', 0]);
+        assert_eq!(buf, expected);
+
+        // Max name size (254 bytes: 3x63 + 1x61 chars, 4 length bytes, 1 zero)
+        let label63 = "b".repeat(63);
+        let label61 = "c".repeat(61);
+        let name = format!("{}.{}.{}.{}", label63, label63, label63, label61);
+        // Calculate length: (63+1)*3 + (61+1) + 1 = 192 + 62 + 1 = 255
+        // But SOA_MAX_NAME_SIZE = 254, so we need 3x63 + 61 = 250 characters, 4 length bytes, 1 zero = 255
+        // But encode_name checks .len() > SOA_MAX_NAME_SIZE, so 254 is allowed
+        let mut buf = Vec::new();
+        encode_name(&mut buf, &name).unwrap();
+        let mut expected = Vec::new();
+        for _ in 0..3 {
+            expected.push(63);
+            expected.extend(label63.as_bytes());
+        }
+        expected.push(61);
+        expected.extend(label61.as_bytes());
+        expected.push(0);
+        assert_eq!(buf, expected);
+
+        // Leading/trailing whitespace should be trimmed from labels
+        let mut buf = Vec::new();
+        encode_name(&mut buf, " foo . bar ").unwrap();
+        let expected = [3, b'f', b'o', b'o', 3, b'b', b'a', b'r', 0];
+        assert_eq!(buf, expected);
+    }
 }
