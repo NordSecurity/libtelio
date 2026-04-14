@@ -28,7 +28,7 @@ async def kill_natlab_processes():
         return
 
     cleanup_script_path = os.path.join(
-        os.path.dirname(__file__), "../bin/cleanup_natlab_processes"
+        os.path.dirname(__file__), "../../bin/cleanup_natlab_processes"
     )
     subprocess.run(["sudo", cleanup_script_path]).check_returncode()
 
