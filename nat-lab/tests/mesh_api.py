@@ -403,17 +403,20 @@ class API:
             f' \'echo "{wg_conf}" > /etc/wireguard/wg0.conf; wg-quick down'
             " /etc/wireguard/wg0.conf; wg-quick up /etc/wireguard/wg0.conf'"
         )
+        start_time = time.monotonic()
         ret = subprocess.run(
             cmd,
             shell=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        elapsed_ms = (time.monotonic() - start_time) * 1000
         log.debug(
-            "Executing %s on %s with result %s",
+            "Executed %s on %s with result %s in %.0fms",
             cmd,
             server_config["container"],
             ret,
+            elapsed_ms,
         )
 
     def config_dynamic_nodes(

@@ -158,7 +158,11 @@ class SshConnection(Connection):
             assert False, f"not supported target_os '{self.target_os}'"
 
         return SshProcess(
-            self._connection, self.tag.name, command, escape_argument, term_type
+            self._connection,
+            self.tag.name,
+            command,
+            escape_argument,
+            term_type,
         )
 
     async def get_ip_address(self) -> tuple[str, str]:
