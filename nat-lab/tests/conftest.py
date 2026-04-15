@@ -9,6 +9,7 @@ from tests.conftest_helpers.log_collection import collect_logs, collect_kernel_l
 from tests.conftest_helpers.pretest import (
     perform_pretest_cleanups,
     copy_vm_binaries_if_needed,
+    start_tcpdump_processes,
 )
 from tests.conftest_helpers.setup_checks import (
     perform_setup_checks,
@@ -17,7 +18,6 @@ from tests.conftest_helpers.setup_checks import (
     get_session_vm_marks,
 )
 from tests.conftest_helpers.windows_monitoring import (
-    start_tcpdump_processes,
     start_windows_vms_resource_monitoring,
 )
 from tests.helpers import SetupParameters
@@ -37,7 +37,6 @@ END_TASKS: threading.Event = threading.Event()
 CURRENT_TEST_LOG_FILE = None
 
 SESSION_VM_MARKS: set[str] = set()
-SESSION_IS_CONTAINER_RUNNING: dict[ConnectionTag, bool] = {}
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -124,7 +123,7 @@ def pytest_collection_modifyitems(items):
 
 
 def pytest_runtestloop(session):
-    global SESSION_VM_MARKS, SESSION_IS_CONTAINER_RUNNING
+    global SESSION_VM_MARKS
 
     if session.config.option.collectonly:
         return
@@ -132,10 +131,12 @@ def pytest_runtestloop(session):
     SESSION_VM_MARKS = get_session_vm_marks(session.items)
 
     if "NATLAB_SKIP_SETUP_CHECKS" not in os.environ:
-        SESSION_IS_CONTAINER_RUNNING = asyncio.run(check_all_containers_running())
+        is_container_running: dict[ConnectionTag, bool] = asyncio.run(
+            check_all_containers_running()
+        )
 
         if not asyncio.run(
-            perform_setup_checks(SESSION_IS_CONTAINER_RUNNING, SESSION_VM_MARKS)
+            perform_setup_checks(is_container_running, SESSION_VM_MARKS)
         ):
             pytest.exit("Setup checks failed, exiting ...")
 

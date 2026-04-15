@@ -7,11 +7,13 @@ import urllib.request
 from contextlib import AsyncExitStack
 from http import HTTPStatus
 from tests.config import LAN_ADDR_MAP, CORE_API_IP, CORE_API_CREDENTIALS
+from tests.conftest_helpers.setup_checks import OPENWRT_VM_TAGS
 from tests.utils.connection import ConnectionTag, clear_ephemeral_setups_set
 from tests.utils.connection.ssh_connection import SshConnection
 from tests.utils.connection_util import new_connection_raw, is_running
 from tests.utils.logger import log, setup_log
 from tests.utils.router import IPStack, new_router
+from tests.utils.tcpdump import make_tcpdump, make_local_tcpdump
 
 
 async def kill_natlab_processes():
@@ -164,3 +166,31 @@ async def copy_vm_binaries_if_needed(session_vm_marks: set[str]):
     if "openwrt" in session_vm_marks:
         await _copy_vm_binaries(ConnectionTag.VM_OPENWRT_GW_1)
         await _copy_vm_binaries(ConnectionTag.VM_OPENWRT_GW_2)
+
+
+async def start_tcpdump_processes(
+    exit_stack: AsyncExitStack,
+):
+    connections = []
+    for gw_tag in ConnectionTag:
+        if gw_tag in OPENWRT_VM_TAGS:
+            continue
+        if "_GW" in gw_tag.name:
+            if not await is_running(gw_tag):
+                continue
+            connection = await exit_stack.enter_async_context(
+                new_connection_raw(gw_tag)
+            )
+            connections.append(connection)
+    for conn_tag in [
+        ConnectionTag.DOCKER_DNS_SERVER_1,
+        ConnectionTag.DOCKER_DNS_SERVER_2,
+    ]:
+        if await is_running(conn_tag):
+            connection = await exit_stack.enter_async_context(
+                new_connection_raw(conn_tag)
+            )
+            connections.append(connection)
+
+    await exit_stack.enter_async_context(make_tcpdump(connections, session=True))
+    await exit_stack.enter_async_context(make_local_tcpdump())
