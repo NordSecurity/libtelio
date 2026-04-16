@@ -14,7 +14,7 @@ define Package/nordvpnlite
 	SECTION:=net
 	CATEGORY:=Network
 	TITLE:=NordVPN Lite
-	DEPENDS:=+kmod-tun +kmod-wireguard +luci-base +ucode-mod-log
+	DEPENDS:=+ca-bundle +jq +kmod-tun +kmod-wireguard +luci-base +ucode-mod-log +uclient-fetch
 	URL:=https://www.nordsecurity.com
 	SOURCE:=nordvpnlite
 endef
