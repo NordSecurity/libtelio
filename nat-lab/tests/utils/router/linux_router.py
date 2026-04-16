@@ -400,11 +400,14 @@ class LinuxRouter(Router):
                     ],
                     quiet=True,
                 ).execute()
-            except ProcessExecError:
-                log.warning(
-                    "disable_path cleanup: INPUT rule for %s already removed",
-                    address,
-                )
+            except ProcessExecError as e:
+                if "matching rule" in e.stderr or "No chain" in e.stderr:
+                    log.warning(
+                        "disable_path cleanup: INPUT rule for %s already removed",
+                        address,
+                    )
+                else:
+                    raise
             try:
                 await self._connection.create_process(
                     [
@@ -421,11 +424,14 @@ class LinuxRouter(Router):
                     ],
                     quiet=True,
                 ).execute()
-            except ProcessExecError:
-                log.warning(
-                    "disable_path cleanup: OUTPUT rule for %s already removed",
-                    address,
-                )
+            except ProcessExecError as e:
+                if "matching rule" in e.stderr or "No chain" in e.stderr:
+                    log.warning(
+                        "disable_path cleanup: OUTPUT rule for %s already removed",
+                        address,
+                    )
+                else:
+                    raise
 
     @asynccontextmanager
     async def break_tcp_conn_to_host(self, address: str) -> AsyncIterator:
@@ -479,11 +485,14 @@ class LinuxRouter(Router):
                     ],
                     quiet=True,
                 ).execute()
-            except ProcessExecError:
-                log.warning(
-                    "break_tcp_conn_to_host cleanup: rule for %s already removed",
-                    address,
-                )
+            except ProcessExecError as e:
+                if "matching rule" in e.stderr or "No chain" in e.stderr:
+                    log.warning(
+                        "break_tcp_conn_to_host cleanup: rule for %s already removed",
+                        address,
+                    )
+                else:
+                    raise
 
     @asynccontextmanager
     async def break_udp_conn_to_host(self, address: str) -> AsyncIterator:
@@ -537,11 +546,14 @@ class LinuxRouter(Router):
                     ],
                     quiet=True,
                 ).execute()
-            except ProcessExecError:
-                log.warning(
-                    "break_udp_conn_to_host cleanup: rule for %s already removed",
-                    address,
-                )
+            except ProcessExecError as e:
+                if "matching rule" in e.stderr or "No chain" in e.stderr:
+                    log.warning(
+                        "break_udp_conn_to_host cleanup: rule for %s already removed",
+                        address,
+                    )
+                else:
+                    raise
 
     # This function blocks outgoing data for a specific port to simulate permission denied error for the socket bound to that port.
     # It was added for LLT-4980, to test a specific code path in proxy.rs
@@ -582,11 +594,14 @@ class LinuxRouter(Router):
                     ],
                     quiet=True,
                 ).execute()
-            except ProcessExecError:
-                log.warning(
-                    "block_udp_port cleanup: rule for port %d already removed",
-                    port,
-                )
+            except ProcessExecError as e:
+                if "matching rule" in e.stderr or "No chain" in e.stderr:
+                    log.warning(
+                        "block_udp_port cleanup: rule for port %d already removed",
+                        port,
+                    )
+                else:
+                    raise
 
     @asynccontextmanager
     async def block_tcp_port(self, port: int) -> AsyncIterator:
@@ -625,11 +640,14 @@ class LinuxRouter(Router):
                     ],
                     quiet=True,
                 ).execute()
-            except ProcessExecError:
-                log.warning(
-                    "block_tcp_port cleanup: rule for port %d already removed",
-                    port,
-                )
+            except ProcessExecError as e:
+                if "matching rule" in e.stderr or "No chain" in e.stderr:
+                    log.warning(
+                        "block_tcp_port cleanup: rule for port %d already removed",
+                        port,
+                    )
+                else:
+                    raise
 
     @asynccontextmanager
     async def reset_upnpd(self) -> AsyncIterator:

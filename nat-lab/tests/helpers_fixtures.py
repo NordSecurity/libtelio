@@ -156,7 +156,8 @@ _PARAM_NAMES = ["alpha_setup_params", "beta_setup_params", "gamma_setup_params"]
 def _resolve_setup_params(request: pytest.FixtureRequest) -> List[SetupParameters]:
     """Dynamically resolve available *_setup_params fixtures.
 
-    Tries alpha, beta, gamma in order. Stops at the first missing fixture.
+    Tries alpha, beta, gamma in order.  Skips any that are not defined so
+    that e.g. alpha + gamma (without beta) is supported.
     At least alpha_setup_params must be available.
     """
     instances: List[SetupParameters] = []
@@ -164,7 +165,7 @@ def _resolve_setup_params(request: pytest.FixtureRequest) -> List[SetupParameter
         try:
             instances.append(request.getfixturevalue(name))
         except pytest.FixtureLookupError:
-            break
+            continue
     if not instances:
         raise ValueError(
             "env_mesh/env fixture requires at least alpha_setup_params to be "
