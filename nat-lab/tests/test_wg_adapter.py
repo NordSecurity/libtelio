@@ -1,6 +1,7 @@
 import pytest
 from contextlib import AsyncExitStack
 from Pyro5.errors import CommunicationError  # type:ignore
+from tests.config import WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY
 from tests.helpers import SetupParameters, setup_environment
 from tests.timeouts import TEST_WG_ADAPTER_CLEANUP_TIMEOUT
 from tests.utils.bindings import TelioAdapterType
@@ -12,7 +13,7 @@ from tests.utils.process import ProcessExecError
 QUERY_CMD = [
     "reg",
     "query",
-    r"HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}",
+    WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY,
     "/s",
     "/f",
     "DeviceInstanceID",
@@ -21,9 +22,12 @@ QUERY_CMD = [
 
 @pytest.mark.windows
 @pytest.mark.timeout(TEST_WG_ADAPTER_CLEANUP_TIMEOUT)
+@pytest.mark.parametrize("iterations", [5])
 @pytest.mark.parametrize("conn_tag", [ConnectionTag.VM_WINDOWS_1])
-async def test_wg_adapter_cleanup_loop_clean_shutdown(conn_tag: ConnectionTag):
-    for i in range(5):
+async def test_wg_adapter_cleanup_loop_clean_shutdown(
+    conn_tag: ConnectionTag, iterations: int
+):
+    for i in range(iterations):
         log.info("Clean shutdown iteration %d", i)
 
         async with AsyncExitStack() as exit_stack:
@@ -55,9 +59,12 @@ async def test_wg_adapter_cleanup_loop_clean_shutdown(conn_tag: ConnectionTag):
 
 @pytest.mark.windows
 @pytest.mark.timeout(TEST_WG_ADAPTER_CLEANUP_TIMEOUT)
+@pytest.mark.parametrize("iterations", [5])
 @pytest.mark.parametrize("conn_tag", [ConnectionTag.VM_WINDOWS_1])
-async def test_wg_adapter_cleanup_loop_dirty_shutdown(conn_tag: ConnectionTag):
-    for i in range(5):
+async def test_wg_adapter_cleanup_loop_dirty_shutdown(
+    conn_tag: ConnectionTag, iterations: int
+):
+    for i in range(iterations):
         log.info("Dirty shutdown iteration %d", i)
 
         # Run libtelio and kill it dirty so it would leave hanging wg-nt adapter

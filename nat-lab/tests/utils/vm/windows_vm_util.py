@@ -1,6 +1,7 @@
 import asyncssh
 import os
 from tests.config import (
+    WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY,
     get_root_path,
     LIBTELIO_BINARY_PATH_WINDOWS_VM,
     UNIFFI_PATH_WINDOWS_VM,
@@ -108,7 +109,7 @@ async def get_network_interface_tunnel_keys(connection):
         [
             "reg",
             "query",
-            "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}",
+            WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY,
             "/s",
             "/f",
             "DriverDesc",

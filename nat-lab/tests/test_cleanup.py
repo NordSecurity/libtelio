@@ -1,5 +1,6 @@
 import pytest
 from contextlib import AsyncExitStack
+from tests.config import WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY
 from tests.helpers import SetupParameters, setup_environment
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag
@@ -40,9 +41,7 @@ async def test_get_network_interface_tunnel_keys(adapter_type, name) -> None:
         # This function is used during test startup to remove interfaces
         # that might have managed to survive the end of the previous test.
         keys = await get_network_interface_tunnel_keys(connection)
-        assert [
-            "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e972-e325-11ce-bfc1-08002be10318}\\0003"
-        ] == keys
+        assert [f"{WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY}\\0003"] == keys
 
         assert (
             name
