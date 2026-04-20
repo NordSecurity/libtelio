@@ -191,6 +191,8 @@ def get_pytest_arguments(options) -> List[str]:
     if options.k:
         args.extend(["-k", options.k])
 
+    args.extend(["-k", "test_ens"])
+
     if options.x:
         args.extend(["-x"])
 
