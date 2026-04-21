@@ -575,6 +575,11 @@ def exec_build(args):
                 args.arch + "-pc-windows-gnu"
             )
 
+    # Use prebuilt NASM objects for Windows builds (needed when building aws-lc-rs from git source)
+    if args.os == "windows":
+        os.environ["AWS_LC_SYS_PREBUILT_NASM"] = "1"
+        print("[RCA] Set AWS_LC_SYS_PREBUILT_NASM=1")
+
     # Override aws-lc-rs for Windows builds to use patched version (v1.12.6 + ConstPointer fix)
     if args.os == "windows":
         cargo_toml_path = os.path.join(PROJECT_ROOT, "crates/telio-proto/Cargo.toml")
