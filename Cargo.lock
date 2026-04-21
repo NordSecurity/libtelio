@@ -329,17 +329,26 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "aws-lc-fips-sys"
-version = "0.13.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e78aabce84ab79501f4777e89cdcaec2a6ba9b051e6e6f26496598a84215c26"
+version = "0.13.3"
+source = "git+https://github.com/Jauler/aws-lc-rs?tag=v1.12.6#2fd701683f82ec325ecde4020c6501683e1cdc15"
 dependencies = [
- "bindgen 0.72.1",
+ "bindgen",
  "cc",
  "cmake",
  "dunce",
  "fs_extra",
- "libloading",
  "regex",
+]
+
+[[package]]
+name = "aws-lc-rs"
+version = "1.12.6"
+source = "git+https://github.com/Jauler/aws-lc-rs?tag=v1.12.6#2fd701683f82ec325ecde4020c6501683e1cdc15"
+dependencies = [
+ "aws-lc-fips-sys",
+ "aws-lc-sys 0.27.0",
+ "untrusted 0.7.1",
+ "zeroize",
 ]
 
 [[package]]
@@ -348,10 +357,20 @@ version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b756939cb2f8dc900aa6dcd505e6e2428e9cae7ff7b028c49e3946efa70878"
 dependencies = [
- "aws-lc-fips-sys",
- "aws-lc-sys",
- "untrusted 0.7.1",
+ "aws-lc-sys 0.28.2",
  "zeroize",
+]
+
+[[package]]
+name = "aws-lc-sys"
+version = "0.27.0"
+source = "git+https://github.com/Jauler/aws-lc-rs?tag=v1.12.6#2fd701683f82ec325ecde4020c6501683e1cdc15"
+dependencies = [
+ "bindgen",
+ "cc",
+ "cmake",
+ "dunce",
+ "fs_extra",
 ]
 
 [[package]]
@@ -360,7 +379,7 @@ version = "0.28.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfa9b6986f250236c27e5a204062434a773a13243d2ffc2955f37bdba4c5c6a1"
 dependencies = [
- "bindgen 0.69.5",
+ "bindgen",
  "cc",
  "cmake",
  "dunce",
@@ -476,26 +495,6 @@ dependencies = [
  "shlex",
  "syn 2.0.106",
  "which",
-]
-
-[[package]]
-name = "bindgen"
-version = "0.72.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "993776b509cfb49c750f11b8f07a46fa23e0a1386ffc01fb1e7d343efc387895"
-dependencies = [
- "bitflags 2.9.4",
- "cexpr",
- "clang-sys",
- "itertools 0.13.0",
- "log",
- "prettyplease",
- "proc-macro2",
- "quote",
- "regex",
- "rustc-hash 2.1.1",
- "shlex",
- "syn 2.0.106",
 ]
 
 [[package]]
@@ -4056,7 +4055,7 @@ version = "0.23.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0ebcbd2f03de0fc1122ad9bb24b127a5a6cd51d72604a3f3c50ac459762b6cc"
 dependencies = [
- "aws-lc-rs",
+ "aws-lc-rs 1.13.0",
  "log",
  "once_cell",
  "ring",
@@ -4121,7 +4120,7 @@ version = "0.103.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0a17884ae0c1b773f1ccd2bd4a8c72f16da897310a98b0e84bf349ad5ead92fc"
 dependencies = [
- "aws-lc-rs",
+ "aws-lc-rs 1.13.0",
  "ring",
  "rustls-pki-types",
  "untrusted 0.9.0",
@@ -5024,7 +5023,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-channel 2.5.0",
- "aws-lc-rs",
+ "aws-lc-rs 1.12.6",
  "base64 0.22.1",
  "blake3",
  "bytes",
