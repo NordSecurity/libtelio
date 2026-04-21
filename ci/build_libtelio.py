@@ -643,6 +643,17 @@ def exec_build(args):
                                 f.write(data)
             print("[RCA] Converted CRLF to LF in source files")
 
+            # Also ensure the patch file itself is LF (git on Windows may convert it to CRLF)
+            with open(patch_file, "rb") as f:
+                patch_data = f.read()
+            if b"\r\n" in patch_data:
+                patch_data = patch_data.replace(b"\r\n", b"\n")
+                patch_file_fixed = os.path.join(crate_dir, "constpointer-fix.patch")
+                with open(patch_file_fixed, "wb") as f:
+                    f.write(patch_data)
+                print("[RCA] Converted patch file CRLF to LF")
+                patch_file = patch_file_fixed
+
             result = subprocess.run(
                 ["git", "apply", "--verbose", patch_file],
                 cwd=crate_dir,
