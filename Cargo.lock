@@ -330,7 +330,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 [[package]]
 name = "aws-lc-fips-sys"
 version = "0.13.3"
-source = "git+https://github.com/Jauler/aws-lc-rs?tag=v1.12.6#2fd701683f82ec325ecde4020c6501683e1cdc15"
+source = "git+https://github.com/Jauler/aws-lc-rs?branch=RCA-windows-segfault#46f22154b66ded2e748612bccc18053acb4d7b28"
 dependencies = [
  "bindgen",
  "cc",
@@ -343,7 +343,7 @@ dependencies = [
 [[package]]
 name = "aws-lc-rs"
 version = "1.12.6"
-source = "git+https://github.com/Jauler/aws-lc-rs?tag=v1.12.6#2fd701683f82ec325ecde4020c6501683e1cdc15"
+source = "git+https://github.com/Jauler/aws-lc-rs?branch=RCA-windows-segfault#46f22154b66ded2e748612bccc18053acb4d7b28"
 dependencies = [
  "aws-lc-fips-sys",
  "aws-lc-sys 0.27.0",
@@ -364,7 +364,7 @@ dependencies = [
 [[package]]
 name = "aws-lc-sys"
 version = "0.27.0"
-source = "git+https://github.com/Jauler/aws-lc-rs?tag=v1.12.6#2fd701683f82ec325ecde4020c6501683e1cdc15"
+source = "git+https://github.com/Jauler/aws-lc-rs?branch=RCA-windows-segfault#46f22154b66ded2e748612bccc18053acb4d7b28"
 dependencies = [
  "bindgen",
  "cc",
