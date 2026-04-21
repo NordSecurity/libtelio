@@ -1,0 +1,1000 @@
+diff --git a/src/agreement.rs b/src/agreement.rs
+index 73b92f4ce12..5b85d74a94c 100644
+--- a/src/agreement.rs
++++ b/src/agreement.rs
+@@ -62,7 +62,6 @@ use crate::ec::verify_evp_key_nid;
+ use crate::ec::{encoding, evp_key_generate};
+ use crate::error::{KeyRejected, Unspecified};
+ use crate::hex;
+-use crate::ptr::ConstPointer;
+ pub use ephemeral::{agree_ephemeral, EphemeralPrivateKey};
+ 
+ use crate::aws_lc::{
+@@ -416,7 +415,9 @@ impl PrivateKey {
+             }
+             KeyInner::X25519(priv_key) => {
+                 let mut buffer = [0u8; MAX_PUBLIC_KEY_LEN];
+-                let out_len = priv_key.marshal_raw_public_to_buffer(&mut buffer)?;
++                let out_len = priv_key
++                    .as_const()
++                    .marshal_raw_public_to_buffer(&mut buffer)?;
+                 Ok(PublicKey {
+                     inner_key: self.inner_key.clone(),
+                     public_key: buffer,
+@@ -448,9 +449,11 @@ impl AsDer<EcPrivateKeyRfc5915Der<'static>> for PrivateKey {
+ 
+         let mut outp = null_mut::<u8>();
+         let ec_key = {
+-            ConstPointer::new(unsafe {
+-                EVP_PKEY_get0_EC_KEY(*self.inner_key.get_evp_pkey().as_const())
+-            })?
++            self.inner_key
++                .get_evp_pkey()
++                .project_const_lifetime(unsafe {
++                    |evp_pkey| EVP_PKEY_get0_EC_KEY(*evp_pkey.as_const())
++                })?
+         };
+         let length = usize::try_from(unsafe { aws_lc::i2d_ECPrivateKey(*ec_key, &mut outp) })
+             .map_err(|_| Unspecified)?;
+@@ -476,6 +479,7 @@ impl AsDer<Pkcs8V1Der<'static>> for PrivateKey {
+         Ok(Pkcs8V1Der::new(
+             self.inner_key
+                 .get_evp_pkey()
++                .as_const()
+                 .marshal_rfc5208_private_key(Version::V1)?,
+         ))
+     }
+@@ -509,7 +513,9 @@ impl AsBigEndian<Curve25519SeedBin<'static>> for PrivateKey {
+             return Err(Unspecified);
+         }
+         let evp_pkey = self.inner_key.get_evp_pkey();
+-        Ok(Curve25519SeedBin::new(evp_pkey.marshal_raw_private_key()?))
++        Ok(Curve25519SeedBin::new(
++            evp_pkey.as_const().marshal_raw_private_key()?,
++        ))
+     }
+ }
+ 
+@@ -576,7 +582,7 @@ impl AsDer<PublicKeyX509Der<'static>> for PublicKey {
+             | KeyInner::ECDH_P384(evp_pkey)
+             | KeyInner::ECDH_P521(evp_pkey)
+             | KeyInner::X25519(evp_pkey) => {
+-                let der = evp_pkey.marshal_rfc5280_public_key()?;
++                let der = evp_pkey.as_const().marshal_rfc5280_public_key()?;
+                 Ok(PublicKeyX509Der::from(Buffer::new(der)))
+             }
+         }
+diff --git a/src/bn.rs b/src/bn.rs
+index 6b54192b0ec..dc1296301d7 100644
+--- a/src/bn.rs
++++ b/src/bn.rs
+@@ -49,7 +49,7 @@ impl TryFrom<u64> for DetachableLcPtr<BIGNUM> {
+     }
+ }
+ 
+-impl ConstPointer<BIGNUM> {
++impl ConstPointer<'_, BIGNUM> {
+     pub(crate) fn to_be_bytes(&self) -> Vec<u8> {
+         unsafe {
+             let bn_bytes = BN_num_bytes(**self);
+diff --git a/src/cipher.rs b/src/cipher.rs
+index 7d83747035d..4c806252ff6 100644
+--- a/src/cipher.rs
++++ b/src/cipher.rs
+@@ -285,21 +285,23 @@ pub enum OperatingMode {
+ 
+ impl OperatingMode {
+     fn evp_cipher(&self, algorithm: &Algorithm) -> ConstPointer<EVP_CIPHER> {
+-        ConstPointer::new(match (self, algorithm.id) {
+-            (OperatingMode::CBC, AlgorithmId::Aes128) => unsafe { EVP_aes_128_cbc() },
+-            (OperatingMode::CTR, AlgorithmId::Aes128) => unsafe { EVP_aes_128_ctr() },
+-            (OperatingMode::CFB128, AlgorithmId::Aes128) => unsafe { EVP_aes_128_cfb128() },
+-            (OperatingMode::ECB, AlgorithmId::Aes128) => unsafe { EVP_aes_128_ecb() },
+-            (OperatingMode::CBC, AlgorithmId::Aes192) => unsafe { EVP_aes_192_cbc() },
+-            (OperatingMode::CTR, AlgorithmId::Aes192) => unsafe { EVP_aes_192_ctr() },
+-            (OperatingMode::CFB128, AlgorithmId::Aes192) => unsafe { EVP_aes_192_cfb128() },
+-            (OperatingMode::ECB, AlgorithmId::Aes192) => unsafe { EVP_aes_192_ecb() },
+-            (OperatingMode::CBC, AlgorithmId::Aes256) => unsafe { EVP_aes_256_cbc() },
+-            (OperatingMode::CTR, AlgorithmId::Aes256) => unsafe { EVP_aes_256_ctr() },
+-            (OperatingMode::CFB128, AlgorithmId::Aes256) => unsafe { EVP_aes_256_cfb128() },
+-            (OperatingMode::ECB, AlgorithmId::Aes256) => unsafe { EVP_aes_256_ecb() },
+-        })
+-        .unwrap()
++        unsafe {
++            ConstPointer::new_static(match (self, algorithm.id) {
++                (OperatingMode::CBC, AlgorithmId::Aes128) => EVP_aes_128_cbc(),
++                (OperatingMode::CTR, AlgorithmId::Aes128) => EVP_aes_128_ctr(),
++                (OperatingMode::CFB128, AlgorithmId::Aes128) => EVP_aes_128_cfb128(),
++                (OperatingMode::ECB, AlgorithmId::Aes128) => EVP_aes_128_ecb(),
++                (OperatingMode::CBC, AlgorithmId::Aes192) => EVP_aes_192_cbc(),
++                (OperatingMode::CTR, AlgorithmId::Aes192) => EVP_aes_192_ctr(),
++                (OperatingMode::CFB128, AlgorithmId::Aes192) => EVP_aes_192_cfb128(),
++                (OperatingMode::ECB, AlgorithmId::Aes192) => EVP_aes_192_ecb(),
++                (OperatingMode::CBC, AlgorithmId::Aes256) => EVP_aes_256_cbc(),
++                (OperatingMode::CTR, AlgorithmId::Aes256) => EVP_aes_256_ctr(),
++                (OperatingMode::CFB128, AlgorithmId::Aes256) => EVP_aes_256_cfb128(),
++                (OperatingMode::ECB, AlgorithmId::Aes256) => EVP_aes_256_ecb(),
++            })
++            .unwrap()
++        }
+     }
+ }
+ 
+diff --git a/src/digest.rs b/src/digest.rs
+index b46d22334ff..8a071fb07fb 100644
+--- a/src/digest.rs
++++ b/src/digest.rs
+@@ -342,7 +342,7 @@ pub const MAX_CHAINING_LEN: usize = MAX_OUTPUT_LEN;
+ /// Match digest types for `EVP_MD` functions.
+ pub(crate) fn match_digest_type(algorithm_id: &AlgorithmID) -> ConstPointer<EVP_MD> {
+     unsafe {
+-        ConstPointer::new(match algorithm_id {
++        ConstPointer::new_static(match algorithm_id {
+             AlgorithmID::SHA1 => EVP_sha1(),
+             AlgorithmID::SHA224 => EVP_sha224(),
+             AlgorithmID::SHA256 => EVP_sha256(),
+diff --git a/src/ec.rs b/src/ec.rs
+index 08557fc5395..3b6c8c8da9b 100644
+--- a/src/ec.rs
++++ b/src/ec.rs
+@@ -3,10 +3,6 @@
+ // Modifications copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ // SPDX-License-Identifier: Apache-2.0 OR ISC
+ 
+-use crate::ec::signature::AlgorithmID;
+-// TODO: Uncomment when MSRV >= 1.64
+-use std::os::raw::c_int;
+-
+ #[cfg(feature = "fips")]
+ use crate::aws_lc::EC_KEY_check_fips;
+ #[cfg(not(feature = "fips"))]
+@@ -18,11 +14,16 @@ use crate::aws_lc::{
+     NID_X9_62_prime256v1, NID_secp224r1, NID_secp256k1, NID_secp384r1, NID_secp521r1, EC_GROUP,
+     EC_KEY, EVP_PKEY, EVP_PKEY_EC,
+ };
++use crate::ec::signature::AlgorithmID;
+ use crate::error::{KeyRejected, Unspecified};
+ #[cfg(feature = "fips")]
+ use crate::fips::indicator_check;
+ use crate::ptr::{ConstPointer, LcPtr};
+ use crate::signature::Signature;
++// TODO: Uncomment when MSRV >= 1.64
++//use core::ffi::c_int;
++use std::os::raw::c_int;
++use std::ptr::null;
+ 
+ pub(crate) mod encoding;
+ pub(crate) mod key_pair;
+@@ -40,7 +41,8 @@ fn verify_ec_key_nid(
+     ec_key: &ConstPointer<EC_KEY>,
+     expected_curve_nid: i32,
+ ) -> Result<(), KeyRejected> {
+-    let ec_group = ConstPointer::new(unsafe { EC_KEY_get0_group(**ec_key) })?;
++    let ec_group =
++        ec_key.project_const_lifetime(unsafe { |ec_key| EC_KEY_get0_group(**ec_key) })?;
+     let key_nid = unsafe { EC_GROUP_get_curve_name(*ec_group) };
+ 
+     if key_nid != expected_curve_nid {
+@@ -55,7 +57,8 @@ pub(crate) fn verify_evp_key_nid(
+     evp_pkey: &ConstPointer<EVP_PKEY>,
+     expected_curve_nid: i32,
+ ) -> Result<(), KeyRejected> {
+-    let ec_key = ConstPointer::new(unsafe { EVP_PKEY_get0_EC_KEY(**evp_pkey) })?;
++    let ec_key =
++        evp_pkey.project_const_lifetime(unsafe { |evp_pkey| EVP_PKEY_get0_EC_KEY(**evp_pkey) })?;
+     verify_ec_key_nid(&ec_key, expected_curve_nid)?;
+ 
+     Ok(())
+@@ -66,7 +69,8 @@ pub(crate) fn validate_evp_key(
+     evp_pkey: &ConstPointer<EVP_PKEY>,
+     expected_curve_nid: i32,
+ ) -> Result<(), KeyRejected> {
+-    let ec_key = ConstPointer::new(unsafe { EVP_PKEY_get0_EC_KEY(**evp_pkey) })?;
++    let ec_key =
++        evp_pkey.project_const_lifetime(unsafe { |evp_pkey| EVP_PKEY_get0_EC_KEY(**evp_pkey) })?;
+     verify_ec_key_nid(&ec_key, expected_curve_nid)?;
+ 
+     #[cfg(not(feature = "fips"))]
+@@ -96,18 +100,20 @@ pub(crate) fn evp_key_generate(nid: c_int) -> Result<LcPtr<EVP_PKEY>, Unspecifie
+ 
+ #[inline]
+ #[allow(non_upper_case_globals)]
+-pub(crate) fn ec_group_from_nid(nid: i32) -> Result<ConstPointer<EC_GROUP>, Unspecified> {
+-    Ok(ConstPointer::new(match nid {
+-        NID_secp224r1 => Ok(unsafe { EC_group_p224() }),
+-        NID_X9_62_prime256v1 => Ok(unsafe { EC_group_p256() }),
+-        NID_secp384r1 => Ok(unsafe { EC_group_p384() }),
+-        NID_secp521r1 => Ok(unsafe { EC_group_p521() }),
+-        NID_secp256k1 => Ok(unsafe { EC_group_secp256k1() }),
+-        _ => {
+-            // OPENSSL_PUT_ERROR(EC, EC_R_UNKNOWN_GROUP);
+-            Err(Unspecified)
+-        }
+-    }?)?)
++pub(crate) fn ec_group_from_nid(nid: i32) -> Result<ConstPointer<'static, EC_GROUP>, Unspecified> {
++    Ok(unsafe {
++        ConstPointer::new_static(match nid {
++            NID_secp224r1 => EC_group_p224(),
++            NID_X9_62_prime256v1 => EC_group_p256(),
++            NID_secp384r1 => EC_group_p384(),
++            NID_secp521r1 => EC_group_p521(),
++            NID_secp256k1 => EC_group_secp256k1(),
++            _ => {
++                // OPENSSL_PUT_ERROR(EC, EC_R_UNKNOWN_GROUP);
++                null()
++            }
++        })?
++    })
+ }
+ 
+ #[inline]
+@@ -116,10 +122,12 @@ fn ecdsa_asn1_to_fixed(alg_id: &'static AlgorithmID, sig: &[u8]) -> Result<Signa
+ 
+     let ecdsa_sig = LcPtr::new(unsafe { ECDSA_SIG_from_bytes(sig.as_ptr(), sig.len()) })?;
+ 
+-    let r_bn = ConstPointer::new(unsafe { ECDSA_SIG_get0_r(*ecdsa_sig.as_const()) })?;
++    let r_bn = ecdsa_sig
++        .project_const_lifetime(unsafe { |ecdsa_sig| ECDSA_SIG_get0_r(*ecdsa_sig.as_const()) })?;
+     let r_buffer = r_bn.to_be_bytes();
+ 
+-    let s_bn = ConstPointer::new(unsafe { ECDSA_SIG_get0_s(*ecdsa_sig.as_const()) })?;
++    let s_bn = ecdsa_sig
++        .project_const_lifetime(unsafe { |ecdsa_sig| ECDSA_SIG_get0_s(*ecdsa_sig.as_const()) })?;
+     let s_buffer = s_bn.to_be_bytes();
+ 
+     Ok(Signature::new(|slice| {
+diff --git a/src/ec/encoding.rs b/src/ec/encoding.rs
+index e7930075003..0cec698bf8f 100644
+--- a/src/ec/encoding.rs
++++ b/src/ec/encoding.rs
+@@ -135,9 +135,9 @@ pub(crate) mod sec1 {
+         compressed: bool,
+     ) -> Result<Vec<u8>, Unspecified> {
+         let pub_key_size = if compressed {
+-            compressed_public_key_size_bytes(evp_pkey.key_size_bits())
++            compressed_public_key_size_bytes(evp_pkey.as_const().key_size_bits())
+         } else {
+-            uncompressed_public_key_size_bytes(evp_pkey.key_size_bits())
++            uncompressed_public_key_size_bytes(evp_pkey.as_const().key_size_bits())
+         };
+         let mut cbb = LcCBB::new(pub_key_size);
+         marshal_sec1_public_point_into_cbb(&mut cbb, evp_pkey, compressed)?;
+@@ -159,9 +159,13 @@ pub(crate) mod sec1 {
+         evp_pkey: &LcPtr<EVP_PKEY>,
+         compressed: bool,
+     ) -> Result<(), Unspecified> {
+-        let ec_key = ConstPointer::new(unsafe { EVP_PKEY_get0_EC_KEY(*evp_pkey.as_const()) })?;
+-        let ec_group = ConstPointer::new(unsafe { EC_KEY_get0_group(*ec_key) })?;
+-        let ec_point = ConstPointer::new(unsafe { EC_KEY_get0_public_key(*ec_key) })?;
++        let ec_key = evp_pkey.project_const_lifetime(unsafe {
++            |evp_pkey| EVP_PKEY_get0_EC_KEY(*evp_pkey.as_const())
++        })?;
++        let ec_group =
++            ec_key.project_const_lifetime(unsafe { |ec_key| EC_KEY_get0_group(**ec_key) })?;
++        let ec_point =
++            ec_key.project_const_lifetime(unsafe { |ec_key| EC_KEY_get0_public_key(**ec_key) })?;
+ 
+         let point_conversion_form = if compressed {
+             point_conversion_form_t::POINT_CONVERSION_COMPRESSED
+@@ -186,8 +190,11 @@ pub(crate) mod sec1 {
+     pub(crate) fn marshal_sec1_private_key(
+         evp_pkey: &LcPtr<EVP_PKEY>,
+     ) -> Result<Vec<u8>, Unspecified> {
+-        let ec_key = ConstPointer::new(unsafe { EVP_PKEY_get0_EC_KEY(*evp_pkey.as_const()) })?;
+-        let ec_group = ConstPointer::new(unsafe { EC_KEY_get0_group(*ec_key) })?;
++        let ec_key = evp_pkey.project_const_lifetime(unsafe {
++            |evp_pkey| EVP_PKEY_get0_EC_KEY(*evp_pkey.as_const())
++        })?;
++        let ec_group =
++            ec_key.project_const_lifetime(unsafe { |ec_key| EC_KEY_get0_group(**ec_key) })?;
+         let nid = unsafe { EC_GROUP_get_curve_name(*ec_group) };
+         #[allow(non_upper_case_globals)]
+         let key_size: usize = match nid {
+@@ -196,7 +203,8 @@ pub(crate) mod sec1 {
+             NID_secp521r1 => Ok(66usize),
+             _ => Err(Unspecified),
+         }?;
+-        let private_bn = ConstPointer::new(unsafe { EC_KEY_get0_private_key(*ec_key) })?;
++        let private_bn =
++            ec_key.project_const_lifetime(unsafe { |ec_key| EC_KEY_get0_private_key(**ec_key) })?;
+ 
+         let mut cbb = LcCBB::new(key_size);
+         if 1 != unsafe { BN_bn2cbb_padded(cbb.as_mut_ptr(), key_size, *private_bn) } {
+@@ -215,7 +223,7 @@ pub(crate) mod rfc5915 {
+     use crate::cbs::build_CBS;
+     use crate::ec::ec_group_from_nid;
+     use crate::error::{KeyRejected, Unspecified};
+-    use crate::ptr::{ConstPointer, LcPtr};
++    use crate::ptr::LcPtr;
+ 
+     pub(crate) fn parse_rfc5915_private_key(
+         key_bytes: &[u8],
+@@ -234,8 +242,10 @@ pub(crate) mod rfc5915 {
+     pub(crate) fn marshal_rfc5915_private_key(
+         evp_pkey: &LcPtr<EVP_PKEY>,
+     ) -> Result<Vec<u8>, Unspecified> {
+-        let ec_key = ConstPointer::new(unsafe { EVP_PKEY_get0_EC_KEY(*evp_pkey.as_const()) })?;
+-        let mut cbb = LcCBB::new(evp_pkey.key_size_bytes());
++        let ec_key = evp_pkey.project_const_lifetime(unsafe {
++            |evp_pkey| EVP_PKEY_get0_EC_KEY(*evp_pkey.as_const())
++        })?;
++        let mut cbb = LcCBB::new(evp_pkey.as_const().key_size_bytes());
+         let enc_flags = unsafe { EC_KEY_get_enc_flags(*ec_key) };
+         if 1 != unsafe { EC_KEY_marshal_private_key(cbb.as_mut_ptr(), *ec_key, enc_flags) } {
+             return Err(Unspecified);
+diff --git a/src/ec/key_pair.rs b/src/ec/key_pair.rs
+index 718cd80732d..5f4720960db 100644
+--- a/src/ec/key_pair.rs
++++ b/src/ec/key_pair.rs
+@@ -128,7 +128,9 @@ impl EcdsaKeyPair {
+     ///
+     pub fn to_pkcs8v1(&self) -> Result<Document, Unspecified> {
+         Ok(Document::new(
+-            self.evp_pkey.marshal_rfc5208_private_key(Version::V1)?,
++            self.evp_pkey
++                .as_const()
++                .marshal_rfc5208_private_key(Version::V1)?,
+         ))
+     }
+ 
+diff --git a/src/ec/signature.rs b/src/ec/signature.rs
+index b72b15af69a..dc83bdee62f 100644
+--- a/src/ec/signature.rs
++++ b/src/ec/signature.rs
+@@ -121,7 +121,7 @@ impl AsDer<PublicKeyX509Der<'static>> for PublicKey {
+     /// # Errors
+     /// Returns an error if the public key fails to marshal to X.509.
+     fn as_der(&self) -> Result<PublicKeyX509Der<'static>, Unspecified> {
+-        let der = self.evp_pkey.marshal_rfc5280_public_key()?;
++        let der = self.evp_pkey.as_const().marshal_rfc5280_public_key()?;
+         Ok(PublicKeyX509Der::new(der))
+     }
+ }
+diff --git a/src/ed25519.rs b/src/ed25519.rs
+index 71d9751c906..f61ebf533a3 100644
+--- a/src/ed25519.rs
++++ b/src/ed25519.rs
+@@ -153,7 +153,7 @@ impl AsDer<PublicKeyX509Der<'static>> for PublicKey {
+         // 2:d=1  hl=2 l=   5 cons:  SEQUENCE
+         // 4:d=2  hl=2 l=   3 prim:   OBJECT            :ED25519
+         // 9:d=1  hl=2 l=  33 prim:  BIT STRING
+-        let der = self.evp_pkey.marshal_rfc5280_public_key()?;
++        let der = self.evp_pkey.as_const().marshal_rfc5280_public_key()?;
+         Ok(PublicKeyX509Der::from(Buffer::new(der)))
+     }
+ }
+@@ -182,7 +182,9 @@ impl Ed25519KeyPair {
+         let evp_pkey = generate_key()?;
+ 
+         let mut public_key = [0u8; ED25519_PUBLIC_KEY_LEN];
+-        let out_len: usize = evp_pkey.marshal_raw_public_to_buffer(&mut public_key)?;
++        let out_len: usize = evp_pkey
++            .as_const()
++            .marshal_raw_public_to_buffer(&mut public_key)?;
+         debug_assert_eq!(public_key.len(), out_len);
+ 
+         Ok(Self {
+@@ -219,7 +221,9 @@ impl Ed25519KeyPair {
+     pub fn generate_pkcs8(_rng: &dyn SecureRandom) -> Result<Document, Unspecified> {
+         let evp_pkey = generate_key()?;
+         Ok(Document::new(
+-            evp_pkey.marshal_rfc5208_private_key(Version::V2)?,
++            evp_pkey
++                .as_const()
++                .marshal_rfc5208_private_key(Version::V2)?,
+         ))
+     }
+ 
+@@ -230,7 +234,9 @@ impl Ed25519KeyPair {
+     ///
+     pub fn to_pkcs8(&self) -> Result<Document, Unspecified> {
+         Ok(Document::new(
+-            self.evp_pkey.marshal_rfc5208_private_key(Version::V2)?,
++            self.evp_pkey
++                .as_const()
++                .marshal_rfc5208_private_key(Version::V2)?,
+         ))
+     }
+ 
+@@ -251,7 +257,9 @@ impl Ed25519KeyPair {
+     pub fn generate_pkcs8v1(_rng: &dyn SecureRandom) -> Result<Document, Unspecified> {
+         let evp_pkey = generate_key()?;
+         Ok(Document::new(
+-            evp_pkey.marshal_rfc5208_private_key(Version::V1)?,
++            evp_pkey
++                .as_const()
++                .marshal_rfc5208_private_key(Version::V1)?,
+         ))
+     }
+ 
+@@ -262,7 +270,9 @@ impl Ed25519KeyPair {
+     ///
+     pub fn to_pkcs8v1(&self) -> Result<Document, Unspecified> {
+         Ok(Document::new(
+-            self.evp_pkey.marshal_rfc5208_private_key(Version::V1)?,
++            self.evp_pkey
++                .as_const()
++                .marshal_rfc5208_private_key(Version::V1)?,
+         ))
+     }
+ 
+@@ -307,7 +317,9 @@ impl Ed25519KeyPair {
+         let evp_pkey = LcPtr::<EVP_PKEY>::parse_raw_private_key(seed, EVP_PKEY_ED25519)?;
+ 
+         let mut derived_public_key = [0u8; ED25519_PUBLIC_KEY_LEN];
+-        let out_len: usize = evp_pkey.marshal_raw_public_to_buffer(&mut derived_public_key)?;
++        let out_len: usize = evp_pkey
++            .as_const()
++            .marshal_raw_public_to_buffer(&mut derived_public_key)?;
+         debug_assert_eq!(derived_public_key.len(), out_len);
+ 
+         Ok(Self {
+@@ -360,10 +372,12 @@ impl Ed25519KeyPair {
+     fn parse_pkcs8(pkcs8: &[u8]) -> Result<Self, KeyRejected> {
+         let evp_pkey = LcPtr::<EVP_PKEY>::parse_rfc5208_private_key(pkcs8, EVP_PKEY_ED25519)?;
+ 
+-        evp_pkey.validate_as_ed25519()?;
++        evp_pkey.as_const().validate_as_ed25519()?;
+ 
+         let mut public_key = [0u8; ED25519_PUBLIC_KEY_LEN];
+-        let out_len: usize = evp_pkey.marshal_raw_public_to_buffer(&mut public_key)?;
++        let out_len: usize = evp_pkey
++            .as_const()
++            .marshal_raw_public_to_buffer(&mut public_key)?;
+         debug_assert_eq!(public_key.len(), out_len);
+ 
+         Ok(Self {
+@@ -406,7 +420,11 @@ impl Ed25519KeyPair {
+     /// Currently the function cannot fail, but it might in future implementations.
+     pub fn seed(&self) -> Result<Seed<'static>, Unspecified> {
+         Ok(Seed {
+-            bytes: self.evp_pkey.marshal_raw_private_key()?.into_boxed_slice(),
++            bytes: self
++                .evp_pkey
++                .as_const()
++                .marshal_raw_private_key()?
++                .into_boxed_slice(),
+             phantom: PhantomData,
+         })
+     }
+@@ -419,7 +437,9 @@ impl AsDer<Pkcs8V1Der<'static>> for Ed25519KeyPair {
+     /// `error::Unspecified` on internal error.
+     fn as_der(&self) -> Result<Pkcs8V1Der<'static>, crate::error::Unspecified> {
+         Ok(Pkcs8V1Der::new(
+-            self.evp_pkey.marshal_rfc5208_private_key(Version::V1)?,
++            self.evp_pkey
++                .as_const()
++                .marshal_rfc5208_private_key(Version::V1)?,
+         ))
+     }
+ }
+@@ -431,7 +451,9 @@ impl AsDer<Pkcs8V2Der<'static>> for Ed25519KeyPair {
+     /// `error::Unspecified` on internal error.
+     fn as_der(&self) -> Result<Pkcs8V2Der<'static>, crate::error::Unspecified> {
+         Ok(Pkcs8V2Der::new(
+-            self.evp_pkey.marshal_rfc5208_private_key(Version::V2)?,
++            self.evp_pkey
++                .as_const()
++                .marshal_rfc5208_private_key(Version::V2)?,
+         ))
+     }
+ }
+diff --git a/src/evp_pkey.rs b/src/evp_pkey.rs
+index 2e30972cf40..402145086ff 100644
+--- a/src/evp_pkey.rs
++++ b/src/evp_pkey.rs
+@@ -43,7 +43,7 @@ impl<T> EVP_PKEY_CTX_consumer for T where T: Fn(*mut EVP_PKEY_CTX) -> Result<(),
+ #[allow(non_upper_case_globals, clippy::type_complexity)]
+ pub(crate) const No_EVP_PKEY_CTX_consumer: Option<fn(*mut EVP_PKEY_CTX) -> Result<(), ()>> = None;
+ 
+-impl LcPtr<EVP_PKEY> {
++impl ConstPointer<'_, EVP_PKEY> {
+     pub(crate) fn validate_as_ed25519(&self) -> Result<(), KeyRejected> {
+         const ED25519_KEY_TYPE: c_int = EVP_PKEY_ED25519;
+         const ED25519_MIN_BITS: c_int = 253;
+@@ -79,7 +79,7 @@ impl LcPtr<EVP_PKEY> {
+     // EVP_PKEY_X448 = 961;
+     // EVP_PKEY_ED448 = 960;
+     pub(crate) fn id(&self) -> i32 {
+-        unsafe { EVP_PKEY_id(*self.as_const()) }
++        unsafe { EVP_PKEY_id(**self) }
+     }
+ 
+     pub(crate) fn key_size_bytes(&self) -> usize {
+@@ -87,30 +87,22 @@ impl LcPtr<EVP_PKEY> {
+     }
+ 
+     pub(crate) fn key_size_bits(&self) -> usize {
+-        unsafe { EVP_PKEY_bits(*self.as_const()) }
+-            .try_into()
+-            .unwrap()
++        unsafe { EVP_PKEY_bits(**self) }.try_into().unwrap()
+     }
+ 
+     pub(crate) fn signature_size_bytes(&self) -> usize {
+-        unsafe { EVP_PKEY_size(*self.as_const()) }
+-            .try_into()
+-            .unwrap()
++        unsafe { EVP_PKEY_size(**self) }.try_into().unwrap()
+     }
+ 
+     #[allow(dead_code)]
+     pub(crate) fn get_ec_key(&self) -> Result<ConstPointer<EC_KEY>, KeyRejected> {
+-        unsafe {
+-            ConstPointer::new(EVP_PKEY_get0_EC_KEY(*self.as_const()))
+-                .map_err(|()| KeyRejected::wrong_algorithm())
+-        }
++        self.project_const_lifetime(unsafe { |evp_pkey| EVP_PKEY_get0_EC_KEY(**evp_pkey) })
++            .map_err(|()| KeyRejected::wrong_algorithm())
+     }
+ 
+     pub(crate) fn get_rsa(&self) -> Result<ConstPointer<RSA>, KeyRejected> {
+-        unsafe {
+-            ConstPointer::new(EVP_PKEY_get0_RSA(*self.as_const()))
+-                .map_err(|()| KeyRejected::wrong_algorithm())
+-        }
++        self.project_const_lifetime(unsafe { |evp_pkey| EVP_PKEY_get0_RSA(**evp_pkey) })
++            .map_err(|()| KeyRejected::wrong_algorithm())
+     }
+ 
+     pub(crate) fn marshal_rfc5280_public_key(&self) -> Result<Vec<u8>, Unspecified> {
+@@ -118,43 +110,27 @@ impl LcPtr<EVP_PKEY> {
+         // size in bytes for keys ranging from 2048-bit to 4096-bit. So size the initial capacity to be roughly
+         // 500% as a conservative estimate to avoid needing to reallocate for any key in that range.
+         let mut cbb = LcCBB::new(self.key_size_bytes() * 5);
+-        if 1 != unsafe { EVP_marshal_public_key(cbb.as_mut_ptr(), *self.as_const()) } {
++        if 1 != unsafe { EVP_marshal_public_key(cbb.as_mut_ptr(), **self) } {
+             return Err(Unspecified);
+         }
+         cbb.into_vec()
+     }
+ 
+-    pub(crate) fn parse_rfc5280_public_key(
+-        bytes: &[u8],
+-        evp_pkey_type: c_int,
+-    ) -> Result<Self, KeyRejected> {
+-        let mut cbs = cbs::build_CBS(bytes);
+-        // Also checks the validity of the key
+-        let evp_pkey = LcPtr::new(unsafe { EVP_parse_public_key(&mut cbs) })
+-            .map_err(|()| KeyRejected::invalid_encoding())?;
+-        evp_pkey
+-            .id()
+-            .eq(&evp_pkey_type)
+-            .then_some(evp_pkey)
+-            .ok_or(KeyRejected::wrong_algorithm())
+-    }
+-
+     pub(crate) fn marshal_rfc5208_private_key(
+         &self,
+         version: Version,
+     ) -> Result<Vec<u8>, Unspecified> {
+-        let key_size_bytes = TryInto::<usize>::try_into(unsafe { EVP_PKEY_bits(*self.as_const()) })
+-            .expect("fit in usize")
+-            / 8;
++        let key_size_bytes =
++            TryInto::<usize>::try_into(unsafe { EVP_PKEY_bits(**self) }).expect("fit in usize") / 8;
+         let mut cbb = LcCBB::new(key_size_bytes * 5);
+         match version {
+             Version::V1 => {
+-                if 1 != unsafe { EVP_marshal_private_key(cbb.as_mut_ptr(), *self.as_const()) } {
++                if 1 != unsafe { EVP_marshal_private_key(cbb.as_mut_ptr(), **self) } {
+                     return Err(Unspecified);
+                 }
+             }
+             Version::V2 => {
+-                if 1 != unsafe { EVP_marshal_private_key_v2(cbb.as_mut_ptr(), *self.as_const()) } {
++                if 1 != unsafe { EVP_marshal_private_key_v2(cbb.as_mut_ptr(), **self) } {
+                     return Err(Unspecified);
+                 }
+             }
+@@ -162,32 +138,9 @@ impl LcPtr<EVP_PKEY> {
+         cbb.into_vec()
+     }
+ 
+-    pub(crate) fn parse_rfc5208_private_key(
+-        bytes: &[u8],
+-        evp_pkey_type: c_int,
+-    ) -> Result<Self, KeyRejected> {
+-        let mut cbs = cbs::build_CBS(bytes);
+-        // Also checks the validity of the key
+-        let evp_pkey = LcPtr::new(unsafe { EVP_parse_private_key(&mut cbs) })
+-            .map_err(|()| KeyRejected::invalid_encoding())?;
+-        evp_pkey
+-            .id()
+-            .eq(&evp_pkey_type)
+-            .then_some(evp_pkey)
+-            .ok_or(KeyRejected::wrong_algorithm())
+-    }
+-
+-    #[allow(non_snake_case)]
+-    pub(crate) fn create_EVP_PKEY_CTX(&self) -> Result<LcPtr<EVP_PKEY_CTX>, ()> {
+-        // The only modification made by EVP_PKEY_CTX_new to `priv_key` is to increment its
+-        // refcount. The modification is made while holding a global lock:
+-        // https://github.com/aws/aws-lc/blob/61503f7fe72457e12d3446853a5452d175560c49/crypto/refcount_lock.c#L29
+-        LcPtr::new(unsafe { EVP_PKEY_CTX_new(*self.as_mut_unsafe(), null_mut()) })
+-    }
+-
+     pub(crate) fn marshal_raw_private_key(&self) -> Result<Vec<u8>, Unspecified> {
+         let mut size = 0;
+-        if 1 != unsafe { EVP_PKEY_get_raw_private_key(*self.as_const(), null_mut(), &mut size) } {
++        if 1 != unsafe { EVP_PKEY_get_raw_private_key(**self, null_mut(), &mut size) } {
+             return Err(Unspecified);
+         }
+         let mut buffer = vec![0u8; size];
+@@ -201,9 +154,7 @@ impl LcPtr<EVP_PKEY> {
+         buffer: &mut [u8],
+     ) -> Result<usize, Unspecified> {
+         let mut key_len = buffer.len();
+-        if 1 == unsafe {
+-            EVP_PKEY_get_raw_private_key(*self.as_const(), buffer.as_mut_ptr(), &mut key_len)
+-        } {
++        if 1 == unsafe { EVP_PKEY_get_raw_private_key(**self, buffer.as_mut_ptr(), &mut key_len) } {
+             Ok(key_len)
+         } else {
+             Err(Unspecified)
+@@ -213,7 +164,7 @@ impl LcPtr<EVP_PKEY> {
+     #[allow(dead_code)]
+     pub(crate) fn marshal_raw_public_key(&self) -> Result<Vec<u8>, Unspecified> {
+         let mut size = 0;
+-        if 1 != unsafe { EVP_PKEY_get_raw_public_key(*self.as_const(), null_mut(), &mut size) } {
++        if 1 != unsafe { EVP_PKEY_get_raw_public_key(**self, null_mut(), &mut size) } {
+             return Err(Unspecified);
+         }
+         let mut buffer = vec![0u8; size];
+@@ -231,13 +182,55 @@ impl LcPtr<EVP_PKEY> {
+             // `EVP_PKEY_get_raw_public_key` writes the total length
+             // to `encapsulate_key_size` in the event that the buffer we provide is larger then
+             // required.
+-            EVP_PKEY_get_raw_public_key(*self.as_const(), buffer.as_mut_ptr(), &mut key_len)
++            EVP_PKEY_get_raw_public_key(**self, buffer.as_mut_ptr(), &mut key_len)
+         } {
+             Ok(key_len)
+         } else {
+             Err(Unspecified)
+         }
+     }
++}
++
++impl LcPtr<EVP_PKEY> {
++    pub(crate) fn parse_rfc5280_public_key(
++        bytes: &[u8],
++        evp_pkey_type: c_int,
++    ) -> Result<Self, KeyRejected> {
++        let mut cbs = cbs::build_CBS(bytes);
++        // Also checks the validity of the key
++        let evp_pkey = LcPtr::new(unsafe { EVP_parse_public_key(&mut cbs) })
++            .map_err(|()| KeyRejected::invalid_encoding())?;
++        evp_pkey
++            .as_const()
++            .id()
++            .eq(&evp_pkey_type)
++            .then_some(evp_pkey)
++            .ok_or(KeyRejected::wrong_algorithm())
++    }
++
++    pub(crate) fn parse_rfc5208_private_key(
++        bytes: &[u8],
++        evp_pkey_type: c_int,
++    ) -> Result<Self, KeyRejected> {
++        let mut cbs = cbs::build_CBS(bytes);
++        // Also checks the validity of the key
++        let evp_pkey = LcPtr::new(unsafe { EVP_parse_private_key(&mut cbs) })
++            .map_err(|()| KeyRejected::invalid_encoding())?;
++        evp_pkey
++            .as_const()
++            .id()
++            .eq(&evp_pkey_type)
++            .then_some(evp_pkey)
++            .ok_or(KeyRejected::wrong_algorithm())
++    }
++
++    #[allow(non_snake_case)]
++    pub(crate) fn create_EVP_PKEY_CTX(&self) -> Result<LcPtr<EVP_PKEY_CTX>, ()> {
++        // The only modification made by EVP_PKEY_CTX_new to `priv_key` is to increment its
++        // refcount. The modification is made while holding a global lock:
++        // https://github.com/aws/aws-lc/blob/61503f7fe72457e12d3446853a5452d175560c49/crypto/refcount_lock.c#L29
++        LcPtr::new(unsafe { EVP_PKEY_CTX_new(*self.as_mut_unsafe(), null_mut()) })
++    }
+ 
+     pub(crate) fn parse_raw_private_key(
+         bytes: &[u8],
+diff --git a/src/kem.rs b/src/kem.rs
+index 52ed528a3b2..90c11eda96c 100644
+--- a/src/kem.rs
++++ b/src/kem.rs
+@@ -360,6 +360,7 @@ where
+         let mut encapsulate_bytes = vec![0u8; self.algorithm.encapsulate_key_size()];
+         let encapsulate_key_size = self
+             .evp_pkey
++            .as_const()
+             .marshal_raw_public_to_buffer(&mut encapsulate_bytes)?;
+ 
+         debug_assert_eq!(encapsulate_key_size, encapsulate_bytes.len());
+diff --git a/src/ptr.rs b/src/ptr.rs
+index 9f714d5dfd8..b8f9248f3d8 100644
+--- a/src/ptr.rs
++++ b/src/ptr.rs
+@@ -1,14 +1,14 @@
+ // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ // SPDX-License-Identifier: Apache-2.0 OR ISC
+ 
+-use core::ops::Deref;
+-
+ use crate::aws_lc::{
+     BN_free, ECDSA_SIG_free, EC_GROUP_free, EC_KEY_free, EC_POINT_free, EVP_AEAD_CTX_free,
+     EVP_CIPHER_CTX_free, EVP_PKEY_CTX_free, EVP_PKEY_free, OPENSSL_free, RSA_free, BIGNUM,
+     ECDSA_SIG, EC_GROUP, EC_KEY, EC_POINT, EVP_AEAD_CTX, EVP_CIPHER_CTX, EVP_PKEY, EVP_PKEY_CTX,
+     RSA,
+ };
++use core::ops::Deref;
++use std::marker::PhantomData;
+ 
+ pub(crate) type LcPtr<T> = ManagedPointer<*mut T>;
+ pub(crate) type DetachableLcPtr<T> = DetachablePointer<*mut T>;
+@@ -40,12 +40,33 @@ impl<P: Pointer> Drop for ManagedPointer<P> {
+     }
+ }
+ 
++impl<'a, P: Pointer> From<&'a ManagedPointer<P>> for ConstPointer<'a, P::T> {
++    fn from(ptr: &'a ManagedPointer<P>) -> ConstPointer<'a, P::T> {
++        ConstPointer {
++            ptr: ptr.pointer.as_const_ptr(),
++            _lifetime: PhantomData,
++        }
++    }
++}
++
+ impl<P: Pointer> ManagedPointer<P> {
+     #[inline]
+     pub fn as_const(&self) -> ConstPointer<P::T> {
+-        ConstPointer {
+-            ptr: self.pointer.as_const_ptr(),
++        self.into()
++    }
++
++    pub fn project_const_lifetime<'a, C>(
++        &'a self,
++        f: unsafe fn(&'a Self) -> *const C,
++    ) -> Result<ConstPointer<'a, C>, ()> {
++        let ptr = unsafe { f(self) };
++        if ptr.is_null() {
++            return Err(());
+         }
++        Ok(ConstPointer {
++            ptr,
++            _lifetime: PhantomData,
++        })
+     }
+ 
+     #[inline]
+@@ -133,20 +154,40 @@ impl<P: Pointer> Drop for DetachablePointer<P> {
+ }
+ 
+ #[derive(Debug)]
+-pub(crate) struct ConstPointer<T> {
++pub(crate) struct ConstPointer<'a, T> {
+     ptr: *const T,
++    _lifetime: PhantomData<&'a T>,
++}
++
++impl<T> ConstPointer<'static, T> {
++    pub unsafe fn new_static(ptr: *const T) -> Result<Self, ()> {
++        if ptr.is_null() {
++            return Err(());
++        }
++        Ok(ConstPointer {
++            ptr,
++            _lifetime: PhantomData,
++        })
++    }
+ }
+ 
+-impl<T> ConstPointer<T> {
+-    pub fn new(ptr: *const T) -> Result<ConstPointer<T>, ()> {
++impl<T> ConstPointer<'_, T> {
++    pub fn project_const_lifetime<'a, C>(
++        &'a self,
++        f: unsafe fn(&'a Self) -> *const C,
++    ) -> Result<ConstPointer<'a, C>, ()> {
++        let ptr = unsafe { f(self) };
+         if ptr.is_null() {
+             return Err(());
+         }
+-        Ok(ConstPointer { ptr })
++        Ok(ConstPointer {
++            ptr,
++            _lifetime: PhantomData,
++        })
+     }
+ }
+ 
+-impl<T> Deref for ConstPointer<T> {
++impl<T> Deref for ConstPointer<'_, T> {
+     type Target = *const T;
+ 
+     fn deref(&self) -> &Self::Target {
+diff --git a/src/rsa/encoding.rs b/src/rsa/encoding.rs
+index 11538c87cd9..193596386f5 100644
+--- a/src/rsa/encoding.rs
++++ b/src/rsa/encoding.rs
+@@ -21,7 +21,11 @@ pub(in crate::rsa) mod rfc8017 {
+         let mut pubkey_bytes = null_mut::<u8>();
+         let mut outlen: usize = 0;
+         if 1 != unsafe {
+-            RSA_public_key_to_bytes(&mut pubkey_bytes, &mut outlen, *pubkey.get_rsa()?)
++            RSA_public_key_to_bytes(
++                &mut pubkey_bytes,
++                &mut outlen,
++                *pubkey.as_const().get_rsa()?,
++            )
+         } {
+             return Err(Unspecified);
+         }
+@@ -85,7 +89,7 @@ pub(in crate::rsa) mod rfc5280 {
+     pub(in crate::rsa) fn encode_public_key_der(
+         key: &LcPtr<EVP_PKEY>,
+     ) -> Result<PublicKeyX509Der<'static>, Unspecified> {
+-        let der = key.marshal_rfc5280_public_key()?;
++        let der = key.as_const().marshal_rfc5280_public_key()?;
+         Ok(PublicKeyX509Der::from(Buffer::new(der)))
+     }
+ 
+diff --git a/src/rsa/encryption.rs b/src/rsa/encryption.rs
+index d31187754e3..3dc58b3316f 100644
+--- a/src/rsa/encryption.rs
++++ b/src/rsa/encryption.rs
+@@ -44,7 +44,7 @@ impl PrivateDecryptingKey {
+         if !is_rsa_key(key) {
+             return Err(Unspecified);
+         }
+-        match key.key_size_bits() {
++        match key.as_const().key_size_bits() {
+             2048..=8192 => Ok(()),
+             _ => Err(Unspecified),
+         }
+@@ -105,13 +105,13 @@ impl PrivateDecryptingKey {
+     /// Returns the RSA signature size in bytes.
+     #[must_use]
+     pub fn key_size_bytes(&self) -> usize {
+-        self.0.signature_size_bytes()
++        self.0.as_const().signature_size_bytes()
+     }
+ 
+     /// Returns the RSA key size in bits.
+     #[must_use]
+     pub fn key_size_bits(&self) -> usize {
+-        self.0.key_size_bits()
++        self.0.as_const().key_size_bits()
+     }
+ 
+     /// Retrieves the `PublicEncryptingKey` corresponding with this `PrivateDecryptingKey`.
+@@ -133,7 +133,7 @@ impl Debug for PrivateDecryptingKey {
+ impl AsDer<Pkcs8V1Der<'static>> for PrivateDecryptingKey {
+     fn as_der(&self) -> Result<Pkcs8V1Der<'static>, Unspecified> {
+         Ok(Pkcs8V1Der::new(
+-            self.0.marshal_rfc5208_private_key(Version::V1)?,
++            self.0.as_const().marshal_rfc5208_private_key(Version::V1)?,
+         ))
+     }
+ }
+@@ -157,7 +157,7 @@ impl PublicEncryptingKey {
+         if !is_rsa_key(key) {
+             return Err(Unspecified);
+         }
+-        match key.key_size_bits() {
++        match key.as_const().key_size_bits() {
+             2048..=8192 => Ok(()),
+             _ => Err(Unspecified),
+         }
+@@ -174,13 +174,13 @@ impl PublicEncryptingKey {
+     /// Returns the RSA signature size in bytes.
+     #[must_use]
+     pub fn key_size_bytes(&self) -> usize {
+-        self.0.signature_size_bytes()
++        self.0.as_const().signature_size_bytes()
+     }
+ 
+     /// Returns the RSA key size in bits.
+     #[must_use]
+     pub fn key_size_bits(&self) -> usize {
+-        self.0.key_size_bits()
++        self.0.as_const().key_size_bits()
+     }
+ }
+ 
+diff --git a/src/rsa/key.rs b/src/rsa/key.rs
+index 1abc483f88e..b43c5d4a6e2 100644
+--- a/src/rsa/key.rs
++++ b/src/rsa/key.rs
+@@ -16,8 +16,6 @@ use crate::encoding::{AsDer, Pkcs8V1Der};
+ use crate::error::{KeyRejected, Unspecified};
+ #[cfg(feature = "ring-io")]
+ use crate::io;
+-#[cfg(feature = "ring-io")]
+-use crate::ptr::ConstPointer;
+ use crate::ptr::{DetachableLcPtr, LcPtr};
+ use crate::rsa::PublicEncryptingKey;
+ use crate::sealed::Sealed;
+@@ -176,7 +174,7 @@ impl KeyPair {
+         if !is_rsa_key(key) {
+             return Err(KeyRejected::unspecified());
+         }
+-        match key.key_size_bits() {
++        match key.as_const().key_size_bits() {
+             2048..=8192 => Ok(()),
+             _ => Err(KeyRejected::unspecified()),
+         }
+@@ -231,7 +229,7 @@ impl KeyPair {
+     #[must_use]
+     pub fn public_modulus_len(&self) -> usize {
+         // This was already validated to be an RSA key so this can't fail
+-        match self.evp_pkey.get_rsa() {
++        match self.evp_pkey.as_const().get_rsa() {
+             Ok(rsa) => {
+                 // https://github.com/awslabs/aws-lc/blob/main/include/openssl/rsa.h#L99
+                 unsafe { RSA_size(*rsa) as usize }
+@@ -261,7 +259,9 @@ impl crate::signature::KeyPair for KeyPair {
+ impl AsDer<Pkcs8V1Der<'static>> for KeyPair {
+     fn as_der(&self) -> Result<Pkcs8V1Der<'static>, Unspecified> {
+         Ok(Pkcs8V1Der::new(
+-            self.evp_pkey.marshal_rfc5208_private_key(Version::V1)?,
++            self.evp_pkey
++                .as_const()
++                .marshal_rfc5208_private_key(Version::V1)?,
+         ))
+     }
+ }
+@@ -292,10 +292,13 @@ impl PublicKey {
+         let key = encoding::rfc8017::encode_public_key_der(evp_pkey)?;
+         #[cfg(feature = "ring-io")]
+         {
++            let evp_pkey = evp_pkey.as_const();
+             let pubkey = evp_pkey.get_rsa()?;
+-            let modulus = ConstPointer::new(unsafe { RSA_get0_n(*pubkey) })?;
++            let modulus =
++                pubkey.project_const_lifetime(unsafe { |pubkey| RSA_get0_n(**pubkey) })?;
+             let modulus = modulus.to_be_bytes().into_boxed_slice();
+-            let exponent = ConstPointer::new(unsafe { RSA_get0_e(*pubkey) })?;
++            let exponent =
++                pubkey.project_const_lifetime(unsafe { |pubkey| RSA_get0_e(**pubkey) })?;
+             let exponent = exponent.to_be_bytes().into_boxed_slice();
+             Ok(PublicKey {
+                 key,
+@@ -478,12 +481,13 @@ pub(super) fn generate_rsa_key(size: c_int) -> Result<LcPtr<EVP_PKEY>, Unspecifi
+ #[must_use]
+ pub(super) fn is_valid_fips_key(key: &LcPtr<EVP_PKEY>) -> bool {
+     // This should always be an RSA key and must-never panic.
+-    let rsa_key = key.get_rsa().expect("RSA EVP_PKEY");
++    let evp_pkey = key.as_const();
++    let rsa_key = evp_pkey.get_rsa().expect("RSA EVP_PKEY");
+ 
+     1 == unsafe { RSA_check_fips(*rsa_key as *mut RSA) }
+ }
+ 
+ pub(super) fn is_rsa_key(key: &LcPtr<EVP_PKEY>) -> bool {
+-    let id = key.id();
++    let id = key.as_const().id();
+     id == EVP_PKEY_RSA || id == EVP_PKEY_RSA_PSS
+ }
+diff --git a/src/rsa/signature.rs b/src/rsa/signature.rs
+index d1b18edf78d..164386c5b8f 100644
+--- a/src/rsa/signature.rs
++++ b/src/rsa/signature.rs
+@@ -109,7 +109,7 @@ impl RsaParameters {
+     /// `error::Unspecified` on parse error.
+     pub fn public_modulus_len(public_key: &[u8]) -> Result<u32, Unspecified> {
+         let rsa = encoding::rfc8017::decode_public_key_der(public_key)?;
+-        Ok(unsafe { RSA_bits(*rsa.get_rsa()?) })
++        Ok(unsafe { RSA_bits(*rsa.as_const().get_rsa()?) })
+     }
+ 
+     #[must_use]
+@@ -222,7 +222,7 @@ pub(crate) fn verify_rsa_signature(
+     signature: &[u8],
+     allowed_bit_size: &RangeInclusive<u32>,
+ ) -> Result<(), Unspecified> {
+-    if !allowed_bit_size.contains(&public_key.key_size_bits().try_into()?) {
++    if !allowed_bit_size.contains(&public_key.as_const().key_size_bits().try_into()?) {
+         return Err(Unspecified);
+     }
+ 

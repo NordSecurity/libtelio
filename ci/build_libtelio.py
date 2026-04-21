@@ -575,19 +575,17 @@ def exec_build(args):
                 args.arch + "-pc-windows-gnu"
             )
 
-    # Use prebuilt NASM objects for Windows builds (needed when building aws-lc-rs from git source)
+    # [RCA] For Windows builds: downgrade aws-lc-rs to v1.12.6 from crates.io,
+    # then patch the downloaded source with the ConstPointer lifetime fix.
     if args.os == "windows":
-        os.environ["AWS_LC_SYS_PREBUILT_NASM"] = "1"
-        print("[RCA] Set AWS_LC_SYS_PREBUILT_NASM=1")
+        import subprocess
+        import glob
 
-    # Override aws-lc-rs for Windows builds to use patched version (v1.12.6 + ConstPointer fix)
-    if args.os == "windows":
+        # Step 1: Rewrite Cargo.toml to use v1.12.6
         cargo_toml_path = os.path.join(PROJECT_ROOT, "crates/telio-proto/Cargo.toml")
         old_line = 'aws-lc-rs = { version = "=1.13.3", optional = true, features = ["bindgen"] }'
-        new_line = 'aws-lc-rs = { git = "https://github.com/Jauler/aws-lc-rs", tag = "v1.12.6", optional = true, features = ["bindgen"] }'
-        print(f"[RCA] Patching {cargo_toml_path}")
-        print(f"[RCA] Old: {old_line}")
-        print(f"[RCA] New: {new_line}")
+        new_line = 'aws-lc-rs = { version = "=1.12.6", optional = true, features = ["bindgen"] }'
+        print(f"[RCA] Step 1: Patching Cargo.toml to use v1.12.6")
         with open(cargo_toml_path, "r") as f:
             content = f.read()
         if old_line in content:
@@ -596,8 +594,53 @@ def exec_build(args):
                 f.write(content)
             print("[RCA] Cargo.toml patched successfully")
         else:
-            print("[RCA] WARNING: old_line not found in Cargo.toml, no replacement made!")
+            print(f"[RCA] WARNING: expected line not found in Cargo.toml!")
             print(f"[RCA] Cargo.toml contents:\n{content}")
+
+        # Step 2: Run cargo fetch to download crates
+        print("[RCA] Step 2: Running cargo fetch...")
+        result = subprocess.run(
+            ["cargo", "fetch"],
+            cwd=PROJECT_ROOT,
+            capture_output=True, text=True
+        )
+        print(f"[RCA] cargo fetch stdout: {result.stdout}")
+        if result.returncode != 0:
+            print(f"[RCA] cargo fetch stderr: {result.stderr}")
+            print(f"[RCA] WARNING: cargo fetch failed (exit code {result.returncode})")
+
+        # Step 3: Find aws-lc-rs source in cargo registry and apply patch
+        print("[RCA] Step 3: Applying ConstPointer lifetime fix patch...")
+        cargo_home = os.environ.get("CARGO_HOME", os.path.join(os.path.expanduser("~"), ".cargo"))
+        registry_src = os.path.join(cargo_home, "registry", "src")
+        crate_dirs = glob.glob(os.path.join(registry_src, "*", "aws-lc-rs-1.12.6"))
+        if not crate_dirs:
+            print(f"[RCA] ERROR: Could not find aws-lc-rs-1.12.6 in {registry_src}")
+            print(f"[RCA] Contents of registry/src: {os.listdir(registry_src) if os.path.isdir(registry_src) else 'NOT FOUND'}")
+        else:
+            crate_dir = crate_dirs[0]
+            print(f"[RCA] Found crate source at: {crate_dir}")
+            patch_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "constpointer-fix-v1.12.6.patch")
+            print(f"[RCA] Applying patch: {patch_file}")
+
+            # Remove the .cargo-checksum.json to prevent cargo from rejecting modified source
+            checksum_file = os.path.join(crate_dir, ".cargo-checksum.json")
+            if os.path.isfile(checksum_file):
+                with open(checksum_file, "w") as f:
+                    f.write('{"files":{}}')
+                print(f"[RCA] Cleared cargo checksum file")
+
+            result = subprocess.run(
+                ["git", "apply", "--verbose", patch_file],
+                cwd=crate_dir,
+                capture_output=True, text=True
+            )
+            print(f"[RCA] git apply stdout: {result.stdout}")
+            if result.returncode != 0:
+                print(f"[RCA] git apply stderr: {result.stderr}")
+                print(f"[RCA] ERROR: Patch failed to apply!")
+            else:
+                print("[RCA] Patch applied successfully!")
 
     config = rutils.CargoConfig(
         args.os,
