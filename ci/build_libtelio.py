@@ -630,6 +630,19 @@ def exec_build(args):
                     f.write('{"files":{}}')
                 print(f"[RCA] Cleared cargo checksum file")
 
+            # Convert CRLF to LF in source files before patching (crates.io on Windows uses CRLF)
+            for root, dirs, files in os.walk(os.path.join(crate_dir, "src")):
+                for fname in files:
+                    if fname.endswith(".rs"):
+                        fpath = os.path.join(root, fname)
+                        with open(fpath, "rb") as f:
+                            data = f.read()
+                        if b"\r\n" in data:
+                            data = data.replace(b"\r\n", b"\n")
+                            with open(fpath, "wb") as f:
+                                f.write(data)
+            print("[RCA] Converted CRLF to LF in source files")
+
             result = subprocess.run(
                 ["git", "apply", "--verbose", patch_file],
                 cwd=crate_dir,
