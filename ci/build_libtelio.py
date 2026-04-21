@@ -575,6 +575,25 @@ def exec_build(args):
                 args.arch + "-pc-windows-gnu"
             )
 
+    # Override aws-lc-rs for Windows builds to use patched version (v1.12.6 + ConstPointer fix)
+    if args.os == "windows":
+        cargo_toml_path = os.path.join(PROJECT_ROOT, "crates/telio-proto/Cargo.toml")
+        old_line = 'aws-lc-rs = { version = "=1.13.3", optional = true, features = ["bindgen"] }'
+        new_line = 'aws-lc-rs = { git = "https://github.com/Jauler/aws-lc-rs", tag = "v1.12.6", optional = true, features = ["bindgen"] }'
+        print(f"[RCA] Patching {cargo_toml_path}")
+        print(f"[RCA] Old: {old_line}")
+        print(f"[RCA] New: {new_line}")
+        with open(cargo_toml_path, "r") as f:
+            content = f.read()
+        if old_line in content:
+            content = content.replace(old_line, new_line)
+            with open(cargo_toml_path, "w") as f:
+                f.write(content)
+            print("[RCA] Cargo.toml patched successfully")
+        else:
+            print("[RCA] WARNING: old_line not found in Cargo.toml, no replacement made!")
+            print(f"[RCA] Cargo.toml contents:\n{content}")
+
     config = rutils.CargoConfig(
         args.os,
         args.arch,
