@@ -13,6 +13,15 @@ last_rc=1
 while [ $SECONDS -lt $end ]; do
     if output=$(python3 /run/qga.py powershell -Command '$svc = Get-Service -Name "sshd" -ErrorAction SilentlyContinue; if ($null -eq $svc) { Write-Output "OpenSSH SSH Server (sshd) service not found"; exit 3 } elseif ($svc.Status -eq "Running") { Write-Output "OpenSSH SSH Server is running"; exit 0 } else { Write-Output ("OpenSSH SSH Server status: " + $svc.Status); exit 2 }'); then
         echo "$output"
+
+        # Enable Windows Error Reporting crash dumps
+        echo "Configuring WER crash dumps..."
+        python3 /run/qga.py powershell -Command 'New-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" -Force'
+        python3 /run/qga.py powershell -Command 'Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" -Name "DumpFolder" -Value "C:\CrashDumps" -Type ExpandString'
+        python3 /run/qga.py powershell -Command 'Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps" -Name "DumpType" -Value 2 -Type DWord'
+        python3 /run/qga.py powershell -Command 'New-Item -Path "C:\CrashDumps" -ItemType Directory -Force'
+        echo "WER crash dumps configured"
+
         exit 0
     else
         last_rc=$?

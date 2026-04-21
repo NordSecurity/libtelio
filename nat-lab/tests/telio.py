@@ -514,7 +514,7 @@ class Client:
 
         async with AsyncExitStack() as exit_stack:
             await exit_stack.enter_async_context(make_tcpdump([self._connection]))
-            if isinstance(self._connection, DockerConnection):
+            if isinstance(self._connection, DockerConnection) or self._connection.target_os == TargetOS.Windows:
                 await self.clear_core_dumps()
 
             await self.clear_system_log()
@@ -569,7 +569,7 @@ class Client:
                     "[%s] Test cleanup: Stopping tcpdump and collecting core dumps",
                     self._node.name,
                 )
-                if isinstance(self._connection, DockerConnection):
+                if isinstance(self._connection, DockerConnection) or self._connection.target_os == TargetOS.Windows:
                     await self.collect_core_dumps()
 
                 log.info(
@@ -1381,16 +1381,26 @@ class Client:
     #  - have set the NATLAB_SAVE_LOGS environment variable
     #  - want to have natlab automatically collect core dumps for you
     def get_coredump_folder(self) -> tuple[str, str]:
+        if self._connection.target_os == TargetOS.Windows:
+            return "C:\\CrashDumps", ""
         return "/var/crash", "core-"
 
     def should_skip_core_dump_collection(self) -> bool:
         return (
             os.environ.get("NATLAB_SAVE_LOGS") is None
-            or self._connection.target_os != TargetOS.Linux
+            or self._connection.target_os not in (TargetOS.Linux, TargetOS.Windows)
         )
 
     async def clear_core_dumps(self):
         if self.should_skip_core_dump_collection():
+            return
+
+        if self._connection.target_os == TargetOS.Windows:
+            await self._connection.create_process(
+                ["powershell", "-Command",
+                 "Remove-Item -Path 'C:\\CrashDumps\\*' -Force -ErrorAction SilentlyContinue"],
+                quiet=True,
+            ).execute()
             return
 
         coredump_folder, _ = self.get_coredump_folder()
@@ -1408,21 +1418,43 @@ class Client:
         if self.should_skip_core_dump_collection():
             return
 
+        coredump_dir = "coredumps"
+        os.makedirs(coredump_dir, exist_ok=True)
+        test_name = get_current_test_case_and_parameters()[0] or ""
+
+        if self._connection.target_os == TargetOS.Windows:
+            try:
+                process = await self._connection.create_process(
+                    ["powershell", "-Command",
+                     "Get-ChildItem -Path 'C:\\CrashDumps' -Filter '*.dmp' | Select-Object -ExpandProperty FullName"],
+                    quiet=True,
+                ).execute()
+                dump_files = [f.strip() for f in process.get_stdout().strip().splitlines() if f.strip()]
+            except ProcessExecError as e:
+                log.warning("[%s] Failed to list Windows crash dumps: %s", self._node.name, e)
+                dump_files = []
+
+            for i, dump_path in enumerate(dump_files):
+                file_name = dump_path.rsplit("\\", 1)[-1]
+                log.info("[%s] Collecting Windows crash dump: %s", self._node.name, dump_path)
+                await self._connection.download(dump_path, coredump_dir)
+                # Rename to include test name
+                downloaded = os.path.join(coredump_dir, file_name)
+                if os.path.exists(downloaded):
+                    os.rename(downloaded, os.path.join(coredump_dir, f"{test_name}_{file_name}_{i}.dmp"))
+            return
+
         coredump_folder, file_prefix = self.get_coredump_folder()
 
         dump_files = await find_files(
             self._connection, coredump_folder, f"{file_prefix}*"
         )
 
-        coredump_dir = "coredumps"
-        os.makedirs(coredump_dir, exist_ok=True)
-
         should_copy_coredumps = len(dump_files) > 0
 
         # if we collected some core dumps, copy them
         if isinstance(self._connection, DockerConnection) and should_copy_coredumps:
             container_name = container_id(self._connection.tag)
-            test_name = get_current_test_case_and_parameters()[0] or ""
             for i, file_path in enumerate(dump_files):
                 file_name = file_path.rsplit("/", 1)[-1]
                 core_dump_destination = (
