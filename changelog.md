@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v6.2.2
+### ****
+---
+* LLT-7169: Fix incorrect certificate validation in ENS service
+
+<br>
+
 ### v6.2.1
 ### ****
 ---
