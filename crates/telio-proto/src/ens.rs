@@ -11,9 +11,8 @@ use hyper_util::rt::TokioIo;
 
 #[cfg(feature = "enable_ens")]
 use rustls::{
-    client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
-    pki_types::{CertificateDer, ServerName, UnixTime},
-    ClientConfig, DigitallySignedStruct, SignatureScheme,
+    client::danger::ServerCertVerifier, crypto::CryptoProvider, pki_types::CertificateDer,
+    ClientConfig, RootCertStore,
 };
 use telio_crypto::{SecretKey, SharedSecret};
 use telio_model::PublicKey;
@@ -399,118 +398,7 @@ fn make_tls_connector(
 }
 
 #[cfg(feature = "enable_ens")]
-fn make_tls_connector(
-    allow_only_mlkem: bool,
-    root_certificate: &[u8],
-) -> std::io::Result<TlsConnector> {
-    use rustls::RootCertStore;
-
-    #[derive(Debug)]
-    struct TrustedRootCertVerifier(RootCertStore);
-
-    impl TrustedRootCertVerifier {
-        fn new(root_certificate: &[u8]) -> std::io::Result<Self> {
-            let mut root_store = RootCertStore::empty();
-            let (added, ignored) = root_store
-                .add_parsable_certificates([CertificateDer::from_slice(root_certificate)]);
-            if ignored > 0 {
-                telio_log_warn!("Added {added} certs to trusted store, ignored: {ignored}");
-                Err(std::io::Error::other(
-                    "Failed to add root cert to the root certificate store",
-                ))
-            } else {
-                telio_log_debug!("Added {added} certs to trusted store, ignored: {ignored}");
-                Ok(Self(root_store))
-            }
-        }
-    }
-
-    impl ServerCertVerifier for TrustedRootCertVerifier {
-        fn verify_server_cert(
-            &self,
-            end_entity: &CertificateDer<'_>,
-            intermediates: &[CertificateDer<'_>],
-            server_name: &ServerName<'_>,
-            _ocsp_response: &[u8],
-            now: UnixTime,
-        ) -> Result<ServerCertVerified, rustls::Error> {
-            use rustls::{
-                client::verify_server_cert_signed_by_trust_anchor,
-                pki_types::SignatureVerificationAlgorithm, server::ParsedCertificate,
-            };
-            use sha2::{Digest, Sha256};
-            let hash: [u8; 32] = Sha256::digest(end_entity).into();
-            telio_log_info!(
-                "Remote gRPC server ({server_name:?}) sha256 fingerprint: {}",
-                hex::encode(hash)
-            );
-
-            let end_entity: ParsedCertificate = end_entity.try_into()?;
-
-            use webpki::aws_lc_rs::*;
-            let schemas: Vec<&dyn SignatureVerificationAlgorithm> = vec![
-                ECDSA_P256_SHA256,
-                ECDSA_P384_SHA384,
-                ECDSA_P521_SHA512,
-                ED25519,
-                RSA_PKCS1_2048_8192_SHA256,
-                RSA_PKCS1_2048_8192_SHA384,
-                RSA_PKCS1_2048_8192_SHA512,
-                RSA_PSS_2048_8192_SHA256_LEGACY_KEY,
-                RSA_PSS_2048_8192_SHA384_LEGACY_KEY,
-                RSA_PSS_2048_8192_SHA512_LEGACY_KEY,
-            ];
-
-            let verification = verify_server_cert_signed_by_trust_anchor(
-                &end_entity,
-                &self.0,
-                intermediates,
-                now,
-                &schemas,
-            );
-
-            telio_log_info!("Remote gRPC TLS certificate verification result: {verification:?}");
-            match verification {
-                Ok(()) => Ok(ServerCertVerified::assertion()),
-                Err(e) => Err(e),
-            }
-        }
-
-        fn verify_tls12_signature(
-            &self,
-            _message: &[u8],
-            _cert: &CertificateDer<'_>,
-            _dss: &DigitallySignedStruct,
-        ) -> Result<HandshakeSignatureValid, rustls::Error> {
-            Ok(HandshakeSignatureValid::assertion())
-        }
-
-        fn verify_tls13_signature(
-            &self,
-            _message: &[u8],
-            _cert: &CertificateDer<'_>,
-            _dss: &DigitallySignedStruct,
-        ) -> Result<HandshakeSignatureValid, rustls::Error> {
-            Ok(HandshakeSignatureValid::assertion())
-        }
-
-        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-            vec![
-                SignatureScheme::ECDSA_NISTP256_SHA256,
-                SignatureScheme::ECDSA_NISTP384_SHA384,
-                SignatureScheme::ECDSA_NISTP521_SHA512,
-                SignatureScheme::ED25519,
-                SignatureScheme::ED448,
-                SignatureScheme::RSA_PKCS1_SHA256,
-                SignatureScheme::RSA_PKCS1_SHA384,
-                SignatureScheme::RSA_PKCS1_SHA512,
-                SignatureScheme::RSA_PSS_SHA256,
-                SignatureScheme::RSA_PSS_SHA384,
-                SignatureScheme::RSA_PSS_SHA512,
-            ]
-        }
-    }
-
+fn make_crypto_provider(allow_only_mlkem: bool) -> Arc<CryptoProvider> {
     let mut provider = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider();
 
     if allow_only_mlkem {
@@ -518,11 +406,108 @@ fn make_tls_connector(
             vec![tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::X25519MLKEM768];
     }
 
-    let mut tls_config = ClientConfig::builder_with_provider(Arc::new(provider))
+    Arc::new(provider)
+}
+
+#[cfg(feature = "enable_ens")]
+fn make_trusted_root_cert_verifier(
+    crypto_provider: Arc<CryptoProvider>,
+    root_certificate: &[u8],
+) -> std::io::Result<Arc<impl ServerCertVerifier>> {
+    use rustls::{
+        client::{danger::HandshakeSignatureValid, WebPkiServerVerifier},
+        pki_types::{ServerName, UnixTime},
+        DigitallySignedStruct, SignatureScheme,
+    };
+
+    #[derive(Debug)]
+    struct CertFingerprintLogger(Arc<WebPkiServerVerifier>);
+
+    impl ServerCertVerifier for CertFingerprintLogger {
+        fn verify_server_cert(
+            &self,
+            end_entity: &CertificateDer<'_>,
+            intermediates: &[CertificateDer<'_>],
+            server_name: &ServerName<'_>,
+            ocsp_response: &[u8],
+            now: UnixTime,
+        ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+            use sha2::{Digest, Sha256};
+            let hash: [u8; 32] = Sha256::digest(end_entity).into();
+            telio_log_info!(
+                "Remote gRPC server ({server_name:?}) sha256 fingerprint: {}",
+                hex::encode(hash)
+            );
+
+            let verification = self.0.verify_server_cert(
+                end_entity,
+                intermediates,
+                server_name,
+                ocsp_response,
+                now,
+            );
+
+            telio_log_info!("Remote gRPC TLS certificate verification result: {verification:?}");
+
+            verification
+        }
+
+        fn verify_tls12_signature(
+            &self,
+            message: &[u8],
+            cert: &CertificateDer<'_>,
+            dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, rustls::Error> {
+            self.0.verify_tls12_signature(message, cert, dss)
+        }
+
+        fn verify_tls13_signature(
+            &self,
+            message: &[u8],
+            cert: &CertificateDer<'_>,
+            dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, rustls::Error> {
+            self.0.verify_tls13_signature(message, cert, dss)
+        }
+
+        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+            self.0.supported_verify_schemes()
+        }
+    }
+
+    let mut roots = RootCertStore::empty();
+    let (added, ignored) =
+        roots.add_parsable_certificates([CertificateDer::from_slice(root_certificate)]);
+    if ignored > 0 {
+        telio_log_warn!("Added {added} certs to trusted store, ignored: {ignored}");
+        return Err(std::io::Error::other(
+            "Failed to add root cert to the root certificate store",
+        ));
+    } else {
+        telio_log_debug!("Added {added} certs to trusted store, ignored: {ignored}");
+    }
+
+    let verifier = WebPkiServerVerifier::builder_with_provider(Arc::new(roots), crypto_provider)
+        .build()
+        .map_err(std::io::Error::other)?;
+    Ok(Arc::new(CertFingerprintLogger(verifier)))
+}
+
+#[cfg(feature = "enable_ens")]
+fn make_tls_connector(
+    allow_only_mlkem: bool,
+    root_certificate: &[u8],
+) -> std::io::Result<TlsConnector> {
+    let provider = make_crypto_provider(allow_only_mlkem);
+
+    let mut tls_config = ClientConfig::builder_with_provider(provider.clone())
         .with_safe_default_protocol_versions()
-        .map_err(|e| std::io::Error::other(format!("{e}")))?
+        .map_err(std::io::Error::other)?
         .dangerous()
-        .with_custom_certificate_verifier(Arc::new(TrustedRootCertVerifier::new(root_certificate)?))
+        .with_custom_certificate_verifier(make_trusted_root_cert_verifier(
+            provider,
+            root_certificate,
+        )?)
         .with_no_client_auth();
 
     tls_config.alpn_protocols = vec![b"h2".to_vec()];
@@ -565,6 +550,7 @@ mod tests {
         time::Duration,
     };
 
+    use assert_matches::assert_matches;
     use async_channel::{self, unbounded, Receiver, Sender};
     use llt_proto::ens::{
         ens_server::{self, EnsServer},
@@ -572,8 +558,8 @@ mod tests {
         ChallengeResponse, ConnectionError,
     };
     use rcgen::{
-        generate_simple_self_signed, BasicConstraints, CertificateParams, CertifiedKey,
-        DistinguishedName, DnType, IsCa, Issuer, KeyPair,
+        generate_simple_self_signed, BasicConstraints, Certificate, CertificateParams,
+        CertifiedKey, DistinguishedName, DnType, IsCa, Issuer, KeyPair,
     };
     use telio_crypto::SecretKey;
     use telio_sockets::NativeProtector;
@@ -615,8 +601,8 @@ mod tests {
     // Root CA and a leaf cert issued by it
     #[derive(Debug)]
     struct TlsConfig {
-        ca_cert_der: Vec<u8>,
-        leaf_cert_pem: String,
+        ca_cert: Certificate,
+        leaf_cert: Certificate,
         leaf_key_pem: String,
     }
 
@@ -646,14 +632,12 @@ mod tests {
             let leaf_key_pair = KeyPair::generate().unwrap();
             let leaf_cert = leaf_params.signed_by(&leaf_key_pair, &issuer).unwrap();
 
-            let ca_cert_der = ca_cert.der().to_vec();
-            let leaf_cert_pem = leaf_cert.pem();
             let leaf_key_pem = leaf_key_pair.serialize_pem();
 
             TlsConfig {
-                ca_cert_der,
-                leaf_cert_pem,
+                ca_cert,
                 leaf_key_pem,
+                leaf_cert,
             }
         }
     }
@@ -762,7 +746,7 @@ mod tests {
         let (port_tx, port_rx) = oneshot::channel();
         let tls_config = TlsConfig::new();
 
-        let cert_pem = tls_config.leaf_cert_pem.clone();
+        let cert_pem = tls_config.leaf_cert.pem().clone();
         let key_pem = tls_config.leaf_key_pem.clone();
         tokio::spawn({
             let cert_pem = cert_pem.clone();
@@ -828,7 +812,7 @@ mod tests {
             10,
             make_socket_pool(),
             allow_only_mlkem,
-            Some(server_config.tls_config.ca_cert_der.clone()),
+            Some(server_config.tls_config.ca_cert.der().to_vec()),
         );
 
         ens.start_monitor_on_port(
@@ -903,7 +887,7 @@ mod tests {
             10,
             make_socket_pool(),
             allow_only_mlkem,
-            Some(server_config.tls_config.ca_cert_der.clone()),
+            Some(server_config.tls_config.ca_cert.der().to_vec()),
         );
 
         let mut backoff = MockBackoff::new();
@@ -1056,5 +1040,123 @@ mod tests {
             )
             .unwrap(),
         ))
+    }
+
+    #[cfg(feature = "enable_ens")]
+    #[test]
+    fn test_cert_verification_rejects_invalid_request() {
+        use rustls::{
+            client::danger::ServerCertVerifier,
+            internal::msgs::codec::{Codec, Reader},
+            DigitallySignedStruct, SignatureScheme,
+        };
+
+        let tls = TlsConfig::new();
+        let verifier =
+            make_trusted_root_cert_verifier(make_crypto_provider(true), &tls.ca_cert.der())
+                .unwrap();
+        let leaf_cert = tls.leaf_cert.der();
+
+        // DigitallySignedStruct with incorrect signature bytes
+        // Wire format: 2 bytes scheme (big-endian u16) + 2 bytes length + signature bytes
+        let scheme_u16: u16 = SignatureScheme::ECDSA_NISTP256_SHA256.into();
+        let garbage_signature = vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02, 0x03];
+        let mut wire_bytes = Vec::new();
+        wire_bytes.extend_from_slice(&scheme_u16.to_be_bytes());
+        wire_bytes.extend_from_slice(&(garbage_signature.len() as u16).to_be_bytes());
+        wire_bytes.extend_from_slice(&garbage_signature);
+
+        let mut reader = Reader::init(&wire_bytes);
+        let dss = DigitallySignedStruct::read(&mut reader).expect("Failed to parse DSS");
+        assert_eq!(dss.scheme, SignatureScheme::ECDSA_NISTP256_SHA256);
+
+        let message = b"this is a TLS handshake message that was NOT signed by the cert's key";
+
+        let tls12_result = verifier.verify_tls12_signature(message, &leaf_cert, &dss);
+        assert_matches!(
+            tls12_result,
+            Err(rustls::Error::InvalidCertificate(
+                rustls::CertificateError::BadSignature
+            ))
+        );
+
+        let tls13_result = verifier.verify_tls13_signature(message, &leaf_cert, &dss);
+        assert_matches!(
+            tls13_result,
+            Err(rustls::Error::InvalidCertificate(
+                rustls::CertificateError::BadSignature
+            ))
+        );
+    }
+
+    #[cfg(feature = "enable_ens")]
+    #[test]
+    fn test_cert_verification_accepts_correct_request() {
+        use rustls::{
+            client::danger::ServerCertVerified,
+            pki_types::{ServerName, UnixTime},
+        };
+
+        let tls = TlsConfig::new();
+        let verifier =
+            make_trusted_root_cert_verifier(make_crypto_provider(true), &tls.ca_cert.der())
+                .unwrap();
+
+        assert_matches!(
+            verifier.verify_server_cert(
+                tls.leaf_cert.der(),
+                &[tls.ca_cert.der().clone()],
+                &ServerName::DnsName("localhost".try_into().unwrap()),
+                &[],
+                UnixTime::now(),
+            ),
+            Ok(ServerCertVerified { .. })
+        );
+    }
+
+    #[cfg(feature = "enable_ens")]
+    #[test]
+    fn test_cert_verification_rejects_incorrect_request() {
+        use rustls::pki_types::{ServerName, UnixTime};
+
+        let tls = TlsConfig::new();
+        let verifier =
+            make_trusted_root_cert_verifier(make_crypto_provider(true), &tls.ca_cert.der())
+                .unwrap();
+
+        assert_matches!(
+            verifier.verify_server_cert(
+                tls.leaf_cert.der(),
+                &[tls.ca_cert.der().clone()],
+                &ServerName::DnsName("some-other-name".try_into().unwrap()),
+                &[],
+                UnixTime::now(),
+            ),
+            Err(rustls::Error::InvalidCertificate(
+                rustls::CertificateError::NotValidForNameContext {
+                    expected,
+                    presented
+                }
+            ))
+            if
+                expected == ServerName::DnsName("some-other-name".try_into().unwrap()) &&
+                presented == vec![ "DnsName(\"localhost\")", "IpAddress(127.0.0.1)" ]
+        );
+
+        let random_leaf_cert =
+            rcgen::generate_simple_self_signed(SUBJECT_ALT_NAMES.clone()).unwrap();
+
+        assert_matches!(
+            verifier.verify_server_cert(
+                random_leaf_cert.cert.der(),
+                &[tls.ca_cert.der().clone()],
+                &ServerName::DnsName("localhost".try_into().unwrap()),
+                &[],
+                UnixTime::now(),
+            ),
+            Err(rustls::Error::InvalidCertificate(
+                rustls::CertificateError::UnknownIssuer
+            ))
+        );
     }
 }
