@@ -270,7 +270,7 @@ where
     S: Serializer,
 {
     let name = match adapter {
-        AdapterType::NepTUN => "netpun",
+        AdapterType::NepTUN => "neptun",
         AdapterType::LinuxNativeWg => "linux-native",
         AdapterType::WindowsNativeWg => "wireguard-nt",
         AdapterType::Custom(_) => "custom",
