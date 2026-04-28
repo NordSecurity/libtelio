@@ -90,9 +90,18 @@ async def test_adapter_gone_event(
 
         elif conn.target_os == TargetOS.Windows:
             try:
-                await conn.create_process(
-                    ["netsh", "interface", "set", "interface", iface, "disable"]
-                ).execute()
+                result = await conn.create_process([
+                    "reg",
+                    "query",
+                    r"HKLM\SYSTEM\CurrentControlSet\Enum\SWD\WireGuard",
+                ]).execute()
+                for line in result.get_stdout().splitlines():
+                    line = line.strip()
+                    if line.startswith("HKEY_LOCAL_MACHINE"):
+                        instance_id = "\\".join(line.split("\\")[-3:])
+                        await conn.create_process(
+                            ["pnputil", "/remove-device", instance_id]
+                        ).execute()
             except ProcessExecError as e:
                 if e.returncode != 1:
                     raise
