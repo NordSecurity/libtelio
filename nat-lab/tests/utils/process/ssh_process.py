@@ -1,5 +1,6 @@
 import asyncio
 import asyncssh
+import time
 from .process import Process, ProcessExecError, StreamCallback
 from contextlib import asynccontextmanager
 from tests.utils.asyncio_util import run_async_context
@@ -47,69 +48,79 @@ class SshProcess(Process):
         stderr_callback: Optional[StreamCallback] = None,
         privileged: bool = False,
     ) -> "SshProcess":
-        if privileged:
-            log.warning("'privileged' does nothing for ssh processes")
-        escaped = [self._escape_argument(arg) for arg in self._command]
-        command_str = " ".join(escaped)
-
+        start_time = time.monotonic()
         try:
-            self._process = await self._ssh_connection.create_process(
-                command_str, term_type=self._term_type
-            )
-            self._running = True
-            self._stdin = self._process.stdin
-            self._stdin_ready.set()
+            if privileged:
+                log.warning("'privileged' does nothing for ssh processes")
+            escaped = [self._escape_argument(arg) for arg in self._command]
+            command_str = " ".join(escaped)
 
-            await asyncio.gather(
-                self._stdout_loop(self._process.stdout, stdout_callback),
-                self._stderr_loop(self._process.stderr, stderr_callback),
-            )
-        except asyncio.CancelledError:
-            log.debug("[%s] '%s' process cancelled.", self._vm_name, self._command)
-            raise
-        except:
-            log.error("[%s] Exception thrown:", self._vm_name, exc_info=True)
-            raise
+            try:
+                self._process = await self._ssh_connection.create_process(
+                    command_str, term_type=self._term_type
+                )
+                self._running = True
+                self._stdin = self._process.stdin
+                self._stdin_ready.set()
+
+                await asyncio.gather(
+                    self._stdout_loop(self._process.stdout, stdout_callback),
+                    self._stderr_loop(self._process.stderr, stderr_callback),
+                )
+            except asyncio.CancelledError:
+                log.debug("[%s] '%s' process cancelled.", self._vm_name, self._command)
+                raise
+            except:
+                log.error("[%s] Exception thrown:", self._vm_name, exc_info=True)
+                raise
+            finally:
+                if self._process and self._process.returncode is None:
+                    self._process.kill()
+                    self._process.close()
+                    await self._process.wait_closed()
+                self._running = False
+
+            await self._process.wait()
+
+            returncode = self._process.returncode
+            exit_status = self._process.exit_status
+            exit_signal = self._process.exit_signal
+
+            # 0 success
+            # suppress -9 sigkill, since we kill those processes
+            if returncode and returncode not in [0, -9]:
+                err = ProcessExecError(
+                    returncode,
+                    self._vm_name,
+                    self._command,
+                    self._stdout,
+                    self._stderr,
+                    exit_status,
+                    exit_signal,
+                )
+                log.debug(
+                    "[%s] Command failed on %s: %s; returncode=%s exit_status=%s exit_signal=%s; "
+                    "stdout=%s; stderr=%s",
+                    self._vm_name,
+                    err.remote_name,
+                    command_str,
+                    err.returncode,
+                    err.exit_status,
+                    err.exit_signal,
+                    err.stdout,
+                    err.stderr,
+                )
+                raise err
+
+            return self
         finally:
-            if self._process and self._process.returncode is None:
-                self._process.kill()
-                self._process.close()
-                await self._process.wait_closed()
-            self._running = False
-
-        await self._process.wait()
-
-        returncode = self._process.returncode
-        exit_status = self._process.exit_status
-        exit_signal = self._process.exit_signal
-
-        # 0 success
-        # suppress -9 sigkill, since we kill those processes
-        if returncode and returncode not in [0, -9]:
-            err = ProcessExecError(
-                returncode,
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+            log.info(
+                "[%s] Finished %s in %.0fms",
                 self._vm_name,
-                self._command,
-                self._stdout,
-                self._stderr,
-                exit_status,
-                exit_signal,
+                " ".join(self._command),
+                elapsed_ms,
             )
-            log.debug(
-                "[%s] Command failed on %s: %s; returncode=%s exit_status=%s exit_signal=%s; "
-                "stdout=%s; stderr=%s",
-                self._vm_name,
-                err.remote_name,
-                command_str,
-                err.returncode,
-                err.exit_status,
-                err.exit_signal,
-                err.stdout,
-                err.stderr,
-            )
-            raise err
-
-        return self
 
     @asynccontextmanager
     async def run(
@@ -118,20 +129,31 @@ class SshProcess(Process):
         stderr_callback: Optional[StreamCallback] = None,
         privileged: bool = False,
     ) -> AsyncIterator["SshProcess"]:
+        start_time = time.monotonic()
+
         async def mark_as_done():
             try:
                 await self.execute(stdout_callback, stderr_callback, privileged)
             finally:
                 self._is_done.set()
 
-        async with run_async_context(mark_as_done()):
-            try:
-                yield self
-            finally:
-                if self._process and self._process.returncode is None:
-                    self._process.kill()
-                    self._process.close()
-                    await self._process.wait_closed()
+        try:
+            async with run_async_context(mark_as_done()):
+                try:
+                    yield self
+                finally:
+                    if self._process and self._process.returncode is None:
+                        self._process.kill()
+                        self._process.close()
+                        await self._process.wait_closed()
+        finally:
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+            log.info(
+                "[%s] Finished %s in %.0fms",
+                self._vm_name,
+                " ".join(self._command),
+                elapsed_ms,
+            )
 
     async def _stdout_loop(
         self, stdout: asyncssh.SSHReader, stdout_callback: Optional[StreamCallback]

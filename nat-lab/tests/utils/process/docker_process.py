@@ -2,6 +2,7 @@ import asyncio
 import secrets
 import subprocess
 import sys
+import time
 from .process import Process, ProcessExecError, StreamCallback
 from aiodocker.containers import DockerContainer
 from aiodocker.execs import Exec
@@ -52,72 +53,86 @@ class DockerProcess(Process):
         stderr_callback: Optional[StreamCallback] = None,
         privileged: bool = False,
     ) -> "DockerProcess":
+        start_time = time.monotonic()
         try:
-            self._execute = await self._container.exec(
-                self._command,
-                stdin=True,
-                environment={
-                    "MOOSE_LOG": "Trace",
-                    "MOOSE_LOG_FILE": MOOSE_LOGS_DIR,
-                    "RUST_BACKTRACE": "full",
-                    "KILL_ID": self._kill_id,
-                },
-                privileged=privileged,
-            )
-        except:
-            log.error("[%s] Exception thrown:", self._container_name, exc_info=True)
-            raise
-        if self._execute is None:
-            return self
-        async with self._execute.start() as exe_stream:
-            self._stream = exe_stream
-            self._stdin_ready.set()
             try:
-                await self._read_loop(exe_stream, stdout_callback, stderr_callback)
-            except asyncio.CancelledError:
-                log.debug(
-                    "[%s] '%s' process cancelled.", self._container_name, self._command
+                self._execute = await self._container.exec(
+                    self._command,
+                    stdin=True,
+                    environment={
+                        "MOOSE_LOG": "Trace",
+                        "MOOSE_LOG_FILE": MOOSE_LOGS_DIR,
+                        "RUST_BACKTRACE": "full",
+                        "KILL_ID": self._kill_id,
+                    },
+                    privileged=privileged,
                 )
-                raise
             except:
                 log.error("[%s] Exception thrown:", self._container_name, exc_info=True)
                 raise
-            finally:
-                if self._execute:
-                    inspect = await self._execute.inspect()
-                    while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
+            if self._execute is None:
+                return self
+            async with self._execute.start() as exe_stream:
+                self._stream = exe_stream
+                self._stdin_ready.set()
+                try:
+                    await self._read_loop(exe_stream, stdout_callback, stderr_callback)
+                except asyncio.CancelledError:
+                    log.debug(
+                        "[%s] '%s' process cancelled.",
+                        self._container_name,
+                        self._command,
+                    )
+                    raise
+                except:
+                    log.error(
+                        "[%s] Exception thrown:", self._container_name, exc_info=True
+                    )
+                    raise
+                finally:
+                    if self._execute:
                         inspect = await self._execute.inspect()
-                        await asyncio.sleep(0.01)
-                    if inspect["ExitCode"] is None:
-                        subprocess.run(
-                            [
-                                "docker",
-                                "exec",
-                                "--privileged",
-                                self._container.id,
-                                "/opt/bin/kill_process_by_natlab_id",
-                                self._kill_id,
-                            ],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
-                self._stream = None
+                        while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
+                            inspect = await self._execute.inspect()
+                            await asyncio.sleep(0.01)
+                        if inspect["ExitCode"] is None:
+                            subprocess.run(
+                                [
+                                    "docker",
+                                    "exec",
+                                    "--privileged",
+                                    self._container.id,
+                                    "/opt/bin/kill_process_by_natlab_id",
+                                    self._kill_id,
+                                ],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                            )
+                    self._stream = None
 
-        inspect = await self._execute.inspect()
-        exit_code = inspect["ExitCode"]
+            inspect = await self._execute.inspect()
+            exit_code = inspect["ExitCode"]
 
-        # 0 success
-        # suppress 137 linux sigkill, since we kill those processes
-        if exit_code and exit_code not in [0, 137]:
-            raise ProcessExecError(
-                exit_code,
+            # 0 success
+            # suppress 137 linux sigkill, since we kill those processes
+            if exit_code and exit_code not in [0, 137]:
+                raise ProcessExecError(
+                    exit_code,
+                    self._container_name,
+                    self._command,
+                    self._stdout,
+                    self._stderr,
+                )
+
+            return self
+        finally:
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+            log.info(
+                "[%s] Finished %s in %.0fms",
                 self._container_name,
-                self._command,
-                self._stdout,
-                self._stderr,
+                " ".join(self._command),
+                elapsed_ms,
             )
-
-        return self
 
     @asynccontextmanager
     async def run(
@@ -126,41 +141,52 @@ class DockerProcess(Process):
         stderr_callback: Optional[StreamCallback] = None,
         privileged: bool = False,
     ) -> AsyncIterator["DockerProcess"]:
+        start_time = time.monotonic()
+
         async def mark_as_done():
             try:
                 await self.execute(stdout_callback, stderr_callback, privileged)
             finally:
                 self._is_done.set()
 
-        async with run_async_context(mark_as_done()):
-            try:
-                yield self
-            finally:
-                if self._execute:
-                    inspect = await self._execute.inspect()
-                    while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
+        try:
+            async with run_async_context(mark_as_done()):
+                try:
+                    yield self
+                finally:
+                    if self._execute:
                         inspect = await self._execute.inspect()
-                        await asyncio.sleep(0.01)
-                    if inspect["ExitCode"] is None:
-                        proc = subprocess.run(
-                            [
-                                "docker",
-                                "exec",
-                                "--privileged",
-                                self._container.id,
-                                "/opt/bin/kill_process_by_natlab_id",
-                                self._kill_id,
-                            ],
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            text=True,
-                        )
-                        if proc.returncode != 0:
-                            log.warning(
-                                "[%s] Cleanup failed: %s",
-                                self._container_name,
-                                proc.stdout + proc.stderr,
+                        while inspect["Pid"] == 0 and inspect["ExitCode"] is None:
+                            inspect = await self._execute.inspect()
+                            await asyncio.sleep(0.01)
+                        if inspect["ExitCode"] is None:
+                            proc = subprocess.run(
+                                [
+                                    "docker",
+                                    "exec",
+                                    "--privileged",
+                                    self._container.id,
+                                    "/opt/bin/kill_process_by_natlab_id",
+                                    self._kill_id,
+                                ],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True,
                             )
+                            if proc.returncode != 0:
+                                log.warning(
+                                    "[%s] Cleanup failed: %s",
+                                    self._container_name,
+                                    proc.stdout + proc.stderr,
+                                )
+        finally:
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+            log.info(
+                "[%s] Finished %s in %.0fms",
+                self._container_name,
+                " ".join(self._command),
+                elapsed_ms,
+            )
 
     async def _read_loop(
         self,

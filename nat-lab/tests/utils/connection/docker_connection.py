@@ -181,7 +181,10 @@ class DockerConnection(Connection):
         self, command: List[str], kill_id=None, term_type=None, quiet=False
     ) -> "Process":
         process = DockerProcess(
-            self._container, container_id(self.tag), command, kill_id
+            self._container,
+            container_id(self.tag),
+            command,
+            kill_id,
         )
 
         if not quiet:
