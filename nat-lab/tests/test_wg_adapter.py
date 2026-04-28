@@ -16,7 +16,7 @@ QUERY_CMD = [
     WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY,
     "/s",
     "/f",
-    "DeviceInstanceID",
+    "DriverDesc",
 ]
 
 
