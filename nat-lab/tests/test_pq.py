@@ -14,8 +14,6 @@ from tests.utils.connection_util import (
 from tests.utils.dns import query_dns
 from tests.utils.ping import ping
 
-pytest_plugins = ["tests.helpers_fixtures"]
-
 EMPTY_PRESHARED_KEY_SLOT = "(none)"
 
 

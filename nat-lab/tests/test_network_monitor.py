@@ -4,8 +4,6 @@ from tests.helpers import SetupParameters, Environment
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag, TargetOS
 
-pytest_plugins = ["tests.helpers_fixtures"]
-
 DEFAULT_WAITING_TIME = 2
 
 

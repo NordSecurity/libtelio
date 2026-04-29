@@ -4,8 +4,6 @@ from tests.helpers import SetupParameters, Environment
 from tests.utils.bindings import default_features, TelioAdapterType
 from tests.utils.connection import ConnectionTag
 
-pytest_plugins = ["tests.helpers_fixtures"]
-
 
 @pytest.mark.parametrize(
     "alpha_setup_params",

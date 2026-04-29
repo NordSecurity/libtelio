@@ -7,8 +7,6 @@ from tests.utils.connection import ConnectionTag
 from tests.utils.ping import ping
 from typing import Optional
 
-pytest_plugins = ["tests.helpers_fixtures"]
-
 
 @pytest.mark.parametrize(
     "alpha_setup_params, beta_setup_params",

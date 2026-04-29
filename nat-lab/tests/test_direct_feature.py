@@ -3,8 +3,6 @@ from tests.helpers import SetupParameters, Environment
 from tests.utils.bindings import features_with_endpoint_providers, EndpointProvider
 from typing import List
 
-pytest_plugins = ["tests.helpers_fixtures"]
-
 ALL_DIRECT_FEATURES = [
     EndpointProvider.UPNP,
     EndpointProvider.LOCAL,

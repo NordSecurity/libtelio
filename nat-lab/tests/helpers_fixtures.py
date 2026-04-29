@@ -30,11 +30,11 @@ async def _exit_stack() -> AsyncGenerator[AsyncExitStack, None]:
     yield stack
     try:
         await asyncio.wait_for(stack.aclose(), timeout=60)
-    except asyncio.TimeoutError:
+    except asyncio.TimeoutError as e:
         raise RuntimeError(
             "exit_stack fixture teardown timed out after 60s — "
             "likely a context manager is stuck during cleanup"
-        ) from None
+        ) from e
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +119,13 @@ async def _vpn_server_connection(
     """When *vpn_conf.should_ping_client* is True, establish a connection
     to the VPN server container and return its ``ConnectionManager``.
     Otherwise return ``None``.
+
+    .. note::
+        ``vpn_conf`` is **not** defined in this module.  The calling test
+        must supply it via ``@pytest.mark.parametrize("vpn_conf", [...])``
+        or by defining a ``vpn_conf`` fixture in its own module / conftest.
+        Requesting this fixture without a ``vpn_conf`` source will raise a
+        ``FixtureLookupError`` at collection time.
     """
     if vpn_conf.should_ping_client:
         managers = await setup_connections_factory([vpn_conf.conn_tag])
@@ -156,8 +163,10 @@ _PARAM_NAMES = ["alpha_setup_params", "beta_setup_params", "gamma_setup_params"]
 def _resolve_setup_params(request: pytest.FixtureRequest) -> List[SetupParameters]:
     """Dynamically resolve available *_setup_params fixtures.
 
-    Tries alpha, beta, gamma in order.  Skips any that are not defined so
-    that e.g. alpha + gamma (without beta) is supported.
+    Tries alpha, beta, gamma in order and stops at the first missing fixture.
+    This preserves positional semantics: index 0 is always alpha, index 1 is
+    always beta, etc.  Gaps (e.g. alpha + gamma without beta) are not
+    supported — define contiguous fixtures starting from alpha.
     At least alpha_setup_params must be available.
     """
     instances: List[SetupParameters] = []
@@ -165,7 +174,7 @@ def _resolve_setup_params(request: pytest.FixtureRequest) -> List[SetupParameter
         try:
             instances.append(request.getfixturevalue(name))
         except pytest.FixtureLookupError:
-            continue
+            break
     if not instances:
         raise ValueError(
             "env_mesh/env fixture requires at least alpha_setup_params to be "

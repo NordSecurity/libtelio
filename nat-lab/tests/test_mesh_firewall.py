@@ -21,8 +21,6 @@ from tests.utils.ping import ping
 from tests.utils.router import IPProto, IPStack
 from typing import Tuple, Optional, Callable, Awaitable
 
-pytest_plugins = ["tests.helpers_fixtures"]
-
 
 def get_ips_and_stack(alpha: Node, beta: Node) -> Tuple[IPProto, str, str]:
     if alpha.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:

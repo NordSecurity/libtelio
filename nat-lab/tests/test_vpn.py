@@ -25,8 +25,6 @@ from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
 from tests.utils.router import IPProto, IPStack
 
-pytest_plugins = ["tests.helpers_fixtures"]
-
 
 class TestVpnConnection:
     """Tests for basic VPN connection (previously test_vpn_connection)."""

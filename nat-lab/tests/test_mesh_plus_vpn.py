@@ -15,8 +15,6 @@ from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.ping import ping
 
-pytest_plugins = ["tests.helpers_fixtures"]
-
 
 # Module-level override — all tests in this file get VPN_1
 @pytest.fixture(name="vpn_tags")

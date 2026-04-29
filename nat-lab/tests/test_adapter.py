@@ -19,8 +19,6 @@ from tests.utils.connection_util import (
 from tests.utils.process import ProcessExecError
 from typing import Awaitable, Callable, List
 
-pytest_plugins = ["tests.helpers_fixtures"]
-
 
 class AdapterState(Enum):
     DOWN = (0,)

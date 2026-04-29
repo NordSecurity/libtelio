@@ -11,8 +11,6 @@ from tests.utils.dns import query_dns
 from tests.utils.router import IPStack
 from typing import List, Tuple, Callable, Awaitable
 
-pytest_plugins = ["tests.helpers_fixtures"]
-
 
 # IPv6 tests are failing because we do not have IPV6 internet connection
 @pytest.mark.asyncio

@@ -3,8 +3,6 @@ from tests.helpers import SetupParameters, Environment, ping_between_all_nodes
 from tests.utils.bindings import default_features, TelioAdapterType
 from tests.utils.connection import ConnectionTag
 
-pytest_plugins = ["tests.helpers_fixtures"]
-
 BUFFER_SIZE = 1310720
 
 

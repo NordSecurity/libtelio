@@ -15,8 +15,6 @@ from tests.utils.bindings import (
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 
-pytest_plugins = ["tests.helpers_fixtures"]
-
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(timeouts.TEST_NODE_STATE_FLICKERING_RELAY_TIMEOUT)

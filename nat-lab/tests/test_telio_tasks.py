@@ -12,8 +12,6 @@ from tests.utils.bindings import (
 )
 from tests.utils.connection import ConnectionTag
 
-pytest_plugins = ["tests.helpers_fixtures"]
-
 _FEATURES = default_features(
     enable_direct=True, enable_lana=("/some_path", False), enable_nurse=True
 )
