@@ -45,7 +45,7 @@ pub(crate) mod grpc {
 const CONTEXT: &str = "ens-auth";
 const ENS_PORT: u16 = 993;
 const AUTHENTICATION_KEY: &str = "authentication";
-const DEFAULT_ROOT_CERTIFICATE: &[u8] = include_bytes!("../data/default_root_certificate.der");
+const DEFAULT_ROOT_CERTIFICATE: &[u8] = include_bytes!("../../data/default_root_certificate.der");
 
 /// ENS errors
 #[derive(Debug, thiserror::Error)]
