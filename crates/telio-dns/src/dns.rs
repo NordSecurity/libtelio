@@ -11,7 +11,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::{Mutex, RwLock};
 use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
 
-use telio_model::features::{FeatureExitDns, TtlValue};
+use telio_model::features::{FeatureDns, TtlValue};
 
 //debug tools
 use telio_utils::{telio_log_debug, telio_log_error};
@@ -65,7 +65,7 @@ impl LocalDnsResolver {
         public_key: &PublicKey,
         forward_ips: &[IpAddr],
         tun: Option<&Tun>,
-        exit_dns: Option<FeatureExitDns>,
+        dns_features: &FeatureDns,
     ) -> Result<Self, String> {
         let socket = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
             .await
@@ -93,10 +93,14 @@ impl LocalDnsResolver {
         // Telio public key
         let telio_public_key: PublicKeyDalek = PublicKeyDalek::from(public_key.0);
 
-        let nameserver = LocalNameServer::new(forward_ips).await?;
+        let use_raw_forwarder = dns_features.use_raw_forwarder.unwrap_or(false);
 
-        let auto_switch_ips =
-            exit_dns.is_some_and(|feature| feature.auto_switch_dns_ips.unwrap_or(true));
+        let nameserver = LocalNameServer::new(forward_ips, use_raw_forwarder).await?;
+
+        let auto_switch_ips = dns_features
+            .exit_dns
+            .as_ref()
+            .is_some_and(|feature| feature.auto_switch_dns_ips.unwrap_or(true));
 
         Ok(LocalDnsResolver {
             socket: Arc::new(socket),
@@ -212,9 +216,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_default_dns_allowed_ips() {
-        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), &[], None, None)
-            .await
-            .unwrap();
+        let resolver = LocalDnsResolver::new(
+            &SecretKey::gen().public(),
+            &[],
+            None,
+            &FeatureDns::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             vec![
                 "100.64.0.2/32".parse::<IpNet>().unwrap(),
@@ -228,9 +237,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_exit_connected_dns_allowed_ips() {
-        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), &[], None, None)
-            .await
-            .unwrap();
+        let resolver = LocalDnsResolver::new(
+            &SecretKey::gen().public(),
+            &[],
+            None,
+            &FeatureDns::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             vec![
                 "100.64.0.2/32".parse::<IpNet>().unwrap(),
@@ -242,9 +256,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_default_dns_servers() {
-        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), &[], None, None)
-            .await
-            .unwrap();
+        let resolver = LocalDnsResolver::new(
+            &SecretKey::gen().public(),
+            &[],
+            None,
+            &FeatureDns::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             vec![
                 "100.64.0.3".parse::<IpAddr>().unwrap(),

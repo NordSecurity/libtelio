@@ -36,6 +36,7 @@ async def test_telio_tasks_with_all_features() -> None:
         features.dns = FeatureDns(
             exit_dns=FeatureExitDns(auto_switch_dns_ips=True),
             ttl_value=60,
+            use_raw_forwarder=True,
         )
         env = await setup_mesh_nodes(
             exit_stack,

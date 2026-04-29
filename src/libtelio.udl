@@ -841,6 +841,8 @@ dictionary FeatureDns {
     TtlValue ttl_value;
     /// Configure options for exit dns [default None]
     FeatureExitDns? exit_dns;
+    /// Use the raw DNS forwarder instead of the old hickory-server
+    boolean? use_raw_forwarder;
 };
 
 /// Turns on post quantum VPN tunnel

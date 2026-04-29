@@ -4924,6 +4924,7 @@ dependencies = [
  "pnet_packet 0.35.0",
  "rand 0.10.1",
  "rand_core_compat",
+ "rstest",
  "telio-crypto",
  "telio-model",
  "telio-utils",

@@ -1774,6 +1774,7 @@ mod tests {
                     dns: FeatureDns {
                         exit_dns: None,
                         ttl_value: TtlValue(60),
+                        use_raw_forwarder: None,
                     },
                     multicast: false,
                     error_notification_service: None,

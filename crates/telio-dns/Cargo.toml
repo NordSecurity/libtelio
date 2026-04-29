@@ -29,5 +29,6 @@ telio-wg.workspace = true
 [dev-dependencies]
 dns-parser = "0.8.0"
 rand_core_compat.workspace = true
+rstest.workspace = true
 
 mockall.workspace = true

@@ -9,7 +9,7 @@ use hickory_server::{
     },
     proto::rr::{rdata, rdata::SOA, DNSClass, LowerName, Name, RData, Record, RecordType},
     resolver::config::{NameServerConfigGroup, ResolverOpts},
-    server::{Request, RequestInfo, ResponseHandler, ResponseInfo},
+    server::RequestInfo,
     store::{forwarder::ForwardConfig, in_memory::InMemoryAuthority},
 };
 use pnet_packet::dns::{DnsQuery, DnsTypes};
@@ -416,11 +416,11 @@ impl ClonableZones {
         self.names.insert(name);
     }
 
-    pub async fn lookup<R: ResponseHandler>(
+    pub async fn lookup<R: hickory_server::server::ResponseHandler>(
         &self,
-        request: &Request,
+        request: &hickory_server::server::Request,
         response_handle: R,
-    ) -> Result<ResponseInfo, LookupError> {
+    ) -> Result<hickory_server::server::ResponseInfo, LookupError> {
         self.zones.lookup(request, None, response_handle).await
     }
 

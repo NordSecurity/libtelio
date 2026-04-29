@@ -1846,7 +1846,7 @@ impl Runtime {
                     &public_key,
                     upstream_dns_servers,
                     dns_entity.virtual_host_tun_fd.as_ref(),
-                    self.features.dns.exit_dns.clone(),
+                    &self.features.dns,
                 )
                 .await
                 .map_err(Error::DnsResolverError)?;
