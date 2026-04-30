@@ -13,6 +13,10 @@ from typing import List, Optional, AsyncIterator
 
 _PROCESS_START_TIMEOUT = 10.0  # seconds to wait for exec PID to appear
 
+# Exit codes for processes terminated by a signal: 128 + signal number
+_EXIT_CODE_SIGKILL = 137  # 128 + 9 (SIGKILL)
+_EXIT_CODE_SIGTERM = 143  # 128 + 15 (SIGTERM)
+
 
 class DockerProcess(Process):
     _container: DockerContainer
@@ -28,6 +32,7 @@ class DockerProcess(Process):
     _kill_id: (
         str  # Private ID added to find the process easily when it needs to be killed
     )
+    _kill_sent: bool  # Set to True once an intentional kill has been dispatched
 
     def __init__(
         self,
@@ -46,6 +51,7 @@ class DockerProcess(Process):
         self._stream = None
         self._execute = None
         self._kill_id = kill_id if kill_id else secrets.token_hex(8).upper()
+        self._kill_sent = False
 
     async def execute(
         self,
@@ -101,10 +107,15 @@ class DockerProcess(Process):
             raise
         exit_code = inspect["ExitCode"]
 
-        # 0 success
-        # 137 = SIGKILL (128+9), 143 = SIGTERM (128+15) — both are expected
-        # when the process is intentionally killed during cleanup
-        if exit_code and exit_code not in [0, 137, 143]:
+        # 0  — clean exit
+        # 137 (SIGKILL) / 143 (SIGTERM) — expected only when we dispatched
+        # an intentional kill via _kill_exec_if_running(); an unexpected
+        # SIGTERM from outside should still surface as an error.
+        intentional_kill = self._kill_sent and exit_code in (
+            _EXIT_CODE_SIGKILL,
+            _EXIT_CODE_SIGTERM,
+        )
+        if exit_code and not intentional_kill:
             raise ProcessExecError(
                 exit_code,
                 self._container_name,
@@ -138,6 +149,7 @@ class DockerProcess(Process):
         try:
             info = await self._wait_for_process_start()
             if info["ExitCode"] is None:
+                self._kill_sent = True
                 proc = await asyncio.create_subprocess_exec(
                     "docker",
                     "exec",

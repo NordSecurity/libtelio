@@ -7,6 +7,9 @@ from tests.utils.asyncio_util import run_async_context
 from tests.utils.logger import log
 from typing import List, Optional, Callable, AsyncIterator
 
+# asyncssh reports signal-terminated processes with negative signal numbers
+_RETURNCODE_SIGKILL = -9  # SIGKILL
+
 
 class SshProcess(Process):
     _ssh_connection: asyncssh.SSHClientConnection
@@ -20,6 +23,7 @@ class SshProcess(Process):
     _process: Optional[asyncssh.SSHClientProcess]
     _running: bool
     _term_type: Optional[str]
+    _kill_sent: bool  # Set to True once an intentional kill has been dispatched
 
     def __init__(
         self,
@@ -41,6 +45,7 @@ class SshProcess(Process):
         self._process = None
         self._running = False
         self._term_type = term_type
+        self._kill_sent = False
 
     async def execute(
         self,
@@ -75,6 +80,7 @@ class SshProcess(Process):
                 raise
             finally:
                 if self._process and self._process.returncode is None:
+                    self._kill_sent = True
                     self._process.kill()
                     self._process.close()
                     await self._process.wait_closed()
@@ -86,9 +92,12 @@ class SshProcess(Process):
             exit_status = self._process.exit_status
             exit_signal = self._process.exit_signal
 
-            # 0 success
-            # suppress -9 sigkill, since we kill those processes
-            if returncode and returncode not in [0, -9]:
+            # 0  — clean exit
+            # _RETURNCODE_SIGKILL (-9) — expected only when we dispatched an
+            # intentional kill above; an unexpected external SIGKILL should
+            # still surface as an error.
+            intentional_kill = self._kill_sent and returncode == _RETURNCODE_SIGKILL
+            if returncode and not intentional_kill:
                 err = ProcessExecError(
                     returncode,
                     self._vm_name,
@@ -143,6 +152,7 @@ class SshProcess(Process):
                     yield self
                 finally:
                     if self._process and self._process.returncode is None:
+                        self._kill_sent = True
                         self._process.kill()
                         self._process.close()
                         await self._process.wait_closed()
