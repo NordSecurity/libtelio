@@ -9,7 +9,6 @@ use blake3::{derive_key, keyed_hash};
 use http::Uri;
 use hyper_util::rt::TokioIo;
 
-#[cfg(feature = "enable_ens")]
 use rustls::{
     client::danger::ServerCertVerifier, crypto::CryptoProvider, pki_types::CertificateDer,
     ClientConfig, RootCertStore,
@@ -46,7 +45,7 @@ pub(crate) mod grpc {
 const CONTEXT: &str = "ens-auth";
 const ENS_PORT: u16 = 993;
 const AUTHENTICATION_KEY: &str = "authentication";
-const DEFAULT_ROOT_CERTIFICATE: &[u8] = include_bytes!("../data/default_root_certificate.der");
+const DEFAULT_ROOT_CERTIFICATE: &[u8] = include_bytes!("../../data/default_root_certificate.der");
 
 /// ENS errors
 #[derive(Debug, thiserror::Error)]
@@ -388,16 +387,6 @@ async fn create_external_channel(
         .await?)
 }
 
-#[cfg(not(feature = "enable_ens"))]
-fn make_tls_connector(
-    _allow_only_mlkem: bool,
-    _root_certificate: &[u8],
-) -> std::io::Result<TlsConnector> {
-    telio_log_warn!("An attempt was made to enable ENS when it is disabled at compile time");
-    Err(std::io::Error::other("ENS is disabled"))
-}
-
-#[cfg(feature = "enable_ens")]
 fn make_crypto_provider(allow_only_mlkem: bool) -> Arc<CryptoProvider> {
     let mut provider = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider();
 
@@ -409,7 +398,6 @@ fn make_crypto_provider(allow_only_mlkem: bool) -> Arc<CryptoProvider> {
     Arc::new(provider)
 }
 
-#[cfg(feature = "enable_ens")]
 fn make_trusted_root_cert_verifier(
     crypto_provider: Arc<CryptoProvider>,
     root_certificate: &[u8],
@@ -493,7 +481,6 @@ fn make_trusted_root_cert_verifier(
     Ok(Arc::new(CertFingerprintLogger(verifier)))
 }
 
-#[cfg(feature = "enable_ens")]
 fn make_tls_connector(
     allow_only_mlkem: bool,
     root_certificate: &[u8],
@@ -524,19 +511,8 @@ fn authentication_tag(secret: SharedSecret, message: &[u8]) -> [u8; 32] {
 ///
 /// In case there are two providers present (ring and aws-lc-rs) rustls requires the user
 /// to explicitly configure the one which should be used by default.
-#[cfg(feature = "enable_ens")]
 pub fn install_default_crypto_provider() {
     if let Err(e) = rustls::crypto::aws_lc_rs::default_provider().install_default() {
-        telio_log_warn!("Failed to install default crypto provider for rustls: {e:?}");
-    }
-}
-
-/// When ENS is disabled, we should only have ring provider and there should be no need
-/// to explicitly configure the default crypto provider. But just to be on the safe side,
-/// (and handle a case where there 3rd crypto provider) we will configure ring either way.
-#[cfg(not(feature = "enable_ens"))]
-pub fn install_default_crypto_provider() {
-    if let Err(e) = rustls::crypto::ring::default_provider().install_default() {
         telio_log_warn!("Failed to install default crypto provider for rustls: {e:?}");
     }
 }
@@ -1042,7 +1018,6 @@ mod tests {
         ))
     }
 
-    #[cfg(feature = "enable_ens")]
     #[test]
     fn test_cert_verification_rejects_invalid_request() {
         use rustls::{
@@ -1089,7 +1064,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "enable_ens")]
     #[test]
     fn test_cert_verification_accepts_correct_request() {
         use rustls::{
@@ -1114,7 +1088,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "enable_ens")]
     #[test]
     fn test_cert_verification_rejects_incorrect_request() {
         use rustls::pki_types::{ServerName, UnixTime};
