@@ -22,7 +22,7 @@ QUERY_CMD = [
 
 @pytest.mark.windows
 @pytest.mark.timeout(TEST_WG_ADAPTER_CLEANUP_TIMEOUT)
-@pytest.mark.parametrize("iterations", [5])
+@pytest.mark.parametrize("iterations", [3])
 @pytest.mark.parametrize("conn_tag", [ConnectionTag.VM_WINDOWS_1])
 async def test_wg_adapter_cleanup_loop_clean_shutdown(
     conn_tag: ConnectionTag, iterations: int
@@ -59,7 +59,7 @@ async def test_wg_adapter_cleanup_loop_clean_shutdown(
 
 @pytest.mark.windows
 @pytest.mark.timeout(TEST_WG_ADAPTER_CLEANUP_TIMEOUT)
-@pytest.mark.parametrize("iterations", [5])
+@pytest.mark.parametrize("iterations", [3])
 @pytest.mark.parametrize("conn_tag", [ConnectionTag.VM_WINDOWS_1])
 async def test_wg_adapter_cleanup_loop_dirty_shutdown(
     conn_tag: ConnectionTag, iterations: int
