@@ -39,6 +39,7 @@ NETWORK_RESTART_LOG_LINE = "netifd: Network device 'eth1' link is up"
 OPENWRT_GW_WAN_IP = {
     ConnectionTag.VM_OPENWRT_GW_1: "10.0.0.2",
     ConnectionTag.VM_OPENWRT_GW_2: "10.0.0.3",
+    ConnectionTag.VM_OPENWRT_GW_3: "10.0.0.4",
 }
 
 OPENWRT_TAGS = [
@@ -51,6 +52,11 @@ OPENWRT_TAGS = [
         ConnectionTag.DOCKER_OPENWRT_CLIENT_2,
         ConnectionTag.VM_OPENWRT_GW_2,
         id="openwrt-25.12",
+    ),
+    pytest.param(
+        ConnectionTag.DOCKER_OPENWRT_CLIENT_3,
+        ConnectionTag.VM_OPENWRT_GW_3,
+        id="openwrt-24.10-armv8",
     ),
 ]
 

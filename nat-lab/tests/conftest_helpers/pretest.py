@@ -164,8 +164,8 @@ async def copy_vm_binaries_if_needed(session_vm_marks: set[str]):
     if "mac" in session_vm_marks:
         await _copy_vm_binaries(ConnectionTag.VM_MAC)
     if "openwrt" in session_vm_marks:
-        await _copy_vm_binaries(ConnectionTag.VM_OPENWRT_GW_1)
-        await _copy_vm_binaries(ConnectionTag.VM_OPENWRT_GW_2)
+        for tag in OPENWRT_VM_TAGS:
+            await _copy_vm_binaries(tag)
 
 
 async def start_tcpdump_processes(
