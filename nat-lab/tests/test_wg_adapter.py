@@ -19,6 +19,20 @@ QUERY_CMD = [
     "DeviceInstanceID",
 ]
 
+_NET_CLASS_KEY = r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}"
+_SW_DEVICE_CLASS_KEY = r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Class\{62f9c741-b25a-46ce-b54c-9bccce08b6f2}"
+
+
+async def _log_adapter_class_info(conn) -> None:
+    for key in [_NET_CLASS_KEY, _SW_DEVICE_CLASS_KEY]:
+        try:
+            result = await conn.create_process([
+                "reg", "query", key, "/s", "/f", "DriverDesc",
+            ]).execute()
+            log.info("DriverDesc entries under %s:\n%s", key, result.get_stdout())
+        except ProcessExecError:
+            log.info("No DriverDesc entries found under %s", key)
+
 
 @pytest.mark.windows
 @pytest.mark.timeout(TEST_WG_ADAPTER_CLEANUP_TIMEOUT)
@@ -44,6 +58,7 @@ async def test_wg_adapter_cleanup_loop_clean_shutdown(
             )
 
             conn, *_ = [conn.connection for conn in env.connections]
+            await _log_adapter_class_info(conn)
             assert (
                 "WireGuard"
                 in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
