@@ -65,6 +65,7 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_STUN_1: "stun-01",
     ConnectionTag.DOCKER_UDP_SERVER: "udp-server",
     ConnectionTag.DOCKER_OPENWRT_CDN: "openwrt-cdn",
+    ConnectionTag.DOCKER_TP_LITE_DNS_SERVER: "tp-lite-dns-server",
 }
 
 DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {

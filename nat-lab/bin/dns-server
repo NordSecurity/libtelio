@@ -18,6 +18,7 @@ KNOWN = {
         b"error-with-noerror-return-code.com": None,
         b"api.nordvpn.com": dns.Record_A(address="10.0.80.86"),
         b"mqtt.nordvpn.com": dns.Record_A(address="10.0.80.85"),
+        b"blocked-malware.com": dns.Record_A(address="123.123.123.123"),
     },
     dns.CNAME: {
         b"www.microsoft.com": dns.Record_CNAME(name="www.microsoft.com-c-3.edgekey.net.")

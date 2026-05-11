@@ -40,6 +40,8 @@ graph LR
     dns-server-2[["dns-server-2
         10.0.80.83
         2001:db8:85a4::adda:edde:8"]]
+    tp-lite-dns-server[["tp-lite-dns-server
+        10.0.80.90"]]
     mqtt-broker("mqtt-broker
         10.0.80.85
         2001:db8:85a4::adda:edde:a")

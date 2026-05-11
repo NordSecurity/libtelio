@@ -64,6 +64,7 @@ class DockerProcess(Process):
                         "MOOSE_LOG_FILE": MOOSE_LOGS_DIR,
                         "RUST_BACKTRACE": "full",
                         "KILL_ID": self._kill_id,
+                        "LD_LIBRARY_PATH": "/libtelio/nat-lab/tests/uniffi",
                     },
                     privileged=privileged,
                 )

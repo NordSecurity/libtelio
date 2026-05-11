@@ -31,6 +31,7 @@ from tests.utils.bindings import (
     Server,
     TelioAdapterType,
     TelioNode,
+    TpLiteStatsOptions,
     default_features,
 )
 from tests.utils.command_grepper import CommandGrepper
@@ -975,6 +976,15 @@ class Client:
 
     async def disable_magic_dns(self) -> None:
         await self.get_proxy().disable_magic_dns()
+
+    async def enable_tp_lite_stats_collection(self, config: TpLiteStatsOptions) -> None:
+        await self.get_proxy().enable_tp_lite_stats_collection(config)
+
+    async def disable_tp_lite_stats_collection(self) -> None:
+        await self.get_proxy().disable_tp_lite_stats_collection()
+
+    async def get_tp_lite_stats(self):
+        return await self.get_proxy().get_tp_lite_stats()
 
     async def notify_network_change(self) -> None:
         await self.get_proxy().notify_network_change()
