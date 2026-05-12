@@ -131,6 +131,21 @@ pub mod moose {
         FileDeleted,
     }
 
+    /// Node parameters for heartbeat/disconnect events
+    pub struct NodeParams {
+        pub connection_duration: String,
+        pub rtt: String,
+        pub rtt_loss: String,
+        pub rtt6: String,
+        pub rtt6_loss: String,
+        pub sent_data: String,
+        pub received_data: String,
+        pub heartbeat_interval: i32,
+        pub derp_connection_duration: i32,
+        pub nat_monitoring: String,
+        pub derp_monitoring: String,
+    }
+
     impl From<TrackerState> for Result {
         fn from(state: TrackerState) -> Result {
             match state {
@@ -164,13 +179,13 @@ pub mod moose {
         );
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Debug)]
     pub struct MooseSQLiteError {
         pub error_code: i32,
         pub message: Option<String>,
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Debug)]
     pub enum InitError {
         SQLiteError(MooseSQLiteError),
         Internal(String),
@@ -199,19 +214,19 @@ pub mod moose {
         init_cb: Box<(dyn InitCallback + 'static)>,
         error_cb: Box<(dyn ErrorCallback + Sync + std::marker::Send + 'static)>,
     ) -> std::result::Result<Result, Error> {
-        let result = match super::event_log(
+        let success = super::event_log(
             "init",
             Some(vec![event_path.as_str(), prod.to_string().as_str()]),
-        ) {
-            Ok(_) => Ok(TrackerState::Ready),
-            _ => Err(InitError::Internal("Not initialized".to_string())),
-        };
+        )
+        .is_ok();
 
-        init_cb.after_init(result.clone());
-
-        match result {
-            Ok(r) => Ok(Result::from(r)),
-            Err(e) => Err(Error::from(e)),
+        if success {
+            init_cb.after_init(Ok(TrackerState::Ready));
+            Ok(Result::Success)
+        } else {
+            let init_error = InitError::Internal("Not initialized".to_string());
+            init_cb.after_init(Err(InitError::Internal("Not initialized".to_string())));
+            Err(Error::from(init_error))
         }
     }
 
@@ -347,37 +362,26 @@ pub mod moose {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[allow(non_snake_case)]
     /// Mocked moose function.
     pub fn send_serviceQuality_node_heartbeat(
-        connectionDuration: String,
-        rtt: String,
-        rtt_loss: String,
-        rtt6: String,
-        rtt6_loss: String,
-        sentData: String,
-        receivedData: String,
-        heartbeatInterval: i32,
-        derpConnectionDuration: i32,
-        nat_monitoring: String,
-        derp_monitoring: String,
+        node_params: NodeParams,
         debug_json: Option<String>,
     ) -> std::result::Result<Result, Error> {
-        let heartbeatIntervalString = heartbeatInterval.to_string();
-        let derpConnectionDurationStr = derpConnectionDuration.to_string();
+        let heartbeat_interval_str = node_params.heartbeat_interval.to_string();
+        let derp_connection_duration_str = node_params.derp_connection_duration.to_string();
         let mut args = vec![
-            connectionDuration.as_str(),
-            rtt.as_str(),
-            rtt_loss.as_str(),
-            rtt6.as_str(),
-            rtt6_loss.as_str(),
-            sentData.as_str(),
-            receivedData.as_str(),
-            heartbeatIntervalString.as_str(),
-            derpConnectionDurationStr.as_str(),
-            nat_monitoring.as_str(),
-            derp_monitoring.as_str(),
+            node_params.connection_duration.as_str(),
+            node_params.rtt.as_str(),
+            node_params.rtt_loss.as_str(),
+            node_params.rtt6.as_str(),
+            node_params.rtt6_loss.as_str(),
+            node_params.sent_data.as_str(),
+            node_params.received_data.as_str(),
+            heartbeat_interval_str.as_str(),
+            derp_connection_duration_str.as_str(),
+            node_params.nat_monitoring.as_str(),
+            node_params.derp_monitoring.as_str(),
         ];
         if let Some(dbg_json) = debug_json.as_ref() {
             args.push(dbg_json.as_str());
@@ -389,37 +393,26 @@ pub mod moose {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[allow(non_snake_case)]
     /// Mocked moose function.
     pub fn send_serviceQuality_node_disconnect(
-        connectionDuration: String,
-        rtt: String,
-        rtt_loss: String,
-        rtt6: String,
-        rtt6_loss: String,
-        sentData: String,
-        receivedData: String,
-        heartbeatInterval: i32,
-        derpConnectionDuration: i32,
-        nat_monitoring: String,
-        derp_monitoring: String,
+        node_params: NodeParams,
         debug_json: Option<String>,
     ) -> std::result::Result<Result, Error> {
-        let heartbeatIntervalString = heartbeatInterval.to_string();
-        let derpConnectionDurationStr = derpConnectionDuration.to_string();
+        let heartbeat_interval_str = node_params.heartbeat_interval.to_string();
+        let derp_connection_duration_str = node_params.derp_connection_duration.to_string();
         let mut args = vec![
-            connectionDuration.as_str(),
-            rtt.as_str(),
-            rtt_loss.as_str(),
-            rtt6.as_str(),
-            rtt6_loss.as_str(),
-            sentData.as_str(),
-            receivedData.as_str(),
-            heartbeatIntervalString.as_str(),
-            derpConnectionDurationStr.as_str(),
-            nat_monitoring.as_str(),
-            derp_monitoring.as_str(),
+            node_params.connection_duration.as_str(),
+            node_params.rtt.as_str(),
+            node_params.rtt_loss.as_str(),
+            node_params.rtt6.as_str(),
+            node_params.rtt6_loss.as_str(),
+            node_params.sent_data.as_str(),
+            node_params.received_data.as_str(),
+            heartbeat_interval_str.as_str(),
+            derp_connection_duration_str.as_str(),
+            node_params.nat_monitoring.as_str(),
+            node_params.derp_monitoring.as_str(),
         ];
         if let Some(dbg_json) = debug_json.as_ref() {
             args.push(dbg_json.as_str());

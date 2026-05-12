@@ -191,7 +191,7 @@ mod test {
 
     pub struct MooseStub {
         return_success: bool,
-        init_cb_result: Result<moose::TrackerState, moose::InitError>,
+        init_cb_result: Option<Result<moose::TrackerState, moose::InitError>>,
         should_call_init_cb: Option<Arc<Barrier>>,
         init_cb_thread: Option<JoinHandle<()>>,
     }
@@ -204,7 +204,7 @@ mod test {
         ) -> Self {
             Self {
                 return_success,
-                init_cb_result,
+                init_cb_result: Some(init_cb_result),
                 should_call_init_cb,
                 init_cb_thread: None,
             }
@@ -219,11 +219,13 @@ mod test {
             _error_cb: Box<(dyn ErrorCallback + Sync + std::marker::Send + 'static)>,
         ) -> std::result::Result<moose::Result, moose::Error> {
             let should_call_init_cb = self.should_call_init_cb.clone();
-            let init_cb_result = self.init_cb_result.clone();
+            let init_cb_result = self.init_cb_result.take();
             self.init_cb_thread = Some(std::thread::spawn(move || {
                 if let Some(barrier) = should_call_init_cb {
                     barrier.wait();
-                    init_cb.after_init(init_cb_result);
+                    if let Some(result) = init_cb_result {
+                        init_cb.after_init(result);
+                    }
                 }
             }));
             if self.return_success {
@@ -248,7 +250,7 @@ mod test {
         fn default() -> Self {
             MooseStub::new(
                 true,
-                Ok(moose::TrackerState::Ready),
+                Ok(moose::TrackerState::AlreadyStarted),
                 Some(Arc::new(Barrier::new(1))),
             )
         }
