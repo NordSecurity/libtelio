@@ -176,7 +176,31 @@ async def collect_download_metrics(
 
 
 @pytest.mark.asyncio
-async def test_vpn_connection_performance() -> None:
+@pytest.mark.parametrize(
+    "setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                is_meshnet=False,
+                run_tcpdump=False,
+            ),
+            id="linux_neptun",
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_MAC,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                is_meshnet=False,
+                run_tcpdump=False,
+            ),
+            marks=pytest.mark.mac,
+            id="mac_neptun",
+        ),
+    ],
+)
+async def test_vpn_connection_performance(setup_params: SetupParameters) -> None:
     """
     Collect performance metrics of vpn connection with iperf
 
@@ -189,12 +213,6 @@ async def test_vpn_connection_performance() -> None:
     """
     async with AsyncExitStack() as exit_stack:
         # Setup environment
-        setup_params = SetupParameters(
-            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-            adapter_type_override=TelioAdapterType.NEP_TUN,
-            is_meshnet=False,
-            run_tcpdump=False,
-        )
         vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
         env = await exit_stack.enter_async_context(
             setup_environment(exit_stack, [setup_params])
