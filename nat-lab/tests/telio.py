@@ -530,7 +530,10 @@ class Client:
         async with AsyncExitStack() as exit_stack:
             if enable_perf:
                 await exit_stack.enter_async_context(
-                    PerfProfiler(connection=self._connection)
+                    PerfProfiler(
+                        connection=self._connection,
+                        file_name_suffix=self._adapter_type.name.lower(),
+                    )
                 )
             if run_tcpdump:
                 await exit_stack.enter_async_context(make_tcpdump([self._connection]))
