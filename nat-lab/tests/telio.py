@@ -1112,7 +1112,8 @@ class Client:
                             f"PRAGMA busy_timeout = {max_timeout};",
                             (
                                 "INSERT OR REPLACE INTO shared_context (key, val, is_essential) VALUES"
-                                f" ('device.fp._string', '\"{fingerprint}\"', 1)"
+                                f" ('device.fp._string', '\"{fingerprint}\"', 1);"
+                                " INSERT OR REPLACE INTO opt_in (id, value) VALUES (1, 1);"
                             ),
                         ],
                         quiet=True,
