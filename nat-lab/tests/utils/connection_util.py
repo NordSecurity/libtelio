@@ -95,7 +95,11 @@ async def create_network_switcher(
         return await NetworkSwitcherWindows.create(connection)
     if tag == ConnectionTag.VM_MAC:
         return NetworkSwitcherMac(connection)
-    if tag in [ConnectionTag.VM_OPENWRT_GW_1, ConnectionTag.VM_OPENWRT_GW_2]:
+    if tag in [
+        ConnectionTag.VM_OPENWRT_GW_1,
+        ConnectionTag.VM_OPENWRT_GW_2,
+        ConnectionTag.VM_OPENWRT_GW_3,
+    ]:
         return NetworkSwitcherOpenwrt(connection)
     if tag in [
         ConnectionTag.VM_LINUX_NLX_1,
@@ -356,6 +360,7 @@ def is_tag_valid_for_ssh_connection(tag: ConnectionTag) -> bool:
         ConnectionTag.VM_MAC,
         ConnectionTag.VM_OPENWRT_GW_1,
         ConnectionTag.VM_OPENWRT_GW_2,
+        ConnectionTag.VM_OPENWRT_GW_3,
         ConnectionTag.VM_LINUX_NLX_1,
         ConnectionTag.VM_LINUX_FULLCONE_GW_1,
         ConnectionTag.VM_LINUX_FULLCONE_GW_2,
