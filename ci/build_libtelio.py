@@ -27,15 +27,28 @@ import rust_build_utils.android_build_utils as abu
 from env import LIBTELIO_ENV_MOOSE_RELEASE_TAG
 from env import LIBTELIO_ENV_UNIFFI_GENERATORS_TAG
 
-# Need to normalise name in moose, LLT-1486
+# As of 2026-05, moose has different architecture codenames for
+# android and linux/windows so we need to map them here.
 MOOSE_MAP = {
-    "x86_64": "x86_64",
-    "aarch64": "aarch64",
-    "arm64": "aarch64",
-    "i686": "i686",
-    "armv5": "armv5_eabi",
-    "armv7": "armv7_eabi",
-    "armv7hf": "armv7_eabihf",
+    "windows": {
+        "x86_64": "x86_64",
+        "aarch64": "aarch64",
+    },
+    "linux": {
+        "x86_64": "x86_64",
+        "aarch64": "aarch64",
+        "arm64": "aarch64",
+        "i686": "i686",
+        "armv5": "armv5",
+        "armv7hf": "armv7hf",
+    },
+    "android": {
+        "x86_64": "x86_64",
+        "aarch64": "arm64-v8a",
+        "arm64": "arm64-v8a",
+        "i686": "x86",
+        "armv7": "armeabi-v7a",
+    },
 }
 
 PROJECT_CONFIG = rutils.Project(
@@ -47,7 +60,7 @@ PROJECT_CONFIG = rutils.Project(
 
 def post_copy_libsqlite3_binary_to_dist(config, args):
     if args.moose:
-        sqlite_path = f"{PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP[config.arch]}/libsqlite3.so"
+        sqlite_path = f"{PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/{config.target_os}/{MOOSE_MAP[config.target_os][config.arch]}/libsqlite3.so"
         shutil.copyfile(
             sqlite_path,
             PROJECT_CONFIG.get_distribution_path(
@@ -213,7 +226,7 @@ LIBTELIO_CONFIG = {
             "x86_64": {
                 "env": {
                     "RUSTFLAGS": (
-                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/windows/{MOOSE_MAP['x86_64']}",
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/windows/{MOOSE_MAP['windows']['x86_64']}",
                         "set",
                     )
                 }
@@ -221,7 +234,7 @@ LIBTELIO_CONFIG = {
             "aarch64": {
                 "env": {
                     "RUSTFLAGS": (
-                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/windows/{MOOSE_MAP['aarch64']}",
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/windows/{MOOSE_MAP['windows']['aarch64']}",
                         "set",
                     )
                 }
@@ -243,7 +256,7 @@ LIBTELIO_CONFIG = {
             "x86_64": {
                 "env": {
                     "RUSTFLAGS": (
-                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/android/{MOOSE_MAP['x86_64']}",
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/android/{MOOSE_MAP['android']['x86_64']}",
                         "set",
                     )
                 },
@@ -251,7 +264,7 @@ LIBTELIO_CONFIG = {
             "aarch64": {
                 "env": {
                     "RUSTFLAGS": (
-                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/android/{MOOSE_MAP['aarch64']}",
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/android/{MOOSE_MAP['android']['aarch64']}",
                         "set",
                     )
                 }
@@ -259,7 +272,7 @@ LIBTELIO_CONFIG = {
             "i686": {
                 "env": {
                     "RUSTFLAGS": (
-                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/android/{MOOSE_MAP['i686']}",
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/android/{MOOSE_MAP['android']['i686']}",
                         "set",
                     )
                 }
@@ -267,7 +280,7 @@ LIBTELIO_CONFIG = {
             "armv7": {
                 "env": {
                     "RUSTFLAGS": (
-                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/android/{MOOSE_MAP['armv7']}",
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/android/{MOOSE_MAP['android']['armv7']}",
                         "set",
                     )
                 }
@@ -282,7 +295,7 @@ LIBTELIO_CONFIG = {
             "x86_64": {
                 "env": {
                     "RUSTFLAGS": (
-                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['x86_64']}",
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['linux']['x86_64']}",
                         "set",
                     )
                 },
@@ -290,7 +303,7 @@ LIBTELIO_CONFIG = {
             "aarch64": {
                 "env": {
                     "RUSTFLAGS": (
-                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['aarch64']}",
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['linux']['aarch64']}",
                         "set",
                     )
                 },
@@ -298,7 +311,7 @@ LIBTELIO_CONFIG = {
             "i686": {
                 "env": {
                     "RUSTFLAGS": (
-                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['i686']}",
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['linux']['i686']}",
                         "set",
                     )
                 },
@@ -306,7 +319,7 @@ LIBTELIO_CONFIG = {
             "armv7hf": {
                 "env": {
                     "RUSTFLAGS": (
-                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['armv7hf']}",
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['linux']['armv7hf']}",
                         "set",
                     )
                 },
@@ -314,7 +327,7 @@ LIBTELIO_CONFIG = {
             "armv5": {
                 "env": {
                     "RUSTFLAGS": (
-                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['armv5']}",
+                        f" -L {PROJECT_ROOT}/3rd-party/libmoose/{LIBTELIO_ENV_MOOSE_RELEASE_TAG}/bin/common/linux/{MOOSE_MAP['linux']['armv5']}",
                         "set",
                     )
                 },
@@ -500,7 +513,9 @@ def try_download_artifacts(
     ).download()
 
     if moose and target_os in ["linux", "windows", "android"]:
-        moose_utils.fetch_moose_dependencies(target_os, MOOSE_MAP[target_arch])
+        moose_utils.fetch_moose_dependencies(
+            target_os, MOOSE_MAP[target_os][target_arch]
+        )
 
 
 def exec_bindings(args):
@@ -544,7 +559,7 @@ def exec_build(args):
     if args.moose:
         if args.os in ["linux", "windows", "android"]:
             sys.path.append(f"{PROJECT_ROOT}/ci")
-            moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP[args.arch])
+            moose_utils.fetch_moose_dependencies(args.os, MOOSE_MAP[args.os][args.arch])
 
         moose_utils.set_cargo_dependencies()
     else:
