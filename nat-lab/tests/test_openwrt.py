@@ -46,17 +46,17 @@ OPENWRT_TAGS = [
     pytest.param(
         ConnectionTag.DOCKER_OPENWRT_CLIENT_1,
         ConnectionTag.VM_OPENWRT_GW_1,
-        id="openwrt-24.10",
+        id="openwrt-25.12",
     ),
     pytest.param(
         ConnectionTag.DOCKER_OPENWRT_CLIENT_2,
         ConnectionTag.VM_OPENWRT_GW_2,
-        id="openwrt-25.12",
+        id="openwrt-24.10-armv8",
     ),
     pytest.param(
         ConnectionTag.DOCKER_OPENWRT_CLIENT_3,
         ConnectionTag.VM_OPENWRT_GW_3,
-        id="openwrt-24.10-armv8",
+        id="openwrt-24.10-malta",
     ),
 ]
 
