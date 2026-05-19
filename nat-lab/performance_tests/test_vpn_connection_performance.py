@@ -19,6 +19,7 @@ from tests.utils.iperf3 import (
 )
 from tests.utils.logger import log
 from tests.utils.testing import get_current_test_log_path
+from typing import Any
 
 
 async def collect_upload_metrics(
@@ -227,7 +228,7 @@ async def test_vpn_connection_performance(setup_params: SetupParameters) -> None
         )
 
         # Collecting baseline results without vpn connection
-        performance_results = {}
+        performance_results: dict[str, Any] = {}
 
         upload_metrics = await collect_upload_metrics(
             photo_album_connection, client_conn, output_unit=ThroughputUnit.MEGABITS
@@ -263,6 +264,9 @@ async def test_vpn_connection_performance(setup_params: SetupParameters) -> None
             **asdict(download_metrics_vpn),
         }
         performance_results["vpn_metrics"] = vpn_metrics
+        performance_results["platform"] = client_conn.target_os.name
+        assert setup_params.adapter_type_override is not None
+        performance_results["adapter_type"] = setup_params.adapter_type_override.name
         log.info("Final results: %s", performance_results)
 
         # Saving performance results
