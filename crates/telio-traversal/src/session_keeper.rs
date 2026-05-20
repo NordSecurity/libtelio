@@ -237,7 +237,7 @@ mod tests {
                         continue;
                     }
                     _ = &mut timeout => {
-                        assert!(false, "Timeout!");
+                        panic!("Timeout!");
                     }
                 }
             }

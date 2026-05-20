@@ -822,6 +822,7 @@ mod tests {
     use lazy_static::lazy_static;
     use mockall::mock;
     use parking_lot::Mutex;
+    use serial_test::serial;
     use telio_crypto::PublicKey;
     use telio_crypto::SecretKey;
     use telio_model::mesh::LinkState;
@@ -860,7 +861,6 @@ mod tests {
     }
 
     lazy_static! {
-        static ref SEQUENTIAL_LOCK: Arc<TMutex<bool>> = Arc::new(TMutex::new(true));
         static ref IGD_IS_AVAILABLE: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
         static ref ENDPOINT: Arc<Mutex<EndpointCandidate>> =
             Arc::new(Mutex::new(EndpointCandidate {
@@ -916,10 +916,23 @@ mod tests {
             )
             .unwrap(),
         );
-        let udp_socket = spool
-            .new_external_udp((Ipv4Addr::UNSPECIFIED, 55555), None)
-            .await
-            .unwrap();
+        let udp_socket = {
+            let mut attempts = 10;
+            loop {
+                match spool
+                    .new_external_udp((Ipv4Addr::UNSPECIFIED, 55555), None)
+                    .await
+                {
+                    Ok(s) => break s,
+                    Err(e) if attempts > 1 => {
+                        attempts -= 1;
+                        println!("Failed to bind socket to port 55555: {e}");
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                    }
+                    Err(e) => panic!("Failed to bind port 55555 after retries: {e}"),
+                }
+            }
+        };
 
         // Set to default ports
         let mut epc = ENDPOINT.lock();
@@ -984,8 +997,8 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn create_upnp_endpoint() {
-        let _quard = SEQUENTIAL_LOCK.lock().await;
         let upnp = prepare_test_setup().await;
 
         tokio::time::sleep(Duration::from_millis(100 + 20)).await;
@@ -998,8 +1011,8 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn check_igd_function_execution() {
-        let _quard = SEQUENTIAL_LOCK.lock().await;
         let upnp = prepare_test_setup().await;
         tokio::time::sleep(Duration::from_millis(100 + 20)).await;
 
@@ -1022,8 +1035,8 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_no_igd_on_router() {
-        let _quard = SEQUENTIAL_LOCK.lock().await;
         // Avoid initial search
         *IGD_IS_AVAILABLE.lock() = true;
         let _upnp = prepare_test_setup().await;
@@ -1038,8 +1051,8 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_upnp_route_corruption_on_router() {
-        let _quard = SEQUENTIAL_LOCK.lock().await;
         let _upnp = prepare_test_setup().await;
         tokio::time::sleep(Duration::from_millis(100 + 20)).await;
 
@@ -1058,6 +1071,7 @@ mod tests {
 
     #[tokio::test]
     #[test_log::test]
+    #[serial]
     async fn test_ensure_igd_gateway_is_called_with_exponential_backoff() {
         let spool = SocketPool::new(
             NativeProtector::new(
@@ -1071,10 +1085,12 @@ mod tests {
             .await
             .unwrap();
 
-        // Set to default ports
-        let mut epc = ENDPOINT.lock();
-        epc.wg.set_port(1000);
-        epc.udp.set_port(2000);
+        {
+            // Set to default ports
+            let mut epc = ENDPOINT.lock();
+            epc.wg.set_port(1000);
+            epc.udp.set_port(2000);
+        }
 
         // These are not properly used yet, just dummy variables
         let mut wg = MockWg::default();

@@ -622,7 +622,7 @@ mod tests {
         intercoms_them.tx.send((pk, upg_msg.clone())).await.unwrap();
 
         // Runtime
-        let _ = tokio::spawn(async move {
+        tokio::spawn(async move {
             let timeout = time::sleep(Duration::from_secs(1));
             tokio::pin!(timeout);
 
@@ -632,7 +632,7 @@ mod tests {
             loop {
                 tokio::select! {
                     _ = intercoms_them.rx.recv() => {
-                        assert!(false, "Should not rx here");
+                        panic!("Should not rx here");
                     }
                     Some(_upg_rq) = upg_rq_rx.recv() => {
                         if !expecting_old_rq {
@@ -646,7 +646,7 @@ mod tests {
                         }
                     }
                     _ = &mut timeout => {
-                        assert!(false, "Timeout!");
+                        panic!("Timeout!");
                     }
                 }
             }
@@ -674,21 +674,17 @@ mod tests {
             .parse::<PublicKey>()
             .unwrap();
 
-        intercoms_them
-            .tx
-            .send((pk.clone(), upg_msg.clone()))
-            .await
-            .unwrap();
+        intercoms_them.tx.send((pk, upg_msg.clone())).await.unwrap();
 
         // Runtime
-        let _ = tokio::spawn(async move {
+        tokio::spawn(async move {
             let timeout = time::sleep(Duration::from_secs(1));
             tokio::pin!(timeout);
 
             loop {
                 tokio::select! {
                     msg = intercoms_them.rx.recv() => {
-                        assert!(false, "Should not rx here, msg: {:?}", msg);
+                        panic!("Should not rx here, msg: {:?}", msg);
                     }
                     Some(_upg_rq) = upg_rq_rx.recv() => {
                         break;
@@ -699,7 +695,7 @@ mod tests {
                         continue;
                     }
                     _ = &mut timeout => {
-                        assert!(false, "Timeout!");
+                        panic!("Timeout!");
                     }
                 }
             }
@@ -853,11 +849,7 @@ mod tests {
             .parse::<PublicKey>()
             .unwrap();
 
-        intercoms_them
-            .tx
-            .send((pk.clone(), upg_msg.clone()))
-            .await
-            .unwrap();
+        intercoms_them.tx.send((pk, upg_msg.clone())).await.unwrap();
 
         wait_for(Duration::from_secs(15), || async {
             !upg_sync.get_upgrade_requests().await.unwrap().is_empty()

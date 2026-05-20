@@ -36,4 +36,4 @@ windows.workspace = true
 [dev-dependencies]
 assert_matches = "1.5.0"
 lazy_static.workspace = true
-serial_test = "3.2.0"
+serial_test.workspace = true
