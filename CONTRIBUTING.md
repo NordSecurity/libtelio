@@ -30,15 +30,28 @@ Read [requirements](docs/git_commit_messages_requirements.md)
 
 ### Updating The Changelog
 
-Instead of writing the change descriptions into a single `changelog.md` file, libtelio developers must create a new file called `.unreleased/<ticket_id_of_change>` and write their change description into it.
+In the past we would write changelog entries directly to `changelog.md`. This led to "changelog merge conflict madness" since whenever a PR with some change to the changelog was merged, any other PR that updated the changelog would have merge conflicts to resolve. To solve this problem we moved to a setup where developers create a file in `.unreleased` and place their changelog entry there, and then when a release is made the changelog is generated from those files.
 
-This is done to avoid a problem known as "changelog merge conflict madness" which occurs when PRs containing changes to the `changelog.md` file are merged into the `main` branch cause a merge conflict for all other PRs also containing changes in the `changelog.md` file.
+The naming convention for files in `.unreleased` is as follows:
 
-Then when a release is made, the person (or a CI workflow) who is responsible for bumping the version will run a script called `generate_changelog.py` which will take the existing changelog, prepend the new version entries from all thee files and delete the files in the `.unreleased` directory.
+- If your change is related to a ticket, name the file the same as the ticket number (e.g. `LLT-1234`)
+- If your change is not related to a ticket, use a short sentence to describe the change, as snake case (e.g. `bump_rustls-webpki_RUSTSEC-2026-0104`)
 
->NOTE: Even if the changes made are not worth mentioning in the changelog, create an empty changelog entry file. This will show that you haven't forgotten about adding a changelog entry and have purposefully omitted it. Otherwise CI will not let you merge your PR.
-<!-- markdownlint-disable-next-line MD028 -->
->NOTE: If the changes made have no ticket, use a few words to describe the change as the file name. Use snake case naming convention.
+When a release is made, the script `ci/generate_changelog.py` is executed which will take all files in `.unreleased` and generate a changelog. Only files that are non-empty are included, and each of those files gets a changelog entry like: `<file name>: <file contents>`. Afterwards the script deletes all files in `.unreleased` to prepare for the next release.
+
+Not all PRs need an addition to the changelog. The changelog is our way of communicating to the apps about changes since the last version, so only changes that are of interest or concern to the apps need to actually have something show up in the changelog. However, to remind you that you may have to add something to the changelog, the CI pipeline requires that you add a file to `.unreleased` in every PR. It is up to both the implementer(s) and the reviewers of a PR to make sure that the file in `.unreleased` has the "right" content for the PR, whether that be leaving it empty because the apps don't care or leaving an accurate description of what has changed.
+
+Some (non-exhaustive) examples of what should end up in the changelog:
+
+- Added, updated or removed features
+- Dependency updates that either fix bugs or change behavior
+- CI changes that affect the resulting artifacts (e.g. when we added CFG to windows builds or adding support for 16k page sizes for android, etc.)
+
+Some (non-exhaustive) examples of what shouldn't end up in the changelog:
+
+- Changes that only touch tests
+- Dependency updates that don't fix bugs or change behavior
+- CI changes that don't affect the resulting artifacts (e.g. updating docker images for natlab, changing rust toolchain for fuzzing jobs, etc.)
 
 #### Directory Structure
 
