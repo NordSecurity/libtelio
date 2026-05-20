@@ -240,6 +240,13 @@ async def test_openwrt_vpn_connection(
             log.debug("</logread>")
             return lines
 
+        async def wait_for_nameserver_lines(expected: int) -> list[str]:
+            while True:
+                ns_lines = await grep_logread("using nameserver")
+                if len(ns_lines) >= expected:
+                    return ns_lines
+                await asyncio.sleep(1)
+
         # Restarting the log daemon clears the log. This makes the testcase safe to be execute in any order.
         await gateway_connection.create_process(
             ["/etc/init.d/log", "restart"]
@@ -248,11 +255,7 @@ async def test_openwrt_vpn_connection(
             ["/etc/init.d/dnsmasq", "restart"]
         ).execute()
 
-        # Dnsmasq restart will populate the logs soon
-        await asyncio.sleep(5)
-
-        ns_lines = await grep_logread("nameserver")
-        assert len(ns_lines) == 1
+        ns_lines = await wait_for_nameserver_lines(1)
         assert "daemon.info dnsmasq[1]: using nameserver 10.0.80.82" in ns_lines[0]
 
         async with nordvpnlite.start():
@@ -267,12 +270,8 @@ async def test_openwrt_vpn_connection(
         await wait_for_log_line(logread_proc)
         log.info("Network has been reloaded")
 
-        # Dnsmasq restart will populate the logs soon
-        await asyncio.sleep(5)
-
         # check if DHCP DNS nameservers were restored
-        ns_lines = await grep_logread("nameserver")
-        assert len(ns_lines) == 3
+        ns_lines = await wait_for_nameserver_lines(3)
         assert "daemon.info dnsmasq[1]: using nameserver 10.0.80.82" in ns_lines[0]
         assert "daemon.info dnsmasq[1]: using nameserver 10.0.80.83" in ns_lines[1]
         assert "daemon.info dnsmasq[1]: using nameserver 10.0.80.82" in ns_lines[2]
