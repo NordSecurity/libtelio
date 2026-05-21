@@ -105,16 +105,16 @@ base64 = "0.22"
 blake3 = "1.8"
 bytes = "1"
 cc = "1"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.6", features = ["derive"] }
 crypto_box = { version = "0.9.1", features = ["std"] }
 enum-map = "2.7.3"
 env_logger = "0.11"
-futures = "0.3.31"
+futures = "0.3.32"
 hashlink = "0.11"
 hex = "0.4.3"
 httparse = "1.10"
 if-addrs = "0.15.0"
-ipnet = { version = "2.11", features = ["serde"] }
+ipnet = { version = "2.12", features = ["serde"] }
 itertools = "0.14"
 lazy_static = "1.5"
 libc = "0.2"
@@ -127,7 +127,7 @@ mockall = "0.14"
 mockall_double = "0.3.1"
 modifier = "0.1.0"
 nat-detect = { git = "https://github.com/NordSecurity/nat-detect.git", tag = "v0.1.9" }
-nix = { version = "0.31.1", features = ["fs", "socket", "uio", "net"] }
+nix = { version = "0.31.3", features = ["fs", "socket", "uio", "net"] }
 ntest = "0.9"
 num_cpus = "1"
 num_enum = "0.7"
@@ -135,12 +135,12 @@ once_cell = "1"
 parking_lot = "0.12"
 pnet_packet = "0.35"
 pretty_assertions = "1"
-proptest = "1.9"
+proptest = "1.11"
 proptest-derive = "0.8.0"
 protobuf-codegen = "3.7.2"
 rand = "0.10.1"
-rand_core = "0.10.0"
-rand_core_compat = { version = "0.1.0", features = ["rand_core_0_6", "rand_core_0_9"] }
+rand_core = "0.10.1"
+rand_core_compat = { version = "0.1.1", features = ["rand_core_0_6", "rand_core_0_9"] }
 regex = "1.12"
 rstest = "0.26.1"
 rustc-hash = "2"
@@ -152,7 +152,7 @@ rustls = { version = "0.23", default-features = false, features = [
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serial_test = "3.4"
-sha2 = "0.10.9"
+sha2 = "0.11.0"
 slog = "2.8"
 smart-default = "0.7.1"
 sn_fake_clock = "0.4"
@@ -169,7 +169,7 @@ tracing-subscriber = { version = "0.3", features = [
 tracing-appender = "0.2"
 uniffi = "0.28.3"
 url = "2.5"
-uuid = { version = "1.19", features = ["v4"] }
+uuid = { version = "1.23", features = ["v4"] }
 wireguard-uapi = { git = "https://github.com/NordSecurity/wireguard-uapi-rs.git", rev = "5f5d9952ced4faf10f56d98153e4a8e560102e5c", features = ["xplatform", "zeroize"], default-features = false  }
 winapi = { version = "0.3", features = ["netioapi", "ws2def", "cfgmgr32", "setupapi", "winreg", "iphlpapi", "errhandlingapi", "ifdef"] }
 windows = { version = "0.62.2", features = [
@@ -177,7 +177,7 @@ windows = { version = "0.62.2", features = [
   "Win32_NetworkManagement_IpHelper",
   "Win32_NetworkManagement_Ndis",
 ] }
-winreg = "0.55.0"
+winreg = "0.56.0"
 
 neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v2.3.0", features = [
   "device",
@@ -187,7 +187,7 @@ x25519-dalek = { version = "2.0.1", features = [
   "static_secrets",
 ] }
 zeroize = { version = "1.8.2", features = ["derive"] }
-hyper-util = "0.1.19"
+hyper-util = "0.1.20"
 
 telio-crypto = { version = "0.1.0", path = "./crates/telio-crypto" }
 telio-dns = { version = "0.1.0", path = "./crates/telio-dns" }

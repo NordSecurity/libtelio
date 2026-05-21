@@ -11,8 +11,8 @@ enable_ens = ["telio-proto/enable_ens"]
 
 [dependencies]
 tokio-rustls = { version = "0.26.4", default-features = false }
-tokio-util = "0.7.17"
-tokio-stream = { default-features = false, version = "0.1.17" }
+tokio-util = "0.7.18"
+tokio-stream = { default-features = false, version = "0.1.18" }
 
 async-trait.workspace = true
 bytes.workspace = true
@@ -36,7 +36,7 @@ telio-proto.workspace = true
 telio-sockets.workspace = true
 telio-task.workspace = true
 telio-utils.workspace = true
-webpki-roots = "1.0.4"
+webpki-roots = "1.0.7"
 smart-default.workspace = true
 
 [dev-dependencies]
@@ -57,7 +57,7 @@ tokio = { workspace = true, features = [
 telio-nurse = { workspace = true, features = ["mockall"] }
 telio-task = { workspace = true, features = ["test-util"] }
 telio-test.workspace = true
-hyper = { version = "1.8.1", features = ["full", "http1"] }
+hyper = { version = "1.9.0", features = ["full", "http1"] }
 hyper-util.workspace = true
 http-body-util = "0.1.3"
 

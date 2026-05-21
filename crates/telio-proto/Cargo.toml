@@ -27,16 +27,16 @@ enable_ens = [
 http = { version = "1.4.0", optional = true }
 llt-proto = { git = "https://github.com/NordSecurity/llt-proto.git", tag = "v1.0.0", optional = true }
 hyper-util = { workspace = true, optional = true }
-prost = { version = "0.14.1", optional = true }
+prost = { version = "0.14.3", optional = true }
 protobuf = "3.7.2"
 rustls = { version = "0.23", default-features = false, features = ["std", "ring"] }
-rustls-webpki = { version = "0.103.12", optional = true }
+rustls-webpki = { version = "0.103.13", optional = true }
 aws-lc-rs = { version = "=1.16.2", features = ["bindgen"], optional = true }
-tokio-stream = { version = "0.1.17", optional = true }
+tokio-stream = { version = "0.1.18", optional = true }
 tokio-rustls = { version = "0.26.4", default-features = false, optional = true }
-tonic = { version = "0.14.2", optional = true }
+tonic = { version = "0.14.6", optional = true }
 tonic-prost = { version = "0.14", optional = true }
-tower = { version = "0.5.2", optional = true }
+tower = { version = "0.5.3", optional = true }
 
 anyhow.workspace = true
 base64.workspace = true
@@ -63,11 +63,11 @@ protobuf-codegen.workspace = true
 [dev-dependencies]
 assert_matches = "1.5.0"
 async-channel = "2.5.0"
-rcgen = "0.14.6"
+rcgen = "0.14.8"
 telio-utils = { workspace = true, features = ["mockall"] }
-test-log = { version = "0.2.19", features = ["trace"] }
+test-log = { version = "0.2.20", features = ["trace"] }
 tokio = { workspace = true, features = ["sync"] }
-tonic = { version = "0.14.2", features = ["tls-aws-lc"] }
+tonic = { version = "0.14.6", features = ["tls-aws-lc"] }
 
 [package.metadata.cargo-machete]
 ignored = ["prost", "tonic-prost"]

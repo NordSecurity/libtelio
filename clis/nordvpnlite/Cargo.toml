@@ -17,20 +17,21 @@ tracing-subscriber.workspace = true
 # Used as a lightweight and safe (because a TCP server has the risk of remote code execution)
 # way for the API and daemon to communicate.
 # Tokio support is needed, because the daemon runs on the async runtime.
-interprocess = { version = "2.2.3", features = ["tokio"] }
+interprocess = { version = "2.4.2", features = ["tokio"] }
 
-nix = { version = "0.30.1", features = ["signal"] }
+nix = { version = "0.31.3", features = ["signal"] }
 
 telio = { path = "../..", features = ["disable_ens"], default-features = false }
 tokio.workspace = true
-signal-hook-tokio = { version = "0.3.1", features = ["futures-v0_3"] }
+signal-hook-tokio = { version = "0.4.0", features = ["futures-v0_3"] }
 futures.workspace = true
 thiserror.workspace = true
 regex.workspace = true
 ipnet.workspace = true
-reqwest = { version = "0.12.26", default-features = false, features = [
+reqwest = { version = "0.13.3", default-features = false, features = [
   "json",
-  "rustls-tls",
+  "rustls",
+  "query",
 ] }
 uuid = { workspace = true, features = ["serde"] }
 anyhow.workspace = true
@@ -40,7 +41,7 @@ rand.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
-temp-dir = "0.1.16"
-temp-file = "0.1.9"
+temp-dir = "0.2.0"
+temp-file = "0.2.0"
 visibility = "0.1.1"
 assert_matches = "1.5.0"

@@ -50,7 +50,7 @@ telio-task = { workspace = true, features = ["test-util"] }
 telio-test.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
-test-log = { version = "0.2.19", features = ["trace"] }
+test-log = { version = "0.2.20", features = ["trace"] }
 
 [build-dependencies]
 cc.workspace = true
@@ -63,7 +63,7 @@ winreg.workspace = true
 uuid.workspace = true
 utf16_lit = "2.0.2"
 
-wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", tag = "v1.2.0" }
+wireguard-nt = { git = "https://github.com/NordSecurity/wireguard-nt-rust-wrapper", tag = "v1.3.0" }
 
 windows = { workspace = true, features = [
     "Win32_Security",
