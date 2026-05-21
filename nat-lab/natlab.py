@@ -279,11 +279,15 @@ def check_containers(
     # Check health status of running containers
     for service in running_services:
         container_ids_raw = run_command_with_output(
-            ["docker", "compose", "ps", "-q", service], hide_output=True
+            ["docker", "compose", "ps", "-q", "--all", service], hide_output=True
         ).strip()
         container_ids = [
             cid.strip() for cid in container_ids_raw.splitlines() if cid.strip()
         ]
+
+        # If no containers are found for the service, consider it a problem and add it to missing_services
+        if not container_ids:
+            missing_services.append(service)
 
         for cid in container_ids:
             container_state_raw = run_command_with_output(
