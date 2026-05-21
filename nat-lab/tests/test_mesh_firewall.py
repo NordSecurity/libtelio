@@ -682,7 +682,6 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
 # After connecting to VPN, the kernel reroutes it through the tunnel
 # but still with the wrong source IP. Exit node's receive this packet,
 # poisoning their NAT table which causes return traffic to be misrouted.
-@pytest.mark.xfail(reason="LLT-7321")
 @pytest.mark.asyncio
 @pytest.mark.libfirewall
 async def test_stale_src_ip_persist_after_connection(
