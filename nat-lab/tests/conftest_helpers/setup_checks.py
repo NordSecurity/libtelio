@@ -310,8 +310,14 @@ async def setup_check_arp_cache(session_vm_marks: set[str]):
         raise Exception("ARP cache not ready for VMs: " + ", ".join(failures))
 
 
-async def setup_nlx_vpn_server() -> None:
+async def setup_nlx_vpn_server(
+    session_is_container_running: dict[ConnectionTag, bool],
+) -> None:
     """Populate NLX_SERVER keys in tests.config (global, survives between tests)."""
+    if not session_is_container_running.get(ConnectionTag.VM_LINUX_NLX_1, False):
+        setup_log.info("NLX container is not running, skipping NLX VPN server setup..")
+        return
+
     async with AsyncExitStack() as exit_stack:
         conn = await exit_stack.enter_async_context(
             new_connection_raw(ConnectionTag.VM_LINUX_NLX_1)
@@ -378,7 +384,10 @@ async def perform_setup_checks(
     for target, timeout, retries in SETUP_CHECKS:
         while retries > 0:
             try:
-                if target is setup_check_duplicate_mac_addresses:
+                if target in [
+                    setup_check_duplicate_mac_addresses,
+                    setup_nlx_vpn_server,
+                ]:
                     await asyncio.wait_for(
                         asyncio.shield(target(session_is_container_running)), timeout
                     )
