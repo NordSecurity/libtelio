@@ -637,6 +637,102 @@ async def test_direct_working_paths_with_pausing_upnp_and_stun() -> None:
         assert len(stun_upnp_requests) == 0
 
 
+@pytest.mark.asyncio
+@pytest.mark.timeout(480)
+async def test_cpc_residual_traffic_all_providers_optimization_on() -> None:
+    setup_params = _generate_setup_parameters([
+        (
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            [
+                EndpointProvider.LOCAL,
+                EndpointProvider.STUN,
+                EndpointProvider.UPNP,
+            ],
+        ),
+        (
+            ConnectionTag.DOCKER_CONE_CLIENT_2,
+            [
+                EndpointProvider.LOCAL,
+                EndpointProvider.STUN,
+                EndpointProvider.UPNP,
+            ],
+        ),
+    ])
+
+    for param in setup_params:
+        assert param.features.direct is not None
+        param.features.direct.endpoint_providers_optimization = (
+            FeatureEndpointProvidersOptimization(
+                optimize_direct_upgrade_stun=True,
+                optimize_direct_upgrade_upnp=True,
+            )
+        )
+
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        alpha, beta = env.nodes
+        alpha_client, beta_client = env.clients
+
+        # Confirm direct is established before idling.
+        await asyncio.gather(
+            alpha_client.wait_for_state_peer(
+                beta.public_key,
+                [NodeState.CONNECTED],
+                [PathType.DIRECT],
+                timeout=60,
+            ),
+            beta_client.wait_for_state_peer(
+                alpha.public_key,
+                [NodeState.CONNECTED],
+                [PathType.DIRECT],
+                timeout=60,
+            ),
+        )
+
+        await asyncio.sleep(300)
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(480)
+async def test_cpc_residual_traffic_stun_only_optimization_on() -> None:
+    setup_params = _generate_setup_parameters([
+        (ConnectionTag.DOCKER_CONE_CLIENT_1, [EndpointProvider.STUN]),
+        (ConnectionTag.DOCKER_CONE_CLIENT_2, [EndpointProvider.STUN]),
+    ])
+
+    for param in setup_params:
+        assert param.features.direct is not None
+        param.features.direct.endpoint_providers_optimization = (
+            FeatureEndpointProvidersOptimization(
+                optimize_direct_upgrade_stun=True,
+                optimize_direct_upgrade_upnp=True,
+            )
+        )
+
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        alpha, beta = env.nodes
+        alpha_client, beta_client = env.clients
+
+        await asyncio.gather(
+            alpha_client.wait_for_state_peer(
+                beta.public_key,
+                [NodeState.CONNECTED],
+                [PathType.DIRECT],
+                timeout=60,
+            ),
+            beta_client.wait_for_state_peer(
+                alpha.public_key,
+                [NodeState.CONNECTED],
+                [PathType.DIRECT],
+                timeout=60,
+            ),
+        )
+
+        await asyncio.sleep(300)
+
+
+
 UHP_FAILING_PATHS_PARAMS = [
     [
         (ConnectionTag.DOCKER_CONE_CLIENT_1, ANY_PROVIDERS),
