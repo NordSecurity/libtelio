@@ -220,6 +220,19 @@ async def save_moose_db() -> None:
         os.rename(original_filename, new_filepath)
 
 
+# Local directory (inside the natlab working directory) where collected
+# core/crash dumps are aggregated. The CI .gitlab-ci.yml uploads this
+# directory (`libtelio/nat-lab/coredumps`) as a job artifact, so anything
+# we drop here will be available for download from the job page.
+COREDUMP_DEST_DIR = "coredumps"
+
+# Where Windows Error Reporting writes its local crash dumps.
+# Must stay in sync with:
+#   - dockur_windows/scripts/enable_crash_dumps.ps1
+#   - libtelio/nat-lab/bin/windows-client (runtime fallback config)
+WINDOWS_DUMP_FOLDER = "C:\\CrashDumps"
+
+
 # This is where natlab expects coredumps to be placed
 # For CI and our internal linux VM, this path is set in our provisioning scripts
 # If you're running locally without the aforementioned linux VM, you are expected to configure this yourself
@@ -227,22 +240,56 @@ async def save_moose_db() -> None:
 #  - running a test targeting a docker image
 #  - have set the NATLAB_SAVE_LOGS environment variable
 #  - want to have natlab automatically collect core dumps for you
-def get_coredump_folder() -> tuple[str, str]:
+def get_coredump_folder(target_os: TargetOS = TargetOS.Linux) -> tuple[str, str]:
+    if target_os == TargetOS.Windows:
+        # Windows Error Reporting writes <image>.<pid>.dmp by default
+        return WINDOWS_DUMP_FOLDER, ""
     return "/var/crash", "core-"
 
 
 def should_skip_core_dump_collection(connection: Connection) -> bool:
-    return (
-        os.environ.get("NATLAB_SAVE_LOGS") is None
-        or connection.target_os != TargetOS.Linux
+    # We collect dumps from Linux (via docker cp from containers) and from
+    # Windows VMs (via SCP over the ssh connection). MacOS dumps are not
+    # collected yet - the dumps are written to /Library/Logs/DiagnosticReports
+    # and need additional setup that we have not done.
+    return os.environ.get("NATLAB_SAVE_LOGS") is None or connection.target_os not in (
+        TargetOS.Linux,
+        TargetOS.Windows,
     )
+
+
+async def _clear_windows_crash_dumps(connection: Connection) -> None:
+    """Remove any pre-existing *.dmp files inside the Windows VM.
+
+    Wrapped in try/except because we do not want a transient SSH or
+    powershell hiccup during cleanup to fail an otherwise-passing test.
+    """
+    try:
+        await connection.create_process(
+            [
+                "powershell",
+                "-Command",
+                f"if (Test-Path '{WINDOWS_DUMP_FOLDER}') {{"
+                f" Remove-Item -Path '{WINDOWS_DUMP_FOLDER}\\*' -Force"
+                f" -ErrorAction SilentlyContinue }} else {{"
+                f" New-Item -Path '{WINDOWS_DUMP_FOLDER}' -ItemType Directory"
+                f" -Force | Out-Null }}",
+            ],
+            quiet=True,
+        ).execute()
+    except ProcessExecError as e:
+        log.warning("Failed to clear pre-existing Windows crash dumps: %s", e)
 
 
 async def clear_core_dumps(connection: Connection) -> None:
     if should_skip_core_dump_collection(connection):
         return
 
-    coredump_folder, _ = get_coredump_folder()
+    if connection.target_os == TargetOS.Windows:
+        await _clear_windows_crash_dumps(connection)
+        return
+
+    coredump_folder, _ = get_coredump_folder(connection.target_os)
 
     # clear the existing system core dumps
     await connection.create_process(
@@ -254,16 +301,71 @@ async def clear_core_dumps(connection: Connection) -> None:
     ).execute()
 
 
+async def _list_windows_crash_dumps(connection: Connection) -> List[str]:
+    """Return a list of absolute Windows paths to *.dmp files in WER's dump folder."""
+    try:
+        process = await connection.create_process(
+            [
+                "powershell",
+                "-Command",
+                f"if (Test-Path '{WINDOWS_DUMP_FOLDER}') {{"
+                f" Get-ChildItem -Path '{WINDOWS_DUMP_FOLDER}' -Filter '*.dmp'"
+                f" | Select-Object -ExpandProperty FullName }}",
+            ],
+            quiet=True,
+        ).execute()
+    except ProcessExecError as e:
+        log.warning("Failed to list Windows crash dumps: %s", e)
+        return []
+
+    return [line.strip() for line in process.get_stdout().splitlines() if line.strip()]
+
+
+async def _collect_windows_crash_dumps(connection: Connection) -> None:
+    dump_files = await _list_windows_crash_dumps(connection)
+    if not dump_files:
+        return
+
+    os.makedirs(COREDUMP_DEST_DIR, exist_ok=True)
+    test_name = get_current_test_case_and_parameters()[0] or ""
+
+    for i, dump_path in enumerate(dump_files):
+        file_name = dump_path.rsplit("\\", 1)[-1]
+        log.info("Collecting Windows crash dump: %s", dump_path)
+        try:
+            # SshConnection.download accepts a directory as the local path
+            # and scps the file into it preserving the source filename.
+            await connection.download(dump_path, COREDUMP_DEST_DIR)
+        except Exception as e:  # pylint: disable=broad-except
+            # Crash dump collection is best-effort - never let it
+            # interfere with the actual test cleanup / result reporting.
+            log.warning("Failed to download %s: %s", dump_path, e)
+            continue
+
+        downloaded = os.path.join(COREDUMP_DEST_DIR, file_name)
+        if os.path.exists(downloaded):
+            renamed = os.path.join(
+                COREDUMP_DEST_DIR, f"{test_name}_{file_name}_{i}.dmp"
+            )
+            try:
+                os.rename(downloaded, renamed)
+            except OSError as e:
+                log.warning("Failed to rename %s -> %s: %s", downloaded, renamed, e)
+
+
 async def collect_core_dumps(connection: Connection) -> None:
     if should_skip_core_dump_collection(connection):
         return
 
-    coredump_folder, file_prefix = get_coredump_folder()
+    if connection.target_os == TargetOS.Windows:
+        await _collect_windows_crash_dumps(connection)
+        return
+
+    coredump_folder, file_prefix = get_coredump_folder(connection.target_os)
 
     dump_files = await find_files(connection, coredump_folder, f"{file_prefix}*")
 
-    coredump_dir = "coredumps"
-    os.makedirs(coredump_dir, exist_ok=True)
+    os.makedirs(COREDUMP_DEST_DIR, exist_ok=True)
 
     should_copy_coredumps = len(dump_files) > 0
 
@@ -273,7 +375,9 @@ async def collect_core_dumps(connection: Connection) -> None:
         test_name = get_current_test_case_and_parameters()[0] or ""
         for i, file_path in enumerate(dump_files):
             file_name = file_path.rsplit("/", 1)[-1]
-            core_dump_destination = f"{coredump_dir}/{test_name}_{file_name}_{i}.core"
+            core_dump_destination = (
+                f"{COREDUMP_DEST_DIR}/{test_name}_{file_name}_{i}.core"
+            )
             cmd = (
                 "docker container cp"
                 f" {container_name}:{file_path} {core_dump_destination}"

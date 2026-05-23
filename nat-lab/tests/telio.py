@@ -35,7 +35,6 @@ from tests.utils.bindings import (
 )
 from tests.utils.command_grepper import CommandGrepper
 from tests.utils.connection import Connection, TargetOS
-from tests.utils.connection.docker_connection import DockerConnection
 from tests.utils.connection_util import get_uniffi_path
 from tests.utils.logger import log
 from tests.utils.moose import MOOSE_DB_TIMEOUT_MS
@@ -497,8 +496,10 @@ class Client:
             )
         if run_tcpdump:
             await exit_stack.enter_async_context(make_tcpdump([self._connection]))
-        if isinstance(self._connection, DockerConnection):
-            await clear_core_dumps(self._connection)
+        # clear_core_dumps() decides internally whether the connection
+        # is one we know how to collect dumps from (currently Docker
+        # containers and Windows VMs) and is a no-op otherwise.
+        await clear_core_dumps(self._connection)
 
     @asynccontextmanager
     async def run(
