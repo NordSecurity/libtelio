@@ -4,6 +4,8 @@ import os
 import pytest
 import shutil
 import subprocess
+from tests.conftest_helpers.pretest import copy_vm_binaries_if_needed
+from tests.conftest_helpers.setup_checks import get_session_vm_marks
 from tests.helpers import SetupParameters
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag, clear_ephemeral_setups_set
@@ -154,6 +156,8 @@ def pytest_runtestloop(session):
     if not session.config.option.collectonly:
         if os.environ.get("NATLAB_SAVE_LOGS") is not None:
             asyncio.run(collect_kernel_logs(session.items, "before_tests"))
+        session_vm_marks = get_session_vm_marks(session.items)
+        asyncio.run(copy_vm_binaries_if_needed(session_vm_marks))
 
 
 # pylint: disable=unused-argument
