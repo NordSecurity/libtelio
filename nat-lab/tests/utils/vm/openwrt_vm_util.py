@@ -189,13 +189,13 @@ class _ApkPackageManager(_OpenwrtPackageManager):
 
 OPENWRT_VM_CONFIG = {
     ConnectionTag.VM_OPENWRT_GW_1: OpenwrtVmConfig(
-        "24.10.4", "x86_64", "x86_64", PkgManager.OPKG
-    ),
-    ConnectionTag.VM_OPENWRT_GW_2: OpenwrtVmConfig(
         "25.12.0", "x86_64", "x86_64", PkgManager.APK
     ),
-    ConnectionTag.VM_OPENWRT_GW_3: OpenwrtVmConfig(
+    ConnectionTag.VM_OPENWRT_GW_2: OpenwrtVmConfig(
         "24.10.4", "aarch64_cortex-a53", "mediatek-filogic", PkgManager.OPKG
+    ),
+    ConnectionTag.VM_OPENWRT_GW_3: OpenwrtVmConfig(
+        "24.10.4", "mipsel_24kc", "ramips-mt7621", PkgManager.OPKG
     ),
 }
 

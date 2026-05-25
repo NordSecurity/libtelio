@@ -37,6 +37,24 @@ case "${QEMU_ARCH}" in
         -device virtio-blk-device,drive=hd0 \
         -drive file=/var/lib/qemu/image.raw,format=raw,if=none,id=hd0
     ;;
+  mipsel)
+    exec /usr/bin/qemu-system-mipsel \
+        -display none \
+        -M malta \
+        -kernel /var/lib/qemu-image/vmlinux.elf \
+        -m 256M \
+        -smp 1 \
+        -append "root=/dev/sda console=ttyS0" \
+        -netdev tap,id=hostnet0,ifname=qemu1,script=no,downscript=no \
+        -netdev tap,id=hostnet1,ifname=qemu0,script=no,downscript=no \
+        -device virtio-net-pci,romfile=,netdev=hostnet0,mac=${VM_MAC0},id=net0 \
+        -device virtio-net-pci,romfile=,netdev=hostnet1,mac=${VM_MAC1},id=net1 \
+        -serial chardev:chr0 \
+        -chardev socket,id=chr0,path=/tmp/qemu-console.sock,mux=on,signal=off,server=on,wait=off \
+        -monitor unix:/tmp/qemu-monitor.sock,server=on,wait=off \
+        -qmp unix:/tmp/qmp.sock,server=on,wait=off \
+        -drive file=/var/lib/qemu/image.raw,format=raw,if=ide
+    ;;
   x86_64)
     exec /usr/bin/qemu-system-x86_64 \
         -nodefaults \
@@ -54,7 +72,7 @@ case "${QEMU_ARCH}" in
         -drive file=/var/lib/qemu/image.raw,format=raw,if=virtio
     ;;
   *)
-    echo "OPENWRT_QEMU_ARCH must be set to 'x86_64' or 'aarch64' (got: '${QEMU_ARCH}')" >&2
+    echo "OPENWRT_QEMU_ARCH must be set to 'x86_64', 'aarch64' or 'mipsel' (got: '${QEMU_ARCH}')" >&2
     exit 1
     ;;
 esac

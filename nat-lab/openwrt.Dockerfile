@@ -16,7 +16,11 @@ RUN mkdir -p /var/lib/qemu-image
 WORKDIR /var/lib/qemu-image
 
 RUN mkdir -p /var/lib/qemu && \
-    gunzip -c ${OPENWRT_IMG_GZ} > /var/lib/qemu/image.raw
+    if echo "${OPENWRT_IMG_GZ}" | grep -q '\.gz$'; then \
+      gunzip -c ${OPENWRT_IMG_GZ} > /var/lib/qemu/image.raw; \
+    else \
+      cp ${OPENWRT_IMG_GZ} /var/lib/qemu/image.raw; \
+    fi
 
 RUN mkdir -p /usr/local/share/vmconfig/container.d /usr/local/share/vmconfig/vm.d
 RUN mkdir -p /var/lib/vmconfig/container.d /var/lib/vmconfig/vm.d
