@@ -92,6 +92,7 @@ def _setup_params(
     ],
 )
 @pytest.mark.asyncio
+@pytest.mark.libfirewall
 async def test_mesh_firewall_successful_passthrough(
     setup_mesh_nodes_factory: Callable[..., Awaitable[Environment]],
     alpha_ip_stack: IPStack,
@@ -186,6 +187,7 @@ async def test_mesh_firewall_successful_passthrough(
     ],
 )
 @pytest.mark.asyncio
+@pytest.mark.libfirewall
 async def test_mesh_firewall_reject_packet(
     setup_mesh_nodes_factory: Callable[..., Awaitable[Environment]],
     alpha_ip_stack: IPStack,
@@ -242,6 +244,7 @@ async def test_mesh_firewall_reject_packet(
 
 # This test uses 'stun' and our stun client does not IPv6
 @pytest.mark.asyncio
+@pytest.mark.libfirewall
 async def test_blocking_incoming_connections_from_exit_node(
     setup_mesh_nodes_factory: Callable[..., Awaitable[Environment]],
 ) -> None:
@@ -348,6 +351,7 @@ async def test_blocking_incoming_connections_from_exit_node(
 
 
 @pytest.mark.asyncio
+@pytest.mark.libfirewall
 @pytest.mark.parametrize(
     "alpha_ip_stack,beta_ip_stack",
     [
@@ -476,6 +480,7 @@ async def test_mesh_firewall_file_share_port(
 
 
 @pytest.mark.asyncio
+@pytest.mark.libfirewall
 @pytest.mark.parametrize(
     "alpha_ip_stack,beta_ip_stack",
     [
@@ -573,6 +578,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
 
 
 @pytest.mark.asyncio
+@pytest.mark.libfirewall
 @pytest.mark.parametrize(
     "alpha_ip_stack,beta_ip_stack",
     [
@@ -678,6 +684,7 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
 # poisoning their NAT table which causes return traffic to be misrouted.
 @pytest.mark.xfail(reason="LLT-7321")
 @pytest.mark.asyncio
+@pytest.mark.libfirewall
 async def test_stale_src_ip_persist_after_connection(
     exit_stack: AsyncExitStack,
     setup_connections_factory: Callable[..., Awaitable[list]],
