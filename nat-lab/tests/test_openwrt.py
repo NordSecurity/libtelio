@@ -61,6 +61,21 @@ OPENWRT_TAGS = [
 ]
 
 
+async def log_dns_state(connection: Connection) -> None:
+    try:
+        resolv = await connection.create_process(["cat", "/etc/resolv.conf"]).execute()
+        log.info("/etc/resolv.conf:\n%s", resolv.get_stdout())
+    except ProcessExecError as e:
+        log.info("/etc/resolv.conf not available: %s", e)
+    try:
+        dnsmasq = await connection.create_process(
+            ["sh", "-c", "netstat -ulnp 2>/dev/null | grep :53 || ss -ulnp | grep :53"]
+        ).execute()
+        log.info("DNS listeners (port 53):\n%s", dnsmasq.get_stdout())
+    except ProcessExecError as e:
+        log.info("Could not check DNS listeners: %s", e)
+
+
 async def check_gateway_and_client_ip(
     gateway_connection: Connection,
     client_connection: Connection,
@@ -642,6 +657,7 @@ async def test_openwrt_router_restart(
             gateway_connection_after_reboot is not None
         ), "OpenWrt router didn't get back online after reboot"
         log.info("Established new connection to the OpenWrt router")
+        await log_dns_state(gateway_connection_after_reboot)
         config_path = Paths(exec_path=Path("nordvpnlite"))
         nordvpnlite_after_reboot = NordVpnLite(
             gateway_connection_after_reboot,
@@ -651,6 +667,7 @@ async def test_openwrt_router_restart(
         # wrap into try/finally to always execute cleanup code
         try:
             log.info("wait for vpn connection to be re-established after reboot")
+            await log_dns_state(gateway_connection_after_reboot)
             await nordvpnlite_after_reboot.wait_for_nordvpnlite_start()
             await nordvpnlite_after_reboot.wait_for_vpn_connected_state()
             await check_gateway_and_client_ip(
