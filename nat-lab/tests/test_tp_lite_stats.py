@@ -288,3 +288,78 @@ async def test_tp_lite_stats_requires_firewall_feature() -> None:
         # Attempt to enable TP-Lite stats without firewall feature, gives an exception
         with pytest.raises(Exception):
             await client.enable_tp_lite_stats_collection(_tp_lite_config())
+
+
+@pytest.mark.asyncio
+async def test_tp_lite_stats_callback_works_after_multiple_reconnects() -> None:
+    async with AsyncExitStack() as exit_stack:
+        env = await exit_stack.enter_async_context(
+            setup_environment(
+                exit_stack,
+                [
+                    SetupParameters(
+                        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        adapter_type_override=TelioAdapterType.NEP_TUN,
+                        features=_features_with_firewall(),
+                    )
+                ],
+                vpn=[ConnectionTag.DOCKER_VPN_1],
+            )
+        )
+        [alpha] = env.nodes
+        [client] = env.clients
+        [connection] = [c.connection for c in env.connections]
+
+        for _ in range(10):
+            await connect_vpn(
+                connection,
+                None,
+                client,
+                alpha.ip_addresses[0],
+                config.WG_SERVER,
+            )
+
+            await client.enable_tp_lite_stats_collection(_tp_lite_config())
+
+            await query_dns(
+                connection,
+                ALLOWED_DOMAIN,
+                dns_server=TP_LITE_DNS_IP,
+                options=["-type=a"],
+            )
+            with pytest.raises(Exception):
+                await query_dns(
+                    connection,
+                    BLOCKED_NXDOMAIN,
+                    dns_server=TP_LITE_DNS_IP,
+                    options=["-type=a"],
+                )
+
+            await _trigger_stats_collection(connection)
+
+            await query_dns(
+                connection,
+                BLOCKED_NULL_IP,
+                dns_server=TP_LITE_DNS_IP,
+                options=["-type=a"],
+            )
+            await query_dns(
+                connection,
+                ALLOWED_DOMAIN,
+                dns_server=TP_LITE_DNS_IP,
+                options=["-type=a"],
+            )
+
+            await _trigger_stats_collection(connection)
+            (num_calls, domains, metrics) = await client.get_tp_lite_stats()
+
+            assert num_calls == 2
+            assert metrics.num_requests == 4
+            assert metrics.num_responses == 4
+            blocked_domain_names = [d.domain_name for d in domains]
+            assert BLOCKED_NXDOMAIN in blocked_domain_names
+            assert BLOCKED_NULL_IP in blocked_domain_names
+            assert ALLOWED_DOMAIN not in blocked_domain_names
+
+            await client.disable_tp_lite_stats_collection()
+            await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
