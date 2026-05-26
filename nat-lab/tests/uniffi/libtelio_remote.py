@@ -79,6 +79,47 @@ class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
             )
 
 
+class TpLiteStatsCallbackImpl(libtelio.TpLiteStatsCallback):
+    def __init__(self):
+        self._num_calls = 0
+        self._domains: list[libtelio.BlockedDomain] = []
+        self._metrics: libtelio.DnsMetrics = libtelio.DnsMetrics(
+            num_requests=0,
+            num_responses=0,
+            num_cache_hits=0,
+        )
+        self._lock = Lock()
+
+    def collect(self, domains, metrics):
+        with self._lock:
+            self._num_calls += 1
+            self._domains.extend(domains)
+            self._metrics.num_requests += metrics.num_requests
+            self._metrics.num_responses += metrics.num_responses
+            self._metrics.num_cache_hits += metrics.num_cache_hits
+
+    def take_data(
+        self,
+    ) -> tuple[int, list[libtelio.BlockedDomain], libtelio.DnsMetrics]:
+        with self._lock:
+            data = (self._num_calls, self._domains, self._metrics)
+            self._clear()
+            return data
+
+    def clear(self):
+        with self._lock:
+            self._clear()
+
+    def _clear(self):
+        self._num_calls = 0
+        self._domains = []
+        self._metrics = libtelio.DnsMetrics(
+            num_requests=0,
+            num_responses=0,
+            num_cache_hits=0,
+        )
+
+
 @Pyro5.api.expose
 @Pyro5.server.behavior(instance_mode="single")
 class LibtelioWrapper:
@@ -88,6 +129,7 @@ class LibtelioWrapper:
         self._libtelio = None
         self._event_cb = TelioEventCbImpl()
         self._logger_cb = TelioLoggerCbImpl(logfile)
+        self._tp_lite_cb = TpLiteStatsCallbackImpl()
         libtelio.add_timestamps_to_logs()
         libtelio.set_global_logger(libtelio.TelioLogLevel.DEBUG, self._logger_cb)
 
@@ -203,6 +245,19 @@ class LibtelioWrapper:
     @serialize_error
     def flush_logs(self):
         self._logger_cb.logfile.flush()
+
+    @serialize_error
+    def enable_tp_lite_stats_collection(self, config: libtelio.TpLiteStatsOptions):
+        self._tp_lite_cb.clear()
+        self._libtelio.enable_tp_lite_stats_collection(config, self._tp_lite_cb)
+
+    @serialize_error
+    def disable_tp_lite_stats_collection(self):
+        self._libtelio.disable_tp_lite_stats_collection()
+
+    @serialize_error
+    def get_tp_lite_stats(self):
+        return self._tp_lite_cb.take_data()
 
 
 def main():

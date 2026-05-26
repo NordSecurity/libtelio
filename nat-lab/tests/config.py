@@ -179,6 +179,10 @@ LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
         "primary": "10.0.254.21",
         "secondary": "",
     },
+    ConnectionTag.DOCKER_TP_LITE_DNS_SERVER: {
+        "primary": "10.0.80.90",
+        "secondary": "",
+    },
 }
 
 GW_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
@@ -283,6 +287,7 @@ LIBTELIO_EXIT_DNS_IPV4 = "100.64.0.3"
 LIBTELIO_EXIT_DNS_IPV6 = LIBTELIO_IPV6_WG_SUBNET + "::3"
 
 VPN_SERVER_SUBNET = "10.0.100.0/24"
+TP_LITE_DNS_SERVER_IP = "10.0.80.90"
 PHOTO_ALBUM_IP = "10.0.80.80"
 PHOTO_ALBUM_IPV6 = "2001:db8:85a4::adda:edde:5"
 UDP_SERVER_IP4 = "10.0.80.81"

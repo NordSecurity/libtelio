@@ -1062,6 +1062,22 @@ services:
     healthcheck:
       test: "nslookup google.com localhost"
 
+  tp-lite-dns-server:
+    hostname: tp-lite-dns-server
+    image: nat-lab:base
+    entrypoint: /opt/bin/tp-lite-dns-server.sh
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    environment:
+      PYTHONUNBUFFERED: 1
+    networks:
+      internet:
+        ipv4_address: 10.0.80.90
+    healthcheck:
+      test: "nslookup -type=a google.com localhost"
+
   mqtt-broker:
     hostname: mqtt-broker
     image: bytebeamio/rumqttd

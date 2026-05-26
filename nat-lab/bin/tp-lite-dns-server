@@ -1,0 +1,101 @@
+#!/bin/env python3
+
+import logging
+from twisted.internet import defer, reactor
+from twisted.names import dns, server, error
+
+# Domains blocked via NXDOMAIN + SOA response style.
+BLOCKED_NXDOMAIN = {
+    b"blocked-malware.com": "malware",
+}
+
+# Domains blocked via A(0.0.0.0) + SOA response style.
+BLOCKED_NULL_IP = {
+    b"blocked-ads.com": "ads-and-trackers",
+}
+
+# Domains that resolve normally on this server.
+ALLOWED = {
+    b"google.com": "142.250.179.206",
+}
+
+
+def _soa(category):
+    return dns.Record_SOA(
+        mname=f"dns-{category}-cybersec.nordthreatprotection.com.",
+        rname="fake-rname.nordvpn.com.",
+        serial=1,
+        refresh=3600,
+        retry=900,
+        expire=86400,
+        minimum=300,
+    )
+
+
+class NxdomainWithSoa(Exception):
+    """Raised by the resolver to signal NXDOMAIN with a SOA authority record."""
+
+    def __init__(self, authority):
+        self.authority = authority
+
+
+class TpLiteDNSServerFactory(server.DNSServerFactory):
+    """
+    Overrides gotResolverError so that NXDOMAIN responses can carry a SOA
+    record in the authority section. The base class discards the authority
+    section on error; we rebuild the response manually when the resolver
+    signals an NxdomainWithSoa error.
+    """
+
+    def gotResolverError(self, failure, protocol, message, address):
+        failure.trap(NxdomainWithSoa, error.DomainError, error.AuthoritativeDomainError)
+        if failure.check(NxdomainWithSoa):
+            nxe = failure.value
+            response = dns.Message(id=message.id, answer=True, recAv=True)
+            response.queries = message.queries
+            response.answers = []
+            response.authority = nxe.authority
+            response.additional = []
+            response.rCode = dns.ENAME  # NXDOMAIN
+            self.sendReply(protocol, response, address)
+        else:
+            super().gotResolverError(failure, protocol, message, address)
+
+
+class TpLiteDNSResolver:
+    def _soa_header(self, name, category):
+        return dns.RRHeader(name=name, type=dns.SOA, cls=dns.IN, ttl=300, payload=_soa(category))
+
+    def query(self, query, timeout=None):
+        name = query.name.name
+        qtype = query.type
+        logging.info(f"query: name={name} type={qtype}")
+
+        if name in BLOCKED_NXDOMAIN:
+            category = BLOCKED_NXDOMAIN[name]
+            logging.info(f"NXDOMAIN+SOA for {name} category={category}")
+            return defer.fail(NxdomainWithSoa([self._soa_header(name, category)]))
+
+        if name in BLOCKED_NULL_IP and qtype == dns.A:
+            category = BLOCKED_NULL_IP[name]
+            logging.info(f"NULL-IP+SOA for {name} category={category}")
+            answer = dns.RRHeader(name=name, type=dns.A, cls=dns.IN, ttl=300, payload=dns.Record_A(address="0.0.0.0"))
+            return defer.succeed(([answer], [self._soa_header(name, category)], []))
+
+        if name in ALLOWED and qtype == dns.A:
+            logging.info(f"Allowed A record for {name} => {ALLOWED[name]}")
+            answer = dns.RRHeader(name=name, type=dns.A, cls=dns.IN, ttl=300, payload=dns.Record_A(address=ALLOWED[name]))
+            return defer.succeed(([answer], [], []))
+
+        logging.info(f"NXDOMAIN (no authority) for {name}")
+        return defer.fail(error.DomainError())
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    factory = TpLiteDNSServerFactory(clients=[TpLiteDNSResolver()])
+    protocol = dns.DNSDatagramProtocol(controller=factory)
+    reactor.listenUDP(53, protocol, interface='::')
+    reactor.listenTCP(53, factory, interface='::')
+    logging.info(f"TP-Lite DNS server starting. NXDOMAIN={list(BLOCKED_NXDOMAIN.keys())} NULL-IP={list(BLOCKED_NULL_IP.keys())} Allowed={list(ALLOWED.keys())}")
+    reactor.run()

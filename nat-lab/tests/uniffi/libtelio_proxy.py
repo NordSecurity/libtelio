@@ -196,3 +196,15 @@ class LibtelioProxy:
     @move_to_async_thread
     def flush_logs(self) -> None:
         self._handle_remote_error(lambda r: r.flush_logs())
+
+    @move_to_async_thread
+    def enable_tp_lite_stats_collection(self, config: libtelio.TpLiteStatsOptions):
+        self._handle_remote_error(lambda r: r.enable_tp_lite_stats_collection(config))
+
+    @move_to_async_thread
+    def disable_tp_lite_stats_collection(self):
+        self._handle_remote_error(lambda r: r.disable_tp_lite_stats_collection())
+
+    @move_to_async_thread
+    def get_tp_lite_stats(self):
+        return self._handle_remote_error(lambda r: r.get_tp_lite_stats())
