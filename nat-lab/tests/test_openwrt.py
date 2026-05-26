@@ -651,6 +651,7 @@ async def test_openwrt_router_restart(
         # wrap into try/finally to always execute cleanup code
         try:
             log.info("wait for vpn connection to be re-established after reboot")
+            await nordvpnlite_after_reboot.wait_for_nordvpnlite_start()
             await nordvpnlite_after_reboot.wait_for_vpn_connected_state()
             await check_gateway_and_client_ip(
                 gateway_connection_after_reboot,

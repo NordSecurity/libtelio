@@ -320,15 +320,11 @@ pub async fn get_countries_with_exp_backoff(
     loop {
         match get_countries(cert_path).await {
             Ok(countries) => return Ok(countries),
-            Err(Error::Reqwest(ref e)) if e.is_timeout() => {
-                warn!(
-                    "Failed to fetch countries due to {e}, will wait for {:?} and retry",
-                    backoff.get_backoff()
-                );
-                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
-            }
             Err(e) => {
-                return Err(e);
+                warn!("Failed to fetch countries due to {e}",);
+                handle_api_error!(e)?;
+                warn!("Will wait for {:?} and retry", backoff.get_backoff());
+                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
             }
         }
     }
@@ -374,15 +370,11 @@ pub async fn get_recommended_servers_with_exp_backoff(
     loop {
         match get_recommended_servers(country_id_filter, limit_filter, cert_path).await {
             Ok(servers) => return Ok(servers),
-            Err(Error::Reqwest(ref e)) if e.is_timeout() => {
-                warn!(
-                    "Failed to fetch recommended servers due to {e}, will wait for {:?} and retry",
-                    backoff.get_backoff()
-                );
-                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
-            }
             Err(e) => {
-                return Err(e);
+                warn!("Failed to fetch recommended servers due to {e}",);
+                handle_api_error!(e)?;
+                warn!("Will wait for {:?} and retry", backoff.get_backoff());
+                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
             }
         }
     }
