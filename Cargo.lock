@@ -5294,6 +5294,7 @@ dependencies = [
  "parking_lot",
  "rand 0.10.1",
  "rstest",
+ "serial_test",
  "stun_codec",
  "surge-ping",
  "telio-crypto",

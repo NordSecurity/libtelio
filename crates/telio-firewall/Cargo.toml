@@ -33,7 +33,7 @@ mockall_double.workspace = true
 if-addrs.workspace = true
 mockall.workspace = true
 sn_fake_clock.workspace = true
-serial_test = "3.2.0"
+serial_test.workspace = true
 
 telio-utils = {workspace = true, features = ["sn_fake_clock"] }
 

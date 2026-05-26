@@ -1744,7 +1744,7 @@ mod tests {
         ];
 
         // Verify all possible permutations are sorted in defined order
-        for mut candidate_permutation in expected_candidates
+        for candidate_permutation in expected_candidates
             .iter()
             .permutations(expected_candidates.len())
         {
@@ -1764,7 +1764,7 @@ mod tests {
         ];
 
         // Verify all possible permutations are sorted in defined order again
-        for mut candidate_permutation in expected_candidates
+        for candidate_permutation in expected_candidates
             .iter()
             .permutations(expected_candidates.len())
         {
