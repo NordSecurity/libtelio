@@ -7,7 +7,7 @@ from tests import config
 from tests.helpers import SetupParameters, setup_environment
 from tests.helpers_vpn import connect_vpn, VpnConfig
 from tests.utils.bindings import TelioAdapterType
-from tests.utils.connection import Connection, ConnectionTag
+from tests.utils.connection import Connection, ConnectionTag, TargetOS
 from tests.utils.connection_util import new_connection_raw
 from tests.utils.iperf3 import (
     IperfServer,
@@ -226,6 +226,16 @@ async def test_vpn_connection_performance(setup_params: SetupParameters) -> None
         photo_album_connection = await exit_stack.enter_async_context(
             new_connection_raw(ConnectionTag.DOCKER_PHOTO_ALBUM)
         )
+
+        # Log iperf3 binary SHA on macOS for debug/verification purposes
+        if client_conn.target_os == TargetOS.Mac:
+            sha_process = client_conn.create_process(
+                ["shasum", "-a", "256", config.IPERF_BINARY_MAC]
+            )
+            await sha_process.execute()
+            log.info(
+                "iperf3 binary SHA256 on macOS: %s", sha_process.get_stdout().strip()
+            )
 
         # Collecting baseline results without vpn connection
         performance_results: dict[str, Any] = {}
