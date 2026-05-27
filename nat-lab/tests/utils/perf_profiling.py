@@ -37,10 +37,32 @@ class PerfProfiler:
 
     * connection - Connection to the instance where perf is running
     * output_dir - Directory to save results to. If None, uses current test log path.
+    * file_name_suffix - Optional suffix inserted before the extension of saved
+      artifact file names (e.g. adapter type), so results from parametrized runs
+      do not collide.
     """
 
     connection: Connection
     output_dir: Optional[str] = None
+    file_name_suffix: Optional[str] = None
+
+    def _apply_suffix(self, file_name: str) -> str:
+        if not self.file_name_suffix:
+            return file_name
+        name, ext = os.path.splitext(file_name)
+        return f"{name}_{self.file_name_suffix}{ext}"
+
+    @property
+    def flame_graph_file(self) -> str:
+        return self._apply_suffix(FLAME_GRAPH_FILE)
+
+    @property
+    def flame_graph_file_with_python(self) -> str:
+        return self._apply_suffix(FLAME_GRAPH_FILE_WITH_PYTHON)
+
+    @property
+    def perf_output_file(self) -> str:
+        return self._apply_suffix(PERF_OUTPUT_FILE)
 
     async def __aenter__(self) -> "PerfProfiler":
         return self
@@ -97,13 +119,13 @@ class PerfProfiler:
         cmd_filtered = (
             f"perf script --demangle -i {PERF_OUTPUT_PATH} --symfs {TEMP_DEBUG_SYMBOLS_FOLDER} | "
             f"stackcollapse-perf.pl | egrep '(tokio|libtelio|telio|neptun)' | "
-            f"flamegraph.pl > /tmp/{FLAME_GRAPH_FILE}"
+            f"flamegraph.pl > /tmp/{self.flame_graph_file}"
         )
         await self.connection.create_process(["sh", "-c", cmd_filtered]).execute()
 
         cmd_full = (
             f"perf script --demangle -i {PERF_OUTPUT_PATH} --symfs {TEMP_DEBUG_SYMBOLS_FOLDER} | "
-            f"stackcollapse-perf.pl | flamegraph.pl > /tmp/{FLAME_GRAPH_FILE_WITH_PYTHON}"
+            f"stackcollapse-perf.pl | flamegraph.pl > /tmp/{self.flame_graph_file_with_python}"
         )
         await self.connection.create_process(["sh", "-c", cmd_full]).execute()
 
@@ -114,12 +136,14 @@ class PerfProfiler:
 
         log.info("Saving results to logs in %s", log_dir)
 
-        perf_local_path = os.path.join(log_dir, PERF_OUTPUT_FILE)
-        graph_path = os.path.join(log_dir, FLAME_GRAPH_FILE)
-        graph_path_with_python = os.path.join(log_dir, FLAME_GRAPH_FILE_WITH_PYTHON)
+        perf_local_path = os.path.join(log_dir, self.perf_output_file)
+        graph_path = os.path.join(log_dir, self.flame_graph_file)
+        graph_path_with_python = os.path.join(
+            log_dir, self.flame_graph_file_with_python
+        )
 
         await self.connection.download(PERF_OUTPUT_PATH, perf_local_path)
-        await self.connection.download(f"/tmp/{FLAME_GRAPH_FILE}", graph_path)
+        await self.connection.download(f"/tmp/{self.flame_graph_file}", graph_path)
         await self.connection.download(
-            f"/tmp/{FLAME_GRAPH_FILE_WITH_PYTHON}", graph_path_with_python
+            f"/tmp/{self.flame_graph_file_with_python}", graph_path_with_python
         )

@@ -11,7 +11,35 @@ from tests.utils.ping import ping
 
 @pytest.mark.perf_profiling
 @pytest.mark.asyncio
-async def test_connect_node_flame_graph_chart() -> None:
+@pytest.mark.parametrize(
+    "setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                is_meshnet=False,
+                run_tcpdump=False,
+                enable_perf=True,
+            ),
+            id="neptun",
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                is_meshnet=False,
+                run_tcpdump=False,
+                enable_perf=True,
+            ),
+            marks=[pytest.mark.linux_native],
+            id="linux_native",
+        ),
+    ],
+)
+async def test_connect_node_flame_graph_chart(
+    setup_params: SetupParameters,
+) -> None:
     """
     Collect flame graph chart of connect_to_exit_node command
 
@@ -23,14 +51,6 @@ async def test_connect_node_flame_graph_chart() -> None:
         5. Save results to logs
     """
     async with AsyncExitStack() as exit_stack:
-        # Setup environment
-        setup_params = SetupParameters(
-            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-            adapter_type_override=TelioAdapterType.NEP_TUN,
-            is_meshnet=False,
-            run_tcpdump=False,
-            enable_perf=True,
-        )
         vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
         log.info("Creating connection to nodes")
         env = await exit_stack.enter_async_context(
