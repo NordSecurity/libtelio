@@ -43,7 +43,7 @@ mockall.workspace = true
 ntest.workspace = true
 serial_test.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
-test-log = { version = "0.2.19", features = ["trace"] }
+test-log = { version = "0.2.20", features = ["trace"] }
 
 
 telio-task = { workspace = true, features = ["test-util"] }
