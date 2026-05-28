@@ -194,6 +194,7 @@ services:
   mac-client-01: &mac-client
     hostname: mac-client-01
     image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/dockur_macos:${LIBTELIO_ENV_NAT_LAB_MACOS_VM_TAG}
+    pull_policy: always
     privileged: true
     devices:
       - "/dev/net/tun"
