@@ -1,8 +1,7 @@
 import asyncio
 import pytest
-from contextlib import AsyncExitStack
 from tests import config
-from tests.helpers import SetupParameters, setup_environment, Connection
+from tests.helpers import SetupParameters, Environment, Connection
 from tests.helpers_vpn import connect_vpn
 from tests.utils.bindings import (
     default_features,
@@ -65,22 +64,39 @@ async def _trigger_stats_collection(
     )
 
 
-@pytest.mark.asyncio
-async def test_tp_lite_stats_basic() -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [
-                    SetupParameters(
-                        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        adapter_type_override=TelioAdapterType.NEP_TUN,
-                        features=_features_with_firewall(),
-                    )
-                ],
-                vpn=[ConnectionTag.DOCKER_VPN_1],
-            )
-        )
+def _alpha_setup_params_with_firewall() -> SetupParameters:
+    return SetupParameters(
+        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+        adapter_type_override=TelioAdapterType.NEP_TUN,
+        features=_features_with_firewall(),
+    )
+
+
+def _alpha_setup_params_default() -> SetupParameters:
+    return SetupParameters(
+        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+        adapter_type_override=TelioAdapterType.NEP_TUN,
+        features=default_features(),
+    )
+
+
+class TestTpLiteStats:
+    """TP-Lite stats collection — all tests share a single-node + VPN_1 setup."""
+
+    @pytest.fixture(name="vpn_tags")
+    def _vpn_tags(self) -> list:
+        return [ConnectionTag.DOCKER_VPN_1]
+
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [pytest.param(_alpha_setup_params_with_firewall())],
+    )
+    @pytest.mark.asyncio
+    async def test_tp_lite_stats_basic(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env: Environment,
+    ) -> None:
         [alpha] = env.nodes
         [client] = env.clients
         [connection] = [c.connection for c in env.connections]
@@ -168,23 +184,16 @@ async def test_tp_lite_stats_basic() -> None:
         (num_calls, _, _) = await client.get_tp_lite_stats()
         assert num_calls == 0
 
-
-@pytest.mark.asyncio
-async def test_tp_lite_stats_re_enable_with_new_callback() -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [
-                    SetupParameters(
-                        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        adapter_type_override=TelioAdapterType.NEP_TUN,
-                        features=_features_with_firewall(),
-                    )
-                ],
-                vpn=[ConnectionTag.DOCKER_VPN_1],
-            )
-        )
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [pytest.param(_alpha_setup_params_with_firewall())],
+    )
+    @pytest.mark.asyncio
+    async def test_tp_lite_stats_re_enable_with_new_callback(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env: Environment,
+    ) -> None:
         [alpha] = env.nodes
         [client] = env.clients
         [connection] = [c.connection for c in env.connections]
@@ -221,23 +230,16 @@ async def test_tp_lite_stats_re_enable_with_new_callback() -> None:
             assert metrics.num_requests == 1
             assert metrics.num_responses == 1
 
-
-@pytest.mark.asyncio
-async def test_tp_lite_stats_empty_dns_server_ips_disables() -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [
-                    SetupParameters(
-                        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        adapter_type_override=TelioAdapterType.NEP_TUN,
-                        features=_features_with_firewall(),
-                    )
-                ],
-                vpn=[ConnectionTag.DOCKER_VPN_1],
-            )
-        )
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [pytest.param(_alpha_setup_params_with_firewall())],
+    )
+    @pytest.mark.asyncio
+    async def test_tp_lite_stats_empty_dns_server_ips_disables(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env: Environment,
+    ) -> None:
         [alpha] = env.nodes
         [client] = env.clients
         [connection] = [c.connection for c in env.connections]
@@ -256,23 +258,16 @@ async def test_tp_lite_stats_empty_dns_server_ips_disables() -> None:
                 _tp_lite_config(dns_server_ips=[])
             )
 
-
-@pytest.mark.asyncio
-async def test_tp_lite_stats_requires_firewall_feature() -> None:
-    async with AsyncExitStack() as exit_stack:
-        env = await exit_stack.enter_async_context(
-            setup_environment(
-                exit_stack,
-                [
-                    SetupParameters(
-                        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                        adapter_type_override=TelioAdapterType.NEP_TUN,
-                        features=default_features(),
-                    )
-                ],
-                vpn=[ConnectionTag.DOCKER_VPN_1],
-            )
-        )
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [pytest.param(_alpha_setup_params_default())],
+    )
+    @pytest.mark.asyncio
+    async def test_tp_lite_stats_requires_firewall_feature(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env: Environment,
+    ) -> None:
         [alpha] = env.nodes
         [client] = env.clients
         [connection] = [c.connection for c in env.connections]
