@@ -248,7 +248,7 @@ class TestPqVpnRekey:
 
         async with new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1) as nlx_conn:
             preshared_before = await inspect_preshared_key(nlx_conn)
-            await client_alpha.wait_for_log("Successful PQ REKEY")
+            await client_alpha.wait_for_log("Successful PQ REKEY", incremental=True)
 
             preshared_after = await inspect_preshared_key(nlx_conn)
             assert (
