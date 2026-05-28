@@ -147,7 +147,7 @@ pub enum Error {
     #[error("Failed to set fwmark for WG socket")]
     WgFwmark,
     #[error("DNS resolver error: {0}")]
-    DnsResolverError(String),
+    DnsResolverError(#[from] telio_dns::error::Error),
     #[error("DNS module should be disabled when executing this operation")]
     DnsNotDisabled,
     #[error("Failed to reconnect to DERP server")]
@@ -1681,8 +1681,7 @@ impl Runtime {
             peers.extend(wildcarded_peers);
 
             dns.upsert("nord", &peers, self.features.dns.ttl_value)
-                .await
-                .map_err(Error::DnsResolverError)?;
+                .await?;
         }
 
         Ok(())
