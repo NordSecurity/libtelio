@@ -510,6 +510,9 @@ pub struct FeatureDns {
     /// Configure options for exit dns
     #[serde(default)]
     pub exit_dns: Option<FeatureExitDns>,
+    /// Use the raw DNS forwarder instead of the old hickory-server
+    #[serde(default)]
+    pub use_raw_forwarder: Option<bool>,
 }
 
 /// Newtype for TTL value to ensure that the default function returns the actual default value and not 0.
@@ -754,7 +757,8 @@ mod tests {
                 "ttl_value": 19,
                 "exit_dns": {
                     "auto_switch_dns_ips": true
-                }
+                },
+                "use_raw_forwarder": true
             },
             "multicast": true,
             "error_notification_service": {
@@ -856,6 +860,7 @@ mod tests {
                         exit_dns: Some(FeatureExitDns {
                             auto_switch_dns_ips: Some(true),
                         }),
+                        use_raw_forwarder: Some(true),
                     },
                     multicast: true,
                     error_notification_service: Some(FeatureErrorNotificationService {

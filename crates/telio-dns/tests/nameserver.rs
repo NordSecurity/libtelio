@@ -11,6 +11,7 @@ use pnet_packet::{
     Packet,
 };
 use rand_core_compat::rand_core_0_6::OsRng;
+use rstest::rstest;
 use std::{
     io::ErrorKind,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
@@ -19,6 +20,7 @@ use std::{
 };
 use telio_dns::{LocalNameServer, NameServer, Records};
 use telio_model::features::TtlValue;
+use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio::{
     self,
@@ -36,6 +38,9 @@ const UDP_HEADER: usize = 8;
 const TCP_MIN_HEADER: usize = 20;
 const ICMP_HEADER: usize = 8;
 const MAX_PACKET: usize = 2048;
+const USE_RAW_FORWARDER: bool = true;
+const TEST_TIMEOUT: Duration = Duration::from_secs(5);
+const RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DnsResponse {
@@ -205,7 +210,7 @@ impl WGClient {
         }
 
         let result = timeout(
-            Duration::from_secs(10),
+            RESPONSE_TIMEOUT,
             self.client_socket.recv(&mut receiving_buffer),
         )
         .await;
@@ -539,10 +544,12 @@ async fn dns_test(
     test_type: DnsTestType,
     local_records: Option<(String, Records)>,
     ttl_value: TtlValue,
+    use_raw_forwarder: bool,
 ) -> Option<DnsResponse> {
-    let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
-        .await
-        .expect("Failed to create a LocalNameServer");
+    let nameserver =
+        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], use_raw_forwarder)
+            .await
+            .expect("Failed to create a LocalNameServer");
 
     dns_test_with_server(query, test_type, local_records, nameserver, ttl_value).await
 }
@@ -597,6 +604,67 @@ async fn init_client_and_server(
     nameserver.start(server_peer.clone(), server_socket).await;
 
     (client, server_peer)
+}
+
+enum UpstreamStubBehavior {
+    Reply(Ipv4Addr),
+    BlackHole,
+}
+
+/// Builds a minimal DNS response with a single A record.
+fn build_upstream_dns_response(query_bytes: &[u8], answer_ip: Ipv4Addr) -> Vec<u8> {
+    let parsed = dns_parser::Packet::parse(query_bytes).expect("Failed to parse incoming query");
+    let qname = parsed.questions[0].qname.to_string();
+
+    let mut builder = Builder::new_query(parsed.header.id, true);
+    builder.add_question(&qname, false, QueryType::A, QueryClass::IN);
+    let mut buf = builder.build().unwrap();
+
+    const FLAGS_OFFSET: usize = 2;
+    const ANCOUNT_OFFSET: usize = 6;
+    const QR_RD_RA: u16 = 0x8180;
+    const TYPE_A: u16 = 1;
+    const CLASS_IN: u16 = 1;
+    const TTL_SECS: u32 = 300;
+    const IPV4_RDLENGTH: u16 = 4;
+    // NAME: compression pointer to qname at offset 0x0C
+    const NAME_PTR: [u8; 2] = [0xC0, 0x0C];
+
+    // Patch the existing header: set QR=1, RD=1, RA=1 flags and answer count=1
+    buf[FLAGS_OFFSET..FLAGS_OFFSET + 2].copy_from_slice(&QR_RD_RA.to_be_bytes());
+    buf[ANCOUNT_OFFSET..ANCOUNT_OFFSET + 2].copy_from_slice(&1_u16.to_be_bytes());
+
+    // Append the answer RR after the question section
+    buf.extend_from_slice(&NAME_PTR);
+    buf.extend_from_slice(&TYPE_A.to_be_bytes());
+    buf.extend_from_slice(&CLASS_IN.to_be_bytes());
+    buf.extend_from_slice(&TTL_SECS.to_be_bytes());
+    buf.extend_from_slice(&IPV4_RDLENGTH.to_be_bytes());
+    buf.extend_from_slice(&answer_ip.octets());
+
+    buf
+}
+
+// Helper for stub upstream resolver
+async fn spawn_upstream_dns_stub(behavior: UpstreamStubBehavior) -> (SocketAddr, JoinHandle<()>) {
+    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind stub socket");
+    let addr = socket.local_addr().unwrap();
+
+    let handle = tokio::spawn(async move {
+        let mut buf = vec![0u8; 4096];
+        let (n, src) = socket.recv_from(&mut buf).await.unwrap();
+        match behavior {
+            UpstreamStubBehavior::Reply(answer_ip) => {
+                let response = build_upstream_dns_response(&buf[..n], answer_ip);
+                socket.send_to(&response, src).await.unwrap();
+            }
+            UpstreamStubBehavior::BlackHole => {}
+        }
+    });
+
+    (addr, handle)
 }
 
 macro_rules! assert_no_data {
@@ -680,12 +748,13 @@ async fn dns_request_local_soa() {
     let zone = String::from("nord");
 
     let response = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "nord",
             DnsTestType::SoaQuerry,
             Some((zone, records)),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -713,12 +782,13 @@ async fn dns_request_local_txt() {
     let zone = String::from("nord");
 
     let response = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "test.nord",
             DnsTestType::TxtQuerry,
             Some((zone, records)),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -737,12 +807,13 @@ async fn dns_request_local_tld() {
     let zone = String::from("nord");
 
     let response = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "nord",
             DnsTestType::CorrectIpv4,
             Some((zone, records)),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -758,12 +829,13 @@ async fn dns_request_local_no_address() {
     let zone = String::from("nord");
 
     let response = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "test.nord",
             DnsTestType::CorrectIpv4,
             Some((zone, records)),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -780,12 +852,13 @@ async fn dns_request_local_ipv4() {
     let zone = String::from("nord");
 
     let response = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "test.nord",
             DnsTestType::CorrectIpv4,
             Some((zone, records)),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -802,12 +875,13 @@ async fn dns_request_local_nickname() {
     records.insert(String::from("nickname.nord"), address.clone());
 
     let response_nickname = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "nickname.nord",
             DnsTestType::CorrectIpv4,
             Some(("nord".into(), records.clone())),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -815,12 +889,13 @@ async fn dns_request_local_nickname() {
     .expect("Expected some DNS response");
 
     let response_nordname = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "big-mountain.nord",
             DnsTestType::CorrectIpv4,
             Some(("nord".into(), records)),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -842,12 +917,13 @@ async fn dns_request_local_ipv4_multiple() {
     let zone = String::from("nord");
 
     let response = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "test.nord",
             DnsTestType::CorrectIpv4,
             Some((zone, records)),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -864,12 +940,13 @@ async fn dns_request_local_case_insensitive() {
     let zone = String::from("nord");
 
     let response = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "TeSt.NoRd",
             DnsTestType::CorrectIpv4,
             Some((zone, records)),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -888,12 +965,13 @@ async fn dns_request_unknown_local_ipv4() {
     let zone = String::from("nord");
 
     let response = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "unknown.nord",
             DnsTestType::CorrectIpv4,
             Some((zone, records)),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -912,12 +990,13 @@ async fn dns_request_unknown_local_ipv6() {
     let zone = String::from("nord");
 
     let response = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "unknown.nord",
             DnsTestType::CorrectIpv6,
             Some((zone, records)),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -935,12 +1014,13 @@ async fn dns_request_local_ipv6() {
     records.insert(String::from("test.nord."), vec![address4, address6]);
     let zone = String::from("nord");
     let response = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "test.nord",
             DnsTestType::CorrectIpv6,
             Some((zone, records)),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -961,12 +1041,13 @@ async fn dns_request_local_aaaa_but_only_a_exists() {
     );
     let zone = String::from("nord");
     let response = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "test.nord",
             DnsTestType::CorrectIpv6,
             Some((zone, records)),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -984,12 +1065,13 @@ async fn dns_request_local_a_but_only_aaaa_exists() {
     );
     let zone = String::from("nord");
     let response = timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "test.nord",
             DnsTestType::CorrectIpv4,
             Some((zone, records)),
             TtlValue(60),
+            USE_RAW_FORWARDER,
         ),
     )
     .await
@@ -998,22 +1080,35 @@ async fn dns_request_local_a_but_only_aaaa_exists() {
     assert_no_data!(response);
 }
 
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
 #[tokio::test]
-async fn dns_request_forward() {
+async fn dns_request_forward(#[case] use_raw_forwarder: bool) {
     timeout(
-        Duration::from_secs(60),
-        dns_test("google.com", DnsTestType::CorrectIpv4, None, TtlValue(60)),
+        TEST_TIMEOUT,
+        dns_test(
+            "google.com",
+            DnsTestType::CorrectIpv4,
+            None,
+            TtlValue(60),
+            use_raw_forwarder,
+        ),
     )
     .await
     .expect("Test timeout")
     .expect("Expected some DNS response");
 }
 
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
 #[tokio::test]
-async fn dns_request_forward_to_slow_server() {
-    let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))])
-        .await
-        .unwrap();
+async fn dns_request_forward_to_slow_server(#[case] use_raw_forwarder: bool) {
+    let nameserver =
+        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))], use_raw_forwarder)
+            .await
+            .unwrap();
 
     // Start a query that will run for several seconds
     tokio::spawn(dns_test_with_server(
@@ -1034,11 +1129,15 @@ async fn dns_request_forward_to_slow_server() {
         .is_ok());
 }
 
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
 #[tokio::test]
-async fn dns_request_to_non_responding_forward_server() {
-    let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))])
-        .await
-        .unwrap();
+async fn dns_request_to_non_responding_forward_server(#[case] use_raw_forwarder: bool) {
+    let nameserver =
+        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))], use_raw_forwarder)
+            .await
+            .unwrap();
 
     dns_test_with_server(
         "google.com",
@@ -1050,134 +1149,152 @@ async fn dns_request_to_non_responding_forward_server() {
     .await;
 }
 
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
 #[tokio::test]
-async fn dns_request_bad_ip_checksum_ipv4() {
+async fn dns_request_bad_ip_checksum_ipv4(#[case] use_raw_forwarder: bool) {
+    dns_test(
+        "google.com",
+        DnsTestType::BadIpChecksumIpv4,
+        None,
+        TtlValue(60),
+        use_raw_forwarder,
+    )
+    .await;
+}
+
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
+#[tokio::test]
+async fn dns_request_bad_udp_checksum_ipv4(#[case] use_raw_forwarder: bool) {
+    dns_test(
+        "google.com",
+        DnsTestType::BadUdpChecksumIpv4,
+        None,
+        TtlValue(60),
+        use_raw_forwarder,
+    )
+    .await;
+}
+
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
+#[tokio::test]
+async fn dns_request_bad_udp_checksum_ipv6(#[case] use_raw_forwarder: bool) {
+    dns_test(
+        "google.com",
+        DnsTestType::BadUdpChecksumIpv6,
+        None,
+        TtlValue(60),
+        use_raw_forwarder,
+    )
+    .await;
+}
+
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
+#[tokio::test]
+async fn dns_request_bad_udp_port_ipv4(#[case] use_raw_forwarder: bool) {
+    dns_test(
+        "google.com",
+        DnsTestType::BadUdpPortIpv4,
+        None,
+        TtlValue(60),
+        use_raw_forwarder,
+    )
+    .await;
+}
+
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
+#[tokio::test]
+async fn dns_request_bad_udp_port_ipv6(#[case] use_raw_forwarder: bool) {
+    dns_test(
+        "google.com",
+        DnsTestType::BadUdpPortIpv6,
+        None,
+        TtlValue(60),
+        use_raw_forwarder,
+    )
+    .await;
+}
+
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
+#[tokio::test]
+async fn dns_request_tcp_ipv4(#[case] use_raw_forwarder: bool) {
     timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "google.com",
-            DnsTestType::BadIpChecksumIpv4,
+            DnsTestType::TcpIpv4,
             None,
             TtlValue(60),
+            use_raw_forwarder,
         ),
     )
     .await
     .expect("Test timeout");
 }
 
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
 #[tokio::test]
-async fn dns_request_bad_udp_checksum_ipv4() {
+async fn dns_request_tcp_ipv6(#[case] use_raw_forwarder: bool) {
     timeout(
-        Duration::from_secs(60),
+        TEST_TIMEOUT,
         dns_test(
             "google.com",
-            DnsTestType::BadUdpChecksumIpv4,
+            DnsTestType::TcpIpv6,
             None,
             TtlValue(60),
+            use_raw_forwarder,
         ),
     )
     .await
     .expect("Test timeout");
 }
 
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
 #[tokio::test]
-async fn dns_request_bad_udp_checksum_ipv6() {
-    timeout(
-        Duration::from_secs(60),
-        dns_test(
-            "google.com",
-            DnsTestType::BadUdpChecksumIpv6,
-            None,
-            TtlValue(60),
-        ),
+async fn dns_request_unsupported_protocol_ipv4(#[case] use_raw_forwarder: bool) {
+    dns_test(
+        "google.com",
+        DnsTestType::UnsupportedProtocolIpv4,
+        None,
+        TtlValue(60),
+        use_raw_forwarder,
     )
-    .await
-    .expect("Test timeout");
+    .await;
 }
 
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
 #[tokio::test]
-async fn dns_request_bad_udp_port_ipv4() {
-    timeout(
-        Duration::from_secs(60),
-        dns_test(
-            "google.com",
-            DnsTestType::BadUdpPortIpv4,
-            None,
-            TtlValue(60),
-        ),
+async fn dns_request_unsupported_protocol_ipv6(#[case] use_raw_forwarder: bool) {
+    dns_test(
+        "google.com",
+        DnsTestType::UnsupportedProtocolIpv6,
+        None,
+        TtlValue(60),
+        use_raw_forwarder,
     )
-    .await
-    .expect("Test timeout");
-}
-
-#[tokio::test]
-async fn dns_request_bad_udp_port_ipv6() {
-    timeout(
-        Duration::from_secs(60),
-        dns_test(
-            "google.com",
-            DnsTestType::BadUdpPortIpv6,
-            None,
-            TtlValue(60),
-        ),
-    )
-    .await
-    .expect("Test timeout");
-}
-
-#[tokio::test]
-async fn dns_request_tcp_ipv4() {
-    timeout(
-        Duration::from_secs(60),
-        dns_test("google.com", DnsTestType::TcpIpv4, None, TtlValue(60)),
-    )
-    .await
-    .expect("Test timeout");
-}
-
-#[tokio::test]
-async fn dns_request_tcp_ipv6() {
-    timeout(
-        Duration::from_secs(60),
-        dns_test("google.com", DnsTestType::TcpIpv6, None, TtlValue(60)),
-    )
-    .await
-    .expect("Test timeout");
-}
-
-#[tokio::test]
-async fn dns_request_unsupported_protocol_ipv4() {
-    timeout(
-        Duration::from_secs(60),
-        dns_test(
-            "google.com",
-            DnsTestType::UnsupportedProtocolIpv4,
-            None,
-            TtlValue(60),
-        ),
-    )
-    .await
-    .expect("Test timeout");
-}
-
-#[tokio::test]
-async fn dns_request_unsupported_protocol_ipv6() {
-    timeout(
-        Duration::from_secs(60),
-        dns_test(
-            "google.com",
-            DnsTestType::UnsupportedProtocolIpv6,
-            None,
-            TtlValue(60),
-        ),
-    )
-    .await
-    .expect("Test timeout");
+    .await;
 }
 
 #[tokio::test]
 async fn test_tcp_rst() {
-    let nameserver = LocalNameServer::new(&[])
+    let nameserver = LocalNameServer::new(&[], USE_RAW_FORWARDER)
         .await
         .expect("Failed to create a LocalNameServer");
     init_client_and_server(None, nameserver, TtlValue(60)).await;
@@ -1186,11 +1303,15 @@ async fn test_tcp_rst() {
     assert_eq!(error_kind, ErrorKind::ConnectionRefused);
 }
 
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
 #[tokio::test]
-async fn test_timers_updated() {
-    let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
-        .await
-        .expect("Failed to create a LocalNameServer");
+async fn test_timers_updated(#[case] use_raw_forwarder: bool) {
+    let nameserver =
+        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], use_raw_forwarder)
+            .await
+            .expect("Failed to create a LocalNameServer");
     let (client, server_peer) = init_client_and_server(None, nameserver, TtlValue(1)).await;
     client.do_handshake().await;
 
@@ -1230,4 +1351,182 @@ async fn test_timers_updated() {
         !client.tunnel.lock().await.is_expired(),
         "Client should not expire due to keepalives"
     );
+}
+
+#[tokio::test]
+async fn dns_request_forward_to_stub_upstream() {
+    let expected_ip = Ipv4Addr::new(93, 184, 216, 34);
+    let (stub_addr, _stub_handle) =
+        spawn_upstream_dns_stub(UpstreamStubBehavior::Reply(expected_ip)).await;
+
+    let nameserver = LocalNameServer::new(&[], USE_RAW_FORWARDER)
+        .await
+        .expect("Failed to create a LocalNameServer");
+    nameserver
+        .forward_to_addrs(&[stub_addr])
+        .await
+        .expect("Failed to set stub upstream");
+
+    let response = timeout(
+        TEST_TIMEOUT,
+        dns_test_with_server(
+            "example.com",
+            DnsTestType::CorrectIpv4,
+            None,
+            nameserver,
+            TtlValue(60),
+        ),
+    )
+    .await
+    .expect("Test timeout")
+    .expect("Expected some DNS response");
+
+    assert!(response.no_error());
+    assert_eq!(response.a_addrs(), vec![expected_ip]);
+}
+
+#[tokio::test]
+async fn dns_request_forward_fallback_to_second_stub() {
+    let expected_ip = Ipv4Addr::new(10, 0, 0, 1);
+    let (blackhole_addr, _bh_handle) =
+        spawn_upstream_dns_stub(UpstreamStubBehavior::BlackHole).await;
+    let (stub_addr, _stub_handle) =
+        spawn_upstream_dns_stub(UpstreamStubBehavior::Reply(expected_ip)).await;
+
+    let nameserver = LocalNameServer::new(&[], USE_RAW_FORWARDER)
+        .await
+        .expect("Failed to create a LocalNameServer");
+    nameserver
+        .forward_to_addrs(&[blackhole_addr, stub_addr])
+        .await
+        .expect("Failed to set stub upstreams");
+
+    let response = timeout(
+        TEST_TIMEOUT,
+        dns_test_with_server(
+            "example.com",
+            DnsTestType::CorrectIpv4,
+            None,
+            nameserver,
+            TtlValue(60),
+        ),
+    )
+    .await
+    .expect("Test timeout")
+    .expect("Expected some DNS response");
+
+    assert!(response.no_error());
+    assert_eq!(response.a_addrs(), vec![expected_ip]);
+}
+
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
+#[tokio::test]
+async fn dns_request_forward_timeout_returns_no_response(#[case] use_raw_forwarder: bool) {
+    let (blackhole_addr, _bh_handle) =
+        spawn_upstream_dns_stub(UpstreamStubBehavior::BlackHole).await;
+
+    let nameserver = LocalNameServer::new(&[], use_raw_forwarder)
+        .await
+        .expect("Failed to create a LocalNameServer");
+    nameserver
+        .forward_to_addrs(&[blackhole_addr])
+        .await
+        .expect("Failed to set stub upstream");
+
+    let result = dns_test_with_server(
+        "example.com",
+        DnsTestType::NonRespondingForwardServer,
+        None,
+        nameserver,
+        TtlValue(60),
+    )
+    .await;
+
+    assert!(result.is_none());
+}
+
+#[tokio::test]
+async fn dns_request_nord_bypasses_forwarder() {
+    let (blackhole_addr, _bh_handle) =
+        spawn_upstream_dns_stub(UpstreamStubBehavior::BlackHole).await;
+
+    let nameserver = LocalNameServer::new(&[], USE_RAW_FORWARDER)
+        .await
+        .expect("Failed to create a LocalNameServer");
+    nameserver
+        .forward_to_addrs(&[blackhole_addr])
+        .await
+        .expect("Failed to set stub upstream");
+
+    let mut records = Records::new();
+    let expected_ip = Ipv4Addr::new(100, 64, 0, 1);
+    records.insert(String::from("test.nord."), vec![IpAddr::V4(expected_ip)]);
+
+    let response = timeout(
+        TEST_TIMEOUT,
+        dns_test_with_server(
+            "test.nord",
+            DnsTestType::CorrectIpv4,
+            Some(("nord".into(), records)),
+            nameserver,
+            TtlValue(60),
+        ),
+    )
+    .await
+    .expect("Test timeout")
+    .expect("Expected some DNS response");
+
+    assert_a_records!(response, vec![IpAddr::V4(expected_ip)]);
+}
+
+#[tokio::test]
+async fn dns_request_forward_hickory_forwarder() {
+    let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], false)
+        .await
+        .expect("Failed to create a LocalNameServer");
+
+    let response = timeout(
+        TEST_TIMEOUT,
+        dns_test_with_server(
+            "google.com",
+            DnsTestType::CorrectIpv4,
+            None,
+            nameserver,
+            TtlValue(60),
+        ),
+    )
+    .await
+    .expect("Test timeout")
+    .expect("Expected some DNS response");
+
+    assert!(response.no_error());
+    assert!(!response.a_addrs().is_empty());
+}
+
+#[tokio::test]
+async fn dns_request_local_nord_with_hickory_forwarder() {
+    let mut records = Records::new();
+    let address = vec![IpAddr::V4(Ipv4Addr::new(100, 100, 100, 100))];
+    records.insert(String::from("test.nord."), address.clone());
+
+    let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], false)
+        .await
+        .expect("Failed to create a LocalNameServer");
+
+    let response = timeout(
+        TEST_TIMEOUT,
+        dns_test_with_server(
+            "test.nord",
+            DnsTestType::CorrectIpv4,
+            Some(("nord".into(), records)),
+            nameserver,
+            TtlValue(60),
+        ),
+    )
+    .await
+    .expect("Test timeout")
+    .expect("Expected some DNS response");
+    assert_a_records!(response, address);
 }

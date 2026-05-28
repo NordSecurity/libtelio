@@ -3,7 +3,8 @@ import pytest
 from contextlib import AsyncExitStack
 from tests import config
 from tests.helpers import setup_api, setup_mesh_nodes, SetupParameters
-from tests.utils.bindings import default_features, TelioAdapterType
+from tests.test_dns import _dns_features, DNS_FORWARDER_PARAMS
+from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.dns import query_dns
@@ -13,6 +14,7 @@ from typing import List, Tuple
 
 # IPv6 tests are failing because we do not have IPV6 internet connection
 @pytest.mark.asyncio
+@pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
 @pytest.mark.parametrize(
     "alpha_info",
     [
@@ -103,7 +105,6 @@ from typing import List, Tuple
                     ConnectionTag.DOCKER_CONE_CLIENT_2,
                     derp_1_limits=(1, 1),
                 ),
-                features=default_features(enable_firewall_exclusion_range="10.0.0.0/8"),
             ),
             id="b",
         )
@@ -114,6 +115,7 @@ async def test_dns_through_exit(
     beta_setup_params: SetupParameters,
     alpha_info: Tuple[IPStack, List[str]],
     exit_info: Tuple[IPStack, List[str]],
+    use_raw_forwarder: bool,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         if (alpha_info[0] == IPStack.IPv4 and exit_info[0] == IPStack.IPv6) or (
@@ -138,6 +140,11 @@ async def test_dns_through_exit(
         )
         beta.set_peer_firewall_settings(
             alpha.id, allow_incoming_connections=True, allow_peer_traffic_routing=True
+        )
+
+        alpha_setup_params.features = _dns_features(use_raw_forwarder)
+        beta_setup_params.features = _dns_features(
+            use_raw_forwarder, enable_firewall_exclusion_range="10.0.0.0/8"
         )
 
         env = await setup_mesh_nodes(
