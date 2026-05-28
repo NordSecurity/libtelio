@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from tests import config, timeouts
+from tests import config
 from tests.helpers import (
     setup_connections,
     setup_environment,
@@ -209,7 +209,6 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(timeouts.TEST_MESH_NETWORK_SWITCH_DIRECT_TIMEOUT)
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
