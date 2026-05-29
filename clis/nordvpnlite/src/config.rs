@@ -55,6 +55,10 @@ impl NordToken {
             "<PASTE_YOUR_AUTHENTICATION_TOKEN_HERE>".to_owned().into(),
         ))
     }
+
+    pub fn zeroize(&mut self) {
+        self.0 = Arc::new(Hidden::from(String::new()));
+    }
 }
 
 impl Default for NordToken {

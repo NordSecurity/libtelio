@@ -348,7 +348,7 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
     }
 }
 
-pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnLiteError> {
+pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), NordVpnLiteError> {
     debug!("started with config: {config:?}");
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
@@ -395,6 +395,8 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
             };
         }
     };
+
+    config.authentication_token.zeroize();
 
     let config_clone = config.clone();
     let mut telio_task_handle = tokio::task::spawn_blocking(move || {
