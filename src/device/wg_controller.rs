@@ -181,9 +181,38 @@ async fn consolidate_wg_private_key<W: WireGuard>(
     let actual_private_key = wireguard_interface.get_interface().await?.private_key;
 
     if actual_private_key != Some(private_key.clone()) {
+        // Collect existing peers before changing the key
+        let existing_peers: Vec<_> = wireguard_interface
+            .get_interface()
+            .await?
+            .peers
+            .values()
+            .cloned()
+            .collect();
+
+        // Remove all peers
+        for peer in &existing_peers {
+            telio_log_info!(
+                "Removing peer {:?} before private key change",
+                peer.public_key
+            );
+            wireguard_interface.del_peer(peer.public_key).await?;
+        }
+
+        // Set the new private key
         wireguard_interface
             .set_secret_key(private_key.clone())
             .await?;
+
+        // Re-add all peers
+        for peer in existing_peers {
+            telio_log_info!(
+                "Re-adding peer {:?} after private key change",
+                peer.public_key
+            );
+            wireguard_interface.add_peer(peer).await?;
+        }
+
         let dns = dns.lock().await;
 
         if let Some(resolver) = dns.resolver.as_ref() {
