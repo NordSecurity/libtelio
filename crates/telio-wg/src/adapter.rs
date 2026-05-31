@@ -36,7 +36,7 @@ pub type FirewallInboundCb = Option<Arc<dyn Fn(&[u8; 32], &mut [u8]) -> bool + S
 
 /// Function pointer to Firewall Outbound Callback
 pub type FirewallOutboundCb =
-    Option<Arc<dyn Fn(&[u8; 32], &[u8], &mut dyn io::Write) -> bool + Send + Sync>>;
+    Option<Arc<dyn Fn(&[u8; 32], &mut [u8], &mut dyn io::Write) -> bool + Send + Sync>>;
 
 /// Function pointer for reseting all the connections
 pub type FirewallResetConnsCb = Option<Arc<dyn Fn(&PublicKey, &mut dyn io::Write) + Send + Sync>>;

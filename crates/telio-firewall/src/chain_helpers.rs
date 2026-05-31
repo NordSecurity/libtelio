@@ -1,22 +1,28 @@
+use std::ffi::{c_void, CString};
+use std::net::SocketAddrV4;
+use std::os::raw::c_char;
 use std::pin::Pin;
 use std::{fmt::Debug, net::IpAddr};
 
 use ipnet::IpNet;
+use telio_utils::telio_log_warn;
 
 use crate::libfirewall::{
-    LibfwAssociatedData, LibfwChain, LibfwFilter, LibfwFilterData, LibfwIpAddr, LibfwIpData,
-    LibfwNetworkFilter, LibfwRule, LibfwVerdict, LIBFW_CONTRACK_STATE_ESTABLISHED,
-    LIBFW_CONTRACK_STATE_INVALID, LIBFW_CONTRACK_STATE_NEW, LIBFW_CONTRACK_STATE_RELATED,
-    LIBFW_DIRECTION_INBOUND, LIBFW_DIRECTION_OUTBOUND, LIBFW_FILTER_ASSOCIATED_DATA,
-    LIBFW_FILTER_CONNTRACK_STATE, LIBFW_FILTER_DIRECTION, LIBFW_FILTER_DST_NETWORK,
-    LIBFW_FILTER_ICMP_TYPE, LIBFW_FILTER_NEXT_LVL_PROTO, LIBFW_FILTER_SRC_NETWORK,
-    LIBFW_FILTER_TCP_FLAGS, LIBFW_ICMP_TYPE_DESTINATION_UNREACHABLE, LIBFW_ICMP_TYPE_ECHO_REPLY,
+    LibfwAssociatedData, LibfwChainV2, LibfwDnatTarget, LibfwDnsDomainSet, LibfwFilter,
+    LibfwFilterData, LibfwIpAddr, LibfwIpData, LibfwNetworkFilter, LibfwRuleV2,
+    LIBFW_ACTION_ACCEPT, LIBFW_ACTION_DNAT, LIBFW_ACTION_DROP, LIBFW_ACTION_REJECT,
+    LIBFW_CONTRACK_STATE_ESTABLISHED, LIBFW_CONTRACK_STATE_INVALID, LIBFW_CONTRACK_STATE_NEW,
+    LIBFW_CONTRACK_STATE_RELATED, LIBFW_DIRECTION_INBOUND, LIBFW_DIRECTION_OUTBOUND,
+    LIBFW_FILTER_ASSOCIATED_DATA, LIBFW_FILTER_CONNTRACK_STATE, LIBFW_FILTER_DIRECTION,
+    LIBFW_FILTER_DNS_QUERY_DOMAIN, LIBFW_FILTER_DST_NETWORK, LIBFW_FILTER_ICMP_TYPE,
+    LIBFW_FILTER_NEXT_LVL_PROTO, LIBFW_FILTER_SRC_NETWORK, LIBFW_FILTER_TCP_FLAGS,
+    LIBFW_ICMP_TYPE_DESTINATION_UNREACHABLE, LIBFW_ICMP_TYPE_ECHO_REPLY,
     LIBFW_ICMP_TYPE_ECHO_REQUEST, LIBFW_ICMP_TYPE_PARAMETER_PROBLEM,
     LIBFW_ICMP_TYPE_REDIRECT_MESSAGE, LIBFW_ICMP_TYPE_ROUTER_ADVERTISEMENT,
     LIBFW_ICMP_TYPE_ROUTER_SOLICITATION, LIBFW_ICMP_TYPE_TIMESTAMP,
     LIBFW_ICMP_TYPE_TIMESTAMP_REPLY, LIBFW_ICMP_TYPE_TIME_EXCEEDED, LIBFW_IP_TYPE_V4,
     LIBFW_IP_TYPE_V6, LIBFW_NEXT_PROTO_ICMP, LIBFW_NEXT_PROTO_ICMPV6, LIBFW_NEXT_PROTO_TCP,
-    LIBFW_NEXT_PROTO_UDP, LIBFW_VERDICT_ACCEPT, LIBFW_VERDICT_DROP, LIBFW_VERDICT_REJECT,
+    LIBFW_NEXT_PROTO_UDP,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,19 +86,29 @@ pub(crate) enum ConnectionState {
 pub(crate) enum FilterData {
     AssociatedData(Option<Vec<u8>>),
     ConntrackState(ConnectionState),
-    #[allow(dead_code)]
     SrcNetwork(NetworkFilterData),
     DstNetwork(NetworkFilterData),
     Direction(Direction),
     NextLevelProtocol(NextLevelProtocol),
     TcpFlags(u8),
     IcmpType(IcmpType),
+    DnsQueryDomain(Vec<String>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Filter {
     pub(crate) filter_data: FilterData,
     pub(crate) inverted: bool,
+}
+
+/// Rule action. Uses libfirewall's V2 action set (LIBFW_ACTION_*) so DNAT
+/// can carry a target endpoint as action data.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RuleAction {
+    Accept,
+    Drop,
+    Reject,
+    Dnat(SocketAddrV4),
 }
 
 impl From<&[u8]> for LibfwAssociatedData {
@@ -130,13 +146,26 @@ impl From<&NetworkFilterData> for LibfwNetworkFilter {
 }
 
 type PinnedAssocData = Pin<Box<Vec<u8>>>;
-type PinnedFilters = Pin<Box<Vec<LibfwFilter>>>;
-type PinnedRuleData = (PinnedFilters, Vec<Option<PinnedAssocData>>);
-type PinnedRules = Pin<Box<Vec<LibfwRule>>>;
+type PinnedDomainSet = Pin<Box<(Vec<CString>, Vec<*const c_char>)>>;
 
-impl From<&Filter> for (LibfwFilter, Option<PinnedAssocData>) {
+#[allow(dead_code)]
+pub(crate) enum FilterExtraData {
+    AssocData(PinnedAssocData),
+    DomainSet(PinnedDomainSet),
+}
+
+type PinnedFilters = Pin<Box<Vec<LibfwFilter>>>;
+type PinnedDnatTarget = Pin<Box<LibfwDnatTarget>>;
+type PinnedRuleData = (
+    PinnedFilters,
+    Vec<Option<FilterExtraData>>,
+    Option<PinnedDnatTarget>,
+);
+type PinnedRules = Pin<Box<Vec<LibfwRuleV2>>>;
+
+impl From<&Filter> for (LibfwFilter, Option<FilterExtraData>) {
     fn from(value: &Filter) -> Self {
-        let (filter, filter_type, assoc_data) = match &value.filter_data {
+        let (filter, filter_type, extra) = match &value.filter_data {
             FilterData::AssociatedData(assoc_data) => {
                 if let Some(assoc_data) = assoc_data {
                     let cloned_assoc_data = Box::pin(assoc_data.to_vec());
@@ -148,7 +177,7 @@ impl From<&Filter> for (LibfwFilter, Option<PinnedAssocData>) {
                             },
                         },
                         LIBFW_FILTER_ASSOCIATED_DATA,
-                        Some(cloned_assoc_data),
+                        Some(FilterExtraData::AssocData(cloned_assoc_data)),
                     )
                 } else {
                     (
@@ -212,6 +241,31 @@ impl From<&Filter> for (LibfwFilter, Option<PinnedAssocData>) {
                 LIBFW_FILTER_ICMP_TYPE,
                 None,
             ),
+            FilterData::DnsQueryDomain(domains) => {
+                let cstrings: Vec<CString> = domains
+                    .iter()
+                    .filter_map(|d| match CString::new(d.as_str()) {
+                        Ok(cstring) => Some(cstring),
+                        Err(err) => {
+                            telio_log_warn!("Skipping invalid DNS whitelist domain {d:?}: {err}");
+                            None
+                        }
+                    })
+                    .collect();
+                let ptrs: Vec<*const c_char> = cstrings.iter().map(|c| c.as_ptr()).collect();
+                let pinned: PinnedDomainSet = Box::pin((cstrings, ptrs));
+                let (domains_ptr, num_domains) = (pinned.1.as_ptr(), pinned.1.len());
+                (
+                    LibfwFilterData {
+                        dns_domain_set: LibfwDnsDomainSet {
+                            domains: domains_ptr,
+                            num_domains,
+                        },
+                    },
+                    LIBFW_FILTER_DNS_QUERY_DOMAIN,
+                    Some(FilterExtraData::DomainSet(pinned)),
+                )
+            }
         };
         (
             LibfwFilter {
@@ -219,7 +273,7 @@ impl From<&Filter> for (LibfwFilter, Option<PinnedAssocData>) {
                 filter_type,
                 filter,
             },
-            assoc_data,
+            extra,
         )
     }
 }
@@ -227,50 +281,75 @@ impl From<&Filter> for (LibfwFilter, Option<PinnedAssocData>) {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Rule {
     pub(crate) filters: Vec<Filter>,
-    pub(crate) action: LibfwVerdict,
+    pub(crate) action: RuleAction,
 }
 
-impl From<&Rule> for (LibfwRule, (PinnedFilters, Vec<Option<PinnedAssocData>>)) {
+fn dnat_target_for(target: &SocketAddrV4) -> LibfwDnatTarget {
+    LibfwDnatTarget {
+        addr: LibfwIpAddr {
+            ip_type: LIBFW_IP_TYPE_V4,
+            ip_data: LibfwIpData {
+                ipv4_bytes: target.ip().octets(),
+            },
+        },
+        port: target.port(),
+    }
+}
+
+impl From<&Rule> for (LibfwRuleV2, PinnedRuleData) {
     fn from(value: &Rule) -> Self {
         let (ffi_filters, additional_data): (Vec<_>, Vec<_>) =
             value.filters.iter().map(|filter| filter.into()).unzip();
         let ffi_filters = Box::pin(ffi_filters);
+
+        let (action, action_data_ptr, pinned_target): (
+            u8,
+            *const c_void,
+            Option<PinnedDnatTarget>,
+        ) = match &value.action {
+            RuleAction::Accept => (LIBFW_ACTION_ACCEPT, std::ptr::null(), None),
+            RuleAction::Drop => (LIBFW_ACTION_DROP, std::ptr::null(), None),
+            RuleAction::Reject => (LIBFW_ACTION_REJECT, std::ptr::null(), None),
+            RuleAction::Dnat(target) => {
+                let pinned = Box::pin(dnat_target_for(target));
+                let ptr = (&*pinned) as *const LibfwDnatTarget as *const c_void;
+                (LIBFW_ACTION_DNAT, ptr, Some(pinned))
+            }
+        };
+
         (
-            LibfwRule {
+            LibfwRuleV2 {
                 filters: ffi_filters.as_ptr(),
                 filter_count: ffi_filters.len(),
-                action: match value.action {
-                    LibfwVerdict::LibfwVerdictAccept => LIBFW_VERDICT_ACCEPT,
-                    LibfwVerdict::LibfwVerdictDrop => LIBFW_VERDICT_DROP,
-                    LibfwVerdict::LibfwVerdictReject => LIBFW_VERDICT_REJECT,
-                },
+                action,
+                action_data: action_data_ptr,
             },
-            (ffi_filters, additional_data),
+            (ffi_filters, additional_data, pinned_target),
         )
     }
 }
 
-// Helper structure for LibfwChain - it keeps all of the allocated stuff and the chain
-// remains usable as long as it's not dropped
+// Helper structure for LibfwChainV2 - it keeps all of the allocated stuff and the chain
+// remains usable as long as it's not dropped.
 pub(crate) struct FfiChainGuard {
-    pub(crate) ffi_chain: LibfwChain,
+    pub(crate) ffi_chain: LibfwChainV2,
     _ffi_rules: PinnedRules,
-    _ffi_filters: Vec<(PinnedFilters, Vec<Option<PinnedAssocData>>)>,
+    _ffi_rule_data: Vec<PinnedRuleData>,
 }
 
 impl From<&[Rule]> for FfiChainGuard {
     fn from(value: &[Rule]) -> Self {
-        let (ffi_rules, _ffi_filters): (Vec<LibfwRule>, Vec<PinnedRuleData>) =
+        let (ffi_rules, _ffi_rule_data): (Vec<LibfwRuleV2>, Vec<PinnedRuleData>) =
             value.iter().map(|rule| rule.into()).unzip();
         let _ffi_rules = Box::pin(ffi_rules);
 
         FfiChainGuard {
-            ffi_chain: LibfwChain {
+            ffi_chain: LibfwChainV2 {
                 rule_count: value.len(),
                 rules: _ffi_rules.as_ptr(),
             },
             _ffi_rules,
-            _ffi_filters,
+            _ffi_rule_data,
         }
     }
 }
@@ -278,7 +357,12 @@ impl From<&[Rule]> for FfiChainGuard {
 #[cfg(test)]
 #[allow(missing_docs, unused)]
 pub mod tests {
-    use std::{mem::ManuallyDrop, net::Ipv4Addr};
+    use std::{
+        ffi::{CStr, CString},
+        mem::ManuallyDrop,
+        net::{Ipv4Addr, SocketAddrV4},
+        os::raw::c_char,
+    };
 
     use ipnet::Ipv4Net;
     use pnet_packet::tcp::TcpFlags;
@@ -287,22 +371,23 @@ pub mod tests {
     use crate::{
         chain_helpers::{
             ConnectionState, Direction, FfiChainGuard, Filter, FilterData, IcmpType,
-            NetworkFilterData, NextLevelProtocol, Rule,
+            NetworkFilterData, NextLevelProtocol, Rule, RuleAction,
         },
         libfirewall::{
-            LibfwAssociatedData, LibfwChain, LibfwFilter, LibfwFilterData, LibfwIpAddr,
-            LibfwIpData, LibfwNetworkFilter, LibfwRule, LibfwVerdict,
+            LibfwAssociatedData, LibfwChainV2, LibfwDnatTarget, LibfwDnsDomainSet, LibfwFilter,
+            LibfwFilterData, LibfwIpAddr, LibfwIpData, LibfwNetworkFilter, LibfwRuleV2,
+            LIBFW_ACTION_ACCEPT, LIBFW_ACTION_DNAT, LIBFW_ACTION_DROP, LIBFW_ACTION_REJECT,
             LIBFW_CONTRACK_STATE_ESTABLISHED, LIBFW_DIRECTION_INBOUND, LIBFW_DIRECTION_OUTBOUND,
             LIBFW_FILTER_ASSOCIATED_DATA, LIBFW_FILTER_CONNTRACK_STATE, LIBFW_FILTER_DIRECTION,
-            LIBFW_FILTER_DST_NETWORK, LIBFW_FILTER_ICMP_TYPE, LIBFW_FILTER_NEXT_LVL_PROTO,
-            LIBFW_FILTER_SRC_NETWORK, LIBFW_FILTER_TCP_FLAGS, LIBFW_ICMP_TYPE_ECHO_REPLY,
-            LIBFW_IP_TYPE_V4, LIBFW_IP_TYPE_V6, LIBFW_NEXT_PROTO_UDP, LIBFW_VERDICT_ACCEPT,
-            LIBFW_VERDICT_DROP, LIBFW_VERDICT_REJECT,
+            LIBFW_FILTER_DNS_QUERY_DOMAIN, LIBFW_FILTER_DST_NETWORK, LIBFW_FILTER_ICMP_TYPE,
+            LIBFW_FILTER_NEXT_LVL_PROTO, LIBFW_FILTER_SRC_NETWORK, LIBFW_FILTER_TCP_FLAGS,
+            LIBFW_ICMP_TYPE_ECHO_REPLY, LIBFW_IP_TYPE_V4, LIBFW_IP_TYPE_V6, LIBFW_NEXT_PROTO_UDP,
         },
     };
 
     #[test]
     fn test_conversion_correctness() {
+        let dnat_target = SocketAddrV4::new(Ipv4Addr::new(1, 1, 1, 1), 53);
         let rules = vec![
             Rule {
                 filters: vec![
@@ -332,7 +417,7 @@ pub mod tests {
                         inverted: true,
                     },
                 ],
-                action: LibfwVerdict::LibfwVerdictAccept,
+                action: RuleAction::Accept,
             },
             Rule {
                 filters: vec![
@@ -345,7 +430,7 @@ pub mod tests {
                         inverted: true,
                     },
                 ],
-                action: LibfwVerdict::LibfwVerdictDrop,
+                action: RuleAction::Drop,
             },
             Rule {
                 filters: vec![
@@ -358,12 +443,36 @@ pub mod tests {
                         inverted: false,
                     },
                 ],
-                action: LibfwVerdict::LibfwVerdictReject,
+                action: RuleAction::Reject,
+            },
+            Rule {
+                filters: vec![
+                    Filter {
+                        filter_data: FilterData::Direction(Direction::Outbound),
+                        inverted: false,
+                    },
+                    Filter {
+                        filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Udp),
+                        inverted: false,
+                    },
+                    Filter {
+                        filter_data: FilterData::DnsQueryDomain(vec![
+                            "example.com".into(),
+                            "foo.bar".into(),
+                        ]),
+                        inverted: false,
+                    },
+                ],
+                action: RuleAction::Dnat(dnat_target),
             },
         ];
 
         let chain_guard: FfiChainGuard = rules.as_slice().into();
         let test_chain_conv = &chain_guard.ffi_chain;
+
+        let test_chain_conv_rules = unsafe {
+            std::slice::from_raw_parts(test_chain_conv.rules, test_chain_conv.rule_count)
+        };
 
         let filters1 = vec![
             LibfwFilter {
@@ -433,7 +542,7 @@ pub mod tests {
             },
         ];
 
-        let mut assoc_data = vec![1u8; 32];
+        let assoc_data = vec![1u8; 32];
         let filters3 = vec![
             LibfwFilter {
                 inverted: true,
@@ -454,194 +563,154 @@ pub mod tests {
             },
         ];
 
-        let rules = vec![
-            LibfwRule {
-                filter_count: filters1.len(),
-                filters: filters1.as_ptr(),
-                action: LIBFW_VERDICT_ACCEPT,
+        let dns_cstrings = [
+            CString::new("example.com").unwrap(),
+            CString::new("foo.bar").unwrap(),
+        ];
+        let dns_ptrs: Vec<*const c_char> = dns_cstrings.iter().map(|c| c.as_ptr()).collect();
+        let filters4 = vec![
+            LibfwFilter {
+                inverted: false,
+                filter_type: LIBFW_FILTER_DIRECTION,
+                filter: LibfwFilterData {
+                    direction_filter: LIBFW_DIRECTION_OUTBOUND,
+                },
             },
-            LibfwRule {
-                filter_count: filters2.len(),
-                filters: filters2.as_ptr(),
-                action: LIBFW_VERDICT_DROP,
+            LibfwFilter {
+                inverted: false,
+                filter_type: LIBFW_FILTER_NEXT_LVL_PROTO,
+                filter: LibfwFilterData {
+                    next_level_protocol: LIBFW_NEXT_PROTO_UDP,
+                },
             },
-            LibfwRule {
-                filter_count: filters3.len(),
-                filters: filters3.as_ptr(),
-                action: LIBFW_VERDICT_REJECT,
+            LibfwFilter {
+                inverted: false,
+                filter_type: LIBFW_FILTER_DNS_QUERY_DOMAIN,
+                filter: LibfwFilterData {
+                    dns_domain_set: LibfwDnsDomainSet {
+                        domains: dns_ptrs.as_ptr(),
+                        num_domains: dns_ptrs.len(),
+                    },
+                },
             },
         ];
 
-        let test_ffi_chain = LibfwChain {
-            rule_count: rules.len(),
-            rules: rules.as_ptr(),
-        };
+        let expected_actions = [
+            LIBFW_ACTION_ACCEPT,
+            LIBFW_ACTION_DROP,
+            LIBFW_ACTION_REJECT,
+            LIBFW_ACTION_DNAT,
+        ];
 
-        let test_chain_conv_rules = unsafe {
-            std::slice::from_raw_parts(test_chain_conv.rules, test_chain_conv.rule_count)
-        };
-        let test_ffi_chain_rules =
-            unsafe { std::slice::from_raw_parts(test_ffi_chain.rules, test_ffi_chain.rule_count) };
+        assert_eq!(test_chain_conv.rule_count, expected_actions.len());
 
-        assert_eq!(test_chain_conv.rule_count, test_ffi_chain.rule_count);
-
-        for i in 0..test_chain_conv.rule_count {
+        for (rule_idx, expected_filters) in
+            [filters1, filters2, filters3, filters4].iter().enumerate()
+        {
+            let rule = &test_chain_conv_rules[rule_idx];
             assert_eq!(
-                test_chain_conv_rules[i].filter_count,
-                test_ffi_chain_rules[i].filter_count
+                rule.filter_count,
+                expected_filters.len(),
+                "rule {rule_idx} filter count"
             );
+            let conv_filters =
+                unsafe { std::slice::from_raw_parts(rule.filters, rule.filter_count) };
+            for (conv, expected) in conv_filters.iter().zip(expected_filters.iter()) {
+                assert_filter_eq(conv, expected);
+            }
 
-            let test_chain_conv_filters = unsafe {
-                std::slice::from_raw_parts(
-                    test_chain_conv_rules[i].filters,
-                    test_chain_conv_rules[i].filter_count,
-                )
-            };
-            let test_ffi_chain_filters = unsafe {
-                std::slice::from_raw_parts(
-                    test_ffi_chain_rules[i].filters,
-                    test_ffi_chain_rules[i].filter_count,
-                )
-            };
+            let expected_action = expected_actions[rule_idx];
+            assert_eq!(test_chain_conv_rules[rule_idx].action, expected_action);
+            if expected_action == LIBFW_ACTION_DNAT {
+                assert!(!test_chain_conv_rules[rule_idx].action_data.is_null());
+                let target = unsafe {
+                    &*(test_chain_conv_rules[rule_idx].action_data as *const LibfwDnatTarget)
+                };
+                assert_eq!(target.addr.ip_type, LIBFW_IP_TYPE_V4);
+                assert_eq!(unsafe { target.addr.ip_data.ipv4_bytes }, [1, 1, 1, 1]);
+                assert_eq!(target.port, 53);
+            } else {
+                assert!(test_chain_conv_rules[rule_idx].action_data.is_null());
+            }
+        }
+    }
 
-            for j in 0..test_chain_conv_rules[i].filter_count {
-                assert_eq!(
-                    test_chain_conv_filters[j].filter_type,
-                    test_ffi_chain_filters[j].filter_type
-                );
-
-                match test_chain_conv_filters[j].filter_type {
-                    LIBFW_FILTER_ASSOCIATED_DATA => {
-                        assert_eq!(
-                            unsafe {
-                                test_chain_conv_filters[j]
-                                    .filter
-                                    .associated_data_filter
-                                    .associated_data_len
-                            },
-                            unsafe {
-                                test_ffi_chain_filters[j]
-                                    .filter
-                                    .associated_data_filter
-                                    .associated_data_len
-                            }
-                        );
-                        if unsafe {
-                            test_chain_conv_filters[j]
-                                .filter
-                                .associated_data_filter
-                                .associated_data
-                                .is_null()
-                        } {
-                            assert!(unsafe {
-                                test_ffi_chain_filters[j]
-                                    .filter
-                                    .associated_data_filter
-                                    .associated_data
-                                    .is_null()
-                            });
-                        } else {
-                            assert!(!unsafe {
-                                test_ffi_chain_filters[j]
-                                    .filter
-                                    .associated_data_filter
-                                    .associated_data
-                                    .is_null()
-                            });
-                            let test_chain_conv_assoc_data = unsafe {
-                                std::slice::from_raw_parts(
-                                    test_chain_conv_filters[j]
-                                        .filter
-                                        .associated_data_filter
-                                        .associated_data,
-                                    test_chain_conv_filters[j]
-                                        .filter
-                                        .associated_data_filter
-                                        .associated_data_len,
-                                )
-                            };
-                            let test_ffi_chain_assoc_data = unsafe {
-                                std::slice::from_raw_parts(
-                                    test_ffi_chain_filters[j]
-                                        .filter
-                                        .associated_data_filter
-                                        .associated_data,
-                                    test_ffi_chain_filters[j]
-                                        .filter
-                                        .associated_data_filter
-                                        .associated_data_len,
-                                )
-                            };
-
-                            for k in 0..test_ffi_chain_assoc_data.len() {
-                                assert_eq!(
-                                    test_ffi_chain_assoc_data[k],
-                                    test_chain_conv_assoc_data[k]
-                                );
-                            }
-                        }
-                    }
-                    LIBFW_FILTER_CONNTRACK_STATE => assert_eq!(
-                        unsafe { test_chain_conv_filters[j].filter.conntrack_state_filter },
-                        unsafe { test_ffi_chain_filters[j].filter.conntrack_state_filter }
-                    ),
-                    LIBFW_FILTER_SRC_NETWORK | LIBFW_FILTER_DST_NETWORK => {
-                        let conv_network_filter =
-                            unsafe { test_chain_conv_filters[j].filter.network_filter };
-                        let ffi_network_filter =
-                            unsafe { test_ffi_chain_filters[j].filter.network_filter };
-                        assert_eq!(
-                            conv_network_filter.network_addr.ip_type,
-                            ffi_network_filter.network_addr.ip_type
-                        );
-                        match conv_network_filter.network_addr.ip_type {
-                            LIBFW_IP_TYPE_V4 => {
-                                assert_eq!(
-                                    unsafe { conv_network_filter.network_addr.ip_data.ipv4_bytes },
-                                    unsafe { ffi_network_filter.network_addr.ip_data.ipv4_bytes }
-                                );
-                            }
-                            LIBFW_IP_TYPE_V6 => {
-                                assert_eq!(
-                                    unsafe { conv_network_filter.network_addr.ip_data.ipv6_bytes },
-                                    unsafe { ffi_network_filter.network_addr.ip_data.ipv6_bytes }
-                                );
-                            }
-                            _ => unreachable!("Unknown IP type"),
-                        };
-
-                        assert_eq!(
-                            conv_network_filter.network_prefix,
-                            ffi_network_filter.network_prefix
-                        );
-                        assert_eq!(
-                            conv_network_filter.port_range_start,
-                            ffi_network_filter.port_range_start
-                        );
-                        assert_eq!(
-                            conv_network_filter.port_range_end,
-                            ffi_network_filter.port_range_end
-                        );
-                    }
-                    LIBFW_FILTER_DIRECTION => assert_eq!(
-                        unsafe { test_chain_conv_filters[j].filter.direction_filter },
-                        unsafe { test_ffi_chain_filters[j].filter.direction_filter }
-                    ),
-                    LIBFW_FILTER_NEXT_LVL_PROTO => assert_eq!(
-                        unsafe { test_chain_conv_filters[j].filter.next_level_protocol },
-                        unsafe { test_ffi_chain_filters[j].filter.next_level_protocol }
-                    ),
-                    LIBFW_FILTER_TCP_FLAGS => assert_eq!(
-                        unsafe { test_chain_conv_filters[j].filter.tcp_flags },
-                        unsafe { test_ffi_chain_filters[j].filter.tcp_flags }
-                    ),
-                    LIBFW_FILTER_ICMP_TYPE => assert_eq!(
-                        unsafe { test_chain_conv_filters[j].filter.icmp_type },
-                        unsafe { test_ffi_chain_filters[j].filter.icmp_type }
-                    ),
-                    _ => unreachable!("Unexpected filter type"),
+    /// Asserts that a converted FFI filter matches the expected one, comparing
+    /// the payload of whichever union variant the `filter_type` selects.
+    fn assert_filter_eq(conv: &LibfwFilter, expected: &LibfwFilter) {
+        assert_eq!(conv.filter_type, expected.filter_type, "filter type");
+        assert_eq!(conv.inverted, expected.inverted, "filter inverted flag");
+        match conv.filter_type {
+            LIBFW_FILTER_ASSOCIATED_DATA => {
+                let c = unsafe { conv.filter.associated_data_filter };
+                let e = unsafe { expected.filter.associated_data_filter };
+                assert_eq!(c.associated_data_len, e.associated_data_len);
+                if e.associated_data.is_null() {
+                    assert!(c.associated_data.is_null());
+                } else {
+                    assert!(!c.associated_data.is_null());
+                    let c_bytes = unsafe {
+                        std::slice::from_raw_parts(c.associated_data, c.associated_data_len)
+                    };
+                    let e_bytes = unsafe {
+                        std::slice::from_raw_parts(e.associated_data, e.associated_data_len)
+                    };
+                    assert_eq!(c_bytes, e_bytes, "associated data bytes");
                 }
             }
+            LIBFW_FILTER_DIRECTION => assert_eq!(unsafe { conv.filter.direction_filter }, unsafe {
+                expected.filter.direction_filter
+            }),
+            LIBFW_FILTER_SRC_NETWORK | LIBFW_FILTER_DST_NETWORK => {
+                let c = unsafe { conv.filter.network_filter };
+                let e = unsafe { expected.filter.network_filter };
+                assert_eq!(c.network_addr.ip_type, e.network_addr.ip_type);
+                match c.network_addr.ip_type {
+                    LIBFW_IP_TYPE_V4 => {
+                        assert_eq!(unsafe { c.network_addr.ip_data.ipv4_bytes }, unsafe {
+                            e.network_addr.ip_data.ipv4_bytes
+                        })
+                    }
+                    LIBFW_IP_TYPE_V6 => {
+                        assert_eq!(unsafe { c.network_addr.ip_data.ipv6_bytes }, unsafe {
+                            e.network_addr.ip_data.ipv6_bytes
+                        })
+                    }
+                    _ => unreachable!("Unknown IP type"),
+                };
+                assert_eq!(c.network_prefix, e.network_prefix);
+                assert_eq!(c.port_range_start, e.port_range_start);
+                assert_eq!(c.port_range_end, e.port_range_end);
+            }
+            LIBFW_FILTER_CONNTRACK_STATE => {
+                assert_eq!(unsafe { conv.filter.conntrack_state_filter }, unsafe {
+                    expected.filter.conntrack_state_filter
+                })
+            }
+            LIBFW_FILTER_NEXT_LVL_PROTO => {
+                assert_eq!(unsafe { conv.filter.next_level_protocol }, unsafe {
+                    expected.filter.next_level_protocol
+                })
+            }
+            LIBFW_FILTER_TCP_FLAGS => assert_eq!(unsafe { conv.filter.tcp_flags }, unsafe {
+                expected.filter.tcp_flags
+            }),
+            LIBFW_FILTER_ICMP_TYPE => assert_eq!(unsafe { conv.filter.icmp_type }, unsafe {
+                expected.filter.icmp_type
+            }),
+            LIBFW_FILTER_DNS_QUERY_DOMAIN => {
+                let c = unsafe { conv.filter.dns_domain_set };
+                let e = unsafe { expected.filter.dns_domain_set };
+                assert_eq!(c.num_domains, e.num_domains, "domain count");
+                let c_ptrs = unsafe { std::slice::from_raw_parts(c.domains, c.num_domains) };
+                let e_ptrs = unsafe { std::slice::from_raw_parts(e.domains, e.num_domains) };
+                for (cp, ep) in c_ptrs.iter().zip(e_ptrs.iter()) {
+                    assert_eq!(unsafe { CStr::from_ptr(*cp) }, unsafe {
+                        CStr::from_ptr(*ep)
+                    });
+                }
+            }
+            _ => unreachable!("Unexpected filter type"),
         }
     }
 }

@@ -319,12 +319,160 @@ fn make_icmp6(src: &str, dst: &str, icmp_type: GenericIcmpType) -> Vec<u8> {
     make_icmp6_with_body(src, dst, icmp_type, &[])
 }
 
+const DNS_HEADER_SIZE: usize = 12;
+
+// Strings in the DNS message format are encoded as a list of labels followed by a null byte.
+// A label starts with a "len byte" denoting how long the label is, followed by the bytes of the string.
+// DNS labels can only contain ascii code points.
+//
+// This explanation and function does not include the "root record" or compression pointers.
+fn encode_domain_name(name: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    for label in name.split('.') {
+        out.push(label.len() as u8);
+        out.extend_from_slice(label.as_bytes());
+    }
+    out.push(0x00);
+    out
+}
+
+enum PacketType {
+    Query,
+    Response,
+    BlockedResponse,
+}
+
+fn dns_packet(tx_id: u16, name: &str, packet_type: PacketType) -> Vec<u8> {
+    use pnet_packet::dns::{MutableDnsPacket, Retcode};
+
+    let mut buf = vec![0; DNS_HEADER_SIZE];
+    let mut packet =
+        MutableDnsPacket::new(&mut buf).expect("Creating MutableDnsPacket should be successful");
+
+    packet.set_id(tx_id);
+    packet.set_is_recursion_desirable(1);
+    packet.set_query_count(1);
+    match packet_type {
+        PacketType::Query => {}
+        PacketType::Response => {
+            packet.set_is_response(1);
+            packet.set_is_recursion_available(1);
+            packet.set_response_count(1);
+        }
+        PacketType::BlockedResponse => {
+            packet.set_is_response(1);
+            packet.set_is_recursion_available(1);
+            packet.set_rcode(Retcode::RecordNotExists);
+            packet.set_authority_rr_count(1);
+        }
+    };
+
+    buf.extend_from_slice(&dns_query(name));
+    match packet_type {
+        PacketType::Query => {}
+        PacketType::Response => buf.extend_from_slice(&dns_a_record()),
+        PacketType::BlockedResponse => buf.extend_from_slice(&dns_soa_record()),
+    }
+
+    buf
+}
+
+fn dns_query(name: &str) -> Vec<u8> {
+    use pnet_packet::dns::{DnsClasses, DnsTypes};
+    let mut buf = encode_domain_name(name);
+    buf.extend_from_slice(&DnsTypes::A.0.to_be_bytes());
+    buf.extend_from_slice(&DnsClasses::IN.0.to_be_bytes());
+    buf
+}
+
+fn dns_rr(rtype: pnet_packet::dns::DnsType, rdata: Vec<u8>) -> Vec<u8> {
+    use pnet_packet::dns::{DnsClasses, MutableDnsResponsePacket};
+
+    let mut buf = vec![0; DNS_HEADER_SIZE];
+    let mut packet = MutableDnsResponsePacket::new(&mut buf).unwrap();
+
+    packet.set_name_tag(u16::from_be_bytes([0xC0, 0x0C]));
+    packet.set_rtype(rtype);
+    packet.set_rclass(DnsClasses::IN);
+    packet.set_ttl(3600);
+    packet.set_data_len(rdata.len() as u16);
+
+    buf.extend_from_slice(&rdata);
+
+    buf
+}
+
+fn dns_a_record() -> Vec<u8> {
+    use pnet_packet::dns::DnsTypes;
+    // For A records the rdata just contains an IPv4 address
+    let rdata = vec![93, 184, 216, 34];
+    dns_rr(DnsTypes::A, rdata)
+}
+
+fn dns_soa_record() -> Vec<u8> {
+    use pnet_packet::dns::DnsTypes;
+    let mut rdata = Vec::new();
+
+    rdata.extend_from_slice(&encode_domain_name(
+        "dns-malware-cybersec.nordthreatprotection.com",
+    )); // MNAME
+    rdata.extend_from_slice(&encode_domain_name("hostmaster.example.com")); // RNAME
+
+    // Some fields that are irrelevant for testing purposes. They can all be set to 0
+    rdata.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0]); // Serial number
+    rdata.extend_from_slice(&[0, 0, 0, 0]); // Refresh interval
+    rdata.extend_from_slice(&[0, 0, 0, 0]); // Retry interval
+    rdata.extend_from_slice(&[0, 0, 0, 0]); // Expiry
+    rdata.extend_from_slice(&[0, 0, 0, 0]); // Minimum
+
+    dns_rr(DnsTypes::SOA, rdata)
+}
+
+fn make_dns_request_to(src: SocketAddrV4, dst: SocketAddrV4, tx_id: u16, name: &str) -> Vec<u8> {
+    let dns_payload = dns_packet(tx_id, name, PacketType::Query);
+    make_udp_with_body(&src.to_string(), &dst.to_string(), &dns_payload)
+}
+
+fn make_dns_request(tx_id: u16, name: &str) -> Vec<u8> {
+    make_dns_request_to(
+        "127.0.0.1:12345".parse().unwrap(),
+        "10.5.0.53:53".parse().unwrap(),
+        tx_id,
+        name,
+    )
+}
+
+fn make_dns_response_to(
+    src: SocketAddrV4,
+    dst: SocketAddrV4,
+    tx_id: u16,
+    name: &str,
+    is_blocked: bool,
+) -> Vec<u8> {
+    let dns_payload = if is_blocked {
+        dns_packet(tx_id, name, PacketType::BlockedResponse)
+    } else {
+        dns_packet(tx_id, name, PacketType::Response)
+    };
+    make_udp_with_body(&src.to_string(), &dst.to_string(), &dns_payload)
+}
+
+fn make_dns_response(tx_id: u16, name: &str, is_blocked: bool) -> Vec<u8> {
+    make_dns_response_to(
+        "10.5.0.53:53".parse().unwrap(),
+        "127.0.0.1:12345".parse().unwrap(),
+        tx_id,
+        name,
+        is_blocked,
+    )
+}
+
 trait FirewallExt {
-    fn process_outbound_packet_sink(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool;
+    fn process_outbound_packet_sink(&self, public_key: &[u8; 32], buffer: &mut [u8]) -> bool;
 }
 
 impl FirewallExt for StatefulFirewall {
-    fn process_outbound_packet_sink(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
+    fn process_outbound_packet_sink(&self, public_key: &[u8; 32], buffer: &mut [u8]) -> bool {
         Firewall::process_outbound_packet(self, public_key, buffer, &mut &io::sink())
     }
 }
@@ -377,13 +525,13 @@ fn ipv6_blocked() {
         assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src4)), false);
 
         // Should PASS (adds 1111..4444 and drops 2222)
-        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(src1, dst1)), is_ipv4);
-        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(src2, dst1)), is_ipv4);
-        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(src1, dst1)), is_ipv4);
-        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(src3, dst1)), is_ipv4);
-        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(src1, dst1)), is_ipv4);
-        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(src4, dst1)), is_ipv4);
-        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(src1, dst1)), is_ipv4);
+        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(src1, dst1)), is_ipv4);
+        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(src2, dst1)), is_ipv4);
+        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(src1, dst1)), is_ipv4);
+        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(src3, dst1)), is_ipv4);
+        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(src1, dst1)), is_ipv4);
+        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(src4, dst1)), is_ipv4);
+        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(src1, dst1)), is_ipv4);
 
         // Should PASS (matching outgoing connections exist in LRUCache)
         assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src3)), is_ipv4);
@@ -433,8 +581,8 @@ fn outgoing_blacklist() {
             ..Default::default()
         });
 
-        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(src, dst)), false);
-        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &make_tcp(src, dst, TcpFlags::ACK)), false);
+        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(src, dst)), false);
+        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &mut make_tcp(src, dst, TcpFlags::ACK)), false);
     }
 }
 
@@ -570,7 +718,7 @@ fn firewall_vpn_peer() {
             assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), false);
 
             assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_tcp(src1, dst1, syn)), true);
-            assert_eq!(fw.process_outbound_packet_sink(&peer1.0, &make_tcp(dst1, src1, synack)), true);
+            assert_eq!(fw.process_outbound_packet_sink(&peer1.0, &mut make_tcp(dst1, src1, synack)), true);
 
             state.whitelist.vpn_peer = None;
             fw.apply_state(state.clone());
@@ -650,7 +798,7 @@ fn firewall_whitelist_change_udp_allow() {
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), false);
         state.whitelist.port_whitelist.insert(them_peer, 8888);
         fw.apply_state(state.clone()); // NOTE: this doesn't change anything about this test
-        assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &make_udp(us, them)), true);
+        assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &mut make_udp(us, them)), true);
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
 
         // Should PASS because we started the session
@@ -682,7 +830,7 @@ fn firewall_whitelist_change_udp_block() {
         state.whitelist.port_whitelist.insert(them_peer, 1111);
         fw.apply_state(state.clone());
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
-        assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &make_udp(us, them)), true);
+        assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &mut make_udp(us, them)), true);
 
         // The already started connection should still work
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
@@ -711,7 +859,7 @@ fn firewall_whitelist_change_tcp_allow() {
         state.whitelist.port_whitelist.insert(them_peer, 8888);
         fw.apply_state(state.clone()); // NOTE: this doesn't change anything about the test
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), false);
-        assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &make_tcp(us, them, TcpFlags::SYN)), true);
+        assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &mut make_tcp(us, them, TcpFlags::SYN)), true);
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
 
 
@@ -744,7 +892,7 @@ fn firewall_whitelist_change_tcp_block() {
         state.whitelist.port_whitelist.insert(them_peer, 1111);
         fw.apply_state(state.clone());
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN)), true);
-        assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &make_tcp(us, them, TcpFlags::SYN | TcpFlags::ACK)), true);
+        assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &mut make_tcp(us, them, TcpFlags::SYN | TcpFlags::ACK)), true);
 
 
         // Firewall allows already established connections
@@ -1084,7 +1232,7 @@ fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
     assert!(
         fw.process_outbound_packet_sink(
             &vpn_peer.0,
-            &make_tcp(
+            &mut make_tcp(
                 &format!("{wlan_ip}:12345"),
                 &format!("{remote_ip}:443"),
                 TcpFlags::SYN
@@ -1106,7 +1254,7 @@ fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
     assert!(
         !fw.process_outbound_packet_sink(
             &vpn_peer.0,
-            &make_tcp(
+            &mut make_tcp(
                 &format!("{wlan_ip}:12345"),
                 &format!("{remote_ip}:443"),
                 TcpFlags::SYN
@@ -1117,7 +1265,7 @@ fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
     assert!(
         fw.process_outbound_packet_sink(
             &vpn_peer.0,
-            &make_tcp(
+            &mut make_tcp(
                 &format!("{tunnel_ip}:54321"),
                 &format!("{remote_ip}:443"),
                 TcpFlags::SYN
@@ -1135,7 +1283,7 @@ fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
     assert!(
         fw.process_outbound_packet_sink(
             &vpn_peer.0,
-            &make_tcp(
+            &mut make_tcp(
                 &format!("{wlan_ip}:12345"),
                 &format!("{remote_ip}:443"),
                 TcpFlags::SYN
@@ -1149,130 +1297,11 @@ mod tp_lite_stats {
     use std::sync::Arc;
 
     use parking_lot::Mutex;
-    use pnet_packet::dns::{
-        DnsClasses, DnsType, DnsTypes, MutableDnsPacket, MutableDnsResponsePacket, Retcode,
-    };
     use telio_model::tp_lite_stats::{
         BlockedDomain, DnsMetrics, TpLiteStatsCallback, TpLiteStatsOptions,
     };
 
     use super::*;
-
-    const DNS_HEADER_SIZE: usize = 12;
-
-    // Strings in the DNS message format are encoded as a list of labels followed by a null byte.
-    // A label starts with a "len byte" denoting how long the label is, followed by the bytes of the string.
-    // DNS labels can only contain ascii code points.
-    //
-    // This explanation and function does not include the "root record" or compression pointers.
-    fn encode_domain_name(name: &str) -> Vec<u8> {
-        let mut out = Vec::new();
-        for label in name.split('.') {
-            out.push(label.len() as u8);
-            out.extend_from_slice(label.as_bytes());
-        }
-        out.push(0x00);
-        out
-    }
-
-    enum PacketType {
-        Query,
-        Response,
-        BlockedResponse,
-    }
-
-    fn dns_packet(tx_id: u16, name: &str, packet_type: PacketType) -> Vec<u8> {
-        let mut buf = vec![0; DNS_HEADER_SIZE];
-        let mut packet = MutableDnsPacket::new(&mut buf)
-            .expect("Creating MutableDnsPacket should be successful");
-
-        packet.set_id(tx_id);
-        packet.set_is_recursion_desirable(1);
-        packet.set_query_count(1);
-        match packet_type {
-            PacketType::Query => {}
-            PacketType::Response => {
-                packet.set_is_response(1);
-                packet.set_is_recursion_available(1);
-                packet.set_response_count(1);
-            }
-            PacketType::BlockedResponse => {
-                packet.set_is_response(1);
-                packet.set_is_recursion_available(1);
-                packet.set_rcode(Retcode::RecordNotExists);
-                packet.set_authority_rr_count(1);
-            }
-        };
-
-        buf.extend_from_slice(&dns_query(name));
-        match packet_type {
-            PacketType::Query => {}
-            PacketType::Response => buf.extend_from_slice(&dns_a_record()),
-            PacketType::BlockedResponse => buf.extend_from_slice(&dns_soa_record()),
-        }
-
-        buf
-    }
-
-    fn dns_query(name: &str) -> Vec<u8> {
-        let mut buf = encode_domain_name(name);
-        buf.extend_from_slice(&DnsTypes::A.0.to_be_bytes());
-        buf.extend_from_slice(&DnsClasses::IN.0.to_be_bytes());
-        buf
-    }
-
-    fn dns_rr(rtype: DnsType, rdata: Vec<u8>) -> Vec<u8> {
-        let mut buf = vec![0; DNS_HEADER_SIZE];
-        let mut packet = MutableDnsResponsePacket::new(&mut buf).unwrap();
-
-        packet.set_name_tag(u16::from_be_bytes([0xC0, 0x0C]));
-        packet.set_rtype(rtype);
-        packet.set_rclass(DnsClasses::IN);
-        packet.set_ttl(3600);
-        packet.set_data_len(rdata.len() as u16);
-
-        buf.extend_from_slice(&rdata);
-
-        buf
-    }
-
-    fn dns_a_record() -> Vec<u8> {
-        // For A records the rdata just contains an IPv4 address
-        let rdata = vec![93, 184, 216, 34];
-        dns_rr(DnsTypes::A, rdata)
-    }
-
-    fn dns_soa_record() -> Vec<u8> {
-        let mut rdata = Vec::new();
-
-        rdata.extend_from_slice(&encode_domain_name(
-            "dns-malware-cybersec.nordthreatprotection.com",
-        )); // MNAME
-        rdata.extend_from_slice(&encode_domain_name("hostmaster.example.com")); // RNAME
-
-        // Some fields that are irrelevant for testing purposes. They can all be set to 0
-        rdata.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0]); // Serial number
-        rdata.extend_from_slice(&[0, 0, 0, 0]); // Refresh interval
-        rdata.extend_from_slice(&[0, 0, 0, 0]); // Retry interval
-        rdata.extend_from_slice(&[0, 0, 0, 0]); // Expiry
-        rdata.extend_from_slice(&[0, 0, 0, 0]); // Minimum
-
-        dns_rr(DnsTypes::SOA, rdata)
-    }
-
-    fn make_dns_request(tx_id: u16, name: &str) -> Vec<u8> {
-        let dns_payload = dns_packet(tx_id, name, PacketType::Query);
-        make_udp_with_body("127.0.0.1:12345", "10.5.0.53:53", &dns_payload)
-    }
-
-    fn make_dns_response(tx_id: u16, name: &str, is_blocked: bool) -> Vec<u8> {
-        let dns_payload = if is_blocked {
-            dns_packet(tx_id, name, PacketType::BlockedResponse)
-        } else {
-            dns_packet(tx_id, name, PacketType::Response)
-        };
-        make_udp_with_body("10.5.0.53:53", "127.0.0.1:12345", &dns_payload)
-    }
 
     #[derive(Debug, Default)]
     struct Stats {
@@ -1319,7 +1348,9 @@ mod tp_lite_stats {
         fw.enable_tp_lite_stats_collection(config, Box::new(callback))
             .unwrap();
 
-        assert!(fw.process_outbound_packet_sink(&make_peer(), &make_dns_request(1, "example.com")));
+        assert!(
+            fw.process_outbound_packet_sink(&make_peer(), &mut make_dns_request(1, "example.com"))
+        );
         assert!(fw.process_inbound_packet(
             &make_peer(),
             &mut make_dns_response(1, "example.com", false)
@@ -1327,7 +1358,7 @@ mod tp_lite_stats {
 
         assert!(fw.process_outbound_packet_sink(
             &make_peer(),
-            &make_dns_request(2, "blocked1.example.com")
+            &mut make_dns_request(2, "blocked1.example.com")
         ));
         assert!(fw.process_inbound_packet(
             &make_peer(),
@@ -1336,7 +1367,7 @@ mod tp_lite_stats {
 
         assert!(fw.process_outbound_packet_sink(
             &make_peer(),
-            &make_dns_request(3, "blocked2.example.com")
+            &mut make_dns_request(3, "blocked2.example.com")
         ));
         // Small sleep to make sure stats collection happens
         std::thread::sleep(std::time::Duration::from_secs(1));
@@ -1388,11 +1419,13 @@ mod tp_lite_stats {
         // regardless of destination IP or port.
         //
         // Packet 1: different IP, non-53 port (DoT port 853) — accepted
-        assert!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(SRC_ADDR, OTHER_ADDR)));
+        assert!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(SRC_ADDR, OTHER_ADDR)));
         // Packet 2: configured DNS IP, port 53 — accepted
-        assert!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(SRC_ADDR, PT_DNS_ADDR)));
+        assert!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(SRC_ADDR, PT_DNS_ADDR)));
         // Packet 3: configured DNS IP, non-53 port (DoT port 853) — accepted (flag not set)
-        assert!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(SRC_ADDR, DOT_DNS_ADDR)));
+        assert!(
+            fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(SRC_ADDR, DOT_DNS_ADDR))
+        );
 
         // Re-enable TP-Lite stats collection with force_plaintext_dns = true
         let config = TpLiteStatsOptions {
@@ -1410,10 +1443,145 @@ mod tp_lite_stats {
         // After enabling with force_plaintext_dns = true:
         //
         // Packet 1: different IP, non-53 port — still accepted (only the configured DNS IP is restricted)
-        assert!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(SRC_ADDR, OTHER_ADDR)));
+        assert!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(SRC_ADDR, OTHER_ADDR)));
         // Packet 2: configured DNS IP, port 53 — accepted (standard DNS is allowed)
-        assert!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(SRC_ADDR, PT_DNS_ADDR)));
+        assert!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(SRC_ADDR, PT_DNS_ADDR)));
         // Packet 3: configured DNS IP, non-53 port (DoT port 853) — rejected
-        assert!(!fw.process_outbound_packet_sink(&make_peer(), &make_udp(SRC_ADDR, DOT_DNS_ADDR)));
+        assert!(
+            !fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(SRC_ADDR, DOT_DNS_ADDR))
+        );
+    }
+}
+
+mod dns_whitelisting {
+    use pnet_packet::ipv4::Ipv4Packet;
+    use pnet_packet::udp::UdpPacket;
+    use telio_model::features::{DnsRedirect, DnsWhitelisting};
+
+    use super::*;
+
+    fn parse_dst_v4(packet: &[u8]) -> (Ipv4Addr, u16) {
+        let ip = Ipv4Packet::new(packet).expect("ipv4 parse");
+        let udp = UdpPacket::new(&packet[IPV4_HEADER_MIN..]).expect("udp parse");
+        (ip.get_destination(), udp.get_destination())
+    }
+
+    fn parse_src_v4(packet: &[u8]) -> (Ipv4Addr, u16) {
+        let ip = Ipv4Packet::new(packet).expect("ipv4 parse");
+        let udp = UdpPacket::new(&packet[IPV4_HEADER_MIN..]).expect("udp parse");
+        (ip.get_source(), udp.get_source())
+    }
+
+    fn fw_with_dns_whitelist(
+        domains: Vec<String>,
+        redirects: Vec<DnsRedirect>,
+    ) -> StatefulFirewall {
+        let feature = FeatureFirewall {
+            dns_whitelisting: Some(DnsWhitelisting { domains, redirects }),
+            ..Default::default()
+        };
+        StatefulFirewall::new(false, feature).expect("libfirewall.so available")
+    }
+
+    #[test]
+    fn dns_whitelisting_redirects_matching_query() {
+        let blocking: SocketAddrV4 = "10.5.0.53:53".parse().unwrap();
+        let standard: SocketAddrV4 = "8.8.8.8:53".parse().unwrap();
+        let fw = fw_with_dns_whitelist(
+            vec!["example.com".into()],
+            vec![DnsRedirect { blocking, standard }],
+        );
+
+        let src: SocketAddrV4 = "127.0.0.1:12345".parse().unwrap();
+        let mut buf = make_dns_request_to(src, blocking, 1, "example.com");
+
+        let accepted = fw.process_outbound_packet(&make_peer(), &mut buf, &mut io::sink());
+        assert!(accepted, "DNAT rule should accept the packet");
+
+        let (dst_ip, dst_port) = parse_dst_v4(&buf);
+        assert_eq!(dst_ip, *standard.ip(), "destination IP must be rewritten");
+        assert_eq!(
+            dst_port,
+            standard.port(),
+            "destination port must be rewritten"
+        );
+    }
+
+    #[test]
+    fn dns_whitelisting_leaves_non_matching_query_alone() {
+        let blocking: SocketAddrV4 = "10.5.0.53:53".parse().unwrap();
+        let standard: SocketAddrV4 = "8.8.8.8:53".parse().unwrap();
+        let fw = fw_with_dns_whitelist(
+            vec!["example.com".into()],
+            vec![DnsRedirect { blocking, standard }],
+        );
+
+        let src: SocketAddrV4 = "127.0.0.1:12345".parse().unwrap();
+        let mut buf = make_dns_request_to(src, blocking, 2, "notwhitelisted.com");
+
+        let accepted = fw.process_outbound_packet(&make_peer(), &mut buf, &mut io::sink());
+        assert!(accepted, "catch-all outbound-accept rule should accept");
+
+        let (dst_ip, dst_port) = parse_dst_v4(&buf);
+        assert_eq!(dst_ip, *blocking.ip(), "dst IP must NOT be rewritten");
+        assert_eq!(dst_port, blocking.port(), "dst port must NOT be rewritten");
+    }
+
+    #[test]
+    fn dns_whitelisting_scopes_to_configured_blocking_dst() {
+        let blocking: SocketAddrV4 = "10.5.0.53:53".parse().unwrap();
+        let standard: SocketAddrV4 = "8.8.8.8:53".parse().unwrap();
+        let fw = fw_with_dns_whitelist(
+            vec!["example.com".into()],
+            vec![DnsRedirect { blocking, standard }],
+        );
+
+        let src: SocketAddrV4 = "127.0.0.1:12345".parse().unwrap();
+        let other_dst: SocketAddrV4 = "1.1.1.1:53".parse().unwrap();
+        let mut buf = make_dns_request_to(src, other_dst, 3, "example.com");
+
+        let accepted = fw.process_outbound_packet(&make_peer(), &mut buf, &mut io::sink());
+        assert!(accepted, "catch-all outbound-accept rule should accept");
+
+        let (dst_ip, dst_port) = parse_dst_v4(&buf);
+        assert_eq!(dst_ip, *other_dst.ip());
+        assert_eq!(dst_port, other_dst.port());
+    }
+
+    #[test]
+    fn dns_whitelisting_un_dnats_response() {
+        let blocking: SocketAddrV4 = "10.5.0.53:53".parse().unwrap();
+        let standard: SocketAddrV4 = "8.8.8.8:53".parse().unwrap();
+        let fw = fw_with_dns_whitelist(
+            vec!["example.com".into()],
+            vec![DnsRedirect { blocking, standard }],
+        );
+
+        let client: SocketAddrV4 = "127.0.0.1:12345".parse().unwrap();
+        let peer = make_peer();
+
+        fw.apply_state(FirewallState {
+            ip_addresses: vec![IpAddr::V4(*client.ip())],
+            ..Default::default()
+        });
+
+        let mut query = make_dns_request_to(client, blocking, 42, "example.com");
+        assert!(fw.process_outbound_packet(&peer, &mut query, &mut io::sink()));
+
+        let mut response = make_dns_response_to(standard, client, 42, "example.com", false);
+        let accepted = fw.process_inbound_packet(&peer, &mut response);
+        assert!(accepted, "response packet should be accepted via conntrack");
+
+        let (src_ip, src_port) = parse_src_v4(&response);
+        assert_eq!(
+            src_ip,
+            *blocking.ip(),
+            "src IP must be un-DNATed to blocking"
+        );
+        assert_eq!(
+            src_port,
+            blocking.port(),
+            "src port must be un-DNATed to blocking"
+        );
     }
 }

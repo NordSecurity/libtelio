@@ -1101,10 +1101,11 @@ impl Runtime {
         #[cfg(feature = "enable_firewall")]
         let firewall_process_outbound_callback = firewall.clone().map(|fw| {
             Arc::new(
-                move |peer: &[u8; 32], packet: &[u8], sink: &mut dyn io::Write| {
+                move |peer: &[u8; 32], packet: &mut [u8], sink: &mut dyn io::Write| {
                     fw.process_outbound_packet(peer, packet, sink)
                 },
-            ) as Arc<dyn Fn(&[u8; 32], &[u8], &mut dyn io::Write) -> bool + Send + Sync>
+            )
+                as Arc<dyn Fn(&[u8; 32], &mut [u8], &mut dyn io::Write) -> bool + Send + Sync>
         });
         #[cfg(not(feature = "enable_firewall"))]
         let firewall_process_outbound_callback = None;

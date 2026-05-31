@@ -143,6 +143,9 @@ typedef string Ipv4Addr;
 typedef string SocketAddr;
 
 [Custom]
+typedef string SocketAddrV4;
+
+[Custom]
 typedef string HiddenString;
 
 [Custom]
@@ -815,6 +818,23 @@ dictionary FirewallBlacklistTuple {
     u16 port;
 };
 
+/// Pair of DNS server endpoints describing how a single DNS-redirect rule
+/// should rewrite outbound DNS traffic.
+dictionary DnsRedirect {
+    /// DNS server that would otherwise drop non-whitelisted queries.
+    SocketAddrV4 blocking;
+    /// DNS server to which whitelisted queries are redirected.
+    SocketAddrV4 standard;
+};
+
+/// DNS query whitelisting via DNAT redirect.
+dictionary DnsWhitelisting {
+    /// Domain patterns to whitelist (matched against DNS query QNAMEs).
+    sequence<string> domains;
+    /// Pairs of (blocking, standard) DNS server endpoints.
+    sequence<DnsRedirect> redirects;
+};
+
 /// Feature config for firewall
 dictionary FeatureFirewall {
     /// Turns on connection resets upon VPN server change
@@ -825,6 +845,9 @@ dictionary FeatureFirewall {
     Ipv4Net? exclude_private_ip_range;
     /// Blackist for outgoing connections
     sequence<FirewallBlacklistTuple> outgoing_blacklist;
+    /// DNS query whitelisting (DNAT redirect of whitelisted queries away
+    /// from the blocking DNS server to the standard one).
+    DnsWhitelisting? dns_whitelisting;
 };
 
 /// Link detection mechanism

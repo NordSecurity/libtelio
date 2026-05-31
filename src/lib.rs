@@ -65,7 +65,7 @@ pub use uniffi_libtelio::*;
     clippy::empty_line_after_doc_comments
 )]
 mod uniffi_libtelio {
-    use std::net::{IpAddr, SocketAddr};
+    use std::net::{IpAddr, SocketAddr, SocketAddrV4};
 
     use super::crypto::{PublicKey, SecretKey};
     use super::*;
@@ -197,6 +197,19 @@ mod uniffi_libtelio {
             Ok(val.parse().map_err(|_| TelioError::UnknownError {
                 inner: "Invalid IP address".to_owned(),
             })?)
+        }
+
+        fn from_custom(obj: Self) -> Self::Builtin {
+            obj.to_string()
+        }
+    }
+
+    impl UniffiCustomTypeConverter for SocketAddrV4 {
+        type Builtin = String;
+
+        fn into_custom(val: Self::Builtin) -> uniffi::Result<Self> {
+            val.parse()
+                .map_err(|e| anyhow::anyhow!(format!("Invalid SocketAddrV4 '{val}': {e}")))
         }
 
         fn from_custom(obj: Self) -> Self::Builtin {

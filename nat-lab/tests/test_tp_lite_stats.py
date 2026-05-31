@@ -32,6 +32,7 @@ def _features_with_firewall():
         boringtun_reset_conns=False,
         exclude_private_ip_range=None,
         outgoing_blacklist=[],
+        dns_whitelisting=None,
     )
     return features
 
