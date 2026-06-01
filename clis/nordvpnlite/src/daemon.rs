@@ -397,19 +397,23 @@ pub async fn daemon_event_loop(config: NordVpnLiteConfig) -> Result<(), NordVpnL
     };
 
     let config_clone = config.clone();
+    let (init_done_tx, init_done_rx) = oneshot::channel::<()>();
     let mut telio_task_handle = tokio::task::spawn_blocking(move || {
         let mut context = TelioContext::new(config_clone, nordlynx_private_key)?;
+        let _ = init_done_tx.send(());
         context.start_listening_commands(telio_rx)
     });
 
-    // Spawn the async task for exit node connection
-    // TODO: This can be triggered through nordvpnlite command to allow the user to stop/restart.
-    let config_clone = config.clone();
-    let tx_clone = telio_tx.clone();
-    tokio::spawn(async move {
-        handle_exit_node_connection(&config_clone, tx_clone).await;
-        debug!("Exit node connection task completed");
-    });
+    // Wait for interface setup to complete before making API calls.
+    if init_done_rx.await.is_ok() {
+        // TODO: This can be triggered through nordvpnlite command to allow the user to stop/restart.
+        let config_clone = config.clone();
+        let tx_clone = telio_tx.clone();
+        tokio::spawn(async move {
+            handle_exit_node_connection(&config_clone, tx_clone).await;
+            debug!("Exit node connection task completed");
+        });
+    }
 
     info!("Entering event loop");
     loop {

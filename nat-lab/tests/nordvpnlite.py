@@ -290,31 +290,18 @@ class NordVpnLite:
             await self.remove_logs()
             await self.save_config()
 
-            async def wait_for_nordvpnlite_start():
-                await self.wait_for_nordvpnlite_socket()
-                while True:
-                    try:
-                        if not await self.is_alive():
-                            raise RuntimeError(
-                                "socket exists but daemon's not running."
-                            )
-                        break
-                    except IgnoreableError:
-                        await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
-                        continue
-
             cmd = ["start"]
             if not self.config.no_detach:
                 cmd.append("--config-file")
                 cmd.append(str(self.config.config_path))
                 stdout, stderr = await self.execute_command(cmd)
-                await wait_for_nordvpnlite_start()
+                await self.wait_for_nordvpnlite_start()
             else:
                 cmd.append("--no-detach")
                 cmd.append("--config-file")
                 cmd.append(str(self.config.config_path))
                 proc = await self.run_command(cmd)
-                await wait_for_nordvpnlite_start()
+                await self.wait_for_nordvpnlite_start()
                 stdout, stderr = proc.get_stdout(), proc.get_stderr()
 
             assert len(stderr) == 0, f"Stderr is not empty: {stderr}"
@@ -438,6 +425,17 @@ class NordVpnLite:
         await self.connection.create_process(
             ["rm", "-f", str(self.config.paths.socket_file)]
         ).execute()
+
+    async def wait_for_nordvpnlite_start(self):
+        await self.wait_for_nordvpnlite_socket()
+        while True:
+            try:
+                if not await self.is_alive():
+                    raise RuntimeError("socket exists but daemon's not running.")
+                break
+            except IgnoreableError:
+                await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+                continue
 
     async def wait_for_nordvpnlite_socket(self):
         while True:
