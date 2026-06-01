@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
-from tests.helpers import setup_mesh_nodes, SetupParameters, connectivity_stack
+from tests.helpers import SetupParameters, Environment, connectivity_stack
 from tests.utils.bindings import (
     Features,
     default_features,
@@ -20,7 +20,7 @@ from tests.utils.connection_util import (
 )
 from tests.utils.logger import log
 from tests.utils.router import IPStack
-from typing import Tuple
+from typing import Awaitable, Callable, Tuple
 
 IP_STACKS = [
     pytest.param(
@@ -149,56 +149,55 @@ async def test_session_keeper(
     alpha_setup_params: SetupParameters,
     alpha_ip_stack: IPStack,
     beta_setup_params: SetupParameters,
+    exit_stack: AsyncExitStack,
+    setup_mesh_nodes_factory: Callable[..., Awaitable[Environment]],
 ) -> None:
-    async with AsyncExitStack() as exit_stack:
-        alpha_setup_params.ip_stack = alpha_ip_stack
+    alpha_setup_params.ip_stack = alpha_ip_stack
 
-        # Initialize node conntracker before starting nodes
-        _, alpha_conntrack = await build_conntracker(
-            exit_stack,
-            alpha_setup_params.connection_tag,
-            alpha_ip_stack,
-            beta_setup_params.ip_stack,
-            for_session_keeper=True,
-        )
-        _, beta_conntrack = await build_conntracker(
-            exit_stack,
-            beta_setup_params.connection_tag,
-            alpha_ip_stack,
-            beta_setup_params.ip_stack,
-            for_session_keeper=True,
-        )
+    # Initialize node conntracker before starting nodes
+    _, alpha_conntrack = await build_conntracker(
+        exit_stack,
+        alpha_setup_params.connection_tag,
+        alpha_ip_stack,
+        beta_setup_params.ip_stack,
+        for_session_keeper=True,
+    )
+    _, beta_conntrack = await build_conntracker(
+        exit_stack,
+        beta_setup_params.connection_tag,
+        alpha_ip_stack,
+        beta_setup_params.ip_stack,
+        for_session_keeper=True,
+    )
 
-        # Startup meshnet
-        env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
-        )
+    # Startup meshnet
+    env = await setup_mesh_nodes_factory([alpha_setup_params, beta_setup_params])
 
-        alpha, beta = env.nodes
-        alpha_client, beta_client = env.clients
+    alpha, beta = env.nodes
+    alpha_client, beta_client = env.clients
 
-        async def wait_for_conntracker() -> None:
-            while True:
-                alpha_limits = await alpha_conntrack.find_conntracker_violations()
-                beta_limits = await beta_conntrack.find_conntracker_violations()
-                log.info("Conntracker state: %s %s", alpha_limits, beta_limits)
-                if alpha_limits is None and beta_limits is None:
-                    return
-                await asyncio.sleep(1)
+    async def wait_for_conntracker() -> None:
+        while True:
+            alpha_limits = await alpha_conntrack.find_conntracker_violations()
+            beta_limits = await beta_conntrack.find_conntracker_violations()
+            log.info("Conntracker state: %s %s", alpha_limits, beta_limits)
+            if alpha_limits is None and beta_limits is None:
+                return
+            await asyncio.sleep(1)
 
-        await asyncio.gather(
-            alpha_client.wait_for_state_peer(
-                beta.public_key,
-                [NodeState.CONNECTED],
-                [PathType.DIRECT],
-            ),
-            beta_client.wait_for_state_peer(
-                alpha.public_key,
-                [NodeState.CONNECTED],
-                [PathType.DIRECT],
-            ),
-            wait_for_conntracker(),
-        )
+    await asyncio.gather(
+        alpha_client.wait_for_state_peer(
+            beta.public_key,
+            [NodeState.CONNECTED],
+            [PathType.DIRECT],
+        ),
+        beta_client.wait_for_state_peer(
+            alpha.public_key,
+            [NodeState.CONNECTED],
+            [PathType.DIRECT],
+        ),
+        wait_for_conntracker(),
+    )
 
 
 @pytest.mark.asyncio
@@ -256,41 +255,40 @@ async def test_qos(
     alpha_setup_params: SetupParameters,
     alpha_ip_stack: IPStack,
     beta_setup_params: SetupParameters,
+    exit_stack: AsyncExitStack,
+    setup_mesh_nodes_factory: Callable[..., Awaitable[Environment]],
 ) -> None:
-    async with AsyncExitStack() as exit_stack:
-        alpha_setup_params.ip_stack = alpha_ip_stack
+    alpha_setup_params.ip_stack = alpha_ip_stack
 
-        # Setup conntracking before mesh startup
-        _, alpha_conntrack = await build_conntracker(
-            exit_stack,
-            alpha_setup_params.connection_tag,
-            alpha_setup_params.ip_stack,
-            beta_setup_params.ip_stack,
-        )
+    # Setup conntracking before mesh startup
+    _, alpha_conntrack = await build_conntracker(
+        exit_stack,
+        alpha_setup_params.connection_tag,
+        alpha_setup_params.ip_stack,
+        beta_setup_params.ip_stack,
+    )
 
-        env = await setup_mesh_nodes(
-            exit_stack, [alpha_setup_params, beta_setup_params]
-        )
+    env = await setup_mesh_nodes_factory([alpha_setup_params, beta_setup_params])
 
-        alpha, beta = env.nodes
-        alpha_client, beta_client = env.clients
+    alpha, beta = env.nodes
+    alpha_client, beta_client = env.clients
 
-        async def wait_for_conntracker() -> None:
-            while True:
-                alpha_limits = await alpha_conntrack.find_conntracker_violations()
-                log.info("wait_for_conntracker(): %s", alpha_limits)
-                if alpha_limits is None:
-                    return
-                await asyncio.sleep(1.0)
+    async def wait_for_conntracker() -> None:
+        while True:
+            alpha_limits = await alpha_conntrack.find_conntracker_violations()
+            log.info("wait_for_conntracker(): %s", alpha_limits)
+            if alpha_limits is None:
+                return
+            await asyncio.sleep(1.0)
 
-        await asyncio.gather(
-            alpha_client.wait_for_state_peer(
-                beta.public_key,
-                [NodeState.CONNECTED],
-            ),
-            beta_client.wait_for_state_peer(
-                alpha.public_key,
-                [NodeState.CONNECTED],
-            ),
-            wait_for_conntracker(),
-        )
+    await asyncio.gather(
+        alpha_client.wait_for_state_peer(
+            beta.public_key,
+            [NodeState.CONNECTED],
+        ),
+        beta_client.wait_for_state_peer(
+            alpha.public_key,
+            [NodeState.CONNECTED],
+        ),
+        wait_for_conntracker(),
+    )

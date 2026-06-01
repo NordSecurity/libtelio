@@ -1,3 +1,7 @@
+# TODO (LLT-7084): Move fixtures to separate fixture files out of conftest.py
+# pylint: disable=too-many-lines
+# Register helpers_fixtures once here so individual test modules don't need to
+# repeat it (which caused PytestWarning: Plugin already registered).
 import asyncio
 import logging
 import os
@@ -29,6 +33,27 @@ from tests.utils.logger import log
 from tests.utils.router import IPStack
 from tests.utils.testing import get_current_test_log_path
 from typing import List
+
+pytest_plugins = ["tests.helpers_fixtures"]
+
+DERP_SERVER_1_ADDR = "http://10.0.10.1:8765"
+DERP_SERVER_2_ADDR = "http://10.0.10.2:8765"
+DERP_SERVER_3_ADDR = "http://10.0.10.3:8765"
+DERP_SERVER_1_SECRET_KEY = "yBTYHj8yPlG9VtMYMwJSRHdzNdyAlVXGc6X2xJkjfHQ="
+DERP_SERVER_2_SECRET_KEY = "2NgALOCSKJcDxwr8MtA+6lYbf7b98KSdAROGoUwZ1V0="
+
+SETUP_CHECK_TIMEOUT_S = 30
+SETUP_CHECK_RETRIES = 5
+SETUP_CHECK_CONNECTIVITY_TIMEOUT = 60
+SETUP_CHECK_CONNECTIVITY_RETRIES = 1
+GW_CHECK_CONNECTIVITY_TIMEOUT = 30
+GW_CHECK_CONNECTIVITY_RETRIES = 2
+SETUP_CHECK_MAC_COLLISION_TIMEOUT_S = 300
+SETUP_CHECK_MAC_COLLISION_RETRIES = 1
+SETUP_CHECK_ARP_CACHE_TIMEOUT_S = 300
+SETUP_CHECK_ARP_CACHE_RETRIES = 1
+SETUP_CHECK_DUPLICATE_IP_TIMEOUT_S = 60
+SETUP_CHECK_DUPLICATE_IP_RETRIES = 1
 
 RUNNER: asyncio.Runner | None = None
 SESSION_SCOPE_EXIT_STACK: AsyncExitStack | None = None
