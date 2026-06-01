@@ -1097,6 +1097,7 @@ fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
     fw.apply_state(FirewallState {
         ip_addresses: vec![IpAddr::V4(tunnel_ip)],
         exit_node_present: true,
+        force_plaintext_dns_for_servers: None,
         whitelist: telio_firewall::firewall::Whitelist {
             vpn_peer: Some(vpn_peer),
             ..Default::default()
@@ -1352,5 +1353,67 @@ mod tp_lite_stats {
             stats.lock().blocked_domains[0].domain_name,
             "blocked1.example.com".to_owned()
         );
+    }
+
+    #[test]
+    fn test_tp_lite_with_force_plaintext_dns() {
+        const SRC_ADDR: &str = "127.0.0.1:12345";
+        const OTHER_ADDR: &str = "1.1.1.1:853";
+        const PT_DNS_ADDR: &str = "10.5.0.53:53";
+        const DOT_DNS_ADDR: &str = "10.5.0.53:853";
+
+        let fw = StatefulFirewall::new(true, FeatureFirewall::default())
+            .expect("Failed to load libfirewall");
+        let mut state = fw.get_state();
+        state.ip_addresses = vec![
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+        ];
+        fw.apply_state(state.clone());
+
+        let stats = Arc::new(Mutex::new(Stats::default()));
+        let callback = Callback {
+            stats: stats.clone(),
+        };
+
+        // Enable TP-Lite stats collection with block_non_dns_traffic = true
+        let config = TpLiteStatsOptions {
+            dns_server_ips: vec![IpAddr::from([10, 5, 0, 53])],
+            ..Default::default()
+        };
+        fw.enable_tp_lite_stats_collection(config, Box::new(callback))
+            .unwrap();
+
+        // Before enabling TP-Lite stats collection, all outbound packets should be accepted
+        // regardless of destination IP or port.
+        //
+        // Packet 1: different IP, non-53 port (DoT port 853) — accepted
+        assert!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(SRC_ADDR, OTHER_ADDR)));
+        // Packet 2: configured DNS IP, port 53 — accepted
+        assert!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(SRC_ADDR, PT_DNS_ADDR)));
+        // Packet 3: configured DNS IP, non-53 port (DoT port 853) — accepted (flag not set)
+        assert!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(SRC_ADDR, DOT_DNS_ADDR)));
+
+        // Re-enable TP-Lite stats collection with force_plaintext_dns = true
+        let config = TpLiteStatsOptions {
+            dns_server_ips: vec![IpAddr::from([10, 5, 0, 53])],
+            force_plaintext_dns: Some(true),
+            ..Default::default()
+        };
+        let stats = Arc::new(Mutex::new(Stats::default()));
+        let callback = Callback {
+            stats: stats.clone(),
+        };
+        fw.enable_tp_lite_stats_collection(config, Box::new(callback))
+            .unwrap();
+
+        // After enabling with force_plaintext_dns = true:
+        //
+        // Packet 1: different IP, non-53 port — still accepted (only the configured DNS IP is restricted)
+        assert!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(SRC_ADDR, OTHER_ADDR)));
+        // Packet 2: configured DNS IP, port 53 — accepted (standard DNS is allowed)
+        assert!(fw.process_outbound_packet_sink(&make_peer(), &make_udp(SRC_ADDR, PT_DNS_ADDR)));
+        // Packet 3: configured DNS IP, non-53 port (DoT port 853) — rejected
+        assert!(!fw.process_outbound_packet_sink(&make_peer(), &make_udp(SRC_ADDR, DOT_DNS_ADDR)));
     }
 }

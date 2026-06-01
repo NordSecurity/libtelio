@@ -161,6 +161,8 @@ pub struct FirewallState {
     pub ip_addresses: Vec<StdIpAddr>,
     /// Whether an exit node is currently active
     pub exit_node_present: bool,
+    /// List of DNS server IPs for which only plaintext DNS should be allowed
+    pub force_plaintext_dns_for_servers: Option<Vec<StdIpAddr>>,
 }
 
 /// Configuration for firewall initialization.
@@ -335,6 +337,11 @@ impl StatefulFirewall {
         config: TpLiteStatsOptions,
         collect_stats_cb: Box<dyn TpLiteStatsCallback>,
     ) -> Result<(), Error> {
+        let force_plaintext_dns_for_servers = config
+            .force_plaintext_dns
+            .unwrap_or(false)
+            .then(|| config.dns_server_ips.clone());
+
         let config = serde_json::to_string(&config).map_err(|err| {
             telio_log_warn!("Failed to convert TP-Lite config to json. {err:?}");
             Error::InvalidTpLiteConfig
@@ -350,6 +357,11 @@ impl StatefulFirewall {
         {
             let mut cb = self.tp_lite_stats_cb.callback.write();
             std::mem::swap(&mut old_cb, &mut cb);
+        }
+        if let Some(server_ips) = force_plaintext_dns_for_servers {
+            let mut state = self.get_state();
+            state.force_plaintext_dns_for_servers = Some(server_ips);
+            self.apply_state(state);
         }
         let res = unsafe {
             self.firewall_lib.libfw_enable_tp_lite_stats_collection(
@@ -370,6 +382,10 @@ impl StatefulFirewall {
 
     /// Disable collection of TP-Lite stats
     pub fn disable_tp_lite_stats_collection(&self) {
+        let mut state = self.get_state();
+        state.force_plaintext_dns_for_servers = None;
+        self.apply_state(state);
+
         unsafe {
             self.firewall_lib
                 .libfw_disable_tp_lite_stats_collection(self.firewall)
@@ -382,6 +398,16 @@ fn filter_dst_ip_all_ports(net: IpNet, inverted: bool) -> Filter {
         filter_data: FilterData::DstNetwork(NetworkFilterData {
             network: net,
             port_range: (0, 65535),
+        }),
+        inverted,
+    }
+}
+
+fn filter_dst_ip_single_port(net: IpNet, port: u16, inverted: bool) -> Filter {
+    Filter {
+        filter_data: FilterData::DstNetwork(NetworkFilterData {
+            network: net,
+            port_range: (port, port),
         }),
         inverted,
     }
@@ -463,6 +489,18 @@ pub(crate) fn build_chain_rules(
     local_ifs_addrs: &[StdIpAddr],
 ) -> Vec<Rule> {
     let mut rules = vec![];
+
+    if let Some(dns_server_ips) = &state.force_plaintext_dns_for_servers {
+        dns_server_ips.iter().for_each(|ip| {
+            rules.push(Rule {
+                filters: vec![
+                    filter_dst_ip_all_ports(IpNet::from(*ip), false),
+                    filter_dst_ip_single_port(IpNet::from(*ip), 53, true),
+                ],
+                action: LibfwVerdict::LibfwVerdictReject,
+            });
+        });
+    }
 
     // Drop all IPv6 packets when we don't allow ipv6 traffic
     const ALL_IP_V6_ADDRS: IpNet = IpNet::V6(Ipv6Net::new_assert(StdIpv6Addr::UNSPECIFIED, 0));
@@ -925,6 +963,7 @@ mod tests {
         let state = FirewallState {
             ip_addresses: vec![tunnel_ip],
             exit_node_present: true,
+            force_plaintext_dns_for_servers: None,
             whitelist: Whitelist {
                 vpn_peer: Some(vpn_pk),
                 ..Default::default()
