@@ -1132,4 +1132,11 @@ dictionary TpLiteStatsOptions {
     ///
     /// Default value: same as blocked_domains_buffer_size
     u64? max_open_requests;
+
+    /// The stats collection can only operate on plaintext DNS packets
+    /// Setting this flag will block DoT and DoH packets, causing the client to fallback to plaintext
+    /// Note: Some clients can be configured with no plaintext fallback, which would then break if this flag is set 
+    ///
+    /// Default value: false
+    boolean? force_plaintext_dns;
 };
