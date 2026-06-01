@@ -7,6 +7,7 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::{
     io,
+    net::IpAddr,
     sync::{Arc, Weak},
 };
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn};
@@ -28,7 +29,7 @@ struct PausedState {
 /// Trait which should be implemented to receive local address change notifications
 pub trait LocalInterfacesObserver: Sync + Send {
     /// Callback which allows to take certain actions when local interfaces changed.
-    fn notify(&self, addrs: &[std::net::IpAddr]);
+    fn notify(&self, addrs: &[IpAddr]);
 }
 
 #[derive(Debug)]
@@ -46,7 +47,7 @@ pub struct NetworkMonitor {
 
 /// Result of a gather operation containing IPs and change status.
 struct GatheredInterfaceIps {
-    addrs: Vec<std::net::IpAddr>,
+    addrs: Vec<IpAddr>,
     changed: bool,
 }
 

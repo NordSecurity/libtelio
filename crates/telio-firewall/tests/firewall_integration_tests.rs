@@ -1069,7 +1069,7 @@ fn firewall_whitelist_port() {
 fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
     let vpn_peer = make_random_peer();
     let wlan_ip = Ipv4Addr::new(192, 168, 1, 5);
-    let tunnel_ip = Ipv4Addr::new(10, 5, 0, 2);
+    let tunnel_ip = telio_model::constants::LOCAL_TUNNEL_IPV4;
     let remote_ip = Ipv4Addr::new(203, 0, 113, 1);
 
     let fw = StatefulFirewall::new(true, FeatureFirewall::default())

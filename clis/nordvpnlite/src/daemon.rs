@@ -25,8 +25,11 @@ use telio::{
     crypto::SecretKey,
     device::{Device, DeviceConfig, Error as DeviceError},
     ffi::defaults_builder::FeaturesDefaultsBuilder,
-    telio_model::event::{ErrorLevel, Event},
-    telio_model::mesh::NodeState,
+    telio_model::{
+        constants::LOCAL_TUNNEL_IPV4,
+        event::{ErrorLevel, Event},
+        mesh::NodeState,
+    },
 };
 
 use crate::command_listener::{ClientCmd, ExitNodeConfig, TelioTaskCmd, TIMEOUT_SEC};
@@ -34,7 +37,7 @@ use crate::core_api::get_server_endpoints_list;
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
-    config::{NordVpnLiteConfig, LOCAL_IP},
+    config::NordVpnLiteConfig,
     core_api::{request_nordlynx_key, Error as ApiError, DEFAULT_WIREGUARD_PORT},
     interface::ConfigureInterface,
 };
@@ -159,7 +162,7 @@ impl TelioContext {
         let mut interface_config_provider = config.interface.get_config_provider();
         interface_config_provider.initialize()?;
         interface_config_provider
-            .set_ip(&LOCAL_IP.into())
+            .set_ip(&LOCAL_TUNNEL_IPV4.into())
             .inspect_err(|e| error!("Failed to set interface IP with error '{e:?}'"))?;
 
         Ok(Self {
