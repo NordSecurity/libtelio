@@ -231,7 +231,7 @@ services:
       PASSWORD: "jobs"
       NETWORK: "bridge"
       RAM_SIZE: "2G"
-      CPU_CORES: "1"
+      CPU_CORES: "4"
       EXTRA_SCRIPT: "/libtelio/nat-lab/bin/mac-client"
       CLIENT_GATEWAY_PRIMARY: 192.168.154.254
       CLIENT_GATEWAY_SECONDARY: 192.168.155.254
