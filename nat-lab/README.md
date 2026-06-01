@@ -195,6 +195,13 @@ Markers are defined in [pyproject.toml](pyproject.toml). Useful ones:
 - moose         requires build with “moose”
 - ipv4 / ipv6 / ipv4v6
 - utils
+- libfirewall   requires `libfirewall.so` (see below)
+
+### libfirewall tests
+
+Tests marked `libfirewall` depend on `tests/uniffi/libfirewall.so` being present. Without it, the firewall is a no-op and these tests are automatically skipped at collection time.
+
+In CI, `libfirewall.so` is downloaded and placed at `nat-lab/tests/uniffi/libfirewall.so` before tests run. For local runs, obtain the `.so` from the internal artifact registry and place it at that path manually.
 
 ### To include a marker
 

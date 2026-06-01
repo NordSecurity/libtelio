@@ -20,12 +20,13 @@ use pnet_packet::{
 use pqcrypto_kyber::{ffi::PQCLEAN_KYBER768_CLEAN_CRYPTO_SECRETKEYBYTES, kyber768};
 use pqcrypto_traits::kem::{Ciphertext, PublicKey, SecretKey, SharedSecret};
 use rand::{rand_core::UnwrapErr, rngs::SysRng};
-use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn, Hidden};
 use tokio::net::{ToSocketAddrs, UdpSocket};
+
+use telio_model::constants::LOCAL_TUNNEL_IPV4;
+use telio_utils::{telio_log_debug, telio_log_error, telio_log_warn, Hidden};
 
 const SERVICE_PORT: u16 = 6480;
 const LOCAL_PORT_RANGE: RangeInclusive<u16> = 49152..=u16::MAX; // dynamic port range
-const LOCAL_IP: Ipv4Addr = Ipv4Addr::new(10, 5, 0, 2);
 const REMOTE_IP: Ipv4Addr = Ipv4Addr::new(10, 5, 0, 1);
 const CIPHERTEXT_LEN: u32 = kyber768::ciphertext_bytes() as _;
 const REKEY_METHOD_ID: u32 = 1;
@@ -362,7 +363,7 @@ fn validate_get_response_ip(ip: &Ipv4Packet) -> Result<(), String> {
     if ip.get_source() != REMOTE_IP {
         return Err("invalid src IP".to_owned());
     }
-    if ip.get_destination() != LOCAL_IP {
+    if ip.get_destination() != LOCAL_TUNNEL_IPV4 {
         return Err("invalid dst IP".to_owned());
     }
     let next_level_protocol = ip.get_next_level_protocol();
@@ -751,7 +752,7 @@ fn fill_get_packet_headers(pkgbuf: &mut [u8], local_port: u16) {
     udppkg.set_length((pkg_len - IPV4_HEADER_LEN) as _);
     udppkg.set_checksum(udp::ipv4_checksum(
         &udppkg.to_immutable(),
-        &LOCAL_IP,
+        &LOCAL_TUNNEL_IPV4,
         &REMOTE_IP,
     ));
     drop(udppkg);
@@ -766,7 +767,7 @@ fn fill_get_packet_headers(pkgbuf: &mut [u8], local_port: u16) {
     ippkg.set_flags(Ipv4Flags::DontFragment);
     ippkg.set_ttl(0xFF);
     ippkg.set_next_level_protocol(IpNextHeaderProtocols::Udp);
-    ippkg.set_source(LOCAL_IP);
+    ippkg.set_source(LOCAL_TUNNEL_IPV4);
     ippkg.set_destination(REMOTE_IP);
     ippkg.set_checksum(ipv4::checksum(&ippkg.to_immutable()));
 }
