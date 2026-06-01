@@ -1,20 +1,26 @@
-use super::{Entities, RequestedState, Result};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    iter::FromIterator,
+    net::{IpAddr, Ipv4Addr},
+    sync::Arc,
+    time::Duration,
+};
+
 use futures::FutureExt;
 use ipnet::IpNet;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::iter::FromIterator;
-use std::net::{IpAddr, Ipv4Addr};
-use std::sync::Arc;
-use std::time::Duration;
+use thiserror::Error as TError;
+use tokio::sync::Mutex;
+
 use telio_crypto::PublicKey;
 use telio_dns::DnsResolver;
 #[cfg(feature = "enable_firewall")]
 use telio_firewall::firewall::{Firewall, FirewallState, Permissions, FILE_SEND_PORT};
-use telio_model::constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
-use telio_model::features::Features;
-use telio_model::mesh::{LinkState, NodeState};
-use telio_model::EndpointMap;
-use telio_model::SocketAddr;
+use telio_model::{
+    constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6},
+    features::Features,
+    mesh::{LinkState, NodeState},
+    EndpointMap, SocketAddr,
+};
 use telio_nurse::aggregator::ConnectivityDataAggregator;
 use telio_proto::{PeersStatesMap, Session};
 use telio_proxy::Proxy;
@@ -24,10 +30,12 @@ use telio_traversal::{
     SessionKeeperTrait, UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
 };
 use telio_utils::{build_ping_endpoint, telio_log_debug, telio_log_info, telio_log_warn, Instant};
-use telio_wg::uapi::{AnalyticsEvent, UpdateReason};
-use telio_wg::{uapi::Peer, WireGuard};
-use thiserror::Error as TError;
-use tokio::sync::Mutex;
+use telio_wg::{
+    uapi::{AnalyticsEvent, Peer, UpdateReason},
+    WireGuard,
+};
+
+use super::{Entities, RequestedState, Result};
 
 pub const DEFAULT_PEER_UPGRADE_WINDOW: u64 = 15;
 

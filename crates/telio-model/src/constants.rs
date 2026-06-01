@@ -9,6 +9,8 @@ pub const VPN_INTERNAL_IPV4: Ipv4Addr = Ipv4Addr::new(100, 64, 0, 1);
 pub const VPN_INTERNAL_IPV6: Ipv6Addr = Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 1);
 /// VPN IPv4 Non-Meshnet Address
 pub const VPN_EXTERNAL_IPV4: Ipv4Addr = Ipv4Addr::new(10, 5, 0, 1);
+/// Local address for tunnel interface when VPN without meshnet is enabled
+pub const LOCAL_TUNNEL_IPV4: Ipv4Addr = Ipv4Addr::new(10, 5, 0, 2);
 /// Ipv4 multicast range
 pub const IPV4_MULTICAST_NETWORK: ConstIpv4Net = ConstIpv4Net::new(Ipv4Addr::new(224, 0, 0, 0), 4);
 /// Ipv6 multicast range
