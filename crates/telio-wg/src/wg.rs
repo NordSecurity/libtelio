@@ -201,7 +201,7 @@ impl DynamicWg {
     ///     };
     ///     let firewall_filter_outbound_packets = {
     ///         let fw = firewall.clone();
-    ///         move |peer: &[u8; 32], packet: &[u8], sink: &mut dyn io::Write| {
+    ///         move |peer: &[u8; 32], packet: &mut [u8], sink: &mut dyn io::Write| {
     ///             fw.process_outbound_packet(peer, packet, sink)
     ///         }
     ///     };

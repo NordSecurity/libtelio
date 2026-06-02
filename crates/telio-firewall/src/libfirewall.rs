@@ -24,6 +24,10 @@ pub const LIBFW_ICMP_TYPE_TIMESTAMP_REPLY: u8 = 14;
 pub const LIBFW_VERDICT_ACCEPT: u8 = 0;
 pub const LIBFW_VERDICT_DROP: u8 = 1;
 pub const LIBFW_VERDICT_REJECT: u8 = 2;
+pub const LIBFW_ACTION_ACCEPT: u8 = 0;
+pub const LIBFW_ACTION_DROP: u8 = 1;
+pub const LIBFW_ACTION_REJECT: u8 = 2;
+pub const LIBFW_ACTION_DNAT: u8 = 3;
 pub const LIBFW_CONTRACK_STATE_NEW: u8 = 0;
 pub const LIBFW_CONTRACK_STATE_ESTABLISHED: u8 = 1;
 pub const LIBFW_CONTRACK_STATE_INVALID: u8 = 2;
@@ -40,6 +44,7 @@ pub const LIBFW_FILTER_DIRECTION: u8 = 4;
 pub const LIBFW_FILTER_NEXT_LVL_PROTO: u8 = 5;
 pub const LIBFW_FILTER_TCP_FLAGS: u8 = 6;
 pub const LIBFW_FILTER_ICMP_TYPE: u8 = 7;
+pub const LIBFW_FILTER_DNS_QUERY_DOMAIN: u8 = 8;
 #[repr(u32)]
 #[doc = " Log levels used in LibfwLogCallback\n"]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -148,6 +153,15 @@ pub struct LibfwNetworkFilter {
     #[doc = " Maximum port accepted by the filter"]
     pub port_range_end: u16,
 }
+#[doc = " A set of DNS domain patterns to match against DNS query QNAMEs\n"]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LibfwDnsDomainSet {
+    #[doc = " Pointer to an array of null-terminated C strings representing domain patterns"]
+    pub domains: *const *const ::std::os::raw::c_char,
+    #[doc = " Number of domain patterns in the array"]
+    pub num_domains: usize,
+}
 #[doc = " Data for the certain filter type\n"]
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -166,6 +180,8 @@ pub union LibfwFilterData {
     pub tcp_flags: u8,
     #[doc = " Checked ICMP types, only ICMP packets can match this filter\n Use when filter_type = LibfwFilterConntrackState"]
     pub icmp_type: u8,
+    #[doc = " Set of DNS domain patterns to match against DNS query QNAMEs\n Use when filter_type = LibfwFilterDnsQueryDomain"]
+    pub dns_domain_set: LibfwDnsDomainSet,
 }
 #[doc = " Struct describing a single Libfw filter\n"]
 #[repr(C)]
@@ -198,6 +214,28 @@ pub struct LibfwChain {
     #[doc = " List of the rules"]
     pub rules: *const LibfwRule,
 }
+#[doc = " V2 rule shape with action data: extends `LibfwRule` to carry an\n optional pointer to action-specific data.\n"]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LibfwRuleV2 {
+    #[doc = " List of filters all of which match in order to consider rule's action"]
+    pub filters: *const LibfwFilter,
+    #[doc = " Length of the filter list"]
+    pub filter_count: usize,
+    #[doc = " One of LIBFW_ACTION_ACCEPT, LIBFW_ACTION_DROP, LIBFW_ACTION_REJECT,\n LIBFW_ACTION_DNAT."]
+    pub action: u8,
+    #[doc = " Action-specific data. NULL for ACCEPT/DROP/REJECT. Points to\n `LibfwDnatTarget` for LIBFW_ACTION_DNAT."]
+    pub action_data: *const ::std::os::raw::c_void,
+}
+#[doc = " V2 chain shape carrying `LibfwRuleV2` rules.\n"]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct LibfwChainV2 {
+    #[doc = " Chain size"]
+    pub rule_count: usize,
+    #[doc = " List of the rules"]
+    pub rules: *const LibfwRuleV2,
+}
 #[doc = " A callback type to enable libfirewall to\n inject packets into VPN tunnel interface\n\n Normally only called when stale connection\n closing is triggered.\n\n @param data - The same pointer as passed in @ref libfw_init. It is meant to\n              provide facilities for callback implementors to add context\n              information to the callback itself. If integrators of libfirewall\n              does not need context information - `null` may be passed in\n              @ref libfw_init\n @param packet - byte array of IP packet\n @param packet_len - length in bytes of IP packet in @param packet\n @param associated_data - if associated data was passed in inbound\n                          and outbound packet processing function\n                          this field will provide the same associated\n                          data. Inteded to be used as peer identifier\n                          in case of nordlynx\n @param associated_data_len - the length in bytes of associated data\n"]
 pub type LibfwInjectPacketCallback = ::std::option::Option<
     unsafe extern "C" fn(
@@ -208,6 +246,15 @@ pub type LibfwInjectPacketCallback = ::std::option::Option<
         associated_data_len: usize,
     ),
 >;
+#[doc = " Target address+port for a DNAT action. Pointed at by `LibfwRuleV2::action_data`\n when `LibfwRuleV2::action == LIBFW_ACTION_DNAT`.\n"]
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct LibfwDnatTarget {
+    #[doc = " Target IP address (v4 or v6, per `ip_type`)"]
+    pub addr: LibfwIpAddr,
+    #[doc = " Target port"]
+    pub port: u16,
+}
 pub struct Libfirewall {
     __library: ::libloading::Library,
     pub libfw_set_log_callback:
@@ -223,6 +270,10 @@ pub struct Libfirewall {
     pub libfw_configure_chain: unsafe extern "C" fn(
         fw: *mut LibfwFirewall,
         ffi_chain: *const LibfwChain,
+    ) -> LibfwResult::Type,
+    pub libfw_configure_chain_v2: unsafe extern "C" fn(
+        fw: *mut LibfwFirewall,
+        ffi_chain: *const LibfwChainV2,
     ) -> LibfwResult::Type,
     pub libfw_trigger_stale_connection_close: unsafe extern "C" fn(
         firewall: *mut LibfwFirewall,
@@ -243,7 +294,7 @@ pub struct Libfirewall {
     ) -> LibfwVerdict,
     pub libfw_process_outbound_packet: unsafe extern "C" fn(
         firewall: *mut LibfwFirewall,
-        packet: *const u8,
+        packet: *mut u8,
         packet_len: usize,
         associated_data: *const u8,
         associated_data_len: usize,
@@ -252,7 +303,6 @@ pub struct Libfirewall {
     ) -> LibfwVerdict,
     pub libfw_deinit: unsafe extern "C" fn(firewall: *mut LibfwFirewall),
 }
-
 #[cfg_attr(test, mockall::automock)]
 impl Libfirewall {
     pub unsafe fn new<P>(path: P) -> Result<Self, ::libloading::Error>
@@ -284,6 +334,9 @@ impl Libfirewall {
             .get(b"libfw_disable_tp_lite_stats_collection\0")
             .map(|sym| *sym)?;
         let libfw_configure_chain = __library.get(b"libfw_configure_chain\0").map(|sym| *sym)?;
+        let libfw_configure_chain_v2 = __library
+            .get(b"libfw_configure_chain_v2\0")
+            .map(|sym| *sym)?;
         let libfw_trigger_stale_connection_close = __library
             .get(b"libfw_trigger_stale_connection_close\0")
             .map(|sym| *sym)?;
@@ -301,6 +354,7 @@ impl Libfirewall {
             libfw_enable_tp_lite_stats_collection,
             libfw_disable_tp_lite_stats_collection,
             libfw_configure_chain,
+            libfw_configure_chain_v2,
             libfw_trigger_stale_connection_close,
             libfw_process_inbound_packet,
             libfw_process_outbound_packet,
@@ -346,6 +400,14 @@ impl Libfirewall {
     ) -> LibfwResult::Type {
         (self.libfw_configure_chain)(fw, ffi_chain)
     }
+    #[doc = " Same as `libfw_configure_chain` but accepts the V2 chain shape. V2 rules\n carry an `action_data` pointer alongside the action byte, allowing DNAT\n rules to specify a target via `LibfwDnatTarget`.\n\n # Safety\n\n Same as `libfw_configure_chain`."]
+    pub unsafe fn libfw_configure_chain_v2(
+        &self,
+        fw: *mut LibfwFirewall,
+        ffi_chain: *const LibfwChainV2,
+    ) -> LibfwResult::Type {
+        (self.libfw_configure_chain_v2)(fw, ffi_chain)
+    }
     #[doc = " A function which triggers stale connection closing\n\n @param fw - pointer returned by @ref libfw_init\n @param associated_data - identifier of peer. Should contain peer's public key\n                          for NordLynx and be Null for other protcols\n @param associated_data_len - size of @param associated_data in bytes\n @param inject_packet_cb_data - a pointer which will be passed in the\n                                inject_packet callback unmodified\n @param inject_inbound_packet_cb - callback which will be used by libfw to inject\n                           packets into virtual tunnel interface\n @param inject_outbound_packet_cb - callback which will be used by libfw to inject\n                          packets back towards VPN server. May be NULL if integrators\n                          accepts that libfirewall will only reject connections from\n                          inbound direction.\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init`."]
     pub unsafe fn libfw_trigger_stale_connection_close(
         &self,
@@ -390,7 +452,7 @@ impl Libfirewall {
     pub unsafe fn libfw_process_outbound_packet(
         &self,
         firewall: *mut LibfwFirewall,
-        packet: *const u8,
+        packet: *mut u8,
         packet_len: usize,
         associated_data: *const u8,
         associated_data_len: usize,

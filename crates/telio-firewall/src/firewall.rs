@@ -33,9 +33,9 @@ use telio_utils::{
 use crate::{
     chain_helpers::{
         ConnectionState, Direction, FfiChainGuard, Filter, FilterData, NetworkFilterData,
-        NextLevelProtocol, Rule,
+        NextLevelProtocol, Rule, RuleAction,
     },
-    libfirewall::{LibfwChain, LibfwFirewall, LibfwLogLevel, LibfwResult, LibfwVerdict},
+    libfirewall::{LibfwChainV2, LibfwFirewall, LibfwLogLevel, LibfwResult, LibfwVerdict},
     tp_lite_stats::{collect_stats, CallbackManager},
 };
 
@@ -96,7 +96,7 @@ pub trait Firewall: Sync + Send {
     fn process_outbound_packet(
         &self,
         public_key: &[u8; 32],
-        buffer: &[u8],
+        buffer: &mut [u8],
         sink: &mut dyn io::Write,
     ) -> bool;
 
@@ -321,8 +321,10 @@ impl StatefulFirewall {
         let state = self.state.read().clone();
         let ffi_chain = (self.configure_chain_fn)(&self.config, &state, interface_ips);
         unsafe {
-            self.firewall_lib
-                .libfw_configure_chain(self.firewall, (&ffi_chain.ffi_chain) as *const LibfwChain);
+            self.firewall_lib.libfw_configure_chain_v2(
+                self.firewall,
+                (&ffi_chain.ffi_chain) as *const LibfwChainV2,
+            );
         }
     }
 
@@ -497,7 +499,7 @@ pub(crate) fn build_chain_rules(
                     filter_dst_ip_all_ports(IpNet::from(*ip), false),
                     filter_dst_ip_single_port(IpNet::from(*ip), 53, true),
                 ],
-                action: LibfwVerdict::LibfwVerdictReject,
+                action: RuleAction::Reject,
             });
         });
     }
@@ -507,7 +509,7 @@ pub(crate) fn build_chain_rules(
     if !config.allow_ipv6 {
         rules.push(Rule {
             filters: vec![filter_dst_ip_all_ports(ALL_IP_V6_ADDRS, false)],
-            action: LibfwVerdict::LibfwVerdictDrop,
+            action: RuleAction::Drop,
         });
     }
 
@@ -529,7 +531,7 @@ pub(crate) fn build_chain_rules(
                 },
                 filter_dst_ip_all_ports(IpNet::from(blacklist_entry.ip), false),
             ],
-            action: LibfwVerdict::LibfwVerdictReject,
+            action: RuleAction::Reject,
         });
     }
 
@@ -545,8 +547,42 @@ pub(crate) fn build_chain_rules(
         }
         rules.push(Rule {
             filters,
-            action: LibfwVerdict::LibfwVerdictReject,
+            action: RuleAction::Reject,
         });
+    }
+
+    // DNS whitelisting: redirect outbound DNS queries for whitelisted domains
+    // away from the "blocking" DNS server to the "standard" one via DNAT.
+    if let Some(dns) = &config.feature.dns_whitelisting {
+        if !dns.domains.is_empty() {
+            for redirect in &dns.redirects {
+                let blocking_net = IpNet::from(StdIpAddr::V4(*redirect.blocking.ip()));
+                rules.push(Rule {
+                    filters: vec![
+                        Filter {
+                            filter_data: FilterData::Direction(Direction::Outbound),
+                            inverted: false,
+                        },
+                        Filter {
+                            filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Udp),
+                            inverted: false,
+                        },
+                        Filter {
+                            filter_data: FilterData::DstNetwork(NetworkFilterData {
+                                network: blocking_net,
+                                port_range: (redirect.blocking.port(), redirect.blocking.port()),
+                            }),
+                            inverted: false,
+                        },
+                        Filter {
+                            filter_data: FilterData::DnsQueryDomain(dns.domains.clone()),
+                            inverted: false,
+                        },
+                    ],
+                    action: RuleAction::Dnat(redirect.standard),
+                });
+            }
+        }
     }
 
     rules.push(Rule {
@@ -554,7 +590,7 @@ pub(crate) fn build_chain_rules(
             filter_data: FilterData::Direction(Direction::Outbound),
             inverted: false,
         }],
-        action: LibfwVerdict::LibfwVerdictAccept,
+        action: RuleAction::Accept,
     });
 
     // Add VPN rule
@@ -564,7 +600,7 @@ pub(crate) fn build_chain_rules(
                 filter_data: FilterData::AssociatedData(Some(vpn_pk.to_vec())),
                 inverted: false,
             }],
-            action: LibfwVerdict::LibfwVerdictAccept,
+            action: RuleAction::Accept,
         });
     }
 
@@ -583,7 +619,7 @@ pub(crate) fn build_chain_rules(
             filters.extend_from_slice(local_net);
             rules.push(Rule {
                 filters,
-                action: LibfwVerdict::LibfwVerdictAccept,
+                action: RuleAction::Accept,
             });
         }
     }
@@ -592,7 +628,7 @@ pub(crate) fn build_chain_rules(
     for filters in local_network_filters {
         rules.push(Rule {
             filters,
-            action: LibfwVerdict::LibfwVerdictDrop,
+            action: RuleAction::Drop,
         });
     }
 
@@ -609,7 +645,7 @@ pub(crate) fn build_chain_rules(
                     },
                     filter_dst_ip_all_ports(IpNet::from(*ip), false),
                 ],
-                action: LibfwVerdict::LibfwVerdictAccept,
+                action: RuleAction::Accept,
             });
         }
 
@@ -622,7 +658,7 @@ pub(crate) fn build_chain_rules(
                 },
                 filter_dst_ip_all_ports(IpNet::from(*ip), false),
             ],
-            action: LibfwVerdict::LibfwVerdictAccept,
+            action: RuleAction::Accept,
         });
 
         // And packets related to them
@@ -634,7 +670,7 @@ pub(crate) fn build_chain_rules(
                 },
                 filter_dst_ip_all_ports(IpNet::from(*ip), false),
             ],
-            action: LibfwVerdict::LibfwVerdictAccept,
+            action: RuleAction::Accept,
         });
 
         // Accept packets for whitelisted ports
@@ -658,7 +694,7 @@ pub(crate) fn build_chain_rules(
                             inverted: false,
                         },
                     ],
-                    action: LibfwVerdict::LibfwVerdictAccept,
+                    action: RuleAction::Accept,
                 });
             }
         }
@@ -666,7 +702,7 @@ pub(crate) fn build_chain_rules(
         // Drop rest of the packets going to local interfaces
         rules.push(Rule {
             filters: vec![filter_dst_ip_all_ports(IpNet::from(*ip), false)],
-            action: LibfwVerdict::LibfwVerdictDrop,
+            action: RuleAction::Drop,
         });
     }
 
@@ -677,7 +713,7 @@ pub(crate) fn build_chain_rules(
                 filter_data: FilterData::AssociatedData(Some(peer.to_vec())),
                 inverted: false,
             }],
-            action: LibfwVerdict::LibfwVerdictAccept,
+            action: RuleAction::Accept,
         });
     }
 
@@ -744,7 +780,7 @@ impl Firewall for StatefulFirewall {
     fn process_outbound_packet(
         &self,
         public_key: &[u8; 32],
-        buffer: &[u8],
+        buffer: &mut [u8],
         sink: &mut dyn io::Write,
     ) -> bool {
         let sink_ptr = &sink as *const &mut dyn io::Write;
@@ -752,7 +788,7 @@ impl Firewall for StatefulFirewall {
             == unsafe {
                 self.firewall_lib.libfw_process_outbound_packet(
                     self.firewall,
-                    buffer.as_ptr(),
+                    buffer.as_mut_ptr(),
                     buffer.len(),
                     public_key as *const u8,
                     public_key.len(),
@@ -826,7 +862,7 @@ mod tests {
 
             result
                 .get_libfirewall_mock()
-                .expect_libfw_configure_chain()
+                .expect_libfw_configure_chain_v2()
                 .once()
                 .returning(|_, _| crate::libfirewall::LibfwResult::LibfwSuccess);
 
@@ -856,7 +892,7 @@ mod tests {
 
         firewall
             .get_libfirewall_mock()
-            .expect_libfw_configure_chain()
+            .expect_libfw_configure_chain_v2()
             .times(2)
             .returning(|_, _| crate::libfirewall::LibfwResult::LibfwSuccess);
 
@@ -891,9 +927,7 @@ mod tests {
         };
         let rules = build_chain_rules(&config, &state, &[]);
         assert!(
-            rules
-                .iter()
-                .all(|r| r.action != LibfwVerdict::LibfwVerdictReject),
+            rules.iter().all(|r| r.action != RuleAction::Reject),
             "found Reject rule without exit_node_present"
         );
     }
@@ -911,9 +945,7 @@ mod tests {
         };
         let rules = build_chain_rules(&config, &state, &[]);
         assert!(
-            rules
-                .iter()
-                .all(|r| r.action != LibfwVerdict::LibfwVerdictReject),
+            rules.iter().all(|r| r.action != RuleAction::Reject),
             "found Reject rule with empty ip_addresses"
         );
     }
@@ -934,7 +966,7 @@ mod tests {
 
         let _rule = rules
             .iter()
-            .filter(|r| r.action == LibfwVerdict::LibfwVerdictReject)
+            .filter(|r| r.action == RuleAction::Reject)
             .find(|r| {
                 let has_outbound = r.filters.iter().any(|f| {
                     f.filter_data == FilterData::Direction(Direction::Outbound) && !f.inverted
@@ -972,7 +1004,7 @@ mod tests {
         let rules = build_chain_rules(&config, &state, &[]);
 
         let reject_pos = rules.iter().position(|r| {
-            r.action == LibfwVerdict::LibfwVerdictReject
+            r.action == RuleAction::Reject
                 && r.filters.iter().any(|f| {
                     f.filter_data == FilterData::Direction(Direction::Outbound) && !f.inverted
                 })
@@ -981,7 +1013,7 @@ mod tests {
                     .any(|f| matches!(&f.filter_data, FilterData::SrcNetwork(_)) && f.inverted)
         });
         let accept_pos = rules.iter().position(|r| {
-            r.action == LibfwVerdict::LibfwVerdictAccept
+            r.action == RuleAction::Accept
                 && r.filters.iter().any(|f| {
                     matches!(&f.filter_data, FilterData::AssociatedData(Some(k))
                         if k == &vpn_pk.to_vec())
@@ -1012,7 +1044,7 @@ mod tests {
 
         let rule = rules
             .iter()
-            .filter(|r| r.action == LibfwVerdict::LibfwVerdictReject)
+            .filter(|r| r.action == RuleAction::Reject)
             .find(|r| {
                 r.filters.iter().any(|f| {
                     f.filter_data == FilterData::Direction(Direction::Outbound) && !f.inverted
@@ -1063,7 +1095,7 @@ mod tests {
 
         firewall
             .get_libfirewall_mock()
-            .expect_libfw_configure_chain()
+            .expect_libfw_configure_chain_v2()
             .times(2)
             .returning(|_, _| crate::libfirewall::LibfwResult::LibfwSuccess);
 

@@ -8,6 +8,8 @@ from tests.utils.bindings import (
     TelioAdapterType,
     TpLiteStatsOptions,
     FeatureFirewall,
+    DnsRedirect,
+    DnsWhitelisting,
 )
 from tests.utils.connection import ConnectionTag
 from tests.utils.dns import query_dns
@@ -22,6 +24,12 @@ BLOCKED_NULL_IP = "blocked-ads.com"
 # Resolves normally on the TP-Lite server
 ALLOWED_DOMAIN = "google.com"
 
+# Standard (non-blocking) DNS server. Unlike the TP-Lite server it resolves
+# blocked-malware.com instead of returning NXDOMAIN.
+STANDARD_DNS_IP = config.LAN_ADDR_MAP[ConnectionTag.DOCKER_DNS_SERVER_1]["primary"]
+# Address the standrd dns-server returns for blocked-malware.com
+WHITELIST_RESOLVED_IP = "123.123.123.123"
+
 CALLBACK_INTERVAL_S = 1  # Use short interval for all tests
 
 
@@ -32,6 +40,22 @@ def _features_with_firewall():
         boringtun_reset_conns=False,
         exclude_private_ip_range=None,
         outgoing_blacklist=[],
+        dns_whitelisting=None,
+    )
+    return features
+
+
+def _features_with_dns_whitelisting(domains: list[str], blocking: str, standard: str):
+    features = default_features()
+    features.firewall = FeatureFirewall(
+        neptun_reset_conns=False,
+        boringtun_reset_conns=False,
+        exclude_private_ip_range=None,
+        outgoing_blacklist=[],
+        dns_whitelisting=DnsWhitelisting(
+            domains=domains,
+            redirects=[DnsRedirect(blocking=blocking, standard=standard)],
+        ),
     )
     return features
 
@@ -288,3 +312,70 @@ class TestTpLiteStats:
         # Attempt to enable TP-Lite stats without firewall feature, gives an exception
         with pytest.raises(Exception):
             await client.enable_tp_lite_stats_collection(_tp_lite_config())
+
+
+class TestDnsWhitelisting:
+    """DNS whitelisting redirects whitelisted queries away from the blocking
+    (TP-Lite) DNS server to a standard one via libfirewall DNAT."""
+
+    @pytest.fixture(name="vpn_tags")
+    def _vpn_tags(self) -> list:
+        return [ConnectionTag.DOCKER_VPN_1]
+
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    features=_features_with_dns_whitelisting(
+                        [BLOCKED_NXDOMAIN],
+                        f"{TP_LITE_DNS_IP}:53",
+                        f"{STANDARD_DNS_IP}:53",
+                    ),
+                )
+            )
+        ],
+    )
+    @pytest.mark.asyncio
+    @pytest.mark.libfirewall
+    async def test_dns_whitelisting_redirects_blocked_domain(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env: Environment,
+    ) -> None:
+        [alpha] = env.nodes
+        [client] = env.clients
+        [connection] = [c.connection for c in env.connections]
+
+        await connect_vpn(
+            connection,
+            None,
+            client,
+            alpha.ip_addresses[0],
+            config.WG_SERVER,
+        )
+
+        # blocked-malware.com is NXDOMAIN at the TP-Lite (blocking) server, but it
+        # is whitelisted, so the firewall DNATs the query to the standard DNS
+        # server, which resolves it to WHITELIST_RESOLVED_IP. Getting that address
+        # back proves the query was redirected.
+        await query_dns(
+            connection,
+            BLOCKED_NXDOMAIN,
+            dns_server=TP_LITE_DNS_IP,
+            expected_output=[WHITELIST_RESOLVED_IP],
+            options=["-type=a"],
+        )
+
+        # A domain that is NOT whitelisted still hits the blocking server, which
+        # returns NXDOMAIN for it, confirming the redirect is scoped to the
+        # whitelisted domains only.
+        with pytest.raises(Exception):
+            await query_dns(
+                connection,
+                "not-whitelisted.com",
+                dns_server=TP_LITE_DNS_IP,
+                options=["-type=a"],
+            )
