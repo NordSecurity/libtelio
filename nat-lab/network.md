@@ -182,6 +182,8 @@ graph LR
     openwrt-gw-01(["openwrt-gw-01
         10.0.254.14
         192.168.115.254"])
+    playwright-runner-01("playwright-runner-01
+        192.168.115.101")
   end
 
   %% Network openwrt-net-02

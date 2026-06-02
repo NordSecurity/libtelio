@@ -183,6 +183,10 @@ LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
         "primary": "10.0.80.90",
         "secondary": "",
     },
+    ConnectionTag.DOCKER_PLAYWRIGHT_RUNNER_1: {
+        "primary": "192.168.115.101",
+        "secondary": "",
+    },
 }
 
 GW_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {

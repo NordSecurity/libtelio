@@ -151,6 +151,13 @@ def pytest_collection_modifyitems(items):
             item.add_marker(pytest.mark.skip(reason="libfirewall.so not available"))
 
 
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):  # pylint: disable=unused-argument
+    outcome = yield
+    rep = outcome.get_result()
+    setattr(item, f"rep_{rep.when}", rep)
+
+
 def pytest_runtestloop(session):
     global SESSION_VM_MARKS
 

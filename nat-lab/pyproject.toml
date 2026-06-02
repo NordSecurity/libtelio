@@ -81,6 +81,8 @@ dependencies = [
     "pytest-shard>=0.1.2",
     "aiofiles>=24.1.0",
     "pytest-split>=0.10.0",
+    "playwright==1.49.1",
+    "pytest-playwright==0.6.2",
 ]
 
 [tool.black]
@@ -193,6 +195,7 @@ markers = [
     "ipv4v6: tests dual stack WG connectivity",
     "utils: tests the natlab utilities",
     "openwrt: tests that require OpenWrt VM to be running",
+    "openwrt_ui: tests that check the OpenWrt LuCI UI",
     "perf_profiling: tests that profile execution with perf",
     "libfirewall: tests that require libfirewall.so to be present in nat-lab/tests/uniffi/",
 ]

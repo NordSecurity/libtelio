@@ -70,6 +70,7 @@ class ConnectionTag(Enum):
     DOCKER_UDP_SERVER = auto()
     DOCKER_OPENWRT_CDN = auto()
     DOCKER_TP_LITE_DNS_SERVER = auto()
+    DOCKER_PLAYWRIGHT_RUNNER_1 = auto()
 
     def __repr__(self):
         return f"{self.name}"
