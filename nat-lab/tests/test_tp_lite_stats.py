@@ -45,6 +45,7 @@ def _tp_lite_config(dns_server_ips: Optional[list[str]] = None):
         blocked_domains_buffer_size=None,
         cache_size=None,
         max_open_requests=None,
+        force_plaintext_dns=None,
     )
 
 
