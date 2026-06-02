@@ -2,7 +2,7 @@ import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from tests import config
-from tests.config import LAN_ADDR_MAP
+from tests.config import LAN_ADDR_MAP, LIBTELIO_DNS_IPV4
 from tests.helpers import Environment, SetupParameters, setup_api, setup_environment
 from tests.helpers_vpn import connect_vpn
 from tests.mesh_api import Node
@@ -16,6 +16,7 @@ from tests.utils.connection_tracker import (
     ConnectionTracker,
 )
 from tests.utils.connection_util import generate_connection_tracker_config
+from tests.utils.dns import query_dns
 from tests.utils.logger import log
 from tests.utils.netcat import NetCatServer, NetCatClient
 from tests.utils.ping import ping
@@ -708,6 +709,13 @@ async def test_stale_src_ip_persist_after_connection(
 
     client_lan_ip = LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1]["primary"]
 
+    # Bring the meshnet entity live before connecting to VPN. This puts the
+    # device in the "meshnet active + VPN exit node" topology, where the reject
+    # rule's allowlist must contain both the meshnet IP and the local tunnel IP
+    # (LOCAL_TUNNEL_IPV4). It exercises the deferred-arming path in
+    # consolidate_firewall (allowlist_complete gated on meshnet_active); without
+    # it the test would only cover the trivial VPN-only path and stop guarding
+    # the regression. Do not remove despite is_meshnet=False.
     await client.set_meshnet_config(env.api.get_meshnet_config(alpha.id))
 
     # Open a TCP connection
@@ -834,3 +842,54 @@ async def test_stale_src_ip_persist_after_meshnet_exit_node_connection(
             )
         except asyncio.TimeoutError:
             pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.libfirewall
+@pytest.mark.ipv4
+async def test_reject_rule_not_armed_during_vpn_meshnet_restart(
+    exit_stack: AsyncExitStack,
+) -> None:
+    setup_params = SetupParameters(
+        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+        adapter_type_override=TelioAdapterType.NEP_TUN,
+        ip_stack=IPStack.IPv4,
+        is_meshnet=True,
+        features=default_features(enable_firewall_exclusion_range="10.0.0.0/8"),
+    )
+
+    env = await exit_stack.enter_async_context(
+        setup_environment(
+            exit_stack,
+            [setup_params],
+            vpn=[ConnectionTag.DOCKER_VPN_1],
+        )
+    )
+
+    alpha = env.nodes[0]
+    connection = env.connections[0].connection
+    client = env.clients[0]
+
+    wg_server = config.WG_SERVER
+    await client.enable_magic_dns(["10.0.80.82"])
+    await client.connect_to_vpn(
+        str(wg_server["ipv4"]),
+        int(wg_server["port"]),
+        str(wg_server["public_key"]),
+    )
+
+    await ping(connection, config.PHOTO_ALBUM_IP)
+    await query_dns(connection, "google.com", dns_server=LIBTELIO_DNS_IPV4)
+
+    await client.stop_device()
+    await client.simple_start()
+
+    await client.connect_to_vpn(
+        str(wg_server["ipv4"]),
+        int(wg_server["port"]),
+        str(wg_server["public_key"]),
+    )
+
+    await client.set_meshnet_config(env.api.get_meshnet_config(alpha.id))
+    await client.enable_magic_dns(["10.0.80.82"])
+    await query_dns(connection, "google.com", dns_server=LIBTELIO_DNS_IPV4)
