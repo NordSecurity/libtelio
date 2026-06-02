@@ -157,6 +157,9 @@ disable = [
     "too-many-locals",
     "wrong-import-order",
     "too-many-instance-attributes",
+    # `fixme` stays disabled on purpose: our TODO/FIXME comments track open Jira
+    # tickets (e.g. LLT-6693, LLT-6746) and intentional workarounds; flagging them
+    # would force deleting that tracking information rather than improving the code.
     "fixme",
     "too-many-public-methods",
     "too-few-public-methods",

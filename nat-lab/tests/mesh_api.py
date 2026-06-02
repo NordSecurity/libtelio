@@ -214,7 +214,7 @@ class API:
     def __init__(self) -> None:
         self.nodes = {}
 
-    def register(  # pylint: disable=dangerous-default-value
+    def register(
         self,
         name: str,
         node_id: str,

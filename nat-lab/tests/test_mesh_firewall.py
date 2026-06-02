@@ -1,5 +1,3 @@
-# pylint: disable=too-many-lines
-
 import asyncio
 import pytest
 from contextlib import AsyncExitStack

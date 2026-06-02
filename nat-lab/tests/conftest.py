@@ -1,5 +1,3 @@
-# TODO (LLT-7084): Move fixtures to separate fixture files out of conftest.py
-# pylint: disable=too-many-lines
 # Register helpers_fixtures once here so individual test modules don't need to
 # repeat it (which caused PytestWarning: Plugin already registered).
 import asyncio
