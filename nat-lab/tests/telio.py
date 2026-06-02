@@ -763,7 +763,7 @@ class Client:
         self,
         public_key: str,
         states: List[NodeState],
-        duration_from_now=float,
+        duration_from_now: float,
         paths: Optional[List[PathType]] = None,
         is_exit: bool = False,
         is_vpn: bool = False,
