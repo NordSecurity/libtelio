@@ -157,7 +157,6 @@ disable = [
     "too-many-locals",
     "wrong-import-order",
     "too-many-instance-attributes",
-    "too-many-boolean-expressions",
     "fixme",
     "too-many-public-methods",
     "too-few-public-methods",

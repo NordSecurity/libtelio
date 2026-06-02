@@ -122,6 +122,32 @@ class Runtime:
     def get_output_notifier(self) -> OutputNotifier:
         return self._output_notifier
 
+    @staticmethod
+    def _peer_state_matches(
+        peer: Optional[TelioNode],
+        states: List[NodeState],
+        paths: List[PathType],
+        is_exit: bool,
+        is_vpn: bool,
+        link_state: Optional[LinkState],
+        vpn_connection_error: Optional[VpnConnectionError],
+    ) -> bool:
+        if peer is None:
+            return False
+        link_state_ok = link_state is None or peer.link_state == link_state
+        vpn_error_ok = (
+            vpn_connection_error is None
+            or peer.vpn_connection_error == vpn_connection_error
+        )
+        return (
+            peer.path in paths
+            and peer.state in states
+            and is_exit == peer.is_exit
+            and is_vpn == peer.is_vpn
+            and link_state_ok
+            and vpn_error_ok
+        )
+
     async def notify_peer_state(
         self,
         public_key: str,
@@ -134,17 +160,8 @@ class Runtime:
     ) -> None:
         while True:
             peer = self.get_peer_info(public_key)
-            if (
-                peer
-                and peer.path in paths
-                and peer.state in states
-                and is_exit == peer.is_exit
-                and is_vpn == peer.is_vpn
-                and (link_state is None or peer.link_state == link_state)
-                and (
-                    vpn_connection_error is None
-                    or peer.vpn_connection_error == vpn_connection_error
-                )
+            if self._peer_state_matches(
+                peer, states, paths, is_exit, is_vpn, link_state, vpn_connection_error
             ):
                 return
             await asyncio.sleep(0.1)
