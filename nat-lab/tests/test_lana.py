@@ -194,7 +194,7 @@ async def get_moose_db_file(
             max_retries -= 1
             await asyncio.sleep(0.1)
     if not max_retries:
-        raise Exception("Retries exhausted, while trying to fetch moose db file")
+        raise RuntimeError("Retries exhausted, while trying to fetch moose db file")
 
 
 async def wait_for_event_dump(

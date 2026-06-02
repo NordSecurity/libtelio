@@ -686,7 +686,7 @@ class Client:
 
     async def start_named_ext_if_filter(self, tun_name, ext_if_filter: List[str]):
         if not isinstance(self.get_router(), WindowsRouter):
-            raise Exception("start_named_ext_if_filter can only be used on Windows")
+            raise RuntimeError("start_named_ext_if_filter can only be used on Windows")
         await self.get_proxy().start_named_ext_if_filter(
             private_key=self._node.private_key,
             adapter=self._adapter_type,
@@ -893,7 +893,7 @@ class Client:
             ],
             timeout,
         ).check_exists(f":{port} ", [protocol, process]):
-            raise Exception("Listening socket could not be found")
+            raise RuntimeError("Listening socket could not be found")
 
     async def connect_to_vpn(
         self,
@@ -1144,7 +1144,7 @@ class Client:
                     max_retries -= 1
                     await asyncio.sleep(0.1)
             if not max_retries:
-                raise Exception(
+                raise RuntimeError(
                     "Retries exhausted, while trying to write fingerprint to db"
                 )
 
@@ -1157,9 +1157,9 @@ class Client:
     def get_endpoint_address(self, public_key: str) -> str:
         node = self.get_node_state(public_key)
         if node is None:
-            raise Exception(f"Node {public_key} doesn't exist")
+            raise RuntimeError(f"Node {public_key} doesn't exist")
         if node.endpoint is None:
-            raise Exception(f"Node {public_key} endpoint doesn't exist")
+            raise RuntimeError(f"Node {public_key} endpoint doesn't exist")
         return node.endpoint.split(":")[0]
 
     def wait_for_output(self, what: str) -> asyncio.Event:

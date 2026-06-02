@@ -423,12 +423,12 @@ async def test_openwrt_simulate_network_down(
             # simulating network interface down
             await gateway_connection.create_process(["ifdown", "wan"]).execute()
             if not await wait_for_interface_state(gateway_connection, "eth1", "DOWN"):
-                raise Exception("Failed to set interface eth1 DOWN")
+                raise RuntimeError("Failed to set interface eth1 DOWN")
 
             # setting wan interface back
             await gateway_connection.create_process(["ifup", "wan"]).execute()
             if not await wait_for_interface_state(gateway_connection, "eth1", "UP"):
-                raise Exception("Failed to set interface eth1 UP")
+                raise RuntimeError("Failed to set interface eth1 UP")
             # check vpn connection is working after interface is UP
             await check_gateway_and_client_ip(
                 gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag

@@ -434,7 +434,7 @@ class TestPqVpnHandshake:
                 is_vpn=True,
                 timeout=3,
             )
-            raise Exception("This shouldn't connect succesfully")
+            raise RuntimeError("This shouldn't connect succesfully")
         except TimeoutError:
             pass
 

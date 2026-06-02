@@ -68,7 +68,7 @@ async def setup_check_interderp():
         ]
 
         if not isinstance(connections[0], DockerConnection):
-            raise Exception("Not docker connection")
+            raise RuntimeError("Not docker connection")
 
         async with make_tcpdump(connections):
             for idx, (server1, server2) in enumerate(
@@ -176,7 +176,7 @@ async def setup_check_duplicate_ip_addresses():
                 ", ".join(sorted(owners)),
             )
         details = {ip: sorted(list(owners)) for ip, owners in duplicates.items()}
-        raise Exception(f"Found duplicate container IPv4 addresses: {details}")
+        raise RuntimeError(f"Found duplicate container IPv4 addresses: {details}")
 
 
 async def setup_check_duplicate_mac_addresses(
@@ -217,7 +217,7 @@ async def setup_check_duplicate_mac_addresses(
             elif conn.target_os == TargetOS.Windows:
                 cmd = ["getmac", "/v", "/fo", "list"]
             else:
-                raise Exception("unknown target os")
+                raise RuntimeError("unknown target os")
 
             proc = await conn.create_process(cmd, quiet=True).execute()
             output = proc.get_stdout()
@@ -235,7 +235,7 @@ async def setup_check_duplicate_mac_addresses(
     if duplicates:
         for mac, tags in duplicates.items():
             setup_log.error("%s -> %s", mac, ", ".join(tags))
-        raise Exception(f"Found duplicate MACs: {duplicates}")
+        raise RuntimeError(f"Found duplicate MACs: {duplicates}")
 
 
 async def setup_check_arp_cache(session_vm_marks: set[str]):
@@ -316,7 +316,7 @@ async def setup_check_arp_cache(session_vm_marks: set[str]):
                 failures.append(failure)
 
     if failures:
-        raise Exception("ARP cache not ready for VMs: " + ", ".join(failures))
+        raise RuntimeError("ARP cache not ready for VMs: " + ", ".join(failures))
 
 
 async def setup_nlx_vpn_server(

@@ -371,7 +371,9 @@ def manage_containers(services_to_start) -> None:
         for service in unhealthy:
             dump_docker_logs(service)
             dump_journal_logs(service)
-        raise Exception(f"Containers failed to start: {failed}; see docker logs above")
+        raise RuntimeError(
+            f"Containers failed to start: {failed}; see docker logs above"
+        )
 
 
 def find_container(service: str, docker_status: List[str]) -> bool:

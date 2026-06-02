@@ -39,7 +39,7 @@ async def copy_file(
 
         await from_connection.download(from_path, core_dump_destination)
     else:
-        raise Exception(f"Copying files from {from_connection} is not supported")
+        raise RuntimeError(f"Copying files from {from_connection} is not supported")
 
 
 async def get_log_without_flush(connection: Connection) -> str:
