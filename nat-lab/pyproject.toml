@@ -146,8 +146,6 @@ disable = [
     "missing-module-docstring",
     "missing-class-docstring",
     "missing-function-docstring",
-    "nonlocal-and-global",
-    "subprocess-run-check",
     "broad-exception-raised",
     "line-too-long",
     "too-many-locals",

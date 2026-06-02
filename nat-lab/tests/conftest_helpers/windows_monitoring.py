@@ -83,6 +83,7 @@ def start_windows_vm_top10_usage_monitoring(
                 ],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             if result.returncode != 0:
                 setup_log.warning(
@@ -127,6 +128,7 @@ def start_windows_vm_monitoring(
                 ],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             if result.returncode != 0:
                 setup_log.warning(

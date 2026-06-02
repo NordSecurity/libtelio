@@ -17,6 +17,7 @@ if platform.machine() != "x86_64":
 else:
     from python_wireguard import Key  # type: ignore
 
+
 GREEK_ALPHABET = [
     "alpha",
     "beta",
@@ -409,6 +410,7 @@ class API:
             shell=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            check=False,
         )
         elapsed_ms = (time.monotonic() - start_time) * 1000
         log.debug(

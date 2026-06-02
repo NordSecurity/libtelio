@@ -54,7 +54,7 @@ def run_command(
         env = {**os.environ.copy(), **env}
 
     print(f"|EXECUTE| {' '.join(command)}")
-    result = subprocess.run(command, env=env)
+    result = subprocess.run(command, env=env, check=False)
     print("")
     if result.returncode != 0 and not allow_failure:
         raise subprocess.CalledProcessError(result.returncode, command)
@@ -308,7 +308,10 @@ def get_pytest_arguments(options) -> List[str]:
 def verify_setup_correctness():
     def get_tag_or_hash_of_dir(path):
         result = subprocess.run(
-            ["git", "tag", "--points-at", "HEAD"], cwd=path, capture_output=True
+            ["git", "tag", "--points-at", "HEAD"],
+            cwd=path,
+            capture_output=True,
+            check=False,
         )
         if result.returncode != 0:
             return None
@@ -317,7 +320,7 @@ def verify_setup_correctness():
             return tag
 
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=path, capture_output=True
+            ["git", "rev-parse", "HEAD"], cwd=path, capture_output=True, check=False
         )
         if result.returncode != 0:
             return None

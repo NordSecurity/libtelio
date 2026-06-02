@@ -46,6 +46,7 @@ def dump_docker_logs(service_name):
         ["docker", "compose", "logs", "--tail", "200", service_name],
         capture_output=True,
         text=True,
+        check=False,
     )
     if result.stdout:
         print(result.stdout)
@@ -61,6 +62,7 @@ def dump_journal_logs(service_name):
             ["docker", "compose", "ps", "-q", service_name],
             capture_output=True,
             text=True,
+            check=False,
         )
         container_ids = [
             cid.strip() for cid in result.stdout.splitlines() if cid.strip()
@@ -76,6 +78,7 @@ def dump_journal_logs(service_name):
                 ["docker", "exec", container_id, "sh", "-c", "command -v journalctl"],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             if check_result.returncode != 0:
                 print(
@@ -102,6 +105,7 @@ def dump_journal_logs(service_name):
                 ],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             if result.stdout:
                 print(result.stdout)
