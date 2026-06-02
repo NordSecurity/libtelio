@@ -9,6 +9,7 @@ from tests.utils.connection import Connection, TargetOS
 from tests.utils.logger import log
 from tests.utils.output_notifier import OutputNotifier
 from tests.utils.process import Process
+from tests.utils.process.process import ProcessExecError
 from typing import AsyncIterator, Any, Dict
 
 
@@ -125,8 +126,19 @@ class IperfServer:
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["IperfServer"]:
-        async with self._process.run(stdout_callback=self.on_stdout):
-            yield self
+        try:
+            async with self._process.run(stdout_callback=self.on_stdout):
+                yield self
+        except ProcessExecError as e:
+            # iperf3 server catches SIGTERM internally and exits with code 1
+            # ("iperf3: interrupt - the server has terminated"), which is normal
+            # shutdown behaviour — not a real error.
+            if e.returncode != 1:
+                raise
+            log.debug(
+                "[%s] iperf3 server exited with code 1 (interrupted by signal) — handled",
+                self._log_prefix,
+            )
 
 
 class IperfClient:
