@@ -469,6 +469,21 @@ class Client:
     def node(self) -> Node:
         return self._node
 
+    async def _enter_run_contexts(
+        self, exit_stack: AsyncExitStack, run_tcpdump, enable_perf
+    ) -> None:
+        if enable_perf:
+            await exit_stack.enter_async_context(
+                PerfProfiler(
+                    connection=self._connection,
+                    file_name_suffix=self._adapter_type.name.lower(),
+                )
+            )
+        if run_tcpdump:
+            await exit_stack.enter_async_context(make_tcpdump([self._connection]))
+        if isinstance(self._connection, DockerConnection):
+            await clear_core_dumps(self._connection)
+
     @asynccontextmanager
     async def run(
         self,
@@ -529,17 +544,7 @@ class Client:
         )
 
         async with AsyncExitStack() as exit_stack:
-            if enable_perf:
-                await exit_stack.enter_async_context(
-                    PerfProfiler(
-                        connection=self._connection,
-                        file_name_suffix=self._adapter_type.name.lower(),
-                    )
-                )
-            if run_tcpdump:
-                await exit_stack.enter_async_context(make_tcpdump([self._connection]))
-            if isinstance(self._connection, DockerConnection):
-                await clear_core_dumps(self._connection)
+            await self._enter_run_contexts(exit_stack, run_tcpdump, enable_perf)
 
             await self.clear_system_log()
 

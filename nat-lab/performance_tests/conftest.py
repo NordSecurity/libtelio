@@ -51,6 +51,23 @@ def event_loop():
             loop.close()
 
 
+def _setup_parameters_id(val: SetupParameters) -> str:
+    short_conn_tag_name = val.connection_tag.name.removeprefix("DOCKER_")
+    param_id = f"{short_conn_tag_name}-{val.adapter_type_override.name.replace('_', '') if val.adapter_type_override is not None else ''}"
+    if val.features.direct is not None and val.features.direct.providers is not None:
+        for provider in val.features.direct.providers:
+            param_id += f"-{provider.name}"
+    return param_id
+
+
+def _ipstack_id(val: IPStack) -> str:
+    return {
+        IPStack.IPv4: "IPv4",
+        IPStack.IPv4v6: "IPv4v6",
+        IPStack.IPv6: "IPv6",
+    }.get(val, "")
+
+
 def pytest_make_parametrize_id(config, val):
     param_id = ""
     if isinstance(val, (list, tuple)):
@@ -60,26 +77,13 @@ def pytest_make_parametrize_id(config, val):
                 param_id += f"-{res}"
         param_id = f"{param_id[1:]}"
     elif isinstance(val, (SetupParameters,)):
-        short_conn_tag_name = val.connection_tag.name.removeprefix("DOCKER_")
-        param_id = f"{short_conn_tag_name}-{val.adapter_type_override.name.replace('_', '') if val.adapter_type_override is not None else ''}"
-        if (
-            val.features.direct is not None
-            and val.features.direct.providers is not None
-        ):
-            for provider in val.features.direct.providers:
-                param_id += f"-{provider.name}"
-
+        param_id = _setup_parameters_id(val)
     elif isinstance(val, (ConnectionTag,)):
         param_id = val.name.removeprefix("DOCKER_")
     elif isinstance(val, (TelioAdapterType,)):
         param_id = val.name.replace("_", "")
     elif isinstance(val, IPStack):
-        if val == IPStack.IPv4:
-            param_id = "IPv4"
-        elif val == IPStack.IPv4v6:
-            param_id = "IPv4v6"
-        elif val == IPStack.IPv6:
-            param_id = "IPv6"
+        param_id = _ipstack_id(val)
     elif isinstance(val, str):
         if len(val) > 16:
             param_id = f"{val[:14]}.."

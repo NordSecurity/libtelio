@@ -159,7 +159,6 @@ disable = [
     "too-many-statements",
     "global-statement",
     "bare-except",
-    "too-many-branches",
     "duplicate-code",
     "too-many-lines"
 ]
