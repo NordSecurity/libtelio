@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v7.0.2
+### ****
+---
+* LLT-7073: Bump NepTUN to v2.3.1 to fix speed degradation on Apple platforms
+
+<br>
+
 ### v7.0.1
 ### ****
 ---
