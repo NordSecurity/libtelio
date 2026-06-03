@@ -199,6 +199,16 @@ async def collect_download_metrics(
             marks=pytest.mark.mac,
             id="mac_neptun",
         ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                is_meshnet=False,
+                run_tcpdump=False,
+            ),
+            marks=pytest.mark.windows,
+            id="windows_nt",
+        ),
     ],
 )
 async def test_vpn_connection_performance(setup_params: SetupParameters) -> None:
