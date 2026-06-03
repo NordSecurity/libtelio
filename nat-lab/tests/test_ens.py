@@ -3,7 +3,12 @@ import base64
 import pytest
 from contextlib import AsyncExitStack
 from tests import config
-from tests.helpers import SetupParameters, setup_environment, setup_connections
+from tests.helpers import (
+    SetupParameters,
+    setup_api,
+    setup_environment,
+    setup_connections,
+)
 from tests.helpers_ens import (
     get_grpc_tls_fingerprint_from_server,
     get_grpc_tls_root_certificate_from_server,
@@ -21,6 +26,7 @@ from tests.utils.bindings import (
     default_features,
     PathType,
     NodeState,
+    RelayState,
     TelioAdapterType,
     VpnConnectionError,
     generate_secret_key,
@@ -30,9 +36,12 @@ from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_by_tag,
 )
+from tests.utils.ping import ping
+from tests.utils.router import IPProto, IPStack
 from typing import cast
 
 ENS_PORT = 993
+ENS_LOG_STR = "Will start ENS monitoring"
 
 
 @pytest.mark.nlx
@@ -579,6 +588,135 @@ async def test_ens_superseded(
             is_vpn=True,
             vpn_connection_error=VpnConnectionError.SUPERSEDED,
         )
+
+
+@pytest.mark.parametrize(
+    "alpha_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    nlx_1_limits=(0, 0),
+                    derp_1_limits=(1, 1),
+                ),
+                features=default_features(
+                    enable_error_notification_service=True,
+                    enable_direct=True,
+                ),
+            )
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.VM_WINDOWS_1,
+                    nlx_1_limits=(0, 0),
+                    derp_1_limits=(1, 1),
+                ),
+                features=default_features(
+                    enable_error_notification_service=True,
+                    enable_direct=True,
+                ),
+            ),
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_MAC,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.VM_MAC,
+                    nlx_1_limits=(0, 0),
+                    derp_1_limits=(1, 1),
+                ),
+                features=default_features(
+                    enable_error_notification_service=True,
+                    enable_direct=True,
+                ),
+            ),
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "beta_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    nlx_1_limits=(0, 0),
+                    derp_1_limits=(1, 1),
+                ),
+                features=default_features(
+                    enable_error_notification_service=True,
+                    enable_direct=True,
+                    enable_firewall_exclusion_range="10.0.0.0/8",
+                ),
+            )
+        )
+    ],
+)
+async def test_ens_not_started_for_meshnet_exit_peer(
+    alpha_setup_params: SetupParameters,
+    beta_setup_params: SetupParameters,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        api, (alpha, beta) = setup_api([(False, IPStack.IPv4), (False, IPStack.IPv4)])
+        beta.set_peer_firewall_settings(
+            alpha.id,
+            allow_incoming_connections=True,
+            allow_peer_traffic_routing=True,
+        )
+
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [alpha_setup_params, beta_setup_params], api)
+        )
+
+        client_alpha, client_beta = env.clients
+        connection_alpha, _ = [conn.connection for conn in env.connections]
+
+        await asyncio.gather(
+            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+        )
+
+        await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
+        await client_beta.set_meshnet_config(api.get_meshnet_config(beta.id))
+
+        await asyncio.gather(
+            client_alpha.wait_for_state_peer(
+                beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
+            ),
+            client_beta.wait_for_state_peer(
+                alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
+            ),
+        )
+
+        await ping(connection_alpha, cast(str, beta.get_ip_address(IPProto.IPv4)))
+        await client_beta.get_router().create_exit_node_route()
+
+        logs_before = await client_alpha.get_log()
+        ens_starts_before = logs_before.count(ENS_LOG_STR)
+
+        await client_alpha.connect_to_exit_node(beta.public_key)
+        await client_alpha.wait_for_state_peer(
+            beta.public_key,
+            [NodeState.CONNECTED],
+            list(PathType),
+            is_exit=True,
+            is_vpn=False,
+        )
+
+        logs_after = await client_alpha.get_log()
+        assert (
+            logs_after.count(ENS_LOG_STR) == ens_starts_before == 0
+        ), "ENS started while routing through a meshnet peer"
 
 
 @pytest.mark.parametrize(
