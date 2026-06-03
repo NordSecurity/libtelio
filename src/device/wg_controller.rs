@@ -628,14 +628,16 @@ async fn consolidate_firewall<F: Firewall>(
         state.whitelist.peer_whitelists[Permissions::RoutingConnections].insert(key);
     }
 
-    if let Some(exit_node) = &requested_state.exit_node {
-        let is_vpn_exit_node =
-            !iter_peers(requested_state).any(|p| p.public_key == exit_node.public_key);
-
-        if is_vpn_exit_node {
+    let is_vpn_exit_node = if let Some(exit_node) = &requested_state.exit_node {
+        let is_vpn = !iter_peers(requested_state).any(|p| p.public_key == exit_node.public_key);
+        if is_vpn {
             state.whitelist.vpn_peer = Some(exit_node.public_key);
         }
-    }
+        state.exit_node_present = true;
+        is_vpn
+    } else {
+        false
+    };
 
     if let Some(meshnet_config) = &requested_state.meshnet_config {
         state.ip_addresses = meshnet_config
@@ -644,6 +646,15 @@ async fn consolidate_firewall<F: Firewall>(
             .clone()
             .ok_or(Error::IpNotSet)?;
     }
+
+    if is_vpn_exit_node {
+        state
+            .ip_addresses
+            .push(IpAddr::V4(Ipv4Addr::new(10, 5, 0, 2)));
+    }
+
+    state.ip_addresses.sort_unstable();
+    state.ip_addresses.dedup();
 
     firewall.apply_state(state);
 
@@ -1551,6 +1562,14 @@ mod tests {
             ..Default::default()
         });
 
+        let mut expected_ips = vec![
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V6(Ipv6Addr::LOCALHOST),
+            IpAddr::V4(Ipv4Addr::new(10, 5, 0, 2)),
+        ];
+        expected_ips.sort_unstable();
+        expected_ips.dedup();
+
         firewall
             .expect_apply_state()
             .once()
@@ -1564,9 +1583,101 @@ mod tests {
                     port_whitelist: Default::default(),
                     vpn_peer: Some(pub_key_2),
                 },
-                ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
-                ..Default::default()
+                ip_addresses: expected_ips,
+                exit_node_present: true,
             }))
+            .return_const(());
+
+        consolidate_firewall(
+            &requested_state,
+            &firewall,
+            Some(pub_key_starcast_vpeer),
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[cfg(feature = "enable_firewall")]
+    #[tokio::test]
+    async fn vpn_exit_node_sets_exit_node_present_and_vpn_ip_addresses() {
+        let mut firewall = MockFirewall::new();
+        let pub_key_starcast_vpeer = SecretKey::gen().public();
+        let pub_key_vpn = SecretKey::gen().public();
+
+        let mut requested_state = create_requested_state(vec![]);
+        requested_state.exit_node = Some(ExitNode {
+            public_key: pub_key_vpn,
+            ..Default::default()
+        });
+
+        let mut expected_ips = vec![
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
+            IpAddr::V4(Ipv4Addr::new(10, 5, 0, 2)),
+        ];
+        expected_ips.sort_unstable();
+        expected_ips.dedup();
+
+        firewall
+            .expect_apply_state()
+            .once()
+            .with(eq(FirewallState {
+                whitelist: Whitelist {
+                    peer_whitelists: enum_map! {
+                        Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer]),
+                        Permissions::RoutingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer]),
+                        Permissions::LocalAreaConnections => FwHashSet::default(),
+                    },
+                    port_whitelist: Default::default(),
+                    vpn_peer: Some(pub_key_vpn),
+                },
+                ip_addresses: expected_ips,
+                exit_node_present: true,
+            }))
+            .return_const(());
+
+        consolidate_firewall(
+            &requested_state,
+            &firewall,
+            Some(pub_key_starcast_vpeer),
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[cfg(feature = "enable_firewall")]
+    #[tokio::test]
+    async fn meshnet_exit_node_sets_exit_node_present_without_vpn_ips() {
+        let mut firewall = MockFirewall::new();
+        let pub_key_starcast_vpeer = SecretKey::gen().public();
+        let pub_key_meshnet_peer = SecretKey::gen().public();
+
+        // Peer is in mesh AND used as exit node → is_vpn_exit_node = false
+        let mut requested_state = create_requested_state(vec![(
+            pub_key_meshnet_peer,
+            vec![],
+            false,
+            false,
+            false,
+            false,
+        )]);
+        requested_state.exit_node = Some(ExitNode {
+            public_key: pub_key_meshnet_peer,
+            ..Default::default()
+        });
+
+        firewall
+            .expect_apply_state()
+            .once()
+            .withf(|state: &FirewallState| {
+                state.exit_node_present
+                    && state.whitelist.vpn_peer.is_none()
+                    // VPN constants must NOT be in ip_addresses for meshnet exit
+                    && !state.ip_addresses.contains(&IpAddr::V4(VPN_INTERNAL_IPV4))
+                    && !state.ip_addresses.contains(&IpAddr::V4(VPN_EXTERNAL_IPV4))
+            })
             .return_const(());
 
         consolidate_firewall(
@@ -1595,6 +1706,13 @@ mod tests {
             ..Default::default()
         });
 
+        let mut expected_ips = vec![
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V6(Ipv6Addr::LOCALHOST),
+        ];
+        expected_ips.sort_unstable();
+        expected_ips.dedup();
+
         firewall
             .expect_apply_state()
             .once()
@@ -1608,8 +1726,8 @@ mod tests {
                     port_whitelist: Default::default(),
                     vpn_peer: None,
                 },
-                ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
-                ..Default::default()
+                ip_addresses: expected_ips,
+                exit_node_present: true,
             }))
             .return_const(());
 
@@ -1640,6 +1758,13 @@ mod tests {
             ..Default::default()
         });
 
+        let mut expected_ips = vec![
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V6(Ipv6Addr::LOCALHOST),
+        ];
+        expected_ips.sort_unstable();
+        expected_ips.dedup();
+
         firewall
             .expect_apply_state()
             .once()
@@ -1653,8 +1778,8 @@ mod tests {
                     port_whitelist: Default::default(),
                     vpn_peer: None,
                 },
-                ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
-                ..Default::default()
+                ip_addresses: expected_ips,
+                exit_node_present: true,
             }))
             .return_const(());
 

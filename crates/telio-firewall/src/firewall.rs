@@ -159,6 +159,8 @@ pub struct FirewallState {
     pub whitelist: Whitelist,
     /// Local node ip addresses
     pub ip_addresses: Vec<StdIpAddr>,
+    /// Whether an exit node is currently active
+    pub exit_node_present: bool,
 }
 
 /// Configuration for firewall initialization.
@@ -181,7 +183,7 @@ pub struct StatefulFirewall {
     config: FirewallConfig,
     /// Current firewall state
     state: RwLock<FirewallState>,
-    /// Last known host interface IPs reported by network monitor.
+    /// Last known host interfaces reported by network monitor.
     interface_ips: RwLock<Vec<StdIpAddr>>,
     /// Chain configuration function
     configure_chain_fn: ConfigureChainFn,
@@ -196,7 +198,6 @@ unsafe impl Send for StatefulFirewall {}
 impl LocalInterfacesObserver for StatefulFirewall {
     fn notify(&self, addrs: &[StdIpAddr]) {
         telio_log_debug!("Firewall notified about network changes: {:?}", addrs);
-
         *self.interface_ips.write() = addrs.to_vec();
         self.refresh_chain();
     }
@@ -376,9 +377,19 @@ impl StatefulFirewall {
     }
 }
 
-fn dst_net_all_ports_filter(net: IpNet, inverted: bool) -> Filter {
+fn filter_dst_ip_all_ports(net: IpNet, inverted: bool) -> Filter {
     Filter {
         filter_data: FilterData::DstNetwork(NetworkFilterData {
+            network: net,
+            port_range: (0, 65535),
+        }),
+        inverted,
+    }
+}
+
+fn filter_src_ip_all_ports(net: IpNet, inverted: bool) -> Filter {
+    Filter {
+        filter_data: FilterData::SrcNetwork(NetworkFilterData {
             network: net,
             port_range: (0, 65535),
         }),
@@ -399,18 +410,18 @@ fn get_local_area_networks_filters(
 
     // Include packets which are going to local IPv4 networks
     let mut ipv4_local_area_network_filters = ipv4_local_area_networks
-        .map(|network| vec![dst_net_all_ports_filter(IpNet::V4(network), false)]);
+        .map(|network| vec![filter_dst_ip_all_ports(IpNet::V4(network), false)]);
 
     // Exclude packets from the exclude range
     if let Some(exclude_range) = exclude_ip_range {
         for local_net_filters in ipv4_local_area_network_filters.iter_mut() {
-            local_net_filters.push(dst_net_all_ports_filter(IpNet::V4(exclude_range), true));
+            local_net_filters.push(filter_dst_ip_all_ports(IpNet::V4(exclude_range), true));
         }
     }
 
     let mut ipv6_local_area_network_filters = vec![
         // Include packets which are going to local network
-        dst_net_all_ports_filter(
+        filter_dst_ip_all_ports(
             IpNet::V6(Ipv6Net::new_assert(
                 // TODO: Actually it Unique Local Address range should be (from what I found) fc00::/7,
                 // but it seems that we assume (and our tests do) that it is fc00::/6
@@ -420,7 +431,7 @@ fn get_local_area_networks_filters(
             false,
         ),
         // Exclude packets which are going to local interfaces
-        dst_net_all_ports_filter(
+        filter_dst_ip_all_ports(
             IpNet::V6(Ipv6Net::new_assert(
                 StdIpv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 0),
                 64,
@@ -432,10 +443,10 @@ fn get_local_area_networks_filters(
     for ip in local_ifs_addrs.iter() {
         if ip.is_ipv4() {
             for local_network_filters in ipv4_local_area_network_filters.iter_mut() {
-                local_network_filters.push(dst_net_all_ports_filter(IpNet::from(*ip), true));
+                local_network_filters.push(filter_dst_ip_all_ports(IpNet::from(*ip), true));
             }
         } else {
-            ipv6_local_area_network_filters.push(dst_net_all_ports_filter(IpNet::from(*ip), true));
+            ipv6_local_area_network_filters.push(filter_dst_ip_all_ports(IpNet::from(*ip), true));
         }
     }
 
@@ -444,19 +455,20 @@ fn get_local_area_networks_filters(
     result
 }
 
-/// Configures the firewall chain based on the provided configuration.
-pub(crate) fn configure_chain(
+/// Builds the rule list for the firewall chain. Separated from configure_chain
+/// so tests can inspect the Rule vec directly.
+pub(crate) fn build_chain_rules(
     config: &FirewallConfig,
     state: &FirewallState,
     local_ifs_addrs: &[StdIpAddr],
-) -> FfiChainGuard {
+) -> Vec<Rule> {
     let mut rules = vec![];
 
     // Drop all IPv6 packets when we don't allow ipv6 traffic
     const ALL_IP_V6_ADDRS: IpNet = IpNet::V6(Ipv6Net::new_assert(StdIpv6Addr::UNSPECIFIED, 0));
     if !config.allow_ipv6 {
         rules.push(Rule {
-            filters: vec![dst_net_all_ports_filter(ALL_IP_V6_ADDRS, false)],
+            filters: vec![filter_dst_ip_all_ports(ALL_IP_V6_ADDRS, false)],
             action: LibfwVerdict::LibfwVerdictDrop,
         });
     }
@@ -477,8 +489,24 @@ pub(crate) fn configure_chain(
                     filter_data: FilterData::NextLevelProtocol(next_level_protocol),
                     inverted: false,
                 },
-                dst_net_all_ports_filter(IpNet::from(blacklist_entry.ip), false),
+                filter_dst_ip_all_ports(IpNet::from(blacklist_entry.ip), false),
             ],
+            action: LibfwVerdict::LibfwVerdictReject,
+        });
+    }
+
+    // LLT-7321: reject outbound packets whose src is not a known tunnel IP.
+    // Filters within a rule are ANDed (see LibfwRule docs).
+    if state.exit_node_present && !state.ip_addresses.is_empty() {
+        let mut filters = vec![Filter {
+            filter_data: FilterData::Direction(Direction::Outbound),
+            inverted: false,
+        }];
+        for ip in &state.ip_addresses {
+            filters.push(filter_src_ip_all_ports(IpNet::from(*ip), true));
+        }
+        rules.push(Rule {
+            filters,
             action: LibfwVerdict::LibfwVerdictReject,
         });
     }
@@ -541,7 +569,7 @@ pub(crate) fn configure_chain(
                         filter_data: FilterData::AssociatedData(Some(peer.to_vec())),
                         inverted: false,
                     },
-                    dst_net_all_ports_filter(IpNet::from(*ip), false),
+                    filter_dst_ip_all_ports(IpNet::from(*ip), false),
                 ],
                 action: LibfwVerdict::LibfwVerdictAccept,
             });
@@ -554,7 +582,7 @@ pub(crate) fn configure_chain(
                     filter_data: FilterData::ConntrackState(ConnectionState::Established),
                     inverted: false,
                 },
-                dst_net_all_ports_filter(IpNet::from(*ip), false),
+                filter_dst_ip_all_ports(IpNet::from(*ip), false),
             ],
             action: LibfwVerdict::LibfwVerdictAccept,
         });
@@ -566,7 +594,7 @@ pub(crate) fn configure_chain(
                     filter_data: FilterData::ConntrackState(ConnectionState::Related),
                     inverted: false,
                 },
-                dst_net_all_ports_filter(IpNet::from(*ip), false),
+                filter_dst_ip_all_ports(IpNet::from(*ip), false),
             ],
             action: LibfwVerdict::LibfwVerdictAccept,
         });
@@ -599,7 +627,7 @@ pub(crate) fn configure_chain(
 
         // Drop rest of the packets going to local interfaces
         rules.push(Rule {
-            filters: vec![dst_net_all_ports_filter(IpNet::from(*ip), false)],
+            filters: vec![filter_dst_ip_all_ports(IpNet::from(*ip), false)],
             action: LibfwVerdict::LibfwVerdictDrop,
         });
     }
@@ -615,7 +643,18 @@ pub(crate) fn configure_chain(
         });
     }
 
-    (rules.as_slice()).into()
+    rules
+}
+
+/// Configures the firewall chain based on the provided configuration.
+pub(crate) fn configure_chain(
+    config: &FirewallConfig,
+    state: &FirewallState,
+    local_ifs_addrs: &[StdIpAddr],
+) -> FfiChainGuard {
+    build_chain_rules(config, state, local_ifs_addrs)
+        .as_slice()
+        .into()
 }
 
 extern "C" fn write_to_sink(
@@ -766,11 +805,11 @@ mod tests {
 
     #[test]
     fn test_notify_triggers_refresh_with_callback_addrs() {
-        let captured_addrs = Arc::new(ParkingLotMutex::new(Vec::<Vec<StdIpAddr>>::new()));
-        let addrs_clone = captured_addrs.clone();
+        let captured = Arc::new(ParkingLotMutex::new(Vec::<Vec<StdIpAddr>>::new()));
+        let captured_clone = captured.clone();
         let spy_fn =
             move |_config: &FirewallConfig, _state: &FirewallState, addrs: &[StdIpAddr]| {
-                addrs_clone.lock().push(addrs.to_vec());
+                captured_clone.lock().push(addrs.to_vec());
                 (Vec::<Rule>::new().as_slice()).into()
             };
 
@@ -789,29 +828,194 @@ mod tests {
             .once()
             .returning(|_| {});
 
-        firewall.notify(&[StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 11))]);
-        firewall.notify(&[StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 12))]);
+        let ip1 = StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 11));
+        let ip2 = StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 12));
+        firewall.notify(&[ip1]);
+        firewall.notify(&[ip2]);
 
-        let calls = captured_addrs.lock();
+        let calls = captured.lock();
         assert_eq!(calls.len(), 3);
         assert_eq!(calls[0], Vec::<StdIpAddr>::new());
-        assert_eq!(
-            calls[1],
-            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 11))]
-        );
-        assert_eq!(
-            calls[2],
-            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 12))]
+        assert_eq!(calls[1], vec![ip1]);
+        assert_eq!(calls[2], vec![ip2]);
+    }
+
+    #[test]
+    fn test_allowlist_rule_not_emitted_without_exit_node() {
+        let config = FirewallConfig {
+            allow_ipv6: false,
+            feature: FeatureFirewall::default(),
+        };
+        let state = FirewallState {
+            ip_addresses: vec![StdIpAddr::V4(Ipv4Addr::new(10, 5, 0, 1))],
+            exit_node_present: false,
+            ..Default::default()
+        };
+        let rules = build_chain_rules(&config, &state, &[]);
+        assert!(
+            rules
+                .iter()
+                .all(|r| r.action != LibfwVerdict::LibfwVerdictReject),
+            "found Reject rule without exit_node_present"
         );
     }
 
     #[test]
+    fn test_allowlist_rule_not_emitted_with_empty_ip_addresses() {
+        let config = FirewallConfig {
+            allow_ipv6: false,
+            feature: FeatureFirewall::default(),
+        };
+        let state = FirewallState {
+            ip_addresses: vec![],
+            exit_node_present: true,
+            ..Default::default()
+        };
+        let rules = build_chain_rules(&config, &state, &[]);
+        assert!(
+            rules
+                .iter()
+                .all(|r| r.action != LibfwVerdict::LibfwVerdictReject),
+            "found Reject rule with empty ip_addresses"
+        );
+    }
+
+    #[test]
+    fn test_allowlist_rule_emitted_as_single_rule_with_inverted_src_filters() {
+        let config = FirewallConfig {
+            allow_ipv6: false,
+            feature: FeatureFirewall::default(),
+        };
+        let tunnel_ip = StdIpAddr::V4(Ipv4Addr::new(10, 5, 0, 1));
+        let state = FirewallState {
+            ip_addresses: vec![tunnel_ip],
+            exit_node_present: true,
+            ..Default::default()
+        };
+        let rules = build_chain_rules(&config, &state, &[]);
+
+        let _rule = rules
+            .iter()
+            .filter(|r| r.action == LibfwVerdict::LibfwVerdictReject)
+            .find(|r| {
+                let has_outbound = r.filters.iter().any(|f| {
+                    f.filter_data == FilterData::Direction(Direction::Outbound) && !f.inverted
+                });
+                let has_inverted_src = r.filters.iter().any(|f| {
+                    matches!(&f.filter_data, FilterData::SrcNetwork(n)
+                        if n.network == IpNet::from(tunnel_ip))
+                        && f.inverted
+                });
+                has_outbound && has_inverted_src
+            })
+            .expect(
+                "expected a Reject rule with Direction::Outbound filter \
+                 and inverted SrcNetwork filter for tunnel IP",
+            );
+    }
+
+    #[test]
+    fn test_allowlist_rule_ordering_before_vpn_accept() {
+        let vpn_pk = PublicKey::new([0xAB; 32]);
+        let config = FirewallConfig {
+            allow_ipv6: false,
+            feature: FeatureFirewall::default(),
+        };
+        let tunnel_ip = StdIpAddr::V4(Ipv4Addr::new(10, 5, 0, 1));
+        let state = FirewallState {
+            ip_addresses: vec![tunnel_ip],
+            exit_node_present: true,
+            whitelist: Whitelist {
+                vpn_peer: Some(vpn_pk),
+                ..Default::default()
+            },
+        };
+        let rules = build_chain_rules(&config, &state, &[]);
+
+        let reject_pos = rules.iter().position(|r| {
+            r.action == LibfwVerdict::LibfwVerdictReject
+                && r.filters.iter().any(|f| {
+                    f.filter_data == FilterData::Direction(Direction::Outbound) && !f.inverted
+                })
+                && r.filters
+                    .iter()
+                    .any(|f| matches!(&f.filter_data, FilterData::SrcNetwork(_)) && f.inverted)
+        });
+        let accept_pos = rules.iter().position(|r| {
+            r.action == LibfwVerdict::LibfwVerdictAccept
+                && r.filters.iter().any(|f| {
+                    matches!(&f.filter_data, FilterData::AssociatedData(Some(k))
+                        if k == &vpn_pk.to_vec())
+                })
+        });
+        assert!(reject_pos.is_some(), "reject rule must exist");
+        assert!(accept_pos.is_some(), "vpn accept rule must exist");
+        assert!(
+            reject_pos.unwrap() < accept_pos.unwrap(),
+            "reject rule must come before vpn accept rule"
+        );
+    }
+
+    #[test]
+    fn test_allowlist_rule_two_ips_both_inverted_src_filters_in_one_rule() {
+        let config = FirewallConfig {
+            allow_ipv6: false,
+            feature: FeatureFirewall::default(),
+        };
+        let ip1 = StdIpAddr::V4(Ipv4Addr::new(10, 5, 0, 1));
+        let ip2 = StdIpAddr::V4(Ipv4Addr::new(100, 64, 0, 1));
+        let state = FirewallState {
+            ip_addresses: vec![ip1, ip2],
+            exit_node_present: true,
+            ..Default::default()
+        };
+        let rules = build_chain_rules(&config, &state, &[]);
+
+        let rule = rules
+            .iter()
+            .filter(|r| r.action == LibfwVerdict::LibfwVerdictReject)
+            .find(|r| {
+                r.filters.iter().any(|f| {
+                    f.filter_data == FilterData::Direction(Direction::Outbound) && !f.inverted
+                }) && r
+                    .filters
+                    .iter()
+                    .any(|f| matches!(&f.filter_data, FilterData::SrcNetwork(_)) && f.inverted)
+            })
+            .expect(
+                "expected a Reject rule with Direction::Outbound and inverted SrcNetwork filters",
+            );
+
+        let inverted_src_count = rule
+            .filters
+            .iter()
+            .filter(|f| matches!(&f.filter_data, FilterData::SrcNetwork(_)) && f.inverted)
+            .count();
+        assert_eq!(
+            inverted_src_count, 2,
+            "one inverted SrcNetwork filter per tunnel IP"
+        );
+
+        for ip in [ip1, ip2] {
+            assert!(
+                rule.filters.iter().any(|f| {
+                    matches!(&f.filter_data, FilterData::SrcNetwork(n)
+                        if n.network == IpNet::from(ip))
+                        && f.inverted
+                }),
+                "inverted SrcNetwork filter for {} must be present",
+                ip
+            );
+        }
+    }
+
+    #[test]
     fn test_notify_addrs_are_used_by_subsequent_refreshes() {
-        let captured_addrs = Arc::new(ParkingLotMutex::new(Vec::<Vec<StdIpAddr>>::new()));
-        let addrs_clone = captured_addrs.clone();
+        let captured = Arc::new(ParkingLotMutex::new(Vec::<Vec<StdIpAddr>>::new()));
+        let captured_clone = captured.clone();
         let spy_fn =
             move |_config: &FirewallConfig, _state: &FirewallState, addrs: &[StdIpAddr]| {
-                addrs_clone.lock().push(addrs.to_vec());
+                captured_clone.lock().push(addrs.to_vec());
                 (Vec::<Rule>::new().as_slice()).into()
             };
 
@@ -830,15 +1034,15 @@ mod tests {
             .once()
             .returning(|_| {});
 
-        let notify_addrs = vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 77, 7))];
-        firewall.notify(&notify_addrs);
+        let notify_ips = vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 77, 7))];
+        firewall.notify(&notify_ips);
         firewall.apply_state(FirewallState {
             ip_addresses: vec![StdIpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))],
             ..Default::default()
         });
 
-        assert_eq!(captured_addrs.lock().len(), 3);
-        assert_eq!(captured_addrs.lock()[1], notify_addrs);
-        assert_eq!(captured_addrs.lock()[2], notify_addrs);
+        assert_eq!(captured.lock().len(), 3);
+        assert_eq!(captured.lock()[1], notify_ips);
+        assert_eq!(captured.lock()[2], notify_ips);
     }
 }

@@ -1,13 +1,12 @@
 //! Module to monitor changes in network.
 //! Get notified when network paths change
 //! and update local IP address cache
-use crate::{local_interfaces::gather_local_interfaces, local_interfaces::GetIfAddrs};
+use crate::local_interfaces::{gather_local_interfaces, GetIfAddrs};
 use if_addrs::Interface;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::{
     io,
-    net::IpAddr,
     sync::{Arc, Weak},
 };
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn};
@@ -28,8 +27,8 @@ struct PausedState {
 
 /// Trait which should be implemented to receive local address change notifications
 pub trait LocalInterfacesObserver: Sync + Send {
-    /// Callback which allows to take certain actions when local interfaces changed
-    fn notify(&self, addrs: &[IpAddr]);
+    /// Callback which allows to take certain actions when local interfaces changed.
+    fn notify(&self, addrs: &[std::net::IpAddr]);
 }
 
 #[derive(Debug)]
@@ -45,9 +44,9 @@ pub struct NetworkMonitor {
     paused_state: Arc<Mutex<PausedState>>,
 }
 
-/// Result of a gather operation containing interface IPs and change status.
+/// Result of a gather operation containing IPs and change status.
 struct GatheredInterfaceIps {
-    addrs: Vec<IpAddr>,
+    addrs: Vec<std::net::IpAddr>,
     changed: bool,
 }
 
@@ -229,8 +228,7 @@ mod tests {
     use if_addrs::IfOperStatus;
     use serial_test::serial;
     use std::{
-        net::IpAddr,
-        net::Ipv4Addr,
+        net::{IpAddr, Ipv4Addr},
         sync::atomic::{AtomicU8, Ordering},
     };
 
