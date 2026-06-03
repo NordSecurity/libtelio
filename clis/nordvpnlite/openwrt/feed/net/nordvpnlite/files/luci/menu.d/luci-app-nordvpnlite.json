@@ -7,8 +7,7 @@
 			"path": "nordvpnlite/settings"
 		},
 		"depends": {
-			"acl": ["nordvpnlite"],
-			"uci": {}
+			"acl": ["luci-app-nordvpnlite"]
 		}
 	}
 }
