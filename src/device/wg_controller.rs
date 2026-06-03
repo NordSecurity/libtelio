@@ -612,21 +612,25 @@ async fn consolidate_firewall<F: Firewall>(
     dns_pubkey: Option<PublicKey>,
 ) -> Result {
     let mut state = FirewallState::default();
+    let peers: Vec<_> = iter_peers(requested_state).collect();
 
-    state.whitelist.port_whitelist = iter_peers(requested_state)
+    state.whitelist.port_whitelist = peers
+        .iter()
         .filter(|p| p.allow_peer_send_files)
         .map(|p| (p.public_key, FILE_SEND_PORT))
         .collect();
 
-    for permission in Permissions::VALUES {
-        state.whitelist.peer_whitelists[permission] = iter_peers(requested_state)
-            .filter(|p| match permission {
-                Permissions::IncomingConnections => p.allow_incoming_connections,
-                Permissions::LocalAreaConnections => p.allow_peer_local_network_access,
-                Permissions::RoutingConnections => p.allow_peer_traffic_routing,
-            })
-            .map(|p| p.public_key)
-            .collect();
+    for peer in &peers {
+        let key = peer.public_key;
+        if peer.allow_incoming_connections {
+            state.whitelist.peer_whitelists[Permissions::IncomingConnections].insert(key);
+        }
+        if peer.allow_peer_local_network_access {
+            state.whitelist.peer_whitelists[Permissions::LocalAreaConnections].insert(key);
+        }
+        if peer.allow_peer_traffic_routing {
+            state.whitelist.peer_whitelists[Permissions::RoutingConnections].insert(key);
+        }
     }
 
     if let Some(key) = starcast_vpeer_pubkey {
@@ -638,16 +642,14 @@ async fn consolidate_firewall<F: Firewall>(
         state.whitelist.peer_whitelists[Permissions::RoutingConnections].insert(key);
     }
 
-    let is_vpn_exit_node = if let Some(exit_node) = &requested_state.exit_node {
-        let is_vpn = !iter_peers(requested_state).any(|p| p.public_key == exit_node.public_key);
-        if is_vpn {
-            state.whitelist.vpn_peer = Some(exit_node.public_key);
-        }
-        state.exit_node_present = true;
-        is_vpn
-    } else {
-        false
-    };
+    let is_vpn = requested_state
+        .exit_node
+        .as_ref()
+        .is_some_and(|en| !peers.iter().any(|p| p.public_key == en.public_key));
+
+    if is_vpn {
+        state.whitelist.vpn_peer = requested_state.exit_node.as_ref().map(|en| en.public_key);
+    }
 
     if let Some(meshnet_config) = &requested_state.meshnet_config {
         state.ip_addresses = meshnet_config
@@ -657,7 +659,7 @@ async fn consolidate_firewall<F: Firewall>(
             .ok_or(Error::IpNotSet)?;
     }
 
-    if is_vpn_exit_node {
+    if is_vpn {
         state.ip_addresses.push(LOCAL_TUNNEL_IPV4.into());
     }
 
