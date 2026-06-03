@@ -1,4 +1,3 @@
-# pylint: disable=too-many-lines
 import asyncio
 import platform
 import re
@@ -122,6 +121,32 @@ class Runtime:
     def get_output_notifier(self) -> OutputNotifier:
         return self._output_notifier
 
+    @staticmethod
+    def _peer_state_matches(
+        peer: Optional[TelioNode],
+        states: List[NodeState],
+        paths: List[PathType],
+        is_exit: bool,
+        is_vpn: bool,
+        link_state: Optional[LinkState],
+        vpn_connection_error: Optional[VpnConnectionError],
+    ) -> bool:
+        if peer is None:
+            return False
+        link_state_ok = link_state is None or peer.link_state == link_state
+        vpn_error_ok = (
+            vpn_connection_error is None
+            or peer.vpn_connection_error == vpn_connection_error
+        )
+        return (
+            peer.path in paths
+            and peer.state in states
+            and is_exit == peer.is_exit
+            and is_vpn == peer.is_vpn
+            and link_state_ok
+            and vpn_error_ok
+        )
+
     async def notify_peer_state(
         self,
         public_key: str,
@@ -134,17 +159,8 @@ class Runtime:
     ) -> None:
         while True:
             peer = self.get_peer_info(public_key)
-            if (
-                peer
-                and peer.path in paths
-                and peer.state in states
-                and is_exit == peer.is_exit
-                and is_vpn == peer.is_vpn
-                and (link_state is None or peer.link_state == link_state)
-                and (
-                    vpn_connection_error is None
-                    or peer.vpn_connection_error == vpn_connection_error
-                )
+            if self._peer_state_matches(
+                peer, states, paths, is_exit, is_vpn, link_state, vpn_connection_error
             ):
                 return
             await asyncio.sleep(0.1)
@@ -469,6 +485,21 @@ class Client:
     def node(self) -> Node:
         return self._node
 
+    async def _enter_run_contexts(
+        self, exit_stack: AsyncExitStack, run_tcpdump, enable_perf
+    ) -> None:
+        if enable_perf:
+            await exit_stack.enter_async_context(
+                PerfProfiler(
+                    connection=self._connection,
+                    file_name_suffix=self._adapter_type.name.lower(),
+                )
+            )
+        if run_tcpdump:
+            await exit_stack.enter_async_context(make_tcpdump([self._connection]))
+        if isinstance(self._connection, DockerConnection):
+            await clear_core_dumps(self._connection)
+
     @asynccontextmanager
     async def run(
         self,
@@ -529,17 +560,7 @@ class Client:
         )
 
         async with AsyncExitStack() as exit_stack:
-            if enable_perf:
-                await exit_stack.enter_async_context(
-                    PerfProfiler(
-                        connection=self._connection,
-                        file_name_suffix=self._adapter_type.name.lower(),
-                    )
-                )
-            if run_tcpdump:
-                await exit_stack.enter_async_context(make_tcpdump([self._connection]))
-            if isinstance(self._connection, DockerConnection):
-                await clear_core_dumps(self._connection)
+            await self._enter_run_contexts(exit_stack, run_tcpdump, enable_perf)
 
             await self.clear_system_log()
 
@@ -681,7 +702,7 @@ class Client:
 
     async def start_named_ext_if_filter(self, tun_name, ext_if_filter: List[str]):
         if not isinstance(self.get_router(), WindowsRouter):
-            raise Exception("start_named_ext_if_filter can only be used on Windows")
+            raise RuntimeError("start_named_ext_if_filter can only be used on Windows")
         await self.get_proxy().start_named_ext_if_filter(
             private_key=self._node.private_key,
             adapter=self._adapter_type,
@@ -758,7 +779,7 @@ class Client:
         self,
         public_key: str,
         states: List[NodeState],
-        duration_from_now=float,
+        duration_from_now: float,
         paths: Optional[List[PathType]] = None,
         is_exit: bool = False,
         is_vpn: bool = False,
@@ -888,7 +909,7 @@ class Client:
             ],
             timeout,
         ).check_exists(f":{port} ", [protocol, process]):
-            raise Exception("Listening socket could not be found")
+            raise RuntimeError("Listening socket could not be found")
 
     async def connect_to_vpn(
         self,
@@ -1139,7 +1160,7 @@ class Client:
                     max_retries -= 1
                     await asyncio.sleep(0.1)
             if not max_retries:
-                raise Exception(
+                raise RuntimeError(
                     "Retries exhausted, while trying to write fingerprint to db"
                 )
 
@@ -1152,9 +1173,9 @@ class Client:
     def get_endpoint_address(self, public_key: str) -> str:
         node = self.get_node_state(public_key)
         if node is None:
-            raise Exception(f"Node {public_key} doesn't exist")
+            raise RuntimeError(f"Node {public_key} doesn't exist")
         if node.endpoint is None:
-            raise Exception(f"Node {public_key} endpoint doesn't exist")
+            raise RuntimeError(f"Node {public_key} endpoint doesn't exist")
         return node.endpoint.split(":")[0]
 
     def wait_for_output(self, what: str) -> asyncio.Event:

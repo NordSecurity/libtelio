@@ -40,7 +40,7 @@ async def get_interface_state(client_conn, client):
     if state_str in ("connected", "up"):
         return AdapterState.UP
 
-    raise Exception(f'Unexpected adapter state: "{output}"')
+    raise RuntimeError(f'Unexpected adapter state: "{output}"')
 
 
 @pytest.mark.parametrize(

@@ -17,6 +17,7 @@ if platform.machine() != "x86_64":
 else:
     from python_wireguard import Key  # type: ignore
 
+
 GREEK_ALPHABET = [
     "alpha",
     "beta",
@@ -213,7 +214,7 @@ class API:
     def __init__(self) -> None:
         self.nodes = {}
 
-    def register(  # pylint: disable=dangerous-default-value
+    def register(
         self,
         name: str,
         node_id: str,
@@ -409,6 +410,7 @@ class API:
             shell=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            check=False,
         )
         elapsed_ms = (time.monotonic() - start_time) * 1000
         log.debug(

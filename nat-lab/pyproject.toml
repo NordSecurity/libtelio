@@ -139,6 +139,13 @@ init-hook = "import sys, os; sys.path.insert(0, os.getcwd())"
 max-line-length = 88
 ignore-paths = ".venv,tests/protobuf,bin/grpc_protobuf,tests/uniffi/telio_bindings.py"
 
+[tool.pylint.design]
+# nat-lab test helpers/fixtures legitimately take many parameters (per-node
+# config, fixtures, matching criteria); keep too-many-arguments enabled to catch
+# egregious cases but at a threshold that doesn't force opaque options-object
+# wrapping of otherwise-readable keyword arguments.
+max-args = 10
+
 [tool.pylint.'MESSAGES CONTROL']
 recursive = true
 disable = [
@@ -146,22 +153,18 @@ disable = [
     "missing-module-docstring",
     "missing-class-docstring",
     "missing-function-docstring",
-    "nonlocal-and-global",
-    "subprocess-run-check",
-    "broad-exception-raised",
     "line-too-long",
     "too-many-locals",
     "wrong-import-order",
-    "too-many-arguments",
     "too-many-instance-attributes",
-    "too-many-boolean-expressions",
+    # `fixme` stays disabled on purpose: our TODO/FIXME comments track open Jira
+    # tickets (e.g. LLT-6693, LLT-6746) and intentional workarounds; flagging them
+    # would force deleting that tracking information rather than improving the code.
     "fixme",
     "too-many-public-methods",
     "too-few-public-methods",
     "too-many-statements",
     "global-statement",
-    "bare-except",
-    "too-many-branches",
     "duplicate-code",
     "too-many-lines"
 ]

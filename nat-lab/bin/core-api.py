@@ -110,7 +110,7 @@ class CoreServer(HTTPServer):
         # Ensure proper SSL shutdown
         try:
             request.unwrap()  # This sends close_notify
-        except:
+        except OSError:
             pass  # Ignore errors during unwrap
 
     def _send_notification(self):

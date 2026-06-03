@@ -68,7 +68,7 @@ async def setup_check_interderp():
         ]
 
         if not isinstance(connections[0], DockerConnection):
-            raise Exception("Not docker connection")
+            raise RuntimeError("Not docker connection")
 
         async with make_tcpdump(connections):
             for idx, (server1, server2) in enumerate(
@@ -86,6 +86,40 @@ async def setup_check_interderp():
                 )
                 await derp_test.execute()
                 await derp_test.save_logs()
+
+
+def _gather_container_ips(cid: str) -> tuple[str, list[str]]:
+    try:
+        name = subprocess.check_output(
+            ["docker", "inspect", "--format={{.Name}}", cid],
+            text=True,
+        ).strip()
+        name = re.sub(r"^/+", "", name)
+    except subprocess.CalledProcessError:
+        name = cid
+
+    # Extract IPv4 addresses inside the container without relying on grep -P.
+    # Use: ip -4 -o addr show -> "... IFACE ... A.B.C.D/XX ..."
+    # Then project the CIDR column and strip mask.
+    try:
+        ips_out = subprocess.check_output(
+            [
+                "docker",
+                "exec",
+                cid,
+                "sh",
+                "-c",
+                "ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1",
+            ],
+            text=True,
+        )
+    except subprocess.CalledProcessError:
+        ips_out = ""
+
+    ips = [
+        ip.strip() for ip in ips_out.split() if ip.strip() and not ip.startswith("127.")
+    ]
+    return name, ips
 
 
 async def setup_check_duplicate_ip_addresses():
@@ -115,38 +149,7 @@ async def setup_check_duplicate_ip_addresses():
     duplicates: dict[str, set[str]] = defaultdict(set)
 
     for cid in containers:
-        try:
-            name = subprocess.check_output(
-                ["docker", "inspect", "--format={{.Name}}", cid],
-                text=True,
-            ).strip()
-            name = re.sub(r"^/+", "", name)
-        except subprocess.CalledProcessError:
-            name = cid
-
-        # Extract IPv4 addresses inside the container without relying on grep -P.
-        # Use: ip -4 -o addr show -> "... IFACE ... A.B.C.D/XX ..."
-        # Then project the CIDR column and strip mask.
-        try:
-            ips_out = subprocess.check_output(
-                [
-                    "docker",
-                    "exec",
-                    cid,
-                    "sh",
-                    "-c",
-                    "ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1",
-                ],
-                text=True,
-            )
-        except subprocess.CalledProcessError:
-            ips_out = ""
-
-        ips = [
-            ip.strip()
-            for ip in ips_out.split()
-            if ip.strip() and not ip.startswith("127.")
-        ]
+        name, ips = _gather_container_ips(cid)
 
         # Print container name and IPs (for debugging parity with the original script)
         setup_log.debug("========== %s (%s) ==========", name, cid)
@@ -173,7 +176,7 @@ async def setup_check_duplicate_ip_addresses():
                 ", ".join(sorted(owners)),
             )
         details = {ip: sorted(list(owners)) for ip, owners in duplicates.items()}
-        raise Exception(f"Found duplicate container IPv4 addresses: {details}")
+        raise RuntimeError(f"Found duplicate container IPv4 addresses: {details}")
 
 
 async def setup_check_duplicate_mac_addresses(
@@ -214,7 +217,7 @@ async def setup_check_duplicate_mac_addresses(
             elif conn.target_os == TargetOS.Windows:
                 cmd = ["getmac", "/v", "/fo", "list"]
             else:
-                raise Exception("unknown target os")
+                raise RuntimeError("unknown target os")
 
             proc = await conn.create_process(cmd, quiet=True).execute()
             output = proc.get_stdout()
@@ -232,7 +235,7 @@ async def setup_check_duplicate_mac_addresses(
     if duplicates:
         for mac, tags in duplicates.items():
             setup_log.error("%s -> %s", mac, ", ".join(tags))
-        raise Exception(f"Found duplicate MACs: {duplicates}")
+        raise RuntimeError(f"Found duplicate MACs: {duplicates}")
 
 
 async def setup_check_arp_cache(session_vm_marks: set[str]):
@@ -270,44 +273,50 @@ async def setup_check_arp_cache(session_vm_marks: set[str]):
     acceptable_states = {"REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT"}
     failures: list[str] = []
 
+    def check_arp_for_ip(tag, ip: str) -> str | None:
+        success = False
+        last_arp_entries: list[dict] = []
+        while True:
+            if success:
+                break
+            warm_arp(ip)
+            last_arp_entries = read_arp_entries()
+            for e in last_arp_entries:
+                dst_ip = e.get("dst")
+                lladdr = e.get("lladdr")
+                state = e.get("state")
+                if dst_ip is None or dst_ip != ip:
+                    continue
+                if lladdr is None:
+                    continue
+                if state is None or state[0] not in acceptable_states:
+                    continue
+                success = True
+                break
+        if not success:
+            state = next(
+                (
+                    e.get("state", "missing")
+                    for e in last_arp_entries
+                    if e.get("dst") == ip
+                ),
+                "missing",
+            )
+            return f"{tag.name}:{ip} state={state}"
+        return None
+
     for tag in get_required_vm_containers_from_marks(session_vm_marks):
         if tag in OPENWRT_VM_TAGS:
             continue
         for ip in LAN_ADDR_MAP[tag].values():
-            success = False
-            last_arp_entries: list[dict] = []
             if ip == "":
                 continue
-            while True:
-                if success:
-                    break
-                warm_arp(ip)
-                last_arp_entries = read_arp_entries()
-                for e in last_arp_entries:
-                    dst_ip = e.get("dst")
-                    lladdr = e.get("lladdr")
-                    state = e.get("state")
-                    if dst_ip is None or dst_ip != ip:
-                        continue
-                    if lladdr is None:
-                        continue
-                    if state is None or state[0] not in acceptable_states:
-                        continue
-                    success = True
-                    break
-            if not success:
-                state = next(
-                    (
-                        e.get("state", "missing")
-                        for e in last_arp_entries
-                        if e.get("dst") == ip
-                    ),
-                    "missing",
-                )
-                failures.append(f"{tag.name}:{ip} state={state}")
+            failure = check_arp_for_ip(tag, ip)
+            if failure is not None:
+                failures.append(failure)
 
     if failures:
-        raise Exception("ARP cache not ready for VMs: " + ", ".join(failures))
+        raise RuntimeError("ARP cache not ready for VMs: " + ", ".join(failures))
 
 
 async def setup_nlx_vpn_server(

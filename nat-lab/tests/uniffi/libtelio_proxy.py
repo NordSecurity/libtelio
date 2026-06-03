@@ -48,7 +48,7 @@ class LibtelioProxy:
                 return None
             (res, err) = fn_res
             if err is not None:
-                raise Exception(err)
+                raise RuntimeError(err)
             return res
 
     @move_to_async_thread

@@ -22,7 +22,7 @@ REG_IPV6GROUPS = (
     r'::(?:ffff(?::0{1,4}){0,1}:){0,1}[^\s:]' + REG_IPV4ADDR,     # ::255.255.255.255, ::ffff:255.255.255.255, ::ffff:0:255.255.255.255 (IPv4-mapped IPv6 addresses and IPv4-translated addresses)
     r'(?:' + REG_IPV6SEG + r':){1,6}:?[^\s:]' + REG_IPV4ADDR          # 2001:db8:3:4::192.0.2.33, 64:ff9b::192.0.2.33 (IPv4-Embedded IPv6 Address)
 )
-REG_IPV6ADDR = '|'.join(['(?:{})'.format(g) for g in REG_IPV6GROUPS[::-1]])  # pylint: disable=consider-using-f-string
+REG_IPV6ADDR = "|".join([f"(?:{g})" for g in REG_IPV6GROUPS[::-1]])
 # fmt: on
 
 

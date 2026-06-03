@@ -81,7 +81,7 @@ def default_features(
     return features
 
 
-def telio_node(  # pylint: disable=dangerous-default-value
+def telio_node(
     identifier: str = "",
     public_key: str = "",
     state: NodeState = NodeState.DISCONNECTED,
@@ -89,8 +89,8 @@ def telio_node(  # pylint: disable=dangerous-default-value
     nickname: Optional[str] = None,
     is_exit: bool = False,
     is_vpn: bool = False,
-    ip_addresses: List[str] = [],
-    allowed_ips: List[str] = [],
+    ip_addresses: Optional[List[str]] = None,
+    allowed_ips: Optional[List[str]] = None,
     endpoint: Optional[str] = None,
     path: PathType = PathType.RELAY,
     allow_incoming_connections: bool = False,
@@ -110,8 +110,8 @@ def telio_node(  # pylint: disable=dangerous-default-value
         nickname=nickname,
         is_exit=is_exit,
         is_vpn=is_vpn,
-        ip_addresses=ip_addresses,
-        allowed_ips=allowed_ips,
+        ip_addresses=ip_addresses if ip_addresses is not None else [],
+        allowed_ips=allowed_ips if allowed_ips is not None else [],
         endpoint=endpoint,
         path=path,
         allow_incoming_connections=allow_incoming_connections,

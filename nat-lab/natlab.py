@@ -46,6 +46,7 @@ def dump_docker_logs(service_name):
         ["docker", "compose", "logs", "--tail", "200", service_name],
         capture_output=True,
         text=True,
+        check=False,
     )
     if result.stdout:
         print(result.stdout)
@@ -61,6 +62,7 @@ def dump_journal_logs(service_name):
             ["docker", "compose", "ps", "-q", service_name],
             capture_output=True,
             text=True,
+            check=False,
         )
         container_ids = [
             cid.strip() for cid in result.stdout.splitlines() if cid.strip()
@@ -76,6 +78,7 @@ def dump_journal_logs(service_name):
                 ["docker", "exec", container_id, "sh", "-c", "command -v journalctl"],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             if check_result.returncode != 0:
                 print(
@@ -102,6 +105,7 @@ def dump_journal_logs(service_name):
                 ],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             if result.stdout:
                 print(result.stdout)
@@ -257,6 +261,23 @@ def quick_restart_container(names: List[str], env=None):
         print(f"Restart of services '{names}' failed...")
 
 
+def _report_container_failures(
+    missing_services: List[str], unhealthy_services: List[str]
+) -> None:
+    failed = missing_services + [
+        s for s in unhealthy_services if s not in missing_services
+    ]
+    if not failed:
+        return
+    # Dump logs at the end for CLI check
+    for service in missing_services:
+        dump_docker_logs(service)
+    for service in unhealthy_services:
+        dump_docker_logs(service)
+        dump_journal_logs(service)
+    raise RuntimeError(f"Containers failed to start: {failed}; see docker logs above")
+
+
 def check_containers(
     services_to_start, check_only=False
 ) -> Tuple[List[str], List[str]]:
@@ -315,19 +336,7 @@ def check_containers(
 
     # Used to call from cli
     if check_only:
-        failed = missing_services + [
-            s for s in unhealthy_services if s not in missing_services
-        ]
-        if failed:
-            # Dump logs at the end for CLI check
-            for service in missing_services:
-                dump_docker_logs(service)
-            for service in unhealthy_services:
-                dump_docker_logs(service)
-                dump_journal_logs(service)
-            raise Exception(
-                f"Containers failed to start: {failed}; see docker logs above"
-            )
+        _report_container_failures(missing_services, unhealthy_services)
 
     return missing_services, unhealthy_services
 
@@ -362,7 +371,9 @@ def manage_containers(services_to_start) -> None:
         for service in unhealthy:
             dump_docker_logs(service)
             dump_journal_logs(service)
-        raise Exception(f"Containers failed to start: {failed}; see docker logs above")
+        raise RuntimeError(
+            f"Containers failed to start: {failed}; see docker logs above"
+        )
 
 
 def find_container(service: str, docker_status: List[str]) -> bool:
@@ -448,6 +459,27 @@ def recreate_all():
     start(None, True)
 
 
+def _resolve_skip_keywords(args) -> set:
+    if args.lite_mode:
+        return {"fullcone", "windows", "mac", "nlx", "openwrt"}
+    skip_keywords: set = set()
+    if args.skip_fullcone:
+        skip_keywords.add("fullcone")
+    if args.skip_windows:
+        skip_keywords.add("windows")
+    if args.skip_windows_1:
+        skip_keywords.update(["windows-client-01", "windows-gw-01", "windows-gw-02"])
+    if args.skip_windows_2:
+        skip_keywords.update(["windows-client-02", "windows-gw-03", "windows-gw-04"])
+    if args.skip_mac:
+        skip_keywords.add("mac")
+    if args.skip_nlx:
+        skip_keywords.add("nlx")
+    if args.skip_openwrt:
+        skip_keywords.add("openwrt")
+    return skip_keywords
+
+
 def main():
     all_services = run_command_with_output(
         ["docker", "compose", "config", "--services"], hide_output=True
@@ -521,31 +553,9 @@ def main():
         return
 
     if args.command == "start":
-        skip_keywords = set()
-        if args.lite_mode:
-            skip_keywords.update(["fullcone", "windows", "mac", "nlx", "openwrt"])
-        else:
-            if args.skip_fullcone:
-                skip_keywords.add("fullcone")
-            if args.skip_windows:
-                skip_keywords.add("windows")
-            if args.skip_windows_1:
-                skip_keywords.update(
-                    ["windows-client-01", "windows-gw-01", "windows-gw-02"]
-                )
-            if args.skip_windows_2:
-                skip_keywords.update(
-                    ["windows-client-02", "windows-gw-03", "windows-gw-04"]
-                )
-            if args.skip_mac:
-                skip_keywords.add("mac")
-            if args.skip_nlx:
-                skip_keywords.add("nlx")
-            if args.skip_openwrt:
-                skip_keywords.add("openwrt")
+        skip_keywords = _resolve_skip_keywords(args)
         if args.services_to_start:
-            services_to_start = args.services_to_start
-            start(skip_keywords, services_to_start=services_to_start)
+            start(skip_keywords, services_to_start=args.services_to_start)
         else:
             start(skip_keywords)
     elif args.command == "restart":

@@ -1,5 +1,3 @@
-# pylint: disable=too-many-lines
-
 import asyncio
 import itertools
 import pytest

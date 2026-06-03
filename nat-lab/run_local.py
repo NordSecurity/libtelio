@@ -54,14 +54,14 @@ def run_command(
         env = {**os.environ.copy(), **env}
 
     print(f"|EXECUTE| {' '.join(command)}")
-    result = subprocess.run(command, env=env)
+    result = subprocess.run(command, env=env, check=False)
     print("")
     if result.returncode != 0 and not allow_failure:
         raise subprocess.CalledProcessError(result.returncode, command)
     return result.returncode
 
 
-def main() -> int:
+def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-o", type=str, default="linux", help="Pass the host OS [default: linux])"
@@ -132,6 +132,11 @@ def main() -> int:
         action="store_true",
         help="Run performance tests instead of functional tests",
     )
+    return parser
+
+
+def main() -> int:
+    parser = _build_arg_parser()
     args = parser.parse_args()
 
     if not args.no_verify_setup_correctness:
@@ -182,64 +187,66 @@ def main() -> int:
         run_command(["uv", "run", "mypy", "."])
 
     if not args.notests:
-        pytest_cmd = [
-            "pytest",
-            "-vv",
-            "--durations=0",
-            f"--reruns={args.reruns}",
-            f"--count={args.count}",
-        ]
-
-        pytest_cmd += [
-            f"--timeout={TEST_TIMEOUT}",
-            # Make timeout compatible with reruns
-            # https://github.com/pytest-dev/pytest-rerunfailures/issues/99
-            "-o",
-            "timeout_func_only=true",
-        ]
-
-        pytest_opts = os.environ.get("PYTEST_ADDOPTS", "")
-        original_durations_data = {}
-        input_path = None
-
-        if "splits" in pytest_opts:
-            if args.input_durations:
-                input_path = Path(args.input_durations)
-                original_durations_data = load_json(input_path)
-                pytest_cmd.extend([
-                    "--store-durations",
-                    f"--durations-path={input_path.absolute()}",
-                    "--splitting-algorithm=least_duration",
-                ])
-            elif args.output_durations:
-                output_path = Path(args.output_durations)
-                pytest_cmd.extend([
-                    "--store-durations",
-                    f"--durations-path={output_path.absolute()}",
-                    "--splitting-algorithm=least_duration",
-                ])
-
-        pytest_cmd += get_pytest_arguments(args)
-
-        test_dir = "performance_tests" if args.perf_tests else "tests"
-        pytest_cmd.append(test_dir)
-
-        pytest_result = run_command(pytest_cmd, allow_failure=True)
-
-        if "splits" in pytest_opts and args.output_durations and args.input_durations:
-            output_path = Path(args.output_durations)
-            if input_path:
-                merged_data = load_json(input_path)
-                new_data = calculate_duration_delta(
-                    original_durations_data, merged_data
-                )
-                save_json(output_path, new_data)
-                save_json(input_path, original_durations_data)
-
-        if pytest_result != 0:
-            raise subprocess.CalledProcessError(pytest_result, pytest_cmd)
+        _run_tests(args)
 
     return 0
+
+
+def _run_tests(args) -> None:
+    pytest_cmd = [
+        "pytest",
+        "-vv",
+        "--durations=0",
+        f"--reruns={args.reruns}",
+        f"--count={args.count}",
+    ]
+
+    pytest_cmd += [
+        f"--timeout={TEST_TIMEOUT}",
+        # Make timeout compatible with reruns
+        # https://github.com/pytest-dev/pytest-rerunfailures/issues/99
+        "-o",
+        "timeout_func_only=true",
+    ]
+
+    pytest_opts = os.environ.get("PYTEST_ADDOPTS", "")
+    original_durations_data = {}
+    input_path = None
+
+    if "splits" in pytest_opts:
+        if args.input_durations:
+            input_path = Path(args.input_durations)
+            original_durations_data = load_json(input_path)
+            pytest_cmd.extend([
+                "--store-durations",
+                f"--durations-path={input_path.absolute()}",
+                "--splitting-algorithm=least_duration",
+            ])
+        elif args.output_durations:
+            output_path = Path(args.output_durations)
+            pytest_cmd.extend([
+                "--store-durations",
+                f"--durations-path={output_path.absolute()}",
+                "--splitting-algorithm=least_duration",
+            ])
+
+    pytest_cmd += get_pytest_arguments(args)
+
+    test_dir = "performance_tests" if args.perf_tests else "tests"
+    pytest_cmd.append(test_dir)
+
+    pytest_result = run_command(pytest_cmd, allow_failure=True)
+
+    if "splits" in pytest_opts and args.output_durations and args.input_durations:
+        output_path = Path(args.output_durations)
+        if input_path:
+            merged_data = load_json(input_path)
+            new_data = calculate_duration_delta(original_durations_data, merged_data)
+            save_json(output_path, new_data)
+            save_json(input_path, original_durations_data)
+
+    if pytest_result != 0:
+        raise subprocess.CalledProcessError(pytest_result, pytest_cmd)
 
 
 def run_build_command(operating_system, args):
@@ -308,7 +315,10 @@ def get_pytest_arguments(options) -> List[str]:
 def verify_setup_correctness():
     def get_tag_or_hash_of_dir(path):
         result = subprocess.run(
-            ["git", "tag", "--points-at", "HEAD"], cwd=path, capture_output=True
+            ["git", "tag", "--points-at", "HEAD"],
+            cwd=path,
+            capture_output=True,
+            check=False,
         )
         if result.returncode != 0:
             return None
@@ -317,7 +327,7 @@ def verify_setup_correctness():
             return tag
 
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=path, capture_output=True
+            ["git", "rev-parse", "HEAD"], cwd=path, capture_output=True, check=False
         )
         if result.returncode != 0:
             return None
