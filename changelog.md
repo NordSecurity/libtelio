@@ -1,4 +1,16 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
+### v8.0.0-rc0
+### ****
+---
+* LLT-6821: nordvpnlite: Zeroize authentication token after its last use
+* LLT-7041: Update moose tracker to v24.0.1
+* LLT-7053: Add `use_raw_forwarder` feature flag to `FeatureDns` to opt-in to the new raw DNS forwarder (default: off, uses hickory-server)
+* LLT-7073: Bump NepTUN to v2.3.1 to fix speed degradation on Apple platforms
+* LLT-7230: TP-Lite DNS whitelisting
+* LLT-7321: Block outgoing packets with wrong source IP
+* LLT-7361: Add option to force plaintext DNS for TP-Lite DNS servers when stats collection is enabled
+
+<br>
 
 ### v7.0.0
 ### ****
@@ -9,14 +21,14 @@
 * LLT-6230: Fix possible DoS triggered by failed SSDP Search request
 * LLT-6880: Introduce endpoint provider preference order. Prefer Local endpoints more than others.
 * LLT-5073: BREAKING CHANGE: Remove enhanced detection mode from link detection
-* LLT-5073: 
+* LLT-5073:
 * LLT-5073: Since every WG implementation libtelio uses, issues a handshake after
 * LLT-5073: a missed keepalive, "enhanced detection" becomes trivial.
-* LLT-5073: 
+* LLT-5073:
 * LLT-5073: However WireGuardNT tx counters are not increased when the internet connected
 * LLT-5073: interface is disabled, which leads to incorrect link state
 * LLT-5073: detection.
-* LLT-5073: 
+* LLT-5073:
 * LLT-5073: This PR removes enhanced detection mode from link detection while keeping
 * LLT-5073: a Windows mod that on network change monitoring trigger, it will
 * LLT-5073: issue a ICMP to every peer in order to improve reliability of link detection

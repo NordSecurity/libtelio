@@ -1,1 +1,0 @@
-Bump rustls-webpki to 0.103.13 to fix RUSTSEC-2026-0104 (reachable panic in CRL parsing)
