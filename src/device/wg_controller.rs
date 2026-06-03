@@ -169,6 +169,7 @@ pub async fn consolidate_wg_state(
             (*firewall).as_ref(),
             starcast_pub_key,
             dns_pubkey,
+            entities.meshnet.left().is_some(),
         )
         .await?;
     }
@@ -610,6 +611,7 @@ async fn consolidate_firewall<F: Firewall>(
     firewall: &F,
     starcast_vpeer_pubkey: Option<PublicKey>,
     dns_pubkey: Option<PublicKey>,
+    meshnet_active: bool,
 ) -> Result {
     let mut state = FirewallState::default();
     let peers: Vec<_> = iter_peers(requested_state).collect();
@@ -665,6 +667,15 @@ async fn consolidate_firewall<F: Firewall>(
 
     state.ip_addresses.sort_unstable();
     state.ip_addresses.dedup();
+
+    // Signal firewall to add src IP-based rules when there's an exit node peer.
+    // The only condition is that if meshnet is enabled but the meshnet_config is not yet set then we should wait before adding the
+    // rule, otherwise it can cause nonet for blocking pre-exit node traffic.
+    state.exit_addresses_up_to_date = requested_state.exit_node.is_some();
+    if meshnet_active && requested_state.meshnet_config.is_none() {
+        // meshnet config not yet set
+        state.exit_addresses_up_to_date = false;
+    }
 
     firewall.apply_state(state);
 
@@ -1504,6 +1515,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1550,6 +1562,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1594,7 +1607,7 @@ mod tests {
                     vpn_peer: Some(pub_key_2),
                 },
                 ip_addresses: expected_ips,
-                exit_node_present: true,
+                exit_addresses_up_to_date: true,
                 force_plaintext_dns_for_servers: None,
             }))
             .return_const(());
@@ -1604,6 +1617,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1644,7 +1658,7 @@ mod tests {
                     vpn_peer: Some(pub_key_vpn),
                 },
                 ip_addresses: expected_ips,
-                exit_node_present: true,
+                exit_addresses_up_to_date: true,
                 force_plaintext_dns_for_servers: None,
             }))
             .return_const(());
@@ -1654,6 +1668,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1684,7 +1699,7 @@ mod tests {
             .expect_apply_state()
             .once()
             .withf(|state: &FirewallState| {
-                state.exit_node_present
+                state.exit_addresses_up_to_date
                     && state.whitelist.vpn_peer.is_none()
                     // VPN constants must NOT be in ip_addresses for meshnet exit
                     && !state.ip_addresses.contains(&IpAddr::V4(VPN_INTERNAL_IPV4))
@@ -1697,6 +1712,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1739,7 +1755,7 @@ mod tests {
                     vpn_peer: None,
                 },
                 ip_addresses: expected_ips,
-                exit_node_present: true,
+                exit_addresses_up_to_date: true,
                 force_plaintext_dns_for_servers: None,
             }))
             .return_const(());
@@ -1749,6 +1765,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1792,7 +1809,7 @@ mod tests {
                     vpn_peer: None,
                 },
                 ip_addresses: expected_ips,
-                exit_node_present: true,
+                exit_addresses_up_to_date: true,
                 force_plaintext_dns_for_servers: None,
             }))
             .return_const(());
@@ -1802,6 +1819,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1850,6 +1868,7 @@ mod tests {
                 &firewall,
                 Some(pub_key_starcast_vpeer),
                 None,
+                false,
             )
             .await
             .unwrap();

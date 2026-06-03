@@ -1226,7 +1226,7 @@ fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
     // No exit node: outbound from any src should pass.
     fw.apply_state(FirewallState {
         ip_addresses: vec![IpAddr::V4(tunnel_ip)],
-        exit_node_present: false,
+        exit_addresses_up_to_date: false,
         ..Default::default()
     });
     assert!(
@@ -1244,7 +1244,7 @@ fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
     // Exit node active + ip_addresses set: non-tunnel src rejected.
     fw.apply_state(FirewallState {
         ip_addresses: vec![IpAddr::V4(tunnel_ip)],
-        exit_node_present: true,
+        exit_addresses_up_to_date: true,
         force_plaintext_dns_for_servers: None,
         whitelist: telio_firewall::firewall::Whitelist {
             vpn_peer: Some(vpn_peer),
@@ -1277,7 +1277,7 @@ fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
     // Exit node disconnected: rule gone.
     fw.apply_state(FirewallState {
         ip_addresses: vec![IpAddr::V4(tunnel_ip)],
-        exit_node_present: false,
+        exit_addresses_up_to_date: false,
         ..Default::default()
     });
     assert!(
