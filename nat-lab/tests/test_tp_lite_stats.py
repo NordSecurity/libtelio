@@ -9,7 +9,6 @@ from tests.utils.bindings import (
     TpLiteStatsOptions,
     FeatureFirewall,
     DnsRedirect,
-    DnsWhitelisting,
 )
 from tests.utils.connection import ConnectionTag
 from tests.utils.dns import query_dns
@@ -40,22 +39,19 @@ def _features_with_firewall():
         boringtun_reset_conns=False,
         exclude_private_ip_range=None,
         outgoing_blacklist=[],
-        dns_whitelisting=None,
+        tp_lite_dns_redirects=[],
     )
     return features
 
 
-def _features_with_dns_whitelisting(domains: list[str], blocking: str, standard: str):
+def _features_with_dns_whitelisting(blocking: str, standard: str):
     features = default_features()
     features.firewall = FeatureFirewall(
         neptun_reset_conns=False,
         boringtun_reset_conns=False,
         exclude_private_ip_range=None,
         outgoing_blacklist=[],
-        dns_whitelisting=DnsWhitelisting(
-            domains=domains,
-            redirects=[DnsRedirect(blocking=blocking, standard=standard)],
-        ),
+        tp_lite_dns_redirects=[DnsRedirect(blocking=blocking, standard=standard)],
     )
     return features
 
@@ -330,7 +326,6 @@ class TestDnsWhitelisting:
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     adapter_type_override=TelioAdapterType.NEP_TUN,
                     features=_features_with_dns_whitelisting(
-                        [BLOCKED_NXDOMAIN],
                         f"{TP_LITE_DNS_IP}:53",
                         f"{STANDARD_DNS_IP}:53",
                     ),
@@ -357,8 +352,21 @@ class TestDnsWhitelisting:
             config.WG_SERVER,
         )
 
+        # Before whitelisting any domain at runtime, the query hits the blocking
+        # (TP-Lite) server and returns NXDOMAIN - it is not redirected.
+        with pytest.raises(Exception):
+            await query_dns(
+                connection,
+                BLOCKED_NXDOMAIN,
+                dns_server=TP_LITE_DNS_IP,
+                options=["-type=a"],
+            )
+
+        # Configure the whitelist at runtime, which reconfigures the firewall.
+        await client.set_tp_lite_whitelisted_domains([BLOCKED_NXDOMAIN])
+
         # blocked-malware.com is NXDOMAIN at the TP-Lite (blocking) server, but it
-        # is whitelisted, so the firewall DNATs the query to the standard DNS
+        # is now whitelisted, so the firewall DNATs the query to the standard DNS
         # server, which resolves it to WHITELIST_RESOLVED_IP. Getting that address
         # back proves the query was redirected.
         await query_dns(

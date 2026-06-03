@@ -457,22 +457,6 @@ pub struct DnsRedirect {
     pub standard: SocketAddrV4,
 }
 
-/// DNS query whitelisting via DNAT redirect.
-///
-/// Outbound DNS queries (UDP) destined to a `blocking` endpoint whose QNAME
-/// matches one of `domains` are rewritten to the corresponding `standard`
-/// endpoint. Non-matching queries continue to the blocking server.
-#[derive(Default, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-pub struct DnsWhitelisting {
-    /// Domain patterns to whitelist (matched against DNS query QNAMEs).
-    #[serde(default)]
-    pub domains: Vec<String>,
-    /// Pairs of (blocking, standard) DNS server endpoints.
-    #[serde(default)]
-    pub redirects: Vec<DnsRedirect>,
-}
-
 /// Feature config for firewall
 #[derive(Default, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
@@ -489,9 +473,14 @@ pub struct FeatureFirewall {
     /// Blackist for outgoing connections
     #[serde(default)]
     pub outgoing_blacklist: Vec<FirewallBlacklistTuple>,
-    /// DNS query whitelisting (DNAT redirect of whitelisted queries away from
-    /// the blocking DNS server to the standard one).
-    pub dns_whitelisting: Option<DnsWhitelisting>,
+    /// TP-Lite DNS whitelisting redirects: pairs of (blocking, standard) DNS
+    /// server endpoints. Outbound DNS queries (UDP) to a `blocking` endpoint
+    /// whose QNAME matches a whitelisted domain are DNAT-rewritten to the
+    /// corresponding `standard` endpoint; non-matching queries continue to the
+    /// blocking server. The whitelisted domains are configured at runtime via
+    /// `set_tp_lite_whitelisted_domains`. Empty disables the feature.
+    #[serde(default)]
+    pub tp_lite_dns_redirects: Vec<DnsRedirect>,
 }
 
 impl FeatureFirewall {
@@ -880,7 +869,7 @@ mod tests {
                             ip: IpAddr::from_str("8.8.4.4").unwrap(),
                             port: 30,
                         }],
-                        dns_whitelisting: None,
+                        tp_lite_dns_redirects: vec![],
                     }),
                     flush_events_on_stop_timeout_seconds: Some(15),
                     post_quantum_vpn: FeaturePostQuantumVPN {
@@ -1002,22 +991,16 @@ mod tests {
         }
 
         #[test]
-        fn test_firewall_dns_whitelisting() {
+        fn test_firewall_tp_lite_dns_redirects() {
             assert_json!(
-                r#"{"firewall": {"dns_whitelisting": {
-                    "domains": ["example.com", "foo.bar"],
-                    "redirects": [
-                        {"blocking": "1.2.3.4:53", "standard": "8.8.8.8:53"}
-                    ]
-                }}}"#,
-                Some(DnsWhitelisting {
-                    domains: vec!["example.com".into(), "foo.bar".into()],
-                    redirects: vec![DnsRedirect {
-                        blocking: "1.2.3.4:53".parse().unwrap(),
-                        standard: "8.8.8.8:53".parse().unwrap(),
-                    }],
-                }),
-                firewall.unwrap().dns_whitelisting
+                r#"{"firewall": {"tp_lite_dns_redirects": [
+                    {"blocking": "1.2.3.4:53", "standard": "8.8.8.8:53"}
+                ]}}"#,
+                vec![DnsRedirect {
+                    blocking: "1.2.3.4:53".parse().unwrap(),
+                    standard: "8.8.8.8:53".parse().unwrap(),
+                }],
+                firewall.unwrap().tp_lite_dns_redirects
             );
         }
 

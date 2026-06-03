@@ -938,6 +938,25 @@ impl Telio {
         })
     }
 
+    /// Set the TP-Lite DNS whitelisted domains at runtime, reconfiguring the
+    /// firewall to redirect queries for these domains.
+    ///
+    /// Requires firewall to be enabled through setting firewall field of Features
+    /// object to a non-null value.
+    pub fn set_tp_lite_whitelisted_domains(&self, domains: Vec<String>) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::set_tp_lite_whitelisted_domains entry with instance id: {}. domains: {:?}",
+            self.id,
+            domains
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.set_tp_lite_whitelisted_domains(domains.clone())
+                    .log_result("Telio::set_tp_lite_whitelisted_domains")
+            })
+        })
+    }
+
     pub fn get_status_map(&self) -> Vec<Node> {
         trace!("acquiring dev lock");
         match self.device_op(true, |dev| dev.external_nodes().map_err(|e| e.into())) {

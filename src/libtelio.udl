@@ -501,16 +501,28 @@ interface Telio {
 
     /// Register callback to get metrics and domains blocked by TP-Lite
     ///
-    /// Requires firewall to be enabled through setting firewall field of Features object 
+    /// Requires firewall to be enabled through setting firewall field of Features object
     /// to a non-null value
     ///
     /// Passing empty list of IPs will disable the collection of TP-Lite stats
     [Throws=TelioError]
     void enable_tp_lite_stats_collection(TpLiteStatsOptions config, TpLiteStatsCallback collect_stats_cb);
-    
+
     // Disable collection of TP-Lite stats
     [Throws=TelioError]
     void disable_tp_lite_stats_collection();
+
+    /// Set the TP-Lite DNS whitelisted domains at runtime, reconfiguring the
+    /// firewall to redirect queries for these domains away from the blocking
+    /// DNS server to the standard one.
+    ///
+    /// Requires firewall to be enabled through setting firewall field of Features
+    /// object to a non-null value. The DNS server pairs are configured via the
+    /// tp_lite_dns_redirects field of the firewall feature config.
+    ///
+    /// Passing an empty list clears the whitelist.
+    [Throws=TelioError]
+    void set_tp_lite_whitelisted_domains(sequence<string> domains);
 
     sequence<TelioNode> get_status_map();
 
@@ -827,14 +839,6 @@ dictionary DnsRedirect {
     SocketAddrV4 standard;
 };
 
-/// DNS query whitelisting via DNAT redirect.
-dictionary DnsWhitelisting {
-    /// Domain patterns to whitelist (matched against DNS query QNAMEs).
-    sequence<string> domains;
-    /// Pairs of (blocking, standard) DNS server endpoints.
-    sequence<DnsRedirect> redirects;
-};
-
 /// Feature config for firewall
 dictionary FeatureFirewall {
     /// Turns on connection resets upon VPN server change
@@ -845,9 +849,12 @@ dictionary FeatureFirewall {
     Ipv4Net? exclude_private_ip_range;
     /// Blackist for outgoing connections
     sequence<FirewallBlacklistTuple> outgoing_blacklist;
-    /// DNS query whitelisting (DNAT redirect of whitelisted queries away
-    /// from the blocking DNS server to the standard one).
-    DnsWhitelisting? dns_whitelisting;
+    /// TP-Lite DNS whitelisting redirects: pairs of (blocking, standard) DNS
+    /// server endpoints. Queries to a blocking endpoint whose QNAME matches a
+    /// whitelisted domain are DNAT-rewritten to the standard endpoint. The
+    /// whitelisted domains are set at runtime via set_tp_lite_whitelisted_domains.
+    /// Empty disables the feature.
+    sequence<DnsRedirect> tp_lite_dns_redirects;
 };
 
 /// Link detection mechanism
@@ -1102,7 +1109,7 @@ enum VpnConnectionError {
 
 /// Simple metrics about TP-Lite DNS activity
 dictionary DnsMetrics {
-    /// Number of DNS requests that have been made 
+    /// Number of DNS requests that have been made
     u32 num_requests;
     /// Number of received DNS responses
     u32 num_responses;
@@ -1112,12 +1119,12 @@ dictionary DnsMetrics {
 
 /// Information about a domain blocked by TP-Lite
 dictionary BlockedDomain {
- 	/// The domain name that was blocked 
-	string domain_name;
-	/// When the request occurred
-	u64 timestamp;
-	/// The category, represented by the "authority" from the SOA record
-	string category;
+    /// The domain name that was blocked
+    string domain_name;
+    /// When the request occurred
+    u64 timestamp;
+    /// The category, represented by the "authority" from the SOA record
+    string category;
 };
 
 /// A callback for getting TP-Lite stats from libfirewall
@@ -1132,8 +1139,8 @@ dictionary TpLiteStatsOptions {
     /// The IP addresses of the TP-Lite DNS servers
     sequence<IpAddr> dns_server_ips;
 
-    /// How many blocked domains libfirewall can store between passing them through the callback 
-    /// If the buffer fills up and new blocked domains arrive, data will be lost 
+    /// How many blocked domains libfirewall can store between passing them through the callback
+    /// If the buffer fills up and new blocked domains arrive, data will be lost
     ///
     /// Default value: 100
     u64? blocked_domains_buffer_size;
@@ -1160,7 +1167,7 @@ dictionary TpLiteStatsOptions {
 
     /// The stats collection can only operate on plaintext DNS packets
     /// Setting this flag will block DoT and DoH packets, causing the client to fallback to plaintext
-    /// Note: Some clients can be configured with no plaintext fallback, which would then break if this flag is set 
+    /// Note: Some clients can be configured with no plaintext fallback, which would then break if this flag is set
     ///
     /// Default value: false
     boolean? force_plaintext_dns;
