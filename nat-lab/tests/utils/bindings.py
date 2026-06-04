@@ -74,7 +74,7 @@ def default_features(
                 boringtun_reset_conns=False,
                 exclude_private_ip_range=enable_firewall_exclusion_range,
                 outgoing_blacklist=[],
-                dns_whitelisting=None,
+                tp_lite_dns_redirects=[],
             )
         else:
             features.firewall.exclude_private_ip_range = enable_firewall_exclusion_range

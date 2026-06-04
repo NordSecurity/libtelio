@@ -259,6 +259,10 @@ class LibtelioWrapper:
     def get_tp_lite_stats(self):
         return self._tp_lite_cb.take_data()
 
+    @serialize_error
+    def set_tp_lite_whitelisted_domains(self, domains: List[str]):
+        self._libtelio.set_tp_lite_whitelisted_domains(domains)
+
 
 def main():
     object_name = sys.argv[1]

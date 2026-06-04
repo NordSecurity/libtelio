@@ -208,6 +208,8 @@ pub enum Error {
     FirewallLoadingError(#[from] libloading::Error),
     #[error("FirewallDisabled")]
     FirewallDisabled,
+    #[error("FirewallUnsupported")]
+    FirewallUnsupported,
 }
 
 pub type Result<T = ()> = std::result::Result<T, Error>;
@@ -767,6 +769,20 @@ impl Device {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
                 Ok(rt.disable_tp_lite_stats_collection())
+            })
+            .await?
+        })
+    }
+
+    /// Set the TP-Lite DNS whitelisted domains at runtime, reconfiguring the
+    /// firewall to redirect queries for these domains.
+    ///
+    /// Requires firewall to be enabled through setting firewall field of Features
+    /// object to a non-null value.
+    pub fn set_tp_lite_whitelisted_domains(&self, domains: Vec<String>) -> Result {
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| {
+                Ok(rt.set_tp_lite_whitelisted_domains(domains))
             })
             .await?
         })
@@ -2120,16 +2136,41 @@ impl Runtime {
             None => Err(Error::FirewallDisabled),
         }
         #[cfg(not(feature = "enable_firewall"))]
-        Ok(())
+        Err(Error::FirewallUnsupported)
     }
 
     /// Disable collection of TP-Lite stats
     pub fn disable_tp_lite_stats_collection(&self) -> Result {
         #[cfg(feature = "enable_firewall")]
-        if let Some(fw) = &self.entities.firewall {
-            fw.disable_tp_lite_stats_collection();
+        {
+            if let Some(fw) = &self.entities.firewall {
+                fw.disable_tp_lite_stats_collection();
+            }
+            Ok(())
         }
-        Ok(())
+        #[cfg(not(feature = "enable_firewall"))]
+        Err(Error::FirewallUnsupported)
+    }
+
+    /// Set the TP-Lite DNS whitelisted domains at runtime, reconfiguring the
+    /// firewall to redirect queries for these domains.
+    ///
+    /// Requires firewall to be enabled through setting firewall field of Features
+    /// object to a non-null value.
+    pub fn set_tp_lite_whitelisted_domains(
+        &self,
+        #[allow(unused_variables)] domains: Vec<String>,
+    ) -> Result {
+        #[cfg(feature = "enable_firewall")]
+        match &self.entities.firewall {
+            Some(fw) => {
+                fw.set_tp_lite_whitelisted_domains(domains);
+                Ok(())
+            }
+            None => Err(Error::FirewallDisabled),
+        }
+        #[cfg(not(feature = "enable_firewall"))]
+        Err(Error::FirewallUnsupported)
     }
 
     /// Connect ot exit node with post-quantum tunnel

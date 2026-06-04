@@ -1594,6 +1594,7 @@ mod tests {
                 ip_addresses: expected_ips,
                 exit_node_present: true,
                 force_plaintext_dns_for_servers: None,
+                ..Default::default()
             }))
             .return_const(());
 
@@ -1644,6 +1645,7 @@ mod tests {
                 ip_addresses: expected_ips,
                 exit_node_present: true,
                 force_plaintext_dns_for_servers: None,
+                ..Default::default()
             }))
             .return_const(());
 
@@ -1739,6 +1741,7 @@ mod tests {
                 ip_addresses: expected_ips,
                 exit_node_present: true,
                 force_plaintext_dns_for_servers: None,
+                ..Default::default()
             }))
             .return_const(());
 
@@ -1792,6 +1795,7 @@ mod tests {
                 ip_addresses: expected_ips,
                 exit_node_present: true,
                 force_plaintext_dns_for_servers: None,
+                ..Default::default()
             }))
             .return_const(());
 

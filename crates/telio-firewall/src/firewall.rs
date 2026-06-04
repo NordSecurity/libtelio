@@ -163,6 +163,8 @@ pub struct FirewallState {
     pub exit_node_present: bool,
     /// List of DNS server IPs for which only plaintext DNS should be allowed
     pub force_plaintext_dns_for_servers: Option<Vec<StdIpAddr>>,
+    /// Domain patterns whitelisted from TP-Lite DNS
+    pub tp_lite_whitelisted_domains: Vec<String>,
 }
 
 /// Configuration for firewall initialization.
@@ -393,6 +395,13 @@ impl StatefulFirewall {
                 .libfw_disable_tp_lite_stats_collection(self.firewall)
         };
     }
+
+    /// Set the TP-Lite DNS whitelisted domains
+    pub fn set_tp_lite_whitelisted_domains(&self, domains: Vec<String>) {
+        let mut state = self.get_state();
+        state.tp_lite_whitelisted_domains = domains;
+        self.apply_state(state);
+    }
 }
 
 fn filter_dst_ip_all_ports(net: IpNet, inverted: bool) -> Filter {
@@ -553,35 +562,35 @@ pub(crate) fn build_chain_rules(
 
     // DNS whitelisting: redirect outbound DNS queries for whitelisted domains
     // away from the "blocking" DNS server to the "standard" one via DNAT.
-    if let Some(dns) = &config.feature.dns_whitelisting {
-        if !dns.domains.is_empty() {
-            for redirect in &dns.redirects {
-                let blocking_net = IpNet::from(StdIpAddr::V4(*redirect.blocking.ip()));
-                rules.push(Rule {
-                    filters: vec![
-                        Filter {
-                            filter_data: FilterData::Direction(Direction::Outbound),
-                            inverted: false,
-                        },
-                        Filter {
-                            filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Udp),
-                            inverted: false,
-                        },
-                        Filter {
-                            filter_data: FilterData::DstNetwork(NetworkFilterData {
-                                network: blocking_net,
-                                port_range: (redirect.blocking.port(), redirect.blocking.port()),
-                            }),
-                            inverted: false,
-                        },
-                        Filter {
-                            filter_data: FilterData::DnsQueryDomain(dns.domains.clone()),
-                            inverted: false,
-                        },
-                    ],
-                    action: RuleAction::Dnat(redirect.standard),
-                });
-            }
+    if !state.tp_lite_whitelisted_domains.is_empty() {
+        for redirect in &config.feature.tp_lite_dns_redirects {
+            let blocking_net = IpNet::from(StdIpAddr::V4(*redirect.blocking.ip()));
+            rules.push(Rule {
+                filters: vec![
+                    Filter {
+                        filter_data: FilterData::Direction(Direction::Outbound),
+                        inverted: false,
+                    },
+                    Filter {
+                        filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Udp),
+                        inverted: false,
+                    },
+                    Filter {
+                        filter_data: FilterData::DstNetwork(NetworkFilterData {
+                            network: blocking_net,
+                            port_range: (redirect.blocking.port(), redirect.blocking.port()),
+                        }),
+                        inverted: false,
+                    },
+                    Filter {
+                        filter_data: FilterData::DnsQueryDomain(
+                            state.tp_lite_whitelisted_domains.clone(),
+                        ),
+                        inverted: false,
+                    },
+                ],
+                action: RuleAction::Dnat(redirect.standard),
+            });
         }
     }
 
@@ -1000,6 +1009,7 @@ mod tests {
                 vpn_peer: Some(vpn_pk),
                 ..Default::default()
             },
+            ..Default::default()
         };
         let rules = build_chain_rules(&config, &state, &[]);
 

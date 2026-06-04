@@ -1010,6 +1010,9 @@ class Client:
     async def get_tp_lite_stats(self):
         return await self.get_proxy().get_tp_lite_stats()
 
+    async def set_tp_lite_whitelisted_domains(self, domains: List[str]) -> None:
+        await self.get_proxy().set_tp_lite_whitelisted_domains(domains)
+
     async def notify_network_change(self) -> None:
         await self.get_proxy().notify_network_change()
 

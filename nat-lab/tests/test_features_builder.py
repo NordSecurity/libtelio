@@ -4,7 +4,6 @@ from tests.uniffi import (
     deserialize_feature_config,
     FirewallBlacklistTuple,
     DnsRedirect,
-    DnsWhitelisting,
     IpProtocol,
 )
 
@@ -38,10 +37,9 @@ def test_telio_features_builder_firewall():
         outgoing_blacklist=[
             FirewallBlacklistTuple(protocol=IpProtocol.UDP, ip="8.8.4.4", port=30)
         ],
-        dns_whitelisting=DnsWhitelisting(
-            domains=["a.b.c"],
-            redirects=[DnsRedirect(blocking="1.2.3.4:30", standard="5.6.7.8:40")],
-        ),
+        tp_lite_dns_redirects=[
+            DnsRedirect(blocking="1.2.3.4:30", standard="5.6.7.8:40")
+        ],
     )
 
     json = """
@@ -56,13 +54,10 @@ def test_telio_features_builder_firewall():
                     "port": 30
             }],
             "neptun_reset_conns": false,
-            "dns_whitelisting": {
-                "domains": ["a.b.c"],
-                "redirects": [{
-                    "blocking": "1.2.3.4:30",
-                    "standard": "5.6.7.8:40"
-                }]
-            }
+            "tp_lite_dns_redirects": [{
+                "blocking": "1.2.3.4:30",
+                "standard": "5.6.7.8:40"
+            }]
         },
         "direct": null,
         "derp": null,

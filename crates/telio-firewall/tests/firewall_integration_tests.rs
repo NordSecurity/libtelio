@@ -1250,6 +1250,7 @@ fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
             vpn_peer: Some(vpn_peer),
             ..Default::default()
         },
+        ..Default::default()
     });
     assert!(
         !fw.process_outbound_packet_sink(
@@ -1456,7 +1457,7 @@ mod tp_lite_stats {
 mod dns_whitelisting {
     use pnet_packet::ipv4::Ipv4Packet;
     use pnet_packet::udp::UdpPacket;
-    use telio_model::features::{DnsRedirect, DnsWhitelisting};
+    use telio_model::features::DnsRedirect;
 
     use super::*;
 
@@ -1477,10 +1478,12 @@ mod dns_whitelisting {
         redirects: Vec<DnsRedirect>,
     ) -> StatefulFirewall {
         let feature = FeatureFirewall {
-            dns_whitelisting: Some(DnsWhitelisting { domains, redirects }),
+            tp_lite_dns_redirects: redirects,
             ..Default::default()
         };
-        StatefulFirewall::new(false, feature).expect("libfirewall.so available")
+        let fw = StatefulFirewall::new(false, feature).expect("libfirewall.so available");
+        fw.set_tp_lite_whitelisted_domains(domains);
+        fw
     }
 
     #[test]
@@ -1549,6 +1552,42 @@ mod dns_whitelisting {
     }
 
     #[test]
+    fn dns_whitelisting_reconfigures_domains_at_runtime() {
+        let blocking: SocketAddrV4 = "10.5.0.53:53".parse().unwrap();
+        let standard: SocketAddrV4 = "8.8.8.8:53".parse().unwrap();
+        // Start with redirects configured but no whitelisted domains.
+        let fw = fw_with_dns_whitelist(vec![], vec![DnsRedirect { blocking, standard }]);
+
+        let src: SocketAddrV4 = "127.0.0.1:12345".parse().unwrap();
+
+        // Before whitelisting, the query is not redirected.
+        let mut buf = make_dns_request_to(src, blocking, 1, "example.com");
+        assert!(fw.process_outbound_packet(&make_peer(), &mut buf, &mut io::sink()));
+        let (dst_ip, dst_port) = parse_dst_v4(&buf);
+        assert_eq!(dst_ip, *blocking.ip(), "dst IP must NOT be rewritten yet");
+        assert_eq!(dst_port, blocking.port());
+
+        // After setting the domain at runtime, the same query is redirected.
+        fw.set_tp_lite_whitelisted_domains(vec!["example.com".into()]);
+        let mut buf = make_dns_request_to(src, blocking, 2, "example.com");
+        assert!(fw.process_outbound_packet(&make_peer(), &mut buf, &mut io::sink()));
+        let (dst_ip, dst_port) = parse_dst_v4(&buf);
+        assert_eq!(dst_ip, *standard.ip(), "dst IP must be rewritten after set");
+        assert_eq!(dst_port, standard.port());
+
+        // Clearing the whitelist stops redirecting again.
+        fw.set_tp_lite_whitelisted_domains(vec![]);
+        let mut buf = make_dns_request_to(src, blocking, 3, "example.com");
+        assert!(fw.process_outbound_packet(&make_peer(), &mut buf, &mut io::sink()));
+        let (dst_ip, _) = parse_dst_v4(&buf);
+        assert_eq!(
+            dst_ip,
+            *blocking.ip(),
+            "dst IP must NOT be rewritten after clear"
+        );
+    }
+
+    #[test]
     fn dns_whitelisting_un_dnats_response() {
         let blocking: SocketAddrV4 = "10.5.0.53:53".parse().unwrap();
         let standard: SocketAddrV4 = "8.8.8.8:53".parse().unwrap();
@@ -1560,10 +1599,9 @@ mod dns_whitelisting {
         let client: SocketAddrV4 = "127.0.0.1:12345".parse().unwrap();
         let peer = make_peer();
 
-        fw.apply_state(FirewallState {
-            ip_addresses: vec![IpAddr::V4(*client.ip())],
-            ..Default::default()
-        });
+        let mut state = fw.get_state();
+        state.ip_addresses = vec![IpAddr::V4(*client.ip())];
+        fw.apply_state(state);
 
         let mut query = make_dns_request_to(client, blocking, 42, "example.com");
         assert!(fw.process_outbound_packet(&peer, &mut query, &mut io::sink()));
