@@ -152,8 +152,11 @@ pub async fn consolidate_wg_state(
         .as_ref()
         .map(|resolver| resolver.public_key());
 
+    telio_log_info!("Should consolidate firewall ...");
+
     #[cfg(feature = "enable_firewall")]
     if let Some(firewall) = entities.firewall.as_ref() {
+        telio_log_info!("Consolidating firewall");
         consolidate_firewall(
             requested_state,
             (*firewall).as_ref(),
@@ -638,11 +641,10 @@ async fn consolidate_firewall<F: Firewall>(
     }
 
     if let Some(meshnet_config) = &requested_state.meshnet_config {
-        state.ip_addresses = meshnet_config
-            .this
-            .ip_addresses
-            .clone()
-            .ok_or(Error::IpNotSet)?;
+        state.ip_addresses = meshnet_config.this.ip_addresses.clone().ok_or_else(|| {
+            telio_log_warn!("Skipping applu state becayse IP is not set!");
+            Error::IpNotSet
+        })?;
     }
 
     firewall.apply_state(state);

@@ -652,6 +652,7 @@ extern "C" fn log_callback(level: LibfwLogLevel, log_line: *const std::ffi::c_ch
 
 impl Firewall for StatefulFirewall {
     fn apply_state(&self, new_state: FirewallState) {
+        telio_log_info!("Applying new firewall state: {:?}", new_state);
         if *self.state.read() == new_state {
             return;
         }

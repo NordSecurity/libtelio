@@ -130,13 +130,16 @@ pub fn get_default_feature_config() -> Features {
 /// Utility function to create a `Features` object from a json-string
 /// Passing an empty string will return the default feature config
 pub fn deserialize_feature_config(fstr: String) -> FfiResult<Features> {
+    telio_log_info!("String before parse: {}", fstr);
     if fstr.is_empty() {
         Ok(Features::default())
     } else {
-        serde_json::from_str(&fstr).map_err(|err| {
+        let result = serde_json::from_str(&fstr).map_err(|err| {
             telio_log_debug!("Failed to deserialize feature config with error: {err:?}");
             TelioError::InvalidString
-        })
+        });
+        telio_log_info!("Parsed features: {:?}", result);
+        result
     }
 }
 
