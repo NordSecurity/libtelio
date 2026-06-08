@@ -45,9 +45,6 @@ MQTT_CREDENTIALS = {
     "password": "9-A'.:vUM3FPTCABorsK}J4mM}/3898_",
 }
 
-# Cache for service credentials to ensure consistency within a test run
-_SERVICE_CREDENTIALS_CACHE: dict[str, Any] = {}
-
 
 class CoreApiErrorCode(Enum):
     MACHINE_ALREADY_EXISTS = 101117
@@ -93,6 +90,8 @@ class CoreServer(HTTPServer):
     def __init__(self, server_address, RequestHandlerClass, mqttc: mqtt.Client) -> None:
         super().__init__(server_address, RequestHandlerClass)
         self._known_machines: Dict[str, Node] = {}
+        # Cache for service credentials to ensure consistency within a test run
+        self._service_credentials: Dict[str, Any] = {}
         self._mqttc = mqttc
         self._id_counter = count(1)
 
@@ -145,6 +144,15 @@ class CoreServer(HTTPServer):
 
     def get_machines(self):
         return self._known_machines
+
+    def get_service_credentials(self):
+        return self._service_credentials
+
+    def set_service_credentials(self, credentials):
+        self._service_credentials = credentials
+
+    def clear_service_credentials(self):
+        self._service_credentials = {}
 
     def next_id(self):
         return next(self._id_counter)
@@ -502,10 +510,10 @@ class CoreApiHandler(BaseHTTPRequestHandler):
 
     @requires_basic_authentication
     def handle_service_credentials(self):
-        global _SERVICE_CREDENTIALS_CACHE
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if not _SERVICE_CREDENTIALS_CACHE:
-            _SERVICE_CREDENTIALS_CACHE = {
+        credentials = self.server.get_service_credentials()
+        if not credentials:
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            credentials = {
                 "created_at": current_time,
                 "updated_at": current_time,
                 "username": "".join(
@@ -517,21 +525,21 @@ class CoreApiHandler(BaseHTTPRequestHandler):
                 "nordlynx_key": base64.b64encode(random.randbytes(32)).decode("utf-8"),
                 "id": random.randint(1, 10000),
             }
+            self.server.set_service_credentials(credentials)
 
         response = {
-            "id": _SERVICE_CREDENTIALS_CACHE["id"],
-            "created_at": _SERVICE_CREDENTIALS_CACHE["created_at"],
-            "updated_at": _SERVICE_CREDENTIALS_CACHE["updated_at"],
-            "username": _SERVICE_CREDENTIALS_CACHE["username"],
-            "password": _SERVICE_CREDENTIALS_CACHE["password"],
-            "nordlynx_private_key": _SERVICE_CREDENTIALS_CACHE["nordlynx_key"],
+            "id": credentials["id"],
+            "created_at": credentials["created_at"],
+            "updated_at": credentials["updated_at"],
+            "username": credentials["username"],
+            "password": credentials["password"],
+            "nordlynx_private_key": credentials["nordlynx_key"],
         }
         self._write_response(response, HTTPStatus.OK)
 
     @requires_basic_authentication
     def handle_reset_credentials(self):
-        global _SERVICE_CREDENTIALS_CACHE
-        _SERVICE_CREDENTIALS_CACHE = {}
+        self.server.clear_service_credentials()
         self._set_headers(status_code=HTTPStatus.OK)
         self.wfile.write(b"Credentials cache cleared")
 
