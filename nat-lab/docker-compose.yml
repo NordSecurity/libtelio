@@ -1150,6 +1150,33 @@ services:
       start_period: 5s
       retries: 3
 
+  playwright-runner-01:
+    hostname: playwright-runner-01
+    build:
+      context: .
+      dockerfile: playwright.Dockerfile
+      args:
+        PLAYWRIGHT_VERSION: 1.49.1
+    environment:
+      NODE_PATH: "/usr/lib/node_modules"
+    command: ["node", "/opt/playwright/server.js"]
+    volumes:
+      - ./bin/playwright/server.js:/opt/playwright/server.js:ro
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      openwrt-net-01:
+        ipv4_address: 192.168.115.101
+    depends_on:
+      openwrt-gw-01:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(4444,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      start_period: 10s
+      retries: 20
+
 networks:
   # Network representing public internet,
   # various services like DERP/STUN will be hosted

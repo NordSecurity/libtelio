@@ -1,0 +1,5 @@
+ARG PLAYWRIGHT_VERSION=1.49.1
+FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-jammy
+
+ARG PLAYWRIGHT_VERSION
+RUN npm install -g playwright@${PLAYWRIGHT_VERSION}
