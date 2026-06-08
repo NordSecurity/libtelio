@@ -147,6 +147,10 @@ ignore-paths = ".venv,tests/protobuf,bin/grpc_protobuf,tests/uniffi/telio_bindin
 # egregious cases but at a threshold that doesn't force opaque options-object
 # wrapping of otherwise-readable keyword arguments.
 max-args = 10
+# Limits above current usage: catch egregious cases without forcing refactors.
+max-locals = 35
+max-statements = 90
+max-attributes = 21
 
 [tool.pylint.'MESSAGES CONTROL']
 recursive = true
@@ -155,19 +159,12 @@ disable = [
     "missing-module-docstring",
     "missing-class-docstring",
     "missing-function-docstring",
-    "line-too-long",
-    "too-many-locals",
-    "wrong-import-order",
-    "too-many-instance-attributes",
-    # `fixme` stays disabled on purpose: our TODO/FIXME comments track open Jira
-    # tickets (e.g. LLT-6693, LLT-6746) and intentional workarounds; flagging them
-    # would force deleting that tracking information rather than improving the code.
-    "fixme",
+    "line-too-long",          # owned by black
+    "wrong-import-order",     # owned by isort (no_sections)
     "too-many-public-methods",
     "too-few-public-methods",
-    "too-many-statements",
-    "global-statement",
     "duplicate-code",
+    "fixme",                  # intentional; tracks open tickets
     "too-many-lines"
 ]
 
