@@ -5,14 +5,14 @@ import uuid
 from collections import Counter
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
-from tests.client_analytics import ClientAnalytics
-from tests.client_events import ClientEvents
-from tests.client_log import ClientLog
-from tests.client_tp_lite import ClientTpLite
-from tests.client_vpn import ClientVpn
+from tests.libtelio_client.analytics import ClientAnalytics
+from tests.libtelio_client.events import ClientEvents
+from tests.libtelio_client.log import ClientLog
+from tests.libtelio_client.runtime import Events, Runtime
+from tests.libtelio_client.tp_lite import ClientTpLite
+from tests.libtelio_client.vpn import ClientVpn
 from tests.log_collector import LOG_COLLECTORS, LogCollector
 from tests.mesh_api import Node
-from tests.runtime import Events, Runtime
 from tests.uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
 from tests.utils import asyncio_util
 from tests.utils.bindings import (

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from tests import config
-from tests.telio import Client
+from tests.libtelio_client import Client
 from tests.utils import stun
 from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.ping import ping

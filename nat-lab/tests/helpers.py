@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 from http import HTTPStatus
 from ipaddress import AddressValueError, IPv6Address
 from itertools import product, zip_longest
+from tests.libtelio_client import Client
 from tests.mesh_api import Node, API
-from tests.telio import Client
 from tests.utils.bindings import (
     default_features,
     Features,

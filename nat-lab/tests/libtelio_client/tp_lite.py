@@ -2,7 +2,7 @@ from tests.utils.bindings import TpLiteStatsOptions
 from typing import List, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from tests.telio import Client
+    from tests.libtelio_client.client import Client
 
 
 class ClientTpLite:

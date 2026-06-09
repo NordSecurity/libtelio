@@ -4,8 +4,8 @@ import pytest
 import shlex
 from contextlib import AsyncExitStack
 from tests.config import DERP_SERVERS
+from tests.libtelio_client import Client
 from tests.mesh_api import API
-from tests.telio import Client
 from tests.utils import testing
 from tests.utils.bindings import (
     features_with_endpoint_providers,
