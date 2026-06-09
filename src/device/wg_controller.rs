@@ -1565,6 +1565,7 @@ mod tests {
                     vpn_peer: Some(pub_key_2),
                 },
                 ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
+                force_plaintext_dns_for_servers: None,
                 ..Default::default()
             }))
             .return_const(());
@@ -1609,6 +1610,7 @@ mod tests {
                     vpn_peer: None,
                 },
                 ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
+                force_plaintext_dns_for_servers: None,
                 ..Default::default()
             }))
             .return_const(());
@@ -1654,6 +1656,7 @@ mod tests {
                     vpn_peer: None,
                 },
                 ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
+                force_plaintext_dns_for_servers: None,
                 ..Default::default()
             }))
             .return_const(());

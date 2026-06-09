@@ -44,6 +44,14 @@ pub struct TpLiteStatsOptions {
     ///
     /// Default value: same as blocked_domains_buffer_size
     pub max_open_requests: Option<u64>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The stats collection can only operate on plaintext DNS packets
+    /// Setting this flag will block DoT and DoH packets, causing the client to fallback to plaintext
+    /// Note: Some clients can be configured with no plaintext fallback, which would then break if this flag is set
+    ///
+    /// Default value: false
+    pub force_plaintext_dns: Option<bool>,
 }
 
 /// A callback for getting TP-Lite stats from libfirewall
