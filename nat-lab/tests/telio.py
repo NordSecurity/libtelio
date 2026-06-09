@@ -8,13 +8,9 @@ from collections import Counter
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from itertools import groupby
+from tests.client_log import ClientLog
 from tests.config import DERP_SERVERS
-from tests.log_collector import (
-    LOG_COLLECTORS,
-    LogCollector,
-    clear_core_dumps,
-    get_log_without_flush,
-)
+from tests.log_collector import LOG_COLLECTORS, LogCollector
 from tests.mesh_api import Node
 from tests.uniffi import VpnConnectionError
 from tests.uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
@@ -38,10 +34,11 @@ from tests.utils.bindings import (
 from tests.utils.command_grepper import CommandGrepper
 from tests.utils.connection import Connection, TargetOS
 from tests.utils.connection_util import get_uniffi_path
+from tests.utils.diagnostics import setup_run_diagnostics
 from tests.utils.logger import log
 from tests.utils.moose import MOOSE_DB_TIMEOUT_MS
 from tests.utils.output_notifier import OutputNotifier
-from tests.utils.perf_profiling import PERF_CMD, PerfProfiler
+from tests.utils.perf_profiling import PERF_CMD
 from tests.utils.process import Process
 from tests.utils.python import get_python_binary
 from tests.utils.router import IPStack, Router, new_router
@@ -50,7 +47,6 @@ from tests.utils.router.linux_router import (
     LinuxRouter,
 )
 from tests.utils.router.windows_router import WindowsRouter
-from tests.utils.tcpdump import make_tcpdump
 from typing import AsyncIterator, List, Optional, Set, Tuple
 
 DEVICE_STOP_TIMEOUT = 30
@@ -464,6 +460,7 @@ class Client:
         self._proxy_port = ""
         self._fingerprint: Optional[tuple[str, str]] = None
         self._allowed_errors: Optional[List[re.Pattern]] = None
+        self._log = ClientLog(self)
         # Automatically enables IPv6 feature when the IPv6 stack is enabled
         if (
             self._node.ip_stack in (IPStack.IPv4v6, IPStack.IPv6)
@@ -486,22 +483,9 @@ class Client:
     def node(self) -> Node:
         return self._node
 
-    async def _enter_run_contexts(
-        self, exit_stack: AsyncExitStack, run_tcpdump, enable_perf
-    ) -> None:
-        if enable_perf:
-            await exit_stack.enter_async_context(
-                PerfProfiler(
-                    connection=self._connection,
-                    file_name_suffix=self._adapter_type.name.lower(),
-                )
-            )
-        if run_tcpdump:
-            await exit_stack.enter_async_context(make_tcpdump([self._connection]))
-        # clear_core_dumps() decides internally whether the connection
-        # is one we know how to collect dumps from (currently Docker
-        # containers and Windows VMs) and is a no-op otherwise.
-        await clear_core_dumps(self._connection)
+    @property
+    def log(self) -> ClientLog:
+        return self._log
 
     @asynccontextmanager
     async def run(
@@ -563,9 +547,15 @@ class Client:
         )
 
         async with AsyncExitStack() as exit_stack:
-            await self._enter_run_contexts(exit_stack, run_tcpdump, enable_perf)
+            await setup_run_diagnostics(
+                exit_stack,
+                self._connection,
+                self._adapter_type,
+                run_tcpdump=run_tcpdump,
+                enable_perf=enable_perf,
+            )
 
-            await self.clear_system_log()
+            await self.log.clear_system_log()
 
             await exit_stack.enter_async_context(
                 self._process.run(stdout_callback=on_stdout, stderr_callback=on_stderr)
@@ -1080,14 +1070,6 @@ class Client:
         assert self._events
         return self._events
 
-    def get_stdout(self) -> str:
-        assert self._process
-        return self._process.get_stdout()
-
-    def get_stderr(self) -> str:
-        assert self._process
-        return self._process.get_stderr()
-
     def get_features(self) -> Features:
         assert self._telio_features
         return self._telio_features
@@ -1156,7 +1138,7 @@ class Client:
 
     async def maybe_write_device_fingerprint_to_moose_db(self):
         if self._fingerprint is not None:
-            await self.wait_for_log("[Moose] Init callback success")
+            await self.log.wait_for_log("[Moose] Init callback success")
             database, fingerprint = self._fingerprint
             max_retries = MOOSE_DB_TIMEOUT_MS / 1000
             max_timeout = MOOSE_DB_TIMEOUT_MS / 30
@@ -1202,63 +1184,3 @@ class Client:
         if node.endpoint is None:
             raise RuntimeError(f"Node {public_key} endpoint doesn't exist")
         return node.endpoint.split(":")[0]
-
-    def wait_for_output(self, what: str) -> asyncio.Event:
-        event = asyncio.Event()
-        self.get_runtime().get_output_notifier().notify_output(what, event)
-        return event
-
-    async def wait_for_log(
-        self,
-        what: str,
-        case_insensitive: bool = True,
-        count=1,
-        not_greater=False,
-        incremental=False,
-    ) -> None:
-        if case_insensitive:
-            what = what.lower()
-
-        target_count = count
-        if incremental:
-            # Get initial log content to establish baseline
-            initial_logs = await self.get_log()
-            if case_insensitive:
-                initial_logs = initial_logs.lower()
-
-            target_count = initial_logs.count(what) + count
-
-        while True:
-            logs = await self.get_log()
-            if case_insensitive:
-                logs = logs.lower()
-            if not_greater:
-                assert (
-                    not logs.count(what) > target_count
-                ), f'"{what}" appeared {logs.count(what)} times, more than the expected {target_count}.'
-            if logs.count(what) >= target_count:
-                break
-            await asyncio.sleep(1)
-
-    async def get_log(self) -> str:
-        await self.flush_logs()
-        return await get_log_without_flush(self._connection)
-
-    async def clear_system_log(self) -> None:
-        """
-        Clear the system log on the target machine
-        Windows only for now
-        """
-        if self._connection.target_os == TargetOS.Windows:
-            for log_name in ["Application", "System"]:
-                await self._connection.create_process(
-                    [
-                        "powershell",
-                        "-Command",
-                        f"Clear-EventLog -LogName {log_name}",
-                    ],
-                    quiet=True,
-                ).execute()
-
-    async def flush_logs(self) -> None:
-        await self.get_proxy().flush_logs()
