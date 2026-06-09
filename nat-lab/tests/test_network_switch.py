@@ -326,16 +326,20 @@ async def _list_mac_network_services(connection) -> list[tuple[str, str]]:
     process = await connection.create_process(
         ["networksetup", "-listnetworkserviceorder"], quiet=True
     ).execute()
-    output = process.get_stdout()
     services = []
-    # Match adjacent service-name and device lines. Device line format:
-    #   (Hardware Port: Ethernet, Device: en0)
-    for match in re.finditer(
-        r"^\(\d+\)\s+(.+?)\s*\n\s+\(Hardware Port:.*?Device:\s*([^)]+)\)",
-        output,
-        re.MULTILINE,
-    ):
-        services.append((match.group(1), match.group(2).strip()))
+    pending_service_name = None
+    for raw_line in process.get_stdout().splitlines():
+        line = raw_line.strip()
+        # Lines like "(1) Ethernet" or "(2) Ethernet 2"
+        svc_match = re.match(r"^\((\d+)\)\s+(.+)$", line)
+        if svc_match:
+            pending_service_name = svc_match.group(2).strip()
+            continue
+        # Lines like "(Hardware Port: Ethernet, Device: en0)"
+        dev_match = re.match(r"^\(Hardware Port:.*?Device:\s*([^)]+)\)$", line)
+        if dev_match and pending_service_name is not None:
+            services.append((pending_service_name, dev_match.group(1).strip()))
+            pending_service_name = None
     return services
 
 
