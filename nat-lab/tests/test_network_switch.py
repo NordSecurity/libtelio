@@ -1,4 +1,5 @@
 import asyncio
+import re
 import pytest
 from contextlib import AsyncExitStack
 from tests import config
@@ -11,6 +12,7 @@ from tests.helpers import (
 from tests.utils import stun
 from tests.utils.asyncio_util import run_async_contexts
 from tests.utils.bindings import (
+    default_features,
     features_with_endpoint_providers,
     EndpointProvider,
     PathType,
@@ -310,6 +312,155 @@ async def test_mesh_network_switch_direct(
         beta_client.allow_errors([
             "telio_traversal::endpoint_providers::stun.*Starting session failed.*A socket operation was attempted to an unreachable network"
         ])
+
+
+async def _list_mac_network_services(connection) -> list[tuple[str, str]]:
+    """Returns (service_name, device_name) pairs in SCDynamicStore preference order.
+
+    Parses output of `networksetup -listnetworkserviceorder`, which looks like:
+        (1) Ethernet
+            (Hardware Port: Ethernet, Device: en0)
+        (2) Ethernet 2
+            (Hardware Port: Ethernet 2, Device: en1)
+    """
+    process = await connection.create_process(
+        ["networksetup", "-listnetworkserviceorder"], quiet=True
+    ).execute()
+    output = process.get_stdout()
+    services = []
+    # Match adjacent service-name and device lines. Device line format:
+    #   (Hardware Port: Ethernet, Device: en0)
+    for match in re.finditer(
+        r"^\(\d+\)\s+(.+?)\s*\n\s+\(Hardware Port:.*?Device:\s*([^)]+)\)",
+        output,
+        re.MULTILINE,
+    ):
+        services.append((match.group(1), match.group(2).strip()))
+    return services
+
+
+async def _set_mac_network_service_order(connection, service_names: list[str]) -> None:
+    """Sets the macOS network service preference order."""
+    await connection.create_process(
+        ["networksetup", "-orderNetworkServices"] + service_names
+    ).execute()
+
+
+@pytest.mark.asyncio
+@pytest.mark.mac
+async def test_mac_interface_selection_with_decoy_interface() -> None:
+    """Verify libtelio binds to the correct interface when a non-routable interface
+    appears before the routable one in the macOS network service order.
+    """
+    async with AsyncExitStack() as exit_stack:
+        features = default_features()
+        # is_test_env=False enables the NativeProtector socket watcher on macOS, which
+        # performs interface selection and socket binding. With is_test_env=True (the
+        # default in all other mac tests) the socket watcher is disabled and none of
+        # the apple-specific interface selection code paths are exercised.
+        features.is_test_env = False
+
+        alpha_setup_params = SetupParameters(
+            connection_tag=ConnectionTag.VM_MAC,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
+            is_meshnet=False,
+            features=features,
+        )
+
+        env = await exit_stack.enter_async_context(
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.DOCKER_VPN_1],
+            )
+        )
+        client_alpha, *_ = env.clients
+        alpha_conn_mngr, *_ = env.connections
+        alpha_connection = alpha_conn_mngr.connection
+
+        services = await _list_mac_network_services(alpha_connection)
+        assert len(services) >= 2, (
+            f"Expected at least 2 network services on the mac VM, got: {services}"
+        )
+        original_order = [name for name, _ in services]
+
+        # Find which macOS service name corresponds to the secondary NIC (en1) by
+        # matching the secondary IP address from ifconfig output to a device name,
+        # then mapping that device name to its network service.
+        secondary_ip = config.LAN_ADDR_MAP[ConnectionTag.VM_MAC]["secondary"]
+        primary_ip = config.LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"]
+        ifconfig_output = await alpha_connection.create_process(
+            ["ifconfig"], quiet=True
+        ).execute()
+        secondary_if_name = None
+        primary_if_name = None
+        current_device = None
+        for line in ifconfig_output.get_stdout().splitlines():
+            device_match = re.match(r"^(\S+):", line)
+            if device_match:
+                current_device = device_match.group(1)
+            if current_device and secondary_ip in line and secondary_if_name is None:
+                secondary_if_name = current_device
+            if current_device and primary_ip in line and primary_if_name is None:
+                primary_if_name = current_device
+
+        assert secondary_if_name is not None, (
+            f"Could not find interface with IP {secondary_ip} in ifconfig output"
+        )
+        assert primary_if_name is not None, (
+            f"Could not find interface with IP {primary_ip} in ifconfig output"
+        )
+
+        secondary_service_name = next(
+            (name for name, device in services if device == secondary_if_name), None
+        )
+        assert secondary_service_name is not None, (
+            f"Could not map interface {secondary_if_name} to a network service. "
+            f"Services: {services}"
+        )
+
+        # Place the secondary (non-default-route) service first in the SCDynamicStore
+        # service order. A buggy implementation that picks by SCDynamicStore order
+        # alone would select the secondary interface. The correct implementation picks
+        # the interface that nw_path_monitor considers preferred (the primary, since
+        # it holds the current default route).
+        decoy_first_order = [secondary_service_name] + [
+            s for s in original_order if s != secondary_service_name
+        ]
+        await _set_mac_network_service_order(alpha_connection, decoy_first_order)
+        try:
+            wg_server = config.WG_SERVER
+            await client_alpha.connect_to_vpn(
+                str(wg_server["ipv4"]),
+                int(wg_server["port"]),
+                str(wg_server["public_key"]),
+            )
+
+            await ping(alpha_connection, config.PHOTO_ALBUM_IP)
+
+            ip = await stun.get(alpha_connection, config.STUN_SERVER)
+            assert ip == wg_server["ipv4"], (
+                f"Expected VPN server IP {wg_server['ipv4']} but got {ip}. "
+                "VPN connectivity failed — libtelio may have bound to the wrong interface."
+            )
+
+            # Verify via logs that the primary interface was discovered for socket binding.
+            # The log line emitted by get_primary_interface_names() in apple.rs contains
+            # both the SCDynamicStore-ordered list and the nw_path_monitor OS preference
+            # order. Confirm the primary interface name appears in the discovery log.
+            logs = await client_alpha.get_log()
+            assert (
+                "Discovered these primary IPv4 interfaces for use in socket binding"
+                in logs
+            ), "Expected interface discovery log from apple.rs protector, not found"
+            assert primary_if_name in logs, (
+                f"Expected primary interface {primary_if_name!r} to be discovered "
+                f"for socket binding, but it was not found in the interface selection "
+                f"log. libtelio may have selected only the wrong interface "
+                f"({secondary_if_name!r}), which was placed first in SCDynamicStore."
+            )
+        finally:
+            await _set_mac_network_service_order(alpha_connection, original_order)
 
 
 class TestInterfaceWindows:
