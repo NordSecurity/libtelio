@@ -9,8 +9,8 @@ from tests.helpers import (
     setup_mesh_nodes,
     setup_api,
 )
+from tests.libtelio_client import Client
 from tests.mesh_api import API
-from tests.telio import Client
 from tests.utils import stun
 from tests.utils.bindings import (
     features_with_endpoint_providers,

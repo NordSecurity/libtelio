@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from tests.telio import Client
+    from tests.libtelio_client.client import Client
 
 
 class ClientAnalytics:

@@ -3,7 +3,7 @@ import pytest
 from datetime import datetime, timedelta
 from tests import config
 from tests.helpers import SetupParameters, Environment
-from tests.telio import Client
+from tests.libtelio_client import Client
 from tests.utils import stun
 from tests.utils.bindings import TelioAdapterType, NodeState, PathType
 from tests.utils.connection import Connection, ConnectionTag
