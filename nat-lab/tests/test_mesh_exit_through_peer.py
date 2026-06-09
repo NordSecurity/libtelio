@@ -18,7 +18,6 @@ from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
 )
-from tests.utils.diagnostics import setup_connection_diagnostics
 from tests.utils.ping import ping
 from tests.utils.router import IPProto, IPStack
 
@@ -262,10 +261,6 @@ async def test_ipv6_exit_node(
                     ping6_limits=(None, None),
                 ),
             )
-        )
-
-        await setup_connection_diagnostics(
-            exit_stack, [connection_alpha, connection_beta]
         )
 
         client_alpha = await exit_stack.enter_async_context(
