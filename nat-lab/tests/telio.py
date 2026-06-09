@@ -32,11 +32,10 @@ from tests.utils.bindings import (
 from tests.utils.command_grepper import CommandGrepper
 from tests.utils.connection import Connection, TargetOS
 from tests.utils.connection_util import get_uniffi_path
-from tests.utils.diagnostics import setup_run_diagnostics
 from tests.utils.logger import log
 from tests.utils.moose import MOOSE_DB_TIMEOUT_MS
 from tests.utils.output_notifier import OutputNotifier
-from tests.utils.perf_profiling import PERF_CMD
+from tests.utils.perf_profiling import PERF_CMD, PerfProfiler
 from tests.utils.process import Process
 from tests.utils.python import get_python_binary
 from tests.utils.router import IPStack, Router, new_router
@@ -489,7 +488,6 @@ class Client:
     async def run(
         self,
         meshnet_config: Optional[Config] = None,
-        run_tcpdump: Optional[bool] = True,
         enable_perf: Optional[bool] = False,
     ) -> AsyncIterator["Client"]:
         async def on_stdout(stdout: str) -> None:
@@ -545,13 +543,13 @@ class Client:
         )
 
         async with AsyncExitStack() as exit_stack:
-            await setup_run_diagnostics(
-                exit_stack,
-                self._connection,
-                self._adapter_type,
-                run_tcpdump=run_tcpdump,
-                enable_perf=enable_perf,
-            )
+            if enable_perf:
+                await exit_stack.enter_async_context(
+                    PerfProfiler(
+                        connection=self._connection,
+                        file_name_suffix=self._adapter_type.name.lower(),
+                    )
+                )
 
             await self.log.clear_system_log()
 

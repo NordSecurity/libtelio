@@ -1,34 +1,27 @@
 from contextlib import AsyncExitStack
 from tests.log_collector import clear_core_dumps
-from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import Connection
-from tests.utils.perf_profiling import PerfProfiler
 from tests.utils.tcpdump import make_tcpdump
-from typing import Optional
+from typing import List
 
 
-async def setup_run_diagnostics(
+async def setup_connection_diagnostics(
     exit_stack: AsyncExitStack,
-    connection: Connection,
-    adapter_type: TelioAdapterType,
+    connections: List[Connection],
     *,
-    run_tcpdump: Optional[bool],
-    enable_perf: Optional[bool],
+    run_tcpdump: bool = True,
 ) -> None:
-    """Enter the per-run diagnostics context managers (perf, tcpdump, coredumps).
+    """Set up packet capture and core-dump collection for the given connections.
 
-    Extracted from `Client.run()` so the client no longer owns this orchestration.
+    This is test-environment setup, independent of any libtelio client: tcpdump
+    records traffic on each connection for the duration of the test and any
+    pre-existing core dumps are cleared up-front so that only dumps produced by
+    the test are collected afterwards.
     """
-    if enable_perf:
-        await exit_stack.enter_async_context(
-            PerfProfiler(
-                connection=connection,
-                file_name_suffix=adapter_type.name.lower(),
-            )
-        )
+    for connection in connections:
+        # clear_core_dumps() decides internally whether the connection
+        # is one we know how to collect dumps from (currently Docker
+        # containers and Windows VMs) and is a no-op otherwise.
+        await clear_core_dumps(connection)
     if run_tcpdump:
-        await exit_stack.enter_async_context(make_tcpdump([connection]))
-    # clear_core_dumps() decides internally whether the connection
-    # is one we know how to collect dumps from (currently Docker
-    # containers and Windows VMs) and is a no-op otherwise.
-    await clear_core_dumps(connection)
+        await exit_stack.enter_async_context(make_tcpdump(connections))
