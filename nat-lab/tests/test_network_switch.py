@@ -448,20 +448,32 @@ async def test_mac_interface_selection_with_decoy_interface() -> None:
                 "VPN connectivity failed — libtelio may have bound to the wrong interface."
             )
 
-            # Verify via logs that the primary interface was discovered for socket binding.
-            # The log line emitted by get_primary_interface_names() in apple.rs contains
-            # both the SCDynamicStore-ordered list and the nw_path_monitor OS preference
-            # order. Confirm the primary interface name appears in the discovery log.
+            # Verify via nw_path_monitor logs that the OS considers the primary interface
+            # (the one with the default route) as the preferred path — not the secondary
+            # interface that we placed first in the SCDynamicStore service order.
+            # nw_path_monitor emits "current network path in os preference order: [...]"
+            # on every path change. The first emission at startup shows the physical
+            # interfaces before the VPN tunnel takes over the path.
             logs = await client_alpha.get_log()
-            assert (
-                "Discovered these primary IPv4 interfaces for use in socket binding"
-                in logs
-            ), "Expected interface discovery log from apple.rs protector, not found"
-            assert primary_if_name in logs, (
-                f"Expected primary interface {primary_if_name!r} to be discovered "
-                f"for socket binding, but it was not found in the interface selection "
-                f"log. libtelio may have selected only the wrong interface "
-                f"({secondary_if_name!r}), which was placed first in SCDynamicStore."
+            path_log_re = re.compile(
+                r"current network path in os preference order: \[([^\]]*)\]"
+            )
+            path_log_matches = path_log_re.findall(logs)
+            assert path_log_matches, (
+                "Expected nw_path_monitor 'current network path in os preference order' "
+                "log entries, but found none"
+            )
+            # The first path change report (before the VPN tunnel comes up) must show
+            # the primary physical interface as the most preferred interface. If the
+            # secondary interface appears first, the OS itself considers it the preferred
+            # path, which would indicate the default route is wrong.
+            first_path = path_log_matches[0]
+            assert primary_if_name in first_path, (
+                f"Expected primary interface {primary_if_name!r} in the first "
+                f"nw_path_monitor OS preference order report: {first_path!r}. "
+                f"The secondary interface ({secondary_if_name!r}) was placed first in "
+                f"SCDynamicStore order — if it also appears first in the nw_path_monitor "
+                f"order, interface selection would fail."
             )
         finally:
             await _set_mac_network_service_order(alpha_connection, original_order)
