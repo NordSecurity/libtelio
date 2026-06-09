@@ -193,8 +193,10 @@ async def test_connect_different_telio_version_through_relay(
             shlex.quote(backport_config(api.get_meshnet_config(beta.id))),
         ])
 
-        await alpha_client.wait_for_state_on_any_derp([RelayState.CONNECTED])
-        await alpha_client.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED])
+        await alpha_client.events.wait_for_state_on_any_derp([RelayState.CONNECTED])
+        await alpha_client.events.wait_for_state_peer(
+            beta.public_key, [NodeState.CONNECTED]
+        )
 
         await ping(
             alpha_conn,

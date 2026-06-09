@@ -96,16 +96,18 @@ async def test_mesh_reconnect(
 
     async with asyncio_util.run_async_context(
         asyncio.gather(
-            client_alpha.wait_for_event_peer(beta.public_key, [NodeState.CONNECTED]),
-            client_alpha.wait_for_event_on_any_derp([RelayState.CONNECTED]),
+            client_alpha.events.wait_for_event_peer(
+                beta.public_key, [NodeState.CONNECTED]
+            ),
+            client_alpha.events.wait_for_event_on_any_derp([RelayState.CONNECTED]),
         ),
     ) as event:
         await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
         await event
 
     await asyncio.gather(
-        client_alpha.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
-        client_beta.wait_for_state_peer(alpha.public_key, [NodeState.CONNECTED]),
+        client_alpha.events.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
+        client_beta.events.wait_for_state_peer(alpha.public_key, [NodeState.CONNECTED]),
     )
 
     await ping(alpha_connection, beta.ip_addresses[0])

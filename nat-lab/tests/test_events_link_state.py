@@ -202,12 +202,12 @@ async def test_event_link_state_peers_idle_all_time(
             await wait_for_any_with_timeout(
                 [
                     asyncio.create_task(
-                        client_alpha.wait_for_link_state(
+                        client_alpha.events.wait_for_link_state(
                             beta.public_key, LinkState.DOWN
                         )
                     ),
                     asyncio.create_task(
-                        client_beta.wait_for_link_state(
+                        client_beta.events.wait_for_link_state(
                             alpha.public_key, LinkState.DOWN
                         )
                     ),
@@ -215,11 +215,11 @@ async def test_event_link_state_peers_idle_all_time(
                 timeout=IDLE_TIMEOUT_S,
             )
 
-        assert client_alpha.get_link_state_events(beta.public_key) == [
+        assert client_alpha.events.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
         ]
-        assert client_beta.get_link_state_events(alpha.public_key) == [
+        assert client_beta.events.get_link_state_events(alpha.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
         ]
@@ -243,11 +243,11 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
             await ping(connection_alpha, beta.ip_addresses[0])
             await ping(connection_beta, alpha.ip_addresses[0])
 
-        assert client_alpha.get_link_state_events(beta.public_key) == [
+        assert client_alpha.events.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
         ]
-        assert client_beta.get_link_state_events(alpha.public_key) == [
+        assert client_beta.events.get_link_state_events(alpha.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
         ]
@@ -274,12 +274,12 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
             await wait_for_any_with_timeout(
                 [
                     asyncio.create_task(
-                        client_alpha.wait_for_link_state(
+                        client_alpha.events.wait_for_link_state(
                             beta.public_key, LinkState.DOWN
                         )
                     ),
                     asyncio.create_task(
-                        client_beta.wait_for_link_state(
+                        client_beta.events.wait_for_link_state(
                             alpha.public_key, LinkState.DOWN
                         )
                     ),
@@ -295,12 +295,12 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
             await wait_for_any_with_timeout(
                 [
                     asyncio.create_task(
-                        client_alpha.wait_for_link_state(
+                        client_alpha.events.wait_for_link_state(
                             beta.public_key, LinkState.DOWN
                         )
                     ),
                     asyncio.create_task(
-                        client_beta.wait_for_link_state(
+                        client_beta.events.wait_for_link_state(
                             alpha.public_key, LinkState.DOWN
                         )
                     ),
@@ -309,11 +309,11 @@ async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
             )
 
         # Expect the links are still UP
-        assert client_alpha.get_link_state_events(beta.public_key) == [
+        assert client_alpha.events.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
         ]
-        assert client_beta.get_link_state_events(alpha.public_key) == [
+        assert client_beta.events.get_link_state_events(alpha.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
         ]
@@ -376,7 +376,7 @@ async def test_event_link_state_peer_goes_offline(
 
         # Expect the link to still be UP for the duration of WG Keepalive timeout + Max. RTT Allowed
         with pytest.raises(asyncio.TimeoutError):
-            await client_alpha.wait_for_link_state(
+            await client_alpha.events.wait_for_link_state(
                 beta.public_key, LinkState.DOWN, WG_PASSIVE_KEEPALIVE_S
             )
 
@@ -384,15 +384,15 @@ async def test_event_link_state_peer_goes_offline(
         # WG Keep alive + Max. RTT allowed + Delay, where,
         #      Delay = 3s
         # Exact timeout proven to be flaky in practice, thus we just wait here indefinitely
-        await client_alpha.wait_for_link_state(beta.public_key, LinkState.DOWN)
+        await client_alpha.events.wait_for_link_state(beta.public_key, LinkState.DOWN)
 
-        assert client_alpha.get_link_state_events(beta.public_key) == [
+        assert client_alpha.events.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
             LinkState.DOWN,
         ]
         # Although the beta device has been stopped, it should still see alpha as up
-        assert client_beta.get_link_state_events(alpha.public_key) == [
+        assert client_beta.events.get_link_state_events(alpha.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
         ]
@@ -416,8 +416,8 @@ async def test_event_link_state_feature_disabled(
 
         await asyncio.sleep(IDLE_TIMEOUT_S)
 
-        alpha_events = client_beta.get_link_state_events(alpha.public_key)
-        beta_events = client_alpha.get_link_state_events(beta.public_key)
+        alpha_events = client_beta.events.get_link_state_events(alpha.public_key)
+        beta_events = client_alpha.events.get_link_state_events(beta.public_key)
 
         assert len(alpha_events) == 0
         assert len(beta_events) == 0
@@ -492,12 +492,12 @@ async def test_event_link_state_peer_doesnt_respond(
                 await wait_for_any_with_timeout(
                     [
                         asyncio.create_task(
-                            client_alpha.wait_for_link_state(
+                            client_alpha.events.wait_for_link_state(
                                 beta.public_key, LinkState.DOWN
                             )
                         ),
                         asyncio.create_task(
-                            client_beta.wait_for_link_state(
+                            client_beta.events.wait_for_link_state(
                                 alpha.public_key, LinkState.DOWN
                             )
                         ),
@@ -538,18 +538,18 @@ async def test_event_link_state_delayed_packet(
         )
 
         # Alpha client should detect DOWN link state before the ICMP packet reaches it
-        await client_alpha.wait_for_link_state(beta.public_key, LinkState.DOWN)
+        await client_alpha.events.wait_for_link_state(beta.public_key, LinkState.DOWN)
 
         # When the delayed ICMP packet is finally received, alpha should detect the UP link state
-        await client_alpha.wait_for_link_state(beta.public_key, LinkState.UP)
+        await client_alpha.events.wait_for_link_state(beta.public_key, LinkState.UP)
 
-        assert client_alpha.get_link_state_events(beta.public_key) == [
+        assert client_alpha.events.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
             LinkState.DOWN,
             LinkState.UP,
         ]
-        assert client_beta.get_link_state_events(alpha.public_key) == [
+        assert client_beta.events.get_link_state_events(alpha.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
         ]
@@ -610,7 +610,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
         # keeping the container/VM connection alive through the primary interface.
         await conn_mgr_alpha.network_switcher.switch_to_secondary_network()
         await client_alpha.notify_network_change()
-        await client_alpha.wait_for_event_on_any_derp([RelayState.CONNECTED])
+        await client_alpha.events.wait_for_event_on_any_derp([RelayState.CONNECTED])
 
         # We can think that after this ping beta->alpha will have tx_ts > rx_ts (ICMP reply),
         # however the counters have a granularity (ie: update rate) of 1s (=WG polling period) thus
@@ -636,8 +636,8 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
 
         # On some implementations (eg: WireguardNT) TX packet counter doesn't increase when the adapter is
         # disabled, which means link state detection might fail.
-        await client_alpha.wait_for_link_state(beta.public_key, LinkState.DOWN)
-        assert client_alpha.get_link_state_events(beta.public_key) == [
+        await client_alpha.events.wait_for_link_state(beta.public_key, LinkState.DOWN)
+        assert client_alpha.events.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
             LinkState.DOWN,
@@ -647,7 +647,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
         # IDLE_TIMEOUT_S seconds after, the down link state should be detected.
         # Alternatively we could ping alpha after disabling its interface which will make tx_ts > rx_ts.
         #
-        # assert client_beta.get_link_state_events(alpha.public_key) == [
+        # assert client_beta.events.get_link_state_events(alpha.public_key) == [
         #     LinkState.DOWN,
         #     LinkState.UP,
         # ]
@@ -712,14 +712,14 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
         # the connection, so no node event is logged in that case
         await asyncio.gather(
             client_alpha.notify_network_change(),
-            client_alpha.wait_for_event_on_any_derp([RelayState.CONNECTED]),
-            client_beta.wait_for_event_peer(
+            client_alpha.events.wait_for_event_on_any_derp([RelayState.CONNECTED]),
+            client_beta.events.wait_for_event_peer(
                 alpha.public_key,
                 [NodeState.CONNECTED],
                 [PathType.RELAY],
                 link_state=LinkState.UP,
             ),
-            client_beta.wait_for_event_peer(
+            client_beta.events.wait_for_event_peer(
                 alpha.public_key,
                 [NodeState.CONNECTED],
                 [PathType.DIRECT],
@@ -755,10 +755,10 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
         # However after 3xdirect keep alives the connection is downgraded and any eventual packets will be successfully sent
         # from the WireguardNT perspective, because the following hop is the proxy socket at localhost (relayed peer endpoint)
         # before going to the disabled NIC.
-        await client_alpha.wait_for_link_state(
+        await client_alpha.events.wait_for_link_state(
             beta.public_key, LinkState.DOWN, IDLE_TIMEOUT_S
         )
-        assert client_alpha.get_link_state_events(beta.public_key) == [
+        assert client_alpha.events.get_link_state_events(beta.public_key) == [
             LinkState.DOWN,
             LinkState.UP,
             LinkState.DOWN,
@@ -770,7 +770,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
         # IDLE_TIMEOUT_S seconds after, the down link state should be detected.
         # Alternatively we could ping alpha after disabling its interface which will make tx_ts > rx_ts.
         #
-        # assert client_beta.get_link_state_events(alpha.public_key) == [
+        # assert client_beta.events.get_link_state_events(alpha.public_key) == [
         #     LinkState.DOWN,
         #     LinkState.UP,
         # ]
@@ -872,10 +872,10 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_with_vpn(
         # However after 3xdirect keep alives the connection is downgraded and any eventual packets will be successfully sent
         # from the WireguardNT perspective, because the following hop is the proxy socket at localhost (relayed peer endpoint)
         # before going to the disabled interface.
-        await client_alpha.wait_for_link_state(
+        await client_alpha.events.wait_for_link_state(
             vpn_public_key, LinkState.DOWN, IDLE_TIMEOUT_S
         )
-        assert client_alpha.get_link_state_events(vpn_public_key) == [
+        assert client_alpha.events.get_link_state_events(vpn_public_key) == [
             LinkState.DOWN,
             LinkState.UP,
             LinkState.DOWN,

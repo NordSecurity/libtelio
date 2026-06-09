@@ -429,26 +429,30 @@ async def run_default_scenario(
     )
 
     await asyncio.gather(
-        client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-        client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-        client_gamma.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+        client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+        client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+        client_gamma.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
     )
     # Note: GAMMA is symmetric, so it will not connect to ALPHA or BETA in direct mode
     await asyncio.gather(
-        client_alpha.wait_for_state_peer(
+        client_alpha.events.wait_for_state_peer(
             beta.public_key,
             [NodeState.CONNECTED],
             [PathType.DIRECT],
         ),
-        client_alpha.wait_for_state_peer(gamma.public_key, [NodeState.CONNECTED]),
-        client_beta.wait_for_state_peer(
+        client_alpha.events.wait_for_state_peer(
+            gamma.public_key, [NodeState.CONNECTED]
+        ),
+        client_beta.events.wait_for_state_peer(
             alpha.public_key,
             [NodeState.CONNECTED],
             [PathType.DIRECT],
         ),
-        client_beta.wait_for_state_peer(gamma.public_key, [NodeState.CONNECTED]),
-        client_gamma.wait_for_state_peer(alpha.public_key, [NodeState.CONNECTED]),
-        client_gamma.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
+        client_beta.events.wait_for_state_peer(gamma.public_key, [NodeState.CONNECTED]),
+        client_gamma.events.wait_for_state_peer(
+            alpha.public_key, [NodeState.CONNECTED]
+        ),
+        client_gamma.events.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
     )
 
     if alpha_has_vpn_connection:
@@ -1278,14 +1282,14 @@ async def test_lana_with_meshnet_exit_node(
         )
 
         await asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(
+            client_alpha.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
-            client_beta.wait_for_state_peer(
+            client_beta.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
@@ -1495,14 +1499,14 @@ async def test_lana_with_disconnected_node(
         )
 
         await asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(
+            client_alpha.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
-            client_beta.wait_for_state_peer(
+            client_beta.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
@@ -1896,10 +1900,10 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         await client_beta.set_meshnet_config(api.get_meshnet_config(beta.id))
 
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(
+            client_alpha.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
-            client_beta.wait_for_state_peer(
+            client_beta.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
@@ -2180,8 +2184,8 @@ async def test_lana_rtt_interval_controls_periodic_qos_collection():
         )
 
         await asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
 
         await client_alpha.log.wait_for_log("Starting periodic ping", count=2)
