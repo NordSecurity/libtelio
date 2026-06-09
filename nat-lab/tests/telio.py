@@ -553,8 +553,6 @@ class Client:
                     )
                 )
 
-            await self.log.clear_system_log()
-
             await exit_stack.enter_async_context(
                 self._process.run(stdout_callback=on_stdout, stderr_callback=on_stderr)
             )

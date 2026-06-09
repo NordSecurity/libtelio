@@ -22,7 +22,6 @@ from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
 )
-from tests.utils.diagnostics import setup_connection_diagnostics
 from tests.utils.logger import log
 from tests.utils.output_notifier import OutputNotifier
 from tests.utils.ping import ping
@@ -154,8 +153,6 @@ async def test_connect_different_telio_version_through_relay(
                 ),
             )
         )
-
-        await setup_connection_diagnostics(exit_stack, [alpha_conn, beta_conn])
 
         alpha_client = await exit_stack.enter_async_context(
             Client(

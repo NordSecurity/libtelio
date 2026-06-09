@@ -1,6 +1,5 @@
 import asyncio
 from tests.log_collector import get_log_without_flush
-from tests.utils.connection import TargetOS
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -64,23 +63,6 @@ class ClientLog:
     async def get_log(self) -> str:
         await self.flush_logs()
         return await get_log_without_flush(self._client.get_connection())
-
-    async def clear_system_log(self) -> None:
-        """
-        Clear the system log on the target machine
-        Windows only for now
-        """
-        connection = self._client.get_connection()
-        if connection.target_os == TargetOS.Windows:
-            for log_name in ["Application", "System"]:
-                await connection.create_process(
-                    [
-                        "powershell",
-                        "-Command",
-                        f"Clear-EventLog -LogName {log_name}",
-                    ],
-                    quiet=True,
-                ).execute()
 
     async def flush_logs(self) -> None:
         await self._client.get_proxy().flush_logs()

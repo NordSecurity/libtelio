@@ -28,7 +28,6 @@ from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
 )
-from tests.utils.diagnostics import setup_connection_diagnostics
 from tests.utils.ping import ping
 from tests.utils.router import IPStack
 from typing import Optional
@@ -609,9 +608,6 @@ async def test_event_content_meshnet_node_upgrade_direct(
                 beta_setup_params.connection_tag,
                 beta_setup_params.connection_tracker_config,
             )
-        )
-        await setup_connection_diagnostics(
-            exit_stack, [connection_alpha, connection_beta]
         )
         alpha.nickname = "alpha"
         beta.nickname = "BETA"
