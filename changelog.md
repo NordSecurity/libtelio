@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v7.0.3
+### ****
+---
+* LLT-7361: Add option to force plaintext DNS for TP-Lite DNS servers when stats collection is enabled
+
+<br>
+
 ### v7.0.2
 ### ****
 ---
