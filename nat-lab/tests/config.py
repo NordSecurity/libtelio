@@ -241,7 +241,7 @@ WINDUMP_BINARY_WINDOWS = "C:/workspace/WinDump.exe".replace("/", "\\")
 
 # Network Adapter device setup class registry path
 # https://learn.microsoft.com/en-us/windows-hardware/drivers/install/system-defined-device-setup-classes-available-to-vendors
-WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY = r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}"
+WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY = r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Class\{62f9c741-b25a-46ce-b54c-9bccce08b6f2}"
 
 # JIRA issue: LLT-1664
 # The directories between host and Docker container are shared via
