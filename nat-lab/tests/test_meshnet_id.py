@@ -28,18 +28,18 @@ async def test_meshnet_id_generated_only_when_meshnet_starts(
 ) -> None:
     client_alpha = env.clients[0]
     # Wait for everything to get set up
-    await client_alpha.wait_for_log("Telio::start_named: Ok(())")
+    await client_alpha.log.wait_for_log("Telio::start_named: Ok(())")
 
-    logs = await client_alpha.get_log()
+    logs = await client_alpha.log.get_log()
     # There should be no meshnet ID generation
     assert logs.count("Meshnet ID:") == 0
 
     config = env.api.get_meshnet_config(env.nodes[0].id)
     await client_alpha.set_meshnet_config(config)
 
-    await client_alpha.wait_for_log("Meshnet ID:")
+    await client_alpha.log.wait_for_log("Meshnet ID:")
 
-    logs = await client_alpha.get_log()
+    logs = await client_alpha.log.get_log()
     assert re.search(
         r"Meshnet ID: Some\(([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)",
         logs,

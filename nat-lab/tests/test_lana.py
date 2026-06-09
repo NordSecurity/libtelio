@@ -2184,8 +2184,8 @@ async def test_lana_rtt_interval_controls_periodic_qos_collection():
             client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
 
-        await client_alpha.wait_for_log("Starting periodic ping", count=2)
-        await client_beta.wait_for_log("Starting periodic ping", count=2)
+        await client_alpha.log.wait_for_log("Starting periodic ping", count=2)
+        await client_beta.log.wait_for_log("Starting periodic ping", count=2)
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 

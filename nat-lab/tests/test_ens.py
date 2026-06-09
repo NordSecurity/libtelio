@@ -145,8 +145,8 @@ async def test_ens_server_maintenance(
                 vpn_connection_error=VpnConnectionError.SERVER_MAINTENANCE,
             )
 
-            await client_alpha.wait_for_log(fingerprint)
-            await client_alpha.wait_for_log(
+            await client_alpha.log.wait_for_log(fingerprint)
+            await client_alpha.log.wait_for_log(
                 "(ConnectionError { code: ServerMaintenance, additional_info: None })"
             )
 
@@ -271,8 +271,8 @@ async def test_ens_unauthenticated(
                 vpn_connection_error=VpnConnectionError.UNAUTHENTICATED,
             )
 
-            await client_alpha.wait_for_log(fingerprint)
-            await client_alpha.wait_for_log(
+            await client_alpha.log.wait_for_log(fingerprint)
+            await client_alpha.log.wait_for_log(
                 "(ConnectionError { code: Unauthenticated, additional_info: None })"
             )
         finally:
@@ -414,7 +414,7 @@ async def test_ens_connection_limit_reached(
                 nlx_server_public_key,
             )
 
-            await client_alpha.wait_for_log(fingerprint)
+            await client_alpha.log.wait_for_log(fingerprint)
 
             await fakefm.add_allowed_user(ens_username, client_beta.node.public_key)
 
@@ -426,7 +426,7 @@ async def test_ens_connection_limit_reached(
                     timeout=5,
                 )
 
-            await client_beta.wait_for_log(fingerprint)
+            await client_beta.log.wait_for_log(fingerprint)
             await client_beta.wait_for_state_peer(
                 nlx_server_public_key,
                 [NodeState.CONNECTING],
@@ -561,7 +561,7 @@ async def test_ens_superseded(
             nlx_server_public_key,
         )
 
-        await client_alpha.wait_for_log(fingerprint)
+        await client_alpha.log.wait_for_log(fingerprint)
 
         await client_beta.connect_to_vpn(
             nlx_server_ip,
@@ -569,7 +569,7 @@ async def test_ens_superseded(
             nlx_server_public_key,
         )
 
-        await client_beta.wait_for_log(fingerprint)
+        await client_beta.log.wait_for_log(fingerprint)
 
         await client_alpha.wait_for_state_peer(
             nlx_server_public_key,
@@ -693,8 +693,8 @@ async def test_ens_connection_error_unknown(
             True,
             vpn_connection_error=error_code,
         )
-        await client_alpha.wait_for_log(additional_info)
-        await client_alpha.wait_for_log(fingerprint)
+        await client_alpha.log.wait_for_log(additional_info)
+        await client_alpha.log.wait_for_log(fingerprint)
 
 
 @pytest.mark.nlx
@@ -807,8 +807,8 @@ async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
                 timeout=15,
                 vpn_connection_error=VpnConnectionError.UNKNOWN,
             )
-        await client_alpha.wait_for_log(fingerprint)
-        await client_alpha.wait_for_log("InvalidCertificate(UnknownIssuer)")
+        await client_alpha.log.wait_for_log(fingerprint)
+        await client_alpha.log.wait_for_log("InvalidCertificate(UnknownIssuer)")
 
 
 @pytest.mark.nlx

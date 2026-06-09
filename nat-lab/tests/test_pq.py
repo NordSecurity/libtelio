@@ -248,7 +248,7 @@ class TestPqVpnRekey:
 
         async with new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1) as nlx_conn:
             preshared_before = await inspect_preshared_key(nlx_conn)
-            await client_alpha.wait_for_log("Successful PQ REKEY", incremental=True)
+            await client_alpha.log.wait_for_log("Successful PQ REKEY", incremental=True)
 
             preshared_after = await inspect_preshared_key(nlx_conn)
             assert (
@@ -580,7 +580,7 @@ class TestNlxVpn:
             sleep_secs = (just_before_pq_restart - datetime.now()).total_seconds()
             await asyncio.sleep(sleep_secs)
 
-            client_log = (await client_alpha.get_log()).lower()
+            client_log = (await client_alpha.log.get_log()).lower()
             log_line = "Restarting postquantum entity".lower()
             occurrences = client_log.count(log_line)
 
@@ -588,7 +588,7 @@ class TestNlxVpn:
                 occurrences == 0
             ), "Found PQ restart log even though PQ should not have been restarted yet"
 
-            await client_alpha.wait_for_log("Restarting postquantum entity")
+            await client_alpha.log.wait_for_log("Restarting postquantum entity")
 
         await client_alpha.wait_for_state_peer(
             config.NLX_SERVER["public_key"],
@@ -639,7 +639,7 @@ class TestNlxVpn:
 
         await asyncio.sleep(200)
 
-        log = (await client_alpha.get_log()).lower()
+        log = (await client_alpha.log.get_log()).lower()
         log_line = "Restarting postquantum entity".lower()
         occurrences = log.count(log_line)
 

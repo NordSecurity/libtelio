@@ -126,4 +126,4 @@ async def test_wg_adapter_cleanup_loop_dirty_shutdown(
                 "WireGuard"
                 in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
             )
-            assert "Removed orphaned adapter" in client.get_stderr()
+            assert "Removed orphaned adapter" in client.log.get_stderr()
