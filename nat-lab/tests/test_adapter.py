@@ -100,7 +100,7 @@ async def test_adapter_gone_event(
             raise RuntimeError("unsupported os")
 
     async with asyncio_util.run_async_context(
-        client.wait_for_event_error(expected_event)
+        client.events.wait_for_event_error(expected_event)
     ) as event:
         await asyncio.gather(
             delete_adapter(),

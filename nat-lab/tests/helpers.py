@@ -385,13 +385,13 @@ async def setup_mesh_nodes(
     )
 
     await asyncio.gather(*[
-        client.wait_for_state_on_any_derp([RelayState.CONNECTED])
+        client.events.wait_for_state_on_any_derp([RelayState.CONNECTED])
         for client, instance in zip_longest(env.clients, instances)
         if instance.derp_servers != []
     ])
 
     connection_future = asyncio.gather(*[
-        client.wait_for_state_peer(
+        client.events.wait_for_state_peer(
             other_node.public_key,
             [NodeState.CONNECTED],
             (
@@ -412,7 +412,7 @@ async def setup_mesh_nodes(
     ])
 
     link_state_future = asyncio.gather(*[
-        client.wait_for_link_state(
+        client.events.wait_for_link_state(
             other_node.public_key,
             LinkState.UP,
             timeout=90 if is_timeout_expected else None,

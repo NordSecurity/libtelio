@@ -335,19 +335,23 @@ async def test_vpn_plus_mesh(
     await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha_node.id))
 
     await asyncio.gather(
-        client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-        client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+        client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+        client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
     )
     await asyncio.gather(
-        client_alpha.wait_for_state_peer(beta_node.public_key, [NodeState.CONNECTED]),
-        client_beta.wait_for_state_peer(alpha_node.public_key, [NodeState.CONNECTED]),
+        client_alpha.events.wait_for_state_peer(
+            beta_node.public_key, [NodeState.CONNECTED]
+        ),
+        client_beta.events.wait_for_state_peer(
+            alpha_node.public_key, [NodeState.CONNECTED]
+        ),
     )
 
     await ping(connection_alpha, beta_node.ip_addresses[0])
 
     # Testing if the VPN node is not cleared after disabling meshnet. See LLT-4266 for more details.
     async with asyncio_util.run_async_context(
-        client_alpha.wait_for_event_peer(
+        client_alpha.events.wait_for_event_peer(
             beta_node.public_key, [NodeState.DISCONNECTED], list(PathType)
         )
     ) as event:

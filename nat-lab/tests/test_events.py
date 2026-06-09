@@ -184,7 +184,7 @@ async def test_event_content_meshnet(
 
         await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
 
-        await client_alpha.wait_for_state_peer(
+        await client_alpha.events.wait_for_state_peer(
             beta.public_key, [NodeState.DISCONNECTED], [PathType.DIRECT]
         )
 
@@ -628,14 +628,14 @@ async def test_event_content_meshnet_node_upgrade_direct(
             beta_setup_params.features,
         ).run(api.get_meshnet_config(beta.id)) as client_beta:
             await asyncio.gather(
-                client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-                client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+                client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+                client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
             )
             await asyncio.gather(
-                client_alpha.wait_for_state_peer(
+                client_alpha.events.wait_for_state_peer(
                     beta.public_key, [NodeState.CONNECTED]
                 ),
-                client_beta.wait_for_state_peer(
+                client_beta.events.wait_for_state_peer(
                     alpha.public_key, [NodeState.CONNECTED]
                 ),
             )
@@ -701,13 +701,13 @@ async def test_event_content_meshnet_node_upgrade_direct(
             ).run(api.get_meshnet_config(beta.id))
         )
 
-        await client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED])
+        await client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED])
 
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(
+            client_alpha.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
-            client_beta.wait_for_state_peer(
+            client_beta.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )

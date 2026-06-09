@@ -186,12 +186,12 @@ async def test_session_keeper(
             await asyncio.sleep(1)
 
     await asyncio.gather(
-        alpha_client.wait_for_state_peer(
+        alpha_client.events.wait_for_state_peer(
             beta.public_key,
             [NodeState.CONNECTED],
             [PathType.DIRECT],
         ),
-        beta_client.wait_for_state_peer(
+        beta_client.events.wait_for_state_peer(
             alpha.public_key,
             [NodeState.CONNECTED],
             [PathType.DIRECT],
@@ -282,11 +282,11 @@ async def test_qos(
             await asyncio.sleep(1.0)
 
     await asyncio.gather(
-        alpha_client.wait_for_state_peer(
+        alpha_client.events.wait_for_state_peer(
             beta.public_key,
             [NodeState.CONNECTED],
         ),
-        beta_client.wait_for_state_peer(
+        beta_client.events.wait_for_state_peer(
             alpha.public_key,
             [NodeState.CONNECTED],
         ),

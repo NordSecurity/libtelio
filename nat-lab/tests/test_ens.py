@@ -145,7 +145,7 @@ async def test_ens_server_maintenance(
         )
 
         async with ens_maintenance(nlx_conn, nlx_server_ip):
-            await client_alpha.wait_for_state_peer(
+            await client_alpha.events.wait_for_state_peer(
                 nlx_server_public_key,
                 [NodeState.CONNECTED],
                 [PathType.DIRECT],
@@ -271,7 +271,7 @@ async def test_ens_unauthenticated(
                     timeout=5,
                 )
 
-            await client_alpha.wait_for_state_peer(
+            await client_alpha.events.wait_for_state_peer(
                 nlx_server_public_key,
                 [NodeState.CONNECTING],
                 [PathType.DIRECT],
@@ -436,7 +436,7 @@ async def test_ens_connection_limit_reached(
                 )
 
             await client_beta.log.wait_for_log(fingerprint)
-            await client_beta.wait_for_state_peer(
+            await client_beta.events.wait_for_state_peer(
                 nlx_server_public_key,
                 [NodeState.CONNECTING],
                 [PathType.DIRECT],
@@ -580,7 +580,7 @@ async def test_ens_superseded(
 
         await client_beta.log.wait_for_log(fingerprint)
 
-        await client_alpha.wait_for_state_peer(
+        await client_alpha.events.wait_for_state_peer(
             nlx_server_public_key,
             [NodeState.CONNECTED],
             list(PathType),
@@ -823,7 +823,7 @@ async def test_ens_connection_error_unknown(
 
         additional_info = "some additional info"
         await trigger_connection_error(vpn_ip, error_code.value, additional_info)
-        await client_alpha.wait_for_state_peer(
+        await client_alpha.events.wait_for_state_peer(
             vpn_conf.server_conf["public_key"],
             [NodeState.CONNECTED],
             [PathType.DIRECT],
@@ -936,7 +936,7 @@ async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
         )
 
         with pytest.raises(asyncio.TimeoutError):
-            await client_alpha.wait_for_state_peer(
+            await client_alpha.events.wait_for_state_peer(
                 nlx_server_public_key,
                 [NodeState.CONNECTED],
                 [PathType.DIRECT],

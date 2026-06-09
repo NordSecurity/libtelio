@@ -92,14 +92,18 @@ async def test_node_state_flickering_relay(
 
     with pytest.raises(asyncio.TimeoutError):
         await asyncio.gather(
-            client_alpha.wait_for_event_peer(
+            client_alpha.events.wait_for_event_peer(
                 beta.public_key, list(NodeState), timeout=120
             ),
-            client_beta.wait_for_event_peer(
+            client_beta.events.wait_for_event_peer(
                 alpha.public_key, list(NodeState), timeout=120
             ),
-            client_alpha.wait_for_event_on_any_derp(list(RelayState), timeout=120),
-            client_beta.wait_for_event_on_any_derp(list(RelayState), timeout=120),
+            client_alpha.events.wait_for_event_on_any_derp(
+                list(RelayState), timeout=120
+            ),
+            client_beta.events.wait_for_event_on_any_derp(
+                list(RelayState), timeout=120
+            ),
         )
 
 
@@ -172,18 +176,22 @@ async def test_node_state_flickering_direct(
 
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.gather(
-                client_alpha.wait_for_event_peer(
+                client_alpha.events.wait_for_event_peer(
                     beta.public_key,
                     list(NodeState),
                     list(PathType),
                     timeout=120,
                 ),
-                client_beta.wait_for_event_peer(
+                client_beta.events.wait_for_event_peer(
                     alpha.public_key,
                     list(NodeState),
                     list(PathType),
                     timeout=120,
                 ),
-                client_alpha.wait_for_event_on_any_derp(list(RelayState), timeout=120),
-                client_beta.wait_for_event_on_any_derp(list(RelayState), timeout=120),
+                client_alpha.events.wait_for_event_on_any_derp(
+                    list(RelayState), timeout=120
+                ),
+                client_beta.events.wait_for_event_on_any_derp(
+                    list(RelayState), timeout=120
+                ),
             )

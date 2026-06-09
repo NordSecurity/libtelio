@@ -416,7 +416,7 @@ class TestPqVpnHandshake:
             endpoint=f"{ip}:{port}",
         )
 
-        await client.wait_for_state_peer(
+        await client.events.wait_for_state_peer(
             pubkey,
             [NodeState.CONNECTING],
             list(PathType),
@@ -426,7 +426,7 @@ class TestPqVpnHandshake:
         )
 
         try:
-            await client.wait_for_state_peer(
+            await client.events.wait_for_state_peer(
                 pubkey,
                 [NodeState.CONNECTED],
                 list(PathType),
@@ -590,7 +590,7 @@ class TestNlxVpn:
 
             await client_alpha.log.wait_for_log("Restarting postquantum entity")
 
-        await client_alpha.wait_for_state_peer(
+        await client_alpha.events.wait_for_state_peer(
             config.NLX_SERVER["public_key"],
             [NodeState.CONNECTED],
             list(PathType),
