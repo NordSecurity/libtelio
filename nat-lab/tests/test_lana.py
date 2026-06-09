@@ -64,6 +64,7 @@ from tests.utils.connection_util import (
     new_connection_by_tag,
     add_outgoing_packets_delay,
 )
+from tests.utils.diagnostics import setup_connection_diagnostics
 from tests.utils.logger import log
 from tests.utils.moose import MOOSE_DB_TIMEOUT_MS, MOOSE_LOGS_DIR
 from tests.utils.ping import ping
@@ -299,6 +300,8 @@ async def start_alpha_beta_in_relay(
     alpha_features: Features,
     beta_features: Features,
 ) -> tuple[Client, Client]:
+    await setup_connection_diagnostics(exit_stack, [connection_alpha, connection_beta])
+
     client_alpha = await exit_stack.enter_async_context(
         Client(
             connection_alpha,
@@ -403,6 +406,10 @@ async def run_default_scenario(
     await add_5ms_delay_to_connections(
         exit_stack, [connection_alpha, connection_beta, connection_gamma]
     )
+
+    # connection_alpha/beta capture is set up in start_alpha_beta_in_relay;
+    # gamma is the extra node added by this scenario.
+    await setup_connection_diagnostics(exit_stack, [connection_gamma])
 
     # Cleanup
     await clean_container(connection_alpha)
@@ -1855,6 +1862,8 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         )
         await clean_container(connection_beta)
 
+        await setup_connection_diagnostics(exit_stack, [connection_beta])
+
         client_beta = await exit_stack.enter_async_context(
             Client(
                 connection_beta,
@@ -1881,6 +1890,8 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
             )
         )
         await clean_container(connection_alpha)
+
+        await setup_connection_diagnostics(exit_stack, [connection_alpha])
 
         alpha.set_peer_firewall_settings(beta.id, allow_incoming_connections=True)
         client_alpha = await exit_stack.enter_async_context(

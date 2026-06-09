@@ -28,6 +28,7 @@ from tests.utils.connection_util import (
     new_connection_manager_by_tag,
     new_connection_raw,
 )
+from tests.utils.diagnostics import setup_connection_diagnostics
 from tests.utils.logger import log
 from tests.utils.ping import ping
 from tests.utils.process import Process
@@ -192,7 +193,6 @@ async def setup_clients(
             Features,
             str,
             Optional[Config],
-            Optional[bool],
             bool,
         ]
     ],
@@ -220,9 +220,9 @@ async def setup_clients(
                 adapter_type_override,
                 features,
                 fingerprint=fingerprint,
-            ).run(meshnet_config, run_tcpdump=run_tcpdump, enable_perf=enable_perf)
+            ).run(meshnet_config, enable_perf=enable_perf)
         )
-        for connection, node, adapter_type_override, features, fingerprint, meshnet_config, run_tcpdump, enable_perf in client_parameters
+        for connection, node, adapter_type_override, features, fingerprint, meshnet_config, enable_perf in client_parameters
     ])
 
 
@@ -315,6 +315,16 @@ async def setup_environment(
         await exit_stack.enter_async_context(make_tcpdump(connections))
         await api.prepare_vpn_servers()
 
+    # Set up per-connection diagnostics (packet capture + core-dump clearing) at
+    # the environment level, before the clients start. This is independent of the
+    # telio clients themselves.
+    for conn_manager, instance in zip(connection_managers, instances):
+        await setup_connection_diagnostics(
+            exit_stack,
+            [conn_manager.connection],
+            run_tcpdump=instance.run_tcpdump,
+        )
+
     clients = await setup_clients(
         exit_stack,
         list(
@@ -332,7 +342,6 @@ async def setup_environment(
                     )
                     for idx, instance in enumerate(instances)
                 ],
-                [instance.run_tcpdump for instance in instances],
                 [instance.enable_perf for instance in instances],
             )
         ),
