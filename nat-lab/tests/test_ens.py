@@ -138,7 +138,7 @@ async def test_ens_server_maintenance(
         nlx_server_port = cast(int, vpn_conf.server_conf["port"])
         nlx_server_public_key = cast(str, vpn_conf.server_conf["public_key"])
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect_to_vpn(
             nlx_server_ip,
             nlx_server_port,
             nlx_server_public_key,
@@ -264,7 +264,7 @@ async def test_ens_unauthenticated(
             nlx_server_public_key = cast(str, vpn_conf.server_conf["public_key"])
 
             with pytest.raises(asyncio.TimeoutError):
-                await client_alpha.connect_to_vpn(
+                await client_alpha.vpn.connect_to_vpn(
                     nlx_server_ip,
                     nlx_server_port,
                     nlx_server_public_key,
@@ -417,7 +417,7 @@ async def test_ens_connection_limit_reached(
             ens_username = "ens_test_user"
             await fakefm.add_allowed_user(ens_username, client_alpha.node.public_key)
 
-            await client_alpha.connect_to_vpn(
+            await client_alpha.vpn.connect_to_vpn(
                 nlx_server_ip,
                 nlx_server_port,
                 nlx_server_public_key,
@@ -428,7 +428,7 @@ async def test_ens_connection_limit_reached(
             await fakefm.add_allowed_user(ens_username, client_beta.node.public_key)
 
             with pytest.raises(asyncio.TimeoutError):
-                await client_beta.connect_to_vpn(
+                await client_beta.vpn.connect_to_vpn(
                     nlx_server_ip,
                     nlx_server_port,
                     nlx_server_public_key,
@@ -564,7 +564,7 @@ async def test_ens_superseded(
         nlx_server_port = cast(int, vpn_conf.server_conf["port"])
         nlx_server_public_key = cast(str, vpn_conf.server_conf["public_key"])
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect_to_vpn(
             nlx_server_ip,
             nlx_server_port,
             nlx_server_public_key,
@@ -572,7 +572,7 @@ async def test_ens_superseded(
 
         await client_alpha.log.wait_for_log(fingerprint)
 
-        await client_beta.connect_to_vpn(
+        await client_beta.vpn.connect_to_vpn(
             nlx_server_ip,
             nlx_server_port,
             nlx_server_public_key,
@@ -815,7 +815,7 @@ async def test_ens_connection_error_unknown(
 
         await setup_connections(exit_stack, [vpn_conf.conn_tag])
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect_to_vpn(
             vpn_ip,
             vpn_port,
             vpn_public_key,
@@ -929,7 +929,7 @@ async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
         nlx_server_port = cast(int, vpn_conf.server_conf["port"])
         nlx_server_public_key = cast(str, vpn_conf.server_conf["public_key"])
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect_to_vpn(
             nlx_server_ip,
             nlx_server_port,
             nlx_server_public_key,

@@ -105,7 +105,7 @@ async def test_mesh_plus_vpn_one_peer(
 
     wg_server = config.WG_SERVER
 
-    await alpha_client.connect_to_vpn(
+    await alpha_client.vpn.connect_to_vpn(
         str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
     )
 
@@ -203,12 +203,12 @@ async def test_mesh_plus_vpn_both_peers(
     wg_server = config.WG_SERVER
 
     await asyncio.gather(
-        alpha_client.connect_to_vpn(
+        alpha_client.vpn.connect_to_vpn(
             str(wg_server["ipv4"]),
             int(wg_server["port"]),
             str(wg_server["public_key"]),
         ),
-        beta_client.connect_to_vpn(
+        beta_client.vpn.connect_to_vpn(
             str(wg_server["ipv4"]),
             int(wg_server["port"]),
             str(wg_server["public_key"]),
@@ -323,7 +323,7 @@ async def test_vpn_plus_mesh(
 
     wg_server = config.WG_SERVER
 
-    await client_alpha.connect_to_vpn(
+    await client_alpha.vpn.connect_to_vpn(
         str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
     )
 
@@ -464,12 +464,12 @@ async def test_vpn_plus_mesh_over_direct(
     wg_server = config.WG_SERVER
 
     await asyncio.gather(
-        alpha_client.connect_to_vpn(
+        alpha_client.vpn.connect_to_vpn(
             str(wg_server["ipv4"]),
             int(wg_server["port"]),
             str(wg_server["public_key"]),
         ),
-        beta_client.connect_to_vpn(
+        beta_client.vpn.connect_to_vpn(
             str(wg_server["ipv4"]),
             int(wg_server["port"]),
             str(wg_server["public_key"]),
@@ -618,17 +618,17 @@ class TestThreeNode:
         wg_server = config.WG_SERVER
 
         await asyncio.gather(
-            client_alpha.connect_to_vpn(
+            client_alpha.vpn.connect_to_vpn(
                 str(wg_server["ipv4"]),
                 int(wg_server["port"]),
                 str(wg_server["public_key"]),
             ),
-            client_beta.connect_to_vpn(
+            client_beta.vpn.connect_to_vpn(
                 str(wg_server["ipv4"]),
                 int(wg_server["port"]),
                 str(wg_server["public_key"]),
             ),
-            client_gamma.connect_to_vpn(
+            client_gamma.vpn.connect_to_vpn(
                 str(wg_server["ipv4"]),
                 int(wg_server["port"]),
                 str(wg_server["public_key"]),

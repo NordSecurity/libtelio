@@ -8,6 +8,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from tests.client_events import ClientEvents
 from tests.client_log import ClientLog
+from tests.client_vpn import ClientVpn
 from tests.log_collector import LOG_COLLECTORS, LogCollector
 from tests.mesh_api import Node
 from tests.runtime import Events, Runtime
@@ -17,9 +18,6 @@ from tests.utils.bindings import (
     Config,
     DnsRedirect,
     Features,
-    LinkState,
-    NodeState,
-    PathType,
     Server,
     TelioAdapterType,
     TelioNode,
@@ -81,6 +79,7 @@ class Client:
         self._allowed_errors: Optional[List[re.Pattern]] = None
         self._log = ClientLog(self)
         self._events_facade = ClientEvents(self)
+        self._vpn = ClientVpn(self)
         # Automatically enables IPv6 feature when the IPv6 stack is enabled
         if (
             self._node.ip_stack in (IPStack.IPv4v6, IPStack.IPv6)
@@ -110,6 +109,10 @@ class Client:
     @property
     def events(self) -> ClientEvents:
         return self._events_facade
+
+    @property
+    def vpn(self) -> ClientVpn:
+        return self._vpn
 
     @asynccontextmanager
     async def run(
@@ -325,7 +328,7 @@ class Client:
         )
 
     async def set_meshnet_config(self, meshnet_config: Config) -> None:
-        made_changes = await self._configure_interface()
+        made_changes = await self.configure_interface()
 
         # Linux native WG takes ~1.5s to setup listen port for WG interface. Since
         # listen port is required for mesh connection, there is no other way to
@@ -347,88 +350,13 @@ class Client:
     async def receive_ping(self) -> str:
         return await self.get_proxy().receive_ping()
 
-    async def connect_to_vpn(
-        self,
-        ip: str,
-        port: int,
-        public_key: str,
-        timeout: Optional[float] = None,
-        pq: bool = False,
-        link_state_enabled: bool = False,
-    ) -> None:
-        await self._configure_interface()
-        await self.get_router().create_vpn_route()
-        async with asyncio_util.run_async_context(
-            self.events.wait_for_event_peer(
-                public_key,
-                [NodeState.CONNECTED],
-                list(PathType),
-                is_exit=True,
-                is_vpn=True,
-                timeout=timeout,
-                link_state=LinkState.UP if link_state_enabled else None,
-            )
-        ) as event:
-            self.get_runtime().allowed_pub_keys.add(public_key)
-
-            if pq:
-                await self.get_proxy().connect_to_exit_node_pq(
-                    public_key=public_key,
-                    allowed_ips=None,
-                    endpoint=f"{ip}:{port}",
-                )
-            else:
-                await self.get_proxy().connect_to_exit_node(
-                    public_key=public_key,
-                    allowed_ips=None,
-                    endpoint=f"{ip}:{port}",
-                )
-            await event
-
     async def set_secret_key(self, secret_key: str):
         await self.get_proxy().set_secret_key(secret_key)
-
-    async def disconnect_from_vpn(
-        self,
-        public_key: str,
-        timeout: Optional[float] = None,
-    ) -> None:
-        async with asyncio_util.run_async_context(
-            self.events.wait_for_event_peer(
-                public_key,
-                [NodeState.DISCONNECTED],
-                list(PathType),
-                is_exit=True,
-                is_vpn=True,
-                timeout=timeout,
-            )
-        ) as event:
-            await self.get_proxy().disconnect_from_exit_nodes()
-            await asyncio.gather(
-                event,
-                self.get_router().delete_vpn_route(),
-            )
-
-    async def disconnect_from_exit_node(
-        self,
-        public_key: str,
-        timeout: Optional[float] = None,
-    ) -> None:
-        async with asyncio_util.run_async_context(
-            self.events.wait_for_event_peer(
-                public_key, [NodeState.CONNECTED], list(PathType), timeout=timeout
-            )
-        ) as event:
-            await self.get_proxy().disconnect_from_exit_nodes()
-            await asyncio.gather(
-                event,
-                self.get_router().delete_vpn_route(),
-            )
 
     async def enable_magic_dns(self, forward_servers: List[str]) -> None:
         # Magic DNS required adapter port.
         # For the reasoning behind this see `set_meshnet_config()`
-        configured = await self._configure_interface()
+        configured = await self.configure_interface()
         if configured and self._adapter_type == TelioAdapterType.LINUX_NATIVE_TUN:
             await asyncio.sleep(2.0)
 
@@ -454,7 +382,7 @@ class Client:
     async def notify_network_change(self) -> None:
         await self.get_proxy().notify_network_change()
 
-    async def _configure_interface(self) -> bool:
+    async def configure_interface(self) -> bool:
         if not self._interface_configured:
             await self.get_router().setup_interface(self._node.ip_addresses)
 
@@ -471,28 +399,7 @@ class Client:
         if new_name:
             self.get_router().set_interface_name(new_name)
             self._interface_configured = False
-        await self._configure_interface()
-
-    async def connect_to_exit_node(
-        self,
-        public_key: str,
-        timeout: Optional[float] = None,
-    ) -> None:
-        await self._configure_interface()
-        await self.get_router().create_vpn_route()
-        async with asyncio_util.run_async_context(
-            self.events.wait_for_event_peer(
-                public_key,
-                [NodeState.CONNECTED],
-                list(PathType),
-                is_exit=True,
-                timeout=timeout,
-            )
-        ) as event:
-            await self.get_proxy().connect_to_exit_node(
-                public_key=public_key, allowed_ips=None, endpoint=None
-            )
-            await event
+        await self.configure_interface()
 
     def get_router(self) -> Router:
         return self._router

@@ -255,7 +255,7 @@ class TestDualVpn:
             config.WG_SERVER,
         )
 
-        await client_alpha.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
+        await client_alpha.vpn.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
         ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
@@ -319,7 +319,7 @@ class TestDualVpn:
         client = alpha_client
 
         async def connect(wg_server: dict):
-            await client.connect_to_vpn(
+            await client.vpn.connect_to_vpn(
                 wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
             )
             await ping(connection, serv_ip)
@@ -364,7 +364,7 @@ class TestDualVpn:
 
                     await nc_client_2.send_data("GET")
 
-                    await client.disconnect_from_vpn(
+                    await client.vpn.disconnect_from_vpn(
                         str(config.WG_SERVER["public_key"])
                     )
 
@@ -432,7 +432,7 @@ class TestDualVpn:
         client = alpha_client
 
         async def connect(wg_server: dict):
-            await client.connect_to_vpn(
+            await client.vpn.connect_to_vpn(
                 wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
             )
             await ping(connection, serv_ip)
@@ -455,7 +455,7 @@ class TestDualVpn:
             source_ip=alpha_ip,
         ).run() as nc_client:
             await nc_client.connection_succeeded()
-            await client.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
+            await client.vpn.disconnect_from_vpn(str(config.WG_SERVER["public_key"]))
 
             await connect(config.WG_SERVER_2)
 
@@ -524,11 +524,11 @@ class TestSingleVpn2Node:
         alpha = env.clients[0]
         beta = env.clients[1]
 
-        await alpha.connect_to_vpn(
+        await alpha.vpn.connect_to_vpn(
             wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
         )
 
-        await beta.connect_to_vpn(
+        await beta.vpn.connect_to_vpn(
             wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
         )
 
@@ -619,11 +619,11 @@ class TestSingleVpn2Node:
         alpha_client = env.clients[0]
         beta_client = env.clients[1]
 
-        await alpha_client.connect_to_vpn(
+        await alpha_client.vpn.connect_to_vpn(
             wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
         )
 
-        await beta_client.connect_to_vpn(
+        await beta_client.vpn.connect_to_vpn(
             wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
         )
 

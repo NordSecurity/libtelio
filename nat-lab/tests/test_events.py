@@ -299,7 +299,7 @@ async def test_event_content_vpn_connection(
 
         wg_server = config.WG_SERVER
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect_to_vpn(
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
@@ -333,7 +333,7 @@ async def test_event_content_vpn_connection(
         ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
-        await client_alpha.disconnect_from_vpn(str(wg_server["public_key"]))
+        await client_alpha.vpn.disconnect_from_vpn(str(wg_server["public_key"]))
 
         ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == alpha_public_ip, f"wrong public IP before connecting to VPN {ip}"
@@ -476,7 +476,7 @@ async def test_event_content_exit_through_peer(
 
         await client_beta.get_router().create_exit_node_route()
 
-        await client_alpha.connect_to_exit_node(beta.public_key)
+        await client_alpha.vpn.connect_to_exit_node(beta.public_key)
 
         ip_alpha = await stun.get(connection_alpha, config.STUN_SERVER)
         ip_beta = await stun.get(connection_beta, config.STUN_SERVER)

@@ -828,7 +828,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_with_vpn(
         wg_server = config.WG_SERVER
         vpn_public_key = str(wg_server["public_key"])
         vpn_ipv4 = str(wg_server["ipv4"])
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect_to_vpn(
             vpn_ipv4, int(wg_server["port"]), vpn_public_key, link_state_enabled=True
         )
 

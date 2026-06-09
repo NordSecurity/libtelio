@@ -456,17 +456,17 @@ async def run_default_scenario(
     )
 
     if alpha_has_vpn_connection:
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect_to_vpn(
             str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
         )
 
     if beta_has_vpn_connection:
-        await client_beta.connect_to_vpn(
+        await client_beta.vpn.connect_to_vpn(
             str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
         )
 
     if gamma_has_vpn_connection:
-        await client_gamma.connect_to_vpn(
+        await client_gamma.vpn.connect_to_vpn(
             str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
         )
 
@@ -1301,7 +1301,7 @@ async def test_lana_with_meshnet_exit_node(
             ),
         )
         await client_beta.get_router().create_exit_node_route()
-        await client_alpha.connect_to_exit_node(beta.public_key)
+        await client_alpha.vpn.connect_to_exit_node(beta.public_key)
         ip_alpha = await stun.get(
             connection_alpha, STUN_SERVER if not is_stun6_needed else STUNV6_SERVER
         )
