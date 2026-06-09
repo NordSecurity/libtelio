@@ -474,9 +474,9 @@ async def run_default_scenario(
     await ping_node(connection_beta, beta, gamma)
     await ping_node(connection_gamma, gamma, alpha)
 
-    await client_alpha.trigger_qos_collection()
-    await client_beta.trigger_qos_collection()
-    await client_gamma.trigger_qos_collection()
+    await client_alpha.analytics.trigger_qos_collection()
+    await client_beta.analytics.trigger_qos_collection()
+    await client_gamma.analytics.trigger_qos_collection()
 
     await asyncio.sleep(DEFAULT_WAITING_TIME)
     if True in [
@@ -488,9 +488,9 @@ async def run_default_scenario(
         # wait for one more icmp timeout if that's the case.
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
-    await client_alpha.trigger_event_collection()
-    await client_beta.trigger_event_collection()
-    await client_gamma.trigger_event_collection()
+    await client_alpha.analytics.trigger_event_collection()
+    await client_beta.analytics.trigger_event_collection()
+    await client_gamma.analytics.trigger_event_collection()
 
     alpha_events = await wait_for_event_dump(
         connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
@@ -1310,13 +1310,13 @@ async def test_lana_with_meshnet_exit_node(
         )
         assert ip_alpha == ip_beta
 
-        await client_alpha.trigger_qos_collection()
-        await client_beta.trigger_qos_collection()
+        await client_alpha.analytics.trigger_qos_collection()
+        await client_beta.analytics.trigger_qos_collection()
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
-        await client_alpha.trigger_event_collection()
-        await client_beta.trigger_event_collection()
+        await client_alpha.analytics.trigger_event_collection()
+        await client_beta.analytics.trigger_event_collection()
 
         alpha_events = await wait_for_event_dump(
             connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
@@ -1511,15 +1511,15 @@ async def test_lana_with_disconnected_node(
             ),
         )
 
-        await client_alpha.trigger_qos_collection()
-        await client_beta.trigger_qos_collection()
+        await client_alpha.analytics.trigger_qos_collection()
+        await client_beta.analytics.trigger_qos_collection()
 
         await ping_node(connection_alpha, alpha, beta)
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
-        await client_alpha.trigger_event_collection()
-        await client_beta.trigger_event_collection()
+        await client_alpha.analytics.trigger_event_collection()
+        await client_beta.analytics.trigger_event_collection()
 
         alpha_events = await wait_for_event_dump(
             connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
@@ -1555,10 +1555,10 @@ async def test_lana_with_disconnected_node(
 
         # Trigger QoS on disconnected node. All ICMPs should timeout
         await asyncio.sleep(DEFAULT_WAITING_TIME)
-        await client_alpha.trigger_qos_collection()
+        await client_alpha.analytics.trigger_qos_collection()
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
-        await client_alpha.trigger_event_collection()
+        await client_alpha.analytics.trigger_event_collection()
         alpha_events = await wait_for_event_dump(
             connection_alpha, ALPHA_EVENTS_PATH, nr_events=2
         )
@@ -1868,7 +1868,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
             ).run(api.get_meshnet_config(beta.id))
         )
 
-        await client_beta.trigger_event_collection()
+        await client_beta.analytics.trigger_event_collection()
         beta_events = await wait_for_event_dump(
             connection_beta, BETA_EVENTS_PATH, nr_events=1
         )
@@ -1911,8 +1911,8 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         await ping_node(connection_alpha, alpha, beta)
         await ping_node(connection_beta, beta, alpha)
 
-        await client_alpha.trigger_event_collection()
-        await client_beta.trigger_event_collection()
+        await client_alpha.analytics.trigger_event_collection()
+        await client_beta.analytics.trigger_event_collection()
 
         alpha_events = await wait_for_event_dump(
             connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
@@ -1963,7 +1963,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
             fingerprint=BETA_FINGERPRINT,
         ).run(api.get_meshnet_config(beta.id)) as client_beta:
 
-            await client_beta.trigger_event_collection()
+            await client_beta.analytics.trigger_event_collection()
             beta_events = await wait_for_event_dump(
                 connection_beta, BETA_EVENTS_PATH, nr_events=1
             )
@@ -2011,7 +2011,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
             ).run(api.get_meshnet_config(beta.id))
         )
 
-        await client_beta.trigger_event_collection()
+        await client_beta.analytics.trigger_event_collection()
         beta_events = await wait_for_event_dump(
             connection_beta, BETA_EVENTS_PATH, nr_events=3
         )
@@ -2193,8 +2193,8 @@ async def test_lana_rtt_interval_controls_periodic_qos_collection():
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
-        await client_alpha.trigger_event_collection()
-        await client_beta.trigger_event_collection()
+        await client_alpha.analytics.trigger_event_collection()
+        await client_beta.analytics.trigger_event_collection()
 
         alpha_events = await wait_for_event_dump(
             connection_alpha, ALPHA_EVENTS_PATH, nr_events=1

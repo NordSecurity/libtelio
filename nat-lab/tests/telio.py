@@ -6,8 +6,10 @@ import uuid
 from collections import Counter
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
+from tests.client_analytics import ClientAnalytics
 from tests.client_events import ClientEvents
 from tests.client_log import ClientLog
+from tests.client_tp_lite import ClientTpLite
 from tests.client_vpn import ClientVpn
 from tests.log_collector import LOG_COLLECTORS, LogCollector
 from tests.mesh_api import Node
@@ -16,12 +18,10 @@ from tests.uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
 from tests.utils import asyncio_util
 from tests.utils.bindings import (
     Config,
-    DnsRedirect,
     Features,
     Server,
     TelioAdapterType,
     TelioNode,
-    TpLiteStatsOptions,
     default_features,
 )
 from tests.utils.connection import Connection
@@ -80,6 +80,8 @@ class Client:
         self._log = ClientLog(self)
         self._events_facade = ClientEvents(self)
         self._vpn = ClientVpn(self)
+        self._analytics = ClientAnalytics(self)
+        self._tp_lite = ClientTpLite(self)
         # Automatically enables IPv6 feature when the IPv6 stack is enabled
         if (
             self._node.ip_stack in (IPStack.IPv4v6, IPStack.IPv6)
@@ -113,6 +115,14 @@ class Client:
     @property
     def vpn(self) -> ClientVpn:
         return self._vpn
+
+    @property
+    def analytics(self) -> ClientAnalytics:
+        return self._analytics
+
+    @property
+    def tp_lite(self) -> ClientTpLite:
+        return self._tp_lite
 
     @asynccontextmanager
     async def run(
@@ -365,20 +375,6 @@ class Client:
     async def disable_magic_dns(self) -> None:
         await self.get_proxy().disable_magic_dns()
 
-    async def enable_tp_lite_stats_collection(self, config: TpLiteStatsOptions) -> None:
-        await self.get_proxy().enable_tp_lite_stats_collection(config)
-
-    async def disable_tp_lite_stats_collection(self) -> None:
-        await self.get_proxy().disable_tp_lite_stats_collection()
-
-    async def get_tp_lite_stats(self):
-        return await self.get_proxy().get_tp_lite_stats()
-
-    async def set_tp_lite_domain_whitelist(
-        self, domains: List[str], redirects: List[DnsRedirect]
-    ) -> None:
-        await self.get_proxy().set_tp_lite_domain_whitelist(domains, redirects)
-
     async def notify_network_change(self) -> None:
         await self.get_proxy().notify_network_change()
 
@@ -520,12 +516,6 @@ class Client:
                 raise RuntimeError(
                     "Retries exhausted, while trying to write fingerprint to db"
                 )
-
-    async def trigger_event_collection(self) -> None:
-        await self.get_proxy().trigger_analytics_event()
-
-    async def trigger_qos_collection(self) -> None:
-        await self.get_proxy().trigger_qos_collection()
 
     def get_endpoint_address(self, public_key: str) -> str:
         node = self.get_node_state(public_key)
