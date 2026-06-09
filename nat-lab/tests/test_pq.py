@@ -30,7 +30,7 @@ async def _connect_vpn_pq(
 ) -> datetime:
     wg_server = config.NLX_SERVER
 
-    await client.connect_to_vpn(
+    await client.vpn.connect_to_vpn(
         str(wg_server["ipv4"]),
         int(wg_server["port"]),
         str(wg_server["public_key"]),
@@ -334,7 +334,7 @@ class TestPqVpnRekey:
 
         await client.enable_magic_dns(["10.0.80.82"])
 
-        await client.connect_to_vpn(
+        await client.vpn.connect_to_vpn(
             str(wg_srv["ipv4"]),
             int(wg_srv["port"]),
             str(wg_srv["public_key"]),
@@ -345,9 +345,9 @@ class TestPqVpnRekey:
         # Expect this to work
         await query_dns(client_conn, "google.com")
 
-        await client.disconnect_from_vpn(str(wg_srv["public_key"]))
+        await client.vpn.disconnect_from_vpn(str(wg_srv["public_key"]))
 
-        await client.connect_to_vpn(
+        await client.vpn.connect_to_vpn(
             str(wg_srv["ipv4"]),
             int(wg_srv["port"]),
             str(wg_srv["public_key"]),
@@ -438,7 +438,7 @@ class TestPqVpnHandshake:
         except TimeoutError:
             pass
 
-        await client.disconnect_from_vpn(pubkey, timeout=4)
+        await client.vpn.disconnect_from_vpn(pubkey, timeout=4)
         await client.get_router().delete_vpn_route()
 
         # now connect to a good behaving PQ server
@@ -479,7 +479,7 @@ class TestPqVpnHandshake:
             wg_server = config.NLX_SERVER
 
             # non-PQ connection
-            await client.connect_to_vpn(
+            await client.vpn.connect_to_vpn(
                 str(wg_server["ipv4"]),
                 int(wg_server["port"]),
                 str(wg_server["public_key"]),
@@ -491,7 +491,7 @@ class TestPqVpnHandshake:
             assert preshared == EMPTY_PRESHARED_KEY_SLOT
 
             # upgrade to PQ
-            await client.disconnect_from_vpn(str(wg_server["public_key"]))
+            await client.vpn.disconnect_from_vpn(str(wg_server["public_key"]))
             await _connect_vpn_pq(client_conn, client)
             await ping(client_conn, config.PHOTO_ALBUM_IP)
 

@@ -82,8 +82,8 @@ async def test_connected_state_after_routing(
 
     await client_beta.get_router().create_exit_node_route()
 
-    await client_alpha.connect_to_exit_node(beta.public_key)
-    await client_alpha.disconnect_from_exit_node(beta.public_key)
+    await client_alpha.vpn.connect_to_exit_node(beta.public_key)
+    await client_alpha.vpn.disconnect_from_exit_node(beta.public_key)
 
     await ping(conn_alpha.connection, beta.ip_addresses[0])
 

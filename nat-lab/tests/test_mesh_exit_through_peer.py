@@ -144,7 +144,7 @@ async def test_mesh_exit_through_peer(
             )
         await client_beta.get_router().create_exit_node_route()
 
-        await client_alpha.connect_to_exit_node(beta.public_key)
+        await client_alpha.vpn.connect_to_exit_node(beta.public_key)
 
         ip_alpha = await stun.get(connection_alpha, config.STUN_SERVER)
         ip_beta = await stun.get(connection_beta, config.STUN_SERVER)
@@ -292,7 +292,7 @@ async def test_ipv6_exit_node(
             testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
         )
         await client_beta.get_router().create_exit_node_route()
-        await client_alpha.connect_to_exit_node(beta.public_key)
+        await client_alpha.vpn.connect_to_exit_node(beta.public_key)
 
         # Ping out-tunnel target with IPv6
         await ping(connection_alpha, config.PHOTO_ALBUM_IPV6)
