@@ -9,7 +9,8 @@ use crate::libfirewall::{
     LIBFW_CONTRACK_STATE_INVALID, LIBFW_CONTRACK_STATE_NEW, LIBFW_CONTRACK_STATE_RELATED,
     LIBFW_DIRECTION_INBOUND, LIBFW_DIRECTION_OUTBOUND, LIBFW_FILTER_ASSOCIATED_DATA,
     LIBFW_FILTER_CONNTRACK_STATE, LIBFW_FILTER_DIRECTION, LIBFW_FILTER_DST_NETWORK,
-    LIBFW_FILTER_ICMP_TYPE, LIBFW_FILTER_NEXT_LVL_PROTO, LIBFW_FILTER_SRC_NETWORK,
+    LIBFW_FILTER_ICMP_TYPE, LIBFW_FILTER_NEXT_LVL_PROTO, LIBFW_FILTER_ORIG_SRC_IP,
+    LIBFW_FILTER_SRC_NETWORK,
     LIBFW_FILTER_TCP_FLAGS, LIBFW_ICMP_TYPE_DESTINATION_UNREACHABLE, LIBFW_ICMP_TYPE_ECHO_REPLY,
     LIBFW_ICMP_TYPE_ECHO_REQUEST, LIBFW_ICMP_TYPE_PARAMETER_PROBLEM,
     LIBFW_ICMP_TYPE_REDIRECT_MESSAGE, LIBFW_ICMP_TYPE_ROUTER_ADVERTISEMENT,
@@ -87,6 +88,7 @@ pub(crate) enum FilterData {
     NextLevelProtocol(NextLevelProtocol),
     TcpFlags(u8),
     IcmpType(IcmpType),
+    OrigSrcIp(IpAddr),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,9 +106,9 @@ impl From<&[u8]> for LibfwAssociatedData {
     }
 }
 
-impl From<&NetworkFilterData> for LibfwNetworkFilter {
-    fn from(value: &NetworkFilterData) -> Self {
-        let (ip_type, ip_data) = match value.network.network() {
+impl From<IpAddr> for LibfwIpAddr {
+    fn from(value: IpAddr) -> Self {
+        let (ip_type, ip_data) = match value {
             IpAddr::V4(ipv4_addr) => (
                 LIBFW_IP_TYPE_V4,
                 LibfwIpData {
@@ -120,8 +122,14 @@ impl From<&NetworkFilterData> for LibfwNetworkFilter {
                 },
             ),
         };
+        LibfwIpAddr { ip_type, ip_data }
+    }
+}
+
+impl From<&NetworkFilterData> for LibfwNetworkFilter {
+    fn from(value: &NetworkFilterData) -> Self {
         LibfwNetworkFilter {
-            network_addr: LibfwIpAddr { ip_type, ip_data },
+            network_addr: value.network.network().into(),
             network_prefix: value.network.prefix_len(),
             port_range_start: value.port_range.0,
             port_range_end: value.port_range.1,
@@ -212,6 +220,13 @@ impl From<&Filter> for (LibfwFilter, Option<PinnedAssocData>) {
                 LIBFW_FILTER_ICMP_TYPE,
                 None,
             ),
+            FilterData::OrigSrcIp(ip) => (
+                LibfwFilterData {
+                    orig_src_ip: (*ip).into(),
+                },
+                LIBFW_FILTER_ORIG_SRC_IP,
+                None,
+            ),
         };
         (
             LibfwFilter {
@@ -295,9 +310,9 @@ pub mod tests {
             LIBFW_CONTRACK_STATE_ESTABLISHED, LIBFW_DIRECTION_INBOUND, LIBFW_DIRECTION_OUTBOUND,
             LIBFW_FILTER_ASSOCIATED_DATA, LIBFW_FILTER_CONNTRACK_STATE, LIBFW_FILTER_DIRECTION,
             LIBFW_FILTER_DST_NETWORK, LIBFW_FILTER_ICMP_TYPE, LIBFW_FILTER_NEXT_LVL_PROTO,
-            LIBFW_FILTER_SRC_NETWORK, LIBFW_FILTER_TCP_FLAGS, LIBFW_ICMP_TYPE_ECHO_REPLY,
-            LIBFW_IP_TYPE_V4, LIBFW_IP_TYPE_V6, LIBFW_NEXT_PROTO_UDP, LIBFW_VERDICT_ACCEPT,
-            LIBFW_VERDICT_DROP, LIBFW_VERDICT_REJECT,
+            LIBFW_FILTER_ORIG_SRC_IP, LIBFW_FILTER_SRC_NETWORK, LIBFW_FILTER_TCP_FLAGS,
+            LIBFW_ICMP_TYPE_ECHO_REPLY, LIBFW_IP_TYPE_V4, LIBFW_IP_TYPE_V6, LIBFW_NEXT_PROTO_UDP,
+            LIBFW_VERDICT_ACCEPT, LIBFW_VERDICT_DROP, LIBFW_VERDICT_REJECT,
         },
     };
 
@@ -343,6 +358,12 @@ pub mod tests {
                     Filter {
                         filter_data: FilterData::IcmpType(IcmpType::EchoReply),
                         inverted: true,
+                    },
+                    Filter {
+                        filter_data: FilterData::OrigSrcIp(std::net::IpAddr::V4(Ipv4Addr::new(
+                            10, 0, 0, 5,
+                        ))),
+                        inverted: false,
                     },
                 ],
                 action: LibfwVerdict::LibfwVerdictDrop,
@@ -429,6 +450,18 @@ pub mod tests {
                 filter_type: LIBFW_FILTER_ICMP_TYPE,
                 filter: LibfwFilterData {
                     icmp_type: LIBFW_ICMP_TYPE_ECHO_REPLY,
+                },
+            },
+            LibfwFilter {
+                inverted: false,
+                filter_type: LIBFW_FILTER_ORIG_SRC_IP,
+                filter: LibfwFilterData {
+                    orig_src_ip: LibfwIpAddr {
+                        ip_type: LIBFW_IP_TYPE_V4,
+                        ip_data: LibfwIpData {
+                            ipv4_bytes: [10, 0, 0, 5],
+                        },
+                    },
                 },
             },
         ];
@@ -639,6 +672,28 @@ pub mod tests {
                         unsafe { test_chain_conv_filters[j].filter.icmp_type },
                         unsafe { test_ffi_chain_filters[j].filter.icmp_type }
                     ),
+                    LIBFW_FILTER_ORIG_SRC_IP => {
+                        let conv_orig_src_ip =
+                            unsafe { test_chain_conv_filters[j].filter.orig_src_ip };
+                        let ffi_orig_src_ip =
+                            unsafe { test_ffi_chain_filters[j].filter.orig_src_ip };
+                        assert_eq!(conv_orig_src_ip.ip_type, ffi_orig_src_ip.ip_type);
+                        match conv_orig_src_ip.ip_type {
+                            LIBFW_IP_TYPE_V4 => {
+                                assert_eq!(
+                                    unsafe { conv_orig_src_ip.ip_data.ipv4_bytes },
+                                    unsafe { ffi_orig_src_ip.ip_data.ipv4_bytes }
+                                );
+                            }
+                            LIBFW_IP_TYPE_V6 => {
+                                assert_eq!(
+                                    unsafe { conv_orig_src_ip.ip_data.ipv6_bytes },
+                                    unsafe { ffi_orig_src_ip.ip_data.ipv6_bytes }
+                                );
+                            }
+                            _ => unreachable!("Unknown IP type"),
+                        };
+                    }
                     _ => unreachable!("Unexpected filter type"),
                 }
             }
