@@ -141,15 +141,16 @@ def setup_api(node_params: List[Tuple[bool, IPStack]]) -> Tuple[API, List[Node]]
     return api, nodes
 
 
+SetupConnectionsParam = Union[
+    ConnectionTag,
+    Tuple[ConnectionTag, Optional[List[ConnTrackerEventsValidator]]],
+    Tuple[ConnectionTag, Optional[List[ConnTrackerEventsValidator]], bool],
+]
+
+
 async def setup_connections(
     exit_stack: AsyncExitStack,
-    connection_parameters: List[
-        Union[
-            ConnectionTag,
-            Tuple[ConnectionTag, Optional[List[ConnTrackerEventsValidator]]],
-            Tuple[ConnectionTag, Optional[List[ConnTrackerEventsValidator]], bool],
-        ]
-    ],
+    connection_parameters: List[SetupConnectionsParam],
 ) -> List[ConnectionManager]:
     """Creates connections to the containers corresponding to a given connection tags.
 
