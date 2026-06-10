@@ -213,7 +213,8 @@ telio-pinger = { version = "0.1.0", path = "./crates/telio-pinger" }
 opt-level = "s"
 lto = true
 codegen-units = 1
-debug = "full"
+debug = 0
+strip = "symbols" 
 
 [profile.dev]
 debug = 0
