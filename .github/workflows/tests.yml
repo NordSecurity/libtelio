@@ -149,9 +149,9 @@ jobs:
     - name: Build Rust Docs
       uses: actions-rs/toolchain@v1
       with:
-        toolchain: nightly-2024-04-17
+        toolchain: nightly-2025-08-07
         components: rust-docs
-    - run: cargo +nightly-2025-03-26 doc --no-deps --workspace --document-private-items
+    - run: cargo +nightly-2025-08-07 doc --no-deps --workspace --document-private-items
 
   test-release:
     runs-on: ubuntu-22.04
