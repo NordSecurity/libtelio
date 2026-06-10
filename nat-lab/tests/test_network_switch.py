@@ -1,5 +1,4 @@
 import asyncio
-import re
 import pytest
 from contextlib import AsyncExitStack
 from tests import config
@@ -314,41 +313,6 @@ async def test_mesh_network_switch_direct(
         ])
 
 
-async def _list_mac_network_services(connection) -> list[tuple[str, str]]:
-    """Returns (service_name, device_name) pairs in SCDynamicStore preference order.
-
-    Parses output of `networksetup -listnetworkserviceorder`, which looks like:
-        (1) Ethernet
-            (Hardware Port: Ethernet, Device: en0)
-        (2) Ethernet 2
-            (Hardware Port: Ethernet 2, Device: en1)
-    """
-    process = await connection.create_process(
-        ["networksetup", "-listnetworkserviceorder"], quiet=True
-    ).execute()
-    services = []
-    pending_service_name = None
-    for raw_line in process.get_stdout().splitlines():
-        line = raw_line.strip()
-        # Lines like "(1) Ethernet" or "(2) Ethernet 2"
-        svc_match = re.match(r"^\((\d+)\)\s+(.+)$", line)
-        if svc_match:
-            pending_service_name = svc_match.group(2).strip()
-            continue
-        # Lines like "(Hardware Port: Ethernet, Device: en0)"
-        dev_match = re.match(r"^\(Hardware Port:.*?Device:\s*([^)]+)\)$", line)
-        if dev_match and pending_service_name is not None:
-            services.append((pending_service_name, dev_match.group(1).strip()))
-            pending_service_name = None
-    return services
-
-
-async def _set_mac_network_service_order(connection, service_names: list[str]) -> None:
-    """Sets the macOS network service preference order"""
-    await connection.create_process(
-        ["networksetup", "-orderNetworkServices"] + service_names
-    ).execute()
-
 
 @pytest.mark.asyncio
 @pytest.mark.mac
@@ -377,99 +341,24 @@ async def test_mac_interface_selection_with_multiple_active_interfaces() -> None
         alpha_conn_mngr, *_ = env.connections
         alpha_connection = alpha_conn_mngr.connection
 
-        # DEBUG: dump SCDynamicStore state to understand interface configuration
-        debug_out = await alpha_connection.create_process(
-            ["python3", "-c", "\n".join([
-                "from SystemConfiguration import SCDynamicStoreCreate, SCDynamicStoreCopyValue",
-                "store = SCDynamicStoreCreate(None, 'test', None, None)",
-                "order = SCDynamicStoreCopyValue(store, 'Setup:/Network/Global/IPv4')",
-                "svcs = list(order['ServiceOrder']) if order else []",
-                "print('ServiceOrder:', svcs)",
-                "for svc in svcs:",
-                "    val = SCDynamicStoreCopyValue(store, f'State:/Network/Service/{svc}/IPv4')",
-                "    setup = SCDynamicStoreCopyValue(store, f'Setup:/Network/Service/{svc}/IPv4')",
-                "    name = SCDynamicStoreCopyValue(store, f'Setup:/Network/Service/{svc}/Interface')",
-                "    print(f'--- {svc} ---')",
-                "    print('  State IPv4:', dict(val) if val else None)",
-                "    print('  Setup IPv4:', dict(setup) if setup else None)",
-                "    print('  Interface:', dict(name) if name else None)",
-            ])],
-            quiet=True,
-        ).execute()
-        print("SCDynamicStore debug:", debug_out.get_stdout())
-
-        services = await _list_mac_network_services(alpha_connection)
-        assert len(services) >= 2, (
-            f"Expected at least 2 network services on the mac VM, got: {services}"
-        )
-        original_order = [name for name, _ in services]
-
-        secondary_ip = config.LAN_ADDR_MAP[ConnectionTag.VM_MAC]["secondary"]
-        primary_ip = config.LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"]
-        ifconfig_output = await alpha_connection.create_process(
-            ["ifconfig"], quiet=True
-        ).execute()
-        secondary_if_name = None
-        primary_if_name = None
-        current_device = None
-        for line in ifconfig_output.get_stdout().splitlines():
-            device_match = re.match(r"^(\S+):", line)
-            if device_match:
-                current_device = device_match.group(1)
-            if current_device and secondary_ip in line and secondary_if_name is None:
-                secondary_if_name = current_device
-            if current_device and primary_ip in line and primary_if_name is None:
-                primary_if_name = current_device
-
-        assert secondary_if_name is not None, (
-            f"Could not find interface with IP {secondary_ip} in ifconfig output"
-        )
-        assert primary_if_name is not None, (
-            f"Could not find interface with IP {primary_ip} in ifconfig output"
+        # The VM has three NICs. The first (en0) is a decoy interface on
+        # mac-net-decoy whose gateway has no internet access. It appears first
+        # in the macOS SCDynamicStore service order. A buggy implementation of
+        # get_primary_interface_names() that ignores nw_path_monitor order would
+        # select en0 and bind sockets to it, causing VPN connectivity to fail.
+        wg_server = config.WG_SERVER
+        await client_alpha.connect_to_vpn(
+            str(wg_server["ipv4"]),
+            int(wg_server["port"]),
+            str(wg_server["public_key"]),
         )
 
-        secondary_service_name = next(
-            (name for name, device in services if device == secondary_if_name), None
+        await ping(alpha_connection, config.PHOTO_ALBUM_IP)
+
+        ip = await stun.get(alpha_connection, config.STUN_SERVER)
+        assert ip == wg_server["ipv4"], (
+            f"Expected VPN server IP {wg_server['ipv4']} but got {ip}."
         )
-        assert secondary_service_name is not None, (
-            f"Could not map interface {secondary_if_name} to a network service. "
-            f"Services: {services}"
-        )
-
-        # Place the secondary (non-default-route) service first to simulate
-        # a scenario where the wrong interface could be selected.
-        reordered = [secondary_service_name] + [
-            s for s in original_order if s != secondary_service_name
-        ]
-        await _set_mac_network_service_order(alpha_connection, reordered)
-        try:
-            wg_server = config.WG_SERVER
-            await client_alpha.connect_to_vpn(
-                str(wg_server["ipv4"]),
-                int(wg_server["port"]),
-                str(wg_server["public_key"]),
-            )
-
-            await ping(alpha_connection, config.PHOTO_ALBUM_IP)
-
-            ip = await stun.get(alpha_connection, config.STUN_SERVER)
-            assert ip == wg_server["ipv4"], (
-                f"Expected VPN server IP {wg_server['ipv4']} but got {ip}."
-            )
-
-            logs = await client_alpha.get_log()
-            path_log_matches = re.findall(
-                r"current network path in os preference order: \[([^\]]*)\]", logs
-            )
-            assert path_log_matches, (
-                "Expected nw_path_monitor OS preference order log entries, found none"
-            )
-            assert primary_if_name in path_log_matches[0], (
-                f"Expected primary interface {primary_if_name!r} to be first in "
-                f"nw_path_monitor report, got: {path_log_matches[0]!r}"
-            )
-        finally:
-            await _set_mac_network_service_order(alpha_connection, original_order)
 
 
 class TestInterfaceWindows:
