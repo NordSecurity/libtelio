@@ -374,7 +374,6 @@ class TestDualVpn:
                     await conntrack.wait_for_no_violations()
 
     @pytest.mark.asyncio
-    @pytest.mark.libfirewall
     @pytest.mark.parametrize(
         "alpha_setup_params",
         [
@@ -566,7 +565,6 @@ class TestSingleVpn2Node:
             await conntrack.wait_for_no_violations()
 
     @pytest.mark.asyncio
-    @pytest.mark.libfirewall
     @pytest.mark.parametrize(
         "alpha_setup_params, beta_setup_params",
         [

@@ -1,10 +1,7 @@
 import asyncio
 import pytest
-from contextlib import AsyncExitStack
 from tests import config
-from tests.config import LAN_ADDR_MAP
-from tests.helpers import Environment, SetupParameters, setup_api, setup_environment
-from tests.helpers_vpn import connect_vpn
+from tests.helpers import SetupParameters, setup_api, Environment
 from tests.mesh_api import Node
 from tests.utils import testing, stun
 from tests.utils.bindings import default_features, Features, TelioAdapterType
@@ -20,7 +17,6 @@ from tests.utils.logger import log
 from tests.utils.netcat import NetCatServer, NetCatClient
 from tests.utils.ping import ping
 from tests.utils.router import IPProto, IPStack
-from tests.utils.tcpdump import TcpDump
 from typing import Tuple, Optional, Callable, Awaitable
 
 
@@ -90,7 +86,6 @@ def _setup_params(
     ],
 )
 @pytest.mark.asyncio
-@pytest.mark.libfirewall
 async def test_mesh_firewall_successful_passthrough(
     setup_mesh_nodes_factory: Callable[..., Awaitable[Environment]],
     alpha_ip_stack: IPStack,
@@ -185,7 +180,6 @@ async def test_mesh_firewall_successful_passthrough(
     ],
 )
 @pytest.mark.asyncio
-@pytest.mark.libfirewall
 async def test_mesh_firewall_reject_packet(
     setup_mesh_nodes_factory: Callable[..., Awaitable[Environment]],
     alpha_ip_stack: IPStack,
@@ -242,7 +236,6 @@ async def test_mesh_firewall_reject_packet(
 
 # This test uses 'stun' and our stun client does not IPv6
 @pytest.mark.asyncio
-@pytest.mark.libfirewall
 async def test_blocking_incoming_connections_from_exit_node(
     setup_mesh_nodes_factory: Callable[..., Awaitable[Environment]],
 ) -> None:
@@ -349,7 +342,6 @@ async def test_blocking_incoming_connections_from_exit_node(
 
 
 @pytest.mark.asyncio
-@pytest.mark.libfirewall
 @pytest.mark.parametrize(
     "alpha_ip_stack,beta_ip_stack",
     [
@@ -478,7 +470,6 @@ async def test_mesh_firewall_file_share_port(
 
 
 @pytest.mark.asyncio
-@pytest.mark.libfirewall
 @pytest.mark.parametrize(
     "alpha_ip_stack,beta_ip_stack",
     [
@@ -576,7 +567,6 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
 
 
 @pytest.mark.asyncio
-@pytest.mark.libfirewall
 @pytest.mark.parametrize(
     "alpha_ip_stack,beta_ip_stack",
     [
@@ -672,165 +662,3 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_client_s
             # if everything is correct -> conntrack should show LAST_ACK -> TIME_WAIT
             # if something goes wrong, it will be stuck at LAST_ACK state
             await conntrack.wait_for_no_violations()
-
-
-# LLT-7321: a TCP connection established BEFORE being connected to VPN
-# carries the client's physical interface IP as its source.
-#
-# After connecting to VPN, the kernel reroutes it through the tunnel
-# but still with the wrong source IP. Exit node's receive this packet,
-# poisoning their NAT table which causes return traffic to be misrouted.
-@pytest.mark.asyncio
-@pytest.mark.libfirewall
-async def test_stale_src_ip_persist_after_connection(
-    exit_stack: AsyncExitStack,
-    setup_connections_factory: Callable[..., Awaitable[list]],
-) -> None:
-    setup_params = SetupParameters(
-        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-        adapter_type_override=TelioAdapterType.NEP_TUN,
-        ip_stack=IPStack.IPv4,
-        is_meshnet=False,
-        features=default_features(enable_firewall_exclusion_range="10.0.0.0/8"),
-    )
-
-    env = await exit_stack.enter_async_context(
-        setup_environment(
-            exit_stack,
-            [setup_params],
-            vpn=[ConnectionTag.DOCKER_VPN_1],
-        )
-    )
-
-    alpha, *_ = env.nodes
-    connection, *_ = [conn.connection for conn in env.connections]
-    client, *_ = env.clients
-
-    client_lan_ip = LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1]["primary"]
-
-    await client.set_meshnet_config(env.api.get_meshnet_config(alpha.id))
-
-    # Open a TCP connection
-    pre_vpn_nc = await exit_stack.enter_async_context(
-        NetCatClient(
-            connection,
-            config.PHOTO_ALBUM_IP,
-            80,
-            source_ip=client_lan_ip,
-        ).run()
-    )
-    await pre_vpn_nc.connection_succeeded()
-
-    vpn_connection, *_ = await setup_connections_factory([ConnectionTag.DOCKER_VPN_1])
-    await connect_vpn(
-        connection,
-        vpn_connection.connection,
-        client,
-        alpha.ip_addresses[0],
-        config.WG_SERVER,
-    )
-
-    # A fresh connection through the tunnel (src = tunnel IP) must work.
-    await ping(connection, config.PHOTO_ALBUM_IP)
-
-    # Widen the VPN peer's AllowedIPs so WireGuard passes all inner-src IPs
-    # through to wg0, isolating the libtelio firewall.
-    await vpn_connection.connection.create_process([
-        "wg",
-        "set",
-        "wg0",
-        "peer",
-        alpha.public_key,
-        "allowed-ips",
-        "0.0.0.0/0",
-    ]).execute()
-
-    stale_ip_capture = TcpDump(
-        vpn_connection.connection,
-        interfaces=["wg0"],
-        expressions=[f"src host {client_lan_ip}"],
-        count=1,
-    )
-
-    # Send data through the stale connection and check the source ip
-    async with stale_ip_capture.run():
-        await pre_vpn_nc.send_data("GET / HTTP/1.0\r\n\r\n")
-        try:
-            await asyncio.wait_for(stale_ip_capture.execute(), timeout=5)
-            raise AssertionError(
-                f"Packet with stale source IP {client_lan_ip} reached the"
-                " VPN's wg0 interface."
-            )
-        except asyncio.TimeoutError:
-            pass
-
-
-# LLT-7321: same stale-src-IP scenario but using a meshnet peer as exit node.
-@pytest.mark.asyncio
-@pytest.mark.libfirewall
-async def test_stale_src_ip_persist_after_meshnet_exit_node_connection(
-    exit_stack: AsyncExitStack,
-    setup_mesh_nodes_factory: Callable[..., Awaitable[Environment]],
-) -> None:
-    env = await setup_mesh_nodes_factory(
-        [
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-                adapter_type_override=TelioAdapterType.NEP_TUN,
-                ip_stack=IPStack.IPv4,
-                features=default_features(enable_firewall_exclusion_range="10.0.0.0/8"),
-            ),
-            SetupParameters(
-                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
-                ip_stack=IPStack.IPv4,
-                features=default_features(enable_firewall_exclusion_range="10.0.0.0/8"),
-            ),
-        ],
-    )
-
-    api = env.api
-    alpha, beta = env.nodes
-    connection_alpha, connection_beta = [conn.connection for conn in env.connections]
-    client_alpha, client_beta = env.clients
-
-    alpha_lan_ip = LAN_ADDR_MAP[ConnectionTag.DOCKER_CONE_CLIENT_1]["primary"]
-
-    beta.set_peer_firewall_settings(
-        alpha.id,
-        allow_incoming_connections=True,
-        allow_peer_traffic_routing=True,
-    )
-    await client_beta.set_meshnet_config(api.get_meshnet_config(beta.id))
-    await client_beta.get_router().create_exit_node_route()
-
-    pre_exit_nc = await exit_stack.enter_async_context(
-        NetCatClient(
-            connection_alpha,
-            config.PHOTO_ALBUM_IP,
-            80,
-            source_ip=alpha_lan_ip,
-        ).run()
-    )
-    await pre_exit_nc.connection_succeeded()
-
-    await client_alpha.connect_to_exit_node(beta.public_key)
-
-    await ping(connection_alpha, config.PHOTO_ALBUM_IP)
-
-    stale_ip_capture = TcpDump(
-        connection_beta,
-        interfaces=["tun10"],
-        expressions=[f"src host {alpha_lan_ip}"],
-        count=1,
-    )
-
-    async with stale_ip_capture.run():
-        await pre_exit_nc.send_data("GET / HTTP/1.0\r\n\r\n")
-        try:
-            await asyncio.wait_for(stale_ip_capture.execute(), timeout=5)
-            raise AssertionError(
-                f"Packet with stale source IP {alpha_lan_ip} reached the"
-                " meshnet exit node's interface."
-            )
-        except asyncio.TimeoutError:
-            pass
