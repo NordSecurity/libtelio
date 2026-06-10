@@ -344,7 +344,7 @@ async def _list_mac_network_services(connection) -> list[tuple[str, str]]:
 
 
 async def _set_mac_network_service_order(connection, service_names: list[str]) -> None:
-    """Sets the macOS network service preference order."""
+    """Sets the macOS network service preference order"""
     await connection.create_process(
         ["networksetup", "-orderNetworkServices"] + service_names
     ).execute()
@@ -352,16 +352,11 @@ async def _set_mac_network_service_order(connection, service_names: list[str]) -
 
 @pytest.mark.asyncio
 @pytest.mark.mac
-async def test_mac_interface_selection_with_decoy_interface() -> None:
-    """Verify libtelio binds to the correct interface when a non-routable interface
-    appears before the routable one in the macOS network service order.
-    """
+async def test_mac_interface_selection_with_multiple_active_interfaces() -> None:
     async with AsyncExitStack() as exit_stack:
         features = default_features()
-        # is_test_env=False enables the NativeProtector socket watcher on macOS, which
-        # performs interface selection and socket binding. With is_test_env=True (the
-        # default in all other mac tests) the socket watcher is disabled and none of
-        # the apple-specific interface selection code paths are exercised.
+        # Enables the NativeProtector socket watcher, which performs interface
+        # selection and socket binding (disabled by default in tests).
         features.is_test_env = False
 
         alpha_setup_params = SetupParameters(
@@ -382,15 +377,27 @@ async def test_mac_interface_selection_with_decoy_interface() -> None:
         alpha_conn_mngr, *_ = env.connections
         alpha_connection = alpha_conn_mngr.connection
 
+        # DEBUG: dump SCDynamicStore state to understand interface configuration
+        debug_out = await alpha_connection.create_process(
+            ["python3", "-c", "\n".join([
+                "from SystemConfiguration import SCDynamicStoreCreate, SCDynamicStoreCopyValue",
+                "store = SCDynamicStoreCreate(None, 'test', None, None)",
+                "order = SCDynamicStoreCopyValue(store, 'Setup:/Network/Global/IPv4')",
+                "print('ServiceOrder:', order['ServiceOrder'] if order else None)",
+                "for svc in (order['ServiceOrder'] if order else []):",
+                "    val = SCDynamicStoreCopyValue(store, f'State:/Network/Service/{svc}/IPv4')",
+                "    print(f'Service {svc}:', val)",
+            ])],
+            quiet=True,
+        ).execute()
+        print("SCDynamicStore debug:", debug_out.get_stdout())
+
         services = await _list_mac_network_services(alpha_connection)
         assert len(services) >= 2, (
             f"Expected at least 2 network services on the mac VM, got: {services}"
         )
         original_order = [name for name, _ in services]
 
-        # Find which macOS service name corresponds to the secondary NIC (en1) by
-        # matching the secondary IP address from ifconfig output to a device name,
-        # then mapping that device name to its network service.
         secondary_ip = config.LAN_ADDR_MAP[ConnectionTag.VM_MAC]["secondary"]
         primary_ip = config.LAN_ADDR_MAP[ConnectionTag.VM_MAC]["primary"]
         ifconfig_output = await alpha_connection.create_process(
@@ -423,15 +430,12 @@ async def test_mac_interface_selection_with_decoy_interface() -> None:
             f"Services: {services}"
         )
 
-        # Place the secondary (non-default-route) service first in the SCDynamicStore
-        # service order. A buggy implementation that picks by SCDynamicStore order
-        # alone would select the secondary interface. The correct implementation picks
-        # the interface that nw_path_monitor considers preferred (the primary, since
-        # it holds the current default route).
-        decoy_first_order = [secondary_service_name] + [
+        # Place the secondary (non-default-route) service first to simulate
+        # a scenario where the wrong interface could be selected.
+        reordered = [secondary_service_name] + [
             s for s in original_order if s != secondary_service_name
         ]
-        await _set_mac_network_service_order(alpha_connection, decoy_first_order)
+        await _set_mac_network_service_order(alpha_connection, reordered)
         try:
             wg_server = config.WG_SERVER
             await client_alpha.connect_to_vpn(
@@ -444,36 +448,19 @@ async def test_mac_interface_selection_with_decoy_interface() -> None:
 
             ip = await stun.get(alpha_connection, config.STUN_SERVER)
             assert ip == wg_server["ipv4"], (
-                f"Expected VPN server IP {wg_server['ipv4']} but got {ip}. "
-                "VPN connectivity failed — libtelio may have bound to the wrong interface."
+                f"Expected VPN server IP {wg_server['ipv4']} but got {ip}."
             )
 
-            # Verify via nw_path_monitor logs that the OS considers the primary interface
-            # (the one with the default route) as the preferred path — not the secondary
-            # interface that we placed first in the SCDynamicStore service order.
-            # nw_path_monitor emits "current network path in os preference order: [...]"
-            # on every path change. The first emission at startup shows the physical
-            # interfaces before the VPN tunnel takes over the path.
             logs = await client_alpha.get_log()
-            path_log_re = re.compile(
-                r"current network path in os preference order: \[([^\]]*)\]"
+            path_log_matches = re.findall(
+                r"current network path in os preference order: \[([^\]]*)\]", logs
             )
-            path_log_matches = path_log_re.findall(logs)
             assert path_log_matches, (
-                "Expected nw_path_monitor 'current network path in os preference order' "
-                "log entries, but found none"
+                "Expected nw_path_monitor OS preference order log entries, found none"
             )
-            # The first path change report (before the VPN tunnel comes up) must show
-            # the primary physical interface as the most preferred interface. If the
-            # secondary interface appears first, the OS itself considers it the preferred
-            # path, which would indicate the default route is wrong.
-            first_path = path_log_matches[0]
-            assert primary_if_name in first_path, (
-                f"Expected primary interface {primary_if_name!r} in the first "
-                f"nw_path_monitor OS preference order report: {first_path!r}. "
-                f"The secondary interface ({secondary_if_name!r}) was placed first in "
-                f"SCDynamicStore order — if it also appears first in the nw_path_monitor "
-                f"order, interface selection would fail."
+            assert primary_if_name in path_log_matches[0], (
+                f"Expected primary interface {primary_if_name!r} to be first in "
+                f"nw_path_monitor report, got: {path_log_matches[0]!r}"
             )
         finally:
             await _set_mac_network_service_order(alpha_connection, original_order)
