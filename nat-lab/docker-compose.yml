@@ -861,7 +861,16 @@ services:
 
   mac-gw-decoy:
     hostname: mac-gw-decoy
-    <<: *common-gw
+    image: nat-lab:base
+    entrypoint: /opt/bin/mac-gw-decoy
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: "ls /ready"
     networks:
       mac-net-decoy:
         ipv4_address: 192.168.156.254
