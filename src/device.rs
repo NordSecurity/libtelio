@@ -93,7 +93,7 @@ use telio_model::{
     event::{Event, Set},
     features::{FeaturePersistentKeepalive, Features, PathType},
     mesh::{ExitNode, LinkState, Node, NodeState},
-    tp_lite_stats::{TpLiteStatsCallback, TpLiteStatsOptions},
+    tp_lite_stats::{DnsRedirect, TpLiteStatsCallback, TpLiteStatsOptions},
     validation::validate_nickname,
     EndpointMap,
 };
@@ -774,15 +774,20 @@ impl Device {
         })
     }
 
-    /// Set the TP-Lite DNS whitelisted domains at runtime, reconfiguring the
-    /// firewall to redirect queries for these domains.
+    /// Set the TP-Lite DNS whitelisting configuration at runtime: the whitelisted
+    /// domains and the (blocking, standard) DNS server redirect pairs, reconfiguring
+    /// the firewall to redirect queries for these domains.
     ///
     /// Requires firewall to be enabled through setting firewall field of Features
     /// object to a non-null value.
-    pub fn set_tp_lite_whitelisted_domains(&self, domains: Vec<String>) -> Result {
+    pub fn set_tp_lite_domain_whitelist(
+        &self,
+        domains: Vec<String>,
+        redirects: Vec<DnsRedirect>,
+    ) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_tp_lite_whitelisted_domains(domains))
+                Ok(rt.set_tp_lite_domain_whitelist(domains, redirects))
             })
             .await?
         })
@@ -2152,19 +2157,21 @@ impl Runtime {
         Err(Error::FirewallUnsupported)
     }
 
-    /// Set the TP-Lite DNS whitelisted domains at runtime, reconfiguring the
-    /// firewall to redirect queries for these domains.
+    /// Set the TP-Lite DNS whitelisting configuration at runtime: the whitelisted
+    /// domains and the (blocking, standard) DNS server redirect pairs, reconfiguring
+    /// the firewall to redirect queries for these domains.
     ///
     /// Requires firewall to be enabled through setting firewall field of Features
     /// object to a non-null value.
-    pub fn set_tp_lite_whitelisted_domains(
+    pub fn set_tp_lite_domain_whitelist(
         &self,
         #[allow(unused_variables)] domains: Vec<String>,
+        #[allow(unused_variables)] redirects: Vec<DnsRedirect>,
     ) -> Result {
         #[cfg(feature = "enable_firewall")]
         match &self.entities.firewall {
             Some(fw) => {
-                fw.set_tp_lite_whitelisted_domains(domains);
+                fw.set_tp_lite_domain_whitelist(domains, redirects);
                 Ok(())
             }
             None => Err(Error::FirewallDisabled),

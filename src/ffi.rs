@@ -33,7 +33,7 @@ use telio_model::{
     event::*,
     features::Features,
     mesh::{ExitNode, Node},
-    tp_lite_stats::{NoopCallback, TpLiteStatsCallback, TpLiteStatsOptions},
+    tp_lite_stats::{DnsRedirect, NoopCallback, TpLiteStatsCallback, TpLiteStatsOptions},
 };
 
 // debug tools
@@ -938,21 +938,28 @@ impl Telio {
         })
     }
 
-    /// Set the TP-Lite DNS whitelisted domains at runtime, reconfiguring the
-    /// firewall to redirect queries for these domains.
+    /// Set the TP-Lite DNS whitelisting configuration at runtime: the whitelisted
+    /// domains and the (blocking, standard) DNS server redirect pairs. Queries to a
+    /// blocking endpoint whose QNAME matches a whitelisted domain are DNAT-rewritten
+    /// to the corresponding standard endpoint.
     ///
     /// Requires firewall to be enabled through setting firewall field of Features
     /// object to a non-null value.
-    pub fn set_tp_lite_whitelisted_domains(&self, domains: Vec<String>) -> FfiResult<()> {
+    pub fn set_tp_lite_domain_whitelist(
+        &self,
+        domains: Vec<String>,
+        redirects: Vec<DnsRedirect>,
+    ) -> FfiResult<()> {
         telio_log_info!(
-            "Telio::set_tp_lite_whitelisted_domains entry with instance id: {}. domains: {:?}",
+            "Telio::set_tp_lite_domain_whitelist entry with instance id: {}. domains: {:?}, redirects: {:?}",
             self.id,
-            domains
+            domains,
+            redirects
         );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
-                dev.set_tp_lite_whitelisted_domains(domains.clone())
-                    .log_result("Telio::set_tp_lite_whitelisted_domains")
+                dev.set_tp_lite_domain_whitelist(domains.clone(), redirects.clone())
+                    .log_result("Telio::set_tp_lite_domain_whitelist")
             })
         })
     }

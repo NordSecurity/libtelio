@@ -77,7 +77,7 @@ mod uniffi_libtelio {
     use telio_model::features::*;
     use telio_model::mesh::*;
     use telio_model::tp_lite_stats::{
-        BlockedDomain, DnsMetrics, TpLiteStatsCallback, TpLiteStatsOptions,
+        BlockedDomain, DnsMetrics, DnsRedirect, TpLiteStatsCallback, TpLiteStatsOptions,
     };
     use telio_utils::{Hidden, HiddenString};
 

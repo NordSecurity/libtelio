@@ -1,8 +1,19 @@
 //! Types for TP-Lite stats collection
 
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddrV4};
 
 use serde::{Deserialize, Serialize};
+
+/// Pair of DNS server endpoints describing how a single DNS-redirect rule
+/// should rewrite outbound DNS traffic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct DnsRedirect {
+    /// DNS server that would otherwise drop non-whitelisted queries.
+    pub blocking: SocketAddrV4,
+    /// DNS server to which whitelisted queries are redirected.
+    pub standard: SocketAddrV4,
+}
 
 /// Config options for the TP-Lite stats collection
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

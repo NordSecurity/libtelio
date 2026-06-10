@@ -39,19 +39,6 @@ def _features_with_firewall():
         boringtun_reset_conns=False,
         exclude_private_ip_range=None,
         outgoing_blacklist=[],
-        tp_lite_dns_redirects=[],
-    )
-    return features
-
-
-def _features_with_dns_whitelisting(blocking: str, standard: str):
-    features = default_features()
-    features.firewall = FeatureFirewall(
-        neptun_reset_conns=False,
-        boringtun_reset_conns=False,
-        exclude_private_ip_range=None,
-        outgoing_blacklist=[],
-        tp_lite_dns_redirects=[DnsRedirect(blocking=blocking, standard=standard)],
     )
     return features
 
@@ -325,10 +312,7 @@ class TestDnsWhitelisting:
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     adapter_type_override=TelioAdapterType.NEP_TUN,
-                    features=_features_with_dns_whitelisting(
-                        f"{TP_LITE_DNS_IP}:53",
-                        f"{STANDARD_DNS_IP}:53",
-                    ),
+                    features=_features_with_firewall(),
                 )
             )
         ],
@@ -362,8 +346,17 @@ class TestDnsWhitelisting:
                 options=["-type=a"],
             )
 
-        # Configure the whitelist at runtime, which reconfigures the firewall.
-        await client.set_tp_lite_whitelisted_domains([BLOCKED_NXDOMAIN])
+        # Configure the whitelist and the DNS redirect at runtime, which
+        # reconfigures the firewall.
+        await client.set_tp_lite_domain_whitelist(
+            [BLOCKED_NXDOMAIN],
+            [
+                DnsRedirect(
+                    blocking=f"{TP_LITE_DNS_IP}:53",
+                    standard=f"{STANDARD_DNS_IP}:53",
+                )
+            ],
+        )
 
         # blocked-malware.com is NXDOMAIN at the TP-Lite (blocking) server, but it
         # is now whitelisted, so the firewall DNATs the query to the standard DNS

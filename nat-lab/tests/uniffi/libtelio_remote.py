@@ -260,8 +260,10 @@ class LibtelioWrapper:
         return self._tp_lite_cb.take_data()
 
     @serialize_error
-    def set_tp_lite_whitelisted_domains(self, domains: List[str]):
-        self._libtelio.set_tp_lite_whitelisted_domains(domains)
+    def set_tp_lite_domain_whitelist(
+        self, domains: List[str], redirects: List[libtelio.DnsRedirect]
+    ):
+        self._libtelio.set_tp_lite_domain_whitelist(domains, redirects)
 
 
 def main():

@@ -20,6 +20,7 @@ from tests.uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
 from tests.utils import asyncio_util
 from tests.utils.bindings import (
     Config,
+    DnsRedirect,
     ErrorEvent,
     Event,
     Features,
@@ -1011,8 +1012,10 @@ class Client:
     async def get_tp_lite_stats(self):
         return await self.get_proxy().get_tp_lite_stats()
 
-    async def set_tp_lite_whitelisted_domains(self, domains: List[str]) -> None:
-        await self.get_proxy().set_tp_lite_whitelisted_domains(domains)
+    async def set_tp_lite_domain_whitelist(
+        self, domains: List[str], redirects: List[DnsRedirect]
+    ) -> None:
+        await self.get_proxy().set_tp_lite_domain_whitelist(domains, redirects)
 
     async def notify_network_change(self) -> None:
         await self.get_proxy().notify_network_change()
