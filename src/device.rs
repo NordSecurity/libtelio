@@ -2195,11 +2195,15 @@ impl Runtime {
                 self.reconfigure_dns_peer(dns, &dns.get_default_dns_servers())
                     .await?;
             }
-        } else if exit_node.endpoint.is_none() {
-            return Err(Error::EndpointNotProvided);
-        }
-        if let Some(endpoint) = exit_node.endpoint {
-            let vpn_ip = endpoint.ip();
+        } else {
+            // ENS provides no real value, when routing through meshnet's peer
+            let vpn_ip = match exit_node.endpoint {
+                Some(ep) => ep.ip(),
+                None => {
+                    return Err(Error::EndpointNotProvided);
+                }
+            };
+
             let client_pk = self.get_private_key().await?;
             if let Some(ens) = self.entities.error_notification_service.as_mut() {
                 telio_log_info!("Starting ENS monitoring");
