@@ -169,6 +169,7 @@ pub async fn consolidate_wg_state(
             (*firewall).as_ref(),
             starcast_pub_key,
             dns_pubkey,
+            entities.meshnet.left().is_some(),
         )
         .await?;
     }
@@ -610,23 +611,28 @@ async fn consolidate_firewall<F: Firewall>(
     firewall: &F,
     starcast_vpeer_pubkey: Option<PublicKey>,
     dns_pubkey: Option<PublicKey>,
+    meshnet_active: bool,
 ) -> Result {
     let mut state = FirewallState::default();
+    let peers: Vec<_> = iter_peers(requested_state).collect();
 
-    state.whitelist.port_whitelist = iter_peers(requested_state)
+    state.whitelist.port_whitelist = peers
+        .iter()
         .filter(|p| p.allow_peer_send_files)
         .map(|p| (p.public_key, FILE_SEND_PORT))
         .collect();
 
-    for permission in Permissions::VALUES {
-        state.whitelist.peer_whitelists[permission] = iter_peers(requested_state)
-            .filter(|p| match permission {
-                Permissions::IncomingConnections => p.allow_incoming_connections,
-                Permissions::LocalAreaConnections => p.allow_peer_local_network_access,
-                Permissions::RoutingConnections => p.allow_peer_traffic_routing,
-            })
-            .map(|p| p.public_key)
-            .collect();
+    for peer in &peers {
+        let key = peer.public_key;
+        if peer.allow_incoming_connections {
+            state.whitelist.peer_whitelists[Permissions::IncomingConnections].insert(key);
+        }
+        if peer.allow_peer_local_network_access {
+            state.whitelist.peer_whitelists[Permissions::LocalAreaConnections].insert(key);
+        }
+        if peer.allow_peer_traffic_routing {
+            state.whitelist.peer_whitelists[Permissions::RoutingConnections].insert(key);
+        }
     }
 
     if let Some(key) = starcast_vpeer_pubkey {
@@ -638,16 +644,14 @@ async fn consolidate_firewall<F: Firewall>(
         state.whitelist.peer_whitelists[Permissions::RoutingConnections].insert(key);
     }
 
-    let is_vpn_exit_node = if let Some(exit_node) = &requested_state.exit_node {
-        let is_vpn = !iter_peers(requested_state).any(|p| p.public_key == exit_node.public_key);
-        if is_vpn {
-            state.whitelist.vpn_peer = Some(exit_node.public_key);
-        }
-        state.exit_node_present = true;
-        is_vpn
-    } else {
-        false
-    };
+    let is_vpn = requested_state
+        .exit_node
+        .as_ref()
+        .is_some_and(|en| !peers.iter().any(|p| p.public_key == en.public_key));
+
+    if is_vpn {
+        state.whitelist.vpn_peer = requested_state.exit_node.as_ref().map(|en| en.public_key);
+    }
 
     if let Some(meshnet_config) = &requested_state.meshnet_config {
         state.ip_addresses = meshnet_config
@@ -657,12 +661,21 @@ async fn consolidate_firewall<F: Firewall>(
             .ok_or(Error::IpNotSet)?;
     }
 
-    if is_vpn_exit_node {
+    if is_vpn {
         state.ip_addresses.push(LOCAL_TUNNEL_IPV4.into());
     }
 
     state.ip_addresses.sort_unstable();
     state.ip_addresses.dedup();
+
+    // Signal firewall to add src IP-based rules when there's an exit node peer.
+    // The only condition is that if meshnet is enabled but the meshnet_config is not yet set then we should wait before adding the
+    // rule, otherwise it can cause nonet for blocking pre-exit node traffic.
+    state.exit_addresses_up_to_date = requested_state.exit_node.is_some();
+    if meshnet_active && requested_state.meshnet_config.is_none() {
+        // meshnet config not yet set
+        state.exit_addresses_up_to_date = false;
+    }
 
     firewall.apply_state(state);
 
@@ -1502,6 +1515,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1548,6 +1562,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1592,7 +1607,7 @@ mod tests {
                     vpn_peer: Some(pub_key_2),
                 },
                 ip_addresses: expected_ips,
-                exit_node_present: true,
+                exit_addresses_up_to_date: true,
                 force_plaintext_dns_for_servers: None,
                 ..Default::default()
             }))
@@ -1603,6 +1618,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1643,7 +1659,7 @@ mod tests {
                     vpn_peer: Some(pub_key_vpn),
                 },
                 ip_addresses: expected_ips,
-                exit_node_present: true,
+                exit_addresses_up_to_date: true,
                 force_plaintext_dns_for_servers: None,
                 ..Default::default()
             }))
@@ -1654,6 +1670,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1684,7 +1701,7 @@ mod tests {
             .expect_apply_state()
             .once()
             .withf(|state: &FirewallState| {
-                state.exit_node_present
+                state.exit_addresses_up_to_date
                     && state.whitelist.vpn_peer.is_none()
                     // VPN constants must NOT be in ip_addresses for meshnet exit
                     && !state.ip_addresses.contains(&IpAddr::V4(VPN_INTERNAL_IPV4))
@@ -1697,6 +1714,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1739,7 +1757,7 @@ mod tests {
                     vpn_peer: None,
                 },
                 ip_addresses: expected_ips,
-                exit_node_present: true,
+                exit_addresses_up_to_date: true,
                 force_plaintext_dns_for_servers: None,
                 ..Default::default()
             }))
@@ -1750,6 +1768,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1793,7 +1812,7 @@ mod tests {
                     vpn_peer: None,
                 },
                 ip_addresses: expected_ips,
-                exit_node_present: true,
+                exit_addresses_up_to_date: true,
                 force_plaintext_dns_for_servers: None,
                 ..Default::default()
             }))
@@ -1804,6 +1823,7 @@ mod tests {
             &firewall,
             Some(pub_key_starcast_vpeer),
             None,
+            false,
         )
         .await
         .unwrap();
@@ -1852,6 +1872,7 @@ mod tests {
                 &firewall,
                 Some(pub_key_starcast_vpeer),
                 None,
+                false,
             )
             .await
             .unwrap();

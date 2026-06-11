@@ -159,8 +159,9 @@ pub struct FirewallState {
     pub whitelist: Whitelist,
     /// Local node ip addresses
     pub ip_addresses: Vec<StdIpAddr>,
-    /// Whether an exit node is currently active
-    pub exit_node_present: bool,
+    /// Whether local addresses, when exit-node (vpn or mesh) is present, are effectively updated, else we're transitioning
+    /// When exit-node is not present this should be false
+    pub exit_addresses_up_to_date: bool,
     /// List of DNS server IPs for which only plaintext DNS should be allowed
     pub force_plaintext_dns_for_servers: Option<Vec<StdIpAddr>>,
     /// Domain patterns whitelisted from TP-Lite DNS
@@ -546,7 +547,12 @@ pub(crate) fn build_chain_rules(
 
     // LLT-7321: reject outbound packets whose src is not a known tunnel IP.
     // Filters within a rule are ANDed (see LibfwRule docs).
-    if state.exit_node_present && !state.ip_addresses.is_empty() {
+    telio_log_debug!(
+        "Adding exit node IP filter with ips: {:?} and exit_addresses_up_to_date: {}",
+        state.ip_addresses,
+        state.exit_addresses_up_to_date
+    );
+    if state.exit_addresses_up_to_date {
         let mut filters = vec![Filter {
             filter_data: FilterData::Direction(Direction::Outbound),
             inverted: false,
@@ -931,7 +937,7 @@ mod tests {
         };
         let state = FirewallState {
             ip_addresses: vec![StdIpAddr::V4(Ipv4Addr::new(10, 5, 0, 1))],
-            exit_node_present: false,
+            exit_addresses_up_to_date: false,
             ..Default::default()
         };
         let rules = build_chain_rules(&config, &state, &[]);
@@ -949,7 +955,7 @@ mod tests {
         };
         let state = FirewallState {
             ip_addresses: vec![],
-            exit_node_present: true,
+            exit_addresses_up_to_date: true,
             ..Default::default()
         };
         let rules = build_chain_rules(&config, &state, &[]);
@@ -968,7 +974,7 @@ mod tests {
         let tunnel_ip = StdIpAddr::V4(Ipv4Addr::new(10, 5, 0, 1));
         let state = FirewallState {
             ip_addresses: vec![tunnel_ip],
-            exit_node_present: true,
+            exit_addresses_up_to_date: true,
             ..Default::default()
         };
         let rules = build_chain_rules(&config, &state, &[]);
@@ -1003,7 +1009,7 @@ mod tests {
         let tunnel_ip = StdIpAddr::V4(Ipv4Addr::new(10, 5, 0, 1));
         let state = FirewallState {
             ip_addresses: vec![tunnel_ip],
-            exit_node_present: true,
+            exit_addresses_up_to_date: true,
             force_plaintext_dns_for_servers: None,
             whitelist: Whitelist {
                 vpn_peer: Some(vpn_pk),
@@ -1047,7 +1053,7 @@ mod tests {
         let ip2 = StdIpAddr::V4(Ipv4Addr::new(100, 64, 0, 1));
         let state = FirewallState {
             ip_addresses: vec![ip1, ip2],
-            exit_node_present: true,
+            exit_addresses_up_to_date: true,
             ..Default::default()
         };
         let rules = build_chain_rules(&config, &state, &[]);

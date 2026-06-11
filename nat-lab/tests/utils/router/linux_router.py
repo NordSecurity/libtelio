@@ -145,20 +145,25 @@ class LinuxRouter(Router):
                         raise exception
                     log.warning(exception.stderr)
 
-            await self._connection.create_process([
-                "ip",
-                "rule",
-                "add",
-                "priority",
-                ROUTING_PRIORITY,
-                "not",
-                "from",
-                "all",
-                "fwmark",
-                FWMARK_VALUE,
-                "lookup",
-                ROUTING_TABLE_ID,
-            ]).execute()
+            try:
+                await self._connection.create_process([
+                    "ip",
+                    "rule",
+                    "add",
+                    "priority",
+                    ROUTING_PRIORITY,
+                    "not",
+                    "from",
+                    "all",
+                    "fwmark",
+                    FWMARK_VALUE,
+                    "lookup",
+                    ROUTING_TABLE_ID,
+                ]).execute()
+            except ProcessExecError as exception:
+                if exception.stderr.find("File exists") < 0:
+                    raise exception
+                log.warning(exception.stderr)
 
         if self.ip_stack in [IPStack.IPv6, IPStack.IPv4v6]:
             for network in [
@@ -184,21 +189,26 @@ class LinuxRouter(Router):
                         raise exception
                     log.warning(exception.stderr)
 
-            await self._connection.create_process([
-                "ip",
-                "-6",
-                "rule",
-                "add",
-                "priority",
-                ROUTING_PRIORITY,
-                "not",
-                "from",
-                "all",
-                "fwmark",
-                FWMARK_VALUE,
-                "lookup",
-                ROUTING_TABLE_ID,
-            ]).execute()
+            try:
+                await self._connection.create_process([
+                    "ip",
+                    "-6",
+                    "rule",
+                    "add",
+                    "priority",
+                    ROUTING_PRIORITY,
+                    "not",
+                    "from",
+                    "all",
+                    "fwmark",
+                    FWMARK_VALUE,
+                    "lookup",
+                    ROUTING_TABLE_ID,
+                ]).execute()
+            except ProcessExecError as exception:
+                if exception.stderr.find("File exists") < 0:
+                    raise exception
+                log.warning(exception.stderr)
 
     async def delete_interface(self, name=None) -> None:
         try:
