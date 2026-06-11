@@ -376,7 +376,7 @@ export NATLAB_SAVE_LOGS=1
 ### Tcpdump internals (useful when customizing)
 
 - Binary and host file paths are defined in [python.build_tcpdump_command()](tests/utils/tcpdump.py) and PCAP_FILE_PATH map at [python.PCAP_FILE_PATH](tests/utils/tcpdump.py)
-- Windows tcpdump in-tests is temporarily disabled (see TODO in [python.make_tcpdump()](tests/utils/tcpdump.py))
+- Windows captures use the in-box `pktmon` tool (full packet size, all adapters present at capture start); the .etl log is converted to pcapng on the VM before download (see [python.PktmonCapture](tests/utils/tcpdump.py)). pktmon cannot exclude the SSH control channel at capture time, so it is stripped from the pcap on the test runner right after download (requires local `tcpdump`; the file is kept unfiltered if that fails). Note: adapters created after capture start (e.g. libtelio's wintun/wireguard adapter) are not captured — decrypted tunnel traffic is only visible in the counterpart node's pcap, while the encrypted side is captured on the physical NICs.
 
 ### Example: run a single test and keep all logs
 
