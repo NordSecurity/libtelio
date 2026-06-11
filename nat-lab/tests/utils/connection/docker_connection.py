@@ -242,3 +242,54 @@ def container_id(tag: ConnectionTag) -> str:
     if tag in DOCKER_SERVICE_IDS:
         return f"nat-lab-{DOCKER_SERVICE_IDS[tag]}-1"
     assert False, f"tag {tag} not a docker container"
+
+
+# VM clients run their guest OS inside a dockur QEMU container. The SSH-based VM
+# tag does not appear in DOCKER_SERVICE_IDS, so map it to the docker service that
+# hosts the guest, allowing the backing container to be controlled (e.g. paused).
+DOCKER_VM_SERVICE_IDS: Dict[ConnectionTag, str] = {
+    ConnectionTag.VM_WINDOWS_1: "windows-client-01",
+    ConnectionTag.VM_WINDOWS_2: "windows-client-02",
+    ConnectionTag.VM_MAC: "mac-client-01",
+}
+
+
+def backing_container_id(tag: ConnectionTag) -> str:
+    """Name of the docker container hosting the client for `tag`.
+
+    For docker tags this is the client container itself; for VM tags it is the
+    dockur QEMU container running the guest OS.
+    """
+    if tag in DOCKER_SERVICE_IDS:
+        return container_id(tag)
+    if tag in DOCKER_VM_SERVICE_IDS:
+        return f"nat-lab-{DOCKER_VM_SERVICE_IDS[tag]}-1"
+    assert False, f"tag {tag} has no backing docker container"
+
+
+@asynccontextmanager
+async def paused_container(tag: ConnectionTag) -> AsyncIterator[None]:
+    """Freeze the docker container hosting `tag` (cgroup freezer) for the scope.
+
+    While frozen the container's processes are suspended and do no work, but the
+    host keeps advancing CLOCK_MONOTONIC. This works for both docker clients and
+    VM clients: freezing the dockur QEMU container stops the guest vCPUs while
+    the host TSC keeps running, so on unpause the guest's monotonic clock (TSC /
+    QPC / mach_absolute_time - the same clock tokio's timers use) jumps forward
+    by the freeze duration. That is exactly how a long device sleep looks to
+    tokio, which makes the missed-tick (burst vs delay) behaviour reproducible
+    without actually waiting for the sleep duration.
+
+    Note: do not issue commands/RPC to the container while paused - they will
+    block until it is unpaused.
+    """
+    name = backing_container_id(tag)
+    async with Docker() as docker:
+        container = await docker.containers.get(name)
+        log.info("[%s] Pausing container %s", tag.name, name)
+        await container.pause()
+        try:
+            yield
+        finally:
+            await container.unpause()
+            log.info("[%s] Unpaused container %s", tag.name, name)
