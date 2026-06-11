@@ -147,27 +147,44 @@ ignore-paths = ".venv,tests/protobuf,bin/grpc_protobuf,tests/uniffi/telio_bindin
 # egregious cases but at a threshold that doesn't force opaque options-object
 # wrapping of otherwise-readable keyword arguments.
 max-args = 10
+# The complexity rules below are enabled to flag egregious cases, but at limits
+# that don't force churny refactors of otherwise-readable integration tests and
+# config dataclasses.
+max-locals = 35
+max-statements = 90
+max-attributes = 16
 
 [tool.pylint.'MESSAGES CONTROL']
 recursive = true
 disable = [
+    # Conventional short names (loop vars, single-letter locals) in test code;
+    # enabling it would be churn for no readability gain.
     "invalid-name",
+    # Docstrings on every test module/class/function add noise where names already
+    # describe intent.
     "missing-module-docstring",
     "missing-class-docstring",
     "missing-function-docstring",
+    # black owns line formatting (max-line-length = 88); the remaining long lines
+    # are strings/URLs/comments black cannot break.
     "line-too-long",
-    "too-many-locals",
+    # isort owns import ordering and is intentionally configured with
+    # no_sections = true (see [tool.isort]); pylint's section grouping conflicts.
     "wrong-import-order",
-    "too-many-instance-attributes",
-    # `fixme` stays disabled on purpose: our TODO/FIXME comments track open Jira
-    # tickets (e.g. LLT-6693, LLT-6746) and intentional workarounds; flagging them
-    # would force deleting that tracking information rather than improving the code.
-    "fixme",
+    # A passing threshold would be meaningless while one class is far over the
+    # limit; revisit once it is split.
     "too-many-public-methods",
+    # False-positives on dataclasses / config holders and pytest test classes that
+    # legitimately expose one (or zero) public methods.
     "too-few-public-methods",
-    "too-many-statements",
-    "global-statement",
+    # Noisy where similar setup/teardown scaffolding is intentionally repeated, and
+    # it cannot be suppressed inline.
     "duplicate-code",
+    # TODO/FIXME comments track intentional workarounds and open tickets; flagging
+    # them would force deleting that tracking information.
+    "fixme",
+    # A few modules legitimately exceed the line limit; splitting them is a
+    # separate concern.
     "too-many-lines"
 ]
 

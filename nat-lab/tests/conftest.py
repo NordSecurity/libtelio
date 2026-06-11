@@ -7,6 +7,7 @@ import Pyro5  # type: ignore
 import pytest
 import threading
 from contextlib import AsyncExitStack
+from dataclasses import dataclass, field
 from tests.conftest_helpers.log_collection import collect_logs, collect_kernel_logs
 from tests.conftest_helpers.pretest import (
     perform_pretest_cleanups,
@@ -53,14 +54,24 @@ SETUP_CHECK_ARP_CACHE_RETRIES = 1
 SETUP_CHECK_DUPLICATE_IP_TIMEOUT_S = 60
 SETUP_CHECK_DUPLICATE_IP_RETRIES = 1
 
-RUNNER: asyncio.Runner | None = None
-SESSION_SCOPE_EXIT_STACK: AsyncExitStack | None = None
 TASKS: List[asyncio.Task] = []
 END_TASKS: threading.Event = threading.Event()
-CURRENT_TEST_LOG_FILE = None
 _LIBFIREWALL_SO = os.path.join(os.path.dirname(__file__), "uniffi", "libfirewall.so")
 
-SESSION_VM_MARKS: set[str] = set()
+
+@dataclass
+class _SessionState:
+    # Session-scoped singletons shared across pytest hooks. Grouping them in one
+    # module-level object lets the hooks mutate shared state through attributes
+    # instead of rebinding module globals (which would each need a `global`
+    # statement).
+    runner: asyncio.Runner | None = None
+    exit_stack: AsyncExitStack | None = None
+    current_test_log_file: logging.FileHandler | None = None
+    vm_marks: set[str] = field(default_factory=set)
+
+
+_SESSION = _SessionState()
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -162,12 +173,10 @@ def pytest_runtest_makereport(item, call):  # pylint: disable=unused-argument
 
 
 def pytest_runtestloop(session):
-    global SESSION_VM_MARKS
-
     if session.config.option.collectonly:
         return
 
-    SESSION_VM_MARKS = get_session_vm_marks(session.items)
+    _SESSION.vm_marks = get_session_vm_marks(session.items)
 
     if "NATLAB_SKIP_SETUP_CHECKS" not in os.environ:
         is_container_running: dict[ConnectionTag, bool] = asyncio.run(
@@ -175,7 +184,7 @@ def pytest_runtestloop(session):
         )
 
         if not asyncio.run(
-            perform_setup_checks(is_container_running, SESSION_VM_MARKS)
+            perform_setup_checks(is_container_running, _SESSION.vm_marks)
         ):
             pytest.exit("Setup checks failed, exiting ...")
 
@@ -183,11 +192,11 @@ def pytest_runtestloop(session):
         asyncio.run(
             collect_kernel_logs(
                 "before_tests",
-                SESSION_VM_MARKS,
+                _SESSION.vm_marks,
             )
         )
 
-    asyncio.run(copy_vm_binaries_if_needed(SESSION_VM_MARKS))
+    asyncio.run(copy_vm_binaries_if_needed(_SESSION.vm_marks))
 
 
 def pytest_runtest_setup():
@@ -204,7 +213,7 @@ def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
         len(LOG_COLLECTORS),
     )
 
-    assert RUNNER
+    assert _SESSION.runner
 
     async def collect_all_logs():
         async with AsyncExitStack() as stack:
@@ -224,17 +233,16 @@ def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
                     log_collector.tag,
                 )
 
-    RUNNER.run(collect_all_logs())
+    _SESSION.runner.run(collect_all_logs())
 
     LOG_COLLECTORS.clear()
-    global CURRENT_TEST_LOG_FILE
 
-    if CURRENT_TEST_LOG_FILE:
-        CURRENT_TEST_LOG_FILE.flush()
-        log.removeHandler(CURRENT_TEST_LOG_FILE)
-        CURRENT_TEST_LOG_FILE.close()
+    if _SESSION.current_test_log_file:
+        _SESSION.current_test_log_file.flush()
+        log.removeHandler(_SESSION.current_test_log_file)
+        _SESSION.current_test_log_file.close()
 
-    CURRENT_TEST_LOG_FILE = None
+    _SESSION.current_test_log_file = None
 
     log.info("Post-test log collection completed for %s", item.reportinfo()[2])
 
@@ -242,19 +250,18 @@ def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
 # Session-long AsyncExitStack is created at session start and closed at session finish.
 # pylint: disable=unused-argument
 def pytest_sessionstart(session):
-    global RUNNER, SESSION_SCOPE_EXIT_STACK
     setattr(Pyro5.config, "SERPENT_BYTES_REPR", True)
     if os.environ.get("NATLAB_SAVE_LOGS"):
-        RUNNER = asyncio.Runner()
-        SESSION_SCOPE_EXIT_STACK = AsyncExitStack()
-        if not RUNNER.run(check_gateway_connectivity(SESSION_SCOPE_EXIT_STACK)):
+        _SESSION.runner = asyncio.Runner()
+        _SESSION.exit_stack = AsyncExitStack()
+        if not _SESSION.runner.run(check_gateway_connectivity(_SESSION.exit_stack)):
             pytest.exit("Gateway nodes connectivity check failed, exiting ...")
-        RUNNER.run(
+        _SESSION.runner.run(
             start_tcpdump_processes(
-                SESSION_SCOPE_EXIT_STACK,
+                _SESSION.exit_stack,
             )
         )
-        RUNNER.run(start_windows_vms_resource_monitoring(TASKS, END_TASKS))
+        _SESSION.runner.run(start_windows_vms_resource_monitoring(TASKS, END_TASKS))
 
 
 # pylint: disable=unused-argument
@@ -264,14 +271,14 @@ def pytest_sessionfinish(session, exitstatus):
 
     END_TASKS.set()
 
-    if RUNNER is not None:
+    if _SESSION.runner is not None:
         try:
-            if SESSION_SCOPE_EXIT_STACK is not None:
-                RUNNER.run(SESSION_SCOPE_EXIT_STACK.aclose())
+            if _SESSION.exit_stack is not None:
+                _SESSION.runner.run(_SESSION.exit_stack.aclose())
         finally:
-            RUNNER.close()
+            _SESSION.runner.close()
 
-    asyncio.run(collect_logs(SESSION_VM_MARKS))
+    asyncio.run(collect_logs(_SESSION.vm_marks))
 
 
 @pytest.fixture(autouse=True)
@@ -289,8 +296,7 @@ def setup_logger(tmp_path, request):
         )
         log.addHandler(file_handler)
 
-        global CURRENT_TEST_LOG_FILE
-        CURRENT_TEST_LOG_FILE = file_handler
+        _SESSION.current_test_log_file = file_handler
     try:
         yield
     finally:
