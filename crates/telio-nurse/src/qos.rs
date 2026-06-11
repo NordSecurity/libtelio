@@ -15,9 +15,31 @@ use telio_wg::uapi::{AnalyticsEvent, PeerState};
 
 use telio_pinger::{DualPingResults, Pinger};
 use telio_sockets::SocketPool;
-use telio_utils::{interval, telio_log_debug, telio_log_trace, DualTarget, Instant, IpStack};
+use telio_utils::{
+    interval, telio_log_debug, telio_log_trace, telio_log_warn, DualTarget, Instant, IpStack,
+};
 
 use crate::{config::QoSConfig, data::MeshConfigUpdateEvent};
+
+/// Grouping power for the QoS histograms (relative error ~= 2^-7 = 0.78%).
+const HISTOGRAM_GROUPING_POWER: u8 = 7;
+/// Max value power for the QoS histograms (covers values up to ~2^34, ~137 Gbps for throughput).
+const HISTOGRAM_MAX_VALUE_POWER: u8 = 34;
+
+/// Build a histogram.
+/// Returns `None` only if the constants are invalid.
+fn new_histogram() -> Option<Histogram> {
+    Histogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER)
+        .map_err(|e| telio_log_warn!("Failed to create histogram: {e:?}"))
+        .ok()
+}
+
+/// Increment a histogram bucket, ignoring overflow errors.
+fn increment_histogram(histogram: &mut Option<Histogram>, value: u64) {
+    if let Some(h) = histogram.as_mut() {
+        let _ = h.increment(value);
+    }
+}
 
 /// Information about a node in the meshnet.
 #[derive(Clone)]
@@ -31,16 +53,16 @@ pub struct NodeInfo {
 
     // RTT
     pub ip_addresses: Vec<DualTarget>,
-    pub rtt_histogram: Histogram,
-    pub rtt_loss_histogram: Histogram,
-    pub rtt6_histogram: Histogram,
-    pub rtt6_loss_histogram: Histogram,
+    pub rtt_histogram: Option<Histogram>,
+    pub rtt_loss_histogram: Option<Histogram>,
+    pub rtt6_histogram: Option<Histogram>,
+    pub rtt6_loss_histogram: Option<Histogram>,
 
     // Throughput
     pub last_tx_bytes: u64,
     pub last_rx_bytes: u64,
-    pub tx_histogram: Histogram,
-    pub rx_histogram: Histogram,
+    pub tx_histogram: Option<Histogram>,
+    pub rx_histogram: Option<Histogram>,
 }
 
 impl NodeInfo {
@@ -61,9 +83,15 @@ impl NodeInfo {
             let tx_increment_value = current_tx / duration_as_seconds;
             let rx_increment_value = current_rx / duration_as_seconds;
 
-            for _ in 0..duration_as_seconds {
-                let _ = self.tx_histogram.increment(tx_increment_value);
-                let _ = self.rx_histogram.increment(rx_increment_value);
+            if let Some(h) = self.tx_histogram.as_mut() {
+                for _ in 0..duration_as_seconds {
+                    let _ = h.increment(tx_increment_value);
+                }
+            }
+            if let Some(h) = self.rx_histogram.as_mut() {
+                for _ in 0..duration_as_seconds {
+                    let _ = h.increment(rx_increment_value);
+                }
             }
         };
     }
@@ -85,14 +113,14 @@ impl From<AnalyticsEvent> for NodeInfo {
             last_event: event.timestamp,
             connected_time: Duration::default(),
             ip_addresses: event.dual_ip_addresses,
-            rtt_histogram: Histogram::new(),
-            rtt_loss_histogram: Histogram::new(),
-            rtt6_histogram: Histogram::new(),
-            rtt6_loss_histogram: Histogram::new(),
+            rtt_histogram: new_histogram(),
+            rtt_loss_histogram: new_histogram(),
+            rtt6_histogram: new_histogram(),
+            rtt6_loss_histogram: new_histogram(),
             last_tx_bytes: 0,
             last_rx_bytes: 0,
-            tx_histogram: Histogram::new(),
-            rx_histogram: Histogram::new(),
+            tx_histogram: new_histogram(),
+            rx_histogram: new_histogram(),
         }
     }
 }
@@ -142,10 +170,14 @@ impl OutputData {
     }
 
     pub fn push_rtt_data(histogram: Option<&Histogram>, buckets: u32, output: &mut String) {
-        output.push_str(&histogram.filter(|h| h.entries() > 0).map_or_else(
-            || Analytics::null_data(buckets),
-            |h| Analytics::percentile_histogram(h, buckets),
-        ));
+        output.push_str(
+            &histogram
+                .filter(|h| Analytics::histogram_has_entries(h))
+                .map_or_else(
+                    || Analytics::null_data(buckets),
+                    |h| Analytics::percentile_histogram(h, buckets),
+                ),
+        );
 
         output.push(',');
     }
@@ -301,29 +333,29 @@ impl Analytics {
         for key in sorted_public_keys {
             if let Some(node) = nodes.get(key) {
                 // RTT
-                OutputData::push_rtt_data(Some(&node.rtt_histogram), buckets, &mut output.rtt);
+                OutputData::push_rtt_data(node.rtt_histogram.as_ref(), buckets, &mut output.rtt);
                 OutputData::push_rtt_data(
-                    Some(&node.rtt_loss_histogram),
+                    node.rtt_loss_histogram.as_ref(),
                     buckets,
                     &mut output.rtt_loss,
                 );
-                OutputData::push_rtt_data(Some(&node.rtt6_histogram), buckets, &mut output.rtt6);
+                OutputData::push_rtt_data(node.rtt6_histogram.as_ref(), buckets, &mut output.rtt6);
                 OutputData::push_rtt_data(
-                    Some(&node.rtt6_loss_histogram),
+                    node.rtt6_loss_histogram.as_ref(),
                     buckets,
                     &mut output.rtt6_loss,
                 );
 
                 // Throughput
-                output.tx.push_str(&Analytics::percentile_histogram(
-                    &node.tx_histogram,
-                    buckets,
+                output.tx.push_str(&node.tx_histogram.as_ref().map_or_else(
+                    || Analytics::empty_data(buckets),
+                    |h| Analytics::percentile_histogram(h, buckets),
                 ));
                 output.tx.push(',');
 
-                output.rx.push_str(&Analytics::percentile_histogram(
-                    &node.rx_histogram,
-                    buckets,
+                output.rx.push_str(&node.rx_histogram.as_ref().map_or_else(
+                    || Analytics::empty_data(buckets),
+                    |h| Analytics::percentile_histogram(h, buckets),
                 ));
                 output.rx.push(',');
 
@@ -363,12 +395,12 @@ impl Analytics {
     pub fn reset_cached_data(&mut self) {
         for node in self.nodes.values_mut() {
             // Keep the nodes, but clear the histograms
-            node.rtt_histogram = Histogram::new();
-            node.rtt_loss_histogram = Histogram::new();
-            node.rtt6_histogram = Histogram::new();
-            node.rtt6_loss_histogram = Histogram::new();
-            node.tx_histogram = Histogram::new();
-            node.rx_histogram = Histogram::new();
+            node.rtt_histogram = new_histogram();
+            node.rtt_loss_histogram = new_histogram();
+            node.rtt6_histogram = new_histogram();
+            node.rtt6_loss_histogram = new_histogram();
+            node.tx_histogram = new_histogram();
+            node.rx_histogram = new_histogram();
             node.connected_time = Duration::default();
         }
     }
@@ -503,13 +535,15 @@ impl Analytics {
                 if let Some(results_v4) = dpr.1.v4 {
                     if let Some(avg_rtt) = results_v4.avg_rtt {
                         let avg_v4 = avg_rtt.as_millis() as u64;
-                        let _ = node.rtt_histogram.increment(avg_v4);
-                        let _ = node.rtt_loss_histogram.increment(
+                        increment_histogram(&mut node.rtt_histogram, avg_v4);
+                        increment_histogram(
+                            &mut node.rtt_loss_histogram,
                             (100 * results_v4.unsuccessful_pings / pinger.no_of_tries) as u64,
                         );
                     } else if results_v4.unsuccessful_pings > 0 {
-                        let _ = node.rtt_histogram.increment(0u64);
-                        let _ = node.rtt_loss_histogram.increment(
+                        increment_histogram(&mut node.rtt_histogram, 0u64);
+                        increment_histogram(
+                            &mut node.rtt_loss_histogram,
                             (100 * results_v4.unsuccessful_pings / pinger.no_of_tries) as u64,
                         );
                     }
@@ -518,13 +552,15 @@ impl Analytics {
                 if let Some(results_v6) = dpr.1.v6 {
                     if let Some(avg_rtt) = results_v6.avg_rtt {
                         let avg_v6 = avg_rtt.as_millis() as u64;
-                        let _ = node.rtt6_histogram.increment(avg_v6);
-                        let _ = node.rtt6_loss_histogram.increment(
+                        increment_histogram(&mut node.rtt6_histogram, avg_v6);
+                        increment_histogram(
+                            &mut node.rtt6_loss_histogram,
                             (100 * results_v6.unsuccessful_pings / pinger.no_of_tries) as u64,
                         );
                     } else if results_v6.unsuccessful_pings > 0 {
-                        let _ = node.rtt6_histogram.increment(0u64);
-                        let _ = node.rtt6_loss_histogram.increment(
+                        increment_histogram(&mut node.rtt6_histogram, 0u64);
+                        increment_histogram(
+                            &mut node.rtt6_loss_histogram,
                             (100 * results_v6.unsuccessful_pings / pinger.no_of_tries) as u64,
                         );
                     }
@@ -544,23 +580,59 @@ impl Analytics {
     ///
     /// The serialized version of the histogram, where the buckets are separated by colons.
     pub fn percentile_histogram(histogram: &Histogram, buckets: u32) -> String {
-        let bucket_size = 100.00 / (buckets as f64);
-        let mut current_step = bucket_size;
-        let mut output = String::new();
-        for _ in 0..buckets {
-            output.push_str(
-                &histogram
-                    .percentile(current_step)
-                    .unwrap_or_default()
-                    .to_string(),
-            );
-            output.push(':');
-            current_step += bucket_size;
+        let total = Self::histogram_entries(histogram);
+        if total == 0 {
+            // No samples: serialize all-zero buckets, matching the previous behaviour where
+            // an empty histogram's percentile lookups returned 0.
+            return Analytics::empty_data(buckets);
         }
 
-        // Pop the last ':'
-        output.pop();
-        output
+        let bucket_size = 100.0 / f64::from(buckets);
+        (1..=buckets)
+            .map(|i| {
+                Self::value_at_percentile(histogram, total, f64::from(i) * bucket_size).to_string()
+            })
+            .collect::<Vec<_>>()
+            .join(":")
+    }
+
+    /// Value at the given percentile.
+    ///
+    /// WORKAROUND: (compatible with the `histogram` 0.6.x crate)
+    /// The old crate computed a off by one error, so percentiles `>= 50` were reported too high.
+    /// e.g. the median of {10..100} came out as 60 instead of 50,  and there is a discontinuity
+    /// at exactly p=50. We deliberately reproduce that bug here so the values shipped to the moose
+    /// analytics backend stay continuous across this dependency bump.
+    ///
+    /// Removing it is the statistically correct behaviour but shifts every reported p50–p100 value,
+    /// so it must be an intentional change coordinated with the analytics team
+    fn value_at_percentile(histogram: &Histogram, total: u64, percentile: f64) -> u64 {
+        let need = (total as f64 * (percentile / 100.0)).ceil() as u64;
+        let rank = if percentile < 50.0 {
+            need.max(1)
+        } else {
+            // Intentional off by one: replicates the 0.6.x reverse scan bug
+            need.saturating_add(1).min(total)
+        };
+
+        let mut cumulative = 0u64;
+        for bucket in histogram {
+            cumulative = cumulative.saturating_add(bucket.count());
+            if cumulative >= rank {
+                return bucket.start();
+            }
+        }
+        0
+    }
+
+    /// Total number of samples recorded in the histogram.
+    fn histogram_entries(histogram: &Histogram) -> u64 {
+        histogram.as_slice().iter().copied().sum()
+    }
+
+    /// Returns true if the histogram has recorded at least one sample.
+    fn histogram_has_entries(histogram: &Histogram) -> bool {
+        Self::histogram_entries(histogram) > 0
     }
 
     fn empty_data(buckets: u32) -> String {
@@ -620,9 +692,14 @@ mod tests {
     const RTT: Duration = Duration::from_secs(1);
 
     #[test]
+    fn new_histogram_is_some() {
+        assert!(new_histogram().is_some());
+    }
+
+    #[test]
     fn test_percentile() {
         let histogram = default_histogram();
-        let empty = Histogram::new();
+        let empty = Histogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER).unwrap();
 
         let output_2_buckets = Analytics::percentile_histogram(&histogram, 2);
         assert_eq!(output_2_buckets, String::from("60:100"));
@@ -972,7 +1049,7 @@ mod tests {
     }
 
     fn default_histogram() -> Histogram {
-        let mut a = Histogram::new();
+        let mut a = Histogram::new(HISTOGRAM_GROUPING_POWER, HISTOGRAM_MAX_VALUE_POWER).unwrap();
         for i in 1..11 {
             a.increment(i * 10).unwrap();
         }
@@ -990,14 +1067,14 @@ mod tests {
             last_event: Instant::now(),
             connected_time,
             ip_addresses: vec![DualTarget::new((Some(Ipv4Addr::new(127, 0, 0, 1)), None)).unwrap()],
-            rtt_histogram: histogram.clone(),
-            rtt_loss_histogram: histogram.clone(),
-            rtt6_histogram: histogram.clone(),
-            rtt6_loss_histogram: histogram.clone(),
+            rtt_histogram: Some(histogram.clone()),
+            rtt_loss_histogram: Some(histogram.clone()),
+            rtt6_histogram: Some(histogram.clone()),
+            rtt6_loss_histogram: Some(histogram.clone()),
             last_rx_bytes: 0,
             last_tx_bytes: 0,
-            tx_histogram: histogram.clone(),
-            rx_histogram: histogram.clone(),
+            tx_histogram: Some(histogram.clone()),
+            rx_histogram: Some(histogram.clone()),
         }
     }
 }
