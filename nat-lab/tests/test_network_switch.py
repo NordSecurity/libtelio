@@ -360,6 +360,13 @@ async def test_mac_interface_selection_with_multiple_active_interfaces() -> None
             f"Expected VPN server IP {wg_server['ipv4']} but got {ip}."
         )
 
+        logs = await client_alpha.get_log()
+        assert "Binding relay socket" in logs, (
+            "Socket binding never happened — tunnel_interface was never set in the "
+            "socket watcher. Wrong interface selection cannot cause test failure. "
+            "See: 'Will not rebind relay sockets for None' in logs."
+        )
+
 
 class TestInterfaceWindows:
     @pytest.mark.asyncio
