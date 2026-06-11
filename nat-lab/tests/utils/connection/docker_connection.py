@@ -60,6 +60,7 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_WINDOWS_GW_4: "windows-gw-04",
     ConnectionTag.DOCKER_WINDOWS_VM_1: "windows-client-01",
     ConnectionTag.DOCKER_WINDOWS_VM_2: "windows-client-02",
+    ConnectionTag.DOCKER_MAC_GW_DECOY: "mac-gw-decoy",
     ConnectionTag.DOCKER_MAC_GW_1: "mac-gw-01",
     ConnectionTag.DOCKER_MAC_GW_2: "mac-gw-02",
     ConnectionTag.DOCKER_CORE_API_1: "core-api",
