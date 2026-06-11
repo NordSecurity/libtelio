@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v6.2.3
+### **Pink Soup**
+---
+* meshnet_peer_ens_fix: ENS starts only, when routing through VPN sever (and not through meshnet peer).
+
+<br>
+
 ### v6.2.2
 ### ****
 ---
