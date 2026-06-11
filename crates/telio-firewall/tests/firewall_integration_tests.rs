@@ -2,8 +2,8 @@ use pnet_packet::{
     icmp::{IcmpType, IcmpTypes, MutableIcmpPacket},
     icmpv6::{Icmpv6Type, Icmpv6Types, MutableIcmpv6Packet},
     ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
-    ipv4::MutableIpv4Packet,
-    ipv6::MutableIpv6Packet,
+    ipv4::{Ipv4Packet, MutableIpv4Packet},
+    ipv6::{Ipv6Packet, MutableIpv6Packet},
     tcp::{MutableTcpPacket, TcpFlags},
     udp::MutableUdpPacket,
     MutablePacket,
@@ -26,6 +26,7 @@ type MakeUdp = &'static dyn Fn(&str, &str) -> Vec<u8>;
 type MakeTcp = &'static dyn Fn(&str, &str, u8) -> Vec<u8>;
 type MakeIcmp = &'static dyn Fn(&str, &str, GenericIcmpType) -> Vec<u8>;
 type MakeIcmpEcho = &'static dyn Fn(&str, &str, GenericIcmpType, u16) -> Vec<u8>;
+type MakeIcmpError = &'static dyn Fn(&[u8]) -> Vec<u8>;
 
 const IPV4_HEADER_MIN: usize = 20; // IPv4 header minimal length in bytes
 const IPV6_HEADER_MIN: usize = 40; // IPv6 header minimal length in bytes
@@ -370,6 +371,70 @@ fn make_icmp6_echo(src: &str, dst: &str, icmp_type: GenericIcmpType, identifier:
     );
     ip.set_source(src_ip);
     ip.set_destination(dst_ip);
+    raw
+}
+
+// Builds an ICMP Destination Unreachable error embedding the `original` datagram
+// (IP header + first 8 bytes), the way real ICMP errors carry the offending packet.
+// The error's addresses are the original's reversed (it comes back from the original
+// destination to the original source). libfirewall matches it to the original flow.
+fn make_icmp4_error(original: &[u8]) -> Vec<u8> {
+    let orig = Ipv4Packet::new(original).expect("ICMP: bad original packet");
+    let (err_src, err_dst) = (orig.get_destination(), orig.get_source());
+
+    let take = (IPV4_HEADER_MIN + 8).min(original.len());
+    let mut body = vec![0u8; 4]; // 4 unused header bytes
+    body.extend_from_slice(&original[..take]);
+
+    let ip_len = IPV4_HEADER_MIN + 4 + body.len();
+    let mut raw = vec![0u8; ip_len];
+    {
+        let mut packet =
+            MutableIcmpPacket::new(&mut raw[IPV4_HEADER_MIN..]).expect("ICMP: Bad ICMP buffer");
+        packet.set_icmp_type(IcmpTypes::DestinationUnreachable);
+        packet.payload_mut().copy_from_slice(&body);
+        let checksum = pnet_packet::icmp::checksum(&packet.to_immutable());
+        packet.set_checksum(checksum);
+    }
+    let mut ip = MutableIpv4Packet::new(&mut raw).expect("ICMP: Bad IP buffer");
+    set_ipv4(
+        &mut ip,
+        IpNextHeaderProtocols::Icmp,
+        IPV4_HEADER_MIN,
+        ip_len,
+    );
+    ip.set_source(err_src);
+    ip.set_destination(err_dst);
+    raw
+}
+
+fn make_icmp6_error(original: &[u8]) -> Vec<u8> {
+    let orig = Ipv6Packet::new(original).expect("ICMP: bad original packet");
+    let (err_src, err_dst) = (orig.get_destination(), orig.get_source());
+
+    let take = (IPV6_HEADER_MIN + 8).min(original.len());
+    let mut body = vec![0u8; 4]; // 4 unused header bytes
+    body.extend_from_slice(&original[..take]);
+
+    let ip_len = IPV6_HEADER_MIN + 4 + body.len();
+    let mut raw = vec![0u8; ip_len];
+    {
+        let mut packet =
+            MutableIcmpv6Packet::new(&mut raw[IPV6_HEADER_MIN..]).expect("ICMP: Bad ICMP buffer");
+        packet.set_icmpv6_type(Icmpv6Types::DestinationUnreachable);
+        packet.payload_mut().copy_from_slice(&body);
+        let checksum = pnet_packet::icmpv6::checksum(&packet.to_immutable(), &err_src, &err_dst);
+        packet.set_checksum(checksum);
+    }
+    let mut ip = MutableIpv6Packet::new(&mut raw).expect("ICMP: Bad IP buffer");
+    set_ipv6(
+        &mut ip,
+        IpNextHeaderProtocols::Icmpv6,
+        IPV6_HEADER_MIN,
+        ip_len,
+    );
+    ip.set_source(err_src);
+    ip.set_destination(err_dst);
     raw
 }
 
@@ -937,6 +1002,43 @@ fn firewall_orig_src_ip_host_initiated_allowed_without_whitelist() {
         // The peer's echo reply is accepted via the OrigSrcIp rule (orig src == us)
         // even though the peer is on no whitelist.
         assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp_echo(them, us, IcmpTypes::EchoReply.into(), ID)), true);
+    }
+}
+
+#[rustfmt::skip]
+#[test]
+fn firewall_orig_src_ip_icmp_error_for_host_initiated_connection_allowed() {
+    // An ICMP error referring to a connection the host initiated is accepted:
+    // libfirewall resolves the embedded original datagram to its conntrack entry,
+    // reports the original source (our IP) and marks it Related, so OrigSrcIp accepts.
+    // An ICMP error for an unknown connection has no original source and is dropped.
+    struct TestInput {
+        us: &'static str,
+        us_unsent: &'static str,
+        them: &'static str,
+        make_udp: MakeUdp,
+        make_icmp_error: MakeIcmpError,
+    }
+    let test_inputs = vec![
+        TestInput { us: "127.0.0.1:1111", us_unsent: "127.0.0.1:2222", them: "8.8.8.8:8888",               make_udp: &make_udp,  make_icmp_error: &make_icmp4_error },
+        TestInput { us: "[::1]:1111",     us_unsent: "[::1]:2222",     them: "[2001:4860:4860::8888]:8888", make_udp: &make_udp6, make_icmp_error: &make_icmp6_error },
+    ];
+
+    for TestInput { us, us_unsent, them, make_udp, make_icmp_error } in &test_inputs {
+        let fw = StatefulFirewall::new(true, FeatureFirewall::default()).expect("Failed to load libfirewall");
+        fw.apply_state(FirewallState {
+            ip_addresses: vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
+            ..Default::default()
+        });
+
+        // Host initiates an outbound UDP connection (conntrack original source = our IP).
+        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(us, them)), true);
+
+        // ICMP error carrying that original datagram comes back -> accepted (Related, orig src == us).
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp_error(&make_udp(us, them))), true);
+
+        // ICMP error for a connection we never opened -> no original source -> dropped.
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp_error(&make_udp(us_unsent, them))), false);
     }
 }
 
