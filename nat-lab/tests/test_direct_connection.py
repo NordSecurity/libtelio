@@ -119,7 +119,7 @@ async def _check_if_true_direct_connection(env: Environment) -> None:
         ])
 
         await asyncio.gather(*[
-            client.wait_for_state_on_any_derp(
+            client.events.wait_for_state_on_any_derp(
                 [RelayState.CONNECTING, RelayState.DISCONNECTED]
             )
             for client in env.clients
@@ -128,7 +128,7 @@ async def _check_if_true_direct_connection(env: Environment) -> None:
         await ping_between_all_nodes(env)
 
     await asyncio.gather(*[
-        client.wait_for_state_on_any_derp([RelayState.CONNECTED])
+        client.events.wait_for_state_on_any_derp([RelayState.CONNECTED])
         for client in env.clients
     ])
 
@@ -188,7 +188,7 @@ async def test_direct_working_paths(
             await asyncio.gather(*[
                 await exit_stack.enter_async_context(
                     run_async_context(
-                        client.wait_for_state_peer(
+                        client.events.wait_for_state_peer(
                             node.public_key, [NodeState.CONNECTED], [PathType.RELAY]
                         )
                     )
@@ -202,7 +202,7 @@ async def test_direct_working_paths(
         await asyncio.gather(*[
             await exit_stack.enter_async_context(
                 run_async_context(
-                    client.wait_for_state_peer(
+                    client.events.wait_for_state_peer(
                         node.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
                     )
                 )
@@ -224,7 +224,7 @@ async def test_direct_working_paths(
             possible_relay_events[conn.connection][node] = (
                 await exit_stack.enter_async_context(
                     run_async_context(
-                        client.wait_for_event_peer(
+                        client.events.wait_for_event_peer(
                             node.public_key, [NodeState.CONNECTED], [PathType.RELAY]
                         )
                     )
@@ -334,10 +334,10 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
             to_provider = alpha_provider
 
         await asyncio.gather(
-            alpha_client.wait_for_state_peer(
+            alpha_client.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
-            beta_client.wait_for_state_peer(
+            beta_client.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
@@ -358,12 +358,12 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
             )
 
             await asyncio.gather(
-                alpha_client.wait_for_state_peer(
+                alpha_client.events.wait_for_state_peer(
                     beta.public_key,
                     [NodeState.CONNECTED],
                     [PathType.RELAY],
                 ),
-                beta_client.wait_for_state_peer(
+                beta_client.events.wait_for_state_peer(
                     alpha.public_key,
                     [NodeState.CONNECTED],
                     [PathType.RELAY],
@@ -379,10 +379,10 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
             )
 
         await asyncio.gather(
-            alpha_client.wait_for_state_peer(
+            alpha_client.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
-            beta_client.wait_for_state_peer(
+            beta_client.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
             direct_state_reported.wait(),
@@ -481,7 +481,7 @@ async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
         await epsilon_client.stop_device()
 
         await asyncio.gather(*[
-            running_client.wait_for_log(
+            running_client.log.wait_for_log(
                 "Skipping sending CMM to peer"
                 f" {stopped_node.public_key} (Unresponsive)"
             )
@@ -496,7 +496,7 @@ async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
         await epsilon_client.set_meshnet_config(api.get_meshnet_config(epsilon.id))
 
         await asyncio.gather(*[
-            client.wait_for_state_peer(
+            client.events.wait_for_state_peer(
                 node.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             )
             for client, node in itertools.product(env.clients, env.nodes)
@@ -592,12 +592,12 @@ async def test_direct_working_paths_with_pausing_upnp_and_stun() -> None:
 
         await asyncio.gather(*[
             (
-                client.wait_for_log(
+                client.log.wait_for_log(
                     "Skipping getting endpoint via STUN endpoint"
                     " provider(ModulePaused)"
                 )
                 if EndpointProvider.STUN in provider
-                else client.wait_for_log(
+                else client.log.wait_for_log(
                     "Skipping getting endpoint via UPNP endpoint"
                     " provider(ModulePaused)"
                 )
@@ -718,8 +718,8 @@ async def test_direct_failing_paths(setup_params: List[SetupParameters]) -> None
             )
 
         await asyncio.gather(
-            alpha_client.wait_for_state_on_any_derp([RelayState.CONNECTING]),
-            beta_client.wait_for_state_on_any_derp([RelayState.CONNECTING]),
+            alpha_client.events.wait_for_state_on_any_derp([RelayState.CONNECTING]),
+            beta_client.events.wait_for_state_on_any_derp([RelayState.CONNECTING]),
         )
 
         with pytest.raises(asyncio.TimeoutError):

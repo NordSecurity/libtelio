@@ -183,7 +183,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         network_switcher = alpha_conn_mngr.network_switcher
 
         wg_server = config.WG_SERVER
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect_to_vpn(
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
@@ -278,16 +278,16 @@ async def test_mesh_network_switch_direct(
 
         await ping(alpha_connection, beta.ip_addresses[0])
 
-        derp_connected_future = alpha_client.wait_for_event_on_any_derp(
+        derp_connected_future = alpha_client.events.wait_for_event_on_any_derp(
             [RelayState.CONNECTED]
         )
 
         # Beta doesn't change its endpoint, so WG roaming may be used by alpha node to restore
         # the connection, so no node event is logged in that case
-        peers_connected_relay_future = beta_client.wait_for_event_peer(
+        peers_connected_relay_future = beta_client.events.wait_for_event_peer(
             alpha.public_key, [NodeState.CONNECTED], [PathType.RELAY]
         )
-        peers_connected_direct_future = beta_client.wait_for_event_peer(
+        peers_connected_direct_future = beta_client.events.wait_for_event_peer(
             alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
         )
         async with run_async_contexts([

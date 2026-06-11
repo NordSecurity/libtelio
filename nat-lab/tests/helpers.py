@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 from http import HTTPStatus
 from ipaddress import AddressValueError, IPv6Address
 from itertools import product, zip_longest
+from tests.libtelio_client import Client
 from tests.mesh_api import Node, API
-from tests.telio import Client
 from tests.utils.bindings import (
     default_features,
     Features,
@@ -141,14 +141,16 @@ def setup_api(node_params: List[Tuple[bool, IPStack]]) -> Tuple[API, List[Node]]
     return api, nodes
 
 
+SetupConnectionsParam = Union[
+    ConnectionTag,
+    Tuple[ConnectionTag, Optional[List[ConnTrackerEventsValidator]]],
+    Tuple[ConnectionTag, Optional[List[ConnTrackerEventsValidator]], bool],
+]
+
+
 async def setup_connections(
     exit_stack: AsyncExitStack,
-    connection_parameters: List[
-        Union[
-            ConnectionTag,
-            Tuple[ConnectionTag, Optional[List[ConnTrackerEventsValidator]]],
-        ]
-    ],
+    connection_parameters: List[SetupConnectionsParam],
 ) -> List[ConnectionManager]:
     """Creates connections to the containers corresponding to a given connection tags.
 
@@ -192,7 +194,6 @@ async def setup_clients(
             Features,
             str,
             Optional[Config],
-            Optional[bool],
             bool,
         ]
     ],
@@ -220,9 +221,9 @@ async def setup_clients(
                 adapter_type_override,
                 features,
                 fingerprint=fingerprint,
-            ).run(meshnet_config, run_tcpdump=run_tcpdump, enable_perf=enable_perf)
+            ).run(meshnet_config, enable_perf=enable_perf)
         )
-        for connection, node, adapter_type_override, features, fingerprint, meshnet_config, run_tcpdump, enable_perf in client_parameters
+        for connection, node, adapter_type_override, features, fingerprint, meshnet_config, enable_perf in client_parameters
     ])
 
 
@@ -302,6 +303,7 @@ async def setup_environment(
             (
                 instance.connection_tag,
                 instance.connection_tracker_config,
+                instance.run_tcpdump,
             )
             for instance in instances
         ],
@@ -332,7 +334,6 @@ async def setup_environment(
                     )
                     for idx, instance in enumerate(instances)
                 ],
-                [instance.run_tcpdump for instance in instances],
                 [instance.enable_perf for instance in instances],
             )
         ),
@@ -385,13 +386,13 @@ async def setup_mesh_nodes(
     )
 
     await asyncio.gather(*[
-        client.wait_for_state_on_any_derp([RelayState.CONNECTED])
+        client.events.wait_for_state_on_any_derp([RelayState.CONNECTED])
         for client, instance in zip_longest(env.clients, instances)
         if instance.derp_servers != []
     ])
 
     connection_future = asyncio.gather(*[
-        client.wait_for_state_peer(
+        client.events.wait_for_state_peer(
             other_node.public_key,
             [NodeState.CONNECTED],
             (
@@ -412,7 +413,7 @@ async def setup_mesh_nodes(
     ])
 
     link_state_future = asyncio.gather(*[
-        client.wait_for_link_state(
+        client.events.wait_for_link_state(
             other_node.public_key,
             LinkState.UP,
             timeout=90 if is_timeout_expected else None,

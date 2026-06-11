@@ -9,8 +9,8 @@ from tests.helpers import (
     setup_mesh_nodes,
     setup_api,
 )
+from tests.libtelio_client import Client
 from tests.mesh_api import API
-from tests.telio import Client
 from tests.utils import stun
 from tests.utils.bindings import (
     features_with_endpoint_providers,
@@ -184,7 +184,7 @@ async def test_event_content_meshnet(
 
         await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
 
-        await client_alpha.wait_for_state_peer(
+        await client_alpha.events.wait_for_state_peer(
             beta.public_key, [NodeState.DISCONNECTED], [PathType.DIRECT]
         )
 
@@ -299,7 +299,7 @@ async def test_event_content_vpn_connection(
 
         wg_server = config.WG_SERVER
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect_to_vpn(
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
@@ -333,7 +333,7 @@ async def test_event_content_vpn_connection(
         ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == wg_server["ipv4"], f"wrong public IP when connected to VPN {ip}"
 
-        await client_alpha.disconnect_from_vpn(str(wg_server["public_key"]))
+        await client_alpha.vpn.disconnect_from_vpn(str(wg_server["public_key"]))
 
         ip = await stun.get(connection, config.STUN_SERVER)
         assert ip == alpha_public_ip, f"wrong public IP before connecting to VPN {ip}"
@@ -476,7 +476,7 @@ async def test_event_content_exit_through_peer(
 
         await client_beta.get_router().create_exit_node_route()
 
-        await client_alpha.connect_to_exit_node(beta.public_key)
+        await client_alpha.vpn.connect_to_exit_node(beta.public_key)
 
         ip_alpha = await stun.get(connection_alpha, config.STUN_SERVER)
         ip_beta = await stun.get(connection_beta, config.STUN_SERVER)
@@ -628,14 +628,14 @@ async def test_event_content_meshnet_node_upgrade_direct(
             beta_setup_params.features,
         ).run(api.get_meshnet_config(beta.id)) as client_beta:
             await asyncio.gather(
-                client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-                client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+                client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+                client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
             )
             await asyncio.gather(
-                client_alpha.wait_for_state_peer(
+                client_alpha.events.wait_for_state_peer(
                     beta.public_key, [NodeState.CONNECTED]
                 ),
-                client_beta.wait_for_state_peer(
+                client_beta.events.wait_for_state_peer(
                     alpha.public_key, [NodeState.CONNECTED]
                 ),
             )
@@ -701,13 +701,13 @@ async def test_event_content_meshnet_node_upgrade_direct(
             ).run(api.get_meshnet_config(beta.id))
         )
 
-        await client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED])
+        await client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED])
 
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(
+            client_alpha.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
-            client_beta.wait_for_state_peer(
+            client_beta.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )

@@ -76,7 +76,7 @@ async def test_upnp_route_removed(
         async with AsyncExitStack() as temp_exit_stack:
             task = await temp_exit_stack.enter_async_context(
                 run_async_context(
-                    alpha_client.wait_for_event_peer(
+                    alpha_client.events.wait_for_event_peer(
                         beta.public_key, [NodeState.CONNECTED]
                     )
                 )
@@ -100,10 +100,10 @@ async def test_upnp_route_removed(
 
             direct_events = await exit_stack.enter_async_context(
                 run_async_contexts([
-                    alpha_client.wait_for_event_peer(
+                    alpha_client.events.wait_for_event_peer(
                         beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
                     ),
-                    beta_client.wait_for_event_peer(
+                    beta_client.events.wait_for_event_peer(
                         alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
                     ),
                 ])
@@ -186,20 +186,20 @@ async def test_upnp_without_support(
         (alpha_conn_mgr, beta_conn_mgr) = env.connections
 
         await asyncio.gather(
-            alpha_client.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-            beta_client.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            alpha_client.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            beta_client.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
 
         # Giving time for upnp gateway search to start
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.gather(
-                alpha_client.wait_for_event_peer(
+                alpha_client.events.wait_for_event_peer(
                     beta_node.public_key,
                     [NodeState.CONNECTED],
                     [PathType.DIRECT],
                     timeout=10,
                 ),
-                beta_client.wait_for_event_peer(
+                beta_client.events.wait_for_event_peer(
                     alpha_node.public_key,
                     [NodeState.CONNECTED],
                     [PathType.DIRECT],

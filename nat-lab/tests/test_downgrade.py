@@ -87,10 +87,10 @@ async def test_downgrade_using_link_detection(
 
         # Expect downgrade to relay
         await asyncio.gather(
-            alpha_client.wait_for_state_peer(
+            alpha_client.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=35
             ),
-            beta_client.wait_for_state_peer(
+            beta_client.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=35
             ),
         )
@@ -149,10 +149,10 @@ async def test_downgrade_using_link_detection_with_silent_connection(
         # So expect no downgrade
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.gather(
-                alpha_client.wait_for_state_peer(
+                alpha_client.events.wait_for_state_peer(
                     beta.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=15
                 ),
-                beta_client.wait_for_state_peer(
+                beta_client.events.wait_for_state_peer(
                     alpha.public_key,
                     [NodeState.CONNECTED],
                     [PathType.RELAY],
@@ -168,10 +168,10 @@ async def test_downgrade_using_link_detection_with_silent_connection(
 
         # Expect downgrade to relay
         await asyncio.gather(
-            alpha_client.wait_for_state_peer(
+            alpha_client.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=35
             ),
-            beta_client.wait_for_state_peer(
+            beta_client.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [PathType.RELAY], timeout=35
             ),
         )

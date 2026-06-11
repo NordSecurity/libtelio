@@ -3,8 +3,8 @@ import pytest
 from contextlib import AsyncExitStack
 from tests import config
 from tests.helpers import setup_api, setup_mesh_nodes, SetupParameters
+from tests.libtelio_client import Client
 from tests.mesh_api import API
-from tests.telio import Client
 from tests.utils import testing, stun
 from tests.utils.bindings import (
     default_features,
@@ -144,7 +144,7 @@ async def test_mesh_exit_through_peer(
             )
         await client_beta.get_router().create_exit_node_route()
 
-        await client_alpha.connect_to_exit_node(beta.public_key)
+        await client_alpha.vpn.connect_to_exit_node(beta.public_key)
 
         ip_alpha = await stun.get(connection_alpha, config.STUN_SERVER)
         ip_beta = await stun.get(connection_beta, config.STUN_SERVER)
@@ -155,7 +155,7 @@ async def test_mesh_exit_through_peer(
         # Since there's no way to get the actual events in the current NAT Lab API, using asyncio.wait() to await for a disconnect event future
         # and also all other events future, then checking which occurred first.
         disconnect_task = asyncio.create_task(
-            client_alpha.wait_for_event_peer(
+            client_alpha.events.wait_for_event_peer(
                 beta.public_key,
                 states=[NodeState.DISCONNECTED],
                 timeout=None,
@@ -169,7 +169,7 @@ async def test_mesh_exit_through_peer(
         all_other_states = list(NodeState)
         all_other_states.remove(NodeState.DISCONNECTED)
         any_other_state_task = asyncio.create_task(
-            client_alpha.wait_for_event_peer(
+            client_alpha.events.wait_for_event_peer(
                 beta.public_key, all_other_states, list(PathType)
             )
         )
@@ -187,7 +187,7 @@ async def test_mesh_exit_through_peer(
         ), "disconnect from beta never happened after disabling meshnet"
 
         with pytest.raises(asyncio.TimeoutError):
-            await client_alpha.wait_for_event_peer(
+            await client_alpha.events.wait_for_event_peer(
                 beta.public_key, list(NodeState), list(PathType), timeout=5
             )
 
@@ -274,12 +274,16 @@ async def test_ipv6_exit_node(
         )
 
         await asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
-            client_beta.wait_for_state_peer(alpha.public_key, [NodeState.CONNECTED]),
+            client_alpha.events.wait_for_state_peer(
+                beta.public_key, [NodeState.CONNECTED]
+            ),
+            client_beta.events.wait_for_state_peer(
+                alpha.public_key, [NodeState.CONNECTED]
+            ),
         )
 
         # Ping in-tunnel node with IPv6
@@ -288,7 +292,7 @@ async def test_ipv6_exit_node(
             testing.unpack_optional(beta.get_ip_address(IPProto.IPv6)),
         )
         await client_beta.get_router().create_exit_node_route()
-        await client_alpha.connect_to_exit_node(beta.public_key)
+        await client_alpha.vpn.connect_to_exit_node(beta.public_key)
 
         # Ping out-tunnel target with IPv6
         await ping(connection_alpha, config.PHOTO_ALBUM_IPV6)

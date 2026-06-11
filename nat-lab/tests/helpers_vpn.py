@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from tests import config
-from tests.telio import Client
+from tests.libtelio_client import Client
 from tests.utils import stun
 from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.ping import ping
@@ -16,7 +16,7 @@ async def connect_vpn(
     client_meshnet_ip: str,
     wg_server: dict,
 ) -> None:
-    await client.connect_to_vpn(
+    await client.vpn.connect_to_vpn(
         wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
     )
 
