@@ -27,7 +27,7 @@ block2 = "0.6"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 neli = { version = "0.7.4", features = ["async"] }
-netlink-packet-route = "0.30.0"
+netlink-packet-route = "0.31.0"
 netlink-packet-core = "0.8.1"
 
 [target.'cfg(windows)'.dependencies]
