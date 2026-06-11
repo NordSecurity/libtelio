@@ -4,6 +4,7 @@
 ### ****
 ---
 * LLT-7361: Add option to force plaintext DNS for TP-Lite DNS servers when stats collection is enabled
+* ENS starts only, when routing through VPN sever (and not through meshnet peer).
 
 <br>
 
