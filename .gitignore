@@ -11,7 +11,6 @@ tcli.log
 *.nix
 *.prepared*
 *.dylib
-*.so
 /nat-lab/data/tcli*
 /3rd-party/ci-helper-scripts/
 /3rd-party/libmoose
@@ -19,6 +18,7 @@ tcli.log
 /nat-lab/3rd-party/iptables
 /nat-lab/3rd-party/netfilter-full-cone-nat
 /nat-lab/tests/uniffi/telio_bindings.py
+/nat-lab/tests/uniffi/libtelio.so
 /nat-lab/tests/uniffi/telio.dll
 /nat-lab/tests/uniffi/firewall.dll
 /nat-lab/tests/uniffi/libfirewall.so

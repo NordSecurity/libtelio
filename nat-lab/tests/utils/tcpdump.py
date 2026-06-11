@@ -178,19 +178,15 @@ def build_tcpdump_command(
     if flags:
         command += flags
 
-    if target_os != TargetOS.Windows and not include_ssh:
-        command += ["--immediate-mode"]
-
-    filter_parts: list[str] = []
     if not include_ssh:
         if target_os != TargetOS.Windows:
-            filter_parts.append("port not 22")
+            command += ["--immediate-mode"]
+            command += ["port not 22"]
         else:
-            filter_parts.append("not port 22")
+            command += ["not port 22"]
+
     if expressions:
-        filter_parts.extend(expressions)
-    if filter_parts:
-        command += [" and ".join(f"({p})" for p in filter_parts)]
+        command += expressions
 
     return command
 

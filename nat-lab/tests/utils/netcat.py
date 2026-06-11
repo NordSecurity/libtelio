@@ -9,10 +9,6 @@ from tests.utils.python import get_python_binary
 from typing import Optional, AsyncIterator
 
 
-class NetCatError(Exception):
-    """Raised when the netcat process exits before reaching an expected state."""
-
-
 def _get_netcat_base_command(connection: Connection) -> list[str]:
     if connection.target_os == TargetOS.Windows:
         # TODO: LLT-5689 implement for windows
@@ -90,7 +86,6 @@ class NetCat:
         self._stdout_data: str = ""
         self._output_notifier: OutputNotifier = OutputNotifier()
         self._data_received: asyncio.Event = asyncio.Event()
-        self._last_stderr: str = ""
 
     async def receive_data(self) -> str:
         """Receive data from stdout"""
@@ -113,29 +108,9 @@ class NetCat:
 
     async def on_stderr(self, stderr: str) -> None:
         """Handle verbose status messages"""
-        line = stderr.strip()
-        log.error("netcat: %s", line)
-        self._last_stderr = line
-        await self._output_notifier.handle_output(line)
+        log.error("netcat: %s", stderr.strip())
+        await self._output_notifier.handle_output(stderr.strip())
         return None
-
-    async def _wait_event_or_exit(self, event: asyncio.Event, label: str) -> None:
-        """Wait for `event`, but fail fast if the netcat process exits first."""
-        event_task = asyncio.create_task(event.wait())
-        done_task = asyncio.create_task(self._process.is_done())
-        try:
-            done, _ = await asyncio.wait(
-                {event_task, done_task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            if event_task in done:
-                event.clear()
-                return
-            raise NetCatError(f"netcat exited before {label}: {self._last_stderr!r}")
-        finally:
-            for t in (event_task, done_task):
-                if not t.done():
-                    t.cancel()
 
     async def execute(self) -> None:
         await self._process.execute(
@@ -187,11 +162,13 @@ class NetCatServer(NetCat):
 
     async def listening_started(self) -> None:
         """Wait for listening started event"""
-        await self._wait_event_or_exit(self._listening_event, "listening started")
+        await self._listening_event.wait()
+        self._listening_event.clear()
 
     async def connection_received(self) -> None:
         """Wait for connection received event"""
-        await self._wait_event_or_exit(self._connection_event, "connection received")
+        await self._connection_event.wait()
+        self._connection_event.clear()
 
 
 class NetCatClient(NetCat):
@@ -236,4 +213,5 @@ class NetCatClient(NetCat):
 
     async def connection_succeeded(self) -> None:
         """Wait for connection succeeded event"""
-        await self._wait_event_or_exit(self._connection_event, "connection succeeded")
+        await self._connection_event.wait()
+        self._connection_event.clear()

@@ -1,7 +1,7 @@
 //! Module to monitor changes in network.
 //! Get notified when network paths change
 //! and update local IP address cache
-use crate::local_interfaces::{gather_local_interfaces, GetIfAddrs};
+use crate::{local_interfaces::gather_local_interfaces, local_interfaces::GetIfAddrs};
 use if_addrs::Interface;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -28,7 +28,7 @@ struct PausedState {
 
 /// Trait which should be implemented to receive local address change notifications
 pub trait LocalInterfacesObserver: Sync + Send {
-    /// Callback which allows to take certain actions when local interfaces changed.
+    /// Callback which allows to take certain actions when local interfaces changed
     fn notify(&self, addrs: &[IpAddr]);
 }
 
@@ -45,7 +45,7 @@ pub struct NetworkMonitor {
     paused_state: Arc<Mutex<PausedState>>,
 }
 
-/// Result of a gather operation containing IPs and change status.
+/// Result of a gather operation containing interface IPs and change status.
 struct GatheredInterfaceIps {
     addrs: Vec<IpAddr>,
     changed: bool,
@@ -229,7 +229,8 @@ mod tests {
     use if_addrs::IfOperStatus;
     use serial_test::serial;
     use std::{
-        net::{IpAddr, Ipv4Addr},
+        net::IpAddr,
+        net::Ipv4Addr,
         sync::atomic::{AtomicU8, Ordering},
     };
 

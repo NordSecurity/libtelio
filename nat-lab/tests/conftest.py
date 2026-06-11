@@ -58,7 +58,6 @@ SESSION_SCOPE_EXIT_STACK: AsyncExitStack | None = None
 TASKS: List[asyncio.Task] = []
 END_TASKS: threading.Event = threading.Event()
 CURRENT_TEST_LOG_FILE = None
-_LIBFIREWALL_SO = os.path.join(os.path.dirname(__file__), "uniffi", "libfirewall.so")
 
 SESSION_VM_MARKS: set[str] = set()
 
@@ -145,13 +144,10 @@ def pytest_make_parametrize_id(config, val):
 
 
 def pytest_collection_modifyitems(items):
-    libfirewall_missing = not os.path.exists(_LIBFIREWALL_SO)
     for item in items:
         # Apply 5 minutes timeout to windows tests (due to constant lag)
         if item.get_closest_marker("windows"):
             item.add_marker(pytest.mark.timeout(300))
-        if libfirewall_missing and item.get_closest_marker("libfirewall"):
-            item.add_marker(pytest.mark.skip(reason="libfirewall.so not available"))
 
 
 @pytest.hookimpl(hookwrapper=True)

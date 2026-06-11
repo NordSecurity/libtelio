@@ -1,7 +1,5 @@
 use std::{
-    fs,
     io::Write,
-    net::IpAddr,
     net::Ipv4Addr,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
@@ -10,15 +8,16 @@ use std::{
 };
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use std::fs;
 use tracing::{level_filters::LevelFilter, Level};
 
-use telio::{
-    crypto::{PublicKey, SecretKey},
-    device::AdapterType,
-    telio_utils::Hidden,
-};
+use telio::{crypto::SecretKey, device::AdapterType, telio_utils::Hidden};
 
 use crate::{interface::InterfaceConfig, NordVpnLiteError};
+use std::net::IpAddr;
+use telio::crypto::PublicKey;
+
+pub(crate) const LOCAL_IP: Ipv4Addr = Ipv4Addr::new(10, 5, 0, 2);
 
 // These IPs are documented but the documentation is not publicly available
 fn dns_default() -> Vec<IpAddr> {
