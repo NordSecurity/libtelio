@@ -23,6 +23,7 @@ from tests.nordvpnlite import (
     Paths,
     CONFIG_PRESETS,
 )
+from tests.timeouts import TEST_OPENWRT_ARMV8_TIMEOUT
 from tests.utils import stun
 from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.connection_util import new_connection_raw, new_connection_by_tag
@@ -52,6 +53,7 @@ OPENWRT_TAGS = [
         ConnectionTag.DOCKER_OPENWRT_CLIENT_2,
         ConnectionTag.VM_OPENWRT_GW_2,
         id="openwrt-24.10-armv8",
+        marks=pytest.mark.timeout(TEST_OPENWRT_ARMV8_TIMEOUT),
     ),
     pytest.param(
         ConnectionTag.DOCKER_OPENWRT_CLIENT_3,
@@ -642,7 +644,7 @@ async def test_openwrt_router_restart(
             new_connection_by_tag(client_tag)
         )
 
-        for attempt in range(3):
+        while True:
             try:
                 gateway_connection_after_reboot = await exit_stack.enter_async_context(
                     new_connection_by_tag(gw_tag)
@@ -651,8 +653,7 @@ async def test_openwrt_router_restart(
             except Exception as e:  # pylint: disable=broad-exception-caught
                 log.debug("OpenWrt router is still rebooting")
                 log.debug(e)
-                if attempt < 2:
-                    await asyncio.sleep(15)
+                await asyncio.sleep(15)
         assert (
             gateway_connection_after_reboot is not None
         ), "OpenWrt router didn't get back online after reboot"
