@@ -210,5 +210,9 @@ class LibtelioProxy:
         return self._handle_remote_error(lambda r: r.get_tp_lite_stats())
 
     @move_to_async_thread
-    def set_tp_lite_whitelisted_domains(self, domains: List[str]):
-        self._handle_remote_error(lambda r: r.set_tp_lite_whitelisted_domains(domains))
+    def set_tp_lite_domain_whitelist(
+        self, domains: List[str], redirects: List[libtelio.DnsRedirect]
+    ):
+        self._handle_remote_error(
+            lambda r: r.set_tp_lite_domain_whitelist(domains, redirects)
+        )

@@ -512,17 +512,17 @@ interface Telio {
     [Throws=TelioError]
     void disable_tp_lite_stats_collection();
 
-    /// Set the TP-Lite DNS whitelisted domains at runtime, reconfiguring the
-    /// firewall to redirect queries for these domains away from the blocking
-    /// DNS server to the standard one.
+    /// Set the TP-Lite DNS whitelisting configuration at runtime: the whitelisted
+    /// domains and the (blocking, standard) DNS server redirect pairs. Outbound DNS
+    /// queries to a blocking endpoint whose QNAME matches a whitelisted domain are
+    /// DNAT-rewritten to the corresponding standard endpoint.
     ///
     /// Requires firewall to be enabled through setting firewall field of Features
-    /// object to a non-null value. The DNS server pairs are configured via the
-    /// tp_lite_dns_redirects field of the firewall feature config.
+    /// object to a non-null value.
     ///
-    /// Passing an empty list clears the whitelist.
+    /// Passing empty lists clears the whitelisting.
     [Throws=TelioError]
-    void set_tp_lite_whitelisted_domains(sequence<string> domains);
+    void set_tp_lite_domain_whitelist(sequence<string> domains, sequence<DnsRedirect> redirects);
 
     sequence<TelioNode> get_status_map();
 
@@ -849,12 +849,6 @@ dictionary FeatureFirewall {
     Ipv4Net? exclude_private_ip_range;
     /// Blackist for outgoing connections
     sequence<FirewallBlacklistTuple> outgoing_blacklist;
-    /// TP-Lite DNS whitelisting redirects: pairs of (blocking, standard) DNS
-    /// server endpoints. Queries to a blocking endpoint whose QNAME matches a
-    /// whitelisted domain are DNAT-rewritten to the standard endpoint. The
-    /// whitelisted domains are set at runtime via set_tp_lite_whitelisted_domains.
-    /// Empty disables the feature.
-    sequence<DnsRedirect> tp_lite_dns_redirects;
 };
 
 /// Link detection mechanism

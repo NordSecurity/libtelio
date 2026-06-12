@@ -3,7 +3,6 @@ from tests.uniffi import (
     FeaturesDefaultsBuilder,
     deserialize_feature_config,
     FirewallBlacklistTuple,
-    DnsRedirect,
     IpProtocol,
 )
 
@@ -37,9 +36,6 @@ def test_telio_features_builder_firewall():
         outgoing_blacklist=[
             FirewallBlacklistTuple(protocol=IpProtocol.UDP, ip="8.8.4.4", port=30)
         ],
-        tp_lite_dns_redirects=[
-            DnsRedirect(blocking="1.2.3.4:30", standard="5.6.7.8:40")
-        ],
     )
 
     json = """
@@ -53,11 +49,7 @@ def test_telio_features_builder_firewall():
                     "ip": "8.8.4.4",
                     "port": 30
             }],
-            "neptun_reset_conns": false,
-            "tp_lite_dns_redirects": [{
-                "blocking": "1.2.3.4:30",
-                "standard": "5.6.7.8:40"
-            }]
+            "neptun_reset_conns": false
         },
         "direct": null,
         "derp": null,

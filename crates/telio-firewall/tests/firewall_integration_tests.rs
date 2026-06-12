@@ -1374,7 +1374,7 @@ mod tp_lite_stats {
 mod dns_whitelisting {
     use pnet_packet::ipv4::Ipv4Packet;
     use pnet_packet::udp::UdpPacket;
-    use telio_model::features::DnsRedirect;
+    use telio_model::tp_lite_stats::DnsRedirect;
 
     use super::*;
 
@@ -1394,12 +1394,9 @@ mod dns_whitelisting {
         domains: Vec<String>,
         redirects: Vec<DnsRedirect>,
     ) -> StatefulFirewall {
-        let feature = FeatureFirewall {
-            tp_lite_dns_redirects: redirects,
-            ..Default::default()
-        };
+        let feature = FeatureFirewall::default();
         let fw = StatefulFirewall::new(false, feature).expect("libfirewall.so available");
-        fw.set_tp_lite_whitelisted_domains(domains);
+        fw.set_tp_lite_domain_whitelist(domains, redirects);
         fw
     }
 
@@ -1485,7 +1482,10 @@ mod dns_whitelisting {
         assert_eq!(dst_port, blocking.port());
 
         // After setting the domain at runtime, the same query is redirected.
-        fw.set_tp_lite_whitelisted_domains(vec!["example.com".into()]);
+        fw.set_tp_lite_domain_whitelist(
+            vec!["example.com".into()],
+            vec![DnsRedirect { blocking, standard }],
+        );
         let mut buf = make_dns_request_to(src, blocking, 2, "example.com");
         assert!(fw.process_outbound_packet(&make_peer(), &mut buf, &mut io::sink()));
         let (dst_ip, dst_port) = parse_dst_v4(&buf);
@@ -1493,7 +1493,7 @@ mod dns_whitelisting {
         assert_eq!(dst_port, standard.port());
 
         // Clearing the whitelist stops redirecting again.
-        fw.set_tp_lite_whitelisted_domains(vec![]);
+        fw.set_tp_lite_domain_whitelist(vec![], vec![DnsRedirect { blocking, standard }]);
         let mut buf = make_dns_request_to(src, blocking, 3, "example.com");
         assert!(fw.process_outbound_packet(&make_peer(), &mut buf, &mut io::sink()));
         let (dst_ip, _) = parse_dst_v4(&buf);

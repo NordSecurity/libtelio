@@ -21,7 +21,7 @@ use thiserror::Error;
 
 use telio_model::{
     features::{FeatureFirewall, IpProtocol},
-    tp_lite_stats::{TpLiteStatsCallback, TpLiteStatsOptions},
+    tp_lite_stats::{DnsRedirect, TpLiteStatsCallback, TpLiteStatsOptions},
 };
 use telio_network_monitors::monitor::LocalInterfacesObserver;
 
@@ -163,6 +163,11 @@ pub struct FirewallState {
     pub force_plaintext_dns_for_servers: Option<Vec<StdIpAddr>>,
     /// Domain patterns whitelisted from TP-Lite DNS
     pub tp_lite_whitelisted_domains: Vec<String>,
+    /// TP-Lite DNS whitelisting redirects: pairs of (blocking, standard) DNS
+    /// server endpoints. Outbound DNS queries (UDP) to a `blocking` endpoint
+    /// whose QNAME matches a whitelisted domain are DNAT-rewritten to the
+    /// corresponding `standard` endpoint. Empty disables the redirect.
+    pub tp_lite_dns_redirects: Vec<DnsRedirect>,
 }
 
 /// Configuration for firewall initialization.
@@ -395,10 +400,13 @@ impl StatefulFirewall {
         };
     }
 
-    /// Set the TP-Lite DNS whitelisted domains
-    pub fn set_tp_lite_whitelisted_domains(&self, domains: Vec<String>) {
+    /// Set the TP-Lite DNS whitelisting configuration: the whitelisted domains
+    /// and the (blocking, standard) DNS server redirect pairs. Both are applied
+    /// together, reconfiguring the firewall to DNAT-redirect matching queries.
+    pub fn set_tp_lite_domain_whitelist(&self, domains: Vec<String>, redirects: Vec<DnsRedirect>) {
         let mut state = self.get_state();
         state.tp_lite_whitelisted_domains = domains;
+        state.tp_lite_dns_redirects = redirects;
         self.apply_state(state);
     }
 }
@@ -535,7 +543,7 @@ pub(crate) fn configure_chain(
     // DNS whitelisting: redirect outbound DNS queries for whitelisted domains
     // away from the "blocking" DNS server to the "standard" one via DNAT.
     if !state.tp_lite_whitelisted_domains.is_empty() {
-        for redirect in &config.feature.tp_lite_dns_redirects {
+        for redirect in &state.tp_lite_dns_redirects {
             let blocking_net = IpNet::from(StdIpAddr::V4(*redirect.blocking.ip()));
             rules.push(Rule {
                 filters: vec![

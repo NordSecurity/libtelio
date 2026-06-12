@@ -149,7 +149,6 @@ def _make_blacklist_features(protocol: IpProtocol, ip: str, port: int) -> Featur
         outgoing_blacklist=[
             FirewallBlacklistTuple(protocol=protocol, ip=ip, port=port)
         ],
-        tp_lite_dns_redirects=[],
     )
     return features
 

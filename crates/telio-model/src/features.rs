@@ -1,13 +1,7 @@
 //! Object descriptions of various
 //! telio configurable features via API
 
-use std::{
-    collections::HashSet,
-    fmt,
-    net::{IpAddr, SocketAddrV4},
-    str::FromStr,
-    time::Duration,
-};
+use std::{collections::HashSet, fmt, net::IpAddr, str::FromStr, time::Duration};
 
 use base64::{prelude::BASE64_STANDARD, Engine};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
@@ -446,17 +440,6 @@ fn ipv4_net_strategy() -> impl proptest::strategy::Strategy<Value = ipnet::Ipv4N
     (addr, prefix).prop_map(|(addr, prefix)| ipnet::Ipv4Net::new(addr.into(), prefix).unwrap())
 }
 
-/// Pair of DNS server endpoints describing how a single DNS-redirect rule
-/// should rewrite outbound DNS traffic.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-pub struct DnsRedirect {
-    /// DNS server that would otherwise drop non-whitelisted queries.
-    pub blocking: SocketAddrV4,
-    /// DNS server to which whitelisted queries are redirected.
-    pub standard: SocketAddrV4,
-}
-
 /// Feature config for firewall
 #[derive(Default, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
@@ -473,14 +456,6 @@ pub struct FeatureFirewall {
     /// Blackist for outgoing connections
     #[serde(default)]
     pub outgoing_blacklist: Vec<FirewallBlacklistTuple>,
-    /// TP-Lite DNS whitelisting redirects: pairs of (blocking, standard) DNS
-    /// server endpoints. Outbound DNS queries (UDP) to a `blocking` endpoint
-    /// whose QNAME matches a whitelisted domain are DNAT-rewritten to the
-    /// corresponding `standard` endpoint; non-matching queries continue to the
-    /// blocking server. The whitelisted domains are configured at runtime via
-    /// `set_tp_lite_whitelisted_domains`. Empty disables the feature.
-    #[serde(default)]
-    pub tp_lite_dns_redirects: Vec<DnsRedirect>,
 }
 
 impl FeatureFirewall {
@@ -869,7 +844,6 @@ mod tests {
                             ip: IpAddr::from_str("8.8.4.4").unwrap(),
                             port: 30,
                         }],
-                        tp_lite_dns_redirects: vec![],
                     }),
                     flush_events_on_stop_timeout_seconds: Some(15),
                     post_quantum_vpn: FeaturePostQuantumVPN {
@@ -987,20 +961,6 @@ mod tests {
                 r#"{"firewall": {}}"#,
                 Some(FeatureFirewall::default()),
                 firewall
-            );
-        }
-
-        #[test]
-        fn test_firewall_tp_lite_dns_redirects() {
-            assert_json!(
-                r#"{"firewall": {"tp_lite_dns_redirects": [
-                    {"blocking": "1.2.3.4:53", "standard": "8.8.8.8:53"}
-                ]}}"#,
-                vec![DnsRedirect {
-                    blocking: "1.2.3.4:53".parse().unwrap(),
-                    standard: "8.8.8.8:53".parse().unwrap(),
-                }],
-                firewall.unwrap().tp_lite_dns_redirects
             );
         }
 
