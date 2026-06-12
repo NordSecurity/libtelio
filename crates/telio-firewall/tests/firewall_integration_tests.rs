@@ -2,8 +2,8 @@ use pnet_packet::{
     icmp::{IcmpType, IcmpTypes, MutableIcmpPacket},
     icmpv6::{Icmpv6Type, Icmpv6Types, MutableIcmpv6Packet},
     ip::{IpNextHeaderProtocol, IpNextHeaderProtocols},
-    ipv4::MutableIpv4Packet,
-    ipv6::MutableIpv6Packet,
+    ipv4::{Ipv4Packet, MutableIpv4Packet},
+    ipv6::{Ipv6Packet, MutableIpv6Packet},
     tcp::{MutableTcpPacket, TcpFlags},
     udp::MutableUdpPacket,
     MutablePacket,
@@ -25,6 +25,8 @@ use telio_model::{
 type MakeUdp = &'static dyn Fn(&str, &str) -> Vec<u8>;
 type MakeTcp = &'static dyn Fn(&str, &str, u8) -> Vec<u8>;
 type MakeIcmp = &'static dyn Fn(&str, &str, GenericIcmpType) -> Vec<u8>;
+type MakeIcmpEcho = &'static dyn Fn(&str, &str, GenericIcmpType, u16) -> Vec<u8>;
+type MakeIcmpError = &'static dyn Fn(&[u8]) -> Vec<u8>;
 
 const IPV4_HEADER_MIN: usize = 20; // IPv4 header minimal length in bytes
 const IPV6_HEADER_MIN: usize = 40; // IPv6 header minimal length in bytes
@@ -319,6 +321,123 @@ fn make_icmp6(src: &str, dst: &str, icmp_type: GenericIcmpType) -> Vec<u8> {
     make_icmp6_with_body(src, dst, icmp_type, &[])
 }
 
+// Builds a well-formed ICMP echo (request/reply) packet: the echo identifier is
+// written to the first two bytes of the ICMP body and a valid checksum is
+// computed. Both are required for libfirewall conntrack to track the connection
+// (it keys ICMP flows on the identifier and rejects packets with a bad checksum).
+// Request and reply that share an identifier are matched into the same flow.
+fn make_icmp4_echo(src: &str, dst: &str, icmp_type: GenericIcmpType, identifier: u16) -> Vec<u8> {
+    let ip_len = IPV4_HEADER_MIN + ICMP_HEADER;
+    let mut raw = vec![0u8; ip_len];
+    {
+        let mut packet =
+            MutableIcmpPacket::new(&mut raw[IPV4_HEADER_MIN..]).expect("ICMP: Bad ICMP buffer");
+        packet.set_icmp_type(icmp_type.v4());
+        packet.payload_mut()[0..2].copy_from_slice(&identifier.to_ne_bytes());
+        let checksum = pnet_packet::icmp::checksum(&packet.to_immutable());
+        packet.set_checksum(checksum);
+    }
+    let mut ip = MutableIpv4Packet::new(&mut raw).expect("ICMP: Bad IP buffer");
+    set_ipv4(
+        &mut ip,
+        IpNextHeaderProtocols::Icmp,
+        IPV4_HEADER_MIN,
+        ip_len,
+    );
+    ip.set_source(src.parse().expect("ICMP: Bad src IP"));
+    ip.set_destination(dst.parse().expect("ICMP: Bad dst IP"));
+    raw
+}
+
+fn make_icmp6_echo(src: &str, dst: &str, icmp_type: GenericIcmpType, identifier: u16) -> Vec<u8> {
+    let ip_len = IPV6_HEADER_MIN + ICMP_HEADER;
+    let mut raw = vec![0u8; ip_len];
+    let src_ip: Ipv6Addr = src.parse().expect("ICMP: Bad src IP");
+    let dst_ip: Ipv6Addr = dst.parse().expect("ICMP: Bad dst IP");
+    {
+        let mut packet =
+            MutableIcmpv6Packet::new(&mut raw[IPV6_HEADER_MIN..]).expect("ICMP: Bad ICMP buffer");
+        packet.set_icmpv6_type(icmp_type.v6());
+        packet.payload_mut()[0..2].copy_from_slice(&identifier.to_ne_bytes());
+        let checksum = pnet_packet::icmpv6::checksum(&packet.to_immutable(), &src_ip, &dst_ip);
+        packet.set_checksum(checksum);
+    }
+    let mut ip = MutableIpv6Packet::new(&mut raw).expect("ICMP: Bad IP buffer");
+    set_ipv6(
+        &mut ip,
+        IpNextHeaderProtocols::Icmpv6,
+        IPV6_HEADER_MIN,
+        ip_len,
+    );
+    ip.set_source(src_ip);
+    ip.set_destination(dst_ip);
+    raw
+}
+
+// Builds an ICMP Destination Unreachable error embedding the `original` datagram
+// (IP header + first 8 bytes), the way real ICMP errors carry the offending packet.
+// The error's addresses are the original's reversed (it comes back from the original
+// destination to the original source). libfirewall matches it to the original flow.
+fn make_icmp4_error(original: &[u8]) -> Vec<u8> {
+    let orig = Ipv4Packet::new(original).expect("ICMP: bad original packet");
+    let (err_src, err_dst) = (orig.get_destination(), orig.get_source());
+
+    let take = (IPV4_HEADER_MIN + 8).min(original.len());
+    let mut body = vec![0u8; 4]; // 4 unused header bytes
+    body.extend_from_slice(&original[..take]);
+
+    let ip_len = IPV4_HEADER_MIN + 4 + body.len();
+    let mut raw = vec![0u8; ip_len];
+    {
+        let mut packet =
+            MutableIcmpPacket::new(&mut raw[IPV4_HEADER_MIN..]).expect("ICMP: Bad ICMP buffer");
+        packet.set_icmp_type(IcmpTypes::DestinationUnreachable);
+        packet.payload_mut().copy_from_slice(&body);
+        let checksum = pnet_packet::icmp::checksum(&packet.to_immutable());
+        packet.set_checksum(checksum);
+    }
+    let mut ip = MutableIpv4Packet::new(&mut raw).expect("ICMP: Bad IP buffer");
+    set_ipv4(
+        &mut ip,
+        IpNextHeaderProtocols::Icmp,
+        IPV4_HEADER_MIN,
+        ip_len,
+    );
+    ip.set_source(err_src);
+    ip.set_destination(err_dst);
+    raw
+}
+
+fn make_icmp6_error(original: &[u8]) -> Vec<u8> {
+    let orig = Ipv6Packet::new(original).expect("ICMP: bad original packet");
+    let (err_src, err_dst) = (orig.get_destination(), orig.get_source());
+
+    let take = (IPV6_HEADER_MIN + 8).min(original.len());
+    let mut body = vec![0u8; 4]; // 4 unused header bytes
+    body.extend_from_slice(&original[..take]);
+
+    let ip_len = IPV6_HEADER_MIN + 4 + body.len();
+    let mut raw = vec![0u8; ip_len];
+    {
+        let mut packet =
+            MutableIcmpv6Packet::new(&mut raw[IPV6_HEADER_MIN..]).expect("ICMP: Bad ICMP buffer");
+        packet.set_icmpv6_type(Icmpv6Types::DestinationUnreachable);
+        packet.payload_mut().copy_from_slice(&body);
+        let checksum = pnet_packet::icmpv6::checksum(&packet.to_immutable(), &err_src, &err_dst);
+        packet.set_checksum(checksum);
+    }
+    let mut ip = MutableIpv6Packet::new(&mut raw).expect("ICMP: Bad IP buffer");
+    set_ipv6(
+        &mut ip,
+        IpNextHeaderProtocols::Icmpv6,
+        IPV6_HEADER_MIN,
+        ip_len,
+    );
+    ip.set_source(err_src);
+    ip.set_destination(err_dst);
+    raw
+}
+
 const DNS_HEADER_SIZE: usize = 12;
 
 // Strings in the DNS message format are encoded as a list of labels followed by a null byte.
@@ -533,11 +652,11 @@ fn ipv6_blocked() {
         assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(src4, dst1)), is_ipv4);
         assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(src1, dst1)), is_ipv4);
 
-        // Should PASS (matching outgoing connections exist in LRUCache)
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src3)), is_ipv4);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src4)), is_ipv4);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src1)), is_ipv4);
-        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src2)), is_ipv4);
+        // Dropped: peer-initiated flows (peer's packets seen first), not host-initiated
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src3)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src4)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src1)), false);
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src2)), false);
 
         // Should FAIL (has no matching outgoing connection)
         assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(dst1, src5)), false);
@@ -724,7 +843,8 @@ fn firewall_vpn_peer() {
             fw.apply_state(state.clone());
             assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_udp(src1, dst1,)), false);
             assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), false);
-            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_tcp(src1, dst1, TcpFlags::ACK)), true);
+            // Peer-initiated established TCP: no longer accepted once the vpn-peer rule is gone
+            assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_tcp(src1, dst1, TcpFlags::ACK)), false);
             assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_tcp(src2, dst1, TcpFlags::ACK)), false);
         }
 }
@@ -778,6 +898,152 @@ fn firewall_whitelist_change_icmp() {
 
 #[rustfmt::skip]
 #[test]
+fn firewall_orig_src_ip_peer_initiated_blocked_after_removal() {
+    // A peer that is whitelisted for incoming connections pings the host, and the
+    // host answers with ICMP echo replies. While the peer is whitelisted, the
+    // pings are accepted and a conntrack entry is opened whose *original*
+    // direction source is the peer's IP (the peer initiated the connection).
+    //
+    // Once the peer is removed from the incoming whitelist, further pings must be
+    // dropped: the incoming-peer rule is gone, and the OrigSrcIp rule only accepts
+    // packets for connections initiated *from the host's own IP*. Here the
+    // connection was initiated by the peer, so OrigSrcIp does not match and the
+    // (still ESTABLISHED) conntrack state is not enough to let the pings through.
+    struct TestInput {
+        us: &'static str,
+        them: &'static str,
+        make_icmp_echo: MakeIcmpEcho,
+    }
+
+    // Echo identifier tying the request and its reply into the same conntrack flow.
+    const ID: u16 = 0x4242;
+
+    let test_inputs = vec![
+        TestInput{ us: "127.0.0.1", them: "8.8.8.8",              make_icmp_echo: &make_icmp4_echo },
+        TestInput{ us: "::1",       them: "2001:4860:4860::8888", make_icmp_echo: &make_icmp6_echo },
+    ];
+
+    for TestInput { us, them, make_icmp_echo } in &test_inputs {
+        let fw = StatefulFirewall::new(true, FeatureFirewall::default()).expect("Failed to load libfirewall");
+        fw.apply_state(FirewallState {
+            ip_addresses: vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
+            ..Default::default()
+        });
+
+        let mut state = fw.get_state();
+        let peer = make_random_peer();
+
+        // Not whitelisted yet: the peer's pings are dropped.
+        assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp_echo(them, us, IcmpTypes::EchoRequest.into(), ID)), false);
+
+        // Allow the peer to open incoming connections.
+        state.whitelist.peer_whitelists[Permissions::IncomingConnections].insert(peer);
+        fw.apply_state(state.clone());
+
+        // The peer pings the host -> accepted by the incoming-peer rule. This opens
+        // a conntrack entry whose original direction source is the peer's IP.
+        assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp_echo(them, us, IcmpTypes::EchoRequest.into(), ID)), true);
+        // The host answers with an echo reply -> accepted outbound; the flow is now ESTABLISHED.
+        assert_eq!(fw.process_outbound_packet_sink(&peer.0, &mut make_icmp_echo(us, them, IcmpTypes::EchoReply.into(), ID)), true);
+        // The connection is established, so subsequent pings keep flowing.
+        assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp_echo(them, us, IcmpTypes::EchoRequest.into(), ID)), true);
+
+        // Remove the peer from the incoming whitelist.
+        state.whitelist.peer_whitelists[Permissions::IncomingConnections].remove(&peer);
+        fw.apply_state(state.clone());
+
+        // Pings must now fail: not from an allowed peer anymore, and the connection
+        // was initiated by the peer (orig src != our IP) so OrigSrcIp doesn't help -
+        // the ESTABLISHED state alone no longer accepts the traffic.
+        assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp_echo(them, us, IcmpTypes::EchoRequest.into(), ID)), false);
+        assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp_echo(them, us, IcmpTypes::EchoReply.into(), ID)), false);
+    }
+}
+
+#[rustfmt::skip]
+#[test]
+fn firewall_orig_src_ip_host_initiated_allowed_without_whitelist() {
+    // Positive control for the OrigSrcIp rule: when the *host* initiates the
+    // connection (host pings the peer), the peer's replies must be accepted even
+    // though the peer is not on any whitelist, because the connection's original
+    // direction source is one of the host's own IPs. This proves the failure in
+    // `firewall_orig_src_ip_peer_initiated_blocked_after_removal` is specific to
+    // peer-initiated connections rather than a blanket drop.
+    struct TestInput {
+        us: &'static str,
+        them: &'static str,
+        make_icmp_echo: MakeIcmpEcho,
+    }
+
+    // Echo identifier tying the request and its reply into the same conntrack flow.
+    const ID: u16 = 0x1337;
+
+    let test_inputs = vec![
+        TestInput{ us: "127.0.0.1", them: "8.8.8.8",              make_icmp_echo: &make_icmp4_echo },
+        TestInput{ us: "::1",       them: "2001:4860:4860::8888", make_icmp_echo: &make_icmp6_echo },
+    ];
+
+    for TestInput { us, them, make_icmp_echo } in &test_inputs {
+        let fw = StatefulFirewall::new(true, FeatureFirewall::default()).expect("Failed to load libfirewall");
+        fw.apply_state(FirewallState {
+            ip_addresses: vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
+            ..Default::default()
+        });
+
+        let peer = make_random_peer();
+
+        // The peer is not whitelisted, so unsolicited inbound pings are dropped.
+        assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp_echo(them, us, IcmpTypes::EchoRequest.into(), ID)), false);
+
+        // The host pings the peer -> accepted outbound, opening a conntrack entry
+        // whose original direction source is the host's own IP.
+        assert_eq!(fw.process_outbound_packet_sink(&peer.0, &mut make_icmp_echo(us, them, IcmpTypes::EchoRequest.into(), ID)), true);
+
+        // The peer's echo reply is accepted via the OrigSrcIp rule (orig src == us)
+        // even though the peer is on no whitelist.
+        assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp_echo(them, us, IcmpTypes::EchoReply.into(), ID)), true);
+    }
+}
+
+#[rustfmt::skip]
+#[test]
+fn firewall_orig_src_ip_icmp_error_for_host_initiated_connection_allowed() {
+    // An ICMP error referring to a connection the host initiated is accepted:
+    // libfirewall resolves the embedded original datagram to its conntrack entry,
+    // reports the original source (our IP) and marks it Related, so OrigSrcIp accepts.
+    // An ICMP error for an unknown connection has no original source and is dropped.
+    struct TestInput {
+        us: &'static str,
+        us_unsent: &'static str,
+        them: &'static str,
+        make_udp: MakeUdp,
+        make_icmp_error: MakeIcmpError,
+    }
+    let test_inputs = vec![
+        TestInput { us: "127.0.0.1:1111", us_unsent: "127.0.0.1:2222", them: "8.8.8.8:8888",               make_udp: &make_udp,  make_icmp_error: &make_icmp4_error },
+        TestInput { us: "[::1]:1111",     us_unsent: "[::1]:2222",     them: "[2001:4860:4860::8888]:8888", make_udp: &make_udp6, make_icmp_error: &make_icmp6_error },
+    ];
+
+    for TestInput { us, us_unsent, them, make_udp, make_icmp_error } in &test_inputs {
+        let fw = StatefulFirewall::new(true, FeatureFirewall::default()).expect("Failed to load libfirewall");
+        fw.apply_state(FirewallState {
+            ip_addresses: vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
+            ..Default::default()
+        });
+
+        // Host initiates an outbound UDP connection (conntrack original source = our IP).
+        assert_eq!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(us, them)), true);
+
+        // ICMP error carrying that original datagram comes back -> accepted (Related, orig src == us).
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp_error(&make_udp(us, them))), true);
+
+        // ICMP error for a connection we never opened -> no original source -> dropped.
+        assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp_error(&make_udp(us_unsent, them))), false);
+    }
+}
+
+#[rustfmt::skip]
+#[test]
 fn firewall_whitelist_change_udp_allow() {
     struct TestInput { us: &'static str, them: &'static str, make_udp: MakeUdp, }
     let test_inputs = vec![
@@ -799,13 +1065,12 @@ fn firewall_whitelist_change_udp_allow() {
         state.whitelist.port_whitelist.insert(them_peer, 8888);
         fw.apply_state(state.clone()); // NOTE: this doesn't change anything about this test
         assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &mut make_udp(us, them)), true);
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
-
-        // Should PASS because we started the session
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
+        // Peer-initiated (the peer's packet above was seen first), so OrigSrcIp doesn't accept it
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), false);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), false);
         state.whitelist.port_whitelist.remove(&them_peer);
         fw.apply_state(state.clone()); // NOTE: also has no impact on this test
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), false);
     }
 }
 
@@ -836,7 +1101,8 @@ fn firewall_whitelist_change_udp_block() {
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
         state.whitelist.port_whitelist.remove(&them_peer);
         fw.apply_state(state.clone());
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
+        // Peer-initiated: dropped after the port whitelist is removed (OrigSrcIp doesn't match)
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), false);
     }
 }
 
@@ -895,11 +1161,12 @@ fn firewall_whitelist_change_tcp_block() {
         assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &mut make_tcp(us, them, TcpFlags::SYN | TcpFlags::ACK)), true);
 
 
-        // Firewall allows already established connections
+        // Firewall allows already established connections while the peer is whitelisted
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::ACK)), true);
         state.whitelist.port_whitelist.remove(&them_peer);
         fw.apply_state(state.clone());
-        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::ACK)), true);
+        // Peer-initiated: dropped after the port whitelist is removed (OrigSrcIp doesn't match)
+        assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::ACK)), false);
     }
 }
 
