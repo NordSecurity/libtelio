@@ -50,3 +50,19 @@ pub async fn setup_logging<P: AsRef<Path>>(
 
     Ok(tracing_worker_guard)
 }
+
+#[macro_export]
+macro_rules! nordvpnlite_logstd_warn {
+    ($($arg:tt)*) => {
+        ::tracing::warn!($($arg)*);
+        eprintln!("WARNING: {}", format_args!($($arg)*));
+    };
+}
+
+#[macro_export]
+macro_rules! nordvpnlite_logstd_error {
+    ($($arg:tt)*) => {
+        ::tracing::error!($($arg)*);
+        eprintln!("ERROR: {}", format_args!($($arg)*));
+    };
+}
