@@ -1,5 +1,6 @@
 import asyncio
 import platform
+import Pyro5.errors  # type: ignore
 import re
 import time
 import uuid
@@ -1131,6 +1132,23 @@ class Client:
                         self._runtime.handle_event(event[1], event[0])
                         event = await self.get_proxy().next_event()
                 await asyncio.sleep(0.1)
+            except (ProxyConnectionError, Pyro5.errors.CommunicationError) as e:
+                # The remote can briefly become unreachable mid-test (e.g. the
+                # device/VM was suspended). next_event() runs in a worker thread
+                # that asyncio cannot cancel, so such a failure otherwise only
+                # surfaces when this task is awaited at teardown - failing the
+                # whole test's teardown (a race between this loop and the proxy
+                # shutdown, LLT-5223). Treat a lost connection as transient and
+                # keep retrying until the remote responds again or the task is
+                # cancelled.
+                if self._quit:
+                    return
+                log.debug(
+                    "[%s] event request loop: remote unreachable, retrying (%s)",
+                    self._node.name,
+                    e,
+                )
+                await asyncio.sleep(0.5)
             except:
                 if self._quit:
                     return
