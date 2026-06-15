@@ -19,6 +19,7 @@ use telio::telio_utils::exponential_backoff::{
 
 use crate::config::{Endpoint, NordToken, NordVpnLiteConfig, NordlynxKeyResponse, VpnConfig};
 use crate::NordVpnLiteError;
+use crate::{nordvpnlite_logstd_error, nordvpnlite_logstd_warn};
 
 const API_BASE: &str = "https://api.nordvpn.com/v1";
 const WIREGUARD_ID: u64 = 35;
@@ -432,44 +433,62 @@ async fn get_recommended_servers(
 }
 
 pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec<Endpoint>, Error> {
-    let country_id: Option<u64> = match &config.vpn {
+    enum CountryResolution {
+        Recommended,
+        Found(u64),
+        FallbackToRecommended,
+    }
+
+    let resolution = match &config.vpn {
         // Use the endpoint directly if provided in the config
         VpnConfig::Server(endpoint) => return Ok(vec![endpoint.clone()]),
         // Find VPN exit node based on country
         VpnConfig::Country(target_country) => {
             if !target_country.chars().all(|c| c.is_ascii_alphabetic()) {
-                warn!("Invalid country format: '{target_country}', non-ascii characters used");
-                None
+                nordvpnlite_logstd_warn!(
+                    "Invalid country format: '{target_country}', non-ascii characters used. To list supported countries/country codes, run: nordvpnlite countries"
+                );
+                CountryResolution::FallbackToRecommended
             } else {
                 match get_countries_with_exp_backoff(config.http_certificate_file_path.as_deref())
                     .await
                 {
-                    Ok(countries_list) => countries_list
-                        .iter()
-                        .find_map(|country| {
-                            // search for country full name or iso code
-                            if country.matches(target_country) {
-                                Some(country.id)
-                            } else {
-                                None
-                            }
-                        })
-                        .or_else(|| {
-                            warn!("Servers not found for '{target_country}' country code.");
+                    Ok(countries_list) => match countries_list.iter().find_map(|country| {
+                        // search for country full name or iso code
+                        if country.matches(target_country) {
+                            Some(country.id)
+                        } else {
                             None
-                        }),
+                        }
+                    }) {
+                        Some(id) => CountryResolution::Found(id),
+                        None => {
+                            nordvpnlite_logstd_warn!(
+                                "Servers not found for '{target_country}' country code. To list supported countries/country codes, run: nordvpnlite countries"
+                            );
+                            CountryResolution::FallbackToRecommended
+                        }
+                    },
                     Err(e) => {
-                        error!("Getting countries failed due to: {e}");
-                        None
+                        nordvpnlite_logstd_error!("Getting countries failed due to: {e}");
+                        CountryResolution::FallbackToRecommended
                     }
                 }
             }
         }
-        VpnConfig::Recommended => None,
+        VpnConfig::Recommended => CountryResolution::Recommended,
     };
 
-    if country_id.is_none() {
-        info!("Using a recommended server");
+    let country_id = match resolution {
+        CountryResolution::Found(id) => Some(id),
+        CountryResolution::Recommended => {
+            info!("Using a recommended server");
+            None
+        }
+        CountryResolution::FallbackToRecommended => {
+            nordvpnlite_logstd_warn!("Falling back to a recommended server");
+            None
+        }
     };
 
     // Fetch the list of recommended server from the API
