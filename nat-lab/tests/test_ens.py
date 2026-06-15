@@ -682,18 +682,18 @@ async def test_ens_not_started_for_meshnet_exit_peer(
         connection_alpha, _ = [conn.connection for conn in env.connections]
 
         await asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
 
         await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
         await client_beta.set_meshnet_config(api.get_meshnet_config(beta.id))
 
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(
+            client_alpha.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
-            client_beta.wait_for_state_peer(
+            client_beta.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
@@ -701,11 +701,11 @@ async def test_ens_not_started_for_meshnet_exit_peer(
         await ping(connection_alpha, cast(str, beta.get_ip_address(IPProto.IPv4)))
         await client_beta.get_router().create_exit_node_route()
 
-        logs_before = await client_alpha.get_log()
+        logs_before = await client_alpha.log.get_log()
         ens_starts_before = logs_before.count(ENS_LOG_STR)
 
-        await client_alpha.connect_to_exit_node(beta.public_key)
-        await client_alpha.wait_for_state_peer(
+        await client_alpha.vpn.connect_to_exit_node(beta.public_key)
+        await client_alpha.events.wait_for_state_peer(
             beta.public_key,
             [NodeState.CONNECTED],
             list(PathType),
@@ -713,7 +713,7 @@ async def test_ens_not_started_for_meshnet_exit_peer(
             is_vpn=False,
         )
 
-        logs_after = await client_alpha.get_log()
+        logs_after = await client_alpha.log.get_log()
         assert (
             logs_after.count(ENS_LOG_STR) == ens_starts_before == 0
         ), "ENS started while routing through a meshnet peer"

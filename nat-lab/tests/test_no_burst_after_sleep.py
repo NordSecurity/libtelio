@@ -173,7 +173,7 @@ async def test_no_burst_after_monotonic_jump(
     await ping_between_all_nodes(env_mesh)
 
     mono_before = await _read_guest_monotonic(connection_alpha)
-    consolidations_before = (await client_alpha.get_log()).count(CONSOLIDATION_LOG)
+    consolidations_before = (await client_alpha.log.get_log()).count(CONSOLIDATION_LOG)
 
     # Freeze the client: it does no work, but the monotonic clock keeps moving,
     # so on unpause the poll interval has many overdue ticks.
@@ -194,7 +194,7 @@ async def test_no_burst_after_monotonic_jump(
     # Give libtelio a moment to wake and process the (now overdue) timers.
     await asyncio.sleep(SETTLE_AFTER_WAKE_S)
 
-    consolidations_after = (await client_alpha.get_log()).count(CONSOLIDATION_LOG)
+    consolidations_after = (await client_alpha.log.get_log()).count(CONSOLIDATION_LOG)
     burst = consolidations_after - consolidations_before
     assert burst <= MAX_CONSOLIDATIONS_AFTER_WAKE, (
         f"Detected a burst of {burst} WG consolidations within"
@@ -205,7 +205,9 @@ async def test_no_burst_after_monotonic_jump(
 
     # Sanity check: the consolidation loop must keep ticking after wake (i.e. we
     # measured "no burst", not "interval died"). One more tick within ~2 periods.
-    await client_alpha.wait_for_log(CONSOLIDATION_LOG, count=consolidations_after + 1)
+    await client_alpha.log.wait_for_log(
+        CONSOLIDATION_LOG, count=consolidations_after + 1
+    )
 
 
 @pytest.mark.asyncio
@@ -257,7 +259,7 @@ async def test_no_burst_after_system_suspend(
     container = backing_container_id(client_alpha.get_connection().tag)
 
     await ping_between_all_nodes(env_mesh)
-    consolidations_before = (await client_alpha.get_log()).count(CONSOLIDATION_LOG)
+    consolidations_before = (await client_alpha.log.get_log()).count(CONSOLIDATION_LOG)
 
     # Suspend the VM (halt vCPUs), hold it down, then resume. The paused/running
     # transition reported by the monitor is the proof the VM really suspended.
@@ -279,7 +281,7 @@ async def test_no_burst_after_system_suspend(
     # on some platforms (e.g. Windows QPC - a real suspend, so no ticks are even
     # missed) and jumps on others (e.g. macOS mach time - missed ticks, which the
     # Delay fix must not replay in a burst).
-    consolidations_after = (await client_alpha.get_log()).count(CONSOLIDATION_LOG)
+    consolidations_after = (await client_alpha.log.get_log()).count(CONSOLIDATION_LOG)
     burst = consolidations_after - consolidations_before
     assert burst <= MAX_CONSOLIDATIONS_AFTER_WAKE, (
         f"Detected a burst of {burst} WG consolidations after a VM suspend"
