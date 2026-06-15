@@ -5,12 +5,6 @@ if TYPE_CHECKING:
 
 
 class ClientAnalytics:
-    """Analytics collection triggers for a `Client`.
-
-    Holds a back-reference to its `Client` and delegates to the libtelio proxy.
-    Accessed as `client.analytics`.
-    """
-
     def __init__(self, client: "Client") -> None:
         self._client = client
 

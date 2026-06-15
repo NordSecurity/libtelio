@@ -7,13 +7,6 @@ if TYPE_CHECKING:
 
 
 class ClientLog:
-    """Realtime log and process-output access for a running `Client`.
-
-    Holds a back-reference to its `Client` and reads the connection / proxy /
-    runtime / process lazily through the client's getters, so it keeps working
-    even though those only come into existence once `Client.run()` has started.
-    """
-
     def __init__(self, client: "Client") -> None:
         self._client = client
 

@@ -13,13 +13,6 @@ if TYPE_CHECKING:
 
 
 class ClientEvents:
-    """Event/state waiting helpers for a running `Client`.
-
-    Holds a back-reference to its `Client` and delegates to the underlying
-    `Events`/`Runtime` (via `client.get_events()`), adding per-node logging and
-    default-path handling. Accessed as `client.events`.
-    """
-
     def __init__(self, client: "Client") -> None:
         self._client = client
 

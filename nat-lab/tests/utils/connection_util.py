@@ -121,8 +121,6 @@ async def new_connection_manager_by_tag(
     async with new_connection_raw(tag) as connection:
         network_switcher = await create_network_switcher(tag, connection)
         await network_switcher.switch_to_primary_network()
-        # Connection-level diagnostics (packet capture + core-dump / system-log
-        # clearing) for the lifetime of the connection, independent of any client.
         async with connection_diagnostics(connection, run_tcpdump=run_tcpdump):
             if tag in DOCKER_GW_MAP:
                 async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:

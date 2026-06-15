@@ -8,12 +8,6 @@ if TYPE_CHECKING:
 
 
 class ClientVpn:
-    """VPN / exit-node connection control for a `Client`.
-
-    Holds a back-reference to its `Client` and orchestrates interface setup,
-    routing, the libtelio proxy and event waiting. Accessed as `client.vpn`.
-    """
-
     def __init__(self, client: "Client") -> None:
         self._client = client
 

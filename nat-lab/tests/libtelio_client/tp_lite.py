@@ -6,12 +6,6 @@ if TYPE_CHECKING:
 
 
 class ClientTpLite:
-    """Throughput-lite stats collection for a `Client`.
-
-    Holds a back-reference to its `Client` and delegates to the libtelio proxy.
-    Accessed as `client.tp_lite`.
-    """
-
     def __init__(self, client: "Client") -> None:
         self._client = client
 
