@@ -189,7 +189,7 @@ async def get_moose_db_file(
             await connection.download(container_backup_path, local_path)
             return
         except Exception as e:  # pylint: disable=broad-exception-caught
-            print(f"get_moose_db_file error: {e}, retrying ...")
+            log.warning("get_moose_db_file error: %s, retrying ...", e)
             max_retries -= 1
             await asyncio.sleep(0.1)
     if not max_retries:

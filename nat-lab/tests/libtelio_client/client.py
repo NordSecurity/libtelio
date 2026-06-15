@@ -507,8 +507,10 @@ class Client:
                     ).execute()
                     return
                 except Exception as e:  # pylint: disable=broad-exception-caught
-                    print(
-                        f"maybe_write_device_fingerprint_to_moose_db error: {e}, retrying ..."
+                    log.warning(
+                        "maybe_write_device_fingerprint_to_moose_db error: %s,"
+                        " retrying ...",
+                        e,
                     )
                     max_retries -= 1
                     await asyncio.sleep(0.1)
