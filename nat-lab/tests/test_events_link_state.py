@@ -93,7 +93,7 @@ def _generate_setup_parameter_pair(
     ]
 
 
-FEATURE_ENABLED_PARAMS_RELAY = [
+FEATURE_ENABLED_PARAMS = [
     param
     for param_pair in [
         (
@@ -106,6 +106,7 @@ FEATURE_ENABLED_PARAMS_RELAY = [
                             TelioAdapterType.NEP_TUN,
                         ),
                     ],
+                    direct=False,
                 ),
                 marks=pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else (),
             ),
@@ -118,6 +119,7 @@ FEATURE_ENABLED_PARAMS_RELAY = [
                             TelioAdapterType.NEP_TUN,
                         ),
                     ],
+                    direct=True,
                 ),
                 marks=pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else (),
             ),
@@ -130,6 +132,7 @@ FEATURE_ENABLED_PARAMS_RELAY = [
     ]
     for param in param_pair
 ]
+
 
 FEATURE_DISABLED_PARAMS = [
     pytest.param([
@@ -146,35 +149,32 @@ FEATURE_DISABLED_PARAMS = [
 
 # Beta node sends the keepalive packets with period according with its wg implementation, impacting
 # alpha link detection mechanism.
-FEATURE_ENABLED_PARAMS_RELAY_PLUS_LINUX_NATIVE_TUN_AS_BETA = (
-    FEATURE_ENABLED_PARAMS_RELAY
-    + [
-        param
-        for param_pair in [
-            (
-                pytest.param(
-                    _generate_setup_parameter_pair(
-                        [
-                            (tag, adapter),
-                            (
-                                ConnectionTag.DOCKER_CONE_CLIENT_2,
-                                TelioAdapterType.LINUX_NATIVE_TUN,
-                            ),
-                        ],
-                    ),
-                    marks=(
-                        pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else ()
-                    ),
+FEATURE_ENABLED_PARAMS_RELAY_PLUS_LINUX_NATIVE_TUN_AS_BETA = FEATURE_ENABLED_PARAMS + [
+    param
+    for param_pair in [
+        (
+            pytest.param(
+                _generate_setup_parameter_pair(
+                    [
+                        (tag, adapter),
+                        (
+                            ConnectionTag.DOCKER_CONE_CLIENT_2,
+                            TelioAdapterType.LINUX_NATIVE_TUN,
+                        ),
+                    ],
                 ),
-            )
-            for tag, adapter in [
-                (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
-                (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
-            ]
+                marks=(
+                    pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else ()
+                ),
+            ),
+        )
+        for tag, adapter in [
+            (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
+            (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
         ]
-        for param in param_pair
     ]
-)
+    for param in param_pair
+]
 
 
 async def wait_for_any_with_timeout(tasks, timeout: float):
@@ -188,7 +188,7 @@ async def wait_for_any_with_timeout(tasks, timeout: float):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS_RELAY)
+@pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS)
 async def test_event_link_state_peers_idle_all_time(
     setup_params: List[SetupParameters],
 ) -> None:
@@ -226,7 +226,7 @@ async def test_event_link_state_peers_idle_all_time(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS_RELAY)
+@pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS)
 async def test_event_link_state_peers_exchanging_data_for_a_long_time(
     setup_params: List[SetupParameters],
 ) -> None:
@@ -254,7 +254,7 @@ async def test_event_link_state_peers_exchanging_data_for_a_long_time(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS_RELAY)
+@pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS)
 async def test_event_link_state_peers_exchanging_data_then_idling_then_resume(
     setup_params: List[SetupParameters],
 ) -> None:
@@ -341,7 +341,7 @@ async def send_ping_and_wait_for_tx_after_rx_log(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS_RELAY)
+@pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS)
 async def test_event_link_state_peer_goes_offline(
     setup_params: List[SetupParameters],
 ) -> None:
@@ -505,7 +505,7 @@ async def test_event_link_state_peer_doesnt_respond(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS_RELAY)
+@pytest.mark.parametrize("setup_params", FEATURE_ENABLED_PARAMS)
 async def test_event_link_state_delayed_packet(
     setup_params: List[SetupParameters],
 ) -> None:
