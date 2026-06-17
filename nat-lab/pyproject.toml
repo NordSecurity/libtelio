@@ -134,12 +134,21 @@ check_untyped_defs = false
 module = "tests.uniffi.telio_bindings"
 ignore_errors = true
 
+[[tool.mypy.overrides]]
+module = "scapy.*"
+ignore_missing_imports = true
+
 [tool.pylint.main]
 init-hook = "import sys, os; sys.path.insert(0, os.getcwd())"
 
 [tool.pylint]
 max-line-length = 88
 ignore-paths = ".venv,tests/protobuf,bin/grpc_protobuf,tests/uniffi/telio_bindings.py"
+
+[tool.pylint.typecheck]
+# scapy.all re-exports its protocol classes dynamically, so pylint can't see
+# names like TCP/UDP via static analysis.
+ignored-modules = ["scapy.all"]
 
 [tool.pylint.design]
 # nat-lab test helpers/fixtures legitimately take many parameters (per-node

@@ -22,10 +22,16 @@ PCAP_FILE_PATH = {
     # read-write /data partition - the adb scratch dir used elsewhere too.
     TargetOS.Android: f"{ANDROID_DEVICE_TMP}dump.pcap",
 }
+# Base path for pktmon's .etl logs; one indexed file per capture segment
+# (pktmon.0.etl, pktmon.1.etl, ...) - see PktmonCapture for why we roll.
 PKTMON_LOG_FILE_WINDOWS = "C:\\workspace\\pktmon.etl"
 # Circular-buffer cap, raised from the 512 MB default so long captures don't
 # rotate away their start (VM has ~56 GB free).
 PKTMON_MAX_LOG_SIZE_MB = 16 * 1024
+# How often to check for adapters that appeared after capture start (e.g.
+# libtelio's tunnel adapter), and a safety cap on how many times we roll.
+PKTMON_ADAPTER_POLL_INTERVAL_S = 1.0
+PKTMON_MAX_SEGMENTS = 8
 TCPDUMP_START_EVENT_TIMEOUT_S = 10
 
 
@@ -134,20 +140,35 @@ class TcpDump:
             yield self
 
 
+def _with_segment_index(path: str, segment: int) -> str:
+    base, dot, ext = path.rpartition(".")
+    return f"{base}.{segment}.{ext}" if dot else f"{path}.{segment}"
+
+
 class PktmonCapture:
     """Packet capture for Windows VMs using the in-box `pktmon` tool.
 
-    Captures all adapters present at start with full payloads, one session
-    per machine, and converts the .etl to pcapng on the VM. Known gap:
-    adapters created later (libtelio's wireguard/wintun adapter) are not
-    captured, so decrypted tunnel traffic is missing from Windows pcaps -
-    it is visible in the counterpart node's pcap instead. `--comp all` and
-    `netsh trace` share this. SSH can't be filtered at capture time and is
-    stripped after download (see strip_ssh_from_pcap).
+    `--comp all` is required to capture libtelio's virtual wireguard/wintun
+    tunnel adapter (`--comp nics` only sees physical NICs). pktmon enumerates
+    adapters when a session starts, so the tunnel adapter - created later -
+    would still be missing (LLT-7429). To capture its decrypted traffic we poll
+    for new adapters and, when one appears, roll the session: stop, then start
+    a fresh one that re-enumerates and includes it. Each session writes its own
+    .etl, converted to a pcapng segment on the VM; segments are downloaded as
+    separate pcaps. After download each pcap is normalised (see
+    rewrite_windows_pcap): pktmon writes the tunnel adapter's bare-IP packets
+    under an Ethernet-typed interface, so they are wrapped in a synthetic
+    Ethernet header, and the SSH control channel (unfilterable at capture time)
+    is dropped. Best-effort: capturing the tunnel adapter depends on it living
+    long enough for the roll to fire.
     """
 
     connection: Connection
     output_file: str
+    # pcap segments produced on the VM (only ones that converted), in order
+    output_files: list[str]
+    # all .etl logs to clean up afterwards
+    log_files: list[str]
 
     def __init__(
         self, connection: Connection, output_file: Optional[str] = None
@@ -155,6 +176,22 @@ class PktmonCapture:
         assert connection.target_os == TargetOS.Windows
         self.connection = connection
         self.output_file = output_file or PCAP_FILE_PATH[TargetOS.Windows]
+        self._segment = 0
+        self._baseline: set[str] = set()
+        self.output_files = []
+        self.log_files = []
+
+    def _etl_path(self, segment: int) -> str:
+        return _with_segment_index(PKTMON_LOG_FILE_WINDOWS, segment)
+
+    def _pcap_path(self, segment: int) -> str:
+        # Keep segment 0 at the plain output path so the common no-roll case
+        # downloads exactly as before.
+        return (
+            self.output_file
+            if segment == 0
+            else _with_segment_index(self.output_file, segment)
+        )
 
     async def _exec_quiet(self, command: list[str], ignore_failure: bool) -> None:
         try:
@@ -169,19 +206,27 @@ class PktmonCapture:
                 e.stderr or e.stdout,
             )
 
-    @asynccontextmanager
-    async def run(self) -> AsyncIterator["PktmonCapture"]:
-        start_time = datetime.now()
-        # one session per machine: clear any leftover from a crashed run
-        await self._exec_quiet(["pktmon", "stop"], ignore_failure=True)
-        await self._exec_quiet(["pktmon", "filter", "remove"], ignore_failure=True)
+    async def _list_interface_names(self) -> set[str]:
+        process = await self.connection.create_process(
+            ["netsh", "interface", "show", "interface"], quiet=True
+        ).execute()
+        names: set[str] = set()
+        for line in process.get_stdout().splitlines():
+            # rows: "<Admin State> <State> <Type> <Interface Name>"; the name
+            # can contain spaces, so split off only the first three columns.
+            parts = line.split(None, 3)
+            if len(parts) == 4 and parts[0] in ("Enabled", "Disabled"):
+                names.add(parts[3].strip())
+        return names
+
+    async def _start_session(self, etl_path: str) -> None:
         await self._exec_quiet(
             [
                 "pktmon",
                 "start",
                 "--capture",
                 "--comp",
-                "nics",
+                "all",
                 "--pkt-size",
                 "0",
                 "--log-mode",
@@ -189,30 +234,114 @@ class PktmonCapture:
                 "--file-size",
                 str(PKTMON_MAX_LOG_SIZE_MB),
                 "--file-name",
-                PKTMON_LOG_FILE_WINDOWS,
+                etl_path,
             ],
             ignore_failure=False,
         )
+        self.log_files.append(etl_path)
+
+    async def _roll(self, current: set[str]) -> None:
+        if self._segment + 1 >= PKTMON_MAX_SEGMENTS:
+            return
+        try:
+            await self._exec_quiet(["pktmon", "stop"], ignore_failure=False)
+            self._segment += 1
+            await self._start_session(self._etl_path(self._segment))
+        except ProcessExecError as e:
+            log.warning(
+                "[%s] failed to roll pktmon capture: %s",
+                self.connection.tag,
+                e.stderr or e.stdout,
+            )
+            return
+        self._baseline |= current
+        log.info(
+            "[%s] rolled pktmon capture to segment %d after new adapter(s)",
+            self.connection.tag,
+            self._segment,
+        )
+
+    async def _poll_for_new_adapters(self) -> None:
+        while True:
+            await asyncio.sleep(PKTMON_ADAPTER_POLL_INTERVAL_S)
+            try:
+                current = await self._list_interface_names()
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                log.debug(
+                    "[%s] could not list interfaces while polling: %s",
+                    self.connection.tag,
+                    e,
+                )
+                continue
+            if not current:
+                continue
+            if not self._baseline:
+                # baseline wasn't captured at start; adopt the first reading
+                self._baseline = current
+                continue
+            new = current - self._baseline
+            if new:
+                log.info(
+                    "[%s] new adapter(s) appeared, rolling pktmon: %s",
+                    self.connection.tag,
+                    ", ".join(sorted(new)),
+                )
+                await self._roll(current)
+
+    async def _convert_segments(self) -> None:
+        for segment in range(self._segment + 1):
+            etl = self._etl_path(segment)
+            pcap = self._pcap_path(segment)
+            try:
+                await self.connection.create_process(
+                    ["pktmon", "etl2pcap", etl, "--out", pcap], quiet=True
+                ).execute()
+                self.output_files.append(pcap)
+            except ProcessExecError as e:
+                log.warning(
+                    "[%s] failed to convert pktmon segment %d (%s): %s",
+                    self.connection.tag,
+                    segment,
+                    etl,
+                    e.stderr or e.stdout,
+                )
+
+    @asynccontextmanager
+    async def run(self) -> AsyncIterator["PktmonCapture"]:
+        start_time = datetime.now()
+        # one session per machine: clear any leftover from a crashed run
+        await self._exec_quiet(["pktmon", "stop"], ignore_failure=True)
+        await self._exec_quiet(["pktmon", "filter", "remove"], ignore_failure=True)
+        await self._start_session(self._etl_path(0))
+        try:
+            self._baseline = await self._list_interface_names()
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            log.debug(
+                "[%s] could not snapshot baseline adapters: %s",
+                self.connection.tag,
+                e,
+            )
         log.info(
             "[%s] pktmon capture ready in %s",
             self.connection.tag,
             datetime.now() - start_time,
         )
+        poller = asyncio.create_task(self._poll_for_new_adapters())
         try:
             yield self
         finally:
+            poller.cancel()
+            try:
+                await poller
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                log.warning(
+                    "[%s] pktmon adapter poller errored: %s", self.connection.tag, e
+                )
             try:
                 await self._exec_quiet(["pktmon", "stop"], ignore_failure=False)
-                await self._exec_quiet(
-                    [
-                        "pktmon",
-                        "etl2pcap",
-                        PKTMON_LOG_FILE_WINDOWS,
-                        "--out",
-                        self.output_file,
-                    ],
-                    ignore_failure=False,
-                )
+                await self._convert_segments()
             except ProcessExecError as e:
                 log.warning(
                     "[%s] failed to stop/convert pktmon capture: %s",
@@ -274,44 +403,83 @@ def build_tcpdump_command(
     return command
 
 
-async def strip_ssh_from_pcap(pcap_path: str) -> None:
-    """Rewrite 'pcap_path' without port-22 SSH traffic, best-effort.
+def _bare_ip_ethertype(raw: bytes) -> Optional[int]:
+    """If 'raw' is a bare IP packet (no L2 header), return its EtherType.
 
-    pktmon can't filter at capture time, so the harness's own SSH chatter
-    (often most of the pcap) is dropped here. Original is kept on failure.
+    pktmon writes every adapter under one Ethernet-typed interface, but the
+    tunnel (wintun/wireguard) adapter has no L2 header, so its packets are bare
+    IP. We recognise them by matching the IP total length to the captured
+    length - a real Ethernet frame's length field is offset by its 14-byte
+    header, so this won't misfire on genuine Ethernet frames.
+    """
+    n = len(raw)
+    if n >= 20 and (raw[0] >> 4) == 4 and (raw[0] & 0x0F) >= 5:
+        if int.from_bytes(raw[2:4], "big") == n:
+            return 0x0800
+    if n >= 40 and (raw[0] >> 4) == 6:
+        if int.from_bytes(raw[4:6], "big") + 40 == n:
+            return 0x86DD
+    return None
+
+
+def _rewrite_windows_pcap_sync(pcap_path: str) -> None:
+    # scapy is only needed on the Windows capture path; import lazily.
+    from scapy.all import (  # pylint: disable=import-outside-toplevel
+        Ether,
+        PcapReader,
+        PcapWriter,
+        TCP,
+        UDP,
+    )
+
+    synthetic_l2 = b"\x00" * 12  # zeroed dst+src MAC for wrapped bare-IP packets
+    tmp_path = f"{pcap_path}.rewrite"
+    try:
+        writer = PcapWriter(tmp_path, linktype=1)
+        try:
+            with PcapReader(pcap_path) as reader:
+                for packet in reader:
+                    raw = bytes(packet)
+                    ethertype = _bare_ip_ethertype(raw)
+                    if ethertype is not None:
+                        raw = synthetic_l2 + ethertype.to_bytes(2, "big") + raw
+                    frame = Ether(raw)
+                    if any(
+                        frame.haslayer(proto)
+                        and (frame[proto].sport == 22 or frame[proto].dport == 22)
+                        for proto in (TCP, UDP)
+                    ):
+                        continue  # drop the harness's own SSH control channel
+                    frame.time = packet.time
+                    writer.write(frame)
+        finally:
+            writer.close()
+        os.replace(tmp_path, pcap_path)
+    except BaseException:
+        if os.path.isfile(tmp_path):
+            os.remove(tmp_path)
+        raise
+
+
+async def rewrite_windows_pcap(pcap_path: str) -> None:
+    """Normalise pktmon framing and drop SSH from a Windows pcap, best-effort.
+
+    Two fixes in one pass: wrap the tunnel adapter's bare-IP packets in a
+    synthetic Ethernet header so Wireshark renders them instead of treating
+    them as malformed, and drop the harness's own SSH control channel (pktmon
+    can't filter at capture time). Original is kept on any failure.
     """
     if not os.path.isfile(pcap_path):
         return
-    filtered_path = f"{pcap_path}.filtered"
+    loop = asyncio.get_event_loop()
     try:
-        process = await asyncio.create_subprocess_exec(
-            "tcpdump",
-            "-r",
-            pcap_path,
-            "-w",
-            filtered_path,
-            "port not 22",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        _, stderr = await process.communicate()
-        if process.returncode == 0:
-            os.replace(filtered_path, pcap_path)
-        else:
-            log.warning(
-                "Failed to strip SSH traffic from %s, keeping it unfiltered: %s",
-                pcap_path,
-                stderr.decode(errors="replace"),
-            )
-    except OSError as e:
+        await loop.run_in_executor(None, _rewrite_windows_pcap_sync, pcap_path)
+    except Exception as e:  # pylint: disable=broad-exception-caught
         log.warning(
-            "Failed to strip SSH traffic from %s, keeping it unfiltered: %s",
+            "Failed to normalize/strip Windows pcap %s, keeping it as-is: %s",
             pcap_path,
             e,
         )
-    finally:
-        if os.path.isfile(filtered_path):
-            os.remove(filtered_path)
 
 
 def find_unique_path_for_tcpdump(log_dir, guest_name):
@@ -366,16 +534,15 @@ async def make_local_tcpdump():
 
 async def _start_capture(
     exit_stack: AsyncExitStack, conn: Connection, session: bool
-) -> None:
+) -> Optional["PktmonCapture"]:
     for attempt in range(1, 4):
         try:
             if conn.target_os == TargetOS.Windows:
-                await exit_stack.enter_async_context(PktmonCapture(conn).run())
-            else:
-                await exit_stack.enter_async_context(
-                    TcpDump(conn, session=session).run()
-                )
-            return
+                capture = PktmonCapture(conn)
+                await exit_stack.enter_async_context(capture.run())
+                return capture
+            await exit_stack.enter_async_context(TcpDump(conn, session=session).run())
+            return None
         except Exception as e:  # pylint: disable=broad-exception-caught
             log.warning(
                 "Failed to start packet capture on %s (attempt %d/3): %s",
@@ -390,6 +557,30 @@ async def _start_capture(
                     log.error("Continuing without packet capture on %s", conn.tag)
                 else:
                     raise e
+    return None
+
+
+async def _download_pktmon_segments(
+    conn: Connection, capture: Optional["PktmonCapture"], dest_dir: str
+) -> None:
+    if capture is None:
+        # capture never started (best-effort on Windows) - nothing to fetch
+        return
+    for segment_file in capture.output_files:
+        path = find_unique_path_for_tcpdump(dest_dir, conn.tag.name)
+        await conn.download(segment_file, path)
+        if os.path.isfile(path):
+            await rewrite_windows_pcap(path)
+    leftovers = capture.output_files + capture.log_files
+    if leftovers:
+        try:
+            await conn.create_process(["del", *leftovers], quiet=True).execute()
+        except ProcessExecError as e:
+            log.debug(
+                "[%s] failed to clean up pktmon files: %s",
+                conn.tag,
+                e.stderr or e.stdout,
+            )
 
 
 @asynccontextmanager
@@ -399,34 +590,25 @@ async def make_tcpdump(
     store_in: Optional[str] = None,
     session: bool = False,
 ):
+    captures: dict[Connection, "PktmonCapture"] = {}
     try:
         async with AsyncExitStack() as exit_stack:
             for conn in connection_list:
-                await _start_capture(exit_stack, conn, session)
+                capture = await _start_capture(exit_stack, conn, session)
+                if conn.target_os == TargetOS.Windows and capture is not None:
+                    captures[conn] = capture
             yield
     finally:
         if download:
             log_dir = get_current_test_log_path()
             os.makedirs(log_dir, exist_ok=True)
+            dest_dir = store_in if store_in else log_dir
             for conn in connection_list:
-                path = find_unique_path_for_tcpdump(
-                    store_in if store_in else log_dir, conn.tag.name
-                )
-                await conn.download(PCAP_FILE_PATH[conn.target_os], path)
-
                 if conn.target_os == TargetOS.Windows:
-                    await strip_ssh_from_pcap(path)
-
-                if conn.target_os in [TargetOS.Linux, TargetOS.Mac, TargetOS.Android]:
-                    await conn.create_process(
-                        ["rm", "-f", PCAP_FILE_PATH[conn.target_os]], quiet=True
-                    ).execute()
-                else:
-                    await conn.create_process(
-                        [
-                            "del",
-                            PCAP_FILE_PATH[conn.target_os],
-                            PKTMON_LOG_FILE_WINDOWS,
-                        ],
-                        quiet=True,
-                    ).execute()
+                    await _download_pktmon_segments(conn, captures.get(conn), dest_dir)
+                    continue
+                path = find_unique_path_for_tcpdump(dest_dir, conn.tag.name)
+                await conn.download(PCAP_FILE_PATH[conn.target_os], path)
+                await conn.create_process(
+                    ["rm", "-f", PCAP_FILE_PATH[conn.target_os]], quiet=True
+                ).execute()
