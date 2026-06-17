@@ -1,14 +1,15 @@
 use std::net::IpAddr;
 
 use clap::Parser;
+// use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use telio_core::telio_task::io::chan;
 use tokio::sync::oneshot;
 use tracing::{error, info, trace};
-
 use crate::{
     comms::{DaemonConnection, DaemonSocket},
-    config::{Endpoint, RunningConfig},
+    config::{Endpoint, RunningConfig,
+    core_api::get_server_endpoints_list,
     daemon::{NordVpnLiteError, TelioStatusReport},
 };
 
@@ -18,14 +19,18 @@ pub(crate) const TIMEOUT_SEC: u64 = 60;
 #[clap()]
 #[derive(Serialize, Deserialize)]
 pub enum ClientCmd {
+    #[clap(about = "Connects to the endpoint")]
+    Connect,
+    #[clap(about = "Disconnect from the endpoint")]
+    Disconnect,
     #[clap(name = "status", about = "Retrieve the status report")]
     GetStatus,
     #[clap(hide = true)]
     IsAlive,
-    #[clap(name = "stop", about = "Stop daemon execution")]
-    QuitDaemon,
     #[clap(name = "reload", about = "Reload config file and restart the daemon")]
     Reload,
+    #[clap(about = "Show countries with available VPN servers")]
+    Countries,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -41,6 +46,7 @@ pub enum TelioTaskCmd {
     GetStatus(oneshot::Sender<TelioStatusReport>),
     // Connect to exit node with endpoint and optional hostname
     ConnectToExitNode(ExitNodeConfig),
+    DisconnectFromExitNode,
     // Break the receive loop to quit the daemon and exit gracefully
     Quit(oneshot::Sender<()>),
 }
@@ -70,6 +76,10 @@ pub(crate) struct DaemonOpts {
     /// Ignored with no-detach flag.
     #[clap(long = "stdout-path", default_value = "/var/log/nordvpnlite.log")]
     pub stdout_path: String,
+
+    // Do not connect when daemon is running
+    #[clap(long = "do-not-connect")]
+    pub do_not_connect: bool,
 }
 
 /// NordVPN Lite is a lightweight, standalone VPN client built around
@@ -80,11 +90,9 @@ pub(crate) struct DaemonOpts {
 #[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("LIBTELIO_COMMIT_SHA"), ") ", env!("BUILD_PROFILE")))]
 pub enum Cmd {
     #[clap(about = "Runs the nordvpnlite event loop")]
-    Start(DaemonOpts),
-    #[clap(flatten)]
+    Daemon(DaemonOpts),
+    #[command(flatten)]
     Client(ClientCmd),
-    #[clap(about = "Show countries with available VPN servers")]
-    Countries,
 }
 
 /// Command response type used to communicate between `telio runner -> daemon -> client`
@@ -124,13 +132,20 @@ where
     }
 }
 
-pub struct CommandListener {
+pub struct CommandListener<'a> {
     socket: DaemonSocket,
     /// Channel to send commands to telio task
     telio_task_tx: chan::Tx<TelioTaskCmd>,
     config: RunningConfig,
     /// Holds the new running config from a client triggered reload
     pending_config: Option<RunningConfig>,
+}
+
+impl CommandListener {
+    pub fn new(
+        socket: DaemonSocket,
+        telio_task_tx: chan::Tx<TelioTaskCmd>,
+        config: RunningConfig,
 }
 
 impl CommandListener {
@@ -174,21 +189,51 @@ impl CommandListener {
                 })
                 .await
             }
-            ClientCmd::QuitDaemon => {
-                trace!("Quitting telio task");
-                let (response_tx, response_rx) = oneshot::channel();
+            ClientCmd::Connect => {
+                trace!("Connecting to exit node");
+                let (response_tx, _) = oneshot::channel();
+                let command = match get_server_endpoints_list(&self.config).await {
+                    Ok(endpoints) => {
+                        // TODO: LLT-6460 - We can store the recommended server list, just in case
+                        // one server fails to connect, try the next one.
+                        if let Some(endpoint) = endpoints.first() {
+                            debug!("Selected exit node: {:#?}", endpoint);
+                            // initiate the VPN connection
+                            TelioTaskCmd::ConnectToExitNode(ExitNodeConfig {
+                                endpoint: endpoint.to_owned(),
+                                dns: self.config.dns.clone(),
+                            })
+                        } else {
+                            error!("Getting exit node endpoint failed: empty list");
+                            TelioTaskCmd::Quit(response_tx)
+                        }
+                    }
+                    Err(e) => {
+                        error!("Getting exit node endpoint failed: {e}");
+                        TelioTaskCmd::Quit(response_tx)
+                    }
+                };
+
+                // Send the command to the telio task
+                #[allow(mpsc_blocking_send)]
+                self.telio_task_tx.send(command).await.map_err(|e| {
+                    error!("Failed to send exit node command to telio task: {e}");
+                    NordVpnLiteError::CommandFailed(ClientCmd::Connect)
+                })?;
+
+                Ok(CommandResponse::Ok)
+            }
+            ClientCmd::Disconnect => {
                 #[allow(mpsc_blocking_send)]
                 self.telio_task_tx
-                    .send(TelioTaskCmd::Quit(response_tx))
+                    .send(TelioTaskCmd::DisconnectFromExitNode)
                     .await
-                    .map_err(|e| {
-                        error!("Error sending command: {}", e);
-                        NordVpnLiteError::CommandFailed(ClientCmd::QuitDaemon)
+                    .map_err(|_| {
+                        error!("Failed to disconnect from exit node");
+                        NordVpnLiteError::CommandFailed(ClientCmd::Disconnect)
                     })?;
-                // Wait for a response from TelioTask
-                // this essentually blocks the client quit command until the daemon initiated
-                // cleanup
-                handle_response(response_rx, |_| Ok(CommandResponse::Ok)).await
+
+                Ok(CommandResponse::Ok)
             }
             ClientCmd::Reload => {
                 match RunningConfig::from_file(&self.config.path) {
@@ -217,6 +262,25 @@ impl CommandListener {
                     }
                 }
             }
+            ClientCmd::Countries => {
+                unimplemented!()
+            }
+            // ClientCmd::QuitDaemon => {
+            //     trace!("Quitting telio task");
+            //     let (response_tx, response_rx) = oneshot::channel();
+            //     #[allow(mpsc_blocking_send)]
+            //     self.telio_task_tx
+            //         .send(TelioTaskCmd::Quit(response_tx))
+            //         .await
+            //         .map_err(|e| {
+            //             error!("Error sending command: {}", e);
+            //             NordVpnLiteError::CommandFailed(ClientCmd::QuitDaemon)
+            //         })?;
+            //     // Wait for a response from TelioTask
+            //     // this essentually blocks the client quit command until the daemon initiated
+            //     // cleanup
+            //     handle_response(response_rx, |_| Ok(CommandResponse::Ok)).await
+            // }
             ClientCmd::IsAlive => Ok(CommandResponse::Ok),
         }
     }
@@ -251,11 +315,13 @@ impl CommandListener {
                 } else {
                     // Early command handling before TelioTask is initialized
                     match &command {
-                        ClientCmd::QuitDaemon => CommandResponse::Ok,
                         ClientCmd::IsAlive => CommandResponse::Ok,
                         ClientCmd::GetStatus | ClientCmd::Reload => {
                             CommandResponse::DaemonInitializing
                         }
+                        ClientCmd::Connect => CommandResponse::DaemonInitializing,
+                        ClientCmd::Disconnect => CommandResponse::DaemonInitializing,
+                        ClientCmd::Countries => CommandResponse::Ok,
                     }
                 };
                 connection.respond(response.serialize()).await?;
