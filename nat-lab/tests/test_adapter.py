@@ -100,7 +100,7 @@ async def test_adapter_gone_event(
             raise RuntimeError("unsupported os")
 
     async with asyncio_util.run_async_context(
-        client.wait_for_event_error(expected_event)
+        client.events.wait_for_event_error(expected_event)
     ) as event:
         await asyncio.gather(
             delete_adapter(),
@@ -242,12 +242,12 @@ class TestAdapterStateForVpnAndDns:
             and isinstance(server_port, int)
             and isinstance(server_public_key, str)
         )
-        await client_alpha.connect_to_vpn(server_ip, server_port, server_public_key)
+        await client_alpha.vpn.connect(server_ip, server_port, server_public_key)
 
         state = await get_interface_state(client_conn, client_alpha)
         assert state == AdapterState.UP
 
-        await client_alpha.disconnect_from_vpn(server_public_key)
+        await client_alpha.vpn.disconnect(server_public_key)
 
         state = await get_interface_state(client_conn, client_alpha)
         assert state == expected_idle_state

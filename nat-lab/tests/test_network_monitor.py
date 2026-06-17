@@ -60,7 +60,7 @@ async def test_network_monitor(
     await client_alpha.restart_interface()
 
     async def check_logs(msg, count):
-        await client_alpha.wait_for_log(msg, count=count, not_greater=NOT_GREATER)
+        await client_alpha.log.wait_for(msg, count=count, not_greater=NOT_GREATER)
 
     await check_logs(PLATFORM_AGNOSTIC_MESSAGE, NR_OF_NOTIFICATIONS)
 

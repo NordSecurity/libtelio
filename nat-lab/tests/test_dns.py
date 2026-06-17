@@ -389,7 +389,7 @@ async def test_vpn_dns(alpha_ip_stack: IPStack, use_raw_forwarder: bool) -> None
 
         wg_server = config.WG_SERVER
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect(
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
@@ -707,7 +707,7 @@ async def test_dns_update(alpha_ip_stack: IPStack, use_raw_forwarder: bool) -> N
 
         wg_server = config.WG_SERVER
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect(
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 

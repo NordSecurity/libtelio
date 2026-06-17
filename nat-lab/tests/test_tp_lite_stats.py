@@ -120,7 +120,7 @@ class TestTpLiteStats:
             config.WG_SERVER,
         )
 
-        await client.enable_tp_lite_stats_collection(_tp_lite_config())
+        await client.tp_lite.enable_stats_collection(_tp_lite_config())
 
         await query_dns(
             connection, ALLOWED_DOMAIN, dns_server=TP_LITE_DNS_IP, options=["-type=a"]
@@ -158,7 +158,7 @@ class TestTpLiteStats:
         )
 
         await _trigger_stats_collection(connection)
-        (num_calls, domains, metrics) = await client.get_tp_lite_stats()
+        (num_calls, domains, metrics) = await client.tp_lite.get_stats()
 
         blocked_domain_names = [d.domain_name for d in domains]
 
@@ -177,7 +177,7 @@ class TestTpLiteStats:
 
         assert ALLOWED_DOMAIN not in blocked_domain_names
 
-        await client.disable_tp_lite_stats_collection()
+        await client.tp_lite.disable_stats_collection()
 
         # Make query after disabling, should not trigger callback
         with pytest.raises(Exception):
@@ -189,7 +189,7 @@ class TestTpLiteStats:
             )
 
         await _trigger_stats_collection(connection)
-        (num_calls, _, _) = await client.get_tp_lite_stats()
+        (num_calls, _, _) = await client.tp_lite.get_stats()
         assert num_calls == 0
 
     @pytest.mark.parametrize(
@@ -215,10 +215,10 @@ class TestTpLiteStats:
         )
 
         for _ in range(2):
-            await client.enable_tp_lite_stats_collection(_tp_lite_config())
+            await client.tp_lite.enable_stats_collection(_tp_lite_config())
 
             await _trigger_stats_collection(connection)
-            (num_calls, _, _) = await client.get_tp_lite_stats()
+            (num_calls, _, _) = await client.tp_lite.get_stats()
             assert num_calls == 0
 
             with pytest.raises(Exception):
@@ -230,7 +230,7 @@ class TestTpLiteStats:
                 )
 
             await _trigger_stats_collection(connection)
-            (num_calls, domains, metrics) = await client.get_tp_lite_stats()
+            (num_calls, domains, metrics) = await client.tp_lite.get_stats()
 
             assert num_calls == 1
             blocked_domain_names = [d.domain_name for d in domains]
@@ -262,7 +262,7 @@ class TestTpLiteStats:
 
         # Attempt to enable TP-Lite stats with empty list of DNS servers, gives an exception
         with pytest.raises(Exception):
-            await client.enable_tp_lite_stats_collection(
+            await client.tp_lite.enable_stats_collection(
                 _tp_lite_config(dns_server_ips=[])
             )
 
@@ -290,7 +290,7 @@ class TestTpLiteStats:
 
         # Attempt to enable TP-Lite stats without firewall feature, gives an exception
         with pytest.raises(Exception):
-            await client.enable_tp_lite_stats_collection(_tp_lite_config())
+            await client.tp_lite.enable_stats_collection(_tp_lite_config())
 
 
 class TestDnsWhitelisting:
@@ -344,7 +344,7 @@ class TestDnsWhitelisting:
 
         # Configure the whitelist and the DNS redirect at runtime, which
         # reconfigures the firewall.
-        await client.set_tp_lite_domain_whitelist(
+        await client.tp_lite.set_domain_whitelist(
             [BLOCKED_NXDOMAIN],
             [
                 DnsRedirect(

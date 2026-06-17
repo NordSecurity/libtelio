@@ -7,6 +7,7 @@ import pytest
 import pytest_asyncio
 from contextlib import AsyncExitStack
 from tests.helpers import (
+    SetupConnectionsParam,
     SetupParameters,
     setup_connections as _setup_connections,
     setup_environment as _setup_environment,
@@ -17,7 +18,7 @@ from tests.helpers_vpn import VpnConfig
 from tests.mesh_api import API
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import ConnectionManager
-from typing import AsyncGenerator, Callable, Awaitable, List, Optional, Union, Tuple
+from typing import AsyncGenerator, Callable, Awaitable, List, Optional, Tuple
 
 
 # ---------------------------------------------------------------------------
@@ -53,12 +54,7 @@ def _setup_connections_factory(
     """
 
     async def _factory(
-        connection_parameters: List[
-            Union[
-                ConnectionTag,
-                Tuple[ConnectionTag, Optional[list]],
-            ]
-        ],
+        connection_parameters: List[SetupConnectionsParam],
     ) -> List[ConnectionManager]:
         return await _setup_connections(exit_stack, connection_parameters)
 

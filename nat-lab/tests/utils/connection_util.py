@@ -18,6 +18,7 @@ from tests.utils.connection_tracker import (
     ConnectionCountLimit,
     FiveTuple,
 )
+from tests.utils.diagnostics import connection_diagnostics
 from tests.utils.logger import log
 from tests.utils.network_switcher import (
     Interface,
@@ -115,31 +116,36 @@ async def create_network_switcher(
 async def new_connection_manager_by_tag(
     tag: ConnectionTag,
     conn_tracker_config: Optional[List[ConnTrackerEventsValidator]] = None,
+    run_tcpdump: bool = True,
 ) -> AsyncIterator[ConnectionManager]:
     async with new_connection_raw(tag) as connection:
         network_switcher = await create_network_switcher(tag, connection)
         await network_switcher.switch_to_primary_network()
-        if tag in DOCKER_GW_MAP:
-            async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
+        async with connection_diagnostics(connection, run_tcpdump=run_tcpdump):
+            if tag in DOCKER_GW_MAP:
+                async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
+                    async with ConnectionTracker(
+                        gw_connection, conn_tracker_config
+                    ).run() as conn_tracker:
+                        try:
+                            yield ConnectionManager(
+                                connection,
+                                gw_connection,
+                                network_switcher,
+                                conn_tracker,
+                            )
+                        finally:
+                            pass
+            else:
                 async with ConnectionTracker(
-                    gw_connection, conn_tracker_config
+                    connection, conn_tracker_config
                 ).run() as conn_tracker:
                     try:
                         yield ConnectionManager(
-                            connection,
-                            gw_connection,
-                            network_switcher,
-                            conn_tracker,
+                            connection, None, network_switcher, conn_tracker
                         )
                     finally:
                         pass
-        else:
-            async with ConnectionTracker(
-                connection, conn_tracker_config
-            ).run() as conn_tracker:
-                yield ConnectionManager(
-                    connection, None, network_switcher, conn_tracker
-                )
 
 
 @asynccontextmanager

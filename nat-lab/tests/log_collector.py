@@ -281,6 +281,23 @@ async def _clear_windows_crash_dumps(connection: Connection) -> None:
         log.warning("Failed to clear pre-existing Windows crash dumps: %s", e)
 
 
+async def clear_system_log(connection: Connection) -> None:
+    """
+    Clear the system log on the target machine
+    Windows only for now
+    """
+    if connection.target_os == TargetOS.Windows:
+        for log_name in ["Application", "System"]:
+            await connection.create_process(
+                [
+                    "powershell",
+                    "-Command",
+                    f"Clear-EventLog -LogName {log_name}",
+                ],
+                quiet=True,
+            ).execute()
+
+
 async def clear_core_dumps(connection: Connection) -> None:
     if should_skip_core_dump_collection(connection):
         return

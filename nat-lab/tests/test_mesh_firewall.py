@@ -312,7 +312,7 @@ async def test_blocking_incoming_connections_from_exit_node(
 
     await client_exit_node.get_router().create_exit_node_route()
 
-    await client_alpha.connect_to_exit_node(exit_node.public_key)
+    await client_alpha.vpn.connect_to_exit_node(exit_node.public_key)
 
     # Both nodes should have the same external ip
 

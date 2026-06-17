@@ -165,6 +165,6 @@ async def test_start_named_ext_if_filter() -> None:
 
         # Wait for direct stun connections and wait for logs from windows.rs
         await asyncio.gather(*[
-            alpha_client.wait_for_log(f"Interface {interface} is not default!")
+            alpha_client.log.wait_for(f"Interface {interface} is not default!")
             for interface in ext_if_filter
         ])

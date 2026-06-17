@@ -28,7 +28,7 @@ async def test_custom_socket_buffers_on_neptun(
     env_mesh: Environment,
 ) -> None:
     client_alpha = env_mesh.clients[0]
-    await client_alpha.wait_for_log(
+    await client_alpha.log.wait_for(
         'Socket buffer "RcvBuf" set with value ' + str(BUFFER_SIZE)
     )
     # Ping to check connection works both ways

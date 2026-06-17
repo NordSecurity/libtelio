@@ -160,7 +160,7 @@ async def test_dns_through_exit(
     # entry connects to exit
     await client_exit.get_router().create_exit_node_route()
 
-    await client_alpha.connect_to_exit_node(exit_node.public_key)
+    await client_alpha.vpn.connect_to_exit_node(exit_node.public_key)
 
     await client_exit.enable_magic_dns(exit_info[1])
 
@@ -193,7 +193,7 @@ async def test_dns_through_exit(
         expected_output=["Name:.*google.com.*Address"],
         options=["-timeout=5"],
     )
-    await client_alpha.disconnect_from_exit_node(exit_node.public_key)
+    await client_alpha.vpn.disconnect_from_exit_node(exit_node.public_key)
 
     # local forwarder should resolve this, checking if forward ips are changed back correctly
     await query_dns(

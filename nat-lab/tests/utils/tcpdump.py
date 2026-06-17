@@ -5,8 +5,7 @@ import subprocess
 from asyncio import Event, wait_for
 from contextlib import asynccontextmanager, AsyncExitStack
 from datetime import datetime
-from tests.utils.connection import TargetOS, Connection
-from tests.utils.connection_util import ConnectionTag
+from tests.utils.connection import Connection, ConnectionTag, TargetOS
 from tests.utils.logger import log
 from tests.utils.output_notifier import OutputNotifier
 from tests.utils.process import Process, ProcessExecError
