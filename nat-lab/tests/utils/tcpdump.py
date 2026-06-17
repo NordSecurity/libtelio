@@ -148,19 +148,12 @@ def _with_segment_index(path: str, segment: int) -> str:
 class PktmonCapture:
     """Packet capture for Windows VMs using the in-box `pktmon` tool.
 
-    `--comp all` is required to capture libtelio's virtual wireguard/wintun
-    tunnel adapter (`--comp nics` only sees physical NICs). pktmon enumerates
-    adapters when a session starts, so the tunnel adapter - created later -
-    would still be missing (LLT-7429). To capture its decrypted traffic we poll
-    for new adapters and, when one appears, roll the session: stop, then start
-    a fresh one that re-enumerates and includes it. Each session writes its own
-    .etl, converted to a pcapng segment on the VM; segments are downloaded as
-    separate pcaps. After download each pcap is normalised (see
-    rewrite_windows_pcap): pktmon writes the tunnel adapter's bare-IP packets
-    under an Ethernet-typed interface, so they are wrapped in a synthetic
-    Ethernet header, and the SSH control channel (unfilterable at capture time)
-    is dropped. Best-effort: capturing the tunnel adapter depends on it living
-    long enough for the roll to fire.
+    `--comp all` captures libtelio's virtual tunnel adapter (`--comp nics`
+    misses it). pktmon only enumerates adapters at session start, so when the
+    tunnel adapter appears later we roll the session (stop+start) to pick it up
+    (LLT-7429), splitting capture into .etl/pcap segments. Segments are merged
+    and normalised after download (see merge_windows_pcaps). Best-effort:
+    depends on the tunnel adapter living long enough for the roll to fire.
     """
 
     connection: Connection
@@ -219,34 +212,45 @@ class PktmonCapture:
                 names.add(parts[3].strip())
         return names
 
+    def _pktmon_start_args(self, etl_path: str) -> list[str]:
+        return [
+            "pktmon",
+            "start",
+            "--capture",
+            "--comp",
+            "all",
+            "--pkt-size",
+            "0",
+            "--log-mode",
+            "circular",
+            "--file-size",
+            str(PKTMON_MAX_LOG_SIZE_MB),
+            "--file-name",
+            etl_path,
+        ]
+
     async def _start_session(self, etl_path: str) -> None:
-        await self._exec_quiet(
-            [
-                "pktmon",
-                "start",
-                "--capture",
-                "--comp",
-                "all",
-                "--pkt-size",
-                "0",
-                "--log-mode",
-                "circular",
-                "--file-size",
-                str(PKTMON_MAX_LOG_SIZE_MB),
-                "--file-name",
-                etl_path,
-            ],
-            ignore_failure=False,
-        )
+        await self._exec_quiet(self._pktmon_start_args(etl_path), ignore_failure=False)
         self.log_files.append(etl_path)
 
     async def _roll(self, current: set[str]) -> None:
         if self._segment + 1 >= PKTMON_MAX_SEGMENTS:
             return
+        next_segment = self._segment + 1
+        etl_path = self._etl_path(next_segment)
+        # One round-trip stop+start - smallest possible gap (pktmon allows one
+        # session per machine, so no overlap). Nested `cmd /c` so a real `&&`
+        # survives arg escaping (^&^&) and chains on the VM.
+        roll_command = [
+            "cmd",
+            "/c",
+            "pktmon",
+            "stop",
+            "&&",
+            *self._pktmon_start_args(etl_path),
+        ]
         try:
-            await self._exec_quiet(["pktmon", "stop"], ignore_failure=False)
-            self._segment += 1
-            await self._start_session(self._etl_path(self._segment))
+            await self._exec_quiet(roll_command, ignore_failure=False)
         except ProcessExecError as e:
             log.warning(
                 "[%s] failed to roll pktmon capture: %s",
@@ -254,6 +258,8 @@ class PktmonCapture:
                 e.stderr or e.stdout,
             )
             return
+        self._segment = next_segment
+        self.log_files.append(etl_path)
         self._baseline |= current
         log.info(
             "[%s] rolled pktmon capture to segment %d after new adapter(s)",
@@ -422,7 +428,7 @@ def _bare_ip_ethertype(raw: bytes) -> Optional[int]:
     return None
 
 
-def _rewrite_windows_pcap_sync(pcap_path: str) -> None:
+def _merge_windows_pcaps_sync(segment_paths: list[str], out_path: str) -> None:
     # scapy is only needed on the Windows capture path; import lazily.
     from scapy.all import (  # pylint: disable=import-outside-toplevel
         Ether,
@@ -433,53 +439,61 @@ def _rewrite_windows_pcap_sync(pcap_path: str) -> None:
     )
 
     synthetic_l2 = b"\x00" * 12  # zeroed dst+src MAC for wrapped bare-IP packets
-    tmp_path = f"{pcap_path}.rewrite"
+    tmp_path = f"{out_path}.merge"
     try:
         writer = PcapWriter(tmp_path, linktype=1)
         try:
-            with PcapReader(pcap_path) as reader:
-                for packet in reader:
-                    raw = bytes(packet)
-                    ethertype = _bare_ip_ethertype(raw)
-                    if ethertype is not None:
-                        raw = synthetic_l2 + ethertype.to_bytes(2, "big") + raw
-                    frame = Ether(raw)
-                    if any(
-                        frame.haslayer(proto)
-                        and (frame[proto].sport == 22 or frame[proto].dport == 22)
-                        for proto in (TCP, UDP)
-                    ):
-                        continue  # drop the harness's own SSH control channel
-                    frame.time = packet.time
-                    writer.write(frame)
+            # Segments are temporally disjoint (stop -> start), so capture-order
+            # concatenation is time-ordered and duplicate-free.
+            for segment_path in segment_paths:
+                with PcapReader(segment_path) as reader:
+                    for packet in reader:
+                        raw = bytes(packet)
+                        ethertype = _bare_ip_ethertype(raw)
+                        if ethertype is not None:
+                            raw = synthetic_l2 + ethertype.to_bytes(2, "big") + raw
+                        frame = Ether(raw)
+                        if any(
+                            frame.haslayer(proto)
+                            and (frame[proto].sport == 22 or frame[proto].dport == 22)
+                            for proto in (TCP, UDP)
+                        ):
+                            continue  # drop the harness's own SSH control channel
+                        frame.time = packet.time
+                        writer.write(frame)
         finally:
             writer.close()
-        os.replace(tmp_path, pcap_path)
+        os.replace(tmp_path, out_path)
     except BaseException:
         if os.path.isfile(tmp_path):
             os.remove(tmp_path)
         raise
 
 
-async def rewrite_windows_pcap(pcap_path: str) -> None:
-    """Normalise pktmon framing and drop SSH from a Windows pcap, best-effort.
+async def merge_windows_pcaps(segment_paths: list[str], out_path: str) -> bool:
+    """Merge pktmon segments into one continuous, normalised pcap, best-effort.
 
-    Two fixes in one pass: wrap the tunnel adapter's bare-IP packets in a
-    synthetic Ethernet header so Wireshark renders them instead of treating
-    them as malformed, and drop the harness's own SSH control channel (pktmon
-    can't filter at capture time). Original is kept on any failure.
+    Concatenates segments in capture order; wraps the tunnel adapter's bare-IP
+    packets in Ethernet framing (else Wireshark sees them as malformed) and
+    drops the SSH control channel (pktmon can't filter at capture time).
+    Returns False on failure, leaving segments untouched for the caller.
     """
-    if not os.path.isfile(pcap_path):
-        return
+    segment_paths = [p for p in segment_paths if os.path.isfile(p)]
+    if not segment_paths:
+        return False
     loop = asyncio.get_event_loop()
     try:
-        await loop.run_in_executor(None, _rewrite_windows_pcap_sync, pcap_path)
+        await loop.run_in_executor(
+            None, _merge_windows_pcaps_sync, segment_paths, out_path
+        )
+        return True
     except Exception as e:  # pylint: disable=broad-exception-caught
         log.warning(
-            "Failed to normalize/strip Windows pcap %s, keeping it as-is: %s",
-            pcap_path,
+            "Failed to merge/normalize Windows pcap segments %s, keeping them: %s",
+            segment_paths,
             e,
         )
+        return False
 
 
 def find_unique_path_for_tcpdump(log_dir, guest_name):
@@ -566,11 +580,24 @@ async def _download_pktmon_segments(
     if capture is None:
         # capture never started (best-effort on Windows) - nothing to fetch
         return
-    for segment_file in capture.output_files:
-        path = find_unique_path_for_tcpdump(dest_dir, conn.tag.name)
-        await conn.download(segment_file, path)
-        if os.path.isfile(path):
-            await rewrite_windows_pcap(path)
+    local_segments: list[str] = []
+    for index, segment_file in enumerate(capture.output_files):
+        tmp_path = f"{dest_dir}/.{conn.tag.name}-pktmon-seg{index}.pcap.tmp"
+        await conn.download(segment_file, tmp_path)
+        if os.path.isfile(tmp_path):
+            local_segments.append(tmp_path)
+    if local_segments:
+        out_path = find_unique_path_for_tcpdump(dest_dir, conn.tag.name)
+        if await merge_windows_pcaps(local_segments, out_path):
+            for tmp_path in local_segments:
+                os.remove(tmp_path)
+        else:
+            # merge failed: keep the raw segments as separate guest pcaps so
+            # the capture isn't lost (unnormalised, SSH not stripped)
+            for tmp_path in local_segments:
+                os.replace(
+                    tmp_path, find_unique_path_for_tcpdump(dest_dir, conn.tag.name)
+                )
     leftovers = capture.output_files + capture.log_files
     if leftovers:
         try:

@@ -137,6 +137,9 @@ ignore_errors = true
 [[tool.mypy.overrides]]
 module = "scapy.*"
 ignore_missing_imports = true
+# scapy populates scapy.all dynamically and ships imperfect type hints, so
+# treat it as untyped rather than chase attr-defined/iterator-type errors.
+follow_imports = "skip"
 
 [tool.pylint.main]
 init-hook = "import sys, os; sys.path.insert(0, os.getcwd())"
