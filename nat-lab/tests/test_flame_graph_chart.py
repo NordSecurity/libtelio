@@ -62,7 +62,7 @@ async def test_connect_node_flame_graph_chart(
     client_conn = alpha_conn
     client_alpha = alpha_client
     log.info("Connecting to vpn server")
-    await client_alpha.vpn.connect_to_vpn(
+    await client_alpha.vpn.connect(
         str(vpn_conf.server_conf["ipv4"]),
         int(vpn_conf.server_conf["port"]),
         str(vpn_conf.server_conf["public_key"]),

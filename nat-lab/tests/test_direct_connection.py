@@ -481,7 +481,7 @@ async def test_direct_working_paths_with_skip_unresponsive_peers() -> None:
         await epsilon_client.stop_device()
 
         await asyncio.gather(*[
-            running_client.log.wait_for_log(
+            running_client.log.wait_for(
                 "Skipping sending CMM to peer"
                 f" {stopped_node.public_key} (Unresponsive)"
             )
@@ -592,12 +592,12 @@ async def test_direct_working_paths_with_pausing_upnp_and_stun() -> None:
 
         await asyncio.gather(*[
             (
-                client.log.wait_for_log(
+                client.log.wait_for(
                     "Skipping getting endpoint via STUN endpoint"
                     " provider(ModulePaused)"
                 )
                 if EndpointProvider.STUN in provider
-                else client.log.wait_for_log(
+                else client.log.wait_for(
                     "Skipping getting endpoint via UPNP endpoint"
                     " provider(ModulePaused)"
                 )

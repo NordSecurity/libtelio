@@ -456,17 +456,17 @@ async def run_default_scenario(
     )
 
     if alpha_has_vpn_connection:
-        await client_alpha.vpn.connect_to_vpn(
+        await client_alpha.vpn.connect(
             str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
         )
 
     if beta_has_vpn_connection:
-        await client_beta.vpn.connect_to_vpn(
+        await client_beta.vpn.connect(
             str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
         )
 
     if gamma_has_vpn_connection:
-        await client_gamma.vpn.connect_to_vpn(
+        await client_gamma.vpn.connect(
             str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
         )
 
@@ -2188,8 +2188,8 @@ async def test_lana_rtt_interval_controls_periodic_qos_collection():
             client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
 
-        await client_alpha.log.wait_for_log("Starting periodic ping", count=2)
-        await client_beta.log.wait_for_log("Starting periodic ping", count=2)
+        await client_alpha.log.wait_for("Starting periodic ping", count=2)
+        await client_beta.log.wait_for("Starting periodic ping", count=2)
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 

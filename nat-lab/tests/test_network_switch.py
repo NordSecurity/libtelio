@@ -183,7 +183,7 @@ async def test_vpn_network_switch(alpha_setup_params: SetupParameters) -> None:
         network_switcher = alpha_conn_mngr.network_switcher
 
         wg_server = config.WG_SERVER
-        await client_alpha.vpn.connect_to_vpn(
+        await client_alpha.vpn.connect(
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 

@@ -11,7 +11,7 @@ class ClientVpn:
     def __init__(self, client: "Client") -> None:
         self._client = client
 
-    async def connect_to_vpn(
+    async def connect(
         self,
         ip: str,
         port: int,
@@ -49,7 +49,7 @@ class ClientVpn:
                 )
             await event
 
-    async def disconnect_from_vpn(
+    async def disconnect(
         self,
         public_key: str,
         timeout: Optional[float] = None,

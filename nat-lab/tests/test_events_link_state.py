@@ -327,7 +327,7 @@ async def send_ping_and_wait_for_tx_after_rx_log(
     If the replies are delivered, the function will hang indefinitely.
     """
     log_wait_task = asyncio.create_task(
-        client.log.wait_for_log("first_tx_after_rx=Some", count=1, incremental=True)
+        client.log.wait_for("first_tx_after_rx=Some", count=1, incremental=True)
     )
 
     # Yield to the event loop to ensure the log wait task is started
@@ -365,9 +365,7 @@ async def test_event_link_state_peer_goes_offline(
 
         # Stopping beta generates rx/tx traffic with alpha. Wait for 2 polling cycles
         # to guarantee that only tx increases (relatively to alpha->beta link)
-        await client_alpha.log.wait_for_log(
-            "UAPI request: get", count=2, incremental=True
-        )
+        await client_alpha.log.wait_for("UAPI request: get", count=2, incremental=True)
 
         # Trigger TX-after-RX monitoring by sending a ping (which should fail since beta is offline)
         await send_ping_and_wait_for_tx_after_rx_log(
@@ -527,9 +525,7 @@ async def test_event_link_state_delayed_packet(
         )
 
         # Wait for 2 polling cycles to finish the previous ping polling interval
-        await client_alpha.log.wait_for_log(
-            "UAPI request: get", count=2, incremental=True
-        )
+        await client_alpha.log.wait_for("UAPI request: get", count=2, incremental=True)
 
         # Trigger TX-after-RX monitoring - alpha will only receive the ICMP reply IDLE_TIMEOUT_S after,
         # in the meantime alpha->beta link state goes DOWN.
@@ -625,9 +621,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter(
 
         # notify_network_change() drops every socket, thus generating some traffic with beta. Waiting for 2 polling cycles
         # will guarantee a different polling interval where tx is the only counter to be increased
-        await client_alpha.log.wait_for_log(
-            "UAPI request: get", count=2, incremental=True
-        )
+        await client_alpha.log.wait_for("UAPI request: get", count=2, incremental=True)
 
         # Trigger TX-after-RX monitoring (ping should fail since adapter is disabled)
         await send_ping_and_wait_for_tx_after_rx_log(
@@ -740,9 +734,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_direct_path
 
         # notify_network_change() drops every socket, thus generating some traffic with beta. Waiting for 2 polling cycles
         # will guarantee a different polling interval where tx is the only counter to be increased
-        await client_alpha.log.wait_for_log(
-            "UAPI request: get", count=2, incremental=True
-        )
+        await client_alpha.log.wait_for("UAPI request: get", count=2, incremental=True)
 
         # Trigger TX-after-RX monitoring (ping should fail since adapter is disabled)
         await send_ping_and_wait_for_tx_after_rx_log(
@@ -828,7 +820,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_with_vpn(
         wg_server = config.WG_SERVER
         vpn_public_key = str(wg_server["public_key"])
         vpn_ipv4 = str(wg_server["ipv4"])
-        await client_alpha.vpn.connect_to_vpn(
+        await client_alpha.vpn.connect(
             vpn_ipv4, int(wg_server["port"]), vpn_public_key, link_state_enabled=True
         )
 
@@ -857,9 +849,7 @@ async def test_event_link_detection_after_disabling_ethernet_adapter_with_vpn(
 
         # notify_network_change() drops every socket, thus generating some traffic with VPN server. Waiting for 2 polling cycles
         # will guarantee a different polling interval where tx is the only counter to be increased
-        await client_alpha.log.wait_for_log(
-            "UAPI request: get", count=2, incremental=True
-        )
+        await client_alpha.log.wait_for("UAPI request: get", count=2, incremental=True)
 
         # Trigger TX-after-RX monitoring (ping should fail since adapter is disabled)
         await send_ping_and_wait_for_tx_after_rx_log(

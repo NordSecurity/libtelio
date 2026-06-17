@@ -16,7 +16,7 @@ async def connect_vpn(
     client_meshnet_ip: str,
     wg_server: dict,
 ) -> None:
-    await client.vpn.connect_to_vpn(
+    await client.vpn.connect(
         wg_server["ipv4"], wg_server["port"], wg_server["public_key"]
     )
 

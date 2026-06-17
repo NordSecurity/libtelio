@@ -484,7 +484,7 @@ class Client:
 
     async def maybe_write_device_fingerprint_to_moose_db(self):
         if self._fingerprint is not None:
-            await self.log.wait_for_log("[Moose] Init callback success")
+            await self.log.wait_for("[Moose] Init callback success")
             database, fingerprint = self._fingerprint
             max_retries = MOOSE_DB_TIMEOUT_MS / 1000
             max_timeout = MOOSE_DB_TIMEOUT_MS / 30

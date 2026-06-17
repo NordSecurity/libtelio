@@ -30,7 +30,7 @@ async def _connect_vpn_pq(
 ) -> datetime:
     wg_server = config.NLX_SERVER
 
-    await client.vpn.connect_to_vpn(
+    await client.vpn.connect(
         str(wg_server["ipv4"]),
         int(wg_server["port"]),
         str(wg_server["public_key"]),
@@ -248,7 +248,7 @@ class TestPqVpnRekey:
 
         async with new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1) as nlx_conn:
             preshared_before = await inspect_preshared_key(nlx_conn)
-            await client_alpha.log.wait_for_log("Successful PQ REKEY", incremental=True)
+            await client_alpha.log.wait_for("Successful PQ REKEY", incremental=True)
 
             preshared_after = await inspect_preshared_key(nlx_conn)
             assert (
@@ -334,7 +334,7 @@ class TestPqVpnRekey:
 
         await client.enable_magic_dns(["10.0.80.82"])
 
-        await client.vpn.connect_to_vpn(
+        await client.vpn.connect(
             str(wg_srv["ipv4"]),
             int(wg_srv["port"]),
             str(wg_srv["public_key"]),
@@ -345,9 +345,9 @@ class TestPqVpnRekey:
         # Expect this to work
         await query_dns(client_conn, "google.com")
 
-        await client.vpn.disconnect_from_vpn(str(wg_srv["public_key"]))
+        await client.vpn.disconnect(str(wg_srv["public_key"]))
 
-        await client.vpn.connect_to_vpn(
+        await client.vpn.connect(
             str(wg_srv["ipv4"]),
             int(wg_srv["port"]),
             str(wg_srv["public_key"]),
@@ -438,7 +438,7 @@ class TestPqVpnHandshake:
         except TimeoutError:
             pass
 
-        await client.vpn.disconnect_from_vpn(pubkey, timeout=4)
+        await client.vpn.disconnect(pubkey, timeout=4)
         await client.get_router().delete_vpn_route()
 
         # now connect to a good behaving PQ server
@@ -479,7 +479,7 @@ class TestPqVpnHandshake:
             wg_server = config.NLX_SERVER
 
             # non-PQ connection
-            await client.vpn.connect_to_vpn(
+            await client.vpn.connect(
                 str(wg_server["ipv4"]),
                 int(wg_server["port"]),
                 str(wg_server["public_key"]),
@@ -491,7 +491,7 @@ class TestPqVpnHandshake:
             assert preshared == EMPTY_PRESHARED_KEY_SLOT
 
             # upgrade to PQ
-            await client.vpn.disconnect_from_vpn(str(wg_server["public_key"]))
+            await client.vpn.disconnect(str(wg_server["public_key"]))
             await _connect_vpn_pq(client_conn, client)
             await ping(client_conn, config.PHOTO_ALBUM_IP)
 
@@ -580,7 +580,7 @@ class TestNlxVpn:
             sleep_secs = (just_before_pq_restart - datetime.now()).total_seconds()
             await asyncio.sleep(sleep_secs)
 
-            client_log = (await client_alpha.log.get_log()).lower()
+            client_log = (await client_alpha.log.get()).lower()
             log_line = "Restarting postquantum entity".lower()
             occurrences = client_log.count(log_line)
 
@@ -588,7 +588,7 @@ class TestNlxVpn:
                 occurrences == 0
             ), "Found PQ restart log even though PQ should not have been restarted yet"
 
-            await client_alpha.log.wait_for_log("Restarting postquantum entity")
+            await client_alpha.log.wait_for("Restarting postquantum entity")
 
         await client_alpha.events.wait_for_state_peer(
             config.NLX_SERVER["public_key"],
@@ -639,7 +639,7 @@ class TestNlxVpn:
 
         await asyncio.sleep(200)
 
-        log = (await client_alpha.log.get_log()).lower()
+        log = (await client_alpha.log.get()).lower()
         log_line = "Restarting postquantum entity".lower()
         occurrences = log.count(log_line)
 
