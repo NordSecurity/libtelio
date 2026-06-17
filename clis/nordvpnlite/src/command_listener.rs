@@ -1,16 +1,15 @@
 use std::net::IpAddr;
 
+use crate::{
+    comms::{DaemonConnection, DaemonSocket},
+    config::{Endpoint, RunningConfig},
+    daemon::{handle_exit_node_connection, NordVpnLiteError, TelioStatusReport},
+};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use telio_core::telio_task::io::chan;
 use tokio::sync::oneshot;
 use tracing::{error, info, trace};
-
-use crate::{
-    comms::{DaemonConnection, DaemonSocket},
-    config::{Endpoint, RunningConfig},
-    daemon::{NordVpnLiteError, TelioStatusReport},
-};
 
 pub(crate) const TIMEOUT_SEC: u64 = 60;
 const DEFAULT_CONFIG_PATH: &str = "/etc/nordvpnlite/config.json";
@@ -19,14 +18,18 @@ const DEFAULT_CONFIG_PATH: &str = "/etc/nordvpnlite/config.json";
 #[clap()]
 #[derive(Serialize, Deserialize)]
 pub enum ClientCmd {
+    #[clap(about = "Connects to the endpoint")]
+    Connect,
+    #[clap(about = "Disconnect from the endpoint")]
+    Disconnect,
     #[clap(name = "status", about = "Retrieve the status report")]
     GetStatus,
     #[clap(hide = true)]
     IsAlive,
-    #[clap(name = "stop", about = "Stop daemon execution")]
-    QuitDaemon,
     #[clap(name = "reload", about = "Reload config file and restart the daemon")]
     Reload,
+    #[clap(about = "Show countries with available VPN servers")]
+    Countries,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -42,6 +45,7 @@ pub enum TelioTaskCmd {
     GetStatus(oneshot::Sender<TelioStatusReport>),
     // Connect to exit node with endpoint and optional hostname
     ConnectToExitNode(ExitNodeConfig),
+    DisconnectFromExitNode,
     // Break the receive loop to quit the daemon and exit gracefully
     Quit(oneshot::Sender<()>),
 }
@@ -71,6 +75,10 @@ pub(crate) struct DaemonOpts {
     /// Ignored with no-detach flag.
     #[clap(long = "stdout-path", default_value = "/var/log/nordvpnlite.log")]
     pub stdout_path: String,
+
+    /// Do not connect when daemon is running
+    #[clap(long = "do-not-connect")]
+    pub do_not_connect: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -128,11 +136,9 @@ pub(crate) struct LogoutOpts {
 #[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("LIBTELIO_COMMIT_SHA"), ") ", env!("BUILD_PROFILE")))]
 pub enum Cmd {
     #[clap(about = "Runs the nordvpnlite event loop")]
-    Start(DaemonOpts),
-    #[clap(flatten)]
+    Daemon(DaemonOpts),
+    #[command(flatten)]
     Client(ClientCmd),
-    #[clap(about = "Show countries with available VPN servers")]
-    Countries,
     #[clap(about = "Store NordVPN authentication credentials")]
     Login(LoginOpts),
     #[clap(about = "Clear NordVPN authentication credentials")]
@@ -226,21 +232,23 @@ impl CommandListener {
                 })
                 .await
             }
-            ClientCmd::QuitDaemon => {
-                trace!("Quitting telio task");
-                let (response_tx, response_rx) = oneshot::channel();
+            ClientCmd::Connect => {
+                trace!("Connecting to exit node");
+                handle_exit_node_connection(&self.config.parsed, self.telio_task_tx.clone())
+                    .await
+                    .map(|_| CommandResponse::Ok)
+            }
+            ClientCmd::Disconnect => {
                 #[allow(mpsc_blocking_send)]
                 self.telio_task_tx
-                    .send(TelioTaskCmd::Quit(response_tx))
+                    .send(TelioTaskCmd::DisconnectFromExitNode)
                     .await
-                    .map_err(|e| {
-                        error!("Error sending command: {}", e);
-                        NordVpnLiteError::CommandFailed(ClientCmd::QuitDaemon)
+                    .map_err(|_| {
+                        error!("Failed to disconnect from exit node");
+                        NordVpnLiteError::CommandFailed(ClientCmd::Disconnect)
                     })?;
-                // Wait for a response from TelioTask
-                // this essentially blocks the client quit command until the daemon initiated
-                // cleanup
-                handle_response(response_rx, |_| Ok(CommandResponse::Ok)).await
+
+                Ok(CommandResponse::Ok)
             }
             ClientCmd::Reload => {
                 match RunningConfig::from_file(&self.config.path) {
@@ -269,6 +277,7 @@ impl CommandListener {
                     }
                 }
             }
+            ClientCmd::Countries => Ok(CommandResponse::Ok),
             ClientCmd::IsAlive => Ok(CommandResponse::Ok),
         }
     }
@@ -303,11 +312,13 @@ impl CommandListener {
                 } else {
                     // Early command handling before TelioTask is initialized
                     match &command {
-                        ClientCmd::QuitDaemon => CommandResponse::Ok,
                         ClientCmd::IsAlive => CommandResponse::Ok,
                         ClientCmd::GetStatus | ClientCmd::Reload => {
                             CommandResponse::DaemonInitializing
                         }
+                        ClientCmd::Connect => CommandResponse::DaemonInitializing,
+                        ClientCmd::Disconnect => CommandResponse::DaemonInitializing,
+                        ClientCmd::Countries => CommandResponse::Ok,
                     }
                 };
                 connection.respond(response.serialize()).await?;
@@ -468,14 +479,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_command_quit() {
-        let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, true, false).await;
-
-        assert_eq!(response.unwrap(), CommandResponse::Ok);
-        assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
-    }
-
-    #[tokio::test]
     async fn test_command_is_alive() {
         let (response, cmd) = test_command_helper(ClientCmd::IsAlive, true, false).await;
 
@@ -532,14 +535,6 @@ mod tests {
         let (_, cmd) = test_command_helper(ClientCmd::GetStatus, true, true).await;
 
         assert_matches!(cmd, Err(NordVpnLiteError::Io(_)));
-    }
-
-    #[tokio::test]
-    async fn test_command_early_quit() {
-        let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, false, false).await;
-
-        assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
-        assert_eq!(response.unwrap(), CommandResponse::Ok);
     }
 
     #[tokio::test]
