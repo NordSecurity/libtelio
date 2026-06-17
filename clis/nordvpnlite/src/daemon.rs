@@ -292,6 +292,23 @@ impl TelioTaskCmd {
                 }
                 Ok(TelioTaskOutcome::Continue)
             }
+            TelioTaskCmd::DisconnectFromExitNode => {
+                if let Some(exit_node) = &ctx.exit_node {
+                    ctx.telio
+                        .disconnect_exit_node(&exit_node.public_key)
+                        .map_err(|e| NordVpnLiteError::CommandFailed(ClientCmd::Disconnect));
+                    let _ = ctx.interface_config_provider
+                        .cleanup_exit_routes()
+                        .inspect_err(|e| {
+                            error!("Failed to cleanup routes for exit routing when disconnecting with error '{e:?}'")
+                        });
+                    ctx.exit_node = None;
+                } else {
+                    error!("No connection to exit node")
+                }
+                Ok(TelioTaskOutcome::Continue)
+            }
+
             TelioTaskCmd::Quit(response_tx_channel) => {
                 ctx.telio.stop();
                 _ = ctx.interface_config_provider.cleanup().inspect_err(|e| {
@@ -344,7 +361,10 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
     }
 }
 
-pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), NordVpnLiteError> {
+pub async fn daemon_event_loop(
+    mut config: NordVpnLiteConfig,
+    do_not_connect: bool,
+) -> Result<(), NordVpnLiteError> {
     debug!("started with config: {config:?}");
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
@@ -352,7 +372,7 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
     let (telio_tx, telio_rx) = mpsc::channel(10);
 
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
-    let mut cmd_listener = CommandListener::new(socket, telio_tx.clone());
+    let mut cmd_listener = CommandListener::new(socket, telio_tx.clone(), &config);
 
     let nordlynx_private_key = {
         let api_request_future = request_nordlynx_key(
@@ -367,10 +387,6 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
                     match connection_result {
                         Ok(connection) => {
                             match cmd_listener.handle_client_command(false, connection).await {
-                                Ok(ClientCmd::QuitDaemon) => {
-                                    info!("Received quit command, exiting");
-                                    return Ok(())
-                                },
                                 Ok(command) => {
                                     debug!("Received command {command:?} while obtaining service credentials, ignoring");
                                 },
@@ -392,7 +408,7 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
         }
     };
 
-    config.authentication_token.zeroize();
+    // config.authentication_token.zeroize();
 
     let config_clone = config.clone();
     let (init_done_tx, init_done_rx) = oneshot::channel::<()>();
@@ -402,15 +418,18 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
         context.start_listening_commands(telio_rx)
     });
 
-    // Wait for interface setup to complete before making API calls.
-    if init_done_rx.await.is_ok() {
-        // TODO: This can be triggered through nordvpnlite command to allow the user to stop/restart.
-        let config_clone = config.clone();
-        let tx_clone = telio_tx.clone();
-        tokio::spawn(async move {
-            handle_exit_node_connection(&config_clone, tx_clone).await;
-            debug!("Exit node connection task completed");
-        });
+    debug!("Value of do_not_connect {do_not_connect}");
+    if !do_not_connect {
+        // Wait for interface setup to complete before making API calls.
+        if init_done_rx.await.is_ok() {
+            // TODO: This can be triggered through nordvpnlite command to allow the user to stop/restart.
+            let config_clone = config.clone();
+            let tx_clone = telio_tx.clone();
+            tokio::spawn(async move {
+                handle_exit_node_connection(&config_clone, tx_clone).await;
+                debug!("Exit node connection task completed");
+            });
+        }
     }
 
     info!("Entering event loop");
