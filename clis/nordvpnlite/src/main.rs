@@ -27,7 +27,7 @@ use tracing::debug;
 const DEFAULT_UMASK: u32 = 0o113;
 
 fn main() -> Result<(), NordVpnLiteError> {
-    let mut cmd = Cmd::parse();
+    let cmd = Cmd::parse();
 
     // Pre-daemonizing setup
     match cmd {
@@ -142,43 +142,6 @@ async fn client_main(cmd: ClientCmd) -> Result<(), NordVpnLiteError> {
                 Err(NordVpnLiteError::DaemonIsNotRunning)
             }
         }
-        // GetStatus => {
-        //     let socket_path = DaemonSocket::get_ipc_socket_path()?;
-        //     if socket_path.exists() {
-        //         let response = timeout(
-        //             Duration::from_secs(TIMEOUT_SEC),
-        //             DaemonSocket::send_command(&socket_path, &serde_json::to_string(&cmd)?),
-        //         )
-        //         .await
-        //         .map_err(|_| NordVpnLiteError::ClientTimeoutError)?;
-
-        //         match CommandResponse::deserialize(&response?)? {
-        //             CommandResponse::Ok => {
-        //                 println!("Command executed successfully");
-        //                 Ok(())
-        //             }
-        //             CommandResponse::StatusReport(status) => {
-        //                 println!("{}", serde_json::to_string_pretty(&status)?);
-        //                 Ok(())
-        //             }
-        //             CommandResponse::DaemonInitializing => {
-        //                 println!("Daemon is not ready, ignoring");
-        //                 Err(NordVpnLiteError::CommandFailed(cmd))
-        //             }
-        //             CommandResponse::Err(e) => {
-        //                 println!("Command executed failed: {e}");
-        //                 Err(NordVpnLiteError::CommandFailed(cmd))
-        //             }
-        //         }
-        //     } else {
-        //         Err(NordVpnLiteError::DaemonIsNotRunning)
-        //     }
-        // }
-        // Disconnect => {
-        //     unimplemented!();
-        //     Err(NordVpnLiteError::InvalidCommand(format!("{cmd:?}")))
-        // }
-        // Display list of available countries with VPN servers
         Countries => {
             for country in get_countries_with_exp_backoff(None).await? {
                 println!("{}: {}", country.name, country.code);

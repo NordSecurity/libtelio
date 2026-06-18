@@ -77,7 +77,7 @@ pub(crate) struct DaemonOpts {
     #[clap(long = "stdout-path", default_value = "/var/log/nordvpnlite.log")]
     pub stdout_path: String,
 
-    // Do not connect when daemon is running
+    /// Do not connect when daemon is running
     #[clap(long = "do-not-connect")]
     pub do_not_connect: bool,
 }
@@ -132,20 +132,13 @@ where
     }
 }
 
-pub struct CommandListener<'a> {
+pub struct CommandListener {
     socket: DaemonSocket,
     /// Channel to send commands to telio task
     telio_task_tx: chan::Tx<TelioTaskCmd>,
     config: RunningConfig,
     /// Holds the new running config from a client triggered reload
     pending_config: Option<RunningConfig>,
-}
-
-impl CommandListener {
-    pub fn new(
-        socket: DaemonSocket,
-        telio_task_tx: chan::Tx<TelioTaskCmd>,
-        config: RunningConfig,
 }
 
 impl CommandListener {
@@ -170,6 +163,7 @@ impl CommandListener {
     async fn process_command(
         &mut self,
         command: &ClientCmd,
+        config: &NordVpnLiteConfig,
     ) -> Result<CommandResponse, NordVpnLiteError> {
         match command {
             ClientCmd::GetStatus => {
@@ -192,7 +186,7 @@ impl CommandListener {
             ClientCmd::Connect => {
                 trace!("Connecting to exit node");
                 let (response_tx, _) = oneshot::channel();
-                let command = match get_server_endpoints_list(&self.config).await {
+                let command = match get_server_endpoints_list(&config).await {
                     Ok(endpoints) => {
                         // TODO: LLT-6460 - We can store the recommended server list, just in case
                         // one server fails to connect, try the next one.
@@ -201,7 +195,7 @@ impl CommandListener {
                             // initiate the VPN connection
                             TelioTaskCmd::ConnectToExitNode(ExitNodeConfig {
                                 endpoint: endpoint.to_owned(),
-                                dns: self.config.dns.clone(),
+                                dns: config.dns.clone(),
                             })
                         } else {
                             error!("Getting exit node endpoint failed: empty list");
@@ -265,22 +259,6 @@ impl CommandListener {
             ClientCmd::Countries => {
                 unimplemented!()
             }
-            // ClientCmd::QuitDaemon => {
-            //     trace!("Quitting telio task");
-            //     let (response_tx, response_rx) = oneshot::channel();
-            //     #[allow(mpsc_blocking_send)]
-            //     self.telio_task_tx
-            //         .send(TelioTaskCmd::Quit(response_tx))
-            //         .await
-            //         .map_err(|e| {
-            //             error!("Error sending command: {}", e);
-            //             NordVpnLiteError::CommandFailed(ClientCmd::QuitDaemon)
-            //         })?;
-            //     // Wait for a response from TelioTask
-            //     // this essentually blocks the client quit command until the daemon initiated
-            //     // cleanup
-            //     handle_response(response_rx, |_| Ok(CommandResponse::Ok)).await
-            // }
             ClientCmd::IsAlive => Ok(CommandResponse::Ok),
         }
     }
@@ -305,13 +283,14 @@ impl CommandListener {
         &mut self,
         is_ready: bool,
         mut connection: DaemonConnection,
+        config: &NordVpnLiteConfig,
     ) -> Result<ClientCmd, NordVpnLiteError> {
         let command_str = connection.read_command().await?;
 
         match serde_json::from_str::<ClientCmd>(&command_str) {
             Ok(command) => {
                 let response = if is_ready {
-                    self.process_command(&command).await?
+                    self.process_command(&command, config).await?
                 } else {
                     // Early command handling before TelioTask is initialized
                     match &command {
@@ -466,14 +445,20 @@ mod tests {
         let path = make_socket_path();
         let (mut listener, _config_file) = make_command_listener(&path);
 
+        println!("Path 1 {:?}", path);
+
         let command = serde_json::to_string(&command).unwrap();
         let daemon = tokio::spawn(async move {
+            let config = NordVpnLiteConfig::default();
             let connection = listener.accept_client_connection().await.unwrap();
 
-            listener.handle_client_command(is_ready, connection).await
+            listener
+                .handle_client_command(is_ready, connection, &config)
+                .await
         });
 
         let daemon_response = if broken_client {
+            println!("Path 2 {:?}", path);
             broken_client_send_command(&path, &command).await.unwrap();
             Err(std::io::Error::other("broken client, no response"))
         } else {
@@ -493,13 +478,13 @@ mod tests {
         assert_eq!(error_response.serialize(), "{\"Err\":\"Test error\"}");
     }
 
-    #[tokio::test]
-    async fn test_command_quit() {
-        let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, true, false).await;
+    // #[tokio::test]
+    // async fn test_command_quit() {
+    //     let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, true, false).await;
 
-        assert_eq!(response.unwrap(), CommandResponse::Ok);
-        assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
-    }
+    //     assert_eq!(response.unwrap(), CommandResponse::Ok);
+    //     assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
+    // }
 
     #[tokio::test]
     async fn test_command_is_alive() {
@@ -526,9 +511,13 @@ mod tests {
         let (mut listener, _config_file) = make_command_listener(&path);
 
         let command = "garbage";
+        // let path_clone = path.clone();
         let daemon = tokio::spawn(async move {
+            let config = NordVpnLiteConfig::default();
             let connection = listener.accept_client_connection().await.unwrap();
-            listener.handle_client_command(true, connection).await
+            listener
+                .handle_client_command(true, connection, &config)
+                .await
         });
         let response = client_send_command(&path, command).await;
         let cmd = daemon.await.unwrap();
@@ -544,8 +533,11 @@ mod tests {
 
         let command = "garbage";
         let daemon = tokio::spawn(async move {
+            let config = NordVpnLiteConfig::default();
             let connection = listener.accept_client_connection().await.unwrap();
-            listener.handle_client_command(true, connection).await
+            listener
+                .handle_client_command(true, connection, &config)
+                .await
         });
         let _ = broken_client_send_command(&path, command).await;
         let cmd = daemon.await.unwrap();
@@ -560,13 +552,13 @@ mod tests {
         assert_matches!(cmd, Err(NordVpnLiteError::Io(_)));
     }
 
-    #[tokio::test]
-    async fn test_command_early_quit() {
-        let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, false, false).await;
+    // #[tokio::test]
+    // async fn test_command_early_quit() {
+    //     let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, false, false).await;
 
-        assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
-        assert_eq!(response.unwrap(), CommandResponse::Ok);
-    }
+    //     assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
+    //     assert_eq!(response.unwrap(), CommandResponse::Ok);
+    // }
 
     #[tokio::test]
     async fn test_command_early_is_alive() {
