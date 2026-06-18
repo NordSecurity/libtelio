@@ -296,7 +296,7 @@ impl TelioTaskCmd {
                 if let Some(exit_node) = &ctx.exit_node {
                     ctx.telio
                         .disconnect_exit_node(&exit_node.public_key)
-                        .map_err(|e| NordVpnLiteError::CommandFailed(ClientCmd::Disconnect));
+                        .map_err(|_| NordVpnLiteError::CommandFailed(ClientCmd::Disconnect))?;
                     let _ = ctx.interface_config_provider
                         .cleanup_exit_routes()
                         .inspect_err(|e| {
@@ -308,7 +308,6 @@ impl TelioTaskCmd {
                 }
                 Ok(TelioTaskOutcome::Continue)
             }
-
             TelioTaskCmd::Quit(response_tx_channel) => {
                 ctx.telio.stop();
                 _ = ctx.interface_config_provider.cleanup().inspect_err(|e| {
@@ -362,7 +361,7 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
 }
 
 pub async fn daemon_event_loop(
-    mut config: NordVpnLiteConfig,
+    config: NordVpnLiteConfig,
     do_not_connect: bool,
 ) -> Result<(), NordVpnLiteError> {
     debug!("started with config: {config:?}");
@@ -372,7 +371,7 @@ pub async fn daemon_event_loop(
     let (telio_tx, telio_rx) = mpsc::channel(10);
 
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
-    let mut cmd_listener = CommandListener::new(socket, telio_tx.clone(), &config);
+    let mut cmd_listener = CommandListener::new(socket, telio_tx.clone());
 
     let nordlynx_private_key = {
         let api_request_future = request_nordlynx_key(
@@ -386,7 +385,7 @@ pub async fn daemon_event_loop(
                 connection_result = cmd_listener.accept_client_connection() => {
                     match connection_result {
                         Ok(connection) => {
-                            match cmd_listener.handle_client_command(false, connection).await {
+                            match cmd_listener.handle_client_command(false, connection, &config).await {
                                 Ok(command) => {
                                     debug!("Received command {command:?} while obtaining service credentials, ignoring");
                                 },
@@ -408,9 +407,9 @@ pub async fn daemon_event_loop(
         }
     };
 
-    // config.authentication_token.zeroize();
+    let mut config_clone = config.clone();
+    config_clone.authentication_token.zeroize();
 
-    let config_clone = config.clone();
     let (init_done_tx, init_done_rx) = oneshot::channel::<()>();
     let mut telio_task_handle = tokio::task::spawn_blocking(move || {
         let mut context = TelioContext::new(config_clone, nordlynx_private_key)?;
@@ -456,7 +455,7 @@ pub async fn daemon_event_loop(
             connection_result = cmd_listener.accept_client_connection() => {
                 match connection_result {
                     Ok(connection) => {
-                        match cmd_listener.handle_client_command(true, connection).await {
+                        match cmd_listener.handle_client_command(true, connection, &config).await {
                             Ok(command) => {
                                 debug!("Client command {:?} executed successfully", command);
                             },
