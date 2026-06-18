@@ -238,6 +238,11 @@ class PktmonCapture:
             return
         next_segment = self._segment + 1
         etl_path = self._etl_path(next_segment)
+        # Register the .etl and adopt 'current' as baseline up front: the file
+        # gets cleaned up even if the roll is interrupted, and a failing roll
+        # won't re-fire on every poll for the same adapter set.
+        self.log_files.append(etl_path)
+        self._baseline |= current
         # One round-trip stop+start - smallest possible gap (pktmon allows one
         # session per machine, so no overlap). Nested `cmd /c` so a real `&&`
         # survives arg escaping (^&^&) and chains on the VM.
@@ -259,8 +264,6 @@ class PktmonCapture:
             )
             return
         self._segment = next_segment
-        self.log_files.append(etl_path)
-        self._baseline |= current
         log.info(
             "[%s] rolled pktmon capture to segment %d after new adapter(s)",
             self.connection.tag,
@@ -435,7 +438,6 @@ def _merge_windows_pcaps_sync(segment_paths: list[str], out_path: str) -> None:
         PcapReader,
         PcapWriter,
         TCP,
-        UDP,
     )
 
     synthetic_l2 = b"\x00" * 12  # zeroed dst+src MAC for wrapped bare-IP packets
@@ -453,12 +455,9 @@ def _merge_windows_pcaps_sync(segment_paths: list[str], out_path: str) -> None:
                         if ethertype is not None:
                             raw = synthetic_l2 + ethertype.to_bytes(2, "big") + raw
                         frame = Ether(raw)
-                        if any(
-                            frame.haslayer(proto)
-                            and (frame[proto].sport == 22 or frame[proto].dport == 22)
-                            for proto in (TCP, UDP)
-                        ):
-                            continue  # drop the harness's own SSH control channel
+                        tcp = frame.getlayer(TCP)
+                        if tcp is not None and 22 in (tcp.sport, tcp.dport):
+                            continue  # drop the harness's own SSH (TCP/22) channel
                         frame.time = packet.time
                         writer.write(frame)
         finally:
@@ -481,11 +480,8 @@ async def merge_windows_pcaps(segment_paths: list[str], out_path: str) -> bool:
     segment_paths = [p for p in segment_paths if os.path.isfile(p)]
     if not segment_paths:
         return False
-    loop = asyncio.get_event_loop()
     try:
-        await loop.run_in_executor(
-            None, _merge_windows_pcaps_sync, segment_paths, out_path
-        )
+        await asyncio.to_thread(_merge_windows_pcaps_sync, segment_paths, out_path)
         return True
     except Exception as e:  # pylint: disable=broad-exception-caught
         log.warning(
@@ -504,7 +500,7 @@ def find_unique_path_for_tcpdump(log_dir, guest_name):
     # first log for that guest/client.
     while os.path.isfile(candidate_path):
         counter += 1
-        candidate_path = f"./{log_dir}/{guest_name}-{counter}.pcap"
+        candidate_path = f"{log_dir}/{guest_name}-{counter}.pcap"
     return candidate_path
 
 
@@ -583,7 +579,17 @@ async def _download_pktmon_segments(
     local_segments: list[str] = []
     for index, segment_file in enumerate(capture.output_files):
         tmp_path = f"{dest_dir}/.{conn.tag.name}-pktmon-seg{index}.pcap.tmp"
-        await conn.download(segment_file, tmp_path)
+        try:
+            await conn.download(segment_file, tmp_path)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            # one bad segment shouldn't lose the others or skip remote cleanup
+            log.warning(
+                "[%s] failed to download pktmon segment %s: %s",
+                conn.tag,
+                segment_file,
+                e,
+            )
+            continue
         if os.path.isfile(tmp_path):
             local_segments.append(tmp_path)
     if local_segments:
