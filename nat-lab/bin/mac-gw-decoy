@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+# Decoy gateway for macOS interface selection testing.
+# Has no internet access — traffic routed here from the macOS VM cannot
+# reach VPN or DERP servers, causing connectivity failure if libtelio
+# selects this interface instead of the primary one.
+
+touch /ready
+
+sleep infinity

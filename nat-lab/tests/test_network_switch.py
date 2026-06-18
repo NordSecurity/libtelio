@@ -11,6 +11,7 @@ from tests.helpers import (
 from tests.utils import stun
 from tests.utils.asyncio_util import run_async_contexts
 from tests.utils.bindings import (
+    default_features,
     features_with_endpoint_providers,
     EndpointProvider,
     PathType,
@@ -310,6 +311,61 @@ async def test_mesh_network_switch_direct(
         beta_client.allow_errors([
             "telio_traversal::endpoint_providers::stun.*Starting session failed.*A socket operation was attempted to an unreachable network"
         ])
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.mac
+async def test_mac_interface_selection_with_multiple_active_interfaces() -> None:
+    async with AsyncExitStack() as exit_stack:
+        features = default_features()
+        # Enables the NativeProtector socket watcher, which performs interface
+        # selection and socket binding (disabled by default in tests).
+        features.is_test_env = False
+
+        alpha_setup_params = SetupParameters(
+            connection_tag=ConnectionTag.VM_MAC,
+            adapter_type_override=TelioAdapterType.NEP_TUN,
+            is_meshnet=False,
+            features=features,
+        )
+
+        env = await exit_stack.enter_async_context(
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.DOCKER_VPN_1],
+            )
+        )
+        client_alpha, *_ = env.clients
+        alpha_conn_mngr, *_ = env.connections
+        alpha_connection = alpha_conn_mngr.connection
+
+        # The VM has three NICs. The first (en0) is a decoy interface on
+        # mac-net-decoy whose gateway has no internet access. It appears first
+        # in the macOS SCDynamicStore service order. A buggy implementation of
+        # get_primary_interface_names() that ignores nw_path_monitor order would
+        # select en0 and bind sockets to it, causing VPN connectivity to fail.
+        wg_server = config.WG_SERVER
+        await client_alpha.connect_to_vpn(
+            str(wg_server["ipv4"]),
+            int(wg_server["port"]),
+            str(wg_server["public_key"]),
+        )
+
+        await ping(alpha_connection, config.PHOTO_ALBUM_IP)
+
+        ip = await stun.get(alpha_connection, config.STUN_SERVER)
+        assert ip == wg_server["ipv4"], (
+            f"Expected VPN server IP {wg_server['ipv4']} but got {ip}."
+        )
+
+        logs = await client_alpha.get_log()
+        assert "Binding relay socket" in logs, (
+            "Socket binding never happened — tunnel_interface was never set in the "
+            "socket watcher. Wrong interface selection cannot cause test failure. "
+            "See: 'Will not rebind relay sockets for None' in logs."
+        )
 
 
 class TestInterfaceWindows:

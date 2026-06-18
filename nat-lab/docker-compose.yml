@@ -203,6 +203,8 @@ services:
         soft: -1
         hard: -1
     depends_on:
+      mac-gw-decoy:
+        condition: service_healthy
       mac-gw-01:
         condition: service_healthy
       mac-gw-02:
@@ -235,6 +237,8 @@ services:
       CLIENT_GATEWAY_PRIMARY: 192.168.154.254
       CLIENT_GATEWAY_SECONDARY: 192.168.155.254
     networks:
+      mac-net-decoy:
+        ipv4_address: 192.168.156.54
       mac-net-01:
         ipv4_address: 192.168.154.54
       mac-net-02:
@@ -855,6 +859,23 @@ services:
         ipv4_address: 192.168.153.254
         priority: 900
 
+  mac-gw-decoy:
+    hostname: mac-gw-decoy
+    image: nat-lab:base
+    entrypoint: /opt/bin/mac-gw-decoy
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: "ls /ready"
+    networks:
+      mac-net-decoy:
+        ipv4_address: 192.168.156.254
+        priority: 900
+
   mac-gw-01:
     hostname: mac-gw-01
     <<: *common-gw
@@ -1332,6 +1353,13 @@ networks:
       driver: default
       config:
         - subnet: 192.168.153.0/24
+
+  mac-net-decoy:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.156.0/24
 
   mac-net-01:
     driver: bridge
