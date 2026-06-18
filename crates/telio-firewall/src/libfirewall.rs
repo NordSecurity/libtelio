@@ -307,7 +307,7 @@ pub struct Libfirewall {
 impl Libfirewall {
     pub unsafe fn new<P>(path: P) -> Result<Self, ::libloading::Error>
     where
-        P: AsRef<::std::ffi::OsStr> + 'static,
+        P: AsRef<::std::ffi::OsStr> + 'static + ::libloading::AsFilename,
     {
         #[cfg(unix)]
         let library = ::libloading::os::unix::Library::open(
