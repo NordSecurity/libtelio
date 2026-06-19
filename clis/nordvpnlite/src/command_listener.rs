@@ -11,6 +11,7 @@ use crate::{
     config::{Endpoint, RunningConfig,
     core_api::get_server_endpoints_list,
     daemon::{NordVpnLiteError, TelioStatusReport},
+    daemon::{handle_exit_node_connection, NordVpnLiteError, TelioStatusReport},
 };
 
 pub(crate) const TIMEOUT_SEC: u64 = 60;
@@ -185,37 +186,9 @@ impl CommandListener {
             }
             ClientCmd::Connect => {
                 trace!("Connecting to exit node");
-                let (response_tx, _) = oneshot::channel();
-                let command = match get_server_endpoints_list(&config).await {
-                    Ok(endpoints) => {
-                        // TODO: LLT-6460 - We can store the recommended server list, just in case
-                        // one server fails to connect, try the next one.
-                        if let Some(endpoint) = endpoints.first() {
-                            debug!("Selected exit node: {:#?}", endpoint);
-                            // initiate the VPN connection
-                            TelioTaskCmd::ConnectToExitNode(ExitNodeConfig {
-                                endpoint: endpoint.to_owned(),
-                                dns: config.dns.clone(),
-                            })
-                        } else {
-                            error!("Getting exit node endpoint failed: empty list");
-                            TelioTaskCmd::Quit(response_tx)
-                        }
-                    }
-                    Err(e) => {
-                        error!("Getting exit node endpoint failed: {e}");
-                        TelioTaskCmd::Quit(response_tx)
-                    }
-                };
-
-                // Send the command to the telio task
-                #[allow(mpsc_blocking_send)]
-                self.telio_task_tx.send(command).await.map_err(|e| {
-                    error!("Failed to send exit node command to telio task: {e}");
-                    NordVpnLiteError::CommandFailed(ClientCmd::Connect)
-                })?;
-
-                Ok(CommandResponse::Ok)
+                handle_exit_node_connection(config, self.telio_task_tx.clone())
+                    .await
+                    .map(|_| CommandResponse::Ok)
             }
             ClientCmd::Disconnect => {
                 #[allow(mpsc_blocking_send)]
