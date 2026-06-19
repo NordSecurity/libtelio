@@ -8,7 +8,7 @@ use tracing_appender::{
 
 use crate::NordVpnLiteError;
 
-pub async fn setup_logging<P: AsRef<Path>>(
+pub fn setup_logging<P: AsRef<Path>>(
     log_file_path: P,
     log_level: LevelFilter,
     log_file_count: usize,
