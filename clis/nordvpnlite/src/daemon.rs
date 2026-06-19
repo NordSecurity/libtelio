@@ -329,7 +329,10 @@ impl TelioTaskCmd {
 /// a country is provided, it queries the API to find a recommended server.
 /// Sends a `ConnectToExitNode` command via the provided channel on success.
 /// Sends a `Quit` command via the provided channel on failure.
-async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sender<TelioTaskCmd>) {
+pub async fn handle_exit_node_connection(
+    config: &NordVpnLiteConfig,
+    tx: mpsc::Sender<TelioTaskCmd>,
+) -> Result<(), NordVpnLiteError> {
     let (response_tx, _) = oneshot::channel();
     let command = match get_server_endpoints_list(config).await {
         Ok(endpoints) => {
@@ -356,8 +359,10 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
     // Send the command to the telio task
     #[allow(mpsc_blocking_send)]
     if let Err(e) = tx.send(command).await {
-        error!("Failed to send exit node command to telio task: {e}");
+        error!("Failed to send exit node command to telio task: {e}")
     }
+
+    Ok(())
 }
 
 pub async fn daemon_event_loop(
@@ -425,7 +430,7 @@ pub async fn daemon_event_loop(
             let config_clone = config.clone();
             let tx_clone = telio_tx.clone();
             tokio::spawn(async move {
-                handle_exit_node_connection(&config_clone, tx_clone).await;
+                let _ = handle_exit_node_connection(&config_clone, tx_clone).await;
                 debug!("Exit node connection task completed");
             });
         }
