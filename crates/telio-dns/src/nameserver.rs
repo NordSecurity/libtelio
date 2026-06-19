@@ -422,7 +422,7 @@ impl LocalNameServer {
                 PayloadRequestInfo::Tcp {
                     source_port: tcp_request.get_source(),
                     destination_port: tcp_request.get_destination(),
-                    next_sequence: tcp_request.get_sequence() + 1,
+                    next_sequence: tcp_request.get_sequence().wrapping_add(1),
                 }
             }
             _ => {
@@ -478,6 +478,19 @@ impl LocalNameServer {
             dns_request,
         })
     }
+}
+
+/// Fuzzing entry point: exercises the synchronous decode spine of [`LocalNameServer::process_packet`]
+#[cfg(feature = "fuzzing")]
+pub fn fuzz_decode_packet(request_packet: &[u8]) {
+    let Some(first_byte) = request_packet.first() else {
+        return;
+    };
+    let _ = match first_byte >> 4 {
+        4 => LocalNameServer::process_ip_packet::<Ipv4Packet>(request_packet),
+        6 => LocalNameServer::process_ip_packet::<Ipv6Packet>(request_packet),
+        _ => return,
+    };
 }
 
 enum IpRequestInfo {
