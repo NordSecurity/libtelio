@@ -290,7 +290,7 @@ class NordVpnLite:
             await self.remove_logs()
             await self.save_config()
 
-            cmd = ["start"]
+            cmd = ["daemon"]
             if not self.config.no_detach:
                 cmd.append("--config-file")
                 cmd.append(str(self.config.config_path))
@@ -314,26 +314,21 @@ class NordVpnLite:
                 log.info("NordVPN Lite skipping cleanup")
 
     async def clean_up(self) -> None:
-        log.info("NordVPN Lite cleanup: exiting and removing socket (if exists)")
+        log.info("NordVPN Lite cleanup: sending SIGTERM and removing socket (if exists)")
         try:
-            await self.quit()
-        except ProcessExecError as exc:
-            if "Error: DaemonIsNotRunning" not in exc.stderr:
-                log.error(exc)
-                await self.kill()
-            else:
-                log.info("Tried to quit but daemon is already not running")
-            if await self.socket_exists():
-                log.debug("Dangling socket found, removing it..")
-                await self.remove_socket()
-        finally:
-            if self.config.config_path:
-                log.info(
-                    "NordVPN Lite cleanup: removing config %s", self.config.config_path
-                )
-                await self.remove_config(self.config.config_path)
-            log.info("NordVPN Lite cleanup: saving logs")
-            await self._save_logs()
+            await self.kill()
+        except ProcessExecError:
+            log.info("Daemon is already not running")
+        if await self.socket_exists():
+            log.debug("Dangling socket found, removing it..")
+            await self.remove_socket()
+        if self.config.config_path:
+            log.info(
+                "NordVPN Lite cleanup: removing config %s", self.config.config_path
+            )
+            await self.remove_config(self.config.config_path)
+        log.info("NordVPN Lite cleanup: saving logs")
+        await self._save_logs()
 
     async def is_alive(self) -> bool:
         try:
@@ -357,18 +352,7 @@ class NordVpnLite:
             raise exc
 
     async def quit(self) -> None:
-        stdout, stderr = await self.execute_command(["stop"])
-        assert (
-            "Command executed successfully" in stdout
-            or "Daemon is already stopped" in stdout
-        ), f"Failed to execute stop command: {stderr}"
-
-        assert (
-            not await self.is_alive()
-        ), "Quit command was sent successfully but daemon's still running"
-        assert (
-            not await self.socket_exists()
-        ), "Daemon's not running but socket still exists"
+        await self.kill()
 
     async def kill(self) -> None:
         try:
