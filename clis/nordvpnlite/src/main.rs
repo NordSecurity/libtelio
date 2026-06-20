@@ -106,7 +106,7 @@ async fn client_main(cmd: ClientCmd) -> Result<(), NordVpnLiteError> {
     debug!("cmd {:?}", cmd);
 
     match cmd {
-        Connect | GetStatus | Disconnect => {
+        Connect | GetStatus | Disconnect | IsAlive => {
             let socket_path = DaemonSocket::get_ipc_socket_path()?;
             if socket_path.exists() {
                 let response = timeout(
@@ -143,9 +143,7 @@ async fn client_main(cmd: ClientCmd) -> Result<(), NordVpnLiteError> {
                 println!("{}: {}", country.name, country.code);
             }
             Ok(())
-        }
-
-        // Unexpected command, Cmd::Start should be handled by main
-        _ => Err(NordVpnLiteError::InvalidCommand(format!("{cmd:?}"))),
+        } // // Unexpected command, Cmd::Start should be handled by main
+          // _ => Err(NordVpnLiteError::InvalidCommand(format!("{cmd:?}"))),
     }
 }
