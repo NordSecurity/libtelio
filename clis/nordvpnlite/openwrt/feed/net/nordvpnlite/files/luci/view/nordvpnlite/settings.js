@@ -37,12 +37,6 @@ var callSetServiceAction = rpc.declare({
     params: ['action']
 });
 
-var callGetServerData = rpc.declare({
-    object: 'nordvpnlite',
-    method: 'get_server_data',
-    params: ['hostname']
-});
-
 var callGetCountries = rpc.declare({
     object: 'nordvpnlite',
     method: 'get_countries'
@@ -52,8 +46,6 @@ var callGetRuntimeStatus = rpc.declare({
     object: 'nordvpnlite',
     method: 'get_runtime_status'
 });
-
-var serverHostnameSuffix = '.nordvpn.com';
 
 var defaultConfig = {
     authentication_token: '<REPLACE_WITH_YOUR_TOKEN>',
@@ -71,33 +63,6 @@ var defaultConfig = {
 
 function isObject(value) {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function normalizeServerHostname(value) {
-    value = String(value || '').trim().toLowerCase();
-
-    if (value.slice(-1) === '.')
-        value = value.slice(0, -1);
-
-    if (value.slice(-serverHostnameSuffix.length) === serverHostnameSuffix)
-        value = value.slice(0, -serverHostnameSuffix.length);
-
-    return value;
-}
-
-function buildServerHostname(value) {
-    value = normalizeServerHostname(value);
-    return value !== '' ? value + serverHostnameSuffix : '';
-}
-
-function callGetServerDataWithTimeout(hostname) {
-    var previousTimeout = L.env.rpctimeout;
-
-    L.env.rpctimeout = Math.max(L.env.rpctimeout || 20, 60);
-
-    return Promise.resolve(callGetServerData(hostname)).finally(function () {
-        L.env.rpctimeout = previousTimeout;
-    });
 }
 
 function callGetCountriesWithTimeout() {
@@ -201,12 +166,6 @@ return view.extend({
 
         if (this.vpn_country_option)
             this.vpn_country_option.setActive(sid, showCountry);
-
-        if (this.server_hostname_option)
-            this.server_hostname_option.setActive(sid, showServer);
-
-        if (this.server_lookup_option)
-            this.server_lookup_option.setActive(sid, showServer);
 
         if (this.server_address_option)
             this.server_address_option.setActive(sid, showServer);
@@ -348,6 +307,7 @@ return view.extend({
     renderServicePanel: function (status) {
         var buttonStyle = 'margin-right:0.5rem; margin-bottom:0.25rem;';
         var enableStyle = buttonStyle + ' margin-left:1rem;';
+        var valueStyle = 'display:flex; align-items:center; min-height:2.3em;';
         var runtimeData = this.getRuntimeStatusDisplayData(this.runtimeStatus);
         var configEnabled = status.config_enabled !== false;
         var statusText;
@@ -362,28 +322,25 @@ return view.extend({
         else if (!status.installed)
             statusText = _('Not installed or not found');
         else if (!configEnabled && status.running)
-            statusText = _('Running (Config disabled).');
+            statusText = _('Running (service disabled)');
         else if (!configEnabled)
-            statusText = _('Stopped (Config disabled).');
+            statusText = _('Stopped (service disabled)');
         else if (status.running)
             statusText = _('Running');
         else if (status.enabled)
-            statusText = _('Stopped.');
+            statusText = _('Stopped');
         else
-            statusText = _('Stopped (Disabled).');
+            statusText = _('Stopped (autostart disabled)');
 
         if (status.installed) {
-            if (status.enabled) {
-                canDisable = true;
+            canEnable = !status.enabled;
+            canDisable = status.enabled;
 
-                if (status.running) {
-                    canRestart = configEnabled;
-                    canStop = true;
-                } else {
-                    canStart = configEnabled;
-                }
+            if (status.running) {
+                canRestart = configEnabled;
+                canStop = true;
             } else {
-                canEnable = true;
+                canStart = configEnabled;
             }
         }
 
@@ -456,7 +413,7 @@ return view.extend({
         return E('div', { 'class': 'cbi-section' }, [
             E('div', { 'class': 'cbi-value' }, [
                 E('label', { 'class': 'cbi-value-title' }, _('Service Status')),
-                E('div', { 'class': 'cbi-value-field' }, E('div', {}, statusText))
+                E('div', { 'class': 'cbi-value-field', 'style': valueStyle }, statusText)
             ]),
             E('div', { 'class': 'cbi-value' }, [
                 E('label', { 'class': 'cbi-value-title' }, _('Service Control')),
@@ -476,31 +433,31 @@ return view.extend({
             ]),
             E('div', { 'class': 'cbi-value' }, [
                 E('label', { 'class': 'cbi-value-title' }, _('Telio Running')),
-                E('div', { 'class': 'cbi-value-field' }, E('div', { 'id': 'nordvpnlite-runtime-telio' }, runtimeData.telio_running))
+                E('div', { 'class': 'cbi-value-field', 'style': valueStyle, 'id': 'nordvpnlite-runtime-telio' }, runtimeData.telio_running)
             ]),
             E('div', { 'class': 'cbi-value' }, [
                 E('label', { 'class': 'cbi-value-title' }, _('Tunnel IP Address')),
-                E('div', { 'class': 'cbi-value-field' }, E('div', { 'id': 'nordvpnlite-runtime-ip' }, runtimeData.ip_address))
+                E('div', { 'class': 'cbi-value-field', 'style': valueStyle, 'id': 'nordvpnlite-runtime-ip' }, runtimeData.ip_address)
             ]),
             E('div', { 'class': 'cbi-value' }, [
                 E('label', { 'class': 'cbi-value-title' }, _('Exit Node Identifier')),
-                E('div', { 'class': 'cbi-value-field' }, E('div', { 'id': 'nordvpnlite-runtime-identifier' }, runtimeData.identifier))
+                E('div', { 'class': 'cbi-value-field', 'style': valueStyle, 'id': 'nordvpnlite-runtime-identifier' }, runtimeData.identifier)
             ]),
             E('div', { 'class': 'cbi-value' }, [
                 E('label', { 'class': 'cbi-value-title' }, _('Exit Node Hostname')),
-                E('div', { 'class': 'cbi-value-field' }, E('div', { 'id': 'nordvpnlite-runtime-hostname' }, runtimeData.hostname))
+                E('div', { 'class': 'cbi-value-field', 'style': valueStyle, 'id': 'nordvpnlite-runtime-hostname' }, runtimeData.hostname)
             ]),
             E('div', { 'class': 'cbi-value' }, [
                 E('label', { 'class': 'cbi-value-title' }, _('Exit Node Endpoint')),
-                E('div', { 'class': 'cbi-value-field' }, E('div', { 'id': 'nordvpnlite-runtime-endpoint' }, runtimeData.endpoint))
+                E('div', { 'class': 'cbi-value-field', 'style': valueStyle, 'id': 'nordvpnlite-runtime-endpoint' }, runtimeData.endpoint)
             ]),
             E('div', { 'class': 'cbi-value' }, [
                 E('label', { 'class': 'cbi-value-title' }, _('Exit Node State')),
-                E('div', { 'class': 'cbi-value-field' }, E('div', { 'id': 'nordvpnlite-runtime-state' }, runtimeData.state))
+                E('div', { 'class': 'cbi-value-field', 'style': valueStyle, 'id': 'nordvpnlite-runtime-state' }, runtimeData.state)
             ]),
             E('div', { 'class': 'cbi-value' }, [
                 E('label', { 'class': 'cbi-value-title' }, _('Exit Node Public Key')),
-                E('div', { 'class': 'cbi-value-field' }, E('div', { 'id': 'nordvpnlite-runtime-public-key', 'style': 'word-break:break-all;' }, runtimeData.public_key))
+                E('div', { 'class': 'cbi-value-field', 'style': valueStyle + ' word-break:break-all;', 'id': 'nordvpnlite-runtime-public-key' }, runtimeData.public_key)
             ])
         ]);
     },
@@ -521,7 +478,12 @@ return view.extend({
 
                 if (attempts >= maxAttempts) {
                     ui.hideModal();
-                    location.reload();
+                    ui.addNotification(
+                        _('Service status'),
+                        E('p', expectRunning
+                            ? _('The service did not reach the running state. Check the authentication token and system log.')
+                            : _('The service did not stop within the expected time.'))
+                    );
                     return;
                 }
 
@@ -529,7 +491,7 @@ return view.extend({
             }).catch(function () {
                 if (attempts >= maxAttempts) {
                     ui.hideModal();
-                    location.reload();
+                    ui.addNotification(_('Service status'), E('p', _('Unable to read the updated service state.')));
                     return;
                 }
 
@@ -549,11 +511,38 @@ return view.extend({
             disable: _('Disabling NordVPN Lite autostart')
         };
 
-        ui.showModal(null, [
-            E('p', { 'class': 'spinning' }, messages[action] || _('Updating NordVPN Lite service'))
-        ]);
+        var runAction = function () {
+            ui.showModal(null, [
+                E('p', { 'class': 'spinning' }, messages[action] || _('Updating NordVPN Lite service'))
+            ]);
 
-        return callSetServiceAction(action).then(function (res) {
+            return callSetServiceAction(action);
+        };
+        var actionPromise;
+
+        if (action === 'start' || action === 'restart') {
+            actionPromise = this.saveConfig(false).then(function (saved) {
+                if (!saved)
+                    return null;
+
+                if (this.configEnabled === false) {
+                    ui.addNotification(
+                        _('Service disabled'),
+                        E('p', _('Enable the service and save the configuration before starting it.'))
+                    );
+                    return null;
+                }
+
+                return runAction();
+            }.bind(this));
+        } else {
+            actionPromise = runAction();
+        }
+
+        return actionPromise.then(function (res) {
+            if (res === null)
+                return;
+
             if (!res || res.success !== true) {
                 ui.hideModal();
                 ui.addNotification(_('Action failed'), E('p', (res && res.error) ? String(res.error) : _('Could not control the service.')));
@@ -703,7 +692,6 @@ return view.extend({
             authentication_token: config.authentication_token === '<REPLACE_WITH_YOUR_TOKEN>' ? '' : String(config.authentication_token || ''),
             vpn_mode: 'recommended',
             vpn_country: '',
-            server_hostname: '',
             server_address: '',
             server_public_key: ''
         };
@@ -714,84 +702,12 @@ return view.extend({
                 data.vpn_country = String(config.vpn.country || '').trim().toUpperCase();
             } else if (config.vpn.server != null) {
                 data.vpn_mode = 'server';
-                data.server_hostname = normalizeServerHostname(config.vpn.server.hostname || '');
                 data.server_address = String(config.vpn.server.address || '');
                 data.server_public_key = String(config.vpn.server.public_key || '');
             }
         }
 
         return data;
-    },
-
-    handleServerHostnameChange: function (section_id, value) {
-        var normalized = normalizeServerHostname(value);
-        var widget = this.server_hostname_option.getUIElement(section_id);
-        var node = widget ? (widget.node.querySelector('input, textarea, select') || widget.node) : null;
-        var serverAddress = String(this.server_address_option.formvalue(section_id) || '').trim();
-        var serverPublicKey = String(this.server_public_key_option.formvalue(section_id) || '').trim();
-
-        if (widget && node && node.value !== normalized)
-            widget.setValue(normalized);
-
-        if (normalized === this.serverDataHostname)
-            return;
-
-        if (serverAddress === '' && serverPublicKey === '')
-            return;
-
-        this.serverDataHostname = '';
-        this.setOptionValue(this.server_address_option, '');
-        this.setOptionValue(this.server_public_key_option, '');
-    },
-
-    setOptionValue: function (option, value) {
-        var widget = option.getUIElement('config');
-        var node = widget ? (widget.node.querySelector('input, textarea, select') || widget.node) : null;
-
-        if (!widget || !node)
-            return;
-
-        widget.setValue(value != null ? String(value) : '');
-        node.dispatchEvent(new Event('input', { bubbles: true }));
-        node.dispatchEvent(new Event('change', { bubbles: true }));
-    },
-
-    handleGetServerData: function () {
-        var hostname = normalizeServerHostname(this.server_hostname_option.formvalue('config'));
-        var fullHostname = buildServerHostname(hostname);
-
-        if (hostname === '') {
-            ui.addNotification(_('Lookup failed'), E('p', _('Please enter a server hostname first.')));
-            return Promise.resolve();
-        }
-
-        if (!this.server_hostname_option.isValid('config')) {
-            ui.addNotification(_('Lookup failed'), E('p', _('Please provide a valid server hostname.')));
-            return Promise.resolve();
-        }
-
-        ui.showModal(null, [
-            E('p', { 'class': 'spinning' }, _('Fetching NordVPN server data'))
-        ]);
-
-        return callGetServerDataWithTimeout(fullHostname).then(function (res) {
-            ui.hideModal();
-
-            if (!res || res.success !== true) {
-                ui.addNotification(_('Lookup failed'), E('p', (res && res.error) ? String(res.error) : _('Unable to fetch NordVPN server data.')));
-                return;
-            }
-
-            this.serverDataHostname = hostname;
-            this.setOptionValue(this.server_hostname_option, normalizeServerHostname(res.hostname || fullHostname));
-            this.setOptionValue(this.server_address_option, res.address || '');
-            this.setOptionValue(this.server_public_key_option, res.public_key || '');
-
-            ui.addNotification(_('Server data loaded'), E('p', _('Server IP address and public key have been filled in.')));
-        }.bind(this)).catch(function (err) {
-            ui.hideModal();
-            ui.addNotification(_('Lookup failed'), E('p', err ? String(err) : _('Unknown error')));
-        });
     },
 
     render: function (data) {
@@ -828,16 +744,15 @@ return view.extend({
             })
         };
 
-        this.serverDataHostname = form_data.config.server_hostname;
-
         var m = new form.JSONMap(form_data, _('NordVPN Lite'),
             _('Configure your NordVPN Lite connection settings.'));
 
         var s = m.section(form.NamedSection, 'config');
 
-        var o = this.enabled_option = s.option(form.Flag, 'enabled', _('Enabled'));
+        var o = this.enabled_option = s.option(form.Flag, 'enabled', _('Enable service'));
         o.default = '1';
         o.rmempty = false;
+        o.description = _('Allow NordVPN Lite to start. This setting is independent of boot-time autostart.');
 
         o = this.authentication_token_option = s.option(form.Value, 'authentication_token', _('Authentication Token'));
         o.password = true;
@@ -888,66 +803,31 @@ return view.extend({
             ]);
         };
 
-        o = this.server_hostname_option = s.option(form.Value, 'server_hostname', _('Server Hostname'));
-        o.depends('vpn_mode', 'server');
-        o.placeholder = _('uk2222');
-        o.description = _('Enter only the server prefix. The .nordvpn.com suffix is added automatically. Use Get data to fill the IP and public key.');
-        o.validate = function (_, value) {
-            if (view.vpn_mode_option.formvalue('config') !== 'server')
-                return true;
-
-            value = normalizeServerHostname(value);
-
-            if (value === '')
-                return true;
-
-            return /^[a-z0-9-]+$/.test(value) ? true : _('Please enter only the server prefix, for example uk2222.');
-        };
-        o.onchange = function (ev, section_id, value) {
-            view.handleServerHostnameChange(section_id, value);
-        };
-        o.renderWidget = function (section_id, option_index, cfgvalue) {
-            var input = form.Value.prototype.renderWidget.call(this, section_id, option_index, cfgvalue);
-
-            return E('div', { 'style': 'display:flex; align-items:center; gap:0.5rem; max-width:30rem;' }, [
-                E('div', { 'style': 'flex:1 1 auto;' }, input),
-                E('span', { 'style': 'white-space:nowrap;' }, serverHostnameSuffix)
-            ]);
-        };
-
-        o = this.server_lookup_option = s.option(form.Button, '_get_server_data', _('Server Lookup'));
-        o.depends('vpn_mode', 'server');
-        o.inputtitle = _('Get data');
-        o.inputstyle = 'apply';
-        o.onclick = function () {
-            return view.handleGetServerData();
-        };
-
         o = this.server_address_option = s.option(form.Value, 'server_address', _('Server IP Address'));
         o.depends('vpn_mode', 'server');
-        o.readonly = true;
         o.datatype = 'ipaddr';
         o.placeholder = '';
+        o.description = _('Enter the IP address of the NordVPN server.');
         o.validate = function (section_id, value) {
             if (view.vpn_mode_option.formvalue('config') !== 'server')
                 return true;
 
             value = String(value || '').trim();
             if (value === '')
-                return _('Use Get data to load the server IP address.');
+                return _('Please provide the server IP address.');
 
             return form.Value.prototype.validate.apply(this, [section_id, value]);
         };
 
         o = this.server_public_key_option = s.option(form.Value, 'server_public_key', _('Server Public Key'));
         o.depends('vpn_mode', 'server');
-        o.readonly = true;
         o.placeholder = '';
+        o.description = _('Enter the WireGuard public key of the NordVPN server.');
         o.validate = function (_, value) {
             if (view.vpn_mode_option.formvalue('config') !== 'server')
                 return true;
 
-            return String(value || '').trim() !== '' ? true : _('Use Get data to load the server public key.');
+            return String(value || '').trim() !== '' ? true : _('Please provide the server public key.');
         };
 
         return m.render().then(function (nodes) {
@@ -978,8 +858,6 @@ return view.extend({
         const token = String(this.authentication_token_option.formvalue('config') || '<REPLACE_WITH_YOUR_TOKEN>').trim();
         const vpnMode = String(this.vpn_mode_option.formvalue('config') || 'recommended').trim();
         const vpnCountry = String(this.vpn_country_option.formvalue('config') || '').trim().toUpperCase();
-        const serverHostname = normalizeServerHostname(this.server_hostname_option.formvalue('config'));
-        const fullServerHostname = buildServerHostname(serverHostname);
         const serverAddress = String(this.server_address_option.formvalue('config') || '').trim();
         const serverPublicKey = String(this.server_public_key_option.formvalue('config') || '').trim();
         const enabled = this.enabled_option.formvalue('config') !== '0';
@@ -994,11 +872,6 @@ return view.extend({
 
             this.config.vpn = { country: vpnCountry };
         } else if (vpnMode === 'server') {
-            if (serverHostname !== '' && !this.server_hostname_option.isValid('config')) {
-                ui.addNotification(_('Save failed'), E('p', _('Please provide a valid server hostname prefix.')));
-                return false;
-            }
-
             if (!this.server_address_option.isValid('config')) {
                 ui.addNotification(_('Save failed'), E('p', _('Please provide a valid server IP address.')));
                 return false;
@@ -1015,9 +888,6 @@ return view.extend({
                     public_key: serverPublicKey
                 }
             };
-
-            if (fullServerHostname !== '')
-                this.config.vpn.server.hostname = fullServerHostname;
         } else {
             this.config.vpn = 'recommended';
         }

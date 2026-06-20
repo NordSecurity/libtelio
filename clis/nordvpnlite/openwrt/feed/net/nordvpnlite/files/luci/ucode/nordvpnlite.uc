@@ -5,9 +5,7 @@ const INIT_SCRIPT = '/etc/init.d/nordvpnlite';
 const SERVICE_NAME = 'nordvpnlite';
 const UCI_CONFIG = 'nordvpnlite';
 const UCI_SECTION = 'settings';
-const SERVERS_API_URL = 'https://api.nordvpn.com/v1/servers?limit=20000';
 const VALID_ACTIONS = ['start', 'stop', 'restart', 'reload', 'enable', 'disable'];
-const SERVER_LOOKUP_TIMEOUT = 45;
 let fs = require('fs');
 let log = require('log');
 
@@ -18,13 +16,6 @@ function has_service() {
 
 function service_action(action) {
 	return system(sprintf('env -i %s %s >/dev/null 2>&1', INIT_SCRIPT, action));
-}
-
-function shell_quote(value) {
-	if (value == null || value == '')
-		return "''";
-
-	return "'" + replace(value, "'", "'\\''") + "'";
 }
 
 function has_command(command) {
@@ -74,75 +65,6 @@ function write_config_enabled(enabled) {
 		UCI_CONFIG, UCI_SECTION, value,
 		UCI_CONFIG
 	)) == 0;
-}
-
-function fetch_server_data_with_jq(hostname) {
-	let url = shell_quote(SERVERS_API_URL);
-	let jq_filter = shell_quote(
-		'first(.[] | select(.hostname == $h) | {' +
-			'hostname,' +
-			'address: .station,' +
-			'supports_wireguard_udp: ([.technologies[] | select(.identifier == "wireguard_udp")] | length > 0),' +
-			'public_key: ([.technologies[] | select(.identifier == "wireguard_udp") | .metadata[] | select(.name == "public_key") | .value][0])' +
-		'})'
-	);
-	let quoted_hostname = shell_quote(hostname);
-	let commands = [];
-
-	if (!has_command('jq'))
-		return {
-			server: null,
-			error: 'jq is required for NordVPN server lookup.'
-		};
-
-	if (has_command('curl')) {
-		push(commands, sprintf(
-			'curl --connect-timeout 10 --max-time %d -sS %s 2>/dev/null | jq -c -r --arg h %s %s 2>/dev/null',
-			SERVER_LOOKUP_TIMEOUT, url, quoted_hostname, jq_filter
-		));
-	}
-
-	if (has_command('uclient-fetch')) {
-		push(commands, sprintf(
-			'uclient-fetch -qO- %s 2>/dev/null | jq -c -r --arg h %s %s 2>/dev/null',
-			url, quoted_hostname, jq_filter
-		));
-	}
-
-	if (has_command('wget')) {
-		push(commands, sprintf(
-			'wget -T %d -qO- %s 2>/dev/null | jq -c -r --arg h %s %s 2>/dev/null',
-			SERVER_LOOKUP_TIMEOUT, url, quoted_hostname, jq_filter
-		));
-	}
-
-	if (!length(commands)) {
-		return {
-			server: null,
-			error: 'No supported HTTP client found (curl, uclient-fetch or wget).'
-		};
-	}
-
-	for (let command in commands) {
-		let output = read_command_output(command);
-
-		if (!output)
-			continue;
-
-		try {
-			return {
-				server: json(output),
-				error: null
-			};
-		} catch (e) {
-			log.ERR('Failed to parse NordVPN server lookup response: %J', e);
-		}
-	}
-
-	return {
-		server: null,
-		error: sprintf('Lookup timed out or failed for %s.', hostname)
-	};
 }
 
 function fetch_countries() {
@@ -334,65 +256,6 @@ return {
 					action: action,
 					exit_code: result,
 					service: SERVICE_NAME
-				};
-			}
-		},
-
-		get_server_data: {
-			args: { hostname: '' },
-			call: function(req) {
-				let hostname = '';
-				let fetch_result = null;
-				let server = null;
-				let fetch_error = null;
-
-				if (req && req.args && req.args.hostname != null)
-					hostname = trim(req.args.hostname);
-
-				if (hostname == '') {
-					return {
-						success: false,
-						error: 'Server hostname is required.'
-					};
-				}
-
-				fetch_result = fetch_server_data_with_jq(hostname);
-				server = fetch_result ? fetch_result.server : null;
-				fetch_error = fetch_result ? fetch_result.error : null;
-
-				if (fetch_error) {
-					return {
-						success: false,
-						error: fetch_error
-					};
-				}
-
-				if (!server) {
-					return {
-						success: false,
-						error: sprintf('Server not found or lookup timed out for %s.', hostname)
-					};
-				}
-
-				if (server.supports_wireguard_udp !== true) {
-					return {
-						success: false,
-						error: sprintf('Server %s does not support wireguard_udp.', hostname)
-					};
-				}
-
-				if (!server.public_key) {
-					return {
-						success: false,
-						error: sprintf('No WireGuard public key found for %s.', hostname)
-					};
-				}
-
-				return {
-					success: true,
-					hostname: server.hostname,
-					address: server.address,
-					public_key: server.public_key
 				};
 			}
 		},
