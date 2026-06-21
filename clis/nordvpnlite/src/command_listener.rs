@@ -1,7 +1,6 @@
 use std::net::IpAddr;
 
 use clap::Parser;
-// use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use telio_core::telio_task::io::chan;
 use tokio::sync::oneshot;
@@ -418,8 +417,6 @@ mod tests {
         let path = make_socket_path();
         let (mut listener, _config_file) = make_command_listener(&path);
 
-        println!("Path 1 {:?}", path);
-
         let command = serde_json::to_string(&command).unwrap();
         let daemon = tokio::spawn(async move {
             let config = NordVpnLiteConfig::default();
@@ -431,7 +428,6 @@ mod tests {
         });
 
         let daemon_response = if broken_client {
-            println!("Path 2 {:?}", path);
             broken_client_send_command(&path, &command).await.unwrap();
             Err(std::io::Error::other("broken client, no response"))
         } else {
@@ -450,14 +446,6 @@ mod tests {
         let error_response = CommandResponse::Err("Test error".to_string());
         assert_eq!(error_response.serialize(), "{\"Err\":\"Test error\"}");
     }
-
-    // #[tokio::test]
-    // async fn test_command_quit() {
-    //     let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, true, false).await;
-
-    //     assert_eq!(response.unwrap(), CommandResponse::Ok);
-    //     assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
-    // }
 
     #[tokio::test]
     async fn test_command_is_alive() {
@@ -484,7 +472,6 @@ mod tests {
         let (mut listener, _config_file) = make_command_listener(&path);
 
         let command = "garbage";
-        // let path_clone = path.clone();
         let daemon = tokio::spawn(async move {
             let config = NordVpnLiteConfig::default();
             let connection = listener.accept_client_connection().await.unwrap();
@@ -524,14 +511,6 @@ mod tests {
 
         assert_matches!(cmd, Err(NordVpnLiteError::Io(_)));
     }
-
-    // #[tokio::test]
-    // async fn test_command_early_quit() {
-    //     let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, false, false).await;
-
-    //     assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
-    //     assert_eq!(response.unwrap(), CommandResponse::Ok);
-    // }
 
     #[tokio::test]
     async fn test_command_early_is_alive() {
