@@ -1226,13 +1226,13 @@ fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
     // No exit node: outbound from any src should pass.
     fw.apply_state(FirewallState {
         ip_addresses: vec![IpAddr::V4(tunnel_ip)],
-        exit_node_present: false,
+        exit_addresses_up_to_date: false,
         ..Default::default()
     });
     assert!(
         fw.process_outbound_packet_sink(
             &vpn_peer.0,
-            &make_tcp(
+            &mut make_tcp(
                 &format!("{wlan_ip}:12345"),
                 &format!("{remote_ip}:443"),
                 TcpFlags::SYN
@@ -1245,15 +1245,17 @@ fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
     fw.apply_state(FirewallState {
         ip_addresses: vec![IpAddr::V4(tunnel_ip)],
         exit_node_present: true,
+        exit_addresses_up_to_date: true,
         whitelist: telio_firewall::firewall::Whitelist {
             vpn_peer: Some(vpn_peer),
             ..Default::default()
         },
+        ..Default::default()
     });
     assert!(
         !fw.process_outbound_packet_sink(
             &vpn_peer.0,
-            &make_tcp(
+            &mut make_tcp(
                 &format!("{wlan_ip}:12345"),
                 &format!("{remote_ip}:443"),
                 TcpFlags::SYN
@@ -1264,7 +1266,7 @@ fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
     assert!(
         fw.process_outbound_packet_sink(
             &vpn_peer.0,
-            &make_tcp(
+            &mut make_tcp(
                 &format!("{tunnel_ip}:54321"),
                 &format!("{remote_ip}:443"),
                 TcpFlags::SYN
@@ -1276,13 +1278,13 @@ fn firewall_outbound_packet_with_wrong_src_ip_rejected() {
     // Exit node disconnected: rule gone.
     fw.apply_state(FirewallState {
         ip_addresses: vec![IpAddr::V4(tunnel_ip)],
-        exit_node_present: false,
+        exit_addresses_up_to_date: false,
         ..Default::default()
     });
     assert!(
         fw.process_outbound_packet_sink(
             &vpn_peer.0,
-            &make_tcp(
+            &mut make_tcp(
                 &format!("{wlan_ip}:12345"),
                 &format!("{remote_ip}:443"),
                 TcpFlags::SYN
