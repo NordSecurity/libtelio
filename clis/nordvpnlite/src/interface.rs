@@ -25,11 +25,9 @@ pub trait ConfigureInterface {
         exit_node: &IpAddr,
         dns: &[IpAddr],
     ) -> Result<(), NordVpnLiteError>;
-    /// Some of the configured routes are not cleared when the adapter is removed and must be removed manually
-    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError>;
-    /// Manually cleanup the interface before the adapter is removed
-    fn cleanup_interface(&mut self) -> Result<(), NordVpnLiteError> {
-        Ok(()) // No-op implementation
+    /// Cleanup exit routes and interface configuration
+    fn cleanup(&mut self) -> Result<(), NordVpnLiteError> {
+        Ok(())
     }
 }
 
@@ -149,10 +147,6 @@ impl ConfigureInterface for Manual {
         _exit_node: &IpAddr,
         _dns: &[IpAddr],
     ) -> Result<(), NordVpnLiteError> {
-        Ok(()) // No-op implementation
-    }
-
-    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
 }
@@ -363,7 +357,7 @@ impl ConfigureInterface for Iproute {
         Ok(())
     }
 
-    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError> {
+    fn cleanup(&mut self) -> Result<(), NordVpnLiteError> {
         if let Some(fw_rule_prio) = &self.fw_rule_prio {
             execute(Command::new("ip").args(["rule", "del", "priority", fw_rule_prio]))?;
         }
@@ -643,6 +637,45 @@ impl Uci {
         execute(Command::new("/etc/init.d/firewall").args(["reload"]))?;
         Ok(())
     }
+
+    fn remove_exit_routes(&mut self) {
+        debug!("Removing exit routes");
+        if let Err(e) = execute(Command::new("uci").args(["del", "network.nordvpnlite_route"])) {
+            error!("Error removing route: {e}");
+        }
+        if let Err(e) = execute(Command::new("uci").args(["del", "network.nordvpnlite_vpn_rule"])) {
+            error!("Error removing vpn rule: {e}");
+        }
+        if let Err(e) = execute(Command::new("uci").args(["del", "network.nordvpnlite_lan_rule"])) {
+            error!("Error removing lan rule: {e}");
+        }
+        if let Err(e) = execute(Command::new("uci").args(["del", "firewall.nordvpnlite_vpn_zone"]))
+        {
+            error!("Error removing zone: {e}");
+        }
+        if let Err(e) =
+            execute(Command::new("uci").args(["del", "firewall.nordvpnlite_vpn_forwarding"]))
+        {
+            error!("Error removing forwarding: {e}");
+        }
+
+        // Restore DNS settings
+        if let Err(e) = self.restore_dnsmasq() {
+            error!("Error restoring dnsmasq: {e}");
+        }
+
+        // Restore IPv6
+        if let Err(e) = self.restore_ipv6() {
+            error!("Error restoring IPv6: {e}");
+        }
+    }
+
+    fn remove_interface(&mut self) {
+        debug!("Removing interface");
+        if let Err(e) = execute(Command::new("uci").args(["del", "network.tun"])) {
+            error!("Error removing interface: {e}");
+        }
+    }
 }
 
 impl ConfigureInterface for Uci {
@@ -782,49 +815,15 @@ impl ConfigureInterface for Uci {
         Ok(())
     }
 
-    fn cleanup_exit_routes(&mut self) -> Result<(), NordVpnLiteError> {
-        debug!("Removing exit routes");
-        if let Err(e) = execute(Command::new("uci").args(["del", "network.nordvpnlite_route"])) {
-            error!("Error removing route: {e}");
-        }
-        if let Err(e) = execute(Command::new("uci").args(["del", "network.nordvpnlite_vpn_rule"])) {
-            error!("Error removing vpn rule: {e}");
-        }
-        if let Err(e) = execute(Command::new("uci").args(["del", "network.nordvpnlite_lan_rule"])) {
-            error!("Error removing lan rule: {e}");
-        }
-        if let Err(e) = execute(Command::new("uci").args(["del", "firewall.nordvpnlite_vpn_zone"]))
-        {
-            error!("Error removing zone: {e}");
-        }
-        if let Err(e) =
-            execute(Command::new("uci").args(["del", "firewall.nordvpnlite_vpn_forwarding"]))
-        {
-            error!("Error removing forwarding: {e}");
-        }
-
-        // Restore DNS settings
-        self.restore_dnsmasq()?;
-
-        // Restore IPv6
-        self.restore_ipv6()?;
+    fn cleanup(&mut self) -> Result<(), NordVpnLiteError> {
+        self.remove_exit_routes();
+        self.remove_interface();
 
         // Save and apply
-        self.reload_firewall()?;
-        self.reload_network()?;
-
-        Ok(())
-    }
-
-    fn cleanup_interface(&mut self) -> Result<(), NordVpnLiteError> {
-        debug!("Removing interface");
-        if let Err(e) = execute(Command::new("uci").args(["del", "network.tun"])) {
-            error!("Error removing interface: {e}");
+        if let Err(e) = self.reload_firewall() {
+            error!("Error reloading firewall: {e}");
         }
-
-        // Save and apply
-        self.reload_network()?;
-        Ok(())
+        self.reload_network()
     }
 }
 

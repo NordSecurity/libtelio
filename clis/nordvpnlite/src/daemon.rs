@@ -291,16 +291,9 @@ impl TelioTaskCmd {
             }
             TelioTaskCmd::Quit(response_tx_channel) => {
                 ctx.telio.stop();
-                _ = ctx
-                    .interface_config_provider
-                    .cleanup_exit_routes()
-                    .inspect_err(|e| {
-                        error!("Failed to cleanup routes for exit routing with error '{e:?}'")
-                    });
-                _ = ctx
-                    .interface_config_provider
-                    .cleanup_interface()
-                    .inspect_err(|e| error!("Failed to cleanup interface with error '{e:?}'"));
+                _ = ctx.interface_config_provider.cleanup().inspect_err(|e| {
+                    error!("Failed to cleanup interface and routes with error '{e:?}'")
+                });
 
                 if response_tx_channel.send(()).is_err() {
                     error!("Telio task failed sending quit response: receiver dropped")
