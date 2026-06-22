@@ -4,15 +4,17 @@ import os
 import re
 import time
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
+from typing import AsyncIterator, Dict, List, Optional
+
 from tests.config import (
+    CORE_API_CA_CERTIFICATE_PATH,
     CORE_API_CREDENTIALS,
+    CORE_API_URL,
     LIBTELIO_BINARY_PATH_DOCKER,
     LIBTELIO_LOCAL_IP,
-    CORE_API_URL,
-    CORE_API_CA_CERTIFICATE_PATH,
     WG_SERVER,
     WG_SERVERS,
 )
@@ -26,7 +28,6 @@ from tests.utils.process import Process, ProcessExecError
 from tests.utils.router import IPStack
 from tests.utils.router.linux_router import LinuxRouter
 from tests.utils.testing import get_current_test_log_path
-from typing import AsyncIterator, Dict, List, Optional
 
 
 class IgnoreableError(Exception):
@@ -169,24 +170,23 @@ class Config:
     async def assert_match_daemon_start(
         self,
         stdout: str,
-    ) -> tuple[Path, Path]:
-        assert (
-            "Starting daemon" in stdout
-        ), f"Could not find 'Starting daemon' in: '{stdout}'"
+        assert "Starting daemon" in stdout, (
+            f"Could not find 'Starting daemon' in: '{stdout}'"
+        )
 
         config_match = re.search(r"Reading config from:\s*(.+.json)", stdout)
         assert config_match, f"Could not find config path in: {stdout}"
         stdout_config_path = Path(config_match.group(1).strip())
-        assert (
-            stdout_config_path == self.config_path
-        ), f"Config path does not match: '{stdout_config_path}' != '{self.config_path}'"
+        assert stdout_config_path == self.config_path, (
+            f"Config path does not match: '{stdout_config_path}' != '{self.config_path}'"
+        )
 
         log_match = re.search(r"Saving logs to:\s*(.+\.log)", stdout)
         assert log_match, f"Could not find log path in: {stdout}"
         log_path = Path(log_match.group(1).strip())
-        assert (
-            log_path == self.paths.lib_log
-        ), f"Log path does not match: '{log_path}' != '{self.paths.lib_log}'"
+        assert log_path == self.paths.lib_log, (
+            f"Log path does not match: '{log_path}' != '{self.paths.lib_log}'"
+        )
 
         return stdout_config_path, log_path
 
@@ -314,7 +314,9 @@ class NordVpnLite:
                 log.info("NordVPN Lite skipping cleanup")
 
     async def clean_up(self) -> None:
-        log.info("NordVPN Lite cleanup: sending SIGTERM and removing socket (if exists)")
+        log.info(
+            "NordVPN Lite cleanup: sending SIGTERM and removing socket (if exists)"
+        )
         try:
             await self.kill()
         except ProcessExecError:
@@ -356,11 +358,20 @@ class NordVpnLite:
 
     async def kill(self) -> None:
         try:
-            # OpenWrt doesn't support killall -w
+            # OpenWrt's BusyBox killall doesn't support -w (wait),
+            # so we poll for the process to exit after sending SIGTERM.
             if self.config.paths.exec_path.parent == Path("."):
                 await self.connection.create_process(
-                    ["killall", "-s", "SIGTERM", "nordvpn"]
+                    ["killall", "-s", "SIGTERM", "nordvpnlite"]
                 ).execute()
+                for _ in range(10):
+                    await asyncio.sleep(0.5)
+                    try:
+                        await self.connection.create_process(
+                            ["pidof", "nordvpnlite"]
+                        ).execute()
+                    except ProcessExecError:
+                        return
             else:
                 await self.connection.create_process(
                     ["killall", "-w", "-s", "SIGTERM", "nordvpnlite"]
@@ -369,7 +380,7 @@ class NordVpnLite:
                 not await self.is_alive()
             ), "SIGTERM was sent but daemon's still running"
         except ProcessExecError as exc:
-            if "nordvpnlite: no process found" not in exc.stderr:
+            if "no process killed" not in exc.stderr and "no process found" not in exc.stderr:
                 raise
 
     async def remove_config(self, path: Path) -> None:
@@ -378,11 +389,13 @@ class NordVpnLite:
 
     async def config_exists(self, path: Path) -> bool:
         try:
-            await self.connection.create_process([
-                "test",
-                "-s",
-                str(path),
-            ]).execute()
+            await self.connection.create_process(
+                [
+                    "test",
+                    "-s",
+                    str(path),
+                ]
+            ).execute()
             return True
         except ProcessExecError as exc:
             assert (exc.returncode, exc.stdout, exc.stderr) == (1, "", "")
