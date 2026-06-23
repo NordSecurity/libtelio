@@ -357,11 +357,11 @@ impl StatefulFirewall {
             let mut cb = self.tp_lite_stats_cb.callback.write();
             std::mem::swap(&mut old_cb, &mut cb);
         }
-        if let Some(server_ips) = force_plaintext_dns_for_servers {
-            let mut state = self.get_state();
-            state.force_plaintext_dns_for_servers = Some(server_ips);
-            self.apply_state(state);
-        }
+
+        let mut state = self.get_state();
+        state.force_plaintext_dns_for_servers = force_plaintext_dns_for_servers;
+        self.apply_state(state);
+
         let res = unsafe {
             self.firewall_lib.libfw_enable_tp_lite_stats_collection(
                 self.firewall,
