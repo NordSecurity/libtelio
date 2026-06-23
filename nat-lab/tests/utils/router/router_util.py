@@ -1,3 +1,4 @@
+from .android_router import AndroidRouter
 from .linux_router import LinuxRouter
 from .mac_router import MacRouter
 from .router import IPStack, Router
@@ -12,4 +13,6 @@ def new_router(connection: Connection, ip_stack: IPStack) -> Router:
         return WindowsRouter(connection, ip_stack)
     if connection.target_os == TargetOS.Mac:
         return MacRouter(connection, ip_stack)
+    if connection.target_os == TargetOS.Android:
+        return AndroidRouter(connection, ip_stack)
     assert False, f"target_os '{connection.target_os}' not supported"
