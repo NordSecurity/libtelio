@@ -1368,6 +1368,28 @@ mod tp_lite_stats {
         assert!(
             !fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(SRC_ADDR, DOT_DNS_ADDR))
         );
+
+        // Re-enable TP-Lite stats collection with force_plaintext_dns = false
+        let config = TpLiteStatsOptions {
+            dns_server_ips: vec![IpAddr::from([10, 5, 0, 53])],
+            ..Default::default()
+        };
+        let callback = Callback {
+            stats: stats.clone(),
+        };
+        fw.enable_tp_lite_stats_collection(config, Box::new(callback))
+            .unwrap();
+
+        // After enabling with force_plaintext_dns = false:
+        //
+        // Packet 1: different IP, non-53 port — still accepted (only the configured DNS IP is restricted)
+        assert!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(SRC_ADDR, OTHER_ADDR)));
+        // Packet 2: configured DNS IP, port 53 — accepted (standard DNS is allowed)
+        assert!(fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(SRC_ADDR, PT_DNS_ADDR)));
+        // Packet 3: configured DNS IP, non-53 port (DoT port 853) should be allowed again
+        assert!(
+            fw.process_outbound_packet_sink(&make_peer(), &mut make_udp(SRC_ADDR, DOT_DNS_ADDR))
+        );
     }
 }
 
