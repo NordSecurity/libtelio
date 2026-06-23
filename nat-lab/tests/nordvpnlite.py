@@ -4,17 +4,16 @@ import os
 import re
 import time
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
-from typing import AsyncIterator, Dict, List, Optional
 
 from tests.config import (
-    CORE_API_CA_CERTIFICATE_PATH,
     CORE_API_CREDENTIALS,
-    CORE_API_URL,
     LIBTELIO_BINARY_PATH_DOCKER,
     LIBTELIO_LOCAL_IP,
+    CORE_API_URL,
+    CORE_API_CA_CERTIFICATE_PATH,
     WG_SERVER,
     WG_SERVERS,
 )
@@ -28,6 +27,7 @@ from tests.utils.process import Process, ProcessExecError
 from tests.utils.router import IPStack
 from tests.utils.router.linux_router import LinuxRouter
 from tests.utils.testing import get_current_test_log_path
+from typing import AsyncIterator, Dict, List, Optional
 
 
 class IgnoreableError(Exception):
@@ -171,23 +171,24 @@ class Config:
     async def assert_match_daemon_start(
         self,
         stdout: str,
-        assert "Starting daemon" in stdout, (
-            f"Could not find 'Starting daemon' in: '{stdout}'"
-        )
+    ) -> tuple[Path, Path]:
+        assert (
+            "Starting daemon" in stdout
+        ), f"Could not find 'Starting daemon' in: '{stdout}'"
 
         config_match = re.search(r"Reading config from:\s*(.+.json)", stdout)
         assert config_match, f"Could not find config path in: {stdout}"
         stdout_config_path = Path(config_match.group(1).strip())
-        assert stdout_config_path == self.config_path, (
-            f"Config path does not match: '{stdout_config_path}' != '{self.config_path}'"
-        )
+        assert (
+            stdout_config_path == self.config_path
+        ), f"Config path does not match: '{stdout_config_path}' != '{self.config_path}'"
 
         log_match = re.search(r"Saving logs to:\s*(.+\.log)", stdout)
         assert log_match, f"Could not find log path in: {stdout}"
         log_path = Path(log_match.group(1).strip())
-        assert log_path == self.paths.lib_log, (
-            f"Log path does not match: '{log_path}' != '{self.paths.lib_log}'"
-        )
+        assert (
+            log_path == self.paths.lib_log
+        ), f"Log path does not match: '{log_path}' != '{self.paths.lib_log}'"
 
         return stdout_config_path, log_path
 
@@ -385,11 +386,14 @@ class NordVpnLite:
                 await self.connection.create_process(
                     ["killall", "-w", "-s", "SIGTERM", "nordvpnlite"]
                 ).execute()
-            assert (
-                not await self.is_alive()
-            ), "SIGTERM was sent but daemon's still running"
+            assert not await self.is_alive(), (
+                "SIGTERM was sent but daemon's still running"
+            )
         except ProcessExecError as exc:
-            if "no process killed" not in exc.stderr and "no process found" not in exc.stderr:
+            if (
+                "no process killed" not in exc.stderr
+                and "no process found" not in exc.stderr
+            ):
                 raise
 
     async def remove_config(self, path: Path) -> None:

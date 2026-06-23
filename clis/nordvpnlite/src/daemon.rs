@@ -311,7 +311,7 @@ impl TelioTaskCmd {
                         .disconnect_exit_node(&exit_node.public_key)
                         .map_err(|_| NordVpnLiteError::CommandFailed(ClientCmd::Disconnect))?;
                     let _ = ctx.interface_config_provider
-                        .cleanup_exit_routes()
+                        .cleanup()
                         .inspect_err(|e| {
                             error!("Failed to cleanup routes for exit routing when disconnecting with error '{e:?}'")
                         });
