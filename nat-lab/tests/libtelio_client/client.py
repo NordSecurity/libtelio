@@ -24,7 +24,7 @@ from tests.utils.bindings import (
     TelioNode,
     default_features,
 )
-from tests.utils.connection import Connection
+from tests.utils.connection import Connection, TargetOS
 from tests.utils.connection_util import get_uniffi_path
 from tests.utils.logger import log
 from tests.utils.moose import MOOSE_DB_TIMEOUT_MS
@@ -221,11 +221,7 @@ class Client:
 
                 await self.maybe_write_device_fingerprint_to_moose_db()
 
-                await self.get_proxy().start_named(
-                    private_key=self._node.private_key,
-                    adapter=self._adapter_type,
-                    name=self.get_router().get_interface_name(),
-                )
+                await self._start_adapter()
 
                 if isinstance(self.get_router(), LinuxRouter):
                     await self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
@@ -304,6 +300,24 @@ class Client:
         log.info("[%s] Test cleanup complete", self._node.name)
         if stop_exception is not None:
             raise stop_exception
+
+    async def _start_adapter(self) -> None:
+        if self._connection.target_os == TargetOS.Android:
+            # Android can't self-create a tun (NepTUN start_named -> ENODEV);
+            # pre-create it and hand libtelio the fd, like VpnService. LLT-4141.
+            iface = self.get_router().get_interface_name()
+            tun = await self.get_proxy().create_tun(int(iface.removeprefix("tun")))
+            await self.get_proxy().start_with_tun(
+                private_key=self._node.private_key,
+                adapter=self._adapter_type,
+                tun=tun,
+            )
+        else:
+            await self.get_proxy().start_named(
+                private_key=self._node.private_key,
+                adapter=self._adapter_type,
+                name=self.get_router().get_interface_name(),
+            )
 
     async def simple_start(self):
         await self.get_proxy().start_named(
