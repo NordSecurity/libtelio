@@ -75,6 +75,7 @@ LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
         "secondary": "192.168.153.54",
     },
     ConnectionTag.VM_MAC: {"primary": "192.168.154.54", "secondary": "192.168.155.54"},
+    ConnectionTag.VM_ANDROID_1: {"primary": "192.168.118.54", "secondary": ""},
     ConnectionTag.DOCKER_CONE_GW_1: {"primary": "192.168.101.254", "secondary": ""},
     ConnectionTag.DOCKER_CONE_GW_2: {"primary": "192.168.102.254", "secondary": ""},
     ConnectionTag.DOCKER_CONE_GW_3: {"primary": "192.168.113.254", "secondary": ""},
@@ -275,6 +276,13 @@ LIBTELIO_BINARY_PATH_VM_MAC = "/var/root/workspace/binaries/"
 
 UNIFFI_PATH_WINDOWS_VM = "C:/workspace/uniffi/".replace("/", "\\")
 UNIFFI_PATH_VM_MAC = "/var/root/workspace/uniffi/"
+
+# Android emulator: the libtelio runtime (bionic libtelio.so + python bindings +
+# Pyro5 remote) runs inside Termux, whose home is app-private. Binaries are staged
+# via adb push to /data/local/tmp, then copied into the Termux work dir.
+ANDROID_DEVICE_TMP = "/data/local/tmp/"
+LIBTELIO_BINARY_PATH_VM_ANDROID = "/data/data/com.termux/files/home/work/"
+UNIFFI_PATH_VM_ANDROID = "/data/data/com.termux/files/home/work/"
 
 LIBTELIO_LOCAL_IP = "10.5.0.2"
 

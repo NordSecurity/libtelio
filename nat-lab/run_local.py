@@ -94,6 +94,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="MacOS build, run tests with 'mac' mark",
     )
     parser.add_argument(
+        "--android",
+        action="store_true",
+        help="Run tests with 'android' mark (requires android-client-01 emulator)",
+    )
+    parser.add_argument(
         "--linux-native", action="store_true", help="Run tests with 'linux_native' mark"
     )
     parser.add_argument(
@@ -296,12 +301,14 @@ def get_pytest_arguments(options) -> List[str]:
     else:
         marks = (
             "not nat and not windows and not mac and not linux_native and not long and"
-            " not moose"
+            " not moose and not android"
         )
         if options.windows:
             marks = marks.replace("not windows", "windows")
         if options.mac:
             marks = marks.replace("not mac", "mac")
+        if options.android:
+            marks = marks.replace("not android", "android")
         if options.linux_native:
             marks = marks.replace("not linux_native", "linux_native")
         if options.moose:

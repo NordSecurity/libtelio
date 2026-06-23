@@ -185,6 +185,7 @@ markers = [
     "windows: tests that require Windows VM to be running",
     "windows2: tests that require a second Windows VM to be running",
     "mac: tests that require Mac VM to be running",
+    "android: tests that require the Android emulator (android-client-01) to be running",
     "linux_native: tests that use linux native WG implementation",
     "fullcone: tests that require fullcone containers to be running",
     "nlx: tests that require nlx VM to be running",

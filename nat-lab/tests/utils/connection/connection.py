@@ -29,6 +29,7 @@ class ConnectionTag(Enum):
     VM_WINDOWS_1 = auto()
     VM_WINDOWS_2 = auto()
     VM_MAC = auto()
+    VM_ANDROID_1 = auto()
     DOCKER_CONE_GW_1 = auto()
     DOCKER_CONE_GW_2 = auto()
     DOCKER_CONE_GW_3 = auto()
@@ -83,6 +84,7 @@ class TargetOS(Enum):
     Linux = auto()
     Windows = auto()
     Mac = auto()
+    Android = auto()
 
     @staticmethod
     def local():
