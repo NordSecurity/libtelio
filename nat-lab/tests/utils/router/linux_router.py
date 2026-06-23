@@ -10,6 +10,10 @@ from typing import AsyncIterator, List
 # An arbitrary routing table id. Must be unique on the system.
 ROUTING_TABLE_ID = "73110"  # TELIO
 
+# IPv4 networks routed through the tunnel via the VPN routing table. Shared so
+# AndroidRouter (which adds its own server-subnet bypass) can't silently diverge.
+VPN_TABLE_V4_NETWORKS = ["10.0.0.0/16", "100.64.0.1", "10.5.0.0/16"]
+
 # An arbitrary fwmark value. Must be unique on the system. Also defined in tcli/src/cli.rs
 FWMARK_VALUE = "11673110"  # LIBTELIO
 
@@ -128,7 +132,7 @@ class LinuxRouter(Router):
 
     async def create_vpn_route(self):
         if self.ip_stack in [IPStack.IPv4, IPStack.IPv4v6]:
-            for network in ["10.0.0.0/16", "100.64.0.1", "10.5.0.0/16"]:
+            for network in VPN_TABLE_V4_NETWORKS:
                 try:
                     await self._connection.create_process([
                         "ip",
