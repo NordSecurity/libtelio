@@ -272,6 +272,16 @@ graph LR
         192.168.155.254"])
   end
 
+  %% Network android-net-01
+  subgraph android-net-01[android-net-01]
+  direction LR
+    android-gw-01(["android-gw-01
+        10.0.254.24
+        192.168.118.254"])
+    android-client-01("android-client-01
+        192.168.118.2")
+  end
+
   %% Node Connections
   cone-gw-01 -..- internet
   cone-gw-02 -..- internet
@@ -293,6 +303,7 @@ graph LR
   windows-gw-04 -..- internet
   mac-gw-01 -..- internet
   mac-gw-02 -..- internet
+  android-gw-01 -..- internet
   cone-client-01 -.- cone-gw-01
   shared-client-01 -.- cone-gw-01
   shared-client-01 -.- cone-gw-03
@@ -316,4 +327,5 @@ graph LR
   windows-client-02 -.- windows-gw-04
   mac-client-01 -.- mac-gw-01
   mac-client-01 -.- mac-gw-02
+  android-client-01 -.- android-gw-01
 ```

@@ -1,0 +1,18 @@
+#!/system/bin/sh
+# nat-lab invokes this as the "python binary" for the Android client (see
+# get_python_binary). It execs the Termux python (the bionic interpreter that
+# can load the android libtelio.so). The entrypoint runs `adb root`, so this
+# runs as root - which libtelio needs to create the tun adapter and which lets
+# it read Termux's app-private files directly (no run-as). The remote's argv is
+# forwarded unchanged:
+#   natlab-python <libtelio_remote.py> <object_name> <ip> <port>
+# Keep these exports in sync with _TERMUX_ENV in tests/utils/connection/adb_connection.py.
+PREFIX=/data/data/com.termux/files/usr
+export PREFIX
+export HOME=/data/data/com.termux/files/home
+export PATH="$PREFIX/bin:/system/bin"
+export LD_LIBRARY_PATH="$PREFIX/lib"
+export LD_PRELOAD="$PREFIX/lib/libtermux-exec.so"
+export TMPDIR="$PREFIX/tmp"
+cd "$HOME/work"
+exec "$PREFIX/bin/python" "$@"
