@@ -12,6 +12,10 @@ use telio::telio_utils::LIBTELIO_FWMARK;
 // Copied from NordVPN Linux app
 const DEFAULT_ROUTING_TABLE_ID: u32 = 205;
 
+const TUNNEL_MTU: u32 = 1420;
+
+const DHCP_OPTION_INTERFACE_MTU: u32 = 26;
+
 pub trait ConfigureInterface {
     /// Initialize the interface
     fn initialize(&mut self) -> Result<(), NordVpnLiteError>;
@@ -251,13 +255,14 @@ impl Iproute {
 
 impl ConfigureInterface for Iproute {
     fn initialize(&mut self) -> Result<(), NordVpnLiteError> {
+        let mtu = TUNNEL_MTU.to_string();
         execute(Command::new("ip").args([
             "link",
             "set",
             "dev",
             &self.interface_name,
             "mtu",
-            "1420",
+            &mtu,
         ]))?;
         execute(Command::new("ip").args(["link", "set", "dev", &self.interface_name, "up"]))
     }
@@ -393,6 +398,9 @@ pub struct Uci {
 
     /// Initial dnsmasq server value
     initial_setting_dnsmasq_server: Option<Vec<String>>,
+
+    /// Initial dhcp.lan.dhcp_option list
+    initial_setting_dhcp_option: Option<Vec<String>>,
 }
 
 /// Represents a boolean option in the UCI configuration system.
@@ -499,10 +507,22 @@ impl Uci {
                 })
                 .unwrap_or(None);
 
+        let initial_setting_dhcp_option =
+            execute_with_output(Command::new("uci").args(["get", "dhcp.lan.dhcp_option"]))
+                .map(|res| {
+                    Some(
+                        res.split_whitespace()
+                            .map(|s| s.to_owned())
+                            .collect::<Vec<String>>(),
+                    )
+                })
+                .unwrap_or(None);
+
         debug!("Initial network.wan.ipv6 state {wan_ipv6_initial_setting:?}");
         debug!("Initial network.wan6.disabled state {wan6_disabled_initial_setting:?}");
         debug!("Initial dhcp.@dnsmasq[0].noresolv {initial_setting_dnsmasq_noresolv:?}");
         debug!("Initial dhcp.@dnsmasq[0].server {initial_setting_dnsmasq_server:?}");
+        debug!("Initial dhcp.lan.dhcp_option {initial_setting_dhcp_option:?}");
 
         Self {
             interface_name: interface_name.to_string(),
@@ -510,6 +530,7 @@ impl Uci {
             wan6_disabled_initial_setting,
             initial_setting_dnsmasq_noresolv,
             initial_setting_dnsmasq_server,
+            initial_setting_dhcp_option,
             max_route_priority,
         }
     }
@@ -529,6 +550,39 @@ impl Uci {
                 Command::new("uci").args(["add_list", &format!("dhcp.@dnsmasq[0].server={}", ip)]),
             )?;
         }
+
+        let dhcp_mtu_option_prefix = format!("{DHCP_OPTION_INTERFACE_MTU},");
+        let advertised_mtu = self
+            .initial_setting_dhcp_option
+            .iter()
+            .flatten()
+            .filter_map(|o| o.strip_prefix(&dhcp_mtu_option_prefix))
+            .filter_map(|v| v.trim().parse::<u32>().ok())
+            .next_back()
+            .map_or(TUNNEL_MTU, |existing| existing.min(TUNNEL_MTU));
+        debug!(
+            "Advertising MTU {advertised_mtu} to LAN via DHCP option {DHCP_OPTION_INTERFACE_MTU}"
+        );
+        execute(Command::new("uci").args(["delete", "dhcp.lan.dhcp_option"]))
+            .map_err(|e| {
+                debug!("uci couldn't delete dhcp.lan.dhcp_option: {}", e);
+            })
+            .ok();
+        for dhcp_option in self
+            .initial_setting_dhcp_option
+            .iter()
+            .flatten()
+            .filter(|o| !o.starts_with(&dhcp_mtu_option_prefix))
+        {
+            execute(
+                Command::new("uci")
+                    .args(["add_list", &format!("dhcp.lan.dhcp_option={dhcp_option}")]),
+            )?;
+        }
+        execute(Command::new("uci").args([
+            "add_list",
+            &format!("dhcp.lan.dhcp_option={dhcp_mtu_option_prefix}{advertised_mtu}"),
+        ]))?;
 
         execute(Command::new("uci").args(["commit", "dhcp"]))?;
         execute(Command::new("/etc/init.d/dnsmasq").args(["reload"]))?;
@@ -562,6 +616,19 @@ impl Uci {
                         .args(["add_list", &format!("dhcp.@dnsmasq[0].server={}", ip)]),
                 )?;
             }
+        }
+
+        debug!("Restoring dhcp.lan.dhcp_option");
+        execute(Command::new("uci").args(["delete", "dhcp.lan.dhcp_option"]))
+            .map_err(|e| {
+                debug!("uci couldn't delete dhcp.lan.dhcp_option: {}", e);
+            })
+            .ok();
+        for dhcp_option in self.initial_setting_dhcp_option.iter().flatten() {
+            execute(
+                Command::new("uci")
+                    .args(["add_list", &format!("dhcp.lan.dhcp_option={dhcp_option}")]),
+            )?;
         }
 
         execute(Command::new("uci").args(["commit", "dhcp"]))?;
@@ -659,7 +726,7 @@ impl Uci {
             error!("Error removing forwarding: {e}");
         }
 
-        // Restore DNS settings
+        // Restore DNS settings and DHCP options
         if let Err(e) = self.restore_dnsmasq() {
             error!("Error restoring dnsmasq: {e}");
         }
@@ -691,7 +758,7 @@ impl ConfigureInterface for Uci {
                 execute(Command::new("uci").args(["rename", "network.@interface[-1]=tun"]))?;
             }
         }
-        execute(Command::new("uci").args(["set", "network.tun.mtu=1420"]))?;
+        execute(Command::new("uci").args(["set", &format!("network.tun.mtu={TUNNEL_MTU}")]))?;
 
         Ok(())
     }
@@ -805,7 +872,7 @@ impl ConfigureInterface for Uci {
         // Disable IPv6
         self.disable_ipv6()?;
 
-        // Configure DNS
+        // Configure DNS and advertise the tunnel MTU to LAN clients over DHCP
         self.configure_dnsmasq(dns)?;
 
         // Save and apply

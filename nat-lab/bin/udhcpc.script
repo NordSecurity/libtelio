@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# udhcpc hook for nat-lab DHCP clients. Applies the lease to $interface and, crucially, sets the
+# interface MTU from DHCP option 26 (exported by udhcpc as $mtu) - or back to the 1500 default when
+# the option is absent. Used to verify the VPN MTU advertised by the OpenWRT router (LLT-6852).
+
+DEFAULT_MTU=1500
+
+case "$1" in
+    deconfig)
+        ip addr flush dev "$interface"
+        ip link set dev "$interface" mtu "$DEFAULT_MTU"
+        ;;
+    bound | renew)
+        ip addr flush dev "$interface"
+        ip addr add "$ip/24" dev "$interface"
+        [ -n "$router" ] && ip route replace default via "$router" dev "$interface"
+        if [ -n "$mtu" ]; then
+            ip link set dev "$interface" mtu "$mtu"
+        else
+            ip link set dev "$interface" mtu "$DEFAULT_MTU"
+        fi
+        echo "udhcpc $1: ip=$ip mtu=${mtu:-$DEFAULT_MTU}"
+        ;;
+esac
