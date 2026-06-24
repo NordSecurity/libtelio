@@ -343,7 +343,7 @@ enum PacketType {
 }
 
 fn dns_packet(tx_id: u16, name: &str, packet_type: PacketType) -> Vec<u8> {
-    use pnet_packet::dns::{MutableDnsPacket, Retcode};
+    use pnet_packet::dns::{MutableDnsPacket, Retcodes};
 
     let mut buf = vec![0; DNS_HEADER_SIZE];
     let mut packet =
@@ -362,7 +362,7 @@ fn dns_packet(tx_id: u16, name: &str, packet_type: PacketType) -> Vec<u8> {
         PacketType::BlockedResponse => {
             packet.set_is_response(1);
             packet.set_is_recursion_available(1);
-            packet.set_rcode(Retcode::RecordNotExists);
+            packet.set_rcode(Retcodes::RecordNotExists);
             packet.set_authority_rr_count(1);
         }
     };

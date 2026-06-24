@@ -4,8 +4,8 @@
 
 use crate::packet_decoder::normalize_qname;
 use pnet_packet::dns::{
-    DnsClasses, DnsQuery, DnsType, DnsTypes, MutableDnsPacket, MutableDnsResponsePacket, Opcode,
-    Retcode,
+    DnsClasses, DnsQuery, DnsType, DnsTypes, MutableDnsPacket, MutableDnsResponsePacket, Opcodes,
+    Retcode, Retcodes,
 };
 use std::convert::TryInto;
 use std::net::{Ipv4Addr, Ipv6Addr};
@@ -244,7 +244,7 @@ impl DnsResponseBuilder {
 
                 // NODATA for A query: NOERROR + SOA in authority
                 let write_soa = answer_count == 0;
-                (Retcode::NoError, write_soa, false)
+                (Retcodes::NoError, write_soa, false)
             }
             ResponseKind::AnswerAAAA { addresses } => {
                 for ip in addresses {
@@ -261,11 +261,11 @@ impl DnsResponseBuilder {
 
                 // NODATA for AAAA query: NOERROR + SOA in authority
                 let write_soa = answer_count == 0;
-                (Retcode::NoError, write_soa, false)
+                (Retcodes::NoError, write_soa, false)
             }
-            ResponseKind::NoData => (Retcode::NoError, true, false),
-            ResponseKind::NxDomain => (Retcode::RecordNotExists, true, false),
-            ResponseKind::SoaAnswer => (Retcode::NoError, true, true),
+            ResponseKind::NoData => (Retcodes::NoError, true, false),
+            ResponseKind::NxDomain => (Retcodes::RecordNotExists, true, false),
+            ResponseKind::SoaAnswer => (Retcodes::NoError, true, true),
         };
 
         // append SOA record to Answers or Authority
@@ -371,7 +371,7 @@ fn write_header(bytes: &mut [u8], params: HeaderParams) -> Result<(), DnsBuildEr
 
     header.set_id(params.id);
     header.set_is_response(1);
-    header.set_opcode(Opcode::StandardQuery);
+    header.set_opcode(Opcodes::StandardQuery);
     header.set_is_authoriative(if params.authoritative { 1 } else { 0 });
     header.set_is_truncated(if params.truncated { 1 } else { 0 });
     header.set_is_recursion_desirable(if params.recursion_desired { 1 } else { 0 });

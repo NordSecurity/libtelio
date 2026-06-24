@@ -4,7 +4,7 @@
 
 use crate::zone::{NORD_ZONE, NORD_ZONE_SUFFIX};
 use pnet_packet::{
-    dns::{DnsClasses, DnsPacket, DnsQuery, Opcode},
+    dns::{DnsClasses, DnsPacket, DnsQuery, Opcodes},
     FromPacket,
 };
 use telio_utils::telio_log_warn;
@@ -65,7 +65,7 @@ pub(crate) fn parse_dns_query_packet(packet_bytes: &[u8]) -> Result<DnsPacket<'_
 /// but in practice this is never implemented
 pub(crate) fn find_nord_query(dns_packet: &DnsPacket) -> Option<DnsQuery> {
     let opcode = dns_packet.get_opcode();
-    if opcode != Opcode::StandardQuery {
+    if opcode != Opcodes::StandardQuery {
         telio_log_warn!("Unsupported Opcode for nord query: {opcode:?}");
         return None;
     }
@@ -169,7 +169,7 @@ mod tests {
         // Set opcode to 2 (Status) while keeping QR=0
         bytes[2] = (bytes[2] & 0x80) | (2 << 3);
         let packet = parse_dns_query_packet(&bytes).unwrap();
-        assert_eq!(packet.get_opcode(), Opcode::ServerStatusRequest);
+        assert_eq!(packet.get_opcode(), Opcodes::ServerStatusRequest);
     }
 
     #[test]
