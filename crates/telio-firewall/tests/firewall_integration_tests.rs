@@ -1068,7 +1068,7 @@ mod tp_lite_stats {
 
     use parking_lot::Mutex;
     use pnet_packet::dns::{
-        DnsClasses, DnsType, DnsTypes, MutableDnsPacket, MutableDnsResponsePacket, Retcode,
+        DnsClasses, DnsType, DnsTypes, MutableDnsPacket, MutableDnsResponsePacket, Retcodes,
     };
     use telio_model::tp_lite_stats::{
         BlockedDomain, DnsMetrics, TpLiteStatsCallback, TpLiteStatsOptions,
@@ -1117,7 +1117,7 @@ mod tp_lite_stats {
             PacketType::BlockedResponse => {
                 packet.set_is_response(1);
                 packet.set_is_recursion_available(1);
-                packet.set_rcode(Retcode::RecordNotExists);
+                packet.set_rcode(Retcodes::RecordNotExists);
                 packet.set_authority_rr_count(1);
             }
         };
