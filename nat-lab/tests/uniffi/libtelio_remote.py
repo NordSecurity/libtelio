@@ -286,6 +286,17 @@ def main():
             print(f"libtelio-port:{port}")
             sys.stdout.flush()
 
+            # On Android the remote runs over an `adb shell` pipe; libtelio's
+            # telio-task crate writes "task started/stopped" to stdout, and when
+            # that pipe breaks during teardown the rust println! panics with
+            # EPIPE, corrupting stop()/shutdown(). The port line above is the
+            # only stdout the host needs, so route fd 1 to the log file. Keep the
+            # adb channel's write end open on a spare fd so the host doesn't see
+            # EOF while the daemon is still serving RPCs.
+            if os.environ.get("PREFIX", "").startswith("/data/data/com.termux"):
+                os.dup(1)
+                os.dup2(logfile.fileno(), 1)
+
             wrapper = LibtelioWrapper(daemon, logfile)
             daemon.register(wrapper, objectId=object_name)
 
