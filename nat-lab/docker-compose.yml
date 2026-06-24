@@ -19,6 +19,17 @@ services:
     profiles:
       - base
 
+  # Reusable image for clients that obtain their address via DHCP (see dhcp-client.Dockerfile).
+  dhcp-client-image:
+    image: nat-lab:dhcp-client
+    build:
+      context: .
+      dockerfile: dhcp-client.Dockerfile
+      additional_contexts:
+        - "nat-lab:base=service:base"
+    profiles:
+      - base
+
   # sysctls here are configured for docker holding VM, they are not applied to VM
   # add them manually into entrypoint script, which is passed as `EXTRA_SCRIPT` in variables
   nlx-01: &common-nlx
@@ -452,6 +463,47 @@ services:
         ipv4_address: 192.168.117.100
     environment:
       CLIENT_GATEWAY_PRIMARY: 192.168.117.254
+
+  # Client that obtains its address from the OpenWRT gateway over DHCP (LLT-6852),
+  # used to verify DHCP-advertised options such as the interface MTU (option 26).
+  openwrt-dhcp-client-01:
+    hostname: openwrt-dhcp-client-01
+    <<: *common-client
+    image: nat-lab:dhcp-client
+    entrypoint: /opt/bin/dhcp-client
+    depends_on:
+      openwrt-gw-01:
+        condition: service_healthy
+    networks:
+      openwrt-net-01: {}
+    environment:
+      CLIENT_GATEWAY_PRIMARY: none
+
+  openwrt-dhcp-client-02:
+    hostname: openwrt-dhcp-client-02
+    <<: *common-client
+    image: nat-lab:dhcp-client
+    entrypoint: /opt/bin/dhcp-client
+    depends_on:
+      openwrt-gw-02:
+        condition: service_healthy
+    networks:
+      openwrt-net-02: {}
+    environment:
+      CLIENT_GATEWAY_PRIMARY: none
+
+  openwrt-dhcp-client-03:
+    hostname: openwrt-dhcp-client-03
+    <<: *common-client
+    image: nat-lab:dhcp-client
+    entrypoint: /opt/bin/dhcp-client
+    depends_on:
+      openwrt-gw-03:
+        condition: service_healthy
+    networks:
+      openwrt-net-03: {}
+    environment:
+      CLIENT_GATEWAY_PRIMARY: none
 
   ###########################################################
   #                        GATEWAYS                         #

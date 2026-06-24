@@ -64,6 +64,25 @@ OPENWRT_TAGS = [
     ),
 ]
 
+OPENWRT_DHCP_TAGS = [
+    pytest.param(
+        ConnectionTag.DOCKER_OPENWRT_DHCP_CLIENT_1,
+        ConnectionTag.VM_OPENWRT_GW_1,
+        id="openwrt-25.12",
+    ),
+    pytest.param(
+        ConnectionTag.DOCKER_OPENWRT_DHCP_CLIENT_2,
+        ConnectionTag.VM_OPENWRT_GW_2,
+        id="openwrt-24.10-armv8",
+        marks=pytest.mark.timeout(TEST_OPENWRT_ARMV8_TIMEOUT),
+    ),
+    pytest.param(
+        ConnectionTag.DOCKER_OPENWRT_DHCP_CLIENT_3,
+        ConnectionTag.VM_OPENWRT_GW_3,
+        id="openwrt-24.10-malta",
+    ),
+]
+
 
 async def log_dns_state(connection: Connection) -> None:
     try:
@@ -720,3 +739,263 @@ async def test_openwrt_router_restart(
             await nordvpnlite_after_reboot.clean_up()
             await wait_for_log_line(logread_proc)
             log.info("Network has been reloaded")
+
+
+async def get_client_mtu(client_connection: Connection, interface: str = "eth0") -> int:
+    """Return the kernel MTU of the given client interface."""
+    proc = await client_connection.create_process(
+        ["cat", f"/sys/class/net/{interface}/mtu"]
+    ).execute()
+    return int(proc.get_stdout().strip())
+
+
+async def renew_dhcp_lease(
+    client_connection: Connection, interface: str = "eth0"
+) -> None:
+    """
+    Re-request the DHCP lease so the client applies whatever the gateway currently advertises.
+    The udhcpc hook (bin/udhcpc.script) sets the interface MTU from DHCP option 26, or resets it to
+    1500 when the option is absent - so a renew reflects the VPN connect/disconnect state directly.
+    `-O mtu` makes udhcpc request option 26 in the parameter request list (as dhclient and
+    NetworkManager do); dnsmasq only sends the option when it is requested.
+    """
+    await client_connection.create_process([
+        "busybox",
+        "udhcpc",
+        "-i",
+        interface,
+        "-n",
+        "-q",
+        "-t",
+        "10",
+        "-O",
+        "mtu",
+        "-s",
+        "/opt/bin/udhcpc.script",
+    ]).execute()
+
+
+@pytest.mark.asyncio
+@pytest.mark.openwrt
+@pytest.mark.parametrize("client_tag,gw_tag", OPENWRT_DHCP_TAGS)
+@pytest.mark.parametrize(
+    "openwrt_config",
+    [
+        ConfigPresetName.VPN_OPENWRT_UCI_PL,
+    ],
+)
+async def test_openwrt_dhcp_client_gets_vpn_mtu(
+    openwrt_config: ConfigPresetName,
+    client_tag: ConnectionTag,
+    gw_tag: ConnectionTag,
+) -> None:
+    """
+    A DHCP LAN client behind the OpenWRT router must receive the VPN-adjusted MTU (LLT-6852).
+
+    With the VPN connected, traffic towards the outside network has to fit within the WireGuard
+    overhead (~80 B), so the router advertises MTU 1420 to LAN clients via DHCP option 26
+    (interface-mtu). A DHCP client picks this up and lowers its interface MTU to 1420; with the
+    VPN disconnected it returns to 1500.
+
+    Runs on each OpenWRT gateway version with its dedicated DHCP client (`nat-lab:dhcp-client`).
+
+    Steps:
+        1. Set up the OpenWRT gateway with nordvpnlite and the DHCP client.
+        2. Before connecting, the client MTU is 1500.
+        3. Connect to the VPN, renew the lease -> the client MTU is 1420.
+        4. Disconnect, renew the lease -> the client MTU is back to 1500.
+    """
+    async with AsyncExitStack() as exit_stack:
+        client_connection, gateway_connection, nordvpnlite = (
+            await setup_openwrt_test_environment(
+                openwrt_config,
+                exit_stack,
+                client_tag=client_tag,
+                gw_tag=gw_tag,
+            )
+        )
+
+        # Baseline: with no VPN, the client must use the standard 1500 MTU.
+        await renew_dhcp_lease(client_connection)
+        baseline_mtu = await get_client_mtu(client_connection)
+        assert (
+            baseline_mtu == 1500
+        ), f"Expected client MTU 1500 before the VPN is connected, got {baseline_mtu}"
+
+        async with nordvpnlite.start():
+            log.debug("NordVPN Lite started, waiting for connected vpn state...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+
+            await renew_dhcp_lease(client_connection)
+            connected_mtu = await get_client_mtu(client_connection)
+            assert connected_mtu == 1420, (
+                "Client must pick up the VPN MTU advertised over DHCP (option 26) while connected;"
+                f" expected 1420, got {connected_mtu}"
+            )
+
+            logread_proc = await start_logread_process(
+                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
+
+        # After disconnect, the option is no longer advertised -> client returns to 1500.
+        await renew_dhcp_lease(client_connection)
+        restored_mtu = await get_client_mtu(client_connection)
+        assert (
+            restored_mtu == 1500
+        ), f"Client MTU must return to 1500 after disconnecting from the VPN, got {restored_mtu}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.openwrt
+@pytest.mark.parametrize(
+    "openwrt_config",
+    [
+        ConfigPresetName.VPN_OPENWRT_UCI_PL,
+    ],
+)
+async def test_openwrt_dhcp_client_restores_existing_mtu(
+    openwrt_config: ConfigPresetName,
+) -> None:
+    """
+    When the LAN already advertises a higher MTU via DHCP option 26, connecting the VPN must
+    override it with the VPN MTU (1420) and disconnecting must restore the original value (LLT-6852).
+
+    Runs on the 25.12 gateway with the dedicated DHCP client; the restore logic does not depend
+    on the OpenWRT version.
+
+    Steps:
+        1. Pre-seed the gateway LAN with its own DHCP option 26 (MTU 1480) before nordvpnlite starts.
+        2. The client picks up 1480.
+        3. Connect to the VPN, renew the lease -> the client MTU is overridden to the VPN MTU 1420.
+        4. Disconnect, renew the lease -> the client MTU is back to the original 1480.
+    """
+    preexisting_mtu = 1480
+    async with AsyncExitStack() as exit_stack:
+        client_connection, gateway_connection, nordvpnlite = (
+            await setup_openwrt_test_environment(
+                openwrt_config,
+                exit_stack,
+                client_tag=ConnectionTag.DOCKER_OPENWRT_DHCP_CLIENT_1,
+                gw_tag=ConnectionTag.VM_OPENWRT_GW_1,
+            )
+        )
+
+        async def reload_gateway_dhcp() -> None:
+            await gateway_connection.create_process(["uci", "commit", "dhcp"]).execute()
+            await gateway_connection.create_process(
+                ["/etc/init.d/dnsmasq", "reload"]
+            ).execute()
+
+        async def clear_gateway_dhcp_option() -> None:
+            await gateway_connection.create_process(
+                ["uci", "-q", "delete", "dhcp.lan.dhcp_option"]
+            ).execute()
+            await reload_gateway_dhcp()
+
+        # Pre-seed the gateway's own option 26 before nordvpnlite starts; remove it on teardown.
+        exit_stack.push_async_callback(clear_gateway_dhcp_option)
+        await gateway_connection.create_process(
+            ["uci", "add_list", f"dhcp.lan.dhcp_option=26,{preexisting_mtu}"]
+        ).execute()
+        await reload_gateway_dhcp()
+
+        # Baseline: the client picks up the gateway's own MTU.
+        await renew_dhcp_lease(client_connection)
+        baseline_mtu = await get_client_mtu(client_connection)
+        assert (
+            baseline_mtu == preexisting_mtu
+        ), f"Expected the gateway's own MTU {preexisting_mtu} before connecting, got {baseline_mtu}"
+
+        async with nordvpnlite.start():
+            log.debug("NordVPN Lite started, waiting for connected vpn state...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+
+            await renew_dhcp_lease(client_connection)
+            connected_mtu = await get_client_mtu(client_connection)
+            assert connected_mtu == 1420, (
+                "VPN MTU must override the gateway's own option 26 with 1420 while connected;"
+                f" expected 1420, got {connected_mtu}"
+            )
+
+            logread_proc = await start_logread_process(
+                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+        await wait_for_log_line(logread_proc)
+        log.info("Network has been reloaded")
+
+        # After disconnect, the gateway's original option 26 must be restored.
+        await renew_dhcp_lease(client_connection)
+        restored_mtu = await get_client_mtu(client_connection)
+        assert (
+            restored_mtu == preexisting_mtu
+        ), f"Original MTU {preexisting_mtu} must be restored after disconnect, got {restored_mtu}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.openwrt
+@pytest.mark.parametrize(
+    "openwrt_config",
+    [
+        ConfigPresetName.VPN_OPENWRT_UCI_PL,
+    ],
+)
+async def test_openwrt_dhcp_client_mtu_derived_from_wan(
+    openwrt_config: ConfigPresetName,
+) -> None:
+    """
+    The advertised MTU is derived from the underlying WAN interface that reaches the VPN server,
+    as min(wan_mtu, 1500) - 80, not a hardcoded 1420 (LLT-6852). On a sub-1500 WAN the LAN client
+    must receive the smaller, correct value.
+
+    Runs on the 25.12 gateway; the derivation does not depend on the OpenWRT version.
+
+    Steps:
+        1. Lower the gateway's WAN (default-route) interface MTU before nordvpnlite starts.
+        2. Connect to the VPN, renew the lease -> the client MTU is wan_mtu - 80.
+        3. Teardown restores the WAN interface MTU.
+    """
+    wan_mtu = 1400
+    expected_client_mtu = wan_mtu - 80  # WireGuard overhead
+    async with AsyncExitStack() as exit_stack:
+        client_connection, gateway_connection, nordvpnlite = (
+            await setup_openwrt_test_environment(
+                openwrt_config,
+                exit_stack,
+                client_tag=ConnectionTag.DOCKER_OPENWRT_DHCP_CLIENT_1,
+                gw_tag=ConnectionTag.VM_OPENWRT_GW_1,
+            )
+        )
+
+        # The gateway's WAN is its default-route interface - the same one nordvpnlite reads.
+        route = (
+            await gateway_connection.create_process(
+                ["ip", "route", "show", "default"]
+            ).execute()
+        ).get_stdout()
+        fields = route.splitlines()[0].split()
+        wan_iface = fields[fields.index("dev") + 1]
+        original_wan_mtu = await get_client_mtu(gateway_connection, wan_iface)
+
+        async def restore_wan_mtu() -> None:
+            await gateway_connection.create_process(
+                ["ip", "link", "set", "dev", wan_iface, "mtu", str(original_wan_mtu)]
+            ).execute()
+
+        # Lower the WAN MTU before nordvpnlite starts, so it reads the reduced value at startup.
+        exit_stack.push_async_callback(restore_wan_mtu)
+        await gateway_connection.create_process(
+            ["ip", "link", "set", "dev", wan_iface, "mtu", str(wan_mtu)]
+        ).execute()
+
+        async with nordvpnlite.start():
+            log.debug("NordVPN Lite started, waiting for connected vpn state...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+
+            await renew_dhcp_lease(client_connection)
+            connected_mtu = await get_client_mtu(client_connection)
+            assert connected_mtu == expected_client_mtu, (
+                f"Advertised MTU must be derived from the {wan_mtu} WAN interface as"
+                f" {expected_client_mtu} (wan - 80), got {connected_mtu}"
+            )

@@ -12,6 +12,10 @@ use telio::telio_utils::LIBTELIO_FWMARK;
 // Copied from NordVPN Linux app
 const DEFAULT_ROUTING_TABLE_ID: u32 = 205;
 
+const WIREGUARD_OVERHEAD: u32 = 80;
+const MAX_VPN_PATH_MTU: u32 = 1500;
+const MIN_TUNNEL_MTU: u32 = 1280;
+
 pub trait ConfigureInterface {
     /// Initialize the interface
     fn initialize(&mut self) -> Result<(), NordVpnLiteError>;
@@ -85,6 +89,31 @@ fn get_available_priorities(
     } else {
         Err(NordVpnLiteError::IpRule)
     }
+}
+
+/// MTU of the default-route (uplink) interface, if determinable.
+fn read_default_route_mtu() -> Option<u32> {
+    let route = execute_with_output(Command::new("ip").args(["route", "show", "default"])).ok()?;
+    let dev = route
+        .split_whitespace()
+        .skip_while(|w| *w != "dev")
+        .nth(1)?;
+    std::fs::read_to_string(format!("/sys/class/net/{dev}/mtu"))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+/// Tunnel MTU: uplink capped at the VPN path limit, less WireGuard overhead, floored.
+fn tunnel_mtu_from_uplink(uplink_mtu: Option<u32>) -> u32 {
+    uplink_mtu
+        .map(|mtu| {
+            mtu.min(MAX_VPN_PATH_MTU)
+                .saturating_sub(WIREGUARD_OVERHEAD)
+                .max(MIN_TUNNEL_MTU)
+        })
+        .unwrap_or(MAX_VPN_PATH_MTU - WIREGUARD_OVERHEAD)
 }
 
 #[derive(Default, Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
@@ -251,13 +280,14 @@ impl Iproute {
 
 impl ConfigureInterface for Iproute {
     fn initialize(&mut self) -> Result<(), NordVpnLiteError> {
+        let mtu = tunnel_mtu_from_uplink(read_default_route_mtu()).to_string();
         execute(Command::new("ip").args([
             "link",
             "set",
             "dev",
             &self.interface_name,
             "mtu",
-            "1420",
+            &mtu,
         ]))?;
         execute(Command::new("ip").args(["link", "set", "dev", &self.interface_name, "up"]))
     }
@@ -393,6 +423,9 @@ pub struct Uci {
 
     /// Initial dnsmasq server value
     initial_setting_dnsmasq_server: Option<Vec<String>>,
+
+    /// Tunnel MTU derived from the uplink interface, computed once at construction
+    tunnel_mtu: u32,
 }
 
 /// Represents a boolean option in the UCI configuration system.
@@ -499,10 +532,13 @@ impl Uci {
                 })
                 .unwrap_or(None);
 
+        let tunnel_mtu = tunnel_mtu_from_uplink(read_default_route_mtu());
+
         debug!("Initial network.wan.ipv6 state {wan_ipv6_initial_setting:?}");
         debug!("Initial network.wan6.disabled state {wan6_disabled_initial_setting:?}");
         debug!("Initial dhcp.@dnsmasq[0].noresolv {initial_setting_dnsmasq_noresolv:?}");
         debug!("Initial dhcp.@dnsmasq[0].server {initial_setting_dnsmasq_server:?}");
+        debug!("Tunnel MTU {tunnel_mtu}");
 
         Self {
             interface_name: interface_name.to_string(),
@@ -510,8 +546,13 @@ impl Uci {
             wan6_disabled_initial_setting,
             initial_setting_dnsmasq_noresolv,
             initial_setting_dnsmasq_server,
+            tunnel_mtu,
             max_route_priority,
         }
+    }
+
+    fn mtu_dhcp_option(&self) -> String {
+        format!("dhcp.lan.dhcp_option=option:mtu,{}", self.tunnel_mtu)
     }
 
     fn configure_dnsmasq(&mut self, ips: &[IpAddr]) -> Result<(), NordVpnLiteError> {
@@ -529,6 +570,12 @@ impl Uci {
                 Command::new("uci").args(["add_list", &format!("dhcp.@dnsmasq[0].server={}", ip)]),
             )?;
         }
+
+        debug!(
+            "Advertising MTU {} to LAN via DHCP option:mtu",
+            self.tunnel_mtu
+        );
+        execute(Command::new("uci").args(["add_list", &self.mtu_dhcp_option()]))?;
 
         execute(Command::new("uci").args(["commit", "dhcp"]))?;
         execute(Command::new("/etc/init.d/dnsmasq").args(["reload"]))?;
@@ -563,6 +610,13 @@ impl Uci {
                 )?;
             }
         }
+
+        debug!("Removing advertised DHCP option:mtu");
+        execute(Command::new("uci").args(["del_list", &self.mtu_dhcp_option()]))
+            .map_err(|e| {
+                debug!("uci couldn't remove advertised dhcp.lan.dhcp_option: {}", e);
+            })
+            .ok();
 
         execute(Command::new("uci").args(["commit", "dhcp"]))?;
         execute(Command::new("/etc/init.d/dnsmasq").args(["reload"]))?;
@@ -659,7 +713,7 @@ impl Uci {
             error!("Error removing forwarding: {e}");
         }
 
-        // Restore DNS settings
+        // Restore DNS settings and DHCP options
         if let Err(e) = self.restore_dnsmasq() {
             error!("Error restoring dnsmasq: {e}");
         }
@@ -691,7 +745,9 @@ impl ConfigureInterface for Uci {
                 execute(Command::new("uci").args(["rename", "network.@interface[-1]=tun"]))?;
             }
         }
-        execute(Command::new("uci").args(["set", "network.tun.mtu=1420"]))?;
+        execute(
+            Command::new("uci").args(["set", &format!("network.tun.mtu={}", self.tunnel_mtu)]),
+        )?;
 
         Ok(())
     }
@@ -805,7 +861,7 @@ impl ConfigureInterface for Uci {
         // Disable IPv6
         self.disable_ipv6()?;
 
-        // Configure DNS
+        // Configure DNS and advertise the tunnel MTU to LAN clients over DHCP
         self.configure_dnsmasq(dns)?;
 
         // Save and apply
@@ -1027,5 +1083,15 @@ mod tests {
         let existing_prios = vec![1, 2, 3, 4];
         let result = get_available_priorities(2, 5, &existing_prios);
         assert!(matches!(result, Err(NordVpnLiteError::IpRule)));
+    }
+
+    #[test]
+    fn test_tunnel_mtu_from_uplink() {
+        assert_eq!(tunnel_mtu_from_uplink(Some(1500)), 1420);
+        assert_eq!(tunnel_mtu_from_uplink(Some(1492)), 1412);
+        assert_eq!(tunnel_mtu_from_uplink(Some(9000)), 1420);
+        assert_eq!(tunnel_mtu_from_uplink(Some(1300)), 1280);
+        assert_eq!(tunnel_mtu_from_uplink(Some(50)), 1280);
+        assert_eq!(tunnel_mtu_from_uplink(None), 1420);
     }
 }
