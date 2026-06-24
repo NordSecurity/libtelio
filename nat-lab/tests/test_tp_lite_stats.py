@@ -12,7 +12,7 @@ from tests.utils.bindings import (
     DnsRedirect,
 )
 from tests.utils.connection import ConnectionTag
-from tests.utils.dns import query_dns
+from tests.utils.dns import query_dns, query_dns_port
 from tests.utils.logger import log
 from tests.utils.process import ProcessExecError
 from typing import Optional
@@ -25,6 +25,10 @@ BLOCKED_NXDOMAIN = "blocked-malware.com"
 BLOCKED_NULL_IP = "blocked-ads.com"
 # Resolves normally on the TP-Lite server
 ALLOWED_DOMAIN = "google.com"
+# Address the TP-Lite server returns for ALLOWED_DOMAIN
+ALLOWED_DOMAIN_IP = "142.250.179.206"
+
+NON_PLAINTEXT_DNS_PORTS = ["443", "853"]
 
 # Standard (non-blocking) DNS server. Unlike the TP-Lite server it resolves
 # blocked-malware.com instead of returning NXDOMAIN.
@@ -49,7 +53,10 @@ def _features_with_firewall():
     return features
 
 
-def _tp_lite_config(dns_server_ips: Optional[list[str]] = None):
+def _tp_lite_config(
+    dns_server_ips: Optional[list[str]] = None,
+    force_plaintext_dns: Optional[bool] = None,
+):
     return TpLiteStatsOptions(
         dns_server_ips=(
             dns_server_ips if dns_server_ips is not None else [TP_LITE_DNS_IP]
@@ -58,7 +65,7 @@ def _tp_lite_config(dns_server_ips: Optional[list[str]] = None):
         blocked_domains_buffer_size=None,
         cache_size=None,
         max_open_requests=None,
-        force_plaintext_dns=None,
+        force_plaintext_dns=force_plaintext_dns,
     )
 
 
@@ -210,6 +217,84 @@ class TestTpLiteStats:
         await _trigger_stats_collection(connection)
         (num_calls, _, _) = await client.tp_lite.get_stats()
         assert num_calls == 0
+
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [pytest.param(_alpha_setup_params_with_firewall())],
+    )
+    @pytest.mark.asyncio
+    @pytest.mark.libfirewall
+    async def test_tp_lite_force_plaintext_dns(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env: Environment,
+    ) -> None:
+        """With force_plaintext_dns enabled, the firewall blocks traffic to the
+        configured DNS server on any port other than 53 (e.g. DoT/DoH), so only
+        plaintext DNS — which the TP-Lite stats collector can inspect — gets through.
+
+        Steps:
+            1. Connect to VPN.
+            2. Enable stats collection with force_plaintext_dns=False, query the
+               configured DNS server on the non-plaintext ports and verify they
+               are allowed through.
+            3. Enable stats collection with force_plaintext_dns=True.
+            4. Query the configured DNS server on the non-plaintext ports and
+               verify they are now blocked, while a different, non-configured DNS
+               server on the same ports is still allowed - only the configured
+               server is restricted.
+            5. Query a blocked domain over plaintext (port 53), trigger a stats
+               flush, and verify it is reported exactly once.
+            6. Re-enable with force_plaintext_dns=False and verify the non-plaintext
+               ports to the configured server work again.
+            7. Disable stats collection.
+        """
+        [alpha] = env.nodes
+        [client] = env.clients
+        [connection] = [c.connection for c in env.connections]
+
+        await connect_vpn(
+            connection,
+            None,
+            client,
+            alpha.ip_addresses[0],
+            config.WG_SERVER,
+        )
+
+        await client.tp_lite.enable_stats_collection(_tp_lite_config())
+        for port in NON_PLAINTEXT_DNS_PORTS:
+            await query_dns_port(
+                connection, port, ALLOWED_DOMAIN, TP_LITE_DNS_IP, [ALLOWED_DOMAIN_IP]
+            )
+
+        await client.tp_lite.enable_stats_collection(
+            _tp_lite_config(force_plaintext_dns=True)
+        )
+
+        for port in NON_PLAINTEXT_DNS_PORTS:
+            with pytest.raises(ProcessExecError):
+                await query_dns_port(connection, port, ALLOWED_DOMAIN, TP_LITE_DNS_IP)
+            await query_dns_port(
+                connection, port, ALLOWED_DOMAIN, STANDARD_DNS_IP, [ALLOWED_DOMAIN_IP]
+            )
+
+        await _query_blocked_expect_failure(connection)
+        await _trigger_stats_collection(connection)
+        (num_calls, domains, metrics) = await client.tp_lite.get_stats()
+        assert num_calls == 1
+        assert BLOCKED_NXDOMAIN in [d.domain_name for d in domains]
+        assert metrics.num_requests == 1
+        assert metrics.num_responses == 1
+
+        await client.tp_lite.enable_stats_collection(
+            _tp_lite_config(force_plaintext_dns=False)
+        )
+        for port in NON_PLAINTEXT_DNS_PORTS:
+            await query_dns_port(
+                connection, port, ALLOWED_DOMAIN, TP_LITE_DNS_IP, [ALLOWED_DOMAIN_IP]
+            )
+
+        await client.tp_lite.disable_stats_collection()
 
     @pytest.mark.parametrize(
         "alpha_setup_params",
