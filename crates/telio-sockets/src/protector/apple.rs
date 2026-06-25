@@ -495,9 +495,16 @@ fn must_broadcast_path_change(
     changed_keys: CFArray<CFString>,
     primary_interfaces: Vec<String>,
 ) -> bool {
-    // Returns true if the given interface is primary.
-    let is_primary =
-        |interface: &str| -> bool { primary_interfaces.iter().any(|x| x == interface) };
+    // When the primary interface list is empty (e.g. during a VPN tunnel restart the
+    // SCDynamicStore may not yet reflect the new primary interface), we cannot reliably
+    // filter by primary interface.  In that case we treat every recognised key as
+    // relevant so that sockets are always rebound and the guest does not lose internet.
+    let primary_interfaces_known = !primary_interfaces.is_empty();
+
+    // Returns true if the given interface is primary (or if the primary list is unknown).
+    let is_primary = |interface: &str| -> bool {
+        !primary_interfaces_known || primary_interfaces.iter().any(|x| x == interface)
+    };
 
     let mut must_broadcast = false;
     for changed_key in &changed_keys {
@@ -509,7 +516,7 @@ fn must_broadcast_path_change(
             Some("IPConfigurationBusy") => {
                 // Is an <interface> the one we actually care about?
                 if let Some(interface) = key_path.next_back() {
-                    // If it is primary, then we do.
+                    // If it is primary (or primary list is unknown), then we do.
                     if is_primary(interface) {
                         must_broadcast = true;
                         break;
@@ -529,7 +536,7 @@ fn must_broadcast_path_change(
                         must_broadcast = true;
                         break;
                     }
-                    // If it is primary, then we do.
+                    // If it is primary (or primary list is unknown), then we do.
                     Some(interface) => {
                         if is_primary(interface) {
                             must_broadcast = true;
