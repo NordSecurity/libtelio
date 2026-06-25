@@ -4,11 +4,11 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 use telio_core::telio_task::io::chan;
 use tokio::sync::oneshot;
-use tracing::{error, trace};
+use tracing::{error, info, trace};
 
 use crate::{
     comms::{DaemonConnection, DaemonSocket},
-    config::Endpoint,
+    config::{Endpoint, RunningConfig},
     daemon::{NordVpnLiteError, TelioStatusReport},
 };
 
@@ -24,6 +24,8 @@ pub enum ClientCmd {
     IsAlive,
     #[clap(name = "stop", about = "Stop daemon execution")]
     QuitDaemon,
+    #[clap(name = "reload", about = "Reload config file and restart the daemon")]
+    Reload,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -126,14 +128,27 @@ pub struct CommandListener {
     socket: DaemonSocket,
     /// Channel to send commands to telio task
     telio_task_tx: chan::Tx<TelioTaskCmd>,
+    config: RunningConfig,
+    /// Holds the new running config from a client triggered reload
+    pending_config: Option<RunningConfig>,
 }
 
 impl CommandListener {
-    pub fn new(socket: DaemonSocket, telio_task_tx: chan::Tx<TelioTaskCmd>) -> CommandListener {
+    pub fn new(
+        socket: DaemonSocket,
+        telio_task_tx: chan::Tx<TelioTaskCmd>,
+        config: RunningConfig,
+    ) -> CommandListener {
         CommandListener {
             socket,
             telio_task_tx,
+            config,
+            pending_config: None,
         }
+    }
+
+    pub fn take_pending_config(&mut self) -> Option<RunningConfig> {
+        self.pending_config.take()
     }
 
     // Main command handling communicating with telio task
@@ -175,6 +190,33 @@ impl CommandListener {
                 // cleanup
                 handle_response(response_rx, |_| Ok(CommandResponse::Ok)).await
             }
+            ClientCmd::Reload => {
+                match RunningConfig::from_file(&self.config.path) {
+                    Err(e) => {
+                        error!("Config file changed but failed to parse: {e}");
+                        Ok(CommandResponse::Err(e.to_string()))
+                    }
+                    Ok(new_config) if new_config.hash == self.config.hash => {
+                        info!("Config file unchanged, ignoring reload request");
+                        Ok(CommandResponse::Ok)
+                    }
+                    Ok(new_config) => {
+                        trace!("Config file changed, proceeding with reload");
+                        self.pending_config = Some(new_config);
+                        let (response_tx, response_rx) = oneshot::channel();
+                        #[allow(mpsc_blocking_send)]
+                        self.telio_task_tx
+                            .send(TelioTaskCmd::Quit(response_tx))
+                            .await
+                            .map_err(|e| {
+                                error!("Error sending command: {}", e);
+                                NordVpnLiteError::CommandFailed(ClientCmd::Reload)
+                            })?;
+                        // Wait for teardown to complete before responding to the client
+                        handle_response(response_rx, |_| Ok(CommandResponse::Ok)).await
+                    }
+                }
+            }
             ClientCmd::IsAlive => Ok(CommandResponse::Ok),
         }
     }
@@ -211,7 +253,9 @@ impl CommandListener {
                     match &command {
                         ClientCmd::QuitDaemon => CommandResponse::Ok,
                         ClientCmd::IsAlive => CommandResponse::Ok,
-                        ClientCmd::GetStatus => CommandResponse::DaemonInitializing,
+                        ClientCmd::GetStatus | ClientCmd::Reload => {
+                            CommandResponse::DaemonInitializing
+                        }
                     }
                 };
                 connection.respond(response.serialize()).await?;
@@ -236,6 +280,7 @@ mod tests {
     use crate::{CommandResponse, DaemonSocket};
     use assert_matches::assert_matches;
     use std::path::Path;
+    use temp_file::TempFile;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::UnixStream,
@@ -245,13 +290,34 @@ mod tests {
 
     const TEST_SOCKET_PATH: &str = "test_socket";
 
+    // A minimal valid NordVpnLiteConfig JSON used across reload tests.
+    const VALID_CONFIG_JSON: &str = r#"{
+        "log_level": "Info",
+        "log_file_path": "test.log",
+        "adapter_type": "linux-native",
+        "interface": { "name": "utun10", "config_provider": "manual" },
+        "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    }"#;
+
     // Create a random socket path for the test, since tests run in parallel they can deadlock
     fn make_socket_path() -> String {
         format!("{}_{}", TEST_SOCKET_PATH, rand::random::<u16>())
     }
 
-    // Helper to create a fake command listener
-    fn make_command_listener(path: &str) -> CommandListener {
+    // Write VALID_CONFIG_JSON to a temp file and load it as a RunningConfig.
+    // Returns both so the TempFile stays alive (and thus the file exists) for the duration of the test.
+    fn make_running_config() -> (RunningConfig, TempFile) {
+        let file = TempFile::new()
+            .unwrap()
+            .with_contents(VALID_CONFIG_JSON.as_bytes())
+            .unwrap();
+        let config = RunningConfig::from_file(file.path()).unwrap();
+        (config, file)
+    }
+
+    // Helper to create a fake command listener.
+    // Returns the listener and the TempFile backing its RunningConfig so the file stays alive.
+    fn make_command_listener(path: &str) -> (CommandListener, TempFile) {
         let (tx, mut task_rx) = mpsc::channel(1);
 
         // spawn a fake telio task
@@ -270,7 +336,34 @@ mod tests {
 
         let socket = DaemonSocket::new(Path::new(path)).unwrap();
 
-        CommandListener::new(socket, tx)
+        let (config, config_file) = make_running_config();
+        (CommandListener::new(socket, tx, config), config_file)
+    }
+
+    fn make_reload_listener(
+        path: &str,
+    ) -> (CommandListener, mpsc::Receiver<TelioTaskCmd>, TempFile) {
+        let (tx, task_rx) = mpsc::channel(1);
+        let socket = DaemonSocket::new(Path::new(path)).unwrap();
+        let (config, config_file) = make_running_config();
+        (
+            CommandListener::new(socket, tx, config),
+            task_rx,
+            config_file,
+        )
+    }
+
+    fn spawn_quit_responder(
+        mut task_rx: mpsc::Receiver<TelioTaskCmd>,
+    ) -> tokio::task::JoinHandle<bool> {
+        tokio::spawn(async move {
+            if let Some(TelioTaskCmd::Quit(tx)) = task_rx.recv().await {
+                tx.send(()).unwrap();
+                true
+            } else {
+                false
+            }
+        })
     }
 
     // Simulate client sending command and waiting for response
@@ -305,7 +398,7 @@ mod tests {
         Result<ClientCmd, NordVpnLiteError>,
     ) {
         let path = make_socket_path();
-        let mut listener = make_command_listener(&path);
+        let (mut listener, _config_file) = make_command_listener(&path);
 
         let command = serde_json::to_string(&command).unwrap();
         let daemon = tokio::spawn(async move {
@@ -364,7 +457,7 @@ mod tests {
     #[tokio::test]
     async fn test_command_invalid() {
         let path = make_socket_path();
-        let mut listener = make_command_listener(&path);
+        let (mut listener, _config_file) = make_command_listener(&path);
 
         let command = "garbage";
         let daemon = tokio::spawn(async move {
@@ -381,7 +474,7 @@ mod tests {
     #[tokio::test]
     async fn test_command_invalid_broken() {
         let path = make_socket_path();
-        let mut listener = make_command_listener(&path);
+        let (mut listener, _config_file) = make_command_listener(&path);
 
         let command = "garbage";
         let daemon = tokio::spawn(async move {
@@ -423,5 +516,95 @@ mod tests {
 
         assert_eq!(cmd.unwrap(), ClientCmd::GetStatus);
         assert_eq!(response.unwrap(), CommandResponse::DaemonInitializing);
+    }
+
+    #[tokio::test]
+    async fn test_command_reload() {
+        let (response, cmd) = test_command_helper(ClientCmd::Reload, true, false).await;
+
+        assert_eq!(response.unwrap(), CommandResponse::Ok);
+        assert_eq!(cmd.unwrap(), ClientCmd::Reload);
+    }
+
+    #[tokio::test]
+    async fn test_command_early_reload() {
+        let (response, cmd) = test_command_helper(ClientCmd::Reload, false, false).await;
+
+        assert_eq!(cmd.unwrap(), ClientCmd::Reload);
+        assert_eq!(response.unwrap(), CommandResponse::DaemonInitializing);
+    }
+
+    #[tokio::test]
+    async fn test_command_reload_unchanged() {
+        use tokio::time::{timeout, Duration};
+
+        let path = make_socket_path();
+        let (mut listener, task_rx, _config_file) = make_reload_listener(&path);
+
+        let command = serde_json::to_string(&ClientCmd::Reload).unwrap();
+        let daemon = tokio::spawn(async move {
+            let connection = listener.accept_client_connection().await.unwrap();
+            listener.handle_client_command(true, connection).await
+        });
+
+        let responder = spawn_quit_responder(task_rx);
+
+        let response = timeout(Duration::from_secs(3), client_send_command(&path, &command))
+            .await
+            .expect("test timed out waiting for client response");
+        let cmd = timeout(Duration::from_secs(3), daemon)
+            .await
+            .expect("test timed out — daemon task hung")
+            .unwrap();
+        let quit_was_incorrectly_sent = responder.await.unwrap();
+
+        assert_eq!(response.unwrap(), CommandResponse::Ok);
+        assert_eq!(cmd.unwrap(), ClientCmd::Reload);
+        assert!(
+            !quit_was_incorrectly_sent,
+            "TelioTaskCmd::Quit must not be sent when config is unchanged"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_command_reload_changed() {
+        use tokio::time::{timeout, Duration};
+
+        let socket_path = make_socket_path();
+        let (mut listener, task_rx, config_file) = make_reload_listener(&socket_path);
+
+        let alt_config = VALID_CONFIG_JSON.replace("utun10", "utun11");
+        std::fs::write(config_file.path(), alt_config.as_bytes()).unwrap();
+
+        let command = serde_json::to_string(&ClientCmd::Reload).unwrap();
+        let daemon = tokio::spawn(async move {
+            let connection = listener.accept_client_connection().await.unwrap();
+            let result = listener.handle_client_command(true, connection).await;
+            let has_pending = listener.take_pending_config().is_some();
+            (result, has_pending)
+        });
+
+        let responder = spawn_quit_responder(task_rx);
+
+        let response = client_send_command(&socket_path, &command).await;
+        let (cmd, had_pending) = timeout(Duration::from_secs(3), daemon)
+            .await
+            .expect("test timed out — daemon task hung")
+            .unwrap();
+        let quit_was_sent = timeout(Duration::from_secs(3), responder)
+            .await
+            .expect("test timed out — responder task hung")
+            .unwrap();
+
+        assert_eq!(response.unwrap(), CommandResponse::Ok);
+        assert_eq!(cmd.unwrap(), ClientCmd::Reload);
+        assert!(
+            quit_was_sent,
+            "TelioTaskCmd::Quit must be sent when config has changed"
+        );
+        assert!(
+            had_pending,
+            "pending_config must be set after a successful reload"
+        );
     }
 }

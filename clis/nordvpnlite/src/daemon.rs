@@ -362,7 +362,7 @@ pub async fn daemon_event_loop(mut config: RunningConfig) -> Result<(), NordVpnL
     let (telio_tx, telio_rx) = mpsc::channel(10);
 
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
-    let mut cmd_listener = CommandListener::new(socket, telio_tx.clone());
+    let mut cmd_listener = CommandListener::new(socket, telio_tx.clone(), config.clone());
 
     let nordlynx_private_key = {
         let api_request_future = request_nordlynx_key(
