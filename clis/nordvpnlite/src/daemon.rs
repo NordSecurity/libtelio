@@ -37,7 +37,7 @@ use crate::core_api::get_server_endpoints_list;
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
-    config::NordVpnLiteConfig,
+    config::{NordVpnLiteConfig, RunningConfig},
     core_api::{request_nordlynx_key, Error as ApiError, DEFAULT_WIREGUARD_PORT},
     interface::ConfigureInterface,
 };
@@ -354,8 +354,8 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
     }
 }
 
-pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), NordVpnLiteError> {
-    debug!("started with config: {config:?}");
+pub async fn daemon_event_loop(mut config: RunningConfig) -> Result<(), NordVpnLiteError> {
+    debug!("started with config: {:?}", config.parsed);
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
 
@@ -366,8 +366,8 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
 
     let nordlynx_private_key = {
         let api_request_future = request_nordlynx_key(
-            &config.authentication_token,
-            config.http_certificate_file_path.as_deref(),
+            &config.parsed.authentication_token,
+            config.parsed.http_certificate_file_path.as_deref(),
         );
         pin_mut!(api_request_future);
         loop {
@@ -402,9 +402,9 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
         }
     };
 
-    config.authentication_token.zeroize();
+    config.parsed.authentication_token.zeroize();
 
-    let config_clone = config.clone();
+    let config_clone = config.parsed.clone();
     let (init_done_tx, init_done_rx) = oneshot::channel::<()>();
     let mut telio_task_handle = tokio::task::spawn_blocking(move || {
         let mut context = TelioContext::new(config_clone, nordlynx_private_key)?;
@@ -415,7 +415,7 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
     // Wait for interface setup to complete before making API calls.
     if init_done_rx.await.is_ok() {
         // TODO: This can be triggered through nordvpnlite command to allow the user to stop/restart.
-        let config_clone = config.clone();
+        let config_clone = config.parsed.clone();
         let tx_clone = telio_tx.clone();
         tokio::spawn(async move {
             handle_exit_node_connection(&config_clone, tx_clone).await;
