@@ -82,15 +82,15 @@ fn main() -> Result<(), NordVpnLiteError> {
             }
         }
 
-        let _tracing_worker_guard = logging::setup_logging(
+        let mut logging_handle = logging::setup_logging(
             &config.parsed.log_file_path,
             config.parsed.log_level,
             config.parsed.log_file_count,
         )?;
 
-        // Run the daemon event loop
+        // Run the daemon event loop.
         let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(daemon::daemon_event_loop(config))
+        rt.block_on(daemon::daemon_event_loop(config, &mut logging_handle))
     } else {
         client_main(cmd)
     }

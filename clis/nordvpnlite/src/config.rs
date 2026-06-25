@@ -275,6 +275,12 @@ impl NordVpnLiteConfig {
         Ok(final_path.to_string_lossy().to_string())
     }
 
+    pub fn logging_params_changed(&self, other: &Self) -> bool {
+        self.log_file_path != other.log_file_path
+            || self.log_level != other.log_level
+            || self.log_file_count != other.log_file_count
+    }
+
     /// Checks if NORD_TOKEN env var is set and contains a valid token.
     pub fn resolve_env_token(&mut self) -> bool {
         if let Ok(token) = std::env::var("NORD_TOKEN") {

@@ -18,7 +18,9 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 use tracing_appender::rolling::InitError;
 
+use crate::logging;
 use telio_core::telio_utils::select;
+
 #[cfg(target_os = "linux")]
 use telio_core::telio_utils::LIBTELIO_FWMARK;
 use telio_core::{
@@ -82,6 +84,8 @@ pub enum NordVpnLiteError {
     LogAppenderError(#[from] InitError),
     #[error(transparent)]
     DaemonizeError(#[from] daemonize::Error),
+    #[error("Failed to configure tracing subscriber: {0}")]
+    TracingError(String),
     #[error("Could not configure IP rules")]
     IpRule,
     #[error("Could not configure IP routing")]
@@ -361,14 +365,36 @@ enum LoopOutcome {
     Reload(Box<RunningConfig>),
 }
 
-pub async fn daemon_event_loop(mut config: RunningConfig) -> Result<(), NordVpnLiteError> {
+pub async fn daemon_event_loop(
+    mut config: RunningConfig,
+    logging_handle: &mut logging::LoggingHandle,
+) -> Result<(), NordVpnLiteError> {
     loop {
         match run_daemon(config.clone()).await? {
             LoopOutcome::Exit => break,
             LoopOutcome::Reload(new_config) => {
                 info!("Reloading config from {}", config.path.display());
+
+                let logging_configuration_changed =
+                    config.parsed.logging_params_changed(&new_config.parsed);
+
                 config = *new_config;
                 config.parsed.resolve_env_token();
+
+                if logging_configuration_changed {
+                    if let Err(e) = logging::reload_logging(
+                        logging_handle,
+                        &config.parsed.log_file_path,
+                        config.parsed.log_level,
+                        config.parsed.log_file_count,
+                    ) {
+                        error!("Failed to reload logging configuration: {e}, continue with previous logging configuration");
+                    } else {
+                        info!("Logging reconfigured successfully");
+                    }
+                } else {
+                    info!("Logging configuration unchanged");
+                }
 
                 info!("Config reloaded, restarting daemon");
                 // loop continues and run_daemon called again with new config
