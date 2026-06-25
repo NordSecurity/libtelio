@@ -354,7 +354,31 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
     }
 }
 
+/// Outcome of a single daemon run
+enum LoopOutcome {
+    Exit,
+    /// Carries new confguration
+    Reload(Box<RunningConfig>),
+}
+
 pub async fn daemon_event_loop(mut config: RunningConfig) -> Result<(), NordVpnLiteError> {
+    loop {
+        match run_daemon(config.clone()).await? {
+            LoopOutcome::Exit => break,
+            LoopOutcome::Reload(new_config) => {
+                info!("Reloading config from {}", config.path.display());
+                config = *new_config;
+                config.parsed.resolve_env_token();
+
+                info!("Config reloaded, restarting daemon");
+                // loop continues and run_daemon called again with new config
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn run_daemon(mut config: RunningConfig) -> Result<LoopOutcome, NordVpnLiteError> {
     debug!("started with config: {:?}", config.parsed);
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
@@ -379,7 +403,7 @@ pub async fn daemon_event_loop(mut config: RunningConfig) -> Result<(), NordVpnL
                             match cmd_listener.handle_client_command(false, connection).await {
                                 Ok(ClientCmd::QuitDaemon) => {
                                     info!("Received quit command, exiting");
-                                    return Ok(())
+                                    return Ok(LoopOutcome::Exit)
                                 },
                                 Ok(command) => {
                                     debug!("Received command {command:?} while obtaining service credentials, ignoring");
@@ -396,7 +420,7 @@ pub async fn daemon_event_loop(mut config: RunningConfig) -> Result<(), NordVpnL
                 },
                 _ = signals.next() => {
                     warn!("Interrupted while obtaining service credentials - stopping");
-                    return Ok(());
+                    return Ok(LoopOutcome::Exit);
                 }
             };
         }
@@ -430,8 +454,13 @@ pub async fn daemon_event_loop(mut config: RunningConfig) -> Result<(), NordVpnL
             join_result = &mut telio_task_handle => {
                 match join_result {
                     Ok(Ok(_)) => {
-                        info!("Telio task thread completed, exiting");
-                        break Ok(())
+                        if let Some(new_config) = cmd_listener.take_pending_config() {
+                            trace!("Telio task thread completed after reload request, restarting");
+                            break Ok(LoopOutcome::Reload(Box::new(new_config)))
+                        } else {
+                            trace!("Telio task thread completed, exiting");
+                            break Ok(LoopOutcome::Exit)
+                        }
                     }
                     Ok(Err(err)) => {
                         error!("Telio task failed with error: {:?}", err);
@@ -461,10 +490,31 @@ pub async fn daemon_event_loop(mut config: RunningConfig) -> Result<(), NordVpnL
                     }
                 }
             },
-            // Handle interrupt signals for clean shutdown
+            // Handle interrupt signals for clean shutdown or reload
             signal = signals.next() => {
                 match signal {
-                    Some(s @ SIGHUP | s @ SIGTERM | s @ SIGINT | s @ SIGQUIT) => {
+                    Some(SIGHUP) => {
+                        info!("Received signal SIGHUP, reloading");
+                        match RunningConfig::from_file(&config.path) {
+                            Err(e) => {
+                                error!("Config file changed but failed to parse: {e}. Ignoring reload.");
+                            }
+                            Ok(new_config) if new_config.hash == config.hash => {
+                                info!("Config file unchanged, ignoring reload request");
+                            }
+                            Ok(new_config) => {
+                                let (response_tx, response_rx) = oneshot::channel();
+                                if let Err(e) = telio_tx.send_timeout(TelioTaskCmd::Quit(response_tx), Duration::from_secs(2)).await {
+                                    error!("Unable to send QUIT due to {e} during reload");
+                                };
+                                if let Err(e) = response_rx.await {
+                                    error!("Error receiving quit response from telio task: {e}");
+                                }
+                                break Ok(LoopOutcome::Reload(Box::new(new_config)));
+                            }
+                        }
+                    }
+                    Some(s @ SIGTERM | s @ SIGINT | s @ SIGQUIT) => {
                         info!("Received signal {:?}, exiting", Signal::try_from(s));
                         let (response_tx, response_rx) = oneshot::channel();
                         if let Err(e) = telio_tx.send_timeout(TelioTaskCmd::Quit(response_tx), Duration::from_secs(2)).await {
@@ -474,7 +524,7 @@ pub async fn daemon_event_loop(mut config: RunningConfig) -> Result<(), NordVpnL
                             error!("Error receiving quit response from telio task: {e}");
                         }
 
-                        break Ok(());
+                        break Ok(LoopOutcome::Exit);
                     }
                     Some(s) => {
                         info!("Received unexpected signal {s:?}, ignoring");
