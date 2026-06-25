@@ -18,6 +18,7 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 use tracing_appender::rolling::InitError;
 
+use crate::logging;
 use telio::telio_utils::select;
 #[cfg(target_os = "linux")]
 use telio::telio_utils::LIBTELIO_FWMARK;
@@ -82,6 +83,8 @@ pub enum NordVpnLiteError {
     LogAppenderError(#[from] InitError),
     #[error(transparent)]
     DaemonizeError(#[from] daemonize::Error),
+    #[error("Failed to configure tracing subscriber: {0}")]
+    TracingError(String),
     #[error("Could not configure IP rules")]
     IpRule,
     #[error("Could not configure IP routing")]
@@ -359,6 +362,7 @@ enum LoopOutcome {
 pub async fn daemon_event_loop(
     mut config: NordVpnLiteConfig,
     config_path: String,
+    mut logging_handle: logging::LoggingHandle,
 ) -> Result<(), NordVpnLiteError> {
     let mut config_file = ConfigFile::new(config_path);
 
@@ -369,6 +373,17 @@ pub async fn daemon_event_loop(
                 info!("Reloading config from {}", config_file.path);
                 config = *new_config;
                 config.resolve_env_token();
+
+                if let Err(e) = logging::reload_logging(
+                    &mut logging_handle,
+                    &config.log_file_path,
+                    config.log_level,
+                    config.log_file_count,
+                ) {
+                    error!("Failed to reload logging configuration: {e}, continue with previous logging configuration");
+                } else {
+                    info!("Logging reconfigred successfully");
+                }
 
                 config_file.set_hash(hash);
                 info!("Config reloaded, restarting daemon");
