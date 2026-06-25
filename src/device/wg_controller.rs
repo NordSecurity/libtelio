@@ -672,6 +672,9 @@ async fn build_requested_peers_list<
     stun_ep_provider: Option<&Arc<E>>,
 ) -> Result<BTreeMap<PublicKey, RequestedPeer>> {
     // Build a list of meshnet peers
+    // Pass the exit node key so that the keepalive for a meshnet peer that is also
+    // acting as an exit node is set to the vpn period rather than the proxying period.
+    let meshnet_exit_node_key = requested_state.exit_node.as_ref().map(|en| en.public_key);
     let mut requested_peers = build_requested_meshnet_peers_list(
         requested_state,
         wireguard_interface,
@@ -680,6 +683,7 @@ async fn build_requested_peers_list<
         proxy_endpoints,
         remote_peer_states,
         features,
+        meshnet_exit_node_key,
     )
     .await?;
     let mut exit_node_exists = false;
@@ -832,6 +836,7 @@ async fn build_requested_meshnet_peers_list<
     proxy_endpoints: &EndpointMap,
     remote_peer_states: &PeersStatesMap,
     features: &Features,
+    meshnet_exit_node_key: Option<PublicKey>,
 ) -> Result<BTreeMap<PublicKey, RequestedPeer>> {
     // Retrieve meshnet config. If it is not set, no peers are requested
     let meshnet_config = match &requested_state.meshnet_config {
@@ -980,7 +985,13 @@ async fn build_requested_meshnet_peers_list<
         requested_peer.peer.endpoint = selected_remote_endpoint;
         requested_peer.endpoint = selected_local_endpoint;
 
-        // Adjust keepalive for direct and offline peers
+        // Adjust keepalive for direct and offline peers.
+        // A meshnet peer that is also the active exit node needs the vpn keepalive
+        // interval (same as a pure VPN peer) so that the exit tunnel stays alive
+        // during network transitions on Android.
+        let is_meshnet_exit_node = meshnet_exit_node_key
+            .map(|k| k == requested_peer.peer.public_key)
+            .unwrap_or(false);
         requested_peer.peer.persistent_keepalive_interval =
             if is_peer_proxying(&requested_peer.peer, proxy_endpoints) {
                 if matches!(
@@ -989,6 +1000,9 @@ async fn build_requested_meshnet_peers_list<
                 ) {
                     // If peer is offline according to derp, we turn off keepalives.
                     None
+                } else if is_meshnet_exit_node {
+                    // Exit node peers need the vpn keepalive to survive rekeys.
+                    requested_state.keepalive_periods.vpn
                 } else {
                     requested_state.keepalive_periods.proxying
                 }
