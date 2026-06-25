@@ -90,7 +90,7 @@ fn main() -> Result<(), NordVpnLiteError> {
 
         // Run the daemon event loop
         let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(daemon::daemon_event_loop(config))
+        rt.block_on(daemon::daemon_event_loop(config, opts.config_path.clone()))
     } else {
         client_main(cmd)
     }
@@ -132,6 +132,10 @@ async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
                     ClientCmd::QuitDaemon => {
                         println!("Daemon is already stopped");
                         Ok(())
+                    }
+                    ClientCmd::Reload => {
+                        println!("Daemon is not running, cannot reload");
+                        Err(NordVpnLiteError::DaemonIsNotRunning)
                     }
                     _ => Err(NordVpnLiteError::DaemonIsNotRunning),
                 }
