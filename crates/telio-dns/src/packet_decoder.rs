@@ -4,7 +4,7 @@
 
 use crate::zone::{NORD_ZONE, NORD_ZONE_SUFFIX};
 use pnet_packet::{
-    dns::{DnsClasses, DnsPacket, DnsQuery, Opcode},
+    dns::{DnsClasses, DnsPacket, DnsQuery, Opcode, Opcodes},
     FromPacket,
 };
 use telio_utils::telio_log_warn;
@@ -59,7 +59,7 @@ pub(crate) fn parse_dns_query_packet(packet_bytes: &[u8]) -> Result<DnsPacket<'_
     }
 
     let opcode = dns_packet.get_opcode();
-    if opcode != Opcode::StandardQuery {
+    if opcode != Opcodes::StandardQuery {
         return Err(DnsParseError::UnsupportedOpcode(opcode));
     }
 
