@@ -4,6 +4,8 @@ ARG OPENWRT_IMAGE=natlab-openwrt-24.10.4-x86-64:v0.6.0
 FROM ${SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/third-party-build/openwrt_image/${OPENWRT_IMAGE}
 
 ARG OPENWRT_IMG_GZ=openwrt-24.10.4-x86-64-generic-ext4-combined.img.gz
+# Set true (x86_64 GW only) to extract the kernel for QEMU -M microvm direct boot.
+ARG OPENWRT_DIRECT_KERNEL=false
 
 ENV QEMU_CONFIG_TIMEOUT="300"
 
@@ -20,6 +22,12 @@ RUN mkdir -p /var/lib/qemu && \
       gunzip -c ${OPENWRT_IMG_GZ} > /var/lib/qemu/image.raw; \
     else \
       cp ${OPENWRT_IMG_GZ} /var/lib/qemu/image.raw; \
+    fi
+
+RUN if [ "${OPENWRT_DIRECT_KERNEL}" = "true" ]; then \
+      apk add --no-cache e2fsprogs-extra && \
+      /opt/bin/openwrt/extract-kernel.sh /var/lib/qemu/image.raw /var/lib/qemu/kernel.bin && \
+      apk del e2fsprogs-extra; \
     fi
 
 RUN mkdir -p /usr/local/share/vmconfig/container.d /usr/local/share/vmconfig/vm.d

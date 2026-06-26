@@ -56,11 +56,19 @@ case "${QEMU_ARCH}" in
         -drive file=/var/lib/qemu/image.raw,format=raw,if=ide
     ;;
   x86_64)
+    # microvm has no firmware/BIOS, so boot the kernel directly (-kernel) instead
+    # of via the image's GRUB; the rootfs is partition 2 of the combined image.
+    # pcie=on keeps virtio-pci net/blk, which OpenWrt's x86 kernel supports out of
+    # the box (pure virtio-mmio would need CONFIG_VIRTIO_MMIO). The kernel is
+    # extracted at build time (see openwrt.Dockerfile / extract-kernel.sh). LLT-7444.
     exec /usr/bin/qemu-system-x86_64 \
         -nodefaults \
         -display none \
+        -M microvm,pcie=on,rtc=on \
         -m 256M \
         -smp 2 \
+        -kernel /var/lib/qemu/kernel.bin \
+        -append "root=/dev/vda2 rootwait console=ttyS0,115200n8 noinitrd" \
         -netdev tap,id=hostnet0,ifname=qemu1,script=no,downscript=no \
         -netdev tap,id=hostnet1,ifname=qemu0,script=no,downscript=no \
         -device virtio-net-pci,romfile=,netdev=hostnet0,mac=${VM_MAC0},id=net0 \
