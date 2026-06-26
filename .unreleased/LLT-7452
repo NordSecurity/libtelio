@@ -1,0 +1,1 @@
+Fix TP-Lite DNS domain whitelist being lost ~5 seconds after it was set; the periodic firewall consolidation no longer drops the runtime whitelist, DNS redirects, or force-plaintext-DNS settings.

@@ -603,6 +603,11 @@ async fn consolidate_firewall<F: Firewall>(
 ) -> Result {
     let mut state = FirewallState::default();
 
+    let current = firewall.get_state();
+    state.tp_lite_whitelisted_domains = current.tp_lite_whitelisted_domains;
+    state.tp_lite_dns_redirects = current.tp_lite_dns_redirects;
+    state.force_plaintext_dns_for_servers = current.force_plaintext_dns_for_servers;
+
     state.whitelist.port_whitelist = iter_peers(requested_state)
         .filter(|p| p.allow_peer_send_files)
         .map(|p| (p.public_key, FILE_SEND_PORT))
@@ -1446,6 +1451,9 @@ mod tests {
     #[tokio::test]
     async fn add_newly_requested_peers_to_firewall() {
         let mut firewall = MockFirewall::new();
+        firewall
+            .expect_get_state()
+            .return_const(FirewallState::default());
 
         let pub_key_starcast_vpeer = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
@@ -1492,6 +1500,9 @@ mod tests {
     #[tokio::test]
     async fn update_permissions_for_requested_peers_in_firewall() {
         let mut firewall = MockFirewall::new();
+        firewall
+            .expect_get_state()
+            .return_const(FirewallState::default());
 
         let pub_key_starcast_vpeer = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
@@ -1538,6 +1549,9 @@ mod tests {
     #[tokio::test]
     async fn add_vpn_exit_node_to_firewall() {
         let mut firewall = MockFirewall::new();
+        firewall
+            .expect_get_state()
+            .return_const(FirewallState::default());
 
         let pub_key_starcast_vpeer = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
@@ -1584,6 +1598,9 @@ mod tests {
     #[tokio::test]
     async fn do_not_add_meshnet_exit_node_to_firewall_if_it_does_not_allow_incoming_connections() {
         let mut firewall = MockFirewall::new();
+        firewall
+            .expect_get_state()
+            .return_const(FirewallState::default());
 
         let pub_key_starcast_vpeer = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
@@ -1630,6 +1647,9 @@ mod tests {
     async fn remove_meshnet_exit_node_from_firewall_if_it_does_not_allow_incoming_connections_anymore(
     ) {
         let mut firewall = MockFirewall::new();
+        firewall
+            .expect_get_state()
+            .return_const(FirewallState::default());
 
         let pub_key_starcast_vpeer = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
@@ -1674,6 +1694,9 @@ mod tests {
     #[tokio::test]
     async fn consolidate_firewall_is_idempotent() {
         let mut firewall = MockFirewall::new();
+        firewall
+            .expect_get_state()
+            .return_const(FirewallState::default());
 
         let pub_key_starcast_vpeer = SecretKey::gen().public();
         let pub_key_1 = SecretKey::gen().public();
@@ -1718,6 +1741,47 @@ mod tests {
             .await
             .unwrap();
         }
+    }
+
+    #[cfg(feature = "enable_firewall")]
+    #[tokio::test]
+    async fn consolidate_firewall_preserves_runtime_tp_lite_state() {
+        let mut firewall = MockFirewall::new();
+
+        let domains = vec!["blocked-malware.com".to_owned()];
+        let redirect = telio_model::tp_lite_stats::DnsRedirect {
+            blocking: "10.0.0.1:53".parse().unwrap(),
+            standard: "10.0.0.2:53".parse().unwrap(),
+        };
+        let plaintext_dns = vec![IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))];
+
+        firewall.expect_get_state().return_const(FirewallState {
+            tp_lite_whitelisted_domains: domains.clone(),
+            tp_lite_dns_redirects: vec![redirect],
+            force_plaintext_dns_for_servers: Some(plaintext_dns.clone()),
+            ..Default::default()
+        });
+
+        let requested_state = create_requested_state(vec![]);
+
+        firewall
+            .expect_apply_state()
+            .once()
+            .with(eq(FirewallState {
+                ip_addresses: vec![
+                    IpAddr::V4(Ipv4Addr::LOCALHOST),
+                    IpAddr::V6(Ipv6Addr::LOCALHOST),
+                ],
+                tp_lite_whitelisted_domains: domains,
+                tp_lite_dns_redirects: vec![redirect],
+                force_plaintext_dns_for_servers: Some(plaintext_dns),
+                ..Default::default()
+            }))
+            .return_const(());
+
+        consolidate_firewall(&requested_state, &firewall, None, None)
+            .await
+            .unwrap();
     }
 
     struct Fixture {
