@@ -61,8 +61,8 @@ class ThroughputUnit(Enum):
 
 
 def get_iperf_binary(target_os: TargetOS) -> str:
-    # Linux and Android resolve the baked iperf3 by bare name (Termux's bin is on
-    # the guest PATH; there is no system iperf3 to shadow it).
+    # Android resolves the baked iperf3 by bare name like Linux (no system
+    # iperf3 shadows it on the guest PATH).
     if target_os in (TargetOS.Linux, TargetOS.Android):
         return "iperf3"
 

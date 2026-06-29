@@ -8,13 +8,9 @@ from contextlib import asynccontextmanager
 from tests.utils.logger import log
 from typing import AsyncIterator, List, Optional
 
-# Guest-side analog of bin/kill_process_by_natlab_id. The base class kills the
-# in-container adb *client* by KILL_ID, but adb can orphan the `su 0` child on
-# the guest when that stream closes, so the actual tool (ping/iperf3/nc/...) would
-# leak. Scan the guest's /proc for the matching KILL_ID and kill it. Pure toybox
-# sh: glob /proc, grep -a the NUL-separated environ; $1 is the id. Echoes
-# "killed:<pids>" so the caller can log what was actually terminated (lets CI
-# confirm the guest-side kill is reaching the process, not just no-oping).
+# Killing the in-container adb client can orphan the `su 0` child on the guest,
+# leaking the tool (ping/iperf3/nc/...). Find the guest pid by KILL_ID and kill
+# it; echo "killed:<pids>" so the caller can log what was terminated.
 _GUEST_KILL_SCRIPT = (
     'id="$1"; [ -n "$id" ] || exit 2; killed=""; '
     "for d in /proc/[0-9]*; do "
@@ -49,16 +45,14 @@ class AdbProcess(DockerProcess):
         kill_id=None,
         extra_path: Optional[str] = None,
     ) -> None:
-        # Fix the id here (mirroring DockerProcess's default) so we can export it
-        # into the *guest* env below - DockerProcess only puts KILL_ID on the
-        # in-container adb-client exec, which the guest process never sees.
+        # Fix the id now so we can export it into the *guest* env; DockerProcess
+        # only sets KILL_ID on the in-container adb client, which the guest never
+        # sees.
         kill_id = kill_id if kill_id else secrets.token_hex(8).upper()
         self._serial = serial
-        # adb passes a single string to the device shell, so quote each arg and
-        # join. KILL_ID is exported so the guest process carries it (see
-        # _kill_exec_if_running). `extra_path` is appended to PATH (so the
-        # system/toybox tools keep priority and Termux's baked binaries resolve
-        # only as a fallback).
+        # adb passes a single string to the device shell, so quote+join each arg.
+        # extra_path is appended (not prepended) so system/toybox tools keep
+        # priority and Termux's baked binaries resolve only as a fallback.
         guest_cmd = " ".join(shlex.quote(arg) for arg in command)
         guest_cmd = f"export KILL_ID={shlex.quote(kill_id)}; {guest_cmd}"
         if extra_path:
@@ -99,8 +93,7 @@ class AdbProcess(DockerProcess):
 
     async def _kill_exec_if_running(self) -> None:
         # Kill the guest process first (adb may orphan the su child when the exec
-        # stream closes), then let the base class kill the in-container adb client
-        # to end the exec and record the intentional kill.
+        # stream closes), then let the base class end the adb client exec.
         await self._kill_guest_process()
         await super()._kill_exec_if_running()
 

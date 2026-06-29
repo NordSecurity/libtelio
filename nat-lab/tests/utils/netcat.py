@@ -23,11 +23,9 @@ def _get_netcat_base_command(connection: Connection) -> list[str]:
             LIBTELIO_BINARY_PATH_VM_MAC + "netcat.py",
         ]
     if connection.target_os == TargetOS.Android:
-        # The baked OpenBSD nc, by absolute path: the netcat flags below (-v/-z)
-        # aren't supported by Android's system toybox nc, which would otherwise
-        # win on PATH (Termux's bin is only appended as a fallback).
+        # Absolute path to the baked OpenBSD nc: toybox's nc (which wins on PATH)
+        # lacks the -v/-z flags used below.
         return [TERMUX_BIN_VM_ANDROID + "nc"]
-    # use the built in netcat command on linux
     return ["nc"]
 
 
