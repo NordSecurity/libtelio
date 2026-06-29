@@ -1,3 +1,7 @@
+# This file is not for copy&paste
+# This is syntax example for the nordvpnlite daemon
+# Another example, used for OpenWRT package, is a bit deeper in this repository: feed/net/nordvpnlite/files/config.json
+
 {
   "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "vpn": {
