@@ -12,12 +12,15 @@ from typing import AsyncIterator, List, Optional
 # in-container adb *client* by KILL_ID, but adb can orphan the `su 0` child on
 # the guest when that stream closes, so the actual tool (ping/iperf3/nc/...) would
 # leak. Scan the guest's /proc for the matching KILL_ID and kill it. Pure toybox
-# sh: glob /proc, grep -a the NUL-separated environ; $1 is the id.
+# sh: glob /proc, grep -a the NUL-separated environ; $1 is the id. Echoes
+# "killed:<pids>" so the caller can log what was actually terminated (lets CI
+# confirm the guest-side kill is reaching the process, not just no-oping).
 _GUEST_KILL_SCRIPT = (
-    'id="$1"; [ -n "$id" ] || exit 2; '
+    'id="$1"; [ -n "$id" ] || exit 2; killed=""; '
     "for d in /proc/[0-9]*; do "
-    'grep -aq "KILL_ID=$id" "$d/environ" 2>/dev/null && kill "${d#/proc/}" 2>/dev/null; '
-    "done; exit 0"
+    'grep -aq "KILL_ID=$id" "$d/environ" 2>/dev/null || continue; '
+    'pid="${d#/proc/}"; kill "$pid" 2>/dev/null && killed="$killed $pid"; '
+    'done; [ -n "$killed" ] && echo "killed:$killed"; exit 0'
 )
 
 
@@ -80,7 +83,15 @@ class AdbProcess(DockerProcess):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            await proc.communicate()
+            stdout, _ = await proc.communicate()
+            out = (stdout or b"").decode(errors="replace").strip()
+            if out.startswith("killed:"):
+                log.info(
+                    "[%s] guest kill-by-id terminated pid(s)%s (KILL_ID=%s)",
+                    self._container_name,
+                    out[len("killed:") :],
+                    self._kill_id,
+                )
         except Exception as e:  # pylint: disable=broad-exception-caught
             log.debug(
                 "[%s] guest kill-by-id failed (ignored): %s", self._container_name, e
