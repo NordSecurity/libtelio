@@ -136,6 +136,7 @@ class TestTpLiteStats:
         [pytest.param(_alpha_setup_params_with_firewall())],
     )
     @pytest.mark.asyncio
+    @pytest.mark.libfirewall
     async def test_tp_lite_stats_basic(
         self,
         alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
@@ -215,6 +216,7 @@ class TestTpLiteStats:
         [pytest.param(_alpha_setup_params_with_firewall())],
     )
     @pytest.mark.asyncio
+    @pytest.mark.libfirewall
     async def test_tp_lite_stats_re_enable_with_new_callback(
         self,
         alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
@@ -255,6 +257,7 @@ class TestTpLiteStats:
         [pytest.param(_alpha_setup_params_with_firewall())],
     )
     @pytest.mark.asyncio
+    @pytest.mark.libfirewall
     async def test_tp_lite_stats_empty_dns_server_ips_disables(
         self,
         alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
@@ -283,6 +286,7 @@ class TestTpLiteStats:
         [pytest.param(_alpha_setup_params_default())],
     )
     @pytest.mark.asyncio
+    @pytest.mark.libfirewall
     async def test_tp_lite_stats_requires_firewall_feature(
         self,
         alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
