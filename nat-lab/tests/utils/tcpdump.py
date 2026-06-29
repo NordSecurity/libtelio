@@ -5,6 +5,7 @@ import subprocess
 from asyncio import Event, wait_for
 from contextlib import asynccontextmanager, AsyncExitStack
 from datetime import datetime
+from tests.config import ANDROID_DEVICE_TMP
 from tests.utils.connection import Connection, ConnectionTag, TargetOS
 from tests.utils.logger import log
 from tests.utils.output_notifier import OutputNotifier
@@ -17,9 +18,9 @@ PCAP_FILE_PATH = {
     TargetOS.Mac: "/var/root/dump.pcap",
     TargetOS.Windows: "C:\\workspace\\dump.pcap",
     # The Linux default `/dump.pcap` lands on `/`, which is a read-only
-    # partition on Android (there's no /tmp). /data/local/tmp is on the
+    # partition on Android (there's no /tmp). ANDROID_DEVICE_TMP is on the
     # read-write /data partition - the adb scratch dir used elsewhere too.
-    TargetOS.Android: "/data/local/tmp/dump.pcap",
+    TargetOS.Android: f"{ANDROID_DEVICE_TMP}dump.pcap",
 }
 PKTMON_LOG_FILE_WINDOWS = "C:\\workspace\\pktmon.etl"
 # Circular-buffer cap, raised from the 512 MB default so long captures don't
