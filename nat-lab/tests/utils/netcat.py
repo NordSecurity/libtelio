@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
-from tests.config import LIBTELIO_BINARY_PATH_VM_MAC
+from tests.config import LIBTELIO_BINARY_PATH_VM_MAC, TERMUX_BIN_VM_ANDROID
 from tests.utils.connection import Connection, TargetOS
 from tests.utils.logger import log
 from tests.utils.output_notifier import OutputNotifier
@@ -22,6 +22,11 @@ def _get_netcat_base_command(connection: Connection) -> list[str]:
             get_python_binary(connection),
             LIBTELIO_BINARY_PATH_VM_MAC + "netcat.py",
         ]
+    if connection.target_os == TargetOS.Android:
+        # The baked OpenBSD nc, by absolute path: the netcat flags below (-v/-z)
+        # aren't supported by Android's system toybox nc, which would otherwise
+        # win on PATH (Termux's bin is only appended as a fallback).
+        return [TERMUX_BIN_VM_ANDROID + "nc"]
     # use the built in netcat command on linux
     return ["nc"]
 

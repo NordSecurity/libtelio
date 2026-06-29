@@ -283,6 +283,10 @@ UNIFFI_PATH_VM_MAC = "/var/root/workspace/uniffi/"
 ANDROID_DEVICE_TMP = "/data/local/tmp/"
 LIBTELIO_BINARY_PATH_VM_ANDROID = "/data/data/com.termux/files/home/work/"
 UNIFFI_PATH_VM_ANDROID = "/data/data/com.termux/files/home/work/"
+# Termux's bin dir, where the baked CLI tools live. Used to invoke a baked tool
+# by absolute path when a same-named system (toybox) tool would otherwise shadow
+# it on PATH (e.g. nc) - see tests/utils/netcat.py.
+TERMUX_BIN_VM_ANDROID = "/data/data/com.termux/files/usr/bin/"
 
 LIBTELIO_LOCAL_IP = "10.5.0.2"
 
