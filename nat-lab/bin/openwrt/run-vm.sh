@@ -56,9 +56,18 @@ case "${QEMU_ARCH}" in
         -drive file=/var/lib/qemu/image.raw,format=raw,if=ide
     ;;
   x86_64)
+    # Use hardware acceleration when /dev/kvm is usable; otherwise fall back to
+    # TCG software emulation (e.g. CI runners without nested virt). KVM is both
+    # much faster and lighter on host CPU than TCG.
+    if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+        ACCEL_ARGS="-enable-kvm -cpu host"
+    else
+        ACCEL_ARGS="-cpu max"
+    fi
     exec /usr/bin/qemu-system-x86_64 \
         -nodefaults \
         -display none \
+        ${ACCEL_ARGS} \
         -m 256M \
         -smp 2 \
         -netdev tap,id=hostnet0,ifname=qemu1,script=no,downscript=no \
