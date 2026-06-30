@@ -1,3 +1,13 @@
+# Fast polling for lightweight docker services. Without this, a bare healthcheck
+# uses Docker's 30s default interval, so `docker compose up --wait` blocks ~30s on
+# services that are actually ready in well under a second. VM healthchecks set their
+# own (slower) timings and intentionally do not use this.
+x-fast-healthcheck: &fast-hc
+  interval: 2s
+  timeout: 2s
+  retries: 15
+  start_period: 2s
+
 services:
   base:
     image: nat-lab:base
@@ -105,6 +115,7 @@ services:
       - ../:/libtelio
       - ./data/core_api/test.pem:/etc/ssl/server_certificate/test.pem
     healthcheck:
+      <<: *fast-hc
       test: "ls /ready"
 
   windows-client-01: &windows-client
@@ -461,6 +472,7 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
+      <<: *fast-hc
       test: "ls /ready"
     networks:
       internet:
@@ -811,7 +823,7 @@ services:
       start_period: 120s
       retries: 5
 
-  windows-gw-01: &windows-gw
+  windows-gw-01:
     hostname: windows-gw-01
     <<: *common-gw
     networks:
@@ -902,6 +914,7 @@ services:
       - ./data/nordderper/config1.yml:/etc/nordderper/config.yml
     working_dir: /etc/nordderper
     healthcheck:
+      <<: *fast-hc
       test: "curl http://localhost:8765" # Here the port comes from nat-lab/data/nordderper/config*.yml
 
   derp-02:
@@ -945,6 +958,7 @@ services:
       options:
         max-size: 50m
     healthcheck:
+      <<: *fast-hc
       test: "stunclient 10.0.1.1 3478 | grep success"
 
   # Two VPN servers
@@ -953,6 +967,7 @@ services:
     image: nat-lab:base
     entrypoint: /opt/bin/vpn-server
     healthcheck:
+      <<: *fast-hc
       test: "ls /ready"
     cap_drop:
       - ALL
@@ -1007,6 +1022,7 @@ services:
         target: /srv/www/photo.png
         read_only: true
     healthcheck:
+      <<: *fast-hc
       test: "curl http://localhost"
 
   # Just some publicly-routable UDP server. To access
@@ -1026,6 +1042,7 @@ services:
         ipv4_address: 10.0.80.81
         ipv6_address: 2001:db8:85a4::adda:edde:6
     healthcheck:
+      <<: *fast-hc
       test: "netstat -ul | grep 2000"
 
   dns-server-1:
@@ -1043,6 +1060,7 @@ services:
         ipv4_address: 10.0.80.82
         ipv6_address: 2001:db8:85a4::adda:edde:7
     healthcheck:
+      <<: *fast-hc
       test: "nslookup google.com localhost"
 
   dns-server-2:
@@ -1060,6 +1078,7 @@ services:
         ipv4_address: 10.0.80.83
         ipv6_address: 2001:db8:85a4::adda:edde:8
     healthcheck:
+      <<: *fast-hc
       test: "nslookup google.com localhost"
 
   tp-lite-dns-server:
@@ -1076,6 +1095,7 @@ services:
       internet:
         ipv4_address: 10.0.80.90
     healthcheck:
+      <<: *fast-hc
       test: "nslookup -type=a google.com localhost"
 
   mqtt-broker:
