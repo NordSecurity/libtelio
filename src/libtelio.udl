@@ -362,6 +362,16 @@ interface Telio {
     [Throws=TelioError]
     void notify_network_change(string network_info);
 
+    /// Set the source IP address(es) currently configured on the tunnel
+    /// interface. When set, the firewall rejects outbound packets whose source
+    /// IP is not one of these.
+    ///
+    /// # Parameters
+    /// - `src_ips`: tunnel interface source IPs, empty to disable.
+    ///
+    [Throws=TelioError]
+    void set_tunnel_src_ip(sequence<IpAddr> src_ips);
+
     /// Notify telio when system goes to sleep.
     [Throws=TelioError]
     void notify_sleep();
