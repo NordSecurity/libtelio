@@ -142,6 +142,10 @@ class LibtelioProxy:
         self._handle_remote_error(lambda r: r.notify_network_change())
 
     @move_to_async_thread
+    def set_tunnel_src_ip(self, src_ips):
+        self._handle_remote_error(lambda r: r.set_tunnel_src_ip(src_ips))
+
+    @move_to_async_thread
     def connect_to_exit_node(self, public_key, allowed_ips, endpoint):
         self._handle_remote_error(
             lambda r: r.connect_to_exit_node(public_key, allowed_ips, endpoint)

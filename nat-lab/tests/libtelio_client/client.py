@@ -378,6 +378,9 @@ class Client:
     async def notify_network_change(self) -> None:
         await self.get_proxy().notify_network_change()
 
+    async def set_tunnel_src_ip(self, src_ips: List[str]) -> None:
+        await self.get_proxy().set_tunnel_src_ip(src_ips)
+
     async def configure_interface(self) -> bool:
         if not self._interface_configured:
             await self.get_router().setup_interface(self._node.ip_addresses)
