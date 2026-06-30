@@ -196,8 +196,33 @@ def pytest_runtestloop(session):
     asyncio.run(copy_vm_binaries_if_needed(_SESSION.vm_marks))
 
 
-def pytest_runtest_setup():
-    asyncio.run(perform_pretest_cleanups())
+def _test_uses_upnp(item) -> bool:
+    """Whether the test exercises a UPNP gateway, so miniupnpd needs a pre-reset.
+
+    Errs on the side of running the reset: only confidently-non-UPNP tests skip it.
+    """
+
+    def contains_upnp(value) -> bool:
+        if isinstance(value, ConnectionTag):
+            return "UPNP" in value.name
+        if isinstance(value, SetupParameters):
+            tag = getattr(value, "connection_tag", None)
+            return isinstance(tag, ConnectionTag) and "UPNP" in tag.name
+        if isinstance(value, (list, tuple, set)):
+            return any(contains_upnp(v) for v in value)
+        return False
+
+    try:
+        params = getattr(getattr(item, "callspec", None), "params", {}) or {}
+        if any(contains_upnp(v) for v in params.values()):
+            return True
+        return "upnp" in item.nodeid.lower()
+    except Exception:  # pylint: disable=broad-exception-caught
+        return True
+
+
+def pytest_runtest_setup(item):
+    asyncio.run(perform_pretest_cleanups(reset_upnp=_test_uses_upnp(item)))
 
 
 def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument

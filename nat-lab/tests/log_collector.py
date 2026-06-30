@@ -146,7 +146,7 @@ async def get_system_log(connection: Connection) -> Optional[str]:
     return None
 
 
-async def save_logs(connection: Connection) -> None:
+async def save_logs(connection: Connection, log_content: Optional[str] = None) -> None:
     """
     Save the logs from libtelio.
     In order to collect all of the logs this function must be called
@@ -160,11 +160,12 @@ async def save_logs(connection: Connection) -> None:
     log_dir = get_current_test_log_path()
     os.makedirs(log_dir, exist_ok=True)
 
-    try:
-        log_content = await get_log_without_flush(connection)
-    except ProcessExecError as err:
-        err.print()
-        return
+    if log_content is None:
+        try:
+            log_content = await get_log_without_flush(connection)
+        except ProcessExecError as err:
+            err.print()
+            return
 
     system_log_content = await get_system_log(connection)
 
@@ -435,13 +436,22 @@ class LogCollector:
         log.info("[%s] Saving moose dbs", self.node_name)
         await save_moose_db()
 
-        log.info("[%s] Checking logs", self.node_name)
-        await self._check_logs_for_errors(connection)
+        # Fetch the libtelio log once and feed both the error check and the save,
+        # instead of pulling it from the node twice.
+        try:
+            log_content = await get_log_without_flush(connection)
+        except ProcessExecError as err:
+            err.print()
+            log_content = None
 
-        log.info("[%s] Saving logs", self.node_name)
-        await save_logs(connection)
+        if log_content is not None:
+            log.info("[%s] Checking logs", self.node_name)
+            self._check_logs_for_errors(log_content)
 
-    async def _check_logs_for_errors(self, connection: Connection) -> None:
+            log.info("[%s] Saving logs", self.node_name)
+            await save_logs(connection, log_content)
+
+    def _check_logs_for_errors(self, log_content: str) -> None:
         """
         Check logs for error and raise error/warning if unexpected errors
         has been found
@@ -451,7 +461,6 @@ class LogCollector:
         at least after logs has been flushed.
         """
 
-        log_content = await get_log_without_flush(connection)
         for line in log_content.splitlines():
             if "TelioLogLevel.ERROR" in line:
                 if not self.allowed_errors or not any(

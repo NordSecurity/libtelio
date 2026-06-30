@@ -394,7 +394,7 @@ async def make_tcpdump(
                 await _start_capture(exit_stack, conn, session)
             yield
     finally:
-        if download:
+        if download and os.environ.get("NATLAB_SAVE_LOGS"):
             log_dir = get_current_test_log_path()
             os.makedirs(log_dir, exist_ok=True)
             for conn in connection_list:

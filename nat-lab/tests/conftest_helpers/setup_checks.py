@@ -10,7 +10,11 @@ from tests.config import LAN_ADDR_MAP
 from tests.interderp_cli import InterDerpClient
 from tests.utils.connection import ConnectionTag, TargetOS
 from tests.utils.connection.docker_connection import DockerConnection
-from tests.utils.connection_util import new_connection_raw, is_running
+from tests.utils.connection_util import (
+    new_connection_raw,
+    is_running,
+    running_container_names,
+)
 from tests.utils.logger import log, setup_log
 from tests.utils.process import ProcessExecError
 from tests.utils.tcpdump import make_tcpdump
@@ -423,9 +427,10 @@ async def check_gateway_connectivity(exit_stack: AsyncExitStack) -> bool:
     current_gateway = None
     for _ in range(GW_CHECK_CONNECTIVITY_RETRIES + 1):
         try:
+            names = await running_container_names()
             for gw_tag in ConnectionTag:
                 if "_GW" in gw_tag.name:
-                    if not await is_running(gw_tag):
+                    if not await is_running(gw_tag, names):
                         continue
                     current_gateway = gw_tag
                     await exit_stack.enter_async_context(new_connection_raw(gw_tag))
@@ -447,8 +452,9 @@ async def check_all_containers_running() -> dict[ConnectionTag, bool]:
     setup_log.info("Checking running containers..")
 
     tags = list(ConnectionTag)
+    names = await running_container_names()
     is_running_results = await asyncio.gather(
-        *[is_running(conn_tag) for conn_tag in tags]
+        *[is_running(conn_tag, names) for conn_tag in tags]
     )
 
     for conn_tag, is_running_res in zip(tags, is_running_results):
