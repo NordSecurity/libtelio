@@ -362,6 +362,15 @@ interface Telio {
     [Throws=TelioError]
     void notify_network_change(string network_info);
 
+    /// Notify telio of a network change including the source IP
+    /// address(es) currently configured on the tunnel interface.
+    ///
+    /// # Parameters
+    /// - `src_ips`: tunnel interface source IPs, empty to disable.
+    ///
+    [Throws=TelioError]
+    void notify_network_change_with_src_ip(sequence<IpAddr> src_ips);
+
     /// Notify telio when system goes to sleep.
     [Throws=TelioError]
     void notify_sleep();

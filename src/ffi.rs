@@ -680,6 +680,21 @@ impl Telio {
         })
     }
 
+    /// Notify telio of a network change including the tunnel interface source.
+    pub fn notify_network_change_with_src_ip(&self, src_ips: Vec<IpAddr>) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::notify_network_change_with_src_ip entry with instance id: {}. src_ips: {:?}",
+            self.id,
+            src_ips
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.notify_network_change_with_src_ip(src_ips.clone())
+                    .log_result("Telio::notify_network_change_with_src_ip")
+            })
+        })
+    }
+
     /// Notify telio system is going to sleep.
     pub fn notify_sleep(&self) -> FfiResult<()> {
         telio_log_info!("telio_notify_sleep entry with instance id: {}.", self.id);

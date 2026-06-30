@@ -1,0 +1,2 @@
+Reject outbound packets whose source IP does not match the tunnel interface's configured source IP(s)
+Add new `notify_network_change_with_src_ip(src_ips)` API: apps should call it on network changes to pass the tunnel interface source IP(s) so the firewall can enforce the source-IP check, pass an empty list to disable the check
