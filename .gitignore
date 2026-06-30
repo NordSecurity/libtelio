@@ -27,7 +27,6 @@ tcli.log
 /nat-lab/data/nordvpnlite/data.json
 /nat-lab/logs
 /nat-lab/coredumps
-/nat-lab/docker-compose.yml.bak
 /src/telio.py
 /build/
 /dist/

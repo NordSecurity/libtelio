@@ -299,8 +299,6 @@ Libtelio emits boths logs and events during runtime that are potentially relevan
 
 ## Troubleshooting
 
-- Docker version < 28.0 and nat-unprotected
-  - Nat-Lab prefers the “nat-unprotected” bridge mode. On Docker Server < 28.0, Nat-Lab will warn and patch compose to use “nat” instead, creating a backup compose file. See [python.check_docker_version_compatibility()](natlab.py).
 - Containers failed to start
   - Use:
 
@@ -453,19 +451,27 @@ export NATLAB_SKIP_SETUP_CHECKS=1
 - TELIO_BIN_PROFILE
   - Controls which libtelio binaries paths are used by tests (release|debug). Automatically set by [python.get_pytest_arguments()](run_local.py:180) based on --telio-debug; may be overridden manually if needed.
 - GITLAB_CI
-  - CI toggle that modifies behavior in a few places (for example, disabling the [docker-compose.yml](docker-compose.yml) port mapping for cone-client-01 and using quiet pulls). See [python.start()](natlab.py:38) and [python.check_docker_version_compatibility()](natlab.py:170).
+  - CI toggle that modifies behavior in a few places (for example using quiet pulls, and disabling the client host-port binding in [docker-compose.yml](docker-compose.yml)). See [python.start()](natlab.py).
 
 ## Rebuild and apply changes efficiently
 
 ### Base image and scripts
 
-- natlab start always rebuilds the “base” image profile with BuildKit:
+- natlab start builds the “base” image profile with BuildKit using the layer cache, so repeated starts with no changes are fast:
 
 ```bash
 uv run python3 natlab.py start
 ```
 
-Implementation: [python.start()](natlab.py:38) issues docker compose build for the base profile.
+- Force a clean (no-cache) rebuild of the base image with `--rebuild` (or `NATLAB_BUILD_NO_CACHE=1`):
+
+```bash
+uv run python3 natlab.py start --rebuild
+```
+
+In CI (`GITLAB_CI`) the build always runs with `--no-cache` for fully reproducible images; the layer cache is a local-dev convenience only.
+
+Implementation: [python.start()](natlab.py) issues docker compose build for the base profile.
 
 ### Recreate vs restart
 
@@ -527,7 +533,7 @@ docker container prune          # will remove stopped containers
 - IPv6
   - The “internet” network has IPv6 enabled in [docker-compose.yml](docker-compose.yml:934). Ensure Docker daemon has IPv6 enabled if running IPv6 tests; otherwise disable IPv6-related markers.
 - Security and networking impact
-  - On newer Docker versions natlab prefers a special “nat-unprotected” bridge mode; on older Docker it falls back to “nat”. This adjusts NAT/masquerade behavior and may affect firewalling/routing on your workstation. See [python.check_docker_version_compatibility()](natlab.py:170) and comments in [docker-compose.yml](docker-compose.yml).
+  - natlab uses Docker bridge networks with custom NAT/masquerade behavior that may affect firewalling/routing on your workstation. See comments in [docker-compose.yml](docker-compose.yml).
 - Windows as host
   - Full env (with nested virtualization) is not supported on native Windows hosts. Use a Linux host for full coverage or run the lite-mode.
 
