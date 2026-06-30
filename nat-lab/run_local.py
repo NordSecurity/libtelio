@@ -64,7 +64,7 @@ def run_command(
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-o", type=str, default="linux", help="Pass the host OS [default: linux])"
+        "-o", type=str, default="linux", help="Pass the host OS [default: linux]"
     )
     parser.add_argument(
         "--restart", action="store_true", help="Restart build container"

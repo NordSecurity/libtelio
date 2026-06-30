@@ -431,17 +431,22 @@ def _resolve_skip_keywords(args) -> set:
     return skip_keywords
 
 
-def main():
-    all_services = run_command_with_output(
+def list_services() -> List[str]:
+    output = run_command_with_output(
         ["docker", "compose", "config", "--services"], hide_output=True
     )
-    valid_services = [service.strip() for service in all_services.splitlines()]
-    parser = argparse.ArgumentParser()
+    return [service.strip() for service in output.splitlines() if service.strip()]
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Build, start and manage the nat-lab docker/VM test environment."
+    )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     start_parser = subparsers.add_parser(
         "start",
-        help="Build and start the environment [--skip-fullcone] [--skip-windows] [--skip-windows-client-02] [--skip-mac] [--skip-nlx] [--lite-mode]",
+        help="Build and start the environment (run `start --help` for skip/scope flags)",
     )
     start_parser.add_argument(
         "--skip-fullcone",
@@ -485,8 +490,8 @@ def main():
     start_parser.add_argument(
         "--services-to-start",
         nargs="+",
-        choices=valid_services,
-        help="List of services to start",
+        metavar="SERVICE",
+        help="Start only these services (validated against the compose file)",
     )
     start_parser.add_argument(
         "--rebuild",
@@ -511,6 +516,14 @@ def main():
     if args.command == "start":
         skip_keywords = _resolve_skip_keywords(args)
         if args.services_to_start:
+            valid_services = list_services()
+            invalid = [s for s in args.services_to_start if s not in valid_services]
+            if invalid:
+                start_parser.error(
+                    "unknown service(s) for --services-to-start: "
+                    f"{', '.join(invalid)}\n"
+                    f"valid services: {', '.join(sorted(valid_services))}"
+                )
             start(
                 skip_keywords,
                 services_to_start=args.services_to_start,
@@ -529,7 +542,7 @@ def main():
     elif args.command == "kill":
         kill()
     elif args.command == "check-containers":
-        check_containers(services_to_start=valid_services, check_only=True)
+        check_containers(services_to_start=list_services(), check_only=True)
 
 
 if __name__ == "__main__":
