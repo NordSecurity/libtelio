@@ -49,6 +49,9 @@ class ClientVpn:
                 )
             await event
 
+            src_ips = list(self._client.node.ip_addresses)
+            await self._client.notify_network_change_with_src_ip(src_ips)
+
     async def disconnect(
         self,
         public_key: str,

@@ -24,6 +24,7 @@ from tests.utils.netcat import NetCatClient
 from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
 from tests.utils.router import IPProto, IPStack
+from tests.utils.tcpdump import make_tcpdump
 
 
 class TestVpnConnection:
@@ -766,3 +767,91 @@ class TestSingleVpn1Node:
         assert (
             ip == config.WG_SERVER["ipv4"]
         ), f"wrong public IP when connected to VPN {ip}"
+
+    @pytest.mark.asyncio
+    # NEP_TUN only: the firewall outbound reject path is wired into the NepTUN
+    # adapter, not LinuxNativeWg. The feature is inactive on linux-native.
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv4,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        vpn_1_limits=(1, 1),
+                    ),
+                    is_meshnet=False,
+                ),
+                id="neptun",
+            ),
+        ],
+    )
+    async def test_vpn_reject_wrong_tunnel_src_ip(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env,
+        single_vpn_server_connection,
+    ) -> None:
+        alpha_node = env.nodes[0]
+        alpha_conn = env.connections[0].connection
+        alpha_client = env.clients[0]
+        vpn_conn = single_vpn_server_connection.connection
+
+        node_ip = alpha_node.ip_addresses[0]
+        # this is not node's tunnel src IP, so the firewall must drop packets from it.
+        foreign_ip = "100.64.0.8"
+        serv_ip = config.PHOTO_ALBUM_IP
+        serv_port = 80
+
+        await connect_vpn(
+            alpha_conn,
+            vpn_conn,
+            alpha_client,
+            node_ip,
+            config.WG_SERVER,
+        )
+
+        interface_name = alpha_client.get_router().get_interface_name()
+
+        await alpha_conn.create_process(
+            ["ip", "-4", "addr", "add", f"{foreign_ip}/32", "dev", interface_name],
+            quiet=True,
+        ).execute()
+        try:
+            async with make_tcpdump([vpn_conn]):
+                async with NetCatClient(
+                    alpha_conn,
+                    serv_ip,
+                    serv_port,
+                    source_ip=node_ip,
+                ).run() as good_client:
+                    await asyncio.wait_for(
+                        good_client.connection_succeeded(), timeout=10
+                    )
+
+                async with NetCatClient(
+                    alpha_conn,
+                    serv_ip,
+                    serv_port,
+                    source_ip=foreign_ip,
+                ).run() as bad_client:
+                    with pytest.raises(asyncio.TimeoutError):
+                        await asyncio.wait_for(
+                            bad_client.connection_succeeded(), timeout=10
+                        )
+        finally:
+            await alpha_conn.create_process(
+                [
+                    "ip",
+                    "-4",
+                    "addr",
+                    "del",
+                    f"{foreign_ip}/32",
+                    "dev",
+                    interface_name,
+                ],
+                quiet=True,
+            ).execute()

@@ -191,6 +191,10 @@ class LibtelioWrapper:
         self._libtelio.notify_network_change("")
 
     @serialize_error
+    def notify_network_change_with_src_ip(self, src_ips: List[str]):
+        self._libtelio.notify_network_change_with_src_ip(src_ips)
+
+    @serialize_error
     def connect_to_exit_node(self, public_key, allowed_ips: str, endpoint: str):
         self._libtelio.connect_to_exit_node_with_id(
             "natlab", public_key, allowed_ips, endpoint
