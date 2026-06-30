@@ -140,6 +140,10 @@ pub struct NordVpnLiteConfig {
 
     /// Path to a http pem certificate to be used when connecting to CoreApi
     pub http_certificate_file_path: Option<PathBuf>,
+
+    /// Enables the libtelio firewall that processes packets.
+    #[serde(default)]
+    pub enable_firewall: bool,
 }
 
 impl NordVpnLiteConfig {
@@ -266,6 +270,7 @@ impl Default for NordVpnLiteConfig {
             override_default_wg_port: None,
             authentication_token: Default::default(),
             http_certificate_file_path: None,
+            enable_firewall: false,
         }
     }
 }
@@ -401,6 +406,7 @@ mod tests {
             override_default_wg_port: None,
             authentication_token: Default::default(),
             http_certificate_file_path: None,
+            enable_firewall: false,
         };
         {
             let json = r#"{

@@ -152,9 +152,13 @@ impl TelioContext {
 
         // TODO: Make telio features configurable from nordvpnlite config: LLT-6587
         // Create default features with direct connections enabled
-        let features = Arc::new(FeaturesDefaultsBuilder::new())
+        let mut features = Arc::new(FeaturesDefaultsBuilder::new())
             .enable_direct()
             .build();
+
+        if config.enable_firewall {
+            features.firewall = Some(Default::default());
+        }
 
         let mut telio = Device::new(features, handle_telio_event, None)?;
         Self::start_telio(&mut telio, &config, nordlynx_private_key)?;
