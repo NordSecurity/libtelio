@@ -645,6 +645,15 @@ async fn consolidate_firewall<F: Firewall>(
             .ok_or(Error::IpNotSet)?;
     }
 
+    state.tunnel_ips = if requested_state.exit_node.is_some() {
+        if requested_state.tunnel_ips.is_empty() {
+            telio_log_warn!("Exit node connected but no tunnel source IP was supplied.");
+        }
+        requested_state.tunnel_ips.clone()
+    } else {
+        Vec::new()
+    };
+
     firewall.apply_dynamic_state(state);
 
     Ok(())
@@ -1567,6 +1576,65 @@ mod tests {
                 ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
                 ..Default::default()
             }))
+            .return_const(());
+
+        consolidate_firewall(
+            &requested_state,
+            &firewall,
+            Some(pub_key_starcast_vpeer),
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[cfg(feature = "enable_firewall")]
+    #[tokio::test]
+    async fn app_supplied_tunnel_ip_is_set_for_vpn_exit() {
+        let mut firewall = MockFirewall::new();
+        let pub_key_starcast_vpeer = SecretKey::gen().public();
+        let pub_key_1 = SecretKey::gen().public();
+        let pub_key_2 = SecretKey::gen().public();
+
+        let mut requested_state =
+            create_requested_state(vec![(pub_key_1, vec![], false, false, false, false)]);
+        requested_state.exit_node = Some(ExitNode {
+            public_key: pub_key_2,
+            ..Default::default()
+        });
+        requested_state.tunnel_ips = vec![IpAddr::V4(Ipv4Addr::new(10, 5, 0, 2))];
+
+        firewall
+            .expect_apply_dynamic_state()
+            .once()
+            .withf(|state| state.tunnel_ips == vec![IpAddr::V4(Ipv4Addr::new(10, 5, 0, 2))])
+            .return_const(());
+
+        consolidate_firewall(
+            &requested_state,
+            &firewall,
+            Some(pub_key_starcast_vpeer),
+            None,
+        )
+        .await
+        .unwrap();
+    }
+
+    #[cfg(feature = "enable_firewall")]
+    #[tokio::test]
+    async fn app_supplied_tunnel_ip_ignored_without_exit_node() {
+        let mut firewall = MockFirewall::new();
+        let pub_key_starcast_vpeer = SecretKey::gen().public();
+        let pub_key_1 = SecretKey::gen().public();
+
+        let mut requested_state =
+            create_requested_state(vec![(pub_key_1, vec![], false, false, false, false)]);
+        requested_state.tunnel_ips = vec![IpAddr::V4(Ipv4Addr::new(10, 5, 0, 2))];
+
+        firewall
+            .expect_apply_dynamic_state()
+            .once()
+            .withf(|state| state.tunnel_ips.is_empty())
             .return_const(());
 
         consolidate_firewall(
