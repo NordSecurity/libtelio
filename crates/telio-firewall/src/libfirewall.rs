@@ -40,6 +40,7 @@ pub const LIBFW_FILTER_DIRECTION: u8 = 4;
 pub const LIBFW_FILTER_NEXT_LVL_PROTO: u8 = 5;
 pub const LIBFW_FILTER_TCP_FLAGS: u8 = 6;
 pub const LIBFW_FILTER_ICMP_TYPE: u8 = 7;
+pub const LIBFW_FILTER_ORIG_SRC_IP: u8 = 9;
 #[repr(u32)]
 #[doc = " Log levels used in LibfwLogCallback\n"]
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -166,6 +167,8 @@ pub union LibfwFilterData {
     pub tcp_flags: u8,
     #[doc = " Checked ICMP types, only ICMP packets can match this filter\n Use when filter_type = LibfwFilterConntrackState"]
     pub icmp_type: u8,
+    #[doc = " Source IP of the connection's original (initiating) direction, taken from conntrack\n Use when filter_type = LIBFW_FILTER_ORIG_SRC_IP"]
+    pub orig_src_ip: LibfwIpAddr,
 }
 #[doc = " Struct describing a single Libfw filter\n"]
 #[repr(C)]

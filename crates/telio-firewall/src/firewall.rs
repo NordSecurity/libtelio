@@ -32,8 +32,7 @@ use telio_utils::{
 
 use crate::{
     chain_helpers::{
-        ConnectionState, Direction, FfiChainGuard, Filter, FilterData, NetworkFilterData,
-        NextLevelProtocol, Rule,
+        Direction, FfiChainGuard, Filter, FilterData, NetworkFilterData, NextLevelProtocol, Rule,
     },
     libfirewall::{LibfwChain, LibfwFirewall, LibfwLogLevel, LibfwResult, LibfwVerdict},
     tp_lite_stats::{collect_stats, CallbackManager},
@@ -585,27 +584,12 @@ pub(crate) fn configure_chain(
             });
         }
 
-        // Accept packets for locally initiated connections
+        // Accept incoming packets for connections initiated from this IP
         rules.push(Rule {
-            filters: vec![
-                Filter {
-                    filter_data: FilterData::ConntrackState(ConnectionState::Established),
-                    inverted: false,
-                },
-                dst_net_all_ports_filter(IpNet::from(*ip), false),
-            ],
-            action: LibfwVerdict::LibfwVerdictAccept,
-        });
-
-        // And packets related to them
-        rules.push(Rule {
-            filters: vec![
-                Filter {
-                    filter_data: FilterData::ConntrackState(ConnectionState::Related),
-                    inverted: false,
-                },
-                dst_net_all_ports_filter(IpNet::from(*ip), false),
-            ],
+            filters: vec![Filter {
+                filter_data: FilterData::OrigSrcIp(*ip),
+                inverted: false,
+            }],
             action: LibfwVerdict::LibfwVerdictAccept,
         });
 
