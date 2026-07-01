@@ -310,9 +310,7 @@ def _report_container_failures(
     raise RuntimeError(f"Containers failed to start: {failed}; see docker logs above")
 
 
-def check_containers(
-    services_to_start, check_only=False
-) -> Tuple[List[str], List[str]]:
+def find_failing_containers(services_to_start) -> Tuple[List[str], List[str]]:
     missing_services: List[str] = []
     unhealthy_services: List[str] = []
 
@@ -327,45 +325,30 @@ def check_containers(
                     unhealthy_services.append(service)
                 break
 
-    if check_only:
-        _report_container_failures(missing_services, unhealthy_services)
-
     return missing_services, unhealthy_services
+
+
+def check_containers(services_to_start) -> None:
+    missing, unhealthy = find_failing_containers(services_to_start)
+    _report_container_failures(missing, unhealthy)
 
 
 def manage_containers(services_to_start) -> None:
     restart_attempts = 0
-    missing: List[str] = []
-    unhealthy: List[str] = []
     while restart_attempts < NATLAB_CONTAINER_RESTART_ATTEMPTS:
-        missing, unhealthy = check_containers(services_to_start, False)
+        missing, unhealthy = find_failing_containers(services_to_start)
         failed = missing + [s for s in unhealthy if s not in missing]
-        if failed:
-            print("Missing services: ", missing)
-            print("Unhealthy services: ", unhealthy)
-            quick_restart_container(
-                failed, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
-            )
-        else:
+        if not failed:
             return
+        print("Missing services: ", missing)
+        print("Unhealthy services: ", unhealthy)
+        quick_restart_container(
+            failed, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
+        )
         restart_attempts += 1
 
-    # Final check after all restart attempts exhausted
-    missing, unhealthy = check_containers(services_to_start, False)
-    failed = missing + [s for s in unhealthy if s not in missing]
-
-    print(f"missing services: {missing}, unhealthy services: {unhealthy}")
-
-    if failed:
-        # Dump logs only at the very end, only for still-failing containers
-        for service in missing:
-            dump_docker_logs(service)
-        for service in unhealthy:
-            dump_docker_logs(service)
-            dump_journal_logs(service)
-        raise RuntimeError(
-            f"Containers failed to start: {failed}; see docker logs above"
-        )
+    # Dump logs and raise for any containers still failing after all attempts.
+    check_containers(services_to_start)
 
 
 def generate_grpc(path):
@@ -542,7 +525,7 @@ def main():
     elif args.command == "kill":
         kill()
     elif args.command == "check-containers":
-        check_containers(services_to_start=list_services(), check_only=True)
+        check_containers(services_to_start=list_services())
 
 
 if __name__ == "__main__":
