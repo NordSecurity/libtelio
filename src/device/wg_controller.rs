@@ -1658,6 +1658,86 @@ mod tests {
 
     #[cfg(feature = "enable_firewall")]
     #[tokio::test]
+    async fn app_supplied_tunnel_ip_survives_exit_node_reconnect() {
+        let mut firewall = MockFirewall::new();
+        let pub_key_starcast_vpeer = SecretKey::gen().public();
+        let pub_key_1 = SecretKey::gen().public();
+        let pub_key_2 = SecretKey::gen().public();
+
+        let mut requested_state =
+            create_requested_state(vec![(pub_key_1, vec![], false, false, false, false)]);
+        // The app supplies the tunnel source IP only once; it must be retained
+        // in the requested state and reapplied on every exit-node reconnect.
+        requested_state.tunnel_ips = vec![IpAddr::V4(Ipv4Addr::new(10, 5, 0, 2))];
+
+        let mut seq = mockall::Sequence::new();
+        // 1) Exit node up: tunnel IP protection applied.
+        firewall
+            .expect_apply_state()
+            .once()
+            .in_sequence(&mut seq)
+            .withf(|state| state.tunnel_ips == vec![IpAddr::V4(Ipv4Addr::new(10, 5, 0, 2))])
+            .return_const(());
+        // 2) Exit node down: protection cleared from the firewall state.
+        firewall
+            .expect_apply_state()
+            .once()
+            .in_sequence(&mut seq)
+            .withf(|state| state.tunnel_ips.is_empty())
+            .return_const(());
+        // 3) Exit node back up: tunnel IP reapplied without the app re-supplying it.
+        firewall
+            .expect_apply_state()
+            .once()
+            .in_sequence(&mut seq)
+            .withf(|state| state.tunnel_ips == vec![IpAddr::V4(Ipv4Addr::new(10, 5, 0, 2))])
+            .return_const(());
+
+        requested_state.exit_node = Some(ExitNode {
+            public_key: pub_key_2,
+            ..Default::default()
+        });
+        consolidate_firewall(
+            &requested_state,
+            &firewall,
+            Some(pub_key_starcast_vpeer),
+            None,
+        )
+        .await
+        .unwrap();
+
+        requested_state.exit_node = None;
+        consolidate_firewall(
+            &requested_state,
+            &firewall,
+            Some(pub_key_starcast_vpeer),
+            None,
+        )
+        .await
+        .unwrap();
+
+        requested_state.exit_node = Some(ExitNode {
+            public_key: pub_key_2,
+            ..Default::default()
+        });
+        consolidate_firewall(
+            &requested_state,
+            &firewall,
+            Some(pub_key_starcast_vpeer),
+            None,
+        )
+        .await
+        .unwrap();
+
+        // The app never re-supplied the IP; the requested state must still hold it.
+        assert_eq!(
+            requested_state.tunnel_ips,
+            vec![IpAddr::V4(Ipv4Addr::new(10, 5, 0, 2))]
+        );
+    }
+
+    #[cfg(feature = "enable_firewall")]
+    #[tokio::test]
     async fn do_not_add_meshnet_exit_node_to_firewall_if_it_does_not_allow_incoming_connections() {
         let mut firewall = MockFirewall::new();
 
