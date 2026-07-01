@@ -10,6 +10,7 @@ from tests.config import (
     PHOTO_ALBUM_IP,
     STUN_SERVER,
     LAN_ADDR_MAP,
+    CORE_API_URL,
 )
 from tests.helpers import (
     print_network_state,
@@ -35,6 +36,7 @@ from tests.utils.openwrt import (
 from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
 from typing import Optional
+from urllib.parse import urlparse
 
 NETWORK_RESTART_LOG_LINE = "netifd: Network device 'eth1' link is up"
 OPENWRT_GW_WAN_IP = {
@@ -155,6 +157,31 @@ async def check_gateway_and_client_ip(
     ), f"LuCi UI isn't available. Response status: {luci_ui_response_status}"
 
 
+async def wait_for_router_dns(
+    connection: Connection, host: str, attempts: int = 20, interval: float = 2.0
+) -> None:
+    """Wait until the OpenWrt router's dnsmasq can resolve `host`.
+
+    After a WAN-down or reboot the router's resolver needs a moment to recover,
+    so probe it with a light nslookup before issuing requests that depend on it.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            await connection.create_process(["nslookup", host], quiet=True).execute()
+            return
+        except ProcessExecError:
+            if attempt == attempts:
+                raise
+            log.warning(
+                "[%s] router cannot resolve %s yet (attempt %d/%d), waiting...",
+                connection.tag.name,
+                host,
+                attempt,
+                attempts,
+            )
+            await asyncio.sleep(interval)
+
+
 async def setup_openwrt_test_environment(
     country_config: ConfigPresetName,
     exit_stack: AsyncExitStack,
@@ -211,6 +238,10 @@ async def setup_openwrt_test_environment(
         exit_stack=exit_stack,
         config=config,
     )
+    # OpenWrt tests exercise router network events (WAN down, reboot); make sure
+    # the router's dnsmasq can resolve core-api again before we query it.
+    core_api_host = urlparse(CORE_API_URL).hostname or CORE_API_URL
+    await wait_for_router_dns(gateway_connection, core_api_host)
     await nordvpnlite.request_credentials_from_core()
     return client_connection, gateway_connection, nordvpnlite
 
