@@ -94,8 +94,9 @@ class TpLiteDNSResolver:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     factory = TpLiteDNSServerFactory(clients=[TpLiteDNSResolver()])
-    protocol = dns.DNSDatagramProtocol(controller=factory)
-    reactor.listenUDP(53, protocol, interface='::')
-    reactor.listenTCP(53, factory, interface='::')
+    # Listen on 53 (plaintext DNS) plus 443 (DoH) and 853 (DoT) "non-plaintext" ports
+    for port in (53, 443, 853):
+        reactor.listenUDP(port, dns.DNSDatagramProtocol(controller=factory), interface='::')
+        reactor.listenTCP(port, factory, interface='::')
     logging.info(f"TP-Lite DNS server starting. NXDOMAIN={list(BLOCKED_NXDOMAIN.keys())} NULL-IP={list(BLOCKED_NULL_IP.keys())} Allowed={list(ALLOWED.keys())}")
     reactor.run()
