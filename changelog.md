@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v7.0.4
+### ****
+---
+* LLT-7389: Close established incoming connections after meshnet remote access permission is stripped
+
+<br>
+
 ### v7.0.3
 ### ****
 ---
