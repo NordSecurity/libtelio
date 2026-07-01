@@ -338,6 +338,7 @@ async def test_openwrt_ip_leaks(
                 "-i",
                 "eth0",
                 "-nn",
+                "not arp",
             ]).run() as tcp_dump:
                 await ping(gateway_connection, PHOTO_ALBUM_IP, enable_strace=True)
                 await ping(client_connection, PHOTO_ALBUM_IP, enable_strace=True)
