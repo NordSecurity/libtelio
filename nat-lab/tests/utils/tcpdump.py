@@ -233,16 +233,16 @@ class PktmonCapture:
         await self._exec_quiet(self._pktmon_start_args(etl_path), ignore_failure=False)
         self.log_files.append(etl_path)
 
-    async def _roll(self, current: set[str]) -> None:
+    async def _reload_pktmon_with_new_adapters(self, new: set[str]) -> None:
         if self._segment + 1 >= PKTMON_MAX_SEGMENTS:
             return
         next_segment = self._segment + 1
         etl_path = self._etl_path(next_segment)
-        # Register the .etl and adopt 'current' as baseline up front: the file
-        # gets cleaned up even if the roll is interrupted, and a failing roll
-        # won't re-fire on every poll for the same adapter set.
+        # Register the .etl and fold the new adapters into the baseline up front:
+        # the file gets cleaned up even if the roll is interrupted, and a failing
+        # roll won't re-fire on every poll for the same adapter set.
         self.log_files.append(etl_path)
-        self._baseline |= current
+        self._baseline |= new
         # One round-trip stop+start - smallest possible gap (pktmon allows one
         # session per machine, so no overlap). Nested `cmd /c` so a real `&&`
         # survives arg escaping (^&^&) and chains on the VM.
@@ -265,9 +265,10 @@ class PktmonCapture:
             return
         self._segment = next_segment
         log.info(
-            "[%s] rolled pktmon capture to segment %d after new adapter(s)",
+            "[%s] rolled pktmon capture to segment %d for new adapter(s): %s",
             self.connection.tag,
             self._segment,
+            ", ".join(sorted(new)),
         )
 
     async def _poll_for_new_adapters(self) -> None:
@@ -295,7 +296,7 @@ class PktmonCapture:
                     self.connection.tag,
                     ", ".join(sorted(new)),
                 )
-                await self._roll(current)
+                await self._reload_pktmon_with_new_adapters(new)
 
     async def _convert_segments(self) -> None:
         for segment in range(self._segment + 1):
