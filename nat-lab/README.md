@@ -374,7 +374,7 @@ export NATLAB_SAVE_LOGS=1
 ### Tcpdump internals (useful when customizing)
 
 - Binary and host file paths are defined in [python.build_tcpdump_command()](tests/utils/tcpdump.py) and PCAP_FILE_PATH map at [python.PCAP_FILE_PATH](tests/utils/tcpdump.py)
-- Windows captures use the in-box `pktmon` tool (full packet size, all adapters present at capture start); the .etl log is converted to pcapng on the VM before download (see [python.PktmonCapture](tests/utils/tcpdump.py)). pktmon cannot exclude the SSH control channel at capture time, so it is stripped from the pcap on the test runner right after download (requires local `tcpdump`; the file is kept unfiltered if that fails). Note: adapters created after capture start (e.g. libtelio's wintun/wireguard adapter) are not captured — decrypted tunnel traffic is only visible in the counterpart node's pcap, while the encrypted side is captured on the physical NICs.
+- Windows captures use the in-box `pktmon` tool with `--comp all` (full packet size, all adapters including virtual ones; `--comp nics` misses them). pktmon only enumerates adapters at session start, so to catch libtelio's tunnel adapter (created later) we poll and roll the session — a single `pktmon stop && pktmon start` — when it appears, splitting capture into segments (see [python.PktmonCapture](tests/utils/tcpdump.py)). After download the segments are merged into one continuous `<guest>.pcap` and normalised by [python.merge_windows_pcaps()](tests/utils/tcpdump.py): the tunnel adapter's bare-IP packets are wrapped in Ethernet framing (else Wireshark shows them as malformed) and the SSH control channel is dropped. Best-effort throughout (raw segments are kept if the merge fails).
 
 ### Example: run a single test and keep all logs
 
