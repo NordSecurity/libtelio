@@ -33,7 +33,7 @@ from tests.utils.network_switcher import (
 )
 from typing import AsyncIterator, Tuple, Optional, List, Union
 
-IS_VM_RUNNING_PING_TIMEOUT = 10.0
+IS_VM_RUNNING_PING_TIMEOUT = 3.0
 
 
 @dataclass
@@ -437,18 +437,56 @@ async def toggle_secondary_adapter(connection: Connection, enable: bool):
         await set_secondary_ifc_state(connection, not enable, secondary_ifc)
 
 
-async def is_running(tag: ConnectionTag) -> bool:
+async def running_container_names(docker: Optional[Docker] = None) -> set[str]:
+    """Snapshot the names of all running docker containers in one API call.
+
+    `containers.list()` already returns only running containers and includes their
+    names, so callers that check many tags can fetch this once instead of opening a
+    Docker client and inspecting every container per tag.
+    """
+
+    async def _collect(client: Docker) -> set[str]:
+        names: set[str] = set()
+        for container in await client.containers.list():
+            names.update(container["Names"])
+        return names
+
+    if docker is not None:
+        return await _collect(docker)
+    async with Docker() as client:
+        return await _collect(client)
+
+
+async def is_running(
+    tag: ConnectionTag, running_names: Optional[set[str]] = None
+) -> bool:
     if tag in DOCKER_SERVICE_IDS:
-        cid = container_id(tag)
-        async with Docker() as docker:
-            clist = await docker.containers.list()
-            for c in clist:
-                name = (await c.show())["Name"]
-                if name == f"/{cid}":
-                    return True
-    else:
-        primary_ip = LAN_ADDR_MAP[tag]["primary"]
-        assert primary_ip != ""
+        if running_names is None:
+            running_names = await running_container_names()
+        return f"/{container_id(tag)}" in running_names
+
+    primary_ip = LAN_ADDR_MAP[tag]["primary"]
+    assert primary_ip != ""
+    proc = await asyncio.wait_for(
+        asyncio.create_subprocess_exec(
+            "ping",
+            "-c",
+            "1",
+            "-W",
+            "1",
+            primary_ip,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        ),
+        timeout=IS_VM_RUNNING_PING_TIMEOUT,
+    )
+    returncode = await asyncio.wait_for(proc.wait(), timeout=2.0)
+    if returncode == 0:
+        return True
+    log.debug("%s haven't replied to ICMP request at %s", tag, primary_ip)
+
+    secondary_ip = LAN_ADDR_MAP[tag]["secondary"]
+    if secondary_ip != "":
         proc = await asyncio.wait_for(
             asyncio.create_subprocess_exec(
                 "ping",
@@ -456,7 +494,7 @@ async def is_running(tag: ConnectionTag) -> bool:
                 "1",
                 "-W",
                 "1",
-                primary_ip,
+                secondary_ip,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=asyncio.subprocess.DEVNULL,
             ),
@@ -465,28 +503,6 @@ async def is_running(tag: ConnectionTag) -> bool:
         returncode = await asyncio.wait_for(proc.wait(), timeout=2.0)
         if returncode == 0:
             return True
-        else:
-            log.debug("%s haven't replied to ICMP request at %s", tag, primary_ip)
-
-        secondary_ip = LAN_ADDR_MAP[tag]["secondary"]
-        if secondary_ip != "":
-            proc = await asyncio.wait_for(
-                asyncio.create_subprocess_exec(
-                    "ping",
-                    "-c",
-                    "1",
-                    "-W",
-                    "1",
-                    secondary_ip,
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL,
-                ),
-                timeout=IS_VM_RUNNING_PING_TIMEOUT,
-            )
-            returncode = await asyncio.wait_for(proc.wait(), timeout=2.0)
-            if returncode == 0:
-                return True
-            else:
-                log.debug("%s haven't replied to ICMP request at %s", tag, primary_ip)
+        log.debug("%s haven't replied to ICMP request at %s", tag, secondary_ip)
 
     return False

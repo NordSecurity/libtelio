@@ -4,11 +4,8 @@ import argparse
 import errno
 import json
 import os
-import shutil
 import subprocess
 import sys
-import warnings
-from packaging import version
 from typing import List, Tuple
 
 # isort: off
@@ -17,6 +14,49 @@ sys.path += [f"{PROJECT_ROOT}/ci"]
 from env import LIBTELIO_ENV_NAT_LAB_DEPS_TAG  # type: ignore # pylint: disable=import-error, wrong-import-position
 
 NATLAB_CONTAINER_RESTART_ATTEMPTS = 5
+
+
+def disable_client_host_ports():
+    """Drop the client host-port binding in CI by editing docker-compose.yml in place.
+
+    Idempotent: a no-op if the binding is already disabled, so repeated runs on the
+    same checkout don't fail.
+    """
+    with open("docker-compose.yml", "r", encoding="utf-8") as file:
+        filedata = file.read()
+    enabled = 'ports: ["58001"]'
+    disabled = "ports: []"
+    if enabled in filedata:
+        filedata = filedata.replace(enabled, disabled)
+        with open("docker-compose.yml", "w", encoding="utf-8") as file:
+            file.write(filedata)
+    elif disabled not in filedata:
+        raise RuntimeError("Cannot find expected client port mapping in compose file")
+
+
+def compose_container_ids(service: str, running_only: bool = False) -> List[str]:
+    """Resolve a compose service to its concrete container IDs (exact, no substring match)."""
+    command = ["docker", "compose", "ps", "-q"]
+    command += ["--status", "running"] if running_only else ["--all"]
+    command.append(service)
+    output = run_command_with_output(command, hide_output=True)
+    return [cid.strip() for cid in output.splitlines() if cid.strip()]
+
+
+def inspect_health(container_id: str):
+    raw = run_command_with_output(
+        ["docker", "inspect", container_id, "--format", "{{json .State.Health}}"],
+        hide_output=True,
+    ).strip()
+    if not raw or raw.lower() == "null":
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(data, dict):
+        return (data.get("Status") or "").lower()
+    return None
 
 
 def run_command(command, env=None):
@@ -120,27 +160,25 @@ def dump_journal_logs(service_name):
         )
 
 
-def start(skip_keywords=None, force_recreate=False, services_to_start=None):
+def start(
+    skip_keywords=None, force_recreate=False, services_to_start=None, rebuild=False
+):
     if skip_keywords is None:
         skip_keywords = []
-
-    check_docker_version_compatibility()
 
     generate_grpc("../dist/linux/ens.proto")
 
     if "GITLAB_CI" in os.environ:
-        with open("docker-compose.yml", "r", encoding="utf-8") as file:
-            filedata = file.read()
-        original_port_mapping = 'ports: ["58001"]'
-        disabled_port_mapping = "ports: []"
-        if original_port_mapping not in filedata:
-            raise RuntimeError("Cannot find expected port mapping compose file")
-        filedata = filedata.replace(original_port_mapping, disabled_port_mapping)
-        with open("docker-compose.yml", "w", encoding="utf-8") as file:
-            file.write(filedata)
+        disable_client_host_ports()
+
+    build_command = ["docker", "compose", "--profile", "base", "build"]
+    # Build from cache locally for fast iteration. In CI always force a clean
+    # rebuild so images are fully reproducible and never reuse a persisted layer.
+    if rebuild or "NATLAB_BUILD_NO_CACHE" in os.environ or "GITLAB_CI" in os.environ:
+        build_command.append("--no-cache")
 
     run_command(
-        ["docker", "compose", "--profile", "base", "build", "--no-cache"],
+        build_command,
         env={
             "COMPOSE_DOCKER_CLI_BUILD": "1",
             "DOCKER_BUILDKIT": "1",
@@ -228,20 +266,11 @@ def kill():
 def quick_restart_container(names: List[str], env=None):
     if env:
         env = {**os.environ.copy(), **env}
-    docker_status = [
-        line.strip().strip("'")
-        for line in subprocess.check_output(
-            ["docker", "ps", "--filter", "status=running", "--format", "'{{.Names}}'"],
-            env=env,
-        )
-        .decode("utf-8")
-        .splitlines()
-    ]
 
-    for container in docker_status:
-        if any(name for name in names if name in container):
-            print("Killing container: ", container)
-            run_command(["docker", "container", "kill", container], env=env)
+    for service in names:
+        for cid in compose_container_ids(service, running_only=True):
+            print("Killing container: ", cid)
+            run_command(["docker", "container", "kill", cid], env=env)
     print("Restarting services: ", names)
     try:
         run_command(
@@ -252,13 +281,16 @@ def quick_restart_container(names: List[str], env=None):
                 "-d",
                 "--wait",
                 "--force-recreate",
+                # Recreate only the failed services, not their healthy dependencies
+                # (which include the slow-to-boot VMs).
+                "--no-deps",
             ]
             + names
             + ["--quiet-pull"],
             env=env,
         )
-    except subprocess.CalledProcessError:
-        print(f"Restart of services '{names}' failed...")
+    except subprocess.CalledProcessError as e:
+        print(f"Restart of services '{names}' failed with exit code {e.returncode}")
 
 
 def _report_container_failures(
@@ -278,143 +310,45 @@ def _report_container_failures(
     raise RuntimeError(f"Containers failed to start: {failed}; see docker logs above")
 
 
-def check_containers(
-    services_to_start, check_only=False
-) -> Tuple[List[str], List[str]]:
-    docker_status = run_command_with_output(
-        ["docker", "ps", "--filter", "status=running"]
-    )
-    docker_status = [line.strip() for line in docker_status.splitlines()]
-
+def find_failing_containers(services_to_start) -> Tuple[List[str], List[str]]:
     missing_services: List[str] = []
     unhealthy_services: List[str] = []
 
-    # Identify missing containers
-    running_services = []
     for service in services_to_start:
-        if not find_container(service, docker_status):
+        running_ids = compose_container_ids(service, running_only=True)
+        if not running_ids:
             missing_services.append(service)
-        else:
-            running_services.append(service)
-
-    # Check health status of running containers
-    for service in running_services:
-        container_ids_raw = run_command_with_output(
-            ["docker", "compose", "ps", "-q", "--all", service], hide_output=True
-        ).strip()
-        container_ids = [
-            cid.strip() for cid in container_ids_raw.splitlines() if cid.strip()
-        ]
-
-        # If no containers are found for the service, consider it a problem and add it to missing_services
-        if not container_ids:
-            missing_services.append(service)
-
-        for cid in container_ids:
-            container_state_raw = run_command_with_output(
-                ["docker", "inspect", cid, "--format", "{{json .State.Health}}"],
-                hide_output=True,
-            ).strip()
-
-            try:
-                container_state_json = (
-                    None
-                    if not container_state_raw or container_state_raw.lower() == "null"
-                    else json.loads(container_state_raw)
-                )
-            except json.JSONDecodeError:
-                container_state_json = None
-
-            if isinstance(container_state_json, dict):
-                status = (container_state_json.get("Status") or "").lower()
-                if status == "unhealthy":
-                    logs = container_state_json.get("Log") or []
-                    print(f"Container {cid} is unhealthy.\nLogs: {logs}")
-                    if service not in unhealthy_services:
-                        unhealthy_services.append(service)
-                    break
-
-    # Used to call from cli
-    if check_only:
-        _report_container_failures(missing_services, unhealthy_services)
+            continue
+        for cid in running_ids:
+            if inspect_health(cid) == "unhealthy":
+                if service not in unhealthy_services:
+                    unhealthy_services.append(service)
+                break
 
     return missing_services, unhealthy_services
 
 
+def check_containers(services_to_start) -> None:
+    missing, unhealthy = find_failing_containers(services_to_start)
+    _report_container_failures(missing, unhealthy)
+
+
 def manage_containers(services_to_start) -> None:
     restart_attempts = 0
-    missing: List[str] = []
-    unhealthy: List[str] = []
     while restart_attempts < NATLAB_CONTAINER_RESTART_ATTEMPTS:
-        missing, unhealthy = check_containers(services_to_start, False)
+        missing, unhealthy = find_failing_containers(services_to_start)
         failed = missing + [s for s in unhealthy if s not in missing]
-        if failed:
-            print("Missing services: ", missing)
-            print("Unhealthy services: ", unhealthy)
-            quick_restart_container(
-                failed, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
-            )
-        else:
+        if not failed:
             return
+        print("Missing services: ", missing)
+        print("Unhealthy services: ", unhealthy)
+        quick_restart_container(
+            failed, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
+        )
         restart_attempts += 1
 
-    # Final check after all restart attempts exhausted
-    missing, unhealthy = check_containers(services_to_start, False)
-    failed = missing + [s for s in unhealthy if s not in missing]
-
-    print(f"missing services: {missing}, unhealthy services: {unhealthy}")
-
-    if failed:
-        # Dump logs only at the very end, only for still-failing containers
-        for service in missing:
-            dump_docker_logs(service)
-        for service in unhealthy:
-            dump_docker_logs(service)
-            dump_journal_logs(service)
-        raise RuntimeError(
-            f"Containers failed to start: {failed}; see docker logs above"
-        )
-
-
-def find_container(service: str, docker_status: List[str]) -> bool:
-    for line in docker_status:
-        if service in line:
-            return True
-
-    return False
-
-
-def check_docker_version_compatibility():
-    docker_version = version.parse(get_docker_version())
-
-    with open("docker-compose.yml", "r", encoding="utf-8") as compose_file:
-        compose_content = compose_file.read()
-    if docker_version < version.parse("28.0") and "nat-unprotected" in compose_content:
-        warnings.warn(
-            f"Nat-lab uses 'unprotected nat' bridge mode which require Docker >= v28.0 (detected: v{docker_version})"
-        )
-
-        compose_content = compose_content.replace("nat-unprotected", "nat")
-        shutil.copy("docker-compose.yml", "docker-compose.yml.bak")
-        with open("docker-compose.yml", "w", encoding="utf-8") as compose_file:
-            compose_file.write(compose_content)
-
-        print("Docker compose backup file created: ./docker-compose.yml.bak")
-        print("Changed to 'nat' bridge gateway mode")
-
-
-def get_docker_version():
-    try:
-        result = subprocess.run(
-            ["docker", "version", "--format", "{{.Server.Version}}"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError:
-        print("Error: Docker is not installed or not running.")
-        sys.exit(1)
-    return result.stdout.strip()
+    # Dump logs and raise for any containers still failing after all attempts.
+    check_containers(services_to_start)
 
 
 def generate_grpc(path):
@@ -482,17 +416,22 @@ def _resolve_skip_keywords(args) -> set:
     return skip_keywords
 
 
-def main():
-    all_services = run_command_with_output(
+def list_services() -> List[str]:
+    output = run_command_with_output(
         ["docker", "compose", "config", "--services"], hide_output=True
     )
-    valid_services = [service.strip() for service in all_services.splitlines()]
-    parser = argparse.ArgumentParser()
+    return [service.strip() for service in output.splitlines() if service.strip()]
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Build, start and manage the nat-lab docker/VM test environment."
+    )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     start_parser = subparsers.add_parser(
         "start",
-        help="Build and start the environment [--skip-fullcone] [--skip-windows] [--skip-windows-client-02] [--skip-mac] [--skip-nlx] [--lite-mode]",
+        help="Build and start the environment (run `start --help` for skip/scope flags)",
     )
     start_parser.add_argument(
         "--skip-fullcone",
@@ -541,8 +480,13 @@ def main():
     start_parser.add_argument(
         "--services-to-start",
         nargs="+",
-        choices=valid_services,
-        help="List of services to start",
+        metavar="SERVICE",
+        help="Start only these services (validated against the compose file)",
+    )
+    start_parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Force a no-cache rebuild of the base image (same as NATLAB_BUILD_NO_CACHE=1)",
     )
 
     subparsers.add_parser("restart", help="Restart (already existing) containers")
@@ -562,9 +506,21 @@ def main():
     if args.command == "start":
         skip_keywords = _resolve_skip_keywords(args)
         if args.services_to_start:
-            start(skip_keywords, services_to_start=args.services_to_start)
+            valid_services = list_services()
+            invalid = [s for s in args.services_to_start if s not in valid_services]
+            if invalid:
+                start_parser.error(
+                    "unknown service(s) for --services-to-start: "
+                    f"{', '.join(invalid)}\n"
+                    f"valid services: {', '.join(sorted(valid_services))}"
+                )
+            start(
+                skip_keywords,
+                services_to_start=args.services_to_start,
+                rebuild=args.rebuild,
+            )
         else:
-            start(skip_keywords)
+            start(skip_keywords, rebuild=args.rebuild)
     elif args.command == "restart":
         restart()
     elif args.command == "recreate":
@@ -576,7 +532,7 @@ def main():
     elif args.command == "kill":
         kill()
     elif args.command == "check-containers":
-        check_containers(services_to_start=valid_services, check_only=True)
+        check_containers(services_to_start=list_services())
 
 
 if __name__ == "__main__":

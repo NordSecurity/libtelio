@@ -7,8 +7,6 @@ ARG OPENWRT_IMG_GZ=openwrt-24.10.4-x86-64-generic-ext4-combined.img.gz
 
 ENV QEMU_CONFIG_TIMEOUT="300"
 
-COPY --chmod=0755 bin/ /opt/bin/
-
 WORKDIR /ipk-source
 COPY data/core_api/test.pem /ipk-source/
 
@@ -24,6 +22,10 @@ RUN mkdir -p /var/lib/qemu && \
 
 RUN mkdir -p /usr/local/share/vmconfig/container.d /usr/local/share/vmconfig/vm.d
 RUN mkdir -p /var/lib/vmconfig/container.d /var/lib/vmconfig/vm.d
+
+# bin/ changes far more often than the image; copy it (and the symlinks below that
+# point into it) last so editing a script does not re-trigger the gunzip above.
+COPY --chmod=0755 bin/ /opt/bin/
 
 RUN ln -s /opt/bin/openwrt/10-usbmount-initsh.sh    /usr/local/share/vmconfig/vm.d/10-usbmount-initsh.sh && \
     ln -s /opt/bin/openwrt/20-firewall.sh           /usr/local/share/vmconfig/vm.d/20-firewall.sh && \
