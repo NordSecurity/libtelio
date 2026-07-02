@@ -251,6 +251,7 @@ DOCKER_VM_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.VM_WINDOWS_1: "windows-client-01",
     ConnectionTag.VM_WINDOWS_2: "windows-client-02",
     ConnectionTag.VM_MAC: "mac-client-01",
+    ConnectionTag.VM_ANDROID_1: "android-client-01",
 }
 
 

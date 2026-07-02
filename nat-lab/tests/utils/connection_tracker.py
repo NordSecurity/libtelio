@@ -5,7 +5,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from enum import Enum
-from tests.utils.connection import Connection
+from tests.utils.connection import Connection, TargetOS
 from tests.utils.connection.ssh_connection import SshConnection
 from tests.utils.logger import log
 from tests.utils.ping import ping
@@ -442,6 +442,10 @@ class ConnectionTracker:
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["ConnectionTracker"]:
+        # Android has no `conntrack` binary; skip the tracker there.
+        if self._connection.target_os == TargetOS.Android:
+            yield self
+            return
         async with self._process.run(stdout_callback=self.on_stdout):
             await self._process.wait_stdin_ready()
 

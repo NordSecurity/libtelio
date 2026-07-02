@@ -1,6 +1,7 @@
 import glob
 import os
 import warnings
+from tests import config
 from tests.utils.connection import Connection, ConnectionTag, TargetOS
 from tests.utils.connection.docker_connection import DockerConnection, container_id
 from tests.utils.logger import log
@@ -48,11 +49,16 @@ async def get_log_without_flush(connection: Connection) -> str:
     if log retrieval is requested after process has already exited. In such a case there is
     nothing to flush and attempting to do so will cause errors.
     """
-    process = (
-        connection.create_process(["type", "tcli.log"], quiet=True)
-        if connection.target_os == TargetOS.Windows
-        else connection.create_process(["cat", "./tcli.log"], quiet=True)
-    )
+    if connection.target_os == TargetOS.Windows:
+        process = connection.create_process(["type", "tcli.log"], quiet=True)
+    elif connection.target_os == TargetOS.Android:
+        # The remote runs from UNIFFI_PATH_VM_ANDROID (the launcher cd's there),
+        # but the collector's adb shell starts at /, so cat the absolute path.
+        process = connection.create_process(
+            ["cat", config.UNIFFI_PATH_VM_ANDROID + "tcli.log"], quiet=True
+        )
+    else:
+        process = connection.create_process(["cat", "./tcli.log"], quiet=True)
     await process.execute()
     return process.get_stdout()
 

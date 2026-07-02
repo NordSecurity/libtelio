@@ -37,6 +37,8 @@ class TestVpnConnection:
     def _mutate_conntracker(
         self, alpha_setup_params: SetupParameters, vpn_conf: VpnConfig
     ):
+        if alpha_setup_params.connection_tag == ConnectionTag.VM_ANDROID_1:
+            return  # android has no conntrack binary; the tracker is skipped
         alpha_setup_params.connection_tracker_config = (
             generate_connection_tracker_config(
                 alpha_setup_params.connection_tag,
@@ -93,6 +95,16 @@ class TestVpnConnection:
                 ),
                 "10.0.254.19",
                 marks=pytest.mark.mac,
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_ANDROID_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    is_meshnet=False,
+                    ip_stack=IPStack.IPv4,  # android kernel has no ip6tables nat
+                ),
+                "10.0.254.24",
+                marks=pytest.mark.android,
             ),
         ],
     )

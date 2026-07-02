@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from tests import config
 from tests.config import LAN_ADDR_MAP, LAN_ADDR_MAP_V6
 from tests.utils.connection import Connection, TargetOS, ConnectionTag
+from tests.utils.connection.adb_connection import AdbConnection
 from tests.utils.connection.docker_connection import (
     DockerConnection,
     DOCKER_GW_MAP,
@@ -23,6 +24,7 @@ from tests.utils.logger import log
 from tests.utils.network_switcher import (
     Interface,
     NetworkSwitcher,
+    NetworkSwitcherAndroid,
     NetworkSwitcherDocker,
     NetworkSwitcherMac,
     NetworkSwitcherWindows,
@@ -44,6 +46,8 @@ class ConnectionManager:
 
 def get_libtelio_binary_path(path: str, connection: Connection) -> str:
     target_os = connection.target_os
+    if connection.tag == ConnectionTag.VM_ANDROID_1:
+        return config.LIBTELIO_BINARY_PATH_VM_ANDROID + path
     if target_os == TargetOS.Linux:
         return config.LIBTELIO_BINARY_PATH_DOCKER + path
 
@@ -58,6 +62,8 @@ def get_libtelio_binary_path(path: str, connection: Connection) -> str:
 
 def get_uniffi_path(connection: Connection) -> str:
     target_os = connection.target_os
+    if connection.tag == ConnectionTag.VM_ANDROID_1:
+        return config.UNIFFI_PATH_VM_ANDROID + "libtelio_remote.py"
     if target_os == TargetOS.Linux:
         return "/libtelio/nat-lab/tests/uniffi/libtelio_remote.py"
     if target_os == TargetOS.Windows:
@@ -75,6 +81,10 @@ async def new_connection_raw(
         if tag in DOCKER_SERVICE_IDS:
             async with Docker() as docker:
                 async with DockerConnection.new_connection(docker, tag) as connection:
+                    yield connection
+        elif tag is ConnectionTag.VM_ANDROID_1:
+            async with Docker() as docker:
+                async with AdbConnection.new_connection(docker, tag) as connection:
                     yield connection
         elif is_tag_valid_for_ssh_connection(tag):
             async with SshConnection.new_connection(
@@ -96,6 +106,8 @@ async def create_network_switcher(
         return await NetworkSwitcherWindows.create(connection)
     if tag == ConnectionTag.VM_MAC:
         return NetworkSwitcherMac(connection)
+    if tag == ConnectionTag.VM_ANDROID_1:
+        return NetworkSwitcherAndroid(connection)
     if tag in [
         ConnectionTag.VM_OPENWRT_GW_1,
         ConnectionTag.VM_OPENWRT_GW_2,
@@ -378,6 +390,8 @@ def is_tag_valid_for_ssh_connection(tag: ConnectionTag) -> bool:
 async def set_secondary_ifc_state(
     connection: Connection, enable: bool, secondary_ifc: Optional[Interface] = None
 ) -> Optional[Interface]:
+    if connection.tag == ConnectionTag.VM_ANDROID_1:
+        return None  # single bridged interface, no secondary
     if connection.target_os == TargetOS.Linux:
         await connection.create_process([
             "ip",

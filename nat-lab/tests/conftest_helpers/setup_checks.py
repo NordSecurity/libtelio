@@ -47,6 +47,7 @@ SESSION_MARK_TO_CONTAINERS = {
         ConnectionTag.VM_LINUX_FULLCONE_GW_2,
     ],
     "mac": [ConnectionTag.VM_MAC],
+    "android": [ConnectionTag.VM_ANDROID_1],
     "nlx": [ConnectionTag.VM_LINUX_NLX_1],
     "openwrt": OPENWRT_VM_TAGS,
     "windows": [ConnectionTag.VM_WINDOWS_1],
@@ -210,7 +211,7 @@ async def setup_check_duplicate_mac_addresses(
                 )
                 raise e
 
-            if conn.target_os == TargetOS.Linux:
+            if conn.target_os in (TargetOS.Linux, TargetOS.Android):
                 cmd = ["sh", "-c", "ip link show | awk '/link\\/ether/ {print $2}'"]
             elif conn.target_os == TargetOS.Mac:
                 cmd = ["sh", "-c", "ifconfig | awk '/ether/ {print $2}'"]

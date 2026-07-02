@@ -4,11 +4,13 @@ import ssl
 import subprocess
 import urllib.error
 import urllib.request
+from aiodocker import Docker
 from contextlib import AsyncExitStack
 from http import HTTPStatus
 from tests.config import LAN_ADDR_MAP, CORE_API_IP, CORE_API_CREDENTIALS
 from tests.conftest_helpers.setup_checks import OPENWRT_VM_TAGS
 from tests.utils.connection import ConnectionTag, clear_ephemeral_setups_set
+from tests.utils.connection.adb_connection import AdbConnection
 from tests.utils.connection.ssh_connection import SshConnection
 from tests.utils.connection_util import new_connection_raw, is_running
 from tests.utils.logger import log, setup_log
@@ -154,6 +156,14 @@ async def _copy_vm_binaries(tag: ConnectionTag):
         raise e
 
 
+async def _copy_android_binaries(tag: ConnectionTag):
+    # Android uses adb (not ssh); push the libtelio runtime into the Termux work dir.
+    setup_log.info("Copying binaries for %s", tag)
+    async with Docker() as docker:
+        async with AdbConnection.new_connection(docker, tag, copy_binaries=True):
+            pass
+
+
 async def copy_vm_binaries_if_needed(session_vm_marks: set[str]):
     if "windows" in session_vm_marks:
         await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_1)
@@ -166,6 +176,8 @@ async def copy_vm_binaries_if_needed(session_vm_marks: set[str]):
     if "openwrt" in session_vm_marks:
         for tag in OPENWRT_VM_TAGS:
             await _copy_vm_binaries(tag)
+    if "android" in session_vm_marks:
+        await _copy_android_binaries(ConnectionTag.VM_ANDROID_1)
 
 
 async def start_tcpdump_processes(

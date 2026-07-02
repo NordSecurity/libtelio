@@ -1173,6 +1173,58 @@ services:
       start_period: 10s
       retries: 20
 
+  # NAT gateway for the Android LAN, bridging android-net-01 to the internet
+  # network. Same pattern as windows-gw/mac-gw.
+  android-gw-01:
+    hostname: android-gw-01
+    <<: *common-gw
+    networks:
+      internet:
+        ipv4_address: 10.0.254.24
+        priority: 1000
+      android-net-01:
+        ipv4_address: 192.168.118.254
+        priority: 900
+
+  # Android emulator (x86_64, KVM). The emulator's NIC is L2-bridged onto
+  # android-net-01 via a TAP interface (entrypoint sets up br0+tap0+dnsmasq), so
+  # the guest gets GUEST_IP over DHCP and is directly addressable from the host -
+  # same bridging model as the dockur Windows/Mac VMs. The container keeps the
+  # docker-assigned helper IP (.2); the guest owns GUEST_IP (.54).
+  # Image is built/published by the separate android-emulator-docker repo
+  # (Termux+python+Pyro5 baked in); nat-lab only pulls it (LLT-4138).
+  android-client-01:
+    hostname: android-client-01
+    image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/android-emulator-docker:${LIBTELIO_ENV_NAT_LAB_ANDROID_VM_TAG}
+    devices:
+      - "/dev/net/tun"
+      - "/dev/kvm"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    depends_on:
+      android-gw-01:
+        condition: service_healthy
+    environment:
+      GUEST_IP: "192.168.118.54"
+      GUEST_GATEWAY: "192.168.118.254"
+      GUEST_DNS: "10.0.80.82"
+    volumes:
+      # The image is generic; libtelio's binaries (pushed to the guest by
+      # copy_binaries) and the kill_process_by_natlab_id script come from the repo
+      # mount at runtime - same as the other nat-lab containers.
+      - ../:/libtelio
+      - ./bin/kill_process_by_natlab_id:/opt/bin/kill_process_by_natlab_id
+    networks:
+      android-net-01:
+        ipv4_address: 192.168.118.2
+    healthcheck:
+      test: "ls /ready"
+      interval: 5s
+      retries: 120
+      start_period: 30s
+      timeout: 5s
+
 networks:
   # Network representing public internet,
   # various services like DERP/STUN will be hosted
@@ -1342,4 +1394,11 @@ networks:
       driver: default
       config:
         - subnet: 192.168.155.0/24
+
+  android-net-01:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.118.0/24
 

@@ -461,7 +461,7 @@ def recreate_all():
 
 def _resolve_skip_keywords(args) -> set:
     if args.lite_mode:
-        return {"fullcone", "windows", "mac", "nlx", "openwrt"}
+        return {"fullcone", "windows", "mac", "nlx", "openwrt", "android"}
     skip_keywords: set = set()
     if args.skip_fullcone:
         skip_keywords.add("fullcone")
@@ -477,6 +477,8 @@ def _resolve_skip_keywords(args) -> set:
         skip_keywords.add("nlx")
     if args.skip_openwrt:
         skip_keywords.add("openwrt")
+    if args.skip_android:
+        skip_keywords.add("android")
     return skip_keywords
 
 
@@ -526,9 +528,14 @@ def main():
         help="Skip starting openwrt related containers",
     )
     start_parser.add_argument(
+        "--skip-android",
+        action="store_true",
+        help="Skip starting the android-client-01 emulator container",
+    )
+    start_parser.add_argument(
         "--lite-mode",
         action="store_true",
-        help="Skip all heavy containers (windows, mac, fullcone and nlx)",
+        help="Skip all heavy containers (windows, mac, fullcone, nlx, openwrt and android)",
     )
 
     start_parser.add_argument(

@@ -41,7 +41,21 @@ class Ping:
         self._ip_proto = testing.unpack_optional(get_ip_address_type(ip))
         kill_id = secrets.token_hex(8).upper()
 
-        if connection.target_os == TargetOS.Windows:
+        if connection.target_os == TargetOS.Android:
+            # Android's iputils ping rejects -4/-6 (IPv4 is `ping`, IPv6 is
+            # `ping6`); otherwise it runs continuously like the Linux/Mac path
+            # and is stopped on teardown via the kill_id.
+            self._process = connection.create_process(
+                [
+                    ("ping" if self._ip_proto == IPProto.IPv4 else "ping6"),
+                    "-p",
+                    kill_id,
+                    ip,
+                ],
+                kill_id,
+                quiet=True,
+            )
+        elif connection.target_os == TargetOS.Windows:
             size = 600 + (int(kill_id[:2], 16) % 200)  # size 600–799 bytes
             self._process = connection.create_process(
                 [

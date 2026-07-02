@@ -5,6 +5,7 @@ import subprocess
 from asyncio import Event, wait_for
 from contextlib import asynccontextmanager, AsyncExitStack
 from datetime import datetime
+from tests.config import ANDROID_DEVICE_TMP
 from tests.utils.connection import Connection, ConnectionTag, TargetOS
 from tests.utils.logger import log
 from tests.utils.output_notifier import OutputNotifier
@@ -16,6 +17,10 @@ PCAP_FILE_PATH = {
     TargetOS.Linux: "/dump.pcap",
     TargetOS.Mac: "/var/root/dump.pcap",
     TargetOS.Windows: "C:\\workspace\\dump.pcap",
+    # The Linux default `/dump.pcap` lands on `/`, which is a read-only
+    # partition on Android (there's no /tmp). ANDROID_DEVICE_TMP is on the
+    # read-write /data partition - the adb scratch dir used elsewhere too.
+    TargetOS.Android: f"{ANDROID_DEVICE_TMP}dump.pcap",
 }
 PKTMON_LOG_FILE_WINDOWS = "C:\\workspace\\pktmon.etl"
 # Circular-buffer cap, raised from the 512 MB default so long captures don't
@@ -226,7 +231,7 @@ def build_tcpdump_command(
     include_ssh: bool = False,
     using_sudo: bool = False,
 ):
-    if target_os not in [TargetOS.Linux, TargetOS.Mac]:
+    if target_os not in [TargetOS.Linux, TargetOS.Mac, TargetOS.Android]:
         raise ValueError(
             f"tcpdump is not supported on {target_os}, use PktmonCapture on Windows"
         )
@@ -236,6 +241,12 @@ def build_tcpdump_command(
     else:
         command = []
     command += ["tcpdump", "-n"]
+
+    if target_os == TargetOS.Android:
+        # Android's tcpdump is torn down abruptly (the container kill script
+        # can't reach the guest process behind adb), so write packet-buffered
+        # (-U) to avoid losing the last block as a truncated savefile.
+        command += ["-U"]
 
     if output_file:
         command += ["-w", output_file]
@@ -406,7 +417,7 @@ async def make_tcpdump(
                 if conn.target_os == TargetOS.Windows:
                     await strip_ssh_from_pcap(path)
 
-                if conn.target_os in [TargetOS.Linux, TargetOS.Mac]:
+                if conn.target_os in [TargetOS.Linux, TargetOS.Mac, TargetOS.Android]:
                     await conn.create_process(
                         ["rm", "-f", PCAP_FILE_PATH[conn.target_os]], quiet=True
                     ).execute()
