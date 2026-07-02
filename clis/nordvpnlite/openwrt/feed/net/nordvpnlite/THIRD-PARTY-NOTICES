@@ -411,10 +411,6 @@ The following dependencies are licensed under the Apache-2.0 license.
 
 - [proc-macro-crate](https://github.com/bkchr/proc-macro-crate) *(also available under: MIT)*
 
-- [proc-macro-error](https://gitlab.com/CreepySkeleton/proc-macro-error) *(also available under: MIT)*
-
-- [proc-macro-error-attr](https://gitlab.com/CreepySkeleton/proc-macro-error) *(also available under: MIT)*
-
 - [proc-macro2](https://github.com/dtolnay/proc-macro2) *(also available under: MIT)*
 
 - [proptest](https://github.com/proptest-rs/proptest) *(also available under: MIT)*
@@ -947,8 +943,6 @@ The following dependencies are licensed under the MIT license.
 
 - [atomic-waker](https://github.com/smol-rs/atomic-waker) *(also available under: Apache-2.0)*
 
-- [atty](https://github.com/softprops/atty)
-
 - [axum](https://github.com/tokio-rs/axum)
 
 - [axum-core](https://github.com/tokio-rs/axum)
@@ -1307,9 +1301,9 @@ The following dependencies are licensed under the MIT license.
 
 - [parking_lot](https://github.com/Amanieu/parking_lot) *(also available under: Apache-2.0)*
 
-- [parking_lot_core](https://github.com/Amanieu/parking_lot) *(also available under: Apache-2.0)*
-
 - [paste](https://github.com/dtolnay/paste) *(also available under: Apache-2.0)*
+
+- [parking_lot_core](https://github.com/Amanieu/parking_lot) *(also available under: Apache-2.0)*
 
 - [percent-encoding](https://github.com/servo/rust-url/) *(also available under: Apache-2.0)*
 
@@ -1358,10 +1352,6 @@ The following dependencies are licensed under the MIT license.
 - [predicates-tree](https://github.com/assert-rs/predicates-rs/tree/master/crates/tree) *(also available under: Apache-2.0)*
 
 - [proc-macro-crate](https://github.com/bkchr/proc-macro-crate) *(also available under: Apache-2.0)*
-
-- [proc-macro-error](https://gitlab.com/CreepySkeleton/proc-macro-error) *(also available under: Apache-2.0)*
-
-- [proc-macro-error-attr](https://gitlab.com/CreepySkeleton/proc-macro-error) *(also available under: Apache-2.0)*
 
 - [proc-macro2](https://github.com/dtolnay/proc-macro2) *(also available under: Apache-2.0)*
 
@@ -2703,7 +2693,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
     means any form of the work other than Source Code Form.
 
 1.7. "Larger Work"
-    means a work that combines Covered Software with other material, in 
+    means a work that combines Covered Software with other material, in
     a separate file or files, that is not Covered Software.
 
 1.8. "License"
