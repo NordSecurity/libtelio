@@ -322,12 +322,13 @@ impl LocalNameServer {
                     // TODO: LLT-7054: Remove once migration is fully validated
                     if let Some(dns_packet) = DnsPacket::new(&raw_query) {
                         telio_log_debug!(
-                            "Request: id: {} is_response: {} opcode: {:?} recursion_desired: {} query_count: {} rcode: {:?}",
+                            "Request: id: {} is_response: {} opcode: {:?} recursion_desired: {} query_count: {} additional_count: {} rcode: {:?}",
                             dns_packet.get_id(),
                             dns_packet.get_is_response(),
                             dns_packet.get_opcode(),
                             dns_packet.get_is_recursion_desirable(),
                             dns_packet.get_query_count(),
+                            dns_packet.get_additional_rr_count(),
                             dns_packet.get_rcode(),
                         );
                         for query in dns_packet.get_queries() {
@@ -716,7 +717,7 @@ impl RequestInfo {
                 };
                 tcp_response.set_checksum(checksum);
 
-                telio_log_debug!("UDP response: {:?}", &tcp_response);
+                telio_log_debug!("TCP response: {:?}", &tcp_response);
                 Ok(length)
             }
         }

@@ -180,6 +180,7 @@ impl RawForwarder {
 
     /// Update the list of upstream resolvers
     pub(crate) async fn set_upstreams(&self, addrs: Vec<SocketAddr>) {
+        telio_log_debug!("Changing forwarder upstreams: {addrs:?}");
         let mut state = self.upstreams.lock().await;
         state.generation = state.generation.wrapping_add(1);
         state.addrs = addrs;
@@ -222,7 +223,7 @@ impl RawForwarder {
                             ).await;
                         }
                         None => {
-                            telio_log_warn!("Forwarder channel dropped");
+                            telio_log_debug!("Forwarder channel dropped");
                             break;
                         },
                     }
