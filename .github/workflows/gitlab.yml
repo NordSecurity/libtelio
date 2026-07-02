@@ -42,7 +42,7 @@ jobs:
        github.ref_name == 'main' ||
        startsWith(github.ref_name, 'release/') ||
        needs.check-branch-has-pr.outputs.has_pr == 'true')
-    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@25e94a4be8c887376dc98ec536132594738ec32a
+    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@1e47022d8ab1ecb75310242902b474142f74561e
     secrets:
       ci-api-v4-url: ${{ secrets.CODEHUB_CI_API_V4_URL }}
       access-token: ${{ secrets.CODEHUB_GITLAB_API_TOKEN }}
