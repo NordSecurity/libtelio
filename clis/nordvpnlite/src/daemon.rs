@@ -275,10 +275,20 @@ impl TelioTaskCmd {
                             .unwrap_or(DEFAULT_WIREGUARD_PORT),
                     )),
                 };
-                match ctx.telio.connect_exit_node(&node) {
+                let connect = if exit_node.post_quantum {
+                    Device::connect_vpn_post_quantum
+                } else {
+                    Device::connect_exit_node
+                };
+                match connect(&ctx.telio, &node) {
                     Ok(_) => {
+                        let kind = if exit_node.post_quantum {
+                            "post quantum "
+                        } else {
+                            ""
+                        };
                         info!(
-                            "Connected to exit node: {} ({}) [{}]",
+                            "Connected to {kind}exit node: {} ({}) [{}]",
                             exit_node.endpoint.address,
                             exit_node.endpoint.public_key,
                             exit_node.endpoint.hostname.as_deref().unwrap_or_default()
@@ -329,6 +339,7 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
                 TelioTaskCmd::ConnectToExitNode(ExitNodeConfig {
                     endpoint: endpoint.to_owned(),
                     dns: config.dns.clone(),
+                    post_quantum: config.post_quantum,
                 })
             } else {
                 error!("Getting exit node endpoint failed: empty list");
