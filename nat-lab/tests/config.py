@@ -283,8 +283,6 @@ UNIFFI_PATH_VM_MAC = "/var/root/workspace/uniffi/"
 ANDROID_DEVICE_TMP = "/data/local/tmp/"
 LIBTELIO_BINARY_PATH_VM_ANDROID = "/data/data/com.termux/files/home/work/"
 UNIFFI_PATH_VM_ANDROID = "/data/data/com.termux/files/home/work/"
-# Absolute path for invoking a baked tool when a same-named toybox tool would
-# shadow it on PATH (e.g. nc) - see tests/utils/netcat.py.
 TERMUX_BIN_VM_ANDROID = "/data/data/com.termux/files/usr/bin/"
 
 LIBTELIO_LOCAL_IP = "10.5.0.2"

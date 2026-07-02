@@ -1,21 +1,29 @@
 import asyncio
-import secrets
 import shlex
-from .docker_process import DockerProcess, _EXIT_CODE_SIGKILL, _EXIT_CODE_SIGTERM
+from .docker_process import (
+    DockerProcess,
+    _EXIT_CODE_SIGKILL,
+    _EXIT_CODE_SIGTERM,
+    generate_kill_id,
+)
 from .process import ProcessExecError, StreamCallback
 from aiodocker.containers import DockerContainer
 from contextlib import asynccontextmanager
 from tests.utils.logger import log
 from typing import AsyncIterator, List, Optional
 
+_GUEST_KILL_TIMEOUT = 10.0
+
 # Killing the in-container adb client can orphan the `su 0` child on the guest,
-# leaking the tool (ping/iperf3/nc/...). Find the guest pid by KILL_ID and kill
-# it; echo "killed:<pids>" so the caller can log what was terminated.
+# leaking the tool (ping/iperf3/nc/...). Single grep pass to find candidates,
+# then a NUL-anchored exact match per candidate (mirrors
+# bin/kill_process_by_natlab_id) so one id can never match another's KILL_ID.
 _GUEST_KILL_SCRIPT = (
     'id="$1"; [ -n "$id" ] || exit 2; killed=""; '
-    "for d in /proc/[0-9]*; do "
-    'grep -aq "KILL_ID=$id" "$d/environ" 2>/dev/null || continue; '
-    'pid="${d#/proc/}"; kill "$pid" 2>/dev/null && killed="$killed $pid"; '
+    'for f in $(grep -alF "KILL_ID=$id" /proc/[0-9]*/environ 2>/dev/null); do '
+    'tr "\\000" "\\n" < "$f" 2>/dev/null | grep -qxF "KILL_ID=$id" || continue; '
+    'pid="${f#/proc/}"; pid="${pid%/environ}"; '
+    'kill "$pid" 2>/dev/null && killed="$killed $pid"; '
     'done; [ -n "$killed" ] && echo "killed:$killed"; exit 0'
 )
 
@@ -48,7 +56,7 @@ class AdbProcess(DockerProcess):
         # Fix the id now so we can export it into the *guest* env; DockerProcess
         # only sets KILL_ID on the in-container adb client, which the guest never
         # sees.
-        kill_id = kill_id if kill_id else secrets.token_hex(8).upper()
+        kill_id = kill_id or generate_kill_id()
         self._serial = serial
         # adb passes a single string to the device shell, so quote+join each arg.
         # extra_path is appended (not prepended) so system/toybox tools keep
@@ -62,7 +70,6 @@ class AdbProcess(DockerProcess):
         super().__init__(container, container_name, adb_command, kill_id)
 
     async def _kill_guest_process(self) -> None:
-        """Best-effort: terminate the guest process carrying our KILL_ID."""
         inner = f"su 0 sh -c {shlex.quote(_GUEST_KILL_SCRIPT)} _ {shlex.quote(self._kill_id)}"
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -77,9 +84,22 @@ class AdbProcess(DockerProcess):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, _ = await proc.communicate()
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=_GUEST_KILL_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                proc.kill()
+                raise
             out = (stdout or b"").decode(errors="replace").strip()
-            if out.startswith("killed:"):
+            if proc.returncode != 0:
+                log.warning(
+                    "[%s] guest kill-by-id failed (rc=%s): %s",
+                    self._container_name,
+                    proc.returncode,
+                    out + " " + (stderr or b"").decode(errors="replace").strip(),
+                )
+            elif out.startswith("killed:"):
                 log.info(
                     "[%s] guest kill-by-id terminated pid(s)%s (KILL_ID=%s)",
                     self._container_name,
@@ -87,14 +107,21 @@ class AdbProcess(DockerProcess):
                     self._kill_id,
                 )
         except Exception as e:  # pylint: disable=broad-exception-caught
-            log.debug(
+            log.warning(
                 "[%s] guest kill-by-id failed (ignored): %s", self._container_name, e
             )
 
     async def _kill_exec_if_running(self) -> None:
-        # Kill the guest process first (adb may orphan the su child when the exec
-        # stream closes), then let the base class end the adb client exec.
-        await self._kill_guest_process()
+        # Guest kill must precede the base kill (ending the adb client exec is
+        # what orphans the su child) and is gated the same way as the base one:
+        # only while the exec is still running. Inspect failures are swallowed
+        # here because super() re-runs the same checks and logs/raises itself.
+        try:
+            exec_alive = (await self._wait_for_process_start())["ExitCode"] is None
+        except (asyncio.TimeoutError, RuntimeError):
+            exec_alive = False
+        if exec_alive:
+            await self._kill_guest_process()
         await super()._kill_exec_if_running()
 
     @asynccontextmanager
