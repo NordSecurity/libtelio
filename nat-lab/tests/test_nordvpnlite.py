@@ -13,20 +13,13 @@ from tests.nordvpnlite import (
     VPNConfig,
     VPNServer,
 )
+from tests.test_pq import inspect_preshared_key
 from tests.utils import stun
-from tests.utils.connection import Connection, ConnectionTag
+from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import new_connection_by_tag
 from tests.utils.logger import log
 from tests.utils.ping import ping
 from tests.utils.process.process import ProcessExecError
-
-EMPTY_PRESHARED_KEY_SLOT = "(none)"
-
-
-async def _read_preshared_key_slot(nlx_conn: Connection) -> str:
-    output = await nlx_conn.create_process(["nlx", "show", "nlx0", "dump"]).execute()
-    last = output.get_stdout().splitlines()[-1]
-    return last.split()[1]
 
 
 @pytest.mark.parametrize(
@@ -248,7 +241,4 @@ async def test_nordvpnlite_pq_vpn_connection(config_provider: str) -> None:
             async with new_connection_by_tag(
                 ConnectionTag.VM_LINUX_NLX_1
             ) as nlx_conn:
-                preshared = await _read_preshared_key_slot(nlx_conn)
-                assert (
-                    preshared != EMPTY_PRESHARED_KEY_SLOT
-                ), "Preshared key was not assigned — PQ handshake did not occur"
+                await inspect_preshared_key(nlx_conn)
