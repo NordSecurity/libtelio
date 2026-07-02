@@ -16,9 +16,33 @@ jobs:
     with:
       key: TRIGGERED_REF
 
+  # Branch pushes only reach GitLab (full build + natlab suite) when the branch
+  # has an open PR; WIP branches without a PR shouldn't occupy the natlab runners.
+  check-branch-has-pr:
+    if: github.event_name == 'push' && github.ref_name != 'main' && !startsWith(github.ref_name, 'release/')
+    runs-on: ubuntu-22.04
+    permissions:
+      pull-requests: read
+    outputs:
+      has_pr: ${{ steps.pr.outputs.has_pr }}
+    steps:
+      - id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          COUNT=$(gh api "repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:${{ github.ref_name }}&state=open" --jq 'length')
+          echo "has_pr=$([ "$COUNT" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "Open PRs for ${{ github.ref_name }}: $COUNT"
+
   trigger-gitlab-pipeline:
-    needs: read-triggered-ref
-    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@25e94a4be8c887376dc98ec536132594738ec32a
+    needs: [read-triggered-ref, check-branch-has-pr]
+    if: >-
+      always() && needs.read-triggered-ref.result == 'success' &&
+      (github.event_name != 'push' ||
+       github.ref_name == 'main' ||
+       startsWith(github.ref_name, 'release/') ||
+       needs.check-branch-has-pr.outputs.has_pr == 'true')
+    uses: NordSecurity/trigger-gitlab-pipeline/.github/workflows/trigger-gitlab-pipeline.yml@1e47022d8ab1ecb75310242902b474142f74561e
     secrets:
       ci-api-v4-url: ${{ secrets.CODEHUB_CI_API_V4_URL }}
       access-token: ${{ secrets.CODEHUB_GITLAB_API_TOKEN }}
