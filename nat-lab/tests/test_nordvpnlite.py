@@ -2,20 +2,31 @@ import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from pathlib import Path
-from tests.config import PHOTO_ALBUM_IP, STUN_SERVER, WG_SERVER, WG_SERVER_2
+from tests.config import NLX_SERVER, PHOTO_ALBUM_IP, STUN_SERVER, WG_SERVER, WG_SERVER_2
 from tests.helpers import setup_connections
 from tests.nordvpnlite import (
     NordVpnLite,
     ConfigPresetName,
     CONFIG_PRESETS,
+    InterfaceConfig,
     NordVpnLiteConfig,
     VPNConfig,
+    VPNServer,
 )
 from tests.utils import stun
-from tests.utils.connection import ConnectionTag
+from tests.utils.connection import Connection, ConnectionTag
+from tests.utils.connection_util import new_connection_by_tag
 from tests.utils.logger import log
 from tests.utils.ping import ping
 from tests.utils.process.process import ProcessExecError
+
+EMPTY_PRESHARED_KEY_SLOT = "(none)"
+
+
+async def _read_preshared_key_slot(nlx_conn: Connection) -> str:
+    output = await nlx_conn.create_process(["nlx", "show", "nlx0", "dump"]).execute()
+    last = output.get_stdout().splitlines()[-1]
+    return last.split()[1]
 
 
 @pytest.mark.parametrize(
@@ -187,3 +198,57 @@ async def test_nordvpnlite_config_created(
             ), "Default config was not created"
         finally:
             await nordvpnlite.remove_config(config_path)
+
+
+@pytest.mark.nlx
+@pytest.mark.parametrize(
+    "config_provider",
+    ["manual", "iproute"],
+)
+async def test_nordvpnlite_pq_vpn_connection(config_provider: str) -> None:
+    """Verify that nordvpnlite connects to a PQ-capable VPN server using
+    post-quantum handshake (mirrors the behaviour exercised by
+    ``test_pq.TestPqVpnConnection`` for the libtelio client)."""
+    config = NordVpnLiteConfig(
+        vpn=VPNConfig(
+            server=VPNServer(
+                address=str(NLX_SERVER["ipv4"]),
+                public_key=str(NLX_SERVER["public_key"]),
+            )
+        ),
+        interface=InterfaceConfig(config_provider=config_provider),
+        post_quantum=True,
+    )
+
+    async with AsyncExitStack() as exit_stack:
+        nordvpnlite = await NordVpnLite.new(exit_stack, config)
+        await nordvpnlite.request_credentials_from_core()
+
+        async with nordvpnlite.start():
+            log.debug(
+                "NordVPN Lite started, waiting for PQ VPN connected state..."
+            )
+            await nordvpnlite.wait_for_vpn_connected_state()
+
+            if config.interface.config_provider == "manual":
+                await exit_stack.enter_async_context(
+                    nordvpnlite.setup_interface(vpn_routes=True)
+                )
+
+            await ping(nordvpnlite.connection, PHOTO_ALBUM_IP)
+
+            ip = await stun.get(nordvpnlite.connection, STUN_SERVER)
+            assert (
+                ip == NLX_SERVER["ipv4"]
+            ), f"wrong public IP when connected to PQ VPN {ip}"
+
+            # Confirm the PQ handshake actually took place by inspecting the
+            # preshared-key slot on the NLX server side — a plain WireGuard
+            # connection would leave it unset.
+            async with new_connection_by_tag(
+                ConnectionTag.VM_LINUX_NLX_1
+            ) as nlx_conn:
+                preshared = await _read_preshared_key_slot(nlx_conn)
+                assert (
+                    preshared != EMPTY_PRESHARED_KEY_SLOT
+                ), "Preshared key was not assigned — PQ handshake did not occur"
