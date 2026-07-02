@@ -23,6 +23,7 @@ use telio_model::features::TtlValue;
 use telio_utils::{telio_log_debug, telio_log_warn};
 use thiserror::Error;
 
+use crate::error::{Error, Result as DnsResult};
 pub(crate) const NORD_ZONE: &str = "nord.";
 pub(crate) const NORD_ZONE_SUFFIX: &str = ".nord.";
 
@@ -38,7 +39,7 @@ pub type Records = HashMap<String, Vec<IpAddr>>;
 
 /// Errors returned by local nord zone resolver
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
-pub(crate) enum NordZoneError {
+pub enum NordZoneError {
     /// Record contains a non nord entry
     #[error("record contains non-nord entry {0}")]
     NonNordRecord(String),
@@ -192,15 +193,11 @@ pub(crate) struct AuthoritativeZone {
 }
 
 impl AuthoritativeZone {
-    pub(crate) async fn new(
-        name: &str,
-        records: &Records,
-        ttl_value: TtlValue,
-    ) -> Result<Self, String> {
+    pub(crate) async fn new(name: &str, records: &Records, ttl_value: TtlValue) -> DnsResult<Self> {
         // TODO: rewrite code so that this assert is not needed.
         for domain in records.keys() {
             if !domain.contains(name) {
-                return Err(format!("{domain} does not end with {name}"));
+                return Err(Error::record_outside_zone(domain, name));
             }
         }
         let zone_name = Name::from_str(name)?;
@@ -329,7 +326,7 @@ pub(crate) struct ForwardZone {
 }
 
 impl ForwardZone {
-    pub(crate) async fn new(name: &str, ips: &[IpAddr]) -> Result<Self, String> {
+    pub(crate) async fn new(name: &str, ips: &[IpAddr]) -> DnsResult<Self> {
         let mut options = ResolverOpts::default();
         // Some tools and browsers do not accept responses without intermediates preserved
         options.preserve_intermediates = true;
@@ -844,5 +841,32 @@ mod tests {
         assert_eq!(nz.records.len(), 0);
         assert!(!nz.records.contains_key("alice.nord."));
         assert!(!nz.records.contains_key("bob.nord."));
+    }
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+    use std::net::IpAddr;
+    use telio_model::features::TtlValue;
+
+    // Helper for tests: creates Records with one entry (domain, ip)
+    // Used to test zone validation
+    fn make_records(domain: &str, ip: IpAddr) -> Records {
+        let mut records = Records::new();
+        records.insert(domain.to_string(), vec![ip]);
+        records
+    }
+
+    // Test: returns Error::RecordOutsideZone if record domain does not match zone
+    #[tokio::test]
+    async fn returns_record_outside_zone_error() {
+        let records = make_records("domain.bad.", IpAddr::from([1, 2, 3, 4]));
+        let result = AuthoritativeZone::new("nord", &records, TtlValue(60)).await;
+        assert!(matches!(
+            result,
+            Err(Error::RecordOutsideZone { ref domain, ref zone })
+                if domain == "domain.bad." && zone == "nord"
+        ));
     }
 }

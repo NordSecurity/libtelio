@@ -1,7 +1,8 @@
+use crate::error::Result as DnsResult;
 use crate::{
     forwarder::RawForwarder,
-    packet_decoder::{find_nord_query, normalize_qname, parse_dns_query_packet},
-    packet_encoder::DnsResponseBuilder,
+    packet_decoder::{find_nord_query, normalize_qname, parse_dns_query_packet, DnsParseError},
+    packet_encoder::{DnsBuildError, DnsResponseBuilder},
     resolver::Resolver,
     zone::{AuthoritativeZone, ClonableZones, ForwardZone, NordZone, Records, NORD_ZONE},
 };
@@ -34,6 +35,8 @@ use tokio::{net::UdpSocket, sync::Mutex};
 
 use telio_utils::{format_hex, telio_log_debug, telio_log_error, telio_log_trace, telio_log_warn};
 
+use thiserror::Error;
+
 const IPV4_HEADER: usize = 20; // bytes
 const IPV6_HEADER: usize = 40; // bytes
 const MAX_PACKET: usize = 2048;
@@ -42,6 +45,66 @@ const TCP_MIN_HEADER: usize = 20;
 const MAX_CONCURRENT_QUERIES: usize = 256;
 const IDLE_TIME: Duration = Duration::from_secs(1);
 const DNS_PORT: u16 = 53;
+
+#[derive(Debug, Error)]
+enum PacketError {
+    #[error("Empty request packet")]
+    EmptyPacket,
+
+    #[error("Invalid IP version: {0}")]
+    InvalidIpVersion(u8),
+
+    #[error("Invalid IP packet")]
+    InvalidIpPacket,
+
+    #[error("Unsupported protocol for DNS request")]
+    InvalidProtocol,
+
+    #[error("Invalid UDP checksum")]
+    InvalidUdpChecksum,
+
+    #[error("Invalid DNS port: {0}")]
+    InvalidDnsPort(u16),
+
+    #[error("Failed to build IP packet")]
+    IpPacketCreationFailed,
+
+    #[error("Failed to build UDP packet")]
+    UdpPacketCreationFailed,
+
+    #[error("Failed to build TCP packet from request packet")]
+    TcpPacketCreationFailed,
+
+    #[error("Failed to decode DNS request")]
+    DecodeMessageRequestFailed,
+
+    #[error("Missing DNS request payload")]
+    MissingDnsRequest,
+
+    #[error("DNS lookup failed: {0}")]
+    LookupFailed(Box<dyn std::error::Error + Send + Sync>),
+
+    #[error("DNS parse error: {0}")]
+    DnsParseFailed(DnsParseError),
+
+    #[error("Failed building DNS response packet: {0}")]
+    DnsResponseBuildFailed(DnsBuildError),
+
+    #[error("Out of bounds on response packet buffer")]
+    ResponseBufferOverflow,
+
+    #[error("Failed to build MutableUdpPacket for response packet")]
+    MutableUdpPacketCreationFailed,
+
+    #[error("Failed to build MutableTcpPacket for response packet")]
+    MutableTcpPacketCreationFailed,
+
+    #[error("Failed to build MutableIpv4Packet for response packet")]
+    MutableIpv4PacketCreationFailed,
+
+    #[error("Failed to build MutableIpv6Packet for response packet")]
+    MutableIpv6PacketCreationFailed,
+}
 
 /// NameServer is a server that stores the DNS records.
 #[async_trait]
@@ -54,16 +117,11 @@ pub trait NameServer {
     /// Stop the server.
     async fn stop(&self);
     /// Configure list of forward DNS servers for zone '.'.
-    async fn forward(&self, to: &[IpAddr]) -> Result<(), String>;
+    async fn forward(&self, to: &[IpAddr]) -> DnsResult<()>;
     /// Configure list of forward DNS servers with explicit socket addresses.
-    async fn forward_to_addrs(&self, to: &[SocketAddr]) -> Result<(), String>;
+    async fn forward_to_addrs(&self, to: &[SocketAddr]) -> DnsResult<()>;
     /// Insert or update zone records used by the server.
-    async fn upsert(
-        &self,
-        zone: &str,
-        records: &Records,
-        ttl_value: TtlValue,
-    ) -> Result<(), String>;
+    async fn upsert(&self, zone: &str, records: &Records, ttl_value: TtlValue) -> DnsResult<()>;
 }
 
 /// Helper to update wg timers
@@ -107,13 +165,9 @@ impl LocalNameServer {
     pub async fn new(
         forward_ips: &[IpAddr],
         use_raw_forwarder: bool,
-    ) -> Result<Arc<RwLock<Self>>, String> {
+    ) -> DnsResult<Arc<RwLock<Self>>> {
         let raw_forwarder: Option<RawForwarder> = if use_raw_forwarder {
-            Some(
-                RawForwarder::new()
-                    .await
-                    .map_err(|e| format!("Failed to create forwarder: {e:?}"))?,
-            )
+            Some(RawForwarder::new().await?)
         } else {
             None
         };
@@ -270,15 +324,13 @@ impl LocalNameServer {
     async fn resolve_dns_request(
         nameserver: Arc<RwLock<LocalNameServer>>,
         request_info: &mut RequestInfo,
-    ) -> Result<Vec<u8>, String> {
+    ) -> Result<Vec<u8>, PacketError> {
         telio_log_debug!("Preparing DNS request");
         let dns_request = match &mut request_info.payload {
             PayloadRequestInfo::Udp {
                 ref mut dns_request,
                 ..
-            } => dns_request
-                .take()
-                .ok_or_else(|| String::from("Inexistent DNS request"))?,
+            } => dns_request.take().ok_or(PacketError::MissingDnsRequest)?,
             _ => return Ok(Vec::new()),
         };
 
@@ -307,7 +359,7 @@ impl LocalNameServer {
                 // build response packet bytes
                 DnsResponseBuilder::new(id, query, ttl.0, response_kind, recursion_desired)
                     .build()
-                    .map_err(|e| format!("Failed building DNS response packet: {e:?}"))?
+                    .map_err(PacketError::DnsResponseBuildFailed)?
             }
             PayloadDestination::Forward(raw_query) => {
                 let raw_forwarder = {
@@ -343,7 +395,7 @@ impl LocalNameServer {
                     let response = forwarder
                         .query(&raw_query)
                         .await
-                        .map_err(|e| format!("Forward failed: {e:?}"))?;
+                        .map_err(|e| PacketError::LookupFailed(Box::new(e)))?;
 
                     telio_log_debug!("Forwarder responded");
                     if let Some(dns_packet) = DnsPacket::new(&response) {
@@ -356,9 +408,8 @@ impl LocalNameServer {
                     let resolver = Resolver::new();
                     let zones = nameserver.zones().await;
 
-                    let forward = MessageRequest::from_bytes(&raw_query).map_err(|_| {
-                        String::from("Failed to build MessageRequest from request packet")
-                    })?;
+                    let forward = MessageRequest::from_bytes(&raw_query)
+                        .map_err(|_| PacketError::DecodeMessageRequestFailed)?;
                     let dns_request =
                         Request::new(forward, request_info.dns_source(), Protocol::Udp);
                     telio_log_debug!("DNS request: {:?}", &dns_request);
@@ -366,7 +417,7 @@ impl LocalNameServer {
                     zones
                         .lookup(&dns_request, resolver.clone())
                         .await
-                        .map_err(|e| format!("Lookup failed {e}"))?;
+                        .map_err(|e| PacketError::LookupFailed(Box::new(e)))?;
 
                     let dns_response = resolver.0.lock().await;
                     telio_log_debug!("Nameserver response: {:?}", &dns_response);
@@ -382,14 +433,14 @@ impl LocalNameServer {
         nameserver: Arc<RwLock<LocalNameServer>>,
         request_packet: &[u8],
         response_packet: &mut [u8],
-    ) -> Result<usize, String> {
+    ) -> Result<usize, PacketError> {
         let mut request_info = request_packet
             .first()
-            .ok_or_else(|| String::from("Empty request packet"))
+            .ok_or(PacketError::EmptyPacket)
             .and_then(|first_byte| match first_byte >> 4 {
                 4 => LocalNameServer::process_ip_packet::<Ipv4Packet>(request_packet),
                 6 => LocalNameServer::process_ip_packet::<Ipv6Packet>(request_packet),
-                _ => Err(String::from("Invalid IP version")),
+                _ => Err(PacketError::InvalidIpVersion(first_byte >> 4)),
             })?;
 
         let dns_response =
@@ -400,25 +451,24 @@ impl LocalNameServer {
 
     fn process_ip_packet<'a, P: IpPacket<'a>>(
         request_packet: &'a [u8],
-    ) -> Result<RequestInfo, String> {
-        let ip = P::try_from(request_packet)
-            .ok_or_else(|| String::from("Failed to build IpPacket from request packet"))?;
+    ) -> Result<RequestInfo, PacketError> {
+        let ip = P::try_from(request_packet).ok_or(PacketError::IpPacketCreationFailed)?;
 
         if !ip.check_valid() {
-            return Err(String::from("Invalid IpPacket"));
+            return Err(PacketError::InvalidIpPacket);
         }
 
         let payload = match ip.next_level_protocol() {
             IpNextHeaderProtocols::Udp => {
-                let udp_request = UdpPacket::new(ip.payload())
-                    .ok_or_else(|| String::from("Failed to build UdpPacket from request packet"))?;
+                let udp_request =
+                    UdpPacket::new(ip.payload()).ok_or(PacketError::UdpPacketCreationFailed)?;
                 LocalNameServer::process_udp_packet(&udp_request, |udp_packet| {
                     ip.udp_checksum(udp_packet)
                 })?
             }
             IpNextHeaderProtocols::Tcp => {
-                let tcp_request = TcpPacket::new(ip.payload())
-                    .ok_or_else(|| String::from("Failed to build TcpPacket from request packet"))?;
+                let tcp_request =
+                    TcpPacket::new(ip.payload()).ok_or(PacketError::TcpPacketCreationFailed)?;
                 PayloadRequestInfo::Tcp {
                     source_port: tcp_request.get_source(),
                     destination_port: tcp_request.get_destination(),
@@ -426,7 +476,7 @@ impl LocalNameServer {
                 }
             }
             _ => {
-                return Err(String::from("Invalid protocol for DNS request"));
+                return Err(PacketError::InvalidProtocol);
             }
         };
 
@@ -439,15 +489,15 @@ impl LocalNameServer {
     fn process_udp_packet<F: Fn(&UdpPacket) -> u16>(
         udp_request: &UdpPacket,
         get_checksum: F,
-    ) -> Result<PayloadRequestInfo, String> {
+    ) -> Result<PayloadRequestInfo, PacketError> {
         // Validate UDP checksum
         if get_checksum(udp_request) != udp_request.get_checksum() {
-            return Err(String::from("Invalid UDP checksum"));
+            return Err(PacketError::InvalidUdpChecksum);
         }
 
         // Validate DNS port
         if udp_request.get_destination() != DNS_PORT {
-            return Err(String::from("Invalid DNS port"));
+            return Err(PacketError::InvalidDnsPort(udp_request.get_destination()));
         }
 
         let payload = udp_request.payload();
@@ -468,7 +518,7 @@ impl LocalNameServer {
             }
             Err(e) => {
                 // malformed DNS query
-                return Err(format!("Failed to parse DNS payload: {e}"));
+                return Err(PacketError::DnsParseFailed(e));
             }
         };
 
@@ -562,7 +612,7 @@ impl RequestInfo {
         &self,
         dns_response: &[u8],
         response_packet: &mut [u8],
-    ) -> Result<usize, String> {
+    ) -> Result<usize, PacketError> {
         let payload_header = match self.payload {
             PayloadRequestInfo::Udp { .. } => UDP_HEADER,
             PayloadRequestInfo::Tcp { .. } => TCP_MIN_HEADER,
@@ -577,7 +627,7 @@ impl RequestInfo {
         &self,
         payload_length: usize,
         response_packet: &mut [u8],
-    ) -> Result<usize, String> {
+    ) -> Result<usize, PacketError> {
         match &self.ip {
             IpRequestInfo::V4 {
                 source_ip,
@@ -587,9 +637,8 @@ impl RequestInfo {
                 ttl,
                 identification,
             } => {
-                let mut ip_response = MutableIpv4Packet::new(response_packet).ok_or_else(|| {
-                    String::from("Failed to build MutableIpv4Packet for response packet")
-                })?;
+                let mut ip_response = MutableIpv4Packet::new(response_packet)
+                    .ok_or(PacketError::MutableIpv4PacketCreationFailed)?;
 
                 ip_response.set_version(4);
                 ip_response.set_header_length((IPV4_HEADER / 4) as u8);
@@ -619,9 +668,8 @@ impl RequestInfo {
                 source_ip,
                 destination_ip,
             } => {
-                let mut ip_response = MutableIpv6Packet::new(response_packet).ok_or_else(|| {
-                    String::from("Failed to build MutableIpv6Packet for response packet")
-                })?;
+                let mut ip_response = MutableIpv6Packet::new(response_packet)
+                    .ok_or(PacketError::MutableIpv6PacketCreationFailed)?;
 
                 ip_response.set_version(6);
                 ip_response.set_traffic_class(0);
@@ -650,7 +698,7 @@ impl RequestInfo {
         ihl: usize,
         dns_response: &[u8],
         response_packet: &mut [u8],
-    ) -> Result<usize, String> {
+    ) -> Result<usize, PacketError> {
         match self.payload {
             PayloadRequestInfo::Udp {
                 source_port,
@@ -660,11 +708,10 @@ impl RequestInfo {
                 let length = ihl + UDP_HEADER + dns_response.len();
                 let buffer_slice = response_packet
                     .get_mut(ihl..length)
-                    .ok_or_else(|| String::from("Out of bounds on response packet buffer"))?;
+                    .ok_or(PacketError::ResponseBufferOverflow)?;
 
-                let mut udp_response = MutableUdpPacket::new(buffer_slice).ok_or_else(|| {
-                    String::from("Failed to build MutableUdpPacket for response packet")
-                })?;
+                let mut udp_response = MutableUdpPacket::new(buffer_slice)
+                    .ok_or(PacketError::MutableUdpPacketCreationFailed)?;
 
                 udp_response.set_source(destination_port);
                 udp_response.set_destination(source_port);
@@ -685,10 +732,9 @@ impl RequestInfo {
                 let length = ihl + TCP_MIN_HEADER;
                 let buffer_slice = response_packet
                     .get_mut(ihl..length)
-                    .ok_or_else(|| String::from("Out of bounds on response packet buffer"))?;
-                let mut tcp_response = MutableTcpPacket::new(buffer_slice).ok_or_else(|| {
-                    String::from("Failed to build MutableTcpPacket for response packet")
-                })?;
+                    .ok_or(PacketError::ResponseBufferOverflow)?;
+                let mut tcp_response = MutableTcpPacket::new(buffer_slice)
+                    .ok_or(PacketError::MutableTcpPacketCreationFailed)?;
 
                 tcp_response.set_source(destination_port);
                 tcp_response.set_destination(source_port);
@@ -819,17 +865,10 @@ impl WithZones for Arc<RwLock<LocalNameServer>> {
 
 #[async_trait]
 impl NameServer for Arc<RwLock<LocalNameServer>> {
-    async fn upsert(
-        &self,
-        zone: &str,
-        records: &Records,
-        ttl_value: TtlValue,
-    ) -> Result<(), String> {
+    async fn upsert(&self, zone: &str, records: &Records, ttl_value: TtlValue) -> DnsResult<()> {
         if normalize_qname(zone) == NORD_ZONE {
             let mut ns = self.write().await;
-            ns.nord_zone
-                .upsert(records, ttl_value)
-                .map_err(|e| format!("Upsert failed: {e}"))?;
+            ns.nord_zone.upsert(records, ttl_value)?;
         }
 
         // TODO: LLT-7054: Remove AuthoritativeZone once migration is fully validated
@@ -841,7 +880,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
         Ok(())
     }
 
-    async fn forward(&self, to: &[IpAddr]) -> Result<(), String> {
+    async fn forward(&self, to: &[IpAddr]) -> DnsResult<()> {
         self.zones_mut().await.upsert(
             LowerName::from_str(".")?,
             Box::new(Arc::new(ForwardZone::new(".", to).await?)),
@@ -854,7 +893,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
         Ok(())
     }
 
-    async fn forward_to_addrs(&self, to: &[SocketAddr]) -> Result<(), String> {
+    async fn forward_to_addrs(&self, to: &[SocketAddr]) -> DnsResult<()> {
         let ns = self.read().await;
         if let Some(forwarder) = &ns.forwarder {
             forwarder.set_upstreams(to.to_vec()).await;
@@ -889,7 +928,8 @@ mod tests {
         rr::Name,
         serialize::binary::{BinDecoder, BinEncodable},
     };
-    use std::{net::Ipv4Addr, str::FromStr};
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    use std::str::FromStr;
 
     const USE_RAW_FORWARDER: bool = true;
 
@@ -1024,5 +1064,242 @@ mod tests {
 
         let ns = nameserver.read().await;
         assert!(ns.forwarder.is_none());
+    }
+
+    // PacketError internal unit tests
+
+    const SRC_IPV4: Ipv4Addr = Ipv4Addr::new(10, 0, 0, 1);
+    const DST_IPV4: Ipv4Addr = Ipv4Addr::new(10, 0, 0, 2);
+
+    /// Helper: build IPv4 packet with the given next-level protocol and payload.
+    fn build_ipv4_packet(protocol: IpNextHeaderProtocol, payload: &[u8]) -> Vec<u8> {
+        let total_len = IPV4_HEADER + payload.len();
+        let mut buf = vec![0u8; total_len];
+        {
+            let mut ip = MutableIpv4Packet::new(&mut buf).unwrap();
+            ip.set_version(4);
+            ip.set_header_length(5);
+            ip.set_total_length(total_len as u16);
+            ip.set_ttl(64);
+            ip.set_next_level_protocol(protocol);
+            ip.set_source(SRC_IPV4);
+            ip.set_destination(DST_IPV4);
+            ip.set_payload(payload);
+            ip.set_checksum(0);
+            ip.set_checksum(checksum(&ip.to_immutable()));
+        }
+        buf
+    }
+
+    /// Helper: build UDP segment with correct IPv4 checksum for SRC_IPV4 / DST_IPV4.
+    fn build_udp_segment(src_port: u16, dst_port: u16, data: &[u8]) -> Vec<u8> {
+        let len = UDP_HEADER + data.len();
+        let mut buf = vec![0u8; len];
+        {
+            let mut udp = MutableUdpPacket::new(&mut buf).unwrap();
+            udp.set_source(src_port);
+            udp.set_destination(dst_port);
+            udp.set_length(len as u16);
+            udp.set_payload(data);
+            udp.set_checksum(0);
+            udp.set_checksum(ipv4_checksum(&udp.to_immutable(), &SRC_IPV4, &DST_IPV4));
+        }
+        buf
+    }
+
+    /// Helper to create local NameServer (used to test packet processing)
+    async fn test_nameserver() -> Arc<RwLock<LocalNameServer>> {
+        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))])
+            .await
+            .unwrap()
+    }
+
+    // Tests PacketError::EmptyPacket
+    #[tokio::test]
+    async fn packet_error_empty_packet() {
+        let ns = test_nameserver().await;
+        let mut response = vec![0u8; MAX_PACKET];
+        let result = LocalNameServer::process_packet(ns, &[], &mut response).await;
+        assert!(matches!(result, Err(PacketError::EmptyPacket)));
+    }
+
+    // Tests PacketError::InvalidIpVersion
+    #[tokio::test]
+    async fn packet_error_invalid_ip_version() {
+        let ns = test_nameserver().await;
+        let mut response = vec![0u8; MAX_PACKET];
+        // Version 3: first byte 0x30, 0x30 >> 4 == 3
+        let result = LocalNameServer::process_packet(ns, &[0x30], &mut response).await;
+        assert!(matches!(result, Err(PacketError::InvalidIpVersion(3))));
+    }
+
+    // Tests PacketError::IpPacketCreationFailed
+    #[test]
+    fn packet_error_ip_packet_creation_failed() {
+        // Buffer too short for a 20-byte IPv4 header
+        let short = [0x45; 4];
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&short);
+        assert!(matches!(result, Err(PacketError::IpPacketCreationFailed)));
+    }
+
+    // Tests PacketError::InvalidIpPacket
+    #[test]
+    fn packet_error_invalid_ip_packet() {
+        let mut packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &[0; UDP_HEADER]);
+        // Corrupt TTL (byte 8) so the IP checksum no longer matches
+        packet[8] ^= 0xFF;
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(result, Err(PacketError::InvalidIpPacket)));
+    }
+
+    // Tests PacketError::InvalidProtocol
+    #[test]
+    fn packet_error_invalid_protocol() {
+        let packet = build_ipv4_packet(IpNextHeaderProtocols::Icmp, &[0; 8]);
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(result, Err(PacketError::InvalidProtocol)));
+    }
+
+    // Tests PacketError::UdpPacketCreationFailed
+    #[test]
+    fn packet_error_udp_packet_creation_failed() {
+        // Valid IPv4 header with UDP protocol, but only 2 bytes of payload (need 8)
+        let packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &[0; 2]);
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(result, Err(PacketError::UdpPacketCreationFailed)));
+    }
+
+    // Tests PacketError::TcpPacketCreationFailed
+    #[test]
+    fn packet_error_tcp_packet_creation_failed() {
+        // Valid IPv4 header with TCP protocol, but only 2 bytes of payload (need 20)
+        let packet = build_ipv4_packet(IpNextHeaderProtocols::Tcp, &[0; 2]);
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(result, Err(PacketError::TcpPacketCreationFailed)));
+    }
+
+    // Tests PacketError::InvalidUdpChecksum
+    #[test]
+    fn packet_error_invalid_udp_checksum() {
+        let mut udp_seg = build_udp_segment(12345, 53, &[0; 4]);
+        // Corrupt UDP checksum (bytes 6-7)
+        udp_seg[6] ^= 0xFF;
+        let packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &udp_seg);
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(result, Err(PacketError::InvalidUdpChecksum)));
+    }
+
+    // Tests PacketError::InvalidDnsPort
+    #[test]
+    fn packet_error_invalid_dns_port() {
+        let udp_seg = build_udp_segment(12345, 80, &[0; 4]);
+        let packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &udp_seg);
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(result, Err(PacketError::InvalidDnsPort(80))));
+    }
+
+    // Tests PacketError::DecodeMessageRequestFailed
+    #[test]
+    fn packet_error_decode_message_request_failed() {
+        // A DNS payload that passes parse_dns_query_packet() (pnet is lenient) but fails
+        // MessageRequest::from_bytes() (hickory-dns is stricter).
+        //
+        // DNS header: ID=0x1234, flags=0x0100 (standard query, RD=1),
+        // QDCOUNT=1, all other counts=0.
+        // Question section: a valid label "a" (0x01, 0x61) followed by root (0x00),
+        // but QTYPE and QCLASS are missing — pnet reads query_count from header and
+        // doesn't validate the question body, but hickory requires complete QTYPE+QCLASS.
+        #[rustfmt::skip]
+        let dns_payload: &[u8] = &[
+            0x12, 0x34, // ID
+            0x01, 0x00, // flags: QR=0 (query), opcode=0 (standard), RD=1
+            0x00, 0x01, // QDCOUNT = 1
+            0x00, 0x00, // ANCOUNT = 0
+            0x00, 0x00, // NSCOUNT = 0
+            0x00, 0x00, // ARCOUNT = 0
+            // Question name: "a." (label len=1, 'a', root terminator)
+            0x01, b'a', 0x00,
+            // QTYPE and QCLASS intentionally missing → hickory fails to decode
+        ];
+        let udp_seg = build_udp_segment(12345, 53, dns_payload);
+        let packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &udp_seg);
+        let result = LocalNameServer::process_ip_packet::<Ipv4Packet>(&packet);
+        assert!(matches!(
+            result,
+            Err(PacketError::DecodeMessageRequestFailed)
+        ));
+    }
+
+    // Tests PacketError::MutableIpv4PacketCreationFailed
+    #[test]
+    fn packet_error_mutable_ipv4_packet_creation_failed() {
+        let info = RequestInfo {
+            ip: IpRequestInfo::V4 {
+                source_ip: SRC_IPV4,
+                destination_ip: DST_IPV4,
+                dscp: 0,
+                ecn: 0,
+                ttl: 64,
+                identification: 0,
+            },
+            payload: PayloadRequestInfo::Udp {
+                source_port: 12345,
+                destination_port: 53,
+                dns_request: None,
+            },
+        };
+        let mut buf = vec![0u8; 4]; // too small for 20-byte IPv4 header
+        let result = info.build_ip_header(0, &mut buf);
+        assert!(matches!(
+            result,
+            Err(PacketError::MutableIpv4PacketCreationFailed)
+        ));
+    }
+
+    // Tests PacketError::MutableIpv6PacketCreationFailed
+    #[test]
+    fn packet_error_mutable_ipv6_packet_creation_failed() {
+        let info = RequestInfo {
+            ip: IpRequestInfo::V6 {
+                source_ip: Ipv6Addr::LOCALHOST,
+                destination_ip: Ipv6Addr::LOCALHOST,
+            },
+            payload: PayloadRequestInfo::Udp {
+                source_port: 12345,
+                destination_port: 53,
+                dns_request: None,
+            },
+        };
+        let mut buf = vec![0u8; 4]; // too small for 40-byte IPv6 header
+        let result = info.build_ip_header(0, &mut buf);
+        assert!(matches!(
+            result,
+            Err(PacketError::MutableIpv6PacketCreationFailed)
+        ));
+    }
+
+    // Tests PacketError::ResponseBufferOverflow
+    #[test]
+    fn packet_error_response_buffer_overflow() {
+        let info = RequestInfo {
+            ip: IpRequestInfo::V4 {
+                source_ip: SRC_IPV4,
+                destination_ip: DST_IPV4,
+                dscp: 0,
+                ecn: 0,
+                ttl: 64,
+                identification: 0,
+            },
+            payload: PayloadRequestInfo::Udp {
+                source_port: 12345,
+                destination_port: 53,
+                dns_request: None,
+            },
+        };
+        let dns_response = vec![0u8; 100];
+        // Too small buffer: here is a room for IP header but not for UDP header + 100-byte payload
+        let mut buf = vec![0u8; IPV4_HEADER + 4];
+        let result = info.build_payload(IPV4_HEADER, &dns_response, &mut buf);
+        assert!(matches!(result, Err(PacketError::ResponseBufferOverflow)));
     }
 }
