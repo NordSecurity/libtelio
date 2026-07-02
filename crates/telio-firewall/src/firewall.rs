@@ -159,6 +159,11 @@ pub struct FirewallState {
     pub whitelist: Whitelist,
     /// Local node ip addresses
     pub ip_addresses: Vec<StdIpAddr>,
+    /// Source address(es) of the tunnel interface, when known. When non-empty,
+    /// the firewall rejects outbound packets whose source IP is not one of
+    /// these addresses, protecting the VPN tunnel from accidental leaks.
+    /// When empty, this protection is disabled.
+    pub tunnel_ips: Vec<StdIpAddr>,
     /// List of DNS server IPs for which only plaintext DNS should be allowed
     pub force_plaintext_dns_for_servers: Option<Vec<StdIpAddr>>,
     /// Domain patterns whitelisted from TP-Lite DNS
@@ -190,7 +195,8 @@ pub struct StatefulFirewall {
     config: FirewallConfig,
     /// Current firewall state
     state: RwLock<FirewallState>,
-    /// Last known host interface IPs reported by network monitor.
+    /// IP addresses currently assigned to the host's local network interfaces,
+    /// as last reported by the network monitor.
     interface_ips: RwLock<Vec<StdIpAddr>>,
     /// Chain configuration function
     configure_chain_fn: ConfigureChainFn,
@@ -431,6 +437,16 @@ fn filter_dst_ip_single_port(net: IpNet, port: u16, inverted: bool) -> Filter {
     }
 }
 
+fn filter_src_ip_all_ports(net: IpNet, inverted: bool) -> Filter {
+    Filter {
+        filter_data: FilterData::SrcNetwork(NetworkFilterData {
+            network: net,
+            port_range: (0, 65535),
+        }),
+        inverted,
+    }
+}
+
 fn get_local_area_networks_filters(
     exclude_ip_range: Option<Ipv4Net>,
     local_ifs_addrs: &[StdIpAddr],
@@ -489,12 +505,13 @@ fn get_local_area_networks_filters(
     result
 }
 
-/// Configures the firewall chain based on the provided configuration.
-pub(crate) fn configure_chain(
+/// Builds the rule list for the firewall chain. Separated from configure_chain
+/// so tests can inspect the Rule vec directly.
+pub(crate) fn build_chain_rules(
     config: &FirewallConfig,
     state: &FirewallState,
     local_ifs_addrs: &[StdIpAddr],
-) -> FfiChainGuard {
+) -> Vec<Rule> {
     let mut rules = vec![];
 
     if let Some(dns_server_ips) = &state.force_plaintext_dns_for_servers {
@@ -572,6 +589,25 @@ pub(crate) fn configure_chain(
                 action: RuleAction::Dnat(redirect.standard),
             });
         }
+    }
+
+    // Reject outbound packets with a wrong source IP (not a tunnel IP).
+    // Has to be placed before the blanket outbound-accept rule below
+    // so it takes effect.
+    if !state.tunnel_ips.is_empty() {
+        let mut filters = vec![Filter {
+            filter_data: FilterData::Direction(Direction::Outbound),
+            inverted: false,
+        }];
+        for tunnel_ip in &state.tunnel_ips {
+            filters.push(filter_src_ip_all_ports(IpNet::from(*tunnel_ip), true));
+        }
+        let reject_rule = Rule {
+            filters,
+            action: RuleAction::Reject,
+        };
+
+        rules.push(reject_rule);
     }
 
     rules.push(Rule {
@@ -691,7 +727,18 @@ pub(crate) fn configure_chain(
         });
     }
 
-    (rules.as_slice()).into()
+    rules
+}
+
+/// Configures the firewall chain based on the provided configuration.
+pub(crate) fn configure_chain(
+    config: &FirewallConfig,
+    state: &FirewallState,
+    local_ifs_addrs: &[StdIpAddr],
+) -> FfiChainGuard {
+    build_chain_rules(config, state, local_ifs_addrs)
+        .as_slice()
+        .into()
 }
 
 extern "C" fn write_to_sink(
@@ -878,6 +925,154 @@ mod tests {
         assert_eq!(
             calls[2],
             vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 12))]
+        );
+    }
+
+    fn reject_rule_for_outbound_src(rules: &[Rule], ip: StdIpAddr) -> Option<&Rule> {
+        let outbound = Filter {
+            filter_data: FilterData::Direction(Direction::Outbound),
+            inverted: false,
+        };
+        let inverted_src = filter_src_ip_all_ports(IpNet::from(ip), true);
+        rules
+            .iter()
+            .filter(|r| r.action == RuleAction::Reject)
+            .find(|r| r.filters.contains(&outbound) && r.filters.contains(&inverted_src))
+    }
+
+    #[test]
+    fn test_reject_rule_not_emitted_without_tunnel_ip() {
+        let config = FirewallConfig {
+            allow_ipv6: false,
+            feature: FeatureFirewall::default(),
+        };
+        let state = FirewallState {
+            tunnel_ips: vec![],
+            ..Default::default()
+        };
+        let rules = build_chain_rules(&config, &state, &[]);
+        assert!(
+            rules.iter().all(|r| r.action != RuleAction::Reject),
+            "no Reject rule should be emitted when tunnel_ips is empty"
+        );
+    }
+
+    #[test]
+    fn test_reject_rule_emitted_with_tunnel_ip() {
+        let config = FirewallConfig {
+            allow_ipv6: false,
+            feature: FeatureFirewall::default(),
+        };
+        let tunnel_ip = StdIpAddr::V4(Ipv4Addr::new(10, 5, 0, 2));
+        let state = FirewallState {
+            tunnel_ips: vec![tunnel_ip],
+            ..Default::default()
+        };
+        let rules = build_chain_rules(&config, &state, &[]);
+        let rule = reject_rule_for_outbound_src(&rules, tunnel_ip).expect(
+            "expected a Reject rule with Direction::Outbound and inverted SrcNetwork(tunnel_ip)",
+        );
+        let inverted_src_count = rule
+            .filters
+            .iter()
+            .filter(|f| matches!(&f.filter_data, FilterData::SrcNetwork(_)) && f.inverted)
+            .count();
+        assert_eq!(inverted_src_count, 1);
+    }
+
+    #[test]
+    fn test_reject_rule_dual_stack_one_rule_two_inverted_src_filters() {
+        let config = FirewallConfig {
+            allow_ipv6: true,
+            feature: FeatureFirewall::default(),
+        };
+        let v4 = StdIpAddr::V4(Ipv4Addr::new(10, 5, 0, 2));
+        let v6 = StdIpAddr::V6(std::net::Ipv6Addr::new(
+            0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 2,
+        ));
+        let state = FirewallState {
+            tunnel_ips: vec![v4, v6],
+            ..Default::default()
+        };
+        let rules = build_chain_rules(&config, &state, &[]);
+        // A single Reject rule must carry one inverted SrcNetwork filter per IP.
+        let rule = rules
+            .iter()
+            .find(|r| {
+                r.action == RuleAction::Reject
+                    && r.filters.iter().any(|f| {
+                        f.filter_data == FilterData::Direction(Direction::Outbound) && !f.inverted
+                    })
+            })
+            .expect("expected a single Reject rule for the tunnel IPs");
+        let inverted_src_count = rule
+            .filters
+            .iter()
+            .filter(|f| matches!(&f.filter_data, FilterData::SrcNetwork(_)) && f.inverted)
+            .count();
+        assert_eq!(
+            inverted_src_count, 2,
+            "one inverted SrcNetwork per tunnel IP"
+        );
+        for ip in [v4, v6] {
+            assert!(
+                rule.filters.iter().any(|f| matches!(&f.filter_data,
+                    FilterData::SrcNetwork(n) if n.network == IpNet::from(ip))
+                    && f.inverted),
+                "inverted SrcNetwork filter for {ip} must be present",
+                ip = ip
+            );
+        }
+    }
+
+    #[test]
+    fn test_reject_rule_ordered_before_blanket_outbound_accept_and_vpn_accept() {
+        let vpn_pk = PublicKey::new([0xAB; 32]);
+        let config = FirewallConfig {
+            allow_ipv6: false,
+            feature: FeatureFirewall::default(),
+        };
+        let tunnel_ip = StdIpAddr::V4(Ipv4Addr::new(10, 5, 0, 2));
+        let state = FirewallState {
+            tunnel_ips: vec![tunnel_ip],
+            whitelist: Whitelist {
+                vpn_peer: Some(vpn_pk),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let rules = build_chain_rules(&config, &state, &[]);
+
+        let reject_pos = rules.iter().position(|r| {
+            r.action == RuleAction::Reject
+                && r.filters.iter().any(|f| {
+                    f.filter_data == FilterData::Direction(Direction::Outbound) && !f.inverted
+                })
+                && r.filters
+                    .iter()
+                    .any(|f| matches!(&f.filter_data, FilterData::SrcNetwork(_)) && f.inverted)
+        });
+        let blanket_outbound_accept_pos = rules.iter().position(|r| {
+            r.action == RuleAction::Accept
+                && r.filters.len() == 1
+                && r.filters[0].filter_data == FilterData::Direction(Direction::Outbound)
+                && !r.filters[0].inverted
+        });
+        let vpn_accept_pos = rules.iter().position(|r| {
+            r.action == RuleAction::Accept
+                && r.filters.iter().any(|f| {
+                    matches!(&f.filter_data, FilterData::AssociatedData(Some(k))
+                        if k == &vpn_pk.to_vec())
+                })
+        });
+        let reject_pos = reject_pos.expect("reject rule must exist");
+        assert!(
+            reject_pos < blanket_outbound_accept_pos.expect("blanket outbound accept must exist"),
+            "reject rule must precede the blanket outbound-accept rule"
+        );
+        assert!(
+            reject_pos < vpn_accept_pos.expect("vpn accept rule must exist"),
+            "reject rule must precede the vpn accept rule"
         );
     }
 

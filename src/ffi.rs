@@ -680,6 +680,26 @@ impl Telio {
         })
     }
 
+    /// Set the source IP address(es) currently configured on the tunnel
+    /// interface. When set, the firewall rejects outbound packets whose source
+    /// IP is not one of these.
+    ///
+    /// # Parameters
+    /// - `src_ips`: tunnel interface source IPs, empty to disable.
+    pub fn set_tunnel_src_ip(&self, src_ips: Vec<IpAddr>) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::set_tunnel_src_ip entry with instance id: {}. src_ips: {:?}",
+            self.id,
+            src_ips
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.set_tunnel_src_ip(src_ips.clone())
+                    .log_result("Telio::set_tunnel_src_ip")
+            })
+        })
+    }
+
     /// Notify telio system is going to sleep.
     pub fn notify_sleep(&self) -> FfiResult<()> {
         telio_log_info!("telio_notify_sleep entry with instance id: {}.", self.id);
