@@ -362,8 +362,9 @@ impl ConfigureInterface for Iproute {
             execute(Command::new("ip").args(["rule", "del", "priority", fw_rule_prio]))?;
         }
         if let Some(table) = &self.table {
-            execute(Command::new("ip").args(["route", "flush", "table", table]))?;
+            execute(Command::new("ip").args(["route", "flush", "table", &table]))?;
         }
+
         self.ipv6_support_manager.reenable()
     }
 }
