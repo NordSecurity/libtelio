@@ -55,6 +55,8 @@ Currently supported configuration variables:
     * `public_key` - The public key of the server/peer to connect to
   * `country` - Full country name or ISO A2 code, of the desired VPN server location.
   * `recommended` - First server from the API recommendation list will be selected.
+* `post_quantum` - If `true`, use a post-quantum-secure (Kyber + X25519) key
+  exchange. Defaults to `false`.
 * `log_level` - filters the logged messages by priority, possible levels:
   * `error`
   * `warn`

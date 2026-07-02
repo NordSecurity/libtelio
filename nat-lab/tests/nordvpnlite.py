@@ -75,6 +75,7 @@ class NordVpnLiteConfig:
     interface: InterfaceConfig = field(default_factory=InterfaceConfig)
     override_default_wg_port: int = 1023
     dns: Optional[List[str]] = None
+    post_quantum: bool = False
 
     def to_dict(self):
         data = asdict(self)

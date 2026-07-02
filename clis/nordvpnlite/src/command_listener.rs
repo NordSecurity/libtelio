@@ -30,6 +30,7 @@ pub enum ClientCmd {
 pub struct ExitNodeConfig {
     pub endpoint: Endpoint,
     pub dns: Vec<IpAddr>,
+    pub post_quantum: bool,
 }
 
 #[derive(Debug)]
