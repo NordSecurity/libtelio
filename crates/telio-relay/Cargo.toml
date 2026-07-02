@@ -40,8 +40,6 @@ webpki-roots = "1.0.7"
 smart-default.workspace = true
 
 [dev-dependencies]
-async-std = { version = "1.13", features = ["attributes"] }
-
 env_logger.workspace = true
 hex.workspace = true
 ntest.workspace = true
