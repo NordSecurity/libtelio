@@ -222,7 +222,7 @@ impl RawForwarder {
                             ).await;
                         }
                         None => {
-                            telio_log_warn!("Forwarder channel dropped");
+                            telio_log_debug!("Forwarder channel dropped");
                             break;
                         },
                     }
