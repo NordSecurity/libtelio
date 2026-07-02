@@ -25,3 +25,11 @@ pub use zone::Records;
 
 #[cfg(feature = "mockall")]
 pub use crate::dns::MockDnsResolver;
+
+/// Public functions exposed for fuzzing framework
+#[cfg(feature = "fuzzing")]
+pub mod fuzz {
+    pub use super::nameserver::fuzz_decode_packet;
+    pub use super::packet_decoder::{find_nord_query, parse_dns_query_packet};
+    pub use super::packet_encoder::fuzz_build_response;
+}

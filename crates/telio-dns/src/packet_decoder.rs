@@ -12,7 +12,7 @@ use thiserror::Error;
 
 /// Errors returned when parsing a DNS query from raw bytes.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
-pub(crate) enum DnsParseError {
+pub enum DnsParseError {
     /// The buffer is too short to contain a valid DNS header or required fields
     #[error("packet too short")]
     PacketTooShort,
@@ -42,9 +42,8 @@ pub(crate) fn normalize_qname(name: &str) -> String {
     name
 }
 
-// TODO: LLT-7151 add fuzzing tests to this function
 /// Parse a DNS Question from raw DNS bytes
-pub(crate) fn parse_dns_query_packet(packet_bytes: &[u8]) -> Result<DnsPacket<'_>, DnsParseError> {
+pub fn parse_dns_query_packet(packet_bytes: &[u8]) -> Result<DnsPacket<'_>, DnsParseError> {
     let dns_packet = DnsPacket::new(packet_bytes).ok_or(DnsParseError::PacketTooShort)?;
 
     if dns_packet.get_is_response() != 0 {
@@ -63,7 +62,7 @@ pub(crate) fn parse_dns_query_packet(packet_bytes: &[u8]) -> Result<DnsPacket<'_
 /// Checks only the first query
 /// DNS spec in theory makes it possible to have multiple query per packet
 /// but in practice this is never implemented
-pub(crate) fn find_nord_query(dns_packet: &DnsPacket) -> Option<DnsQuery> {
+pub fn find_nord_query(dns_packet: &DnsPacket) -> Option<DnsQuery> {
     let opcode = dns_packet.get_opcode();
     if opcode != Opcodes::StandardQuery {
         telio_log_warn!("Unsupported Opcode for nord query: {opcode:?}");

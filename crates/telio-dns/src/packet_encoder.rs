@@ -304,6 +304,43 @@ impl DnsResponseBuilder {
     }
 }
 
+/// Fuzzing entry point: for response encoder ([`DnsResponseBuilder::build`]) across every [`ResponseKind`].
+#[cfg(feature = "fuzzing")]
+pub fn fuzz_build_response(data: &[u8]) {
+    use crate::packet_decoder::parse_dns_query_packet;
+    use pnet_packet::FromPacket;
+
+    let Ok(packet) = parse_dns_query_packet(data) else {
+        return;
+    };
+    // Take first query regardless of zone
+    let Some(query) = packet.get_queries_iter().next().map(|q| q.from_packet()) else {
+        return;
+    };
+
+    let id = packet.get_id();
+    let recursion_desired = packet.get_is_recursion_desirable() == 1;
+    // Construct TTL and record count from input
+    let ttl = data
+        .iter()
+        .take(4)
+        .fold(0u32, |acc, &b| (acc << 8) | b as u32);
+    let count = data.len().min(128);
+    let v4: Vec<Ipv4Addr> = (0..count).map(|i| Ipv4Addr::from(i as u32)).collect();
+    let v6: Vec<Ipv6Addr> = (0..count).map(|i| Ipv6Addr::from(i as u128)).collect();
+
+    let kinds = [
+        ResponseKind::AnswerA { addresses: v4 },
+        ResponseKind::AnswerAAAA { addresses: v6 },
+        ResponseKind::NoData,
+        ResponseKind::NxDomain,
+        ResponseKind::SoaAnswer,
+    ];
+    for kind in kinds {
+        let _ = DnsResponseBuilder::new(id, query.clone(), ttl, kind, recursion_desired).build();
+    }
+}
+
 /// Try to reserve needed bytes in `out` without exceeding `max_size`
 ///
 /// Sets `truncated` to true otherwise

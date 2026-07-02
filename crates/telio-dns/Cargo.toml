@@ -6,6 +6,9 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
+[features]
+fuzzing = []
+
 [dependencies]
 rand.workspace = true
 hickory-server = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v3.0.3", features = ["hickory-resolver"], default-features = false }

@@ -52,6 +52,34 @@ jobs:
         - name: fuzz telio pq parse_response_payload
           working-directory: crates/telio-pq
           run: cargo fuzz run parse_response_payload -- -max_total_time=180
+  telio-dns-fuzzing:
+      runs-on: ubuntu-22.04
+      strategy:
+        # Run every target even if one finds a crash
+        fail-fast: false
+        matrix:
+          target:
+            - parse_dns_query
+            - decode_packet
+            - build_response
+      steps:
+        - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
+          with:
+            toolchain: nightly-2026-02-27
+            override: true
+        - run: cargo install cargo-fuzz --locked --version 0.12.0
+        - name: fuzz telio dns ${{ matrix.target }}
+          working-directory: crates/telio-dns
+          run: cargo fuzz run ${{ matrix.target }} fuzz/corpus/${{ matrix.target }} fuzz/seed_corpus/${{ matrix.target }} -- -max_total_time=180
+        # Preserve the crashing input so the failure can be reproduced locally
+        # with `cargo fuzz run <target> <artifact>`.
+        - if: failure()
+          uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+          with:
+            name: fuzz-artifacts-${{ matrix.target }}
+            path: crates/telio-dns/fuzz/artifacts/${{ matrix.target }}/
+            if-no-files-found: ignore
   telio-starcast-fuzzing:
     runs-on: ubuntu-22.04
     steps:
