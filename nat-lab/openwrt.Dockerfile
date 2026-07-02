@@ -1,7 +1,7 @@
-ARG SEC_CONTAINER_REGISTRY
+ARG LIBTELIO_ENV_SEC_CONTAINER_REGISTRY
 ARG OPENWRT_IMAGE=natlab-openwrt-24.10.4-x86-64:v0.6.0
 
-FROM ${SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/third-party-build/openwrt_image/${OPENWRT_IMAGE}
+FROM ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/third-party-build/openwrt_image/${OPENWRT_IMAGE}
 
 ARG OPENWRT_IMG_GZ=openwrt-24.10.4-x86-64-generic-ext4-combined.img.gz
 
