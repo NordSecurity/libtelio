@@ -17,10 +17,7 @@ use pnet_packet::{
     Packet,
 };
 use rand::{rand_core::UnwrapErr, rngs::SysRng};
-use safe_pqc_kyber::{
-    decapsulate, keypair, Keypair, KYBER_CIPHERTEXTBYTES, KYBER_PUBLICKEYBYTES,
-    KYBER_SECRETKEYBYTES,
-};
+use safe_pqc_kyber::{decapsulate, keypair, Keypair, KYBER_CIPHERTEXTBYTES};
 use tokio::net::{ToSocketAddrs, UdpSocket};
 
 use telio_model::constants::LOCAL_TUNNEL_IPV4;
@@ -101,7 +98,7 @@ struct TunnelSock {
 
 pub struct KeySet {
     pub wg_keys: super::Keys,
-    pub pq_secret: Hidden<[u8; KYBER_SECRETKEYBYTES]>,
+    pub pq_secret: Hidden<safe_pqc_kyber::SecretKey>,
 }
 
 /// Get PQ keys from the VPN server
@@ -210,7 +207,7 @@ pub struct RekeyV2Auth {
 /// Establsh new PQ preshared key with the VPN server
 pub async fn rekey(
     sock_pool: &telio_sockets::SocketPool,
-    pq_secret: &Hidden<[u8; KYBER_SECRETKEYBYTES]>,
+    pq_secret: &Hidden<safe_pqc_kyber::SecretKey>,
     pq_version: u32,
     v2_auth: Option<RekeyV2Auth>,
 ) -> super::Result<telio_crypto::PresharedKey> {
@@ -507,7 +504,7 @@ fn create_get_packet(
     wg_server_public: &telio_crypto::PublicKey,
     wg_client_secret: &telio_crypto::SecretKey,
     wg_client_public: &telio_crypto::PublicKey,
-    pq_public: &[u8; KYBER_PUBLICKEYBYTES],
+    pq_public: &safe_pqc_kyber::PublicKey,
     device_private_key: &telio_crypto::SecretKey,
     local_port: u16,
     pq_version: u32,
@@ -621,7 +618,7 @@ fn create_get_packet(
 fn push_get_method_udp_payload_without_auth_tag(
     pkgbuf: &mut Vec<u8>,
     wg_public: &telio_crypto::PublicKey,
-    pq_public: &[u8; KYBER_PUBLICKEYBYTES],
+    pq_public: &safe_pqc_kyber::PublicKey,
     pq_version: u32,
 ) {
     let method = 0u32; // get

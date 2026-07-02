@@ -4359,6 +4359,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "108c4ad7fe882cbb078ff40de415658e9d827f636e4fb17e7d5a97503a9aceaf"
 dependencies = [
  "rand_core 0.6.4",
+ "zeroize",
 ]
 
 [[package]]
