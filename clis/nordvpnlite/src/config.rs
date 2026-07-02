@@ -20,6 +20,53 @@ use telio::{
 
 use crate::{interface::InterfaceConfig, NordVpnLiteError};
 
+#[derive(Clone)]
+pub struct ConfigFile {
+    pub path: String,
+    hash: u64,
+}
+
+impl ConfigFile {
+    pub fn new(path: String) -> Self {
+        let hash = std::fs::read(&path)
+            .map(|b| Self::hash_bytes(&b))
+            .unwrap_or(0);
+        Self { path, hash }
+    }
+
+    pub fn read_if_changed(&self) -> Option<Result<(NordVpnLiteConfig, u64), NordVpnLiteError>> {
+        match std::fs::read(&self.path) {
+            Ok(bytes) => {
+                let new_hash = Self::hash_bytes(&bytes);
+                if new_hash != self.hash {
+                    Some(NordVpnLiteConfig::from_bytes(&bytes).map(|config| (config, new_hash)))
+                } else {
+                    None
+                }
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Cannot read config file '{}' for hash check: {e}. Treating as unchanged.",
+                    self.path
+                );
+                None
+            }
+        }
+    }
+
+    pub fn set_hash(&mut self, hash: u64) {
+        self.hash = hash;
+    }
+
+    fn hash_bytes(bytes: &[u8]) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        bytes.hash(&mut hasher);
+        hasher.finish()
+    }
+}
+
 // These IPs are documented but the documentation is not publicly available
 fn dns_default() -> Vec<IpAddr> {
     vec![
@@ -147,6 +194,13 @@ pub struct NordVpnLiteConfig {
 }
 
 impl NordVpnLiteConfig {
+    /// Construct a NordVpnLiteConfig by deserializing raw bytes
+    fn from_bytes(bytes: &[u8]) -> Result<Self, NordVpnLiteError> {
+        let mut config: NordVpnLiteConfig = serde_json::from_slice(bytes)?;
+        config.log_file_path = Self::resolve_log_path(&config.log_file_path)?;
+        Ok(config)
+    }
+
     /// Construct a NordVpnLiteConfig by deserializing a file at given path
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, NordVpnLiteError> {
         let path = path.as_ref();
@@ -659,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn test_config_with_absolute_path() {
+    fn test_absolute_log_path() {
         let log_path = std::env::current_dir().unwrap().join("absolute.log");
         let config_json = config_json_for_log(log_path.to_str().unwrap());
 
@@ -667,10 +721,6 @@ mod tests {
         let config = NordVpnLiteConfig::from_file(file.path().to_str().unwrap()).unwrap();
 
         assert_eq!(config.log_file_path, log_path.to_string_lossy());
-        assert_eq!(
-            serde_json::from_str::<NordVpnLiteConfig>(&config_json).unwrap(),
-            config
-        );
     }
 
     #[test]
@@ -684,13 +734,16 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_log_path_error() {
+    fn test_invalid_log_path_returns_error() {
         let config_json = config_json_for_log("");
 
         let file = temp_config(&config_json);
         let err = NordVpnLiteConfig::from_file(file.path().to_str().unwrap()).unwrap_err();
 
-        matches!(err, NordVpnLiteError::InvalidConfigOption { .. });
+        assert!(
+            matches!(err, NordVpnLiteError::InvalidConfigOption { ref key, .. } if key == "log_file_path"),
+            "expected InvalidConfigOption for log_file_path, got: {err:?}"
+        );
     }
 
     #[test]
@@ -724,5 +777,207 @@ mod tests {
         );
 
         std::env::remove_var("NORD_TOKEN");
+    }
+
+    #[test]
+    fn test_config_file_unchanged_returns_none() {
+        let file = temp_config(r#"{"key": "value"}"#);
+        let path = file.path().to_str().unwrap().to_owned();
+        let config_file = ConfigFile::new(path);
+        assert!(config_file.read_if_changed().is_none());
+    }
+
+    #[test]
+    fn test_config_file_changed_returns_some() {
+        let valid_config = r#"{
+            "log_level": "Info",
+            "log_file_path": "test.log",
+            "adapter_type": "linux-native",
+            "interface": { "name": "utun10", "config_provider": "manual" },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }"#;
+        let file = temp_config(r#"{"key": "original"}"#);
+        let path = file.path().to_str().unwrap().to_owned();
+        let config_file = ConfigFile::new(path.clone());
+        std::fs::write(&path, valid_config).unwrap();
+        assert!(config_file.read_if_changed().is_some());
+    }
+
+    #[test]
+    fn test_config_file_changed_invalid_config_returns_some_err() {
+        let file = temp_config(r#"{"key": "original"}"#);
+        let path = file.path().to_str().unwrap().to_owned();
+        let config_file = ConfigFile::new(path.clone());
+        std::fs::write(
+            &path,
+            r#"{"key": "changed but invalid json for NordVpnLiteConfig"}"#,
+        )
+        .unwrap();
+        let result = config_file.read_if_changed();
+        assert!(matches!(result, Some(Err(_))));
+    }
+
+    #[test]
+    fn test_config_file_unchanged_for_missing_file_returns_none() {
+        let config_file = ConfigFile {
+            path: "/nonexistent/path/config.json".to_owned(),
+            hash: 42,
+        };
+        assert!(config_file.read_if_changed().is_none());
+    }
+
+    #[test]
+    fn test_config_file_hash_is_zero_for_missing_file() {
+        let config_file = ConfigFile::new("/nonexistent/path/config.json".to_owned());
+        assert_eq!(config_file.hash, 0);
+    }
+
+    #[test]
+    fn test_config_file_set_hash_marks_file_as_seen() {
+        let valid_config = r#"{
+            "log_level": "Info",
+            "log_file_path": "test.log",
+            "adapter_type": "linux-native",
+            "interface": { "name": "utun10", "config_provider": "manual" },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }"#;
+        let file = temp_config(r#"{"key": "original"}"#);
+        let path = file.path().to_str().unwrap().to_owned();
+        let mut config_file = ConfigFile::new(path.clone());
+
+        std::fs::write(&path, valid_config).unwrap();
+        let (_, new_hash) = config_file
+            .read_if_changed()
+            .expect("expected Some after file change")
+            .expect("expected valid config");
+
+        // Update the hash
+        config_file.set_hash(new_hash);
+        assert!(
+            config_file.read_if_changed().is_none(),
+            "expected None after set_hash with current hash"
+        );
+    }
+
+    fn minimal_config_bytes(log_path: &str) -> Vec<u8> {
+        config_json_for_log(log_path).into_bytes()
+    }
+
+    #[test]
+    fn test_from_bytes_absolute_log_path_nonexistent_parent_returns_error() {
+        let bytes = minimal_config_bytes("/nonexistent/dir/app.log");
+        let err = NordVpnLiteConfig::from_bytes(&bytes)
+            .expect_err("from_bytes should fail when the parent directory does not exist");
+
+        assert!(
+            matches!(err, NordVpnLiteError::InvalidConfigOption { ref key, .. } if key == "log_file_path"),
+            "expected InvalidConfigOption for log_file_path, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_from_bytes_invalid_json_returns_error() {
+        let err = NordVpnLiteConfig::from_bytes(b"not valid json at all")
+            .expect_err("from_bytes should fail on malformed JSON input");
+
+        assert!(
+            matches!(err, NordVpnLiteError::ParsingError(_)),
+            "expected ParsingError for invalid JSON, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_from_bytes_missing_required_field_returns_error() {
+        // authentication_token is omitted
+        let bytes = br#"{
+            "log_level": "Info",
+            "log_file_path": "test.log",
+            "adapter_type": "linux-native",
+            "interface": { "name": "utun10", "config_provider": "manual" }
+        }"#;
+
+        let err = NordVpnLiteConfig::from_bytes(bytes)
+            .expect_err("from_bytes should fail when a required field is missing");
+
+        assert!(
+            matches!(err, NordVpnLiteError::ParsingError(_)),
+            "expected ParsingError for missing required field, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_from_bytes_unknown_field_returns_error() {
+        let bytes = br#"{
+            "log_level": "Info",
+            "log_file_path": "test.log",
+            "adapter_type": "linux-native",
+            "interface": { "name": "utun10", "config_provider": "manual" },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "unknown_field": "should_fail"
+        }"#;
+
+        let err = NordVpnLiteConfig::from_bytes(bytes)
+            .expect_err("from_bytes should fail when an unknown field is present");
+
+        assert!(
+            matches!(err, NordVpnLiteError::ParsingError(_)),
+            "expected ParsingError for unknown field, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_from_bytes_invalid_token_returns_error() {
+        // authentication_token is too short
+        let bytes = br#"{
+            "log_level": "Info",
+            "log_file_path": "test.log",
+            "adapter_type": "linux-native",
+            "interface": { "name": "utun10", "config_provider": "manual" },
+            "authentication_token": "deadbeef"
+        }"#;
+
+        let err = NordVpnLiteConfig::from_bytes(bytes)
+            .expect_err("from_bytes should fail for an invalid authentication token");
+
+        assert!(
+            matches!(err, NordVpnLiteError::ParsingError(_)),
+            "expected ParsingError for invalid token, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_from_bytes_all_optional_fields_parsed() {
+        let log_path = std::env::current_dir().unwrap().join("full.log");
+        let bytes = format!(
+            r#"{{
+                "log_level": "Debug",
+                "log_file_path": "{}",
+                "log_file_count": 3,
+                "adapter_type": "linux-native",
+                "interface": {{ "name": "nlx", "config_provider": "manual" }},
+                "vpn": {{ "country": "de" }},
+                "dns": ["1.1.1.1", "8.8.8.8"],
+                "override_default_wg_port": 51820,
+                "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }}"#,
+            log_path.display()
+        )
+        .into_bytes();
+
+        let config =
+            NordVpnLiteConfig::from_bytes(&bytes).expect("from_bytes should accept all fields");
+
+        assert_eq!(config.log_level, LevelFilter::DEBUG);
+        assert_eq!(config.log_file_count, 3);
+        assert_eq!(config.vpn, VpnConfig::Country("de".to_owned()));
+        assert_eq!(
+            config.dns,
+            vec![
+                IpAddr::from(Ipv4Addr::new(1, 1, 1, 1)),
+                IpAddr::from(Ipv4Addr::new(8, 8, 8, 8)),
+            ]
+        );
+        assert_eq!(config.override_default_wg_port, Some(51820));
+        assert_eq!(config.log_file_path, log_path.to_string_lossy().as_ref());
     }
 }

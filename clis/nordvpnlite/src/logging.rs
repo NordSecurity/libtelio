@@ -2,18 +2,26 @@ use std::path::Path;
 
 use tracing::level_filters::LevelFilter;
 use tracing_appender::{
-    non_blocking::WorkerGuard,
-    rolling::{Builder, Rotation},
+    non_blocking::{NonBlocking, WorkerGuard},
+    rolling::{Builder, RollingFileAppender, Rotation},
 };
+use tracing_subscriber::{reload, Layer, Registry};
 
 use crate::NordVpnLiteError;
 
-pub fn setup_logging<P: AsRef<Path>>(
+type DynLayer = Box<dyn Layer<Registry> + Send + Sync>;
+
+pub struct LoggingHandle {
+    _worker_guard: WorkerGuard,
+    fmt_layer_reload_handle: reload::Handle<DynLayer, Registry>,
+    filter_reload_handle: reload::Handle<LevelFilter, Registry>,
+}
+
+fn build_appender<P: AsRef<Path>>(
     log_file_path: P,
-    log_level: LevelFilter,
     log_file_count: usize,
-) -> Result<WorkerGuard, NordVpnLiteError> {
-    let log_appender = Builder::new()
+) -> Result<RollingFileAppender, NordVpnLiteError> {
+    Builder::new()
         .filename_prefix(
             log_file_path
                 .as_ref()
@@ -37,18 +45,68 @@ pub fn setup_logging<P: AsRef<Path>>(
                 msg: "needs to contain both directory and file name".to_owned(),
                 value: log_file_path.as_ref().to_string_lossy().into_owned(),
             }
-        })?)?;
+        })?)
+        .map_err(Into::into)
+}
 
-    let (non_blocking_writer, tracing_worker_guard) = tracing_appender::non_blocking(log_appender);
-    tracing_subscriber::fmt()
-        .with_max_level(log_level)
-        .with_writer(non_blocking_writer)
-        .with_ansi(false)
-        .with_line_number(true)
-        .with_level(true)
-        .init();
+fn build_fmt_layer(writer: NonBlocking) -> DynLayer {
+    Box::new(
+        tracing_subscriber::fmt::layer()
+            .with_writer(writer)
+            .with_ansi(false)
+            .with_line_number(true)
+            .with_level(true),
+    )
+}
 
-    Ok(tracing_worker_guard)
+pub fn setup_logging<P: AsRef<Path>>(
+    log_file_path: P,
+    log_level: LevelFilter,
+    log_file_count: usize,
+) -> Result<LoggingHandle, NordVpnLiteError> {
+    use tracing_subscriber::prelude::*;
+
+    let appender = build_appender(&log_file_path, log_file_count)?;
+    let (writer, guard) = tracing_appender::non_blocking(appender);
+    let fmt_layer: DynLayer = build_fmt_layer(writer);
+
+    let (layer_reload, fmt_layer_reload_handle) = reload::Layer::new(fmt_layer);
+    let (filter_reload, filter_reload_handle) = reload::Layer::new(log_level);
+
+    let subscriber = Registry::default().with(layer_reload.with_filter(filter_reload));
+    tracing::subscriber::set_global_default(subscriber)
+        .map_err(|e| NordVpnLiteError::TracingError(e.to_string()))?;
+
+    Ok(LoggingHandle {
+        _worker_guard: guard,
+        fmt_layer_reload_handle,
+        filter_reload_handle,
+    })
+}
+
+pub fn reload_logging<P: AsRef<Path>>(
+    handle: &mut LoggingHandle,
+    log_file_path: P,
+    log_level: LevelFilter,
+    log_file_count: usize,
+) -> Result<(), NordVpnLiteError> {
+    let appender = build_appender(&log_file_path, log_file_count)?;
+    let (new_writer, new_guard) = tracing_appender::non_blocking(appender);
+    let new_layer: DynLayer = build_fmt_layer(new_writer);
+
+    handle
+        .filter_reload_handle
+        .modify(|level| *level = log_level)
+        .map_err(|e| NordVpnLiteError::TracingError(e.to_string()))?;
+
+    handle
+        .fmt_layer_reload_handle
+        .modify(|layer| *layer = new_layer)
+        .map_err(|e| NordVpnLiteError::TracingError(e.to_string()))?;
+
+    handle._worker_guard = new_guard;
+
+    Ok(())
 }
 
 #[macro_export]
