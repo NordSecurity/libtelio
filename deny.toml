@@ -11,7 +11,6 @@ ignore = [
     "RUSTSEC-2024-0381", # pqcrypto-kyber is unmaintained
     "RUSTSEC-2024-0436", # paste is unmaintained
     "RUSTSEC-2024-0375", # atty is unmaintained
-    "RUSTSEC-2025-0052", # async-std is unmaintained
     "RUSTSEC-2021-0145", # atty has potential unaligned read
     "RUSTSEC-2025-0141", # bincode is unmaintained
     "RUSTSEC-2026-0162", # pqcrypto-traits is unmaintained
