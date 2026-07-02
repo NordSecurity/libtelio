@@ -12,10 +12,9 @@ publish = false
 fuzzing = []
 
 [dependencies]
-# pqcrypto version is fixed, because the newer version implements incompatible kyber kem according to draft specs
-pqcrypto-kyber = { version = "=0.7.6", default-features = false }
-pqcrypto-internals = "=0.2.5"
-pqcrypto-traits = { default-features = false, version = "0.3.5" }
+# safe_pqc_kyber implements Round-3 Kyber768 (wire-compatible with the retired pqcrypto-kyber 0.7.6)
+# and fixes KyberSlash; the FIPS-203 ml-kem crates are NOT wire-compatible.
+safe_pqc_kyber = { version = "0.6.3", features = ["std"] }
 hmac = { version = "0.13.0", default-features = false }
 blake2 = { default-features = false, version = "0.10.6" }
 blake3 = { workspace = true, default-features = false }
@@ -31,6 +30,7 @@ pnet_packet.workspace = true
 mockall = { workspace = true, optional = true }
 parking_lot.workspace = true
 rand.workspace = true
+rand_core_compat.workspace = true # provides the rand_core 0.6 RNG required by safe_pqc_kyber
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

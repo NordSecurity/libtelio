@@ -1,0 +1,1 @@
+Replace unmaintained pqcrypto-kyber/-traits/-internals with safe_pqc_kyber (wire-compatible Round-3 Kyber768).
