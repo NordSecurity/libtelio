@@ -8,34 +8,13 @@ pub struct FeaturesDefaultsBuilder {
 }
 
 impl FeaturesDefaultsBuilder {
+    /// Create a new builder with default values
     pub fn new() -> Self {
-        let config = Features {
-            wireguard: default(),
-            validate_keys: default(),
-            firewall: default(),
-            post_quantum_vpn: default(),
-            dns: default(),
-            nurse: None,
-            lana: None,
-            paths: None,
-            direct: None,
-            is_test_env: None,
-            hide_user_data: true,
-            hide_thread_id: true,
-            // All inner values of derp are None's or false's
-            // and as it does not actualy control derp
-            // builder part is not added
-            derp: None,
-            link_detection: None,
-            flush_events_on_stop_timeout_seconds: None,
-            multicast: false,
-            ipv6: false,
-            nicknames: false,
-            error_notification_service: None,
-        };
-
         Self {
-            config: Mutex::new(config),
+            config: Mutex::new(Features {
+                nurse: None,
+                ..default()
+            }),
         }
     }
 
@@ -82,7 +61,7 @@ impl FeaturesDefaultsBuilder {
             cfg.wireguard.persistent_keepalive.proxying = Some(125);
             cfg.wireguard.persistent_keepalive.stun = Some(125);
 
-            // Preseve any previous values if those were set.
+            // Preserve any previous values if those were set.
             let prev = cfg.derp.as_ref().cloned().unwrap_or_default();
             cfg.derp = Some(FeatureDerp {
                 tcp_keepalive: Some(125),
@@ -94,7 +73,7 @@ impl FeaturesDefaultsBuilder {
         self
     }
 
-    /// Enable key valiation in set_config call with defaults
+    /// Enable key validation in set_config call with defaults
     pub fn enable_validate_keys(self: Arc<Self>) -> Arc<Self> {
         self.config.lock().validate_keys = FeatureValidateKeys(true);
         self
@@ -112,7 +91,7 @@ impl FeaturesDefaultsBuilder {
         self
     }
 
-    /// Enable blocking event flush with timout on stop with defaults
+    /// Enable blocking event flush with timeout on stop with defaults
     pub fn enable_flush_events_on_stop_timeout_seconds(self: Arc<Self>) -> Arc<Self> {
         self.config.lock().flush_events_on_stop_timeout_seconds = Some(0);
         self
@@ -124,7 +103,7 @@ impl FeaturesDefaultsBuilder {
         self
     }
 
-    /// Eanable multicast with defaults
+    /// Enable multicast with defaults
     pub fn enable_multicast(self: Arc<Self>) -> Arc<Self> {
         self.config.lock().multicast = true;
         self
@@ -171,4 +150,38 @@ impl Default for FeaturesDefaultsBuilder {
 
 fn default<T: Default>() -> T {
     T::default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_builder_default_features() {
+        let builder = Arc::new(FeaturesDefaultsBuilder::new());
+        let features = builder.build();
+
+        assert_eq!(features.wireguard, default());
+        assert_eq!(features.validate_keys, default());
+        assert_eq!(features.post_quantum_vpn, default());
+        assert_eq!(features.dns, default());
+
+        assert_eq!(features.nurse, None);
+        assert_eq!(features.lana, None);
+        assert_eq!(features.paths, None);
+        assert_eq!(features.direct, None);
+        assert_eq!(features.is_test_env, None);
+
+        assert_eq!(features.derp, None);
+        assert_eq!(features.firewall, None);
+        assert_eq!(features.flush_events_on_stop_timeout_seconds, None);
+        assert_eq!(features.link_detection, None);
+        assert_eq!(features.error_notification_service, None);
+
+        assert!(features.hide_user_data);
+        assert!(features.hide_thread_id);
+        assert!(!features.ipv6);
+        assert!(!features.nicknames);
+        assert!(!features.multicast);
+    }
 }

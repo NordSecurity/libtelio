@@ -563,7 +563,7 @@ callback interface TelioProtectCb {
 };
 
 /// A [Features] builder that allows a simpler initialization of
-/// features with defaults comming from libtelio lib.
+/// features with defaults coming from libtelio lib.
 ///
 /// !!! Should only be used then remote config is inaccessible !!!
 ///
@@ -594,7 +594,7 @@ interface FeaturesDefaultsBuilder {
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_battery_saving_defaults();
 
-    /// Enable key valiation in set_config call with defaults
+    /// Enable key validation in set_config call with defaults
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_validate_keys();
 
@@ -606,7 +606,7 @@ interface FeaturesDefaultsBuilder {
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_nicknames();
 
-    /// Enable blocking event flush with timout on stop with defaults
+    /// Enable blocking event flush with timeout on stop with defaults
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_flush_events_on_stop_timeout_seconds();
 
@@ -614,7 +614,7 @@ interface FeaturesDefaultsBuilder {
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_link_detection();
 
-    /// Eanable multicast with defaults
+    /// Enable multicast with defaults
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_multicast();
 

@@ -199,7 +199,7 @@ pub enum RttType {
 pub struct FeatureLana {
     /// Path of the file where events will be stored. If such file does not exist, it will be created, otherwise reused
     pub event_path: String,
-    /// Whether the events should be sent to produciton or not
+    /// Whether the events should be sent to production or not
     pub prod: bool,
 }
 
@@ -254,7 +254,7 @@ pub enum PathType {
     Direct,
 }
 
-/// Enable meshent direct connection
+/// Enable meshnet direct connection
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
@@ -453,7 +453,7 @@ pub struct FeatureFirewall {
     /// Customizable private IP range to treat certain private IP ranges
     /// as public IPs for testing purposes.
     pub exclude_private_ip_range: Option<Ipv4Net>,
-    /// Blackist for outgoing connections
+    /// Blacklist for outgoing connections
     #[serde(default)]
     pub outgoing_blacklist: Vec<FirewallBlacklistTuple>,
 }
@@ -515,7 +515,7 @@ pub struct FeatureDns {
     pub use_raw_forwarder: Option<bool>,
 }
 
-/// Newtype for TTL value to ensure that the default function returns the actual default value and not 0.
+/// New type for TTL value to ensure that the default function returns the actual default value and not 0.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
