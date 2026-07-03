@@ -12,12 +12,8 @@ from contextlib import asynccontextmanager
 from tests.utils.logger import log
 from typing import AsyncIterator, List, Optional
 
-_GUEST_KILL_TIMEOUT = 10.0
-
-# Killing the in-container adb client can orphan the `su 0` child on the guest,
-# leaking the tool (ping/iperf3/nc/...). Single grep pass to find candidates,
-# then a NUL-anchored exact match per candidate (mirrors
-# bin/kill_process_by_natlab_id) so one id can never match another's KILL_ID.
+# Guest-side kill-by-id: the base kill only reaches the adb client, orphaning the
+# `su 0` child. NUL-anchored exact match so one id can't match another's KILL_ID.
 _GUEST_KILL_SCRIPT = (
     'id="$1"; [ -n "$id" ] || exit 2; killed=""; '
     'for f in $(grep -alF "KILL_ID=$id" /proc/[0-9]*/environ 2>/dev/null); do '
@@ -29,19 +25,9 @@ _GUEST_KILL_SCRIPT = (
 
 
 class AdbProcess(DockerProcess):
-    """A command run on the Android guest, exec'd as
-    `adb -s <serial> shell su 0 sh -c '<cmd>'` inside the emulator's backing
-    container.
-
-    Mechanically a DockerProcess - same exec and streaming. This class adds the
-    adb-shell shaping (the part that makes it not just a container process); the
-    caller passes the plain guest argv. Run as root via `su 0` (not `adb root`,
-    which restarts adbd and drops the bridged interface).
-
-    Teardown differs from the base: the guest daemon shuts itself down and the
-    adb client is torn down with it, so adb reports the exec exit as a signal
-    (137/143) and the base class never gets to flag it as an intentional kill
-    (_kill_sent). `run` tolerates that teardown signal-exit - see its comment.
+    """A command on the Android guest, run as root:
+        adb -s <serial> shell su 0 sh -c '<cmd>'
+    `su 0` not `adb root` (adb root restarts adbd, dropping the bridged interface).
     """
 
     def __init__(
@@ -53,16 +39,12 @@ class AdbProcess(DockerProcess):
         kill_id=None,
         extra_path: Optional[str] = None,
     ) -> None:
-        # Fix the id now so we can export it into the *guest* env; DockerProcess
-        # only sets KILL_ID on the in-container adb client, which the guest never
-        # sees.
+        # export KILL_ID into the guest env (base only sets it on the adb client)
         kill_id = kill_id or generate_kill_id()
         self._serial = serial
-        # adb passes a single string to the device shell, so quote+join each arg.
-        # extra_path is appended (not prepended) so system/toybox tools keep
-        # priority and Termux's baked binaries resolve only as a fallback.
         guest_cmd = " ".join(shlex.quote(arg) for arg in command)
         guest_cmd = f"export KILL_ID={shlex.quote(kill_id)}; {guest_cmd}"
+        # append (not prepend): system/toybox tools win, Termux binaries are fallback
         if extra_path:
             guest_cmd = f'export PATH="$PATH":{shlex.quote(extra_path)}; {guest_cmd}'
         shell_cmd = f"su 0 sh -c {shlex.quote(guest_cmd)}"
@@ -84,13 +66,7 @@ class AdbProcess(DockerProcess):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=_GUEST_KILL_TIMEOUT
-                )
-            except asyncio.TimeoutError:
-                proc.kill()
-                raise
+            stdout, stderr = await proc.communicate()
             out = (stdout or b"").decode(errors="replace").strip()
             if proc.returncode != 0:
                 log.warning(
@@ -112,10 +88,8 @@ class AdbProcess(DockerProcess):
             )
 
     async def _kill_exec_if_running(self) -> None:
-        # Guest kill must precede the base kill (ending the adb client exec is
-        # what orphans the su child) and is gated the same way as the base one:
-        # only while the exec is still running. Inspect failures are swallowed
-        # here because super() re-runs the same checks and logs/raises itself.
+        # kill the guest process before the base ends the adb command (that
+        # orphans the su child)
         try:
             exec_alive = (await self._wait_for_process_start())["ExitCode"] is None
         except (asyncio.TimeoutError, RuntimeError):
@@ -131,13 +105,8 @@ class AdbProcess(DockerProcess):
         stderr_callback: Optional[StreamCallback] = None,
         privileged: bool = False,
     ) -> AsyncIterator["AdbProcess"]:
-        # On teardown the `adb shell` exec is killed by a signal (the guest
-        # daemon stops itself / the adb client is torn down with it) and adb
-        # surfaces 137/143 as the exec exit; because the guest self-exits, the
-        # base class can't record it as an intentional kill (_kill_sent), so it
-        # raises. This is the same teardown signal-exit the base DockerProcess
-        # already tolerates on docker - swallow it for this exec only, but never
-        # mask a real exception it superseded.
+        # teardown makes adb exit by signal (137/143); tolerate it for this exec,
+        # but don't mask a real superseded error
         try:
             async with super().run(stdout_callback, stderr_callback, privileged):
                 yield self
