@@ -1,5 +1,5 @@
 use rand::RngExt;
-use regex::{Captures, Match, Regex, RegexBuilder};
+use regex_lite::{Captures, Match, Regex, RegexBuilder};
 use std::{
     net::{Ipv4Addr, Ipv6Addr},
     str::FromStr,

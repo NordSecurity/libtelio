@@ -2886,7 +2886,7 @@ dependencies = [
  "ipnet",
  "nix 0.31.3",
  "rand 0.10.1",
- "regex",
+ "regex-lite",
  "reqwest 0.13.3",
  "serde",
  "serde_json",
@@ -3813,6 +3813,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex-lite"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973"
+
+[[package]]
 name = "regex-syntax"
 version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4731,7 +4737,7 @@ dependencies = [
  "hex",
  "ipnet",
  "parking_lot",
- "regex",
+ "regex-lite",
  "reqwest 0.13.3",
  "rustyline",
  "serde",
@@ -5306,7 +5312,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rand 0.10.1",
- "regex",
+ "regex-lite",
  "rstest",
  "rustc-hash",
  "serde",
