@@ -17,7 +17,8 @@ use telio_core::telio_utils::exponential_backoff::{
     Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
 };
 
-use crate::config::{Endpoint, NordToken, NordVpnLiteConfig, NordlynxKeyResponse, VpnConfig};
+use crate::auth::{NordToken, NordlynxKeyResponse};
+use crate::config::{Endpoint, NordVpnLiteConfig, VpnConfig};
 use crate::NordVpnLiteError;
 use crate::{nordvpnlite_logstd_error, nordvpnlite_logstd_warn};
 

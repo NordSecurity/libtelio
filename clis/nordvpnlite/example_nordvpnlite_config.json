@@ -1,5 +1,5 @@
 {
-  "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "auth_file_path": "/etc/nordvpnlite/auth.json",
   "vpn": {
     "country": "de"
   },

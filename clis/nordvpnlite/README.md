@@ -48,7 +48,11 @@ The config file should be provided in a JSON format
 
 Currently supported configuration variables:
 
-* `authentication_token` - Token from Nord VPN account to authenticate API calls
+* `auth_file_path` - Path to the file where the authentication token is stored,
+  defaults to `/etc/nordvpnlite/auth.json`. Use the `login`/`logout` commands
+  (see below) to manage its contents rather than editing it directly. The
+  `NORD_TOKEN` environment variable, when set to a valid token, takes precedence
+  over this file.
 * `vpn` - VPN config type. If omitted, 'recommended' type is chosen. Possible options:
   * `server` - manually specified endpoint:
     * `address` - The IP address of the server/endpoint to connect to
@@ -90,12 +94,20 @@ And following cli commands:
 * `nordvpnlite stop` - stop daemon execution
 * `nordvpnlite reload` - reload the configuration file and restart the daemon
 * `nordvpnlite countries` - list countries with available VPN servers
+* `nordvpnlite login <token>` (or `nordvpnlite login --token <token>`) - store the authentication token obtained
+  from [my.nordaccount.com](https://my.nordaccount.com) into the auth file
+  (`auth_file_path`). Overwrites any previously stored token.
+  * `--config-file <path>` - use an alternative configuration file
+  (defaults to `/etc/nordvpnlite/config.json`)
+* `nordvpnlite logout` - remove the stored authentication token (auth file).
+  * `--config-file <path>` - use an alternative configuration file
+  (defaults to `/etc/nordvpnlite/config.json`)
 
 ## OpenWRT
 
 After installing the `.ipk` package:
 
-* Edit the `/etc/nordvpnlite/config.json` file, and replace `authentication_token` with your authentication token obtained from [my.nordaccount.com](https://my.nordaccount.com)
+* Store your authentication token obtained from [my.nordaccount.com](https://my.nordaccount.com) by running `nordvpnlite login <token>` (or `nordvpnlite login --token <token>`) (it is saved to the `auth_file_path` configured in `/etc/nordvpnlite/config.json`, by default `/etc/nordvpnlite/auth.json`)
 * To start the `nordvpnlite` service run `/etc/init.d/nordvpnlite start`
 * After each edit of `/etc/nordvpnlite/config.json` reload the service with `/etc/init.d/nordvpnlite reload`
 * To stop the `nordvpnlite` service run `/etc/init.d/nordvpnlite stop`. Important: Simply running `nordvpnlite stop` will cause procd to respawn it

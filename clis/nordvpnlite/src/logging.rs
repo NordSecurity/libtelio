@@ -111,16 +111,16 @@ pub fn reload_logging<P: AsRef<Path>>(
 
 #[macro_export]
 macro_rules! nordvpnlite_logstd_warn {
-    ($($arg:tt)*) => {
+    ($($arg:tt)*) => {{
         ::tracing::warn!($($arg)*);
-        eprintln!("WARNING: {}", format_args!($($arg)*));
-    };
+        ::std::eprintln!("WARNING: {}", ::std::format_args!($($arg)*));
+    }};
 }
 
 #[macro_export]
 macro_rules! nordvpnlite_logstd_error {
-    ($($arg:tt)*) => {
+    ($($arg:tt)*) => {{
         ::tracing::error!($($arg)*);
-        eprintln!("ERROR: {}", format_args!($($arg)*));
-    };
+        ::std::eprintln!("ERROR: {}", ::std::format_args!($($arg)*));
+    }};
 }
