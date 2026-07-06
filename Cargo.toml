@@ -211,7 +211,7 @@ telio-pinger = { version = "0.1.0", path = "./crates/telio-pinger" }
 telio-core = { version = "0.1.0", path = "./crates/telio-core", default-features = false }
 
 [profile.release]
-opt-level = "s"
+opt-level = "z"
 lto = true
 codegen-units = 1
 debug = "full"
