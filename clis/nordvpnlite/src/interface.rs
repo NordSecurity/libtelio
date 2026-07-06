@@ -1,6 +1,6 @@
 use crate::NordVpnLiteError;
 use ipnet::IpNet;
-use regex::Regex;
+use regex_lite::Regex;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::process::Command;

@@ -22,7 +22,7 @@ parking_lot.workspace = true
 proptest = { workspace = true, optional = true , default-features = false }
 proptest-derive = { workspace = true, optional = true }
 rand.workspace = true
-regex.workspace = true
+regex-lite.workspace = true
 rustc-hash.workspace = true
 serde.workspace = true
 smart-default.workspace = true

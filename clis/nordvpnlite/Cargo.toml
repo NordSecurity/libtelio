@@ -26,7 +26,7 @@ tokio.workspace = true
 signal-hook-tokio = { version = "0.4.0", features = ["futures-v0_3"] }
 futures.workspace = true
 thiserror.workspace = true
-regex.workspace = true
+regex-lite.workspace = true
 ipnet.workspace = true
 reqwest = { version = "0.13.3", default-features = false, features = [
   "json",

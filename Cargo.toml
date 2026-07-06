@@ -142,7 +142,7 @@ protobuf-codegen = "3.7.2"
 rand = "0.10.1"
 rand_core = "0.10.1"
 rand_core_compat = { version = "0.1.1", features = ["rand_core_0_6", "rand_core_0_9"] }
-regex = "1.12"
+regex-lite = "0.1.9"
 rstest = "0.26.1"
 rustc-hash = "2"
 rustls-platform-verifier = "0.6.2"
