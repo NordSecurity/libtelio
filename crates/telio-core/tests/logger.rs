@@ -8,7 +8,7 @@ mod test_module {
         time::Duration,
     };
 
-    use telio::{
+    use telio_core::{
         ffi_types::{FfiResult, TelioLoggerCb},
         logging::{ASYNC_CHANNEL_CLOSED_MSG, START_ASYNC_LOGGER_MSG},
     };
@@ -16,8 +16,8 @@ mod test_module {
     #[test]
     fn test_logger() {
         // Line number of tracing::info! call in this fill, down below
-        const INFO_LINE1: u32 = 74;
-        const INFO_LINE2: u32 = 75;
+        const INFO_LINE1: u32 = 77;
+        const INFO_LINE2: u32 = 78;
 
         let call_count = Arc::new(AtomicUsize::new(0));
 
@@ -29,7 +29,7 @@ mod test_module {
         impl TelioLoggerCb for TestLogger {
             fn log(
                 &self,
-                log_level: telio::ffi_types::TelioLogLevel,
+                log_level: telio_core::ffi_types::TelioLogLevel,
                 payload: String,
             ) -> FfiResult<()> {
                 sleep(Duration::from_secs(2)); // Slow down logger so that the internal logs queue grows
@@ -39,7 +39,10 @@ mod test_module {
                 }
                 let tid = std::thread::current().id();
                 assert_ne!(self.log_caller_tid, tid);
-                assert!(matches!(log_level, telio::ffi_types::TelioLogLevel::Info));
+                assert!(matches!(
+                    log_level,
+                    telio_core::ffi_types::TelioLogLevel::Info
+                ));
                 if self.call_count.load(Ordering::Relaxed) == 0 {
                     assert_eq!(
                         format!(
@@ -67,14 +70,14 @@ mod test_module {
             log_caller_tid: std::thread::current().id(),
         };
 
-        telio::set_global_logger(telio::ffi_types::TelioLogLevel::Info, Box::new(logger));
-        telio::hide_thread_id_in_logs(false);
+        telio_core::set_global_logger(telio_core::ffi_types::TelioLogLevel::Info, Box::new(logger));
+        telio_core::hide_thread_id_in_logs(false);
 
         tracing::debug!("this will be ignored since it's below info");
         tracing::info!("test message");
         tracing::info!("test message");
 
-        telio::unset_global_logger();
+        telio_core::unset_global_logger();
         assert_eq!(2, call_count.load(Ordering::Relaxed));
 
         tracing::info!("this will be ignored since it's after the unset_global_logger call");

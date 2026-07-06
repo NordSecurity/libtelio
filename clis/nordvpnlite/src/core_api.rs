@@ -7,13 +7,13 @@ use std::fs::File;
 use std::io::Read;
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
-use telio::telio_model::mesh::ExitNode;
+use telio_core::telio_model::mesh::ExitNode;
 use thiserror::Error;
 use tokio::time::Duration;
 use tracing::{debug, error, info, trace, warn};
 
-use telio::crypto::SecretKey;
-use telio::telio_utils::exponential_backoff::{
+use telio_core::crypto::SecretKey;
+use telio_core::telio_utils::exponential_backoff::{
     Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
 };
 
@@ -510,7 +510,7 @@ pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec
 
 #[cfg(test)]
 mod tests {
-    use telio::telio_model::mesh::ExitNode;
+    use telio_core::telio_model::mesh::ExitNode;
 
     use super::*;
 

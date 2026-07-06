@@ -8,54 +8,10 @@ pub mod _telio_integration_documentation {
 
 pub mod ffi;
 pub use crate::ffi::*;
-use crate::{defaults_builder::FeaturesDefaultsBuilder, types::*};
-pub use ffi::types as ffi_types;
+pub use telio_core::*;
 
-/// cbindgen:ignore
-pub mod device;
-
-/// cbindgen:ignore
-pub use telio_crypto as crypto;
-
-/// cbindgen:ignore
-pub use telio_dns;
-
-/// cbindgen:ignore
-pub use telio_proto;
-
-/// cbindgen:ignore
-pub use telio_proxy;
-
-/// cbindgen:ignore
-pub use telio_nurse;
-
-/// cbindgen:ignore
-pub use telio_relay;
-
-/// cbindgen:ignore
-pub use telio_traversal;
-
-/// cbindgen:ignore
-pub use telio_sockets;
-
-/// cbindgen:ignore
-pub use telio_task;
-
-/// cbindgen:ignore
-pub use telio_wg;
-
-/// cbindgen:ignore
-pub use telio_model;
-
-/// cbindgen:ignore
-pub use telio_utils;
-
-/// cbindgen:ignore
-pub use telio_lana;
-
-#[cfg(feature = "enable_firewall")]
-/// cbindgen:ignore
-pub use telio_firewall;
+use telio_core::defaults_builder::FeaturesDefaultsBuilder;
+pub use telio_core::types as ffi_types;
 
 pub use uniffi_libtelio::*;
 #[allow(
@@ -83,16 +39,6 @@ mod uniffi_libtelio {
 
     type ErrorEvent = telio_model::event::Error;
     type TelioNode = telio_model::mesh::Node;
-
-    impl From<uniffi::UnexpectedUniFFICallbackError> for TelioError {
-        fn from(err: uniffi::UnexpectedUniFFICallbackError) -> Self {
-            let err_string = err.to_string();
-            let err_reason = err.reason;
-            Self::UnknownError {
-                inner: format!("{err_string} - {err_reason}"),
-            }
-        }
-    }
 
     fn decode_key(val: String) -> uniffi::Result<[u8; telio_crypto::KEY_SIZE]> {
         let mut key = [0_u8; telio_crypto::KEY_SIZE];
