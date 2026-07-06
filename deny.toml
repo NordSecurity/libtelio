@@ -33,6 +33,7 @@ allow = [
 confidence-threshold = 0.8
 exceptions = [
     { allow = ["GPL-3.0-only"], name = "telio", version = "*" },
+    { allow = ["GPL-3.0-only"], name = "telio-core", version = "*" },
     { allow = ["GPL-3.0-only"], name = "llt-proto", version = "*" },
 ]
 

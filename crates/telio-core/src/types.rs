@@ -65,6 +65,16 @@ pub enum TelioLogLevel {
     Trace = 5,
 }
 
+impl From<uniffi::UnexpectedUniFFICallbackError> for TelioError {
+    fn from(err: uniffi::UnexpectedUniFFICallbackError) -> Self {
+        let err_string = err.to_string();
+        let err_reason = err.reason;
+        Self::UnknownError {
+            inner: format!("{err_string} - {err_reason}"),
+        }
+    }
+}
+
 impl From<KeyDecodeError> for TelioError {
     fn from(_: KeyDecodeError) -> Self {
         Self::InvalidKey

@@ -2,7 +2,7 @@ use std::net::IpAddr;
 
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use telio::telio_task::io::chan;
+use telio_core::telio_task::io::chan;
 use tokio::sync::oneshot;
 use tracing::{error, trace};
 

@@ -12,7 +12,7 @@ use std::{
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use tracing::{level_filters::LevelFilter, Level};
 
-use telio::{
+use telio_core::{
     crypto::{PublicKey, SecretKey},
     device::AdapterType,
     telio_utils::Hidden,
