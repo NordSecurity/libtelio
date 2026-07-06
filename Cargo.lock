@@ -3333,37 +3333,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pqcrypto-internals"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9d34bec6abe2283e6de7748b68b292d1ffa2203397e3e71380ff8418a49fb46"
-dependencies = [
- "cc",
- "dunce",
- "getrandom 0.2.17",
- "libc",
-]
-
-[[package]]
-name = "pqcrypto-kyber"
-version = "0.7.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe9d9695c19e525d5366c913562a331fbeef9a2ad801d9a9ded61a0e4c2fe0fb"
-dependencies = [
- "cc",
- "glob",
- "libc",
- "pqcrypto-internals",
- "pqcrypto-traits",
-]
-
-[[package]]
-name = "pqcrypto-traits"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94e851c7654eed9e68d7d27164c454961a616cf8c203d500607ef22c737b51bb"
-
-[[package]]
 name = "predicates"
 version = "3.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4183,6 +4152,16 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
+name = "safe_pqc_kyber"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "108c4ad7fe882cbb078ff40de415658e9d827f636e4fb17e7d5a97503a9aceaf"
+dependencies = [
+ "rand_core 0.6.4",
+ "zeroize",
+]
 
 [[package]]
 name = "salsa20"
@@ -5045,11 +5024,10 @@ dependencies = [
  "neptun",
  "parking_lot",
  "pnet_packet 0.35.0",
- "pqcrypto-internals",
- "pqcrypto-kyber",
- "pqcrypto-traits",
  "proptest",
  "rand 0.10.1",
+ "rand_core_compat",
+ "safe_pqc_kyber",
  "sha2",
  "telio-crypto",
  "telio-model",
