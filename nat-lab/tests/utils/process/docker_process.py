@@ -18,6 +18,10 @@ _EXIT_CODE_SIGKILL = 137  # 128 + 9 (SIGKILL)
 _EXIT_CODE_SIGTERM = 143  # 128 + 15 (SIGTERM)
 
 
+def generate_kill_id() -> str:
+    return secrets.token_hex(8).upper()
+
+
 class DockerProcess(Process):
     _container: DockerContainer
     _container_name: str
@@ -50,7 +54,7 @@ class DockerProcess(Process):
         self._is_done = asyncio.Event()
         self._stream = None
         self._execute = None
-        self._kill_id = kill_id if kill_id else secrets.token_hex(8).upper()
+        self._kill_id = kill_id or generate_kill_id()
         self._kill_sent = False
 
     async def execute(
