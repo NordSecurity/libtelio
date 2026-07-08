@@ -12,7 +12,6 @@ crate-type = ["cdylib"]
 [features]
 default = ["enable_ens", "enable_firewall"]
 pretend_to_be_macos = ["telio-model/pretend_to_be_macos", "telio-core/pretend_to_be_macos"]
-disable_ens = ["telio-core/disable_ens"]
 enable_ens = ["telio-proto/enable_ens", "telio-core/enable_ens"]
 enable_firewall = ["telio-firewall", "telio-core/enable_firewall"]
 
