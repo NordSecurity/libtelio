@@ -12,7 +12,7 @@ use crate::{
     daemon::{NordVpnLiteError, TelioStatusReport},
 };
 
-pub(crate) const TIMEOUT_SEC: u64 = 30;
+pub(crate) const TIMEOUT_SEC: u64 = 60;
 
 #[derive(Parser, Debug, PartialEq)]
 #[clap()]
