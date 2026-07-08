@@ -395,7 +395,7 @@ def recreate_all():
 
 def _resolve_skip_keywords(args) -> set:
     if args.lite_mode:
-        return {"fullcone", "windows", "mac", "nlx", "openwrt", "android"}
+        return {"fullcone", "windows", "mac", "nlx", "openwrt", "android", "playwright"}
     skip_keywords: set = set()
     if args.skip_fullcone:
         skip_keywords.add("fullcone")

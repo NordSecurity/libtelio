@@ -612,7 +612,6 @@ class TestTpLiteStats:
 
         await client.tp_lite.disable_stats_collection()
 
-
     @pytest.mark.parametrize(
         "alpha_setup_params",
         [pytest.param(_alpha_setup_params_with_firewall())],
@@ -637,9 +636,6 @@ class TestTpLiteStats:
         [alpha] = env.nodes
         [client] = env.clients
         [connection] = [c.connection for c in env.connections]
-        standard_dns_ip = config.LAN_ADDR_MAP[ConnectionTag.DOCKER_DNS_SERVER_1][
-            "primary"
-        ]
 
         await connect_vpn(
             connection,
@@ -655,7 +651,10 @@ class TestTpLiteStats:
 
         with pytest.raises(Exception):
             await query_dns(
-                connection, BLOCKED_NXDOMAIN, dns_server=config.LIBTELIO_DNS_IPV4, options=["-type=a"]
+                connection,
+                BLOCKED_NXDOMAIN,
+                dns_server=config.LIBTELIO_DNS_IPV4,
+                options=["-type=a"],
             )
 
         await _trigger_stats_collection(connection)
