@@ -610,21 +610,25 @@ async fn consolidate_firewall<F: Firewall>(
     dns_pubkey: Option<PublicKey>,
 ) -> Result {
     let mut state = FirewallState::default();
+    let peers: Vec<_> = iter_peers(requested_state).collect();
 
-    state.whitelist.port_whitelist = iter_peers(requested_state)
+    state.whitelist.port_whitelist = peers
+        .iter()
         .filter(|p| p.allow_peer_send_files)
         .map(|p| (p.public_key, FILE_SEND_PORT))
         .collect();
 
-    for permission in Permissions::VALUES {
-        state.whitelist.peer_whitelists[permission] = iter_peers(requested_state)
-            .filter(|p| match permission {
-                Permissions::IncomingConnections => p.allow_incoming_connections,
-                Permissions::LocalAreaConnections => p.allow_peer_local_network_access,
-                Permissions::RoutingConnections => p.allow_peer_traffic_routing,
-            })
-            .map(|p| p.public_key)
-            .collect();
+    for peer in &peers {
+        let key = peer.public_key;
+        if peer.allow_incoming_connections {
+            state.whitelist.peer_whitelists[Permissions::IncomingConnections].insert(key);
+        }
+        if peer.allow_peer_local_network_access {
+            state.whitelist.peer_whitelists[Permissions::LocalAreaConnections].insert(key);
+        }
+        if peer.allow_peer_traffic_routing {
+            state.whitelist.peer_whitelists[Permissions::RoutingConnections].insert(key);
+        }
     }
 
     if let Some(key) = starcast_vpeer_pubkey {
