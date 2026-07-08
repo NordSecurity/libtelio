@@ -15,7 +15,7 @@ use std::{
 };
 use telio_crypto::SecretKey;
 use telio_firewall::firewall::{
-    Firewall, FirewallState, Permissions, StatefulFirewall, FILE_SEND_PORT,
+    Firewall, FirewallDynamicState, Permissions, StatefulFirewall, FILE_SEND_PORT,
 };
 use telio_model::{
     features::{FeatureFirewall, FirewallBlacklistTuple, IpProtocol},
@@ -632,7 +632,7 @@ fn ipv6_blocked() {
     ];
     for TestInput { src1, src2, src3, src4, src5, dst1, dst2, make_udp , is_ipv4} in test_inputs {
         let fw = StatefulFirewall::new(false, FeatureFirewall::default(),).expect("Failed to load libfirewall");
-        fw.apply_state(FirewallState {
+        fw.apply_dynamic_state(FirewallDynamicState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
         });
@@ -697,7 +697,7 @@ fn outgoing_blacklist() {
             outgoing_blacklist: blacklist.clone(),
             ..Default::default()
         },).expect("Failed to load libfirewall");
-        fw.apply_state(FirewallState {
+        fw.apply_dynamic_state(FirewallDynamicState {
             ip_addresses: vec![
                 IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
                 IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
@@ -760,9 +760,9 @@ fn firewall_whitelist() {
         let mut feature = FeatureFirewall::default();
         feature.neptun_reset_conns = true;
         let fw = StatefulFirewall::new(true, feature).expect("Failed to load libfirewall");
-        let mut state = fw.get_state();
+        let mut state = fw.get_dynamic_state();
         state.ip_addresses = vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))];
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         let peer1 = make_random_peer();
         let peer2 = make_random_peer();
 
@@ -772,8 +772,8 @@ fn firewall_whitelist() {
         assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), false);
 
         state.whitelist.port_whitelist.insert(peer2, 1111);
-        fw.apply_state(state.clone());
-        assert_eq!(fw.get_state().whitelist.port_whitelist.len(), 1);
+        fw.apply_dynamic_state(state.clone());
+        assert_eq!(fw.get_dynamic_state().whitelist.port_whitelist.len(), 1);
 
         assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_udp(src1, dst1,)), false);
         assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), true);
@@ -785,7 +785,7 @@ fn firewall_whitelist() {
         assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_tcp(src5, dst1, TcpFlags::SYN)), true);
 
         state.whitelist.peer_whitelists[Permissions::IncomingConnections].insert(peer2);
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         let src = src1.parse::<StdSocketAddr>().unwrap().ip().to_string();
         let dst = dst1.parse::<StdSocketAddr>().unwrap().ip().to_string();
         assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_icmp(&src, &dst, IcmpTypes::EchoRequest.into())), false);
@@ -824,9 +824,9 @@ fn firewall_vpn_peer() {
         for TestInput { src1, src2, dst1, make_udp, make_tcp } in &test_inputs {
             let feature = FeatureFirewall::default();
             let fw = StatefulFirewall::new(true, feature).expect("Failed to load libfirewall");
-            let mut state = fw.get_state();
+            let mut state = fw.get_dynamic_state();
             state.ip_addresses = vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))];
-            fw.apply_state(state.clone());
+            fw.apply_dynamic_state(state.clone());
 
             let peer1 = make_random_peer();
             let peer2 = make_random_peer();
@@ -837,7 +837,7 @@ fn firewall_vpn_peer() {
             assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_tcp(src2, dst1, synack)), false);
 
             state.whitelist.vpn_peer = Some(peer1);
-            fw.apply_state(state.clone());
+            fw.apply_dynamic_state(state.clone());
             assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_udp(src1, dst1,)), true);
             assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), false);
 
@@ -845,7 +845,7 @@ fn firewall_vpn_peer() {
             assert_eq!(fw.process_outbound_packet_sink(&peer1.0, &mut make_tcp(dst1, src1, synack)), true);
 
             state.whitelist.vpn_peer = None;
-            fw.apply_state(state.clone());
+            fw.apply_dynamic_state(state.clone());
             assert_eq!(fw.process_inbound_packet(&peer1.0, &mut make_udp(src1, dst1,)), false);
             assert_eq!(fw.process_inbound_packet(&peer2.0, &mut make_udp(src2, dst1,)), false);
             // Peer-initiated established TCP: no longer accepted once the vpn-peer rule is gone
@@ -873,12 +873,12 @@ fn firewall_whitelist_change_icmp() {
         let feature = FeatureFirewall::default();
         // Set number of conntrack entries to 0 to test only the whitelist
         let fw = StatefulFirewall::new(true, feature).expect("Failed to load libfirewall");
-        fw.apply_state(FirewallState {
+        fw.apply_dynamic_state(FirewallDynamicState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
         });
 
-        let mut state = fw.get_state();
+        let mut state = fw.get_dynamic_state();
         let peer = make_random_peer();
         assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp(them, us, IcmpTypes::EchoReply.into())), false);
 
@@ -890,7 +890,7 @@ fn firewall_whitelist_change_icmp() {
         }
 
         state.whitelist.peer_whitelists[Permissions::IncomingConnections].insert(peer);
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp(them, us, IcmpTypes::EchoRequest.into())), true);
         assert_eq!(fw.process_inbound_packet(&peer.0, &mut make_icmp(them, us, IcmpTypes::EchoReply.into())), true);
         if *is_v4 {
@@ -930,12 +930,12 @@ fn firewall_orig_src_ip_peer_initiated_blocked_after_removal() {
 
     for TestInput { us, them, make_icmp_echo } in &test_inputs {
         let fw = StatefulFirewall::new(true, FeatureFirewall::default()).expect("Failed to load libfirewall");
-        fw.apply_state(FirewallState {
+        fw.apply_dynamic_state(FirewallDynamicState {
             ip_addresses: vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
         });
 
-        let mut state = fw.get_state();
+        let mut state = fw.get_dynamic_state();
         let peer = make_random_peer();
 
         // Not whitelisted yet: the peer's pings are dropped.
@@ -943,7 +943,7 @@ fn firewall_orig_src_ip_peer_initiated_blocked_after_removal() {
 
         // Allow the peer to open incoming connections.
         state.whitelist.peer_whitelists[Permissions::IncomingConnections].insert(peer);
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
 
         // The peer pings the host -> accepted by the incoming-peer rule. This opens
         // a conntrack entry whose original direction source is the peer's IP.
@@ -955,7 +955,7 @@ fn firewall_orig_src_ip_peer_initiated_blocked_after_removal() {
 
         // Remove the peer from the incoming whitelist.
         state.whitelist.peer_whitelists[Permissions::IncomingConnections].remove(&peer);
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
 
         // Pings must now fail: not from an allowed peer anymore, and the connection
         // was initiated by the peer (orig src != our IP) so OrigSrcIp doesn't help -
@@ -990,7 +990,7 @@ fn firewall_orig_src_ip_host_initiated_allowed_without_whitelist() {
 
     for TestInput { us, them, make_icmp_echo } in &test_inputs {
         let fw = StatefulFirewall::new(true, FeatureFirewall::default()).expect("Failed to load libfirewall");
-        fw.apply_state(FirewallState {
+        fw.apply_dynamic_state(FirewallDynamicState {
             ip_addresses: vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
         });
@@ -1031,7 +1031,7 @@ fn firewall_orig_src_ip_icmp_error_for_host_initiated_connection_allowed() {
 
     for TestInput { us, us_unsent, them, make_udp, make_icmp_error } in &test_inputs {
         let fw = StatefulFirewall::new(true, FeatureFirewall::default()).expect("Failed to load libfirewall");
-        fw.apply_state(FirewallState {
+        fw.apply_dynamic_state(FirewallDynamicState {
             ip_addresses: vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
         });
@@ -1058,23 +1058,23 @@ fn firewall_whitelist_change_udp_allow() {
 
     for TestInput { us, them, make_udp } in test_inputs {
         let fw = StatefulFirewall::new(true, FeatureFirewall::default(),).expect("Failed to load libfirewall");
-        fw.apply_state(FirewallState {
+        fw.apply_dynamic_state(FirewallDynamicState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
         });
-        let mut state = fw.get_state();
+        let mut state = fw.get_dynamic_state();
 
         let them_peer = make_random_peer();
 
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), false);
         state.whitelist.port_whitelist.insert(them_peer, 8888);
-        fw.apply_state(state.clone()); // NOTE: this doesn't change anything about this test
+        fw.apply_dynamic_state(state.clone()); // NOTE: this doesn't change anything about this test
         assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &mut make_udp(us, them)), true);
         // Peer-initiated (the peer's packet above was seen first), so OrigSrcIp doesn't accept it
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), false);
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), false);
         state.whitelist.port_whitelist.remove(&them_peer);
-        fw.apply_state(state.clone()); // NOTE: also has no impact on this test
+        fw.apply_dynamic_state(state.clone()); // NOTE: also has no impact on this test
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), false);
     }
 }
@@ -1090,22 +1090,22 @@ fn firewall_whitelist_change_udp_block() {
 
     for TestInput { us, them, make_udp } in test_inputs {
         let fw = StatefulFirewall::new(true, FeatureFirewall::default(),).expect("Failed to load libfirewall");
-        fw.apply_state(FirewallState {
+        fw.apply_dynamic_state(FirewallDynamicState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
         });
-        let mut state = fw.get_state();
+        let mut state = fw.get_dynamic_state();
         let them_peer = make_random_peer();
 
         state.whitelist.port_whitelist.insert(them_peer, 1111);
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
         assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &mut make_udp(us, them)), true);
 
         // The already started connection should still work
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), true);
         state.whitelist.port_whitelist.remove(&them_peer);
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         // Peer-initiated: dropped after the port whitelist is removed (OrigSrcIp doesn't match)
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_udp(them, us)), false);
     }
@@ -1121,14 +1121,14 @@ fn firewall_whitelist_change_tcp_allow() {
     ];
     for TestInput { us, them, make_tcp } in test_inputs {
         let fw = StatefulFirewall::new(true, FeatureFirewall::default(),).expect("Failed to load libfirewall");
-        let mut state = fw.get_state();
+        let mut state = fw.get_dynamic_state();
         state.ip_addresses = vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))];
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
 
         let them_peer = make_random_peer();
 
         state.whitelist.port_whitelist.insert(them_peer, 8888);
-        fw.apply_state(state.clone()); // NOTE: this doesn't change anything about the test
+        fw.apply_dynamic_state(state.clone()); // NOTE: this doesn't change anything about the test
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), false);
         assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &mut make_tcp(us, them, TcpFlags::SYN)), true);
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN | TcpFlags::ACK)), true);
@@ -1137,7 +1137,7 @@ fn firewall_whitelist_change_tcp_allow() {
         // Should PASS because we started the session
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::ACK)), true);
         state.whitelist.port_whitelist.remove(&them_peer);
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::ACK)), true);
     }
 
@@ -1153,15 +1153,15 @@ fn firewall_whitelist_change_tcp_block() {
     ];
     for TestInput { us, them, make_tcp } in test_inputs {
         let fw = StatefulFirewall::new(true, FeatureFirewall::default(),).expect("Failed to load libfirewall");
-        let mut state = fw.get_state();
+        let mut state = fw.get_dynamic_state();
         state.ip_addresses = vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))];
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
 
         let them_peer = make_random_peer();
 
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN)), false);
         state.whitelist.port_whitelist.insert(them_peer, 1111);
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::SYN)), true);
         assert_eq!(fw.process_outbound_packet_sink(&them_peer.0, &mut make_tcp(us, them, TcpFlags::SYN | TcpFlags::ACK)), true);
 
@@ -1169,7 +1169,7 @@ fn firewall_whitelist_change_tcp_block() {
         // Firewall allows already established connections while the peer is whitelisted
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::ACK)), true);
         state.whitelist.port_whitelist.remove(&them_peer);
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         // Peer-initiated: dropped after the port whitelist is removed (OrigSrcIp doesn't match)
         assert_eq!(fw.process_inbound_packet(&them_peer.0, &mut make_tcp(them, us, TcpFlags::ACK)), false);
     }
@@ -1207,11 +1207,11 @@ fn firewall_whitelist_peer() {
         for TestInput { src1, src2, dst, make_udp, make_tcp, make_icmp } in &test_inputs {
             let feature = FeatureFirewall::default();
             let fw = StatefulFirewall::new(true, feature).expect("Failed to load libfirewall");
-            fw.apply_state(FirewallState {
+            fw.apply_dynamic_state(FirewallDynamicState {
                 ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
                 ..Default::default()
             });
-            let mut state = fw.get_state();
+            let mut state = fw.get_dynamic_state();
             assert!(state.whitelist.peer_whitelists[Permissions::IncomingConnections].is_empty());
 
             let src2_ip = src2.parse::<StdSocketAddr>().unwrap().ip().to_string();
@@ -1222,16 +1222,16 @@ fn firewall_whitelist_peer() {
             assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_tcp(src2, dst, TcpFlags::PSH)), false);
 
             state.whitelist.peer_whitelists[Permissions::IncomingConnections].insert((&make_peer()).into());
-            fw.apply_state(state.clone());
-            assert_eq!(fw.get_state().whitelist.peer_whitelists[Permissions::IncomingConnections].len(), 1);
+            fw.apply_dynamic_state(state.clone());
+            assert_eq!(fw.get_dynamic_state().whitelist.peer_whitelists[Permissions::IncomingConnections].len(), 1);
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, dst,)), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp(&src2_ip, &dst_ip, IcmpTypes::EchoRequest.into())), true);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_tcp(src2, dst, TcpFlags::PSH)), true);
 
             state.whitelist.peer_whitelists[Permissions::IncomingConnections].remove(&(&make_peer()).into());
-            fw.apply_state(state.clone());
-            assert_eq!(fw.get_state().whitelist.peer_whitelists[Permissions::IncomingConnections].len(), 0);
+            fw.apply_dynamic_state(state.clone());
+            assert_eq!(fw.get_dynamic_state().whitelist.peer_whitelists[Permissions::IncomingConnections].len(), 0);
 
             assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(src1, dst,)), false);
             assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp(&src2_ip, &dst_ip, IcmpTypes::EchoRequest.into())), false);
@@ -1280,12 +1280,12 @@ fn firewall_test_permissions() {
         let mut feature = FeatureFirewall::default();
         feature.neptun_reset_conns = true;
         let fw = StatefulFirewall::new(true, feature).expect("Failed to load libfirewall");
-        let mut state = fw.get_state();
+        let mut state = fw.get_dynamic_state();
         state.ip_addresses = vec![
             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
         ];
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         assert!(state.whitelist.peer_whitelists[Permissions::IncomingConnections].is_empty());
         assert!(state.whitelist.peer_whitelists[Permissions::RoutingConnections].is_empty());
         assert!(state.whitelist.peer_whitelists[Permissions::LocalAreaConnections].is_empty());
@@ -1299,7 +1299,7 @@ fn firewall_test_permissions() {
         // Allow incoming connection
         state.whitelist.peer_whitelists[Permissions::IncomingConnections]
             .insert((&make_peer()).into());
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         assert_eq!(
             state.whitelist.peer_whitelists[Permissions::IncomingConnections].len(),
             1
@@ -1325,7 +1325,7 @@ fn firewall_test_permissions() {
         // Allow local area connections
         state.whitelist.peer_whitelists[Permissions::LocalAreaConnections]
             .insert((&make_peer()).into());
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         assert_eq!(
             state.whitelist.peer_whitelists[Permissions::LocalAreaConnections].len(),
             1
@@ -1345,7 +1345,7 @@ fn firewall_test_permissions() {
         // Allow routing permissiongs but no local area connection
         state.whitelist.peer_whitelists[Permissions::LocalAreaConnections]
             .remove(&(&make_peer()).into());
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         assert_eq!(
             state.whitelist.peer_whitelists[Permissions::LocalAreaConnections].len(),
             0
@@ -1353,7 +1353,7 @@ fn firewall_test_permissions() {
 
         state.whitelist.peer_whitelists[Permissions::RoutingConnections]
             .insert((&make_peer()).into());
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         assert_eq!(
             state.whitelist.peer_whitelists[Permissions::RoutingConnections].len(),
             1
@@ -1373,7 +1373,7 @@ fn firewall_test_permissions() {
         // Allow only routing
         state.whitelist.peer_whitelists[Permissions::IncomingConnections]
             .remove(&(&make_peer()).into());
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         assert_eq!(
             state.whitelist.peer_whitelists[Permissions::IncomingConnections].len(),
             0
@@ -1393,7 +1393,7 @@ fn firewall_test_permissions() {
 
         state.whitelist.peer_whitelists[Permissions::RoutingConnections]
             .remove(&(&make_peer()).into());
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         assert_eq!(
             state.whitelist.peer_whitelists[Permissions::RoutingConnections].len(),
             0
@@ -1449,21 +1449,21 @@ fn firewall_whitelist_port() {
     ];
     for test_input @ TestInput { src: _, dst: _, make_udp, make_tcp, make_icmp } in test_inputs {
         let fw = StatefulFirewall::new(true, FeatureFirewall::default(),).expect("Failed to load libfirewall");
-        fw.apply_state(FirewallState {
+        fw.apply_dynamic_state(FirewallDynamicState {
             ip_addresses: vec![(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))), IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))],
             ..Default::default()
         });
-        let mut state = fw.get_state();
-        assert!(fw.get_state().whitelist.peer_whitelists[Permissions::IncomingConnections].is_empty());
-        assert!(fw.get_state().whitelist.port_whitelist.is_empty());
+        let mut state = fw.get_dynamic_state();
+        assert!(fw.get_dynamic_state().whitelist.peer_whitelists[Permissions::IncomingConnections].is_empty());
+        assert!(fw.get_dynamic_state().whitelist.port_whitelist.is_empty());
 
         assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT))), false);
         assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp(&test_input.src, &test_input.dst, IcmpTypes::EchoRequest.into())), false);
         assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_tcp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT), TcpFlags::PSH)), false);
 
         state.whitelist.port_whitelist.insert(PublicKey(make_peer()), FILE_SEND_PORT);
-        fw.apply_state(state.clone());
-        assert_eq!(fw.get_state().whitelist.port_whitelist.len(), 1);
+        fw.apply_dynamic_state(state.clone());
+        assert_eq!(fw.get_dynamic_state().whitelist.port_whitelist.len(), 1);
 
         assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp(&test_input.src, &test_input.dst, IcmpTypes::EchoRequest.into())), false);
 
@@ -1474,8 +1474,8 @@ fn firewall_whitelist_port() {
         assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_tcp(&test_input.src_socket(11111), &test_input.dst_socket(12345), TcpFlags::PSH)), false);
 
         state.whitelist.port_whitelist.remove(&PublicKey(make_peer()));
-        fw.apply_state(state.clone());
-        assert_eq!(fw.get_state().whitelist.port_whitelist.len(), 0);
+        fw.apply_dynamic_state(state.clone());
+        assert_eq!(fw.get_dynamic_state().whitelist.port_whitelist.len(), 0);
 
         assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_udp(&test_input.src_socket(11111), &test_input.dst_socket(FILE_SEND_PORT))), false);
         assert_eq!(fw.process_inbound_packet(&make_peer(), &mut make_icmp(&test_input.src, &test_input.dst, IcmpTypes::EchoRequest.into())), false);
@@ -1520,12 +1520,12 @@ mod tp_lite_stats {
     fn tp_lite_stats_enabled() {
         let fw = StatefulFirewall::new(true, FeatureFirewall::default())
             .expect("Failed to load libfirewall");
-        let mut state = fw.get_state();
+        let mut state = fw.get_dynamic_state();
         state.ip_addresses = vec![
             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
         ];
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
         let config = TpLiteStatsOptions {
             dns_server_ips: vec![IpAddr::from([10, 5, 0, 53])],
             callback_interval_s: Some(1),
@@ -1585,12 +1585,12 @@ mod tp_lite_stats {
 
         let fw = StatefulFirewall::new(true, FeatureFirewall::default())
             .expect("Failed to load libfirewall");
-        let mut state = fw.get_state();
+        let mut state = fw.get_dynamic_state();
         state.ip_addresses = vec![
             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
             IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
         ];
-        fw.apply_state(state.clone());
+        fw.apply_dynamic_state(state.clone());
 
         let stats = Arc::new(Mutex::new(Stats::default()));
         let callback = Callback {
@@ -1810,9 +1810,9 @@ mod dns_whitelisting {
         let client: SocketAddrV4 = "127.0.0.1:12345".parse().unwrap();
         let peer = make_peer();
 
-        let mut state = fw.get_state();
+        let mut state = fw.get_dynamic_state();
         state.ip_addresses = vec![IpAddr::V4(*client.ip())];
-        fw.apply_state(state);
+        fw.apply_dynamic_state(state);
 
         let mut query = make_dns_request_to(client, blocking, 42, "example.com");
         assert!(fw.process_outbound_packet(&peer, &mut query, &mut io::sink()));
@@ -1843,7 +1843,7 @@ fn outbound_wrong_tunnel_src_ip_rejected() {
 
     let fw = StatefulFirewall::new(false, FeatureFirewall::default())
         .expect("Failed to load libfirewall");
-    fw.apply_state(FirewallState {
+    fw.apply_dynamic_state(FirewallDynamicState {
         tunnel_ips: vec![IpAddr::V4(tunnel_ip.parse().unwrap())],
         ..Default::default()
     });
@@ -1873,7 +1873,7 @@ fn outbound_wrong_src_ip_allowed_when_tunnel_ips_unset() {
     let fw = StatefulFirewall::new(false, FeatureFirewall::default())
         .expect("Failed to load libfirewall");
     // Empty tunnel_ips disables the protection: outbound is unrestricted.
-    fw.apply_state(FirewallState::default());
+    fw.apply_dynamic_state(FirewallDynamicState::default());
 
     assert!(
         fw.process_outbound_packet_sink(&make_peer(), &mut make_udp("10.5.0.9:1111", dst)),
@@ -1890,7 +1890,7 @@ fn outbound_wrong_tunnel_src_ip_rejected_dual_stack() {
 
     let fw = StatefulFirewall::new(true, FeatureFirewall::default())
         .expect("Failed to load libfirewall");
-    fw.apply_state(FirewallState {
+    fw.apply_dynamic_state(FirewallDynamicState {
         tunnel_ips: vec![
             IpAddr::V4(tunnel_v4.parse().unwrap()),
             IpAddr::V6(tunnel_v6.parse().unwrap()),
