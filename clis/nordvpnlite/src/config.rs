@@ -144,6 +144,9 @@ pub struct NordVpnLiteConfig {
     /// Enables the libtelio firewall that processes packets.
     #[serde(default)]
     pub enable_firewall: bool,
+
+    #[serde(default)]
+    pub post_quantum: bool,
 }
 
 impl NordVpnLiteConfig {
@@ -271,6 +274,7 @@ impl Default for NordVpnLiteConfig {
             authentication_token: Default::default(),
             http_certificate_file_path: None,
             enable_firewall: false,
+            post_quantum: false,
         }
     }
 }
@@ -407,6 +411,7 @@ mod tests {
             authentication_token: Default::default(),
             http_certificate_file_path: None,
             enable_firewall: false,
+            post_quantum: false,
         };
         {
             let json = r#"{
@@ -418,7 +423,8 @@ mod tests {
                 "config_provider": "manual"
             },
             "vpn": "recommended",
-            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "post_quantum": false
             }"#;
 
             assert_eq!(expected, serde_json::from_str(json).unwrap());
@@ -522,6 +528,26 @@ mod tests {
                 "config_provider": "manual"
             },
             "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }"#;
+
+        assert_eq!(expected_config, serde_json::from_str(json).unwrap());
+    }
+
+    #[test]
+    fn test_config_post_quantum() {
+        let mut expected_config = NordVpnLiteConfig::default();
+        expected_config.post_quantum = true;
+
+        let json = r#"{
+            "log_level": "Trace",
+            "log_file_path": "/var/log/nordvpnlite.log",
+            "adapter_type": "neptun",
+            "interface": {
+                "name": "nlx",
+                "config_provider": "manual"
+            },
+            "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "post_quantum": true
             }"#;
 
         assert_eq!(expected_config, serde_json::from_str(json).unwrap());
