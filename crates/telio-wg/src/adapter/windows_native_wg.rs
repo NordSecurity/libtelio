@@ -584,6 +584,15 @@ impl Adapter for WindowsNativeWg {
                 // If all of the peers has been removed -> bring the adapter down
                 if self.enable_dynamic_wg_nt_control && peer_cnt.map(|p| p == 0).unwrap_or(false) {
                     self.ensure_adapter_state(AdapterState::Down).await?;
+                    // The driver retains the previously bound port across Down and would
+                    // re-bind it on the next Up; reset it so a fresh ephemeral port is chosen
+                    let reset_port = xplatform::set::Device {
+                        listen_port: Some(0),
+                        ..Default::default()
+                    };
+                    if let Err(err) = self.adapter.set_config_uapi(&reset_port) {
+                        telio_log_warn!("Failed to reset listen port after adapter down: {err}");
+                    }
                 }
 
                 resp
