@@ -136,8 +136,6 @@ impl ConfigureInterface for Manual {
     fn set_ip(&mut self, _ip_address: &IpAddr) -> Result<(), NordVpnLiteError> {
         Ok(()) // No-op implementation
     }
-    /// For manual configuration, we still use ifconfig to query the interface
-    /// This is a fallback for when the interface is configured manually
     fn get_ip(&self) -> Option<IpAddr> {
         None
     }
