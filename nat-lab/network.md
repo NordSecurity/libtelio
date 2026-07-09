@@ -179,6 +179,7 @@ graph LR
   direction LR
     openwrt-client-01("openwrt-client-01
         192.168.115.100")
+    openwrt-dhcp-client-01("openwrt-dhcp-client-01")
     openwrt-gw-01(["openwrt-gw-01
         10.0.254.14
         192.168.115.254"])
@@ -191,6 +192,7 @@ graph LR
   direction LR
     openwrt-client-02("openwrt-client-02
         192.168.116.100")
+    openwrt-dhcp-client-02("openwrt-dhcp-client-02")
     openwrt-gw-02(["openwrt-gw-02
         10.0.254.22
         192.168.116.254"])
@@ -201,6 +203,7 @@ graph LR
   direction LR
     openwrt-client-03("openwrt-client-03
         192.168.117.100")
+    openwrt-dhcp-client-03("openwrt-dhcp-client-03")
     openwrt-gw-03(["openwrt-gw-03
         10.0.254.23
         192.168.117.254"])
