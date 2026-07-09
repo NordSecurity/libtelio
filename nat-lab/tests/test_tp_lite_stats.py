@@ -271,6 +271,11 @@ class TestTpLiteStats:
             _tp_lite_config(force_plaintext_dns=True)
         )
 
+        # LLT-7452: This sleep is added as a regression test in order to validate that
+        # the configuration set by enable_stats_collection is not cleared by the
+        # firewall consilidation. Consolidation runs every 5 seconds.
+        await asyncio.sleep(10)
+
         for port in NON_PLAINTEXT_DNS_PORTS:
             with pytest.raises(ProcessExecError):
                 await query_dns_port(connection, port, ALLOWED_DOMAIN, TP_LITE_DNS_IP)
@@ -667,6 +672,11 @@ class TestDnsWhitelisting:
                 )
             ],
         )
+
+        # LLT-7452: This sleep is added as a regression test in order to validate that
+        # the configuration set by set_domain_whitelist is not cleared by the
+        # firewall consilidation. Consolidation runs every 5 seconds.
+        await asyncio.sleep(10)
 
         # blocked-malware.com is NXDOMAIN at the TP-Lite (blocking) server, but it
         # is now whitelisted, so the firewall DNATs the query to the standard DNS
