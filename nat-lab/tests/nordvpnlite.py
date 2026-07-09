@@ -357,6 +357,14 @@ class NordVpnLite:
                 raise IgnoreableError() from exc
             raise exc
 
+    async def reload(self) -> None:
+        """Trigger a config reload on the running daemon and wait for it to reconnect."""
+        stdout, stderr = await self.execute_command(["reload"])
+        assert (
+            "Command executed successfully" in stdout
+        ), f"Reload failed: stdout={stdout!r}, stderr={stderr!r}"
+        await self.wait_for_nordvpnlite_start()
+
     async def quit(self) -> None:
         stdout, stderr = await self.execute_command(["stop"])
         assert (
