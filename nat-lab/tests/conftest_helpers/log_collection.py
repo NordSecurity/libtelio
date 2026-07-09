@@ -109,7 +109,8 @@ async def collect_kernel_logs(
 
     save_dmesg_from_host(suffix)
     save_audit_log_from_host(suffix)
-    await save_dmesg_from_remote_vm(ConnectionTag.VM_LINUX_NLX_1, suffix)
+    if "nlx" in session_vm_marks:
+        await save_dmesg_from_remote_vm(ConnectionTag.VM_LINUX_NLX_1, suffix)
 
     if "mac" in session_vm_marks:
         try:
