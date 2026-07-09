@@ -1,7 +1,12 @@
-name: Rust Docs to Github Pages
-run-name: ${{ github.actor }} is building and deploying rustdoc to GitHub Pages from ${{ github.ref }}
+name: Docs and Changelog to Github Pages
+run-name: ${{ github.actor }} is building and deploying rustdoc and changelog to GitHub Pages from ${{ github.ref }}
 # Because documentation versioning and build promotion are not implemente yet, leaving this to be triggered manually only for now.
-on: [workflow_dispatch]
+# `repository_dispatch` (type `changelog-updated`) lets the release pipeline redeploy the
+# page after it pushes a new changelog entry to the `gh-pages` branch.
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [changelog-updated]
 
 permissions:
   contents: read
@@ -19,8 +24,20 @@ jobs:
     - name: Checkout
       uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
+    # The changelog is not kept on `main`; its source of truth is the `gh-pages` branch
+    - name: Checkout changelog source
+      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      with:
+        ref: gh-pages
+        path: changelog-src
+
     - name: Configure GitHub Pages
       uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # 5.0.0
+
+    - name: Install Protoc
+      uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+      with:
+        repo-token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build Rust Docs
       uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
@@ -32,6 +49,21 @@ jobs:
     # --no-deps is required to prevent rustdoc from adding third party dependencies to our documentation, but that also brakes links to
     # local pages so that's fixed by adding --workspace.
     - run: cargo +nightly-2025-08-07 doc --no-deps --workspace --document-private-items
+
+    - name: Set up Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      with:
+        python-version: '3.12'
+
+    # Render the changelog into the docs tree at /changelog/ so it is served next to the
+    # rustdoc pages, and link it from the generated docs index page (--docs-index).
+    - name: Render changelog page
+      run: |
+        python3 -m pip install markdown==3.10.2
+        python3 ci/render_changelog.py \
+          --in changelog-src/changelog.md \
+          --out target/doc/changelog/index.html \
+          --docs-index target/doc/index.html
 
     # Using @v1 of actions/upload-pages-artifact, because the later versions are buggy: https://github.com/actions/deploy-pages/issues/179
     - name: Upload Github pages artifact

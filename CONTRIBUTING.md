@@ -39,6 +39,8 @@ The naming convention for files in `.unreleased` is as follows:
 
 When a release is made, the script `ci/generate_changelog.py` is executed which will take all files in `.unreleased` and generate a changelog. Only files that are non-empty are included, and each of those files gets a changelog entry like: `<file name>: <file contents>`. Afterwards the script deletes all files in `.unreleased` to prepare for the next release.
 
+The compiled changelog for all released versions is published to GitHub Pages at `/changelog/`, next to the rustdoc API docs. Its source of truth is the `changelog.md` file on the [`gh-pages`](https://github.com/NordSecurity/libtelio/tree/gh-pages) branch (not `main`), which the `.github/workflows/gh-pages.yml` workflow renders to HTML and deploys. Keeping it off `main` lets the release pipeline update it without opening a PR against `main`. Do not edit `changelog.md` by hand — add your entry to `.unreleased` as described above.
+
 Not all PRs need an addition to the changelog. The changelog is our way of communicating to the apps about changes since the last version, so only changes that are of interest or concern to the apps need to actually have something show up in the changelog. However, to remind you that you may have to add something to the changelog, the CI pipeline requires that you add a file to `.unreleased` in every PR. It is up to both the implementer(s) and the reviewers of a PR to make sure that the file in `.unreleased` has the "right" content for the PR, whether that be leaving it empty because the apps don't care or leaving an accurate description of what has changed.
 
 Some (non-exhaustive) examples of what should end up in the changelog:
