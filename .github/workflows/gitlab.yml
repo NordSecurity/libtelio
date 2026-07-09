@@ -30,7 +30,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          COUNT=$(gh api "repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:${{ github.ref_name }}&state=open" --jq 'length')
+          for attempt in 1 2 3 4 5; do
+            COUNT=$(gh api "repos/${{ github.repository }}/pulls?head=${{ github.repository_owner }}:${{ github.ref_name }}&state=open" --jq 'length')
+            echo "Attempt $attempt: open PRs for ${{ github.ref_name }}: $COUNT"
+            [ "$COUNT" -gt 0 ] && break
+            [ "$attempt" -lt 5 ] && sleep 5
+          done
           echo "has_pr=$([ "$COUNT" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "Open PRs for ${{ github.ref_name }}: $COUNT"
 
