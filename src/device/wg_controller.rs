@@ -9,7 +9,7 @@ use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_dns::DnsResolver;
 #[cfg(feature = "enable_firewall")]
-use telio_firewall::firewall::{Firewall, FirewallState, Permissions, FILE_SEND_PORT};
+use telio_firewall::firewall::{Firewall, FirewallDynamicState, Permissions, FILE_SEND_PORT};
 use telio_model::constants::{VPN_EXTERNAL_IPV4, VPN_INTERNAL_IPV4, VPN_INTERNAL_IPV6};
 use telio_model::features::Features;
 use telio_model::mesh::{LinkState, NodeState};
@@ -601,7 +601,7 @@ async fn consolidate_firewall<F: Firewall>(
     starcast_vpeer_pubkey: Option<PublicKey>,
     dns_pubkey: Option<PublicKey>,
 ) -> Result {
-    let mut state = FirewallState::default();
+    let mut state = FirewallDynamicState::default();
 
     state.whitelist.port_whitelist = iter_peers(requested_state)
         .filter(|p| p.allow_peer_send_files)
@@ -645,7 +645,7 @@ async fn consolidate_firewall<F: Firewall>(
             .ok_or(Error::IpNotSet)?;
     }
 
-    firewall.apply_state(state);
+    firewall.apply_dynamic_state(state);
 
     Ok(())
 }
@@ -1461,9 +1461,9 @@ mod tests {
         ]);
 
         firewall
-            .expect_apply_state()
+            .expect_apply_dynamic_state()
             .once()
-            .with(eq(FirewallState {
+            .with(eq(FirewallDynamicState {
                 whitelist: Whitelist {
                     peer_whitelists: enum_map! {
                         Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_1, pub_key_2, pub_key_starcast_vpeer].iter().cloned()),
@@ -1507,9 +1507,9 @@ mod tests {
         ]);
 
         firewall
-            .expect_apply_state()
+            .expect_apply_dynamic_state()
             .once()
-            .with(eq(FirewallState {
+            .with(eq(FirewallDynamicState {
                 whitelist: Whitelist {
                     peer_whitelists: enum_map! {
                         Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_1, pub_key_2, pub_key_starcast_vpeer].iter().cloned()),
@@ -1552,9 +1552,9 @@ mod tests {
         });
 
         firewall
-            .expect_apply_state()
+            .expect_apply_dynamic_state()
             .once()
-            .with(eq(FirewallState {
+            .with(eq(FirewallDynamicState {
                 whitelist: Whitelist {
                     peer_whitelists: enum_map! {
                         Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
@@ -1565,7 +1565,6 @@ mod tests {
                     vpn_peer: Some(pub_key_2),
                 },
                 ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
-                force_plaintext_dns_for_servers: None,
                 ..Default::default()
             }))
             .return_const(());
@@ -1597,9 +1596,9 @@ mod tests {
         });
 
         firewall
-            .expect_apply_state()
+            .expect_apply_dynamic_state()
             .once()
-            .with(eq(FirewallState {
+            .with(eq(FirewallDynamicState {
                 whitelist: Whitelist {
                     peer_whitelists: enum_map! {
                         Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
@@ -1610,7 +1609,6 @@ mod tests {
                     vpn_peer: None,
                 },
                 ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
-                force_plaintext_dns_for_servers: None,
                 ..Default::default()
             }))
             .return_const(());
@@ -1643,9 +1641,9 @@ mod tests {
         });
 
         firewall
-            .expect_apply_state()
+            .expect_apply_dynamic_state()
             .once()
-            .with(eq(FirewallState {
+            .with(eq(FirewallDynamicState {
                 whitelist: Whitelist {
                     peer_whitelists: enum_map! {
                         Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_starcast_vpeer].iter().cloned()),
@@ -1656,7 +1654,6 @@ mod tests {
                     vpn_peer: None,
                 },
                 ip_addresses: vec![IpAddr::V4(Ipv4Addr::LOCALHOST), IpAddr::V6(Ipv6Addr::LOCALHOST)],
-                force_plaintext_dns_for_servers: None,
                 ..Default::default()
             }))
             .return_const(());
@@ -1684,7 +1681,7 @@ mod tests {
             (pub_key_2, vec![], false, true, false, false),
         ]);
 
-        let expected_state = FirewallState {
+        let expected_state = FirewallDynamicState {
             whitelist: Whitelist {
                 peer_whitelists: enum_map! {
                     Permissions::IncomingConnections => FwHashSet::from_iter([pub_key_1, pub_key_starcast_vpeer].iter().cloned()),
@@ -1703,7 +1700,7 @@ mod tests {
 
         // Calling consolidate_firewall multiple times with same state should produce same config
         firewall
-            .expect_apply_state()
+            .expect_apply_dynamic_state()
             .times(3)
             .with(eq(expected_state))
             .returning(|_| ());
