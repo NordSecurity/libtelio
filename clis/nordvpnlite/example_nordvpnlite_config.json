@@ -1,5 +1,5 @@
 {
-  "auth_file_path": "/etc/nordvpnlite/auth.json",
+  "auth_file_path": "/tmp/example_auth_file.json",
   "vpn": {
     "country": "de"
   },

@@ -205,6 +205,7 @@ async def setup_openwrt_test_environment(
     country_config: ConfigPresetName,
     exit_stack: AsyncExitStack,
     config_path: Optional[Path] = None,
+    auth_path: Optional[Path] = None,
     client_tag: ConnectionTag = ConnectionTag.DOCKER_OPENWRT_CLIENT_1,
     gw_tag: ConnectionTag = ConnectionTag.VM_OPENWRT_GW_1,
 ) -> tuple[Connection, Connection, NordVpnLite]:
@@ -248,6 +249,7 @@ async def setup_openwrt_test_environment(
     config = Config(
         CONFIG_PRESETS[country_config],
         config_path,
+        auth_path,
         country_config,
         paths=paths,
     )
@@ -660,6 +662,7 @@ async def test_openwrt_router_restart(
                     ConfigPresetName.VPN_OPENWRT_UCI_PL,
                     exit_stack,
                     config_path=Path("/etc/nordvpnlite/config.json"),
+                    auth_path=Path("/etc/nordvpnlite/auth.json"),
                     client_tag=client_tag,
                     gw_tag=gw_tag,
                 )
