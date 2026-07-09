@@ -64,8 +64,16 @@ const ICMPV6_BLOCKED_TYPES: [u8; 4] = [
 pub const FILE_SEND_PORT: u16 = 49111;
 
 /// Type for chain configuration function
-pub(crate) type ConfigureChainFn =
-    Box<dyn Fn(&FirewallConfig, &FirewallState, &[StdIpAddr]) -> FfiChainGuard + Send + Sync>;
+pub(crate) type ConfigureChainFn = Box<
+    dyn Fn(
+            &FirewallConfig,
+            &FirewallDynamicState,
+            &FirewallConfiguredState,
+            &[StdIpAddr],
+        ) -> FfiChainGuard
+        + Send
+        + Sync,
+>;
 
 #[allow(dead_code)]
 pub(crate) trait Icmp: Sized {
@@ -84,10 +92,10 @@ impl Icmp for Icmpv6Type {
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 pub trait Firewall: Sync + Send {
     /// Applies a new firewall state and updates the chain if it differs from current state
-    fn apply_state(&self, state: FirewallState);
+    fn apply_dynamic_state(&self, state: FirewallDynamicState);
 
     /// Returns a clone of the current firewall state
-    fn get_state(&self) -> FirewallState;
+    fn get_dynamic_state(&self) -> FirewallDynamicState;
 
     /// For new connections it opens a pinhole for incoming connection
     /// If connection is already cached, it resets its timer and extends its lifetime
@@ -151,13 +159,18 @@ pub struct Whitelist {
     pub vpn_peer: Option<PublicKey>,
 }
 
-/// Runtime state for firewall rules that can be updated dynamically.
+/// Dynamic state for firewall rules that is updated dynamically by wg_controller's consolidation.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct FirewallState {
+pub struct FirewallDynamicState {
     /// Whitelist configuration
     pub whitelist: Whitelist,
     /// Local node ip addresses
     pub ip_addresses: Vec<StdIpAddr>,
+}
+
+/// Configured state that is configured via tp_lite API calls.
+#[derive(Clone, Debug, Default)]
+pub struct FirewallConfiguredState {
     /// List of DNS server IPs for which only plaintext DNS should be allowed
     pub force_plaintext_dns_for_servers: Option<Vec<StdIpAddr>>,
 }
@@ -180,10 +193,12 @@ pub struct StatefulFirewall {
     firewall: *mut LibfwFirewall,
     /// Firewall configuration set at initialization
     config: FirewallConfig,
-    /// Current firewall state
-    state: RwLock<FirewallState>,
+    /// Dynamic state
+    dynamic_state: RwLock<FirewallDynamicState>,
     /// Last known host interface IPs reported by network monitor.
     interface_ips: RwLock<Vec<StdIpAddr>>,
+    /// Configured state
+    configured_state: RwLock<FirewallConfiguredState>,
     /// Chain configuration function
     configure_chain_fn: ConfigureChainFn,
     /// Callback for TP-Lite stats
@@ -261,14 +276,13 @@ impl StatefulFirewall {
             feature,
         };
 
-        let state = FirewallState::default();
-
         let result = Self {
             firewall_lib,
             firewall,
             config,
-            state: RwLock::new(state.clone()),
+            dynamic_state: RwLock::new(FirewallDynamicState::default()),
             interface_ips: RwLock::new(Vec::new()),
+            configured_state: RwLock::new(FirewallConfiguredState::default()),
             configure_chain_fn,
             tp_lite_stats_cb: CallbackManager::new(),
         };
@@ -312,12 +326,16 @@ impl StatefulFirewall {
 
     fn refresh_chain(&self) {
         let interface_ips = self.interface_ips.read().clone();
-        self.refresh_chain_with_interface_ips(&interface_ips);
-    }
+        let dynamic_state = self.dynamic_state.read().clone();
+        let configured_state = self.configured_state.read().clone();
 
-    fn refresh_chain_with_interface_ips(&self, interface_ips: &[StdIpAddr]) {
-        let state = self.state.read().clone();
-        let ffi_chain = (self.configure_chain_fn)(&self.config, &state, interface_ips);
+        let ffi_chain = (self.configure_chain_fn)(
+            &self.config,
+            &dynamic_state,
+            &configured_state,
+            &interface_ips,
+        );
+
         unsafe {
             self.firewall_lib
                 .libfw_configure_chain(self.firewall, (&ffi_chain.ffi_chain) as *const LibfwChain);
@@ -357,9 +375,10 @@ impl StatefulFirewall {
             std::mem::swap(&mut old_cb, &mut cb);
         }
 
-        let mut state = self.get_state();
-        state.force_plaintext_dns_for_servers = force_plaintext_dns_for_servers;
-        self.apply_state(state);
+        self.configured_state
+            .write()
+            .force_plaintext_dns_for_servers = force_plaintext_dns_for_servers;
+        self.refresh_chain();
 
         let res = unsafe {
             self.firewall_lib.libfw_enable_tp_lite_stats_collection(
@@ -380,9 +399,10 @@ impl StatefulFirewall {
 
     /// Disable collection of TP-Lite stats
     pub fn disable_tp_lite_stats_collection(&self) {
-        let mut state = self.get_state();
-        state.force_plaintext_dns_for_servers = None;
-        self.apply_state(state);
+        self.configured_state
+            .write()
+            .force_plaintext_dns_for_servers = None;
+        self.refresh_chain();
 
         unsafe {
             self.firewall_lib
@@ -472,12 +492,13 @@ fn get_local_area_networks_filters(
 /// Configures the firewall chain based on the provided configuration.
 pub(crate) fn configure_chain(
     config: &FirewallConfig,
-    state: &FirewallState,
+    dynamic_state: &FirewallDynamicState,
+    configured_state: &FirewallConfiguredState,
     local_ifs_addrs: &[StdIpAddr],
 ) -> FfiChainGuard {
     let mut rules = vec![];
 
-    if let Some(dns_server_ips) = &state.force_plaintext_dns_for_servers {
+    if let Some(dns_server_ips) = &configured_state.force_plaintext_dns_for_servers {
         dns_server_ips.iter().for_each(|ip| {
             rules.push(Rule {
                 filters: vec![
@@ -529,7 +550,7 @@ pub(crate) fn configure_chain(
     });
 
     // Add VPN rule
-    if let Some(vpn_pk) = state.whitelist.vpn_peer {
+    if let Some(vpn_pk) = dynamic_state.whitelist.vpn_peer {
         rules.push(Rule {
             filters: vec![Filter {
                 filter_data: FilterData::AssociatedData(Some(vpn_pk.to_vec())),
@@ -545,7 +566,7 @@ pub(crate) fn configure_chain(
     );
 
     #[allow(clippy::indexing_slicing)]
-    for peer in state.whitelist.peer_whitelists[Permissions::LocalAreaConnections].iter() {
+    for peer in dynamic_state.whitelist.peer_whitelists[Permissions::LocalAreaConnections].iter() {
         for local_net in local_network_filters.iter() {
             let mut filters = vec![Filter {
                 filter_data: FilterData::AssociatedData(Some(peer.to_vec())),
@@ -568,10 +589,11 @@ pub(crate) fn configure_chain(
     }
 
     // Rules for incoming connections
-    for ip in &state.ip_addresses {
+    for ip in &dynamic_state.ip_addresses {
         // Accept packets for whitelisted peers
         #[allow(clippy::indexing_slicing)]
-        for peer in state.whitelist.peer_whitelists[Permissions::IncomingConnections].iter() {
+        for peer in dynamic_state.whitelist.peer_whitelists[Permissions::IncomingConnections].iter()
+        {
             rules.push(Rule {
                 filters: vec![
                     Filter {
@@ -595,7 +617,7 @@ pub(crate) fn configure_chain(
 
         // Accept packets for whitelisted ports
         for proto in [NextLevelProtocol::Tcp, NextLevelProtocol::Udp] {
-            for (peer, &port) in &state.whitelist.port_whitelist {
+            for (peer, &port) in &dynamic_state.whitelist.port_whitelist {
                 rules.push(Rule {
                     filters: vec![
                         Filter {
@@ -627,7 +649,7 @@ pub(crate) fn configure_chain(
     }
 
     #[allow(clippy::indexing_slicing)]
-    for peer in state.whitelist.peer_whitelists[Permissions::RoutingConnections].iter() {
+    for peer in dynamic_state.whitelist.peer_whitelists[Permissions::RoutingConnections].iter() {
         rules.push(Rule {
             filters: vec![Filter {
                 filter_data: FilterData::AssociatedData(Some(peer.to_vec())),
@@ -673,17 +695,17 @@ extern "C" fn log_callback(level: LibfwLogLevel, log_line: *const std::ffi::c_ch
 }
 
 impl Firewall for StatefulFirewall {
-    fn apply_state(&self, new_state: FirewallState) {
-        if *self.state.read() == new_state {
+    fn apply_dynamic_state(&self, new_state: FirewallDynamicState) {
+        if *self.dynamic_state.read() == new_state {
             return;
         }
-        *self.state.write() = new_state;
+        *self.dynamic_state.write() = new_state;
 
         self.refresh_chain();
     }
 
-    fn get_state(&self) -> FirewallState {
-        self.state.read().clone()
+    fn get_dynamic_state(&self) -> FirewallDynamicState {
+        self.dynamic_state.read().clone()
     }
 
     fn process_outbound_packet(
@@ -759,8 +781,9 @@ mod tests {
             let mut result = Self {
                 firewall: 0x1 as *mut crate::libfirewall::LibfwFirewall,
                 firewall_lib: crate::libfirewall::MockLibfirewall::default(),
-                state: RwLock::new(FirewallState::default()),
+                dynamic_state: RwLock::new(FirewallDynamicState::default()),
                 interface_ips: RwLock::new(Vec::new()),
+                configured_state: RwLock::new(FirewallConfiguredState::default()),
                 config: FirewallConfig {
                     allow_ipv6: use_ipv6,
                     feature,
@@ -790,11 +813,13 @@ mod tests {
     fn test_notify_triggers_refresh_with_callback_addrs() {
         let captured_addrs = Arc::new(ParkingLotMutex::new(Vec::<Vec<StdIpAddr>>::new()));
         let addrs_clone = captured_addrs.clone();
-        let spy_fn =
-            move |_config: &FirewallConfig, _state: &FirewallState, addrs: &[StdIpAddr]| {
-                addrs_clone.lock().push(addrs.to_vec());
-                (Vec::<Rule>::new().as_slice()).into()
-            };
+        let spy_fn = move |_: &FirewallConfig,
+                           _: &FirewallDynamicState,
+                           _: &FirewallConfiguredState,
+                           addrs: &[StdIpAddr]| {
+            addrs_clone.lock().push(addrs.to_vec());
+            (Vec::<Rule>::new().as_slice()).into()
+        };
 
         let mut firewall =
             StatefulFirewall::new_mock(true, FeatureFirewall::default(), Box::new(spy_fn));
@@ -831,11 +856,13 @@ mod tests {
     fn test_notify_addrs_are_used_by_subsequent_refreshes() {
         let captured_addrs = Arc::new(ParkingLotMutex::new(Vec::<Vec<StdIpAddr>>::new()));
         let addrs_clone = captured_addrs.clone();
-        let spy_fn =
-            move |_config: &FirewallConfig, _state: &FirewallState, addrs: &[StdIpAddr]| {
-                addrs_clone.lock().push(addrs.to_vec());
-                (Vec::<Rule>::new().as_slice()).into()
-            };
+        let spy_fn = move |_: &FirewallConfig,
+                           _: &FirewallDynamicState,
+                           _: &FirewallConfiguredState,
+                           addrs: &[StdIpAddr]| {
+            addrs_clone.lock().push(addrs.to_vec());
+            (Vec::<Rule>::new().as_slice()).into()
+        };
 
         let mut firewall =
             StatefulFirewall::new_mock(true, FeatureFirewall::default(), Box::new(spy_fn));
@@ -854,7 +881,7 @@ mod tests {
 
         let notify_addrs = vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 77, 7))];
         firewall.notify(&notify_addrs);
-        firewall.apply_state(FirewallState {
+        firewall.apply_dynamic_state(FirewallDynamicState {
             ip_addresses: vec![StdIpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))],
             ..Default::default()
         });
