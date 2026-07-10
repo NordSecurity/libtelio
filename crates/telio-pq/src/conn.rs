@@ -4,7 +4,7 @@ use tokio::task::JoinHandle;
 
 use telio_model::features::FeaturePostQuantumVPN;
 use telio_task::io::chan;
-use telio_utils::{reset_after, telio_log_debug, telio_log_warn};
+use telio_utils::{telio_log_debug, telio_log_warn, SuspendAwareTicker};
 
 use crate::proto;
 
@@ -23,7 +23,11 @@ impl ConnKeyRotation {
     ) -> Self {
         telio_log_debug!("Starting PQ task");
 
-        let rekey_interval = Duration::from_secs(features.rekey_interval_s as _);
+        let mut rekey_interval = features.rekey_interval_s;
+        if rekey_interval == 0 {
+            rekey_interval = 1;
+        }
+        let rekey_interval = Duration::from_secs(rekey_interval as _);
         let request_retry = Duration::from_secs(features.handshake_retry_interval_s as _);
         let pq_version = features.version;
 
@@ -68,11 +72,10 @@ impl ConnKeyRotation {
                 .await;
 
             telio_log_debug!("Rekey interval: {}s", rekey_interval.as_secs());
-            let mut interval = telio_utils::interval(rekey_interval);
+            let mut ticker = SuspendAwareTicker::new_after(rekey_interval, rekey_interval);
 
-            interval.tick().await; // This call returns immedietly
             loop {
-                interval.tick().await;
+                ticker.tick().await;
 
                 // Dylint is unhappy about the `rekey` future size
                 // and asks for using `Box::pin` to move it on the heap
@@ -109,14 +112,14 @@ impl ConnKeyRotation {
                     }
                     Ok(Err(err)) => {
                         telio_log_warn!("Failed to perform PQ rekey: {err}");
-                        reset_after(&mut interval, request_retry);
+                        ticker.reset_after(request_retry);
                     }
                     Err(_timeout) => {
                         telio_log_warn!(
                             "Failed to perform PQ rekey: TIMEOUT({}s)",
                             request_retry.as_secs()
                         );
-                        interval.reset_immediately();
+                        ticker.reset_immediately();
                     }
                 }
             }

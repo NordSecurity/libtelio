@@ -37,7 +37,8 @@ use telio_traversal::{
     },
     last_rx_time_provider::{TimeSinceLastRxProvider, WireGuardTimeSinceLastRxProvider},
     ping_pong_handler::PingPongHandler,
-    SessionKeeper, UpgradeRequestChangeEvent, UpgradeSync, WireGuardEndpointCandidateChangeEvent,
+    SessionKeeper, SessionKeeperTrait, UpgradeRequestChangeEvent, UpgradeSync,
+    WireGuardEndpointCandidateChangeEvent,
 };
 
 #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
@@ -1824,7 +1825,20 @@ impl Runtime {
             }
 
             meshnet_entities.derp.reconnect().await;
+
+            // Fire all keepalive pings immediately so peers receive a fresh
+            // handshake after the network change rather than waiting up to one
+            // full keepalive interval
+            if let Some(sk) = &meshnet_entities.session_keeper {
+                let _ = sk.reset_keepalives().await;
+            }
         }
+
+        // Restart the PQ key-rotation task so it opens a fresh socket on the
+        // new network interface.  We keep the existing preshared key in place
+        // so the WireGuard peer remains configured and traffic is not
+        // interrupted while the new task performs its first rekey
+        self.entities.postquantum_wg.restart_rotation();
 
         #[cfg(target_os = "android")]
         PATH_CHANGE_BROADCAST.send(());
