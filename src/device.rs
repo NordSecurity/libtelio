@@ -276,6 +276,11 @@ pub struct RequestedState {
 
     // Requested keepalive periods
     pub(crate) keepalive_periods: FeaturePersistentKeepalive,
+
+    // Tunnel source IPs supplied by the integrating app via set_tunnel_src_ip(...).
+    // When non-empty, the firewall rejects outbound packets whose source IP is
+    // not one of these.
+    pub tunnel_ips: Vec<IpAddr>,
 }
 
 pub struct MeshnetEntities {
@@ -781,6 +786,15 @@ impl Device {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
                 Ok(rt.notify_network_change().await)
+            })
+            .await?
+        })
+    }
+
+    pub fn set_tunnel_src_ip(&self, src_ips: Vec<IpAddr>) -> Result {
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| {
+                Ok(rt.set_tunnel_src_ip(src_ips).await)
             })
             .await?
         })
@@ -1802,6 +1816,14 @@ impl Runtime {
         #[cfg(target_os = "android")]
         PATH_CHANGE_BROADCAST.send(());
 
+        Ok(())
+    }
+
+    async fn set_tunnel_src_ip(&mut self, src_ips: Vec<IpAddr>) -> Result {
+        self.requested_state.tunnel_ips = src_ips;
+        // re-consolidate so the firewall picks up tunnel_ips when building rules chain.
+        wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+            .await?;
         Ok(())
     }
 

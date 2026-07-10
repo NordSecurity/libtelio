@@ -1635,3 +1635,96 @@ mod tp_lite_stats {
         );
     }
 }
+
+#[test]
+fn outbound_wrong_tunnel_src_ip_rejected() {
+    let tunnel_ip = "10.5.0.2";
+    let wrong_ip = "10.5.0.9";
+    let dst = "8.8.8.8:8888";
+
+    let fw = StatefulFirewall::new(false, FeatureFirewall::default())
+        .expect("Failed to load libfirewall");
+    fw.apply_dynamic_state(FirewallDynamicState {
+        tunnel_ips: vec![IpAddr::V4(tunnel_ip.parse().unwrap())],
+        ..Default::default()
+    });
+
+    // Packets originating from the tunnel source IP are allowed out.
+    assert!(
+        fw.process_outbound_packet_sink(
+            &make_peer(),
+            &mut make_udp(&format!("{tunnel_ip}:1111"), dst)
+        ),
+        "packet from the tunnel src IP must be accepted"
+    );
+    // Packets with any other source IP are rejected to avoid poisoning NAT.
+    assert!(
+        !fw.process_outbound_packet_sink(
+            &make_peer(),
+            &mut make_udp(&format!("{wrong_ip}:1111"), dst)
+        ),
+        "packet with a non-tunnel src IP must be rejected"
+    );
+}
+
+#[test]
+fn outbound_wrong_src_ip_allowed_when_tunnel_ips_unset() {
+    let dst = "8.8.8.8:8888";
+
+    let fw = StatefulFirewall::new(false, FeatureFirewall::default())
+        .expect("Failed to load libfirewall");
+    // Empty tunnel_ips disables the protection: outbound is unrestricted.
+    fw.apply_dynamic_state(FirewallDynamicState::default());
+
+    assert!(
+        fw.process_outbound_packet_sink(&make_peer(), &mut make_udp("10.5.0.9:1111", dst)),
+        "with tunnel_ips unset, any src IP must be accepted"
+    );
+}
+
+#[test]
+fn outbound_wrong_tunnel_src_ip_rejected_dual_stack() {
+    let tunnel_v4 = "10.5.0.2";
+    let tunnel_v6 = "fd74:656c:696f::2";
+    let dst4 = "8.8.8.8:8888";
+    let dst6 = "[2001:4860:4860::8888]:8888";
+
+    let fw = StatefulFirewall::new(true, FeatureFirewall::default())
+        .expect("Failed to load libfirewall");
+    fw.apply_dynamic_state(FirewallDynamicState {
+        tunnel_ips: vec![
+            IpAddr::V4(tunnel_v4.parse().unwrap()),
+            IpAddr::V6(tunnel_v6.parse().unwrap()),
+        ],
+        ..Default::default()
+    });
+
+    // Both tunnel source IPs are allowed out on their respective stacks.
+    assert!(
+        fw.process_outbound_packet_sink(
+            &make_peer(),
+            &mut make_udp(&format!("{tunnel_v4}:1111"), dst4)
+        ),
+        "packet from the IPv4 tunnel src IP must be accepted"
+    );
+    assert!(
+        fw.process_outbound_packet_sink(
+            &make_peer(),
+            &mut make_udp6(&format!("[{tunnel_v6}]:1111"), dst6)
+        ),
+        "packet from the IPv6 tunnel src IP must be accepted"
+    );
+
+    // Wrong source IPs are rejected on both stacks.
+    assert!(
+        !fw.process_outbound_packet_sink(&make_peer(), &mut make_udp("10.5.0.9:1111", dst4)),
+        "IPv4 packet with a non-tunnel src IP must be rejected"
+    );
+    assert!(
+        !fw.process_outbound_packet_sink(
+            &make_peer(),
+            &mut make_udp6("[fd74:656c:696f::9]:1111", dst6)
+        ),
+        "IPv6 packet with a non-tunnel src IP must be rejected"
+    );
+}
