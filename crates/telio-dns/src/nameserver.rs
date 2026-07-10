@@ -37,6 +37,7 @@ use telio_utils::{format_hex, telio_log_debug, telio_log_error, telio_log_trace,
 const IPV4_HEADER: usize = 20; // bytes
 const IPV6_HEADER: usize = 40; // bytes
 const MAX_PACKET: usize = 2048;
+const MAX_DNS_PACKET: usize = 65535;
 const UDP_HEADER: usize = 8;
 const TCP_MIN_HEADER: usize = 20;
 const MAX_CONCURRENT_QUERIES: usize = 256;
@@ -226,6 +227,11 @@ impl LocalNameServer {
                                     }
                                 };
 
+                                let needed = length + MAX_PACKET;
+                                if sending_buffer.len() < needed {
+                                    sending_buffer.resize(needed, 0);
+                                }
+
                                 let tunn_res = peer.lock().await.encapsulate(
                                     task_receiving_buffer.get(..length).unwrap_or(&[]),
                                     &mut sending_buffer,
@@ -382,7 +388,7 @@ impl LocalNameServer {
     async fn process_packet(
         nameserver: Arc<RwLock<LocalNameServer>>,
         request_packet: &[u8],
-        response_packet: &mut [u8],
+        response_packet: &mut Vec<u8>,
     ) -> Result<usize, String> {
         let mut request_info = request_packet
             .first()
@@ -395,6 +401,11 @@ impl LocalNameServer {
 
         let dns_response =
             LocalNameServer::resolve_dns_request(nameserver, &mut request_info).await?;
+
+        let required = request_info.response_packet_len(dns_response.len())?;
+        if response_packet.len() < required {
+            response_packet.resize(required, 0);
+        }
 
         request_info.build_response_packet(&dns_response, response_packet)
     }
@@ -557,6 +568,24 @@ impl RequestInfo {
             PayloadRequestInfo::Udp { source_port, .. }
             | PayloadRequestInfo::Tcp { source_port, .. } => source_port,
         }
+    }
+
+    fn response_packet_len(&self, dns_response_len: usize) -> Result<usize, String> {
+        let ip_header = match self.ip {
+            IpRequestInfo::V4 { .. } => IPV4_HEADER,
+            IpRequestInfo::V6 { .. } => IPV6_HEADER,
+        };
+        let payload_header = match self.payload {
+            PayloadRequestInfo::Udp { .. } => UDP_HEADER,
+            PayloadRequestInfo::Tcp { .. } => TCP_MIN_HEADER,
+        };
+        let total = ip_header + payload_header + dns_response_len;
+        if total > MAX_DNS_PACKET {
+            return Err(format!(
+                "DNS response too large for a single packet: {total} bytes"
+            ));
+        }
+        Ok(total)
     }
 
     fn build_response_packet(

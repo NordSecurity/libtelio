@@ -18,7 +18,7 @@ use tokio::{
 };
 
 /// Maximum buffer size for response packet
-const FORWARDER_BUFFER_SIZE: usize = 4096;
+const FORWARDER_BUFFER_SIZE: usize = 65535;
 /// Channel size for forward messages
 const CHANNEL_SIZE: usize = 256;
 /// Default timeout for upstream DNS queries
@@ -455,6 +455,7 @@ mod tests {
     use tokio::task::JoinHandle;
 
     const TEST_PACKET_ID: u16 = 0x1234;
+    const MAX_DGRAM: usize = 9214;
     const TEST_DNS_PAYLOAD: &[u8; 13] = b"query-payload";
 
     fn make_dns_packet(id: u16, payload: &[u8]) -> Vec<u8> {
@@ -473,7 +474,7 @@ mod tests {
         let addr = socket.local_addr().unwrap();
 
         let handle = tokio::spawn(async move {
-            let mut buf = vec![0u8; 4096];
+            let mut buf = vec![0u8; FORWARDER_BUFFER_SIZE];
             let (n, src) = socket.recv_from(&mut buf).await.unwrap();
             let received = buf[..n].to_vec();
 
@@ -694,7 +695,7 @@ mod tests {
 
     #[tokio::test]
     async fn forward_query_passes_through_large_response() {
-        let large_payload = vec![0xAB; FORWARDER_BUFFER_SIZE - 3];
+        let large_payload = vec![0xAB; MAX_DGRAM];
         let (addr, _handle) = spawn_stub(StubBehavior::Echo).await;
 
         let forwarder = RawForwarder::new().await.unwrap();
