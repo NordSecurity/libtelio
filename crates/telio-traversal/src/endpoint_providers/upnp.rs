@@ -409,7 +409,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
                 exponential_backoff,
                 upnp_interval: PinnedSleep::new(initial_upnp_interval, ()),
                 is_battery_optimization_on,
-                is_endpoint_provider_paused: false,
+                is_endpoint_provider_paused: is_battery_optimization_on,
                 rx_buff,
                 igd_gw,
                 ping_pong_handler,
@@ -425,6 +425,18 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
         })
         .await
         .unwrap_or(None)
+    }
+
+    /// Test-only mirror of `EndpointProvider::unpause` (that trait is only
+    /// implemented for the concrete-typed provider, so it isn't callable on the
+    /// mock-typed provider used in tests).
+    #[cfg(test)]
+    async fn unpause_for_test(&self) {
+        let _ = task_exec!(&self.task, async move |s| {
+            s.is_endpoint_provider_paused = false;
+            Ok(())
+        })
+        .await;
     }
 
     pub async fn get_internal_socket(&self) -> Option<SocketAddr> {
@@ -907,8 +919,9 @@ mod tests {
         *IGD_IS_AVAILABLE.lock() = false;
     }
 
-    pub async fn prepare_test_setup()
-    -> UpnpEndpointProvider<MockWg, MockUpnpEpCommands, MockBackoff> {
+    pub async fn prepare_test_setup(
+        is_battery_optimization_on: bool,
+    ) -> UpnpEndpointProvider<MockWg, MockUpnpEpCommands, MockBackoff> {
         let spool = SocketPool::new(
             NativeProtector::new(
                 #[cfg(target_os = "macos")]
@@ -970,6 +983,7 @@ mod tests {
         mock.expect_check_endpoint_routes()
             .returning(check_endpoint_route);
         mock.expect_lease_needs_renew().return_const(false);
+        mock.expect_should_renew_lease_after().returning(|| None);
 
         UpnpEndpointProvider::start_with(
             udp_socket,
@@ -992,14 +1006,14 @@ mod tests {
             },
             Arc::new(TMutex::new(PingPongHandler::new(SecretKey::r#gen()))),
             mock,
-            false,
+            is_battery_optimization_on,
         )
     }
 
     #[tokio::test]
     #[serial]
     async fn create_upnp_endpoint() {
-        let upnp = prepare_test_setup().await;
+        let upnp = prepare_test_setup(false).await;
 
         tokio::time::sleep(Duration::from_millis(100 + 20)).await;
 
@@ -1013,7 +1027,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn check_igd_function_execution() {
-        let upnp = prepare_test_setup().await;
+        let upnp = prepare_test_setup(false).await;
         tokio::time::sleep(Duration::from_millis(100 + 20)).await;
 
         let udp_int_port = ENDPOINT.lock().udp.port();
@@ -1039,7 +1053,7 @@ mod tests {
     async fn test_no_igd_on_router() {
         // Avoid initial search
         *IGD_IS_AVAILABLE.lock() = true;
-        let _upnp = prepare_test_setup().await;
+        let _upnp = prepare_test_setup(false).await;
         tokio::time::sleep(Duration::from_millis(20)).await;
 
         // When IGD is off the port should be unchanged
@@ -1053,7 +1067,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_upnp_route_corruption_on_router() {
-        let _upnp = prepare_test_setup().await;
+        let _upnp = prepare_test_setup(false).await;
         tokio::time::sleep(Duration::from_millis(100 + 20)).await;
 
         // Upnp will change the static port to a random port
@@ -1157,6 +1171,35 @@ mod tests {
         assert!(
             igd_search_count <= 4,
             "igd search call count: {igd_search_count}",
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_upnp_no_mappings_until_unpaused_when_battery_optimization_is_on() {
+        *IGD_IS_AVAILABLE.lock() = false;
+
+        let upnp = prepare_test_setup(true).await;
+
+        // Give the provider ample time to discover, if it were going to.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Battery optimization on => provider starts paused => no discovery yet.
+        assert_eq!(
+            ENDPOINT.lock().wg.port(),
+            1000,
+            "provider created a mapping while it should have been paused"
+        );
+
+        // The device signals that a peer now needs a direct upgrade.
+        upnp.unpause_for_test().await;
+        tokio::time::sleep(Duration::from_millis(100 + 20)).await;
+
+        // Now discovery is expected.
+        assert_ne!(
+            ENDPOINT.lock().wg.port(),
+            1000,
+            "provider did not discover after being unpaused"
         );
     }
 }
