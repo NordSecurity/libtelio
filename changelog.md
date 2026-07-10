@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v7.0.5
+### ****
+---
+* Fix issue where force_plaintext_dns for TP-Lite stats collection would be disabled 5 seconds after enabling it
+
+<br>
+
 ### v7.0.4
 ### ****
 ---
