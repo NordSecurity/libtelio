@@ -10,6 +10,14 @@
 * LLT-7361: Add option to force plaintext DNS for TP-Lite DNS servers when stats collection is enabled
 * LLT-7441: Fix crashes on dns packet parsing
 * LLT-7389: Close established incomming connections after meshnet remote access permission is stripped
+* LLT-6822: Add support for post-quantum to nordvpnlite
+* LLT-6852: Nordvpnlite: Advertise vpn mtu via dhcp option 26
+* LLT-7321: Reject outbound packets whose source IP does not match the tunnel interface's configured source IP(s)
+            Add new `set_tunnel_src_ip(src_ips)` API: apps pass the tunnel interface source IP(s) so the firewall can enforce 
+            the source-IP check. Pass an empty list to disable the check.
+            Apps should set it once and re-call only if the IP changes.
+* LLT-7381: Replace unmaintained pqcrypto-kyber/-traits/-internals with safe_pqc_kyber (wire-compatible Round-3 Kyber768).
+* LLT-7470: Increase nordvpnlite client command timeout to 60 seconds
 
 <br>
 
