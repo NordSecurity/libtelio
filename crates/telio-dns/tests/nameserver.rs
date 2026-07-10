@@ -38,6 +38,8 @@ const UDP_HEADER: usize = 8;
 const TCP_MIN_HEADER: usize = 20;
 const ICMP_HEADER: usize = 8;
 const MAX_PACKET: usize = 2048;
+const MAX_DNS_PACKET: usize = 65535;
+const LARGE_RESPONSE_RECORD_COUNT: usize = 300;
 const USE_RAW_FORWARDER: bool = true;
 const TEST_TIMEOUT: Duration = Duration::from_secs(5);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -190,8 +192,8 @@ impl WGClient {
     async fn send_dns_request(&self, query: &str, test_type: DnsTestType) -> Option<DnsResponse> {
         let request = WGClient::build_dns_request(query, test_type);
 
-        let mut sending_buffer = vec![0u8; MAX_PACKET];
-        let mut receiving_buffer = vec![0u8; MAX_PACKET];
+        let mut sending_buffer = vec![0u8; MAX_DNS_PACKET];
+        let mut receiving_buffer = vec![0u8; MAX_DNS_PACKET];
 
         match self
             .tunnel
@@ -608,11 +610,12 @@ async fn init_client_and_server(
 
 enum UpstreamStubBehavior {
     Reply(Ipv4Addr),
+    ReplyLarge { count: usize },
     BlackHole,
 }
 
-/// Builds a minimal DNS response with a single A record.
-fn build_upstream_dns_response(query_bytes: &[u8], answer_ip: Ipv4Addr) -> Vec<u8> {
+/// Builds a DNS response containing one A record per address in `answer_ips`.
+fn build_upstream_dns_response(query_bytes: &[u8], answer_ips: &[Ipv4Addr]) -> Vec<u8> {
     let parsed = dns_parser::Packet::parse(query_bytes).expect("Failed to parse incoming query");
     let qname = parsed.questions[0].qname.to_string();
 
@@ -630,19 +633,29 @@ fn build_upstream_dns_response(query_bytes: &[u8], answer_ip: Ipv4Addr) -> Vec<u
     // NAME: compression pointer to qname at offset 0x0C
     const NAME_PTR: [u8; 2] = [0xC0, 0x0C];
 
-    // Patch the existing header: set QR=1, RD=1, RA=1 flags and answer count=1
+    // Patch the existing header: set QR=1, RD=1, RA=1 flags and answer count
     buf[FLAGS_OFFSET..FLAGS_OFFSET + 2].copy_from_slice(&QR_RD_RA.to_be_bytes());
-    buf[ANCOUNT_OFFSET..ANCOUNT_OFFSET + 2].copy_from_slice(&1_u16.to_be_bytes());
+    buf[ANCOUNT_OFFSET..ANCOUNT_OFFSET + 2]
+        .copy_from_slice(&(answer_ips.len() as u16).to_be_bytes());
 
-    // Append the answer RR after the question section
-    buf.extend_from_slice(&NAME_PTR);
-    buf.extend_from_slice(&TYPE_A.to_be_bytes());
-    buf.extend_from_slice(&CLASS_IN.to_be_bytes());
-    buf.extend_from_slice(&TTL_SECS.to_be_bytes());
-    buf.extend_from_slice(&IPV4_RDLENGTH.to_be_bytes());
-    buf.extend_from_slice(&answer_ip.octets());
+    // Append one answer RR per address after the question section
+    for answer_ip in answer_ips {
+        buf.extend_from_slice(&NAME_PTR);
+        buf.extend_from_slice(&TYPE_A.to_be_bytes());
+        buf.extend_from_slice(&CLASS_IN.to_be_bytes());
+        buf.extend_from_slice(&TTL_SECS.to_be_bytes());
+        buf.extend_from_slice(&IPV4_RDLENGTH.to_be_bytes());
+        buf.extend_from_slice(&answer_ip.octets());
+    }
 
     buf
+}
+
+/// Generates `count` distinct A record addresses.
+fn generate_answer_ips(count: usize) -> Vec<Ipv4Addr> {
+    (0..count)
+        .map(|i| Ipv4Addr::new(10, ((i >> 8) & 0xFF) as u8, (i & 0xFF) as u8, 1))
+        .collect()
 }
 
 // Helper for stub upstream resolver
@@ -657,7 +670,11 @@ async fn spawn_upstream_dns_stub(behavior: UpstreamStubBehavior) -> (SocketAddr,
         let (n, src) = socket.recv_from(&mut buf).await.unwrap();
         match behavior {
             UpstreamStubBehavior::Reply(answer_ip) => {
-                let response = build_upstream_dns_response(&buf[..n], answer_ip);
+                let response = build_upstream_dns_response(&buf[..n], &[answer_ip]);
+                socket.send_to(&response, src).await.unwrap();
+            }
+            UpstreamStubBehavior::ReplyLarge { count } => {
+                let response = build_upstream_dns_response(&buf[..n], &generate_answer_ips(count));
                 socket.send_to(&response, src).await.unwrap();
             }
             UpstreamStubBehavior::BlackHole => {}
@@ -1417,6 +1434,39 @@ async fn dns_request_forward_fallback_to_second_stub() {
 
     assert!(response.no_error());
     assert_eq!(response.a_addrs(), vec![expected_ip]);
+}
+
+#[tokio::test]
+async fn dns_request_forward_large_response() {
+    let (stub_addr, _stub_handle) = spawn_upstream_dns_stub(UpstreamStubBehavior::ReplyLarge {
+        count: LARGE_RESPONSE_RECORD_COUNT,
+    })
+    .await;
+
+    let nameserver = LocalNameServer::new(&[], USE_RAW_FORWARDER)
+        .await
+        .expect("Failed to create a LocalNameServer");
+    nameserver
+        .forward_to_addrs(&[stub_addr])
+        .await
+        .expect("Failed to set stub upstream");
+
+    let response = timeout(
+        TEST_TIMEOUT,
+        dns_test_with_server(
+            "example.com",
+            DnsTestType::CorrectIpv4,
+            None,
+            nameserver,
+            TtlValue(60),
+        ),
+    )
+    .await
+    .expect("Test timeout")
+    .expect("Expected some DNS response");
+
+    assert!(response.no_error());
+    assert_eq!(response.a_addrs().len(), LARGE_RESPONSE_RECORD_COUNT);
 }
 
 #[rstest]
