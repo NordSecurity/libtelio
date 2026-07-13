@@ -262,7 +262,7 @@ async def test_adapter_state_for_vpn_and_dns(
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     connection_tag=ConnectionTag.VM_WINDOWS_1,
-                    derp_1_limits=(1, 1),
+                    derp_1_limits=(3, 3),
                 ),
                 features=default_features(enable_dynamic_wg_nt_control=True),
             ),
@@ -274,7 +274,7 @@ async def test_adapter_state_for_vpn_and_dns(
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 connection_tracker_config=generate_connection_tracker_config(
                     connection_tag=ConnectionTag.VM_WINDOWS_1,
-                    derp_1_limits=(1, 1),
+                    derp_1_limits=(3, 3),
                 ),
                 features=default_features(enable_dynamic_wg_nt_control=False),
             ),
@@ -299,20 +299,34 @@ async def test_adapter_state_for_meshnet(alpha_setup_params: SetupParameters) ->
             else AdapterState.UP
         )
 
-        state = await get_interface_state(client_conn, client_alpha)
-        assert state == expected_idle_state
-
-        # Add node to meshnet
-        api.default_config_two_nodes()
-        first_node_id = next(iter(api.nodes))
-        await client_alpha.set_meshnet_config(
-            api.get_meshnet_config(first_node_id, derp_servers=[config.DERP_PRIMARY])
-        )
-
+        # If meshnet is enabled without any peers, adapter should still be Up
         state = await get_interface_state(client_conn, client_alpha)
         assert state == AdapterState.UP
 
         await client_alpha.set_mesh_off()
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == expected_idle_state
 
+        # Add node to meshnet, adapter should go UP
+        api.default_config_two_nodes()
+        first_node_id = next(iter(api.nodes))
+        mesh_config = api.get_meshnet_config(
+            first_node_id, derp_servers=[config.DERP_PRIMARY]
+        )
+        await client_alpha.set_meshnet_config(mesh_config)
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.UP
+
+        await client_alpha.set_mesh_off()
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == expected_idle_state
+
+        # Mesh with config, but without peers, adapter should be UP
+        mesh_config.peers = None
+        await client_alpha.set_meshnet_config(mesh_config)
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.UP
+
+        await client_alpha.set_mesh_off()
         state = await get_interface_state(client_conn, client_alpha)
         assert state == expected_idle_state

@@ -32,7 +32,7 @@ use telio_task::{
 };
 
 use crate::{
-    adapter::{self, Adapter, AdapterType, Error, FirewallResetConnsCb, Tun},
+    adapter::{self, Adapter, AdapterType, Error, FirewallResetConnsCb, IsMeshnetEnabledCb, Tun},
     link_detection::{self, LinkDetection, LinkDetectionUpdateResult},
     uapi::{self, AnalyticsEvent, Cmd, Event, Interface, Peer, PeerState, Response, UpdateReason},
     FirewallInboundCb, FirewallOutboundCb,
@@ -77,6 +77,14 @@ pub trait WireGuard: Send + Sync + 'static {
     async fn reset_existing_connections(&self, exit_pubkey: PublicKey) -> Result<(), Error>;
     /// Set the ip stack for the adapter
     async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result<(), Error>;
+    /// Ensure that adapter is UP or DOWN
+    async fn ensure_expected_adapter_state(
+        &self,
+        _peers_cnt: usize,
+        _is_meshnet_on: IsMeshnetEnabledCb,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 /// WireGuard implementation allowing dynamic selection of implementation.
@@ -101,8 +109,10 @@ pub struct Config {
     /// Callback of firewall to create connection reset packets
     /// for all active connections
     pub firewall_reset_connections: FirewallResetConnsCb,
-    /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
-    pub enable_dynamic_wg_nt_control: bool,
+    /// Optional callback controlling dynamic WireGuard-NT behavior.
+    /// When present, the callback is consulted by the Windows native adapter
+    /// to determine whether meshnet is currently enabled.
+    pub enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
     /// Configurable socket buffer size, if None doesn't modify default OS set values
     pub skt_buffer_size: Option<u32>,
     /// Configurable socket buffer size, if None doesn't modify default OS set values
@@ -224,7 +234,7 @@ impl DynamicWg {
     ///             firewall_process_outbound_callback:
     ///                 Some(Arc::new(firewall_filter_outbound_packets)),
     ///             firewall_reset_connections: None,
-    ///             enable_dynamic_wg_nt_control: false,
+    ///             enable_dynamic_wg_nt_control: None,
     ///             skt_buffer_size: None,
     ///             inter_thread_channel_size: None,
     ///             max_inter_thread_batched_pkts: None,
@@ -463,6 +473,22 @@ impl WireGuard for DynamicWg {
         })
         .await?)
     }
+
+    /// Ensure that adapter is UP or DOWN
+    async fn ensure_expected_adapter_state(
+        &self,
+        peers_cnt: usize,
+        is_meshnet_on: IsMeshnetEnabledCb,
+    ) -> Result<(), Error> {
+        Ok(task_exec!(&self.task, async move |s| {
+            let _ = s
+                .adapter
+                .ensure_expected_adapter_state(peers_cnt, is_meshnet_on)
+                .await;
+            Ok(())
+        })
+        .await?)
+    }
 }
 
 impl Config {
@@ -483,7 +509,7 @@ impl Config {
             firewall_process_inbound_callback: self.firewall_process_inbound_callback.clone(),
             firewall_process_outbound_callback: self.firewall_process_outbound_callback.clone(),
             firewall_reset_connections: self.firewall_reset_connections.clone(),
-            enable_dynamic_wg_nt_control: self.enable_dynamic_wg_nt_control,
+            enable_dynamic_wg_nt_control: self.enable_dynamic_wg_nt_control.clone(),
             skt_buffer_size: self.skt_buffer_size,
             inter_thread_channel_size: self.inter_thread_channel_size,
             max_inter_thread_batched_pkts: self.max_inter_thread_batched_pkts,
@@ -1091,7 +1117,7 @@ pub mod tests {
                 firewall_process_inbound_callback: Default::default(),
                 firewall_process_outbound_callback: Default::default(),
                 firewall_reset_connections: None,
-                enable_dynamic_wg_nt_control: false,
+                enable_dynamic_wg_nt_control: None,
                 skt_buffer_size: None,
                 inter_thread_channel_size: None,
                 max_inter_thread_batched_pkts: None,
@@ -1155,7 +1181,11 @@ pub mod tests {
         pub wg: Arc<DynamicWg>,
     }
 
-    pub async fn setup(#[cfg(all(not(test), feature = "test-adapter"))] cfg: Config) -> Env {
+    pub async fn setup(
+        #[cfg(all(not(test), feature = "test-adapter"))]
+        #[allow(unused_variables)]
+        cfg: Config,
+    ) -> Env {
         let events_ch = Chan::default();
         let analytics_ch = Some(McChan::default().tx);
         let adapter = Arc::new(Mutex::new(MockAdapter::new()));
