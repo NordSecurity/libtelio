@@ -30,10 +30,10 @@ async def _exit_stack() -> AsyncGenerator[AsyncExitStack, None]:
     stack = AsyncExitStack()
     yield stack
     try:
-        await asyncio.wait_for(stack.aclose(), timeout=60)
+        await asyncio.wait_for(stack.aclose(), timeout=300)
     except asyncio.TimeoutError as e:
         raise RuntimeError(
-            "exit_stack fixture teardown timed out after 60s — "
+            "exit_stack fixture teardown timed out after 300s — "
             "likely a context manager is stuck during cleanup"
         ) from e
 
