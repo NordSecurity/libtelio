@@ -41,7 +41,6 @@ SETUP_CHECK_DUPLICATE_IP_RETRIES = 1
 
 OPENWRT_VM_TAGS = [
     ConnectionTag.VM_OPENWRT_GW_1,
-    ConnectionTag.VM_OPENWRT_GW_2,
     ConnectionTag.VM_OPENWRT_GW_3,
 ]
 
