@@ -1,5 +1,6 @@
 import asyncio
 import pytest
+import re
 from enum import Enum
 from tests import config
 from tests.helpers import SetupParameters, Environment
@@ -17,6 +18,7 @@ from tests.utils.connection_util import (
     ConnectionManager,
 )
 from tests.utils.process import ProcessExecError
+from tests.utils.python import get_python_binary
 from typing import Awaitable, Callable, List
 
 
@@ -251,6 +253,77 @@ class TestAdapterStateForVpnAndDns:
 
         state = await get_interface_state(client_conn, client_alpha)
         assert state == expected_idle_state
+
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_WINDOWS_1,
+                    adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        connection_tag=ConnectionTag.VM_WINDOWS_1,
+                        vpn_1_limits=(1, 2),
+                    ),
+                    is_meshnet=False,
+                    features=default_features(enable_dynamic_wg_nt_control=True),
+                ),
+                marks=[pytest.mark.windows],
+            ),
+        ],
+    )
+    async def test_wg_nt_down_releases_listen_port(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env: Environment,
+    ) -> None:
+        """
+        LLT-6287: after a dynamic adapter Down the driver must not re-bind the
+        stale listen port, so reconnecting works even if another process took it.
+        """
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+
+        server_ip = str(config.WG_SERVER["ipv4"])
+        server_port = int(config.WG_SERVER["port"])
+        server_public_key = str(config.WG_SERVER["public_key"])
+
+        await client_alpha.vpn.connect(server_ip, server_port, server_public_key)
+
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.UP
+
+        ports = re.findall(r"listen_port: Some\((\d+)\)", await client_alpha.log.get())
+        assert ports, "listen_port not found in libtelio log"
+        listen_port = int(ports[-1])
+        assert listen_port != 0
+
+        await client_alpha.vpn.disconnect(server_public_key)
+
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.DOWN
+
+        # TODO: LLT-5689 - rewrite with the NetCat wrapper once it supports Windows
+        occupy_port_cmd = [
+            get_python_binary(client_conn),
+            "-c",
+            "import socket, time; "
+            "s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); "
+            f"s.bind(('0.0.0.0', {listen_port})); "
+            "print('BOUND', flush=True); "
+            "time.sleep(600)",
+        ]
+        async with client_conn.create_process(occupy_port_cmd).run() as process:
+            await process.wait_stdin_ready()
+            while "BOUND" not in process.get_stdout():
+                await asyncio.sleep(0.1)
+
+            await client_alpha.vpn.connect(
+                server_ip, server_port, server_public_key, timeout=40
+            )
+
+            state = await get_interface_state(client_conn, client_alpha)
+            assert state == AdapterState.UP
 
 
 @pytest.mark.parametrize(
