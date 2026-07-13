@@ -18,7 +18,9 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 use tracing_appender::rolling::InitError;
 
+use crate::logging;
 use telio_core::telio_utils::select;
+
 #[cfg(target_os = "linux")]
 use telio_core::telio_utils::LIBTELIO_FWMARK;
 use telio_core::{
@@ -37,7 +39,7 @@ use crate::core_api::get_server_endpoints_list;
 use crate::{
     command_listener::CommandListener,
     comms::DaemonSocket,
-    config::NordVpnLiteConfig,
+    config::{NordVpnLiteConfig, RunningConfig},
     core_api::{request_nordlynx_key, Error as ApiError, DEFAULT_WIREGUARD_PORT},
     interface::ConfigureInterface,
 };
@@ -82,6 +84,8 @@ pub enum NordVpnLiteError {
     LogAppenderError(#[from] InitError),
     #[error(transparent)]
     DaemonizeError(#[from] daemonize::Error),
+    #[error("Failed to configure tracing subscriber: {0}")]
+    TracingError(String),
     #[error("Could not configure IP rules")]
     IpRule,
     #[error("Could not configure IP routing")]
@@ -354,20 +358,66 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
     }
 }
 
-pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), NordVpnLiteError> {
-    debug!("started with config: {config:?}");
+/// Outcome of a single daemon run
+enum LoopOutcome {
+    Exit,
+    /// Carries new confguration
+    Reload(Box<RunningConfig>),
+}
+
+pub async fn daemon_event_loop(
+    mut config: RunningConfig,
+    logging_handle: &mut logging::LoggingHandle,
+) -> Result<(), NordVpnLiteError> {
+    loop {
+        match run_daemon(config.clone()).await? {
+            LoopOutcome::Exit => break,
+            LoopOutcome::Reload(new_config) => {
+                info!("Reloading config from {}", config.path.display());
+
+                let logging_configuration_changed =
+                    config.parsed.logging_params_changed(&new_config.parsed);
+
+                config = *new_config;
+                config.parsed.resolve_env_token();
+
+                if logging_configuration_changed {
+                    if let Err(e) = logging::reload_logging(
+                        logging_handle,
+                        &config.parsed.log_file_path,
+                        config.parsed.log_level,
+                        config.parsed.log_file_count,
+                    ) {
+                        error!("Failed to reload logging configuration: {e}, continue with previous logging configuration");
+                    } else {
+                        info!("Logging reconfigured successfully");
+                    }
+                } else {
+                    info!("Logging configuration unchanged");
+                }
+
+                info!("Config reloaded, restarting daemon");
+                // loop continues and run_daemon called again with new config
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn run_daemon(mut config: RunningConfig) -> Result<LoopOutcome, NordVpnLiteError> {
+    debug!("started with config: {:?}", config.parsed);
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
 
     let (telio_tx, telio_rx) = mpsc::channel(10);
 
     let socket = DaemonSocket::new(&DaemonSocket::get_ipc_socket_path()?)?;
-    let mut cmd_listener = CommandListener::new(socket, telio_tx.clone());
+    let mut cmd_listener = CommandListener::new(socket, telio_tx.clone(), config.clone());
 
     let nordlynx_private_key = {
         let api_request_future = request_nordlynx_key(
-            &config.authentication_token,
-            config.http_certificate_file_path.as_deref(),
+            &config.parsed.authentication_token,
+            config.parsed.http_certificate_file_path.as_deref(),
         );
         pin_mut!(api_request_future);
         loop {
@@ -379,7 +429,7 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
                             match cmd_listener.handle_client_command(false, connection).await {
                                 Ok(ClientCmd::QuitDaemon) => {
                                     info!("Received quit command, exiting");
-                                    return Ok(())
+                                    return Ok(LoopOutcome::Exit)
                                 },
                                 Ok(command) => {
                                     debug!("Received command {command:?} while obtaining service credentials, ignoring");
@@ -396,15 +446,15 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
                 },
                 _ = signals.next() => {
                     warn!("Interrupted while obtaining service credentials - stopping");
-                    return Ok(());
+                    return Ok(LoopOutcome::Exit);
                 }
             };
         }
     };
 
-    config.authentication_token.zeroize();
+    config.parsed.authentication_token.zeroize();
 
-    let config_clone = config.clone();
+    let config_clone = config.parsed.clone();
     let (init_done_tx, init_done_rx) = oneshot::channel::<()>();
     let mut telio_task_handle = tokio::task::spawn_blocking(move || {
         let mut context = TelioContext::new(config_clone, nordlynx_private_key)?;
@@ -415,7 +465,7 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
     // Wait for interface setup to complete before making API calls.
     if init_done_rx.await.is_ok() {
         // TODO: This can be triggered through nordvpnlite command to allow the user to stop/restart.
-        let config_clone = config.clone();
+        let config_clone = config.parsed.clone();
         let tx_clone = telio_tx.clone();
         tokio::spawn(async move {
             handle_exit_node_connection(&config_clone, tx_clone).await;
@@ -430,8 +480,13 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
             join_result = &mut telio_task_handle => {
                 match join_result {
                     Ok(Ok(_)) => {
-                        info!("Telio task thread completed, exiting");
-                        break Ok(())
+                        if let Some(new_config) = cmd_listener.take_pending_config() {
+                            trace!("Telio task thread completed after reload request, restarting");
+                            break Ok(LoopOutcome::Reload(Box::new(new_config)))
+                        } else {
+                            trace!("Telio task thread completed, exiting");
+                            break Ok(LoopOutcome::Exit)
+                        }
                     }
                     Ok(Err(err)) => {
                         error!("Telio task failed with error: {:?}", err);
@@ -461,10 +516,31 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
                     }
                 }
             },
-            // Handle interrupt signals for clean shutdown
+            // Handle interrupt signals for clean shutdown or reload
             signal = signals.next() => {
                 match signal {
-                    Some(s @ SIGHUP | s @ SIGTERM | s @ SIGINT | s @ SIGQUIT) => {
+                    Some(SIGHUP) => {
+                        info!("Received signal SIGHUP, reloading");
+                        match RunningConfig::from_file(&config.path) {
+                            Err(e) => {
+                                error!("Config file changed but failed to parse: {e}. Ignoring reload.");
+                            }
+                            Ok(new_config) if new_config.hash == config.hash => {
+                                info!("Config file unchanged, ignoring reload request");
+                            }
+                            Ok(new_config) => {
+                                let (response_tx, response_rx) = oneshot::channel();
+                                if let Err(e) = telio_tx.send_timeout(TelioTaskCmd::Quit(response_tx), Duration::from_secs(2)).await {
+                                    error!("Unable to send QUIT due to {e} during reload");
+                                };
+                                if let Err(e) = response_rx.await {
+                                    error!("Error receiving quit response from telio task: {e}");
+                                }
+                                break Ok(LoopOutcome::Reload(Box::new(new_config)));
+                            }
+                        }
+                    }
+                    Some(s @ SIGTERM | s @ SIGINT | s @ SIGQUIT) => {
                         info!("Received signal {:?}, exiting", Signal::try_from(s));
                         let (response_tx, response_rx) = oneshot::channel();
                         if let Err(e) = telio_tx.send_timeout(TelioTaskCmd::Quit(response_tx), Duration::from_secs(2)).await {
@@ -474,7 +550,7 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
                             error!("Error receiving quit response from telio task: {e}");
                         }
 
-                        break Ok(());
+                        break Ok(LoopOutcome::Exit);
                     }
                     Some(s) => {
                         info!("Received unexpected signal {s:?}, ignoring");

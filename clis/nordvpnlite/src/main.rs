@@ -16,7 +16,7 @@ mod logging;
 use crate::{
     command_listener::{ClientCmd, Cmd, CommandResponse, TIMEOUT_SEC},
     comms::DaemonSocket,
-    config::NordVpnLiteConfig,
+    config::RunningConfig,
     core_api::get_countries_with_exp_backoff,
     daemon::NordVpnLiteError,
 };
@@ -35,10 +35,10 @@ fn main() -> Result<(), NordVpnLiteError> {
         }
 
         // Parse config file
-        let mut config = NordVpnLiteConfig::from_file(&opts.config_path)?;
-        config.resolve_env_token();
+        let mut config = RunningConfig::from_file(&opts.config_path)?;
+        config.parsed.resolve_env_token();
 
-        println!("Saving logs to: {}", config.log_file_path);
+        println!("Saving logs to: {}", config.parsed.log_file_path);
         println!("Starting daemon");
 
         // Fork the process before starting Tokio runtime.
@@ -82,15 +82,15 @@ fn main() -> Result<(), NordVpnLiteError> {
             }
         }
 
-        let _tracing_worker_guard = logging::setup_logging(
-            &config.log_file_path,
-            config.log_level,
-            config.log_file_count,
+        let mut logging_handle = logging::setup_logging(
+            &config.parsed.log_file_path,
+            config.parsed.log_level,
+            config.parsed.log_file_count,
         )?;
 
-        // Run the daemon event loop
+        // Run the daemon event loop.
         let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(daemon::daemon_event_loop(config))
+        rt.block_on(daemon::daemon_event_loop(config, &mut logging_handle))
     } else {
         client_main(cmd)
     }

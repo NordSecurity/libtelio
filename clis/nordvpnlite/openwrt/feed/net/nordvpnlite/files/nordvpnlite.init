@@ -22,7 +22,6 @@ stop_service() {
 }
 
 reload_service() {
-  stop
-  sleep 1
-  start
+  echo "Reloading nordvpnlite configuration"
+  /usr/sbin/nordvpnlite reload
 }

@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import pytest
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -148,6 +149,78 @@ async def test_nordvpnlite_vpn_country_connection(
                     hostname in report
                     for hostname in ["pl128.nordvpn.com", "de1263.nordvpn.com"]
                 ), report
+
+
+async def test_nordvpnlite_reload_country_change() -> None:
+    async with AsyncExitStack() as exit_stack:
+        # Start connected to PL
+        initial_config = NordVpnLiteConfig(vpn=VPNConfig(country="pl"))
+        nordvpnlite = await NordVpnLite.new(exit_stack, initial_config)
+        await nordvpnlite.request_credentials_from_core()
+
+        async with nordvpnlite.start():
+            # Verify initial PL connection
+            log.debug("Waiting for initial PL VPN connection...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+
+            ip = await stun.get(nordvpnlite.connection, STUN_SERVER)
+            assert ip == WG_SERVER["ipv4"], f"Expected PL server IP, got {ip}"
+            report = await nordvpnlite.get_status()
+            assert "pl128.nordvpn.com" in report, report
+
+            # Rewrite config on disk to DE and trigger reload
+            log.debug("Updating config to DE and reloading...")
+            nordvpnlite.config.config_data = NordVpnLiteConfig(
+                vpn=VPNConfig(country="de")
+            )
+            await nordvpnlite.save_config()
+            await nordvpnlite.reload()
+
+            # Verify new DE connection
+            log.debug("Waiting for DE VPN connection after reload...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+
+            ip = await stun.get(nordvpnlite.connection, STUN_SERVER)
+            assert (
+                ip == WG_SERVER_2["ipv4"]
+            ), f"Expected DE server IP after reload, got {ip}"
+            report = await nordvpnlite.get_status()
+            assert "de1263.nordvpn.com" in report, report
+
+
+async def test_nordvpnlite_reload_no_config_change() -> None:
+    """Reload without changing the config file should be a no-op (daemon keeps running)."""
+    async with AsyncExitStack() as exit_stack:
+        config = copy.deepcopy(CONFIG_PRESETS[ConfigPresetName.DEFAULT])
+        nordvpnlite = await NordVpnLite.new(exit_stack, config_data=config)
+
+        async with nordvpnlite.start():
+            await nordvpnlite.wait_for_telio_running_status()
+
+            # Trigger reload without modifying the config file on disk
+            stdout, stderr = await nordvpnlite.execute_command(["reload"])
+            assert (
+                "Command executed successfully" in stdout
+            ), f"Reload command failed: stdout={stdout!r}, stderr={stderr!r}"
+
+            # Force filesystem sync to ensure logs are flushed to disk before checking
+            await nordvpnlite.connection.create_process(["sync"]).execute()
+
+            try:
+                await nordvpnlite.connection.create_process([
+                    "grep",
+                    "-q",
+                    "Config reloaded, restarting daemon",
+                    str(nordvpnlite.config.paths.daemon_log),
+                ]).execute()
+                pytest.fail("Daemon restarted after reload with unchanged config")
+            except ProcessExecError:
+                pass  # Expected: restart message absent
+
+            # Daemon must still be alive after the no-op reload
+            assert (
+                await nordvpnlite.is_alive()
+            ), "Daemon is no longer alive after no-op reload"
 
 
 @pytest.mark.parametrize(
