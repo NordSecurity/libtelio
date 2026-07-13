@@ -2886,13 +2886,13 @@ dependencies = [
  "ipnet",
  "nix 0.31.3",
  "rand 0.10.1",
- "regex",
+ "regex-lite",
  "reqwest 0.13.3",
  "serde",
  "serde_json",
  "serial_test",
  "signal-hook-tokio",
- "telio",
+ "telio-core",
  "temp-dir",
  "temp-file",
  "thiserror 2.0.18",
@@ -3813,6 +3813,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex-lite"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973"
+
+[[package]]
 name = "regex-syntax"
 version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4731,14 +4737,14 @@ dependencies = [
  "hex",
  "ipnet",
  "parking_lot",
- "regex",
+ "regex-lite",
  "reqwest 0.13.3",
  "rustyline",
  "serde",
  "serde_json",
  "sha2",
  "shellwords",
- "telio",
+ "telio-core",
  "telio-crypto",
  "telio-model",
  "telio-proto",
@@ -4781,6 +4787,7 @@ dependencies = [
  "rstest",
  "rustls-platform-verifier 0.6.2",
  "serde_json",
+ "telio-core",
  "telio-crypto",
  "telio-dns",
  "telio-firewall",
@@ -4807,6 +4814,59 @@ dependencies = [
  "uuid",
  "winapi",
  "winres",
+ "wireguard-uapi",
+]
+
+[[package]]
+name = "telio-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64",
+ "cfg-if",
+ "enum-map",
+ "futures",
+ "ipnet",
+ "itertools 0.15.0",
+ "jni 0.21.1",
+ "lazy_static",
+ "libloading 0.9.0",
+ "maplit",
+ "mockall",
+ "nat-detect",
+ "num_cpus",
+ "once_cell",
+ "parking_lot",
+ "rand 0.10.1",
+ "rstest",
+ "rustls-platform-verifier 0.6.2",
+ "serde_json",
+ "telio-crypto",
+ "telio-dns",
+ "telio-firewall",
+ "telio-lana",
+ "telio-model",
+ "telio-network-monitors",
+ "telio-nurse",
+ "telio-pq",
+ "telio-proto",
+ "telio-proxy",
+ "telio-relay",
+ "telio-sockets",
+ "telio-starcast",
+ "telio-task",
+ "telio-traversal",
+ "telio-utils",
+ "telio-wg",
+ "thiserror 2.0.18",
+ "time",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uniffi",
+ "uuid",
+ "winapi",
  "wireguard-uapi",
 ]
 
@@ -5252,7 +5312,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rand 0.10.1",
- "regex",
+ "regex-lite",
  "rstest",
  "rustc-hash",
  "serde",

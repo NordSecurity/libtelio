@@ -19,7 +19,7 @@ use tracing_subscriber::{
     registry::LookupSpan,
 };
 
-use crate::{TelioLogLevel, TelioLoggerCb};
+use crate::types::{TelioLogLevel, TelioLoggerCb};
 
 const LOG_BUFFER: usize = 1024;
 pub const START_ASYNC_LOGGER_MSG: &str = "Starting async logger thread";
@@ -315,7 +315,7 @@ mod test {
         time::Duration,
     };
 
-    use crate::{TelioLogLevel, TelioLoggerCb};
+    use crate::types::{TelioLogLevel, TelioLoggerCb};
 
     #[test]
     fn test_trace_via_telio_cb() {

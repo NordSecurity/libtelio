@@ -1,13 +1,13 @@
 use crate::NordVpnLiteError;
 use ipnet::IpNet;
-use regex::Regex;
+use regex_lite::Regex;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::process::Command;
 use tracing::{debug, error, info, warn};
 
 #[cfg(target_os = "linux")]
-use telio::telio_utils::LIBTELIO_FWMARK;
+use telio_core::telio_utils::LIBTELIO_FWMARK;
 
 // Copied from NordVPN Linux app
 const DEFAULT_ROUTING_TABLE_ID: u32 = 205;

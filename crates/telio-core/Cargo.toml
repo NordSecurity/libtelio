@@ -1,0 +1,81 @@
+[package]
+name = "telio-core"
+version = "0.1.0"
+authors = ["info@nordvpn.com"]
+edition = "2018"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+
+[features]
+default = ["enable_ens", "enable_firewall"]
+pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
+enable_ens = ["telio-proto/enable_ens"]
+enable_firewall = ["telio-firewall"]
+
+[dependencies]
+cfg-if = "1.0.4"
+
+anyhow.workspace = true
+async-trait.workspace = true
+base64.workspace = true
+enum-map.workspace = true
+futures.workspace = true
+ipnet.workspace = true
+lazy_static.workspace = true
+num_cpus.workspace = true
+parking_lot.workspace = true
+serde_json.workspace = true
+rand.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uniffi.workspace = true
+uuid.workspace = true
+wireguard-uapi.workspace = true
+
+telio-crypto.workspace = true
+telio-dns.workspace = true
+telio-network-monitors.workspace = true
+telio-firewall = { workspace = true, optional = true }
+telio-lana.workspace = true
+telio-model.workspace = true
+telio-nurse.workspace = true
+telio-proto.workspace = true
+telio-proxy.workspace = true
+telio-pq.workspace = true
+telio-relay.workspace = true
+telio-sockets.workspace = true
+telio-starcast.workspace = true
+telio-task.workspace = true
+telio-traversal.workspace = true
+telio-utils.workspace = true
+telio-wg.workspace = true
+once_cell.workspace = true
+nat-detect.workspace = true
+time.workspace = true
+libloading = "0.9.0"
+itertools.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+rustls-platform-verifier.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winapi = { workspace = true, features = ["ntdef", "winerror"] }
+
+[dev-dependencies]
+maplit.workspace = true
+
+mockall.workspace = true
+rstest.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+telio-dns = { workspace = true, features = ["mockall"] }
+telio-firewall = { workspace = true, features = ["mockall"] }
+telio-nurse = { workspace = true, features = ["mockall"] }
+telio-proxy = { workspace = true, features = ["mockall"] }
+telio-pq = { workspace = true, features = ["mockall"] }
+telio-traversal = { workspace = true, features = ["mockall"] }
+telio-utils.workspace = true
+telio-wg = { workspace = true, features = ["mockall", "test-adapter"] }

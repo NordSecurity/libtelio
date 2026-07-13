@@ -7,14 +7,13 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 
 [lib]
-crate-type = ["cdylib", "lib"]
+crate-type = ["cdylib"]
 
 [features]
 default = ["enable_ens", "enable_firewall"]
-pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
-disable_ens = []
-enable_ens = ["telio-proto/enable_ens"]
-enable_firewall = ["telio-firewall"]
+pretend_to_be_macos = ["telio-model/pretend_to_be_macos", "telio-core/pretend_to_be_macos"]
+enable_ens = ["telio-proto/enable_ens", "telio-core/enable_ens"]
+enable_firewall = ["telio-firewall", "telio-core/enable_firewall"]
 
 [dependencies]
 cfg-if = "1.0.4"
@@ -40,6 +39,7 @@ uniffi.workspace = true
 uuid.workspace = true
 wireguard-uapi.workspace = true
 
+telio-core.workspace = true
 telio-crypto.workspace = true
 telio-dns.workspace = true
 telio-network-monitors.workspace = true
@@ -141,7 +141,7 @@ protobuf-codegen = "3.7.2"
 rand = "0.10.1"
 rand_core = "0.10.1"
 rand_core_compat = { version = "0.1.1", features = ["rand_core_0_6", "rand_core_0_9"] }
-regex = "1.12"
+regex-lite = "0.1.9"
 rstest = "0.26.1"
 rustc-hash = "2"
 rustls-platform-verifier = "0.6.2"
@@ -208,9 +208,10 @@ telio-utils = { version = "0.1.0", path = "./crates/telio-utils" }
 telio-wg = { version = "0.1.0", path = "./crates/telio-wg" }
 telio-pq = { version = "0.1.0", path = "./crates/telio-pq" }
 telio-pinger = { version = "0.1.0", path = "./crates/telio-pinger" }
+telio-core = { version = "0.1.0", path = "./crates/telio-core", default-features = false }
 
 [profile.release]
-opt-level = "s"
+opt-level = "z"
 lto = true
 codegen-units = 1
 debug = "full"

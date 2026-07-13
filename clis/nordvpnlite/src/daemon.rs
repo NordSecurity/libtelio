@@ -7,8 +7,8 @@ use serde_json::error::Error as SerdeJsonError;
 use signal_hook_tokio::Signals;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use telio::crypto::PublicKey;
-use telio::telio_model::mesh::{ExitNode, Node};
+use telio_core::crypto::PublicKey;
+use telio_core::telio_model::mesh::{ExitNode, Node};
 use thiserror::Error as ThisError;
 use tokio::task::JoinError;
 use tokio::{
@@ -18,13 +18,13 @@ use tokio::{
 use tracing::{debug, error, info, trace, warn};
 use tracing_appender::rolling::InitError;
 
-use telio::telio_utils::select;
+use telio_core::telio_utils::select;
 #[cfg(target_os = "linux")]
-use telio::telio_utils::LIBTELIO_FWMARK;
-use telio::{
+use telio_core::telio_utils::LIBTELIO_FWMARK;
+use telio_core::{
     crypto::SecretKey,
+    defaults_builder::FeaturesDefaultsBuilder,
     device::{Device, DeviceConfig, Error as DeviceError},
-    ffi::defaults_builder::FeaturesDefaultsBuilder,
     telio_model::{
         constants::LOCAL_TUNNEL_IPV4,
         event::{ErrorLevel, Event},
@@ -488,7 +488,7 @@ pub async fn daemon_event_loop(mut config: NordVpnLiteConfig) -> Result<(), Nord
     }
 }
 
-/// Handle events from telio::device
+/// Handle events from telio_core::device
 fn handle_telio_event(event: Box<Event>) {
     match event.as_ref() {
         Event::Node { body } => {
