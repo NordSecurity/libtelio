@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 #[cfg(not(test))]
 use interprocess::os::unix::local_socket::ListenerOptionsExt;
@@ -91,9 +91,10 @@ impl DaemonSocket {
 
     /// Function for sending commands to the server.
     /// Also retrieves the response from the IPC server, but blocks while waiting for it.
-    /// Note that endlines are used to indicate the end of a message so the server knows when to stop reading and
-    /// send a response, otherwise the server would wait until the API closes the socket and won't be able to send a response.
-    /// This is also sort of a deadlock risk, so should be handled with care.
+    /// Both the command and the response are newline-terminated so each side knows when a
+    /// message ends without having to close the socket. Commands must therefore not contain
+    /// newlines (rejected below), which avoids the deadlock where both sides block waiting on
+    /// each other for a message boundary.
     ///
     /// # Arguments
     ///
@@ -118,7 +119,16 @@ impl DaemonSocket {
         stream.write_all(&buffer).await?;
 
         let mut response_buffer = String::new();
-        stream.read_to_string(&mut response_buffer).await?;
+        let mut reader = BufReader::new(&mut stream);
+        if reader.read_line(&mut response_buffer).await? == 0 {
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof,
+                "Daemon closed the connection without sending a response",
+            ));
+        }
+        if response_buffer.ends_with('\n') {
+            response_buffer.pop();
+        }
 
         Ok(response_buffer)
     }
@@ -152,19 +162,33 @@ impl DaemonConnection {
     pub async fn read_command(&mut self) -> Result<String> {
         let mut command_buffer = String::new();
         let mut reader = BufReader::new(&mut self.stream);
-        reader.read_line(&mut command_buffer).await?;
-        // Removing the trailing newline used as a message ending according to platform.
-        command_buffer.pop();
+        if reader.read_line(&mut command_buffer).await? == 0 {
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof,
+                "Client closed the connection without sending a command",
+            ));
+        }
+        if command_buffer.ends_with('\n') {
+            command_buffer.pop();
+        }
 
         Ok(command_buffer)
     }
 
     /// Function for writing a reply back to the IPC socket after processing the received command.
+    /// The response is newline-terminated so the client can detect the end of the message
+    /// via `read_line` without relying on the connection being closed. This mirrors the
+    /// request framing and assumes the response contains no newlines.
     ///
     /// # Arguments
     ///
     /// * `response` - The response produced by handling a command.
-    pub async fn respond(&mut self, response: String) -> Result<()> {
+    pub async fn respond(&mut self, mut response: String) -> Result<()> {
+        debug_assert!(
+            !response.contains('\n'),
+            "IPC response must not contain a newline; it would corrupt message framing"
+        );
+        response.push('\n');
         self.stream.write_all(response.as_bytes()).await?;
 
         Ok(())
