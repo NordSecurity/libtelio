@@ -125,6 +125,7 @@ class TpLiteStatsCallbackImpl(libtelio.TpLiteStatsCallback):
 class LibtelioWrapper:
     def __init__(self, daemon, logfile):
         self._daemon = daemon
+        self._logfile = logfile
 
         self._libtelio = None
         self._event_cb = TelioEventCbImpl()
@@ -137,6 +138,13 @@ class LibtelioWrapper:
         if self._libtelio is not None:
             self._libtelio.shutdown()
         self._daemon.shutdown()
+
+    @serialize_error
+    def redirect_stdout_to_logfile(self):
+        # Point stdout at tcli.log so telio-task stdout can't EPIPE-crash the remote when SSH
+        # dies mid-freeze — same as the Android startup guard in main() below, but on demand.
+        sys.stdout.flush()
+        os.dup2(self._logfile.fileno(), sys.stdout.fileno())
 
     @serialize_error
     def create(self, features: libtelio.Features):

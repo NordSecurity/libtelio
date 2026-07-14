@@ -35,6 +35,7 @@ from tests.utils.connection.docker_connection import (
     backing_container_id,
     paused_container,
 )
+from tests.utils.connection.ssh_connection import SshConnection
 from tests.utils.python import get_python_binary
 
 # Each tick of libtelio's 5s WireGuard-consolidation poll (src/device.rs) emits
@@ -175,10 +176,18 @@ async def test_no_burst_after_monotonic_jump(
     mono_before = await _read_guest_monotonic(connection_alpha)
     consolidations_before = (await client_alpha.log.get()).count(CONSOLIDATION_LOG)
 
+    # VM SSH session can't survive the freeze: detach remote stdout (else EPIPE-crash) + rebuild SSH on wake.
+    is_ssh = isinstance(connection_alpha, SshConnection)
+    if is_ssh:
+        await client_alpha.get_proxy().redirect_stdout_to_logfile()
+
     # Freeze the client: it does no work, but the monotonic clock keeps moving,
     # so on unpause the poll interval has many overdue ticks.
     async with paused_container(alpha_tag):
         await asyncio.sleep(SLEEP_DURATION_S)
+
+    if is_ssh:
+        await connection_alpha.reconnect()
 
     mono_after = await _read_guest_monotonic(connection_alpha)
     slept = mono_after - mono_before
@@ -254,10 +263,14 @@ async def test_no_burst_after_system_suspend(
     guest-suspend-ram command - so the hypervisor-level suspend is used instead.)
     """
     client_alpha = env_mesh.clients[0]
-    container = backing_container_id(client_alpha.get_connection().tag)
+    connection_alpha = client_alpha.get_connection()
+    container = backing_container_id(connection_alpha.tag)
 
     await ping_between_all_nodes(env_mesh)
     consolidations_before = (await client_alpha.log.get()).count(CONSOLIDATION_LOG)
+
+    # VM SSH session can't survive the suspend: detach remote stdout (else EPIPE-crash) + rebuild SSH on resume.
+    await client_alpha.get_proxy().redirect_stdout_to_logfile()
 
     # Suspend the VM (halt vCPUs), hold it down, then resume. The paused/running
     # transition reported by the monitor is the proof the VM really suspended.
@@ -270,6 +283,9 @@ async def test_no_burst_after_system_suspend(
     assert await _wait_for_run_state(
         container, "running"
     ), f"{container} did not resume after 'cont'"
+
+    assert isinstance(connection_alpha, SshConnection)
+    await connection_alpha.reconnect()
 
     # Let the guest settle and re-establish connectivity after the suspend.
     await asyncio.sleep(SETTLE_AFTER_WAKE_S)
