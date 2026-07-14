@@ -1,17 +1,15 @@
 use std::net::IpAddr;
 
+use crate::{
+    comms::{DaemonConnection, DaemonSocket},
+    config::{Endpoint, RunningConfig},
+    daemon::{handle_exit_node_connection, NordVpnLiteError, TelioStatusReport},
+};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
 use telio_core::telio_task::io::chan;
 use tokio::sync::oneshot;
 use tracing::{error, info, trace};
-use crate::{
-    comms::{DaemonConnection, DaemonSocket},
-    config::{Endpoint, RunningConfig,
-    core_api::get_server_endpoints_list,
-    daemon::{NordVpnLiteError, TelioStatusReport},
-    daemon::{handle_exit_node_connection, NordVpnLiteError, TelioStatusReport},
-};
 
 pub(crate) const TIMEOUT_SEC: u64 = 60;
 
@@ -163,7 +161,6 @@ impl CommandListener {
     async fn process_command(
         &mut self,
         command: &ClientCmd,
-        config: &NordVpnLiteConfig,
     ) -> Result<CommandResponse, NordVpnLiteError> {
         match command {
             ClientCmd::GetStatus => {
@@ -185,7 +182,7 @@ impl CommandListener {
             }
             ClientCmd::Connect => {
                 trace!("Connecting to exit node");
-                handle_exit_node_connection(config, self.telio_task_tx.clone())
+                handle_exit_node_connection(&self.config.parsed, self.telio_task_tx.clone())
                     .await
                     .map(|_| CommandResponse::Ok)
             }
@@ -228,9 +225,7 @@ impl CommandListener {
                     }
                 }
             }
-            ClientCmd::Countries => {
-                unimplemented!()
-            }
+            ClientCmd::Countries => Ok(CommandResponse::Ok),
             ClientCmd::IsAlive => Ok(CommandResponse::Ok),
         }
     }
@@ -255,14 +250,13 @@ impl CommandListener {
         &mut self,
         is_ready: bool,
         mut connection: DaemonConnection,
-        config: &NordVpnLiteConfig,
     ) -> Result<ClientCmd, NordVpnLiteError> {
         let command_str = connection.read_command().await?;
 
         match serde_json::from_str::<ClientCmd>(&command_str) {
             Ok(command) => {
                 let response = if is_ready {
-                    self.process_command(&command, config).await?
+                    self.process_command(&command).await?
                 } else {
                     // Early command handling before TelioTask is initialized
                     match &command {
@@ -419,12 +413,9 @@ mod tests {
 
         let command = serde_json::to_string(&command).unwrap();
         let daemon = tokio::spawn(async move {
-            let config = NordVpnLiteConfig::default();
             let connection = listener.accept_client_connection().await.unwrap();
 
-            listener
-                .handle_client_command(is_ready, connection, &config)
-                .await
+            listener.handle_client_command(is_ready, connection).await
         });
 
         let daemon_response = if broken_client {
@@ -473,11 +464,8 @@ mod tests {
 
         let command = "garbage";
         let daemon = tokio::spawn(async move {
-            let config = NordVpnLiteConfig::default();
             let connection = listener.accept_client_connection().await.unwrap();
-            listener
-                .handle_client_command(true, connection, &config)
-                .await
+            listener.handle_client_command(true, connection).await
         });
         let response = client_send_command(&path, command).await;
         let cmd = daemon.await.unwrap();
@@ -493,11 +481,8 @@ mod tests {
 
         let command = "garbage";
         let daemon = tokio::spawn(async move {
-            let config = NordVpnLiteConfig::default();
             let connection = listener.accept_client_connection().await.unwrap();
-            listener
-                .handle_client_command(true, connection, &config)
-                .await
+            listener.handle_client_command(true, connection).await
         });
         let _ = broken_client_send_command(&path, command).await;
         let cmd = daemon.await.unwrap();

@@ -389,7 +389,7 @@ enum LoopOutcome {
 pub async fn daemon_event_loop(
     mut config: RunningConfig,
     logging_handle: &mut logging::LoggingHandle,
-    do_no_connect: bool,
+    do_not_connect: bool,
 ) -> Result<(), NordVpnLiteError> {
     loop {
         match run_daemon(config.clone(), do_not_connect).await? {
@@ -451,7 +451,7 @@ async fn run_daemon(
                 connection_result = cmd_listener.accept_client_connection() => {
                     match connection_result {
                         Ok(connection) => {
-                            match cmd_listener.handle_client_command(false, connection, &config).await {
+                            match cmd_listener.handle_client_command(false, connection).await {
                                 Ok(command) => {
                                     debug!("Received command {command:?} while obtaining service credentials, ignoring");
                                 },
@@ -491,7 +491,7 @@ async fn run_daemon(
         // Wait for interface setup to complete before making API calls.
         if init_done_rx.await.is_ok() {
             // TODO: This can be triggered through nordvpnlite command to allow the user to stop/restart.
-            let config_clone = config.clone();
+            let config_clone = config.parsed.clone();
             let tx_clone = telio_tx.clone();
             tokio::spawn(async move {
                 let _ = handle_exit_node_connection(&config_clone, tx_clone).await;
@@ -529,7 +529,7 @@ async fn run_daemon(
             connection_result = cmd_listener.accept_client_connection() => {
                 match connection_result {
                     Ok(connection) => {
-                        match cmd_listener.handle_client_command(true, connection, &config).await {
+                        match cmd_listener.handle_client_command(true, connection).await {
                             Ok(command) => {
                                 debug!("Client command {:?} executed successfully", command);
                             },

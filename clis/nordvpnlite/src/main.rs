@@ -110,7 +110,7 @@ async fn client_main(cmd: ClientCmd) -> Result<(), NordVpnLiteError> {
     debug!("cmd {:?}", cmd);
 
     match cmd {
-        Connect | GetStatus | Disconnect | IsAlive => {
+        Connect | Disconnect | Reload | GetStatus | IsAlive => {
             let socket_path = DaemonSocket::get_ipc_socket_path()?;
             if socket_path.exists() {
                 let response = timeout(
