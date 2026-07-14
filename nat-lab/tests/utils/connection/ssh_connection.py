@@ -17,11 +17,14 @@ from uuid import uuid4
 class SshConnection(Connection):
     _connection: asyncssh.SSHClientConnection
     _connection_id: str
+    _ip: str
+    _reconnected: bool
 
     def __init__(
         self,
         connection: asyncssh.SSHClientConnection,
         tag: ConnectionTag,
+        ip: str = "",
     ):
         if tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
             target_os = TargetOS.Windows
@@ -44,6 +47,8 @@ class SshConnection(Connection):
         super().__init__(target_os, tag)
         self._connection = connection
         self._connection_id = str(uuid4())
+        self._ip = ip or connection._host  # pylint: disable=protected-access
+        self._reconnected = False
 
     async def __aenter__(self):
         log.info(
@@ -60,6 +65,54 @@ class SshConnection(Connection):
             self.tag.name,
             self._connection_id,
         )
+        # Close the rebuilt session here; new_connection's asyncssh ctx only owns the original.
+        if self._reconnected:
+            self._connection.close()
+            await self._connection.wait_closed()
+
+    @staticmethod
+    def _credentials(tag: ConnectionTag) -> tuple[str, str | None]:
+        if tag is ConnectionTag.VM_MAC:
+            return "root", "jobs"
+        if tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
+            return "bill", "gates"
+        if tag in [
+            ConnectionTag.VM_OPENWRT_GW_1,
+            ConnectionTag.VM_OPENWRT_GW_2,
+            ConnectionTag.VM_OPENWRT_GW_3,
+        ]:
+            return "root", None
+        return "root", "root"
+
+    @staticmethod
+    async def _connect(ip: str, tag: ConnectionTag) -> asyncssh.SSHClientConnection:
+        username, password = SshConnection._credentials(tag)
+        return await asyncssh.connect(
+            ip,
+            username=username,
+            password=password,
+            known_hosts=None,
+            agent_path=None,
+        )
+
+    async def reconnect(self) -> None:
+        # The per-client asyncssh session dies when the guest is frozen/suspended for tens of seconds; rebuild in place.
+        try:
+            self._connection.close()
+            await self._connection.wait_closed()
+        except Exception as e:  # pylint: disable=broad-except
+            log.warning(
+                "[%s] error closing dead SSH session before reconnect: %s",
+                self.tag.name,
+                e,
+            )
+        self._connection = await self._connect(self._ip, self.tag)
+        self._reconnected = True
+        log.info(
+            "[%s] SSH connection reopened after reconnect() (conn_id=%s)",
+            self.tag.name,
+            self._connection_id,
+        )
 
     @classmethod
     @asynccontextmanager
@@ -69,30 +122,9 @@ class SshConnection(Connection):
         tag: ConnectionTag,
         copy_binaries: bool = False,
     ) -> AsyncIterator["SshConnection"]:
-        username = "root"
-        password: str | None = "root"
-        if tag is ConnectionTag.VM_MAC:
-            username = "root"
-            password = "jobs"
-        elif tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
-            username = "bill"
-            password = "gates"
-        elif tag in [
-            ConnectionTag.VM_OPENWRT_GW_1,
-            ConnectionTag.VM_OPENWRT_GW_2,
-            ConnectionTag.VM_OPENWRT_GW_3,
-        ]:
-            password = None
-
         try:
-            async with asyncssh.connect(
-                ip,
-                username=username,
-                password=password,
-                known_hosts=None,
-                agent_path=None,
-            ) as ssh_connection:
-                async with cls(ssh_connection, tag) as connection:
+            async with await cls._connect(ip, tag) as ssh_connection:
+                async with cls(ssh_connection, tag, ip) as connection:
                     if copy_binaries:
                         await connection.copy_binaries()
 

@@ -202,6 +202,10 @@ class LibtelioProxy:
         self._handle_remote_error(lambda r: r.flush_logs())
 
     @move_to_async_thread
+    def redirect_stdout_to_logfile(self) -> None:
+        self._handle_remote_error(lambda r: r.redirect_stdout_to_logfile())
+
+    @move_to_async_thread
     def enable_tp_lite_stats_collection(self, config: libtelio.TpLiteStatsOptions):
         self._handle_remote_error(lambda r: r.enable_tp_lite_stats_collection(config))
 
