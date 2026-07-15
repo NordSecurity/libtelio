@@ -93,6 +93,10 @@ class SshConnection(Connection):
             password=password,
             known_hosts=None,
             agent_path=None,
+            connect_timeout=30,
+            login_timeout=30,
+            keepalive_interval=15,
+            keepalive_count_max=4,
         )
 
     async def reconnect(self) -> None:

@@ -54,6 +54,8 @@ SETUP_CHECK_ARP_CACHE_RETRIES = 1
 SETUP_CHECK_DUPLICATE_IP_TIMEOUT_S = 60
 SETUP_CHECK_DUPLICATE_IP_RETRIES = 1
 
+SESSIONFINISH_CLEANUP_TIMEOUT_S = 600
+
 TASKS: List[asyncio.Task] = []
 END_TASKS: threading.Event = threading.Event()
 CURRENT_TEST_LOG_FILE = None
@@ -296,11 +298,25 @@ def pytest_sessionfinish(session, exitstatus):
     if _SESSION.runner is not None:
         try:
             if _SESSION.exit_stack is not None:
-                _SESSION.runner.run(_SESSION.exit_stack.aclose())
+                _SESSION.runner.run(
+                    asyncio.wait_for(
+                        _SESSION.exit_stack.aclose(),
+                        SESSIONFINISH_CLEANUP_TIMEOUT_S,
+                    )
+                )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            log.warning("Session exit_stack aclose failed/timed out: %s", e)
         finally:
             _SESSION.runner.close()
 
-    asyncio.run(collect_logs(_SESSION.vm_marks))
+    try:
+        asyncio.run(
+            asyncio.wait_for(
+                collect_logs(_SESSION.vm_marks), SESSIONFINISH_CLEANUP_TIMEOUT_S
+            )
+        )
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        log.warning("Post-test log collection failed/timed out: %s", e)
 
 
 @pytest.fixture(autouse=True)

@@ -18,8 +18,9 @@ def save_dmesg_from_host(suffix):
             capture_output=True,
             text=True,
             check=True,
+            timeout=30,
         ).stdout
-    except subprocess.CalledProcessError as e:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         setup_log.error("Error executing dmesg: %s", e)
         return
 
@@ -160,27 +161,31 @@ def collect_core_api_server_logs():
     container_name = "nat-lab-core-api-1"
     os.makedirs(LOG_DIR, exist_ok=True)
     out_path = os.path.join(LOG_DIR, "core_api.log")
-    with open(out_path, "w", encoding="utf-8") as f:
-        subprocess.run(
-            ["docker", "logs", container_name],
-            stdout=f,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=True,
-        )
+    try:
+        with open(out_path, "w", encoding="utf-8") as f:
+            subprocess.run(
+                ["docker", "logs", container_name],
+                stdout=f,
+                stderr=subprocess.STDOUT,
+                text=True,
+                check=True,
+                timeout=60,
+            )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        setup_log.warning("Error collecting core-api logs: %s", e)
 
 
 def copy_file_from_container(container_name, src_path, dst_path):
     docker_cp_command = f"docker cp {container_name}:{src_path} {dst_path}"
     try:
-        subprocess.run(docker_cp_command, shell=True, check=True)
+        subprocess.run(docker_cp_command, shell=True, check=True, timeout=60)
         setup_log.info(
             "Log file %s copied successfully from %s to %s",
             src_path,
             container_name,
             dst_path,
         )
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         setup_log.warning(
             "Error copying log file %s from %s to %s",
             src_path,

@@ -539,7 +539,10 @@ async def make_local_tcpdump():
         raise
     finally:
         if process:
-            process.kill()
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
             await process.wait()
 
 

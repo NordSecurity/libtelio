@@ -275,11 +275,13 @@ async def test_no_burst_after_system_suspend(
     # Suspend the VM (halt vCPUs), hold it down, then resume. The paused/running
     # transition reported by the monitor is the proof the VM really suspended.
     await _qemu_monitor(container, "stop")
-    assert await _wait_for_run_state(
-        container, "paused"
-    ), f"{container} did not suspend (QEMU never reported 'paused')"
-    await asyncio.sleep(SUSPEND_DURATION_S)
-    await _qemu_monitor(container, "cont")
+    try:
+        assert await _wait_for_run_state(
+            container, "paused"
+        ), f"{container} did not suspend (QEMU never reported 'paused')"
+        await asyncio.sleep(SUSPEND_DURATION_S)
+    finally:
+        await _qemu_monitor(container, "cont")
     assert await _wait_for_run_state(
         container, "running"
     ), f"{container} did not resume after 'cont'"
