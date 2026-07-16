@@ -2,39 +2,65 @@
 
 This file documents the release process of libtelio.
 
-## The Release Script
+## How a release is made
 
-To prepare a release, there's a helper script `release.py`. This script will tag the commit and change versions in all relevant places.
-
-The common usage is:
-
-```bash
-release.py --changelog --push --tag=v4.0.5
-```
-
-You can check the actual commands executed, by passing the `--dry-run` argument.
-
-## Changelog Generation
-
-If you don't want to use the `release.py` script, you'll need to manually generate the `changelog.md` using the `ci/generate_changelog.py` script.
-
-This script will take all the content from each file in the `.unreleased` directory, add it to the changelog and delete those files. The unreleased change descriptions are kept in separate files to avoid merge conflicts on the `changelog.md` file on PRs.
-
-You can use `generate_changelog.py --help` to find out more about the usage of the script. For this specific project structure example, the script arguments would be:
+Releases are **tag-driven**: create a semver tag on the commit you want to release (for a
+main-line release that's typically a commit that already passed nightly) and push it —
+**no manual changelog preparation**:
 
 ```bash
-python3 ci/generate_changelog.py --out_version "v1.2.3" --out-series_name "Šaltibarščiai" --unreleased-dir ".unreleased" --out-file "changelog.md"
+git tag v8.1.0
+git push origin v8.1.0
 ```
 
-- `v1.2.3` is the version of the release being made. This value is required.
-- `Šaltibarščiai` is the series version name (like android lollipop). If omitted, the last series version name will be used.
-- `.unreleased` is the directory containing all the new unreleased change descriptions. Default is ".unreleased"
-- `changelog.md` is the actual changelog onto which the changelog entries will be prepended. Default is "changelog.md"
+Pushing the tag triggers the release pipeline, which runs `ci/release.py` to:
 
-If you're not sure about running the script and want to check the output before writing or deleting any files, you can use `generate_changelog.py --dry-run`
+1. **Generate the changelog** for the tag from the `.unreleased/` files at the tagged commit
+   (via `ci/generate_changelog.py`) and insert it at the correct position in the changelog
+   published to GitHub Pages at `/changelog/` (source of truth: the `gh-pages` branch — see
+   [CONTRIBUTING.md](../CONTRIBUTING.md#updating-the-changelog)).
+2. **Publish the GitLab release** with that changelog block as the release notes.
+3. **Open a PR** against the branch the release was cut from (`main` or a `release/vX.Y`
+   branch) that removes the consumed `.unreleased/` files and, on a **final** (non-`-rc`) tag,
+   bumps `Cargo.toml` to the next version.
 
->NOTE: In case there are entries in the changelog file that need to be converted into unreleased change files, you can use this one liner:
+`ci/release.py` is run by the pipeline (not locally) and uses `GITHUB_WRITE_TOKEN` to publish
+the changelog and open the PR.
+
+### Version bumps (handled by the pipeline's PR)
+
+- **`main`** → next **minor** by default (e.g. `v8.0.0` → `8.1.0`). Override with the
+  `RELEASE_NEXT_VERSION` pipeline variable for the rare major.
+- **`release/vX.Y`** → next **patch** (e.g. `v6.2.3` → `6.2.4`).
+- **RC / pre-release tags** (`vX.Y.Z-rcN`) generate + publish the changelog and consume the
+  `.unreleased/` files, but do **not** bump `Cargo.toml`.
+
+### Release codename (series name)
+
+Optional. Pass `RELEASE_SERIES_NAME` as a variable when running the manual `generate-release` job to set
+the `### **Codename**` line; if omitted it defaults to empty (`### ****`).
+
+### New minor lines
+
+Releasing a new minor on an older line (e.g. `v6.3.0` when no `release/v6.3` exists) requires
+creating that `release/vX.Y` branch first, then tagging on it.
+
+## Manual changelog generation (local preview)
+
+`ci/generate_changelog.py` aggregates the `.unreleased/` files into a version block. The
+per-change files are kept separate to avoid merge conflicts on a shared changelog file on PRs.
+For a local preview without writing or deleting anything:
 
 ```bash
-tail -n +4 ../changelog.md | head -n <number_of_entries_to_extract + 1> | sed -E 's/\* (LLT-[0-9][0-9][0-9][0-9]): (.*)/\1 \"\2\"/' | xargs -n2 sh -c 'echo "$2" >> $1' sh
+python3 ci/generate_changelog.py --out-version "v1.2.3" --dry-run
 ```
+
+- `--out-version` (e.g. `v1.2.3`) is required.
+- `--out-series-name` sets the codename; if omitted it defaults to empty (`### ****`).
+- `--out-file` is the changelog to insert into (the block is inserted at its semver-sorted
+  position, not blindly prepended).
+- `--no-delete` writes the changelog but keeps the `.unreleased/` files.
+
+(The release pipeline drives this via `ci/release.py`, which imports these functions directly.)
+
+Run `python3 ci/generate_changelog.py --help` for the full list.
