@@ -1,5 +1,13 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v8.0.0-rc3
+### ****
+---
+* LLT-6287: Fix WG-NT re-binding the previously used listen port after a dynamic down transition, which could clash with a port taken by another process in the meantime.
+* Reduce the size of release library
+
+<br>
+
 ### v8.0.0-rc2
 ### ****
 ---
