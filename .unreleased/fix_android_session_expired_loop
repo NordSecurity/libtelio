@@ -1,0 +1,1 @@
+Make session keeper and PQ restarts suspend-aware, and restart more things on network change
