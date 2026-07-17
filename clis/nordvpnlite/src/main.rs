@@ -33,9 +33,21 @@ fn main() -> Result<(), NordVpnLiteError> {
     match cmd {
         Cmd::Daemon(opts) => {
             // Check if daemon already is running before forking
-            if DaemonSocket::get_ipc_socket_path()?.exists() {
-                return Err(NordVpnLiteError::DaemonIsRunning);
+            let socket_path = DaemonSocket::get_ipc_socket_path()?;
+            if socket_path.exists() {
+                match std::os::unix::net::UnixStream::connect(&socket_path) {
+                    Ok(_) => {
+                        return Err(NordVpnLiteError::DaemonIsRunning);
+                    }
+                    Err(_) => {
+                        debug!("Stale socket found, removing: {}", socket_path.display());
+                        let _ = std::fs::remove_file(&socket_path);
+                    }
+                }
             }
+            // if DaemonSocket::get_ipc_socket_path()?.exists() {
+            //     return Err(NordVpnLiteError::DaemonIsRunning);
+            // }
 
             // Parse config file
             let mut config = RunningConfig::from_file(&opts.config_path)?;
