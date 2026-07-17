@@ -54,6 +54,8 @@ SETUP_CHECK_ARP_CACHE_RETRIES = 1
 SETUP_CHECK_DUPLICATE_IP_TIMEOUT_S = 60
 SETUP_CHECK_DUPLICATE_IP_RETRIES = 1
 
+SESSIONFINISH_CLEANUP_TIMEOUT_S = 600
+
 TASKS: List[asyncio.Task] = []
 END_TASKS: threading.Event = threading.Event()
 CURRENT_TEST_LOG_FILE = None
@@ -240,31 +242,28 @@ def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
     async def collect_all_logs():
         async with AsyncExitStack() as stack:
             for log_collector in LOG_COLLECTORS:
-                log.info(
-                    "[%s] Will run post-test log collection for %s",
-                    log_collector.node_name,
-                    log_collector.tag,
-                )
-                connection = await stack.enter_async_context(
-                    new_connection_raw(log_collector.tag)
-                )
-                await log_collector.cleanup(connection)
-                log.info(
-                    "[%s] Done running post-test log collection for %s",
-                    log_collector.node_name,
-                    log_collector.tag,
-                )
+                try:
+                    connection = await stack.enter_async_context(
+                        new_connection_raw(log_collector.tag)
+                    )
+                    await log_collector.cleanup(connection)
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    log.warning(
+                        "[%s] post-test log collection failed for %s: %s",
+                        log_collector.node_name,
+                        log_collector.tag,
+                        e,
+                    )
 
-    _SESSION.runner.run(collect_all_logs())
-
-    LOG_COLLECTORS.clear()
-
-    if _SESSION.current_test_log_file:
-        _SESSION.current_test_log_file.flush()
-        log.removeHandler(_SESSION.current_test_log_file)
-        _SESSION.current_test_log_file.close()
-
-    _SESSION.current_test_log_file = None
+    try:
+        _SESSION.runner.run(collect_all_logs())
+    finally:
+        LOG_COLLECTORS.clear()
+        if _SESSION.current_test_log_file:
+            _SESSION.current_test_log_file.flush()
+            log.removeHandler(_SESSION.current_test_log_file)
+            _SESSION.current_test_log_file.close()
+        _SESSION.current_test_log_file = None
 
     log.info("Post-test log collection completed for %s", item.reportinfo()[2])
 
@@ -296,11 +295,25 @@ def pytest_sessionfinish(session, exitstatus):
     if _SESSION.runner is not None:
         try:
             if _SESSION.exit_stack is not None:
-                _SESSION.runner.run(_SESSION.exit_stack.aclose())
+                _SESSION.runner.run(
+                    asyncio.wait_for(
+                        _SESSION.exit_stack.aclose(),
+                        SESSIONFINISH_CLEANUP_TIMEOUT_S,
+                    )
+                )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            log.warning("Session exit_stack aclose failed/timed out: %s", e)
         finally:
             _SESSION.runner.close()
 
-    asyncio.run(collect_logs(_SESSION.vm_marks))
+    try:
+        asyncio.run(
+            asyncio.wait_for(
+                collect_logs(_SESSION.vm_marks), SESSIONFINISH_CLEANUP_TIMEOUT_S
+            )
+        )
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        log.warning("Post-test log collection failed/timed out: %s", e)
 
 
 @pytest.fixture(autouse=True)

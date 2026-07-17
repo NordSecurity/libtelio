@@ -165,7 +165,13 @@ class DockerProcess(Process):
                     stderr=asyncio.subprocess.PIPE,
                 )
                 stdout, stderr = await proc.communicate()
-                if proc.returncode != 0:
+                if proc.returncode == 3:
+                    log.debug(
+                        "[%s] Cleanup: process already gone (natlab id %s)",
+                        self._container_name,
+                        self._kill_id,
+                    )
+                elif proc.returncode != 0:
                     log.warning(
                         "[%s] Cleanup failed: %s",
                         self._container_name,

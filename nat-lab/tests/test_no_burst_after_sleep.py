@@ -72,6 +72,28 @@ async def _read_guest_monotonic(connection: Connection) -> float:
     return float(process.get_stdout().strip())
 
 
+async def _reconnect_when_ready(
+    connection: SshConnection, deadline_s: float = 90.0, delay: float = 3.0
+) -> None:
+    # a just-unfrozen/resumed guest may accept a socket before it can run anything
+    attempts = max(1, int(deadline_s / delay))
+    last_error: Exception | None = None
+    for _ in range(attempts):
+        try:
+            await connection.reconnect()
+            await connection.create_process(
+                ["echo", "natlab_ready"], quiet=True
+            ).execute()
+            return
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            last_error = e
+            await asyncio.sleep(delay)
+    raise ConnectionError(
+        f"guest {connection.tag.name} did not become reachable within {deadline_s}s"
+        f" after freeze/suspend: {last_error}"
+    )
+
+
 # --- VM suspend, driven through the dockur QEMU monitor ----------------------
 # A VM client runs its guest OS in QEMU inside the dockur container. The QEMU
 # monitor lives inside that container (telnet on localhost) and is reachable with
@@ -177,8 +199,10 @@ async def test_no_burst_after_monotonic_jump(
     consolidations_before = (await client_alpha.log.get()).count(CONSOLIDATION_LOG)
 
     # VM SSH session can't survive the freeze: detach remote stdout (else EPIPE-crash) + rebuild SSH on wake.
-    is_ssh = isinstance(connection_alpha, SshConnection)
-    if is_ssh:
+    ssh_alpha = (
+        connection_alpha if isinstance(connection_alpha, SshConnection) else None
+    )
+    if ssh_alpha:
         await client_alpha.get_proxy().redirect_stdout_to_logfile()
 
     # Freeze the client: it does no work, but the monotonic clock keeps moving,
@@ -186,8 +210,8 @@ async def test_no_burst_after_monotonic_jump(
     async with paused_container(alpha_tag):
         await asyncio.sleep(SLEEP_DURATION_S)
 
-    if is_ssh:
-        await connection_alpha.reconnect()
+    if ssh_alpha:
+        await _reconnect_when_ready(ssh_alpha)
 
     mono_after = await _read_guest_monotonic(connection_alpha)
     slept = mono_after - mono_before
@@ -275,17 +299,19 @@ async def test_no_burst_after_system_suspend(
     # Suspend the VM (halt vCPUs), hold it down, then resume. The paused/running
     # transition reported by the monitor is the proof the VM really suspended.
     await _qemu_monitor(container, "stop")
-    assert await _wait_for_run_state(
-        container, "paused"
-    ), f"{container} did not suspend (QEMU never reported 'paused')"
-    await asyncio.sleep(SUSPEND_DURATION_S)
-    await _qemu_monitor(container, "cont")
+    try:
+        assert await _wait_for_run_state(
+            container, "paused"
+        ), f"{container} did not suspend (QEMU never reported 'paused')"
+        await asyncio.sleep(SUSPEND_DURATION_S)
+    finally:
+        await _qemu_monitor(container, "cont")
     assert await _wait_for_run_state(
         container, "running"
     ), f"{container} did not resume after 'cont'"
 
     assert isinstance(connection_alpha, SshConnection)
-    await connection_alpha.reconnect()
+    await _reconnect_when_ready(connection_alpha)
 
     # Let the guest settle and re-establish connectivity after the suspend.
     await asyncio.sleep(SETTLE_AFTER_WAKE_S)
