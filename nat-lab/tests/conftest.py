@@ -242,31 +242,28 @@ def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
     async def collect_all_logs():
         async with AsyncExitStack() as stack:
             for log_collector in LOG_COLLECTORS:
-                log.info(
-                    "[%s] Will run post-test log collection for %s",
-                    log_collector.node_name,
-                    log_collector.tag,
-                )
-                connection = await stack.enter_async_context(
-                    new_connection_raw(log_collector.tag)
-                )
-                await log_collector.cleanup(connection)
-                log.info(
-                    "[%s] Done running post-test log collection for %s",
-                    log_collector.node_name,
-                    log_collector.tag,
-                )
+                try:
+                    connection = await stack.enter_async_context(
+                        new_connection_raw(log_collector.tag)
+                    )
+                    await log_collector.cleanup(connection)
+                except Exception as e:  # pylint: disable=broad-exception-caught
+                    log.warning(
+                        "[%s] post-test log collection failed for %s: %s",
+                        log_collector.node_name,
+                        log_collector.tag,
+                        e,
+                    )
 
-    _SESSION.runner.run(collect_all_logs())
-
-    LOG_COLLECTORS.clear()
-
-    if _SESSION.current_test_log_file:
-        _SESSION.current_test_log_file.flush()
-        log.removeHandler(_SESSION.current_test_log_file)
-        _SESSION.current_test_log_file.close()
-
-    _SESSION.current_test_log_file = None
+    try:
+        _SESSION.runner.run(collect_all_logs())
+    finally:
+        LOG_COLLECTORS.clear()
+        if _SESSION.current_test_log_file:
+            _SESSION.current_test_log_file.flush()
+            log.removeHandler(_SESSION.current_test_log_file)
+            _SESSION.current_test_log_file.close()
+        _SESSION.current_test_log_file = None
 
     log.info("Post-test log collection completed for %s", item.reportinfo()[2])
 
