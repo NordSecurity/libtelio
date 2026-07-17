@@ -32,7 +32,6 @@ class SshConnection(Connection):
             target_os = TargetOS.Mac
         elif tag in [
             ConnectionTag.VM_OPENWRT_GW_1,
-            ConnectionTag.VM_OPENWRT_GW_2,
             ConnectionTag.VM_OPENWRT_GW_3,
             ConnectionTag.VM_LINUX_NLX_1,
             ConnectionTag.VM_LINUX_FULLCONE_GW_1,
@@ -78,7 +77,6 @@ class SshConnection(Connection):
             return "bill", "gates"
         if tag in [
             ConnectionTag.VM_OPENWRT_GW_1,
-            ConnectionTag.VM_OPENWRT_GW_2,
             ConnectionTag.VM_OPENWRT_GW_3,
         ]:
             return "root", None
@@ -232,7 +230,6 @@ class SshConnection(Connection):
             and self.tag
             in [
                 ConnectionTag.VM_OPENWRT_GW_1,
-                ConnectionTag.VM_OPENWRT_GW_2,
                 ConnectionTag.VM_OPENWRT_GW_3,
             ]
         ):

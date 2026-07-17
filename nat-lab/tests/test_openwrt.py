@@ -24,7 +24,6 @@ from tests.nordvpnlite import (
     Paths,
     CONFIG_PRESETS,
 )
-from tests.timeouts import TEST_OPENWRT_ARMV8_TIMEOUT
 from tests.utils import stun
 from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.connection_util import new_connection_raw, new_connection_by_tag
@@ -41,7 +40,6 @@ from urllib.parse import urlparse
 NETWORK_RESTART_LOG_LINE = "netifd: Network device 'eth1' link is up"
 OPENWRT_GW_WAN_IP = {
     ConnectionTag.VM_OPENWRT_GW_1: "10.0.0.2",
-    ConnectionTag.VM_OPENWRT_GW_2: "10.0.0.3",
     ConnectionTag.VM_OPENWRT_GW_3: "10.0.0.4",
 }
 
@@ -50,12 +48,6 @@ OPENWRT_TAGS = [
         ConnectionTag.DOCKER_OPENWRT_CLIENT_1,
         ConnectionTag.VM_OPENWRT_GW_1,
         id="openwrt-25.12",
-    ),
-    pytest.param(
-        ConnectionTag.DOCKER_OPENWRT_CLIENT_2,
-        ConnectionTag.VM_OPENWRT_GW_2,
-        id="openwrt-24.10-armv8",
-        marks=pytest.mark.timeout(TEST_OPENWRT_ARMV8_TIMEOUT),
     ),
     pytest.param(
         ConnectionTag.DOCKER_OPENWRT_CLIENT_3,
@@ -69,12 +61,6 @@ OPENWRT_DHCP_TAGS = [
         ConnectionTag.DOCKER_OPENWRT_DHCP_CLIENT_1,
         ConnectionTag.VM_OPENWRT_GW_1,
         id="openwrt-25.12",
-    ),
-    pytest.param(
-        ConnectionTag.DOCKER_OPENWRT_DHCP_CLIENT_2,
-        ConnectionTag.VM_OPENWRT_GW_2,
-        id="openwrt-24.10-armv8",
-        marks=pytest.mark.timeout(TEST_OPENWRT_ARMV8_TIMEOUT),
     ),
     pytest.param(
         ConnectionTag.DOCKER_OPENWRT_DHCP_CLIENT_3,
