@@ -14,8 +14,7 @@
 use super::addressconfig;
 use super::mtumonitor::MtuMonitor;
 use crate::{adapter::IsMeshnetEnabledCb, windows::cleanup::*};
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::{mem, option, ptr};
+use std::sync::{Arc, Mutex};
 use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn, Hidden,
 };

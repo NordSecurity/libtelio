@@ -6,8 +6,8 @@
 //
 
 use super::winipcfg::luid::InterfaceLuid;
+use std::ptr;
 use std::sync::{Arc, Mutex};
-use std::{mem, ptr};
 use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
 };
@@ -24,8 +24,6 @@ pub struct MtuMonitor {
     family: ADDRESS_FAMILY,
     min_mtu: u32,
 
-    last_luid: u64,
-    last_index: i32,
     last_mtu: u32,
 
     // Quickhack: Adapter is Sync+Send, so it cannot hold any substructures with raw ptr / HANDLE
@@ -45,8 +43,6 @@ impl MtuMonitor {
             own_luid,
             family,
             min_mtu,
-            last_luid: 0,
-            last_index: -1,
             last_mtu: 0,
 
             route_cb_handle: Arc::new(Mutex::new(0)),
@@ -196,17 +192,17 @@ impl MtuMonitor {
         telio_log_trace!("+++ MtuMonitor::do_it");
 
         telio_log_trace!("+++ MtuMonitor::do_it: find_default_luid");
-        self.find_default_luid()?;
+        let default_luid = self.find_default_luid()?;
         telio_log_trace!("--- MtuMonitor::do_it: find_default_luid");
 
         let mut mtu: u32 = 0;
 
-        if 0 != self.last_luid {
-            let last_luid = InterfaceLuid::new(self.last_luid);
+        if 0 != default_luid {
+            let default_luid = InterfaceLuid::new(default_luid);
             telio_log_trace!("+++ MtuMonitor::do_it: get_interface");
-            let last_iface = last_luid.get_interface()?;
-            if last_iface.Mtu > 0 {
-                mtu = last_iface.Mtu;
+            let default_iface = default_luid.get_interface()?;
+            if default_iface.Mtu > 0 {
+                mtu = default_iface.Mtu;
             }
         }
 
@@ -232,7 +228,7 @@ impl MtuMonitor {
         Ok(())
     }
 
-    fn find_default_luid(&mut self) -> Result<(), NETIO_STATUS> {
+    fn find_default_luid(&self) -> Result<u64, NETIO_STATUS> {
         let mut p_table: PMIB_IPFORWARD_TABLE2 = ptr::null_mut();
         let result = unsafe { GetIpForwardTable2(self.family, &mut p_table) };
         if NO_ERROR != result {
@@ -243,7 +239,6 @@ impl MtuMonitor {
             return Err(result);
         }
         let mut lowest_metric: u32 = u32::MAX;
-        let mut index: u32 = 0;
         let mut luid: u64 = 0;
 
         assert!(!p_table.is_null());
@@ -276,7 +271,6 @@ impl MtuMonitor {
                     let current_metric = unsafe { (*current_entry).Metric + iface.Metric };
                     if current_metric < lowest_metric {
                         lowest_metric = current_metric;
-                        index = unsafe { (*current_entry).InterfaceIndex };
                         luid = unsafe { (*current_entry).InterfaceLuid.Value };
                     }
                 }
@@ -288,10 +282,7 @@ impl MtuMonitor {
 
         unsafe { FreeMibTable(p_table as _) };
 
-        self.last_luid = luid;
-        self.last_index = index as i32;
-
-        Ok(())
+        Ok(luid)
     }
 }
 
