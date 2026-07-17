@@ -617,6 +617,67 @@ class TestTpLiteStats:
 
         await client.tp_lite.disable_stats_collection()
 
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [pytest.param(_alpha_setup_params_with_firewall())],
+    )
+    @pytest.mark.asyncio
+    @pytest.mark.libfirewall
+    async def test_tp_lite_stats_with_magic_dns(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env: Environment,
+    ) -> None:
+        """Verify that MagicDNS doesn't interfere with stats collection.
+
+        Steps:
+            1. Connect the VPN, enable MagicDNS and enable stats collection.
+            2. Query a blocked domain.
+            3. Trigger a flush and confirm that the DNS request and response
+               show up in the metrics and blocked domains.
+            4. Disable stats collection.
+        """
+
+        [alpha] = env.nodes
+        [client] = env.clients
+        [connection] = [c.connection for c in env.connections]
+
+        await connect_vpn(
+            connection,
+            None,
+            client,
+            alpha.ip_addresses[0],
+            config.WG_SERVER,
+        )
+
+        await client.enable_magic_dns([TP_LITE_DNS_IP])
+
+        await client.tp_lite.enable_stats_collection(_tp_lite_config())
+
+        with pytest.raises(Exception):
+            await query_dns(
+                connection,
+                BLOCKED_NXDOMAIN,
+                dns_server=config.LIBTELIO_DNS_IPV4,
+                options=["-type=a"],
+            )
+
+        await _trigger_stats_collection(connection)
+        (num_calls, domains, metrics) = await client.tp_lite.get_stats()
+
+        blocked_domain_names = [d.domain_name for d in domains]
+
+        assert num_calls == 1
+        assert metrics.num_requests == 1
+        assert metrics.num_responses == 1
+        assert metrics.num_cache_hits == 0
+
+        assert BLOCKED_NXDOMAIN in blocked_domain_names
+        nxdomain_entry = next(d for d in domains if d.domain_name == BLOCKED_NXDOMAIN)
+        assert "malware" in nxdomain_entry.category.lower()
+
+        await client.tp_lite.disable_stats_collection()
+
 
 class TestDnsWhitelisting:
     """DNS whitelisting redirects whitelisted queries away from the blocking
