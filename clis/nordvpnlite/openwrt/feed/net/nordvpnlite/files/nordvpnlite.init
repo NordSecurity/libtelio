@@ -16,6 +16,10 @@ start_service() {
   procd_close_instance
 }
 
+stop_service() {
+  rm -f /run/nordvpnlited.sock /var/run/nordvpnlited.sock 
+}
+
 reload_service() {
   echo "Reloading nordvpnlite configuration"
   /usr/sbin/nordvpnlite reload
