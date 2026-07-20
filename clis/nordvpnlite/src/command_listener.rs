@@ -13,6 +13,7 @@ use crate::{
 };
 
 pub(crate) const TIMEOUT_SEC: u64 = 60;
+const DEFAULT_CONFIG_PATH: &str = "/etc/nordvpnlite/config.json";
 
 #[derive(Parser, Debug, PartialEq)]
 #[clap()]
@@ -51,7 +52,7 @@ pub(crate) struct DaemonOpts {
     #[clap(
         long = "config-file",
         short = 'c',
-        default_value = "/etc/nordvpnlite/config.json"
+        default_value = DEFAULT_CONFIG_PATH
     )]
     pub config_path: String,
 
@@ -72,6 +73,53 @@ pub(crate) struct DaemonOpts {
     pub stdout_path: String,
 }
 
+#[derive(Parser, Debug)]
+pub(crate) struct LoginOpts {
+    /// Configuration file to read authentication credentials path
+    #[clap(
+        long = "config-file",
+        short = 'c',
+        default_value = DEFAULT_CONFIG_PATH
+    )]
+    pub config_path: String,
+
+    /// Authentication token (long syntax)
+    #[clap(
+        long = "token",
+        value_name = "TOKEN",
+        conflicts_with = "token_positional"
+    )]
+    pub token: Option<String>,
+
+    /// Authentication token (short syntax)
+    #[clap(
+        value_name = "TOKEN",
+        required_unless_present = "token",
+        conflicts_with = "token"
+    )]
+    pub token_positional: Option<String>,
+}
+
+impl LoginOpts {
+    pub fn token(&self) -> &str {
+        self.token
+            .as_deref()
+            .or(self.token_positional.as_deref())
+            .unwrap_or_default()
+    }
+}
+
+#[derive(Parser, Debug)]
+pub(crate) struct LogoutOpts {
+    /// Configuration file to read authentication credentials path
+    #[clap(
+        long = "config-file",
+        short = 'c',
+        default_value = DEFAULT_CONFIG_PATH
+    )]
+    pub config_path: String,
+}
+
 /// NordVPN Lite is a lightweight, standalone VPN client built around
 /// the libtelio library. It is designed for embedded and edge environments,
 /// that are too resource constrained for the full NordVPN application.
@@ -85,6 +133,10 @@ pub enum Cmd {
     Client(ClientCmd),
     #[clap(about = "Show countries with available VPN servers")]
     Countries,
+    #[clap(about = "Store NordVPN authentication credentials")]
+    Login(LoginOpts),
+    #[clap(about = "Clear NordVPN authentication credentials")]
+    Logout(LogoutOpts),
 }
 
 /// Command response type used to communicate between `telio runner -> daemon -> client`
@@ -186,7 +238,7 @@ impl CommandListener {
                         NordVpnLiteError::CommandFailed(ClientCmd::QuitDaemon)
                     })?;
                 // Wait for a response from TelioTask
-                // this essentually blocks the client quit command until the daemon initiated
+                // this essentially blocks the client quit command until the daemon initiated
                 // cleanup
                 handle_response(response_rx, |_| Ok(CommandResponse::Ok)).await
             }
@@ -294,9 +346,9 @@ mod tests {
     const VALID_CONFIG_JSON: &str = r#"{
         "log_level": "Info",
         "log_file_path": "test.log",
+        "auth_file_path": "auth.json",
         "adapter_type": "linux-native",
-        "interface": { "name": "utun10", "config_provider": "manual" },
-        "authentication_token": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        "interface": { "name": "utun10", "config_provider": "manual" }
     }"#;
 
     // Create a random socket path for the test, since tests run in parallel they can deadlock
@@ -606,5 +658,38 @@ mod tests {
             had_pending,
             "pending_config must be set after a successful reload"
         );
+    }
+
+    #[test]
+    fn test_login_cmd_accepts_long_token_syntax() {
+        let cmd = Cmd::try_parse_from(["nordvpnlite", "login", "--token", "abcd"]).unwrap();
+
+        let Cmd::Login(opts) = cmd else {
+            panic!("expected login command")
+        };
+
+        assert_eq!(opts.token(), "abcd");
+    }
+
+    #[test]
+    fn test_login_cmd_accepts_short_token_syntax() {
+        let cmd = Cmd::try_parse_from(["nordvpnlite", "login", "abcd"]).unwrap();
+
+        let Cmd::Login(opts) = cmd else {
+            panic!("expected login command")
+        };
+
+        assert_eq!(opts.token(), "abcd");
+    }
+
+    #[test]
+    fn test_login_cmd_rejects_both_token_forms() {
+        let result = Cmd::try_parse_from(["nordvpnlite", "login", "--token", "abcd", "efgh"]);
+
+        assert!(result.is_err());
+
+        let result = Cmd::try_parse_from(["nordvpnlite", "login", "abcd", "--token", "efgh"]);
+
+        assert!(result.is_err());
     }
 }

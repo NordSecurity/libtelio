@@ -64,7 +64,7 @@ impl DaemonSocket {
             .reclaim_name(true);
 
         // Disable setting umask for tests.
-        // `umask()` C API call is operating on a process level, and therfore is not thread-safe.
+        // `umask()` C API call is operating on a process level, and therefore is not thread-safe.
         // As multiple cargo tests are executing in parallel this causes a panic.
         #[cfg(not(test))]
         // Mode for unix socket rw-------

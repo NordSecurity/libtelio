@@ -15,8 +15,19 @@ var callSetConfig = rpc.declare({
     params: ['config']
 });
 
+var callLogin = rpc.declare({
+    object: 'nordvpnlite',
+    method: 'login',
+    params: ['token']
+});
+
+var callLogout = rpc.declare({
+    object: 'nordvpnlite',
+    method: 'logout'
+});
+
 var defaultConfig = {
-    authentication_token: '<REPLACE_WITH_YOUR_TOKEN>',
+    auth_file_path: '/etc/nordvpnlite/auth.json',
     vpn: 'recommended',
     log_level: 'error',
     log_file_path: '/var/log/nordvpnlite.log',
@@ -40,8 +51,10 @@ return view.extend({
         this.config = config;
 
         var form_data = {
+            auth: {
+                authentication_token: ""
+            },
             config: {
-                authentication_token: this.config.authentication_token === "<REPLACE_WITH_YOUR_TOKEN>" ? "" : this.config.authentication_token,
                 vpn: this.config.vpn === "recommended" ? "" : this.config.vpn.country
             }
         };
@@ -49,11 +62,14 @@ return view.extend({
         var m = new form.JSONMap(form_data, _('NordVPN Lite'),
             _('Configure your NordVPN Lite connection settings.'));
 
-        var s = m.section(form.NamedSection, 'config');
+        var auth_section = m.section(form.NamedSection, 'auth', 'auth', _('Authentication'));
 
-        var o = this.authentication_token_option = s.option(form.Value, 'authentication_token', _('Authentication Token'));
+        var o = this.authentication_token_option = auth_section.option(form.Value, 'authentication_token', _('Authentication Token'));
         o.password = true;
         o.placeholder = _('Enter your Nord Account authentication token');
+        o.description = _('Leave empty to keep the currently stored token, or enter a new token to replace it.');
+
+        var s = m.section(form.NamedSection, 'config', 'config', _('Settings'));
 
         o = this.vpn_option = s.option(form.Value, 'vpn', _('Country Code'));
         o.placeholder = _('recommended');
@@ -71,10 +87,10 @@ return view.extend({
             return
         }
 
-        const token = String(this.authentication_token_option.formvalue('config') || '<REPLACE_WITH_YOUR_TOKEN>').trim();
+        const token = String(this.authentication_token_option.formvalue('auth') || '').trim();
         const vpn = String(this.vpn_option.formvalue('config') || '').trim();
 
-        this.config.authentication_token = token;
+        delete this.config.authentication_token;
 
         if (vpn === '') {
             this.config.vpn = 'recommended';
@@ -84,13 +100,32 @@ return view.extend({
 
         try {
             const res = await callSetConfig(this.config);
-            if (!res || res.success !== true)
+            if (!res || res.success !== true) {
                 ui.addNotification(_('Save failed'), E('p', _('Could not write config file.')));
-            else
-                ui.addNotification(_('Saved'), E('p', _('Configuration updated.')));
+                return;
+            }
         } catch (err) {
             ui.addNotification(_('Save failed'), E('p', err ? String(err) : _('Unknown error')));
+            return;
         }
+
+        // Store the token separately via the login command, which writes it to the auth file.
+        // An empty field keeps the previously stored token.
+        if (token !== '') {
+            try {
+                const authRes = await callLogin(token);
+                if (!authRes || authRes.success !== true) {
+                    ui.addNotification(_('Save failed'), E('p',
+                        (authRes && authRes.error) ? String(authRes.error) : _('Could not store authentication token.')));
+                    return;
+                }
+            } catch (err) {
+                ui.addNotification(_('Save failed'), E('p', err ? String(err) : _('Unknown error')));
+                return;
+            }
+        }
+
+        ui.addNotification(_('Saved'), E('p', _('Configuration updated.')));
     },
 
     handleSaveApply: null,

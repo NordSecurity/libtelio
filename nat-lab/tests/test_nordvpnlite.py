@@ -257,7 +257,7 @@ async def test_nordvpnlite_config_created(
             pytest.fail("Start should not succeed with default config")
         except ProcessExecError as exc:
             assert str(config_path) in exc.stdout, "Config path not mentioned in stdout"
-            assert "creating default config" in exc.stderr
+            assert "creating default config" in exc.stdout
             assert "InvalidConfigToken" in exc.stderr
             assert await nordvpnlite.config_exists(
                 config_path

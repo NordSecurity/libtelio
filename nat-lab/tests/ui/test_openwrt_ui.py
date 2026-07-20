@@ -29,10 +29,8 @@ async def test_nordvpnlite_settings_required_fields(
     """
     Steps:
     1. Log into LuCI and open the NordVPN Lite settings page.
-    2. Assert the Authentication Token field is visible.
-    3. Assert the Country Code field is visible.
+    2. Assert the Country Code field is visible.
     """
-    await expect(nordvpnlite_settings.token).to_be_visible()
     await expect(nordvpnlite_settings.vpn).to_be_visible()
 
 

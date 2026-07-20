@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import os
 import re
@@ -65,12 +66,12 @@ class InterfaceConfig:
 
 @dataclass
 class NordVpnLiteConfig:
-    authentication_token: str = CORE_API_CREDENTIALS["password"]
     vpn: Optional[VPNConfig] = None
     log_level: str = "debug"
     log_file_path: str = "/var/log/nordvpnlite_natlab.log"
     log_file_count: int = 0
     adapter_type: str = "neptun"
+    auth_file_path: str = "/run/auth.json"
     http_certificate_file_path: str = "/etc/ssl/server_certificate/test.pem"
     interface: InterfaceConfig = field(default_factory=InterfaceConfig)
     override_default_wg_port: int = 1023
@@ -151,45 +152,59 @@ class Paths:
     def lib_log(self) -> Path:
         return self.log_dir / "nordvpnlite_natlab.log"
 
+    @property
+    def auth_file(self) -> Path:
+        return self.run_dir / "auth.json"
+
 
 class Config:
     def __init__(
         self,
         config_data: NordVpnLiteConfig,
         config_path: Optional[Path] = None,
+        auth_path: Optional[Path] = None,
         config_name: ConfigPresetName = ConfigPresetName.DEFAULT,
         no_detach: bool = False,
         paths=Paths(),
     ):
         self.paths: Paths = paths
         self.config_path: Path = config_path or Path(f"/tmp/{config_name.value}")
+        self.auth_path: Path = auth_path or self.paths.auth_file
         self.config_name: ConfigPresetName = config_name
-        self.config_data: NordVpnLiteConfig = config_data
+        self.config_data: NordVpnLiteConfig = copy.deepcopy(config_data)
+        self.config_data.auth_file_path = str(self.auth_path)
         self.no_detach: bool = no_detach
 
     async def assert_match_daemon_start(
         self,
         stdout: str,
-    ) -> tuple[Path, Path]:
+    ) -> tuple[Path, Path, Path]:
         assert (
             "Starting daemon" in stdout
         ), f"Could not find 'Starting daemon' in: '{stdout}'"
 
-        config_match = re.search(r"Reading config from:\s*(.+.json)", stdout)
+        config_match = re.search(r"Reading config from:\s*(\S+\.json)", stdout)
         assert config_match, f"Could not find config path in: {stdout}"
-        stdout_config_path = Path(config_match.group(1).strip())
+        config_path = Path(config_match.group(1).strip())
         assert (
-            stdout_config_path == self.config_path
-        ), f"Config path does not match: '{stdout_config_path}' != '{self.config_path}'"
+            config_path == self.config_path
+        ), f"Config path does not match: '{config_path}' != '{self.config_path}'"
 
-        log_match = re.search(r"Saving logs to:\s*(.+\.log)", stdout)
+        auth_match = re.search(r"Reading auth from:\s*(\S+\.json)", stdout)
+        assert auth_match, f"Could not find auth path in: {stdout}"
+        auth_path = Path(auth_match.group(1).strip())
+        assert (
+            auth_path == self.auth_path
+        ), f"Auth path does not match: '{auth_path}' != '{self.auth_path}'"
+
+        log_match = re.search(r"Saving logs to:\s*(\S+\.log)", stdout)
         assert log_match, f"Could not find log path in: {stdout}"
         log_path = Path(log_match.group(1).strip())
         assert (
             log_path == self.paths.lib_log
         ), f"Log path does not match: '{log_path}' != '{self.paths.lib_log}'"
 
-        return stdout_config_path, log_path
+        return config_path, auth_path, log_path
 
 
 class NordVpnLite:
@@ -240,9 +255,11 @@ class NordVpnLite:
         content = json.dumps(self.config.config_data.to_dict(), indent=2)
         remote_path = str(self.config.config_path)
         safe_content = content.replace("EOF", "EO_F")
+        auth_dir = str(Path(self.config.config_data.auth_file_path).parent)
         cmd = [
             "sh",
             "-c",
+            f"mkdir -p {auth_dir}\n"
             f"cat <<'EOF' > {remote_path}\n{safe_content}\nEOF\n",
         ]
         await self.connection.create_process(cmd).execute()
@@ -271,7 +288,7 @@ class NordVpnLite:
         except ProcessExecError as exc:
             time_took = time.time() - start_time
             log.debug("Command: [%s] took %.3f seconds", cmd, time_took)
-            log.debug("Exception occured while executing nordvpnlite command: %s", exc)
+            log.debug("Exception occurred while executing nordvpnlite command: %s", exc)
             raise
 
     async def run_command(
@@ -290,6 +307,7 @@ class NordVpnLite:
         try:
             await self.remove_logs()
             await self.save_config()
+            await self.login()
 
             cmd = ["start"]
             if not self.config.no_detach:
@@ -344,6 +362,34 @@ class NordVpnLite:
             if "Error: DaemonIsNotRunning" in exc.stderr:
                 return False
             raise exc
+
+    async def login(self) -> bool:
+        log.info("NordVPN Lite login: storing credentials")
+        try:
+            cmd = ["login"]
+            cmd.append("--token")
+            cmd.append(CORE_API_CREDENTIALS["password"])
+            cmd.append("--config-file")
+            cmd.append(str(self.config.config_path))
+            stdout, _ = await self.execute_command(cmd)
+            return "Authentication credentials stored successfully" in stdout
+        except ProcessExecError as exc:
+            raise exc
+
+    async def logout(self) -> bool:
+        log.info("NordVPN Lite logout: clearing credentials")
+        try:
+            cmd = ["logout"]
+            cmd.append("--config-file")
+            cmd.append(str(self.config.config_path))
+            stdout, _ = await self.execute_command(cmd)
+            if "Authentication credentials cleared successfully" in stdout:
+                return True
+            if "No authentication credentials to clear" in stdout:
+                return True
+            return False
+        except ProcessExecError as exc:
+            raise IgnoreableError() from exc
 
     async def get_status(self) -> str:
         try:

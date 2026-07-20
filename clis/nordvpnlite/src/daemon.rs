@@ -361,7 +361,7 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
 /// Outcome of a single daemon run
 enum LoopOutcome {
     Exit,
-    /// Carries new confguration
+    /// Carries new configuration
     Reload(Box<RunningConfig>),
 }
 
@@ -379,7 +379,6 @@ pub async fn daemon_event_loop(
                     config.parsed.logging_params_changed(&new_config.parsed);
 
                 config = *new_config;
-                config.parsed.resolve_env_token();
 
                 if logging_configuration_changed {
                     if let Err(e) = logging::reload_logging(
@@ -404,7 +403,7 @@ pub async fn daemon_event_loop(
     Ok(())
 }
 
-async fn run_daemon(mut config: RunningConfig) -> Result<LoopOutcome, NordVpnLiteError> {
+async fn run_daemon(config: RunningConfig) -> Result<LoopOutcome, NordVpnLiteError> {
     debug!("started with config: {:?}", config.parsed);
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
@@ -415,8 +414,15 @@ async fn run_daemon(mut config: RunningConfig) -> Result<LoopOutcome, NordVpnLit
     let mut cmd_listener = CommandListener::new(socket, telio_tx.clone(), config.clone());
 
     let nordlynx_private_key = {
+        let auth_token =
+            config
+                .parsed
+                .get_auth_token()
+                .map_err(|e| NordVpnLiteError::InvalidConfigToken {
+                    msg: format!("Failed to get authentication token: {e}"),
+                })?;
         let api_request_future = request_nordlynx_key(
-            &config.parsed.authentication_token,
+            &auth_token,
             config.parsed.http_certificate_file_path.as_deref(),
         );
         pin_mut!(api_request_future);
@@ -451,8 +457,6 @@ async fn run_daemon(mut config: RunningConfig) -> Result<LoopOutcome, NordVpnLit
             };
         }
     };
-
-    config.parsed.authentication_token.zeroize();
 
     let config_clone = config.parsed.clone();
     let (init_done_tx, init_done_rx) = oneshot::channel::<()>();

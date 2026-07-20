@@ -1,5 +1,5 @@
 {
-  "authentication_token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "auth_file_path": "/tmp/example_auth_file.json",
   "vpn": {
     "country": "de"
   },

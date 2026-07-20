@@ -3,12 +3,18 @@
 		"description": "Grant access to NordVPN Lite configuration",
 		"read": {
 			"ubus": {
-				"nordvpnlite": ["get_config"]
+				"nordvpnlite": [
+					"get_config"
+				]
 			}
 		},
 		"write": {
 			"ubus": {
-				"nordvpnlite": ["set_config"]
+				"nordvpnlite": [
+					"set_config",
+					"login",
+					"logout"
+				]
 			}
 		}
 	}
