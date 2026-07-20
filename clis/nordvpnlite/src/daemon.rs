@@ -305,6 +305,22 @@ impl TelioTaskCmd {
                 }
                 Ok(TelioTaskOutcome::Continue)
             }
+            TelioTaskCmd::DisconnectFromExitNode => {
+                if let Some(exit_node) = &ctx.exit_node {
+                    ctx.telio
+                        .disconnect_exit_node(&exit_node.public_key)
+                        .map_err(|_| NordVpnLiteError::CommandFailed(ClientCmd::Disconnect))?;
+                    let _ = ctx.interface_config_provider
+                        .cleanup()
+                        .inspect_err(|e| {
+                            error!("Failed to cleanup routes for exit routing when disconnecting with error '{e:?}'")
+                        });
+                    ctx.exit_node = None;
+                } else {
+                    error!("No connection to exit node")
+                }
+                Ok(TelioTaskOutcome::Continue)
+            }
             TelioTaskCmd::Quit(response_tx_channel) => {
                 ctx.telio.stop();
                 _ = ctx.interface_config_provider.cleanup().inspect_err(|e| {
@@ -326,7 +342,10 @@ impl TelioTaskCmd {
 /// a country is provided, it queries the API to find a recommended server.
 /// Sends a `ConnectToExitNode` command via the provided channel on success.
 /// Sends a `Quit` command via the provided channel on failure.
-async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sender<TelioTaskCmd>) {
+pub async fn handle_exit_node_connection(
+    config: &NordVpnLiteConfig,
+    tx: mpsc::Sender<TelioTaskCmd>,
+) -> Result<(), NordVpnLiteError> {
     let (response_tx, _) = oneshot::channel();
     let command = match get_server_endpoints_list(config).await {
         Ok(endpoints) => {
@@ -354,8 +373,10 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
     // Send the command to the telio task
     #[allow(mpsc_blocking_send)]
     if let Err(e) = tx.send(command).await {
-        error!("Failed to send exit node command to telio task: {e}");
+        error!("Failed to send exit node command to telio task: {e}")
     }
+
+    Ok(())
 }
 
 /// Outcome of a single daemon run
@@ -368,9 +389,10 @@ enum LoopOutcome {
 pub async fn daemon_event_loop(
     mut config: RunningConfig,
     logging_handle: &mut logging::LoggingHandle,
+    do_not_connect: bool,
 ) -> Result<(), NordVpnLiteError> {
     loop {
-        match run_daemon(config.clone()).await? {
+        match run_daemon(config.clone(), do_not_connect).await? {
             LoopOutcome::Exit => break,
             LoopOutcome::Reload(new_config) => {
                 info!("Reloading config from {}", config.path.display());
@@ -404,7 +426,10 @@ pub async fn daemon_event_loop(
     Ok(())
 }
 
-async fn run_daemon(mut config: RunningConfig) -> Result<LoopOutcome, NordVpnLiteError> {
+async fn run_daemon(
+    mut config: RunningConfig,
+    do_not_connect: bool,
+) -> Result<LoopOutcome, NordVpnLiteError> {
     debug!("started with config: {:?}", config.parsed);
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
@@ -427,10 +452,6 @@ async fn run_daemon(mut config: RunningConfig) -> Result<LoopOutcome, NordVpnLit
                     match connection_result {
                         Ok(connection) => {
                             match cmd_listener.handle_client_command(false, connection).await {
-                                Ok(ClientCmd::QuitDaemon) => {
-                                    info!("Received quit command, exiting");
-                                    return Ok(LoopOutcome::Exit)
-                                },
                                 Ok(command) => {
                                     debug!("Received command {command:?} while obtaining service credentials, ignoring");
                                 },
@@ -453,8 +474,11 @@ async fn run_daemon(mut config: RunningConfig) -> Result<LoopOutcome, NordVpnLit
     };
 
     config.parsed.authentication_token.zeroize();
-
     let config_clone = config.parsed.clone();
+
+    // let mut config_clone = config.clone();
+    // config_clone.authentication_token.zeroize();
+
     let (init_done_tx, init_done_rx) = oneshot::channel::<()>();
     let mut telio_task_handle = tokio::task::spawn_blocking(move || {
         let mut context = TelioContext::new(config_clone, nordlynx_private_key)?;
@@ -462,15 +486,18 @@ async fn run_daemon(mut config: RunningConfig) -> Result<LoopOutcome, NordVpnLit
         context.start_listening_commands(telio_rx)
     });
 
-    // Wait for interface setup to complete before making API calls.
-    if init_done_rx.await.is_ok() {
-        // TODO: This can be triggered through nordvpnlite command to allow the user to stop/restart.
-        let config_clone = config.parsed.clone();
-        let tx_clone = telio_tx.clone();
-        tokio::spawn(async move {
-            handle_exit_node_connection(&config_clone, tx_clone).await;
-            debug!("Exit node connection task completed");
-        });
+    debug!("Value of do_not_connect {do_not_connect}");
+    if !do_not_connect {
+        // Wait for interface setup to complete before making API calls.
+        if init_done_rx.await.is_ok() {
+            // TODO: This can be triggered through nordvpnlite command to allow the user to stop/restart.
+            let config_clone = config.parsed.clone();
+            let tx_clone = telio_tx.clone();
+            tokio::spawn(async move {
+                let _ = handle_exit_node_connection(&config_clone, tx_clone).await;
+                debug!("Exit node connection task completed");
+            });
+        }
     }
 
     info!("Entering event loop");

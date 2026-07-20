@@ -7,6 +7,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
+
 from tests.config import (
     CORE_API_CREDENTIALS,
     LIBTELIO_BINARY_PATH_DOCKER,
@@ -291,7 +292,7 @@ class NordVpnLite:
             await self.remove_logs()
             await self.save_config()
 
-            cmd = ["start"]
+            cmd = ["daemon"]
             if not self.config.no_detach:
                 cmd.append("--config-file")
                 cmd.append(str(self.config.config_path))
@@ -315,26 +316,23 @@ class NordVpnLite:
                 log.info("NordVPN Lite skipping cleanup")
 
     async def clean_up(self) -> None:
-        log.info("NordVPN Lite cleanup: exiting and removing socket (if exists)")
+        log.info(
+            "NordVPN Lite cleanup: sending SIGTERM and removing socket (if exists)"
+        )
         try:
-            await self.quit()
-        except ProcessExecError as exc:
-            if "Error: DaemonIsNotRunning" not in exc.stderr:
-                log.error(exc)
-                await self.kill()
-            else:
-                log.info("Tried to quit but daemon is already not running")
-            if await self.socket_exists():
-                log.debug("Dangling socket found, removing it..")
-                await self.remove_socket()
-        finally:
-            if self.config.config_path:
-                log.info(
-                    "NordVPN Lite cleanup: removing config %s", self.config.config_path
-                )
-                await self.remove_config(self.config.config_path)
-            log.info("NordVPN Lite cleanup: saving logs")
-            await self._save_logs()
+            await self.kill()
+        except ProcessExecError:
+            log.info("Daemon is already not running")
+        if await self.socket_exists():
+            log.debug("Dangling socket found, removing it..")
+            await self.remove_socket()
+        if self.config.config_path:
+            log.info(
+                "NordVPN Lite cleanup: removing config %s", self.config.config_path
+            )
+            await self.remove_config(self.config.config_path)
+        log.info("NordVPN Lite cleanup: saving logs")
+        await self._save_logs()
 
     async def is_alive(self) -> bool:
         try:
@@ -366,35 +364,36 @@ class NordVpnLite:
         await self.wait_for_nordvpnlite_start()
 
     async def quit(self) -> None:
-        stdout, stderr = await self.execute_command(["stop"])
-        assert (
-            "Command executed successfully" in stdout
-            or "Daemon is already stopped" in stdout
-        ), f"Failed to execute stop command: {stderr}"
-
-        assert (
-            not await self.is_alive()
-        ), "Quit command was sent successfully but daemon's still running"
-        assert (
-            not await self.socket_exists()
-        ), "Daemon's not running but socket still exists"
+        await self.kill()
 
     async def kill(self) -> None:
         try:
-            # OpenWrt doesn't support killall -w
+            # OpenWrt's BusyBox killall doesn't support -w (wait),
+            # so we poll for the process to exit after sending SIGTERM.
             if self.config.paths.exec_path.parent == Path("."):
                 await self.connection.create_process(
-                    ["killall", "-s", "SIGTERM", "nordvpn"]
+                    ["killall", "-s", "SIGTERM", "nordvpnlite"]
                 ).execute()
+                for _ in range(10):
+                    await asyncio.sleep(0.5)
+                    try:
+                        await self.connection.create_process(
+                            ["pidof", "nordvpnlite"]
+                        ).execute()
+                    except ProcessExecError:
+                        return
             else:
                 await self.connection.create_process(
                     ["killall", "-w", "-s", "SIGTERM", "nordvpnlite"]
                 ).execute()
-            assert (
-                not await self.is_alive()
-            ), "SIGTERM was sent but daemon's still running"
+            assert not await self.is_alive(), (
+                "SIGTERM was sent but daemon's still running"
+            )
         except ProcessExecError as exc:
-            if "nordvpnlite: no process found" not in exc.stderr:
+            if (
+                "no process killed" not in exc.stderr
+                and "no process found" not in exc.stderr
+            ):
                 raise
 
     async def remove_config(self, path: Path) -> None:
@@ -403,11 +402,13 @@ class NordVpnLite:
 
     async def config_exists(self, path: Path) -> bool:
         try:
-            await self.connection.create_process([
-                "test",
-                "-s",
-                str(path),
-            ]).execute()
+            await self.connection.create_process(
+                [
+                    "test",
+                    "-s",
+                    str(path),
+                ]
+            ).execute()
             return True
         except ProcessExecError as exc:
             assert (exc.returncode, exc.stdout, exc.stderr) == (1, "", "")

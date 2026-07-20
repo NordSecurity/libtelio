@@ -21,85 +21,108 @@ use crate::{
     daemon::NordVpnLiteError,
 };
 
+use tracing::debug;
+
 /// Umask allows only rw-rw-r--
 const DEFAULT_UMASK: u32 = 0o113;
 
 fn main() -> Result<(), NordVpnLiteError> {
-    let mut cmd = Cmd::parse();
+    let cmd = Cmd::parse();
 
     // Pre-daemonizing setup
-    if let Cmd::Start(opts) = &mut cmd {
-        // Check if daemon already is running before forking
-        if DaemonSocket::get_ipc_socket_path()?.exists() {
-            return Err(NordVpnLiteError::DaemonIsRunning);
-        }
-
-        // Parse config file
-        let mut config = RunningConfig::from_file(&opts.config_path)?;
-        config.parsed.resolve_env_token();
-
-        println!("Saving logs to: {}", config.parsed.log_file_path);
-        println!("Starting daemon");
-
-        // Fork the process before starting Tokio runtime.
-        // Tokio creates a multi-threaded asynchronous runtime,
-        // but during forking only a single thread survives,
-        // leaving tokio runtime in an undefined state and resulting in a panic.
-        // https://github.com/tokio-rs/tokio/issues/4301
-        if !opts.no_detach {
-            // Redirect stdout and stderr to a specified file or /var/log/nordvpnlite.log by default
-            let stdout_log_file = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(&opts.stdout_path)?;
-
-            // Daemon working directory is set to `/` by default
-            // any relative path operations from now on could fail
-            let daemon = Daemonize::new()
-                .umask(DEFAULT_UMASK)
-                .working_directory(&opts.working_directory)
-                .stdout(stdout_log_file.try_clone()?)
-                .stderr(stdout_log_file);
-
-            // Daemonize the process
-            match daemon.execute() {
-                // Quit parent process
-                Outcome::Parent(Ok(_)) => {
-                    return Ok(());
-                }
-                // Continue in child process
-                Outcome::Child(Ok(_)) => {}
-                // Errors
-                Outcome::Parent(Err(err)) => {
-                    eprintln!("Fork parent error: {err}");
-                    return Err(err.into());
-                }
-                Outcome::Child(Err(err)) => {
-                    eprintln!("Child error {err}");
-                    return Err(err.into());
+    match cmd {
+        Cmd::Daemon(opts) => {
+            // Check if daemon already is running before forking
+            let socket_path = DaemonSocket::get_ipc_socket_path()?;
+            if socket_path.exists() {
+                match std::os::unix::net::UnixStream::connect(&socket_path) {
+                    Ok(_) => {
+                        return Err(NordVpnLiteError::DaemonIsRunning);
+                    }
+                    Err(_) => {
+                        debug!("Stale socket found, removing: {}", socket_path.display());
+                        let _ = std::fs::remove_file(&socket_path);
+                    }
                 }
             }
+            // if DaemonSocket::get_ipc_socket_path()?.exists() {
+            //     return Err(NordVpnLiteError::DaemonIsRunning);
+            // }
+
+            // Parse config file
+            let mut config = RunningConfig::from_file(&opts.config_path)?;
+            config.parsed.resolve_env_token();
+
+            println!("Saving logs to: {}", config.parsed.log_file_path);
+            println!("Starting daemon");
+
+            // Fork the process before starting Tokio runtime.
+            // Tokio creates a multi-threaded asynchronous runtime,
+            // but during forking only a single thread survives,
+            // leaving tokio runtime in an undefined state and resulting in a panic.
+            // https://github.com/tokio-rs/tokio/issues/4301
+            if !opts.no_detach {
+                // Redirect stdout and stderr to a specified file or /var/log/nordvpnlite.log by default
+                let stdout_log_file = OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(&opts.stdout_path)?;
+
+                // Daemon working directory is set to `/` by default
+                // any relative path operations from now on could fail
+                let daemon = Daemonize::new()
+                    .umask(DEFAULT_UMASK)
+                    .working_directory(&opts.working_directory)
+                    .stdout(stdout_log_file.try_clone()?)
+                    .stderr(stdout_log_file);
+
+                // Daemonize the process
+                match daemon.execute() {
+                    // Quit parent process
+                    Outcome::Parent(Ok(_)) => {
+                        return Ok(());
+                    }
+                    // Continue in child process
+                    Outcome::Child(Ok(_)) => {}
+                    // Errors
+                    Outcome::Parent(Err(err)) => {
+                        eprintln!("Fork parent error: {err}");
+                        return Err(err.into());
+                    }
+                    Outcome::Child(Err(err)) => {
+                        eprintln!("Child error {err}");
+                        return Err(err.into());
+                    }
+                }
+            }
+
+            let mut logging_handle = logging::setup_logging(
+                &config.parsed.log_file_path,
+                config.parsed.log_level,
+                config.parsed.log_file_count,
+            )?;
+
+            // Run the daemon event loop.
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(daemon::daemon_event_loop(
+                config,
+                &mut logging_handle,
+                opts.do_not_connect,
+            ))
         }
-
-        let mut logging_handle = logging::setup_logging(
-            &config.parsed.log_file_path,
-            config.parsed.log_level,
-            config.parsed.log_file_count,
-        )?;
-
-        // Run the daemon event loop.
-        let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(daemon::daemon_event_loop(config, &mut logging_handle))
-    } else {
-        client_main(cmd)
+        Cmd::Client(client_cmds) => client_main(client_cmds),
     }
 }
 
 #[tokio::main]
-async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
+async fn client_main(cmd: ClientCmd) -> Result<(), NordVpnLiteError> {
+    use ClientCmd::*;
+
+    debug!("cmd {:?}", cmd);
+
     match cmd {
-        Cmd::Client(cmd) => {
+        Connect | Disconnect | Reload | GetStatus | IsAlive => {
             let socket_path = DaemonSocket::get_ipc_socket_path()?;
             if socket_path.exists() {
                 let response = timeout(
@@ -128,24 +151,15 @@ async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
                     }
                 }
             } else {
-                match cmd {
-                    ClientCmd::QuitDaemon => {
-                        println!("Daemon is already stopped");
-                        Ok(())
-                    }
-                    _ => Err(NordVpnLiteError::DaemonIsNotRunning),
-                }
+                Err(NordVpnLiteError::DaemonIsNotRunning)
             }
         }
-        // Display list of available countries with VPN servers
-        Cmd::Countries => {
+        Countries => {
             for country in get_countries_with_exp_backoff(None).await? {
                 println!("{}: {}", country.name, country.code);
             }
             Ok(())
-        }
-
-        // Unexpected command, Cmd::Start should be handled by main
-        _ => Err(NordVpnLiteError::InvalidCommand(format!("{cmd:?}"))),
+        } // // Unexpected command, Cmd::Start should be handled by main
+          // _ => Err(NordVpnLiteError::InvalidCommand(format!("{cmd:?}"))),
     }
 }

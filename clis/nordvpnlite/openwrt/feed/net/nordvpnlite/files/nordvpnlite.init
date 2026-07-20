@@ -7,7 +7,7 @@ STOP=01
 start_service() {
   echo "Starting nordvpnlite service"
   procd_open_instance
-  procd_set_param command /usr/sbin/nordvpnlite start --no-detach
+  procd_set_param command /usr/sbin/nordvpnlite daemon --no-detach
   procd_set_param stdout 1
   procd_set_param stderr 1
   # By default procd will try to respawn the process every 5 seconds.
@@ -17,8 +17,7 @@ start_service() {
 }
 
 stop_service() {
-  echo "Stopping nordvpnlite service"
-  /usr/sbin/nordvpnlite stop
+  rm -f /run/nordvpnlited.sock /var/run/nordvpnlited.sock 
 }
 
 reload_service() {
