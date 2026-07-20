@@ -1,4 +1,4 @@
-use super::{Adapter, Error as AdapterError, Tun as NativeTun};
+use super::{Adapter, Error as AdapterError, IsMeshnetEnabledCb, Tun as NativeTun};
 use crate::{
     uapi::{Cmd, Cmd::Get, Cmd::Set, Interface, Peer, Response},
     windows::{service, tunnel::interfacewatcher::InterfaceWatcher},
@@ -53,8 +53,8 @@ pub struct WindowsNativeWg {
     cleaned_up: Arc<Mutex<bool>>,
     watcher: Arc<Mutex<InterfaceWatcher>>,
 
-    /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
-    enable_dynamic_wg_nt_control: bool,
+    /// Optional callback for dynamic WireGuard-NT behavior.
+    enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
 }
 
 /// Error type implementation for wg-nt
@@ -77,7 +77,7 @@ impl WindowsNativeWg {
         adapter: &Arc<wireguard_nt::Adapter>,
         luid: u64,
         watcher: &Arc<Mutex<InterfaceWatcher>>,
-        enable_dynamic_wg_nt_control: bool,
+        enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
     ) -> Self {
         Self {
             adapter: adapter.clone(),
@@ -110,14 +110,14 @@ impl WindowsNativeWg {
     fn create(
         name: &str,
         path: &str,
-        enable_dynamic_wg_nt_control: bool,
+        enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
     ) -> std::result::Result<Self, AdapterError> {
         // try to load dll
         match unsafe { wireguard_nt::load_from_path(path) } {
             Ok(wg_dll) => {
                 // Someone to watch over me while I sleep
                 let watcher = Arc::new(Mutex::new(InterfaceWatcher::new(
-                    enable_dynamic_wg_nt_control,
+                    enable_dynamic_wg_nt_control.clone(),
                 )));
                 if let Ok(mut watcher) = watcher.lock() {
                     if let Err(monitoring_err) = watcher.start_monitoring() {
@@ -326,7 +326,7 @@ impl WindowsNativeWg {
     ///
     pub async fn start(
         name: &str,
-        enable_dynamic_wg_nt_control: bool,
+        enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
     ) -> std::result::Result<Self, AdapterError> {
         const SWD_WIREGUARD: &str = r"SYSTEM\CurrentControlSet\Enum\SWD\WireGuard";
         telio_log_debug!("Print registry before adapter creation!");
@@ -338,7 +338,7 @@ impl WindowsNativeWg {
         Self::cleanup_orphaned_devices().await;
 
         let dll_path = "wireguard.dll";
-        let tmp_wg_dev = Self::create(name, dll_path, enable_dynamic_wg_nt_control);
+        let tmp_wg_dev = Self::create(name, dll_path, enable_dynamic_wg_nt_control.clone());
 
         telio_log_debug!("Print registry after adapter creation!");
         Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, service::GUID_DEVINTERFACE_NET_STR);
@@ -348,7 +348,7 @@ impl WindowsNativeWg {
         telio_log_info!(
             "Adapter '{}' using created successfully. enable_dynamic_wg_nt_control: {}",
             name,
-            enable_dynamic_wg_nt_control
+            enable_dynamic_wg_nt_control.is_some()
         );
         if !service::wait_for_service("WireGuard", service::DEFAULT_SERVICE_WAIT_TIMEOUT) {
             return Err(AdapterError::WindowsNativeWg(Error::Fail(
@@ -377,7 +377,7 @@ impl WindowsNativeWg {
             )));
         }
 
-        if !wg_dev.enable_dynamic_wg_nt_control {
+        if wg_dev.enable_dynamic_wg_nt_control.is_none() {
             wg_dev.ensure_adapter_state(AdapterState::Up).await?;
         }
 
@@ -452,7 +452,7 @@ impl WindowsNativeWg {
                 "Attempting to bring interface {:?}, currently it is: {:?}, enable_dynamic_wg_nt_control: {:?}",
                 want_adapter_state,
                 have_adapter_state,
-                self.enable_dynamic_wg_nt_control
+                self.enable_dynamic_wg_nt_control.is_some()
             );
 
             // The wireguard-nt-rust-wrapper here indicates success using
@@ -554,10 +554,12 @@ impl Adapter for WindowsNativeWg {
         match cmd {
             Get => Ok(self.get_config_uapi()),
             Set(set_cfg) => {
-                // If we have any peers added -> bring the adapter up
-                if self.enable_dynamic_wg_nt_control && !set_cfg.peers.is_empty() {
-                    self.ensure_adapter_state(AdapterState::Up).await?;
-                }
+                // If we have any peers added OR have meshnet enabled -> bring the adapter up
+                self.ensure_expected_adapter_state(
+                    set_cfg.peers.len(),
+                    self.enable_dynamic_wg_nt_control.clone(),
+                )
+                .await?;
 
                 let (resp, peer_cnt) = match self.adapter.set_config_uapi(set_cfg) {
                     Ok(()) => {
@@ -581,19 +583,12 @@ impl Adapter for WindowsNativeWg {
                     ),
                 };
 
-                // If all of the peers has been removed -> bring the adapter down
-                if self.enable_dynamic_wg_nt_control && peer_cnt.map(|p| p == 0).unwrap_or(false) {
-                    self.ensure_adapter_state(AdapterState::Down).await?;
-                    // The driver retains the previously bound port across Down and would
-                    // re-bind it on the next Up; reset it so a fresh ephemeral port is chosen
-                    let reset_port = xplatform::set::Device {
-                        listen_port: Some(0),
-                        ..Default::default()
-                    };
-                    if let Err(err) = self.adapter.set_config_uapi(&reset_port) {
-                        telio_log_warn!("Failed to reset listen port after adapter down: {err}");
-                    }
-                }
+                // If all of the peers has been removed and meshnet is disabled -> bring the adapter down
+                self.ensure_expected_adapter_state(
+                    peer_cnt.unwrap_or(0),
+                    self.enable_dynamic_wg_nt_control.clone(),
+                )
+                .await?;
 
                 resp
             }
@@ -623,6 +618,36 @@ impl Adapter for WindowsNativeWg {
 
     fn clone_box(&self) -> Option<Box<dyn Adapter>> {
         None
+    }
+
+    async fn ensure_expected_adapter_state(
+        &self,
+        peers_cnt: usize,
+        is_meshnet_on: IsMeshnetEnabledCb,
+    ) -> std::result::Result<(), AdapterError> {
+        let meshnet_on = is_meshnet_on
+            .as_ref()
+            .is_some_and(|is_meshnet_on_cb| is_meshnet_on_cb());
+        let has_peers = peers_cnt > 0;
+
+        // We have dynamic control on, so let's take some control decision
+        if is_meshnet_on.is_some() {
+            if !meshnet_on && !has_peers {
+                self.ensure_adapter_state(AdapterState::Down).await?;
+
+                let reset_port = xplatform::set::Device {
+                    listen_port: Some(0),
+                    ..Default::default()
+                };
+                if let Err(err) = self.adapter.set_config_uapi(&reset_port) {
+                    telio_log_warn!("Failed to reset listen port after adapter down: {err}");
+                }
+            } else {
+                self.ensure_adapter_state(AdapterState::Up).await?;
+            }
+        }
+
+        Ok(())
     }
 }
 

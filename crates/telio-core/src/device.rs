@@ -341,6 +341,9 @@ pub struct Entities {
     // Wireguard interface
     wireguard_interface: Arc<DynamicWg>,
 
+    // Shared meshnet status for WireGuard callbacks
+    meshnet_on: Arc<Mutex<bool>>,
+
     // Internal DNS server
     dns: Arc<Mutex<DNS>>,
 
@@ -1230,7 +1233,14 @@ impl Runtime {
         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))]
         set_tunnel_interface(&socket_pool, config.tun.as_ref(), config.name.as_ref());
 
+        let meshnet_on = Arc::new(Mutex::new(false));
+
         let requested_device_config = RequestedDeviceConfig::from(&config);
+
+        let enable_dynamic_wg_nt_control = features
+            .wireguard
+            .enable_dynamic_wg_nt_control
+            .then(|| meshnet_on_checker(meshnet_on.clone()));
 
         // tests runtime use wg::MockedAdapter
         cfg_if! {
@@ -1254,7 +1264,7 @@ impl Runtime {
                         firewall_process_inbound_callback,
                         firewall_process_outbound_callback,
                         firewall_reset_connections,
-                        enable_dynamic_wg_nt_control: features.wireguard.enable_dynamic_wg_nt_control,
+                        enable_dynamic_wg_nt_control,
                         skt_buffer_size : Runtime::sanitize_neptun_config(features.wireguard.skt_buffer_size, config.adapter.clone()),
                         inter_thread_channel_size : Runtime::sanitize_neptun_config(features.wireguard.inter_thread_channel_size, config.adapter.clone()),
                         max_inter_thread_batched_pkts : Runtime::sanitize_neptun_config(features.wireguard.max_inter_thread_batched_pkts, config.adapter.clone()),
@@ -1279,7 +1289,7 @@ impl Runtime {
                             firewall_process_inbound_callback,
                             firewall_process_outbound_callback,
                             firewall_reset_connections,
-                            enable_dynamic_wg_nt_control: features.wireguard.enable_dynamic_wg_nt_control,
+                            enable_dynamic_wg_nt_control,
                             skt_buffer_size: features.wireguard.skt_buffer_size,
                             inter_thread_channel_size: features.wireguard.inter_thread_channel_size,
                             max_inter_thread_batched_pkts: features.wireguard.max_inter_thread_batched_pkts,
@@ -1356,6 +1366,8 @@ impl Runtime {
             ..Default::default()
         };
 
+        *meshnet_on.lock().await = requested_state.meshnet_config.is_some();
+
         let dns = Arc::new(Mutex::new(DNS {
             resolver: None,
             #[cfg(unix)]
@@ -1397,6 +1409,7 @@ impl Runtime {
             requested_state,
             entities: Entities {
                 wireguard_interface: wireguard_interface.clone(),
+                meshnet_on,
                 dns,
                 #[cfg(feature = "enable_firewall")]
                 firewall,
@@ -1961,6 +1974,7 @@ impl Runtime {
 
         self.requested_state.old_meshnet_config = self.requested_state.meshnet_config.clone();
         self.requested_state.meshnet_config = config.clone();
+        *self.entities.meshnet_on.lock().await = self.requested_state.meshnet_config.is_some();
 
         let wg_itf = self.entities.wireguard_interface.get_interface().await?;
         let secret_key = if let Some(secret_key) = wg_itf.private_key {
@@ -1975,6 +1989,7 @@ impl Runtime {
             .iter()
             .map(|p| p.base.public_key)
             .collect();
+        let peers_cnt = peers.len();
 
         // Update for proxy and derp config
         if let Some(config) = config {
@@ -2152,6 +2167,22 @@ impl Runtime {
             if tx.send(Box::new(event)).is_err() {
                 telio_log_warn!("Failed to send MeshConfigUpdateEvent to nurse component");
             }
+        }
+
+        // Check, if we have to toggle the wg-nt adapter
+        if let Err(err) = self
+            .entities
+            .wireguard_interface
+            .ensure_expected_adapter_state(
+                peers_cnt,
+                self.features
+                    .wireguard
+                    .enable_dynamic_wg_nt_control
+                    .then(|| meshnet_on_checker(self.entities.meshnet_on.clone())),
+            )
+            .await
+        {
+            telio_log_debug!("Failed to ensure adapter state: {}", err);
         }
 
         Ok(())
@@ -2885,6 +2916,10 @@ fn fd_to_if_index(tun_fd: i32) -> Option<u64> {
             None
         }
     }
+}
+
+fn meshnet_on_checker(meshnet_on: Arc<Mutex<bool>>) -> Arc<dyn Fn() -> bool + Send + Sync> {
+    Arc::new(move || meshnet_on.try_lock().map(|value| *value).unwrap_or(false))
 }
 
 fn node_from_exit_node(exit_node: &ExitNode) -> Node {

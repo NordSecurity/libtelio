@@ -13,7 +13,7 @@
 
 use super::addressconfig;
 use super::mtumonitor::MtuMonitor;
-use crate::windows::cleanup::*;
+use crate::{adapter::IsMeshnetEnabledCb, windows::cleanup::*};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::{mem, option, ptr};
 use telio_utils::{
@@ -32,7 +32,7 @@ pub struct InterfaceWatcher {
     iface_cb_handle: Arc<Mutex<usize>>, // iface_cb_handle: HANDLE,
 
     watched_adapter: Arc<Mutex<AdapterConfiguration>>,
-    enable_dynamic_wg_nt_control: bool,
+    enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
 }
 
 struct AdapterConfiguration {
@@ -85,7 +85,7 @@ impl AdapterConfiguration {
 }
 
 impl InterfaceWatcher {
-    pub fn new(enable_dynamic_wg_nt_control: bool) -> Self {
+    pub fn new(enable_dynamic_wg_nt_control: IsMeshnetEnabledCb) -> Self {
         telio_log_trace!("InterfaceWatcher::new");
         Self {
             iface_cb_handle: Arc::new(Mutex::new(0)), // iface_cb_handle: NULL,
@@ -320,8 +320,16 @@ impl InterfaceWatcher {
                         .last_known_config
                         .as_ref()
                         .is_some_and(|c| !c.config.peers.is_empty());
-                    if self.enable_dynamic_wg_nt_control && !has_peers {
-                        telio_log_info!("Skipping adatper.up() due to empty peer list");
+                    let meshnet_enabled = self
+                        .enable_dynamic_wg_nt_control
+                        .as_ref()
+                        .is_some_and(|is_meshnet_on_cb| is_meshnet_on_cb());
+                    if self.enable_dynamic_wg_nt_control.is_some()
+                        && (!has_peers && !meshnet_enabled)
+                    {
+                        telio_log_info!(
+                            "Skipping adapter.up() due to empty peer list and meshnet disabled"
+                        );
                     } else if adapter.up().is_err() {
                         telio_log_error!("Adapter could not be set to online state");
                     }

@@ -41,6 +41,9 @@ pub type FirewallOutboundCb =
 /// Function pointer for reseting all the connections
 pub type FirewallResetConnsCb = Option<Arc<dyn Fn(&PublicKey, &mut dyn io::Write) + Send + Sync>>;
 
+/// Function pointer for checking, whether the meshnet is enabled
+pub type IsMeshnetEnabledCb = Option<Arc<dyn Fn() -> bool + Send + Sync>>;
+
 /// Tunnel file descriptor
 #[cfg(not(target_os = "windows"))]
 #[cfg_attr(docsrs, doc(cfg(not(windows))))]
@@ -93,6 +96,15 @@ pub trait Adapter: Send + Sync {
     ///
     /// Only the custom adapters can be cloned this way.
     fn clone_box(&self) -> Option<Box<dyn Adapter>>;
+
+    /// Ensure that adapter is UP or DOWN
+    async fn ensure_expected_adapter_state(
+        &self,
+        _peers_cnt: usize,
+        _is_meshnet_on: IsMeshnetEnabledCb,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 /// Enumeration of `Error` types for `Adapter` struct
