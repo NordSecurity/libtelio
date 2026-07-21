@@ -7,7 +7,6 @@
 
 use super::winipcfg::luid::InterfaceLuid;
 use std::ptr;
-use std::sync::{Arc, Mutex};
 use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
 };
@@ -26,10 +25,16 @@ pub struct MtuMonitor {
 
     last_mtu: u32,
 
-    // Quickhack: Adapter is Sync+Send, so it cannot hold any substructures with raw ptr / HANDLE
-    route_cb_handle: Arc<Mutex<usize>>, // route_cb_handle: HANDLE,
-    iface_cb_handle: Arc<Mutex<usize>>, // iface_cb_handle: HANDLE,
+    // OS change-notification handles; see the `unsafe impl Send` below.
+    route_cb_handle: HANDLE,
+    iface_cb_handle: HANDLE,
 }
+
+// SAFETY: `route_cb_handle` and `iface_cb_handle` are opaque OS
+// change-notification handles. They are never dereferenced, only handed back
+// to CancelMibChangeNotify2, which may be called from any thread. The monitor
+// is therefore safe to move between threads.
+unsafe impl Send for MtuMonitor {}
 
 impl MtuMonitor {
     pub fn new(own_luid: u64, family: ADDRESS_FAMILY) -> Self {
@@ -45,77 +50,60 @@ impl MtuMonitor {
             min_mtu,
             last_mtu: 0,
 
-            route_cb_handle: Arc::new(Mutex::new(0)),
-            iface_cb_handle: Arc::new(Mutex::new(0)),
+            route_cb_handle: NULL,
+            iface_cb_handle: NULL,
         }
     }
 
     pub fn start_monitoring(&mut self) -> Result<(), NETIO_STATUS> {
         self.do_it()?;
 
-        if let Ok(mut route_cb_handle) = self.route_cb_handle.clone().lock() {
-            let mut cb_handle: HANDLE = NULL;
-            let result = unsafe {
-                winapi::shared::netioapi::NotifyRouteChange2(
-                    self.family,
-                    Some(Self::route_change_callback),
-                    self as *mut Self as _,
-                    false as _,
-                    &mut cb_handle,
-                )
-            };
-            if NO_ERROR != result {
-                return Err(result);
-            }
-            *route_cb_handle = cb_handle as _;
+        let mut cb_handle: HANDLE = NULL;
+        let result = unsafe {
+            winapi::shared::netioapi::NotifyRouteChange2(
+                self.family,
+                Some(Self::route_change_callback),
+                self as *mut Self as _,
+                false as _,
+                &mut cb_handle,
+            )
+        };
+        if NO_ERROR != result {
+            return Err(result);
         }
+        self.route_cb_handle = cb_handle;
 
-        if let Ok(mut iface_cb_handle) = self.iface_cb_handle.clone().lock() {
-            let mut cb_handle: HANDLE = NULL;
-            let result = unsafe {
-                winapi::shared::netioapi::NotifyIpInterfaceChange(
-                    self.family,
-                    Some(Self::interface_change_callback),
-                    self as *mut Self as _,
-                    false as _,
-                    &mut cb_handle,
-                )
-            };
-            if NO_ERROR != result {
-                return Err(result);
-            }
-            *iface_cb_handle = cb_handle as _;
-        } else {
-            telio_log_error!("error obtaining lock");
-            return Err(ERROR_INVALID_PARAMETER);
+        let mut cb_handle: HANDLE = NULL;
+        let result = unsafe {
+            winapi::shared::netioapi::NotifyIpInterfaceChange(
+                self.family,
+                Some(Self::interface_change_callback),
+                self as *mut Self as _,
+                false as _,
+                &mut cb_handle,
+            )
+        };
+        if NO_ERROR != result {
+            return Err(result);
         }
+        self.iface_cb_handle = cb_handle;
 
         Ok(())
     }
 
-    pub fn stop(&self) {
+    pub fn stop(&mut self) {
         telio_log_trace!("+++ MtuMonitor::stop");
 
-        if let Ok(mut route_cb_handle) = self.route_cb_handle.clone().lock() {
-            unsafe {
-                if 0 != *route_cb_handle {
-                    CancelMibChangeNotify2(*route_cb_handle as HANDLE);
-                    *route_cb_handle = 0;
-                }
+        unsafe {
+            if !self.route_cb_handle.is_null() {
+                CancelMibChangeNotify2(self.route_cb_handle);
+                self.route_cb_handle = NULL;
             }
-        } else {
-            telio_log_error!("error obtaining lock");
-        }
 
-        if let Ok(mut iface_cb_handle) = self.iface_cb_handle.clone().lock() {
-            unsafe {
-                if 0 != *iface_cb_handle {
-                    CancelMibChangeNotify2(*iface_cb_handle as HANDLE);
-                    *iface_cb_handle = 0;
-                }
+            if !self.iface_cb_handle.is_null() {
+                CancelMibChangeNotify2(self.iface_cb_handle);
+                self.iface_cb_handle = NULL;
             }
-        } else {
-            telio_log_error!("error obtaining lock");
         }
 
         telio_log_trace!("--- MtuMonitor::stop");

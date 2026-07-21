@@ -27,12 +27,18 @@ use winapi::shared::{
 };
 
 pub struct InterfaceWatcher {
-    // Quickhack: Adapter is Sync+Send, so it cannot hold any substructures with raw ptr / HANDLE
-    iface_cb_handle: Arc<Mutex<usize>>, // iface_cb_handle: HANDLE,
+    // OS change-notification handle; see the `unsafe impl Send` below.
+    iface_cb_handle: HANDLE,
 
     watched_adapter: Arc<Mutex<AdapterConfiguration>>,
     enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
 }
+
+// SAFETY: `iface_cb_handle` is an opaque OS change-notification handle. It is
+// never dereferenced, only handed back to CancelMibChangeNotify2, which may be
+// called from any thread. The watcher is therefore safe to move between
+// threads.
+unsafe impl Send for InterfaceWatcher {}
 
 struct AdapterConfiguration {
     luid: u64,
@@ -87,7 +93,7 @@ impl InterfaceWatcher {
     pub fn new(enable_dynamic_wg_nt_control: IsMeshnetEnabledCb) -> Self {
         telio_log_trace!("InterfaceWatcher::new");
         Self {
-            iface_cb_handle: Arc::new(Mutex::new(0)), // iface_cb_handle: NULL,
+            iface_cb_handle: NULL,
 
             watched_adapter: Arc::new(Mutex::new(AdapterConfiguration::new())),
             enable_dynamic_wg_nt_control,
@@ -106,47 +112,38 @@ impl InterfaceWatcher {
 
         telio_log_trace!("+++ InterfaceWatcher::start_monitoring");
 
-        if let Ok(mut iface_cb_handle) = self.iface_cb_handle.clone().lock() {
-            let mut cb_handle: HANDLE = NULL;
-            let result = unsafe {
-                winapi::shared::netioapi::NotifyIpInterfaceChange(
-                    AF_UNSPEC as _,
-                    Some(Self::interface_change_callback),
-                    self as *mut Self as _,
-                    false as _,
-                    &mut cb_handle,
-                )
-            };
-            telio_log_trace!("--- InterfaceWatcher::start_monitoring {}", result);
-            if NO_ERROR != result {
-                Err(result)
-            } else {
-                *iface_cb_handle = cb_handle as _;
-                Ok(())
-            }
+        let mut cb_handle: HANDLE = NULL;
+        let result = unsafe {
+            winapi::shared::netioapi::NotifyIpInterfaceChange(
+                AF_UNSPEC as _,
+                Some(Self::interface_change_callback),
+                self as *mut Self as _,
+                false as _,
+                &mut cb_handle,
+            )
+        };
+        telio_log_trace!("--- InterfaceWatcher::start_monitoring {}", result);
+        if NO_ERROR != result {
+            Err(result)
         } else {
-            telio_log_error!("error obtaining lock");
-            Err(ERROR_INVALID_PARAMETER)
+            self.iface_cb_handle = cb_handle;
+            Ok(())
         }
     }
 
-    pub fn stop(&self) {
+    pub fn stop(&mut self) {
         telio_log_trace!("+++ InterfaceWatcher::stop");
 
-        if let Ok(mut iface_cb_handle) = self.iface_cb_handle.clone().lock() {
-            unsafe {
-                if 0 != *iface_cb_handle {
-                    CancelMibChangeNotify2(*iface_cb_handle as HANDLE);
-                    *iface_cb_handle = 0;
-                }
+        unsafe {
+            if !self.iface_cb_handle.is_null() {
+                CancelMibChangeNotify2(self.iface_cb_handle);
+                self.iface_cb_handle = NULL;
             }
-        } else {
-            telio_log_error!("error obtaining lock");
         }
 
         if let Ok(watched_adapter) = self.watched_adapter.clone().lock() {
             for mtu_monitor in watched_adapter.mtu_monitor.as_slice() {
-                if let Ok(mtumon) = mtu_monitor.clone().lock() {
+                if let Ok(mut mtumon) = mtu_monitor.clone().lock() {
                     mtumon.stop();
                 }
             }
