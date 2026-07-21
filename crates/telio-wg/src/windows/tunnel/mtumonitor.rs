@@ -7,6 +7,7 @@
 
 use super::winipcfg::luid::InterfaceLuid;
 use std::ptr;
+use std::sync::Mutex;
 use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
 };
@@ -23,7 +24,9 @@ pub struct MtuMonitor {
     family: ADDRESS_FAMILY,
     min_mtu: u32,
 
-    last_mtu: u32,
+    // Serialises route_change_callback and interface_change_callback, which are
+    // registered on separate handles and so can run concurrently on different threads.
+    last_mtu: Mutex<u32>,
 
     // OS change-notification handles; see the `unsafe impl Send` below.
     route_cb_handle: HANDLE,
@@ -48,7 +51,7 @@ impl MtuMonitor {
             own_luid,
             family,
             min_mtu,
-            last_mtu: 0,
+            last_mtu: Mutex::new(0),
 
             route_cb_handle: NULL,
             iface_cb_handle: NULL,
@@ -176,8 +179,16 @@ impl MtuMonitor {
         );
     }
 
-    fn do_it(&mut self) -> Result<(), NETIO_STATUS> {
+    fn do_it(&self) -> Result<(), NETIO_STATUS> {
         telio_log_trace!("+++ MtuMonitor::do_it");
+
+        let mut last_mtu = match self.last_mtu.lock() {
+            Ok(last_mtu) => last_mtu,
+            Err(_) => {
+                telio_log_error!("error obtaining lock");
+                return Err(ERROR_INVALID_PARAMETER);
+            }
+        };
 
         telio_log_trace!("+++ MtuMonitor::do_it: find_default_luid");
         let default_luid = self.find_default_luid()?;
@@ -194,7 +205,7 @@ impl MtuMonitor {
             }
         }
 
-        if mtu > 0 && self.last_mtu != mtu {
+        if mtu > 0 && *last_mtu != mtu {
             let own_luid = InterfaceLuid::new(self.own_luid);
             telio_log_trace!("+++ MtuMonitor::do_it: get_ip_interface");
             let mut own_iface = own_luid.get_ip_interface(self.family)?;
@@ -208,7 +219,7 @@ impl MtuMonitor {
             if NO_ERROR != result {
                 return Err(result);
             }
-            self.last_mtu = mtu;
+            *last_mtu = mtu;
         }
 
         telio_log_trace!("--- MtuMonitor::do_it");
