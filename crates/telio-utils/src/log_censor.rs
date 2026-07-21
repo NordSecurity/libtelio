@@ -1,4 +1,3 @@
-use rand::RngExt;
 use regex_lite::{Captures, Match, Regex, RegexBuilder};
 use std::{
     net::{Ipv4Addr, Ipv6Addr},
@@ -6,20 +5,34 @@ use std::{
     sync::atomic::AtomicBool,
 };
 
-/// LogCensor can postprocess logs and replace IP addresses and domain names with their hash values.
+/// LogCensor can postprocess logs and replace IP addresses and domain names.
 #[derive(Debug)]
 pub struct LogCensor {
+    mode: LogCensorMode,
     mask_seed: [u8; 32],
     regex: Regex,
     hide_data_regex: Regex,
     is_enabled: AtomicBool,
 }
 
+/// Mode of operation for the LogCensor
+#[derive(Debug, Default)]
+pub enum LogCensorMode {
+    #[default]
+    /// Substrings to be censored are replaced with the hex encoding of the hash
+    Hash,
+    /// Substrings to be censored are replaced with `...`
+    Dots,
+    /// Substrings to be censored are completely removed
+    EmptyString,
+}
+
 impl Default for LogCensor {
     fn default() -> Self {
         #[allow(clippy::expect_used)]
-        let hide_data_re = Regex::new(r#"(\\?['"])?hide_(user_data|thread_id)(\\?['"])?(\s)*:(\s)*(true|false)(\s)*,(\s)*"#)
+        let hide_data_regex = Regex::new(r#"(\\?['"])?hide_(user_data|thread_id)(\\?['"])?(\s)*:(\s)*(true|false)(\s)*,(\s)*"#)
             .expect("Statically known String for filtering hide_user_data and hide_thread_id is a valid regex");
+
         #[allow(clippy::expect_used)]
         RegexBuilder::new(
             r"
@@ -63,21 +76,26 @@ impl Default for LogCensor {
         .ignore_whitespace(true)
         .build()
         .map(|re| LogCensor {
-            mask_seed: rand::rng().random::<[u8; 32]>(),
+            mask_seed: rand::random::<[u8; 32]>(),
             regex: re,
-            hide_data_regex: hide_data_re,
             is_enabled: AtomicBool::new(true),
+            hide_data_regex,
+            mode: LogCensorMode::default(),
         })
         .expect("Statically known string for LogCensor is a valid regex")
     }
 }
 
-#[allow(unused)]
 impl LogCensor {
-    /// Enables log censoring via postprocessing
+    /// Enables log censoring via postprocessing.
     pub fn set_enabled(&self, enabled: bool) {
         self.is_enabled
             .store(enabled, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Sets the mode of operation of the `self`.
+    pub fn set_mode(&mut self, mode: LogCensorMode) {
+        self.mode = mode;
     }
 
     fn should_censor(&self) -> bool {
@@ -103,49 +121,65 @@ impl LogCensor {
         format!("{name}({hash_prefix:.16})")
     }
 
-    /// Replace IPs and domains in `log` by their hash values
+    fn censor_input(&self, name: &str, input: &[u8]) -> String {
+        match self.mode {
+            LogCensorMode::Hash => self.hash(name, input),
+            LogCensorMode::Dots => format!("{name}(...)"),
+            LogCensorMode::EmptyString => String::new(),
+        }
+    }
+
+    /// Replace IPs and domains in `log` according to the selected mode of operation.
     pub fn censor_logs(&self, log: String) -> String {
-        let hide_replaced = self.hide_data_regex.replace_all(&log, |_: &Captures| "");
-        let ips_replaced = if self.should_censor() {
-            self.regex
-                .replace_all(&hide_replaced, |captures: &Captures| {
-                    let name = "IP4";
-                    if let Some(m) = captures.name(name) {
-                        if let Ok(ip) = Ipv4Addr::from_str(m.as_str()) {
-                            return self.hash(name, ip.octets().as_slice());
-                        }
-                    }
-                    let name = "IP6";
-                    if let Some(m) = captures.name(name) {
-                        if let Ok(ip) = Ipv6Addr::from_str(m.as_str()) {
-                            if Self::incorret_chars_on_bounds(&hide_replaced, &m) {
-                                return m.as_str().to_owned();
-                            }
-                            return self.hash(name, ip.octets().as_slice());
-                        }
-                    }
-                    let name = "DOMAIN";
-                    if let Some(m) = captures.name(name) {
-                        return self.hash(name, m.as_str().as_bytes());
-                    }
-                    captures.get(0).map(|s| s.as_str().to_owned()).unwrap_or(
-                    "Regex crate guarantees this, too low priority to panic on its fail, though"
-                        .to_string(),
-                )
-                })
-        } else {
-            std::borrow::Cow::Borrowed("")
+        let log = match self.hide_data_regex.replace_all(&log, |_: &Captures| "") {
+            std::borrow::Cow::Borrowed(_) => log,
+            std::borrow::Cow::Owned(replaced) => replaced,
         };
 
-        match ips_replaced {
-            std::borrow::Cow::Borrowed(_) => match hide_replaced {
-                std::borrow::Cow::Borrowed(_) => log,
-                std::borrow::Cow::Owned(s) => s,
-            },
-            std::borrow::Cow::Owned(s) => s,
+        if !self.should_censor() {
+            return log;
+        }
+
+        let replaced = self.regex.replace_all(&log, |captures: &Captures| {
+            let name = "IP4";
+
+            if let Some(ip) = captures
+                .name(name)
+                .and_then(|m| Ipv4Addr::from_str(m.as_str()).ok())
+            {
+                return self.censor_input(name, ip.octets().as_slice());
+            }
+
+            let name = "IP6";
+
+            if let Some((m, ip)) = captures
+                .name(name)
+                .and_then(|m| Ipv6Addr::from_str(m.as_str()).ok().map(|ip| (m, ip)))
+            {
+                if Self::incorret_chars_on_bounds(&log, &m) {
+                    return m.as_str().to_owned();
+                }
+                return self.censor_input(name, ip.octets().as_slice());
+            }
+
+            let name = "DOMAIN";
+            if let Some(m) = captures.name(name) {
+                return self.censor_input(name, m.as_str().as_bytes());
+            }
+
+            captures.get(0).map(|s| s.as_str().to_owned()).unwrap_or(
+                "Regex crate guarantees this, too low priority to panic on its fail, though"
+                    .to_string(),
+            )
+        });
+
+        match replaced {
+            std::borrow::Cow::Borrowed(_) => log,
+            std::borrow::Cow::Owned(replaced) => replaced,
         }
     }
 }
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -283,5 +317,20 @@ mod test {
         let actual = censor.censor_logs(original);
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_log_censor_modes() {
+        let mut censor = LogCensor::default();
+        censor.set_mode(LogCensorMode::Dots);
+        let input = EXAMPLES[0].0;
+        let censored = censor.censor_logs(input.to_owned());
+        assert_eq!(
+            censored,
+            "1999-09-09 [INFO] New endpoint (IP4(...):1234) created"
+        );
+        censor.set_mode(LogCensorMode::EmptyString);
+        let censored = censor.censor_logs(input.to_owned());
+        assert_eq!(censored, "1999-09-09 [INFO] New endpoint (:1234) created");
     }
 }
