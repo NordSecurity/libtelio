@@ -13,6 +13,7 @@ tcli.log
 *.dylib
 *.so
 /nat-lab/data/tcli*
+/nat-lab/docker-compose.override.yml
 /3rd-party/ci-helper-scripts/
 /3rd-party/libmoose
 /3rd-party/nordderper
