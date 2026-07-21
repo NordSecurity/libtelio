@@ -297,7 +297,9 @@ class _PhaseTimeout:
             self._disarm(old)
 
     @pytest.hookimpl(hookwrapper=True)
-    def pytest_runtest_teardown(self, item, nextitem):  # pylint: disable=unused-argument
+    def pytest_runtest_teardown(
+        self, item, nextitem
+    ):  # pylint: disable=unused-argument
         old = self._arm(TEARDOWN_PHASE_TIMEOUT_S, "teardown", item.nodeid)
         try:
             yield
