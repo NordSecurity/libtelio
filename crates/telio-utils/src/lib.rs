@@ -14,6 +14,10 @@ pub use map::*;
 pub mod sleep;
 pub use sleep::*;
 
+/// Suspend-aware interval ticker
+pub mod suspend_aware_ticker;
+pub use suspend_aware_ticker::*;
+
 /// Timed, repeated actions
 pub mod repeated_actions;
 pub use repeated_actions::*;

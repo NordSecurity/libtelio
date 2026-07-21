@@ -5,13 +5,14 @@ use std::{
 };
 use thiserror::Error as ThisError;
 
-use crate::{interval, interval_after};
 use futures::{
     future::BoxFuture,
     stream::{FuturesUnordered, StreamExt},
     FutureExt,
 };
-use tokio::time::{Duration, Interval};
+use tokio::time::Duration;
+
+use crate::SuspendAwareTicker;
 
 /// Possible [RepeatedAction] errors.
 #[derive(ThisError, Debug)]
@@ -33,7 +34,7 @@ type Result<T> = std::result::Result<T, RepeatedActionError>;
 
 /// Main struct container, that hold all actions
 pub struct RepeatedActions<K, C, R> {
-    actions: HashMap<K, (Interval, RepeatedAction<C, R>)>,
+    actions: HashMap<K, (SuspendAwareTicker, RepeatedAction<C, R>)>,
 }
 
 impl<K, C, R> Default for RepeatedActions<K, C, R>
@@ -64,7 +65,7 @@ where
         action: RepeatedAction<C, R>,
     ) -> Result<()> {
         if let hash_map::Entry::Vacant(e) = self.actions.entry(key) {
-            e.insert((interval(dur), action));
+            e.insert((SuspendAwareTicker::new(dur), action));
             return Ok(());
         }
 
@@ -84,10 +85,21 @@ where
         self.actions.get_mut(key).map_or_else(
             || Err(RepeatedActionError::RepeatedActionNotFound),
             |a| {
-                a.0 = interval_after(dur, dur);
+                a.0 = SuspendAwareTicker::new_after(dur, dur);
                 Ok(())
             },
         )
+    }
+
+    /// Reset all action timers so they fire immediately on the next poll.
+    ///
+    /// This is useful after a network change: rather than waiting up to one full
+    /// period for the next scheduled keepalive, all peers receive a ping as soon
+    /// as `select_action` is polled again
+    pub fn reset_all_actions(&mut self) {
+        self.actions.values_mut().for_each(|(ticker, _)| {
+            ticker.reset_immediately();
+        });
     }
 
     /// Check if it contains action
@@ -105,11 +117,11 @@ where
         let a = self
             .actions
             .iter_mut()
-            .map(|(key, (interval, action))| (key, interval.tick(), action));
+            .map(|(key, (ticker, action))| (key, ticker.tick(), action));
 
         // Transform futures to `Output = (key, action)`
         let mut b: FuturesUnordered<_> = a
-            .map(|(key, interval, action)| interval.map(move |_| (key, action)).boxed())
+            .map(|(key, tick, action)| tick.map(move |_| (key, action)).boxed())
             .collect();
 
         b.next()
@@ -151,10 +163,6 @@ mod tests {
         pub async fn change(&mut self, str: String) -> Result {
             self.test = str;
             Ok(())
-        }
-
-        pub fn get(&self) -> &str {
-            &self.test
         }
     }
 

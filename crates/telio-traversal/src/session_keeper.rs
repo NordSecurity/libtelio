@@ -46,6 +46,10 @@ pub trait SessionKeeperTrait {
         interval: Duration,
     ) -> Result<()>;
     async fn remove_node(&self, key: &PublicKey) -> Result<()>;
+    /// Reset all keepalive timers so they fire immediately on the next poll.
+    /// Call this after a network change to ensure peers receive a fresh
+    /// keepalive ping without waiting for the next scheduled interval
+    async fn reset_keepalives(&self) -> Result<()>;
 }
 
 pub struct SessionKeeper {
@@ -127,6 +131,15 @@ impl SessionKeeperTrait for SessionKeeper {
         .await?;
 
         Ok(())
+    }
+
+    async fn reset_keepalives(&self) -> Result<()> {
+        task_exec!(&self.task, async move |s| {
+            s.actions.reset_all_actions();
+            Ok(())
+        })
+        .await
+        .map_err(Error::Task)
     }
 }
 
