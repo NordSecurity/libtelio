@@ -280,7 +280,7 @@ class _PhaseTimeout:
             raise TimeoutError(f"{phase} exceeded {seconds}s for {nodeid}")
 
         old = signal.signal(signal.SIGALRM, _fire)
-        signal.setitimer(signal.ITIMER_REAL, seconds)
+        signal.setitimer(signal.ITIMER_REAL, seconds, seconds)
         return old
 
     @staticmethod
