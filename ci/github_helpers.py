@@ -49,7 +49,7 @@ def github_api_request(method, repo, path, token, payload=None):
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Authorization", f"Bearer {token}")
     req.add_header("Accept", "application/vnd.github+json")
-    req.add_header("X-GitHub-Api-Version", "2022-11-28")
+    req.add_header("X-GitHub-Api-Version", "2026-03-10")
     if data is not None:
         req.add_header("Content-Type", "application/json")
     try:

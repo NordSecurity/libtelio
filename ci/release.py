@@ -18,6 +18,7 @@ import re
 import tempfile
 
 import tomlkit
+from packaging.version import Version
 
 import generate_changelog as gc
 from github_helpers import git_clone, github_api_request, has_changes, run
@@ -46,7 +47,7 @@ def resolve_source_branch_for_tag(github_repo: str, tag: str) -> str:
     return branch if refs.strip() else "main"
 
 
-def next_cargo_version(tag: str, source_branch: str, override: str) -> str:
+def next_release_version(tag: str, source_branch: str, override: str) -> str:
     if override:
         return override.lstrip("v")
     major, minor, patch = (int(x) for x in tag.lstrip("v").split("-")[0].split("."))
@@ -147,9 +148,9 @@ def open_cleanup_pr(args, token, source_branch, tmp) -> None:
     actions = []
     if is_final_tag(args.tag):
         cargo_path = os.path.join(src, "Cargo.toml")
-        new_version = next_cargo_version(args.tag, source_branch, args.next_version)
+        new_version = next_release_version(args.tag, source_branch, args.next_version)
         current_version = get_cargo_version(cargo_path)
-        if gc.version_key(new_version) <= gc.version_key(current_version):
+        if Version(new_version) <= Version(current_version):
             raise RuntimeError(
                 f"Refusing to bump {source_branch} Cargo.toml from {current_version} to "
                 f"{new_version}: not a forward bump. Releasing an older tag, or is the branch "

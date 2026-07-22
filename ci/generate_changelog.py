@@ -1,22 +1,18 @@
-"""OS module for file operations,
-argparse module for command line arguments parsing,
-sys module for graceful exiting,
-re for regex matching,
-Optional for optional type."""
-
 import os
 import sys
 import argparse
 import re
 from typing import Optional
 
+from markdown_it import MarkdownIt
+from packaging.version import Version, InvalidVersion
+
 
 # Regexes for ticket number in filename
 TICKET_NUMBER = r"^([a-zA-Z]{1,10})[\s_-]?(\d{1,6})"
-# A version header, e.g. "### v8.0.0-rc2". The `v` is optional to match old "### 5.0.0" headers.
-VERSION_HEADER = r"^### (v?\d[^\s]*)\s*$"
-# major.minor.patch with an optional pre-release suffix.
-VERSION_PARTS = r"^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-(.+))?$"
+# A version heading's text, e.g. "v8.0.0-rc2" or legacy "5.0.0" (the `v` is optional).
+# Applied to a parsed `### ` heading's text to tell version headings from series names.
+VERSION_HEADING = r"^v?\d\S*$"
 
 # Python automatically translates the '\n' escape character for cross platform compatibility.
 # Format use to print the version at the beginning of the new version entry in the changelog.
@@ -34,8 +30,7 @@ AUTO_GENERATION_NOTE_LINE = (
 )
 
 TICKET_NUMBER_REGEX = re.compile(TICKET_NUMBER, re.I)
-VERSION_HEADER_REGEX = re.compile(VERSION_HEADER, re.M)
-VERSION_PARTS_REGEX = re.compile(VERSION_PARTS)
+VERSION_HEADING_REGEX = re.compile(VERSION_HEADING)
 
 
 def _match_ticket(input_str: str) -> Optional[str]:
@@ -47,44 +42,50 @@ def _match_ticket(input_str: str) -> Optional[str]:
     return None
 
 
-def version_key(version: str):
-    """Sort key for a version. A final release sorts after its pre-releases
-    (v8.0.0 > v8.0.0-rc2 > v8.0.0-rc1)."""
-    match = VERSION_PARTS_REGEX.match(version)
-    if not match:
-        return ((0, 0, 0), (1,))
-    major = int(match.group(1) or 0)
-    minor = int(match.group(2) or 0)
-    patch = int(match.group(3) or 0)
-    pre = match.group(4)
-    if pre is None:
-        # A final release sorts after all of its pre-releases.
-        pre_key = (1,)
-    else:
-        numbered = re.match(r"^(\D*)(\d+)$", pre)
-        if numbered:
-            # e.g. "rc2" -> (0, "rc", 2)
-            pre_key = (0, (0, numbered.group(1), int(numbered.group(2))))
-        else:
-            # e.g. legacy "rc" -> (1, "rc", 0)
-            pre_key = (0, (1, pre, 0))
-    return ((major, minor, patch), pre_key)
+def _sort_key(version: str) -> Version:
+    """Parse a version string for sorting. Unparseable headers sort lowest."""
+    try:
+        return Version(version)
+    except InvalidVersion:
+        return Version("0")
+
+
+def _line_start_offsets(text: str) -> list:
+    """For each line, give the character position where it starts"""
+    offsets = [0]
+    for line in text.split("\n"):
+        offsets.append(offsets[-1] + len(line) + 1)
+    return offsets
+
+
+def _version_headings(body: str) -> list:
+    """Find every '### <version>' heading and return [(version, char_offset), ...]
+    from top to bottom."""
+    tokens = MarkdownIt().parse(body)
+    offsets = _line_start_offsets(body)
+    headings = []
+    for i, token in enumerate(tokens):
+        if token.type == "heading_open" and token.tag == "h3" and token.map:
+            heading_text = tokens[i + 1].content.strip()
+            if VERSION_HEADING_REGEX.match(heading_text):
+                headings.append((heading_text, offsets[token.map[0]]))
+    return headings
 
 
 def insert_block_sorted(body: str, block: str, out_version: str) -> str:
     """Insert `block` into `body` (version blocks, newest-first) keeping semver order.
     If `out_version` already has a block, replace it, so re-runs don't duplicate it."""
-    new_key = version_key(out_version)
-    matches = list(VERSION_HEADER_REGEX.finditer(body))
-    # Block already exists: replace
-    for i, match in enumerate(matches):
-        if match.group(1) == out_version:
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
-            return body[: match.start()] + block + body[end:]
+    new_key = _sort_key(out_version)
+    headings = _version_headings(body)
+    # Block already exists: replace.
+    for i, (version, offset) in enumerate(headings):
+        if version == out_version:
+            end = headings[i + 1][1] if i + 1 < len(headings) else len(body)
+            return body[:offset] + block + body[end:]
     # Otherwise insert before the first older version.
-    for match in matches:
-        if version_key(match.group(1)) < new_key:
-            return body[: match.start()] + block + body[match.start() :]
+    for version, offset in headings:
+        if _sort_key(version) < new_key:
+            return body[:offset] + block + body[offset:]
     # Empty changelog, or the new version is the oldest.
     return block if not body else body + block
 
@@ -291,19 +292,6 @@ def test() -> int:
             print(f"Failed for: {text[0]}, expected: {text[1]}, got: {res}")
             success = 1
 
-    # Version ordering: final > rc, rc numbers ordered, and plain numeric ordering.
-    ordering = [
-        ("v8.0.0", "v8.0.0-rc2"),
-        ("v8.0.0-rc2", "v8.0.0-rc1"),
-        ("v7.0.0", "v6.2.4"),
-    ]
-    for higher, lower in ordering:
-        if version_key(higher) > version_key(lower):
-            print(f"Success ordering: {higher} > {lower}")
-        else:
-            print(f"Failed ordering: expected {higher} > {lower}")
-            success = 1
-
     # Sorted insertion: v6.2.4 must land above v6.2.3, below v7.0.0 (a naive prepend fails this).
     body = (
         "### v8.0.0-rc1\n### ****\n---\n* a\n\n<br>\n\n"
@@ -312,7 +300,7 @@ def test() -> int:
     )
     block = "### v6.2.4\n### ****\n---\n* d\n\n<br>\n\n"
     result = insert_block_sorted(body, block, "v6.2.4")
-    order = VERSION_HEADER_REGEX.findall(result)
+    order = [v for v, _ in _version_headings(result)]
     if order == ["v8.0.0-rc1", "v7.0.0", "v6.2.4", "v6.2.3"]:
         print("Success insertion: v6.2.4 placed between v7.0.0 and v6.2.3")
     else:
@@ -321,7 +309,7 @@ def test() -> int:
 
     # Idempotency: re-inserting an existing version replaces it in place (no duplicate).
     again = insert_block_sorted(result, block, "v6.2.4")
-    order_again = VERSION_HEADER_REGEX.findall(again)
+    order_again = [v for v, _ in _version_headings(again)]
     if again == result and order_again.count("v6.2.4") == 1:
         print("Success idempotency: re-inserting v6.2.4 does not duplicate")
     else:
@@ -329,11 +317,33 @@ def test() -> int:
         success = 1
 
     # The oldest version appends at the bottom (the fall-through branch).
-    bottom = VERSION_HEADER_REGEX.findall(
-        insert_block_sorted(body, "### v1.0.0\n---\n\n<br>\n\n", "v1.0.0")
-    )
+    bottom = [
+        v
+        for v, _ in _version_headings(
+            insert_block_sorted(body, "### v1.0.0\n---\n\n<br>\n\n", "v1.0.0")
+        )
+    ]
     if bottom[-1] != "v1.0.0":
         print(f"Failed insertion: lowest not at bottom, got {bottom}")
+        success = 1
+
+    # A '### vX.Y.Z' inside a fenced code block is not a real heading: the parser
+    # must ignore it (a line regex would wrongly treat it as a version boundary).
+    code_body = (
+        "### v8.0.0\n### ****\n---\n* real entry\n\n"
+        "```\n### v9.9.9\n```\n\n<br>\n\n"
+        "### v6.2.3\n### ****\n---\n* c\n\n<br>\n\n"
+    )
+    code_order = [
+        v
+        for v, _ in _version_headings(
+            insert_block_sorted(code_body, "### v7.0.0\n---\n\n<br>\n\n", "v7.0.0")
+        )
+    ]
+    if code_order == ["v8.0.0", "v7.0.0", "v6.2.3"]:
+        print("Success code-fence: fake '### v9.9.9' in a code block is ignored")
+    else:
+        print(f"Failed code-fence: got order {code_order}")
         success = 1
 
     # A missing .unreleased dir means no entries, not an error.
