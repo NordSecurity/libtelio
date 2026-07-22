@@ -5,6 +5,7 @@ import logging
 import os
 import Pyro5  # type: ignore
 import pytest
+import signal
 import threading
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
@@ -266,6 +267,48 @@ def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
         _SESSION.current_test_log_file = None
 
     log.info("Post-test log collection completed for %s", item.reportinfo()[2])
+
+
+SETUP_PHASE_TIMEOUT_S = 300
+TEARDOWN_PHASE_TIMEOUT_S = 300
+
+
+class _PhaseTimeout:
+    @staticmethod
+    def _arm(seconds, phase, nodeid):
+        def _fire(signum, frame):  # pylint: disable=unused-argument
+            raise TimeoutError(f"{phase} exceeded {seconds}s for {nodeid}")
+
+        old = signal.signal(signal.SIGALRM, _fire)
+        signal.setitimer(signal.ITIMER_REAL, seconds, seconds)
+        return old
+
+    @staticmethod
+    def _disarm(old):
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old)
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_setup(self, item):
+        old = self._arm(SETUP_PHASE_TIMEOUT_S, "setup", item.nodeid)
+        try:
+            yield
+        finally:
+            self._disarm(old)
+
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_runtest_teardown(
+        self, item, nextitem
+    ):  # pylint: disable=unused-argument
+        old = self._arm(TEARDOWN_PHASE_TIMEOUT_S, "teardown", item.nodeid)
+        try:
+            yield
+        finally:
+            self._disarm(old)
+
+
+def pytest_configure(config):
+    config.pluginmanager.register(_PhaseTimeout())
 
 
 # Session-long AsyncExitStack is created at session start and closed at session finish.
