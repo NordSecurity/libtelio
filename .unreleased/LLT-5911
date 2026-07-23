@@ -1,0 +1,1 @@
+Log presented certificate details (issuer, subject, validity, fingerprint) when DERP TLS certificate verification fails

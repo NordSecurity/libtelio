@@ -188,6 +188,7 @@ x25519-dalek = { version = "2.0.1", features = [
 ] }
 zeroize = { version = "1.9.0", features = ["derive"] }
 hyper-util = "0.1.20"
+x509-parser = { version = "0.18.1", default-features = false }
 
 telio-crypto = { version = "0.1.0", path = "./crates/telio-crypto" }
 telio-dns = { version = "0.1.0", path = "./crates/telio-dns" }

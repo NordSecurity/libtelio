@@ -20,7 +20,7 @@ use webpki_roots::TLS_SERVER_ROOTS;
 
 use crate::{Config, DerpKeepaliveConfig};
 
-use rustls_platform_verifier::ConfigVerifierExt;
+use rustls_platform_verifier::Verifier as PlatformVerifier;
 use telio_crypto::{PublicKey, SecretKey};
 use tokio::time::Interval;
 use tokio::{
@@ -29,7 +29,14 @@ use tokio::{
     time::timeout,
 };
 use tokio_rustls::{
-    rustls::{pki_types::ServerName, ClientConfig, RootCertStore},
+    rustls::{
+        client::{
+            danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
+            WebPkiServerVerifier,
+        },
+        pki_types::{CertificateDer, ServerName, UnixTime},
+        ClientConfig, DigitallySignedStruct, Error as RustlsError, RootCertStore, SignatureScheme,
+    },
     TlsConnector,
 };
 use url::{Host, Url};
@@ -146,17 +153,27 @@ async fn try_connect(
             .await
         }
         _ => {
-            let config = if derp_config.use_built_in_root_certificates {
-                let root_store: RootCertStore = TLS_SERVER_ROOTS.iter().cloned().collect();
+            let builder = ClientConfig::builder();
+            let provider = builder.crypto_provider().clone();
 
-                let config = ClientConfig::builder()
-                    .with_root_certificates(root_store)
-                    .with_no_client_auth();
+            let verifier: Arc<dyn ServerCertVerifier> =
+                if derp_config.use_built_in_root_certificates {
+                    let root_store: RootCertStore = TLS_SERVER_ROOTS.iter().cloned().collect();
 
-                TlsConnector::from(Arc::new(config))
-            } else {
-                TlsConnector::from(Arc::new(ClientConfig::with_platform_verifier()?))
-            };
+                    WebPkiServerVerifier::builder_with_provider(Arc::new(root_store), provider)
+                        .build()
+                        // Can only fail on an empty root store or unparsable CRLs; roots are
+                        // compiled-in (never empty) and no CRLs are given, so this never errors
+                        .map_err(IoError::other)?
+                } else {
+                    Arc::new(PlatformVerifier::new(provider)?)
+                };
+
+            let config = builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(CertLoggingVerifier::new(verifier)))
+                .with_no_client_auth();
+            let config = TlsConnector::from(Arc::new(config));
 
             let server_name =
                 ServerName::try_from(hostname).map_err(|_| Error::InvalidServerName)?;
@@ -171,6 +188,125 @@ async fn try_connect(
             )
             .await
         }
+    }
+}
+
+/// Decorator around the actual certificate verifier which logs details of the
+/// presented server certificate when (and only when) its verification fails,
+/// to make TLS interception (e.g. a MITM proxy injecting its own CA) diagnosable
+/// from the field logs. Verification itself is fully delegated to the inner verifier.
+struct CertLoggingVerifier {
+    inner: Arc<dyn ServerCertVerifier>,
+    log_failure: Box<dyn Fn(String) + Send + Sync>,
+}
+
+impl CertLoggingVerifier {
+    fn new(inner: Arc<dyn ServerCertVerifier>) -> Self {
+        Self::with_sink(inner, |msg| telio_log_warn!("{}", msg))
+    }
+
+    /// Allows tests to capture the failure message instead of logging it
+    fn with_sink(
+        inner: Arc<dyn ServerCertVerifier>,
+        log_failure: impl Fn(String) + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            inner,
+            log_failure: Box::new(log_failure),
+        }
+    }
+}
+
+impl std::fmt::Debug for CertLoggingVerifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CertLoggingVerifier")
+            .field("inner", &self.inner)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ServerCertVerifier for CertLoggingVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp_response: &[u8],
+        now: UnixTime,
+    ) -> Result<ServerCertVerified, RustlsError> {
+        let result = self.inner.verify_server_cert(
+            end_entity,
+            intermediates,
+            server_name,
+            ocsp_response,
+            now,
+        );
+        if let Err(err) = &result {
+            (self.log_failure)(format_failed_cert(
+                end_entity,
+                intermediates,
+                server_name,
+                err,
+            ));
+        }
+        result
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        self.inner.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        self.inner.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.inner.supported_verify_schemes()
+    }
+
+    fn requires_raw_public_keys(&self) -> bool {
+        self.inner.requires_raw_public_keys()
+    }
+}
+
+fn format_failed_cert(
+    end_entity: &CertificateDer<'_>,
+    intermediates: &[CertificateDer<'_>],
+    server_name: &ServerName<'_>,
+    err: &RustlsError,
+) -> String {
+    use sha2::{Digest, Sha256};
+    let fingerprint = hex::encode(Sha256::digest(end_entity.as_ref()));
+    match x509_parser::parse_x509_certificate(end_entity.as_ref()) {
+        Ok((_, cert)) => format!(
+            "DERP TLS cert verification failed for {:?}: {}. Presented cert: issuer=[{}], subject=[{}], validity=[{} .. {}], sha256={}, intermediates={}",
+            server_name,
+            err,
+            cert.issuer(),
+            cert.subject(),
+            cert.validity().not_before,
+            cert.validity().not_after,
+            fingerprint,
+            intermediates.len()
+        ),
+        Err(parse_err) => format!(
+            "DERP TLS cert verification failed for {:?}: {}. Presented cert unparsable ({}), sha256={}, intermediates={}",
+            server_name,
+            err,
+            parse_err,
+            fingerprint,
+            intermediates.len()
+        ),
     }
 }
 
@@ -466,6 +602,145 @@ mod tests {
                 .await
                 .unwrap()
                 .as_slice()
+        );
+    }
+
+    fn logs_capture() -> (Arc<std::sync::Mutex<Vec<String>>>, impl Fn(String)) {
+        let logs = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink_logs = logs.clone();
+        let sink = move |msg| sink_logs.lock().unwrap().push(msg);
+        (logs, sink)
+    }
+
+    // Explicit provider: with both `ring` and `aws-lc-rs` rustls features enabled
+    // (workspace-wide test builds), the ambient default used by ClientConfig::builder()
+    // is ambiguous and panics
+    fn test_crypto_provider() -> Arc<rustls::crypto::CryptoProvider> {
+        Arc::new(rustls::crypto::ring::default_provider())
+    }
+
+    fn built_in_roots_verifier(
+        sink: impl Fn(String) + Send + Sync + 'static,
+    ) -> CertLoggingVerifier {
+        let provider = test_crypto_provider();
+        let root_store: RootCertStore = TLS_SERVER_ROOTS.iter().cloned().collect();
+        let inner = WebPkiServerVerifier::builder_with_provider(Arc::new(root_store), provider)
+            .build()
+            .unwrap();
+        CertLoggingVerifier::with_sink(inner, sink)
+    }
+
+    // Simulates a MITM proxy presenting a certificate from an unknown CA:
+    // the decorator must return the inner verifier's UnknownIssuer error
+    // unchanged and log the details of the presented certificate.
+    #[test]
+    fn cert_logging_verifier_rejects_unknown_issuer_and_logs_cert_details() {
+        use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair};
+        use sha2::{Digest, Sha256};
+        use tokio_rustls::rustls::CertificateError;
+
+        let mut params = CertificateParams::new(vec!["derp.example.com".to_string()]).unwrap();
+        let mut dn = DistinguishedName::new();
+        dn.push(DnType::CommonName, "Evil Proxy CA");
+        params.distinguished_name = dn;
+        let key = KeyPair::generate().unwrap();
+        let self_signed = params.self_signed(&key).unwrap();
+
+        let (logs, sink) = logs_capture();
+        let verifier = built_in_roots_verifier(sink);
+        let server_name = ServerName::try_from("derp.example.com").unwrap();
+
+        let result =
+            verifier.verify_server_cert(self_signed.der(), &[], &server_name, &[], UnixTime::now());
+
+        assert!(
+            matches!(
+                result,
+                Err(RustlsError::InvalidCertificate(
+                    CertificateError::UnknownIssuer
+                ))
+            ),
+            "expected UnknownIssuer for a self-signed cert, got: {result:?}"
+        );
+
+        let logs = logs.lock().unwrap();
+        assert_eq!(
+            logs.len(),
+            1,
+            "expected exactly one failure log, got: {logs:?}"
+        );
+        let msg = &logs[0];
+        let fingerprint = hex::encode(Sha256::digest(self_signed.der().as_ref()));
+        let assert_contains = |needle: &str| {
+            assert!(
+                msg.contains(needle),
+                "expected log message to contain {needle:?}, got: {msg:?}"
+            );
+        };
+        assert_contains("DERP TLS cert verification failed");
+        assert_contains("derp.example.com");
+        assert_contains("UnknownIssuer");
+        assert_contains("issuer=[CN=Evil Proxy CA]");
+        assert_contains("subject=[CN=Evil Proxy CA]");
+        assert_contains(&format!("sha256={fingerprint}"));
+        assert_contains("intermediates=0");
+    }
+
+    // Happy path: a chain anchored in the trust store must pass through the
+    // decorator unchanged (verification is fully delegated to the inner verifier).
+    #[test]
+    fn cert_logging_verifier_accepts_trusted_chain() {
+        use rcgen::{
+            BasicConstraints, CertificateParams, DistinguishedName, DnType, IsCa, Issuer, KeyPair,
+        };
+
+        let mut ca_params = CertificateParams::default();
+        ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let mut ca_dn = DistinguishedName::new();
+        ca_dn.push(DnType::CommonName, "Test Root CA");
+        ca_params.distinguished_name = ca_dn;
+        let ca_key = KeyPair::generate().unwrap();
+        let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+        let issuer = Issuer::new(ca_params, ca_key);
+
+        let leaf_params = CertificateParams::new(vec!["derp.example.com".to_string()]).unwrap();
+        let leaf_key = KeyPair::generate().unwrap();
+        let leaf_cert = leaf_params.signed_by(&leaf_key, &issuer).unwrap();
+
+        let mut roots = RootCertStore::empty();
+        roots.add(ca_cert.der().clone()).unwrap();
+
+        let provider = test_crypto_provider();
+        let inner = WebPkiServerVerifier::builder_with_provider(Arc::new(roots), provider)
+            .build()
+            .unwrap();
+        let (logs, sink) = logs_capture();
+        let verifier = CertLoggingVerifier::with_sink(inner, sink);
+
+        let server_name = ServerName::try_from("derp.example.com").unwrap();
+        let result =
+            verifier.verify_server_cert(leaf_cert.der(), &[], &server_name, &[], UnixTime::now());
+
+        assert!(
+            result.is_ok(),
+            "expected trusted chain to verify, got: {result:?}"
+        );
+        let logs = logs.lock().unwrap();
+        assert!(
+            logs.is_empty(),
+            "expected no log on successful verification, got: {logs:?}"
+        );
+    }
+
+    #[test]
+    fn format_failed_cert_handles_unparsable_certificate() {
+        let garbage = CertificateDer::from(vec![0u8; 16]);
+        let server_name = ServerName::try_from("derp.example.com").unwrap();
+        // Must not panic on a certificate that is not valid X.509
+        let msg = format_failed_cert(&garbage, &[], &server_name, &RustlsError::DecryptError);
+        assert!(
+            msg.contains("unparsable"),
+            "expected log message to mention the cert is unparsable, got: {msg:?}"
         );
     }
 }
