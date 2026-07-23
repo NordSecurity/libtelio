@@ -1,7 +1,6 @@
 import asyncio
 import json
 import re
-import subprocess
 import tests.config
 from collections import defaultdict
 from contextlib import AsyncExitStack
@@ -36,6 +35,8 @@ SETUP_CHECK_MAC_COLLISION_TIMEOUT_S = 300
 SETUP_CHECK_MAC_COLLISION_RETRIES = 1
 SETUP_CHECK_ARP_CACHE_TIMEOUT_S = 300
 SETUP_CHECK_ARP_CACHE_RETRIES = 1
+SETUP_CHECK_ARP_PER_IP_DEADLINE_S = 60
+ARP_POLL_INTERVAL_S = 1.0
 SETUP_CHECK_DUPLICATE_IP_TIMEOUT_S = 60
 SETUP_CHECK_DUPLICATE_IP_RETRIES = 1
 
@@ -92,33 +93,36 @@ async def setup_check_interderp():
                 await derp_test.save_logs()
 
 
-def _gather_container_ips(cid: str) -> tuple[str, list[str]]:
-    try:
-        name = subprocess.check_output(
-            ["docker", "inspect", "--format={{.Name}}", cid],
-            text=True,
-        ).strip()
-        name = re.sub(r"^/+", "", name)
-    except subprocess.CalledProcessError:
+async def _gather_container_ips(cid: str) -> tuple[str, list[str]]:
+    proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "inspect",
+        "--format={{.Name}}",
+        cid,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    stdout, _ = await proc.communicate()
+    if proc.returncode == 0:
+        name = re.sub(r"^/+", "", stdout.decode().strip())
+    else:
         name = cid
 
     # Extract IPv4 addresses inside the container without relying on grep -P.
     # Use: ip -4 -o addr show -> "... IFACE ... A.B.C.D/XX ..."
     # Then project the CIDR column and strip mask.
-    try:
-        ips_out = subprocess.check_output(
-            [
-                "docker",
-                "exec",
-                cid,
-                "sh",
-                "-c",
-                "ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1",
-            ],
-            text=True,
-        )
-    except subprocess.CalledProcessError:
-        ips_out = ""
+    proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "exec",
+        cid,
+        "sh",
+        "-c",
+        "ip -4 -o addr show | awk '{print $4}' | cut -d/ -f1",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    stdout, _ = await proc.communicate()
+    ips_out = stdout.decode() if proc.returncode == 0 else ""
 
     ips = [
         ip.strip() for ip in ips_out.split() if ip.strip() and not ip.startswith("127.")
@@ -134,9 +138,17 @@ async def setup_check_duplicate_ip_addresses():
     """
     setup_log.info("Running duplicate IP addresses check..")
     try:
-        containers_out = subprocess.check_output(
-            ["docker", "ps", "-q"], text=True
-        ).strip()
+        proc = await asyncio.create_subprocess_exec(
+            "docker",
+            "ps",
+            "-q",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"return code {proc.returncode}")
+        containers_out = stdout.decode().strip()
     except Exception as e:  # pylint: disable=broad-exception-caught
         setup_log.error(
             f"cannot execute 'docker ps -q': {e}; skipping duplicate IP check"
@@ -153,7 +165,7 @@ async def setup_check_duplicate_ip_addresses():
     duplicates: dict[str, set[str]] = defaultdict(set)
 
     for cid in containers:
-        name, ips = _gather_container_ips(cid)
+        name, ips = await _gather_container_ips(cid)
 
         # Print container name and IPs (for debugging parity with the original script)
         setup_log.debug("========== %s (%s) ==========", name, cid)
@@ -253,71 +265,84 @@ async def setup_check_arp_cache(session_vm_marks: set[str]):
 
     setup_log.info("Running ARP cache check..")
 
-    def warm_arp(ip: str) -> None:
-        subprocess.call(
-            ["ping", "-c", "1", "-W", "1", ip],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+    async def warm_arp(ip: str) -> None:
+        proc = await asyncio.create_subprocess_exec(
+            "ping",
+            "-c",
+            "1",
+            "-W",
+            "1",
+            ip,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
+        await proc.wait()
 
-    def read_arp_entries() -> list[dict]:
-        return json.loads(
-            subprocess.check_output(
-                ["ip", "-j", "neigh", "show"],
-                text=True,
-            ).strip()
+    async def read_arp_entries() -> list[dict]:
+        proc = await asyncio.create_subprocess_exec(
+            "ip",
+            "-j",
+            "neigh",
+            "show",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
         )
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"'ip -j neigh show' failed with return code {proc.returncode}"
+            )
+        return json.loads(stdout)
 
-    subprocess.call(
-        ["sudo", "ip", "-s", "-s", "neigh", "flush", "all"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+    flush_proc = await asyncio.create_subprocess_exec(
+        "sudo",
+        "ip",
+        "-s",
+        "-s",
+        "neigh",
+        "flush",
+        "all",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
     )
+    await flush_proc.wait()
 
     acceptable_states = {"REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT"}
-    failures: list[str] = []
 
-    def check_arp_for_ip(tag, ip: str) -> str | None:
-        success = False
+    async def check_arp_for_ip(tag, ip: str) -> str | None:
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + SETUP_CHECK_ARP_PER_IP_DEADLINE_S
         last_arp_entries: list[dict] = []
         while True:
-            if success:
-                break
-            warm_arp(ip)
-            last_arp_entries = read_arp_entries()
+            await warm_arp(ip)
+            last_arp_entries = await read_arp_entries()
             for e in last_arp_entries:
-                dst_ip = e.get("dst")
-                lladdr = e.get("lladdr")
+                if e.get("dst") != ip:
+                    continue
+                if e.get("lladdr") is None:
+                    continue
                 state = e.get("state")
-                if dst_ip is None or dst_ip != ip:
-                    continue
-                if lladdr is None:
-                    continue
                 if state is None or state[0] not in acceptable_states:
                     continue
-                success = True
+                return None
+            if loop.time() >= deadline:
                 break
-        if not success:
-            state = next(
-                (
-                    e.get("state", "missing")
-                    for e in last_arp_entries
-                    if e.get("dst") == ip
-                ),
-                "missing",
-            )
-            return f"{tag.name}:{ip} state={state}"
-        return None
+            await asyncio.sleep(ARP_POLL_INTERVAL_S)
+        state = next(
+            (e.get("state", "missing") for e in last_arp_entries if e.get("dst") == ip),
+            "missing",
+        )
+        return f"{tag.name}:{ip} state={state}"
 
-    for tag in get_required_vm_containers_from_marks(session_vm_marks):
-        if tag in OPENWRT_VM_TAGS:
-            continue
-        for ip in LAN_ADDR_MAP[tag].values():
-            if ip == "":
-                continue
-            failure = check_arp_for_ip(tag, ip)
-            if failure is not None:
-                failures.append(failure)
+    checks = [
+        (tag, ip)
+        for tag in get_required_vm_containers_from_marks(session_vm_marks)
+        if tag not in OPENWRT_VM_TAGS
+        for ip in LAN_ADDR_MAP[tag].values()
+        if ip != ""
+    ]
+    results = await asyncio.gather(*(check_arp_for_ip(tag, ip) for tag, ip in checks))
+    failures = [f for f in results if f is not None]
 
     if failures:
         raise RuntimeError("ARP cache not ready for VMs: " + ", ".join(failures))
@@ -402,14 +427,12 @@ async def perform_setup_checks(
                     setup_nlx_vpn_server,
                 ]:
                     await asyncio.wait_for(
-                        asyncio.shield(target(session_is_container_running)), timeout
+                        target(session_is_container_running), timeout
                     )
                 elif target is setup_check_arp_cache:
-                    await asyncio.wait_for(
-                        asyncio.shield(target(session_vm_marks)), timeout
-                    )
+                    await asyncio.wait_for(target(session_vm_marks), timeout)
                 else:
-                    await asyncio.wait_for(asyncio.shield(target()), timeout)
+                    await asyncio.wait_for(target(), timeout)
                 break
             except asyncio.TimeoutError:
                 setup_log.warning("%s() timeout, retrying...", target)

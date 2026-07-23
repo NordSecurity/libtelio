@@ -1,6 +1,6 @@
+import asyncio
 import os
 import shutil
-import subprocess
 from tests.config import LAN_ADDR_MAP
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection.ssh_connection import SshConnection
@@ -11,18 +11,20 @@ from tests.utils.process import ProcessExecError
 LOG_DIR = "logs"
 
 
-def save_dmesg_from_host(suffix):
-    try:
-        result = subprocess.run(
-            ["sudo", "dmesg", "-d", "-T"],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,
-        ).stdout
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        setup_log.error("Error executing dmesg: %s", e)
+async def save_dmesg_from_host(suffix):
+    proc = await asyncio.create_subprocess_exec(
+        "sudo",
+        "dmesg",
+        "-d",
+        "-T",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        setup_log.error("Error executing dmesg: %s", stderr.decode(errors="replace"))
         return
+    result = stdout.decode(errors="replace")
 
     if result:
         with open(
@@ -108,7 +110,7 @@ async def collect_kernel_logs(
 ):
     os.makedirs(LOG_DIR, exist_ok=True)
 
-    save_dmesg_from_host(suffix)
+    await save_dmesg_from_host(suffix)
     save_audit_log_from_host(suffix)
     if "nlx" in session_vm_marks:
         await save_dmesg_from_remote_vm(ConnectionTag.VM_LINUX_NLX_1, suffix)
@@ -127,71 +129,84 @@ async def collect_kernel_logs(
 async def collect_logs(
     session_vm_marks: set[str],
 ):
-    collect_nordderper_logs()
-    collect_dns_server_logs()
-    collect_core_api_server_logs()
+    await collect_nordderper_logs()
+    await collect_dns_server_logs()
+    await collect_core_api_server_logs()
     await collect_kernel_logs("after_tests", session_vm_marks)
     await collect_mac_diagnostic_reports(session_vm_marks)
     await save_nordlynx_logs(session_vm_marks)
 
 
-def collect_nordderper_logs():
+async def collect_nordderper_logs():
     num_containers = 3
 
     for i in range(1, num_containers + 1):
         container_name = f"nat-lab-derp-{i:02d}-1"
         destination_path = f"{LOG_DIR}/derp_{i:02d}_relay.log"
 
-        copy_file_from_container(
+        await copy_file_from_container(
             container_name, "/etc/nordderper/relay.log", destination_path
         )
 
 
-def collect_dns_server_logs():
+async def collect_dns_server_logs():
     num_containers = 2
 
     for i in range(1, num_containers + 1):
         container_name = f"nat-lab-dns-server-{i}-1"
         destination_path = f"{LOG_DIR}/dns_server_{i}.log"
 
-        copy_file_from_container(container_name, "/dns-server.log", destination_path)
+        await copy_file_from_container(
+            container_name, "/dns-server.log", destination_path
+        )
 
 
-def collect_core_api_server_logs():
+async def collect_core_api_server_logs():
     container_name = "nat-lab-core-api-1"
     os.makedirs(LOG_DIR, exist_ok=True)
     out_path = os.path.join(LOG_DIR, "core_api.log")
-    try:
-        with open(out_path, "w", encoding="utf-8") as f:
-            subprocess.run(
-                ["docker", "logs", container_name],
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                text=True,
-                check=True,
-                timeout=60,
-            )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-        setup_log.warning("Error collecting core-api logs: %s", e)
-
-
-def copy_file_from_container(container_name, src_path, dst_path):
-    docker_cp_command = f"docker cp {container_name}:{src_path} {dst_path}"
-    try:
-        subprocess.run(docker_cp_command, shell=True, check=True, timeout=60)
-        setup_log.info(
-            "Log file %s copied successfully from %s to %s",
-            src_path,
-            container_name,
-            dst_path,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "logs",
+        container_name,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    stdout, _ = await proc.communicate()
+    if proc.returncode != 0:
         setup_log.warning(
-            "Error copying log file %s from %s to %s",
+            "Error collecting core-api logs: %s", stdout.decode(errors="replace")
+        )
+        return
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(stdout.decode(errors="replace"))
+
+
+async def copy_file_from_container(container_name, src_path, dst_path):
+    proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "cp",
+        f"{container_name}:{src_path}",
+        dst_path,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        setup_log.warning(
+            "Error copying log file %s from %s to %s: %s",
             src_path,
             container_name,
             dst_path,
+            stderr.decode(errors="replace"),
         )
+        return
+    setup_log.info(
+        "Log file %s copied successfully from %s to %s",
+        src_path,
+        container_name,
+        dst_path,
+    )
 
 
 async def collect_mac_diagnostic_reports(
