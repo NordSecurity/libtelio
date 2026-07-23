@@ -1,5 +1,15 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v7.0.6
+### ****
+---
+* LLT-7321: Reject outbound packets whose source IP does not match the tunnel interface's configured source IP(s)
+* LLT-7321: Add new `set_tunnel_src_ip(src_ips)` API: apps pass the tunnel interface source IP(s) so the firewall can enforce the source-IP check. Pass an empty list to disable the check. Apps should call it once and re-call only if the IP changes.
+* LLT-6304: Check whether the meshnet is enabled before making control decision in wg-nt dynamic mode.
+* Make session keeper and PQ restarts suspend-aware, and restart more things on network change
+
+<br>
+
 ### v7.0.5
 ### ****
 ---
