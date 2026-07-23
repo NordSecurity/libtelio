@@ -333,12 +333,7 @@ mod tests {
     use assert_matches::assert_matches;
     use std::path::Path;
     use temp_file::TempFile;
-    use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::UnixStream,
-        sync::mpsc,
-        task,
-    };
+    use tokio::{io::AsyncWriteExt, net::UnixStream, sync::mpsc, task};
 
     const TEST_SOCKET_PATH: &str = "test_socket";
 
@@ -420,15 +415,8 @@ mod tests {
 
     // Simulate client sending command and waiting for response
     async fn client_send_command(path: &str, cmd: &str) -> std::io::Result<CommandResponse> {
-        let mut client_stream = UnixStream::connect(&Path::new(path)).await?;
-        client_stream
-            .write_all(format!("{}\n", cmd).as_bytes())
-            .await?;
-
-        let mut data = vec![0; 1024];
-        let size = client_stream.read(&mut data).await?;
-        let response = String::from_utf8(data[..size].to_vec()).unwrap();
-        Ok(CommandResponse::deserialize(response.trim()).unwrap())
+        let response = DaemonSocket::send_command(Path::new(path), cmd).await?;
+        CommandResponse::deserialize(&response).map_err(|e| std::io::Error::other(e.to_string()))
     }
 
     // Broken client, closes connection without waiting for response
@@ -691,5 +679,53 @@ mod tests {
         let result = Cmd::try_parse_from(["nordvpnlite", "login", "abcd", "--token", "efgh"]);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_response_serialize_has_no_raw_newline() {
+        let responses = [
+            CommandResponse::Ok,
+            CommandResponse::DaemonInitializing,
+            CommandResponse::Err("multi\nline\nerror".to_string()),
+            CommandResponse::StatusReport(TelioStatusReport::default()),
+        ];
+        for response in responses {
+            assert!(
+                !response.serialize().contains('\n'),
+                "serialized response must not contain a raw newline: {response:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_client_errors_when_daemon_closes_without_response() {
+        let path = make_socket_path();
+        let socket = DaemonSocket::new(Path::new(&path)).unwrap();
+        let daemon = tokio::spawn(async move {
+            let mut connection = socket.accept().await.unwrap();
+            let _ = connection.read_command().await;
+        });
+
+        let result = DaemonSocket::send_command(Path::new(&path), "\"IsAlive\"").await;
+        daemon.await.unwrap();
+
+        assert_matches!(result, Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof);
+    }
+
+    #[tokio::test]
+    async fn test_daemon_errors_when_client_closes_without_command() {
+        let path = make_socket_path();
+        let socket = DaemonSocket::new(Path::new(&path)).unwrap();
+        let daemon = tokio::spawn(async move {
+            let mut connection = socket.accept().await.unwrap();
+            connection.read_command().await
+        });
+
+        let client_stream = UnixStream::connect(Path::new(&path)).await.unwrap();
+        drop(client_stream);
+
+        let result = daemon.await.unwrap();
+
+        assert_matches!(result, Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof);
     }
 }
