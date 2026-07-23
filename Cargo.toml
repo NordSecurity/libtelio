@@ -179,14 +179,14 @@ windows = { version = "0.62.2", features = [
 ] }
 winreg = "0.56.0"
 
-neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v3.0.0", features = [
+neptun = { git = "https://github.com/NordSecurity/neptun.git", tag = "v3.0.1", features = [
   "device",
 ] }
 x25519-dalek = { version = "2.0.1", features = [
   "reusable_secrets",
   "static_secrets",
 ] }
-zeroize = { version = "1.8.2", features = ["derive"] }
+zeroize = { version = "1.9.0", features = ["derive"] }
 hyper-util = "0.1.20"
 
 telio-crypto = { version = "0.1.0", path = "./crates/telio-crypto" }
