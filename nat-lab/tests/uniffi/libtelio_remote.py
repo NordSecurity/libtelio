@@ -283,6 +283,15 @@ def main():
     container_ip = sys.argv[2]
     port = int(sys.argv[3])
 
+    # macOS sshd reaps the exec'd child when the SSH connection drops across a VM
+    # suspend, killing this RPC daemon (Windows OpenSSH keeps the orphan). Detach
+    # into our own session so the Pyro server survives the reconnect - LLT-4961.
+    if sys.platform == "darwin":
+        try:
+            os.setsid()
+        except OSError:
+            pass
+
     # Cleanup old log files if any exists
     try:
         os.remove(TCLI_LOG)

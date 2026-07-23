@@ -156,6 +156,14 @@ class SshProcess(Process):
                         self._process.kill()
                         self._process.close()
                         await self._process.wait_closed()
+        except asyncssh.Error as e:
+            # run_async_context re-raises the launcher task's exception on exit; a
+            # transport loss (VM SSH session dies across a freeze/suspend) is
+            # expected and recovered via reconnect(), so don't fail teardown over
+            # it. A real command failure is ProcessExecError, which still propagates.
+            log.warning(
+                "[%s] SSH transport lost for %s: %s", self._vm_name, self._command, e
+            )
         finally:
             elapsed_ms = (time.monotonic() - start_time) * 1000
             log.info(
