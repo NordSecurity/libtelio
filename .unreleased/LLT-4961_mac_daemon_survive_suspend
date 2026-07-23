@@ -1,0 +1,1 @@
+Fix nat-lab macOS VM suspend test: the libtelio remote process is now detached (setsid) so it survives the SSH session being torn down across a VM suspend, and SSH transport loss on a reconnected long-lived process no longer fails teardown.
