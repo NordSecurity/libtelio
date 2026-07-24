@@ -37,9 +37,9 @@ The naming convention for files in `.unreleased` is as follows:
 - If your change is related to a ticket, name the file the same as the ticket number (e.g. `LLT-1234`)
 - If your change is not related to a ticket, use a short sentence to describe the change, as snake case (e.g. `bump_rustls-webpki_RUSTSEC-2026-0104`)
 
-When a release is made, the script `ci/generate_changelog.py` is executed which will take all files in `.unreleased` and generate a changelog. Only files that are non-empty are included, and each of those files gets a changelog entry like: `<file name>: <file contents>`. Afterwards the script deletes all files in `.unreleased` to prepare for the next release.
+When a release is made, the **release pipeline** runs `ci/generate_changelog.py`, which takes the files in `.unreleased` and generates a version block (each non-empty file becomes an entry like `<ticket>: <file contents>`). The pipeline inserts that block at the correct position in the published changelog and then opens a PR that removes the consumed `.unreleased` files (so they don't carry into the next release). You no longer run this at release time by hand — just add your `.unreleased` entry in your PR. See [docs/releasing.md](docs/releasing.md) for the full release flow.
 
-The compiled changelog for all released versions is published to GitHub Pages at `/changelog/`, next to the rustdoc API docs. Its source of truth is the `changelog.md` file on the [`gh-pages`](https://github.com/NordSecurity/libtelio/tree/gh-pages) branch (not `main`), which the `.github/workflows/gh-pages.yml` workflow renders to HTML and deploys. Keeping it off `main` lets the release pipeline update it without opening a PR against `main`. Do not edit `changelog.md` by hand — add your entry to `.unreleased` as described above.
+There is **no `changelog.md` in the repo** anymore. The compiled changelog for all released versions is published to GitHub Pages at `/changelog/`, next to the rustdoc API docs; its source of truth is the `changelog.md` file on the [`gh-pages`](https://github.com/NordSecurity/libtelio/tree/gh-pages) branch (not `main`), which the release pipeline updates and `.github/workflows/gh-pages.yml` renders to HTML and deploys. Keeping it off `main` lets the pipeline update it without a PR against `main`. Add your changelog entry to `.unreleased` as described above — never edit the published changelog by hand.
 
 Not all PRs need an addition to the changelog. The changelog is our way of communicating to the apps about changes since the last version, so only changes that are of interest or concern to the apps need to actually have something show up in the changelog. However, to remind you that you may have to add something to the changelog, the CI pipeline requires that you add a file to `.unreleased` in every PR. It is up to both the implementer(s) and the reviewers of a PR to make sure that the file in `.unreleased` has the "right" content for the PR, whether that be leaving it empty because the apps don't care or leaving an accurate description of what has changed.
 
@@ -65,9 +65,10 @@ Some (non-exhaustive) examples of what shouldn't end up in the changelog:
 │   ├── EXT-001<br>
 │   ├── LLT-0054<br>
 │   ├── ...<br>
-├── ci/generate_changelog.py<br>
-└── changelog.md<br>
+└── ci/generate_changelog.py<br>
 ```
+
+(The published `changelog.md` is not in this repo — it lives on the `gh-pages` branch; see above.)
 
 ## Licensing
 
