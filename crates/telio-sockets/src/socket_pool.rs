@@ -14,7 +14,7 @@ use tokio::{
     net::{TcpSocket, TcpStream, ToSocketAddrs, UdpSocket},
 };
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "neptun"))]
 use neptun::device::MakeExternalNeptun;
 use telio_utils::{telio_log_debug, telio_log_warn};
 
@@ -224,7 +224,7 @@ impl SocketPool {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "neptun"))]
 impl MakeExternalNeptun for SocketPool {
     fn make_external(&self, socket: NativeSocket) {
         let _ = self.protect.make_external(socket);
