@@ -7,11 +7,11 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
-neptun.workspace = true
+neptun = { workspace = true, optional = true }
 libc.workspace = true
 tracing.workspace = true
 parking_lot.workspace = true
-socket2.workspace = true
+socket2 = { workspace = true, features = ["all"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
 mockall = { workspace = true, optional = true }
@@ -19,6 +19,10 @@ nix.workspace = true
 
 telio-utils.workspace = true
 once_cell.workspace = true
+
+[features]
+default = []
+neptun = ["dep:neptun"]
 
 [dev-dependencies]
 mockall.workspace = true
