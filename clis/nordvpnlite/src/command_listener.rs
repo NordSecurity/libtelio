@@ -28,8 +28,6 @@ pub enum ClientCmd {
     IsAlive,
     #[clap(name = "reload", about = "Reload config file and restart the daemon")]
     Reload,
-    #[clap(about = "Show countries with available VPN servers")]
-    Countries,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -139,6 +137,8 @@ pub enum Cmd {
     Daemon(DaemonOpts),
     #[command(flatten)]
     Client(ClientCmd),
+    #[clap(about = "Show countries with available VPN servers")]
+    Countries,
     #[clap(about = "Store NordVPN authentication credentials")]
     Login(LoginOpts),
     #[clap(about = "Clear NordVPN authentication credentials")]
@@ -233,7 +233,6 @@ impl CommandListener {
                 .await
             }
             ClientCmd::Connect => {
-                trace!("Connecting to exit node");
                 handle_exit_node_connection(&self.config.parsed, self.telio_task_tx.clone())
                     .await
                     .map(|_| CommandResponse::Ok)
@@ -277,7 +276,6 @@ impl CommandListener {
                     }
                 }
             }
-            ClientCmd::Countries => Ok(CommandResponse::Ok),
             ClientCmd::IsAlive => Ok(CommandResponse::Ok),
         }
     }
@@ -318,7 +316,6 @@ impl CommandListener {
                         }
                         ClientCmd::Connect => CommandResponse::DaemonInitializing,
                         ClientCmd::Disconnect => CommandResponse::DaemonInitializing,
-                        ClientCmd::Countries => CommandResponse::Ok,
                     }
                 };
                 connection.respond(response.serialize()).await?;
