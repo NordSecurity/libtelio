@@ -23,6 +23,8 @@ use crate::{
     daemon::NordVpnLiteError,
 };
 
+use tracing::debug;
+
 /// Umask allows only rw-rw-r--
 const DEFAULT_UMASK: u32 = 0o113;
 
@@ -32,8 +34,7 @@ const DEFAULT_FILE_PERMISSIONS: u32 = 0o640;
 fn main() -> Result<(), NordVpnLiteError> {
     let mut cmd = Cmd::parse();
 
-    // Pre-daemonizing setup
-    if let Cmd::Start(opts) = &mut cmd {
+    if let Cmd::Daemon(opts) = &mut cmd {
         // Check if daemon already is running before forking
         if DaemonSocket::get_ipc_socket_path()?.exists() {
             return Err(NordVpnLiteError::DaemonIsRunning);
@@ -102,7 +103,11 @@ fn main() -> Result<(), NordVpnLiteError> {
 
         // Run the daemon event loop.
         let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(daemon::daemon_event_loop(config, &mut logging_handle))
+        rt.block_on(daemon::daemon_event_loop(
+            config,
+            &mut logging_handle,
+            opts.do_not_connect,
+        ))
     } else {
         client_main(cmd)
     }
@@ -140,13 +145,7 @@ async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
                     }
                 }
             } else {
-                match cmd {
-                    ClientCmd::QuitDaemon => {
-                        println!("Daemon is already stopped");
-                        Ok(())
-                    }
-                    _ => Err(NordVpnLiteError::DaemonIsNotRunning),
-                }
+                Err(NordVpnLiteError::DaemonIsNotRunning)
             }
         }
         // Display list of available countries with VPN servers

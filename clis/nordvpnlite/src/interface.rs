@@ -392,6 +392,18 @@ impl ConfigureInterface for Iproute {
         if let Some(table) = &self.table {
             execute(Command::new("ip").args(["route", "flush", "table", table]))?;
         }
+
+        // Remove the IPv6 default route
+        let _ = execute(Command::new("ip").args([
+            "-6",
+            "route",
+            "del",
+            "default",
+            "dev",
+            &self.interface_name,
+        ]))
+        .inspect_err(|e| warn!("Failed to remove IPv6 default route: {e:?}"));
+
         self.ipv6_support_manager.reenable()
     }
 }
