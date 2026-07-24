@@ -214,7 +214,8 @@ telio-core = { version = "0.1.0", path = "./crates/telio-core", default-features
 opt-level = "z"
 lto = true
 codegen-units = 1
-debug = "full"
+debug = 0
+strip = "symbols" 
 
 [profile.dev]
 debug = 0
