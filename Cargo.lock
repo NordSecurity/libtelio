@@ -5146,8 +5146,11 @@ dependencies = [
  "num_enum",
  "rand 0.10.1",
  "rand_core_compat",
+ "rcgen",
  "rstest",
+ "rustls",
  "rustls-platform-verifier 0.6.2",
+ "sha2",
  "smart-default",
  "static_assertions",
  "telio-crypto",
@@ -5166,6 +5169,7 @@ dependencies = [
  "tracing",
  "url",
  "webpki-roots",
+ "x509-parser",
 ]
 
 [[package]]
