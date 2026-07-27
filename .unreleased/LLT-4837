@@ -1,0 +1,1 @@
+Fix a data race between the route change and interface change callbacks in the WG-NT MTU monitor, which could concurrently mutate the cached MTU state.
