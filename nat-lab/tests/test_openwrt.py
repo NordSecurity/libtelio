@@ -123,8 +123,7 @@ async def check_gateway_and_client_ip(
         None
     """
     try:
-        # TODO (LLT-6844): Disable strace once problem with ping -9 is resolved
-        await ping(gateway_connection, PHOTO_ALBUM_IP, enable_strace=True)
+        await ping(gateway_connection, PHOTO_ALBUM_IP)
     except ProcessExecError:
         dm = await gateway_connection.create_process(["dmesg"]).execute()
         dmesg_tail = "\n".join(dm.get_stdout().splitlines()[-100:])
@@ -145,7 +144,7 @@ async def check_gateway_and_client_ip(
         f"Expected value: {expected_ip}"
     )
 
-    await ping(client_connection, PHOTO_ALBUM_IP, enable_strace=True)
+    await ping(client_connection, PHOTO_ALBUM_IP)
     client_ip = await stun.get(client_connection, STUN_SERVER)
     assert client_ip == expected_ip, (
         f"Client device has wrong public IP when connected to VPN: {client_ip}. "
@@ -378,8 +377,8 @@ async def test_openwrt_ip_leaks(
                 "-nn",
                 "not arp",
             ]).run() as tcp_dump:
-                await ping(gateway_connection, PHOTO_ALBUM_IP, enable_strace=True)
-                await ping(client_connection, PHOTO_ALBUM_IP, enable_strace=True)
+                await ping(gateway_connection, PHOTO_ALBUM_IP)
+                await ping(client_connection, PHOTO_ALBUM_IP)
                 # wrapping into asyncio.wait_for as BusyBox nc doesn't support timeouts
                 await asyncio.wait_for(
                     gateway_connection.create_process([
