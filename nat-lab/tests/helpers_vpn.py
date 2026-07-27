@@ -3,7 +3,7 @@ from tests import config
 from tests.libtelio_client import Client
 from tests.utils import stun
 from tests.utils.connection import Connection, ConnectionTag
-from tests.utils.ping import ping
+from natlab import ping
 from typing import Optional, Dict, Union
 
 VAGRANT_LIBVIRT_MANAGEMENT_IP = "192.168.121"

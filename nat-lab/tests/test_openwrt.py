@@ -32,7 +32,7 @@ from tests.utils.openwrt import (
     start_logread_process,
     wait_until_unreachable_after_reboot,
 )
-from tests.utils.ping import ping
+from natlab import ping
 from tests.utils.process import ProcessExecError
 from typing import Optional
 from urllib.parse import urlparse

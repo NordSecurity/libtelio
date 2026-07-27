@@ -15,7 +15,7 @@ from tests.libtelio_client.vpn import ClientVpn
 from tests.log_collector import LOG_COLLECTORS, LogCollector
 from tests.mesh_api import Node
 from tests.uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
-from tests.utils import asyncio_util
+from natlab import asyncio_util
 from tests.utils.bindings import (
     Config,
     Features,

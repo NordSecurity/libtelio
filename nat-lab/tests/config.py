@@ -1,4 +1,6 @@
 import os
+
+_COMPOSE_PROJECT = os.environ.get("COMPOSE_PROJECT_NAME", "nat-lab")
 import platform
 from tests.utils.bindings import Server, RelayState
 from tests.utils.connection import ConnectionTag
@@ -296,7 +298,7 @@ WG_SERVER: Dict[str, Union[str, int]] = {
         (key, str(val))
         for key, val in zip(("private_key", "public_key"), Key.key_pair())
     ),
-    "container": "nat-lab-vpn-01-1",
+    "container": f"{_COMPOSE_PROJECT}-vpn-01-1",
 }
 
 # vpn-02
@@ -307,7 +309,7 @@ WG_SERVER_2: Dict[str, Union[str, int]] = {
         (key, str(val))
         for key, val in zip(("private_key", "public_key"), Key.key_pair())
     ),
-    "container": "nat-lab-vpn-02-1",
+    "container": f"{_COMPOSE_PROJECT}-vpn-02-1",
 }
 
 # nlx-01
@@ -315,7 +317,7 @@ WG_SERVER_2: Dict[str, Union[str, int]] = {
 NLX_SERVER: Dict[str, Union[str, int]] = {
     "ipv4": "10.0.100.51",
     "port": 1023,  # Select some port in non-ephemeral port range to avoid clashes
-    "container": "nat-lab-nlx-01-1",
+    "container": f"{_COMPOSE_PROJECT}-nlx-01-1",
     "type": "nordlynx",
     "public_key": "csmoelQgK1QvyE5+XmZnXaPNt/zCgk84BG6BwfcmOFE=",  # This is a test only public key, never used outside of tests
 }

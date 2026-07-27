@@ -66,7 +66,7 @@ from tests.utils.connection_util import (
 )
 from tests.utils.logger import log
 from tests.utils.moose import MOOSE_DB_TIMEOUT_MS, MOOSE_LOGS_DIR
-from tests.utils.ping import ping
+from natlab import ping
 from tests.utils.router import IPStack, IPProto
 from tests.utils.telio_log_notifier import TelioLogNotifier
 from tests.utils.testing import get_current_test_log_path

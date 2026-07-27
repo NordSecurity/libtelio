@@ -12,7 +12,7 @@ from tests.utils.bindings import (
     NodeState,
 )
 from tests.utils.connection import ConnectionTag
-from tests.utils.ping import ping
+from natlab import ping
 from typing import List, Tuple
 
 

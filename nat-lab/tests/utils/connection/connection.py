@@ -117,6 +117,11 @@ class Connection(ABC):
         self._target_os = target_os
 
     @property
+    def name(self) -> str:
+        # natlab identifies a node by name; here that is the tag it was built from
+        return self._tag.name
+
+    @property
     def tag(self) -> ConnectionTag:
         return self._tag
 

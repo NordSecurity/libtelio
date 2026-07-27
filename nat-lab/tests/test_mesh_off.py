@@ -11,7 +11,7 @@ from tests.utils.bindings import (
     NodeState,
 )
 from tests.utils.connection import ConnectionTag
-from tests.utils.ping import ping
+from natlab import ping
 
 
 # Marks in-tunnel stack only, exiting only through IPv4

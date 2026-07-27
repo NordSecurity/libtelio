@@ -1,0 +1,34 @@
+version: 1
+lab: base
+tests: nat-lab/tests
+deps: nat-lab
+mount: /libtelio
+# nine labs on one runner host starves the emulated mipsel OpenWRT guest, which then
+# misses its healthcheck; libtelio's own fleet spreads nine shards across hosts
+shards: 3
+# a hanging test must fail rather than block the job; timeout_func_only keeps the
+# timeout compatible with reruns
+pytest_args: ["--timeout=180", "-o", "timeout_func_only=true"]
+# this suite splits itself with pytest-split
+shard_args: ["--splits", "{total}", "--group", "{index}"]
+env:
+  TELIO_BIN_PROFILE: release
+binaries:
+  - from: dist/bindings/python/telio.py
+    to: nat-lab/tests/uniffi/telio_bindings.py
+    mode: "0644"
+  - from: dist/linux/release/x86_64/libtelio.so
+    to: nat-lab/tests/uniffi/libtelio.so
+    mode: "0644"
+  - from: dist/linux/release/x86_64/libtelio.so.debug
+    to: nat-lab/tests/uniffi/libtelio.so.debug
+    mode: "0644"
+  - from: dist/linux/release/x86_64/libfirewall.so
+    to: nat-lab/tests/uniffi/libfirewall.so
+    mode: "0644"
+  - from: dist/darwin/macos/release/libfirewall.dylib
+    to: nat-lab/tests/uniffi/libfirewall.dylib
+    mode: "0644"
+trees:
+  - from: dist
+    to: dist
