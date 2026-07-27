@@ -3,7 +3,7 @@ import copy
 import pytest
 import time
 from tests.libtelio_client import Runtime, Events, WontHappenError
-from tests.utils.asyncio_util import run_async_contexts, run_async_context
+from natlab.asyncio_util import run_async_contexts, run_async_context
 from tests.utils.bindings import (
     NodeState,
     RelayState,

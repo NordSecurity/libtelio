@@ -18,7 +18,7 @@ from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
 )
-from tests.utils.ping import ping
+from natlab import ping
 from tests.utils.router import IPProto, IPStack
 
 

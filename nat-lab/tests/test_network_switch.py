@@ -9,7 +9,7 @@ from tests.helpers import (
     SetupParameters,
 )
 from tests.utils import stun
-from tests.utils.asyncio_util import run_async_contexts
+from natlab.asyncio_util import run_async_contexts
 from tests.utils.bindings import (
     features_with_endpoint_providers,
     EndpointProvider,
@@ -24,7 +24,7 @@ from tests.utils.network_switcher.network_switcher_windows import (
     NetworkSwitcherWindows,
     InterfaceState,
 )
-from tests.utils.ping import ping
+from natlab import ping
 from tests.utils.process import ProcessExecError
 from unittest.mock import Mock, AsyncMock, patch
 

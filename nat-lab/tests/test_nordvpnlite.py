@@ -19,7 +19,7 @@ from tests.utils import stun
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import new_connection_by_tag
 from tests.utils.logger import log
-from tests.utils.ping import ping
+from natlab import ping
 from tests.utils.process.process import ProcessExecError
 
 

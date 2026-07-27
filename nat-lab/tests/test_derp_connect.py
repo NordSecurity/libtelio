@@ -7,7 +7,7 @@ from tests.config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVE
 from tests.helpers import SetupParameters, setup_mesh_nodes
 from tests.utils.bindings import RelayState, FeatureDerp, default_features
 from tests.utils.connection import ConnectionTag
-from tests.utils.ping import ping
+from natlab import ping
 from typing import List
 
 DERP1_IP = str(DERP_PRIMARY.ipv4)
