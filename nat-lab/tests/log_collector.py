@@ -414,7 +414,7 @@ class LogCollector:
     node_name: str
     start_time: object
     router: Router
-    allowed_errors: Optional[List[Pattern[str]]]
+    allowed_errors: List[Pattern[str]]
 
     def __init__(self, client):
         log.info(
