@@ -76,7 +76,7 @@ class Client:
         self._libtelio_proxy: Optional[LibtelioProxy] = None
         self._proxy_port = ""
         self._fingerprint: Optional[tuple[str, str]] = None
-        self._allowed_errors: Optional[List[re.Pattern]] = None
+        self._allowed_errors: List[re.Pattern] = []
         self._log = ClientLog(self)
         self._events_facade = ClientEvents(self)
         self._vpn = ClientVpn(self)
@@ -438,8 +438,6 @@ class Client:
         return self._telio_features
 
     def allow_errors(self, allowed_errors: List[str]) -> None:
-        if self._allowed_errors is None:
-            self._allowed_errors = []
         self._allowed_errors.extend(re.compile(e) for e in allowed_errors)
 
     async def stop_device(self) -> None:
