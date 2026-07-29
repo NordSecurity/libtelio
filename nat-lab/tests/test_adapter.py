@@ -325,6 +325,92 @@ class TestAdapterStateForVpnAndDns:
             state = await get_interface_state(client_conn, client_alpha)
             assert state == AdapterState.UP
 
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_WINDOWS_1,
+                    adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        connection_tag=ConnectionTag.VM_WINDOWS_1,
+                        derp_1_limits=(2, 2),
+                        vpn_1_limits=(1, 1),
+                    ),
+                    features=default_features(enable_dynamic_wg_nt_control=True),
+                ),
+                marks=[pytest.mark.windows],
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_WINDOWS_1,
+                    adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        connection_tag=ConnectionTag.VM_WINDOWS_1,
+                        derp_1_limits=(2, 2),
+                        vpn_1_limits=(1, 1),
+                    ),
+                    features=default_features(enable_dynamic_wg_nt_control=False),
+                ),
+                marks=[pytest.mark.windows],
+            ),
+        ],
+    )
+    async def test_adapter_state_for_meshnet_and_vpn(
+        self,
+        alpha_setup_params: SetupParameters,
+        env: Environment,
+    ) -> None:
+        # Creates and enables meshnet without any nodes
+        api = env.api
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+
+        expected_idle_state = (
+            AdapterState.DOWN
+            if alpha_setup_params.features.wireguard.enable_dynamic_wg_nt_control
+            else AdapterState.UP
+        )
+
+        # If meshnet is enabled without any peers, adapter should still be Up
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.UP
+
+        await client_alpha.set_mesh_off()
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == expected_idle_state
+
+        # Add node to meshnet, adapter should go UP
+        api.default_config_two_nodes()
+        first_node_id = next(iter(api.nodes))
+        mesh_config = api.get_meshnet_config(
+            first_node_id, derp_servers=[config.DERP_PRIMARY]
+        )
+        await client_alpha.set_meshnet_config(mesh_config)
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.UP
+
+        # Connect to VPN
+        server_ip = config.WG_SERVER["ipv4"]
+        server_port = config.WG_SERVER["port"]
+        server_public_key = config.WG_SERVER["public_key"]
+        assert (
+            isinstance(server_ip, str)
+            and isinstance(server_port, int)
+            and isinstance(server_public_key, str)
+        )
+        await client_alpha.vpn.connect(server_ip, server_port, server_public_key)
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.UP
+
+        await client_alpha.set_mesh_off()
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.UP
+
+        await client_alpha.vpn.disconnect(server_public_key)
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == expected_idle_state
+
 
 @pytest.mark.parametrize(
     "alpha_setup_params",
