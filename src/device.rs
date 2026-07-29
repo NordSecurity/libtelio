@@ -1968,7 +1968,6 @@ impl Runtime {
             .iter()
             .map(|p| p.base.public_key)
             .collect();
-        let peers_cnt = peers.len();
 
         // Update for proxy and derp config
         if let Some(config) = config {
@@ -2129,6 +2128,22 @@ impl Runtime {
             }
         }
 
+        // Note: If the exit_node is a meshnet peer it will be counted twice
+        // (and it does not take into account magic_dns virtual peer),
+        // but since we only need this count for
+        // `ensure_expected_adapter_state()` to be `wg_peers_cnt > 0`,
+        // to NOT disable the wg-nt adapter, it does not really matter, how will
+        // exit_node will be counted, as long as it is taken into account.
+        let wg_peers_cnt = {
+            (self
+                .requested_state
+                .meshnet_config
+                .as_ref()
+                .and_then(|config| config.peers.as_ref())
+                .map_or(0, |peers| peers.len()))
+                + (self.requested_state.exit_node.as_ref().map_or(0, |_| 1))
+        };
+
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
             .boxed()
             .await?;
@@ -2153,7 +2168,7 @@ impl Runtime {
             .entities
             .wireguard_interface
             .ensure_expected_adapter_state(
-                peers_cnt,
+                wg_peers_cnt,
                 self.features
                     .wireguard
                     .enable_dynamic_wg_nt_control
