@@ -9,6 +9,7 @@ from typing import Optional
 
 FLAME_GRAPH_FILE = "connect_node_flamegraph.svg"
 FLAME_GRAPH_FILE_WITH_PYTHON = "connect_node_flamegraph_with_python.svg"
+FOLDED_STACKS_FILE = "connect_node_folded_stacks.txt"
 TEMP_DEBUG_SYMBOLS_FOLDER = "/tmp/libtelio_debug"
 PERF_OUTPUT_FILE = "perf_cpu_clock.data"
 PERF_OUTPUT_PATH = f"/tmp/{PERF_OUTPUT_FILE}"
@@ -59,6 +60,10 @@ class PerfProfiler:
     @property
     def flame_graph_file_with_python(self) -> str:
         return self._apply_suffix(FLAME_GRAPH_FILE_WITH_PYTHON)
+
+    @property
+    def folded_stacks_file(self) -> str:
+        return self._apply_suffix(FOLDED_STACKS_FILE)
 
     @property
     def perf_output_file(self) -> str:
@@ -113,12 +118,13 @@ class PerfProfiler:
         ]).execute()
 
     async def generate_flame_graphs(self) -> None:
-        """Generate flame graph charts from perf data."""
+        """Generate flame graph charts and folded stacks from perf data."""
         log.info("Generating flame graph charts")
 
         cmd_filtered = (
             f"perf script --demangle -i {PERF_OUTPUT_PATH} --symfs {TEMP_DEBUG_SYMBOLS_FOLDER} | "
             f"stackcollapse-perf.pl | egrep '(tokio|libtelio|telio|neptun)' | "
+            f"tee /tmp/{self.folded_stacks_file} | "
             f"flamegraph.pl > /tmp/{self.flame_graph_file}"
         )
         await self.connection.create_process(["sh", "-c", cmd_filtered]).execute()
@@ -130,7 +136,7 @@ class PerfProfiler:
         await self.connection.create_process(["sh", "-c", cmd_full]).execute()
 
     async def save_results(self) -> None:
-        """Download perf data and flame graphs to local directory."""
+        """Download perf data, flame graphs, and folded stacks to local directory."""
         log_dir = self.output_dir or get_current_test_log_path()
         os.makedirs(log_dir, exist_ok=True)
 
@@ -141,9 +147,13 @@ class PerfProfiler:
         graph_path_with_python = os.path.join(
             log_dir, self.flame_graph_file_with_python
         )
+        folded_stacks_path = os.path.join(log_dir, self.folded_stacks_file)
 
         await self.connection.download(PERF_OUTPUT_PATH, perf_local_path)
         await self.connection.download(f"/tmp/{self.flame_graph_file}", graph_path)
         await self.connection.download(
             f"/tmp/{self.flame_graph_file_with_python}", graph_path_with_python
+        )
+        await self.connection.download(
+            f"/tmp/{self.folded_stacks_file}", folded_stacks_path
         )
