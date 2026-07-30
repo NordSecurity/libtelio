@@ -102,7 +102,11 @@ fn main() -> Result<(), NordVpnLiteError> {
 
         // Run the daemon event loop.
         let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(daemon::daemon_event_loop(config, &mut logging_handle))
+        rt.block_on(daemon::daemon_event_loop(
+            config,
+            &mut logging_handle,
+            opts.do_not_connect,
+        ))
     } else {
         client_main(cmd)
     }

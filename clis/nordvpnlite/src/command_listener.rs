@@ -71,6 +71,10 @@ pub(crate) struct DaemonOpts {
     /// Ignored with no-detach flag.
     #[clap(long = "stdout-path", default_value = "/var/log/nordvpnlite.log")]
     pub stdout_path: String,
+
+    /// Do not connect to the exit node
+    #[clap(long = "do-not-connect")]
+    pub do_not_connect: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -129,7 +133,7 @@ pub(crate) struct LogoutOpts {
 pub enum Cmd {
     #[clap(about = "Runs the nordvpnlite event loop")]
     Start(DaemonOpts),
-    #[clap(flatten)]
+    #[command(flatten)]
     Client(ClientCmd),
     #[clap(about = "Show countries with available VPN servers")]
     Countries,

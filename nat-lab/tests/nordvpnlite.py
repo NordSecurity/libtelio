@@ -165,6 +165,7 @@ class Config:
         auth_path: Optional[Path] = None,
         config_name: ConfigPresetName = ConfigPresetName.DEFAULT,
         no_detach: bool = False,
+        do_not_connect: bool = False,
         paths=Paths(),
     ):
         self.paths: Paths = paths
@@ -174,6 +175,7 @@ class Config:
         self.config_data: NordVpnLiteConfig = copy.deepcopy(config_data)
         self.config_data.auth_file_path = str(self.auth_path)
         self.no_detach: bool = no_detach
+        self.do_not_connect: bool = do_not_connect
 
     async def assert_match_daemon_start(
         self,
@@ -232,6 +234,7 @@ class NordVpnLite:
         config_name: ConfigPresetName = ConfigPresetName.DEFAULT,
         config_path: Optional[Path] = None,
         no_detach: bool = False,
+        do_not_connect: bool = False,
         connection_tag: ConnectionTag = ConnectionTag.DOCKER_CONE_CLIENT_1,
         connection: Optional[Connection] = None,
     ) -> "NordVpnLite":
@@ -247,6 +250,7 @@ class NordVpnLite:
                 config_path=config_path,
                 config_name=config_name,
                 no_detach=no_detach,
+                do_not_connect=do_not_connect,
             ),
         )
         return nordvpnlite
@@ -310,6 +314,8 @@ class NordVpnLite:
             await self.login()
 
             cmd = ["start"]
+            if self.config.do_not_connect:
+                cmd.append("--do-not-connect")
             if not self.config.no_detach:
                 cmd.append("--config-file")
                 cmd.append(str(self.config.config_path))
