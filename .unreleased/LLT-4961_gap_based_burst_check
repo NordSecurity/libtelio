@@ -1,1 +1,0 @@
-Make the nat-lab no-burst-after-sleep tests detect a burst by consolidation tick spacing instead of tick count, so infra lag can no longer fail them.
