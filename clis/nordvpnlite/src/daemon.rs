@@ -368,9 +368,10 @@ enum LoopOutcome {
 pub async fn daemon_event_loop(
     mut config: RunningConfig,
     logging_handle: &mut logging::LoggingHandle,
+    connect_on_startup: bool,
 ) -> Result<(), NordVpnLiteError> {
     loop {
-        match run_daemon(config.clone()).await? {
+        match run_daemon(config.clone(), connect_on_startup).await? {
             LoopOutcome::Exit => break,
             LoopOutcome::Reload(new_config) => {
                 info!("Reloading config from {}", config.path.display());
@@ -403,7 +404,10 @@ pub async fn daemon_event_loop(
     Ok(())
 }
 
-async fn run_daemon(config: RunningConfig) -> Result<LoopOutcome, NordVpnLiteError> {
+async fn run_daemon(
+    config: RunningConfig,
+    connect_on_startup: bool,
+) -> Result<LoopOutcome, NordVpnLiteError> {
     debug!("started with config: {:?}", config.parsed);
 
     let mut signals = Signals::new([SIGHUP, SIGTERM, SIGINT, SIGQUIT])?;
@@ -466,15 +470,16 @@ async fn run_daemon(config: RunningConfig) -> Result<LoopOutcome, NordVpnLiteErr
         context.start_listening_commands(telio_rx)
     });
 
-    // Wait for interface setup to complete before making API calls.
-    if init_done_rx.await.is_ok() {
-        // TODO: This can be triggered through nordvpnlite command to allow the user to stop/restart.
-        let config_clone = config.parsed.clone();
-        let tx_clone = telio_tx.clone();
-        tokio::spawn(async move {
-            handle_exit_node_connection(&config_clone, tx_clone).await;
-            debug!("Exit node connection task completed");
-        });
+    if connect_on_startup {
+        if init_done_rx.await.is_ok() {
+            let config_clone = config.parsed.clone();
+            let tx_clone = telio_tx.clone();
+            // Without blocking the main thread select (HTTP request) and connect to exit node
+            tokio::spawn(async move {
+                handle_exit_node_connection(&config_clone, tx_clone).await;
+                debug!("Exit node connection task completed");
+            });
+        }
     }
 
     info!("Entering event loop");
