@@ -26,8 +26,6 @@ pub enum ClientCmd {
     GetStatus,
     #[clap(hide = true)]
     IsAlive,
-    #[clap(name = "stop", about = "Stop daemon execution")]
-    QuitDaemon,
     #[clap(name = "reload", about = "Reload config file and restart the daemon")]
     Reload,
 }
@@ -267,22 +265,6 @@ impl CommandListener {
                 })
                 .await
             }
-            ClientCmd::QuitDaemon => {
-                trace!("Quitting telio task");
-                let (response_tx, response_rx) = oneshot::channel();
-                #[allow(mpsc_blocking_send)]
-                self.telio_task_tx
-                    .send(TelioTaskCmd::Quit(response_tx))
-                    .await
-                    .map_err(|e| {
-                        error!("Error sending command: {}", e);
-                        NordVpnLiteError::CommandFailed(ClientCmd::QuitDaemon)
-                    })?;
-                // Wait for a response from TelioTask
-                // this essentially blocks the client quit command until the daemon initiated
-                // cleanup
-                handle_response(response_rx, |_| Ok(CommandResponse::Ok)).await
-            }
             ClientCmd::Reload => {
                 match RunningConfig::from_file(&self.config.path) {
                     Err(e) => {
@@ -344,7 +326,6 @@ impl CommandListener {
                 } else {
                     // Early command handling before TelioTask is initialized
                     match &command {
-                        ClientCmd::QuitDaemon => CommandResponse::Ok,
                         ClientCmd::IsAlive => CommandResponse::Ok,
                         ClientCmd::GetStatus
                         | ClientCmd::Reload
@@ -574,14 +555,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_command_quit() {
-        let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, true, false).await;
-
-        assert_eq!(response.unwrap(), CommandResponse::Ok);
-        assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
-    }
-
-    #[tokio::test]
     async fn test_command_is_alive() {
         let (response, cmd) = test_command_helper(ClientCmd::IsAlive, true, false).await;
 
@@ -638,14 +611,6 @@ mod tests {
         let (_, cmd) = test_command_helper(ClientCmd::GetStatus, true, true).await;
 
         assert_matches!(cmd, Err(NordVpnLiteError::Io(_)));
-    }
-
-    #[tokio::test]
-    async fn test_command_early_quit() {
-        let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, false, false).await;
-
-        assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
-        assert_eq!(response.unwrap(), CommandResponse::Ok);
     }
 
     #[tokio::test]

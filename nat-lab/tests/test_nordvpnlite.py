@@ -36,12 +36,12 @@ async def test_nordvpnlite_start(no_detach) -> None:
             no_detach=no_detach,
         )
 
-        await nordvpnlite.quit()
+        await nordvpnlite.kill()
 
         async with nordvpnlite.start() as nordvpnlite_client:
             assert await nordvpnlite_client.is_alive()
 
-        await nordvpnlite.quit()
+        await nordvpnlite.kill()
 
 
 async def test_nordvpnlite_logs() -> None:

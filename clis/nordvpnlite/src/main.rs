@@ -16,7 +16,7 @@ mod logging;
 
 use crate::{
     auth::{NordToken, NordVpnLiteAuth},
-    command_listener::{ClientCmd, Cmd, CommandResponse, LoginOpts, LogoutOpts, TIMEOUT_SEC},
+    command_listener::{Cmd, CommandResponse, LoginOpts, LogoutOpts, TIMEOUT_SEC},
     comms::DaemonSocket,
     config::{NordVpnLiteConfig, RunningConfig},
     core_api::get_countries_with_exp_backoff,
@@ -144,13 +144,7 @@ async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
                     }
                 }
             } else {
-                match cmd {
-                    ClientCmd::QuitDaemon => {
-                        println!("Daemon is already stopped");
-                        Ok(())
-                    }
-                    _ => Err(NordVpnLiteError::DaemonIsNotRunning),
-                }
+                Err(NordVpnLiteError::DaemonIsNotRunning)
             }
         }
         // Display list of available countries with VPN servers
