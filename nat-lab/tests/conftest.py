@@ -62,6 +62,9 @@ END_TASKS: threading.Event = threading.Event()
 CURRENT_TEST_LOG_FILE = None
 _LIBFIREWALL_SO = os.path.join(os.path.dirname(__file__), "uniffi", "libfirewall.so")
 
+TEARDOWN_PHASE_TIMEOUT_S = 300
+COLLECT_ALL_LOGS_TIMEOUT_S = TEARDOWN_PHASE_TIMEOUT_S - 60
+
 
 @dataclass
 class _SessionState:
@@ -240,21 +243,29 @@ def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
 
     assert _SESSION.runner
 
+    async def collect_logs_for(log_collector):
+        try:
+            async with new_connection_raw(log_collector.tag) as connection:
+                await log_collector.cleanup(connection)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            log.warning(
+                "[%s] post-test log collection failed for %s: %s",
+                log_collector.node_name,
+                log_collector.tag,
+                e,
+            )
+
     async def collect_all_logs():
-        async with AsyncExitStack() as stack:
-            for log_collector in LOG_COLLECTORS:
-                try:
-                    connection = await stack.enter_async_context(
-                        new_connection_raw(log_collector.tag)
-                    )
-                    await log_collector.cleanup(connection)
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    log.warning(
-                        "[%s] post-test log collection failed for %s: %s",
-                        log_collector.node_name,
-                        log_collector.tag,
-                        e,
-                    )
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*(collect_logs_for(lc) for lc in LOG_COLLECTORS)),
+                timeout=COLLECT_ALL_LOGS_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            log.warning(
+                "Post-test log collection timed out after %ss, some logs may be missing",
+                COLLECT_ALL_LOGS_TIMEOUT_S,
+            )
 
     try:
         _SESSION.runner.run(collect_all_logs())
@@ -270,7 +281,6 @@ def pytest_runtest_teardown(item, nextitem):  # pylint: disable=unused-argument
 
 
 SETUP_PHASE_TIMEOUT_S = 300
-TEARDOWN_PHASE_TIMEOUT_S = 300
 
 
 class _PhaseTimeout:
