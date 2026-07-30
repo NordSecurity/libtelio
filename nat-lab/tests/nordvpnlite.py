@@ -309,7 +309,7 @@ class NordVpnLite:
             await self.save_config()
             await self.login()
 
-            cmd = ["start"]
+            cmd = ["daemon"]
             if not self.config.no_detach:
                 cmd.append("--config-file")
                 cmd.append(str(self.config.config_path))
