@@ -27,9 +27,9 @@ burst); both cases must be burst-free:
 """
 
 import asyncio
+import pytest
 import re
 from datetime import datetime
-import pytest
 from tests.helpers import Environment, SetupParameters, ping_between_all_nodes
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import Connection, ConnectionTag
