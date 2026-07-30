@@ -37,6 +37,7 @@ There is a command for running the daemon:
   * `--config-file <path_to_config_file>` - specify alternative configuration file,
   * `--no-detach` - run the nordvpnlite in the foreground as a regular process,
   without detaching from the terminal.
+  * `--do-not-connect` - starts daemon without establishing VPN connection.
   * `--stdout-path` - Redirect daemon standard output to the specified file,
   Defaults to `/var/log/nordvpnlite.log`, ignored when used with `--no-detach`
   Some early logs may still be printed to stdout before redirection.
