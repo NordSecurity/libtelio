@@ -544,10 +544,6 @@ async fn run_daemon(
                     match connection_result {
                         Ok(connection) => {
                             match cmd_listener.handle_client_command(false, connection).await {
-                                Ok(ClientCmd::QuitDaemon) => {
-                                    info!("Received quit command, exiting");
-                                    return Ok(LoopOutcome::Exit)
-                                },
                                 Ok(command) => {
                                     debug!("Received command {command:?} while obtaining service credentials, ignoring");
                                 },

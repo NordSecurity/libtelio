@@ -16,11 +16,6 @@ start_service() {
   procd_close_instance
 }
 
-stop_service() {
-  echo "Stopping nordvpnlite service"
-  /usr/sbin/nordvpnlite stop
-}
-
 reload_service() {
   echo "Reloading nordvpnlite configuration"
   /usr/sbin/nordvpnlite reload

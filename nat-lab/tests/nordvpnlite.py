@@ -210,6 +210,7 @@ class Config:
 class NordVpnLite:
     SOCKET_CHECK_INTERVAL_S = 0.5
     NORDVPNLITE_CMD_CHECK_INTERVAL_S = 10  # TODO (LLT-6693): revert back to 1
+    KILL_TIMEOUT_S = 30.0
 
     def __init__(
         self,
@@ -333,26 +334,23 @@ class NordVpnLite:
                 log.info("NordVPN Lite skipping cleanup")
 
     async def clean_up(self) -> None:
-        log.info("NordVPN Lite cleanup: exiting and removing socket (if exists)")
+        log.info(
+            "NordVPN Lite cleanup: sending SIGTERM and removing socket (if exists)"
+        )
         try:
-            await self.quit()
-        except ProcessExecError as exc:
-            if "Error: DaemonIsNotRunning" not in exc.stderr:
-                log.error(exc)
-                await self.kill()
-            else:
-                log.info("Tried to quit but daemon is already not running")
-            if await self.socket_exists():
-                log.debug("Dangling socket found, removing it..")
-                await self.remove_socket()
-        finally:
-            if self.config.config_path:
-                log.info(
-                    "NordVPN Lite cleanup: removing config %s", self.config.config_path
-                )
-                await self.remove_config(self.config.config_path)
-            log.info("NordVPN Lite cleanup: saving logs")
-            await self._save_logs()
+            await self.kill()
+        except ProcessExecError:
+            log.info("Daemon is already not running")
+        if await self.socket_exists():
+            log.debug("Dangling socket found, removing it..")
+            await self.remove_socket()
+        if self.config.config_path:
+            log.info(
+                "NordVPN Lite cleanup: removing config %s", self.config.config_path
+            )
+            await self.remove_config(self.config.config_path)
+        log.info("NordVPN Lite cleanup: saving logs")
+        await self._save_logs()
 
     async def is_alive(self) -> bool:
         try:
@@ -412,36 +410,23 @@ class NordVpnLite:
         await self.wait_for_nordvpnlite_start()
 
     async def quit(self) -> None:
-        stdout, stderr = await self.execute_command(["stop"])
-        assert (
-            "Command executed successfully" in stdout
-            or "Daemon is already stopped" in stdout
-        ), f"Failed to execute stop command: {stderr}"
-
-        assert (
-            not await self.is_alive()
-        ), "Quit command was sent successfully but daemon's still running"
-        assert (
-            not await self.socket_exists()
-        ), "Daemon's not running but socket still exists"
+        await self.kill()
 
     async def kill(self) -> None:
         try:
-            # OpenWrt doesn't support killall -w
-            if self.config.paths.exec_path.parent == Path("."):
-                await self.connection.create_process(
-                    ["killall", "-s", "SIGTERM", "nordvpn"]
-                ).execute()
-            else:
-                await self.connection.create_process(
-                    ["killall", "-w", "-s", "SIGTERM", "nordvpnlite"]
-                ).execute()
-            assert (
-                not await self.is_alive()
-            ), "SIGTERM was sent but daemon's still running"
+            await self.connection.create_process(
+                ["killall", "-s", "SIGTERM", "nordvpnlite"]
+            ).execute()
         except ProcessExecError as exc:
-            if "nordvpnlite: no process found" not in exc.stderr:
+            if (
+                "no process killed" not in exc.stderr
+                and "no process found" not in exc.stderr
+            ):
                 raise
+            log.info("kill(): no nordvpnlite process was running")
+            return
+
+        await self.wait_for_nordvpnlite_stop()
 
     async def remove_config(self, path: Path) -> None:
         await self.connection.create_process(["rm", "-f", str(path)]).execute()
@@ -491,6 +476,23 @@ class NordVpnLite:
             except IgnoreableError:
                 await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
                 continue
+
+    async def wait_for_nordvpnlite_stop(self) -> None:
+        """Wait for the daemon socket to disappear, indicating the daemon has fully exited."""
+        deadline = asyncio.get_event_loop().time() + self.KILL_TIMEOUT_S
+        while await self.socket_exists():
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"nordvpnlite did not stop within {self.KILL_TIMEOUT_S}s after SIGTERM"
+                )
+            log.debug(
+                "kill(): socket still exists, checking again in %.1fs (%.1fs remaining)",
+                self.SOCKET_CHECK_INTERVAL_S,
+                remaining,
+            )
+            await asyncio.sleep(min(self.SOCKET_CHECK_INTERVAL_S, remaining))
+        log.info("kill(): daemon socket gone — process has exited")
 
     async def wait_for_nordvpnlite_socket(self):
         while True:
