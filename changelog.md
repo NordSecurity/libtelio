@@ -1,4 +1,11 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
+### v7.0.7
+### ****
+---
+* Dynamic WG-NT does not teardown adapter, when setting meshnet off and still connected to VPN
+
+<br>
+
 ### v8.0.0-rc2
 ### ****
 ---
