@@ -66,7 +66,7 @@ pub enum ForwardError {
 /// Forwards raw DNS queries to upstream resolvers.
 /// Next upstream resolver is tried if no response is received after `timeout`.
 #[derive(Clone, Debug)]
-pub(crate) struct RawForwarder {
+pub(crate) struct UdpForwarder {
     tx: mpsc::Sender<ForwardQuery>,
     upstreams: Arc<Mutex<UpstreamState>>,
     timeout: Arc<Mutex<Duration>>,
@@ -142,7 +142,7 @@ fn allocate_id(pending: &HashMap<u16, PendingQuery>, next_id: &mut u16) -> Optio
     None
 }
 
-impl RawForwarder {
+impl UdpForwarder {
     /// Create a new DNS forwarder
     pub(crate) async fn new() -> Result<Self, ForwardError> {
         let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
@@ -155,7 +155,7 @@ impl RawForwarder {
 
         tokio::spawn(Self::run(socket, rx, upstreams.clone(), timeout.clone()));
 
-        Ok(RawForwarder {
+        Ok(UdpForwarder {
             tx,
             upstreams,
             timeout,
@@ -577,7 +577,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_upstreams_stores_resolvers() {
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         let addrs = vec!["8.8.8.8:53".parse().unwrap(), "1.1.1.1:53".parse().unwrap()];
 
         forwarder.set_upstreams(addrs.clone()).await;
@@ -588,7 +588,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_upstreams_replaces_existing() {
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         let first_addrs = vec!["8.8.8.8:53".parse().unwrap()];
         let second_addrs = vec!["1.1.1.1:53".parse().unwrap(), "8.8.4.4:53".parse().unwrap()];
 
@@ -601,7 +601,7 @@ mod tests {
 
     #[tokio::test]
     async fn query_returns_no_upstreams_when_empty() {
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
 
         let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
         let result = forwarder.query(&request).await;
@@ -614,7 +614,7 @@ mod tests {
 
     #[tokio::test]
     async fn cloned_forwarders_share_upstream_state() {
-        let forwarder1 = RawForwarder::new().await.unwrap();
+        let forwarder1 = UdpForwarder::new().await.unwrap();
         let forwarder2 = forwarder1.clone();
 
         let addrs = vec!["8.8.8.8:53".parse().unwrap()];
@@ -626,7 +626,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_timeout_updates_value() {
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         let target_timeout = Duration::from_secs(10);
 
         forwarder.set_timeout(target_timeout).await;
@@ -641,7 +641,7 @@ mod tests {
         let (blackhole_addr2, _bh2) = spawn_stub(StubBehavior::BlackHole).await;
         let target_timeout = Duration::from_millis(50);
 
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         forwarder
             .set_upstreams(vec![blackhole_addr1, blackhole_addr2])
             .await;
@@ -663,7 +663,7 @@ mod tests {
     async fn forward_query_returns_response_from_upstream() {
         let (addr, _handle) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         forwarder.set_upstreams(vec![addr]).await;
 
         let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
@@ -678,7 +678,7 @@ mod tests {
         let (blackhole_addr, _bh_handle) = spawn_stub(StubBehavior::BlackHole).await;
         let (reply_addr, _reply_handle) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         forwarder
             .set_upstreams(vec![blackhole_addr, reply_addr])
             .await;
@@ -696,7 +696,7 @@ mod tests {
         let large_payload = vec![0xAB; FORWARDER_BUFFER_SIZE - 3];
         let (addr, _handle) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         forwarder.set_upstreams(vec![addr]).await;
 
         let request = make_dns_packet(TEST_PACKET_ID, &large_payload);
@@ -711,7 +711,7 @@ mod tests {
         let (first_addr, _h1) = spawn_stub(StubBehavior::Echo).await;
         let (second_addr, _h2) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         forwarder.set_upstreams(vec![first_addr]).await;
 
         let request1 = make_dns_packet(0x1111, TEST_DNS_PAYLOAD);
@@ -730,7 +730,7 @@ mod tests {
         let query_count = 20;
         let (stub_addr, _stub_handle) = spawn_multi_stub(query_count).await;
 
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         forwarder.set_upstreams(vec![stub_addr]).await;
         forwarder.set_timeout(Duration::from_secs(5)).await;
 
@@ -771,7 +771,7 @@ mod tests {
             }
         });
 
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         forwarder.set_upstreams(vec![stub_addr]).await;
         forwarder.set_timeout(Duration::from_secs(5)).await;
 
@@ -800,7 +800,7 @@ mod tests {
     async fn id_rewrite_preserves_rest_of_packet() {
         let (addr, _handle) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         forwarder.set_upstreams(vec![addr]).await;
 
         let payload: Vec<u8> = (0..200u8).collect();
@@ -813,7 +813,7 @@ mod tests {
 
     #[tokio::test]
     async fn packet_too_short_returns_error() {
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         forwarder
             .set_upstreams(vec!["127.0.0.1:53".parse().unwrap()])
             .await;
@@ -827,7 +827,7 @@ mod tests {
 
     #[tokio::test]
     async fn set_upstreams_increments_generation() {
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
 
         let state = forwarder.upstreams.lock().await;
         assert_eq!(state.generation, 0);
@@ -854,7 +854,7 @@ mod tests {
         let (blackhole_addr, _bh) = spawn_stub(StubBehavior::BlackHole).await;
         let (reply_addr, _reply) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         forwarder.set_upstreams(vec![blackhole_addr]).await;
         forwarder.set_timeout(Duration::from_millis(50)).await;
 
@@ -876,7 +876,7 @@ mod tests {
     async fn upstream_change_to_empty_during_pending_query_times_out() {
         let (blackhole_addr, _bh) = spawn_stub(StubBehavior::BlackHole).await;
 
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         forwarder.set_upstreams(vec![blackhole_addr]).await;
         forwarder.set_timeout(Duration::from_millis(50)).await;
 
@@ -900,7 +900,7 @@ mod tests {
         let (blackhole_addr, _bh) = spawn_stub(StubBehavior::BlackHole).await;
         let (reply_addr, _reply) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = RawForwarder::new().await.unwrap();
+        let forwarder = UdpForwarder::new().await.unwrap();
         forwarder.set_upstreams(vec![blackhole_addr]).await;
         forwarder.set_timeout(Duration::from_millis(100)).await;
 
