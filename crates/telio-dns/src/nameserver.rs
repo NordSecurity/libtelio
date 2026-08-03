@@ -1,6 +1,6 @@
 use crate::error::Result as DnsResult;
 use crate::{
-    forwarder::RawForwarder,
+    forwarder::UdpForwarder,
     packet_decoder::{find_nord_query, normalize_qname, parse_dns_query_packet, DnsParseError},
     packet_encoder::{DnsBuildError, DnsResponseBuilder},
     resolver::Resolver,
@@ -156,7 +156,7 @@ pub struct LocalNameServer {
     nord_zone: NordZone,
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
-    forwarder: Option<RawForwarder>,
+    forwarder: Option<UdpForwarder>,
 }
 
 impl LocalNameServer {
@@ -166,8 +166,8 @@ impl LocalNameServer {
         forward_ips: &[IpAddr],
         use_new_forwarder: bool,
     ) -> DnsResult<Arc<RwLock<Self>>> {
-        let raw_forwarder: Option<RawForwarder> = if use_new_forwarder {
-            Some(RawForwarder::new().await?)
+        let raw_forwarder: Option<UdpForwarder> = if use_new_forwarder {
+            Some(UdpForwarder::new().await?)
         } else {
             None
         };
