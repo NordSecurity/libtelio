@@ -164,9 +164,9 @@ impl LocalNameServer {
     /// configured for zone `.`.
     pub async fn new(
         forward_ips: &[IpAddr],
-        use_raw_forwarder: bool,
+        use_new_forwarder: bool,
     ) -> DnsResult<Arc<RwLock<Self>>> {
-        let raw_forwarder: Option<RawForwarder> = if use_raw_forwarder {
+        let raw_forwarder: Option<RawForwarder> = if use_new_forwarder {
             Some(RawForwarder::new().await?)
         } else {
             None

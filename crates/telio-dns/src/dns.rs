@@ -83,9 +83,9 @@ impl LocalDnsResolver {
         // Telio public key
         let telio_public_key: PublicKeyDalek = PublicKeyDalek::from(public_key.0);
 
-        let use_raw_forwarder = dns_features.use_raw_forwarder.unwrap_or(false);
+        let use_new_forwarder = dns_features.use_new_forwarder.unwrap_or(false);
 
-        let nameserver = LocalNameServer::new(forward_ips, use_raw_forwarder).await?;
+        let nameserver = LocalNameServer::new(forward_ips, use_new_forwarder).await?;
 
         let auto_switch_ips = dns_features
             .exit_dns
