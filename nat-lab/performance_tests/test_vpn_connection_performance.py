@@ -18,6 +18,7 @@ from tests.utils.iperf3 import (
     ThroughputUnit,
 )
 from tests.utils.logger import log
+from tests.utils.router import IPStack
 from tests.utils.testing import get_current_test_log_path
 from typing import Any
 
@@ -208,6 +209,17 @@ async def collect_download_metrics(
             ),
             marks=pytest.mark.windows,
             id="windows_nt",
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                is_meshnet=False,
+                run_tcpdump=False,
+                ip_stack=IPStack.IPv4,
+            ),
+            marks=pytest.mark.android,
+            id="android_neptun",
         ),
     ],
 )
