@@ -5104,6 +5104,7 @@ dependencies = [
  "tower",
  "tracing",
  "uuid",
+ "x509-parser",
 ]
 
 [[package]]
