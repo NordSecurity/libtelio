@@ -28,6 +28,8 @@ burst); both cases must be burst-free:
 
 import asyncio
 import pytest
+import re
+from datetime import datetime
 from tests.helpers import Environment, SetupParameters, ping_between_all_nodes
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import Connection, ConnectionTag
@@ -51,9 +53,32 @@ SLEEP_DURATION_S = 60
 # Settle window after wake before counting. Kept below the 5s poll period so
 # that, with the fix, at most the single immediate tick lands in the window.
 SETTLE_AFTER_WAKE_S = 3
-# With the fix we expect ~1 consolidation right after wake; allow a small margin
-# for scheduling jitter. A burst would be far above this (~SLEEP/period ≈ 12).
-MAX_CONSOLIDATIONS_AFTER_WAKE = 4
+# Burst detection is by tick spacing, not count: with the Delay fix consecutive
+# ticks are ~5s apart, while a Burst replay fires them back-to-back (~ms). A
+# count-based check flakes when infra lag (slow SSH reconnect) stretches the
+# measurement window over extra genuine 5s ticks.
+MIN_TICK_GAP_S = 1.0
+
+# libtelio's own tracing timestamp inside each log line, e.g.
+# "2026-07-30T00:23:41.2862004Z" - guest-side, unaffected by log collection lag.
+_TELIO_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+(?=Z)")
+
+
+def _consolidation_timestamps(log: str) -> list[datetime]:
+    stamps = []
+    for line in log.splitlines():
+        if CONSOLIDATION_LOG in line:
+            match = _TELIO_TIMESTAMP.search(line)
+            assert match, f"no telio timestamp in consolidation line: {line!r}"
+            second, _, frac = match.group().partition(".")
+            stamps.append(datetime.fromisoformat(f"{second}.{frac[:6]}"))
+    return stamps
+
+
+def _burst_gaps(stamps: list[datetime]) -> list[float]:
+    gaps = [(b - a).total_seconds() for a, b in zip(stamps, stamps[1:])]
+    # negative gap = guest wall clock resyncing after resume, not a replay
+    return [g for g in gaps if 0 <= g < MIN_TICK_GAP_S]
 
 
 async def _read_guest_monotonic(connection: Connection) -> float:
@@ -227,12 +252,13 @@ async def test_no_burst_after_monotonic_jump(
     # Give libtelio a moment to wake and process the (now overdue) timers.
     await asyncio.sleep(SETTLE_AFTER_WAKE_S)
 
-    consolidations_after = (await client_alpha.log.get()).count(CONSOLIDATION_LOG)
-    burst = consolidations_after - consolidations_before
-    assert burst <= MAX_CONSOLIDATIONS_AFTER_WAKE, (
-        f"Detected a burst of {burst} WG consolidations within"
-        f" {SETTLE_AFTER_WAKE_S}s of waking from a {SLEEP_DURATION_S}s sleep"
-        f" (expected <= {MAX_CONSOLIDATIONS_AFTER_WAKE}); missed interval ticks"
+    stamps = _consolidation_timestamps(await client_alpha.log.get())
+    consolidations_after = len(stamps)
+    bursts = _burst_gaps(stamps[max(0, consolidations_before - 1) :])
+    assert not bursts, (
+        f"Detected {len(bursts)} WG consolidation(s) fired within"
+        f" {MIN_TICK_GAP_S}s of the previous one after a {SLEEP_DURATION_S}s"
+        f" sleep (poll period is 5s, gaps: {bursts}); missed interval ticks"
         " are being replayed in a burst - see LLT-4948."
     )
 
@@ -321,9 +347,10 @@ async def test_no_burst_after_system_suspend(
     # on some platforms (e.g. Windows QPC - a real suspend, so no ticks are even
     # missed) and jumps on others (e.g. macOS mach time - missed ticks, which the
     # Delay fix must not replay in a burst).
-    consolidations_after = (await client_alpha.log.get()).count(CONSOLIDATION_LOG)
-    burst = consolidations_after - consolidations_before
-    assert burst <= MAX_CONSOLIDATIONS_AFTER_WAKE, (
-        f"Detected a burst of {burst} WG consolidations after a VM suspend"
-        f" (expected <= {MAX_CONSOLIDATIONS_AFTER_WAKE}) - see LLT-4948."
+    stamps = _consolidation_timestamps(await client_alpha.log.get())
+    bursts = _burst_gaps(stamps[max(0, consolidations_before - 1) :])
+    assert not bursts, (
+        f"Detected {len(bursts)} WG consolidation(s) fired within"
+        f" {MIN_TICK_GAP_S}s of the previous one after a VM suspend"
+        f" (poll period is 5s, gaps: {bursts}) - see LLT-4948."
     )
