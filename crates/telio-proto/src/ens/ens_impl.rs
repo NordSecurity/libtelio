@@ -492,6 +492,7 @@ pub(crate) mod tests {
         time::{Duration, Instant},
     };
 
+    use assert_matches::assert_matches;
     use async_channel::{self, unbounded, Receiver, Sender};
     use llt_proto::ens::{
         ens_server::{self, EnsServer},
