@@ -1,11 +1,13 @@
 import asyncio
 import json
+import os
 import re
 import tests.config
 from collections import defaultdict
 from contextlib import AsyncExitStack
 from itertools import combinations
 from tests.config import LAN_ADDR_MAP
+from tests.conftest_helpers.log_collection import LOG_DIR
 from tests.interderp_cli import InterDerpClient
 from tests.utils.connection import ConnectionTag, TargetOS
 from tests.utils.connection.docker_connection import (
@@ -210,6 +212,32 @@ async def _run_cmd(cmd: list[str]) -> str:
     return out + err
 
 
+async def _save_container_log(container: str) -> str | None:
+    path = os.path.join(LOG_DIR, f"docker-{container}.log")
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        with open(path, "wb") as log_file:
+            proc = await asyncio.create_subprocess_exec(
+                "docker",
+                "logs",
+                container,
+                stdout=log_file,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            returncode = await proc.wait()
+    except OSError as e:
+        setup_log.warning("Failed to save %s container log: %s", container, e)
+        return None
+    if returncode != 0:
+        setup_log.warning(
+            "'docker logs %s' exited with %s; %s may be incomplete",
+            container,
+            returncode,
+            path,
+        )
+    return path
+
+
 async def _dump_vm_connection_failure_diagnostics(conn_tag: ConnectionTag) -> None:
     """Dump container logs and host network state when a VM SSH connection fails.
 
@@ -220,8 +248,9 @@ async def _dump_vm_connection_failure_diagnostics(conn_tag: ConnectionTag) -> No
         return
 
     container = f"nat-lab-{DOCKER_VM_SERVICE_IDS[conn_tag]}-1"
-    logs = await _run_cmd(["docker", "logs", "--tail", "100", container])
-    setup_log.warning("Last 100 lines of %s container logs:\n%s", container, logs)
+    log_path = await _save_container_log(container)
+    if log_path is not None:
+        setup_log.warning("Full %s container log saved to %s", container, log_path)
 
     primary_ip = LAN_ADDR_MAP[conn_tag]["primary"]
     for cmd, label in [
