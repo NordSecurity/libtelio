@@ -4,7 +4,7 @@
 //! (when `enable_ens` feature is on) or a stub implementation (when disabled).
 
 #[cfg(feature = "enable_ens")]
-mod ens_impl;
+pub(crate) mod ens_impl;
 #[cfg(feature = "enable_ens")]
 pub(crate) use ens_impl::grpc;
 #[cfg(feature = "enable_ens")]

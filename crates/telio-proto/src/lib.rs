@@ -16,6 +16,9 @@ mod packet;
 
 mod ens;
 
+#[cfg(feature = "enable_ens")]
+mod tls;
+
 pub use ens::{
     grpc::{ConnectionError, Error as GrpcError},
     install_default_crypto_provider, Error, ErrorNotificationService,
