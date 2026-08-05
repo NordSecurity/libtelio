@@ -45,6 +45,37 @@ async def get_interface_state(client_conn, client):
     raise RuntimeError(f'Unexpected adapter state: "{output}"')
 
 
+async def get_defender_status(client_conn, client):
+    process = await client_conn.create_process([
+        "powershell",
+        "-Command",
+        "$s = Get-MpComputerStatus; "
+        "Write-Output $s.RealTimeProtectionEnabled; "
+        "Write-Output $s.AntivirusEnabled; "
+        "Write-Output $s.AMServiceEnabled",
+    ]).execute()
+    output = process.get_stdout()
+    lines = [line.strip().lower() for line in output.splitlines() if line.strip()]
+
+    if len(lines) != 3 or any(v not in ("true", "false") for v in lines):
+        raise RuntimeError(f'Unexpected Defender status output: "{output}"')
+
+    rtp, av, svc = (v == "true" for v in lines)
+
+    print(
+        f"[{client.get_name()}] Defender status: "
+        f"RealTimeProtectionEnabled={rtp}, "
+        f"AntivirusEnabled={av}, "
+        f"AMServiceEnabled={svc}"
+    )
+
+    return {
+        "realtime_protection": rtp,
+        "antivirus_enabled": av,
+        "am_service_enabled": svc,
+    }
+
+
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -223,6 +254,8 @@ class TestAdapterStateForVpnAndDns:
         )
 
         actual_state = await get_interface_state(client_conn, client_alpha)
+        defender_status = await get_defender_status(client_conn, client_alpha)
+        print("Defender status: ", defender_status)
         assert actual_state == expected_idle_state
 
         await client_alpha.enable_magic_dns(["1.2.3.4"])
