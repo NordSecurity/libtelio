@@ -8,6 +8,7 @@ from subprocess import run, DEVNULL
 from tests.config import LINUX_INTERFACE_NAME
 from tests.utils.logger import log
 from tests.utils.process import Process, DockerProcess, ProcessExecError
+import os
 from typing import List, Type, Dict, AsyncIterator
 from typing_extensions import Self
 from uuid import uuid4
@@ -240,7 +241,9 @@ class DockerConnection(Connection):
 
 def container_id(tag: ConnectionTag) -> str:
     if tag in DOCKER_SERVICE_IDS:
-        return f"nat-lab-{DOCKER_SERVICE_IDS[tag]}-1"
+        # the lab publishes its compose project; a run may share a host with others
+        project = os.environ.get("COMPOSE_PROJECT_NAME", "nat-lab")
+        return f"{project}-{DOCKER_SERVICE_IDS[tag]}-1"
     assert False, f"tag {tag} not a docker container"
 
 
@@ -264,7 +267,8 @@ def backing_container_id(tag: ConnectionTag) -> str:
     if tag in DOCKER_SERVICE_IDS:
         return container_id(tag)
     if tag in DOCKER_VM_SERVICE_IDS:
-        return f"nat-lab-{DOCKER_VM_SERVICE_IDS[tag]}-1"
+        project = os.environ.get("COMPOSE_PROJECT_NAME", "nat-lab")
+        return f"{project}-{DOCKER_VM_SERVICE_IDS[tag]}-1"
     assert False, f"tag {tag} has no backing docker container"
 
 

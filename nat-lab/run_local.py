@@ -189,7 +189,7 @@ def main() -> int:
             raise
 
     if not args.notypecheck:
-        run_command(["uv", "run", "mypy", "."])
+        run_command((_natlab_prefix() or ["uv", "run"]) + ["mypy", "."])
 
     if not args.notests:
         _run_tests(args)
@@ -197,8 +197,24 @@ def main() -> int:
     return 0
 
 
+def _natlab_prefix() -> list:
+    """Run through an editable natlab when NATLAB_DIR points at a checkout.
+
+    The lab and the framework live in natlab, which is not declared as a dependency
+    here: in CI the service supplies it, and locally this stays opt-in so a checkout
+    without it is unaffected.
+    """
+    natlab_dir = os.environ.get("NATLAB_DIR")
+    if not natlab_dir:
+        return []
+    if not os.path.isdir(natlab_dir):
+        print(f"NATLAB_DIR={natlab_dir} is not a directory", file=sys.stderr)
+        sys.exit(1)
+    return ["uv", "run", "--with-editable", natlab_dir]
+
+
 def _run_tests(args) -> None:
-    pytest_cmd = [
+    pytest_cmd = _natlab_prefix() + [
         "pytest",
         "-vv",
         "--durations=0",

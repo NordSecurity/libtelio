@@ -23,8 +23,8 @@ from tests.utils.connection_util import (
     new_connection_with_conn_tracker,
 )
 from tests.utils.logger import log
-from tests.utils.output_notifier import OutputNotifier
-from tests.utils.ping import ping
+from natlab import OutputNotifier
+from natlab import ping
 from tests.utils.router import IPProto, IPStack, new_router
 from typing import Any, List, Dict
 

@@ -12,7 +12,7 @@ from tests.utils.bindings import (
     Server,
     TelioNode,
 )
-from tests.utils.output_notifier import OutputNotifier
+from natlab import OutputNotifier
 from typing import List, Optional, Set, Tuple
 
 

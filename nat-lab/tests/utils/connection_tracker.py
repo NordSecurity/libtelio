@@ -8,7 +8,7 @@ from enum import Enum
 from tests.utils.connection import Connection, TargetOS
 from tests.utils.connection.ssh_connection import SshConnection
 from tests.utils.logger import log
-from tests.utils.ping import ping
+from natlab import ping
 from tests.utils.process import Process
 from typing import Optional, List, Dict, AsyncIterator
 
