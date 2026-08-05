@@ -7,12 +7,13 @@ use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
+    ffi::c_void,
     io::Error as IOError,
     mem, option,
     ptr::{self, null},
     result,
     slice::Windows,
-    sync::{Arc, Mutex},
+    sync::{Arc, Condvar, Mutex},
     time::Duration,
 };
 
@@ -26,11 +27,17 @@ use windows::core::GUID;
 use windows::core::PCWSTR;
 use windows::Win32::Devices::DeviceAndDriverInstallation::GUID_DEVCLASS_NET;
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
-    CM_Get_DevNode_Status, SetupDiCallClassInstaller, SetupDiEnumDeviceInfo,
-    SetupDiGetDeviceRegistryPropertyW, SetupDiSetClassInstallParamsW, CM_DEVNODE_STATUS_FLAGS,
-    CM_PROB, CR_SUCCESS, DIF_REMOVE, DI_REMOVEDEVICE_GLOBAL, DN_HAS_PROBLEM, SPDRP_FRIENDLYNAME,
-    SP_CLASSINSTALL_HEADER, SP_REMOVEDEVICE_PARAMS,
+    CM_Get_DevNode_Status, CM_Register_Notification, CM_Unregister_Notification,
+    SetupDiCallClassInstaller, SetupDiEnumDeviceInfo, SetupDiGetDeviceInstallParamsW,
+    SetupDiGetDeviceInstanceIdW, SetupDiGetDeviceRegistryPropertyW, SetupDiSetClassInstallParamsW,
+    CM_DEVNODE_STATUS_FLAGS, CM_NOTIFY_ACTION, CM_NOTIFY_ACTION_DEVICEINSTANCEREMOVED,
+    CM_NOTIFY_EVENT_DATA, CM_NOTIFY_FILTER, CM_NOTIFY_FILTER_0, CM_NOTIFY_FILTER_0_2,
+    CM_NOTIFY_FILTER_TYPE_DEVICEINSTANCE, CM_PROB, CONFIGRET, CR_SUCCESS, DIF_REMOVE,
+    DI_NEEDREBOOT, DI_NEEDRESTART, DI_REMOVEDEVICE_GLOBAL, DN_HAS_PROBLEM, HCMNOTIFICATION,
+    MAX_DEVICE_ID_LEN, SPDRP_FRIENDLYNAME, SP_CLASSINSTALL_HEADER, SP_DEVINSTALL_PARAMS_W,
+    SP_REMOVEDEVICE_PARAMS,
 };
+use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::NetworkManagement::Ndis::GUID_DEVINTERFACE_NET;
 use winreg::{enums::*, RegKey, HKEY};
 use wireguard_nt::{
@@ -38,7 +45,106 @@ use wireguard_nt::{
 };
 use wireguard_uapi::xplatform;
 
-const REMOVAL_SLEEP_SECS: u64 = 2;
+const REMOVAL_NOTIFICATION_TIMEOUT: Duration = Duration::from_secs(5);
+
+struct DeviceRemovalNotificationState {
+    removed: Mutex<bool>,
+    removed_condvar: Condvar,
+}
+
+struct DeviceRemovalNotification {
+    handle: HCMNOTIFICATION,
+    state: Arc<DeviceRemovalNotificationState>,
+}
+
+impl DeviceRemovalNotification {
+    fn register(instance_id: [u16; MAX_DEVICE_ID_LEN as usize]) -> Result<Self, CONFIGRET> {
+        let state = Arc::new(DeviceRemovalNotificationState {
+            removed: Mutex::new(false),
+            removed_condvar: Condvar::new(),
+        });
+        let filter = CM_NOTIFY_FILTER {
+            cbSize: std::mem::size_of::<CM_NOTIFY_FILTER>() as u32,
+            Flags: 0,
+            FilterType: CM_NOTIFY_FILTER_TYPE_DEVICEINSTANCE,
+            Reserved: 0,
+            u: CM_NOTIFY_FILTER_0 {
+                DeviceInstance: CM_NOTIFY_FILTER_0_2 {
+                    InstanceId: instance_id,
+                },
+            },
+        };
+        let mut handle = HCMNOTIFICATION(std::ptr::null_mut());
+        let result = unsafe {
+            CM_Register_Notification(
+                &filter,
+                Some(Arc::as_ptr(&state).cast()),
+                Some(device_removal_notification_callback),
+                &mut handle,
+            )
+        };
+        if result != CR_SUCCESS {
+            return Err(result);
+        }
+
+        Ok(Self { handle, state })
+    }
+
+    fn wait(&self, timeout: Duration) -> bool {
+        let removed = match self.state.removed.lock() {
+            Ok(removed) => removed,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if *removed {
+            return true;
+        }
+
+        let (removed, _) =
+            match self
+                .state
+                .removed_condvar
+                .wait_timeout_while(removed, timeout, |removed| !*removed)
+            {
+                Ok(result) => result,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+        *removed
+    }
+}
+
+impl Drop for DeviceRemovalNotification {
+    fn drop(&mut self) {
+        let result = unsafe { CM_Unregister_Notification(self.handle) };
+        if result != CR_SUCCESS {
+            telio_log_warn!(
+                "Failed to unregister device removal notification: config manager error {}",
+                result.0
+            );
+            std::mem::forget(self.state.clone());
+        }
+    }
+}
+
+unsafe extern "system" fn device_removal_notification_callback(
+    _notification: HCMNOTIFICATION,
+    context: *const c_void,
+    action: CM_NOTIFY_ACTION,
+    _event_data: *const CM_NOTIFY_EVENT_DATA,
+    _event_data_size: u32,
+) -> u32 {
+    if action != CM_NOTIFY_ACTION_DEVICEINSTANCEREMOVED || context.is_null() {
+        return ERROR_SUCCESS.0;
+    }
+
+    let state = unsafe { &*context.cast::<DeviceRemovalNotificationState>() };
+    let mut removed = match state.removed.lock() {
+        Ok(removed) => removed,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    *removed = true;
+    state.removed_condvar.notify_all();
+    ERROR_SUCCESS.0
+}
 
 /// Telio wrapper around wireguard-nt
 pub struct WindowsNativeWg {
@@ -212,7 +318,6 @@ impl WindowsNativeWg {
             let mut index: u32 = 0;
             const FRIENDLY_NAME_BUF_WCHARS: usize = 260;
             let mut name_buf = [0u8; FRIENDLY_NAME_BUF_WCHARS * 2];
-            let mut removed = false;
 
             loop {
                 if SetupDiEnumDeviceInfo(dev_info_handle, index, &mut dev_info_set.dev_info_data)
@@ -224,14 +329,13 @@ impl WindowsNativeWg {
                 // Skip devices that are not marked as having problems.
                 let mut status = CM_DEVNODE_STATUS_FLAGS(0);
                 let mut code = CM_PROB(0);
-                if CM_Get_DevNode_Status(
+                let devnode_is_present = CM_Get_DevNode_Status(
                     &mut status,
                     &mut code,
                     dev_info_set.dev_info_data.DevInst,
                     0,
-                ) == CR_SUCCESS
-                    && (status.0 & DN_HAS_PROBLEM.0) == 0
-                {
+                ) == CR_SUCCESS;
+                if devnode_is_present && (status.0 & DN_HAS_PROBLEM.0) == 0 {
                     index += 1;
                     continue;
                 }
@@ -277,43 +381,115 @@ impl WindowsNativeWg {
                     HwProfile: 0,
                 };
 
-                let set_ok = SetupDiSetClassInstallParamsW(
+                if let Err(error) = SetupDiSetClassInstallParamsW(
                     dev_info_handle,
                     Some(&dev_info_set.dev_info_data),
                     Some(&remove_params.ClassInstallHeader),
                     std::mem::size_of::<SP_REMOVEDEVICE_PARAMS>() as u32,
-                )
-                .is_ok();
-
-                let call_ok = set_ok
-                    && SetupDiCallClassInstaller(
-                        DIF_REMOVE,
-                        dev_info_handle,
-                        Some(&dev_info_set.dev_info_data),
-                    )
-                    .is_ok();
-
-                if !call_ok {
+                ) {
                     telio_log_warn!(
-                        "Failed to remove orphaned WireGuard adapter \"{}\": {:?}",
+                        "Failed to set removal parameters for orphaned WireGuard adapter \"{}\": {:?}",
                         name,
-                        IOError::last_os_error()
+                        error
                     );
                     index += 1;
                     continue;
                 }
-                removed = true;
+
+                let removal_notification = if devnode_is_present {
+                    let mut instance_id = [0u16; MAX_DEVICE_ID_LEN as usize];
+                    match SetupDiGetDeviceInstanceIdW(
+                        dev_info_handle,
+                        &dev_info_set.dev_info_data,
+                        Some(&mut instance_id),
+                        None,
+                    ) {
+                        Ok(()) => match DeviceRemovalNotification::register(instance_id) {
+                            Ok(notification) => Some(notification),
+                            Err(error) => {
+                                telio_log_warn!(
+                                    "Failed to register removal notification for orphaned WireGuard adapter \"{}\": config manager error {}",
+                                    name,
+                                    error.0
+                                );
+                                None
+                            }
+                        },
+                        Err(error) => {
+                            telio_log_warn!(
+                                "Failed to get device instance ID for orphaned WireGuard adapter \"{}\": {:?}",
+                                name,
+                                error
+                            );
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
+                if let Err(error) = SetupDiCallClassInstaller(
+                    DIF_REMOVE,
+                    dev_info_handle,
+                    Some(&dev_info_set.dev_info_data),
+                ) {
+                    telio_log_warn!(
+                        "Failed to remove orphaned WireGuard adapter \"{}\": {:?}",
+                        name,
+                        error
+                    );
+                    index += 1;
+                    continue;
+                }
+
+                let mut install_params = SP_DEVINSTALL_PARAMS_W {
+                    cbSize: std::mem::size_of::<SP_DEVINSTALL_PARAMS_W>() as u32,
+                    ..Default::default()
+                };
+                if let Err(error) = SetupDiGetDeviceInstallParamsW(
+                    dev_info_handle,
+                    Some(&dev_info_set.dev_info_data),
+                    &mut install_params,
+                ) {
+                    telio_log_warn!(
+                        "Failed to verify removal state for orphaned WireGuard adapter \"{}\": {:?}",
+                        name,
+                        error
+                    );
+                    index += 1;
+                    continue;
+                }
+
+                let install_flags = install_params.Flags;
+                if (install_flags.0 & (DI_NEEDREBOOT.0 | DI_NEEDRESTART.0)) != 0 {
+                    telio_log_warn!(
+                        "Removal of orphaned WireGuard adapter \"{}\" requires a system restart",
+                        name
+                    );
+                    index += 1;
+                    continue;
+                }
+
+                if dev_info_set.dev_info_data.DevInst != 0 {
+                    telio_log_warn!(
+                        "Removal of orphaned WireGuard adapter \"{}\" did not clear its device instance",
+                        name
+                    );
+                    index += 1;
+                    continue;
+                }
+
+                if let Some(notification) = removal_notification.as_ref() {
+                    if !notification.wait(REMOVAL_NOTIFICATION_TIMEOUT) {
+                        telio_log_warn!(
+                            "Timed out waiting for removal notification for orphaned WireGuard adapter \"{}\"",
+                            name
+                        );
+                    }
+                }
 
                 telio_log_info!("Removed orphaned WireGuard adapter \"{}\"", name);
                 index += 1;
-            }
-
-            if removed {
-                // TODO: Remove this sleep once we have a better way to track device removal/insertion
-                // Note: windows messages (e.g. WM_DEVICECHANGE) cannot be used to track removal,
-                // since those  messages does not arrive,
-                // when we trigger removal and wait for messages on same thread
-                std::thread::sleep(Duration::from_secs(REMOVAL_SLEEP_SECS));
             }
         }
     }
