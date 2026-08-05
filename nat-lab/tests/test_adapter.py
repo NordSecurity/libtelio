@@ -55,6 +55,7 @@ async def get_defender_status(client_conn, client):
         "Write-Output $s.AMServiceEnabled",
     ]).execute()
     output = process.get_stdout()
+    print(output)
     lines = [line.strip().lower() for line in output.splitlines() if line.strip()]
 
     if len(lines) != 3 or any(v not in ("true", "false") for v in lines):
@@ -63,7 +64,7 @@ async def get_defender_status(client_conn, client):
     rtp, av, svc = (v == "true" for v in lines)
 
     print(
-        f"[{client.get_name()}] Defender status: "
+        f"Defender status: "
         f"RealTimeProtectionEnabled={rtp}, "
         f"AntivirusEnabled={av}, "
         f"AMServiceEnabled={svc}"
