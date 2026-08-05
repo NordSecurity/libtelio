@@ -809,8 +809,9 @@ services:
       test: /opt/bin/openwrt/openwrt-qemu-healthcheck.sh
       interval: 15s
       timeout: 5s
+      # Match the entrypoint's QEMU_CONFIG_TIMEOUT
       start_period: 120s
-      retries: 5
+      retries: 32
 
   windows-gw-01:
     hostname: windows-gw-01
