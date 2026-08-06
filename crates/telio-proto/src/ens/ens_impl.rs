@@ -2,6 +2,7 @@ use std::{
     net::{IpAddr, ToSocketAddrs},
     str::FromStr,
     sync::Arc,
+    time::Duration,
 };
 
 use base64::prelude::{Engine, BASE64_STANDARD};
@@ -34,7 +35,10 @@ use tonic::{
 use tower::service_fn;
 use uuid::Uuid;
 
-use crate::ens::grpc::{ChallengeRequest, ConnectionErrorRequest};
+use crate::ens::{
+    grpc::{ChallengeRequest, ConnectionErrorRequest},
+    KeepaliveConfig,
+};
 
 pub(crate) mod grpc {
     pub use llt_proto::ens::{
@@ -72,6 +76,8 @@ pub struct ErrorNotificationService {
     allow_only_mlkem: bool,
     // DER encoded root certificate to be use for verification of TLS
     root_certificate: Vec<u8>,
+    // Configuration of the keep alive messages sent over the ENS connection
+    keepalive: KeepaliveConfig,
 }
 
 impl Drop for ErrorNotificationService {
@@ -87,6 +93,7 @@ impl ErrorNotificationService {
         socket_pool: Arc<SocketPool>,
         allow_only_mlkem: bool,
         root_certificate_override: Option<Vec<u8>>,
+        mut keepalive: KeepaliveConfig,
     ) -> (Self, Rx<(grpc::ConnectionError, PublicKey)>) {
         let Chan { rx, tx }: Chan<(grpc::ConnectionError, PublicKey)> = Chan::new(buffer_size);
         if let Some(cert) = &root_certificate_override {
@@ -94,6 +101,15 @@ impl ErrorNotificationService {
                 "Will use root certificate override: {:?}",
                 BASE64_STANDARD.encode(cert)
             );
+        }
+
+        if keepalive.interval == Some(Duration::ZERO) {
+            telio_log_warn!("Keepalive interval set to 0, resetting to default");
+            keepalive.interval = Some(Duration::from_secs(120));
+        }
+        if keepalive.timeout == Some(Duration::ZERO) {
+            telio_log_warn!("Keepalive timeout set to 0, resetting to default");
+            keepalive.timeout = Some(Duration::from_secs(20));
         }
 
         (
@@ -104,6 +120,7 @@ impl ErrorNotificationService {
                 allow_only_mlkem,
                 root_certificate: root_certificate_override
                     .unwrap_or_else(|| DEFAULT_ROOT_CERTIFICATE.to_vec()),
+                keepalive,
             },
             rx,
         )
@@ -143,6 +160,7 @@ impl ErrorNotificationService {
         let tx = self.tx.clone();
         let allow_only_mlkem = self.allow_only_mlkem;
         let root_certificate = self.root_certificate.clone();
+        let keepalive = self.keepalive;
 
         let join_handle = tokio::spawn(async move {
             // This future is too big for keeping it on the stack
@@ -156,6 +174,7 @@ impl ErrorNotificationService {
                 allow_only_mlkem,
                 backoff,
                 root_certificate,
+                keepalive,
             ))
             .await
             {
@@ -206,6 +225,7 @@ async fn task(
     allow_only_mlkem: bool,
     mut backoff: impl Backoff,
     root_certificate: Vec<u8>,
+    keepalive: KeepaliveConfig,
 ) -> anyhow::Result<()> {
     'outer: loop {
         macro_rules! restart {
@@ -239,7 +259,8 @@ async fn task(
                 vpn_uri,
                 pool,
                 allow_only_mlkem,
-                root_certificate.clone()
+                root_certificate.clone(),
+                keepalive
             ))
             .await,
             backoff
@@ -341,6 +362,8 @@ async fn create_external_channel(
     pool: Arc<SocketPool>,
     allow_only_mlkem: bool,
     root_certificate: Vec<u8>,
+
+    keepalive: KeepaliveConfig,
 ) -> anyhow::Result<Channel> {
     let socket_factory = move |uri: Uri| {
         let pool = pool.clone();
@@ -763,6 +786,15 @@ mod tests {
         errors_tx.send(Command::End).await.unwrap();
     }
 
+    impl Default for KeepaliveConfig {
+        fn default() -> Self {
+            Self {
+                interval: Default::default(),
+                timeout: Default::default(),
+            }
+        }
+    }
+
     #[tokio::test]
     #[test_log::test]
     async fn test_ens() {
@@ -789,6 +821,7 @@ mod tests {
             make_socket_pool(),
             allow_only_mlkem,
             Some(server_config.tls_config.ca_cert.der().to_vec()),
+            KeepaliveConfig::default(),
         );
 
         ens.start_monitor_on_port(
@@ -864,6 +897,7 @@ mod tests {
             make_socket_pool(),
             allow_only_mlkem,
             Some(server_config.tls_config.ca_cert.der().to_vec()),
+            KeepaliveConfig::default(),
         );
 
         let mut backoff = MockBackoff::new();
@@ -977,8 +1011,13 @@ mod tests {
         });
 
         let allow_only_mlkem = true;
-        let (mut ens, mut rx) =
-            ErrorNotificationService::new(10, make_socket_pool(), allow_only_mlkem, None);
+        let (mut ens, mut rx) = ErrorNotificationService::new(
+            10,
+            make_socket_pool(),
+            allow_only_mlkem,
+            None,
+            KeepaliveConfig::default(),
+        );
 
         let result = ens
             .start_monitor_on_port(
