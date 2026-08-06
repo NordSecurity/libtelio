@@ -8,7 +8,9 @@ use telio_lana::init_lana;
 use telio_network_monitors::monitor::LocalInterfacesObserver;
 use telio_network_monitors::{local_interfaces::SystemGetIfAddrs, monitor::NetworkMonitor};
 use telio_pq::PostQuantum;
-use telio_proto::{ConnectionError, Error as EnsError, ErrorNotificationService, HeartbeatMessage};
+use telio_proto::{
+    ConnectionError, Error as EnsError, ErrorNotificationService, HeartbeatMessage, KeepaliveConfig,
+};
 use telio_proxy::{Config as ProxyConfig, Io as ProxyIo, Proxy, UdpProxy};
 use telio_relay::{
     derp::Config as DerpConfig, multiplexer::Multiplexer, DerpKeepaliveConfig, DerpRelay,
@@ -1376,6 +1378,14 @@ impl Runtime {
                     socket_pool.clone(),
                     error_notification_service.allow_only_pq,
                     error_notification_service.root_certificate_override.clone(),
+                    KeepaliveConfig {
+                        interval: error_notification_service
+                            .keepalive_interval_s
+                            .map(|s| Duration::from_secs(s as u64)),
+                        timeout: error_notification_service
+                            .keepalive_timeout_s
+                            .map(|s| Duration::from_secs(s as u64)),
+                    },
                 );
                 (Some(ens), rx)
             } else {
