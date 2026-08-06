@@ -45,6 +45,99 @@ async def get_interface_state(client_conn, client):
     raise RuntimeError(f'Unexpected adapter state: "{output}"')
 
 
+async def get_defender_status(client_conn, client):
+    process = await client_conn.create_process([
+        "powershell",
+        "-Command",
+        "$ErrorActionPreference='SilentlyContinue'; "
+        "$s = Get-MpComputerStatus; "
+        "Write-Output ('RealTimeProtectionEnabled=' + $s.RealTimeProtectionEnabled); "
+        "Write-Output ('AntivirusEnabled=' + $s.AntivirusEnabled); "
+        "Write-Output ('AMServiceEnabled=' + $s.AMServiceEnabled); "
+        "Write-Output ('IsTamperProtected=' + $s.IsTamperProtected); "
+        "$f = Get-ItemProperty 'HKLM:\\SOFTWARE\\Microsoft\\Windows Defender\\Features'; "
+        "Write-Output ('TamperProtection=' + $(if ($f.TamperProtection -ne $null) {$f.TamperProtection} else {'NA'})); "
+        "Write-Output ('TamperProtectionSource=' + $(if ($f.TamperProtectionSource -ne $null) {$f.TamperProtectionSource} else {'NA'})); "
+        "foreach ($svc in 'WinDefend','WdNisSvc','Sense','WdFilter','WdBoot','WdNisDrv','wscsvc','SecurityHealthService') { "
+        "  $st = (Get-ItemProperty ('HKLM:\\SYSTEM\\CurrentControlSet\\Services\\' + $svc)).Start; "
+        "  Write-Output ('svc.' + $svc + '=' + $(if ($st -ne $null) {$st} else {'NA'})) "
+        "}; "
+        "$rt = Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection'; "
+        "Write-Output ('policy.DisableRealtimeMonitoring=' + $(if ($rt.DisableRealtimeMonitoring -ne $null) {$rt.DisableRealtimeMonitoring} else {'NA'})); "
+        "$pol = Get-ItemProperty 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender'; "
+        "Write-Output ('policy.DisableAntiSpyware=' + $(if ($pol.DisableAntiSpyware -ne $null) {$pol.DisableAntiSpyware} else {'NA'}))",
+    ]).execute()
+    output = process.get_stdout()
+    print(output)
+
+    # Parse "key=value" lines into a dict.
+    fields = {}
+    for line in output.splitlines():
+        line = line.strip()
+        if "=" in line:
+            key, _, value = line.partition("=")
+            fields[key.strip()] = value.strip()
+
+    def as_bool(key):
+        v = fields.get(key, "").lower()
+        if v not in ("true", "false"):
+            raise RuntimeError(
+                f'Unexpected/missing Defender flag "{key}" in output: "{output}"'
+            )
+        return v == "true"
+
+    # Core runtime flags (same contract + validation as before).
+    rtp = as_bool("RealTimeProtectionEnabled")
+    av = as_bool("AntivirusEnabled")
+    svc = as_bool("AMServiceEnabled")
+    tamper = as_bool("IsTamperProtected")
+
+    def as_int(key):
+        v = fields.get(key, "NA")
+        try:
+            return int(v)
+        except ValueError:
+            return None  # "NA" / missing registry value
+
+    services = {
+        name: as_int(f"svc.{name}")
+        for name in (
+            "WinDefend", "WdNisSvc", "Sense", "WdFilter",
+            "WdBoot", "WdNisDrv", "wscsvc", "SecurityHealthService",
+        )
+    }
+
+    print(
+        f"Defender status: "
+        f"RealTimeProtectionEnabled={rtp}, "
+        f"AntivirusEnabled={av}, "
+        f"AMServiceEnabled={svc}, "
+        f"IsTamperProtected={tamper}"
+    )
+    print(
+        f"Defender registry: "
+        f"TamperProtection={fields.get('TamperProtection', 'NA')}, "
+        f"DisableRealtimeMonitoring={fields.get('policy.DisableRealtimeMonitoring', 'NA')}, "
+        f"DisableAntiSpyware={fields.get('policy.DisableAntiSpyware', 'NA')}"
+    )
+    print(
+        "Defender services (Start; 4=disabled, 2=auto, 3=manual): "
+        + ", ".join(f"{n}={s}" for n, s in services.items())
+    )
+
+    return {
+        "realtime_protection": rtp,
+        "antivirus_enabled": av,
+        "am_service_enabled": svc,
+        "is_tamper_protected": tamper,
+        "tamper_protection": fields.get("TamperProtection", "NA"),
+        "tamper_protection_source": fields.get("TamperProtectionSource", "NA"),
+        "policy_disable_realtime_monitoring": fields.get("policy.DisableRealtimeMonitoring", "NA"),
+        "policy_disable_antispyware": fields.get("policy.DisableAntiSpyware", "NA"),
+        "services": services,
+    }
+
+
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -223,6 +316,8 @@ class TestAdapterStateForVpnAndDns:
         )
 
         actual_state = await get_interface_state(client_conn, client_alpha)
+        defender_status = await get_defender_status(client_conn, client_alpha)
+        print("Defender status: ", defender_status)
         assert actual_state == expected_idle_state
 
         await client_alpha.enable_magic_dns(["1.2.3.4"])

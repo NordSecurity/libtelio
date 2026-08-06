@@ -131,6 +131,7 @@ services:
 
   windows-client-01: &windows-client
     hostname: windows-client-01
+    pull_policy: always
     image: ${LIBTELIO_ENV_SEC_CONTAINER_REGISTRY}/nord-projects/nordvpn/infra/llt/automation/docker/libtelio/dockur_windows:${LIBTELIO_ENV_NAT_LAB_WINDOWS_VM_TAG}
     privileged: true
     devices:
