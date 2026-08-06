@@ -64,6 +64,7 @@ protobuf-codegen.workspace = true
 assert_matches = "1.5.0"
 async-channel = "2.5.0"
 rcgen = "0.14.8"
+rstest.workspace = true
 telio-utils = { workspace = true, features = ["mockall"] }
 test-log = { version = "0.2.20", features = ["trace"] }
 tokio = { workspace = true, features = ["sync"] }
