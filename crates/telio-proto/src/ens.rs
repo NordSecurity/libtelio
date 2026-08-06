@@ -24,7 +24,7 @@ use telio_task::io::{
 };
 use telio_utils::{
     exponential_backoff::{self, Backoff},
-    telio_log_debug, telio_log_error, telio_log_info, telio_log_warn,
+    telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, version_tag,
 };
 use tokio::{select, sync::watch, task::JoinHandle};
 use tokio_rustls::TlsConnector;
@@ -413,7 +413,8 @@ async fn create_external_channel(
         }
     };
 
-    let endpoint = Endpoint::try_from(vpn_uri.to_owned())?;
+    let endpoint = Endpoint::try_from(vpn_uri.to_owned())?.user_agent(make_user_agent())?;
+
     let endpoint = if let Some(interval) = keepalive.interval {
         endpoint.http2_keep_alive_interval(interval)
     } else {
@@ -592,6 +593,10 @@ pub fn install_default_crypto_provider() {
     }
 }
 
+fn make_user_agent() -> String {
+    format!("telio/{} {}", version_tag(), std::env::consts::OS,)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -760,6 +765,17 @@ mod tests {
 
     impl Interceptor for CheckAuthenticationInterceptor {
         fn call(&mut self, req: Request<()>) -> Result<Request<()>, Status> {
+            match req.metadata().get("user-agent") {
+                Some(user_agent) => {
+                    if !user_agent.to_str().unwrap().starts_with("telio/") {
+                        return Err(Status::unauthenticated(format!(
+                            "incorrect user-agent: {user_agent:?}"
+                        )));
+                    }
+                }
+                None => return Err(Status::unauthenticated("missing user-agent")),
+            }
+
             match req.metadata().get(AUTHENTICATION_KEY) {
                 Some(t) => {
                     let decoded = BASE64_STANDARD.decode(&t).unwrap();
