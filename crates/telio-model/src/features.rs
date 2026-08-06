@@ -566,6 +566,21 @@ pub struct FeatureErrorNotificationService {
     /// DER encoded root certificate to be used for verification of all TLS connections
     /// to gRPC ENS endpoint in place of the hardcoded one
     pub root_certificate_override: Option<Vec<u8>>,
+
+    /// Interval between the keep alive messages sent over the ENS connection, in seconds.
+    /// When the underlying tcp connection stops working, the new connection will
+    /// be re-created after at most keepalive_interval_s + keepalive_timeout_s seconds.
+    /// When set to null, the keep alives are disabled.
+    /// Setting it to 0 is an error.
+    #[default(Some(120))]
+    pub keepalive_interval_s: Option<u32>,
+
+    /// How long to wait for a response to a keep alive message before considering the ENS
+    /// connection dead, in seconds. Only used when keepalive_interval_s is set.
+    /// When set to null, the underlying http client default is used
+    /// Setting it to 0 is an error.
+    #[default(Some(20))]
+    pub keepalive_timeout_s: Option<u32>,
 }
 
 impl std::fmt::Debug for FeatureErrorNotificationService {
@@ -574,6 +589,8 @@ impl std::fmt::Debug for FeatureErrorNotificationService {
             .field("buffer_size", &self.buffer_size)
             .field("allow_only_pq", &self.allow_only_pq)
             .field("backoff", &self.backoff)
+            .field("keepalive_interval_s", &self.keepalive_interval_s)
+            .field("keepalive_timeout_s", &self.keepalive_timeout_s)
             .field(
                 "root_certificate_override",
                 &self
@@ -867,7 +884,9 @@ mod tests {
                         buffer_size: 42,
                         allow_only_pq: true,
                         backoff: Default::default(),
-                        root_certificate_override: None
+                        root_certificate_override: None,
+                        keepalive_interval_s: Some(120),
+                        keepalive_timeout_s: Some(20),
                     })
                 }
             );
@@ -1061,6 +1080,8 @@ mod tests {
                         maximal_s: Some(120),
                     },
                     root_certificate_override: None,
+                    keepalive_interval_s: Some(120),
+                    keepalive_timeout_s: Some(20),
                 }),
                 error_notification_service
             );
@@ -1076,6 +1097,8 @@ mod tests {
                     allow_only_pq: true,
                     backoff: Default::default(),
                     root_certificate_override: None,
+                    keepalive_interval_s: Some(120),
+                    keepalive_timeout_s: Some(20),
                 }),
                 error_notification_service
             );
@@ -1093,6 +1116,8 @@ mod tests {
                         maximal_s: Some(120),
                     },
                     root_certificate_override: None,
+                    keepalive_interval_s: Some(120),
+                    keepalive_timeout_s: Some(20),
                 }),
                 error_notification_service
             );
@@ -1111,6 +1136,8 @@ mod tests {
                         maximal_s: None
                     },
                     root_certificate_override: None,
+                    keepalive_interval_s: Some(120),
+                    keepalive_timeout_s: Some(20),
                 }),
                 error_notification_service
             );
@@ -1129,8 +1156,78 @@ mod tests {
                         maximal_s: Some(67890)
                     },
                     root_certificate_override: None,
+                    keepalive_interval_s: Some(120),
+                    keepalive_timeout_s: Some(20),
                 }),
                 error_notification_service
+            );
+        }
+
+        #[test]
+        fn test_ens_keepalive_interval() {
+            assert_json!(
+                r#"{"error_notification_service": {}}"#,
+                Some(120),
+                error_notification_service.unwrap().keepalive_interval_s
+            );
+            assert_json!(
+                r#"{"error_notification_service": {"keepalive_interval_s": 42}}"#,
+                Some(42),
+                error_notification_service.unwrap().keepalive_interval_s
+            );
+            assert_json!(
+                r#"{"error_notification_service": {"keepalive_interval_s": null}}"#,
+                None,
+                error_notification_service.unwrap().keepalive_interval_s
+            );
+        }
+
+        #[test]
+        fn test_ens_keepalive_interval_default() {
+            assert_eq!(
+                FeatureErrorNotificationService::default().keepalive_interval_s,
+                Some(120)
+            );
+        }
+
+        #[test]
+        fn test_ens_keepalive_timeout() {
+            assert_json!(
+                r#"{"error_notification_service": {}}"#,
+                Some(20),
+                error_notification_service.unwrap().keepalive_timeout_s
+            );
+            assert_json!(
+                r#"{"error_notification_service": {"keepalive_timeout_s": 42}}"#,
+                Some(42),
+                error_notification_service.unwrap().keepalive_timeout_s
+            );
+            assert_json!(
+                r#"{"error_notification_service": {"keepalive_timeout_s": null}}"#,
+                None,
+                error_notification_service.unwrap().keepalive_timeout_s
+            );
+        }
+
+        #[test]
+        fn test_ens_keepalive_timeout_default() {
+            assert_eq!(
+                FeatureErrorNotificationService::default().keepalive_timeout_s,
+                Some(20)
+            );
+        }
+
+        #[test]
+        fn test_ens_keepalive_interval_and_timeout_are_independent() {
+            assert_json!(
+                r#"{"error_notification_service": {"keepalive_interval_s": 1}}"#,
+                Some(20),
+                error_notification_service.unwrap().keepalive_timeout_s
+            );
+            assert_json!(
+                r#"{"error_notification_service": {"keepalive_timeout_s": 1}}"#,
+                Some(120),
+                error_notification_service.unwrap().keepalive_interval_s
             );
         }
     }

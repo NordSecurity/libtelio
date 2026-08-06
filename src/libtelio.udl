@@ -909,6 +909,21 @@ dictionary FeatureErrorNotificationService {
     /// DER encoded root certificate to be used for verification of all TLS connections
     /// to gRPC ENS endpoint in place of the hardcoded one
     bytes? root_certificate_override;
+
+    /// Interval between the keep alive messages sent over the ENS connection, in seconds.
+    /// When the underlying tcp connection stops working, the new connection will
+    /// be re-created after at most keepalive_interval_s + keepalive_timeout_s seconds.
+    /// When set to null, the keep alives are disabled.
+    /// Setting it to 0 is an error.
+    /// [default 120s]
+    u32? keepalive_interval_s = 120;
+
+    /// How long to wait for a response to a keep alive message before considering the ENS
+    /// connection dead, in seconds. Only used when keepalive_interval_s is set.
+    /// When set to null, the underlying http client default is used
+    /// Setting it to 0 is an error.
+    /// [default 20s]
+    u32? keepalive_timeout_s = 20;
 };
 
 /// Exponential backoff bounds
