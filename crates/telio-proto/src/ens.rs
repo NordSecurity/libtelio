@@ -168,6 +168,7 @@ impl ErrorNotificationService {
         let tx = self.tx.clone();
         let allow_only_mlkem = self.allow_only_mlkem;
         let root_certificate = self.root_certificate.clone();
+
         let keepalive = self.keepalive;
 
         let join_handle = tokio::spawn(async move {
@@ -370,7 +371,6 @@ async fn create_external_channel(
     pool: Arc<SocketPool>,
     allow_only_mlkem: bool,
     root_certificate: Vec<u8>,
-
     keepalive: KeepaliveConfig,
 ) -> anyhow::Result<Channel> {
     let socket_factory = move |uri: Uri| {
@@ -413,7 +413,28 @@ async fn create_external_channel(
         }
     };
 
-    Ok(Endpoint::try_from(vpn_uri.to_owned())?
+    let endpoint = Endpoint::try_from(vpn_uri.to_owned())?;
+    let endpoint = if let Some(interval) = keepalive.interval {
+        endpoint.http2_keep_alive_interval(interval)
+    } else {
+        endpoint
+    };
+    let endpoint = if let Some(timeout) = keepalive.timeout {
+        endpoint.keep_alive_timeout(timeout)
+    } else {
+        endpoint
+    };
+
+    // Strictly this is not needed in our case since we have a long lived connection
+    // that we want to keep alive. This setting helps in the case where there is
+    // **no** active rpc connection and we want to make a new rpc call after a while.
+    let endpoint = if keepalive.interval.is_some() {
+        endpoint.keep_alive_while_idle(true)
+    } else {
+        endpoint
+    };
+
+    Ok(endpoint
         .connect_with_connector(service_fn(socket_factory))
         .await?)
 }
