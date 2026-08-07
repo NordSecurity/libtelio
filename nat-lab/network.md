@@ -187,17 +187,6 @@ graph LR
         192.168.115.101")
   end
 
-  %% Network openwrt-net-03
-  subgraph openwrt-net-03[openwrt-net-03]
-  direction LR
-    openwrt-client-03("openwrt-client-03
-        192.168.117.100")
-    openwrt-dhcp-client-03("openwrt-dhcp-client-03")
-    openwrt-gw-03(["openwrt-gw-03
-        10.0.254.23
-        192.168.117.254"])
-  end
-
   %% Network windows-net-01
   subgraph windows-net-01[windows-net-01]
   direction LR
@@ -287,7 +276,6 @@ graph LR
   udp-block-gw-01 -..- internet
   udp-block-gw-02 -..- internet
   openwrt-gw-01 -..- internet
-  openwrt-gw-03 -..- internet
   windows-gw-01 -..- internet
   windows-gw-02 -..- internet
   windows-gw-03 -..- internet
@@ -310,7 +298,6 @@ graph LR
   udp-block-client-01 -.- udp-block-gw-01
   udp-block-client-02 -.- udp-block-gw-02
   openwrt-client-01 -.- openwrt-gw-01
-  openwrt-client-03 -.- openwrt-gw-03
   windows-client-01 -.- windows-gw-01
   windows-client-01 -.- windows-gw-02
   windows-client-02 -.- windows-gw-03
