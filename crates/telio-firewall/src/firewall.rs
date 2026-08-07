@@ -429,10 +429,27 @@ impl StatefulFirewall {
     /// Set the TP-Lite DNS whitelisting configuration: the whitelisted domains
     /// and the (blocking, standard) DNS server redirect pairs. Both are applied
     /// together, reconfiguring the firewall to DNAT-redirect matching queries.
-    pub fn set_tp_lite_domain_whitelist(&self, domains: Vec<String>, redirects: Vec<DnsRedirect>) {
-        self.configured_state.write().tp_lite_whitelisted_domains = domains;
-        self.configured_state.write().tp_lite_dns_redirects = redirects;
+    ///
+    /// Returns `true` when the set of whitelisted domains differs from the one
+    /// previously configured. Callers use this to decide whether caches keyed on
+    /// the whitelist need invalidating - see LLT-7558. Changing only the
+    /// redirects does not affect which domains bypass blocking, so it does not
+    /// set the flag.
+    pub fn set_tp_lite_domain_whitelist(
+        &self,
+        domains: Vec<String>,
+        redirects: Vec<DnsRedirect>,
+    ) -> bool {
+        let domains_changed = {
+            let mut configured_state = self.configured_state.write();
+            let changed = configured_state.tp_lite_whitelisted_domains != domains;
+            configured_state.tp_lite_whitelisted_domains = domains;
+            configured_state.tp_lite_dns_redirects = redirects;
+            changed
+        };
+
         self.refresh_chain();
+        domains_changed
     }
 }
 

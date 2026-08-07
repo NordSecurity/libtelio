@@ -796,7 +796,7 @@ impl Device {
     ) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
-                Ok(rt.set_tp_lite_domain_whitelist(domains, redirects))
+                Ok(rt.set_tp_lite_domain_whitelist(domains, redirects).await)
             })
             .await?
         })
@@ -2244,7 +2244,7 @@ impl Runtime {
     ///
     /// Requires firewall to be enabled through setting firewall field of Features
     /// object to a non-null value.
-    pub fn set_tp_lite_domain_whitelist(
+    pub async fn set_tp_lite_domain_whitelist(
         &self,
         #[allow(unused_variables)] domains: Vec<String>,
         #[allow(unused_variables)] redirects: Vec<DnsRedirect>,
@@ -2252,7 +2252,19 @@ impl Runtime {
         #[cfg(feature = "enable_firewall")]
         match &self.entities.firewall {
             Some(fw) => {
-                fw.set_tp_lite_domain_whitelist(domains, redirects);
+                let domains_changed = fw.set_tp_lite_domain_whitelist(domains, redirects);
+
+                // LLT-7558: the firewall only ever sees DNS queries that miss the
+                // MagicDNS resolver cache - a cache hit is answered before any
+                // packet is emitted. So a whitelist change has no effect on
+                // already-cached names until their TTL expires, and the cache has
+                // to be dropped here. This also clears negative entries, because
+                // re-blocking is not the only broken direction.
+                if domains_changed {
+                    if let Some(dns) = &self.entities.dns.lock().await.resolver {
+                        dns.flush_cache().await;
+                    }
+                }
                 Ok(())
             }
             None => Err(Error::FirewallDisabled),
