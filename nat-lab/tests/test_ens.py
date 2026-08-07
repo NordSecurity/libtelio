@@ -803,7 +803,7 @@ async def test_ens_connection_error_unknown(
             setup_environment(
                 exit_stack,
                 [alpha_setup_params],
-                vpn=[ConnectionTag.VM_LINUX_NLX_1, ConnectionTag.DOCKER_VPN_1],
+                vpn=[ConnectionTag.DOCKER_VPN_1],
             )
         )
 

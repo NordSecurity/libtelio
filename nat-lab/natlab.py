@@ -479,7 +479,12 @@ def _resolve_skip_keywords(args) -> set:
     if args.skip_nlx:
         skip_keywords.add("nlx")
     if args.skip_openwrt:
-        skip_keywords.add("openwrt")
+        # playwright-runner-01 `depends_on` openwrt-gw-01, so leaving it in the
+        # service list would make docker compose boot the OpenWrt VM anyway.
+        # Playwright only serves the OpenWrt LuCI tests, so it goes with them.
+        skip_keywords.update(["openwrt", "playwright"])
+    if args.skip_playwright:
+        skip_keywords.add("playwright")
     if args.skip_android:
         skip_keywords.add("android")
     return skip_keywords
@@ -536,6 +541,14 @@ def main():
         help="Skip starting openwrt related containers",
     )
     start_parser.add_argument(
+        "--skip-playwright",
+        action="store_true",
+        help=(
+            "Skip starting playwright-runner-01 (implied by --skip-openwrt, since it"
+            " depends_on openwrt-gw-01)"
+        ),
+    )
+    start_parser.add_argument(
         "--skip-android",
         action="store_true",
         help="Skip starting the android-client-01 emulator container",
@@ -556,6 +569,14 @@ def main():
         "--rebuild",
         action="store_true",
         help="Force a no-cache rebuild of the base image (same as NATLAB_BUILD_NO_CACHE=1)",
+    )
+    start_parser.add_argument(
+        "--force-recreate",
+        action="store_true",
+        help=(
+            "Recreate containers even if their config and image are unchanged"
+            " (`recreate-all` scoped to the selected services)"
+        ),
     )
 
     subparsers.add_parser("restart", help="Restart (already existing) containers")
@@ -585,11 +606,16 @@ def main():
                 )
             start(
                 skip_keywords,
+                force_recreate=args.force_recreate,
                 services_to_start=args.services_to_start,
                 rebuild=args.rebuild,
             )
         else:
-            start(skip_keywords, rebuild=args.rebuild)
+            start(
+                skip_keywords,
+                force_recreate=args.force_recreate,
+                rebuild=args.rebuild,
+            )
     elif args.command == "restart":
         restart()
     elif args.command == "recreate":
