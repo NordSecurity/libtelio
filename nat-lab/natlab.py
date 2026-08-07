@@ -471,8 +471,18 @@ def restart():
     run_command(["docker", "compose", "restart"])
 
 
-def recreate():
-    """Recreate existing containers (only recreates running containers)"""
+def recreate(skip_keywords=None):
+    """Recreate containers, forcing recreation even if config and image are unchanged.
+
+    With skip keywords (the same --lite-mode/--skip-* flags `start` takes), recreates
+    exactly that subset - use this on a CI shard to rebuild only the services it needs
+    without paying for the ones it skips. With none, recreates the containers that
+    already exist.
+    """
+    if skip_keywords:
+        start(skip_keywords, True)
+        return
+
     running_services = run_command_with_output(
         ["docker", "compose", "ps", "-a", "--services"], True
     ).splitlines()
@@ -488,6 +498,26 @@ def recreate_all():
     start(None, True)
 
 
+def shard_args():
+    """Print the --skip-* flags for this shard, per $NATLAB_SHARD_PLAN.
+
+    The same plan decides which tests land here (see
+    tests/conftest_helpers/sharding.py), so the services a shard starts and the
+    tests it runs cannot disagree. Prints nothing when unsharded, which leaves
+    `natlab.py recreate` starting everything.
+    """
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+    from tests.conftest_helpers.sharding import (  # pylint: disable=import-outside-toplevel
+        plan_from_env,
+    )
+
+    plan = plan_from_env()
+    if plan is None:
+        return
+    shards, position = plan
+    print(" ".join(f"--skip-{keyword}" for keyword in sorted(shards[position].skip)))
+
+
 def _resolve_skip_keywords(args) -> set:
     if args.lite_mode:
         return {"fullcone", "windows", "mac", "nlx", "openwrt", "android", "playwright"}
@@ -501,7 +531,10 @@ def _resolve_skip_keywords(args) -> set:
     if args.skip_nlx:
         skip_keywords.add("nlx")
     if args.skip_openwrt:
-        skip_keywords.add("openwrt")
+        # playwright-runner-01 `depends_on` openwrt-gw-01, so leaving it in the
+        # service list would make docker compose boot the OpenWrt VM anyway.
+        # Playwright only serves the OpenWrt LuCI tests, so it goes with them.
+        skip_keywords.update(["openwrt", "playwright"])
     if args.skip_android:
         skip_keywords.add("android")
     return skip_keywords
@@ -520,42 +553,46 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-    start_parser = subparsers.add_parser(
-        "start",
-        help="Build and start the environment (run `start --help` for skip/scope flags)",
-    )
-    start_parser.add_argument(
+    # Service selection, shared by `start` and `recreate`.
+    scope_flags = argparse.ArgumentParser(add_help=False)
+    scope_flags.add_argument(
         "--skip-fullcone",
         action="store_true",
         help="Skip starting fullcone related containers (fullcone-client-*, fullcone-gw-*)",
     )
-    start_parser.add_argument(
+    scope_flags.add_argument(
         "--skip-windows",
         action="store_true",
         help="Skip starting all windows related containers (windows-client-*, windows-gw-*)",
     )
-    start_parser.add_argument(
+    scope_flags.add_argument(
         "--skip-mac",
         action="store_true",
         help="Skip starting mac-client-01 container and related gateways",
     )
-    start_parser.add_argument(
+    scope_flags.add_argument(
         "--skip-nlx", action="store_true", help="Skip starting nlx-01 container"
     )
-    start_parser.add_argument(
+    scope_flags.add_argument(
         "--skip-openwrt",
         action="store_true",
         help="Skip starting openwrt related containers",
     )
-    start_parser.add_argument(
+    scope_flags.add_argument(
         "--skip-android",
         action="store_true",
         help="Skip starting the android-client-01 emulator container",
     )
-    start_parser.add_argument(
+    scope_flags.add_argument(
         "--lite-mode",
         action="store_true",
         help="Skip all heavy containers (windows, mac, fullcone, nlx, openwrt and android)",
+    )
+
+    start_parser = subparsers.add_parser(
+        "start",
+        parents=[scope_flags],
+        help="Build and start the environment (run `start --help` for skip/scope flags)",
     )
 
     start_parser.add_argument(
@@ -571,8 +608,16 @@ def main():
     )
 
     subparsers.add_parser("restart", help="Restart (already existing) containers")
-    subparsers.add_parser("recreate", help="Recreate (already existing) containers")
+    subparsers.add_parser(
+        "recreate",
+        parents=[scope_flags],
+        help="Recreate containers - the subset the skip/scope flags select, or the already existing ones",
+    )
     subparsers.add_parser("recreate-all", help="Recreate all containers")
+    subparsers.add_parser(
+        "shard-args",
+        help="Print this CI shard's --skip-* flags, per $NATLAB_SHARD_PLAN",
+    )
     subparsers.add_parser("stop", help="Stop the environment")
     subparsers.add_parser("kill", help="Kill the environment")
     subparsers.add_parser(
@@ -605,9 +650,11 @@ def main():
     elif args.command == "restart":
         restart()
     elif args.command == "recreate":
-        recreate()
+        recreate(_resolve_skip_keywords(args))
     elif args.command == "recreate-all":
         recreate_all()
+    elif args.command == "shard-args":
+        shard_args()
     elif args.command == "stop":
         stop()
     elif args.command == "kill":
