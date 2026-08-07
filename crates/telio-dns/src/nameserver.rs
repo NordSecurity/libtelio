@@ -122,6 +122,8 @@ pub trait NameServer {
     async fn forward_to_addrs(&self, to: &[SocketAddr]) -> DnsResult<()>;
     /// Insert or update zone records used by the server.
     async fn upsert(&self, zone: &str, records: &Records, ttl_value: TtlValue) -> DnsResult<()>;
+    /// Drop every entry from the forward zone's resolver cache.
+    async fn flush_forward_cache(&self);
 }
 
 /// Helper to update wg timers
@@ -157,6 +159,11 @@ pub struct LocalNameServer {
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
     forwarder: Option<RawForwarder>,
+    /// Typed handle to the same forward zone that is stored, type-erased, in
+    /// `zones`. Both hold the same `Arc`, so this stays in sync across the
+    /// copy-on-write clones of `ClonableZones`. Kept so the resolver cache can
+    /// be flushed without downcasting out of `Box<dyn AuthorityObject>`.
+    forward_zone: Option<Arc<ForwardZone>>,
 }
 
 impl LocalNameServer {
@@ -176,6 +183,7 @@ impl LocalNameServer {
             zones: Arc::new(ClonableZones::new()),
             task_handle: None,
             forwarder: raw_forwarder,
+            forward_zone: None,
         }));
         ns.forward(forward_ips).await?;
         Ok(ns)
@@ -894,16 +902,38 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
     }
 
     async fn forward(&self, to: &[IpAddr]) -> DnsResult<()> {
-        self.zones_mut().await.upsert(
-            LowerName::from_str(".")?,
-            Box::new(Arc::new(ForwardZone::new(".", to).await?)),
-        );
+        let forward_zone = Arc::new(ForwardZone::new(".", to).await?);
+        let root = LowerName::from_str(".")?;
+
+        // Scope each guard explicitly: `zones_mut` holds a write guard on the
+        // whole LocalNameServer, so it must be released before taking `write()`
+        // below, otherwise this would deadlock on itself.
+        {
+            self.zones_mut()
+                .await
+                .upsert(root, Box::new(forward_zone.clone()));
+        }
+        {
+            // Both copies share one Arc, so flushing through this handle affects
+            // the zone that actually serves queries.
+            self.write().await.forward_zone = Some(forward_zone);
+        }
 
         let upstreams: Vec<SocketAddr> =
             to.iter().map(|ip| SocketAddr::new(*ip, DNS_PORT)).collect();
         self.forward_to_addrs(&upstreams).await?;
 
         Ok(())
+    }
+
+    async fn flush_forward_cache(&self) {
+        // Clone the handle and release the read guard before touching the
+        // resolver, so the nameserver lock is never held across the cache lock.
+        let forward_zone = self.read().await.forward_zone.clone();
+        if let Some(forward_zone) = forward_zone {
+            forward_zone.flush_cache();
+            telio_log_debug!("Flushed MagicDNS forward resolver cache");
+        }
     }
 
     async fn forward_to_addrs(&self, to: &[SocketAddr]) -> DnsResult<()> {
