@@ -6,7 +6,12 @@ from dataclasses import asdict
 from tests import config
 from tests.helpers import SetupParameters, setup_environment
 from tests.helpers_vpn import connect_vpn, VpnConfig
-from tests.utils.bindings import TelioAdapterType
+from tests.utils.bindings import (
+    default_features,
+    FeatureFirewall,
+    Features,
+    TelioAdapterType,
+)
 from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.connection_util import new_connection_raw
 from tests.utils.iperf3 import (
@@ -21,6 +26,18 @@ from tests.utils.logger import log
 from tests.utils.router import IPStack
 from tests.utils.testing import get_current_test_log_path
 from typing import Any
+
+
+def _features_with_firewall() -> Features:
+    """Build default features with the firewall enabled."""
+    features = default_features()
+    features.firewall = FeatureFirewall(
+        neptun_reset_conns=False,
+        boringtun_reset_conns=False,
+        exclude_private_ip_range=None,
+        outgoing_blacklist=[],
+    )
+    return features
 
 
 async def collect_upload_metrics(
@@ -202,6 +219,17 @@ async def collect_download_metrics(
         ),
         pytest.param(
             SetupParameters(
+                connection_tag=ConnectionTag.VM_MAC,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                features=_features_with_firewall(),
+                is_meshnet=False,
+                run_tcpdump=False,
+            ),
+            marks=[pytest.mark.mac, pytest.mark.libfirewall],
+            id="mac_neptun_enabled_libfirewall",
+        ),
+        pytest.param(
+            SetupParameters(
                 connection_tag=ConnectionTag.VM_WINDOWS_1,
                 adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
                 is_meshnet=False,
@@ -288,7 +316,10 @@ async def test_vpn_connection_performance(setup_params: SetupParameters) -> None
         performance_results["vpn_metrics"] = vpn_metrics
         performance_results["platform"] = client_conn.target_os.name
         assert setup_params.adapter_type_override is not None
-        performance_results["adapter_type"] = setup_params.adapter_type_override.name
+        adapter_type = setup_params.adapter_type_override.name
+        if setup_params.features.firewall is not None:
+            adapter_type += "_enabled_libfirewall"
+        performance_results["adapter_type"] = adapter_type
         log.info("Final results: %s", performance_results)
 
         # Saving performance results
