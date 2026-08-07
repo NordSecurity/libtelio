@@ -31,7 +31,7 @@ _FEATURES.nurse.qos = FeatureQoS(
 _FEATURES.dns = FeatureDns(
     exit_dns=FeatureExitDns(auto_switch_dns_ips=True),
     ttl_value=60,
-    use_raw_forwarder=True,
+    use_new_forwarder=True,
 )
 
 

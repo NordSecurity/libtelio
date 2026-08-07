@@ -544,10 +544,10 @@ async fn dns_test(
     test_type: DnsTestType,
     local_records: Option<(String, Records)>,
     ttl_value: TtlValue,
-    use_raw_forwarder: bool,
+    use_new_forwarder: bool,
 ) -> Option<DnsResponse> {
     let nameserver =
-        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], use_raw_forwarder)
+        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], use_new_forwarder)
             .await
             .expect("Failed to create a LocalNameServer");
 
@@ -1084,7 +1084,7 @@ async fn dns_request_local_a_but_only_aaaa_exists() {
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn dns_request_forward(#[case] use_raw_forwarder: bool) {
+async fn dns_request_forward(#[case] use_new_forwarder: bool) {
     timeout(
         TEST_TIMEOUT,
         dns_test(
@@ -1092,7 +1092,7 @@ async fn dns_request_forward(#[case] use_raw_forwarder: bool) {
             DnsTestType::CorrectIpv4,
             None,
             TtlValue(60),
-            use_raw_forwarder,
+            use_new_forwarder,
         ),
     )
     .await
@@ -1104,9 +1104,9 @@ async fn dns_request_forward(#[case] use_raw_forwarder: bool) {
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn dns_request_forward_to_slow_server(#[case] use_raw_forwarder: bool) {
+async fn dns_request_forward_to_slow_server(#[case] use_new_forwarder: bool) {
     let nameserver =
-        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))], use_raw_forwarder)
+        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))], use_new_forwarder)
             .await
             .unwrap();
 
@@ -1133,9 +1133,9 @@ async fn dns_request_forward_to_slow_server(#[case] use_raw_forwarder: bool) {
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn dns_request_to_non_responding_forward_server(#[case] use_raw_forwarder: bool) {
+async fn dns_request_to_non_responding_forward_server(#[case] use_new_forwarder: bool) {
     let nameserver =
-        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))], use_raw_forwarder)
+        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))], use_new_forwarder)
             .await
             .unwrap();
 
@@ -1153,13 +1153,13 @@ async fn dns_request_to_non_responding_forward_server(#[case] use_raw_forwarder:
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn dns_request_bad_ip_checksum_ipv4(#[case] use_raw_forwarder: bool) {
+async fn dns_request_bad_ip_checksum_ipv4(#[case] use_new_forwarder: bool) {
     dns_test(
         "google.com",
         DnsTestType::BadIpChecksumIpv4,
         None,
         TtlValue(60),
-        use_raw_forwarder,
+        use_new_forwarder,
     )
     .await;
 }
@@ -1168,13 +1168,13 @@ async fn dns_request_bad_ip_checksum_ipv4(#[case] use_raw_forwarder: bool) {
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn dns_request_bad_udp_checksum_ipv4(#[case] use_raw_forwarder: bool) {
+async fn dns_request_bad_udp_checksum_ipv4(#[case] use_new_forwarder: bool) {
     dns_test(
         "google.com",
         DnsTestType::BadUdpChecksumIpv4,
         None,
         TtlValue(60),
-        use_raw_forwarder,
+        use_new_forwarder,
     )
     .await;
 }
@@ -1183,13 +1183,13 @@ async fn dns_request_bad_udp_checksum_ipv4(#[case] use_raw_forwarder: bool) {
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn dns_request_bad_udp_checksum_ipv6(#[case] use_raw_forwarder: bool) {
+async fn dns_request_bad_udp_checksum_ipv6(#[case] use_new_forwarder: bool) {
     dns_test(
         "google.com",
         DnsTestType::BadUdpChecksumIpv6,
         None,
         TtlValue(60),
-        use_raw_forwarder,
+        use_new_forwarder,
     )
     .await;
 }
@@ -1198,13 +1198,13 @@ async fn dns_request_bad_udp_checksum_ipv6(#[case] use_raw_forwarder: bool) {
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn dns_request_bad_udp_port_ipv4(#[case] use_raw_forwarder: bool) {
+async fn dns_request_bad_udp_port_ipv4(#[case] use_new_forwarder: bool) {
     dns_test(
         "google.com",
         DnsTestType::BadUdpPortIpv4,
         None,
         TtlValue(60),
-        use_raw_forwarder,
+        use_new_forwarder,
     )
     .await;
 }
@@ -1213,13 +1213,13 @@ async fn dns_request_bad_udp_port_ipv4(#[case] use_raw_forwarder: bool) {
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn dns_request_bad_udp_port_ipv6(#[case] use_raw_forwarder: bool) {
+async fn dns_request_bad_udp_port_ipv6(#[case] use_new_forwarder: bool) {
     dns_test(
         "google.com",
         DnsTestType::BadUdpPortIpv6,
         None,
         TtlValue(60),
-        use_raw_forwarder,
+        use_new_forwarder,
     )
     .await;
 }
@@ -1228,7 +1228,7 @@ async fn dns_request_bad_udp_port_ipv6(#[case] use_raw_forwarder: bool) {
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn dns_request_tcp_ipv4(#[case] use_raw_forwarder: bool) {
+async fn dns_request_tcp_ipv4(#[case] use_new_forwarder: bool) {
     timeout(
         TEST_TIMEOUT,
         dns_test(
@@ -1236,7 +1236,7 @@ async fn dns_request_tcp_ipv4(#[case] use_raw_forwarder: bool) {
             DnsTestType::TcpIpv4,
             None,
             TtlValue(60),
-            use_raw_forwarder,
+            use_new_forwarder,
         ),
     )
     .await
@@ -1247,7 +1247,7 @@ async fn dns_request_tcp_ipv4(#[case] use_raw_forwarder: bool) {
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn dns_request_tcp_ipv6(#[case] use_raw_forwarder: bool) {
+async fn dns_request_tcp_ipv6(#[case] use_new_forwarder: bool) {
     timeout(
         TEST_TIMEOUT,
         dns_test(
@@ -1255,7 +1255,7 @@ async fn dns_request_tcp_ipv6(#[case] use_raw_forwarder: bool) {
             DnsTestType::TcpIpv6,
             None,
             TtlValue(60),
-            use_raw_forwarder,
+            use_new_forwarder,
         ),
     )
     .await
@@ -1266,13 +1266,13 @@ async fn dns_request_tcp_ipv6(#[case] use_raw_forwarder: bool) {
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn dns_request_unsupported_protocol_ipv4(#[case] use_raw_forwarder: bool) {
+async fn dns_request_unsupported_protocol_ipv4(#[case] use_new_forwarder: bool) {
     dns_test(
         "google.com",
         DnsTestType::UnsupportedProtocolIpv4,
         None,
         TtlValue(60),
-        use_raw_forwarder,
+        use_new_forwarder,
     )
     .await;
 }
@@ -1281,13 +1281,13 @@ async fn dns_request_unsupported_protocol_ipv4(#[case] use_raw_forwarder: bool) 
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn dns_request_unsupported_protocol_ipv6(#[case] use_raw_forwarder: bool) {
+async fn dns_request_unsupported_protocol_ipv6(#[case] use_new_forwarder: bool) {
     dns_test(
         "google.com",
         DnsTestType::UnsupportedProtocolIpv6,
         None,
         TtlValue(60),
-        use_raw_forwarder,
+        use_new_forwarder,
     )
     .await;
 }
@@ -1307,9 +1307,9 @@ async fn test_tcp_rst() {
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn test_timers_updated(#[case] use_raw_forwarder: bool) {
+async fn test_timers_updated(#[case] use_new_forwarder: bool) {
     let nameserver =
-        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], use_raw_forwarder)
+        LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], use_new_forwarder)
             .await
             .expect("Failed to create a LocalNameServer");
     let (client, server_peer) = init_client_and_server(None, nameserver, TtlValue(1)).await;
@@ -1423,11 +1423,11 @@ async fn dns_request_forward_fallback_to_second_stub() {
 #[case::hickory(false)]
 #[case::raw(true)]
 #[tokio::test]
-async fn dns_request_forward_timeout_returns_no_response(#[case] use_raw_forwarder: bool) {
+async fn dns_request_forward_timeout_returns_no_response(#[case] use_new_forwarder: bool) {
     let (blackhole_addr, _bh_handle) =
         spawn_upstream_dns_stub(UpstreamStubBehavior::BlackHole).await;
 
-    let nameserver = LocalNameServer::new(&[], use_raw_forwarder)
+    let nameserver = LocalNameServer::new(&[], use_new_forwarder)
         .await
         .expect("Failed to create a LocalNameServer");
     nameserver
