@@ -165,6 +165,7 @@ class Config:
         auth_path: Optional[Path] = None,
         config_name: ConfigPresetName = ConfigPresetName.DEFAULT,
         no_detach: bool = False,
+        do_not_connect: bool = False,
         paths=Paths(),
     ):
         self.paths: Paths = paths
@@ -174,6 +175,7 @@ class Config:
         self.config_data: NordVpnLiteConfig = copy.deepcopy(config_data)
         self.config_data.auth_file_path = str(self.auth_path)
         self.no_detach: bool = no_detach
+        self.do_not_connect: bool = do_not_connect
 
     async def assert_match_daemon_start(
         self,
@@ -210,6 +212,7 @@ class Config:
 class NordVpnLite:
     SOCKET_CHECK_INTERVAL_S = 0.5
     NORDVPNLITE_CMD_CHECK_INTERVAL_S = 10  # TODO (LLT-6693): revert back to 1
+    KILL_TIMEOUT_S = 30.0
 
     def __init__(
         self,
@@ -232,6 +235,7 @@ class NordVpnLite:
         config_name: ConfigPresetName = ConfigPresetName.DEFAULT,
         config_path: Optional[Path] = None,
         no_detach: bool = False,
+        do_not_connect: bool = False,
         connection_tag: ConnectionTag = ConnectionTag.DOCKER_CONE_CLIENT_1,
         connection: Optional[Connection] = None,
     ) -> "NordVpnLite":
@@ -247,6 +251,7 @@ class NordVpnLite:
                 config_path=config_path,
                 config_name=config_name,
                 no_detach=no_detach,
+                do_not_connect=do_not_connect,
             ),
         )
         return nordvpnlite
@@ -309,7 +314,9 @@ class NordVpnLite:
             await self.save_config()
             await self.login()
 
-            cmd = ["start"]
+            cmd = ["daemon"]
+            if self.config.do_not_connect:
+                cmd.append("--do-not-connect")
             if not self.config.no_detach:
                 cmd.append("--config-file")
                 cmd.append(str(self.config.config_path))
@@ -333,26 +340,23 @@ class NordVpnLite:
                 log.info("NordVPN Lite skipping cleanup")
 
     async def clean_up(self) -> None:
-        log.info("NordVPN Lite cleanup: exiting and removing socket (if exists)")
+        log.info(
+            "NordVPN Lite cleanup: sending SIGTERM and removing socket (if exists)"
+        )
         try:
-            await self.quit()
-        except ProcessExecError as exc:
-            if "Error: DaemonIsNotRunning" not in exc.stderr:
-                log.error(exc)
-                await self.kill()
-            else:
-                log.info("Tried to quit but daemon is already not running")
-            if await self.socket_exists():
-                log.debug("Dangling socket found, removing it..")
-                await self.remove_socket()
-        finally:
-            if self.config.config_path:
-                log.info(
-                    "NordVPN Lite cleanup: removing config %s", self.config.config_path
-                )
-                await self.remove_config(self.config.config_path)
-            log.info("NordVPN Lite cleanup: saving logs")
-            await self._save_logs()
+            await self.kill()
+        except ProcessExecError:
+            log.info("Daemon is already not running")
+        if await self.socket_exists():
+            log.debug("Dangling socket found, removing it..")
+            await self.remove_socket()
+        if self.config.config_path:
+            log.info(
+                "NordVPN Lite cleanup: removing config %s", self.config.config_path
+            )
+            await self.remove_config(self.config.config_path)
+        log.info("NordVPN Lite cleanup: saving logs")
+        await self._save_logs()
 
     async def is_alive(self) -> bool:
         try:
@@ -411,37 +415,36 @@ class NordVpnLite:
         ), f"Reload failed: stdout={stdout!r}, stderr={stderr!r}"
         await self.wait_for_nordvpnlite_start()
 
-    async def quit(self) -> None:
-        stdout, stderr = await self.execute_command(["stop"])
+    async def connect(self) -> None:
+        stdout, stderr = await self.execute_command(["connect"])
         assert (
             "Command executed successfully" in stdout
-            or "Daemon is already stopped" in stdout
-        ), f"Failed to execute stop command: {stderr}"
+        ), f"Connect failed: stdout={stdout!r}, stderr={stderr!r}"
 
+    async def disconnect(self) -> None:
+        stdout, stderr = await self.execute_command(["disconnect"])
         assert (
-            not await self.is_alive()
-        ), "Quit command was sent successfully but daemon's still running"
-        assert (
-            not await self.socket_exists()
-        ), "Daemon's not running but socket still exists"
+            "Command executed successfully" in stdout
+        ), f"Disconnect failed: stdout={stdout!r}, stderr={stderr!r}"
+
+    async def quit(self) -> None:
+        await self.kill()
 
     async def kill(self) -> None:
         try:
-            # OpenWrt doesn't support killall -w
-            if self.config.paths.exec_path.parent == Path("."):
-                await self.connection.create_process(
-                    ["killall", "-s", "SIGTERM", "nordvpn"]
-                ).execute()
-            else:
-                await self.connection.create_process(
-                    ["killall", "-w", "-s", "SIGTERM", "nordvpnlite"]
-                ).execute()
-            assert (
-                not await self.is_alive()
-            ), "SIGTERM was sent but daemon's still running"
+            await self.connection.create_process(
+                ["killall", "-s", "SIGTERM", "nordvpnlite"]
+            ).execute()
         except ProcessExecError as exc:
-            if "nordvpnlite: no process found" not in exc.stderr:
+            if (
+                "no process killed" not in exc.stderr
+                and "no process found" not in exc.stderr
+            ):
                 raise
+            log.info("kill(): no nordvpnlite process was running")
+            return
+
+        await self.wait_for_nordvpnlite_stop()
 
     async def remove_config(self, path: Path) -> None:
         await self.connection.create_process(["rm", "-f", str(path)]).execute()
@@ -492,6 +495,23 @@ class NordVpnLite:
                 await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
                 continue
 
+    async def wait_for_nordvpnlite_stop(self) -> None:
+        """Wait for the daemon socket to disappear, indicating the daemon has fully exited."""
+        deadline = asyncio.get_event_loop().time() + self.KILL_TIMEOUT_S
+        while await self.socket_exists():
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"nordvpnlite did not stop within {self.KILL_TIMEOUT_S}s after SIGTERM"
+                )
+            log.debug(
+                "kill(): socket still exists, checking again in %.1fs (%.1fs remaining)",
+                self.SOCKET_CHECK_INTERVAL_S,
+                remaining,
+            )
+            await asyncio.sleep(min(self.SOCKET_CHECK_INTERVAL_S, remaining))
+        log.info("kill(): daemon socket gone — process has exited")
+
     async def wait_for_nordvpnlite_socket(self):
         while True:
             try:
@@ -515,6 +535,20 @@ class NordVpnLite:
                 if status["exit_node"]:
                     if status["exit_node"]["state"] == "connected":
                         return
+                await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+            except IgnoreableError:
+                await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+                continue
+
+    async def wait_for_vpn_disconnected_state(self):
+        """Wait until the daemon reports no active exit node (exit_node is None)."""
+        # TODO: remove after LLT-6693
+        await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+        while True:
+            try:
+                status = json.loads(await self.get_status())
+                if status.get("exit_node") is None:
+                    return
                 await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
             except IgnoreableError:
                 await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)

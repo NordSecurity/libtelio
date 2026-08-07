@@ -1,16 +1,15 @@
 use std::net::IpAddr;
 
-use clap::Parser;
-use serde::{Deserialize, Serialize};
-use telio_core::telio_task::io::chan;
-use tokio::sync::oneshot;
-use tracing::{error, info, trace};
-
 use crate::{
     comms::{DaemonConnection, DaemonSocket},
     config::{Endpoint, RunningConfig},
     daemon::{NordVpnLiteError, TelioStatusReport},
 };
+use clap::Parser;
+use serde::{Deserialize, Serialize};
+use telio_core::telio_task::io::chan;
+use tokio::sync::oneshot;
+use tracing::{error, info, trace};
 
 pub(crate) const TIMEOUT_SEC: u64 = 60;
 const DEFAULT_CONFIG_PATH: &str = "/etc/nordvpnlite/config.json";
@@ -19,12 +18,14 @@ const DEFAULT_CONFIG_PATH: &str = "/etc/nordvpnlite/config.json";
 #[clap()]
 #[derive(Serialize, Deserialize)]
 pub enum ClientCmd {
+    #[clap(about = "Connect to the exit node")]
+    Connect,
+    #[clap(about = "Disconnect from the exit node")]
+    Disconnect,
     #[clap(name = "status", about = "Retrieve the status report")]
     GetStatus,
     #[clap(hide = true)]
     IsAlive,
-    #[clap(name = "stop", about = "Stop daemon execution")]
-    QuitDaemon,
     #[clap(name = "reload", about = "Reload config file and restart the daemon")]
     Reload,
 }
@@ -40,8 +41,8 @@ pub struct ExitNodeConfig {
 pub enum TelioTaskCmd {
     // Get telio status
     GetStatus(oneshot::Sender<TelioStatusReport>),
-    // Connect to exit node with endpoint and optional hostname
-    ConnectToExitNode(ExitNodeConfig),
+    Connect(oneshot::Sender<Result<(), String>>),
+    Disconnect(oneshot::Sender<Result<(), String>>),
     // Break the receive loop to quit the daemon and exit gracefully
     Quit(oneshot::Sender<()>),
 }
@@ -71,6 +72,10 @@ pub(crate) struct DaemonOpts {
     /// Ignored with no-detach flag.
     #[clap(long = "stdout-path", default_value = "/var/log/nordvpnlite.log")]
     pub stdout_path: String,
+
+    /// Do not connect to the exit node
+    #[clap(long = "do-not-connect")]
+    pub do_not_connect: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -128,8 +133,8 @@ pub(crate) struct LogoutOpts {
 #[command(version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("LIBTELIO_COMMIT_SHA"), ") ", env!("BUILD_PROFILE")))]
 pub enum Cmd {
     #[clap(about = "Runs the nordvpnlite event loop")]
-    Start(DaemonOpts),
-    #[clap(flatten)]
+    Daemon(DaemonOpts),
+    #[command(flatten)]
     Client(ClientCmd),
     #[clap(about = "Show countries with available VPN servers")]
     Countries,
@@ -226,21 +231,39 @@ impl CommandListener {
                 })
                 .await
             }
-            ClientCmd::QuitDaemon => {
-                trace!("Quitting telio task");
+            ClientCmd::Connect => {
+                trace!("Connect");
                 let (response_tx, response_rx) = oneshot::channel();
                 #[allow(mpsc_blocking_send)]
                 self.telio_task_tx
-                    .send(TelioTaskCmd::Quit(response_tx))
+                    .send(TelioTaskCmd::Connect(response_tx))
                     .await
-                    .map_err(|e| {
-                        error!("Error sending command: {}", e);
-                        NordVpnLiteError::CommandFailed(ClientCmd::QuitDaemon)
+                    .map_err(|_| {
+                        error!("Failed to send Connect command to telio task");
+                        NordVpnLiteError::CommandFailed(ClientCmd::Connect)
                     })?;
-                // Wait for a response from TelioTask
-                // this essentially blocks the client quit command until the daemon initiated
-                // cleanup
-                handle_response(response_rx, |_| Ok(CommandResponse::Ok)).await
+                handle_response(response_rx, |result| match result {
+                    Ok(()) => Ok(CommandResponse::Ok),
+                    Err(e) => Ok(CommandResponse::Err(e)),
+                })
+                .await
+            }
+            ClientCmd::Disconnect => {
+                trace!("Disconnect");
+                let (response_tx, response_rx) = oneshot::channel();
+                #[allow(mpsc_blocking_send)]
+                self.telio_task_tx
+                    .send(TelioTaskCmd::Disconnect(response_tx))
+                    .await
+                    .map_err(|_| {
+                        error!("Failed to send Disconnect command to telio task");
+                        NordVpnLiteError::CommandFailed(ClientCmd::Disconnect)
+                    })?;
+                handle_response(response_rx, |result| match result {
+                    Ok(()) => Ok(CommandResponse::Ok),
+                    Err(e) => Ok(CommandResponse::Err(e)),
+                })
+                .await
             }
             ClientCmd::Reload => {
                 match RunningConfig::from_file(&self.config.path) {
@@ -303,11 +326,11 @@ impl CommandListener {
                 } else {
                     // Early command handling before TelioTask is initialized
                     match &command {
-                        ClientCmd::QuitDaemon => CommandResponse::Ok,
                         ClientCmd::IsAlive => CommandResponse::Ok,
-                        ClientCmd::GetStatus | ClientCmd::Reload => {
-                            CommandResponse::DaemonInitializing
-                        }
+                        ClientCmd::GetStatus
+                        | ClientCmd::Reload
+                        | ClientCmd::Connect
+                        | ClientCmd::Disconnect => CommandResponse::DaemonInitializing,
                     }
                 };
                 connection.respond(response.serialize()).await?;
@@ -374,10 +397,15 @@ mod tests {
                     let status_report = TelioStatusReport::default();
                     response_tx_channel.send(status_report).unwrap();
                 }
+                TelioTaskCmd::Connect(response_tx_channel) => {
+                    response_tx_channel.send(Ok(())).unwrap();
+                }
+                TelioTaskCmd::Disconnect(response_tx_channel) => {
+                    response_tx_channel.send(Ok(())).unwrap();
+                }
                 TelioTaskCmd::Quit(response_tx_channel) => {
                     response_tx_channel.send(()).unwrap();
                 }
-                _ => {}
             }
         });
 
@@ -468,11 +496,62 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_command_quit() {
-        let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, true, false).await;
+    async fn test_command_connect() {
+        let (response, cmd) = test_command_helper(ClientCmd::Connect, true, false).await;
 
         assert_eq!(response.unwrap(), CommandResponse::Ok);
-        assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
+        assert_eq!(cmd.unwrap(), ClientCmd::Connect);
+    }
+
+    async fn test_command_error_helper(command: ClientCmd, error_msg: &str) {
+        let path = make_socket_path();
+        let (tx, mut task_rx) = mpsc::channel::<TelioTaskCmd>(1);
+
+        let err = error_msg.to_string();
+        task::spawn(async move {
+            match task_rx.recv().await.unwrap() {
+                TelioTaskCmd::Connect(response_tx) => {
+                    response_tx.send(Err(err)).unwrap();
+                }
+                TelioTaskCmd::Disconnect(response_tx) => {
+                    response_tx.send(Err(err)).unwrap();
+                }
+                _ => {}
+            }
+        });
+
+        let socket = DaemonSocket::new(Path::new(&path)).unwrap();
+        let (config, _config_file) = make_running_config();
+        let mut listener = CommandListener::new(socket, tx, config);
+
+        let command_str = serde_json::to_string(&command).unwrap();
+        let daemon = tokio::spawn(async move {
+            let connection = listener.accept_client_connection().await.unwrap();
+            listener.handle_client_command(true, connection).await
+        });
+
+        let response = client_send_command(&path, &command_str).await;
+        let cmd = daemon.await.unwrap();
+
+        assert_eq!(
+            response.unwrap(),
+            CommandResponse::Err(error_msg.to_string())
+        );
+        assert_eq!(cmd.unwrap(), command);
+    }
+
+    #[tokio::test]
+    async fn test_command_connect_disconnect_error() {
+        test_command_error_helper(ClientCmd::Connect, "simulated connect failure").await;
+        test_command_error_helper(ClientCmd::Disconnect, "simulated disconnect failure").await;
+    }
+
+    #[tokio::test]
+    async fn test_command_disconnect() {
+        let (response, cmd) = test_command_helper(ClientCmd::Disconnect, true, false).await;
+
+        assert_eq!(response.unwrap(), CommandResponse::Ok);
+        assert_eq!(cmd.unwrap(), ClientCmd::Disconnect);
     }
 
     #[tokio::test]
@@ -532,14 +611,6 @@ mod tests {
         let (_, cmd) = test_command_helper(ClientCmd::GetStatus, true, true).await;
 
         assert_matches!(cmd, Err(NordVpnLiteError::Io(_)));
-    }
-
-    #[tokio::test]
-    async fn test_command_early_quit() {
-        let (response, cmd) = test_command_helper(ClientCmd::QuitDaemon, false, false).await;
-
-        assert_eq!(cmd.unwrap(), ClientCmd::QuitDaemon);
-        assert_eq!(response.unwrap(), CommandResponse::Ok);
     }
 
     #[tokio::test]
