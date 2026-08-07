@@ -212,7 +212,7 @@ class Config:
 class NordVpnLite:
     SOCKET_CHECK_INTERVAL_S = 0.5
     NORDVPNLITE_CMD_CHECK_INTERVAL_S = 10  # TODO (LLT-6693): revert back to 1
-    KILL_TIMEOUT_S = 5.0
+    KILL_TIMEOUT_S = 30.0
 
     def __init__(
         self,
