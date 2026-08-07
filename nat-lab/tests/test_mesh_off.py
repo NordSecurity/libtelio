@@ -13,6 +13,10 @@ from tests.utils.bindings import (
 from tests.utils.connection import ConnectionTag
 from tests.utils.ping import ping
 
+# CI load balancing only - see the shard_* markers in pyproject.toml. These tests need
+# nothing beyond the plain docker services.
+pytestmark = pytest.mark.shard_vm_misc
+
 
 # Marks in-tunnel stack only, exiting only through IPv4
 @pytest.mark.asyncio
