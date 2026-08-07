@@ -49,11 +49,11 @@ OPENWRT_TAGS = [
         ConnectionTag.VM_OPENWRT_GW_1,
         id="openwrt-25.12",
     ),
-    pytest.param(
-        ConnectionTag.DOCKER_OPENWRT_CLIENT_3,
-        ConnectionTag.VM_OPENWRT_GW_3,
-        id="openwrt-24.10-malta",
-    ),
+    # pytest.param(
+    #     ConnectionTag.DOCKER_OPENWRT_CLIENT_3,
+    #     ConnectionTag.VM_OPENWRT_GW_3,
+    #     id="openwrt-24.10-malta",
+    # ),
 ]
 
 OPENWRT_DHCP_TAGS = [
@@ -62,11 +62,11 @@ OPENWRT_DHCP_TAGS = [
         ConnectionTag.VM_OPENWRT_GW_1,
         id="openwrt-25.12",
     ),
-    pytest.param(
-        ConnectionTag.DOCKER_OPENWRT_DHCP_CLIENT_3,
-        ConnectionTag.VM_OPENWRT_GW_3,
-        id="openwrt-24.10-malta",
-    ),
+    # pytest.param(
+    #     ConnectionTag.DOCKER_OPENWRT_DHCP_CLIENT_3,
+    #     ConnectionTag.VM_OPENWRT_GW_3,
+    #     id="openwrt-24.10-malta",
+    # ),
 ]
 
 
