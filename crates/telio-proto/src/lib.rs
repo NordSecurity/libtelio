@@ -16,10 +16,14 @@ mod packet;
 
 mod ens;
 
+mod tls;
+
 pub use ens::{
     grpc::{ConnectionError, Error as GrpcError},
     install_default_crypto_provider, Error, ErrorNotificationService,
 };
+
+pub use tls::CertLoggingVerifier;
 
 pub use codec::{Codec, Error as CodecError, Result as CodecResult};
 pub use packet::*;
