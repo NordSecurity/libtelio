@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import json
 import pytest
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -36,12 +37,12 @@ async def test_nordvpnlite_start(no_detach) -> None:
             no_detach=no_detach,
         )
 
-        await nordvpnlite.quit()
+        await nordvpnlite.kill()
 
         async with nordvpnlite.start() as nordvpnlite_client:
             assert await nordvpnlite_client.is_alive()
 
-        await nordvpnlite.quit()
+        await nordvpnlite.kill()
 
 
 async def test_nordvpnlite_logs() -> None:
@@ -248,11 +249,11 @@ async def test_nordvpnlite_config_created(
         try:
             if request.node.callspec.id == "default":
                 # Start nordvpnlite without a config-file parameter
-                await nordvpnlite.execute_command(["start"])
+                await nordvpnlite.execute_command(["daemon"])
             else:
                 # Start nordvpnlite with a custom config-file parameter
                 await nordvpnlite.execute_command(
-                    ["start", "--config-file", str(config_path)]
+                    ["daemon", "--config-file", str(config_path)]
                 )
             pytest.fail("Start should not succeed with default config")
         except ProcessExecError as exc:
@@ -311,3 +312,239 @@ async def test_nordvpnlite_pq_vpn_connection(config_provider: str) -> None:
             # connection would leave it unset.
             async with new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1) as nlx_conn:
                 await inspect_preshared_key(nlx_conn)
+
+
+async def test_nordvpnlite_connect_when_already_connected() -> None:
+    """Calling connect while VPN is already established must return a CLI error
+    but must NOT break the existing VPN connection."""
+    async with AsyncExitStack() as exit_stack:
+        nordvpnlite = await NordVpnLite.new(
+            exit_stack,
+            config_data=CONFIG_PRESETS[ConfigPresetName.DEFAULT],
+        )
+        await nordvpnlite.request_credentials_from_core()
+
+        async with nordvpnlite.start():
+            log.debug("NordVPN Lite started, waiting for VPN connected state...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+
+            status = json.loads(await nordvpnlite.get_status())
+            assert (
+                status.get("exit_node") is not None
+            ), "Expected an active VPN connection"
+            assert status["exit_node"]["state"] == "connected", (
+                f"Expected exit_node state 'connected', "
+                f"got {status['exit_node']['state']!r}"
+            )
+
+            log.debug("VPN is connected; sending duplicate connect command...")
+
+            # The second connect must fail with a CLI error.
+            try:
+                await nordvpnlite.execute_command(["connect"])
+                pytest.fail(
+                    "Expected a ProcessExecError when calling connect on an "
+                    "already-connected VPN, but the command succeeded."
+                )
+            except ProcessExecError as exc:
+                log.debug(
+                    "Got expected CLI error on duplicate connect: "
+                    "stdout=%r stderr=%r",
+                    exc.stdout,
+                    exc.stderr,
+                )
+
+            log.debug(
+                "Duplicate connect raised CLI error; verifying connection is intact..."
+            )
+
+            # The daemon must still be running.
+            assert (
+                await nordvpnlite.is_alive()
+            ), "Daemon should still be alive after duplicate connect error"
+
+            # The VPN connection must still be established.
+            status = json.loads(await nordvpnlite.get_status())
+            assert status.get("exit_node") is not None, (
+                "Expected VPN connection to remain active, "
+                f"but exit_node={status.get('exit_node')}"
+            )
+            assert status["exit_node"]["state"] == "connected", (
+                f"Expected exit_node state 'connected', "
+                f"got {status['exit_node']['state']!r}"
+            )
+
+            log.debug("Confirmed: VPN connection intact after duplicate connect")
+
+
+async def test_nordvpnlite_disconnect_when_not_connected() -> None:
+    """Calling disconnect while VPN is not established must return a CLI error
+    but the daemon must remain alive."""
+    async with AsyncExitStack() as exit_stack:
+        nordvpnlite = await NordVpnLite.new(
+            exit_stack,
+            config_data=CONFIG_PRESETS[ConfigPresetName.DEFAULT],
+            do_not_connect=True,
+        )
+
+        await nordvpnlite.request_credentials_from_core()
+
+        async with nordvpnlite.start():
+            # Daemon is running but VPN connection is NOT established.
+            log.debug(
+                "NordVPN Lite started with --do-not-connect, "
+                "waiting for telio running status..."
+            )
+            await nordvpnlite.wait_for_telio_running_status()
+
+            assert (
+                await nordvpnlite.is_alive()
+            ), "Daemon should be alive before disconnect"
+
+            status = json.loads(await nordvpnlite.get_status())
+            assert status.get("exit_node") is None, (
+                f"Expected no VPN connection before disconnect attempt, "
+                f"but exit_node={status.get('exit_node')}"
+            )
+
+            log.debug("VPN is not connected; sending disconnect command...")
+
+            # Disconnect must fail with a CLI error since there is nothing to disconnect.
+            try:
+                await nordvpnlite.execute_command(["disconnect"])
+                pytest.fail(
+                    "Expected a ProcessExecError when calling disconnect with no "
+                    "active VPN connection, but the command succeeded."
+                )
+            except ProcessExecError as exc:
+                log.debug(
+                    "Got expected CLI error on disconnect with no connection: "
+                    "stdout=%r stderr=%r",
+                    exc.stdout,
+                    exc.stderr,
+                )
+
+            log.debug(
+                "Disconnect raised CLI error; verifying daemon is still running..."
+            )
+
+            # The daemon must still be running after the failed disconnect.
+            assert (
+                await nordvpnlite.is_alive()
+            ), "Daemon should still be alive after disconnect error"
+
+            log.debug("Confirmed: daemon is still alive after failed disconnect")
+
+
+async def test_nordvpnlite_reload_preserves_connected_state() -> None:
+    """VPN was connected (PL) before reload, after reload stays connected to DE."""
+    async with AsyncExitStack() as exit_stack:
+        nordvpnlite = await NordVpnLite.new(
+            exit_stack,
+            config_data=NordVpnLiteConfig(vpn=VPNConfig(country="pl")),
+            do_not_connect=True,
+        )
+        await nordvpnlite.request_credentials_from_core()
+
+        async with nordvpnlite.start():
+            await nordvpnlite.wait_for_telio_running_status()
+            await nordvpnlite.connect()
+            await nordvpnlite.wait_for_vpn_connected_state()
+
+            nordvpnlite.config.config_data = NordVpnLiteConfig(
+                vpn=VPNConfig(country="de")
+            )
+            await nordvpnlite.save_config()
+            await nordvpnlite.reload()
+
+            await nordvpnlite.wait_for_vpn_connected_state()
+            status = json.loads(await nordvpnlite.get_status())
+            assert status.get("exit_node") is not None
+            assert status["exit_node"]["state"] == "connected"
+            report = await nordvpnlite.get_status()
+            assert "de1263.nordvpn.com" in report, report
+
+
+async def test_nordvpnlite_reload_preserves_disconnected_state() -> None:
+    """VPN was disconnected before reload and stays disconnected after reload."""
+    async with AsyncExitStack() as exit_stack:
+        nordvpnlite = await NordVpnLite.new(
+            exit_stack,
+            config_data=NordVpnLiteConfig(vpn=VPNConfig(country="pl")),
+            do_not_connect=True,
+        )
+        await nordvpnlite.request_credentials_from_core()
+
+        async with nordvpnlite.start():
+            await nordvpnlite.wait_for_telio_running_status()
+
+            nordvpnlite.config.config_data = NordVpnLiteConfig(
+                vpn=VPNConfig(country="de")
+            )
+            await nordvpnlite.save_config()
+            await nordvpnlite.reload()
+
+            await nordvpnlite.wait_for_telio_running_status()
+            status = json.loads(await nordvpnlite.get_status())
+            assert status["telio_is_running"]
+            assert status.get("exit_node") is None
+
+
+async def test_nordvpnlite_connect_disconnect() -> None:
+    """Start daemon with --do-not-connect, verify VPN is not established,
+    then explicitly connect and disconnect via CLI commands."""
+    async with AsyncExitStack() as exit_stack:
+        nordvpnlite = await NordVpnLite.new(
+            exit_stack,
+            config_data=CONFIG_PRESETS[ConfigPresetName.DEFAULT],
+            do_not_connect=True,
+        )
+
+        await nordvpnlite.request_credentials_from_core()
+
+        async with nordvpnlite.start():
+            # Step 1: daemon is running but VPN connection is NOT established
+            log.debug(
+                "NordVPN Lite started with --do-not-connect, "
+                "waiting for telio running status..."
+            )
+            await nordvpnlite.wait_for_telio_running_status()
+
+            assert await nordvpnlite.is_alive(), "Daemon should be alive"
+
+            status = json.loads(await nordvpnlite.get_status())
+            assert status["telio_is_running"], "telio should be running"
+            assert (
+                status.get("exit_node") is None
+            ), f"Expected no VPN connection, but exit_node={status.get('exit_node')}"
+
+            log.debug("Confirmed: daemon running, VPN not connected")
+
+            # Step 2: connect and verify VPN is established
+            log.debug("Sending connect command...")
+            await nordvpnlite.connect()
+            await nordvpnlite.wait_for_vpn_connected_state()
+
+            status = json.loads(await nordvpnlite.get_status())
+            assert (
+                status.get("exit_node") is not None
+            ), "Expected an active VPN exit_node after connect"
+            assert status["exit_node"]["state"] == "connected", (
+                f"Expected exit_node state 'connected', "
+                f"got {status['exit_node']['state']!r}"
+            )
+
+            log.debug("Confirmed: VPN connected")
+
+            # Step 3: disconnect and verify VPN connection is stopped
+            log.debug("Sending disconnect command...")
+            await nordvpnlite.disconnect()
+            await nordvpnlite.wait_for_vpn_disconnected_state()
+
+            status = json.loads(await nordvpnlite.get_status())
+            assert status.get("exit_node") is None, (
+                f"Expected no VPN connection after disconnect, "
+                f"but exit_node={status.get('exit_node')}"
+            )
+
+            log.debug("Confirmed: VPN disconnected")
