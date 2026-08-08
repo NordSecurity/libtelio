@@ -18,7 +18,13 @@ KNOWN = {
         b"error-with-noerror-return-code.com": None,
         b"api.nordvpn.com": dns.Record_A(address="10.0.80.86"),
         b"mqtt.nordvpn.com": dns.Record_A(address="10.0.80.85"),
-        b"blocked-malware.com": dns.Record_A(address="123.123.123.123"),
+        # LLT-7558: an explicit, long TTL is required here. This record is the
+        # "unblocked" answer used by the TP-Lite DNS whitelisting tests, which
+        # need it to be cacheable by the MagicDNS (hickory) resolver. Without an
+        # explicit TTL the answer is served with RRHeader's default of 0, hickory
+        # stores it as already-expired and evicts it on the next lookup, and the
+        # stale-cache test would silently pass for the wrong reason.
+        b"blocked-malware.com": dns.Record_A(address="123.123.123.123", ttl=3600),
     },
     dns.CNAME: {
         b"www.microsoft.com": dns.Record_CNAME(name="www.microsoft.com-c-3.edgekey.net.")
@@ -35,7 +41,14 @@ class DNSResolver:
         logging.info(f"Resolving name: {name} => {record}")
         if record is None:
             return [], [], []
-        answer = dns.RRHeader(name=name, type=type, payload=record)
+        # Propagate an explicit per-record TTL to the resource record header when
+        # one was configured. Twisted leaves Record_*.ttl as None unless it was
+        # passed to the constructor, and RRHeader rejects None, so fall back to
+        # RRHeader's own default of 0 to keep every other record unchanged.
+        ttl = getattr(record, "ttl", None)
+        if ttl is None:
+            ttl = 0
+        answer = dns.RRHeader(name=name, type=type, ttl=ttl, payload=record)
         return [answer], [], []
 
     def query(self, query, timeout=None):

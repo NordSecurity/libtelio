@@ -178,6 +178,17 @@ impl ForwardAuthority {
             resolver,
         })
     }
+
+    /// Drop every entry from the resolver's cache.
+    ///
+    /// Removes both positive and negative (NXDOMAIN) entries. Needed when
+    /// something outside DNS changes what an answer ought to be - see LLT-7558,
+    /// where a TP-Lite whitelist change alters whether a query gets redirected,
+    /// but a cached answer would be returned without the query ever reaching
+    /// the firewall.
+    pub fn flush_cache(&self) {
+        self.resolver.clear_cache();
+    }
 }
 
 #[async_trait::async_trait]
