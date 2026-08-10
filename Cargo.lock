@@ -5084,6 +5084,7 @@ dependencies = [
  "protobuf",
  "protobuf-codegen",
  "rcgen",
+ "rstest",
  "rustls",
  "rustls-webpki",
  "sha2",

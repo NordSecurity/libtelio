@@ -10,6 +10,8 @@ use telio_task::io::{
 use telio_utils::exponential_backoff::Backoff;
 use telio_utils::telio_log_warn;
 
+use crate::ens::KeepaliveConfig;
+
 pub(crate) mod grpc {
     /// Stub VPN connection error for when ENS is disabled at compile time.
     #[derive(Debug, Clone, Default)]
@@ -50,6 +52,7 @@ impl ErrorNotificationService {
         _socket_pool: Arc<SocketPool>,
         _allow_only_mlkem: bool,
         _root_certificate_override: Option<Vec<u8>>,
+        _keepalive: KeepaliveConfig,
     ) -> (Self, Rx<(grpc::ConnectionError, PublicKey)>) {
         let Chan { rx, tx }: Chan<(grpc::ConnectionError, PublicKey)> = Chan::new(buffer_size);
         (Self { _tx: tx }, rx)
