@@ -47,8 +47,7 @@ SETUP_CHECK_DUPLICATE_IP_RETRIES = 1
 
 OPENWRT_VM_TAGS = [
     ConnectionTag.VM_OPENWRT_GW_1,
-    # TMP DISABLED (openwrt-gw-03)
-    # ConnectionTag.VM_OPENWRT_GW_3,
+    ConnectionTag.VM_OPENWRT_GW_3,
 ]
 
 SESSION_MARK_TO_CONTAINERS = {
