@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v7.0.8
+### ****
+---
+* LLT-7581: Add client side keepalives to the ENS connections
+
+<br>
+
 ### v7.0.7
 ### ****
 ---
