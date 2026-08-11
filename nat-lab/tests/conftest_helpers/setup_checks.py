@@ -1,19 +1,14 @@
 import asyncio
 import json
-import os
 import re
 import tests.config
 from collections import defaultdict
 from contextlib import AsyncExitStack
 from itertools import combinations
 from tests.config import LAN_ADDR_MAP
-from tests.conftest_helpers.log_collection import LOG_DIR
 from tests.interderp_cli import InterDerpClient
 from tests.utils.connection import ConnectionTag, TargetOS
-from tests.utils.connection.docker_connection import (
-    DockerConnection,
-    DOCKER_VM_SERVICE_IDS,
-)
+from tests.utils.connection.docker_connection import DockerConnection
 from tests.utils.connection_util import (
     new_connection_raw,
     is_running,
@@ -201,68 +196,6 @@ async def setup_check_duplicate_ip_addresses():
         raise RuntimeError(f"Found duplicate container IPv4 addresses: {details}")
 
 
-async def _run_cmd(cmd: list[str]) -> str:
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await proc.communicate()
-    out = (stdout or b"").decode(errors="replace")
-    err = (stderr or b"").decode(errors="replace")
-    return out + err
-
-
-async def _save_container_log(container: str) -> str | None:
-    path = os.path.join(LOG_DIR, f"docker-{container}.log")
-    try:
-        os.makedirs(LOG_DIR, exist_ok=True)
-        with open(path, "wb") as log_file:
-            proc = await asyncio.create_subprocess_exec(
-                "docker",
-                "logs",
-                container,
-                stdout=log_file,
-                stderr=asyncio.subprocess.STDOUT,
-            )
-            returncode = await proc.wait()
-    except OSError as e:
-        setup_log.warning("Failed to save %s container log: %s", container, e)
-        return None
-    if returncode != 0:
-        setup_log.warning(
-            "'docker logs %s' exited with %s; %s may be incomplete",
-            container,
-            returncode,
-            path,
-        )
-    return path
-
-
-async def _dump_vm_connection_failure_diagnostics(conn_tag: ConnectionTag) -> None:
-    """Dump container logs and host network state when a VM SSH connection fails.
-
-    Helps identify whether the failure is inside the guest (sshd not ready)
-    or on the host network path (routing/ARP not yet established).
-    """
-    if conn_tag not in DOCKER_VM_SERVICE_IDS:
-        return
-
-    container = f"nat-lab-{DOCKER_VM_SERVICE_IDS[conn_tag]}-1"
-    log_path = await _save_container_log(container)
-    if log_path is not None:
-        setup_log.warning("Full %s container log saved to %s", container, log_path)
-
-    primary_ip = LAN_ADDR_MAP[conn_tag]["primary"]
-    for cmd, label in [
-        (["ping", "-c", "1", "-W", "2", primary_ip], "ping"),
-        (["ip", "neigh", "show", primary_ip], "arp"),
-        (["ip", "route", "get", primary_ip], "route"),
-    ]:
-        out = await _run_cmd(cmd)
-        setup_log.warning("Host diag [%s] for %s:\n%s", label, primary_ip, out)
-
-
 async def setup_check_duplicate_mac_addresses(
     session_is_container_running: dict[ConnectionTag, bool],
 ):
@@ -292,7 +225,6 @@ async def setup_check_duplicate_mac_addresses(
                 setup_log.warning(
                     "Failed to check MAC address for %s: %s", conn_tag.name, e
                 )
-                await _dump_vm_connection_failure_diagnostics(conn_tag)
                 raise e
 
             if conn.target_os in (TargetOS.Linux, TargetOS.Android):
