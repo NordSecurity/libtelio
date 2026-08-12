@@ -92,6 +92,10 @@ pub enum NordVpnLiteError {
     IpRoute,
     #[error("Endpoint has no PublicKey")]
     EndpointNoPublicKey,
+    #[error("Already connected to exit node")]
+    AlreadyConnected,
+    #[error("Not connected to exit node")]
+    NotConnected,
 }
 
 /// Libtelio and VPN status report
@@ -184,15 +188,30 @@ impl TelioContext {
     fn start_listening_commands(
         &mut self,
         mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
-    ) -> Result<(), NordVpnLiteError> {
+    ) -> Result<bool, NordVpnLiteError> {
+        let mut was_connected = false;
         while let Some(cmd) = rx_channel.blocking_recv() {
             trace!("TelioTask got command {:?}", cmd);
+
+            if matches!(cmd, TelioTaskCmd::Quit(_)) {
+                was_connected = self.was_connected()?;
+            }
+
             match cmd.execute(self)? {
                 TelioTaskOutcome::Exit => break,
                 TelioTaskOutcome::Continue => continue,
             }
         }
-        Ok(())
+        Ok(was_connected)
+    }
+
+    // This function is called in the context of configuration reload.
+    // Returns true if exit node is in connected or connecting state.
+    fn was_connected(&self) -> Result<bool, NordVpnLiteError> {
+        let external_nodes = self.telio.external_nodes()?;
+        Ok(external_nodes.iter().any(|node| {
+            node.is_exit && matches!(node.state, NodeState::Connected | NodeState::Connecting)
+        }))
     }
 
     fn start_telio(
@@ -297,6 +316,7 @@ impl TelioTaskCmd {
                             external_nodes.iter().find(|node| node.is_exit).map(|node| {
                                 ExitNodeStatus::from_node(node, exit_node.endpoint.hostname)
                             });
+
                         ctx.exit_node = exit_node;
                     }
                     Err(e) => {
@@ -361,25 +381,40 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
 /// Outcome of a single daemon run
 enum LoopOutcome {
     Exit,
-    /// Carries new configuration
-    Reload(Box<RunningConfig>),
+    /// Carries new configuration and whether the VPN was connected at the time of reload.
+    Reload {
+        config: Box<RunningConfig>,
+        was_connected: bool,
+    },
 }
 
 pub async fn daemon_event_loop(
     mut config: RunningConfig,
     logging_handle: &mut logging::LoggingHandle,
-    connect_on_startup: bool,
+    auto_connect: bool,
 ) -> Result<(), NordVpnLiteError> {
+    let mut was_connected_before_reload = None;
     loop {
+        // For the initial launch, respect the --do-not-connect flag.
+        // For subsequent runs after a reload, the pre reload state directly encodes the intent
+        let connect_on_startup = match was_connected_before_reload {
+            None => auto_connect,
+            Some(connected) => connected,
+        };
+
         match run_daemon(config.clone(), connect_on_startup).await? {
             LoopOutcome::Exit => break,
-            LoopOutcome::Reload(new_config) => {
+            LoopOutcome::Reload {
+                config: new_config,
+                was_connected,
+            } => {
                 info!("Reloading config from {}", config.path.display());
 
                 let logging_configuration_changed =
                     config.parsed.logging_params_changed(&new_config.parsed);
 
                 config = *new_config;
+                was_connected_before_reload = Some(was_connected);
 
                 if logging_configuration_changed {
                     if let Err(e) = logging::reload_logging(
@@ -463,6 +498,7 @@ async fn run_daemon(
     };
 
     let config_clone = config.parsed.clone();
+
     let (init_done_tx, init_done_rx) = oneshot::channel::<()>();
     let mut telio_task_handle = tokio::task::spawn_blocking(move || {
         let mut context = TelioContext::new(config_clone, nordlynx_private_key)?;
@@ -470,16 +506,14 @@ async fn run_daemon(
         context.start_listening_commands(telio_rx)
     });
 
-    if connect_on_startup {
-        if init_done_rx.await.is_ok() {
-            let config_clone = config.parsed.clone();
-            let tx_clone = telio_tx.clone();
-            // Without blocking the main thread select (HTTP request) and connect to exit node
-            tokio::spawn(async move {
-                handle_exit_node_connection(&config_clone, tx_clone).await;
-                debug!("Exit node connection task completed");
-            });
-        }
+    if connect_on_startup && init_done_rx.await.is_ok() {
+        let config_clone = config.parsed.clone();
+        let tx_clone = telio_tx.clone();
+        // Without blocking the main thread select (HTTP request) and connect to exit node
+        tokio::spawn(async move {
+            handle_exit_node_connection(&config_clone, tx_clone).await;
+            debug!("Exit node connection task completed");
+        });
     }
 
     info!("Entering event loop");
@@ -488,10 +522,13 @@ async fn run_daemon(
             // Check if telio_task completes and exit if it fails
             join_result = &mut telio_task_handle => {
                 match join_result {
-                    Ok(Ok(_)) => {
+                    Ok(Ok(was_connected)) => {
                         if let Some(new_config) = cmd_listener.take_pending_config() {
                             trace!("Telio task thread completed after reload request, restarting");
-                            break Ok(LoopOutcome::Reload(Box::new(new_config)))
+                            break Ok(LoopOutcome::Reload {
+                                config: Box::new(new_config),
+                                was_connected,
+                            })
                         } else {
                             trace!("Telio task thread completed, exiting");
                             break Ok(LoopOutcome::Exit)
@@ -545,7 +582,17 @@ async fn run_daemon(
                                 if let Err(e) = response_rx.await {
                                     error!("Error receiving quit response from telio task: {e}");
                                 }
-                                break Ok(LoopOutcome::Reload(Box::new(new_config)));
+                                let was_connected = match telio_task_handle.await {
+                                    Ok(Ok(state)) => state,
+                                    err => {
+                                        error!("Telio task did not complete cleanly during reload: {err:?}, defaulting to disconnected state");
+                                        false
+                                    }
+                                };
+                                break Ok(LoopOutcome::Reload {
+                                    config: Box::new(new_config),
+                                    was_connected,
+                                });
                             }
                         }
                     }
