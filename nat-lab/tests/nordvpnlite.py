@@ -417,6 +417,18 @@ class NordVpnLite:
         ), f"Reload failed: stdout={stdout!r}, stderr={stderr!r}"
         await self.wait_for_nordvpnlite_start()
 
+    async def connect(self) -> None:
+        stdout, stderr = await self.execute_command(["connect"])
+        assert (
+            "Command executed successfully" in stdout
+        ), f"Connect failed: stdout={stdout!r}, stderr={stderr!r}"
+
+    async def disconnect(self) -> None:
+        stdout, stderr = await self.execute_command(["disconnect"])
+        assert (
+            "Command executed successfully" in stdout
+        ), f"Disconnect failed: stdout={stdout!r}, stderr={stderr!r}"
+
     async def quit(self) -> None:
         stdout, stderr = await self.execute_command(["stop"])
         assert (
@@ -521,6 +533,20 @@ class NordVpnLite:
                 if status["exit_node"]:
                     if status["exit_node"]["state"] == "connected":
                         return
+                await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+            except IgnoreableError:
+                await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+                continue
+
+    async def wait_for_vpn_disconnected_state(self):
+        """Wait until the daemon reports no active exit node (exit_node is None)."""
+        # TODO: remove after LLT-6693
+        await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+        while True:
+            try:
+                status = json.loads(await self.get_status())
+                if status.get("exit_node") is None:
+                    return
                 await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
             except IgnoreableError:
                 await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
