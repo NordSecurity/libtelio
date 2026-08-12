@@ -94,6 +94,8 @@ And following cli commands:
 * `nordvpnlite is-alive` - query if the daemon is running
 * `nordvpnlite stop` - stop daemon execution
 * `nordvpnlite reload` - reload the configuration file and restart the daemon
+* `nordvpnlite connect` - connect to the VPN exit node
+* `nordvpnlite disconnect` - disconnect from the current VPN exit node
 * `nordvpnlite countries` - list countries with available VPN servers
 * `nordvpnlite login <token>` (or `nordvpnlite login --token <token>`) - store the authentication token obtained
   from [my.nordaccount.com](https://my.nordaccount.com) into the auth file
