@@ -92,6 +92,10 @@ pub enum NordVpnLiteError {
     IpRoute,
     #[error("Endpoint has no PublicKey")]
     EndpointNoPublicKey,
+    #[error("Already connected to exit node")]
+    AlreadyConnected,
+    #[error("Not connected to exit node")]
+    NotConnected,
 }
 
 /// Libtelio and VPN status report
@@ -132,6 +136,12 @@ impl ExitNodeStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VpnConnectionState {
+    Disconnected,
+    Connected,
+}
+
 /// Outcome of executing a TelioTaskCmd, indicating whether TelioTask should keep listening
 /// for commands or not
 #[derive(Debug, PartialEq, Eq)]
@@ -145,6 +155,7 @@ struct TelioContext {
     interface_config_provider: Box<dyn ConfigureInterface>,
     config: NordVpnLiteConfig,
     exit_node: Option<ExitNodeStatus>,
+    connection_state: VpnConnectionState,
 }
 
 impl TelioContext {
@@ -178,13 +189,14 @@ impl TelioContext {
             interface_config_provider,
             config,
             exit_node: None,
+            connection_state: VpnConnectionState::Disconnected,
         })
     }
 
     fn start_listening_commands(
         &mut self,
         mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
-    ) -> Result<(), NordVpnLiteError> {
+    ) -> Result<VpnConnectionState, NordVpnLiteError> {
         while let Some(cmd) = rx_channel.blocking_recv() {
             trace!("TelioTask got command {:?}", cmd);
             match cmd.execute(self)? {
@@ -192,7 +204,7 @@ impl TelioContext {
                 TelioTaskOutcome::Continue => continue,
             }
         }
-        Ok(())
+        Ok(self.connection_state)
     }
 
     fn start_telio(
@@ -298,6 +310,7 @@ impl TelioTaskCmd {
                                 ExitNodeStatus::from_node(node, exit_node.endpoint.hostname)
                             });
                         ctx.exit_node = exit_node;
+                        ctx.connection_state = VpnConnectionState::Connected;
                     }
                     Err(e) => {
                         error!("Failed to connect to VPN with error: {e:?}");
@@ -361,25 +374,41 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
 /// Outcome of a single daemon run
 enum LoopOutcome {
     Exit,
-    /// Carries new configuration
-    Reload(Box<RunningConfig>),
+    /// Carries new configuration and the VPN connection state at the time of reload.
+    Reload {
+        config: Box<RunningConfig>,
+        connection_state: VpnConnectionState,
+    },
 }
 
 pub async fn daemon_event_loop(
     mut config: RunningConfig,
     logging_handle: &mut logging::LoggingHandle,
-    connect_on_startup: bool,
+    auto_connect: bool,
 ) -> Result<(), NordVpnLiteError> {
+    let mut pre_reload_connection_state = None;
     loop {
+        // For the initial launch, respect the --do-not-connect flag.
+        // For subsequent runs after a reload, the pre reolad state directly encodes the intent
+        let connect_on_startup = match pre_reload_connection_state {
+            None => auto_connect,
+            Some(VpnConnectionState::Connected) => true,
+            Some(VpnConnectionState::Disconnected) => false,
+        };
+
         match run_daemon(config.clone(), connect_on_startup).await? {
             LoopOutcome::Exit => break,
-            LoopOutcome::Reload(new_config) => {
+            LoopOutcome::Reload {
+                config: new_config,
+                connection_state: vpn_connection_state,
+            } => {
                 info!("Reloading config from {}", config.path.display());
 
                 let logging_configuration_changed =
                     config.parsed.logging_params_changed(&new_config.parsed);
 
                 config = *new_config;
+                pre_reload_connection_state = Some(vpn_connection_state);
 
                 if logging_configuration_changed {
                     if let Err(e) = logging::reload_logging(
@@ -463,6 +492,7 @@ async fn run_daemon(
     };
 
     let config_clone = config.parsed.clone();
+
     let (init_done_tx, init_done_rx) = oneshot::channel::<()>();
     let mut telio_task_handle = tokio::task::spawn_blocking(move || {
         let mut context = TelioContext::new(config_clone, nordlynx_private_key)?;
@@ -470,16 +500,14 @@ async fn run_daemon(
         context.start_listening_commands(telio_rx)
     });
 
-    if connect_on_startup {
-        if init_done_rx.await.is_ok() {
-            let config_clone = config.parsed.clone();
-            let tx_clone = telio_tx.clone();
-            // Without blocking the main thread select (HTTP request) and connect to exit node
-            tokio::spawn(async move {
-                handle_exit_node_connection(&config_clone, tx_clone).await;
-                debug!("Exit node connection task completed");
-            });
-        }
+    if connect_on_startup && init_done_rx.await.is_ok() {
+        let config_clone = config.parsed.clone();
+        let tx_clone = telio_tx.clone();
+        // Without blocking the main thread select (HTTP request) and connect to exit node
+        tokio::spawn(async move {
+            handle_exit_node_connection(&config_clone, tx_clone).await;
+            debug!("Exit node connection task completed");
+        });
     }
 
     info!("Entering event loop");
@@ -488,10 +516,13 @@ async fn run_daemon(
             // Check if telio_task completes and exit if it fails
             join_result = &mut telio_task_handle => {
                 match join_result {
-                    Ok(Ok(_)) => {
+                    Ok(Ok(vpn_connection_state)) => {
                         if let Some(new_config) = cmd_listener.take_pending_config() {
                             trace!("Telio task thread completed after reload request, restarting");
-                            break Ok(LoopOutcome::Reload(Box::new(new_config)))
+                            break Ok(LoopOutcome::Reload {
+                                config: Box::new(new_config),
+                                connection_state: vpn_connection_state,
+                            })
                         } else {
                             trace!("Telio task thread completed, exiting");
                             break Ok(LoopOutcome::Exit)
@@ -545,7 +576,17 @@ async fn run_daemon(
                                 if let Err(e) = response_rx.await {
                                     error!("Error receiving quit response from telio task: {e}");
                                 }
-                                break Ok(LoopOutcome::Reload(Box::new(new_config)));
+                                let vpn_connection_state = match telio_task_handle.await {
+                                    Ok(Ok(state)) => state,
+                                    err => {
+                                        error!("Telio task did not complete cleanly during reload: {err:?}, defaulting to Disconnected state");
+                                        VpnConnectionState::Disconnected
+                                    }
+                                };
+                                break Ok(LoopOutcome::Reload {
+                                    config: Box::new(new_config),
+                                    connection_state: vpn_connection_state,
+                                });
                             }
                         }
                     }
