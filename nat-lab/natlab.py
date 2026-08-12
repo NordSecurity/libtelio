@@ -470,10 +470,6 @@ def _resolve_skip_keywords(args) -> set:
         skip_keywords.add("fullcone")
     if args.skip_windows:
         skip_keywords.add("windows")
-    if args.skip_windows_1:
-        skip_keywords.update(["windows-client-01", "windows-gw-01", "windows-gw-02"])
-    if args.skip_windows_2:
-        skip_keywords.update(["windows-client-02", "windows-gw-03", "windows-gw-04"])
     if args.skip_mac:
         skip_keywords.add("mac")
     if args.skip_nlx:
@@ -511,16 +507,6 @@ def main():
         "--skip-windows",
         action="store_true",
         help="Skip starting all windows related containers (windows-client-*, windows-gw-*)",
-    )
-    start_parser.add_argument(
-        "--skip-windows-1",
-        action="store_true",
-        help="Skip starting windows-client-01 container and related gateways",
-    )
-    start_parser.add_argument(
-        "--skip-windows-2",
-        action="store_true",
-        help="Skip starting windows-client-02 container and related gateways",
     )
     start_parser.add_argument(
         "--skip-mac",

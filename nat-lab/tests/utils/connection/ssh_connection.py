@@ -26,7 +26,7 @@ class SshConnection(Connection):
         tag: ConnectionTag,
         ip: str = "",
     ):
-        if tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
+        if tag is ConnectionTag.VM_WINDOWS_1:
             target_os = TargetOS.Windows
         elif tag is ConnectionTag.VM_MAC:
             target_os = TargetOS.Mac
@@ -73,7 +73,7 @@ class SshConnection(Connection):
     def _credentials(tag: ConnectionTag) -> tuple[str, str | None]:
         if tag is ConnectionTag.VM_MAC:
             return "root", "jobs"
-        if tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
+        if tag is ConnectionTag.VM_WINDOWS_1:
             return "bill", "gates"
         if tag in [
             ConnectionTag.VM_OPENWRT_GW_1,
@@ -142,7 +142,7 @@ class SshConnection(Connection):
 
                     yield connection
         except OSError:
-            if tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
+            if tag is ConnectionTag.VM_WINDOWS_1:
                 try:
                     import tests.utils.connection_util  # pylint: disable=import-outside-toplevel
 

@@ -28,7 +28,6 @@ class ConnectionTag(Enum):
     DOCKER_OPENWRT_DHCP_CLIENT_3 = auto()
     DOCKER_INTERNAL_SYMMETRIC_CLIENT = auto()
     VM_WINDOWS_1 = auto()
-    VM_WINDOWS_2 = auto()
     VM_MAC = auto()
     VM_ANDROID_1 = auto()
     DOCKER_CONE_GW_1 = auto()
@@ -58,10 +57,7 @@ class ConnectionTag(Enum):
     DOCKER_PHOTO_ALBUM = auto()
     DOCKER_WINDOWS_GW_1 = auto()
     DOCKER_WINDOWS_GW_2 = auto()
-    DOCKER_WINDOWS_GW_3 = auto()
-    DOCKER_WINDOWS_GW_4 = auto()
     DOCKER_WINDOWS_VM_1 = auto()
-    DOCKER_WINDOWS_VM_2 = auto()
     DOCKER_MAC_GW_1 = auto()
     DOCKER_MAC_GW_2 = auto()
     DOCKER_CORE_API_1 = auto()
@@ -166,7 +162,7 @@ async def setup_ephemeral_ports(connection: Connection):
     start_port = random.randint(15000, 55000)
     num_ports = random.randint(2000, 5000)
 
-    if connection.tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
+    if connection.tag is ConnectionTag.VM_WINDOWS_1:
         cmd = [
             "netsh",
             "int",

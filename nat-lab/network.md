@@ -220,28 +220,6 @@ graph LR
         192.168.151.254"])
   end
 
-  %% Network windows-net-03
-  subgraph windows-net-03[windows-net-03]
-  direction LR
-    windows-client-02("windows-client-02
-        192.168.152.54
-        192.168.153.54")
-    windows-gw-03(["windows-gw-03
-        10.0.254.17
-        192.168.152.254"])
-  end
-
-  %% Network windows-net-04
-  subgraph windows-net-04[windows-net-04]
-  direction LR
-    windows-client-02("windows-client-02
-        192.168.152.54
-        192.168.153.54")
-    windows-gw-04(["windows-gw-04
-        10.0.254.18
-        192.168.153.254"])
-  end
-
   %% Network mac-net-01
   subgraph mac-net-01[mac-net-01]
   direction LR
@@ -290,8 +268,6 @@ graph LR
   openwrt-gw-03 -..- internet
   windows-gw-01 -..- internet
   windows-gw-02 -..- internet
-  windows-gw-03 -..- internet
-  windows-gw-04 -..- internet
   mac-gw-01 -..- internet
   mac-gw-02 -..- internet
   android-gw-01 -..- internet
@@ -313,8 +289,6 @@ graph LR
   openwrt-client-03 -.- openwrt-gw-03
   windows-client-01 -.- windows-gw-01
   windows-client-01 -.- windows-gw-02
-  windows-client-02 -.- windows-gw-03
-  windows-client-02 -.- windows-gw-04
   mac-client-01 -.- mac-gw-01
   mac-client-01 -.- mac-gw-02
   android-client-01 -.- android-gw-01

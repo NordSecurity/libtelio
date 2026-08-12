@@ -56,10 +56,7 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_PHOTO_ALBUM: "photo-album",
     ConnectionTag.DOCKER_WINDOWS_GW_1: "windows-gw-01",
     ConnectionTag.DOCKER_WINDOWS_GW_2: "windows-gw-02",
-    ConnectionTag.DOCKER_WINDOWS_GW_3: "windows-gw-03",
-    ConnectionTag.DOCKER_WINDOWS_GW_4: "windows-gw-04",
     ConnectionTag.DOCKER_WINDOWS_VM_1: "windows-client-01",
-    ConnectionTag.DOCKER_WINDOWS_VM_2: "windows-client-02",
     ConnectionTag.DOCKER_MAC_GW_1: "mac-gw-01",
     ConnectionTag.DOCKER_MAC_GW_2: "mac-gw-02",
     ConnectionTag.DOCKER_CORE_API_1: "core-api",
@@ -84,7 +81,6 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: ConnectionTag.DOCKER_UDP_BLOCK_GW_1,
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: ConnectionTag.DOCKER_UDP_BLOCK_GW_2,
     ConnectionTag.VM_WINDOWS_1: ConnectionTag.DOCKER_WINDOWS_GW_1,
-    ConnectionTag.VM_WINDOWS_2: ConnectionTag.DOCKER_WINDOWS_GW_3,
     ConnectionTag.VM_MAC: ConnectionTag.DOCKER_MAC_GW_1,
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: (
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1
@@ -102,7 +98,6 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
 
 DOCKER_VM_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.VM_WINDOWS_1: ConnectionTag.DOCKER_WINDOWS_VM_1,
-    ConnectionTag.VM_WINDOWS_2: ConnectionTag.DOCKER_WINDOWS_VM_2,
 }
 
 DOCKER_SERVICE_SKIP_IPTABLES: list[ConnectionTag] = [
@@ -249,7 +244,6 @@ def container_id(tag: ConnectionTag) -> str:
 # hosts the guest, allowing the backing container to be controlled (e.g. paused).
 DOCKER_VM_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.VM_WINDOWS_1: "windows-client-01",
-    ConnectionTag.VM_WINDOWS_2: "windows-client-02",
     ConnectionTag.VM_MAC: "mac-client-01",
     ConnectionTag.VM_ANDROID_1: "android-client-01",
 }

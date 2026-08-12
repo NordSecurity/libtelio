@@ -178,29 +178,6 @@ services:
       windows-net-02:
         ipv4_address: 192.168.151.54
 
-  windows-client-02:
-    hostname: windows-client-02
-    <<: *windows-client
-    depends_on:
-      windows-gw-03:
-        condition: service_healthy
-      windows-gw-04:
-        condition: service_healthy
-    networks:
-      windows-net-03:
-        ipv4_address: 192.168.152.54
-      windows-net-04:
-        ipv4_address: 192.168.153.54
-    environment:
-      USERNAME: "bill"
-      PASSWORD: "gates"
-      NETWORK: "bridge"
-      RAM_SIZE: "4G"
-      CPU_CORES: "2"
-      EXTRA_SCRIPT: "/libtelio/nat-lab/bin/windows-client"
-      CLIENT_GATEWAY_PRIMARY: 192.168.152.254
-      CLIENT_GATEWAY_SECONDARY: 192.168.153.254
-
   cone-client-02:
     hostname: cone-client-02
     <<: *common-client
@@ -835,28 +812,6 @@ services:
         ipv4_address: 192.168.151.254
         priority: 900
 
-  windows-gw-03:
-    hostname: windows-gw-03
-    <<: *common-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.17
-        priority: 1000
-      windows-net-03:
-        ipv4_address: 192.168.152.254
-        priority: 900
-
-  windows-gw-04:
-    hostname: windows-gw-04
-    <<: *common-gw
-    networks:
-      internet:
-        ipv4_address: 10.0.254.18
-        priority: 1000
-      windows-net-04:
-        ipv4_address: 192.168.153.254
-        priority: 900
-
   mac-gw-01:
     hostname: mac-gw-01
     <<: *common-gw
@@ -1369,20 +1324,6 @@ networks:
       driver: default
       config:
         - subnet: 192.168.151.0/24
-
-  windows-net-03:
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 192.168.152.0/24
-
-  windows-net-04:
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 192.168.153.0/24
 
   mac-net-01:
     driver: bridge

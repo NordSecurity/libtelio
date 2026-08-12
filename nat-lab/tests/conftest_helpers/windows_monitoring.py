@@ -15,7 +15,7 @@ async def start_windows_vms_resource_monitoring(
     tasks: List[asyncio.Task],
     end_tasks: threading.Event,
 ):
-    vms = [ConnectionTag.DOCKER_WINDOWS_VM_1, ConnectionTag.DOCKER_WINDOWS_VM_2]
+    vms = [ConnectionTag.DOCKER_WINDOWS_VM_1]
     for vm_tag in vms:
         is_vm_running = await is_running(vm_tag)
         if is_vm_running:
