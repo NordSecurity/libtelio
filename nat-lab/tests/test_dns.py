@@ -26,6 +26,10 @@ from tests.utils.process import ProcessExecError
 from tests.utils.router import IPStack
 from typing import List, Optional
 
+# CI load balancing only - see the shard_* markers in pyproject.toml. These tests need
+# nothing beyond the plain docker services.
+pytestmark = pytest.mark.shard_mac
+
 DNS_FORWARDER_PARAMS = [
     pytest.param(False, id="hickory"),
     pytest.param(True, id="raw"),

@@ -113,7 +113,8 @@ uv run python3 natlab.py check-containers
 
 ### Start modifiers (skip heavy services)
 
-- Lightweight bring-up (skips Windows, macOS, fullcone, NLX):
+- Lightweight bring-up — starts the 38 docker-only services and no QEMU/KVM guest at
+  all (skips Windows, macOS, NLX, fullcone, Android, OpenWrt and Playwright):
 
 ```bash
 uv run python3 natlab.py start --lite-mode
@@ -122,7 +123,7 @@ uv run python3 natlab.py start --lite-mode
 - Skip specific groups:
 
 ```bash
-uv run python3 natlab.py start --skip-windows --skip-mac --skip-nlx --skip-fullcone
+uv run python3 natlab.py start --skip-windows --skip-mac --skip-nlx --skip-fullcone --skip-android --skip-openwrt
 ```
 
 - Skip an individual Windows VM:
@@ -131,6 +132,14 @@ uv run python3 natlab.py start --skip-windows --skip-mac --skip-nlx --skip-fullc
 uv run python3 natlab.py start --skip-windows-1
 uv run python3 natlab.py start --skip-windows-2
 ```
+
+Skip keywords are matched as substrings against the compose service names, so
+`--skip-windows` also drops `windows-gw-*`. Note that `--skip-openwrt` implies
+`--skip-playwright`: `playwright-runner-01` `depends_on` `openwrt-gw-01`, so leaving it
+in would make compose boot the OpenWrt VM regardless.
+
+Add `--force-recreate` to recreate the selected containers even when their config and
+image are unchanged (this is `recreate-all`, scoped to the services you asked for).
 
 If a service is missing, the script prints compose logs for that service and fails. See [python.check_containers()](natlab.py).
 

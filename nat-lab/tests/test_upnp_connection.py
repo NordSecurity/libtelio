@@ -18,6 +18,10 @@ from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
 from tests.utils.router import new_router, IPStack
 
+# CI load balancing only - see the shard_* markers in pyproject.toml. These tests need
+# nothing beyond the plain docker services.
+pytestmark = pytest.mark.shard_openwrt
+
 
 async def execute_upnpc_with_retry(connection, timeout=10.0):
     start_time = asyncio.get_event_loop().time()

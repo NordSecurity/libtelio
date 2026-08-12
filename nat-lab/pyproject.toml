@@ -211,6 +211,14 @@ markers = [
     "openwrt_ui: tests that check the OpenWrt LuCI UI",
     "perf_profiling: tests that profile execution with perf",
     "libfirewall: tests that require libfirewall.so to be present in nat-lab/tests/uniffi/",
+    # The shard_* markers below are pure CI load-balancing hints. They do NOT add any
+    # service requirement: they mark docker-only tests that would otherwise all land on
+    # the same CI shard, so that CI can run them alongside a VM shard instead (a VM
+    # shard always starts a superset of the docker-only services). Locally they have no
+    # effect. Retag freely when the suite's timings drift.
+    "shard_mac: docker-only test assigned to the mac CI shard for load balancing",
+    "shard_openwrt: docker-only test assigned to the openwrt CI shard for load balancing",
+    "shard_vm_misc: docker-only test assigned to the vm-misc CI shard for load balancing",
 ]
 
 [tool.pyright]
