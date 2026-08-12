@@ -1,0 +1,1 @@
+Fix nat-lab windows VMs powering off 61 min after boot: switch VM image to non-eval LTSC media (expired-eval WLMS shutdown timer)
