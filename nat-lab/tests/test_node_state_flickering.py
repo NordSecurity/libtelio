@@ -122,14 +122,12 @@ CFG = [
         pytest.param(
             alpha_cfg[0],
             beta_cfg[0],
-            marks=(
-                [pytest.mark.windows2]
-                if alpha_cfg[1] == [pytest.mark.windows]
-                and beta_cfg[1] == [pytest.mark.windows]
-                else alpha_cfg[1] + beta_cfg[1]
-            ),
+            marks=alpha_cfg[1] + beta_cfg[1],
         )
         for alpha_cfg, beta_cfg in itertools.combinations_with_replacement(CFG, 2)
+        # nat-lab has a single Windows VM, so no windows<->windows pair
+        if alpha_cfg[0] != TelioAdapterType.WINDOWS_NATIVE_TUN
+        or beta_cfg[0] != TelioAdapterType.WINDOWS_NATIVE_TUN
     ],
 )
 async def test_node_state_flickering_direct(
@@ -142,11 +140,7 @@ async def test_node_state_flickering_direct(
             if alpha_adapter_type == TelioAdapterType.WINDOWS_NATIVE_TUN
             else ConnectionTag.DOCKER_CONE_CLIENT_1
         )
-        beta_conn_tag = (
-            ConnectionTag.VM_WINDOWS_2
-            if beta_adapter_type == TelioAdapterType.WINDOWS_NATIVE_TUN
-            else ConnectionTag.DOCKER_CONE_CLIENT_2
-        )
+        beta_conn_tag = ConnectionTag.DOCKER_CONE_CLIENT_2
 
         env = await setup_mesh_nodes(
             exit_stack,

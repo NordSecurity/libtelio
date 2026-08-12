@@ -102,7 +102,7 @@ async def create_network_switcher(
 ) -> NetworkSwitcher:
     if tag in DOCKER_SERVICE_IDS:
         return NetworkSwitcherDocker(connection)
-    if tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
+    if tag is ConnectionTag.VM_WINDOWS_1:
         return await NetworkSwitcherWindows.create(connection)
     if tag == ConnectionTag.VM_MAC:
         return NetworkSwitcherMac(connection)
@@ -373,7 +373,6 @@ async def remove_traffic_control_rules(connection):
 def is_tag_valid_for_ssh_connection(tag: ConnectionTag) -> bool:
     return tag in [
         ConnectionTag.VM_WINDOWS_1,
-        ConnectionTag.VM_WINDOWS_2,
         ConnectionTag.VM_MAC,
         ConnectionTag.VM_OPENWRT_GW_1,
         ConnectionTag.VM_OPENWRT_GW_3,

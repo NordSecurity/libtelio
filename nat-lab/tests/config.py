@@ -70,10 +70,6 @@ LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
         "primary": "192.168.150.54",
         "secondary": "192.168.151.54",
     },
-    ConnectionTag.VM_WINDOWS_2: {
-        "primary": "192.168.152.54",
-        "secondary": "192.168.153.54",
-    },
     ConnectionTag.VM_MAC: {"primary": "192.168.154.54", "secondary": "192.168.155.54"},
     ConnectionTag.VM_ANDROID_1: {"primary": "192.168.118.54", "secondary": ""},
     ConnectionTag.DOCKER_CONE_GW_1: {"primary": "192.168.101.254", "secondary": ""},
@@ -185,10 +181,6 @@ GW_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
     ConnectionTag.VM_WINDOWS_1: {
         "primary": "192.168.150.254",
         "secondary": "192.168.151.254",
-    },
-    ConnectionTag.VM_WINDOWS_2: {
-        "primary": "192.168.152.254",
-        "secondary": "192.168.153.254",
     },
     ConnectionTag.VM_MAC: {
         "primary": "192.168.154.254",

@@ -55,7 +55,6 @@ SESSION_MARK_TO_CONTAINERS = {
     "nlx": [ConnectionTag.VM_LINUX_NLX_1],
     "openwrt": OPENWRT_VM_TAGS,
     "windows": [ConnectionTag.VM_WINDOWS_1],
-    "windows2": [ConnectionTag.VM_WINDOWS_2],
 }
 
 

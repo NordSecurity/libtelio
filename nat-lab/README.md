@@ -125,13 +125,6 @@ uv run python3 natlab.py start --lite-mode
 uv run python3 natlab.py start --skip-windows --skip-mac --skip-nlx --skip-fullcone
 ```
 
-- Skip an individual Windows VM:
-
-```bash
-uv run python3 natlab.py start --skip-windows-1
-uv run python3 natlab.py start --skip-windows-2
-```
-
 If a service is missing, the script prints compose logs for that service and fails. See [python.check_containers()](natlab.py).
 
 ## Running tests locally
@@ -389,7 +382,7 @@ uv run python3 run_local.py -k test_direct_connection -v
 
 - Credentials come from composition and SshConnection defaults:
   - Windows VMs: user bill / password gates (see [python.SshConnection.new_connection()](tests/utils/connection/ssh_connection.py))
-    - IPs: 192.168.150.54 (VM_WINDOWS_1), 192.168.152.54 (VM_WINDOWS_2) from [python.LAN_ADDR_MAP](tests/config.py)
+    - IP: 192.168.150.54 (VM_WINDOWS_1) from [python.LAN_ADDR_MAP](tests/config.py)
     - Example:
 
 ```bash

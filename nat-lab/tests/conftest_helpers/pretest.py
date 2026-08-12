@@ -176,10 +176,6 @@ async def _copy_android_binaries(tag: ConnectionTag):
 async def copy_vm_binaries_if_needed(session_vm_marks: set[str]):
     if "windows" in session_vm_marks:
         await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_1)
-        try:
-            await _copy_vm_binaries(ConnectionTag.VM_WINDOWS_2)
-        except Exception as e:  # pylint: disable=broad-exception-caught
-            setup_log.warning("[Ignored] Couldn't copy binary to VM_WINDOWS_2: %s", e)
     if "mac" in session_vm_marks:
         await _copy_vm_binaries(ConnectionTag.VM_MAC)
     if "openwrt" in session_vm_marks:
