@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import json
 import pytest
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -311,3 +312,57 @@ async def test_nordvpnlite_pq_vpn_connection(config_provider: str) -> None:
             # connection would leave it unset.
             async with new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1) as nlx_conn:
                 await inspect_preshared_key(nlx_conn)
+
+
+async def test_nordvpnlite_reload_preserves_connected_state() -> None:
+    """VPN was connected (PL) before reload, after reload stays connected to DE."""
+    async with AsyncExitStack() as exit_stack:
+        nordvpnlite = await NordVpnLite.new(
+            exit_stack,
+            config_data=NordVpnLiteConfig(vpn=VPNConfig(country="pl")),
+            do_not_connect=True,
+        )
+        await nordvpnlite.request_credentials_from_core()
+
+        async with nordvpnlite.start():
+            await nordvpnlite.wait_for_telio_running_status()
+            await nordvpnlite.connect()
+            await nordvpnlite.wait_for_vpn_connected_state()
+
+            nordvpnlite.config.config_data = NordVpnLiteConfig(
+                vpn=VPNConfig(country="de")
+            )
+            await nordvpnlite.save_config()
+            await nordvpnlite.reload()
+
+            await nordvpnlite.wait_for_vpn_connected_state()
+            status = json.loads(await nordvpnlite.get_status())
+            assert status.get("exit_node") is not None
+            assert status["exit_node"]["state"] == "connected"
+            report = await nordvpnlite.get_status()
+            assert "de1263.nordvpn.com" in report, report
+
+
+async def test_nordvpnlite_reload_preserves_disconnected_state() -> None:
+    """VPN was disconnected before reload and stays disconnected after reload."""
+    async with AsyncExitStack() as exit_stack:
+        nordvpnlite = await NordVpnLite.new(
+            exit_stack,
+            config_data=NordVpnLiteConfig(vpn=VPNConfig(country="pl")),
+            do_not_connect=True,
+        )
+        await nordvpnlite.request_credentials_from_core()
+
+        async with nordvpnlite.start():
+            await nordvpnlite.wait_for_telio_running_status()
+
+            nordvpnlite.config.config_data = NordVpnLiteConfig(
+                vpn=VPNConfig(country="de")
+            )
+            await nordvpnlite.save_config()
+            await nordvpnlite.reload()
+
+            await nordvpnlite.wait_for_telio_running_status()
+            status = json.loads(await nordvpnlite.get_status())
+            assert status["telio_is_running"]
+            assert status.get("exit_node") is None

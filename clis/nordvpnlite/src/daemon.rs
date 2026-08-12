@@ -92,6 +92,10 @@ pub enum NordVpnLiteError {
     IpRoute,
     #[error("Endpoint has no PublicKey")]
     EndpointNoPublicKey,
+    #[error("Already connected to exit node")]
+    AlreadyConnected,
+    #[error("Not connected to exit node")]
+    NotConnected,
 }
 
 /// Libtelio and VPN status report
@@ -132,6 +136,13 @@ impl ExitNodeStatus {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ApplicationState {
+    LoggedOut,
+    Disconnected,
+    Connected,
+}
+
 /// Outcome of executing a TelioTaskCmd, indicating whether TelioTask should keep listening
 /// for commands or not
 #[derive(Debug, PartialEq, Eq)]
@@ -145,12 +156,14 @@ struct TelioContext {
     interface_config_provider: Box<dyn ConfigureInterface>,
     config: NordVpnLiteConfig,
     exit_node: Option<ExitNodeStatus>,
+    application_state: ApplicationState,
 }
 
 impl TelioContext {
     fn new(
         config: NordVpnLiteConfig,
         nordlynx_private_key: SecretKey,
+        application_state: ApplicationState,
     ) -> Result<Self, NordVpnLiteError> {
         debug!("Initializing telio device");
 
@@ -178,13 +191,14 @@ impl TelioContext {
             interface_config_provider,
             config,
             exit_node: None,
+            application_state,
         })
     }
 
     fn start_listening_commands(
         &mut self,
         mut rx_channel: mpsc::Receiver<TelioTaskCmd>,
-    ) -> Result<(), NordVpnLiteError> {
+    ) -> Result<ApplicationState, NordVpnLiteError> {
         while let Some(cmd) = rx_channel.blocking_recv() {
             trace!("TelioTask got command {:?}", cmd);
             match cmd.execute(self)? {
@@ -192,7 +206,7 @@ impl TelioContext {
                 TelioTaskOutcome::Continue => continue,
             }
         }
-        Ok(())
+        Ok(self.application_state)
     }
 
     fn start_telio(
@@ -298,6 +312,7 @@ impl TelioTaskCmd {
                                 ExitNodeStatus::from_node(node, exit_node.endpoint.hostname)
                             });
                         ctx.exit_node = exit_node;
+                        ctx.application_state = ApplicationState::Connected;
                     }
                     Err(e) => {
                         error!("Failed to connect to VPN with error: {e:?}");
@@ -361,8 +376,11 @@ async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sende
 /// Outcome of a single daemon run
 enum LoopOutcome {
     Exit,
-    /// Carries new configuration
-    Reload(Box<RunningConfig>),
+    /// Carries new configuration and the application state at the time of reload.
+    Reload {
+        config: Box<RunningConfig>,
+        application_state: ApplicationState,
+    },
 }
 
 pub async fn daemon_event_loop(
@@ -370,16 +388,21 @@ pub async fn daemon_event_loop(
     logging_handle: &mut logging::LoggingHandle,
     do_not_connect: bool,
 ) -> Result<(), NordVpnLiteError> {
+    let mut application_state = ApplicationState::LoggedOut;
     loop {
-        match run_daemon(config.clone(), do_not_connect).await? {
+        match run_daemon(config.clone(), application_state, do_not_connect).await? {
             LoopOutcome::Exit => break,
-            LoopOutcome::Reload(new_config) => {
+            LoopOutcome::Reload {
+                config: new_config,
+                application_state: new_state,
+            } => {
                 info!("Reloading config from {}", config.path.display());
 
                 let logging_configuration_changed =
                     config.parsed.logging_params_changed(&new_config.parsed);
 
                 config = *new_config;
+                application_state = new_state;
 
                 if logging_configuration_changed {
                     if let Err(e) = logging::reload_logging(
@@ -406,6 +429,7 @@ pub async fn daemon_event_loop(
 
 async fn run_daemon(
     config: RunningConfig,
+    application_state: ApplicationState,
     do_not_connect: bool,
 ) -> Result<LoopOutcome, NordVpnLiteError> {
     debug!("started with config: {:?}", config.parsed);
@@ -463,14 +487,22 @@ async fn run_daemon(
     };
 
     let config_clone = config.parsed.clone();
+
     let (init_done_tx, init_done_rx) = oneshot::channel::<()>();
     let mut telio_task_handle = tokio::task::spawn_blocking(move || {
-        let mut context = TelioContext::new(config_clone, nordlynx_private_key)?;
+        let mut context = TelioContext::new(config_clone, nordlynx_private_key, application_state)?;
         let _ = init_done_tx.send(());
         context.start_listening_commands(telio_rx)
     });
 
-    if !do_not_connect {
+    // For the initial launch (LoggedOut), respect the --do-not-connect flag.
+    // For subsequent runs after a reload, the state directly encodes the intent
+    let should_connect = match application_state {
+        ApplicationState::LoggedOut => !do_not_connect,
+        ApplicationState::Connected => true,
+        ApplicationState::Disconnected => false,
+    };
+    if should_connect {
         // Wait for interface setup to complete before initiating connection.
         if init_done_rx.await.is_ok() {
             let config_clone = config.parsed.clone();
@@ -488,10 +520,13 @@ async fn run_daemon(
             // Check if telio_task completes and exit if it fails
             join_result = &mut telio_task_handle => {
                 match join_result {
-                    Ok(Ok(_)) => {
+                    Ok(Ok(final_state)) => {
                         if let Some(new_config) = cmd_listener.take_pending_config() {
                             trace!("Telio task thread completed after reload request, restarting");
-                            break Ok(LoopOutcome::Reload(Box::new(new_config)))
+                            break Ok(LoopOutcome::Reload {
+                                config: Box::new(new_config),
+                                application_state: final_state,
+                            })
                         } else {
                             trace!("Telio task thread completed, exiting");
                             break Ok(LoopOutcome::Exit)
@@ -545,7 +580,17 @@ async fn run_daemon(
                                 if let Err(e) = response_rx.await {
                                     error!("Error receiving quit response from telio task: {e}");
                                 }
-                                break Ok(LoopOutcome::Reload(Box::new(new_config)));
+                                let final_state = match telio_task_handle.await {
+                                    Ok(Ok(state)) => state,
+                                    err => {
+                                        error!("Telio task did not complete cleanly during reload: {err:?}, defaulting to Disconnected state");
+                                        ApplicationState::Disconnected
+                                    }
+                                };
+                                break Ok(LoopOutcome::Reload {
+                                    config: Box::new(new_config),
+                                    application_state: final_state,
+                                });
                             }
                         }
                     }
