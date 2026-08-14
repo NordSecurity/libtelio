@@ -72,7 +72,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -83,7 +83,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2746,7 +2746,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "2.2.3"
-source = "git+https://github.com/NordSecurity/neptun.git?rev=ab311c9073055b0713cc87db64de108246ffff50#ab311c9073055b0713cc87db64de108246ffff50"
+source = "git+https://github.com/NordSecurity/neptun.git?rev=87d2e0489d70b5278beebedd56998010611516df#87d2e0489d70b5278beebedd56998010611516df"
 dependencies = [
  "aead",
  "base64",
@@ -4534,7 +4534,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
