@@ -335,7 +335,7 @@ impl WindowsNativeWg {
 
         // Cleaning orphaned WireGuard-NT adapters inside the driver can be racey,
         // so we do it in a separate step, before creating a new adapter
-        Self::cleanup_orphaned_devices().await;
+        // Self::cleanup_orphaned_devices().await;
 
         let dll_path = "wireguard.dll";
         let tmp_wg_dev = Self::create(name, dll_path, enable_dynamic_wg_nt_control.clone());
