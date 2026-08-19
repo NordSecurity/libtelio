@@ -1,6 +1,10 @@
 import os
 
 _COMPOSE_PROJECT = os.environ.get("COMPOSE_PROJECT_NAME", "nat-lab")
+
+
+def compose_container(service: str) -> str:
+    return f"{_COMPOSE_PROJECT}-{service}-1"
 import platform
 from tests.utils.bindings import Server, RelayState
 from tests.utils.connection import ConnectionTag
