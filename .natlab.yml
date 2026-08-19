@@ -5,8 +5,13 @@ deps: nat-lab
 mount: /libtelio
 shards: 9
 # a hanging test must fail rather than block the job; timeout_func_only keeps the
-# timeout compatible with reruns
-pytest_args: ["--timeout=180", "-o", "timeout_func_only=true"]
+# timeout compatible with reruns; long/perf tests only run in dedicated jobs
+pytest_args:
+  - "-m"
+  - "not long and not perf_profiling"
+  - "--timeout=180"
+  - "-o"
+  - "timeout_func_only=true"
 # this suite splits itself with pytest-split
 shard_args: ["--splits", "{total}", "--group", "{index}"]
 env:
