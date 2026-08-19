@@ -21,9 +21,11 @@ from tests.conftest_helpers.setup_checks import (
     check_all_containers_running,
     get_session_vm_marks,
 )
-from tests.conftest_helpers.windows_monitoring import (
-    start_windows_vms_resource_monitoring,
-)
+
+# Windows VM resource monitoring is temporary disabled
+# from tests.conftest_helpers.windows_monitoring import (
+#     start_windows_vms_resource_monitoring,
+# )
 from tests.helpers import SetupParameters
 from tests.log_collector import LOG_COLLECTORS
 from tests.utils.bindings import TelioAdapterType
@@ -335,7 +337,8 @@ def pytest_sessionstart(session):
                 _SESSION.exit_stack,
             )
         )
-        _SESSION.runner.run(start_windows_vms_resource_monitoring(TASKS, END_TASKS))
+        # Disabled while investigating the Windows VM bugcheck
+        # _SESSION.runner.run(start_windows_vms_resource_monitoring(TASKS, END_TASKS))
 
 
 # pylint: disable=unused-argument
