@@ -3,9 +3,7 @@ lab: base
 tests: nat-lab/tests
 deps: nat-lab
 mount: /libtelio
-# nine labs on one runner host starves the emulated mipsel OpenWRT guest, which then
-# misses its healthcheck; libtelio's own fleet spreads nine shards across hosts
-shards: 3
+shards: 9
 # a hanging test must fail rather than block the job; timeout_func_only keeps the
 # timeout compatible with reruns
 pytest_args: ["--timeout=180", "-o", "timeout_func_only=true"]
