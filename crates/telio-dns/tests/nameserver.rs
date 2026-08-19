@@ -1385,6 +1385,40 @@ async fn dns_request_forward_to_stub_upstream() {
     assert_eq!(response.a_addrs(), vec![expected_ip]);
 }
 
+#[rstest]
+#[case::hickory(false)]
+#[case::raw(true)]
+#[tokio::test]
+async fn dns_request_onion_forwarded_to_stub_upstream(#[case] use_raw_forwarder: bool) {
+    let expected_ip = Ipv4Addr::new(10, 20, 30, 40);
+    let (stub_addr, _stub_handle) =
+        spawn_upstream_dns_stub(UpstreamStubBehavior::Reply(expected_ip)).await;
+
+    let nameserver = LocalNameServer::new(&[], use_raw_forwarder)
+        .await
+        .expect("Failed to create a LocalNameServer");
+    nameserver
+        .forward_to_addrs(&[stub_addr])
+        .await
+        .expect("Failed to set stub upstream");
+
+    let response = timeout(
+        TEST_TIMEOUT,
+        dns_test_with_server(
+            "example.onion",
+            DnsTestType::CorrectIpv4,
+            None,
+            nameserver,
+            TtlValue(60),
+        ),
+    )
+    .await
+    .expect("Test timeout")
+    .expect("Expected some DNS response");
+
+    assert_a_records!(response, vec![expected_ip]);
+}
+
 #[tokio::test]
 async fn dns_request_forward_fallback_to_second_stub() {
     let expected_ip = Ipv4Addr::new(10, 0, 0, 1);

@@ -1,7 +1,9 @@
 use crate::error::Result as DnsResult;
 use crate::{
     forwarder::RawForwarder,
-    packet_decoder::{find_nord_query, normalize_qname, parse_dns_query_packet, DnsParseError},
+    packet_decoder::{
+        find_nord_query, is_onion_query, normalize_qname, parse_dns_query_packet, DnsParseError,
+    },
     packet_encoder::{DnsBuildError, DnsResponseBuilder},
     resolver::Resolver,
     zone::{AuthoritativeZone, ClonableZones, ForwardZone, NordZone, Records, NORD_ZONE},
@@ -150,13 +152,13 @@ async fn update_wg_timers(
 }
 
 /// Local name server.
-#[derive(Default)]
 pub struct LocalNameServer {
     /// .nord peers zone
     nord_zone: NordZone,
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
-    forwarder: Option<RawForwarder>,
+    forwarder: RawForwarder,
+    use_raw_forwarder: bool,
 }
 
 impl LocalNameServer {
@@ -166,16 +168,13 @@ impl LocalNameServer {
         forward_ips: &[IpAddr],
         use_raw_forwarder: bool,
     ) -> DnsResult<Arc<RwLock<Self>>> {
-        let raw_forwarder: Option<RawForwarder> = if use_raw_forwarder {
-            Some(RawForwarder::new().await?)
-        } else {
-            None
-        };
+        let raw_forwarder = RawForwarder::new().await?;
         let ns = Arc::new(RwLock::new(LocalNameServer {
             nord_zone: NordZone::new(),
             zones: Arc::new(ClonableZones::new()),
             task_handle: None,
             forwarder: raw_forwarder,
+            use_raw_forwarder,
         }));
         ns.forward(forward_ips).await?;
         Ok(ns)
@@ -361,12 +360,15 @@ impl LocalNameServer {
                     .build()
                     .map_err(PacketError::DnsResponseBuildFailed)?
             }
-            PayloadDestination::Forward(raw_query) => {
-                let raw_forwarder = {
+            PayloadDestination::Forward {
+                raw_query,
+                is_onion,
+            } => {
+                let (raw_forwarder, use_raw_forwarder) = {
                     let ns = nameserver.read().await;
-                    ns.forwarder.clone()
+                    (ns.forwarder.clone(), ns.use_raw_forwarder || is_onion)
                 };
-                if let Some(forwarder) = raw_forwarder {
+                if use_raw_forwarder {
                     telio_log_debug!(
                         "Forwarding raw DNS request from port {:?}",
                         request_info.dns_source_port(),
@@ -392,7 +394,7 @@ impl LocalNameServer {
                         }
                     }
 
-                    let response = forwarder
+                    let response = raw_forwarder
                         .query(&raw_query)
                         .await
                         .map_err(|e| PacketError::LookupFailed(Box::new(e)))?;
@@ -513,7 +515,10 @@ impl LocalNameServer {
                     })
                 } else {
                     // not .nord, forward unchanged
-                    Some(PayloadDestination::Forward(payload.to_vec()))
+                    Some(PayloadDestination::Forward {
+                        raw_query: payload.to_vec(),
+                        is_onion: is_onion_query(&packet),
+                    })
                 }
             }
             Err(e) => {
@@ -588,7 +593,10 @@ enum PayloadDestination {
         recursion_desired: bool,
         query: DnsQuery,
     },
-    Forward(Vec<u8>),
+    Forward {
+        raw_query: Vec<u8>,
+        is_onion: bool,
+    },
 }
 
 enum PayloadRequestInfo {
@@ -908,9 +916,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
 
     async fn forward_to_addrs(&self, to: &[SocketAddr]) -> DnsResult<()> {
         let ns = self.read().await;
-        if let Some(forwarder) = &ns.forwarder {
-            forwarder.set_upstreams(to.to_vec()).await;
-        }
+        ns.forwarder.set_upstreams(to.to_vec()).await;
 
         Ok(())
     }
@@ -1059,24 +1065,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn nameserver_creates_forwarder_when_raw_flag_set() {
+    async fn nameserver_uses_raw_forwarder_when_flag_set() {
         let nameserver =
             LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], USE_RAW_FORWARDER)
                 .await
                 .unwrap();
 
         let ns = nameserver.read().await;
-        assert!(ns.forwarder.is_some());
+        assert!(ns.use_raw_forwarder);
     }
 
     #[tokio::test]
-    async fn nameserver_skips_forwarder_by_default() {
+    async fn nameserver_uses_hickory_forwarder_by_default() {
         let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], false)
             .await
             .unwrap();
 
         let ns = nameserver.read().await;
-        assert!(ns.forwarder.is_none());
+        assert!(!ns.use_raw_forwarder);
     }
 
     // PacketError internal unit tests

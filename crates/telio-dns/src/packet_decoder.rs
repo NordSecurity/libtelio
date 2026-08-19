@@ -83,6 +83,24 @@ pub fn find_nord_query(dns_packet: &DnsPacket) -> Option<DnsQuery> {
     }
 }
 
+/// Check whether the first query is for the `.onion` top-level domain.
+pub(crate) fn is_onion_query(dns_packet: &DnsPacket) -> bool {
+    let Some(query) = dns_packet
+        .get_queries_iter()
+        .next()
+        .map(|query| query.from_packet())
+    else {
+        return false;
+    };
+
+    if query.qclass != DnsClasses::IN {
+        return false;
+    }
+
+    let qname = normalize_qname(&query.get_qname_parsed());
+    qname == "onion." || qname.ends_with(".onion.")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,5 +204,24 @@ mod tests {
         assert!(!is_nord_name("testnord"));
         assert!(!is_nord_name(""));
         assert!(!is_nord_name("."));
+    }
+
+    #[test]
+    fn test_onion_query() {
+        for qname in ["onion", "service.onion", "SERVICE.ONION"] {
+            let bytes = build_dns_query_bytes(&[qname], QueryType::A);
+            let packet = parse_dns_query_packet(&bytes).unwrap();
+            assert!(is_onion_query(&packet), "expected {} to be .onion", qname);
+        }
+
+        for qname in ["notonion", "onion.example", "service.onion.test"] {
+            let bytes = build_dns_query_bytes(&[qname], QueryType::A);
+            let packet = parse_dns_query_packet(&bytes).unwrap();
+            assert!(
+                !is_onion_query(&packet),
+                "did not expect {} to be .onion",
+                qname
+            );
+        }
     }
 }

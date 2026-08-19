@@ -1,0 +1,1 @@
+Forward .onion DNS queries to the configured upstream resolver instead of returning NXDOMAIN.
