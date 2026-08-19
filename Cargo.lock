@@ -2745,7 +2745,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "2.2.3"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v3.0.1#a45a31d28780695cb816d5e245a70bd520bd1293"
+source = "git+https://github.com/NordSecurity/neptun.git?branch=LLT-7521-fix-roaming-on-apple#02a95a070ec153009f2bfc73f2967f74158c816b"
 dependencies = [
  "aead",
  "base64",
