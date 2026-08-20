@@ -12,11 +12,22 @@ pytest_args:
   - "--timeout=180"
   - "-o"
   - "timeout_func_only=true"
+# least_duration keeps expensive VM tests spread thin across shards; a uniform split
+# packs them back-to-back and the guests degrade under the sustained load
 # this suite splits itself with pytest-split
-shard_args: ["--splits", "{total}", "--group", "{index}"]
+shard_args:
+  - "--splits"
+  - "{total}"
+  - "--group"
+  - "{index}"
+  - "--splitting-algorithm=least_duration"
+  - "--durations-path=compiled_test_durations.json"
 env:
   TELIO_BIN_PROFILE: release
 binaries:
+  - from: compiled_test_durations.json
+    to: nat-lab/compiled_test_durations.json
+    mode: "0644"
   - from: dist/bindings/python/telio.py
     to: nat-lab/tests/uniffi/telio_bindings.py
     mode: "0644"
