@@ -262,9 +262,8 @@ impl InterfaceWatcher {
                 watched_adapter.luid,
             ) {
                 Ok(_) => {}
-                Err(_err) => {
-                    // TODO: collect and broadcast errors?
-                    // iw.errors <- interfaceWatcherError{services.ErrorSetNetConfig, err}
+                Err(err) => {
+                    telio_log_error!("Failed to configure {} on adapter: {}", family_str, err);
                 }
             }
         } else {

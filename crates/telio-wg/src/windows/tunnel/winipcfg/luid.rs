@@ -360,6 +360,10 @@ impl InterfaceLuid {
     pub fn flush_ip_addresses(&self, address_family: ADDRESS_FAMILY) -> Result<(), NETIO_STATUS> {
         let mut p_table: PMIB_UNICASTIPADDRESS_TABLE = ptr::null_mut();
         let result = unsafe { GetUnicastIpAddressTable(address_family, &mut p_table) };
+        // ERROR_NOT_FOUND: no address entries for this family - nothing to flush
+        if ERROR_NOT_FOUND == result {
+            return Ok(());
+        }
         if NO_ERROR != result {
             return Err(result);
         }
@@ -367,16 +371,17 @@ impl InterfaceLuid {
         assert!(!p_table.is_null());
         let num_entries = unsafe { (*p_table).NumEntries };
         let x_table = unsafe { (*p_table).Table.as_ptr() };
+        let mut delete_statuses = Vec::new();
         for i in 0..num_entries {
             let current_entry = unsafe { x_table.add(i as _) };
             if unsafe { (*current_entry).InterfaceLuid.Value } == self.luid.Value {
-                unsafe { DeleteUnicastIpAddressEntry(current_entry) };
+                delete_statuses.push(unsafe { DeleteUnicastIpAddressEntry(current_entry) });
             }
         }
 
         unsafe { FreeMibTable(p_table as _) };
 
-        Ok(())
+        flush_result(delete_statuses)
     }
 
     /// flush_ipv4_addresses method deletes all interface's unicast IP addresses.
@@ -635,6 +640,10 @@ impl InterfaceLuid {
     pub fn flush_routes(&self, address_family: ADDRESS_FAMILY) -> Result<(), NETIO_STATUS> {
         let mut p_table: PMIB_IPFORWARD_TABLE2 = ptr::null_mut();
         let result = unsafe { GetIpForwardTable2(address_family, &mut p_table) };
+        // ERROR_NOT_FOUND: no route entries for this family - nothing to flush
+        if ERROR_NOT_FOUND == result {
+            return Ok(());
+        }
         if NO_ERROR != result {
             return Err(result);
         }
@@ -695,14 +704,15 @@ fn flush_result(
 ) -> Result<(), NETIO_STATUS> {
     let mut last_error: NETIO_STATUS = NO_ERROR;
     for status in delete_statuses {
-        if NO_ERROR != status {
+        // ERROR_NOT_FOUND: entry vanished since the table snapshot - already flushed
+        if NO_ERROR != status && ERROR_NOT_FOUND != status {
             last_error = status;
         }
     }
     if NO_ERROR == last_error {
         Ok(())
     } else {
-        Err(NO_ERROR)
+        Err(last_error)
     }
 }
 
@@ -724,7 +734,6 @@ mod tests {
         );
     }
 
-    // Route vanished between the table snapshot and the delete - already flushed
     #[test]
     fn flush_result_treats_not_found_as_flushed() {
         assert_eq!(flush_result([ERROR_NOT_FOUND]), Ok(()));
