@@ -633,8 +633,6 @@ impl InterfaceLuid {
     /// flush_routes method deletes all interface's routes.
     /// It continues on failures, and returns the last error afterwards.
     pub fn flush_routes(&self, address_family: ADDRESS_FAMILY) -> Result<(), NETIO_STATUS> {
-        let mut last_error: NETIO_STATUS = NO_ERROR;
-
         let mut p_table: PMIB_IPFORWARD_TABLE2 = ptr::null_mut();
         let result = unsafe { GetIpForwardTable2(address_family, &mut p_table) };
         if NO_ERROR != result {
@@ -644,23 +642,17 @@ impl InterfaceLuid {
         assert!(!p_table.is_null());
         let num_entries = unsafe { (*p_table).NumEntries };
         let x_table = unsafe { (*p_table).Table.as_ptr() };
+        let mut delete_statuses = Vec::new();
         for i in 0..num_entries {
             let current_entry = unsafe { x_table.add(i as _) };
             if unsafe { (*current_entry).InterfaceLuid.Value } == self.luid.Value {
-                let result = unsafe { DeleteIpForwardEntry2(current_entry) };
-                if NO_ERROR != result {
-                    last_error = result;
-                }
+                delete_statuses.push(unsafe { DeleteIpForwardEntry2(current_entry) });
             }
         }
 
         unsafe { FreeMibTable(p_table as _) };
 
-        if NO_ERROR == last_error {
-            Ok(())
-        } else {
-            Err(result)
-        }
+        flush_result(delete_statuses)
     }
 
     /// flush_routes_ipv4 method deletes all interface's routes.
@@ -695,5 +687,46 @@ impl InterfaceLuid {
     /// flush_dns_ipv6 method clears all DNS servers associated with the adapter.
     pub fn flush_dns_ipv6(&self) -> Result<(), String> {
         self.flush_dns(AF_INET6 as _)
+    }
+}
+
+fn flush_result(
+    delete_statuses: impl IntoIterator<Item = NETIO_STATUS>,
+) -> Result<(), NETIO_STATUS> {
+    let mut last_error: NETIO_STATUS = NO_ERROR;
+    for status in delete_statuses {
+        if NO_ERROR != status {
+            last_error = status;
+        }
+    }
+    if NO_ERROR == last_error {
+        Ok(())
+    } else {
+        Err(NO_ERROR)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flush_result_ok_when_all_deletes_succeed() {
+        assert_eq!(flush_result([NO_ERROR, NO_ERROR]), Ok(()));
+    }
+
+    // Repro of "Unable to set IPv4 routes: 0": the failing delete's code must survive
+    #[test]
+    fn flush_result_reports_the_delete_error_code() {
+        assert_eq!(
+            flush_result([NO_ERROR, ERROR_ACCESS_DENIED, NO_ERROR]),
+            Err(ERROR_ACCESS_DENIED)
+        );
+    }
+
+    // Route vanished between the table snapshot and the delete - already flushed
+    #[test]
+    fn flush_result_treats_not_found_as_flushed() {
+        assert_eq!(flush_result([ERROR_NOT_FOUND]), Ok(()));
     }
 }
