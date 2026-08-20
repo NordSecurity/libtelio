@@ -13,6 +13,16 @@ NATLAB_DATA_PATH = "nat-lab/data/"
 OWR_CERT_PATH = "/etc/ssl/server_certificate/"
 CERT_FILE_NAME = "test.pem"
 
+
+def _cert_source_path() -> str:
+    # an attached lab serves the cert it generated, not the committed one
+    lab_dir = os.getenv("NATLAB_LAB_DIR")
+    if lab_dir:
+        candidate = os.path.join(lab_dir, "data", "core_api", CERT_FILE_NAME)
+        if os.path.isfile(candidate):
+            return candidate
+    return get_root_path(f"{NATLAB_DATA_PATH}core_api/{CERT_FILE_NAME}")
+
 # CDN
 CDN_HOST = LAN_ADDR_MAP[ConnectionTag.DOCKER_OPENWRT_CDN]["primary"]
 CDN_BASE_URL = f"http://{CDN_HOST}/nordvpnlite"
@@ -69,7 +79,7 @@ class _OpenwrtPackageManager(ABC):
     async def _copy_test_certificate(self) -> None:
         await self._conn.create_process(["mkdir", "-p", OWR_CERT_PATH]).execute()
         await self._conn.upload_file(
-            get_root_path(f"{NATLAB_DATA_PATH}core_api/{CERT_FILE_NAME}"),
+            _cert_source_path(),
             f"{OWR_CERT_PATH}{CERT_FILE_NAME}",
         )
 
