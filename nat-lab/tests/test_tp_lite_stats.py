@@ -35,6 +35,9 @@ NON_PLAINTEXT_DNS_PORTS = ["443", "853"]
 STANDARD_DNS_IP = config.LAN_ADDR_MAP[ConnectionTag.DOCKER_DNS_SERVER_1]["primary"]
 # Address the standrd dns-server returns for blocked-malware.com
 WHITELIST_RESOLVED_IP = "123.123.123.123"
+# TTL the standard dns-server attaches to its blocked-malware.com answer.
+# Must match the explicit ttl configured in nat-lab/bin/dns-server.
+WHITELIST_RESOLVED_TTL = 3600
 
 CALLBACK_INTERVAL_S = 1  # Use short interval for all tests
 
@@ -90,6 +93,82 @@ async def _query_blocked_expect_failure(connection: Connection) -> None:
     with pytest.raises(Exception):
         await query_dns(
             connection, BLOCKED_NXDOMAIN, dns_server=TP_LITE_DNS_IP, options=["-type=a"]
+        )
+
+
+async def _dig_magic_dns(connection: Connection, domain: str) -> tuple[str, str]:
+    """Resolve `domain` through MagicDNS with dig and return (stdout, stderr).
+
+    Unlike nslookup, dig prints the TTL of the answer, which lets the caller
+    tell a freshly fetched answer apart from one replayed out of the resolver
+    cache. `+noall +answer` reduces the output to just the answer section, so
+    the TTL is the second whitespace-separated field, same as in
+    test_dns.py::test_dns_ttl_value.
+    """
+    process = await connection.create_process([
+        "dig",
+        "+noall",
+        "+nocmd",
+        "+answer",
+        "+timeout=5",
+        domain,
+        f"@{config.LIBTELIO_DNS_IPV4}",
+    ]).execute()
+    return process.get_stdout(), process.get_stderr()
+
+
+def _parse_dig_a_answer(dig_stdout: str) -> tuple[Optional[int], Optional[str]]:
+    """Extract (ttl, address) from the first A record of a `dig +noall +answer`
+    output, or (None, None) when there is no A record (e.g. NXDOMAIN)."""
+    for line in dig_stdout.splitlines():
+        fields = line.split()
+        # <name> <ttl> <class> <type> <rdata>
+        if len(fields) >= 5 and fields[3] == "A":
+            return int(fields[1]), fields[4]
+    return None, None
+
+
+async def _assert_served_from_cache(
+    client, domain: str, log_offset: int, expected: bool
+) -> None:
+    """Assert whether the most recent lookup of `domain` was answered from the
+    MagicDNS (hickory) resolver cache rather than by querying upstream.
+
+    Only log lines produced after `log_offset` are considered, so the caller can
+    scope the check to a single query.
+
+    Two markers straddle the cache branch in hickory's CachingClient::inner_lookup
+    (crates/resolver/src/caching_client.rs:180):
+
+        telio_dns::forward:220  "forwarding lookup: <domain> <type>"
+            -> logged before the cache is consulted, so it appears either way
+        hickory_proto::xfer::dns_handle:67  "querying: <domain> <type>"
+            -> logged inside DnsHandle::lookup, which is only reached when
+               lookup_from_cache() returned None
+
+    So "forwarding lookup" present + "querying" absent means the answer came out
+    of the cache and no DNS packet was ever emitted - which also means the
+    firewall never had a chance to act on the query.
+    """
+    logs = (await client.log.get())[log_offset:]
+    forwarded = f"forwarding lookup: {domain}" in logs
+    queried_upstream = f"querying: {domain}" in logs
+
+    assert forwarded, (
+        f"expected a 'forwarding lookup: {domain}' entry, meaning the request"
+        " reached the MagicDNS forward zone; found none, so the test did not"
+        " exercise the resolver at all"
+    )
+
+    if expected:
+        assert not queried_upstream, (
+            f"expected '{domain}' to be answered from the resolver cache, but"
+            " an upstream query was sent ('querying:' present in the log)"
+        )
+    else:
+        assert queried_upstream, (
+            f"expected '{domain}' to be resolved upstream, but no 'querying:'"
+            " entry was logged, so it was answered from the resolver cache"
         )
 
 
@@ -761,3 +840,135 @@ class TestDnsWhitelisting:
                 dns_server=TP_LITE_DNS_IP,
                 options=["-type=a"],
             )
+
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    features=_features_with_firewall(),
+                )
+            )
+        ],
+    )
+    @pytest.mark.asyncio
+    @pytest.mark.libfirewall
+    async def test_dns_whitelisting_reblock_is_effective(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env: Environment,
+    ) -> None:
+        """LLT-7558: clearing the TP-Lite whitelist must make the domain blocked
+        again, even if it was resolved - and cached by MagicDNS - while it was
+        whitelisted.
+
+        The fix must invalidate the MagicDNS resolver cache when the whitelist
+        changes: the firewall only ever sees queries that miss the cache, so as
+        long as a whitelisted answer stays cached the domain remains reachable
+        no matter what the firewall chain says.
+
+        Steps:
+            1. Connect the VPN and enable MagicDNS pointed at the TP-Lite server.
+            2. Whitelist the domain. The firewall DNATs the query to the standard
+               DNS server, which answers with a long-lived (TTL 3600) record that
+               the resolver caches.
+            3. Clear the whitelist and query again. The domain must be blocked,
+               and the query must actually reach the firewall rather than being
+               answered from the cache.
+
+        NOTE: there is deliberately no "confirm it is blocked first" query before
+        step 2. The nat-lab TP-Lite server answers NXDOMAIN with an SOA carrying
+        ttl=300 and minimum=300 (nat-lab/bin/tp-lite-dns-server), so hickory
+        derives a negative_ttl of min(ttl, minimum) = 300 and caches the NXDOMAIN
+        for five minutes. Such a query would poison the cache and make step 2 fail,
+        because the whitelisted lookup would be served from that negative entry
+        instead of reaching the firewall.
+
+        NOTE: this depends on FeatureDns::use_raw_forwarder being left at its
+        default of false (crates/telio-dns/src/dns.rs:86), which selects the
+        hickory forwarder. The alternative RawForwarder has no cache, so the
+        behaviour asserted here would already hold.
+        """
+
+        [alpha] = env.nodes
+        [client] = env.clients
+        [connection] = [c.connection for c in env.connections]
+
+        await connect_vpn(
+            connection,
+            None,
+            client,
+            alpha.ip_addresses[0],
+            config.WG_SERVER,
+        )
+
+        # Route client DNS through MagicDNS, which forwards to the TP-Lite server.
+        # This is what puts the resolver cache in front of the firewall.
+        await client.enable_magic_dns([TP_LITE_DNS_IP])
+
+        redirects = [
+            DnsRedirect(
+                blocking=f"{TP_LITE_DNS_IP}:53",
+                standard=f"{STANDARD_DNS_IP}:53",
+            )
+        ]
+
+        # Step 2: whitelist the domain so the firewall DNATs the query to the
+        # standard DNS server, and the resolver caches the answer it returns.
+        #
+        # This is the first lookup of BLOCKED_NXDOMAIN in the test, on purpose:
+        # see the note in the docstring about the nat-lab TP-Lite server caching
+        # its NXDOMAIN for 300s.
+        await client.tp_lite.set_domain_whitelist([BLOCKED_NXDOMAIN], redirects)
+        stdout, stderr = await _dig_magic_dns(connection, BLOCKED_NXDOMAIN)
+        ttl, address = _parse_dig_a_answer(stdout)
+        assert address == WHITELIST_RESOLVED_IP, (
+            f"expected {BLOCKED_NXDOMAIN} to be redirected to the standard DNS"
+            f" server after whitelisting, got {address}. An empty answer here"
+            " usually means a cached NXDOMAIN was served instead of the query"
+            " reaching the firewall - check that nothing looked this domain up"
+            " earlier in the test (see the docstring)."
+            f"\ndig stdout:\n{stdout}\ndig stderr:\n{stderr}"
+        )
+        # Guard the precondition: the answer has to be cacheable for this test to
+        # be meaningful. If it is served with a different (likely 0) TTL the
+        # resolver would not retain it and the assertions below would hold
+        # trivially, for the wrong reason.
+        assert ttl == WHITELIST_RESOLVED_TTL, (
+            f"expected a freshly resolved answer with TTL {WHITELIST_RESOLVED_TTL},"
+            f" got {ttl}; the answer must be cacheable for this test to be"
+            f" meaningful\ndig stdout:\n{stdout}\ndig stderr:\n{stderr}"
+        )
+
+        # Step 3: clear the whitelist. The firewall drops the DNAT rule, so the
+        # domain must be blocked again.
+        await client.tp_lite.set_domain_whitelist([], redirects)
+
+        # Match the timing of the counterpart test so both observe the cache in
+        # the same state.
+        await asyncio.sleep(2)
+
+        # Only look at log output produced by the query below.
+        log_offset = len(await client.log.get())
+        stdout, stderr = await _dig_magic_dns(connection, BLOCKED_NXDOMAIN)
+        _, address = _parse_dig_a_answer(stdout)
+
+        # With an empty whitelist the query is no longer DNATed, so it reaches
+        # the blocking TP-Lite server and comes back NXDOMAIN, i.e. no A record.
+        assert address is None, (
+            f"expected {BLOCKED_NXDOMAIN} to be blocked again after the whitelist"
+            f" was cleared, but it resolved to {address}. The MagicDNS resolver"
+            " is still serving the answer cached while the domain was"
+            " whitelisted (LLT-7558)."
+            f"\ndig stdout:\n{stdout}\ndig stderr:\n{stderr}"
+        )
+
+        # Being blocked is not enough on its own - the query also has to have
+        # reached the firewall. Without this the test could pass for the wrong
+        # reason, e.g. if the entry had simply been evicted from the 32-entry
+        # LRU rather than deliberately invalidated.
+        await _assert_served_from_cache(
+            client, BLOCKED_NXDOMAIN, log_offset, expected=False
+        )

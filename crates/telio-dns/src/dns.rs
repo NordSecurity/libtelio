@@ -32,6 +32,8 @@ pub trait DnsResolver {
     async fn upsert(&self, zone: &str, records: &Records, ttl_value: TtlValue) -> Result<()>;
     /// Configure list of forward DNS servers for zone '.'.
     async fn forward(&self, to: &[IpAddr]) -> Result<()>;
+    /// Drop every entry from the forwarding resolver's cache.
+    async fn flush_cache(&self);
     /// Get public key of this DNS server.
     fn public_key(&self) -> PublicKey;
     /// Get Peer of this DNS server with selected allowed IPs.
@@ -134,6 +136,11 @@ impl DnsResolver for LocalDnsResolver {
     async fn forward(&self, to: &[IpAddr]) -> Result<()> {
         telio_log_debug!("Dns - forward {:?}", to);
         self.nameserver.forward(to).await
+    }
+
+    async fn flush_cache(&self) {
+        telio_log_debug!("Dns - flush_cache");
+        self.nameserver.flush_forward_cache().await;
     }
 
     fn public_key(&self) -> PublicKey {
