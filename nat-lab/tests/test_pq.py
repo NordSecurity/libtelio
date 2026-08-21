@@ -12,7 +12,7 @@ from tests.utils.connection_util import (
     new_connection_by_tag,
 )
 from tests.utils.dns import query_dns
-from tests.utils.ping import ping
+from natlab import ping
 
 EMPTY_PRESHARED_KEY_SLOT = "(none)"
 

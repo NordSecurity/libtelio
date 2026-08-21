@@ -4,7 +4,7 @@ from contextlib import AsyncExitStack
 from tests.helpers import SetupParameters, Environment
 from tests.utils.bindings import TelioNode
 from tests.utils.connection import ConnectionTag
-from tests.utils.ping import ping
+from natlab import ping
 from typing import Optional
 
 

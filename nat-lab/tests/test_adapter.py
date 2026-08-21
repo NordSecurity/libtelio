@@ -4,7 +4,7 @@ import re
 from enum import Enum
 from tests import config
 from tests.helpers import SetupParameters, Environment
-from tests.utils import asyncio_util
+from natlab import asyncio_util
 from tests.utils.bindings import (
     ErrorEvent,
     ErrorCode,

@@ -3,7 +3,7 @@ import asyncssh
 import time
 from .process import Process, ProcessExecError, StreamCallback
 from contextlib import asynccontextmanager
-from tests.utils.asyncio_util import run_async_context
+from natlab.asyncio_util import run_async_context
 from tests.utils.logger import log
 from typing import List, Optional, Callable, AsyncIterator
 

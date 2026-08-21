@@ -15,7 +15,7 @@ from tests.utils.connection_tracker import (
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.logger import log
 from tests.utils.netcat import NetCatServer, NetCatClient
-from tests.utils.ping import ping
+from natlab import ping
 from tests.utils.router import IPProto, IPStack
 from typing import Tuple, Optional, Callable, Awaitable
 

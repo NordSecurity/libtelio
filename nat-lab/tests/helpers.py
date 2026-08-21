@@ -29,7 +29,7 @@ from tests.utils.connection_util import (
     new_connection_raw,
 )
 from tests.utils.logger import log
-from tests.utils.ping import ping
+from natlab import ping
 from tests.utils.process import Process
 from tests.utils.router import IPStack
 from tests.utils.tcpdump import make_tcpdump

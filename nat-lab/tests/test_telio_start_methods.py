@@ -12,7 +12,7 @@ from tests.utils.bindings import (
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import get_libtelio_binary_path
 from tests.utils.logger import log
-from tests.utils.output_notifier import OutputNotifier
+from natlab import OutputNotifier
 from tests.utils.router.windows_router import WindowsRouter
 from typing import AsyncIterator, List
 

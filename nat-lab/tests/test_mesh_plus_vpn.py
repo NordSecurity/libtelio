@@ -2,7 +2,8 @@ import asyncio
 import pytest
 from tests import config, timeouts
 from tests.helpers import SetupParameters
-from tests.utils import stun, asyncio_util
+from tests.utils import stun
+from natlab import asyncio_util
 from tests.utils.bindings import (
     features_with_endpoint_providers,
     EndpointProvider,
@@ -13,7 +14,7 @@ from tests.utils.bindings import (
 )
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
-from tests.utils.ping import ping
+from natlab import ping
 
 
 # Module-level override — all tests in this file get VPN_1

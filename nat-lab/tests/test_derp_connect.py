@@ -3,11 +3,11 @@ import os
 import pytest
 from contextlib import AsyncExitStack, asynccontextmanager
 from copy import deepcopy
-from tests.config import DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
+from tests.config import compose_container, DERP_PRIMARY, DERP_SECONDARY, DERP_TERTIARY, DERP_SERVERS
 from tests.helpers import SetupParameters, setup_mesh_nodes
 from tests.utils.bindings import RelayState, FeatureDerp, default_features
 from tests.utils.connection import ConnectionTag
-from tests.utils.ping import ping
+from natlab import ping
 from typing import List
 
 DERP1_IP = str(DERP_PRIMARY.ipv4)
@@ -366,7 +366,7 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         #  [GW1]    [GW2]   [Symmetric-GW]
         #    |        |        |
         # [ALPHA]   [BETA]  [GAMMA]
-        async with stop_container("nat-lab-derp-01-1"):
+        async with stop_container(compose_container("derp-01")):
             await asyncio.gather(
                 alpha_client.events.wait_for_state_derp(
                     _DERP2_IP, [RelayState.CONNECTED]
@@ -402,7 +402,7 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         #    |        |        |
         # [ALPHA]   [BETA]  [GAMMA]
 
-        async with stop_container("nat-lab-derp-02-1"):
+        async with stop_container(compose_container("derp-02")):
             await asyncio.gather(
                 alpha_client.events.wait_for_state_derp(
                     _DERP1_IP, [RelayState.CONNECTED]
@@ -438,7 +438,7 @@ async def test_derp_restart(setup_params: List[SetupParameters]) -> None:
         #    |        |        |
         # [ALPHA]   [BETA]  [GAMMA]
 
-        async with stop_container("nat-lab-derp-03-1"):
+        async with stop_container(compose_container("derp-03")):
             await asyncio.gather(
                 alpha_client.events.wait_for_state_derp(
                     _DERP1_IP, [RelayState.CONNECTED]
