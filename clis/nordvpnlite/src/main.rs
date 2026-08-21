@@ -3,6 +3,7 @@
 use clap::Parser;
 use daemonize::{Daemonize, Outcome};
 use std::fs::{self, OpenOptions};
+use std::io::{Error, ErrorKind};
 use tokio::time::{timeout, Duration};
 
 mod auth;
@@ -121,7 +122,13 @@ async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
                 .await
                 .map_err(|_| NordVpnLiteError::ClientTimeoutError)?;
 
-                match CommandResponse::deserialize(&response?)? {
+                let response = match response {
+                    Ok(response) => response,
+                    Err(err) if is_daemon_gone(&err) => return handle_missing_daemon(cmd),
+                    Err(err) => return Err(err.into()),
+                };
+
+                match CommandResponse::deserialize(&response)? {
                     CommandResponse::Ok => {
                         println!("Command executed successfully");
                         Ok(())
@@ -140,13 +147,7 @@ async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
                     }
                 }
             } else {
-                match cmd {
-                    ClientCmd::QuitDaemon => {
-                        println!("Daemon is already stopped");
-                        Ok(())
-                    }
-                    _ => Err(NordVpnLiteError::DaemonIsNotRunning),
-                }
+                handle_missing_daemon(cmd)
             }
         }
         // Display list of available countries with VPN servers
@@ -163,6 +164,31 @@ async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
 
         // Unexpected command, Cmd::Start should be handled by main
         _ => Err(NordVpnLiteError::InvalidCommand(format!("{cmd:?}"))),
+    }
+}
+
+/// Whether an IO error means nothing is listening on the socket anymore, either because
+/// the socket file is stale or because the daemon exited while the command was in flight.
+fn is_daemon_gone(err: &Error) -> bool {
+    matches!(
+        err.kind(),
+        ErrorKind::ConnectionRefused
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::BrokenPipe
+            | ErrorKind::UnexpectedEof
+            | ErrorKind::NotFound
+    )
+}
+
+/// Report a client command that could not reach the daemon.
+fn handle_missing_daemon(cmd: ClientCmd) -> Result<(), NordVpnLiteError> {
+    match cmd {
+        ClientCmd::QuitDaemon => {
+            println!("Daemon is already stopped");
+            Ok(())
+        }
+        _ => Err(NordVpnLiteError::DaemonIsNotRunning),
     }
 }
 
@@ -310,6 +336,7 @@ mod tests {
     use assert_matches::assert_matches;
     use serial_test::serial;
     use temp_file::TempFile;
+    use tokio::net::UnixListener;
 
     /// Config JSON pointing its auth file at the given path.
     fn config_json(auth_file_path: &str) -> String {
@@ -347,6 +374,33 @@ mod tests {
                 Err(NordVpnLiteError::InvalidConfigToken { .. })
             );
         };
+    }
+
+    #[test]
+    fn test_daemon_gone_does_not_mask_other_errors() {
+        assert!(is_daemon_gone(&Error::from(ErrorKind::ConnectionReset)));
+        assert!(!is_daemon_gone(&Error::from(ErrorKind::PermissionDenied)));
+    }
+
+    #[tokio::test]
+    async fn test_stale_socket_file_reports_daemon_gone() {
+        let path = TempFile::new()
+            .expect("Failed to create temp socket file")
+            .path()
+            .with_extension("sock");
+
+        // Bind and drop a listener, leaving the socket file behind like a daemon that
+        // exited without cleaning up after itself. Unlike DaemonSocket, UnixListener
+        // does not reclaim the name on drop.
+        drop(UnixListener::bind(&path).expect("Failed to bind test socket"));
+        assert!(path.exists());
+
+        let err = DaemonSocket::send_command(&path, "\"IsAlive\"")
+            .await
+            .expect_err("connecting to a stale socket should fail");
+        assert!(is_daemon_gone(&err), "unexpected error: {err:?}");
+
+        let _ = fs::remove_file(&path);
     }
 
     #[test]
