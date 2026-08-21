@@ -8,6 +8,15 @@ from tests.utils.connection_util import new_connection_by_tag
 from tests.utils.logger import log
 from tests.utils.process import ProcessExecError
 
+QUERY_CMD = [
+    "reg",
+    "query",
+    WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY,
+    "/s",
+    "/f",
+    "DriverDesc",
+]
+
 
 @pytest.mark.windows
 @pytest.mark.parametrize("conn_tag", [ConnectionTag.VM_WINDOWS_1])
