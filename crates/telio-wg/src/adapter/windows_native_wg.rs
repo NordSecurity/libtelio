@@ -39,6 +39,9 @@ use wireguard_nt::{
 use wireguard_uapi::xplatform;
 
 const REMOVAL_SLEEP_SECS: u64 = 2;
+const CREATE_ADAPTER_MAX_ATTEMPTS: usize = 10;
+const CREATE_ADAPTER_INITIAL_BACKOFF_SECS: u64 = 2;
+const CREATE_ADAPTER_MAX_BACKOFF_SECS: u64 = 14;
 
 /// Telio wrapper around wireguard-nt
 pub struct WindowsNativeWg {
@@ -338,13 +341,33 @@ impl WindowsNativeWg {
         Self::cleanup_orphaned_devices().await;
 
         let dll_path = "wireguard.dll";
-        let tmp_wg_dev = Self::create(name, dll_path, enable_dynamic_wg_nt_control.clone());
+        let mut backoff_secs = CREATE_ADAPTER_INITIAL_BACKOFF_SECS;
+        let mut attempt = 1;
+        let wg_dev = loop {
+            let tmp_wg_dev = Self::create(name, dll_path, enable_dynamic_wg_nt_control.clone());
 
-        telio_log_debug!("Print registry after adapter creation!");
-        Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, service::GUID_DEVINTERFACE_NET_STR);
-        Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
+            telio_log_debug!("Print registry after adapter creation!");
+            Self::print_registry_key_contents(
+                HKEY_LOCAL_MACHINE,
+                service::GUID_DEVINTERFACE_NET_STR,
+            );
+            Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
 
-        let wg_dev = tmp_wg_dev?;
+            match tmp_wg_dev {
+                Ok(wg_dev) => break wg_dev,
+                Err(err) if attempt < CREATE_ADAPTER_MAX_ATTEMPTS => {
+                    telio_log_warn!(
+                        "Failed to create adapter '{}' with err: {err}. Attempt {attempt}/{}. Retrying in {backoff_secs}s",
+                        name,
+                        CREATE_ADAPTER_MAX_ATTEMPTS
+                    );
+                    sleep(Duration::from_secs(backoff_secs)).await;
+                    backoff_secs = (backoff_secs * 2).min(CREATE_ADAPTER_MAX_BACKOFF_SECS);
+                    attempt += 1;
+                }
+                Err(err) => return Err(err),
+            }
+        };
         telio_log_info!(
             "Adapter '{}' using created successfully. enable_dynamic_wg_nt_control: {}",
             name,
