@@ -360,6 +360,10 @@ impl InterfaceLuid {
     pub fn flush_ip_addresses(&self, address_family: ADDRESS_FAMILY) -> Result<(), NETIO_STATUS> {
         let mut p_table: PMIB_UNICASTIPADDRESS_TABLE = ptr::null_mut();
         let result = unsafe { GetUnicastIpAddressTable(address_family, &mut p_table) };
+        // ERROR_NOT_FOUND: no address entries for this family - nothing to flush
+        if ERROR_NOT_FOUND == result {
+            return Ok(());
+        }
         if NO_ERROR != result {
             return Err(result);
         }
@@ -367,16 +371,17 @@ impl InterfaceLuid {
         assert!(!p_table.is_null());
         let num_entries = unsafe { (*p_table).NumEntries };
         let x_table = unsafe { (*p_table).Table.as_ptr() };
+        let mut delete_statuses = Vec::new();
         for i in 0..num_entries {
             let current_entry = unsafe { x_table.add(i as _) };
             if unsafe { (*current_entry).InterfaceLuid.Value } == self.luid.Value {
-                unsafe { DeleteUnicastIpAddressEntry(current_entry) };
+                delete_statuses.push(unsafe { DeleteUnicastIpAddressEntry(current_entry) });
             }
         }
 
         unsafe { FreeMibTable(p_table as _) };
 
-        Ok(())
+        flush_result(delete_statuses)
     }
 
     /// flush_ipv4_addresses method deletes all interface's unicast IP addresses.
@@ -478,13 +483,10 @@ impl InterfaceLuid {
 
         row.Metric = metric;
 
-        let result = unsafe { CreateIpForwardEntry2(&row) };
-
-        if NO_ERROR == result {
-            Ok(())
-        } else {
-            Err(result)
-        }
+        upsert_route(
+            || unsafe { CreateIpForwardEntry2(&row) },
+            || unsafe { SetIpForwardEntry2(&row) },
+        )
     }
 
     /// add_route_ipv6 method adds a route to the interface. Corresponds to CreateIpForwardEntry2 function, with added splitDefault feature.
@@ -512,13 +514,10 @@ impl InterfaceLuid {
 
         row.Metric = metric;
 
-        let result = unsafe { CreateIpForwardEntry2(&row) };
-
-        if NO_ERROR == result {
-            Ok(())
-        } else {
-            Err(result)
-        }
+        upsert_route(
+            || unsafe { CreateIpForwardEntry2(&row) },
+            || unsafe { SetIpForwardEntry2(&row) },
+        )
     }
 
     /// add_routes_ipv4 method adds multiple routes to the interface
@@ -633,10 +632,12 @@ impl InterfaceLuid {
     /// flush_routes method deletes all interface's routes.
     /// It continues on failures, and returns the last error afterwards.
     pub fn flush_routes(&self, address_family: ADDRESS_FAMILY) -> Result<(), NETIO_STATUS> {
-        let mut last_error: NETIO_STATUS = NO_ERROR;
-
         let mut p_table: PMIB_IPFORWARD_TABLE2 = ptr::null_mut();
         let result = unsafe { GetIpForwardTable2(address_family, &mut p_table) };
+        // ERROR_NOT_FOUND: no route entries for this family - nothing to flush
+        if ERROR_NOT_FOUND == result {
+            return Ok(());
+        }
         if NO_ERROR != result {
             return Err(result);
         }
@@ -644,23 +645,17 @@ impl InterfaceLuid {
         assert!(!p_table.is_null());
         let num_entries = unsafe { (*p_table).NumEntries };
         let x_table = unsafe { (*p_table).Table.as_ptr() };
+        let mut delete_statuses = Vec::new();
         for i in 0..num_entries {
             let current_entry = unsafe { x_table.add(i as _) };
             if unsafe { (*current_entry).InterfaceLuid.Value } == self.luid.Value {
-                let result = unsafe { DeleteIpForwardEntry2(current_entry) };
-                if NO_ERROR != result {
-                    last_error = result;
-                }
+                delete_statuses.push(unsafe { DeleteIpForwardEntry2(current_entry) });
             }
         }
 
         unsafe { FreeMibTable(p_table as _) };
 
-        if NO_ERROR == last_error {
-            Ok(())
-        } else {
-            Err(result)
-        }
+        flush_result(delete_statuses)
     }
 
     /// flush_routes_ipv4 method deletes all interface's routes.
@@ -695,5 +690,172 @@ impl InterfaceLuid {
     /// flush_dns_ipv6 method clears all DNS servers associated with the adapter.
     pub fn flush_dns_ipv6(&self) -> Result<(), String> {
         self.flush_dns(AF_INET6 as _)
+    }
+}
+
+fn upsert_route(
+    create: impl Fn() -> NETIO_STATUS,
+    set: impl Fn() -> NETIO_STATUS,
+) -> Result<(), NETIO_STATUS> {
+    let mut last_status = NO_ERROR;
+    for _ in 0..3 {
+        last_status = create();
+        if NO_ERROR == last_status {
+            return Ok(());
+        }
+        if ERROR_OBJECT_ALREADY_EXISTS != last_status {
+            return Err(last_status);
+        }
+        // ERROR_OBJECT_ALREADY_EXISTS: row raced into existence - converge its metric to ours
+        last_status = set();
+        if NO_ERROR == last_status {
+            return Ok(());
+        }
+        if ERROR_NOT_FOUND != last_status {
+            return Err(last_status);
+        }
+        // ERROR_NOT_FOUND: the row vanished between create and set - recreate
+    }
+    telio_utils::telio_log_warn!(
+        "route create/set attempts exhausted, route flapping; last status: {}",
+        last_status
+    );
+    Err(last_status)
+}
+
+fn flush_result(
+    delete_statuses: impl IntoIterator<Item = NETIO_STATUS>,
+) -> Result<(), NETIO_STATUS> {
+    let mut last_error: NETIO_STATUS = NO_ERROR;
+    for status in delete_statuses {
+        // ERROR_NOT_FOUND: entry vanished since the table snapshot - already flushed
+        if NO_ERROR != status && ERROR_NOT_FOUND != status {
+            last_error = status;
+        }
+    }
+    if NO_ERROR == last_error {
+        Ok(())
+    } else {
+        Err(last_error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn flush_result_ok_when_all_deletes_succeed() {
+        assert_eq!(flush_result([NO_ERROR, NO_ERROR]), Ok(()));
+    }
+
+    // Repro of "Unable to set IPv4 routes: 0": the failing delete's code must survive
+    #[test]
+    fn flush_result_reports_the_delete_error_code() {
+        assert_eq!(
+            flush_result([NO_ERROR, ERROR_ACCESS_DENIED, NO_ERROR]),
+            Err(ERROR_ACCESS_DENIED)
+        );
+    }
+
+    #[test]
+    fn flush_result_treats_not_found_as_flushed() {
+        assert_eq!(flush_result([ERROR_NOT_FOUND]), Ok(()));
+    }
+
+    #[test]
+    fn upsert_route_creates_when_absent() {
+        let set_calls = Cell::new(0);
+        let result = upsert_route(
+            || NO_ERROR,
+            || {
+                set_calls.set(set_calls.get() + 1);
+                NO_ERROR
+            },
+        );
+        assert_eq!(result, Ok(()));
+        assert_eq!(set_calls.get(), 0);
+    }
+
+    #[test]
+    fn upsert_route_overwrites_concurrently_created_row() {
+        let set_calls = Cell::new(0);
+        let result = upsert_route(
+            || ERROR_OBJECT_ALREADY_EXISTS,
+            || {
+                set_calls.set(set_calls.get() + 1);
+                NO_ERROR
+            },
+        );
+        assert_eq!(result, Ok(()));
+        assert_eq!(set_calls.get(), 1);
+    }
+
+    #[test]
+    fn upsert_route_recreates_row_that_vanished_before_set() {
+        let create_calls = Cell::new(0);
+        let result = upsert_route(
+            || {
+                create_calls.set(create_calls.get() + 1);
+                if create_calls.get() == 1 {
+                    ERROR_OBJECT_ALREADY_EXISTS
+                } else {
+                    NO_ERROR
+                }
+            },
+            || ERROR_NOT_FOUND,
+        );
+        assert_eq!(result, Ok(()));
+        assert_eq!(create_calls.get(), 2);
+    }
+
+    #[test]
+    fn upsert_route_reports_create_error() {
+        assert_eq!(
+            upsert_route(|| ERROR_ACCESS_DENIED, || NO_ERROR),
+            Err(ERROR_ACCESS_DENIED)
+        );
+    }
+
+    #[test]
+    fn upsert_route_reports_set_error() {
+        assert_eq!(
+            upsert_route(|| ERROR_OBJECT_ALREADY_EXISTS, || ERROR_ACCESS_DENIED),
+            Err(ERROR_ACCESS_DENIED)
+        );
+    }
+
+    // A recreated row must still be converged, not accepted with foreign parameters
+    #[test]
+    fn upsert_route_converges_row_recreated_by_racer() {
+        let set_calls = Cell::new(0);
+        let result = upsert_route(
+            || ERROR_OBJECT_ALREADY_EXISTS,
+            || {
+                set_calls.set(set_calls.get() + 1);
+                if set_calls.get() == 1 {
+                    ERROR_NOT_FOUND
+                } else {
+                    NO_ERROR
+                }
+            },
+        );
+        assert_eq!(result, Ok(()));
+        assert_eq!(set_calls.get(), 2);
+    }
+
+    #[test]
+    fn upsert_route_gives_up_after_bounded_attempts() {
+        let create_calls = Cell::new(0);
+        let result = upsert_route(
+            || {
+                create_calls.set(create_calls.get() + 1);
+                ERROR_OBJECT_ALREADY_EXISTS
+            },
+            || ERROR_NOT_FOUND,
+        );
+        assert_eq!(result, Err(ERROR_NOT_FOUND));
+        assert_eq!(create_calls.get(), 3);
     }
 }

@@ -1,0 +1,1 @@
+Fix Windows WG-NT adapter randomly coming up unable to receive tunnel traffic when its route setup raced concurrent route-table changes.
