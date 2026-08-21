@@ -49,6 +49,7 @@ thiserror.workspace = true
 tokio = { workspace = true, features = ["full"] }
 tracing.workspace = true
 uuid = { workspace = true, features = ["v4"], optional = true }
+x509-parser.workspace = true
 
 telio-crypto.workspace = true
 telio-model.workspace = true

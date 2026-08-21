@@ -20,8 +20,9 @@ use webpki_roots::TLS_SERVER_ROOTS;
 
 use crate::{Config, DerpKeepaliveConfig};
 
-use rustls_platform_verifier::ConfigVerifierExt;
+use rustls_platform_verifier::Verifier as PlatformVerifier;
 use telio_crypto::{PublicKey, SecretKey};
+use telio_proto::CertLoggingVerifier;
 use tokio::time::Interval;
 use tokio::{
     io::{split, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
@@ -29,7 +30,11 @@ use tokio::{
     time::timeout,
 };
 use tokio_rustls::{
-    rustls::{pki_types::ServerName, ClientConfig, RootCertStore},
+    rustls::{
+        client::{danger::ServerCertVerifier, WebPkiServerVerifier},
+        pki_types::ServerName,
+        ClientConfig, RootCertStore,
+    },
     TlsConnector,
 };
 use url::{Host, Url};
@@ -146,17 +151,29 @@ async fn try_connect(
             .await
         }
         _ => {
-            let config = if derp_config.use_built_in_root_certificates {
-                let root_store: RootCertStore = TLS_SERVER_ROOTS.iter().cloned().collect();
+            let builder = ClientConfig::builder();
+            let provider = builder.crypto_provider().clone();
 
-                let config = ClientConfig::builder()
-                    .with_root_certificates(root_store)
-                    .with_no_client_auth();
+            let verifier: Arc<dyn ServerCertVerifier> =
+                if derp_config.use_built_in_root_certificates {
+                    let root_store: RootCertStore = TLS_SERVER_ROOTS.iter().cloned().collect();
 
-                TlsConnector::from(Arc::new(config))
-            } else {
-                TlsConnector::from(Arc::new(ClientConfig::with_platform_verifier()?))
-            };
+                    WebPkiServerVerifier::builder_with_provider(Arc::new(root_store), provider)
+                        .build()
+                        // Can only fail on an empty root store or unparsable CRLs; roots are
+                        // compiled-in (never empty) and no CRLs are given, so this never errors
+                        .map_err(IoError::other)?
+                } else {
+                    Arc::new(PlatformVerifier::new(provider)?)
+                };
+
+            let config = builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(CertLoggingVerifier::new(
+                    verifier, "DERP", false,
+                )))
+                .with_no_client_auth();
+            let config = TlsConnector::from(Arc::new(config));
 
             let server_name =
                 ServerName::try_from(hostname).map_err(|_| Error::InvalidServerName)?;

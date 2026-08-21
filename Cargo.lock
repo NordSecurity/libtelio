@@ -5104,6 +5104,7 @@ dependencies = [
  "tower",
  "tracing",
  "uuid",
+ "x509-parser",
 ]
 
 [[package]]
@@ -5136,7 +5137,6 @@ dependencies = [
  "crypto_box",
  "env_logger",
  "futures",
- "hex",
  "http-body-util",
  "httparse",
  "hyper",
