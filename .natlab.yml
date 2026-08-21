@@ -24,6 +24,12 @@ shard_args:
   - "--durations-path=compiled_test_durations.json"
 env:
   TELIO_BIN_PROFILE: release
+# the mocked API must serve the cert the prebuilt guest packages were built to
+# trust, which is this committed one
+lab_files:
+  - from: nat-lab/data/core_api/test.pem
+    to: data/core_api/test.pem
+    mode: "0600"
 binaries:
   - from: compiled_test_durations.json
     to: nat-lab/compiled_test_durations.json
