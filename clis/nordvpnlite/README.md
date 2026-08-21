@@ -37,6 +37,7 @@ There is a command for running the daemon:
   * `--config-file <path_to_config_file>` - specify alternative configuration file,
   * `--no-detach` - run the nordvpnlite in the foreground as a regular process,
   without detaching from the terminal.
+  * `--do-not-connect` - starts daemon without establishing VPN connection.
   * `--stdout-path` - Redirect daemon standard output to the specified file,
   Defaults to `/var/log/nordvpnlite.log`, ignored when used with `--no-detach`
   Some early logs may still be printed to stdout before redirection.
@@ -93,6 +94,8 @@ And following cli commands:
 * `nordvpnlite is-alive` - query if the daemon is running
 * `nordvpnlite stop` - stop daemon execution
 * `nordvpnlite reload` - reload the configuration file and restart the daemon
+* `nordvpnlite connect` - connect to the VPN exit node
+* `nordvpnlite disconnect` - disconnect from the current VPN exit node
 * `nordvpnlite countries` - list countries with available VPN servers
 * `nordvpnlite login <token>` (or `nordvpnlite login --token <token>`) - store the authentication token obtained
   from [my.nordaccount.com](https://my.nordaccount.com) into the auth file
