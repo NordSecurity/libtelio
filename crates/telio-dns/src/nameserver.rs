@@ -1,6 +1,6 @@
 use crate::error::Result as DnsResult;
 use crate::{
-    forwarder::RawForwarder,
+    forwarder::UdpForwarder,
     packet_decoder::{find_nord_query, normalize_qname, parse_dns_query_packet, DnsParseError},
     packet_encoder::{DnsBuildError, DnsResponseBuilder},
     resolver::Resolver,
@@ -156,7 +156,7 @@ pub struct LocalNameServer {
     nord_zone: NordZone,
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
-    forwarder: Option<RawForwarder>,
+    forwarder: Option<UdpForwarder>,
 }
 
 impl LocalNameServer {
@@ -166,8 +166,8 @@ impl LocalNameServer {
         forward_ips: &[IpAddr],
         use_raw_forwarder: bool,
     ) -> DnsResult<Arc<RwLock<Self>>> {
-        let raw_forwarder: Option<RawForwarder> = if use_raw_forwarder {
-            Some(RawForwarder::new().await?)
+        let raw_forwarder: Option<UdpForwarder> = if use_raw_forwarder {
+            Some(UdpForwarder::new().await?)
         } else {
             None
         };
@@ -374,12 +374,13 @@ impl LocalNameServer {
                     // TODO: LLT-7054: Remove once migration is fully validated
                     if let Some(dns_packet) = DnsPacket::new(&raw_query) {
                         telio_log_debug!(
-                            "Request: id: {} is_response: {} opcode: {:?} recursion_desired: {} query_count: {} rcode: {:?}",
+                            "Request: id: {} is_response: {} opcode: {:?} recursion_desired: {} query_count: {} additional_count: {} rcode: {:?}",
                             dns_packet.get_id(),
                             dns_packet.get_is_response(),
                             dns_packet.get_opcode(),
                             dns_packet.get_is_recursion_desirable(),
                             dns_packet.get_query_count(),
+                            dns_packet.get_additional_rr_count(),
                             dns_packet.get_rcode(),
                         );
                         for query in dns_packet.get_queries() {
@@ -775,7 +776,7 @@ impl RequestInfo {
                 };
                 tcp_response.set_checksum(checksum);
 
-                telio_log_debug!("UDP response: {:?}", &tcp_response);
+                telio_log_debug!("TCP response: {:?}", &tcp_response);
                 Ok(length)
             }
         }
