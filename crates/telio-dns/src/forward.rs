@@ -230,9 +230,9 @@ impl Authority for ForwardAuthority {
                 telio_log_debug!("DNS name resolution failed (no records): {:?}", e);
             }
 
-            Err(ref e) => {
+            Err(ref _e) => {
                 #[cfg(debug_assertions)]
-                telio_log_debug!("DNS name resolution failed: {:?}", e);
+                telio_log_debug!("DNS name resolution failed: {:?}", _e);
 
                 #[cfg(not(debug_assertions))]
                 telio_log_warn!("DNS name resolution failed");
