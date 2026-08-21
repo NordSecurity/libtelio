@@ -43,6 +43,32 @@ def run_windows_vm_monitoring_funcs(
     ]  # Storing the task to keep it alive
 
 
+def log_powershell_failure(
+    description: str, vm_tag: ConnectionTag, result: subprocess.CompletedProcess[str]
+):
+    setup_log.warning(
+        "powershell command for %s failed on %s: returncode=%d stdout=%s stderr=%s",
+        description,
+        vm_tag,
+        result.returncode,
+        truncate(result.stdout),
+        truncate(result.stderr),
+    )
+
+
+def missing_sample_placeholder(result: subprocess.CompletedProcess[str]) -> str:
+    return f"MISSING_SAMPLE returncode={result.returncode}"
+
+
+def truncate(output: str, limit: int = 2000) -> str:
+    output = output.strip()
+    if not output:
+        return "<empty>"
+    if len(output) <= limit:
+        return output
+    return f"<truncated>...{output[-limit:]}"
+
+
 def start_windows_vm_top10_cpu_usage_monitoring(vm_tag):
     powershell_cmd = r"""
     Get-Counter '\Process(*)\% Processor Time' -ErrorAction SilentlyContinue |
@@ -86,12 +112,9 @@ def start_windows_vm_top10_usage_monitoring(
                 check=False,
             )
             if result.returncode != 0:
-                setup_log.warning(
-                    "powershell command for top10 %s failed on %s: %s",
-                    resource_name,
-                    vm_tag,
-                    result.stderr,
-                )
+                log_powershell_failure(f"top10 {resource_name}", vm_tag, result)
+                placeholder = missing_sample_placeholder(result)
+                output_file.write(f"{datetime.now().isoformat()} {placeholder}\n")
                 time.sleep(1)
                 return
             lines = result.stdout.splitlines()
@@ -131,12 +154,9 @@ def start_windows_vm_monitoring(
                 check=False,
             )
             if result.returncode != 0:
-                setup_log.warning(
-                    "powershell command for %s failed on %s: %s",
-                    resource_name,
-                    vm_tag,
-                    result.stderr,
-                )
+                log_powershell_failure(resource_name, vm_tag, result)
+                placeholder = missing_sample_placeholder(result)
+                output_file.write(f"{datetime.now().isoformat()}, {placeholder}\n")
                 time.sleep(1)
                 return
             lines = result.stdout.splitlines()
