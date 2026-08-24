@@ -361,10 +361,10 @@ impl InterfaceLuid {
         let mut p_table: PMIB_UNICASTIPADDRESS_TABLE = ptr::null_mut();
         let result = unsafe { GetUnicastIpAddressTable(address_family, &mut p_table) };
         // ERROR_NOT_FOUND: no address entries for this family - nothing to flush
-        if ERROR_NOT_FOUND == result {
+        if result == ERROR_NOT_FOUND {
             return Ok(());
         }
-        if NO_ERROR != result {
+        if result != NO_ERROR {
             return Err(result);
         }
 
@@ -635,10 +635,10 @@ impl InterfaceLuid {
         let mut p_table: PMIB_IPFORWARD_TABLE2 = ptr::null_mut();
         let result = unsafe { GetIpForwardTable2(address_family, &mut p_table) };
         // ERROR_NOT_FOUND: no route entries for this family - nothing to flush
-        if ERROR_NOT_FOUND == result {
+        if result == ERROR_NOT_FOUND {
             return Ok(());
         }
-        if NO_ERROR != result {
+        if result != NO_ERROR {
             return Err(result);
         }
 
@@ -700,21 +700,21 @@ fn upsert_route(
     let mut last_status = NO_ERROR;
     for _ in 0..3 {
         last_status = create();
-        if NO_ERROR == last_status {
+        if last_status == NO_ERROR {
             return Ok(());
-        }
-        if ERROR_OBJECT_ALREADY_EXISTS != last_status {
-            return Err(last_status);
         }
         // ERROR_OBJECT_ALREADY_EXISTS: row raced into existence - converge its metric to ours
-        last_status = set();
-        if NO_ERROR == last_status {
-            return Ok(());
-        }
-        if ERROR_NOT_FOUND != last_status {
+        if last_status != ERROR_OBJECT_ALREADY_EXISTS {
             return Err(last_status);
         }
+        last_status = set();
+        if last_status == NO_ERROR {
+            return Ok(());
+        }
         // ERROR_NOT_FOUND: the row vanished between create and set - recreate
+        if last_status != ERROR_NOT_FOUND {
+            return Err(last_status);
+        }
     }
     telio_utils::telio_log_warn!(
         "route create/set attempts exhausted, route flapping; last status: {}",
@@ -729,11 +729,11 @@ fn flush_result(
     let mut last_error: NETIO_STATUS = NO_ERROR;
     for status in delete_statuses {
         // ERROR_NOT_FOUND: entry vanished since the table snapshot - already flushed
-        if NO_ERROR != status && ERROR_NOT_FOUND != status {
+        if status != NO_ERROR && status != ERROR_NOT_FOUND {
             last_error = status;
         }
     }
-    if NO_ERROR == last_error {
+    if last_error == NO_ERROR {
         Ok(())
     } else {
         Err(last_error)
