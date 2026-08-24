@@ -1,9 +1,9 @@
 use crate::error::Result as DnsResult;
 use crate::{
-    forwarder::UdpForwarder,
     packet_decoder::{find_nord_query, normalize_qname, parse_dns_query_packet, DnsParseError},
     packet_encoder::{DnsBuildError, DnsResponseBuilder},
     resolver::Resolver,
+    udp_forwarder::UdpForwarder,
     zone::{AuthoritativeZone, ClonableZones, ForwardZone, NordZone, Records, NORD_ZONE},
 };
 use async_trait::async_trait;
