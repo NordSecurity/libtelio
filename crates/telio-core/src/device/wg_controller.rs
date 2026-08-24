@@ -24,7 +24,6 @@ use telio_model::{
 use telio_nurse::aggregator::ConnectivityDataAggregator;
 use telio_proto::{PeersStatesMap, Session};
 use telio_proxy::Proxy;
-use telio_starcast::starcast_peer::StarcastPeer;
 use telio_traversal::{
     cross_ping_check::CrossPingCheckTrait, endpoint_providers::EndpointProvider,
     SessionKeeperTrait, UpgradeSyncTrait, WireGuardEndpointCandidateChangeEvent,
@@ -35,7 +34,7 @@ use telio_wg::{
     WireGuard,
 };
 
-use super::{Entities, RequestedState, Result};
+use super::{Entities, RequestedState, Result, StarcastPeer};
 
 pub const DEFAULT_PEER_UPGRADE_WINDOW: u64 = 15;
 
@@ -104,6 +103,18 @@ pub async fn consolidate_wg_state(
         entities.cross_ping_check(),
     )
     .await?;
+    #[cfg(feature = "enable_upnp")]
+    let upnp_ep_provider = entities.meshnet.left().and_then(|m| {
+        m.direct.as_ref().and_then(|direct| {
+            direct
+                .upnp_endpoint_provider
+                .as_ref()
+                .map(|upnp| upnp.as_ref() as &dyn EndpointProvider)
+        })
+    });
+    #[cfg(not(feature = "enable_upnp"))]
+    let upnp_ep_provider = None;
+
     consolidate_wg_peers(
         requested_state,
         &*entities.wireguard_interface,
@@ -119,11 +130,7 @@ pub async fn consolidate_wg_state(
                 .as_ref()
                 .and_then(|direct| direct.stun_endpoint_provider.as_ref())
         }),
-        entities.meshnet.left().and_then(|m| {
-            m.direct
-                .as_ref()
-                .and_then(|direct| direct.upnp_endpoint_provider.as_ref())
-        }),
+        upnp_ep_provider,
         &entities.postquantum_wg,
         entities.starcast_vpeer(),
         features,
@@ -143,12 +150,15 @@ pub async fn consolidate_wg_state(
     )
     .await?;
 
-    #[cfg(feature = "enable_firewall")]
+    #[cfg(all(feature = "enable_firewall", feature = "enable_starcast"))]
     let starcast_pub_key = if let Some(starcast_vpeer) = entities.starcast_vpeer() {
         Some(starcast_vpeer.get_peer().await?.public_key)
     } else {
         None
     };
+
+    #[cfg(all(feature = "enable_firewall", not(feature = "enable_starcast")))]
+    let starcast_pub_key = None;
 
     #[cfg(feature = "enable_firewall")]
     let dns_pubkey = entities
@@ -212,7 +222,16 @@ async fn consolidate_wg_listen_port<W: WireGuard, P: Proxy>(
     // down->up transition, listen-port may change. Therefore this consolidation has been added to
     // keep it in sync all the time.
 
+    #[cfg(not(feature = "enable_starcast"))]
+    let _ = starcast_vpeer;
+
+    #[cfg(feature = "enable_starcast")]
     if let (None, None) = (proxy, starcast_vpeer) {
+        return Ok(());
+    }
+
+    #[cfg(not(feature = "enable_starcast"))]
+    if proxy.is_none() {
         return Ok(());
     }
 
@@ -223,9 +242,12 @@ async fn consolidate_wg_listen_port<W: WireGuard, P: Proxy>(
         let wg_addr = wg_port.map(|p| (Ipv4Addr::LOCALHOST, p).into());
         proxy.set_wg_address(wg_addr).await?;
     }
-    if let Some(starcast_vpeer) = starcast_vpeer {
-        let wg_addr = wg_port.map(|p| (Ipv4Addr::LOCALHOST, p).into());
-        starcast_vpeer.set_wg_address(wg_addr).await?;
+    #[cfg(feature = "enable_starcast")]
+    {
+        if let Some(starcast_vpeer) = starcast_vpeer {
+            let wg_addr = wg_port.map(|p| (Ipv4Addr::LOCALHOST, p).into());
+            starcast_vpeer.set_wg_address(wg_addr).await?;
+        }
     }
 
     Ok(())
@@ -350,7 +372,6 @@ async fn consolidate_wg_peers<
     S: SessionKeeperTrait,
     D: DnsResolver,
     E1: EndpointProvider,
-    E2: EndpointProvider,
 >(
     requested_state: &RequestedState,
     wireguard_interface: &W,
@@ -362,7 +383,7 @@ async fn consolidate_wg_peers<
     dns: &Mutex<crate::device::DNS<D>>,
     remote_peer_states: PeersStatesMap,
     stun_ep_provider: Option<&Arc<E1>>,
-    upnp_ep_provider: Option<&Arc<E2>>,
+    upnp_ep_provider: Option<&dyn EndpointProvider>,
     post_quantum_vpn: &impl telio_pq::PostQuantum,
     starcast_vpeer: Option<&Arc<StarcastPeer>>,
     features: &Features,
@@ -382,7 +403,15 @@ async fn consolidate_wg_peers<
         }
     }
 
-    let ep_control = |ep: Arc<dyn EndpointProvider>| async move {
+    let mut endpoint_providers_to_control: Vec<&dyn EndpointProvider> = Vec::new();
+    if let Some(stun) = stun_ep_provider {
+        endpoint_providers_to_control.push(stun.as_ref());
+    }
+    if let Some(upnp) = upnp_ep_provider {
+        endpoint_providers_to_control.push(upnp);
+    }
+
+    for ep in endpoint_providers_to_control {
         if is_any_peer_eligible_for_upgrade {
             telio_log_debug!("Unpausing {} provider", ep.name());
             ep.unpause().await;
@@ -390,14 +419,6 @@ async fn consolidate_wg_peers<
             telio_log_debug!("Pausing {} provider", ep.name());
             ep.pause().await;
         }
-    };
-
-    if let Some(stun) = stun_ep_provider {
-        ep_control(stun.clone()).await;
-    }
-
-    if let Some(upnp) = upnp_ep_provider {
-        ep_control(upnp.clone()).await;
     }
 
     let requested_peers = build_requested_peers_list(
@@ -789,15 +810,21 @@ async fn build_requested_peers_list<
         requested_peers.insert(dns_peer_public_key, requested_peer);
     }
 
-    if let Some(starcast_vpeer) = starcast_vpeer {
-        let starcast_peer = starcast_vpeer.get_peer().await?;
-        let starcast_peer_public_key = starcast_peer.public_key;
-        let requested_starcast_peer = RequestedPeer {
-            peer: starcast_peer,
-            endpoint: None,
-        };
-        requested_peers.insert(starcast_peer_public_key, requested_starcast_peer);
+    #[cfg(feature = "enable_starcast")]
+    {
+        if let Some(starcast_vpeer) = starcast_vpeer {
+            let starcast_peer = starcast_vpeer.get_peer().await?;
+            let starcast_peer_public_key = starcast_peer.public_key;
+            let requested_starcast_peer = RequestedPeer {
+                peer: starcast_peer,
+                endpoint: None,
+            };
+            requested_peers.insert(starcast_peer_public_key, requested_starcast_peer);
+        }
     }
+
+    #[cfg(not(feature = "enable_starcast"))]
+    let _ = starcast_vpeer;
 
     if let (Some(wg_stun_server), Some(stun)) = (&requested_state.wg_stun_server, stun_ep_provider)
     {
@@ -2278,7 +2305,7 @@ mod tests {
             let upgrade_sync = Arc::new(self.upgrade_sync);
             let session_keeper = Arc::new(self.session_keeper);
             let stun_ep_provider = { self.stun_ep_provider.map(Arc::new) };
-            let upnp_ep_provider: Option<Arc<MockEndpointProvider>> = None;
+            let upnp_ep_provider: Option<&dyn EndpointProvider> = None;
             let wireguard_interface = Arc::new(self.wireguard_interface);
             let aggregator = ConnectivityDataAggregator::new(
                 AggregatorConfig::default(),
@@ -2297,7 +2324,7 @@ mod tests {
                 &self.dns,
                 HashMap::new(),
                 stun_ep_provider.as_ref(),
-                upnp_ep_provider.as_ref(),
+                upnp_ep_provider,
                 &self.post_quantum,
                 None,
                 &self.features,
