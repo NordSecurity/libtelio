@@ -46,6 +46,9 @@ const TCP_MIN_HEADER: usize = 20;
 const MAX_CONCURRENT_QUERIES: usize = 256;
 const IDLE_TIME: Duration = Duration::from_secs(1);
 
+/// Timeout for one upstream DNS query attempt
+pub(crate) const QUERY_TIMEOUT: Duration = Duration::from_secs(2);
+
 #[derive(Debug, Error)]
 enum PacketError {
     #[error("Empty request packet")]
@@ -167,7 +170,7 @@ impl LocalNameServer {
         use_raw_forwarder: bool,
     ) -> DnsResult<Arc<RwLock<Self>>> {
         let raw_forwarder: Option<UdpForwarder> = if use_raw_forwarder {
-            Some(UdpForwarder::new().await?)
+            Some(UdpForwarder::new(QUERY_TIMEOUT).await?)
         } else {
             None
         };
