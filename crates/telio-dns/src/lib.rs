@@ -5,13 +5,11 @@
 //! Easily create and run in process dns resolver.
 
 mod dns;
-// TODO: LLT-7053 remove after integrating forwarder
-#[allow(dead_code)]
-mod forwarder;
 mod nameserver;
 mod packet_decoder;
 mod packet_encoder;
 mod resolver;
+mod udp_forwarder;
 mod zone;
 
 pub mod bind_tun;

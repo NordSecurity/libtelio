@@ -1,4 +1,4 @@
-use crate::forwarder::ForwardError;
+use crate::udp_forwarder::ForwardError;
 use crate::zone::NordZoneError;
 use std::{io, net::AddrParseError};
 use thiserror::Error;
