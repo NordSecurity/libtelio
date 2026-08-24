@@ -33,3 +33,6 @@ pub mod fuzz {
     pub use super::packet_decoder::{find_nord_query, parse_dns_query_packet};
     pub use super::packet_encoder::fuzz_build_response;
 }
+
+/// DNS port number
+pub const DNS_PORT: u16 = 53;
