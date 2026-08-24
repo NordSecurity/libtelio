@@ -27,6 +27,7 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
+use telio_model::constants::DNS_PORT;
 use telio_model::features::TtlValue;
 use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
 use tokio::task::JoinHandle;
@@ -44,7 +45,6 @@ const UDP_HEADER: usize = 8;
 const TCP_MIN_HEADER: usize = 20;
 const MAX_CONCURRENT_QUERIES: usize = 256;
 const IDLE_TIME: Duration = Duration::from_secs(1);
-const DNS_PORT: u16 = 53;
 
 #[derive(Debug, Error)]
 enum PacketError {
@@ -1225,7 +1225,7 @@ mod tests {
     // Tests PacketError::InvalidUdpChecksum
     #[test]
     fn packet_error_invalid_udp_checksum() {
-        let mut udp_seg = build_udp_segment(12345, 53, &[0; 4]);
+        let mut udp_seg = build_udp_segment(12345, DNS_PORT, &[0; 4]);
         // Corrupt UDP checksum (bytes 6-7)
         udp_seg[6] ^= 0xFF;
         let packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &udp_seg);
@@ -1265,7 +1265,7 @@ mod tests {
             0x01, b'a', 0x00,
             // QTYPE and QCLASS intentionally missing → hickory fails to decode
         ];
-        let udp_seg = build_udp_segment(12345, 53, dns_payload);
+        let udp_seg = build_udp_segment(12345, DNS_PORT, dns_payload);
         let packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &udp_seg);
         let ns = test_nameserver().await;
         let mut response = vec![0u8; MAX_PACKET];
@@ -1290,7 +1290,7 @@ mod tests {
             },
             payload: PayloadRequestInfo::Udp {
                 source_port: 12345,
-                destination_port: 53,
+                destination_port: DNS_PORT,
                 dns_request: None,
             },
         };
@@ -1312,7 +1312,7 @@ mod tests {
             },
             payload: PayloadRequestInfo::Udp {
                 source_port: 12345,
-                destination_port: 53,
+                destination_port: DNS_PORT,
                 dns_request: None,
             },
         };
@@ -1338,7 +1338,7 @@ mod tests {
             },
             payload: PayloadRequestInfo::Udp {
                 source_port: 12345,
-                destination_port: 53,
+                destination_port: DNS_PORT,
                 dns_request: None,
             },
         };
