@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from tests.config import LIBTELIO_BINARY_PATH_VM_MAC, TERMUX_BIN_VM_ANDROID
 from tests.utils.connection import Connection, TargetOS
 from tests.utils.logger import log
-from tests.utils.output_notifier import OutputNotifier
+from natlab import OutputNotifier
 from tests.utils.process import Process
 from tests.utils.python import get_python_binary
 from typing import Optional, AsyncIterator

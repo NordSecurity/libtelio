@@ -1,21 +1,12 @@
 import logging
 
+from natlab.logger import configure_cli_logging, log
+
 LOG_LEVEL = logging.INFO
 
-
-class Logger:
-    def __init__(self, level=logging.INFO):
-        self.logger = logging.getLogger("natlab-logger")
-
-        if not self.logger.hasHandlers():
-            self.logger.setLevel(logging.DEBUG)
-
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(level)
-            console_handler.setFormatter(
-                logging.Formatter("%(asctime)s,%(msecs)03d | %(message)s")
-            )
-            self.logger.addHandler(console_handler)
+# natlab's logger is library-style (no handlers); these tests expect console output
+if all(isinstance(handler, logging.NullHandler) for handler in log.handlers):
+    configure_cli_logging(LOG_LEVEL)
 
 
 class SetupLoggerAdapter(logging.LoggerAdapter):
@@ -23,5 +14,4 @@ class SetupLoggerAdapter(logging.LoggerAdapter):
         return f"[SETUP] {msg}", kwargs
 
 
-log = Logger(level=LOG_LEVEL).logger
 setup_log = SetupLoggerAdapter(log, {})

@@ -8,7 +8,7 @@ from tests.helpers import send_https_request, verify_uuid
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import new_connection_by_tag
 from tests.utils.logger import log
-from tests.utils.output_notifier import OutputNotifier
+from natlab import OutputNotifier
 
 
 @dataclass

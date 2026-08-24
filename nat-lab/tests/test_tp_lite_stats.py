@@ -3,7 +3,7 @@ import pytest
 from tests import config
 from tests.helpers import SetupParameters, Environment, Connection
 from tests.helpers_vpn import connect_vpn
-from tests.utils import asyncio_util
+from natlab import asyncio_util
 from tests.utils.bindings import (
     default_features,
     TelioAdapterType,

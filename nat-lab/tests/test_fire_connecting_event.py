@@ -5,7 +5,7 @@ from tests.helpers import SetupParameters, Environment
 from tests.utils.bindings import NodeState, TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
-from tests.utils.ping import ping
+from natlab import ping
 
 
 @pytest.mark.asyncio

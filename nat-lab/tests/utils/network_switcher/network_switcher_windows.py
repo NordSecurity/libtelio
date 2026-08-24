@@ -3,7 +3,7 @@ import re
 from .network_switcher import NetworkSwitcher, InterfaceState
 from dataclasses import dataclass
 from tests import config
-from tests.utils.command_grepper import CommandGrepper
+from natlab import CommandGrepper
 from tests.utils.connection import Connection
 from tests.utils.logger import log
 from tests.utils.process import ProcessExecError

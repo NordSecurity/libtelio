@@ -5,7 +5,7 @@ from tests.helpers_vpn import VpnConfig
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.logger import log
-from tests.utils.ping import ping
+from natlab import ping
 
 
 # Module-level override — all tests in this file get VPN_1
