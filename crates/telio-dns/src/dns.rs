@@ -6,7 +6,7 @@ use crate::{
 use async_trait::async_trait;
 use ipnet::IpNet;
 use neptun::noise::Tunn;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 use std::{net::SocketAddr, sync::Arc};
 use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::uapi::Peer;
@@ -15,7 +15,13 @@ use tokio::net::UdpSocket;
 use tokio::sync::{Mutex, RwLock};
 use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
 
-use telio_model::features::{FeatureDns, TtlValue};
+use telio_model::{
+    constants::{
+        DNS_VIRTUAL_PEER_IPV4, DNS_VIRTUAL_PEER_IPV6, DNS_VIRTUAL_PEER_ON_EXIT_IPV4,
+        DNS_VIRTUAL_PEER_ON_EXIT_IPV6,
+    },
+    features::{FeatureDns, TtlValue},
+};
 
 //debug tools
 use telio_utils::{telio_log_debug, telio_log_error};
@@ -38,10 +44,10 @@ pub trait DnsResolver {
     fn get_peer(&self, allowed_ips: Vec<IpNet>) -> Peer;
     /// Get default allowed IPs of this DNS server.
     fn get_default_dns_allowed_ips(&self) -> Vec<IpNet>;
-    /// Get DNS virtual peer addresses.
+    /// Get allowed IPs when connected to exit node.
     fn get_exit_connected_dns_allowed_ips(&self) -> Vec<IpNet>;
-    /// Get default DNS server IP addresses.
-    fn get_default_dns_servers(&self) -> Vec<IpAddr>;
+    /// Get DNS server IP addresses when connected to exit node.
+    fn get_exit_node_dns_servers(&self) -> Vec<IpAddr>;
     /// Change DNS peer's public key
     async fn set_peer_public_key(&self, key: PublicKey);
 }
@@ -156,24 +162,24 @@ impl DnsResolver for LocalDnsResolver {
 
     fn get_default_dns_allowed_ips(&self) -> Vec<IpNet> {
         vec![
-            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into(),
-            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3)).into(),
-            IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 2)).into(),
-            IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 3)).into(),
+            IpAddr::V4(DNS_VIRTUAL_PEER_IPV4).into(),
+            IpAddr::V4(DNS_VIRTUAL_PEER_ON_EXIT_IPV4).into(),
+            IpAddr::V6(DNS_VIRTUAL_PEER_IPV6).into(),
+            IpAddr::V6(DNS_VIRTUAL_PEER_ON_EXIT_IPV6).into(),
         ]
     }
 
     fn get_exit_connected_dns_allowed_ips(&self) -> Vec<IpNet> {
         vec![
-            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into(),
-            IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 2)).into(),
+            IpAddr::V4(DNS_VIRTUAL_PEER_IPV4).into(),
+            IpAddr::V6(DNS_VIRTUAL_PEER_IPV6).into(),
         ]
     }
 
-    fn get_default_dns_servers(&self) -> Vec<IpAddr> {
+    fn get_exit_node_dns_servers(&self) -> Vec<IpAddr> {
         vec![
-            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3)),
-            IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 3)),
+            IpAddr::V4(DNS_VIRTUAL_PEER_ON_EXIT_IPV4),
+            IpAddr::V6(DNS_VIRTUAL_PEER_ON_EXIT_IPV6),
         ]
     }
 
@@ -243,7 +249,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_default_dns_servers() {
+    async fn test_get_exit_node_dns_servers() {
         let resolver = LocalDnsResolver::new(
             &SecretKey::gen().public(),
             &[],
@@ -257,7 +263,7 @@ mod tests {
                 "100.64.0.3".parse::<IpAddr>().unwrap(),
                 "fd74:656c:696f::3".parse::<IpAddr>().unwrap(),
             ],
-            resolver.get_default_dns_servers()
+            resolver.get_exit_node_dns_servers()
         );
     }
 }
