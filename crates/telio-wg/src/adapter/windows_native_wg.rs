@@ -7,30 +7,42 @@ use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
+    ffi::c_void,
+    future::Future,
     io::Error as IOError,
-    mem, option,
+    mem,
+    ops::ControlFlow,
+    option,
     ptr::{self, null},
     result,
     slice::Windows,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicI32, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
 use telio_utils::{
     telio_log_debug, telio_log_error, telio_log_info, telio_log_trace, telio_log_warn,
 };
-use tokio::time::sleep;
+use tokio::sync::Notify;
+use tokio::time::{sleep, timeout};
 use utf16_lit::utf16_null;
 use uuid::Uuid;
 use windows::core::GUID;
 use windows::core::PCWSTR;
 use windows::Win32::Devices::DeviceAndDriverInstallation::GUID_DEVCLASS_NET;
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
-    CM_Get_DevNode_Status, SetupDiCallClassInstaller, SetupDiEnumDeviceInfo,
-    SetupDiGetDeviceRegistryPropertyW, SetupDiSetClassInstallParamsW, CM_DEVNODE_STATUS_FLAGS,
-    CM_PROB, CR_SUCCESS, DIF_REMOVE, DI_REMOVEDEVICE_GLOBAL, DN_HAS_PROBLEM, SPDRP_FRIENDLYNAME,
-    SP_CLASSINSTALL_HEADER, SP_REMOVEDEVICE_PARAMS,
+    CM_Get_DevNode_Status, CM_Register_Notification, CM_Unregister_Notification,
+    SetupDiCallClassInstaller, SetupDiEnumDeviceInfo, SetupDiGetDeviceRegistryPropertyW,
+    SetupDiSetClassInstallParamsW, CM_DEVNODE_STATUS_FLAGS, CM_NOTIFY_ACTION,
+    CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL, CM_NOTIFY_EVENT_DATA, CM_NOTIFY_FILTER,
+    CM_NOTIFY_FILTER_0, CM_NOTIFY_FILTER_0_0, CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE, CM_PROB,
+    CONFIGRET, CR_SUCCESS, DIF_REMOVE, DI_REMOVEDEVICE_GLOBAL, DN_HAS_PROBLEM, HCMNOTIFICATION,
+    SPDRP_FRIENDLYNAME, SP_CLASSINSTALL_HEADER, SP_REMOVEDEVICE_PARAMS,
 };
+use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::NetworkManagement::Ndis::GUID_DEVINTERFACE_NET;
 use winreg::{enums::*, RegKey, HKEY};
 use wireguard_nt::{
@@ -39,6 +51,106 @@ use wireguard_nt::{
 use wireguard_uapi::xplatform;
 
 const REMOVAL_SLEEP_SECS: u64 = 2;
+const SET_STATE_MAX_ATTEMPTS: usize = 10;
+const SET_STATE_INITIAL_BACKOFF: Duration = Duration::from_millis(200);
+const SET_STATE_MAX_BACKOFF: Duration = Duration::from_secs(2);
+
+/// Wakes `ensure_adapter_state` retries as soon as a network device interface
+/// (re)arrives instead of sleeping through the whole backoff.
+///
+/// Filters on the interface class only: a false wakeup from an unrelated
+/// adapter just costs one extra state check.
+struct DeviceInterfaceArrivalWatcher {
+    handle: HCMNOTIFICATION,
+    arrival: Arc<Notify>,
+}
+
+// SAFETY: `handle` is only used by `CM_Unregister_Notification` in `Drop`, which is thread-safe
+unsafe impl Send for DeviceInterfaceArrivalWatcher {}
+unsafe impl Sync for DeviceInterfaceArrivalWatcher {}
+
+impl DeviceInterfaceArrivalWatcher {
+    fn register() -> Result<Self, CONFIGRET> {
+        let arrival = Arc::new(Notify::new());
+        let filter = CM_NOTIFY_FILTER {
+            cbSize: std::mem::size_of::<CM_NOTIFY_FILTER>() as u32,
+            Flags: 0,
+            FilterType: CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE,
+            Reserved: 0,
+            u: CM_NOTIFY_FILTER_0 {
+                DeviceInterface: CM_NOTIFY_FILTER_0_0 {
+                    ClassGuid: GUID_DEVINTERFACE_NET,
+                },
+            },
+        };
+        let mut handle = HCMNOTIFICATION(std::ptr::null_mut());
+        let result = unsafe {
+            CM_Register_Notification(
+                &filter,
+                Some(Arc::as_ptr(&arrival).cast()),
+                Some(device_interface_arrival_callback),
+                &mut handle,
+            )
+        };
+        if result != CR_SUCCESS {
+            return Err(result);
+        }
+
+        Ok(Self { handle, arrival })
+    }
+
+    async fn wait_arrival(&self, timeout_after: Duration) {
+        let _ = timeout(timeout_after, self.arrival.notified()).await;
+    }
+}
+
+impl Drop for DeviceInterfaceArrivalWatcher {
+    fn drop(&mut self) {
+        let result = unsafe { CM_Unregister_Notification(self.handle) };
+        if result != CR_SUCCESS {
+            telio_log_warn!(
+                "Failed to unregister device interface arrival notification: config manager error {}",
+                result.0
+            );
+            // The callback may still fire with a pointer into this Arc - leak it
+            std::mem::forget(self.arrival.clone());
+        }
+    }
+}
+
+unsafe extern "system" fn device_interface_arrival_callback(
+    _notification: HCMNOTIFICATION,
+    context: *const c_void,
+    action: CM_NOTIFY_ACTION,
+    _event_data: *const CM_NOTIFY_EVENT_DATA,
+    _event_data_size: u32,
+) -> u32 {
+    if action == CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL && !context.is_null() {
+        unsafe { &*context.cast::<Notify>() }.notify_one();
+    }
+    ERROR_SUCCESS.0
+}
+
+/// Runs `attempt` until it breaks, waiting with exponentially growing backoff
+/// before every retry - including retries after a failed state read (LLT-5443).
+async fn retry_with_backoff<A, W, F>(mut attempt: A, mut wait: W) -> bool
+where
+    A: FnMut() -> ControlFlow<()>,
+    W: FnMut(Duration) -> F,
+    F: Future<Output = ()>,
+{
+    let mut backoff = SET_STATE_INITIAL_BACKOFF;
+    for attempt_index in 0..SET_STATE_MAX_ATTEMPTS {
+        if attempt_index > 0 {
+            wait(backoff).await;
+            backoff = (backoff * 2).min(SET_STATE_MAX_BACKOFF);
+        }
+        if attempt().is_break() {
+            return true;
+        }
+    }
+    false
+}
 
 /// Telio wrapper around wireguard-nt
 pub struct WindowsNativeWg {
@@ -52,6 +164,9 @@ pub struct WindowsNativeWg {
     // during Adapter::stop(), or needs to be done in drop()
     cleaned_up: Arc<Mutex<bool>>,
     watcher: Arc<Mutex<InterfaceWatcher>>,
+
+    // None when notification registration failed; retries then fall back to plain sleeps
+    iface_arrival: Option<DeviceInterfaceArrivalWatcher>,
 
     /// Optional callback for dynamic WireGuard-NT behavior.
     enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
@@ -84,6 +199,7 @@ impl WindowsNativeWg {
             luid,
             cleaned_up: Arc::new(Mutex::new(false)),
             watcher: watcher.clone(),
+            iface_arrival: None,
             enable_dynamic_wg_nt_control,
         }
     }
@@ -344,7 +460,17 @@ impl WindowsNativeWg {
         Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, service::GUID_DEVINTERFACE_NET_STR);
         Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
 
-        let wg_dev = tmp_wg_dev?;
+        let mut wg_dev = tmp_wg_dev?;
+        wg_dev.iface_arrival = match DeviceInterfaceArrivalWatcher::register() {
+            Ok(watcher) => Some(watcher),
+            Err(error) => {
+                telio_log_warn!(
+                    "Failed to register device interface arrival notification: config manager error {}",
+                    error.0
+                );
+                None
+            }
+        };
         telio_log_info!(
             "Adapter '{}' using created successfully. enable_dynamic_wg_nt_control: {}",
             name,
@@ -425,58 +551,75 @@ impl WindowsNativeWg {
         // The interface up for slightly longer before declaring error.
         //
         // See LLT-5443 for more details
-        let mut os_error = IOError::from_raw_os_error(0);
-        for _ in 0..5 {
-            // Retrieve up/down state of the adapter
-            let have_adapter_state = match self.adapter.get_adapter_state() {
-                Ok(state) => {
-                    if state == WIREGUARD_STATE_UP {
-                        AdapterState::Up
-                    } else {
-                        AdapterState::Down
+        // Raw os error code only: the future must stay Send, so no RefCell here
+        let os_error_code = AtomicI32::new(0);
+        let succeeded = retry_with_backoff(
+            || {
+                // Retrieve up/down state of the adapter
+                let have_adapter_state = match self.adapter.get_adapter_state() {
+                    Ok(state) => {
+                        if state == WIREGUARD_STATE_UP {
+                            AdapterState::Up
+                        } else {
+                            AdapterState::Down
+                        }
                     }
+                    Err(_) => {
+                        let err = IOError::last_os_error();
+                        telio_log_warn!("Failed to get adapter state, last error: {err:?}");
+                        os_error_code.store(err.raw_os_error().unwrap_or(-1), Ordering::Relaxed);
+                        return ControlFlow::Continue(());
+                    }
+                };
+
+                // Make this function idempotent
+                if want_adapter_state == have_adapter_state {
+                    return ControlFlow::Break(());
                 }
-                Err(_) => {
-                    os_error = IOError::last_os_error();
-                    telio_log_warn!("Failed to get adapter state, last error: {os_error:?}");
-                    continue;
+
+                telio_log_debug!(
+                    "Attempting to bring interface {:?}, currently it is: {:?}, enable_dynamic_wg_nt_control: {:?}",
+                    want_adapter_state,
+                    have_adapter_state,
+                    self.enable_dynamic_wg_nt_control.is_some()
+                );
+
+                // The wireguard-nt-rust-wrapper here indicates success using
+                // bool for `.up()` or `.down()` functions
+                let success = match want_adapter_state {
+                    AdapterState::Up => self.adapter.up(),
+                    AdapterState::Down => self.adapter.down(),
+                };
+
+                if success.is_ok() {
+                    return ControlFlow::Break(());
                 }
-            };
 
-            // Make this function idempotent
-            if want_adapter_state == have_adapter_state {
-                return Ok(());
-            }
+                let err = IOError::last_os_error();
+                telio_log_warn!(
+                    "Failed to set adapter state to {want_adapter_state:?}, last error: {err:?}"
+                );
+                os_error_code.store(err.raw_os_error().unwrap_or(-1), Ordering::Relaxed);
+                ControlFlow::Continue(())
+            },
+            |backoff| async move {
+                match &self.iface_arrival {
+                    Some(watcher) => watcher.wait_arrival(backoff).await,
+                    None => sleep(backoff).await,
+                }
+            },
+        )
+        .await;
 
-            telio_log_debug!(
-                "Attempting to bring interface {:?}, currently it is: {:?}, enable_dynamic_wg_nt_control: {:?}",
-                want_adapter_state,
-                have_adapter_state,
-                self.enable_dynamic_wg_nt_control.is_some()
-            );
-
-            // The wireguard-nt-rust-wrapper here indicates success using
-            // bool for `.up()` or `.down()` functions
-            let success = match want_adapter_state {
-                AdapterState::Up => self.adapter.up(),
-                AdapterState::Down => self.adapter.down(),
-            };
-
-            // Terminate if we succeeded
-            if success.is_ok() {
-                return Ok(());
-            }
-
-            // Continue if we failed
-            os_error = IOError::last_os_error();
-            telio_log_warn!(
-                "Failed to set adapter state to {want_adapter_state:?}, last error: {os_error:?}"
-            );
-            sleep(Duration::from_millis(200)).await;
+        if succeeded {
+            return Ok(());
         }
-        telio_log_error!("Failed to set adapter state for 5 times. Giving up!");
+        telio_log_error!(
+            "Failed to set adapter state for {SET_STATE_MAX_ATTEMPTS} times. Giving up!"
+        );
         Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-            "Failed to set adapter's state to {want_adapter_state:?}, last error: {os_error:?}",
+            "Failed to set adapter's state to {want_adapter_state:?}, last error: {:?}",
+            IOError::from_raw_os_error(os_error_code.load(Ordering::Relaxed))
         ))))
     }
 
@@ -655,5 +798,73 @@ impl Drop for WindowsNativeWg {
     fn drop(&mut self) {
         self.cleanup();
         telio_log_info!("wg-nt: deleting adapter: done");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    fn recording_wait(
+        waits: &RefCell<Vec<Duration>>,
+    ) -> impl FnMut(Duration) -> std::future::Ready<()> + '_ {
+        move |backoff| {
+            waits.borrow_mut().push(backoff);
+            std::future::ready(())
+        }
+    }
+
+    // Regression for the LLT-5443 loop: a failing state read must still wait
+    // before retrying, and the backoff must double up to the cap
+    #[tokio::test]
+    async fn failing_attempts_wait_with_capped_exponential_backoff() {
+        let waits = RefCell::new(Vec::new());
+
+        let succeeded =
+            retry_with_backoff(|| ControlFlow::Continue(()), recording_wait(&waits)).await;
+
+        assert!(!succeeded);
+        let expected: Vec<Duration> = [200, 400, 800, 1600, 2000, 2000, 2000, 2000, 2000]
+            .iter()
+            .map(|ms| Duration::from_millis(*ms))
+            .collect();
+        assert_eq!(*waits.borrow(), expected);
+    }
+
+    #[tokio::test]
+    async fn immediate_success_does_not_wait() {
+        let waits = RefCell::new(Vec::new());
+
+        let succeeded = retry_with_backoff(|| ControlFlow::Break(()), recording_wait(&waits)).await;
+
+        assert!(succeeded);
+        assert!(waits.borrow().is_empty());
+    }
+
+    #[tokio::test]
+    async fn stops_retrying_once_attempt_succeeds() {
+        let waits = RefCell::new(Vec::new());
+        let attempts = RefCell::new(0);
+
+        let succeeded = retry_with_backoff(
+            || {
+                *attempts.borrow_mut() += 1;
+                if *attempts.borrow() < 3 {
+                    ControlFlow::Continue(())
+                } else {
+                    ControlFlow::Break(())
+                }
+            },
+            recording_wait(&waits),
+        )
+        .await;
+
+        assert!(succeeded);
+        assert_eq!(*attempts.borrow(), 3);
+        assert_eq!(
+            *waits.borrow(),
+            vec![Duration::from_millis(200), Duration::from_millis(400)]
+        );
     }
 }
