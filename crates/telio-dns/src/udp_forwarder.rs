@@ -7,9 +7,13 @@
 //! If no response is received after the set timeout, the next
 //! upstream resolver is tried.
 
-use crate::{bind_tun::bind_to_tun, packet_encoder::DNS_HEADER_OFFSET};
+use crate::{
+    bind_tun::bind_to_tun,
+    packet_encoder::DNS_HEADER_OFFSET,
+    upstream::{UpstreamCursor, UpstreamList},
+};
 use rand::RngExt;
-use std::{collections::HashMap, io, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::HashMap, io, sync::Arc, time::Duration};
 use telio_utils::{sleep_until, telio_log_debug, telio_log_warn, Instant};
 use thiserror::Error;
 use tokio::{
@@ -66,14 +70,6 @@ pub enum ForwardError {
 #[derive(Clone, Debug)]
 pub(crate) struct UdpForwarder {
     tx: mpsc::Sender<ForwardQuery>,
-    upstreams: Arc<Mutex<UpstreamState>>,
-}
-
-/// Upstream resolver list with a generation counter to detect changes
-#[derive(Clone, Debug, Default)]
-struct UpstreamState {
-    addrs: Vec<SocketAddr>,
-    generation: u64,
 }
 
 /// Internal message for forwarding a DNS query
@@ -90,10 +86,8 @@ struct PendingQuery {
     original_id: u16,
     /// Raw DNS packet bytes
     query_bytes: Vec<u8>,
-    /// Current upstream index for request
-    upstream_index: usize,
-    /// Generation of the upstream list when this query was last dispatched
-    upstream_generation: u64,
+    /// Failover cursor over the upstream list
+    upstream_cursor: UpstreamCursor,
     /// Channel to send the response back to the caller
     respond_to: oneshot::Sender<Result<Vec<u8>, ForwardError>>,
     /// Instant when request times out
@@ -141,17 +135,19 @@ fn allocate_id(pending: &HashMap<u16, PendingQuery>, next_id: &mut u16) -> Optio
 
 impl UdpForwarder {
     /// Create a new DNS forwarder
-    pub(crate) async fn new(timeout: Duration) -> Result<Self, ForwardError> {
+    pub(crate) async fn new(
+        upstreams: Arc<Mutex<UpstreamList>>,
+        timeout: Duration,
+    ) -> Result<Self, ForwardError> {
         let socket = Arc::new(UdpSocket::bind("0.0.0.0:0").await?);
 
         bind_to_tun(&socket)?;
 
         let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
-        let upstreams = Arc::new(Mutex::new(UpstreamState::default()));
 
-        tokio::spawn(Self::run(socket, rx, upstreams.clone(), timeout));
+        tokio::spawn(Self::run(socket, rx, upstreams, timeout));
 
-        Ok(UdpForwarder { tx, upstreams })
+        Ok(UdpForwarder { tx })
     }
 
     /// Forward a DNS query to the configured upstream resolver
@@ -170,18 +166,11 @@ impl UdpForwarder {
         recv.await.map_err(|_| ForwardError::ChannelClosed)?
     }
 
-    /// Update the list of upstream resolvers
-    pub(crate) async fn set_upstreams(&self, addrs: Vec<SocketAddr>) {
-        let mut state = self.upstreams.lock().await;
-        state.generation = state.generation.wrapping_add(1);
-        state.addrs = addrs;
-    }
-
     /// Main async loop that forwards incoming requests
     async fn run(
         socket: Arc<UdpSocket>,
         mut rx: mpsc::Receiver<ForwardQuery>,
-        upstreams: Arc<Mutex<UpstreamState>>,
+        upstreams: Arc<Mutex<UpstreamList>>,
         timeout: Duration,
     ) {
         telio_log_debug!("Forwarder starting");
@@ -219,7 +208,7 @@ impl UdpForwarder {
                             // validate the src IP
                             let is_known_upstream = {
                                 let state = upstreams.lock().await;
-                                state.addrs.iter().any(|u| u.ip() == src.ip())
+                                state.addrs().iter().any(|u| u.ip() == src.ip())
                             };
                             if !is_known_upstream {
                                 telio_log_warn!("Received DNS response from unknown source: {src}, ignoring");
@@ -273,7 +262,7 @@ impl UdpForwarder {
     async fn handle_new_query(
         socket: &UdpSocket,
         msg: ForwardQuery,
-        upstreams: &Arc<Mutex<UpstreamState>>,
+        upstreams: &Arc<Mutex<UpstreamList>>,
         timeout: Duration,
         pending: &mut HashMap<u16, PendingQuery>,
         next_id: &mut u16,
@@ -287,10 +276,11 @@ impl UdpForwarder {
                 }
             };
 
-        let (upstream_addr, generation) = {
+        let (upstream_addr, upstream_cursor) = {
             let state = upstreams.lock().await;
-            match state.addrs.first().cloned() {
-                Some(addr) => (addr, state.generation),
+            let mut cursor = state.new_cursor();
+            match cursor.advance(&state).next {
+                Some(addr) => (addr, cursor),
                 None => {
                     send_channel_response!(msg.respond_to, Err(ForwardError::NoUpstreams));
                     return;
@@ -308,8 +298,7 @@ impl UdpForwarder {
             PendingQuery {
                 original_id,
                 query_bytes: rewritten_bytes,
-                upstream_index: 0,
-                upstream_generation: generation,
+                upstream_cursor,
                 respond_to: msg.respond_to,
                 deadline: Instant::now() + timeout,
             },
@@ -365,7 +354,7 @@ impl UdpForwarder {
     /// Handle expired queries
     async fn handle_timeouts(
         socket: &UdpSocket,
-        upstreams: &Arc<Mutex<UpstreamState>>,
+        upstreams: &Arc<Mutex<UpstreamList>>,
         timeout: Duration,
         pending: &mut HashMap<u16, PendingQuery>,
     ) {
@@ -382,11 +371,6 @@ impl UdpForwarder {
             return;
         }
 
-        let current_state = {
-            let locked = upstreams.lock().await;
-            locked.clone()
-        };
-
         for (internal_id, is_closed) in expired_ids {
             let mut entry = match pending.remove(&internal_id) {
                 Some(e) => e,
@@ -398,22 +382,22 @@ impl UdpForwarder {
                 continue;
             }
 
-            let next_index = if entry.upstream_generation == current_state.generation {
-                entry.upstream_index + 1
-            } else {
+            let advance = {
+                let current_state = upstreams.lock().await;
+                entry.upstream_cursor.advance(&current_state)
+            };
+
+            if advance.restarted {
                 telio_log_debug!(
                     "Upstreams changed for request: {internal_id}, restarting from index 0"
                 );
-                0
-            };
+            }
 
-            match current_state.addrs.get(next_index) {
-                Some(&next_upstream) => {
+            match advance.next {
+                Some(next_upstream) => {
                     telio_log_debug!(
                         "Upstream timed out for request: {internal_id}, trying next: {next_upstream}"
                     );
-                    entry.upstream_index = next_index;
-                    entry.upstream_generation = current_state.generation;
                     entry.deadline = Instant::now() + timeout;
 
                     if let Err(e) = socket.send_to(&entry.query_bytes, next_upstream).await {
@@ -437,6 +421,7 @@ mod tests {
     use crate::nameserver::QUERY_TIMEOUT;
 
     use super::*;
+    use std::net::SocketAddr;
     use tokio::task::JoinHandle;
 
     const TEST_PACKET_ID: u16 = 0x1234;
@@ -495,12 +480,26 @@ mod tests {
         (addr, handle)
     }
 
+    /// Forwarder with default QUERY_TIMEOUT preloaded with `addrs`
+    async fn new_forwarder(addrs: Vec<SocketAddr>) -> (UdpForwarder, Arc<Mutex<UpstreamList>>) {
+        new_forwarder_with_timeout(addrs, QUERY_TIMEOUT).await
+    }
+
+    async fn new_forwarder_with_timeout(
+        addrs: Vec<SocketAddr>,
+        timeout: Duration,
+    ) -> (UdpForwarder, Arc<Mutex<UpstreamList>>) {
+        let upstreams = Arc::new(Mutex::new(UpstreamList::default()));
+        upstreams.lock().await.set(addrs);
+        let forwarder = UdpForwarder::new(upstreams.clone(), timeout).await.unwrap();
+        (forwarder, upstreams)
+    }
+
     fn dummy_pending() -> PendingQuery {
         PendingQuery {
             original_id: 0,
             query_bytes: vec![],
-            upstream_index: 0,
-            upstream_generation: 0,
+            upstream_cursor: UpstreamList::default().new_cursor(),
             respond_to: oneshot::channel().0,
             deadline: Instant::now(),
         }
@@ -564,32 +563,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_upstreams_stores_resolvers() {
-        let forwarder = UdpForwarder::new(QUERY_TIMEOUT).await.unwrap();
-        let addrs = vec!["8.8.8.8:53".parse().unwrap(), "1.1.1.1:53".parse().unwrap()];
-
-        forwarder.set_upstreams(addrs.clone()).await;
-
-        let state = forwarder.upstreams.lock().await;
-        assert_eq!(state.addrs, addrs);
-    }
-
-    #[tokio::test]
-    async fn set_upstreams_replaces_existing() {
-        let forwarder = UdpForwarder::new(QUERY_TIMEOUT).await.unwrap();
-        let first_addrs = vec!["8.8.8.8:53".parse().unwrap()];
-        let second_addrs = vec!["1.1.1.1:53".parse().unwrap(), "8.8.4.4:53".parse().unwrap()];
-
-        forwarder.set_upstreams(first_addrs).await;
-        forwarder.set_upstreams(second_addrs.clone()).await;
-
-        let state = forwarder.upstreams.lock().await;
-        assert_eq!(state.addrs, second_addrs);
-    }
-
-    #[tokio::test]
     async fn query_returns_no_upstreams_when_empty() {
-        let forwarder = UdpForwarder::new(QUERY_TIMEOUT).await.unwrap();
+        let (forwarder, _upstreams) = new_forwarder(vec![]).await;
 
         let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
         let result = forwarder.query(&request).await;
@@ -601,26 +576,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cloned_forwarders_share_upstream_state() {
-        let forwarder1 = UdpForwarder::new(QUERY_TIMEOUT).await.unwrap();
-        let forwarder2 = forwarder1.clone();
-
-        let addrs = vec!["8.8.8.8:53".parse().unwrap()];
-        forwarder1.set_upstreams(addrs.clone()).await;
-
-        let state = forwarder2.upstreams.lock().await;
-        assert_eq!(state.addrs, addrs);
-    }
-
-    #[tokio::test]
     async fn forward_query_timeout() {
         let (blackhole_addr1, _bh1) = spawn_stub(StubBehavior::BlackHole).await;
         let (blackhole_addr2, _bh2) = spawn_stub(StubBehavior::BlackHole).await;
 
-        let forwarder = UdpForwarder::new(BLACKHOLE_QUERY_TIMEOUT).await.unwrap();
-        forwarder
-            .set_upstreams(vec![blackhole_addr1, blackhole_addr2])
-            .await;
+        let (forwarder, _upstreams) = new_forwarder_with_timeout(
+            vec![blackhole_addr1, blackhole_addr2],
+            BLACKHOLE_QUERY_TIMEOUT,
+        )
+        .await;
 
         let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
         let result = forwarder.query(&request).await;
@@ -638,8 +602,7 @@ mod tests {
     async fn forward_query_returns_response_from_upstream() {
         let (addr, _handle) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = UdpForwarder::new(QUERY_TIMEOUT).await.unwrap();
-        forwarder.set_upstreams(vec![addr]).await;
+        let (forwarder, _upstreams) = new_forwarder(vec![addr]).await;
 
         let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
         let result = forwarder.query(&request).await.unwrap();
@@ -653,10 +616,9 @@ mod tests {
         let (blackhole_addr, _bh_handle) = spawn_stub(StubBehavior::BlackHole).await;
         let (reply_addr, _reply_handle) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = UdpForwarder::new(BLACKHOLE_QUERY_TIMEOUT).await.unwrap();
-        forwarder
-            .set_upstreams(vec![blackhole_addr, reply_addr])
-            .await;
+        let (forwarder, _upstreams) =
+            new_forwarder_with_timeout(vec![blackhole_addr, reply_addr], BLACKHOLE_QUERY_TIMEOUT)
+                .await;
 
         let request = make_dns_packet(TEST_PACKET_ID, TEST_DNS_PAYLOAD);
         let result = forwarder.query(&request).await.unwrap();
@@ -670,8 +632,7 @@ mod tests {
         let large_payload = vec![0xAB; FORWARDER_BUFFER_SIZE - 3];
         let (addr, _handle) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = UdpForwarder::new(QUERY_TIMEOUT).await.unwrap();
-        forwarder.set_upstreams(vec![addr]).await;
+        let (forwarder, _upstreams) = new_forwarder(vec![addr]).await;
 
         let request = make_dns_packet(TEST_PACKET_ID, &large_payload);
         let result = forwarder.query(&request).await.unwrap();
@@ -685,14 +646,13 @@ mod tests {
         let (first_addr, _h1) = spawn_stub(StubBehavior::Echo).await;
         let (second_addr, _h2) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = UdpForwarder::new(QUERY_TIMEOUT).await.unwrap();
-        forwarder.set_upstreams(vec![first_addr]).await;
+        let (forwarder, upstreams) = new_forwarder(vec![first_addr]).await;
 
         let request1 = make_dns_packet(0x1111, TEST_DNS_PAYLOAD);
         let r1 = forwarder.query(&request1).await.unwrap();
         assert_eq!(get_dns_id(&r1).unwrap(), 0x1111);
 
-        forwarder.set_upstreams(vec![second_addr]).await;
+        upstreams.lock().await.set(vec![second_addr]);
 
         let request2 = make_dns_packet(0x2222, TEST_DNS_PAYLOAD);
         let r2 = forwarder.query(&request2).await.unwrap();
@@ -704,8 +664,7 @@ mod tests {
         let query_count = 20;
         let (stub_addr, _stub_handle) = spawn_multi_stub(query_count).await;
 
-        let forwarder = UdpForwarder::new(QUERY_TIMEOUT).await.unwrap();
-        forwarder.set_upstreams(vec![stub_addr]).await;
+        let (forwarder, _upstreams) = new_forwarder(vec![stub_addr]).await;
 
         let mut handles = Vec::new();
         for i in 0..query_count {
@@ -744,8 +703,7 @@ mod tests {
             }
         });
 
-        let forwarder = UdpForwarder::new(QUERY_TIMEOUT).await.unwrap();
-        forwarder.set_upstreams(vec![stub_addr]).await;
+        let (forwarder, _upstreams) = new_forwarder(vec![stub_addr]).await;
 
         let mut handles = Vec::new();
         for i in 0..3u16 {
@@ -772,8 +730,7 @@ mod tests {
     async fn id_rewrite_preserves_rest_of_packet() {
         let (addr, _handle) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = UdpForwarder::new(QUERY_TIMEOUT).await.unwrap();
-        forwarder.set_upstreams(vec![addr]).await;
+        let (forwarder, _upstreams) = new_forwarder(vec![addr]).await;
 
         let payload: Vec<u8> = (0..200u8).collect();
         let request = make_dns_packet(0xBEEF, &payload);
@@ -785,10 +742,7 @@ mod tests {
 
     #[tokio::test]
     async fn packet_too_short_returns_error() {
-        let forwarder = UdpForwarder::new(QUERY_TIMEOUT).await.unwrap();
-        forwarder
-            .set_upstreams(vec!["127.0.0.1:53".parse().unwrap()])
-            .await;
+        let (forwarder, _upstreams) = new_forwarder(vec!["127.0.0.1:53".parse().unwrap()]).await;
 
         let result = forwarder.query(&[0x12]).await;
         match result {
@@ -798,36 +752,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn set_upstreams_increments_generation() {
-        let forwarder = UdpForwarder::new(QUERY_TIMEOUT).await.unwrap();
-
-        let state = forwarder.upstreams.lock().await;
-        assert_eq!(state.generation, 0);
-        drop(state);
-
-        forwarder
-            .set_upstreams(vec!["8.8.8.8:53".parse().unwrap()])
-            .await;
-
-        let state = forwarder.upstreams.lock().await;
-        assert_eq!(state.generation, 1);
-        drop(state);
-
-        forwarder
-            .set_upstreams(vec!["1.1.1.1:53".parse().unwrap()])
-            .await;
-
-        let state = forwarder.upstreams.lock().await;
-        assert_eq!(state.generation, 2);
-    }
-
-    #[tokio::test]
     async fn upstream_change_during_pending_query_retries_from_new_list() {
         let (blackhole_addr, _bh) = spawn_stub(StubBehavior::BlackHole).await;
         let (reply_addr, _reply) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = UdpForwarder::new(BLACKHOLE_QUERY_TIMEOUT).await.unwrap();
-        forwarder.set_upstreams(vec![blackhole_addr]).await;
+        let (forwarder, upstreams) =
+            new_forwarder_with_timeout(vec![blackhole_addr], BLACKHOLE_QUERY_TIMEOUT).await;
 
         let f = forwarder.clone();
         let query_handle = tokio::spawn(async move {
@@ -836,7 +766,7 @@ mod tests {
         });
 
         tokio::time::sleep(Duration::from_millis(10)).await;
-        forwarder.set_upstreams(vec![reply_addr]).await;
+        upstreams.lock().await.set(vec![reply_addr]);
 
         let result = query_handle.await.unwrap().unwrap();
         assert_eq!(get_dns_id(&result).unwrap(), TEST_PACKET_ID);
@@ -847,8 +777,8 @@ mod tests {
     async fn upstream_change_to_empty_during_pending_query_times_out() {
         let (blackhole_addr, _bh) = spawn_stub(StubBehavior::BlackHole).await;
 
-        let forwarder = UdpForwarder::new(BLACKHOLE_QUERY_TIMEOUT).await.unwrap();
-        forwarder.set_upstreams(vec![blackhole_addr]).await;
+        let (forwarder, upstreams) =
+            new_forwarder_with_timeout(vec![blackhole_addr], BLACKHOLE_QUERY_TIMEOUT).await;
 
         let f = forwarder.clone();
         let query_handle = tokio::spawn(async move {
@@ -857,7 +787,7 @@ mod tests {
         });
 
         tokio::time::sleep(Duration::from_millis(10)).await;
-        forwarder.set_upstreams(vec![]).await;
+        upstreams.lock().await.set(vec![]);
 
         match query_handle.await.unwrap() {
             Err(ForwardError::Timeout) => {}
@@ -870,8 +800,8 @@ mod tests {
         let (blackhole_addr, _bh) = spawn_stub(StubBehavior::BlackHole).await;
         let (reply_addr, _reply) = spawn_stub(StubBehavior::Echo).await;
 
-        let forwarder = UdpForwarder::new(Duration::from_millis(100)).await.unwrap();
-        forwarder.set_upstreams(vec![blackhole_addr]).await;
+        let (forwarder, upstreams) =
+            new_forwarder_with_timeout(vec![blackhole_addr], Duration::from_millis(100)).await;
 
         let f = forwarder.clone();
         let query_handle = tokio::spawn(async move {
@@ -880,7 +810,7 @@ mod tests {
         });
 
         tokio::time::sleep(Duration::from_millis(50)).await;
-        forwarder.set_upstreams(vec![reply_addr]).await;
+        upstreams.lock().await.set(vec![reply_addr]);
 
         let result = query_handle.await.unwrap().unwrap();
         assert_eq!(get_dns_id(&result).unwrap(), TEST_PACKET_ID);
