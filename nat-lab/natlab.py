@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from typing import List, Tuple
 
 # isort: off
@@ -15,6 +16,7 @@ sys.path += [f"{PROJECT_ROOT}/ci"]
 from env import LIBTELIO_ENV_NAT_LAB_DEPS_TAG  # type: ignore # pylint: disable=import-error, wrong-import-position
 
 NATLAB_CONTAINER_RESTART_ATTEMPTS = 5
+NATLAB_CONTAINER_HEALTHY_WAIT_SECONDS = 1200
 
 DIRECT_ROUTING_OVERRIDE_FILE = "docker-compose.override.yml"
 DIRECT_ROUTING_OVERRIDE = """\
@@ -379,9 +381,12 @@ def _report_container_failures(
     raise RuntimeError(f"Containers failed to start: {failed}; see docker logs above")
 
 
-def find_failing_containers(services_to_start) -> Tuple[List[str], List[str]]:
+def find_failing_containers(
+    services_to_start,
+) -> Tuple[List[str], List[str], List[str]]:
     missing_services: List[str] = []
     unhealthy_services: List[str] = []
+    starting_services: List[str] = []
 
     for service in services_to_start:
         running_ids = compose_container_ids(service, running_only=True)
@@ -389,32 +394,53 @@ def find_failing_containers(services_to_start) -> Tuple[List[str], List[str]]:
             missing_services.append(service)
             continue
         for cid in running_ids:
-            if inspect_health(cid) == "unhealthy":
+            health = inspect_health(cid)
+            if health == "unhealthy":
                 if service not in unhealthy_services:
                     unhealthy_services.append(service)
                 break
+            if health == "starting":
+                if service not in starting_services:
+                    starting_services.append(service)
+                break
 
-    return missing_services, unhealthy_services
+    return missing_services, unhealthy_services, starting_services
 
 
 def check_containers(services_to_start) -> None:
-    missing, unhealthy = find_failing_containers(services_to_start)
+    missing, unhealthy, _ = find_failing_containers(services_to_start)
     _report_container_failures(missing, unhealthy)
 
 
 def manage_containers(services_to_start) -> None:
     restart_attempts = 0
+    last_reported_starting: List[str] = []
+    wait_deadline = time.monotonic() + NATLAB_CONTAINER_HEALTHY_WAIT_SECONDS
     while restart_attempts < NATLAB_CONTAINER_RESTART_ATTEMPTS:
-        missing, unhealthy = find_failing_containers(services_to_start)
+        missing, unhealthy, starting = find_failing_containers(services_to_start)
         failed = missing + [s for s in unhealthy if s not in missing]
-        if not failed:
+        if failed:
+            print("Missing services: ", missing)
+            print("Unhealthy services: ", unhealthy)
+            for service in failed:
+                dump_docker_logs(service)
+            quick_restart_container(
+                failed, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
+            )
+            restart_attempts += 1
+            continue
+        if not starting:
             return
-        print("Missing services: ", missing)
-        print("Unhealthy services: ", unhealthy)
-        quick_restart_container(
-            failed, env={"COMPOSE_DOCKER_CLI_BUILD": "1", "DOCKER_BUILDKIT": "1"}
-        )
-        restart_attempts += 1
+        if time.monotonic() >= wait_deadline:
+            for service in starting:
+                dump_docker_logs(service)
+            raise RuntimeError(
+                f"Containers still starting after {NATLAB_CONTAINER_HEALTHY_WAIT_SECONDS}s: {starting}"
+            )
+        if starting != last_reported_starting:
+            print("Waiting for starting services: ", starting)
+            last_reported_starting = starting
+        time.sleep(5)
 
     # Dump logs and raise for any containers still failing after all attempts.
     check_containers(services_to_start)
