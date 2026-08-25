@@ -5,6 +5,7 @@ use crate::{
     packet_encoder::{DnsBuildError, DnsResponseBuilder},
     resolver::Resolver,
     udp_forwarder::UdpForwarder,
+    upstream::UpstreamList,
     zone::{AuthoritativeZone, ClonableZones, ForwardZone, NordZone, Records, NORD_ZONE},
 };
 use async_trait::async_trait;
@@ -160,6 +161,7 @@ pub struct LocalNameServer {
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
     forwarder: Option<UdpForwarder>,
+    upstreams: Arc<Mutex<UpstreamList>>,
 }
 
 impl LocalNameServer {
@@ -169,8 +171,9 @@ impl LocalNameServer {
         forward_ips: &[IpAddr],
         use_raw_forwarder: bool,
     ) -> DnsResult<Arc<RwLock<Self>>> {
+        let upstreams = Arc::new(Mutex::new(UpstreamList::default()));
         let raw_forwarder: Option<UdpForwarder> = if use_raw_forwarder {
-            Some(UdpForwarder::new(QUERY_TIMEOUT).await?)
+            Some(UdpForwarder::new(upstreams.clone(), QUERY_TIMEOUT).await?)
         } else {
             None
         };
@@ -179,6 +182,7 @@ impl LocalNameServer {
             zones: Arc::new(ClonableZones::new()),
             task_handle: None,
             forwarder: raw_forwarder,
+            upstreams,
         }));
         ns.forward(forward_ips).await?;
         Ok(ns)
@@ -911,11 +915,8 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
     }
 
     async fn forward_to_addrs(&self, to: &[SocketAddr]) -> DnsResult<()> {
-        let ns = self.read().await;
-        if let Some(forwarder) = &ns.forwarder {
-            forwarder.set_upstreams(to.to_vec()).await;
-        }
-
+        let upstreams = self.read().await.upstreams.clone();
+        upstreams.lock().await.set(to.to_vec());
         Ok(())
     }
 
@@ -1071,6 +1072,39 @@ mod tests {
 
         let ns = nameserver.read().await;
         assert!(ns.forwarder.is_some());
+    }
+
+    #[tokio::test]
+    async fn forward_updates_shared_upstreams() {
+        let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], false)
+            .await
+            .unwrap();
+        {
+            let ns = nameserver.read().await;
+            let state = ns.upstreams.lock().await;
+            assert_eq!(
+                state.addrs(),
+                [SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+                    DNS_PORT
+                )]
+            );
+        }
+
+        nameserver
+            .forward(&[IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1))])
+            .await
+            .unwrap();
+
+        let ns = nameserver.read().await;
+        let state = ns.upstreams.lock().await;
+        assert_eq!(
+            state.addrs(),
+            [SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)),
+                DNS_PORT
+            )]
+        );
     }
 
     #[tokio::test]

@@ -10,6 +10,7 @@ mod packet_decoder;
 mod packet_encoder;
 mod resolver;
 mod udp_forwarder;
+mod upstream;
 mod zone;
 
 pub mod bind_tun;
