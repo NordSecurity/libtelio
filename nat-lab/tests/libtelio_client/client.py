@@ -197,6 +197,8 @@ class Client:
             try:
                 await self._process.wait_stdin_ready()
 
+                LOG_COLLECTORS.append(LogCollector(self))
+
                 # There are two scenarios when it comes to what port is being used to connect to the Pyro5 remote.
                 # Scenario 1 - docker with mapped ports:
                 #   In this case we just use the mapped ports.
@@ -229,8 +231,6 @@ class Client:
                 async with asyncio_util.run_async_context(self._event_request_loop()):
                     if meshnet_config:
                         await self.set_meshnet_config(meshnet_config)
-                    log_collector = LogCollector(self)
-                    LOG_COLLECTORS.append(log_collector)
                     yield self
             finally:
                 await self.cleanup()
