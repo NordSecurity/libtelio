@@ -45,6 +45,53 @@ async def get_interface_state(client_conn, client):
     raise RuntimeError(f'Unexpected adapter state: "{output}"')
 
 
+async def get_interface_mtu(client_conn, client, address_family: str) -> int:
+    itf_name = client.get_router().get_interface_name()
+    process = await client_conn.create_process(
+        [
+            "powershell",
+            "-Command",
+            f'($mtu = (Get-NetIPInterface -InterfaceAlias "{itf_name}" -AddressFamily {address_family} -ErrorAction Stop).NlMtu); $mtu',
+        ],
+        quiet=True,
+    ).execute()
+    output = process.get_stdout().strip()
+    mtus = [int(line.strip()) for line in output.splitlines() if line.strip()]
+
+    if len(mtus) != 1:
+        raise RuntimeError(
+            f'Unexpected {address_family} MTU output for "{itf_name}": "{output}"'
+        )
+
+    return mtus[0]
+
+
+async def wait_for_interface_mtus(client_conn, client, expected_mtu: int) -> None:
+    expected_mtus = {"IPv4": expected_mtu, "IPv6": expected_mtu}
+    last_mtus = {}
+    last_error = None
+
+    for _ in range(20):
+        try:
+            last_mtus = {
+                address_family: await get_interface_mtu(
+                    client_conn, client, address_family
+                )
+                for address_family in expected_mtus
+            }
+            if last_mtus == expected_mtus:
+                return
+        except (ProcessExecError, RuntimeError) as error:
+            last_error = error
+
+        await asyncio.sleep(0.5)
+
+    assert last_mtus == expected_mtus, (
+        f"Expected adapter MTUs {expected_mtus}, got {last_mtus}. "
+        f"Last error: {last_error}"
+    )
+
+
 @pytest.mark.parametrize(
     "alpha_setup_params",
     [
@@ -168,6 +215,74 @@ async def test_adapter_service_loading(
         pass
 
     _ = await setup_mesh_nodes_factory([alpha_setup_params, beta_setup_params])
+
+
+@pytest.mark.parametrize(
+    "alpha_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                is_meshnet=False,
+                features=default_features(enable_dynamic_wg_nt_control=False),
+            ),
+            marks=[pytest.mark.windows],
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "use_ext_if_filter",
+    [
+        pytest.param(False, id="start_named_with_mtu"),
+        pytest.param(True, id="start_named_ext_if_filter_with_mtu"),
+    ],
+)
+async def test_windows_adapter_starts_with_predefined_mtu(
+    alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+    use_ext_if_filter: bool,
+    env: Environment,
+) -> None:
+    client_conn, *_ = [conn.connection for conn in env.connections]
+    client_alpha, *_ = env.clients
+    expected_mtu = 1360
+
+    await client_alpha.stop_device()
+    if use_ext_if_filter:
+        await client_alpha.start_named_ext_if_filter_with_mtu(
+            client_alpha.get_router().get_interface_name(), [], expected_mtu
+        )
+    else:
+        await client_alpha.simple_start_with_mtu(expected_mtu)
+
+    await wait_for_interface_mtus(client_conn, client_alpha, expected_mtu)
+
+
+@pytest.mark.parametrize(
+    "alpha_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                is_meshnet=False,
+                features=default_features(enable_dynamic_wg_nt_control=False),
+            ),
+            marks=[pytest.mark.windows],
+        ),
+    ],
+)
+async def test_windows_adapter_mtu_can_be_changed_at_runtime(
+    alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+    env: Environment,
+) -> None:
+    client_conn, *_ = [conn.connection for conn in env.connections]
+    client_alpha, *_ = env.clients
+    expected_mtu = 1320
+
+    await client_alpha.set_adapter_mtu(expected_mtu)
+
+    await wait_for_interface_mtus(client_conn, client_alpha, expected_mtu)
 
 
 class TestAdapterStateForVpnAndDns:
