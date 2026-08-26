@@ -118,9 +118,12 @@ fn format_failed_cert(
     err: &rustls::Error,
 ) -> String {
     let fingerprint = fingerprint(end_entity);
+    // `err` is deliberately printed with `Debug`: it keeps the rustls variant name (e.g.
+    // `InvalidCertificate(UnknownIssuer)`) in the log, which support tooling and
+    // `nat-lab/tests/test_ens.py` grep for. `Display` would drop it.
     match x509_parser::parse_x509_certificate(end_entity.as_ref()) {
         Ok((_, cert)) => format!(
-            "{} TLS cert verification failed for {:?}: {}. Presented cert: issuer=[{}], subject=[{}], validity=[{} .. {}], sha256={}, intermediates={}",
+            "{} TLS cert verification failed for {:?}: {:?}. Presented cert: issuer=[{}], subject=[{}], validity=[{} .. {}], sha256={}, intermediates={}",
             context,
             server_name,
             err,
@@ -132,7 +135,7 @@ fn format_failed_cert(
             intermediates.len()
         ),
         Err(parse_err) => format!(
-            "{} TLS cert verification failed for {:?}: {}. Presented cert unparsable ({}), sha256={}, intermediates={}",
+            "{} TLS cert verification failed for {:?}: {:?}. Presented cert unparsable ({}), sha256={}, intermediates={}",
             context,
             server_name,
             err,
@@ -296,7 +299,9 @@ mod tests {
         for needle in [
             "DERP TLS cert verification failed",
             SERVER_NAME,
-            "UnknownIssuer",
+            // `Debug`-formatted variant name; test_ens_will_not_emit_errors_from_incorrect_tls_session
+            // in nat-lab greps the client log for exactly this substring
+            "InvalidCertificate(UnknownIssuer)",
             "issuer=[CN=Evil Proxy CA]",
             "subject=[CN=Evil Proxy CA]",
             &format!("sha256={}", fingerprint(evil_cert.der())),
