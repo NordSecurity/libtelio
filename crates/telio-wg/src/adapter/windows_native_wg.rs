@@ -1,7 +1,10 @@
 use super::{Adapter, Error as AdapterError, IsMeshnetEnabledCb, Tun as NativeTun};
 use crate::{
     uapi::{Cmd, Cmd::Get, Cmd::Set, Interface, Peer, Response},
-    windows::{service, tunnel::interfacewatcher::InterfaceWatcher},
+    windows::{
+        service,
+        tunnel::{interfacewatcher::InterfaceWatcher, mtumonitor::set_interface_mtu},
+    },
 };
 use async_trait::async_trait;
 use sha2::{Digest, Sha256};
@@ -22,6 +25,7 @@ use telio_utils::{
 use tokio::time::sleep;
 use utf16_lit::utf16_null;
 use uuid::Uuid;
+use winapi::shared::ws2def::{ADDRESS_FAMILY, AF_INET, AF_INET6};
 use windows::core::GUID;
 use windows::core::PCWSTR;
 use windows::Win32::Devices::DeviceAndDriverInstallation::GUID_DEVCLASS_NET;
@@ -39,6 +43,7 @@ use wireguard_nt::{
 use wireguard_uapi::xplatform;
 
 const REMOVAL_SLEEP_SECS: u64 = 2;
+const MIN_SUPPORTED_MTU: u32 = 1280;
 
 /// Telio wrapper around wireguard-nt
 pub struct WindowsNativeWg {
@@ -111,6 +116,7 @@ impl WindowsNativeWg {
         name: &str,
         path: &str,
         enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
+        mtu: Option<u32>,
     ) -> std::result::Result<Self, AdapterError> {
         // try to load dll
         match unsafe { wireguard_nt::load_from_path(path) } {
@@ -158,7 +164,7 @@ impl WindowsNativeWg {
                             enable_dynamic_wg_nt_control,
                         );
                         if let Ok(mut watcher) = watcher.lock() {
-                            watcher.configure(wgnt.adapter.clone(), luid);
+                            watcher.configure(wgnt.adapter.clone(), luid, mtu);
                             Ok(wgnt)
                         } else {
                             Err(AdapterError::WindowsNativeWg(Error::Fail(
@@ -327,6 +333,7 @@ impl WindowsNativeWg {
     pub async fn start(
         name: &str,
         enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
+        mtu: Option<u32>,
     ) -> std::result::Result<Self, AdapterError> {
         const SWD_WIREGUARD: &str = r"SYSTEM\CurrentControlSet\Enum\SWD\WireGuard";
         telio_log_debug!("Print registry before adapter creation!");
@@ -338,7 +345,7 @@ impl WindowsNativeWg {
         Self::cleanup_orphaned_devices().await;
 
         let dll_path = "wireguard.dll";
-        let tmp_wg_dev = Self::create(name, dll_path, enable_dynamic_wg_nt_control.clone());
+        let tmp_wg_dev = Self::create(name, dll_path, enable_dynamic_wg_nt_control.clone(), mtu);
 
         telio_log_debug!("Print registry after adapter creation!");
         Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, service::GUID_DEVINTERFACE_NET_STR);
@@ -375,6 +382,10 @@ impl WindowsNativeWg {
             return Err(AdapterError::WindowsNativeWg(Error::Fail(
                 "Adapter interface not ready".to_string(),
             )));
+        }
+
+        if let Some(mtu) = mtu {
+            wg_dev.set_adapter_mtu_inner(mtu)?;
         }
 
         if wg_dev.enable_dynamic_wg_nt_control.is_none() {
@@ -546,6 +557,53 @@ impl WindowsNativeWg {
             }
         }
     }
+
+    fn set_adapter_mtu_inner(&self, mtu: u32) -> std::result::Result<(), AdapterError> {
+        if mtu < MIN_SUPPORTED_MTU {
+            return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                "MTU must be at least {MIN_SUPPORTED_MTU}, got {mtu}",
+            ))));
+        }
+
+        let families = [AF_INET as ADDRESS_FAMILY, AF_INET6 as ADDRESS_FAMILY];
+        let mut set_any = false;
+        let mut last_err = None;
+        for family in families {
+            match set_interface_mtu(self.luid, family, mtu) {
+                Ok(()) => {
+                    telio_log_info!("Set adapter MTU to {} for family {}", mtu, family);
+                    set_any = true;
+                }
+                Err(err) => {
+                    telio_log_warn!(
+                        "Failed to set adapter MTU to {} for family {}: {}",
+                        mtu,
+                        family,
+                        err
+                    );
+                    last_err = Some(err);
+                }
+            }
+        }
+
+        if !set_any {
+            return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
+                "Failed to set adapter MTU to {}, last error: {}",
+                mtu,
+                last_err.unwrap_or_default()
+            ))));
+        }
+
+        if let Ok(mut interface_watcher) = self.watcher.clone().lock() {
+            interface_watcher.set_forced_mtu(mtu);
+        } else {
+            return Err(AdapterError::WindowsNativeWg(Error::Fail(
+                "error obtaining lock".into(),
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -614,6 +672,10 @@ impl Adapter for WindowsNativeWg {
 
     async fn set_tun(&self, _tun: super::Tun) -> std::result::Result<(), AdapterError> {
         Err(AdapterError::UnsupportedAdapter)
+    }
+
+    async fn set_adapter_mtu(&self, mtu: u32) -> std::result::Result<(), AdapterError> {
+        self.set_adapter_mtu_inner(mtu)
     }
 
     fn clone_box(&self) -> Option<Box<dyn Adapter>> {

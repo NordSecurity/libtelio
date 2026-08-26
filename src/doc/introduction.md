@@ -82,8 +82,11 @@ use telio_wg::Tun;
 pub struct DeviceConfig {
     pub private_key: SecretKey,
     pub adapter: AdapterType,
+    pub fwmark: Option<u32>,
     pub name: Option<String>,
     pub tun: Option<Tun>,
+    pub ext_if_filter: Option<Vec<String>>,
+    pub mtu: Option<u32>,
 }
 ```
 

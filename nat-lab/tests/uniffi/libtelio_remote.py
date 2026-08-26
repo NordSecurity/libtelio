@@ -165,11 +165,25 @@ class LibtelioWrapper:
         )
 
     @serialize_error
+    def start_named_with_mtu(self, private_key, adapter, name: str, mtu: int):
+        self._libtelio.start_named_with_mtu(
+            private_key, libtelio.TelioAdapterType(adapter), name, mtu
+        )
+
+    @serialize_error
     def start_named_ext_if_filter(
         self, private_key, adapter, name: str, ext_if_list: List[str]
     ):
         self._libtelio.start_named_ext_if_filter(
             private_key, libtelio.TelioAdapterType(adapter), name, ext_if_list
+        )
+
+    @serialize_error
+    def start_named_ext_if_filter_with_mtu(
+        self, private_key, adapter, name: str, ext_if_list: List[str], mtu: int
+    ):
+        self._libtelio.start_named_ext_if_filter_with_mtu(
+            private_key, libtelio.TelioAdapterType(adapter), name, ext_if_list, mtu
         )
 
     @serialize_error
@@ -189,6 +203,10 @@ class LibtelioWrapper:
     @serialize_error
     def set_ext_if_filter(self, ext_if_list: List[str]):
         self._libtelio.set_ext_if_filter(ext_if_list)
+
+    @serialize_error
+    def set_adapter_mtu(self, mtu: int):
+        self._libtelio.set_adapter_mtu(mtu)
 
     @serialize_error
     def set_tun(self, tun: int):

@@ -300,11 +300,23 @@ interface Telio {
     [Throws=TelioError]
     void start_named(SecretKey secret_key, TelioAdapterType adapter, string name);
 
+    /// Start telio with specified adapter, name and MTU.
+    ///
+    /// Adapter will attempt to open its own tunnel.
+    [Throws=TelioError]
+    void start_named_with_mtu(SecretKey secret_key, TelioAdapterType adapter, string name, u32 mtu);
+
     /// Start telio with specified adapter type, adapter name and filtered default interface list.
     ///
     /// Adapter will attempt to open its own tunnel.
     [Throws=TelioError]
     void start_named_ext_if_filter(SecretKey secret_key, TelioAdapterType adapter, string name, sequence<string> ext_if_filter);
+
+    /// Start telio with specified adapter type, adapter name, MTU and filtered default interface list.
+    ///
+    /// Adapter will attempt to open its own tunnel.
+    [Throws=TelioError]
+    void start_named_ext_if_filter_with_mtu(SecretKey secret_key, TelioAdapterType adapter, string name, sequence<string> ext_if_filter, u32 mtu);
 
     /// Start telio device with specified adapter and already open tunnel.
     ///
@@ -324,6 +336,10 @@ interface Telio {
     /// Set filtered interfaces list on adapter
     [Throws=TelioError]
     void set_ext_if_filter(sequence<string> ext_if_filter);
+
+    /// Set adapter MTU at runtime.
+    [Throws=TelioError]
+    void set_adapter_mtu(u32 mtu);
 
     /// Sets private key for started device.
     ///

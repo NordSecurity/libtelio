@@ -1,0 +1,1 @@
+Added API support for configuring Windows WG-NT adapter MTU at startup and updating it at runtime.
