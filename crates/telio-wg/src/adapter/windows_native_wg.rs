@@ -38,7 +38,7 @@ use wireguard_nt::{
 };
 use wireguard_uapi::xplatform;
 
-const REMOVAL_SLEEP_SECS: u64 = 2;
+const REMOVAL_SLEEP_SECS: u64 = 15;
 const CREATE_ADAPTER_MAX_ATTEMPTS: usize = 10;
 const CREATE_ADAPTER_INITIAL_BACKOFF_SECS: u64 = 2;
 const CREATE_ADAPTER_MAX_BACKOFF_SECS: u64 = 14;
@@ -321,6 +321,29 @@ impl WindowsNativeWg {
         }
     }
 
+    async fn force_wireguard_nt_reload(path: &str) {
+        let wg_dll = match unsafe { wireguard_nt::load_from_path(path) } {
+            Ok(wg_dll) => wg_dll,
+            Err(err) => {
+                telio_log_warn!("Failed to load wireguard.dll for forced reload: {err:?}");
+                return;
+            }
+        };
+
+        let deleted = unsafe { wg_dll.WireGuardDeleteDriver() } != 0;
+        if deleted {
+            telio_log_info!("WireGuard-NT driver deleted for forced reload");
+        } else {
+            telio_log_warn!(
+                "WireGuard-NT driver delete failed during forced reload: {:?}",
+                IOError::last_os_error()
+            );
+        }
+
+        drop(wg_dll); // this triggers libloading::Library drop -> FreeLibrary
+        sleep(Duration::from_millis(2000)).await;
+    }
+
     /// Start adapter with name `name`
     ///
     ///
@@ -361,6 +384,7 @@ impl WindowsNativeWg {
                         name,
                         CREATE_ADAPTER_MAX_ATTEMPTS
                     );
+                    Self::force_wireguard_nt_reload(dll_path).await;
                     sleep(Duration::from_secs(backoff_secs)).await;
                     backoff_secs = (backoff_secs * 2).min(CREATE_ADAPTER_MAX_BACKOFF_SECS);
                     attempt += 1;
