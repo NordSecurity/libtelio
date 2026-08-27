@@ -34,7 +34,8 @@ use windows::Win32::Devices::DeviceAndDriverInstallation::{
 use windows::Win32::NetworkManagement::Ndis::GUID_DEVINTERFACE_NET;
 use winreg::{enums::*, RegKey, HKEY};
 use wireguard_nt::{
-    self, set_logger, Error as WireGuardNTError, SetInterface, SetPeer, WIREGUARD_STATE_UP,
+    self, default_logger, set_logger, Error as WireGuardNTError, SetInterface, SetPeer,
+    WIREGUARD_STATE_UP,
 };
 use wireguard_uapi::xplatform;
 
@@ -118,6 +119,8 @@ impl WindowsNativeWg {
         // try to load dll
         match unsafe { wireguard_nt::load_from_path(path) } {
             Ok(wg_dll) => {
+                set_logger(&wg_dll, Some(default_logger));
+
                 // Someone to watch over me while I sleep
                 let watcher = Arc::new(Mutex::new(InterfaceWatcher::new(
                     enable_dynamic_wg_nt_control.clone(),
