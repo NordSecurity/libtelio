@@ -386,7 +386,16 @@ impl WindowsNativeWg {
                         name,
                         CREATE_ADAPTER_MAX_ATTEMPTS
                     );
-                    Self::force_wireguard_nt_reload(dll_path).await;
+                    match service::is_service_marked_for_delete("WireGuard") {
+                        Ok(true) => telio_log_error!(
+                            "WireGuard service is marked for deletion. Retrying adapter creation in {backoff_secs}s"
+                        ),
+                        Ok(false) => {}
+                        Err(err) => telio_log_warn!(
+                            "Failed to check if WireGuard service is marked for deletion: {err:?}"
+                        ),
+                    }
+                    // Self::force_wireguard_nt_reload(dll_path).await;
                     sleep(Duration::from_secs(backoff_secs)).await;
                     backoff_secs = (backoff_secs * 2).min(CREATE_ADAPTER_MAX_BACKOFF_SECS);
                     attempt += 1;
