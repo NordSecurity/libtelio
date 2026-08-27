@@ -16,13 +16,15 @@ use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_GET_DEVICE_INTERFACE_LIST_PRESENT, CONFIGRET, CR_SUCCESS, DICS_FLAG_GLOBAL, DIGCF_PRESENT,
     DIREG_DRV, DN_DRIVER_LOADED, DN_STARTED, HDEVINFO, SP_DEVINFO_DATA,
 };
-use windows::Win32::Foundation::{GetLastError, ERROR_GEN_FAILURE, ERROR_SUCCESS};
+use windows::Win32::Foundation::{
+    GetLastError, ERROR_GEN_FAILURE, ERROR_SERVICE_MARKED_FOR_DELETE, ERROR_SUCCESS,
+};
 use windows::Win32::NetworkManagement::IpHelper::{GetIfEntry2, MIB_IF_ROW2};
 use windows::Win32::NetworkManagement::Ndis::NET_LUID_LH;
 use windows::Win32::System::Registry::{RegCloseKey, RegQueryValueExW, HKEY};
 use windows::Win32::System::Services::{
-    OpenSCManagerW, OpenServiceW, QueryServiceStatus, SC_HANDLE, SC_MANAGER_CONNECT,
-    SERVICE_QUERY_STATUS, SERVICE_STATUS,
+    CloseServiceHandle, OpenSCManagerW, OpenServiceW, QueryServiceStatus, SC_HANDLE,
+    SC_MANAGER_CONNECT, SERVICE_QUERY_STATUS, SERVICE_STATUS,
 };
 use winreg::{enums::*, RegKey};
 
@@ -240,6 +242,28 @@ pub fn wait_for_service(service_name: &str, timeout: Duration) -> bool {
     }
 
     false
+}
+
+pub fn is_service_marked_for_delete(service_name: &str) -> WindowsResult<bool> {
+    let service_name_wide: Vec<u16> = str_to_utf16(service_name);
+    let service_name_wide = PCWSTR(service_name_wide.as_ptr());
+
+    unsafe {
+        let sc_manager = OpenSCManagerW(PCWSTR::null(), PCWSTR::null(), SC_MANAGER_CONNECT)?;
+        let service = OpenServiceW(sc_manager, service_name_wide, SERVICE_QUERY_STATUS);
+        let result = match service {
+            Ok(service) => {
+                let _ = CloseServiceHandle(service);
+                Ok(false)
+            }
+            Err(err) if err.code() == HRESULT::from_win32(ERROR_SERVICE_MARKED_FOR_DELETE.0) => {
+                Ok(true)
+            }
+            Err(err) => Err(err),
+        };
+        let _ = CloseServiceHandle(sc_manager);
+        result
+    }
 }
 
 pub async fn wait_for_adapter_interface_ready(adapter_luid: u64, timeout: Duration) -> bool {
