@@ -45,6 +45,7 @@ pub enum TelioTaskCmd {
     GetStatus(oneshot::Sender<TelioStatusReport>),
     Connect(oneshot::Sender<Result<(), String>>),
     ConnectToExitNode(ExitNodeConfig, Option<oneshot::Sender<Result<(), String>>>),
+    ConnectFailed,
     Disconnect(oneshot::Sender<Result<(), String>>),
     // Break the receive loop to quit the daemon and exit gracefully
     Quit(oneshot::Sender<()>),
@@ -245,11 +246,22 @@ impl CommandListener {
                         error!("Failed to send Connect command to telio task");
                         NordVpnLiteError::CommandFailed(ClientCmd::Connect)
                     })?;
-                handle_response(response_rx, |result| match result {
-                    Ok(()) => Ok(CommandResponse::Ok),
-                    Err(e) => Ok(CommandResponse::Err(e)),
-                })
-                .await
+
+                tokio::spawn(async move {
+                    match response_rx.await {
+                        Ok(Ok(())) => {
+                            info!("Connect succeeded");
+                        }
+                        Ok(Err(e)) => {
+                            error!("Connect failed: {e}");
+                        }
+                        Err(_) => {
+                            error!("Connect response sender dropped");
+                        }
+                    }
+                });
+
+                Ok(CommandResponse::Ok)
             }
             ClientCmd::Disconnect => {
                 trace!("Disconnect");
@@ -424,6 +436,7 @@ mod tests {
                     response_tx_channel.send(Ok(())).unwrap();
                 }
                 TelioTaskCmd::ConnectToExitNode(_, None) => {}
+                TelioTaskCmd::ConnectFailed => {}
                 TelioTaskCmd::Disconnect(response_tx_channel) => {
                     response_tx_channel.send(Ok(())).unwrap();
                 }
@@ -561,11 +574,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_command_connect_disconnect_error() {
-        // Check that the telio error raised during connecting is propagated to the client
-        test_command_error_helper(ClientCmd::Connect, " connect failure").await;
+    async fn test_command_disconnect_error() {
         // Check that the telio error raised during disconnecting is propagated to the client
         test_command_error_helper(ClientCmd::Disconnect, "disconnect failure").await;
+    }
+
+    #[tokio::test]
+    async fn test_command_connect_returns_ok_immediately() {
+        // Connect now returns Ok immediately (fire-and-forget); errors are only logged, not sent back to client
+        let (response, cmd) = test_command_helper(ClientCmd::Connect, true, false).await;
+
+        assert_eq!(response.unwrap(), CommandResponse::Ok);
+        assert_eq!(cmd.unwrap(), ClientCmd::Connect);
     }
 
     #[tokio::test]

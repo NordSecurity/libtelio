@@ -315,8 +315,14 @@ async def test_nordvpnlite_pq_vpn_connection(config_provider: str) -> None:
 
 
 async def test_nordvpnlite_connect_when_already_connected() -> None:
-    """Calling connect while VPN is already established must return a CLI error
-    but must NOT break the existing VPN connection."""
+    """Calling connect while VPN connection is already established must NOT break the
+    existing VPN connection.
+
+    connect is fire-and-forget: the CLI always returns 'Command executed
+    successfully' immediately. The daemon silently rejects the duplicate
+    (AlreadyConnected) internally, so the test verifies connection integrity
+    via a status poll rather than a CLI error.
+    """
     async with AsyncExitStack() as exit_stack:
         nordvpnlite = await NordVpnLite.new(
             exit_stack,
@@ -339,29 +345,18 @@ async def test_nordvpnlite_connect_when_already_connected() -> None:
 
             log.debug("VPN is connected; sending duplicate connect command...")
 
-            # The second connect must fail with a CLI error.
-            try:
-                await nordvpnlite.execute_command(["connect"])
-                pytest.fail(
-                    "Expected a ProcessExecError when calling connect on an "
-                    "already-connected VPN, but the command succeeded."
-                )
-            except ProcessExecError as exc:
-                log.debug(
-                    "Got expected CLI error on duplicate connect: "
-                    "stdout=%r stderr=%r",
-                    exc.stdout,
-                    exc.stderr,
-                )
+            # connect is fire-and-forget: always returns Ok immediately.
+            # The daemon drops the duplicate internally (AlreadyConnected).
+            await nordvpnlite.connect()
 
             log.debug(
-                "Duplicate connect raised CLI error; verifying connection is intact..."
+                "Duplicate connect returned Ok; verifying connection is intact..."
             )
 
             # The daemon must still be running.
             assert (
                 await nordvpnlite.is_alive()
-            ), "Daemon should still be alive after duplicate connect error"
+            ), "Daemon should still be alive after duplicate connect"
 
             # The VPN connection must still be established.
             status = json.loads(await nordvpnlite.get_status())
@@ -378,7 +373,7 @@ async def test_nordvpnlite_connect_when_already_connected() -> None:
 
 
 async def test_nordvpnlite_disconnect_when_not_connected() -> None:
-    """Calling disconnect while VPN is not established must return a CLI error
+    """Calling disconnect while VPN connection is not established must return a CLI error
     but the daemon must remain alive."""
     async with AsyncExitStack() as exit_stack:
         nordvpnlite = await NordVpnLite.new(
@@ -494,7 +489,7 @@ async def test_nordvpnlite_reload_preserves_disconnected_state() -> None:
 
 
 async def test_nordvpnlite_connect_disconnect() -> None:
-    """Start daemon with --do-not-connect, verify VPN is not established,
+    """Start daemon with --do-not-connect, verify VPN connection is not established,
     then explicitly connect and disconnect via CLI commands."""
     async with AsyncExitStack() as exit_stack:
         nordvpnlite = await NordVpnLite.new(

@@ -94,6 +94,8 @@ pub enum NordVpnLiteError {
     EndpointNoPublicKey,
     #[error("Already connected to exit node")]
     AlreadyConnected,
+    #[error("Connection to exit node already in progress")]
+    ConnectionPending,
     #[error("Not connected to exit node")]
     NotConnected,
 }
@@ -152,6 +154,10 @@ struct TelioContext {
     /// Handle to the tokio runtime. Used to run async tasks (e.g. HTTP calls) from
     /// within the spawn_blocking context of start_listening_commands
     tokio_handle: tokio::runtime::Handle,
+    /// Sender to send commands back to the telio task loop
+    telio_tx: mpsc::Sender<TelioTaskCmd>,
+    /// Flag to track if a connect is pending to avoid double-connect race
+    pending_connect: bool,
 }
 
 impl TelioContext {
@@ -159,6 +165,7 @@ impl TelioContext {
         config: NordVpnLiteConfig,
         nordlynx_private_key: SecretKey,
         tokio_handle: tokio::runtime::Handle,
+        telio_tx: mpsc::Sender<TelioTaskCmd>,
     ) -> Result<Self, NordVpnLiteError> {
         debug!("Initializing telio device");
 
@@ -187,6 +194,8 @@ impl TelioContext {
             config,
             exit_node: None,
             tokio_handle,
+            telio_tx,
+            pending_connect: false,
         })
     }
 
@@ -199,7 +208,7 @@ impl TelioContext {
             trace!("TelioTask got command {:?}", cmd);
 
             if matches!(cmd, TelioTaskCmd::Quit(_)) {
-                was_connected = self.was_connected()?;
+                was_connected = self.is_connected()?;
             }
 
             match cmd.execute(self)? {
@@ -212,7 +221,7 @@ impl TelioContext {
 
     // This function is called in the context of configuration reload.
     // Returns true if exit node is in connected or connecting state.
-    fn was_connected(&self) -> Result<bool, NordVpnLiteError> {
+    fn is_connected(&self) -> Result<bool, NordVpnLiteError> {
         let external_nodes = self.telio.external_nodes()?;
         Ok(external_nodes.iter().any(|node| {
             node.is_exit && matches!(node.state, NodeState::Connected | NodeState::Connecting)
@@ -319,6 +328,17 @@ impl TelioContext {
     }
 }
 
+fn reject_connect(
+    tx: oneshot::Sender<Result<(), String>>,
+    err: NordVpnLiteError,
+) -> Result<TelioTaskOutcome, NordVpnLiteError> {
+    warn!("{err}");
+    if tx.send(Err(err.to_string())).is_err() {
+        error!("Connect: receiver dropped before result could be sent");
+    }
+    Ok(TelioTaskOutcome::Continue)
+}
+
 impl TelioTaskCmd {
     fn execute(self, ctx: &mut TelioContext) -> Result<TelioTaskOutcome, NordVpnLiteError> {
         match self {
@@ -364,47 +384,66 @@ impl TelioTaskCmd {
             }
             TelioTaskCmd::Connect(response_tx) => {
                 if ctx.exit_node.is_some() {
-                    error!("Already connected to exit node");
-                    if response_tx
-                        .send(Err(NordVpnLiteError::AlreadyConnected.to_string()))
-                        .is_err()
-                    {
-                        error!("Connect: receiver dropped before result could be sent");
-                    }
-                    return Ok(TelioTaskOutcome::Continue);
+                    return reject_connect(response_tx, NordVpnLiteError::AlreadyConnected);
                 }
 
-                let endpoint_result = ctx
-                    .tokio_handle
-                    .block_on(get_server_endpoints_list(&ctx.config))
-                    .map_err(NordVpnLiteError::CoreApiError)
-                    .and_then(|endpoints| {
-                        endpoints.into_iter().next().ok_or_else(|| {
-                            error!("Getting exit node endpoint failed: empty list");
-                            NordVpnLiteError::CommandFailed(ClientCmd::Connect)
-                        })
-                    });
+                if ctx.pending_connect {
+                    return reject_connect(response_tx, NordVpnLiteError::ConnectionPending);
+                }
 
-                match endpoint_result {
-                    Ok(endpoint) => {
-                        debug!("Selected exit node endpoint: {:#?}", endpoint);
-                        TelioTaskCmd::ConnectToExitNode(
-                            ExitNodeConfig {
-                                endpoint,
-                                dns: ctx.config.dns.clone(),
-                                post_quantum: ctx.config.post_quantum,
+                ctx.pending_connect = true;
+                let config = ctx.config.clone();
+                let telio_tx = ctx.telio_tx.clone();
+                ctx.tokio_handle.spawn(async move {
+                    let exit_node_result: Result<ExitNodeConfig, NordVpnLiteError> =
+                        match get_server_endpoints_list(&config).await {
+                            Ok(endpoints) => match endpoints.into_iter().next() {
+                                Some(endpoint) => {
+                                    debug!("Selected exit node endpoint: {:#?}", endpoint);
+                                    Ok(ExitNodeConfig {
+                                        endpoint,
+                                        dns: config.dns,
+                                        post_quantum: config.post_quantum,
+                                    })
+                                }
+                                None => {
+                                    error!("Getting exit node endpoint failed: empty list");
+                                    Err(NordVpnLiteError::CommandFailed(ClientCmd::Connect))
+                                }
                             },
-                            Some(response_tx),
-                        )
-                        .execute(ctx)
-                    }
-                    Err(e) => {
-                        if response_tx.send(Err(e.to_string())).is_err() {
-                            error!("Connect: receiver dropped before result could be sent");
+                            Err(e) => {
+                                error!("Getting exit node endpoint failed: {e}");
+                                Err(NordVpnLiteError::CoreApiError(e))
+                            }
+                        };
+
+                    match exit_node_result {
+                        Ok(exit_node_config) => {
+                            #[allow(mpsc_blocking_send)]
+                            if let Err(e) = telio_tx
+                                .send(TelioTaskCmd::ConnectToExitNode(
+                                    exit_node_config,
+                                    Some(response_tx),
+                                ))
+                                .await
+                            {
+                                error!("Failed to send ConnectToExitNode to telio task: {e}");
+                                #[allow(mpsc_blocking_send)]
+                                let _ = telio_tx.send(TelioTaskCmd::ConnectFailed).await;
+                            }
                         }
-                        Ok(TelioTaskOutcome::Continue)
+                        Err(err) => {
+                            if response_tx.send(Err(err.to_string())).is_err() {
+                                error!("Connect: receiver dropped before result could be sent");
+                            }
+
+                            #[allow(mpsc_blocking_send)]
+                            let _ = telio_tx.send(TelioTaskCmd::ConnectFailed).await;
+                        }
                     }
-                }
+                });
+
+                Ok(TelioTaskOutcome::Continue)
             }
             TelioTaskCmd::ConnectToExitNode(exit_node_config, response_tx) => {
                 debug!(
@@ -412,6 +451,8 @@ impl TelioTaskCmd {
                     exit_node_config.endpoint
                 );
                 let result = ctx.connect_to_exit_node(exit_node_config);
+                ctx.pending_connect = false;
+
                 if let Some(tx) = response_tx {
                     if tx
                         .send(result.as_ref().map_err(|e| e.to_string()).map(|_| ()))
@@ -420,6 +461,11 @@ impl TelioTaskCmd {
                         error!("ConnectToExitNode: receiver dropped before result could be sent");
                     }
                 }
+                Ok(TelioTaskOutcome::Continue)
+            }
+            TelioTaskCmd::ConnectFailed => {
+                debug!("Connect failed");
+                ctx.pending_connect = false;
                 Ok(TelioTaskOutcome::Continue)
             }
             TelioTaskCmd::Quit(response_tx_channel) => {
@@ -436,44 +482,6 @@ impl TelioTaskCmd {
                 Ok(TelioTaskOutcome::Exit)
             }
         }
-    }
-}
-
-/// Sends a `ConnectToExitNode` command via the provided channel on success.
-/// Sends a `Quit` command on failure so the daemon exits cleanly.
-async fn handle_exit_node_connection(config: &NordVpnLiteConfig, tx: mpsc::Sender<TelioTaskCmd>) {
-    let command = match get_server_endpoints_list(config).await {
-        Ok(endpoints) => {
-            // TODO: LLT-6460 - We can store the recommended server list, just in case
-            // one server fails to connect, try the next one.
-            if let Some(endpoint) = endpoints.first() {
-                debug!("Selected exit node: {:#?}", endpoint);
-                // initiate the VPN connection — fire-and-forget, no response needed
-                TelioTaskCmd::ConnectToExitNode(
-                    ExitNodeConfig {
-                        endpoint: endpoint.to_owned(),
-                        dns: config.dns.clone(),
-                        post_quantum: config.post_quantum,
-                    },
-                    None,
-                )
-            } else {
-                error!("Getting exit node endpoint failed: empty list");
-                let (response_tx, _) = oneshot::channel();
-                TelioTaskCmd::Quit(response_tx)
-            }
-        }
-        Err(e) => {
-            error!("Getting exit node endpoint failed: {e}");
-            let (response_tx, _) = oneshot::channel();
-            TelioTaskCmd::Quit(response_tx)
-        }
-    };
-
-    // Send the command to the telio task
-    #[allow(mpsc_blocking_send)]
-    if let Err(e) = tx.send(command).await {
-        error!("Failed to send exit node command to telio task: {e}");
     }
 }
 
@@ -599,19 +607,46 @@ async fn run_daemon(
     let config_clone = config.parsed.clone();
     let tokio_handle = tokio::runtime::Handle::current();
     let (init_done_tx, init_done_rx) = oneshot::channel::<()>();
+    let telio_tx_clone = telio_tx.clone();
     let mut telio_task_handle = tokio::task::spawn_blocking(move || {
-        let mut context = TelioContext::new(config_clone, nordlynx_private_key, tokio_handle)?;
+        let mut context = TelioContext::new(
+            config_clone,
+            nordlynx_private_key,
+            tokio_handle,
+            telio_tx_clone,
+        )?;
         let _ = init_done_tx.send(());
         context.start_listening_commands(telio_rx)
     });
 
     if connect_on_startup && init_done_rx.await.is_ok() {
-        let config_clone = config.parsed.clone();
-        let tx_clone = telio_tx.clone();
-        // Without blocking the main thread select (HTTP request) and connect to exit node
+        let telio_tx_clone = telio_tx.clone();
+
         tokio::spawn(async move {
-            handle_exit_node_connection(&config_clone, tx_clone).await;
-            debug!("Exit node connection task completed");
+            let (response_tx, response_rx) = oneshot::channel();
+            #[allow(mpsc_blocking_send)]
+            if let Err(e) = telio_tx_clone
+                .send(TelioTaskCmd::Connect(response_tx))
+                .await
+            {
+                error!("Failed to send Connect on startup: {e}");
+                return;
+            }
+
+            match response_rx.await {
+                Ok(Ok(())) => {
+                    debug!("Connect on startup succeeded");
+                }
+                Ok(Err(e)) => {
+                    error!("Connect on startup failed: {e}, shutting down daemon");
+                    let (quit_tx, _) = oneshot::channel();
+                    #[allow(mpsc_blocking_send)]
+                    let _ = telio_tx_clone.send(TelioTaskCmd::Quit(quit_tx)).await;
+                }
+                Err(_) => {
+                    // receiver dropped — ConnectToExitNode already handled it
+                }
+            }
         });
     }
 
