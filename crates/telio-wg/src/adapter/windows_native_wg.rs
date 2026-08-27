@@ -118,6 +118,8 @@ impl WindowsNativeWg {
         // try to load dll
         match unsafe { wireguard_nt::load_from_path(path) } {
             Ok(wg_dll) => {
+                wireguard_nt::set_logger(&wg_dll, Some(wireguard_nt::default_logger));
+
                 // Someone to watch over me while I sleep
                 let watcher = Arc::new(Mutex::new(InterfaceWatcher::new(
                     enable_dynamic_wg_nt_control.clone(),
