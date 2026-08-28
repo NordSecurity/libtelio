@@ -64,6 +64,8 @@ class Ping:
                     "-t",
                     "-l",
                     str(size),
+                    "-w",
+                    "1000",
                     ip,
                 ],
                 quiet=True,
