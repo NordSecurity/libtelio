@@ -63,9 +63,12 @@ const SET_STATE_MAX_BACKOFF: Duration = Duration::from_secs(2);
 struct DeviceInterfaceArrivalWatcher {
     handle: HCMNOTIFICATION,
     arrival: Arc<Notify>,
+    // The callback context's own reference into `arrival`, released in Drop
+    context: *const Notify,
 }
 
-// SAFETY: `handle` is only used by `CM_Unregister_Notification` in `Drop`, which is thread-safe
+// SAFETY: `handle` is only used by `CM_Unregister_Notification` in `Drop`, which is thread-safe,
+// and `context` only by the callback and Drop
 unsafe impl Send for DeviceInterfaceArrivalWatcher {}
 unsafe impl Sync for DeviceInterfaceArrivalWatcher {}
 
@@ -84,19 +87,26 @@ impl DeviceInterfaceArrivalWatcher {
             },
         };
         let mut handle = HCMNOTIFICATION(std::ptr::null_mut());
+        let context = Arc::into_raw(arrival.clone());
         let result = unsafe {
             CM_Register_Notification(
                 &filter,
-                Some(Arc::as_ptr(&arrival).cast()),
+                Some(context.cast()),
                 Some(device_interface_arrival_callback),
                 &mut handle,
             )
         };
         if result != CR_SUCCESS {
+            // Registration failed, so no callback can ever see the context
+            drop(unsafe { Arc::from_raw(context) });
             return Err(result);
         }
 
-        Ok(Self { handle, arrival })
+        Ok(Self {
+            handle,
+            arrival,
+            context,
+        })
     }
 
     async fn wait_arrival(&self, timeout_after: Duration) {
@@ -106,14 +116,16 @@ impl DeviceInterfaceArrivalWatcher {
 
 impl Drop for DeviceInterfaceArrivalWatcher {
     fn drop(&mut self) {
+        // Blocks until in-flight callbacks return; there is no separate completion
+        // signal after a failed call, so on failure the context stays leaked
         let result = unsafe { CM_Unregister_Notification(self.handle) };
-        if result != CR_SUCCESS {
+        if result == CR_SUCCESS {
+            drop(unsafe { Arc::from_raw(self.context) });
+        } else {
             telio_log_warn!(
                 "Failed to unregister device interface arrival notification: config manager error {}",
                 result.0
             );
-            // The callback may still fire with a pointer into this Arc - leak it
-            std::mem::forget(self.arrival.clone());
         }
     }
 }
@@ -461,16 +473,14 @@ impl WindowsNativeWg {
         Self::print_registry_key_contents(HKEY_LOCAL_MACHINE, SWD_WIREGUARD);
 
         let mut wg_dev = tmp_wg_dev?;
-        wg_dev.iface_arrival = match DeviceInterfaceArrivalWatcher::register() {
-            Ok(watcher) => Some(watcher),
-            Err(error) => {
+        wg_dev.iface_arrival = DeviceInterfaceArrivalWatcher::register()
+            .inspect_err(|error| {
                 telio_log_warn!(
                     "Failed to register device interface arrival notification: config manager error {}",
                     error.0
-                );
-                None
-            }
-        };
+                )
+            })
+            .ok();
         telio_log_info!(
             "Adapter '{}' using created successfully. enable_dynamic_wg_nt_control: {}",
             name,
