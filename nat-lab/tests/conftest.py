@@ -6,7 +6,6 @@ import os
 import Pyro5  # type: ignore
 import pytest
 import signal
-import threading
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from tests.conftest_helpers.log_collection import collect_logs, collect_kernel_logs
@@ -21,11 +20,6 @@ from tests.conftest_helpers.setup_checks import (
     check_all_containers_running,
     get_session_vm_marks,
 )
-
-# Windows VM resource monitoring is temporary disabled
-# from tests.conftest_helpers.windows_monitoring import (
-#     start_windows_vms_resource_monitoring,
-# )
 from tests.helpers import SetupParameters
 from tests.log_collector import LOG_COLLECTORS
 from tests.utils.bindings import TelioAdapterType
@@ -34,7 +28,6 @@ from tests.utils.connection_util import new_connection_raw
 from tests.utils.logger import log
 from tests.utils.router import IPStack
 from tests.utils.testing import get_current_test_log_path
-from typing import List
 
 pytest_plugins = ["tests.helpers_fixtures"]
 
@@ -59,8 +52,6 @@ SETUP_CHECK_DUPLICATE_IP_RETRIES = 1
 
 SESSIONFINISH_CLEANUP_TIMEOUT_S = 600
 
-TASKS: List[asyncio.Task] = []
-END_TASKS: threading.Event = threading.Event()
 CURRENT_TEST_LOG_FILE = None
 _LIBFIREWALL_SO = os.path.join(os.path.dirname(__file__), "uniffi", "libfirewall.so")
 
@@ -337,16 +328,12 @@ def pytest_sessionstart(session):
                 _SESSION.exit_stack,
             )
         )
-        # Disabled while investigating the Windows VM bugcheck
-        # _SESSION.runner.run(start_windows_vms_resource_monitoring(TASKS, END_TASKS))
 
 
 # pylint: disable=unused-argument
 def pytest_sessionfinish(session, exitstatus):
     if os.environ.get("NATLAB_SAVE_LOGS") is None or session.config.option.collectonly:
         return
-
-    END_TASKS.set()
 
     if _SESSION.runner is not None:
         try:
