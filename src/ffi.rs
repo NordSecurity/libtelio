@@ -357,6 +357,7 @@ impl Telio {
                     name: None,
                     tun: None,
                     ext_if_filter: None,
+                    mtu: None,
                 })
                 .log_result("Telio::start")
             })
@@ -384,6 +385,7 @@ impl Telio {
                     name: None,
                     tun: None,
                     ext_if_filter: None,
+                    mtu: None,
                 })
                 .log_result("Telio::start")
             })
@@ -417,8 +419,45 @@ impl Telio {
                     name: Some(name.clone()),
                     tun: None,
                     ext_if_filter: None,
+                    mtu: None,
                 })
                 .log_result("Telio::start_named")
+            })
+        })
+    }
+
+    /// Start telio with specified adapter, name and MTU.
+    ///
+    /// Adapter will attempt to open its own tunnel.
+    pub fn start_named_with_mtu(
+        &self,
+        private_key: SecretKey,
+        adapter: TelioAdapterType,
+        name: String,
+        mtu: u32,
+    ) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::start_named_with_mtu entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Name: {}. MTU: {}",
+            self.id,
+            private_key.public(),
+            &adapter,
+            &name,
+            mtu,
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.start(DeviceConfig {
+                    private_key: private_key.clone(),
+                    adapter: adapter
+                        .try_into()
+                        .map_err(|e| TelioError::UnknownError { inner: e })?,
+                    fwmark: None,
+                    name: Some(name.clone()),
+                    tun: None,
+                    ext_if_filter: None,
+                    mtu: Some(mtu),
+                })
+                .log_result("Telio::start_named_with_mtu")
             })
         })
     }
@@ -452,8 +491,47 @@ impl Telio {
                     name: Some(name.clone()),
                     tun: None,
                     ext_if_filter: Some(ext_if_filter.clone()),
+                    mtu: None,
                 })
                 .log_result("Telio::start_named_ext_if_filter")
+            })
+        })
+    }
+
+    /// Start telio with specified adapter type, adapter name, MTU
+    /// and provided external interface filter.
+    ///
+    /// Adapter will attempt to open its own tunnel.
+    pub fn start_named_ext_if_filter_with_mtu(
+        &self,
+        private_key: SecretKey,
+        adapter: TelioAdapterType,
+        name: String,
+        ext_if_filter: Vec<String>,
+        mtu: u32,
+    ) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::start_named_ext_if_filter_with_mtu entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Name: {}. MTU: {}",
+            self.id,
+            private_key.public(),
+            &adapter,
+            &name,
+            mtu,
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.start(DeviceConfig {
+                    private_key: private_key.clone(),
+                    adapter: adapter
+                        .try_into()
+                        .map_err(|e| TelioError::UnknownError { inner: e })?,
+                    fwmark: None,
+                    name: Some(name.clone()),
+                    tun: None,
+                    ext_if_filter: Some(ext_if_filter.clone()),
+                    mtu: Some(mtu),
+                })
+                .log_result("Telio::start_named_ext_if_filter_with_mtu")
             })
         })
     }
@@ -473,6 +551,20 @@ impl Telio {
             self.device_op(true, |dev| {
                 dev.set_ext_if_filter(ext_if_filter.clone())
                     .map_err(TelioError::from)
+            })
+        })
+    }
+
+    /// Set adapter MTU at runtime.
+    pub fn set_adapter_mtu(&self, mtu: u32) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::set_adapter_mtu entry with instance id: {}. MTU: {}",
+            self.id,
+            mtu
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.set_adapter_mtu(mtu).map_err(TelioError::from)
             })
         })
     }
@@ -520,6 +612,7 @@ impl Telio {
                     name: None,
                     tun,
                     ext_if_filter: None,
+                    mtu: None,
                 })
                 .log_result("Telio::start_with_tun")
             })

@@ -228,6 +228,7 @@ pub struct DeviceConfig {
     pub name: Option<String>,
     pub tun: Option<Tun>,
     pub ext_if_filter: Option<Vec<String>>,
+    pub mtu: Option<u32>,
 }
 
 pub struct Device {
@@ -242,6 +243,7 @@ pub struct Device {
 pub struct RequestedDeviceConfig {
     pub private_key: SecretKey,
     pub fwmark: Option<u32>,
+    pub mtu: Option<u32>,
 }
 
 impl RequestedDeviceConfig {
@@ -249,6 +251,7 @@ impl RequestedDeviceConfig {
         Self {
             private_key: device_config.private_key.clone(),
             fwmark: device_config.fwmark,
+            mtu: device_config.mtu,
         }
     }
 }
@@ -717,6 +720,16 @@ impl Device {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
                 Ok(rt.set_ext_if_filter(ext_if_filter).boxed().await)
+            })
+            .await?
+        })
+    }
+
+    /// Configure the MTU of the WireGuard adapter.
+    pub fn set_adapter_mtu(&self, mtu: u32) -> Result {
+        self.async_runtime()?.block_on(async {
+            task_exec!(self.rt()?, async move |rt| {
+                Ok(rt.set_adapter_mtu(mtu).boxed().await)
             })
             .await?
         })
@@ -1267,6 +1280,7 @@ impl Runtime {
                         firewall_process_outbound_callback,
                         firewall_reset_connections,
                         enable_dynamic_wg_nt_control,
+                        mtu: config.mtu,
                         skt_buffer_size : Runtime::sanitize_neptun_config(features.wireguard.skt_buffer_size, config.adapter.clone()),
                         inter_thread_channel_size : Runtime::sanitize_neptun_config(features.wireguard.inter_thread_channel_size, config.adapter.clone()),
                         max_inter_thread_batched_pkts : Runtime::sanitize_neptun_config(features.wireguard.max_inter_thread_batched_pkts, config.adapter.clone()),
@@ -1292,6 +1306,7 @@ impl Runtime {
                             firewall_process_outbound_callback,
                             firewall_reset_connections,
                             enable_dynamic_wg_nt_control,
+                            mtu: config.mtu,
                             skt_buffer_size: features.wireguard.skt_buffer_size,
                             inter_thread_channel_size: features.wireguard.inter_thread_channel_size,
                             max_inter_thread_batched_pkts: features.wireguard.max_inter_thread_batched_pkts,
@@ -1751,6 +1766,15 @@ impl Runtime {
         self.entities.socket_pool.set_ext_if_filter(&ext_if_filter);
 
         Ok(())
+    }
+
+    async fn set_adapter_mtu(&mut self, mtu: u32) -> Result {
+        self.requested_state.device_config.mtu = Some(mtu);
+        Ok(self
+            .entities
+            .wireguard_interface
+            .set_adapter_mtu(mtu)
+            .await?)
     }
 
     async fn set_private_key(&mut self, private_key: &SecretKey) -> Result {

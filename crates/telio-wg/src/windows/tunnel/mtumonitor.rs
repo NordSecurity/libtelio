@@ -206,19 +206,11 @@ impl MtuMonitor {
         }
 
         if mtu > 0 && *last_mtu != mtu {
-            let own_luid = InterfaceLuid::new(self.own_luid);
-            telio_log_trace!("+++ MtuMonitor::do_it: get_ip_interface");
-            let mut own_iface = own_luid.get_ip_interface(self.family)?;
-            own_iface.NlMtu = mtu.saturating_sub(80);
-            if own_iface.NlMtu < self.min_mtu {
-                own_iface.NlMtu = self.min_mtu;
-            }
-
-            telio_log_trace!("+++ MtuMonitor::do_it: SetIpInterfaceEntry");
-            let result = unsafe { SetIpInterfaceEntry(&mut own_iface) };
-            if NO_ERROR != result {
-                return Err(result);
-            }
+            set_interface_mtu(
+                self.own_luid,
+                self.family,
+                mtu.saturating_sub(80).max(self.min_mtu),
+            )?;
             *last_mtu = mtu;
         }
 
@@ -283,6 +275,16 @@ impl MtuMonitor {
 
         Ok(luid)
     }
+}
+
+pub fn set_interface_mtu(luid: u64, family: ADDRESS_FAMILY, mtu: u32) -> Result<(), NETIO_STATUS> {
+    let own_luid = InterfaceLuid::new(luid);
+    telio_log_trace!("+++ set_interface_mtu: get_ip_interface");
+    let mut own_iface = own_luid.get_ip_interface(family)?;
+    own_iface.NlMtu = mtu;
+
+    telio_log_trace!("+++ set_interface_mtu: SetIpInterfaceEntry");
+    own_luid.set_ip_interface(&mut own_iface)
 }
 
 #[cfg(windows)]

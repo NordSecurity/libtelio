@@ -92,6 +92,11 @@ pub trait Adapter: Send + Sync {
     /// Set the (u)tun file descriptor to be used by the adapter
     async fn set_tun(&self, tun: Tun) -> Result<(), Error>;
 
+    /// Set adapter MTU.
+    async fn set_adapter_mtu(&self, _mtu: u32) -> Result<(), Error> {
+        Err(Error::UnsupportedAdapter)
+    }
+
     /// Make a copy of this adapter.
     ///
     /// Only the custom adapters can be cloned this way.
@@ -299,8 +304,12 @@ pub(crate) async fn start(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
 
             #[cfg(windows)]
             Ok(Box::new(
-                windows_native_wg::WindowsNativeWg::start(&name, cfg.enable_dynamic_wg_nt_control)
-                    .await?,
+                windows_native_wg::WindowsNativeWg::start(
+                    &name,
+                    cfg.enable_dynamic_wg_nt_control,
+                    cfg.mtu,
+                )
+                .await?,
             ))
         }
         AdapterType::Custom(adapter) => adapter.clone_box().ok_or(Error::UnsupportedAdapter),

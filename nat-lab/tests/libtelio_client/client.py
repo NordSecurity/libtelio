@@ -328,6 +328,14 @@ class Client:
         if isinstance(self.get_router(), LinuxRouter):
             await self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
 
+    async def simple_start_with_mtu(self, mtu: int):
+        await self.get_proxy().start_named_with_mtu(
+            private_key=self._node.private_key,
+            adapter=self._adapter_type,
+            name=self.get_router().get_interface_name(),
+            mtu=mtu,
+        )
+
     async def create_tun(self, tun_id: int) -> int:
         return await self.get_proxy().create_tun(tun_id)
 
@@ -350,6 +358,24 @@ class Client:
             name=tun_name,
             ext_if_list=ext_if_filter,
         )
+
+    async def start_named_ext_if_filter_with_mtu(
+        self, tun_name, ext_if_filter: List[str], mtu: int
+    ):
+        if not isinstance(self.get_router(), WindowsRouter):
+            raise RuntimeError(
+                "start_named_ext_if_filter_with_mtu can only be used on Windows"
+            )
+        await self.get_proxy().start_named_ext_if_filter_with_mtu(
+            private_key=self._node.private_key,
+            adapter=self._adapter_type,
+            name=tun_name,
+            ext_if_list=ext_if_filter,
+            mtu=mtu,
+        )
+
+    async def set_adapter_mtu(self, mtu: int):
+        await self.get_proxy().set_adapter_mtu(mtu)
 
     async def set_meshnet_config(self, meshnet_config: Config) -> None:
         made_changes = await self.configure_interface()

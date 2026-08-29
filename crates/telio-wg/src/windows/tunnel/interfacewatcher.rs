@@ -12,7 +12,7 @@
 //
 
 use super::addressconfig;
-use super::mtumonitor::MtuMonitor;
+use super::mtumonitor::{set_interface_mtu, MtuMonitor};
 use crate::{adapter::IsMeshnetEnabledCb, windows::cleanup::*};
 use std::sync::{Arc, Mutex};
 use telio_utils::{
@@ -46,6 +46,7 @@ struct AdapterConfiguration {
     stored_events: Vec<InterfaceWatcherEvent>,
 
     last_known_config: Option<Arc<WireGuardUapiSetDevice>>,
+    forced_mtu: Option<u32>,
 
     mtu_monitor: Vec<Arc<Mutex<MtuMonitor>>>,
 }
@@ -84,6 +85,7 @@ impl AdapterConfiguration {
             adapter: None,
             stored_events: Vec::new(),
             last_known_config: None,
+            forced_mtu: None,
             mtu_monitor: Vec::new(),
         }
     }
@@ -154,7 +156,7 @@ impl InterfaceWatcher {
         telio_log_trace!("--- InterfaceWatcher::stop");
     }
 
-    pub fn configure(&mut self, adapter: Arc<wireguard_nt::Adapter>, luid: u64) {
+    pub fn configure(&mut self, adapter: Arc<wireguard_nt::Adapter>, luid: u64, mtu: Option<u32>) {
         telio_log_trace!("+++ InterfaceWatcher::configure");
 
         if let Ok(mut watched_adapter) = self.watched_adapter.clone().lock() {
@@ -163,6 +165,7 @@ impl InterfaceWatcher {
 
             watched_adapter.luid = luid;
             watched_adapter.adapter = Some(adapter);
+            watched_adapter.forced_mtu = mtu;
 
             watched_adapter.last_known_config = None;
 
@@ -196,6 +199,19 @@ impl InterfaceWatcher {
         telio_log_trace!("--- InterfaceWatcher::configure");
     }
 
+    pub fn set_forced_mtu(&mut self, mtu: u32) {
+        telio_log_trace!("+++ InterfaceWatcher::set_forced_mtu");
+
+        if let Ok(mut watched_adapter) = self.watched_adapter.clone().lock() {
+            watched_adapter.forced_mtu = Some(mtu);
+            Self::stop_mtu_monitors(&mut watched_adapter);
+        } else {
+            telio_log_error!("error obtaining lock");
+        }
+
+        telio_log_trace!("--- InterfaceWatcher::set_forced_mtu");
+    }
+
     pub fn set_last_known_configuration(
         &mut self,
         config: &wireguard_uapi::xplatform::set::Device,
@@ -223,6 +239,15 @@ impl InterfaceWatcher {
         telio_log_trace!("--- InterfaceWatcher::clear_last_known_configuration");
     }
 
+    fn stop_mtu_monitors(watched_adapter: &mut AdapterConfiguration) {
+        for mtu_monitor in watched_adapter.mtu_monitor.as_slice() {
+            if let Ok(mut mtumon) = mtu_monitor.clone().lock() {
+                mtumon.stop();
+            }
+        }
+        watched_adapter.mtu_monitor.clear();
+    }
+
     fn setup(watched_adapter: &mut AdapterConfiguration, family: ADDRESS_FAMILY) {
         telio_log_trace!("+++ InterfaceWatcher::setup");
 
@@ -235,9 +260,12 @@ impl InterfaceWatcher {
         // TODO: we have successfully started the adapter, now stop watchdog
         // iw.watchdog.Stop()
 
-        // OPTWGWINCONF: use MtuMonitor to dynamically adjust the MTU size, if it wasn't forced by config.
-        // if iw.conf.Interface.MTU == 0
-        {
+        if let Some(mtu) = watched_adapter.forced_mtu {
+            telio_log_info!("Setting forced MTU {} for {}", mtu, family_str);
+            if let Err(err) = set_interface_mtu(watched_adapter.luid, family, mtu) {
+                telio_log_error!("Failed to set forced MTU for {}: {}", family_str, err);
+            }
+        } else {
             telio_log_info!("Monitoring MTU of default routes for {}", family_str);
             let arc_mtu_monitor =
                 Arc::new(Mutex::new(MtuMonitor::new(watched_adapter.luid, family)));

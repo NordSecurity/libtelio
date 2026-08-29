@@ -106,6 +106,12 @@ class LibtelioProxy:
         )
 
     @move_to_async_thread
+    def start_named_with_mtu(self, private_key, adapter, name: str, mtu: int):
+        self._handle_remote_error(
+            lambda r: r.start_named_with_mtu(private_key, adapter.value, name, mtu)
+        )
+
+    @move_to_async_thread
     def create_tun(self, tun_name: str) -> int:
         return self._handle_remote_error(lambda r: r.create_tun(tun_name))
 
@@ -126,12 +132,26 @@ class LibtelioProxy:
         )
 
     @move_to_async_thread
+    def start_named_ext_if_filter_with_mtu(
+        self, private_key, adapter, name: str, ext_if_list: List[str], mtu: int
+    ):
+        self._handle_remote_error(
+            lambda r: r.start_named_ext_if_filter_with_mtu(
+                private_key, adapter.value, name, ext_if_list, mtu
+            )
+        )
+
+    @move_to_async_thread
     def set_fwmark(self, fwmark: int):
         self._handle_remote_error(lambda r: r.set_fwmark(fwmark))
 
     @move_to_async_thread
     def set_ext_if_filter(self, ext_if_list: List[str]):
         self._handle_remote_error(lambda r: r.set_ext_if_filter(ext_if_list))
+
+    @move_to_async_thread
+    def set_adapter_mtu(self, mtu: int):
+        self._handle_remote_error(lambda r: r.set_adapter_mtu(mtu))
 
     @move_to_async_thread
     def set_tun(self, tun: int):
