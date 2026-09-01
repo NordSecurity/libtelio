@@ -106,14 +106,18 @@ impl Adapter for NepTUN {
                 peers: device
                     .peers
                     .iter()
-                    .map(|peer| set::Peer {
-                        supported_ciphers: Some(
-                            NEPTUN_SUPPORTED_CIPHERS
+                    .map(|peer| {
+                        let ciphers = match &peer.supported_ciphers {
+                            Some(c) => c.clone(),
+                            None => NEPTUN_SUPPORTED_CIPHERS
                                 .iter()
                                 .map(|s| s.to_string())
                                 .collect(),
-                        ),
-                        ..peer.clone()
+                        };
+                        set::Peer {
+                            supported_ciphers: Some(ciphers),
+                            ..peer.clone()
+                        }
                     })
                     .collect(),
             };

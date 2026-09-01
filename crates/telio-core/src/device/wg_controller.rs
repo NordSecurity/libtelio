@@ -756,6 +756,7 @@ async fn build_requested_peers_list<
                                     .vpn,
                                 allowed_ips,
                                 preshared_key,
+                                supported_ciphers: exit_node.supported_ciphers.clone(),
                                 ..Default::default()
                             },
                             endpoint: None,

@@ -205,13 +205,13 @@ class LibtelioWrapper:
     @serialize_error
     def connect_to_exit_node(self, public_key, allowed_ips: str, endpoint: str):
         self._libtelio.connect_to_exit_node_with_id(
-            "natlab", public_key, allowed_ips, endpoint
+            "natlab", public_key, allowed_ips, endpoint, None
         )
 
     @serialize_error
     def connect_to_exit_node_pq(self, public_key, allowed_ips: str, endpoint: str):
         self._libtelio.connect_to_exit_node_postquantum(
-            "natlabpq", public_key, allowed_ips, endpoint
+            "natlabpq", public_key, allowed_ips, endpoint, None
         )
 
     @serialize_error

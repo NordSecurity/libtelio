@@ -90,6 +90,9 @@ pub struct ExitNode {
     pub allowed_ips: Option<Vec<IpNet>>,
     /// Socket address of the Exit Node
     pub endpoint: Option<SocketAddr>,
+    /// List of supported ciphers for the exit node connection.
+    /// When `None`, the adapter default is used (NepTUN only).
+    pub supported_ciphers: Option<Vec<String>>,
 }
 
 /// Connection state of the node

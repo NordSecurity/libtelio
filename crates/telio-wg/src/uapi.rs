@@ -63,6 +63,8 @@ pub struct Peer {
     pub time_since_last_handshake: Option<Duration>,
     /// The peer's preshared key
     pub preshared_key: Option<PresharedKey>,
+    /// Supported ciphers for this peer. When `None`, the adapter default is used.
+    pub supported_ciphers: Option<Vec<String>>,
 }
 
 impl From<get::Peer> for Peer {
@@ -92,6 +94,7 @@ impl From<get::Peer> for Peer {
             } else {
                 Some(PresharedKey((*item.preshared_key).into()))
             },
+            supported_ciphers: None,
         }
     }
 }
@@ -166,6 +169,7 @@ impl From<&Peer> for set::Peer {
                 })
                 .collect(),
             preshared_key: item.preshared_key.clone().map(|psk| psk.0 .0.into()),
+            supported_ciphers: item.supported_ciphers.clone(),
             ..Default::default()
         }
     }

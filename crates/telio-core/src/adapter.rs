@@ -121,6 +121,7 @@ impl TryFrom<WgPeer> for telio_wg::uapi::Peer {
 
                 Some(PresharedKey::new(array))
             }),
+            supported_ciphers: None,
         })
     }
 }
