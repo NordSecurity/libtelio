@@ -1064,6 +1064,9 @@ dictionary TelioNode {
     boolean peer_allows_multicast;
     /// Configuration for the Error Notification Service
     VpnConnectionError? vpn_connection_error;
+    /// The cipher negotiated during the WireGuard handshake.
+    /// Only populated when using the NepTUN adapter; `null` for kernel WireGuard implementations.
+    string? selected_cipher;
 };
 
 /// Main object of `Event`. See `Event::new()` for init options.

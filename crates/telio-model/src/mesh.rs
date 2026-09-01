@@ -54,6 +54,9 @@ pub struct Node {
     pub peer_allows_multicast: bool,
     /// Latest NordLynx VPN error received from the VPN's Error Notification Service
     pub vpn_connection_error: Option<VpnConnectionError>,
+    /// The cipher selected during the WireGuard handshake.
+    /// Only populated when using the NepTUN adapter; `None` for kernel WireGuard implementations.
+    pub selected_cipher: Option<String>,
 }
 
 /// Possible VPN errors received from the Error Notification Service
