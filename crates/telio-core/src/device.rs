@@ -2516,6 +2516,7 @@ impl Runtime {
                     allow_multicast: meshnet_peer.allow_multicast,
                     peer_allows_multicast: meshnet_peer.peer_allows_multicast,
                     vpn_connection_error: None,
+                    selected_cipher: peer.selected_cipher.clone(),
                 })
             }
             (None, Some(exit_node)) => {
@@ -2525,6 +2526,7 @@ impl Runtime {
                     link_state,
                     allowed_ips: peer.allowed_ips.clone(),
                     path: path_type,
+                    selected_cipher: peer.selected_cipher.clone(),
                     ..node_from_exit_node(exit_node)
                 })
             }
