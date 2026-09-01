@@ -4795,7 +4795,7 @@ dependencies = [
  "uuid",
  "winapi",
  "winres",
- "wireguard-uapi",
+ "wireguard-uapi 4.0.0 (git+https://github.com/tomasz-kumor/wireguard-uapi-rs.git?branch=kumor%2FLLT-7574-cipher-suites-support)",
 ]
 
 [[package]]
@@ -4848,7 +4848,7 @@ dependencies = [
  "uniffi",
  "uuid",
  "winapi",
- "wireguard-uapi",
+ "wireguard-uapi 4.0.0 (git+https://github.com/tomasz-kumor/wireguard-uapi-rs.git?branch=kumor%2FLLT-7574-cipher-suites-support)",
 ]
 
 [[package]]
@@ -5352,7 +5352,7 @@ dependencies = [
  "windows",
  "winreg",
  "wireguard-nt",
- "wireguard-uapi",
+ "wireguard-uapi 4.0.0 (git+https://github.com/tomasz-kumor/wireguard-uapi-rs.git?branch=kumor%2FLLT-7574-cipher-suites-support)",
 ]
 
 [[package]]
@@ -6765,7 +6765,21 @@ dependencies = [
  "widestring",
  "winapi",
  "windows-sys 0.61.2",
- "wireguard-uapi",
+ "wireguard-uapi 4.0.0 (git+https://github.com/NordSecurity/wireguard-uapi-rs.git?rev=5f5d9952ced4faf10f56d98153e4a8e560102e5c)",
+]
+
+[[package]]
+name = "wireguard-uapi"
+version = "4.0.0"
+source = "git+https://github.com/tomasz-kumor/wireguard-uapi-rs.git?branch=kumor%2FLLT-7574-cipher-suites-support#1124262821ffbe8112ee3dfcbb3237c0107126b6"
+dependencies = [
+ "derive_builder 0.10.2",
+ "hex",
+ "libc",
+ "neli 0.6.5",
+ "take-until",
+ "thiserror 1.0.69",
+ "zeroize",
 ]
 
 [[package]]
