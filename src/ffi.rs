@@ -689,6 +689,7 @@ impl Telio {
         public_key: PublicKey,
         allowed_ips: Option<Vec<IpNet>>,
         endpoint: Option<SocketAddr>,
+        supported_ciphers: Option<Vec<String>>,
     ) -> FfiResult<()> {
         telio_log_info!(
             "Telio::connect_to_exit_node entry with instance id :{}. Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
@@ -697,7 +698,13 @@ impl Telio {
             allowed_ips,
             endpoint,
         );
-        self.connect_to_exit_node_with_id(None, public_key, allowed_ips, endpoint)
+        self.connect_to_exit_node_with_id(
+            None,
+            public_key,
+            allowed_ips,
+            endpoint,
+            supported_ciphers,
+        )
     }
 
     /// Connects to an exit node. (VPN if endpoint is not NULL, Peer if endpoint is NULL)
@@ -710,12 +717,15 @@ impl Telio {
     /// - `allowed_ips`: List of subnets which will be routed to the exit node.
     ///   Can be None, same as "0.0.0.0/0".
     /// - `endpoint`: An endpoint to an exit node. Can be None, must contain a port.
+    /// - `supported_ciphers`: List of supported ciphers for the connection. When `None`, the
+    ///   adapter default is used (NepTUN only).
     pub fn connect_to_exit_node_with_id(
         &self,
         identifier: Option<String>,
         public_key: PublicKey,
         allowed_ips: Option<Vec<IpNet>>,
         endpoint: Option<SocketAddr>,
+        supported_ciphers: Option<Vec<String>>,
     ) -> FfiResult<()> {
         telio_log_info!(
             "Telio::connect_to_exit_node_with_id entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
@@ -731,6 +741,7 @@ impl Telio {
             public_key,
             allowed_ips,
             endpoint,
+            supported_ciphers,
         };
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
@@ -771,6 +782,7 @@ impl Telio {
             public_key,
             allowed_ips,
             endpoint: Some(endpoint),
+            supported_ciphers: None,
         };
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
