@@ -430,7 +430,7 @@ class NordVpnLite:
             # OpenWrt doesn't support killall -w
             if self.config.paths.exec_path.parent == Path("."):
                 await self.connection.create_process(
-                    ["killall", "-s", "SIGTERM", "nordvpn"]
+                    ["killall", "-s", "SIGTERM", "nordvpnlite"]
                 ).execute()
             else:
                 await self.connection.create_process(
@@ -458,6 +458,12 @@ class NordVpnLite:
         except ProcessExecError as exc:
             assert (exc.returncode, exc.stdout, exc.stderr) == (1, "", "")
             return False
+
+    async def read_config(self) -> dict:
+        proc = await self.connection.create_process(
+            ["cat", str(self.config.config_path)]
+        ).execute()
+        return json.loads(proc.get_stdout())
 
     async def remove_logs(self) -> None:
         for path in [self.config.paths.daemon_log, self.config.paths.lib_log]:
