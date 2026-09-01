@@ -5374,7 +5374,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.2",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.52.0",
@@ -6753,7 +6753,7 @@ dependencies = [
 [[package]]
 name = "wireguard-nt"
 version = "1.0.0"
-source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper?tag=v1.3.0#f554a48131a24743389713a7624a3b9ef17d619b"
+source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper.git?branch=kumor%2FLLT-7574-aead-cipher-suites-support#db7e4093f4d0520f2f286f935bd1668e0daccf3a"
 dependencies = [
  "bitflags",
  "getrandom 0.4.2",
@@ -6771,7 +6771,7 @@ dependencies = [
 [[package]]
 name = "wireguard-uapi"
 version = "4.0.0"
-source = "git+https://github.com/NordSecurity/wireguard-uapi-rs.git?rev=5f5d9952ced4faf10f56d98153e4a8e560102e5c#5f5d9952ced4faf10f56d98153e4a8e560102e5c"
+source = "git+https://github.com/NordSecurity/wireguard-uapi-rs.git?branch=kumor%2FLLT-7574-aegis-aead-cipher-suites-support#53beebe02c24c8eac381cefcfd3734006705aaf1"
 dependencies = [
  "derive_builder 0.10.2",
  "hex",
