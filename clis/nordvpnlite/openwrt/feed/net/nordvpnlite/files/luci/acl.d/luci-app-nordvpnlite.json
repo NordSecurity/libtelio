@@ -16,7 +16,6 @@
 				"nordvpnlite": [
 					"set_config",
 					"login",
-					"logout",
 					"set_service_action"
 				]
 			}

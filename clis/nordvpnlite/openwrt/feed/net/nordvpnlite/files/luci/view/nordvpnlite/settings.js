@@ -766,11 +766,11 @@ return view.extend({
         }
     },
 
-    handleSave: null,
-
-    handleSaveApply: function () {
+    handleSave: function () {
         return this.saveConfig(true);
     },
+
+    handleSaveApply: null,
 
     handleReset: null
 });

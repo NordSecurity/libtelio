@@ -185,26 +185,6 @@ return {
 			}
 		},
 
-		logout: {
-			call: function() {
-				const cmd = sprintf('%s logout --config-file %s', NORDVPNLITE_BIN, CONFIG_FILE);
-				let proc = fs.popen(cmd, 'r');
-				if (proc == null) {
-					log.ERR('Failed to spawn logout command: %J', fs.error());
-					return { success: false, error: fs.error() };
-				}
-
-				proc.read('all');
-				const rc = proc.close();
-				if (rc != 0) {
-					log.ERR('logout command failed with code %d', rc);
-					return { success: false, error: sprintf('logout command failed (code %d)', rc) };
-				}
-
-				return { success: true };
-			}
-		},
-
 		get_service_status: {
 			call: function() {
 				if (!has_service()) {
