@@ -169,11 +169,11 @@ impl Pinger {
         Ok((pinger, socket))
     }
 
+    #[cfg(debug_assertions)]
     fn prepare_payload(&self) -> [u8; MAX_PING_PAYLOAD_SIZE] {
         let mut payload = [0; MAX_PING_PAYLOAD_SIZE];
 
         // Trace the compomnent that sent the ping for debugging purposes
-        #[cfg(debug_assertions)]
         {
             let data = self.module_name.as_bytes();
             for (dest, &src) in payload.iter_mut().zip(data) {
@@ -182,6 +182,11 @@ impl Pinger {
         }
 
         payload
+    }
+
+    #[cfg(not(debug_assertions))]
+    fn prepare_payload(&self) -> [u8; MAX_PING_PAYLOAD_SIZE] {
+        [0; MAX_PING_PAYLOAD_SIZE]
     }
 
     /// Helper for iOS/tvOS.
