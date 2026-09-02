@@ -125,6 +125,20 @@ where
             write!(writer, "{tid:?} {module_path}:{line} ",)?;
         }
 
+        if let Some(scope) = ctx.event_scope() {
+            for span in scope.from_root() {
+                write!(writer, "{}", span.name())?;
+                let ext = span.extensions();
+                if let Some(fields) = ext.get::<fmt::FormattedFields<N>>() {
+                    if !fields.is_empty() {
+                        write!(writer, "{{{fields}}}")?;
+                    }
+                }
+                write!(writer, ":")?;
+            }
+            write!(writer, " ")?;
+        }
+
         ctx.format_fields(writer.by_ref(), event)?;
 
         writeln!(writer)
