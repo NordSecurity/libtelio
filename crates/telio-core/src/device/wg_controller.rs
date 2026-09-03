@@ -2164,6 +2164,8 @@ mod tests {
                         time_since_last_handshake: None,
                         time_since_last_rx: None,
                         preshared_key: None,
+                        supported_ciphers: None,
+                        selected_cipher: None,
                     }))
                     .return_once(|_| Ok(()));
             }
@@ -2199,6 +2201,8 @@ mod tests {
                         time_since_last_handshake: None,
                         time_since_last_rx: None,
                         preshared_key: None,
+                        supported_ciphers: None,
+                        selected_cipher: None,
                     }));
             }
         }
@@ -2955,6 +2959,7 @@ mod tests {
             public_key,
             allowed_ips: Some(allowed_ips.clone()),
             endpoint,
+            supported_ciphers: None,
         });
         f.features.ipv6 = true;
 
