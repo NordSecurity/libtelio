@@ -2745,7 +2745,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "2.2.3"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v3.0.4#0aebe247729574acc449f9debd62fc8d419dbf07"
+source = "git+https://github.com/tomasz-kumor/NepTUN.git?branch=LLT-7574-aead-cipher-suites-support#048e64c7e36441f971b93ba64c081a58f05cc8ce"
 dependencies = [
  "aead",
  "base64",
