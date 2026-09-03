@@ -63,6 +63,10 @@ pub struct Peer {
     pub time_since_last_handshake: Option<Duration>,
     /// The peer's preshared key
     pub preshared_key: Option<PresharedKey>,
+    /// Supported ciphers for this peer. When `None`, the adapter default is used.
+    pub supported_ciphers: Option<Vec<String>>,
+    /// The cipher selected during the WireGuard handshake (populated from GET response, NepTUN only).
+    pub selected_cipher: Option<String>,
 }
 
 impl From<get::Peer> for Peer {
@@ -92,6 +96,8 @@ impl From<get::Peer> for Peer {
             } else {
                 Some(PresharedKey((*item.preshared_key).into()))
             },
+            supported_ciphers: None,
+            selected_cipher: None,
         }
     }
 }
@@ -166,6 +172,7 @@ impl From<&Peer> for set::Peer {
                 })
                 .collect(),
             preshared_key: item.preshared_key.clone().map(|psk| psk.0 .0.into()),
+            supported_ciphers: item.supported_ciphers.clone(),
             ..Default::default()
         }
     }
@@ -677,6 +684,9 @@ fn parse_peer<R: Read>(
                     if preshared.0 != [0; 32] {
                         peer.preshared_key = Some(preshared);
                     }
+                }
+                "selected_cipher" => {
+                    peer.selected_cipher = Some(val.to_owned());
                 }
                 "public_key" => {
                     break (

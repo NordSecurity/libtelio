@@ -10,6 +10,7 @@ use std::{io, ops::Deref};
 use telio_crypto::PublicKey;
 use telio_utils::telio_log_debug;
 use tokio::sync::RwLock;
+use wireguard_uapi::xplatform::set;
 
 use super::{Adapter, Error as AdapterError, Tun as NativeTun};
 use crate::uapi::{self, Cmd, Response};
@@ -91,10 +92,40 @@ impl NepTUN {
     }
 }
 
+const NEPTUN_SUPPORTED_CIPHERS: &[&str] = &["CHACHA20_POLY1305", "AES_128_GCM", "AES_256_GCM"];
+
 #[async_trait]
 impl Adapter for NepTUN {
     async fn send_uapi_cmd(&self, cmd: &Cmd) -> Result<Response, AdapterError> {
-        let res = self.send_uapi_cmd_str(&cmd.to_string()).await;
+        let cmd_str = if let Cmd::Set(device) = cmd {
+            let device_with_ciphers = set::Device {
+                private_key: device.private_key.clone(),
+                listen_port: device.listen_port,
+                fwmark: device.fwmark,
+                replace_peers: device.replace_peers,
+                peers: device
+                    .peers
+                    .iter()
+                    .map(|peer| {
+                        let ciphers = match &peer.supported_ciphers {
+                            Some(c) => c.clone(),
+                            None => NEPTUN_SUPPORTED_CIPHERS
+                                .iter()
+                                .map(|s| s.to_string())
+                                .collect(),
+                        };
+                        set::Peer {
+                            supported_ciphers: Some(ciphers),
+                            ..peer.clone()
+                        }
+                    })
+                    .collect(),
+            };
+            format!("set=1\n{device_with_ciphers}")
+        } else {
+            cmd.to_string()
+        };
+        let res = self.send_uapi_cmd_str(&cmd_str).await;
         Ok(uapi::response_from_str(&res)?)
     }
 

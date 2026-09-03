@@ -278,6 +278,7 @@ impl TelioTaskCmd {
                             .override_default_wg_port
                             .unwrap_or(DEFAULT_WIREGUARD_PORT),
                     )),
+                    supported_ciphers: None,
                 };
                 let (connect, kind): (fn(_, _) -> _, _) = if exit_node.post_quantum {
                     (Device::connect_vpn_post_quantum, "post quantum ")

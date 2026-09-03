@@ -483,6 +483,7 @@ impl Cli {
                     } else {
                         Some(allowed_ips)
                     },
+                    supported_ciphers: None,
                 };
 
                 if postquantum {

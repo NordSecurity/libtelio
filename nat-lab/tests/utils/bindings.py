@@ -121,4 +121,5 @@ def telio_node(
         allow_multicast=allow_multicast,
         peer_allows_multicast=peer_allows_multicast,
         vpn_connection_error=vpn_connection_error,
+        selected_cipher=None
     )
