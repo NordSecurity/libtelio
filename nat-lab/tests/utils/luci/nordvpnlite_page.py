@@ -9,7 +9,7 @@ class NordVpnLiteSettingsPage(LuciPage):
     def __init__(self, page: Page, base_url: str):
         super().__init__(page, base_url)
         self.token = cbi_input(page, "auth", "authentication_token")
-        self.vpn = cbi_input(page, "config", "vpn")
+        self.vpn = page.locator('[id^="widget.cbid."][id$=".config.vpn_mode"]')
         self.save_button = cbi_button_save(page)
 
     async def save(self) -> None:
