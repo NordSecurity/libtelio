@@ -151,6 +151,108 @@ class TestVpnConnection:
             vpn_conf.server_conf,
         )
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "alpha_setup_params, public_ip",
+        [
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    is_meshnet=False,
+                ),
+                "10.0.254.1",
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                    is_meshnet=False,
+                ),
+                "10.0.254.1",
+                marks=pytest.mark.linux_native,
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_WINDOWS_1,
+                    adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                    is_meshnet=False,
+                ),
+                "10.0.254.15",
+                marks=[
+                    pytest.mark.windows,
+                ],
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_MAC,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    is_meshnet=False,
+                ),
+                "10.0.254.19",
+                marks=pytest.mark.mac,
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_ANDROID_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    is_meshnet=False,
+                    ip_stack=IPStack.IPv4,
+                ),
+                "10.0.254.24",
+                marks=pytest.mark.android,
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "vpn_conf",
+        [
+            pytest.param(
+                VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True),
+                id="wg_server",
+            ),
+        ],
+    )
+    async def test_vpn_connection_cipher_negotiation(
+        self,
+        vpn_conf: VpnConfig,
+        alpha_setup_params: SetupParameters,
+        public_ip: str,
+        env,
+        vpn_server_connection,
+    ) -> None:
+        alpha_conn = env.connections[0].connection
+        alpha_client = env.clients[0]
+
+        supported_ciphers = ["CHACHA20_POLY1305", "AES_128_GCM", "AES_256_GCM"]
+
+        ip = await stun.get(alpha_conn, config.STUN_SERVER)
+        assert ip == public_ip, f"wrong public IP before connecting to VPN {ip}"
+
+        await alpha_client.vpn.connect(
+            str(vpn_conf.server_conf["ipv4"]),
+            int(vpn_conf.server_conf["port"]),
+            str(vpn_conf.server_conf["public_key"]),
+            supported_ciphers=supported_ciphers,
+        )
+
+        await ping(alpha_conn, config.PHOTO_ALBUM_IP)
+
+        node_state = alpha_client.get_node_state(str(vpn_conf.server_conf["public_key"]))
+        assert node_state is not None, "no node state found after VPN connect"
+
+        uses_neptun = alpha_setup_params.adapter_type_override == TelioAdapterType.NEP_TUN
+        if uses_neptun:
+            assert node_state.selected_cipher in supported_ciphers, (
+                f"expected selected_cipher to be one of {supported_ciphers!r}, "
+                f"got {node_state.selected_cipher!r}"
+            )
+        else:
+            assert node_state.selected_cipher is None, (
+                f"expected selected_cipher=None for non-NEP_TUN adapter, "
+                f"got {node_state.selected_cipher!r}"
+            )
+
 
 def _make_blacklist_features(protocol: IpProtocol, ip: str, port: int) -> Features:
     """Build default features with a firewall outgoing blacklist entry."""
