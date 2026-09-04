@@ -306,6 +306,12 @@ interface Telio {
     [Throws=TelioError]
     void start_named_ext_if_filter(SecretKey secret_key, TelioAdapterType adapter, string name, sequence<string> ext_if_filter);
 
+    /// Start telio with the specified adapter and the options in `config`.
+    ///
+    /// Adapter will attempt to open its own tunnel.
+    [Throws=TelioError]
+    void start_with_config(SecretKey secret_key, TelioAdapterType adapter, StartConfig config);
+
     /// Start telio device with specified adapter and already open tunnel.
     ///
     /// Telio will take ownership of tunnel , and close it on stop.
@@ -570,6 +576,19 @@ callback interface TelioLoggerCb {
 callback interface TelioProtectCb {
     [Throws=TelioError]
     void protect(i32 socket_id);
+};
+
+/// Optional settings for starting telio, consumed by [Telio::start_with_config].
+///
+/// Every field defaults to "not set", so supporting a new option requires a
+/// single additional field instead of an additional `start*` function.
+dictionary StartConfig {
+    /// Name of the tunnel interface opened by the adapter. When not set, telio
+    /// picks a platform default.
+    string? name = null;
+
+    /// Interfaces to skip while looking for the default interface.
+    sequence<string>? ext_if_filter = null;
 };
 
 /// A [Features] builder that allows a simpler initialization of

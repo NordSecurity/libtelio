@@ -145,6 +145,38 @@ pub extern "C" fn Java_com_nordsec_telio_TelioCert_initCertStore(
     })
 }
 
+/// Optional settings for starting the telio device.
+///
+/// Every field defaults to "not set", so supporting a new option requires a
+/// single additional field instead of an additional `start*` function.
+#[derive(Debug)]
+pub struct StartConfig {
+    /// Name of the tunnel interface opened by the adapter. When not set, telio
+    /// picks a platform default.
+    pub name: Option<String>,
+    /// Interfaces to skip while looking for the default interface.
+    pub ext_if_filter: Option<Vec<String>>,
+}
+
+impl StartConfig {
+    fn to_device_config(
+        &self,
+        private_key: SecretKey,
+        adapter: TelioAdapterType,
+    ) -> FfiResult<DeviceConfig> {
+        Ok(DeviceConfig {
+            private_key,
+            adapter: adapter
+                .try_into()
+                .map_err(|e| TelioError::UnknownError { inner: e })?,
+            fwmark: None,
+            name: self.name.clone(),
+            tun: None,
+            ext_if_filter: self.ext_if_filter.clone(),
+        })
+    }
+}
+
 pub struct Telio {
     inner: Mutex<Option<Device>>,
     id: usize,
@@ -454,6 +486,30 @@ impl Telio {
                     ext_if_filter: Some(ext_if_filter.clone()),
                 })
                 .log_result("Telio::start_named_ext_if_filter")
+            })
+        })
+    }
+
+    /// Start telio with the specified adapter and the options in `config`.
+    ///
+    /// Adapter will attempt to open its own tunnel.
+    pub fn start_with_config(
+        &self,
+        private_key: SecretKey,
+        adapter: TelioAdapterType,
+        config: StartConfig,
+    ) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Config: {:?}",
+            self.id,
+            private_key.public(),
+            &adapter,
+            &config,
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.start(config.to_device_config(private_key.clone(), adapter)?)
+                    .log_result("Telio::start_with_config")
             })
         })
     }
