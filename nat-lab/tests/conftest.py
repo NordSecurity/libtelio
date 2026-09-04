@@ -20,6 +20,8 @@ from tests.conftest_helpers.setup_checks import (
     check_all_containers_running,
     get_session_vm_marks,
 )
+from tests.conftest_helpers.sharding import select_for_this_shard
+
 from tests.helpers import SetupParameters
 from tests.log_collector import LOG_COLLECTORS
 from tests.utils.bindings import TelioAdapterType
@@ -151,7 +153,8 @@ def pytest_make_parametrize_id(config, val):
     return param_id
 
 
-def pytest_collection_modifyitems(items):
+@pytest.hookimpl(trylast=True)
+def pytest_collection_modifyitems(config, items):
     libfirewall_missing = not os.path.exists(_LIBFIREWALL_SO)
     for item in items:
         # Apply 5 minutes timeout to windows tests (due to constant lag)
@@ -159,6 +162,16 @@ def pytest_collection_modifyitems(items):
             item.add_marker(pytest.mark.timeout(300))
         if libfirewall_missing and item.get_closest_marker("libfirewall"):
             item.add_marker(pytest.mark.skip(reason="libfirewall.so not available"))
+
+    # Keep only this shard's slice. trylast, so pytest's own -m deselection has
+    # already run and every shard is dividing up an identical set of items.
+    mine, others, summary = select_for_this_shard(items)
+    if summary is None:
+        return
+    log.info(summary)
+    items[:] = mine
+    if others:
+        config.hook.pytest_deselected(items=others)
 
 
 @pytest.hookimpl(hookwrapper=True)
