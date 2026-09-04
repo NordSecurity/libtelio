@@ -652,21 +652,29 @@ async def test_openwrt_router_restart(
                     gw_tag=gw_tag,
                 )
             )
+
             await gateway_connection.create_process(
                 ["mkdir", "-p", "/etc/nordvpnlite"]
             ).execute()
 
-            # start nordvpnlite without a cleanup as we want to validate vpn connection restore
-            async with nordvpnlite.start(cleanup=False):
-                log.debug("NordVPN Lite started, waiting for connected vpn state...")
-                await nordvpnlite.wait_for_vpn_connected_state()
-                await check_gateway_and_client_ip(
-                    gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
-                )
-                await exit_stack.enter_async_context(
-                    gateway_connection.create_process(["reboot"]).run()
-                )
-                await wait_until_unreachable_after_reboot(gateway_connection)
+            # TODO(LLT-7676): This restart is a workaround, shouldn't be needed when LLT-7676 is done
+            await nordvpnlite.remove_logs()
+            await nordvpnlite.save_config()
+            await nordvpnlite.login()
+            await gateway_connection.create_process(
+                ["/etc/init.d/nordvpnlite", "restart"]
+            ).execute()
+            await nordvpnlite.wait_for_nordvpnlite_start()
+
+            log.debug("NordVPN Lite started, waiting for connected vpn state...")
+            await nordvpnlite.wait_for_vpn_connected_state()
+            await check_gateway_and_client_ip(
+                gateway_connection, client_connection, WG_SERVER["ipv4"], gw_tag
+            )
+            await exit_stack.enter_async_context(
+                gateway_connection.create_process(["reboot"]).run()
+            )
+            await wait_until_unreachable_after_reboot(gateway_connection)
     except (
         asyncssh.misc.ConnectionLost,
         asyncssh.misc.ChannelOpenError,
