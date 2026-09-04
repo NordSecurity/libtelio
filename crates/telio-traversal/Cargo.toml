@@ -6,9 +6,12 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
+[features]
+enable_upnp = ["dep:igd"]
+
 [dependencies]
 bytecodec = "0.5.0"
-igd = { git = "https://github.com/NordSecurity/rust-igd.git", tag = "v0.13.3", features = ["aio"], default-features = false }
+igd = { git = "https://github.com/NordSecurity/rust-igd.git", tag = "v0.13.3", features = ["aio"], default-features = false, optional = true }
 stun_codec = "0.4"
 
 async-trait.workspace = true
