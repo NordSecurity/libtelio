@@ -28,7 +28,7 @@ async def test_meshnet_id_generated_only_when_meshnet_starts(
 ) -> None:
     client_alpha = env.clients[0]
     # Wait for everything to get set up
-    await client_alpha.log.wait_for("Telio::start_named: Ok(())")
+    await client_alpha.log.wait_for("Telio::start_with_config: Ok(())")
 
     logs = await client_alpha.log.get()
     # There should be no meshnet ID generation
