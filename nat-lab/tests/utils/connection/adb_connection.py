@@ -28,7 +28,8 @@ TERMUX_PACKAGE = "com.termux"
 # exports in bin/android/natlab-python (the root/exec variant of the same env).
 _TERMUX_ENV = (
     f"export PREFIX={TERMUX_PREFIX} HOME={TERMUX_HOME} "
-    f'PATH="{TERMUX_PREFIX}/bin:$PATH" LD_LIBRARY_PATH={TERMUX_PREFIX}/lib '
+    f'PATH="{TERMUX_PREFIX}/bin:$PATH" '
+    f"LD_LIBRARY_PATH={TERMUX_HOME}/work:{TERMUX_PREFIX}/lib "
     f"LD_PRELOAD={TERMUX_PREFIX}/lib/libtermux-exec.so TMPDIR={TERMUX_PREFIX}/tmp; "
 )
 

@@ -12,6 +12,7 @@ from tests.utils.connection import ConnectionTag, clear_ephemeral_setups_set
 from tests.utils.logger import log
 from tests.utils.router import IPStack
 from tests.utils.testing import get_current_test_log_path
+from tests.utils.vm import android_vm_util
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -154,6 +155,23 @@ async def collect_kernel_logs(items, suffix):
     os.makedirs(log_dir, exist_ok=True)
     save_dmesg_from_host(suffix)
     save_audit_log_from_host(suffix)
+
+
+def pytest_collection_modifyitems(items):
+    if os.path.exists(android_vm_util.LIBFIREWALL_SO):
+        return
+    for item in items:
+        if item.get_closest_marker("android") and item.get_closest_marker(
+            "libfirewall"
+        ):
+            item.add_marker(
+                pytest.mark.skip(
+                    reason=(
+                        "libfirewall not available at"
+                        f" {android_vm_util.LIBFIREWALL_SO}"
+                    )
+                )
+            )
 
 
 def pytest_runtestloop(session):
