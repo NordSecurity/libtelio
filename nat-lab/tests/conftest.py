@@ -21,7 +21,6 @@ from tests.conftest_helpers.setup_checks import (
     get_session_vm_marks,
 )
 from tests.conftest_helpers.sharding import select_for_this_shard
-
 from tests.helpers import SetupParameters
 from tests.log_collector import LOG_COLLECTORS
 from tests.utils.bindings import TelioAdapterType
