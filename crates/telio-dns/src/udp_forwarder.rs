@@ -9,13 +9,13 @@
 
 use crate::{
     bind_tun::bind_to_tun,
+    error::ForwardError,
     packet_encoder::DNS_HEADER_OFFSET,
     upstream::{UpstreamCursor, UpstreamList},
 };
 use rand::RngExt;
-use std::{collections::HashMap, io, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use telio_utils::{sleep_until, telio_log_debug, telio_log_warn, Instant};
-use thiserror::Error;
 use tokio::{
     net::UdpSocket,
     sync::{mpsc, oneshot, Mutex},
@@ -35,32 +35,6 @@ macro_rules! send_channel_response {
             telio_log_warn!("Response channel dropped");
         }
     };
-}
-
-/// Errors returned when forwarding a DNS query
-#[derive(Error, Debug)]
-pub enum ForwardError {
-    /// Failed upstream socket bind operation
-    #[error("Failed socket bind operation: {0}")]
-    SocketBindFailed(#[from] io::Error),
-    /// Failed to send a DNS query to the upstream resolver
-    #[error("Failed to send DNS query: {0}")]
-    SendFailed(io::Error),
-    /// No upstreams configured
-    #[error("No upstream resolvers configured")]
-    NoUpstreams,
-    /// The upstream resolvers did not respond within the configured timeout
-    #[error("DNS query timed out")]
-    Timeout,
-    /// The forwarder channel was closed
-    #[error("Forwarder channel closed")]
-    ChannelClosed,
-    /// Too many concurrent requests
-    #[error("Too many concurrent requests in flight")]
-    TooManyRequests,
-    /// The DNS packet is too short
-    #[error("DNS packet too short")]
-    PacketTooShort,
 }
 
 /// DNS query forwarder bound to the tunnel interface

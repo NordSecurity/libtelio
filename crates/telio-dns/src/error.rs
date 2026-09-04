@@ -1,4 +1,3 @@
-use crate::udp_forwarder::ForwardError;
 use crate::zone::NordZoneError;
 use std::{io, net::AddrParseError};
 use thiserror::Error;
@@ -18,6 +17,32 @@ pub enum DnsIoError {
     /// Configuring tunnel binding for DNS
     #[error("Failed to configure tunnel binding: {0}")]
     ConfigureTunnel(io::Error),
+}
+
+/// Errors returned when forwarding a DNS query
+#[derive(Error, Debug)]
+pub enum ForwardError {
+    /// Failed upstream socket bind operation
+    #[error("Failed socket bind operation: {0}")]
+    SocketBindFailed(#[from] io::Error),
+    /// Failed to send a DNS query to the upstream resolver
+    #[error("Failed to send DNS query: {0}")]
+    SendFailed(io::Error),
+    /// No upstreams configured
+    #[error("No upstream resolvers configured")]
+    NoUpstreams,
+    /// The upstream resolvers did not respond within the configured timeout
+    #[error("DNS query timed out")]
+    Timeout,
+    /// The forwarder channel was closed
+    #[error("Forwarder channel closed")]
+    ChannelClosed,
+    /// Too many concurrent requests
+    #[error("Too many concurrent requests in flight")]
+    TooManyRequests,
+    /// The DNS packet is too short
+    #[error("DNS packet too short")]
+    PacketTooShort,
 }
 
 /// Error type for the telio-dns crate
