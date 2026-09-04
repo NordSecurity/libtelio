@@ -249,6 +249,18 @@ async def collect_download_metrics(
             marks=pytest.mark.android,
             id="android_neptun",
         ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                features=_features_with_firewall(),
+                is_meshnet=False,
+                run_tcpdump=False,
+                ip_stack=IPStack.IPv4,
+            ),
+            marks=[pytest.mark.android, pytest.mark.libfirewall],
+            id="android_neptun_enabled_libfirewall",
+        ),
     ],
 )
 async def test_vpn_connection_performance(setup_params: SetupParameters) -> None:
