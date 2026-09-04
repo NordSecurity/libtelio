@@ -161,6 +161,55 @@ pub extern "C" fn Java_com_nordsec_telio_TelioCert_initCertStore<'caller>(
     })
 }
 
+/// Optional settings for starting the telio device.
+///
+/// Every field defaults to "not set", so supporting a new option requires a
+/// single additional field instead of an additional `start*` function.
+#[derive(Debug, Default)]
+pub struct StartConfig {
+    /// Name of the tunnel interface opened by the adapter. When not set, telio
+    /// picks a platform default.
+    pub name: Option<String>,
+    /// Interfaces to skip while looking for the default interface.
+    pub ext_if_filter: Option<Vec<String>>,
+    /// File descriptor of an already open tunnel, which telio takes ownership
+    /// of and closes on stop. When not set, the adapter opens its own tunnel.
+    /// Ignored on Windows.
+    pub tun: Option<i32>,
+}
+
+impl StartConfig {
+    fn to_device_config(
+        &self,
+        private_key: SecretKey,
+        adapter: TelioAdapterType,
+    ) -> FfiResult<DeviceConfig> {
+        let adapter = adapter
+            .try_into()
+            .map_err(|e| TelioError::UnknownError { inner: e })?;
+
+        // Take ownership of the descriptor only after every fallible step: an
+        // early return would drop it and close an fd the caller still owns
+        #[cfg(not(target_os = "windows"))]
+        let tun = self.tun.map(|fd| {
+            use std::os::fd::{FromRawFd, OwnedFd};
+            // SAFETY: the caller hands over an open descriptor it no longer uses
+            unsafe { OwnedFd::from_raw_fd(fd) }
+        });
+        #[cfg(target_os = "windows")]
+        let tun = None;
+
+        Ok(DeviceConfig {
+            private_key,
+            adapter,
+            fwmark: None,
+            name: self.name.clone(),
+            tun,
+            ext_if_filter: self.ext_if_filter.clone(),
+        })
+    }
+}
+
 pub struct Telio {
     inner: Mutex<Option<Device>>,
     id: usize,
@@ -383,27 +432,7 @@ impl Telio {
     ///
     /// Adapter will attempt to open its own tunnel.
     pub fn start(&self, private_key: SecretKey, adapter: TelioAdapterType) -> FfiResult<()> {
-        telio_log_info!(
-            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}",
-            self.id,
-            private_key.public(),
-            &adapter
-        );
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| {
-                dev.start(DeviceConfig {
-                    private_key: private_key.clone(),
-                    adapter: adapter
-                        .try_into()
-                        .map_err(|e| TelioError::UnknownError { inner: e })?,
-                    fwmark: None,
-                    name: None,
-                    tun: None,
-                    ext_if_filter: None,
-                })
-                .log_result("Telio::start")
-            })
-        })
+        self.start_with_config(private_key, adapter, StartConfig::default())
     }
 
     /// Start telio with specified adapter and name.
@@ -415,28 +444,14 @@ impl Telio {
         adapter: TelioAdapterType,
         name: String,
     ) -> FfiResult<()> {
-        telio_log_info!(
-            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Name: {}",
-            self.id,
-            private_key.public(),
-            &adapter,
-            &name,
-        );
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| {
-                dev.start(DeviceConfig {
-                    private_key: private_key.clone(),
-                    adapter: adapter
-                        .try_into()
-                        .map_err(|e| TelioError::UnknownError { inner: e })?,
-                    fwmark: None,
-                    name: Some(name.clone()),
-                    tun: None,
-                    ext_if_filter: None,
-                })
-                .log_result("Telio::start_named")
-            })
-        })
+        self.start_with_config(
+            private_key,
+            adapter,
+            StartConfig {
+                name: Some(name),
+                ..Default::default()
+            },
+        )
     }
 
     /// Start telio with specified adapter type, adapter name
@@ -450,26 +465,37 @@ impl Telio {
         name: String,
         ext_if_filter: Vec<String>,
     ) -> FfiResult<()> {
+        self.start_with_config(
+            private_key,
+            adapter,
+            StartConfig {
+                name: Some(name),
+                ext_if_filter: Some(ext_if_filter),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Start telio with the specified adapter and the options in `config`.
+    ///
+    /// Adapter will attempt to open its own tunnel unless `config.tun` is set.
+    pub fn start_with_config(
+        &self,
+        private_key: SecretKey,
+        adapter: TelioAdapterType,
+        config: StartConfig,
+    ) -> FfiResult<()> {
         telio_log_info!(
-            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Name: {}",
+            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Config: {:?}",
             self.id,
             private_key.public(),
             &adapter,
-            &name,
+            &config,
         );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
-                dev.start(DeviceConfig {
-                    private_key: private_key.clone(),
-                    adapter: adapter
-                        .try_into()
-                        .map_err(|e| TelioError::UnknownError { inner: e })?,
-                    fwmark: None,
-                    name: Some(name.clone()),
-                    tun: None,
-                    ext_if_filter: Some(ext_if_filter.clone()),
-                })
-                .log_result("Telio::start_named_ext_if_filter")
+                dev.start(config.to_device_config(private_key.clone(), adapter)?)
+                    .log_result("Telio::start_with_config")
             })
         })
     }
@@ -509,37 +535,16 @@ impl Telio {
         &self,
         private_key: SecretKey,
         adapter: TelioAdapterType,
-        _tun: i32,
+        tun: i32,
     ) -> FfiResult<()> {
-        telio_log_info!(
-            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Tun: {_tun}",
-            self.id,
-            private_key.public(),
-            &adapter
-        );
-
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| {
-                #[cfg(not(target_os = "windows"))]
-                let tun = {
-                    use std::os::fd::{FromRawFd, OwnedFd};
-                    Some(unsafe { OwnedFd::from_raw_fd(_tun) })
-                };
-                #[cfg(target_os = "windows")]
-                let tun = None;
-                dev.start(DeviceConfig {
-                    private_key: private_key.clone(),
-                    adapter: adapter
-                        .try_into()
-                        .map_err(|e| TelioError::UnknownError { inner: e })?,
-                    fwmark: None,
-                    name: None,
-                    tun,
-                    ext_if_filter: None,
-                })
-                .log_result("Telio::start_with_tun")
-            })
-        })
+        self.start_with_config(
+            private_key,
+            adapter,
+            StartConfig {
+                tun: Some(tun),
+                ..Default::default()
+            },
+        )
     }
 
     /// Stop telio device.
@@ -1201,5 +1206,36 @@ mod tests {
         let actual =
             deserialize_feature_config(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV.to_owned());
         assert!(actual.is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_start_config_rejected_does_not_close_callers_tun() {
+        use std::os::{
+            fd::{AsRawFd, BorrowedFd},
+            unix::net::UnixStream,
+        };
+
+        let (callers_end, _other_end) = UnixStream::pair().unwrap();
+        let fd = callers_end.as_raw_fd();
+        let config = StartConfig {
+            tun: Some(fd),
+            ..Default::default()
+        };
+
+        // `Custom` cannot be converted to a device adapter, so the config is rejected
+        assert!(matches!(
+            config.to_device_config(SecretKey::gen(), TelioAdapterType::Custom),
+            Err(TelioError::UnknownError { .. })
+        ));
+
+        // dup fails with EBADF if the rejected call closed the descriptor
+        // SAFETY: `callers_end` keeps the descriptor open for the whole borrow
+        let still_open = unsafe { BorrowedFd::borrow_raw(fd) }.try_clone_to_owned();
+        assert!(
+            still_open.is_ok(),
+            "caller's tun fd was closed: {:?}",
+            still_open
+        );
     }
 }
