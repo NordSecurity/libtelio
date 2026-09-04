@@ -82,8 +82,10 @@ use telio_wg::Tun;
 pub struct DeviceConfig {
     pub private_key: SecretKey,
     pub adapter: AdapterType,
+    pub fwmark: Option<u32>,
     pub name: Option<String>,
     pub tun: Option<Tun>,
+    pub ext_if_filter: Option<Vec<String>>,
 }
 ```
 
@@ -91,8 +93,10 @@ Let's discuss its fields shortly:
 
 - `private_key` a `telio::crypto::SecretKey` instance containing a 256-bit key,
 - `adapter` indicating which Wireguard implementation we want to use,
+- `fwmark` the firewall mark to set on the sockets opened by Telio, Linux only,
 - `name` is the name of the network interface, when omitted, Telio uses the default one,
-- `tun` a file descriptor of the already opened tunnel, if it's not provided Telio will open a new one.
+- `tun` a file descriptor of the already opened tunnel, if it's not provided Telio will open a new one,
+- `ext_if_filter` names of the interfaces to skip while looking for the default interface.
 
 The API provides a default config which is almost sufficient for simple cases,
 the only need that needs to be done is the generation of a private key:
