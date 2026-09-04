@@ -24,3 +24,12 @@ pub const IPV6_STARCAST_ADDRESS: Ipv6Addr = Ipv6Addr::new(0xfd74, 0x656c, 0x696f
 pub const IPV4_STARCAST_NETWORK: ConstIpv4Net = ConstIpv4Net::new(IPV4_STARCAST_ADDRESS, 32);
 /// Ipv6 starcast's virtual peer network
 pub const IPV6_STARCAST_NETWORK: ConstIpv6Net = ConstIpv6Net::new(IPV6_STARCAST_ADDRESS, 128);
+/// IPv4 DNS virtual peer address
+pub const DNS_VIRTUAL_PEER_IPV4: Ipv4Addr = Ipv4Addr::new(100, 64, 0, 2);
+/// IPv6 DNS virtual peer address
+pub const DNS_VIRTUAL_PEER_IPV6: Ipv6Addr = Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 0x2);
+/// IPv4 DNS peer address on exit node
+pub const DNS_VIRTUAL_PEER_ON_EXIT_IPV4: Ipv4Addr = Ipv4Addr::new(100, 64, 0, 3);
+/// IPv6 DNS peer address on exit node
+pub const DNS_VIRTUAL_PEER_ON_EXIT_IPV6: Ipv6Addr =
+    Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 0x3);

@@ -1,5 +1,6 @@
 use crate::{
     forward::ForwardAuthority, packet_decoder::normalize_qname, packet_encoder::ResponseKind,
+    DNS_PORT,
 };
 use async_trait::async_trait;
 use hickory_server::{
@@ -343,7 +344,7 @@ impl ForwardZone {
             ZoneType::Forward,
             ForwardConfig {
                 options: Some(options),
-                name_servers: NameServerConfigGroup::from_ips_clear(ips, 53, true),
+                name_servers: NameServerConfigGroup::from_ips_clear(ips, DNS_PORT, true),
             },
         )
         .await?;

@@ -18,7 +18,7 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
-use telio_dns::{LocalNameServer, NameServer, Records};
+use telio_dns::{LocalNameServer, NameServer, Records, DNS_PORT};
 use telio_model::features::TtlValue;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
@@ -242,7 +242,7 @@ impl WGClient {
                             .expect("Failed to parse tcp response");
                         assert_eq!(tcp_response.get_flags(), TcpFlags::RST);
                         // Server should reply from 53
-                        assert_eq!(tcp_response.get_source(), 53);
+                        assert_eq!(tcp_response.get_source(), DNS_PORT);
                         None
                     } else {
                         let udp_response = UdpPacket::new(ip_response.payload())
@@ -260,7 +260,7 @@ impl WGClient {
                         let tcp_response = TcpPacket::new(ip_response.payload())
                             .expect("Failed to parse tcp response");
                         assert_eq!(tcp_response.get_flags(), TcpFlags::RST);
-                        assert_eq!(tcp_response.get_source(), 53);
+                        assert_eq!(tcp_response.get_source(), DNS_PORT);
                         None
                     } else {
                         let udp_response = UdpPacket::new(ip_response.payload())
@@ -339,7 +339,7 @@ impl WGClient {
                 let mut tcp_packet = MutableTcpPacket::new(&mut buffer[IPV4_HEADER..length])
                     .expect("Failed to create MutableTcpPacket");
                 tcp_packet.set_source(100);
-                tcp_packet.set_destination(53);
+                tcp_packet.set_destination(DNS_PORT);
                 tcp_packet.set_sequence(42);
                 tcp_packet.set_payload(dns_query);
                 tcp_packet.set_checksum(0);
@@ -361,9 +361,10 @@ impl WGClient {
                 let mut udp_packet = MutableUdpPacket::new(&mut buffer[IPV4_HEADER..length])
                     .expect("Failed to create MutableUdpPacket");
                 udp_packet.set_source(100);
-                udp_packet.set_destination(53);
                 if matches!(test_type, DnsTestType::BadUdpPortIpv4) {
                     udp_packet.set_destination(54);
+                } else {
+                    udp_packet.set_destination(DNS_PORT);
                 }
                 udp_packet.set_length((UDP_HEADER + dns_query.len()) as u16);
                 udp_packet.set_payload(dns_query);
@@ -420,7 +421,7 @@ impl WGClient {
                 let mut tcp_packet = MutableTcpPacket::new(&mut buffer[IPV6_HEADER..total_length])
                     .expect("Failed to create MutableTcpPacket");
                 tcp_packet.set_source(100);
-                tcp_packet.set_destination(53);
+                tcp_packet.set_destination(DNS_PORT);
                 tcp_packet.set_payload(dns_query);
                 tcp_packet.set_checksum(0);
                 tcp_packet.set_checksum(pnet_packet::tcp::ipv6_checksum(
@@ -450,7 +451,7 @@ impl WGClient {
                 if matches!(test_type, DnsTestType::BadUdpPortIpv6) {
                     udp_response.set_destination(54);
                 } else {
-                    udp_response.set_destination(53);
+                    udp_response.set_destination(DNS_PORT);
                 }
                 udp_response.set_length(length as u16);
                 udp_response.set_payload(dns_query);

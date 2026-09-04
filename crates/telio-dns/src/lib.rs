@@ -5,13 +5,12 @@
 //! Easily create and run in process dns resolver.
 
 mod dns;
-// TODO: LLT-7053 remove after integrating forwarder
-#[allow(dead_code)]
-mod forwarder;
 mod nameserver;
 mod packet_decoder;
 mod packet_encoder;
 mod resolver;
+mod udp_forwarder;
+mod upstream;
 mod zone;
 
 pub mod bind_tun;
@@ -35,3 +34,6 @@ pub mod fuzz {
     pub use super::packet_decoder::{find_nord_query, parse_dns_query_packet};
     pub use super::packet_encoder::fuzz_build_response;
 }
+
+/// DNS port number
+pub const DNS_PORT: u16 = 53;

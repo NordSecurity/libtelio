@@ -2332,7 +2332,7 @@ impl Runtime {
 
         if is_meshnet_exit_node {
             if let Some(dns) = &self.entities.dns.lock().await.resolver {
-                self.reconfigure_dns_peer(dns, &dns.get_default_dns_servers())
+                self.reconfigure_dns_peer(dns, &dns.get_exit_node_dns_servers())
                     .await?;
             }
         } else {
