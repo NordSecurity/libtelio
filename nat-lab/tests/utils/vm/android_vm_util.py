@@ -1,6 +1,7 @@
 import os
-from tests.config import ANDROID_DEVICE_TMP, UNIFFI_PATH_VM_ANDROID
+from tests.config import ANDROID_DEVICE_TMP, get_root_path, UNIFFI_PATH_VM_ANDROID
 from tests.utils.connection.adb_connection import AdbConnection
+from tests.utils.logger import log
 
 # Where the libtelio runtime files land on the guest (inside Termux).
 WORK_DIR = UNIFFI_PATH_VM_ANDROID.rstrip("/")
@@ -9,9 +10,9 @@ WORK_DIR = UNIFFI_PATH_VM_ANDROID.rstrip("/")
 # android-client-01 volumes), so the files are read straight from the mount and
 # `adb push`ed - no host->container copy, same as the other nat-lab containers.
 _MOUNT = "/libtelio"
-_DIST_ANDROID = (
-    f"{_MOUNT}/dist/android/{os.getenv('TELIO_BIN_PROFILE', 'release')}/x86_64"
-)
+_DIST_SUBPATH = f"dist/android/{os.getenv('TELIO_BIN_PROFILE', 'release')}/x86_64"
+_DIST_ANDROID = f"{_MOUNT}/{_DIST_SUBPATH}"
+LIBFIREWALL_SO = get_root_path(f"{_DIST_SUBPATH}/libfirewall.so")
 _UNIFFI = f"{_MOUNT}/nat-lab/tests/uniffi"
 _BIN = f"{_MOUNT}/nat-lab/bin/android"
 
@@ -33,6 +34,14 @@ async def copy_binaries(connection: AdbConnection) -> None:
         (f"{_UNIFFI}/libtelio_remote.py", "libtelio_remote.py"),
         (f"{_UNIFFI}/serialization.py", "serialization.py"),
     ]
+
+    if os.path.exists(LIBFIREWALL_SO):
+        runtime_files.append((f"{_DIST_ANDROID}/libfirewall.so", "libfirewall.so"))
+    else:
+        log.warning(
+            "libfirewall.so not found at %s, libfirewall tests will be skipped",
+            LIBFIREWALL_SO,
+        )
 
     for src, name in runtime_files:
         await connection.push_from_container(src, f"{ANDROID_DEVICE_TMP}{name}")
