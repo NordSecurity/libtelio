@@ -92,6 +92,11 @@ pub trait Adapter: Send + Sync {
     /// Set the (u)tun file descriptor to be used by the adapter
     async fn set_tun(&self, tun: Tun) -> Result<(), Error>;
 
+    /// Set the MTU of the adapter interface, `None` restores the adapter's own handling
+    async fn set_adapter_mtu(&self, _mtu: Option<u32>) -> Result<(), Error> {
+        Err(Error::UnsupportedAdapter)
+    }
+
     /// Make a copy of this adapter.
     ///
     /// Only the custom adapters can be cloned this way.
