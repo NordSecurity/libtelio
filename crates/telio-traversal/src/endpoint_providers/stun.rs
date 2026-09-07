@@ -1955,6 +1955,7 @@ mod tests {
             async fn stop(self);
             async fn reset_existing_connections(&self, exit_pubkey: PublicKey) -> Result<(), Error>;
             async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result<(), Error>;
+            async fn set_adapter_mtu(&self, mtu: u32) -> Result<(), Error>;
         }
     }
 

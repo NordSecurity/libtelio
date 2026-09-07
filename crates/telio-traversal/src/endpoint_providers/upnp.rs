@@ -869,6 +869,7 @@ mod tests {
             async fn stop(self);
             async fn reset_existing_connections(&self, exit_pubkey: PublicKey) -> Result1<()>;
             async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result1<()>;
+            async fn set_adapter_mtu(&self, mtu: u32) -> Result1<()>;
         }
     }
 
