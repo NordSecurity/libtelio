@@ -13,7 +13,7 @@ from serialization import (  # type: ignore # pylint: disable=import-error
     init_serialization,
 )
 from threading import Lock
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 REMOTE_LOG = "remote.log"
 TCLI_LOG = "tcli.log"
@@ -197,7 +197,7 @@ class LibtelioWrapper:
         self._libtelio.set_ext_if_filter(ext_if_list)
 
     @serialize_error
-    def set_adapter_mtu(self, mtu: int):
+    def set_adapter_mtu(self, mtu: Optional[int]):
         self._libtelio.set_adapter_mtu(mtu)
 
     @serialize_error
