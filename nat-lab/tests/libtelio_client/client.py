@@ -364,7 +364,7 @@ class Client:
         if isinstance(self.get_router(), LinuxRouter):
             await self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
 
-    async def set_adapter_mtu(self, mtu: int):
+    async def set_adapter_mtu(self, mtu: Optional[int]):
         await self.get_proxy().set_adapter_mtu(mtu)
 
     async def set_meshnet_config(self, meshnet_config: Config) -> None:
