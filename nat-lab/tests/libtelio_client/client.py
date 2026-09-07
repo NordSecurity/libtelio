@@ -20,6 +20,7 @@ from tests.utils.bindings import (
     Config,
     Features,
     Server,
+    StartConfig,
     TelioAdapterType,
     TelioNode,
     default_features,
@@ -350,6 +351,21 @@ class Client:
             name=tun_name,
             ext_if_list=ext_if_filter,
         )
+
+    async def start_with_config(self, config: StartConfig):
+        # Defaulted in place, since every nat-lab client needs the router's name.
+        if config.name is None:
+            config.name = self.get_router().get_interface_name()
+        await self.get_proxy().start_with_config(
+            private_key=self._node.private_key,
+            adapter=self._adapter_type,
+            config=config,
+        )
+        if isinstance(self.get_router(), LinuxRouter):
+            await self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
+
+    async def set_adapter_mtu(self, mtu: int):
+        await self.get_proxy().set_adapter_mtu(mtu)
 
     async def set_meshnet_config(self, meshnet_config: Config) -> None:
         made_changes = await self.configure_interface()
