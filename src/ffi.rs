@@ -172,6 +172,10 @@ pub struct StartConfig {
     pub name: Option<String>,
     /// Interfaces to skip while looking for the default interface.
     pub ext_if_filter: Option<Vec<String>>,
+    /// MTU to set on the adapter interface, at least 1280. When not set, the
+    /// adapter picks its own. Only supported by the Windows native adapter,
+    /// starting any other adapter with it set fails.
+    pub mtu: Option<u32>,
     /// File descriptor of an already open tunnel, which telio takes ownership
     /// of and closes on stop. When not set, the adapter opens its own tunnel.
     /// Ignored on Windows.
@@ -184,6 +188,11 @@ impl StartConfig {
         private_key: SecretKey,
         adapter: TelioAdapterType,
     ) -> FfiResult<DeviceConfig> {
+        if self.mtu.is_some() && !matches!(adapter, TelioAdapterType::WindowsNativeTun) {
+            return Err(TelioError::UnknownError {
+                inner: "MTU is only supported by the Windows native adapter".to_owned(),
+            });
+        }
         let adapter = adapter
             .try_into()
             .map_err(|e| TelioError::UnknownError { inner: e })?;
@@ -206,6 +215,7 @@ impl StartConfig {
             name: self.name.clone(),
             tun,
             ext_if_filter: self.ext_if_filter.clone(),
+            mtu: self.mtu,
         })
     }
 }
@@ -422,6 +432,7 @@ impl Telio {
                     name: None,
                     tun: None,
                     ext_if_filter: None,
+                    mtu: None,
                 })
                 .log_result("Telio::start")
             })
@@ -486,7 +497,7 @@ impl Telio {
         config: StartConfig,
     ) -> FfiResult<()> {
         telio_log_info!(
-            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Config: {:?}",
+            "Telio::start_with_config entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Config: {:?}",
             self.id,
             private_key.public(),
             &adapter,
@@ -515,6 +526,25 @@ impl Telio {
             self.device_op(true, |dev| {
                 dev.set_ext_if_filter(ext_if_filter.clone())
                     .map_err(TelioError::from)
+            })
+        })
+    }
+
+    /// Set the MTU of the adapter interface, at least 1280. `None` restores the
+    /// adapter's own MTU handling.
+    ///
+    /// Only supported by the Windows native adapter, other adapters fail with
+    /// an unsupported-adapter error.
+    pub fn set_adapter_mtu(&self, mtu: Option<u32>) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::set_adapter_mtu entry with instance id: {}. MTU: {:?}",
+            self.id,
+            mtu,
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.set_adapter_mtu(mtu)
+                    .log_result("Telio::set_adapter_mtu")
             })
         })
     }
@@ -1206,6 +1236,23 @@ mod tests {
         let actual =
             deserialize_feature_config(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV.to_owned());
         assert!(actual.is_ok());
+    }
+
+    #[test]
+    fn test_start_config_mtu_requires_windows_native_adapter() {
+        let config = StartConfig {
+            mtu: Some(1400),
+            ..Default::default()
+        };
+        let key = SecretKey::gen();
+
+        assert!(config
+            .to_device_config(key.clone(), TelioAdapterType::WindowsNativeTun)
+            .is_ok());
+        assert!(matches!(
+            config.to_device_config(key, TelioAdapterType::NepTUN),
+            Err(TelioError::UnknownError { .. })
+        ));
     }
 
     #[cfg(unix)]
