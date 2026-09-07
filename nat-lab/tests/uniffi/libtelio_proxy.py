@@ -126,12 +126,22 @@ class LibtelioProxy:
         )
 
     @move_to_async_thread
+    def start_with_config(self, private_key, adapter, config: libtelio.StartConfig):
+        self._handle_remote_error(
+            lambda r: r.start_with_config(private_key, adapter.value, config)
+        )
+
+    @move_to_async_thread
     def set_fwmark(self, fwmark: int):
         self._handle_remote_error(lambda r: r.set_fwmark(fwmark))
 
     @move_to_async_thread
     def set_ext_if_filter(self, ext_if_list: List[str]):
         self._handle_remote_error(lambda r: r.set_ext_if_filter(ext_if_list))
+
+    @move_to_async_thread
+    def set_adapter_mtu(self, mtu: int):
+        self._handle_remote_error(lambda r: r.set_adapter_mtu(mtu))
 
     @move_to_async_thread
     def set_tun(self, tun: int):
