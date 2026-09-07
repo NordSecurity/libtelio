@@ -27,7 +27,7 @@ from tests.utils.process import Process, ProcessExecError
 from tests.utils.router import IPStack
 from tests.utils.router.linux_router import LinuxRouter
 from tests.utils.testing import get_current_test_log_path
-from typing import AsyncIterator, Dict, List, Optional
+from typing import AsyncIterator, Awaitable, Callable, Dict, List, Optional
 
 
 class IgnoreableError(Exception):
@@ -210,6 +210,7 @@ class Config:
 class NordVpnLite:
     SOCKET_CHECK_INTERVAL_S = 0.5
     NORDVPNLITE_CMD_CHECK_INTERVAL_S = 10  # TODO (LLT-6693): revert back to 1
+    DAEMON_STOP_TIMEOUT_S = 10
 
     def __init__(
         self,
@@ -268,9 +269,6 @@ class NordVpnLite:
         self,
         cmd: list,
     ) -> tuple[str, str]:
-        # TODO(LLT-6785): remove the sleep
-        await asyncio.sleep(5)
-
         start_time = time.time()
         try:
             cmd = [str(self.config.paths.exec_path)] + cmd
@@ -413,16 +411,23 @@ class NordVpnLite:
 
     async def quit(self) -> None:
         stdout, stderr = await self.execute_command(["stop"])
+        daemon_already_stopped = "Daemon is already stopped" in stdout
         assert (
-            "Command executed successfully" in stdout
-            or "Daemon is already stopped" in stdout
+            "Command executed successfully" in stdout or daemon_already_stopped
         ), f"Failed to execute stop command: {stderr}"
 
-        assert (
-            not await self.is_alive()
+        if daemon_already_stopped:
+            if await self.socket_exists():
+                log.debug("Dangling socket found after stop no-op, removing it..")
+                await self.remove_socket()
+            return
+
+        # Daemon responds to stop before the process exits and the socket is removed
+        assert await self._wait_until_false(
+            self.is_alive, self.DAEMON_STOP_TIMEOUT_S
         ), "Quit command was sent successfully but daemon's still running"
-        assert (
-            not await self.socket_exists()
+        assert await self._wait_until_false(
+            self.socket_exists, self.DAEMON_STOP_TIMEOUT_S
         ), "Daemon's not running but socket still exists"
 
     async def kill(self) -> None:
@@ -436,12 +441,30 @@ class NordVpnLite:
                 await self.connection.create_process(
                     ["killall", "-w", "-s", "SIGTERM", "nordvpnlite"]
                 ).execute()
-            assert (
-                not await self.is_alive()
+            assert await self._wait_until_false(
+                self.is_alive, self.DAEMON_STOP_TIMEOUT_S
             ), "SIGTERM was sent but daemon's still running"
         except ProcessExecError as exc:
             if "nordvpnlite: no process found" not in exc.stderr:
                 raise
+
+    async def _wait_until_false(
+        self, check: Callable[[], Awaitable[bool]], timeout_s: float
+    ) -> bool:
+        """Poll `check` until it returns False, or until `timeout_s` elapses"""
+
+        async def poll() -> None:
+            while await check():
+                await asyncio.sleep(self.SOCKET_CHECK_INTERVAL_S)
+
+        task = asyncio.ensure_future(poll())
+        try:
+            await asyncio.wait_for(task, timeout_s)
+        except asyncio.TimeoutError:
+            if not task.cancelled():
+                raise
+            return False
+        return True
 
     async def remove_config(self, path: Path) -> None:
         await self.connection.create_process(["rm", "-f", str(path)]).execute()

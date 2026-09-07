@@ -3,6 +3,7 @@
 use clap::Parser;
 use daemonize::{Daemonize, Outcome};
 use std::fs::{self, OpenOptions};
+use std::io::{Error, ErrorKind};
 use tokio::time::{timeout, Duration};
 
 mod auth;
@@ -113,39 +114,37 @@ async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
     match cmd {
         Cmd::Client(cmd) => {
             let socket_path = DaemonSocket::get_ipc_socket_path()?;
-            if socket_path.exists() {
-                let response = timeout(
-                    Duration::from_secs(TIMEOUT_SEC),
-                    DaemonSocket::send_command(&socket_path, &serde_json::to_string(&cmd)?),
-                )
-                .await
-                .map_err(|_| NordVpnLiteError::ClientTimeoutError)?;
+            if !socket_path.exists() {
+                return handle_missing_daemon(cmd);
+            }
 
-                match CommandResponse::deserialize(&response?)? {
-                    CommandResponse::Ok => {
-                        println!("Command executed successfully");
-                        Ok(())
-                    }
-                    CommandResponse::StatusReport(status) => {
-                        println!("{}", serde_json::to_string_pretty(&status)?);
-                        Ok(())
-                    }
-                    CommandResponse::DaemonInitializing => {
-                        println!("Daemon is not ready, ignoring");
-                        Err(NordVpnLiteError::CommandFailed(cmd))
-                    }
-                    CommandResponse::Err(e) => {
-                        println!("Command executed failed: {e}");
-                        Err(NordVpnLiteError::CommandFailed(cmd))
-                    }
+            let response = timeout(
+                Duration::from_secs(TIMEOUT_SEC),
+                DaemonSocket::send_command(&socket_path, &serde_json::to_string(&cmd)?),
+            )
+            .await
+            .map_err(|_| NordVpnLiteError::ClientTimeoutError)?;
+
+            if response.as_ref().is_err_and(is_daemon_gone) {
+                return handle_missing_daemon(cmd);
+            }
+
+            match CommandResponse::deserialize(&response?)? {
+                CommandResponse::Ok => {
+                    println!("Command executed successfully");
+                    Ok(())
                 }
-            } else {
-                match cmd {
-                    ClientCmd::QuitDaemon => {
-                        println!("Daemon is already stopped");
-                        Ok(())
-                    }
-                    _ => Err(NordVpnLiteError::DaemonIsNotRunning),
+                CommandResponse::StatusReport(status) => {
+                    println!("{}", serde_json::to_string_pretty(&status)?);
+                    Ok(())
+                }
+                CommandResponse::DaemonInitializing => {
+                    println!("Daemon is not ready, ignoring");
+                    Err(NordVpnLiteError::CommandFailed(cmd))
+                }
+                CommandResponse::Err(e) => {
+                    println!("Command executed failed: {e}");
+                    Err(NordVpnLiteError::CommandFailed(cmd))
                 }
             }
         }
@@ -163,6 +162,31 @@ async fn client_main(cmd: Cmd) -> Result<(), NordVpnLiteError> {
 
         // Unexpected command, Cmd::Start should be handled by main
         _ => Err(NordVpnLiteError::InvalidCommand(format!("{cmd:?}"))),
+    }
+}
+
+/// Whether an IO error means nothing is listening on the socket anymore, either because
+/// the socket file is stale or because the daemon exited while the command was in flight.
+fn is_daemon_gone(err: &Error) -> bool {
+    matches!(
+        err.kind(),
+        ErrorKind::NotFound
+            | ErrorKind::ConnectionRefused
+            | ErrorKind::BrokenPipe
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::UnexpectedEof
+    )
+}
+
+/// Report a client command that could not reach the daemon.
+fn handle_missing_daemon(cmd: ClientCmd) -> Result<(), NordVpnLiteError> {
+    match cmd {
+        ClientCmd::QuitDaemon => {
+            println!("Daemon is already stopped");
+            Ok(())
+        }
+        _ => Err(NordVpnLiteError::DaemonIsNotRunning),
     }
 }
 
@@ -310,6 +334,7 @@ mod tests {
     use assert_matches::assert_matches;
     use serial_test::serial;
     use temp_file::TempFile;
+    use tokio::net::UnixListener;
 
     /// Config JSON pointing its auth file at the given path.
     fn config_json(auth_file_path: &str) -> String {
@@ -347,6 +372,69 @@ mod tests {
                 Err(NordVpnLiteError::InvalidConfigToken { .. })
             );
         };
+    }
+
+    #[test]
+    fn test_daemon_gone_does_not_mask_other_errors() {
+        for kind in [
+            ErrorKind::NotFound,
+            ErrorKind::ConnectionRefused,
+            ErrorKind::BrokenPipe,
+            ErrorKind::ConnectionReset,
+            ErrorKind::ConnectionAborted,
+            ErrorKind::UnexpectedEof,
+        ] {
+            assert!(is_daemon_gone(&Error::from(kind)), "{kind:?}");
+        }
+
+        for kind in [
+            ErrorKind::PermissionDenied,
+            ErrorKind::InvalidData,
+            ErrorKind::TimedOut,
+        ] {
+            assert!(!is_daemon_gone(&Error::from(kind)), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn test_missing_daemon_reports_daemon_is_not_running() {
+        for cmd in [
+            ClientCmd::QuitDaemon,
+            ClientCmd::IsAlive,
+            ClientCmd::GetStatus,
+            ClientCmd::Reload,
+        ] {
+            // Matched exhaustively so that a new command has to pick a side here.
+            match cmd {
+                // Stopping an already stopped daemon is not an error, everything else is.
+                ClientCmd::QuitDaemon => assert_matches!(handle_missing_daemon(cmd), Ok(())),
+                ClientCmd::IsAlive | ClientCmd::GetStatus | ClientCmd::Reload => assert_matches!(
+                    handle_missing_daemon(cmd),
+                    Err(NordVpnLiteError::DaemonIsNotRunning)
+                ),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_stale_socket_file_reports_daemon_gone() {
+        let path = TempFile::new()
+            .expect("Failed to create temp socket file")
+            .path()
+            .with_extension("sock");
+
+        // Bind and drop a listener, leaving the socket file behind like a daemon that
+        // exited without cleaning up after itself. Unlike DaemonSocket, UnixListener
+        // does not reclaim the name on drop.
+        drop(UnixListener::bind(&path).expect("Failed to bind test socket"));
+        assert!(path.exists());
+
+        let err = DaemonSocket::send_command(&path, "\"IsAlive\"")
+            .await
+            .expect_err("connecting to a stale socket should fail");
+        assert!(is_daemon_gone(&err), "unexpected error: {err:?}");
+
+        let _ = fs::remove_file(&path);
     }
 
     #[test]
