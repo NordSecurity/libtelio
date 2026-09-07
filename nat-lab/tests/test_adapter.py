@@ -9,6 +9,7 @@ from tests.utils.bindings import (
     ErrorEvent,
     ErrorCode,
     ErrorLevel,
+    StartConfig,
     TelioAdapterType,
     default_features,
 )
@@ -27,6 +28,10 @@ class AdapterState(Enum):
     UP = 1
 
 
+MTU_POLL_ATTEMPTS = 20
+MTU_POLL_INTERVAL_S = 0.5
+
+
 async def get_interface_state(client_conn, client):
     itf_name = client.get_router().get_interface_name()
     process = await client_conn.create_process([
@@ -43,6 +48,51 @@ async def get_interface_state(client_conn, client):
         return AdapterState.UP
 
     raise RuntimeError(f'Unexpected adapter state: "{output}"')
+
+
+async def get_interface_mtu(client_conn, client, address_family: str) -> int:
+    itf_name = client.get_router().get_interface_name()
+    process = await client_conn.create_process([
+        "powershell",
+        "-Command",
+        f'(Get-NetIPInterface -InterfaceAlias "{itf_name}"'
+        f" -AddressFamily {address_family}).NlMtu",
+    ]).execute()
+    output = process.get_stdout().strip()
+
+    if not output.isdigit():
+        raise RuntimeError(
+            f'Unexpected {address_family} MTU for "{itf_name}": "{output}"'
+        )
+
+    return int(output)
+
+
+async def wait_for_interface_mtu(client_conn, client, expected_mtu: int) -> None:
+    """
+    Wait for both address families to report `expected_mtu`.
+
+    The adapter sets each family separately and the interface watcher may
+    re-apply the MTU on interface events, so the value is not readable
+    immediately after the call that requested it.
+    """
+    expected = {"IPv4": expected_mtu, "IPv6": expected_mtu}
+    actual: dict = {}
+
+    for _ in range(MTU_POLL_ATTEMPTS):
+        try:
+            actual = {
+                family: await get_interface_mtu(client_conn, client, family)
+                for family in expected
+            }
+        except (ProcessExecError, RuntimeError):
+            # The interface is missing or still settling after a restart
+            actual = {}
+        if actual == expected:
+            break
+        await asyncio.sleep(MTU_POLL_INTERVAL_S)
+
+    assert actual == expected, f"Expected adapter MTUs {expected}, last read {actual}"
 
 
 @pytest.mark.parametrize(
@@ -487,3 +537,165 @@ async def test_adapter_state_for_meshnet(
     await client_alpha.set_mesh_off()
     state = await get_interface_state(client_conn, client_alpha)
     assert state == expected_idle_state
+
+
+@pytest.mark.windows
+class TestAdapterMtu:
+    """Setting the adapter MTU, supported on Windows only."""
+
+    @pytest.fixture
+    def alpha_setup_params(self) -> SetupParameters:
+        return SetupParameters(
+            connection_tag=ConnectionTag.VM_WINDOWS_1,
+            adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+            is_meshnet=False,
+            features=default_features(enable_dynamic_wg_nt_control=False),
+        )
+
+    async def test_starts_with_configured_mtu(self, env: Environment) -> None:
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+        expected_mtu = 1360
+
+        await client_alpha.stop_device()
+        await client_alpha.start_with_config(StartConfig(mtu=expected_mtu))
+
+        await wait_for_interface_mtu(client_conn, client_alpha, expected_mtu)
+
+    async def test_changes_mtu_at_runtime(self, env: Environment) -> None:
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+        expected_mtu = 1320
+
+        for family in ("IPv4", "IPv6"):
+            current_mtu = await get_interface_mtu(client_conn, client_alpha, family)
+            assert current_mtu != expected_mtu
+
+        await client_alpha.set_adapter_mtu(expected_mtu)
+
+        await wait_for_interface_mtu(client_conn, client_alpha, expected_mtu)
+
+    async def test_rejects_too_low_mtu(self, env: Environment) -> None:
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+        current_mtus = {
+            family: await get_interface_mtu(client_conn, client_alpha, family)
+            for family in ("IPv4", "IPv6")
+        }
+
+        with pytest.raises(RuntimeError, match="MTU must be at least 1280"):
+            await client_alpha.set_adapter_mtu(1279)
+
+        for family, mtu in current_mtus.items():
+            assert await get_interface_mtu(client_conn, client_alpha, family) == mtu
+
+
+@pytest.mark.windows
+class TestAdapterMtuWithDynamicWgNtControl:
+    """A set MTU must survive the adapter going up and down."""
+
+    @pytest.fixture(name="vpn_tags")
+    def _vpn_tags(self) -> list:
+        return [ConnectionTag.DOCKER_VPN_1]
+
+    @pytest.fixture
+    def alpha_setup_params(self) -> SetupParameters:
+        return SetupParameters(
+            connection_tag=ConnectionTag.VM_WINDOWS_1,
+            adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+            connection_tracker_config=generate_connection_tracker_config(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                vpn_1_limits=(1, 1),
+            ),
+            is_meshnet=False,
+            features=default_features(enable_dynamic_wg_nt_control=True),
+        )
+
+    async def test_mtu_survives_adapter_state_changes(self, env: Environment) -> None:
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+        expected_mtu = 1340
+
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.DOWN
+
+        await client_alpha.set_adapter_mtu(expected_mtu)
+        await wait_for_interface_mtu(client_conn, client_alpha, expected_mtu)
+
+        server_ip = config.WG_SERVER["ipv4"]
+        server_port = config.WG_SERVER["port"]
+        server_public_key = config.WG_SERVER["public_key"]
+        assert (
+            isinstance(server_ip, str)
+            and isinstance(server_port, int)
+            and isinstance(server_public_key, str)
+        )
+        await client_alpha.vpn.connect(server_ip, server_port, server_public_key)
+
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.UP
+        await wait_for_interface_mtu(client_conn, client_alpha, expected_mtu)
+
+        await client_alpha.vpn.disconnect(server_public_key)
+
+        state = await get_interface_state(client_conn, client_alpha)
+        assert state == AdapterState.DOWN
+        await wait_for_interface_mtu(client_conn, client_alpha, expected_mtu)
+
+
+@pytest.mark.parametrize(
+    "alpha_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                is_meshnet=False,
+            ),
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                is_meshnet=False,
+            ),
+            marks=[pytest.mark.linux_native],
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_MAC,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                is_meshnet=False,
+            ),
+            marks=[pytest.mark.mac],
+        ),
+    ],
+)
+class TestAdapterMtuUnsupported:
+    """Only the Windows native adapter supports setting the MTU."""
+
+    async def test_rejects_mtu_at_runtime(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env: Environment,
+    ) -> None:
+        client_alpha, *_ = env.clients
+
+        with pytest.raises(RuntimeError, match="UnsupportedAdapter"):
+            await client_alpha.set_adapter_mtu(1340)
+
+    async def test_rejects_mtu_at_start(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        env: Environment,
+    ) -> None:
+        client_alpha, *_ = env.clients
+
+        await client_alpha.stop_device()
+        with pytest.raises(
+            RuntimeError, match="MTU is only supported by the Windows native adapter"
+        ):
+            await client_alpha.start_with_config(StartConfig(mtu=1340))
+
+        # Leave the device running for the test cleanup
+        await client_alpha.start_with_config(StartConfig())

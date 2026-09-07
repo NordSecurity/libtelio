@@ -480,7 +480,11 @@ impl WireGuard for DynamicWg {
     }
 
     async fn set_adapter_mtu(&self, mtu: u32) -> Result<(), Error> {
-        task_exec!(&self.task, async move |s| Ok(s.adapter.set_adapter_mtu(mtu).await)).await??;
+        task_exec!(&self.task, async move |s| Ok(s
+            .adapter
+            .set_adapter_mtu(mtu)
+            .await))
+        .await??;
         Ok(())
     }
 

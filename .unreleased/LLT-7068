@@ -1,0 +1,1 @@
+Added the `mtu` start option and `set_adapter_mtu`, for setting the adapter interface MTU. Supported on Windows only.

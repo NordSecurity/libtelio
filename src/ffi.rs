@@ -559,7 +559,8 @@ impl Telio {
         );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
-                dev.set_adapter_mtu(mtu).log_result("Telio::set_adapter_mtu")
+                dev.set_adapter_mtu(mtu)
+                    .log_result("Telio::set_adapter_mtu")
             })
         })
     }
