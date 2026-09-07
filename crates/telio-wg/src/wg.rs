@@ -77,6 +77,8 @@ pub trait WireGuard: Send + Sync + 'static {
     async fn reset_existing_connections(&self, exit_pubkey: PublicKey) -> Result<(), Error>;
     /// Set the ip stack for the adapter
     async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result<(), Error>;
+    /// Set the MTU of the adapter interface
+    async fn set_adapter_mtu(&self, mtu: u32) -> Result<(), Error>;
     /// Ensure that adapter is UP or DOWN
     async fn ensure_expected_adapter_state(
         &self,
@@ -113,6 +115,8 @@ pub struct Config {
     /// When present, the callback is consulted by the Windows native adapter
     /// to determine whether meshnet is currently enabled.
     pub enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
+    /// MTU to set on the adapter interface, if None the adapter picks its own
+    pub mtu: Option<u32>,
     /// Configurable socket buffer size, if None doesn't modify default OS set values
     pub skt_buffer_size: Option<u32>,
     /// Configurable socket buffer size, if None doesn't modify default OS set values
@@ -235,6 +239,7 @@ impl DynamicWg {
     ///                 Some(Arc::new(firewall_filter_outbound_packets)),
     ///             firewall_reset_connections: None,
     ///             enable_dynamic_wg_nt_control: None,
+    ///             mtu: None,
     ///             skt_buffer_size: None,
     ///             inter_thread_channel_size: None,
     ///             max_inter_thread_batched_pkts: None,
@@ -474,6 +479,11 @@ impl WireGuard for DynamicWg {
         .await?)
     }
 
+    async fn set_adapter_mtu(&self, mtu: u32) -> Result<(), Error> {
+        task_exec!(&self.task, async move |s| Ok(s.adapter.set_adapter_mtu(mtu).await)).await??;
+        Ok(())
+    }
+
     /// Ensure that adapter is UP or DOWN
     async fn ensure_expected_adapter_state(
         &self,
@@ -510,6 +520,7 @@ impl Config {
             firewall_process_outbound_callback: self.firewall_process_outbound_callback.clone(),
             firewall_reset_connections: self.firewall_reset_connections.clone(),
             enable_dynamic_wg_nt_control: self.enable_dynamic_wg_nt_control.clone(),
+            mtu: self.mtu,
             skt_buffer_size: self.skt_buffer_size,
             inter_thread_channel_size: self.inter_thread_channel_size,
             max_inter_thread_batched_pkts: self.max_inter_thread_batched_pkts,
@@ -1118,6 +1129,7 @@ pub mod tests {
                 firewall_process_outbound_callback: Default::default(),
                 firewall_reset_connections: None,
                 enable_dynamic_wg_nt_control: None,
+                mtu: None,
                 skt_buffer_size: None,
                 inter_thread_channel_size: None,
                 max_inter_thread_batched_pkts: None,

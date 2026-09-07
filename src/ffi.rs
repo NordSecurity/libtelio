@@ -156,6 +156,10 @@ pub struct StartConfig {
     pub name: Option<String>,
     /// Interfaces to skip while looking for the default interface.
     pub ext_if_filter: Option<Vec<String>>,
+    /// MTU to set on the adapter interface. When not set, the adapter picks
+    /// its own. Only supported by the Windows native adapter, starting any
+    /// other adapter with it set fails.
+    pub mtu: Option<u32>,
 }
 
 impl StartConfig {
@@ -164,6 +168,11 @@ impl StartConfig {
         private_key: SecretKey,
         adapter: TelioAdapterType,
     ) -> FfiResult<DeviceConfig> {
+        if self.mtu.is_some() && !matches!(adapter, TelioAdapterType::WindowsNativeTun) {
+            return Err(TelioError::UnknownError {
+                inner: "MTU is only supported by the Windows native adapter".to_owned(),
+            });
+        }
         Ok(DeviceConfig {
             private_key,
             adapter: adapter
@@ -173,6 +182,7 @@ impl StartConfig {
             name: self.name.clone(),
             tun: None,
             ext_if_filter: self.ext_if_filter.clone(),
+            mtu: self.mtu,
         })
     }
 }
@@ -389,6 +399,7 @@ impl Telio {
                     name: None,
                     tun: None,
                     ext_if_filter: None,
+                    mtu: None,
                 })
                 .log_result("Telio::start")
             })
@@ -416,6 +427,7 @@ impl Telio {
                     name: None,
                     tun: None,
                     ext_if_filter: None,
+                    mtu: None,
                 })
                 .log_result("Telio::start")
             })
@@ -449,6 +461,7 @@ impl Telio {
                     name: Some(name.clone()),
                     tun: None,
                     ext_if_filter: None,
+                    mtu: None,
                 })
                 .log_result("Telio::start_named")
             })
@@ -484,6 +497,7 @@ impl Telio {
                     name: Some(name.clone()),
                     tun: None,
                     ext_if_filter: Some(ext_if_filter.clone()),
+                    mtu: None,
                 })
                 .log_result("Telio::start_named_ext_if_filter")
             })
@@ -500,7 +514,7 @@ impl Telio {
         config: StartConfig,
     ) -> FfiResult<()> {
         telio_log_info!(
-            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Config: {:?}",
+            "Telio::start_with_config entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Config: {:?}",
             self.id,
             private_key.public(),
             &adapter,
@@ -529,6 +543,23 @@ impl Telio {
             self.device_op(true, |dev| {
                 dev.set_ext_if_filter(ext_if_filter.clone())
                     .map_err(TelioError::from)
+            })
+        })
+    }
+
+    /// Set the MTU of the adapter interface.
+    ///
+    /// Only supported by the Windows native adapter, other adapters fail with
+    /// an unsupported-adapter error.
+    pub fn set_adapter_mtu(&self, mtu: u32) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::set_adapter_mtu entry with instance id: {}. MTU: {}",
+            self.id,
+            mtu,
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.set_adapter_mtu(mtu).log_result("Telio::set_adapter_mtu")
             })
         })
     }
@@ -576,6 +607,7 @@ impl Telio {
                     name: None,
                     tun,
                     ext_if_filter: None,
+                    mtu: None,
                 })
                 .log_result("Telio::start_with_tun")
             })
@@ -1230,5 +1262,23 @@ mod tests {
         let actual =
             deserialize_feature_config(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV.to_owned());
         assert!(actual.is_ok());
+    }
+
+    #[test]
+    fn test_start_config_mtu_requires_windows_native_adapter() {
+        let config = StartConfig {
+            name: None,
+            ext_if_filter: None,
+            mtu: Some(1400),
+        };
+        let key = SecretKey::gen();
+
+        assert!(config
+            .to_device_config(key.clone(), TelioAdapterType::WindowsNativeTun)
+            .is_ok());
+        assert!(matches!(
+            config.to_device_config(key, TelioAdapterType::NepTUN),
+            Err(TelioError::UnknownError { .. })
+        ));
     }
 }

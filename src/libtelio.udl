@@ -331,6 +331,13 @@ interface Telio {
     [Throws=TelioError]
     void set_ext_if_filter(sequence<string> ext_if_filter);
 
+    /// Set the MTU of the adapter interface.
+    ///
+    /// Only supported by the Windows native adapter, other adapters fail with
+    /// an unsupported-adapter error.
+    [Throws=TelioError]
+    void set_adapter_mtu(u32 mtu);
+
     /// Sets private key for started device.
     ///
     /// If private_key is not set, device will never connect.
@@ -589,6 +596,11 @@ dictionary StartConfig {
 
     /// Interfaces to skip while looking for the default interface.
     sequence<string>? ext_if_filter = null;
+
+    /// MTU to set on the adapter interface. When not set, the adapter picks
+    /// its own. Only supported by the Windows native adapter, starting any
+    /// other adapter with it set fails.
+    u32? mtu = null;
 };
 
 /// A [Features] builder that allows a simpler initialization of
