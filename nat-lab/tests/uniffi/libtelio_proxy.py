@@ -140,7 +140,7 @@ class LibtelioProxy:
         self._handle_remote_error(lambda r: r.set_ext_if_filter(ext_if_list))
 
     @move_to_async_thread
-    def set_adapter_mtu(self, mtu: int):
+    def set_adapter_mtu(self, mtu: Optional[int]):
         self._handle_remote_error(lambda r: r.set_adapter_mtu(mtu))
 
     @move_to_async_thread
