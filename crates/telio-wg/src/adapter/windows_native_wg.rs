@@ -40,7 +40,8 @@ use wireguard_nt::{
 use wireguard_uapi::xplatform;
 
 const REMOVAL_SLEEP_SECS: u64 = 2;
-const CREATE_ADAPTER_MAX_ATTEMPTS: usize = 10;
+const ADAPTER_GUID_POOL_SIZE: usize = 8;
+const CREATE_ADAPTER_MAX_ATTEMPTS: usize = ADAPTER_GUID_POOL_SIZE;
 const CREATE_ADAPTER_INITIAL_BACKOFF_SECS: u64 = 2;
 const CREATE_ADAPTER_MAX_BACKOFF_SECS: u64 = 14;
 
@@ -92,10 +93,21 @@ impl WindowsNativeWg {
         }
     }
 
-    fn get_adapter_guid_from_name_hash(name: &str) -> u128 {
-        // Generate deterministic GUID from the adapter name.
+    /// Generate a deterministic GUID from the adapter name for a given attempt.
+    ///
+    /// `attempt == 0` is byte-identical to the plain `sha256(name)` derivation, so the
+    /// primary adapter keeps its identity - and with it the persistent firewall, DNS and
+    /// network profile state keyed on the interface GUID.
+    ///
+    /// Retries walk a small fixed pool instead of a random GUID, which keeps the amount of
+    /// per-GUID state Windows accumulates bounded at `ADAPTER_GUID_POOL_SIZE` per name.
+    fn get_adapter_guid_from_name_hash(name: &str, attempt: usize) -> u128 {
         let mut hasher = Sha256::new();
         hasher.update(name);
+        if attempt > 0 {
+            hasher.update([0u8]);
+            hasher.update(attempt.to_le_bytes());
+        }
         let hash = hasher.finalize();
         let mut guid_bytes: [u8; 16] = [0u8; 16];
         #[allow(clippy::indexing_slicing)]
@@ -106,6 +118,17 @@ impl WindowsNativeWg {
         guid
     }
 
+    /// Render a GUID the way Windows does in `SWD\WireGuard\{...}`.
+    fn guid_to_windows_string(guid: u128) -> String {
+        format!(
+            "{{{}}}",
+            Uuid::from_bytes_le(guid.to_ne_bytes())
+                .hyphenated()
+                .to_string()
+                .to_uppercase()
+        )
+    }
+
     /// Returns a wireguard adapter with name `name`, loading dll from path 'path'
     ///
     /// # Errors
@@ -113,6 +136,7 @@ impl WindowsNativeWg {
     ///
     fn create(
         name: &str,
+        adapter_guid: u128,
         path: &str,
         enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
     ) -> std::result::Result<Self, AdapterError> {
@@ -138,14 +162,10 @@ impl WindowsNativeWg {
                 }
 
                 // Try to create a new adapter
-                let adapter_guid = Self::get_adapter_guid_from_name_hash(name);
                 telio_log_debug!(
-                    "Try to create adapter for name: {:#?} with guid: {{{}}}",
+                    "Try to create adapter for name: {:#?} with guid: {}",
                     name,
-                    Uuid::from_u128(adapter_guid)
-                        .hyphenated()
-                        .to_string()
-                        .to_uppercase()
+                    Self::guid_to_windows_string(adapter_guid)
                 );
 
                 // Adapter name and pool name must be the same, because netsh
@@ -189,7 +209,11 @@ impl WindowsNativeWg {
     /// WireGuard-NT's `api/adapter.c`. It enumerates all `GUID_DEVCLASS_NET`
     /// devices created by the WireGuard software enumerator and removes any
     /// whose devnode has `DN_HAS_PROBLEM` set.
-    async fn cleanup_orphaned_devices() {
+    ///
+    /// Afterwards it also drops the per-GUID network configuration that `DIF_REMOVE`
+    /// leaves behind for the retry GUIDs derived from `name` - see
+    /// [`Self::cleanup_pool_guid_netcfg`].
+    async fn cleanup_orphaned_devices(adapter_name: &str) {
         unsafe {
             // Get list of all WireGuard network adapters.
             let enumerator_utf16 = utf16_null!(service::WIREGUARD_ENUMERATOR);
@@ -314,7 +338,12 @@ impl WindowsNativeWg {
                 index += 1;
             }
 
-            if removed {
+            // The devnodes are gone by now, but `DIF_REMOVE` deliberately preserves each
+            // adapter's network configuration so it can be restored on reinstall. Drop the
+            // leftovers belonging to our retry GUIDs, so a retry slot always starts clean.
+            let removed_pool = Self::cleanup_pool_guid_netcfg(adapter_name);
+
+            if removed || removed_pool {
                 // TODO: Remove this sleep once we have a better way to track device removal/insertion
                 // Note: windows messages (e.g. WM_DEVICECHANGE) cannot be used to track removal,
                 // since those  messages does not arrive,
@@ -322,6 +351,63 @@ impl WindowsNativeWg {
                 std::thread::sleep(Duration::from_secs(REMOVAL_SLEEP_SECS));
             }
         }
+    }
+
+    /// Delete the persistent per-GUID network configuration left behind by adapters
+    /// created on one of our retry GUIDs.
+    ///
+    /// Deliberately bounded and targeted: only the `ADAPTER_GUID_POOL_SIZE` GUIDs we derive
+    /// ourselves, only slots `1..` (slot 0 is the primary adapter, whose settings we want to
+    /// keep), and only when the `Connection\PnpInstanceID` confirms the entry really was ours.
+    ///
+    /// `Control\NetworkSetup2\Interfaces\{GUID}` is intentionally *not* touched - it is
+    /// SYSTEM-owned on Windows 10 and later, and a stale entry there is inert.
+    fn cleanup_pool_guid_netcfg(name: &str) -> bool {
+        const NET_CLASS_KEY: &str =
+            r"SYSTEM\CurrentControlSet\Control\Network\{4d36e972-e325-11ce-bfc1-08002be10318}";
+
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        let mut removed: bool = false;
+
+        for attempt in 1..ADAPTER_GUID_POOL_SIZE {
+            let guid = Self::get_adapter_guid_from_name_hash(name, attempt);
+            let guid_str = Self::guid_to_windows_string(guid);
+            let net_key = format!(r"{NET_CLASS_KEY}\{guid_str}");
+
+            // Only delete entries we know we created.
+            let owned_by_us = hklm
+                .open_subkey(format!(r"{net_key}\Connection"))
+                .and_then(|key| key.get_value::<String, _>("PnpInstanceID"))
+                .map(|id| id.to_uppercase().starts_with(r"SWD\WIREGUARD\"))
+                .unwrap_or(false);
+            if !owned_by_us {
+                continue;
+            }
+
+            for key in [
+                net_key,
+                format!(
+                    r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces\{guid_str}"
+                ),
+                format!(
+                    r"SYSTEM\CurrentControlSet\Services\Tcpip6\Parameters\Interfaces\{guid_str}"
+                ),
+                format!(
+                    r"SYSTEM\CurrentControlSet\Services\NetBT\Parameters\Interfaces\Tcpip_{guid_str}"
+                ),
+            ] {
+                match hklm.delete_subkey_all(&key) {
+                    Ok(()) => {
+                        removed = true;
+                        telio_log_info!("Removed stale adapter config {key}")
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => telio_log_warn!("Failed to remove stale adapter config {key}: {e:?}"),
+                }
+            }
+        }
+
+        removed
     }
 
     /// Start adapter with name `name`
@@ -341,13 +427,21 @@ impl WindowsNativeWg {
 
         // Cleaning orphaned WireGuard-NT adapters inside the driver can be racey,
         // so we do it in a separate step, before creating a new adapter
-        Self::cleanup_orphaned_devices().await;
+        Self::cleanup_orphaned_devices(name).await;
 
         let dll_path = "wireguard.dll";
         let mut backoff_secs = CREATE_ADAPTER_INITIAL_BACKOFF_SECS;
-        let mut attempt = 1;
+        let mut attempt = 0;
         let wg_dev = loop {
-            let tmp_wg_dev = Self::create(name, dll_path, enable_dynamic_wg_nt_control.clone());
+            // The adapter name stays fixed across attempts - only the GUID rotates, so the
+            // interface keeps the name the rest of the system (netsh, nat-lab) expects.
+            let adapter_guid = Self::get_adapter_guid_from_name_hash(name, attempt);
+            let tmp_wg_dev = Self::create(
+                name,
+                adapter_guid,
+                dll_path,
+                enable_dynamic_wg_nt_control.clone(),
+            );
 
             telio_log_debug!("Print registry after adapter creation!");
             Self::print_registry_key_contents(
@@ -358,10 +452,12 @@ impl WindowsNativeWg {
 
             match tmp_wg_dev {
                 Ok(wg_dev) => break wg_dev,
-                Err(err) if attempt < CREATE_ADAPTER_MAX_ATTEMPTS => {
+                Err(err) if attempt + 1 < CREATE_ADAPTER_MAX_ATTEMPTS => {
                     telio_log_warn!(
-                        "Failed to create adapter '{}' with err: {err}. Attempt {attempt}/{}. Retrying in {backoff_secs}s",
+                        "Failed to create adapter '{}' with guid {} with err: {err}. Attempt {}/{}. Retrying in {backoff_secs}s",
                         name,
+                        Self::guid_to_windows_string(adapter_guid),
+                        attempt + 1,
                         CREATE_ADAPTER_MAX_ATTEMPTS
                     );
                     sleep(Duration::from_secs(backoff_secs)).await;
@@ -681,5 +777,44 @@ impl Drop for WindowsNativeWg {
     fn drop(&mut self) {
         self.cleanup();
         telio_log_info!("wg-nt: deleting adapter: done");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Slot 0 must keep producing the GUID that shipped before the pool was introduced,
+    /// otherwise every existing installation loses its adapter identity on upgrade.
+    /// The expected value is the one observed in `SWD\WireGuard\{...}` on a live machine.
+    #[test]
+    fn primary_slot_guid_is_unchanged() {
+        assert_eq!(
+            WindowsNativeWg::guid_to_windows_string(
+                WindowsNativeWg::get_adapter_guid_from_name_hash("NordLynx", 0)
+            ),
+            "{FC01FCD5-2B9D-2FD8-78D8-CB78B313E2B2}"
+        );
+    }
+
+    #[test]
+    fn retry_slots_are_distinct_and_stable() {
+        let guids: Vec<u128> = (0..ADAPTER_GUID_POOL_SIZE)
+            .map(|attempt| WindowsNativeWg::get_adapter_guid_from_name_hash("NordLynx", attempt))
+            .collect();
+
+        for (i, guid) in guids.iter().enumerate() {
+            assert!(
+                !guids[..i].contains(guid),
+                "slot {} collides with an earlier slot",
+                i
+            );
+            assert_eq!(
+                *guid,
+                WindowsNativeWg::get_adapter_guid_from_name_hash("NordLynx", i),
+                "slot {} is not deterministic",
+                i
+            );
+        }
     }
 }
