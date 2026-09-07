@@ -173,6 +173,12 @@ class LibtelioWrapper:
         )
 
     @serialize_error
+    def start_with_config(self, private_key, adapter, config: libtelio.StartConfig):
+        self._libtelio.start_with_config(
+            private_key, libtelio.TelioAdapterType(adapter), config
+        )
+
+    @serialize_error
     def create_tun(self, tun_id: int) -> int:
         return create_tun(tun_id)
 
@@ -189,6 +195,10 @@ class LibtelioWrapper:
     @serialize_error
     def set_ext_if_filter(self, ext_if_list: List[str]):
         self._libtelio.set_ext_if_filter(ext_if_list)
+
+    @serialize_error
+    def set_adapter_mtu(self, mtu: int):
+        self._libtelio.set_adapter_mtu(mtu)
 
     @serialize_error
     def set_tun(self, tun: int):
