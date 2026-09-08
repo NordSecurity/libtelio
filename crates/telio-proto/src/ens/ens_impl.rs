@@ -1069,6 +1069,61 @@ pub(crate) mod tests {
         ens.stop().await;
     }
 
+    #[tokio::test]
+    #[test_log::test]
+    async fn test_ens_forwards_unknown_error_code() {
+        const UNKNOWN_ERROR_CODE: i32 = grpc::Error::Superseded as i32 + 1;
+
+        let bounds = ExponentialBackoffBounds::default();
+        let backoff = ExponentialBackoff::new(bounds).unwrap();
+        let client_private_key = SecretKey::gen();
+
+        let errors_to_emit = [
+            ConnectionError {
+                code: UNKNOWN_ERROR_CODE,
+                additional_info: Some("unknown code".to_owned()),
+            },
+            ConnectionError {
+                code: grpc::Error::ServerMaintenance as i32,
+                additional_info: None,
+            },
+        ];
+
+        let server_config = spawn_server().await;
+
+        let allow_only_mlkem = true;
+        let (mut ens, mut rx) = ErrorNotificationService::new(
+            10,
+            make_socket_pool(),
+            allow_only_mlkem,
+            Some(server_config.tls_config.ca_cert.der().to_vec()),
+            KeepaliveConfig::default(),
+        );
+
+        ens.start_monitor_on_port(
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            server_config.port,
+            server_config.public_key,
+            client_private_key,
+            backoff,
+        )
+        .await
+        .unwrap();
+
+        send_errors(&errors_to_emit, server_config.command_tx.clone()).await;
+        let collected_errors = collect_errors(errors_to_emit.len(), &mut rx).await;
+
+        assert_eq!(
+            errors_to_emit
+                .into_iter()
+                .map(|e| (e, server_config.public_key.clone()))
+                .collect::<Vec<_>>(),
+            collected_errors
+        );
+
+        ens.stop().await;
+    }
+
     async fn collect_errors(
         n: usize,
         rx: &mut Rx<(ConnectionError, PublicKey)>,

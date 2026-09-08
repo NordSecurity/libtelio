@@ -4158,6 +4158,21 @@ mod tests {
     }
 
     #[test]
+    fn test_convert_connection_error_with_unknown_code() {
+        const UNKNOWN_ERROR_CODE: i32 = telio_proto::GrpcError::Superseded as i32 + 1;
+
+        let connection_error = ConnectionError {
+            code: UNKNOWN_ERROR_CODE,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            convert_connection_error(connection_error),
+            telio_model::mesh::VpnConnectionError::Unknown
+        );
+    }
+
+    #[test]
     fn test_sanitizing_sanitize_neptun_config() {
         assert!(Runtime::sanitize_neptun_config(None, AdapterType::NepTUN).is_none());
         assert!(Runtime::sanitize_neptun_config(None, AdapterType::LinuxNativeWg).is_none());
