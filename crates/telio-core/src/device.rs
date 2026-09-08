@@ -2070,7 +2070,7 @@ impl Runtime {
             }
 
             let derp_config = DerpConfig {
-                secret_key,
+                secret_key: self.requested_state.device_config.private_key.clone(),
                 servers: SortedServers::new(config.derp_servers.clone().unwrap_or_default()),
                 meshnet_peers: peers,
                 timeout: Duration::from_secs(10), //TODO: make configurable
