@@ -1362,6 +1362,43 @@ pub mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn wg_sets_adapter_mtu() {
+        let Env { adapter, wg, .. } = setup().await;
+
+        adapter
+            .lock()
+            .await
+            .expect_set_adapter_mtu()
+            .with(predicate::eq(1400))
+            .times(1)
+            .returning(|_| Ok(()));
+        wg.set_adapter_mtu(1400).await.unwrap();
+        adapter.lock().await.checkpoint();
+
+        adapter.lock().await.expect_stop().return_once(|| ());
+        wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wg_set_adapter_mtu_propagates_adapter_error() {
+        let Env { adapter, wg, .. } = setup().await;
+
+        adapter
+            .lock()
+            .await
+            .expect_set_adapter_mtu()
+            .times(1)
+            .returning(|_| Err(AdapterError::UnsupportedAdapter));
+        assert!(matches!(
+            wg.set_adapter_mtu(1400).await,
+            Err(Error::UnsupportedAdapter)
+        ));
+
+        adapter.lock().await.expect_stop().return_once(|| ());
+        wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn wg_adds_peer() {
         let Env {
             adapter,
