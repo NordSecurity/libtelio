@@ -1161,6 +1161,10 @@ pub mod tests {
             Err(Error::UnsupportedAdapter)
         }
 
+        async fn set_adapter_mtu(&self, mtu: u32) -> Result<(), AdapterError> {
+            self.lock().await.set_adapter_mtu(mtu).await
+        }
+
         fn clone_box(&self) -> Option<Box<dyn Adapter>> {
             None
         }
