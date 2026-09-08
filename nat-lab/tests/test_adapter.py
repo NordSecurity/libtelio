@@ -604,7 +604,7 @@ class TestAdapterMtu:
         client_alpha, *_ = env.clients
         current_mtus = await get_interface_mtus(client_conn, client_alpha)
 
-        with pytest.raises(RuntimeError, match="MTU must be at least 1280"):
+        with pytest.raises(RuntimeError, match="MtuTooLow"):
             await client_alpha.set_adapter_mtu(1279)
 
         for family, mtu in current_mtus.items():
