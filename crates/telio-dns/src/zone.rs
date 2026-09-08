@@ -349,6 +349,11 @@ impl ForwardZone {
         .await?;
         Ok(ForwardZone { zone })
     }
+
+    /// Drop every entry from the underlying resolver's cache.
+    pub(crate) fn flush_cache(&self) {
+        self.zone.flush_cache();
+    }
 }
 
 #[async_trait]
