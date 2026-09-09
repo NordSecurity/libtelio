@@ -42,6 +42,7 @@ from typing import cast
 
 ENS_PORT = 993
 ENS_LOG_STR = "Will start ENS monitoring"
+OUT_OF_RANGE_ENS_ERROR_CODE = VpnConnectionError.SUPERSEDED.value + 1
 
 
 @pytest.mark.nlx
@@ -761,17 +762,20 @@ async def test_ens_not_started_for_meshnet_exit_peer(
         ),
     ],
 )
+@pytest.mark.parametrize(
+    "error_code",
+    [VpnConnectionError.UNKNOWN.value, OUT_OF_RANGE_ENS_ERROR_CODE],
+)
 async def test_ens_connection_error_unknown(
     alpha_setup_params: SetupParameters,
     public_ip: str,
+    error_code: int,
 ) -> None:
     vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
     vpn_ip = str(vpn_conf.server_conf["ipv4"])
     vpn_port = cast(int, vpn_conf.server_conf["port"])
     vpn_public_key = str(vpn_conf.server_conf["public_key"])
     vpn_private_key = str(vpn_conf.server_conf["private_key"])
-
-    error_code = VpnConnectionError.UNKNOWN
 
     fingerprint = await get_grpc_tls_fingerprint(vpn_ip)
     root_certificate_b64 = await get_grpc_tls_root_certificate(vpn_ip)
@@ -822,14 +826,14 @@ async def test_ens_connection_error_unknown(
         )
 
         additional_info = "some additional info"
-        await trigger_connection_error(vpn_ip, error_code.value, additional_info)
+        await trigger_connection_error(vpn_ip, error_code, additional_info)
         await client_alpha.events.wait_for_state_peer(
             vpn_conf.server_conf["public_key"],
             [NodeState.CONNECTED],
             [PathType.DIRECT],
             True,
             True,
-            vpn_connection_error=error_code,
+            vpn_connection_error=VpnConnectionError.UNKNOWN,
         )
         await client_alpha.log.wait_for(additional_info)
         await client_alpha.log.wait_for(fingerprint)
