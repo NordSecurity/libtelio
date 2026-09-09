@@ -818,7 +818,6 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
 mod tests {
     use super::{
         EPHEMERAL_PORT_RANGE, EndpointCandidate, MockUpnpEpCommands, UpnpEndpointProvider,
-        async_trait,
     };
 
     use std::{
@@ -832,46 +831,21 @@ mod tests {
     use crate::endpoint_providers::Error;
     use crate::ping_pong_handler::PingPongHandler;
     use lazy_static::lazy_static;
-    use mockall::mock;
     use parking_lot::Mutex;
     use serial_test::serial;
     use telio_crypto::PublicKey;
     use telio_crypto::SecretKey;
-    use telio_model::mesh::LinkState;
     use telio_sockets::{NativeProtector, SocketPool};
     use telio_utils::exponential_backoff::{
         ExponentialBackoff, ExponentialBackoffBounds, MockBackoff,
     };
-    use telio_utils::ip_stack::IpStack;
     use telio_wg::{
-        Error as wgError, WireGuard,
+        MockWireGuard,
         uapi::{Interface, Peer},
     };
     use tokio::sync::Mutex as TMutex;
 
     type Result<T> = std::result::Result<T, Error>;
-    type Result1<T> = std::result::Result<T, wgError>;
-
-    mock! {
-        pub Wg {}
-        #[async_trait]
-        impl WireGuard for Wg {
-            async fn get_interface(&self) -> Result1<Interface,>;
-            async fn get_adapter_luid(&self) -> Result1<u64>;
-            async fn wait_for_listen_port(&self, d: Duration) -> Result1<u16>;
-            async fn get_link_state(&self, key: PublicKey) -> Result1<Option<LinkState>>;
-            async fn set_secret_key(&self, key: SecretKey) -> Result1<()>;
-            async fn set_fwmark(&self, fwmark: u32) -> Result1<()>;
-            async fn add_peer(&self, peer: Peer) -> Result1<()>;
-            async fn del_peer(&self, key: PublicKey) -> Result1<()>;
-            async fn drop_connected_sockets(&self) -> Result1<()>;
-            async fn time_since_last_rx(&self, public_key: PublicKey) -> Result1<Option<Duration>>;
-            async fn stop(self);
-            async fn reset_existing_connections(&self, exit_pubkey: PublicKey) -> Result1<()>;
-            async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result1<()>;
-            async fn set_adapter_mtu(&self, mtu: u32) -> Result1<()>;
-        }
-    }
 
     lazy_static! {
         static ref IGD_IS_AVAILABLE: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
@@ -922,7 +896,7 @@ mod tests {
 
     pub async fn prepare_test_setup(
         is_battery_optimization_on: bool,
-    ) -> UpnpEndpointProvider<MockWg, MockUpnpEpCommands, MockBackoff> {
+    ) -> UpnpEndpointProvider<MockWireGuard, MockUpnpEpCommands, MockBackoff> {
         let spool = SocketPool::new(
             NativeProtector::new(
                 #[cfg(target_os = "macos")]
@@ -954,7 +928,7 @@ mod tests {
         epc.udp.set_port(2000);
 
         // These are not properly used yet, just dummy variables
-        let mut wg = MockWg::default();
+        let mut wg = MockWireGuard::default();
         let wg_port = 55345;
         let wg_peers = Vec::<(PublicKey, Peer)>::new();
         let backoff_array = [100, 200, 400, 800, 1600, 3200];
@@ -1108,7 +1082,7 @@ mod tests {
         }
 
         // These are not properly used yet, just dummy variables
-        let mut wg = MockWg::default();
+        let mut wg = MockWireGuard::default();
         let wg_port = 55345;
 
         wg.expect_get_interface().returning(move || {
