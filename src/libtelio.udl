@@ -308,7 +308,7 @@ interface Telio {
 
     /// Start telio with the specified adapter and the options in `config`.
     ///
-    /// Adapter will attempt to open its own tunnel.
+    /// Adapter will attempt to open its own tunnel unless `config.tun` is set.
     [Throws=TelioError]
     void start_with_config(SecretKey secret_key, TelioAdapterType adapter, StartConfig config);
 
@@ -601,6 +601,11 @@ dictionary StartConfig {
     /// its own. Only supported by the Windows native adapter, starting any
     /// other adapter with it set fails.
     u32? mtu = null;
+
+    /// File descriptor of an already open tunnel, which telio takes ownership
+    /// of and closes on stop. When not set, the adapter opens its own tunnel.
+    /// Ignored on Windows.
+    i32? tun = null;
 };
 
 /// A [Features] builder that allows a simpler initialization of
