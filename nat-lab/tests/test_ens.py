@@ -42,7 +42,7 @@ from typing import cast
 
 ENS_PORT = 993
 ENS_LOG_STR = "Will start ENS monitoring"
-OUT_OF_RANGE_ENS_ERROR_CODE = VpnConnectionError.SUPERSEDED.value + 1
+OUT_OF_RANGE_ENS_ERROR_CODE = VpnConnectionError.UNSUPPORTED_CIPHER.value + 1
 
 
 @pytest.mark.nlx
@@ -763,13 +763,34 @@ async def test_ens_not_started_for_meshnet_exit_peer(
     ],
 )
 @pytest.mark.parametrize(
-    "error_code",
-    [VpnConnectionError.UNKNOWN.value, OUT_OF_RANGE_ENS_ERROR_CODE],
+    "error_code, expected_error, expected_logged_code",
+    [
+        pytest.param(
+            VpnConnectionError.UNKNOWN.value,
+            VpnConnectionError.UNKNOWN,
+            "Unknown",
+            id="unknown",
+        ),
+        pytest.param(
+            OUT_OF_RANGE_ENS_ERROR_CODE,
+            VpnConnectionError.UNKNOWN,
+            str(OUT_OF_RANGE_ENS_ERROR_CODE),
+            id="out_of_range",
+        ),
+        pytest.param(
+            VpnConnectionError.UNSUPPORTED_CIPHER.value,
+            VpnConnectionError.UNSUPPORTED_CIPHER,
+            "UnsupportedCipher",
+            id="unsupported_cipher",
+        ),
+    ],
 )
-async def test_ens_connection_error_unknown(
+async def test_ens_connection_error_from_stub(
     alpha_setup_params: SetupParameters,
     public_ip: str,
     error_code: int,
+    expected_error: VpnConnectionError,
+    expected_logged_code: str,
 ) -> None:
     vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
     vpn_ip = str(vpn_conf.server_conf["ipv4"])
@@ -833,9 +854,11 @@ async def test_ens_connection_error_unknown(
             [PathType.DIRECT],
             True,
             True,
-            vpn_connection_error=VpnConnectionError.UNKNOWN,
+            vpn_connection_error=expected_error,
         )
-        await client_alpha.log.wait_for(additional_info)
+        await client_alpha.log.wait_for(
+            f'(ConnectionError {{ code: {expected_logged_code}, additional_info: Some("{additional_info}") }})'
+        )
         await client_alpha.log.wait_for(fingerprint)
 
 
