@@ -1124,7 +1124,9 @@ enum VpnConnectionError {
     /// Authentication failed
     "Unauthenticated",
     /// There is a newer connection to this VPN server
-    "Superseded"
+    "Superseded",
+    /// The server rejected the VPN encryption cipher
+    "UnsupportedCipher"
 };
 
 /// Simple metrics about TP-Lite DNS activity

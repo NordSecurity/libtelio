@@ -3006,6 +3006,9 @@ fn convert_connection_error(
         code if code == GrpcError::Superseded as i32 => {
             telio_model::mesh::VpnConnectionError::Superseded
         }
+        code if code == GrpcError::UnsupportedCipher as i32 => {
+            telio_model::mesh::VpnConnectionError::UnsupportedCipher
+        }
         _code => telio_model::mesh::VpnConnectionError::Unknown,
     }
 }
@@ -3017,6 +3020,7 @@ mod tests {
     use std::net::Ipv6Addr;
     use telio_model::config::{Peer, PeerBase};
     use telio_model::features::FeatureDirect;
+    use telio_model::mesh::VpnConnectionError;
     use telio_sockets::native::NativeSocket;
     use telio_sockets::Protector;
     use tokio::io::ErrorKind;
@@ -4157,9 +4161,28 @@ mod tests {
         assert_eq!(ipv6, has_ipv6_address);
     }
 
+    #[rstest]
+    #[case(telio_proto::GrpcError::Unknown as i32, VpnConnectionError::Unknown)]
+    #[case(telio_proto::GrpcError::ConnectionLimitReached as i32, VpnConnectionError::ConnectionLimitReached)]
+    #[case(telio_proto::GrpcError::ServerMaintenance as i32, VpnConnectionError::ServerMaintenance)]
+    #[case(telio_proto::GrpcError::Unauthenticated as i32, VpnConnectionError::Unauthenticated)]
+    #[case(telio_proto::GrpcError::Superseded as i32, VpnConnectionError::Superseded)]
+    #[case(telio_proto::GrpcError::UnsupportedCipher as i32, VpnConnectionError::UnsupportedCipher)]
+    fn test_convert_connection_error(
+        #[case] llt_proto_error_code: i32,
+        #[case] expected_code: VpnConnectionError,
+    ) {
+        let connection_error = ConnectionError {
+            code: llt_proto_error_code,
+            ..Default::default()
+        };
+
+        assert_eq!(convert_connection_error(connection_error), expected_code);
+    }
+
     #[test]
     fn test_convert_connection_error_with_unknown_code() {
-        const UNKNOWN_ERROR_CODE: i32 = telio_proto::GrpcError::Superseded as i32 + 1;
+        const UNKNOWN_ERROR_CODE: i32 = telio_proto::GrpcError::UnsupportedCipher as i32 + 1;
 
         let connection_error = ConnectionError {
             code: UNKNOWN_ERROR_CODE,
