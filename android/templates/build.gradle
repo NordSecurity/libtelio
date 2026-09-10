@@ -5,11 +5,11 @@ apply plugin: 'kotlin-android'
 
 buildscript {
     repositories {
-        jcenter()
+        mavenCentral()
         google()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.0.1'
+        classpath 'com.android.tools.build:gradle:8.13.0'
         classpath "org.jfrog.buildinfo:build-info-extractor-gradle:5.1.14"
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.23"
     }
@@ -24,7 +24,7 @@ def repoPassword = System.getenv('ARTIFACTORY_PASSWORD')
 
 repositories {
     google()
-    jcenter()
+    mavenCentral()
     maven { url "https://jitpack.io" }
     maven { url 'https://maven.google.com' }
     maven { url repoUrl + "/libs-release-local" }
