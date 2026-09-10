@@ -115,7 +115,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--input-durations",
         type=str,
-        help="Path to input duration file (read-only reference for splitting)",
+        help=(
+            "Path to the published durations file (read-only reference); the delta"
+            " against it is written to --output-durations"
+        ),
     )
     parser.add_argument(
         "--output-durations",
@@ -214,7 +217,6 @@ def _run_tests(args) -> None:
         "timeout_func_only=true",
     ]
 
-    pytest_opts = os.environ.get("PYTEST_ADDOPTS", "")
     original_durations_data = {}
     input_path = None
 
@@ -232,9 +234,6 @@ def _run_tests(args) -> None:
             "--store-durations",
             f"--durations-path={durations_path.absolute()}",
         ])
-
-    if "splits" in pytest_opts:
-        pytest_cmd.append("--splitting-algorithm=least_duration")
 
     pytest_cmd += get_pytest_arguments(args)
 
