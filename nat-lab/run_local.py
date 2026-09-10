@@ -218,22 +218,23 @@ def _run_tests(args) -> None:
     original_durations_data = {}
     input_path = None
 
+    durations_path: Optional[Path] = None
+
+    if args.input_durations:
+        input_path = Path(args.input_durations)
+        original_durations_data = load_json(input_path)
+        durations_path = input_path
+    elif args.output_durations:
+        durations_path = Path(args.output_durations)
+
+    if durations_path is not None:
+        pytest_cmd.extend([
+            "--store-durations",
+            f"--durations-path={durations_path.absolute()}",
+        ])
+
     if "splits" in pytest_opts:
-        if args.input_durations:
-            input_path = Path(args.input_durations)
-            original_durations_data = load_json(input_path)
-            pytest_cmd.extend([
-                "--store-durations",
-                f"--durations-path={input_path.absolute()}",
-                "--splitting-algorithm=least_duration",
-            ])
-        elif args.output_durations:
-            output_path = Path(args.output_durations)
-            pytest_cmd.extend([
-                "--store-durations",
-                f"--durations-path={output_path.absolute()}",
-                "--splitting-algorithm=least_duration",
-            ])
+        pytest_cmd.append("--splitting-algorithm=least_duration")
 
     pytest_cmd += get_pytest_arguments(args)
 
@@ -242,7 +243,7 @@ def _run_tests(args) -> None:
 
     pytest_result = run_command(pytest_cmd, allow_failure=True)
 
-    if "splits" in pytest_opts and args.output_durations and args.input_durations:
+    if args.output_durations and args.input_durations:
         output_path = Path(args.output_durations)
         if input_path:
             merged_data = load_json(input_path)
