@@ -7,7 +7,7 @@ use pnet_packet::{
     dns::{DnsClasses, DnsPacket, DnsQuery, Opcodes},
     FromPacket,
 };
-use telio_utils::telio_log_warn;
+use telio_utils::telio_log_debug;
 use thiserror::Error;
 
 /// Errors returned when parsing a DNS query from raw bytes.
@@ -65,12 +65,12 @@ pub fn parse_dns_query_packet(packet_bytes: &[u8]) -> Result<DnsPacket<'_>, DnsP
 pub fn find_nord_query(dns_packet: &DnsPacket) -> Option<DnsQuery> {
     let opcode = dns_packet.get_opcode();
     if opcode != Opcodes::StandardQuery {
-        telio_log_warn!("Unsupported Opcode for nord query: {opcode:?}");
+        telio_log_debug!("Unsupported Opcode for nord query: {opcode:?}");
         return None;
     }
 
     if dns_packet.get_query_count() > 1 {
-        telio_log_warn!(
+        telio_log_debug!(
             "DNS packet contains multiple queries: {}",
             dns_packet.get_query_count()
         );
