@@ -747,7 +747,7 @@ services:
     healthcheck:
       test: /opt/bin/openwrt/openwrt-qemu-healthcheck.sh
       interval: 15s
-      timeout: 5s
+      timeout: 30s
       start_period: 45s
       retries: 5
 
@@ -785,7 +785,7 @@ services:
     healthcheck:
       test: /opt/bin/openwrt/openwrt-qemu-healthcheck.sh
       interval: 15s
-      timeout: 5s
+      timeout: 30s
       # Match the entrypoint's QEMU_CONFIG_TIMEOUT
       start_period: 120s
       retries: 32

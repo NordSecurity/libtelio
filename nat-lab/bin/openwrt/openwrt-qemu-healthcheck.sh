@@ -3,6 +3,7 @@
 set -eu
 
 OPENWRT_GW_IP=${OPENWRT_VM_LAN_IP}
+SSH_TIMEOUT=20
 
 [ -S /tmp/qmp.sock ] || exit 1
 
@@ -15,19 +16,12 @@ OUT=$(
 
 echo "$OUT" | grep -q '"status"\s*:\s*"running"' || exit 1
 
-if [ -S /tmp/qga.sock ]; then
-  GAP=$(
-    { printf '%s\n' \
-        '{ "execute": "qmp_capabilities" }' \
-        '{ "execute": "guest-ping" }' \
-      | socat - UNIX-CONNECT:/tmp/qmp.sock; } 2>/dev/null || true
-  )
-  echo "$GAP" | grep -q '"return"\s*:\s*{}' || exit 1
-fi
-
 [ -f /var/lib/qemu/initialized ] || exit 1
 
-
-socat -T 2 - tcp:"$OPENWRT_GW_IP":22,connect-timeout=2 </dev/null >/dev/null 2>&1 || exit 1
+printf 'SSH-2.0-natlab_healthcheck\r\n' \
+  | socat -t "$SSH_TIMEOUT" -T "$SSH_TIMEOUT" - \
+      tcp:"$OPENWRT_GW_IP":22,connect-timeout="$SSH_TIMEOUT" 2>/dev/null \
+  | grep -q '^SSH-2\.0-' \
+  || { echo "no SSH identification from $OPENWRT_GW_IP:22"; exit 1; }
 
 exit 0
