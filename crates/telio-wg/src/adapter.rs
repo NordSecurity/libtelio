@@ -112,6 +112,9 @@ pub trait Adapter: Send + Sync {
     }
 }
 
+/// IPv6 minimum link MTU, the interface MTU applies to both address families
+pub const MIN_MTU: u32 = 1280;
+
 /// Enumeration of `Error` types for `Adapter` struct
 #[derive(Debug, TError)]
 pub enum Error {
@@ -135,6 +138,10 @@ pub enum Error {
     /// Unsupported adapter
     #[error("Unsupported adapter")]
     UnsupportedAdapter,
+
+    /// MTU below the minimum any adapter accepts
+    #[error("MTU must be at least {min}, got {0}", min = MIN_MTU)]
+    MtuTooLow(u32),
 
     /// Unsupported on Windows adapter
     #[error("Mismatched windows adapter")]

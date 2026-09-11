@@ -331,7 +331,7 @@ interface Telio {
     [Throws=TelioError]
     void set_ext_if_filter(sequence<string> ext_if_filter);
 
-    /// Set the MTU of the adapter interface.
+    /// Set the MTU of the adapter interface, at least 1280.
     ///
     /// Only supported by the Windows native adapter, other adapters fail with
     /// an unsupported-adapter error.
@@ -597,9 +597,9 @@ dictionary StartConfig {
     /// Interfaces to skip while looking for the default interface.
     sequence<string>? ext_if_filter = null;
 
-    /// MTU to set on the adapter interface. When not set, the adapter picks
-    /// its own. Only supported by the Windows native adapter, starting any
-    /// other adapter with it set fails.
+    /// MTU to set on the adapter interface, at least 1280. When not set, the
+    /// adapter picks its own. Only supported by the Windows native adapter,
+    /// starting any other adapter with it set fails.
     u32? mtu = null;
 
     /// File descriptor of an already open tunnel, which telio takes ownership

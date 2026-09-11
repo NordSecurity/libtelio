@@ -55,8 +55,6 @@ use wireguard_nt::{
 use wireguard_uapi::xplatform;
 
 const REMOVAL_SLEEP_SECS: u64 = 2;
-// IPv6 minimum link MTU, the interface MTU applies to both address families
-const MIN_MTU: u32 = 1280;
 const SET_STATE_MAX_ATTEMPTS: usize = 10;
 const SET_STATE_INITIAL_BACKOFF: Duration = Duration::from_millis(200);
 const SET_STATE_MAX_BACKOFF: Duration = Duration::from_secs(2);
@@ -712,12 +710,6 @@ impl WindowsNativeWg {
     }
 
     fn set_adapter_mtu_inner(&self, mtu: u32) -> std::result::Result<(), AdapterError> {
-        if mtu < MIN_MTU {
-            return Err(AdapterError::WindowsNativeWg(Error::Fail(format!(
-                "MTU must be at least {MIN_MTU}, got {mtu}",
-            ))));
-        }
-
         // Stop the MTU monitors first, so they cannot overwrite the value set below
         if let Ok(mut interface_watcher) = self.watcher.clone().lock() {
             interface_watcher.set_forced_mtu(mtu);

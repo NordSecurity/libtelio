@@ -156,9 +156,9 @@ pub struct StartConfig {
     pub name: Option<String>,
     /// Interfaces to skip while looking for the default interface.
     pub ext_if_filter: Option<Vec<String>>,
-    /// MTU to set on the adapter interface. When not set, the adapter picks
-    /// its own. Only supported by the Windows native adapter, starting any
-    /// other adapter with it set fails.
+    /// MTU to set on the adapter interface, at least 1280. When not set, the
+    /// adapter picks its own. Only supported by the Windows native adapter,
+    /// starting any other adapter with it set fails.
     pub mtu: Option<u32>,
     /// File descriptor of an already open tunnel, which telio takes ownership
     /// of and closes on stop. When not set, the adapter opens its own tunnel.
@@ -510,7 +510,7 @@ impl Telio {
         })
     }
 
-    /// Set the MTU of the adapter interface.
+    /// Set the MTU of the adapter interface, at least 1280.
     ///
     /// Only supported by the Windows native adapter, other adapters fail with
     /// an unsupported-adapter error.

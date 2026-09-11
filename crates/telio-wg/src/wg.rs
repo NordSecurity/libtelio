@@ -89,6 +89,13 @@ pub trait WireGuard: Send + Sync + 'static {
     }
 }
 
+fn check_mtu(mtu: u32) -> Result<(), Error> {
+    if mtu < adapter::MIN_MTU {
+        return Err(Error::MtuTooLow(mtu));
+    }
+    Ok(())
+}
+
 /// WireGuard implementation allowing dynamic selection of implementation.
 pub struct DynamicWg {
     task: Task<State>,
@@ -115,7 +122,8 @@ pub struct Config {
     /// When present, the callback is consulted by the Windows native adapter
     /// to determine whether meshnet is currently enabled.
     pub enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
-    /// MTU to set on the adapter interface, if None the adapter picks its own
+    /// MTU to set on the adapter interface, at least [adapter::MIN_MTU]. If None the
+    /// adapter picks its own
     pub mtu: Option<u32>,
     /// Configurable socket buffer size, if None doesn't modify default OS set values
     pub skt_buffer_size: Option<u32>,
@@ -260,6 +268,9 @@ impl DynamicWg {
     where
         Self: Sized,
     {
+        if let Some(mtu) = cfg.mtu {
+            check_mtu(mtu)?;
+        }
         let adapter = Self::start_adapter(cfg.try_clone()?).await?;
         #[cfg(unix)]
         return Ok(Self::start_with(
@@ -480,6 +491,7 @@ impl WireGuard for DynamicWg {
     }
 
     async fn set_adapter_mtu(&self, mtu: u32) -> Result<(), Error> {
+        check_mtu(mtu)?;
         task_exec!(&self.task, async move |s| Ok(s
             .adapter
             .set_adapter_mtu(mtu)
@@ -1377,6 +1389,42 @@ pub mod tests {
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wg_rejects_too_low_adapter_mtu_before_reaching_adapter() {
+        let Env { adapter, wg, .. } = setup().await;
+
+        assert!(matches!(
+            wg.set_adapter_mtu(adapter::MIN_MTU - 1).await,
+            Err(Error::MtuTooLow(_))
+        ));
+
+        adapter.lock().await.expect_stop().return_once(|| ());
+        wg.stop().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn wg_rejects_too_low_mtu_on_start() {
+        let cfg = Config {
+            mtu: Some(adapter::MIN_MTU - 1),
+            ..Config::new().unwrap()
+        };
+        let io = Io {
+            events: Chan::default().tx,
+            analytics_tx: None,
+            libtelio_wide_event_publisher: None,
+        };
+        let result = DynamicWg::start(
+            io,
+            cfg,
+            None,
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_MS),
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS),
+        )
+        .await;
+        assert!(matches!(result, Err(Error::MtuTooLow(_))));
     }
 
     #[tokio::test(start_paused = true)]

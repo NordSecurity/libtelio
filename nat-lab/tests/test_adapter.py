@@ -583,7 +583,7 @@ class TestAdapterMtu:
             for family in ("IPv4", "IPv6")
         }
 
-        with pytest.raises(RuntimeError, match="MTU must be at least 1280"):
+        with pytest.raises(RuntimeError, match="MtuTooLow"):
             await client_alpha.set_adapter_mtu(1279)
 
         for family, mtu in current_mtus.items():
