@@ -77,8 +77,8 @@ pub trait WireGuard: Send + Sync + 'static {
     async fn reset_existing_connections(&self, exit_pubkey: PublicKey) -> Result<(), Error>;
     /// Set the ip stack for the adapter
     async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result<(), Error>;
-    /// Set the MTU of the adapter interface
-    async fn set_adapter_mtu(&self, mtu: u32) -> Result<(), Error>;
+    /// Set the MTU of the adapter interface, `None` restores the adapter's own handling
+    async fn set_adapter_mtu(&self, mtu: Option<u32>) -> Result<(), Error>;
     /// Ensure that adapter is UP or DOWN
     async fn ensure_expected_adapter_state(
         &self,
@@ -490,8 +490,10 @@ impl WireGuard for DynamicWg {
         .await?)
     }
 
-    async fn set_adapter_mtu(&self, mtu: u32) -> Result<(), Error> {
-        check_mtu(mtu)?;
+    async fn set_adapter_mtu(&self, mtu: Option<u32>) -> Result<(), Error> {
+        if let Some(mtu) = mtu {
+            check_mtu(mtu)?;
+        }
         task_exec!(&self.task, async move |s| Ok(s
             .adapter
             .set_adapter_mtu(mtu)
@@ -1173,7 +1175,7 @@ pub mod tests {
             Err(Error::UnsupportedAdapter)
         }
 
-        async fn set_adapter_mtu(&self, mtu: u32) -> Result<(), AdapterError> {
+        async fn set_adapter_mtu(&self, mtu: Option<u32>) -> Result<(), AdapterError> {
             self.lock().await.set_adapter_mtu(mtu).await
         }
 
@@ -1381,10 +1383,20 @@ pub mod tests {
             .lock()
             .await
             .expect_set_adapter_mtu()
-            .with(predicate::eq(1400))
+            .with(predicate::eq(Some(1400)))
             .times(1)
             .returning(|_| Ok(()));
-        wg.set_adapter_mtu(1400).await.unwrap();
+        wg.set_adapter_mtu(Some(1400)).await.unwrap();
+        adapter.lock().await.checkpoint();
+
+        adapter
+            .lock()
+            .await
+            .expect_set_adapter_mtu()
+            .with(predicate::eq(None))
+            .times(1)
+            .returning(|_| Ok(()));
+        wg.set_adapter_mtu(None).await.unwrap();
         adapter.lock().await.checkpoint();
 
         adapter.lock().await.expect_stop().return_once(|| ());
@@ -1396,7 +1408,7 @@ pub mod tests {
         let Env { adapter, wg, .. } = setup().await;
 
         assert!(matches!(
-            wg.set_adapter_mtu(adapter::MIN_MTU - 1).await,
+            wg.set_adapter_mtu(Some(adapter::MIN_MTU - 1)).await,
             Err(Error::MtuTooLow(_))
         ));
 
@@ -1438,7 +1450,7 @@ pub mod tests {
             .times(1)
             .returning(|_| Err(AdapterError::UnsupportedAdapter));
         assert!(matches!(
-            wg.set_adapter_mtu(1400).await,
+            wg.set_adapter_mtu(Some(1400)).await,
             Err(Error::UnsupportedAdapter)
         ));
 

@@ -510,13 +510,14 @@ impl Telio {
         })
     }
 
-    /// Set the MTU of the adapter interface, at least 1280.
+    /// Set the MTU of the adapter interface, at least 1280. `None` restores the
+    /// adapter's own MTU handling.
     ///
     /// Only supported by the Windows native adapter, other adapters fail with
     /// an unsupported-adapter error.
-    pub fn set_adapter_mtu(&self, mtu: u32) -> FfiResult<()> {
+    pub fn set_adapter_mtu(&self, mtu: Option<u32>) -> FfiResult<()> {
         telio_log_info!(
-            "Telio::set_adapter_mtu entry with instance id: {}. MTU: {}",
+            "Telio::set_adapter_mtu entry with instance id: {}. MTU: {:?}",
             self.id,
             mtu,
         );

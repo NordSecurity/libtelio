@@ -518,7 +518,7 @@ impl WindowsNativeWg {
             )));
         }
 
-        if let Some(mtu) = mtu {
+        if mtu.is_some() {
             wg_dev.set_adapter_mtu_inner(mtu)?;
         }
 
@@ -709,8 +709,9 @@ impl WindowsNativeWg {
         }
     }
 
-    fn set_adapter_mtu_inner(&self, mtu: u32) -> std::result::Result<(), AdapterError> {
-        // Stop the MTU monitors first, so they cannot overwrite the value set below
+    fn set_adapter_mtu_inner(&self, mtu: Option<u32>) -> std::result::Result<(), AdapterError> {
+        // The watcher stops the MTU monitors first, so they cannot overwrite the
+        // value set below, or restarts them when the forced MTU is cleared
         if let Ok(mut interface_watcher) = self.watcher.clone().lock() {
             interface_watcher.set_forced_mtu(mtu);
         } else {
@@ -718,6 +719,9 @@ impl WindowsNativeWg {
                 "error obtaining lock".into(),
             )));
         }
+        let Some(mtu) = mtu else {
+            return Ok(());
+        };
 
         // An address family whose interface is not up yet gets the MTU from the
         // interface watcher once it appears, so fail only when both fail
@@ -814,7 +818,7 @@ impl Adapter for WindowsNativeWg {
         Err(AdapterError::UnsupportedAdapter)
     }
 
-    async fn set_adapter_mtu(&self, mtu: u32) -> std::result::Result<(), AdapterError> {
+    async fn set_adapter_mtu(&self, mtu: Option<u32>) -> std::result::Result<(), AdapterError> {
         self.set_adapter_mtu_inner(mtu)
     }
 

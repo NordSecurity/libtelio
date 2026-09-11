@@ -723,8 +723,8 @@ impl Device {
         })
     }
 
-    /// Configure the MTU of the adapter interface.
-    pub fn set_adapter_mtu(&self, mtu: u32) -> Result {
+    /// Configure the MTU of the adapter interface, `None` restores the adapter's own handling.
+    pub fn set_adapter_mtu(&self, mtu: Option<u32>) -> Result {
         self.async_runtime()?.block_on(async {
             task_exec!(self.rt()?, async move |rt| {
                 Ok(rt.set_adapter_mtu(mtu).boxed().await)
@@ -1766,7 +1766,7 @@ impl Runtime {
         Ok(())
     }
 
-    async fn set_adapter_mtu(&mut self, mtu: u32) -> Result {
+    async fn set_adapter_mtu(&mut self, mtu: Option<u32>) -> Result {
         Ok(self
             .entities
             .wireguard_interface

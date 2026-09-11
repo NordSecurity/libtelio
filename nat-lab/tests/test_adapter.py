@@ -68,23 +68,34 @@ async def get_interface_mtu(client_conn, client, address_family: str) -> int:
     return int(output)
 
 
+async def get_interface_mtus(client_conn, client) -> dict[str, int]:
+    return {
+        family: await get_interface_mtu(client_conn, client, family)
+        for family in ("IPv4", "IPv6")
+    }
+
+
 async def wait_for_interface_mtu(client_conn, client, expected_mtu: int) -> None:
+    await wait_for_interface_mtus(
+        client_conn, client, {"IPv4": expected_mtu, "IPv6": expected_mtu}
+    )
+
+
+async def wait_for_interface_mtus(
+    client_conn, client, expected: dict[str, int]
+) -> None:
     """
-    Wait for both address families to report `expected_mtu`.
+    Wait for the address families to report the MTUs in `expected`.
 
     The adapter sets each family separately and the interface watcher may
     re-apply the MTU on interface events, so the value is not readable
     immediately after the call that requested it.
     """
-    expected = {"IPv4": expected_mtu, "IPv6": expected_mtu}
     actual: dict = {}
 
     for _ in range(MTU_POLL_ATTEMPTS):
         try:
-            actual = {
-                family: await get_interface_mtu(client_conn, client, family)
-                for family in expected
-            }
+            actual = await get_interface_mtus(client_conn, client)
         except (ProcessExecError, RuntimeError):
             # The interface is missing or still settling after a restart
             actual = {}
@@ -575,13 +586,23 @@ class TestAdapterMtu:
 
         await wait_for_interface_mtu(client_conn, client_alpha, expected_mtu)
 
+    async def test_restores_automatic_mtu(self, env: Environment) -> None:
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+        automatic_mtus = await get_interface_mtus(client_conn, client_alpha)
+        forced_mtu = 1320
+        assert forced_mtu not in automatic_mtus.values()
+
+        await client_alpha.set_adapter_mtu(forced_mtu)
+        await wait_for_interface_mtu(client_conn, client_alpha, forced_mtu)
+
+        await client_alpha.set_adapter_mtu(None)
+        await wait_for_interface_mtus(client_conn, client_alpha, automatic_mtus)
+
     async def test_rejects_too_low_mtu(self, env: Environment) -> None:
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
-        current_mtus = {
-            family: await get_interface_mtu(client_conn, client_alpha, family)
-            for family in ("IPv4", "IPv6")
-        }
+        current_mtus = await get_interface_mtus(client_conn, client_alpha)
 
         with pytest.raises(RuntimeError, match="MtuTooLow"):
             await client_alpha.set_adapter_mtu(1279)

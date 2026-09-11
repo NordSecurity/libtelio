@@ -331,12 +331,13 @@ interface Telio {
     [Throws=TelioError]
     void set_ext_if_filter(sequence<string> ext_if_filter);
 
-    /// Set the MTU of the adapter interface, at least 1280.
+    /// Set the MTU of the adapter interface, at least 1280. `None` restores the
+    /// adapter's own MTU handling.
     ///
     /// Only supported by the Windows native adapter, other adapters fail with
     /// an unsupported-adapter error.
     [Throws=TelioError]
-    void set_adapter_mtu(u32 mtu);
+    void set_adapter_mtu(u32? mtu);
 
     /// Sets private key for started device.
     ///
