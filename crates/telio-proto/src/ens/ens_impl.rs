@@ -1012,12 +1012,16 @@ pub(crate) mod tests {
 
         let errors_to_emit = [
             ConnectionError {
-                code: grpc::Error::Unknown as i32,
+                code: grpc::Error::Unknown.into(),
                 additional_info: None,
             },
             ConnectionError {
-                code: grpc::Error::ConnectionLimitReached as i32,
+                code: grpc::Error::ConnectionLimitReached.into(),
                 additional_info: Some("additional info".to_owned()),
+            },
+            ConnectionError {
+                code: grpc::Error::UnsupportedCipher.into(),
+                additional_info: Some("caesar cipher is unsupported".to_owned()),
             },
         ];
 
@@ -1043,7 +1047,7 @@ pub(crate) mod tests {
         .unwrap();
 
         send_errors(&errors_to_emit, server_config.command_tx.clone()).await;
-        let _collected_errors = collect_errors(2, &mut rx).await;
+        let _collected_errors = collect_errors(errors_to_emit.len(), &mut rx).await;
 
         ens.start_monitor_on_port(
             IpAddr::V4(Ipv4Addr::LOCALHOST),
@@ -1056,7 +1060,7 @@ pub(crate) mod tests {
         .unwrap();
 
         send_errors(&errors_to_emit, server_config.command_tx.clone()).await;
-        let collected_errors = collect_errors(2, &mut rx).await;
+        let collected_errors = collect_errors(errors_to_emit.len(), &mut rx).await;
 
         assert_eq!(
             errors_to_emit
@@ -1072,7 +1076,7 @@ pub(crate) mod tests {
     #[tokio::test]
     #[test_log::test]
     async fn test_ens_forwards_unknown_error_code() {
-        const UNKNOWN_ERROR_CODE: i32 = grpc::Error::Superseded as i32 + 1;
+        const UNKNOWN_ERROR_CODE: i32 = grpc::Error::UnsupportedCipher as i32 + 1;
 
         let bounds = ExponentialBackoffBounds::default();
         let backoff = ExponentialBackoff::new(bounds).unwrap();

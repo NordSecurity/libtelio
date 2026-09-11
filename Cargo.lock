@@ -2484,8 +2484,8 @@ checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
 name = "llt-proto"
-version = "0.1.0"
-source = "git+https://github.com/NordSecurity/llt-proto.git?tag=v1.0.0#4a9e79beebee837a7873636a164c88cf0971a4df"
+version = "2.0.0"
+source = "git+https://github.com/NordSecurity/llt-proto.git?rev=6d4d5354eab9c640c54d5948251042b87f8e1c63#6d4d5354eab9c640c54d5948251042b87f8e1c63"
 dependencies = [
  "anyhow",
  "prost",
