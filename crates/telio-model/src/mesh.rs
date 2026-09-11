@@ -54,6 +54,9 @@ pub struct Node {
     pub peer_allows_multicast: bool,
     /// Latest NordLynx VPN error received from the VPN's Error Notification Service
     pub vpn_connection_error: Option<VpnConnectionError>,
+    /// The cipher selected during the WireGuard handshake.
+    /// Only populated when using the NepTUN adapter; `None` for kernel WireGuard implementations.
+    pub selected_cipher: Option<String>,
 }
 
 /// Possible VPN errors received from the Error Notification Service
@@ -90,6 +93,9 @@ pub struct ExitNode {
     pub allowed_ips: Option<Vec<IpNet>>,
     /// Socket address of the Exit Node
     pub endpoint: Option<SocketAddr>,
+    /// List of supported ciphers for the exit node connection.
+    /// When `None`, the adapter default is used (NepTUN only).
+    pub supported_ciphers: Option<Vec<String>>,
 }
 
 /// Connection state of the node

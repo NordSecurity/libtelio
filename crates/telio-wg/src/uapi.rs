@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use telio_crypto::{KeyDecodeError, PresharedKey, PublicKey, SecretKey};
 use telio_model::mesh::{LinkState, Node, NodeState};
 use telio_utils::{telio_log_warn, DualTarget, DualTargetError, Instant};
-use wireguard_uapi::{get, key::Key, xplatform::set};
+use wireguard_uapi::{get, key::Key, xplatform, xplatform::set};
 
 use std::{
     collections::BTreeMap,
@@ -63,6 +63,10 @@ pub struct Peer {
     pub time_since_last_handshake: Option<Duration>,
     /// The peer's preshared key
     pub preshared_key: Option<PresharedKey>,
+    /// Supported ciphers for this peer. When `None`, the adapter default is used.
+    pub supported_ciphers: Option<Vec<String>>,
+    /// The cipher selected during the WireGuard handshake (populated from GET response, NepTUN only).
+    pub selected_cipher: Option<String>,
 }
 
 impl From<get::Peer> for Peer {
@@ -92,6 +96,10 @@ impl From<get::Peer> for Peer {
             } else {
                 Some(PresharedKey((*item.preshared_key).into()))
             },
+            supported_ciphers: item
+                .supported_ciphers
+                .map(|ciphers| ciphers.into_iter().map(|c| c.to_string()).collect()),
+            selected_cipher: item.selected_cipher.map(|c| c.to_string()),
         }
     }
 }
@@ -166,6 +174,12 @@ impl From<&Peer> for set::Peer {
                 })
                 .collect(),
             preshared_key: item.preshared_key.clone().map(|psk| psk.0 .0.into()),
+            supported_ciphers: item.supported_ciphers.as_ref().map(|ciphers| {
+                ciphers
+                    .iter()
+                    .filter_map(|s| s.parse::<xplatform::Cipher>().ok())
+                    .collect()
+            }),
             ..Default::default()
         }
     }
@@ -677,6 +691,19 @@ fn parse_peer<R: Read>(
                     if preshared.0 != [0; 32] {
                         peer.preshared_key = Some(preshared);
                     }
+                }
+                "supported_ciphers" => {
+                    let ciphers: Vec<String> = val
+                        .split(',')
+                        .map(|s| s.trim().to_owned())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    if !ciphers.is_empty() {
+                        peer.supported_ciphers = Some(ciphers);
+                    }
+                }
+                "selected_cipher" => {
+                    peer.selected_cipher = Some(val.to_owned());
                 }
                 "public_key" => {
                     break (
