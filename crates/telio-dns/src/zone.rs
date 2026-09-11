@@ -19,7 +19,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     str::FromStr,
 };
-use telio_model::features::TtlValue;
+use telio_model::{constants::DNS_PORT, features::TtlValue};
 use telio_utils::{telio_log_debug, telio_log_warn};
 use thiserror::Error;
 
@@ -343,7 +343,7 @@ impl ForwardZone {
             ZoneType::Forward,
             ForwardConfig {
                 options: Some(options),
-                name_servers: NameServerConfigGroup::from_ips_clear(ips, 53, true),
+                name_servers: NameServerConfigGroup::from_ips_clear(ips, DNS_PORT, true),
             },
         )
         .await?;

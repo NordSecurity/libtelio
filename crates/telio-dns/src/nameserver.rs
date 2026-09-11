@@ -1,9 +1,10 @@
 use crate::error::Result as DnsResult;
 use crate::{
-    forwarder::UdpForwarder,
     packet_decoder::{find_nord_query, normalize_qname, parse_dns_query_packet, DnsParseError},
     packet_encoder::{DnsBuildError, DnsResponseBuilder},
     resolver::Resolver,
+    udp_forwarder::UdpForwarder,
+    upstream::UpstreamList,
     zone::{AuthoritativeZone, ClonableZones, ForwardZone, NordZone, Records, NORD_ZONE},
 };
 use async_trait::async_trait;
@@ -27,6 +28,7 @@ use std::{
     str::FromStr,
     sync::Arc,
 };
+use telio_model::constants::DNS_PORT;
 use telio_model::features::TtlValue;
 use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
 use tokio::task::JoinHandle;
@@ -44,7 +46,9 @@ const UDP_HEADER: usize = 8;
 const TCP_MIN_HEADER: usize = 20;
 const MAX_CONCURRENT_QUERIES: usize = 256;
 const IDLE_TIME: Duration = Duration::from_secs(1);
-const DNS_PORT: u16 = 53;
+
+/// Timeout for one upstream DNS query attempt
+pub(crate) const QUERY_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Error)]
 enum PacketError {
@@ -159,6 +163,7 @@ pub struct LocalNameServer {
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
     forwarder: Option<UdpForwarder>,
+    upstreams: Arc<Mutex<UpstreamList>>,
     /// Typed handle to the same forward zone that is stored, type-erased, in
     /// `zones`. Both hold the same `Arc`, so this stays in sync across the
     /// copy-on-write clones of `ClonableZones`. Kept so the resolver cache can
@@ -173,8 +178,9 @@ impl LocalNameServer {
         forward_ips: &[IpAddr],
         use_raw_forwarder: bool,
     ) -> DnsResult<Arc<RwLock<Self>>> {
+        let upstreams = Arc::new(Mutex::new(UpstreamList::default()));
         let raw_forwarder: Option<UdpForwarder> = if use_raw_forwarder {
-            Some(UdpForwarder::new().await?)
+            Some(UdpForwarder::new(upstreams.clone(), QUERY_TIMEOUT).await?)
         } else {
             None
         };
@@ -183,6 +189,7 @@ impl LocalNameServer {
             zones: Arc::new(ClonableZones::new()),
             task_handle: None,
             forwarder: raw_forwarder,
+            upstreams,
             forward_zone: None,
         }));
         ns.forward(forward_ips).await?;
@@ -938,11 +945,8 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
     }
 
     async fn forward_to_addrs(&self, to: &[SocketAddr]) -> DnsResult<()> {
-        let ns = self.read().await;
-        if let Some(forwarder) = &ns.forwarder {
-            forwarder.set_upstreams(to.to_vec()).await;
-        }
-
+        let upstreams = self.read().await.upstreams.clone();
+        upstreams.lock().await.set(to.to_vec());
         Ok(())
     }
 
@@ -1101,6 +1105,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn forward_updates_shared_upstreams() {
+        let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], false)
+            .await
+            .unwrap();
+        {
+            let ns = nameserver.read().await;
+            let state = ns.upstreams.lock().await;
+            assert_eq!(
+                state.addrs(),
+                [SocketAddr::new(
+                    IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+                    DNS_PORT
+                )]
+            );
+        }
+
+        nameserver
+            .forward(&[IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1))])
+            .await
+            .unwrap();
+
+        let ns = nameserver.read().await;
+        let state = ns.upstreams.lock().await;
+        assert_eq!(
+            state.addrs(),
+            [SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)),
+                DNS_PORT
+            )]
+        );
+    }
+
+    #[tokio::test]
     async fn nameserver_skips_forwarder_by_default() {
         let nameserver = LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], false)
             .await
@@ -1225,7 +1262,7 @@ mod tests {
     // Tests PacketError::InvalidUdpChecksum
     #[test]
     fn packet_error_invalid_udp_checksum() {
-        let mut udp_seg = build_udp_segment(12345, 53, &[0; 4]);
+        let mut udp_seg = build_udp_segment(12345, DNS_PORT, &[0; 4]);
         // Corrupt UDP checksum (bytes 6-7)
         udp_seg[6] ^= 0xFF;
         let packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &udp_seg);
@@ -1265,7 +1302,7 @@ mod tests {
             0x01, b'a', 0x00,
             // QTYPE and QCLASS intentionally missing → hickory fails to decode
         ];
-        let udp_seg = build_udp_segment(12345, 53, dns_payload);
+        let udp_seg = build_udp_segment(12345, DNS_PORT, dns_payload);
         let packet = build_ipv4_packet(IpNextHeaderProtocols::Udp, &udp_seg);
         let ns = test_nameserver().await;
         let mut response = vec![0u8; MAX_PACKET];
@@ -1290,7 +1327,7 @@ mod tests {
             },
             payload: PayloadRequestInfo::Udp {
                 source_port: 12345,
-                destination_port: 53,
+                destination_port: DNS_PORT,
                 dns_request: None,
             },
         };
@@ -1312,7 +1349,7 @@ mod tests {
             },
             payload: PayloadRequestInfo::Udp {
                 source_port: 12345,
-                destination_port: 53,
+                destination_port: DNS_PORT,
                 dns_request: None,
             },
         };
@@ -1338,7 +1375,7 @@ mod tests {
             },
             payload: PayloadRequestInfo::Udp {
                 source_port: 12345,
-                destination_port: 53,
+                destination_port: DNS_PORT,
                 dns_request: None,
             },
         };
