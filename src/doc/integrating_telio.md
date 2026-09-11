@@ -337,10 +337,11 @@ let adapter = get_default_adapter();
 
 let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
 
-// There are three ways to start telio:
+// There are four ways to start telio:
 // * start - telio does everything
 // * start_with_tun - use existing tun (android, apple)
 // * start_with_name - create tun with name (windows, linux)
+// * start_with_config - like start, with optional settings (name, ext_if_filter, mtu)
 telio.start(sk, adapter).unwrap();
 telio.stop().unwrap();
 
@@ -355,10 +356,11 @@ adapter := GetDefaultAdapter()
 
 telio, err := Telio {...}
 
-// There are three ways to start telio:
+// There are four ways to start telio:
 // * Start - telio does everything
 // * StartWithTun - use existing tun (android, apple)
 // * StartWithName - create tun with name (windows, linux)
+// * StartWithConfig - like start, with optional settings (name, ext_if_filter, mtu)
 _, err = telio.Start(sk, adapter)
 _, err = telio.Stop()
 
@@ -373,10 +375,11 @@ let adapter = getDefaultAdapter()
 
 let telio = Telio(...)
 
-// There are three ways to start telio:
+// There are four ways to start telio:
 // * start - telio does everything
 // * startWithTun - use existing tun (android, apple)
 // * startWithName - create tun with name (windows, linux)
+// * startWithConfig - like start, with optional settings (name, ext_if_filter, mtu)
 telio.start(sk, adapter)
 telio.stop()
 
@@ -391,10 +394,11 @@ var adapter = GetDefaultAdapter();
 
 Telio telio = new Telio(...);
 
-// There are three ways to start telio:
+// There are four ways to start telio:
 // * Start - telio does everything
 // * StartWithTun - use existing tun (android, apple)
 // * StartWithName - create tun with name (windows, linux)
+// * StartWithConfig - like start, with optional settings (name, ext_if_filter, mtu)
 telio.Start(sk, adapter);
 telio.Stop();
 
@@ -409,10 +413,11 @@ val adapter = getDefaultAdapter()
 
 val telio = Telio.new(...)!!
 
-// There are three ways to start telio:
+// There are four ways to start telio:
 // * start - telio does everything
 // * startWithTun - use existing tun (android, apple)
 // * startWithName - create tun with name (windows, linux)
+// * startWithConfig - like start, with optional settings (name, ext_if_filter, mtu)
 telio.start(sk, adapter)!!
 telio.stop()!!
 

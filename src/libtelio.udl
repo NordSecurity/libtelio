@@ -306,6 +306,12 @@ interface Telio {
     [Throws=TelioError]
     void start_named_ext_if_filter(SecretKey secret_key, TelioAdapterType adapter, string name, sequence<string> ext_if_filter);
 
+    /// Start telio with the specified adapter and the options in `config`.
+    ///
+    /// Adapter will attempt to open its own tunnel unless `config.tun` is set.
+    [Throws=TelioError]
+    void start_with_config(SecretKey secret_key, TelioAdapterType adapter, StartConfig config);
+
     /// Start telio device with specified adapter and already open tunnel.
     ///
     /// Telio will take ownership of tunnel , and close it on stop.
@@ -324,6 +330,14 @@ interface Telio {
     /// Set filtered interfaces list on adapter
     [Throws=TelioError]
     void set_ext_if_filter(sequence<string> ext_if_filter);
+
+    /// Set the MTU of the adapter interface, at least 1280. `None` restores the
+    /// adapter's own MTU handling.
+    ///
+    /// Only supported by the Windows native adapter, other adapters fail with
+    /// an unsupported-adapter error.
+    [Throws=TelioError]
+    void set_adapter_mtu(u32? mtu);
 
     /// Sets private key for started device.
     ///
@@ -570,6 +584,29 @@ callback interface TelioLoggerCb {
 callback interface TelioProtectCb {
     [Throws=TelioError]
     void protect(i32 socket_id);
+};
+
+/// Optional settings for starting telio, consumed by [Telio::start_with_config].
+///
+/// Every field defaults to "not set", so supporting a new option requires a
+/// single additional field instead of an additional `start*` function.
+dictionary StartConfig {
+    /// Name of the tunnel interface opened by the adapter. When not set, telio
+    /// picks a platform default.
+    string? name = null;
+
+    /// Interfaces to skip while looking for the default interface.
+    sequence<string>? ext_if_filter = null;
+
+    /// MTU to set on the adapter interface, at least 1280. When not set, the
+    /// adapter picks its own. Only supported by the Windows native adapter,
+    /// starting any other adapter with it set fails.
+    u32? mtu = null;
+
+    /// File descriptor of an already open tunnel, which telio takes ownership
+    /// of and closes on stop. When not set, the adapter opens its own tunnel.
+    /// Ignored on Windows.
+    i32? tun = null;
 };
 
 /// A [Features] builder that allows a simpler initialization of

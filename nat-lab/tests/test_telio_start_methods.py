@@ -7,6 +7,7 @@ from tests.utils.bindings import (
     default_features,
     features_with_endpoint_providers,
     EndpointProvider,
+    StartConfig,
     TelioAdapterType,
 )
 from tests.utils.connection import ConnectionTag
@@ -84,6 +85,39 @@ async def test_start_with_tun_and_switch_it_at_runtime(alpha_tag) -> None:
         await alpha_client.get_proxy().set_tun(tun12)
         await alpha_client.restart_interface(new_name=tun_name_prefix + "12")
         await alpha_client.get_router().delete_interface(tun_name_prefix + "11")
+        await ping_between_all_nodes(env)
+
+
+@pytest.mark.parametrize(
+    "interface_name",
+    [
+        pytest.param(None, id="default_name"),
+        pytest.param("tun11", id="explicit_name"),
+    ],
+)
+async def test_start_with_config(interface_name) -> None:
+    setup_params = _generate_setup_parameters([
+        ConnectionTag.DOCKER_CONE_CLIENT_1,
+        ConnectionTag.DOCKER_CONE_CLIENT_2,
+    ])
+
+    async with AsyncExitStack() as exit_stack:
+        env = await setup_mesh_nodes(exit_stack, setup_params)
+        alpha_client, _ = env.clients
+        alpha, _ = env.nodes
+        router = alpha_client.get_router()
+        old_interface_name = router.get_interface_name()
+
+        await ping_between_all_nodes(env)
+        await alpha_client.stop_device()
+
+        # A `None` name leaves the current interface name to the client helper
+        await alpha_client.start_with_config(StartConfig(name=interface_name))
+        new_interface_name = interface_name or old_interface_name
+        router.set_interface_name(new_interface_name)
+        await alpha_client.set_meshnet_config(env.api.get_meshnet_config(alpha.id))
+        if new_interface_name != old_interface_name:
+            await router.delete_interface(old_interface_name)
         await ping_between_all_nodes(env)
 
 
