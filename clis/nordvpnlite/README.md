@@ -85,7 +85,32 @@ needs be absolute, otherwise will be relative to `working-directory` when daemon
     * `manual` - do not configure interfaces automatically
     * `iproute` - systems using iproute2 command
     * `uci` - OpenWRT systems using uci command
+  * `manage_dnsmasq` - Only used by the `uci` provider. If `true` (the default), the
+  daemon points dnsmasq at the `dns` servers (`dhcp.@dnsmasq[0].noresolv` and `.server`,
+  replacing existing entries such as split-DNS forwards) and advertises the tunnel MTU
+  to LAN clients, restoring both on a clean shutdown. Set to `false` to leave
+  `/etc/config/dhcp` untouched
 * `dns` - Optional list of DNS server IP addresses to use. If not set, built-in safe defaults are used.
+  Ignored when `interface.manage_dnsmasq` is `false`
+* `health_check` - Optional active tunnel health check (Linux only), disabled by default:
+  * `enabled` - `true` to turn it on. Defaults to `false`
+  * `interval_seconds` - seconds between probes. Defaults to `15`
+  * `probe_timeout_seconds` - seconds before a probe counts as failed. Defaults to `5`
+  * `failure_threshold` - consecutive failed tunnel probes, while the uplink works,
+  before switching server. Defaults to `4`
+  * `settle_seconds` - seconds to wait after connecting or switching before probing
+  again. Defaults to `30`
+  * `probe_targets` - TCP `address:port` endpoints; a probe succeeds if any of them
+  accepts a connection. Defaults to `1.1.1.1:443`, `8.8.8.8:443` and `9.9.9.9:443`
+  * `wan_interface` - uplink interface for the comparison probe. Detected from the
+  default route if not set
+
+  Each probe opens a TCP connection through the tunnel interface. When that fails, the
+  probe is repeated through the uplink, and only a failing tunnel with a working uplink
+  counts towards `failure_threshold`, so an ISP outage does not cause server switching.
+  The next server is taken from the list fetched at startup, because the API may be
+  unreachable while the tunnel is down. With a fixed `vpn.server`, the daemon reconnects
+  to that server instead.
 
 And following cli commands:
 

@@ -12,6 +12,8 @@ mod comms;
 mod config;
 mod core_api;
 mod daemon;
+#[cfg(target_os = "linux")]
+mod health;
 mod interface;
 mod logging;
 

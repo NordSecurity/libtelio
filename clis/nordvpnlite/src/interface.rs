@@ -91,13 +91,20 @@ fn get_available_priorities(
     }
 }
 
+/// Device named in an `ip route` line (the word after `dev`), if any.
+fn route_device(route: &str) -> Option<&str> {
+    route.split_whitespace().skip_while(|w| *w != "dev").nth(1)
+}
+
+/// Device of the main-table default route (the uplink), if determinable.
+pub(crate) fn read_default_route_device() -> Option<String> {
+    let route = execute_with_output(Command::new("ip").args(["route", "show", "default"])).ok()?;
+    route_device(&route).map(str::to_owned)
+}
+
 /// MTU of the default-route (uplink) interface, if determinable.
 fn read_default_route_mtu() -> Option<u32> {
-    let route = execute_with_output(Command::new("ip").args(["route", "show", "default"])).ok()?;
-    let dev = route
-        .split_whitespace()
-        .skip_while(|w| *w != "dev")
-        .nth(1)?;
+    let dev = read_default_route_device()?;
     std::fs::read_to_string(format!("/sys/class/net/{dev}/mtu"))
         .ok()?
         .trim()
@@ -125,12 +132,33 @@ pub enum InterfaceConfigurationProvider {
     Uci,
 }
 
-#[derive(Default, PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
+#[derive(PartialEq, Eq, Deserialize, Serialize, Debug, Clone)]
 pub struct InterfaceConfig {
     pub name: String,
     pub config_provider: InterfaceConfigurationProvider,
     /// Set the maximum routing rule priority
     pub max_route_priority: Option<u32>,
+    /// Let the UCI provider rewrite dnsmasq upstreams (`dhcp.@dnsmasq[0].noresolv` and
+    /// `.server`) and advertise the tunnel MTU through `dhcp.lan.dhcp_option`. Set to
+    /// `false` to leave `/etc/config/dhcp` untouched, e.g. to keep split-DNS forwards;
+    /// `dns` is then ignored.
+    #[serde(default = "default_manage_dnsmasq")]
+    pub manage_dnsmasq: bool,
+}
+
+fn default_manage_dnsmasq() -> bool {
+    true
+}
+
+impl Default for InterfaceConfig {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            config_provider: InterfaceConfigurationProvider::default(),
+            max_route_priority: None,
+            manage_dnsmasq: default_manage_dnsmasq(),
+        }
+    }
 }
 
 impl InterfaceConfig {
@@ -146,9 +174,11 @@ impl InterfaceConfig {
                 max_route_priority: self.max_route_priority,
                 ..Default::default()
             }),
-            InterfaceConfigurationProvider::Uci => {
-                Box::new(Uci::new(&self.name, self.max_route_priority))
-            }
+            InterfaceConfigurationProvider::Uci => Box::new(Uci::new(
+                &self.name,
+                self.max_route_priority,
+                self.manage_dnsmasq,
+            )),
         }
     }
 }
@@ -424,6 +454,9 @@ pub struct Uci {
 
     /// Tunnel MTU derived from the uplink interface, computed once at construction
     tunnel_mtu: u32,
+
+    /// Whether dnsmasq and the LAN DHCP options may be modified
+    manage_dnsmasq: bool,
 }
 
 /// Represents a boolean option in the UCI configuration system.
@@ -462,7 +495,7 @@ impl UciBoolOption {
 }
 
 impl Uci {
-    fn new(interface_name: &str, max_route_priority: Option<u32>) -> Self {
+    fn new(interface_name: &str, max_route_priority: Option<u32>, manage_dnsmasq: bool) -> Self {
         // TODO: LLT-6485: Add support for multiple WANs
 
         // In OpenWRT, each network interface is declared using UCI syntax like:
@@ -537,6 +570,9 @@ impl Uci {
         debug!("Initial dhcp.@dnsmasq[0].noresolv {initial_setting_dnsmasq_noresolv:?}");
         debug!("Initial dhcp.@dnsmasq[0].server {initial_setting_dnsmasq_server:?}");
         debug!("Tunnel MTU {tunnel_mtu}");
+        if !manage_dnsmasq {
+            info!("dnsmasq management disabled, /etc/config/dhcp will not be modified");
+        }
 
         Self {
             interface_name: interface_name.to_string(),
@@ -546,6 +582,7 @@ impl Uci {
             initial_setting_dnsmasq_server,
             tunnel_mtu,
             max_route_priority,
+            manage_dnsmasq,
         }
     }
 
@@ -712,8 +749,10 @@ impl Uci {
         }
 
         // Restore DNS settings and DHCP options
-        if let Err(e) = self.restore_dnsmasq() {
-            error!("Error restoring dnsmasq: {e}");
+        if self.manage_dnsmasq {
+            if let Err(e) = self.restore_dnsmasq() {
+                error!("Error restoring dnsmasq: {e}");
+            }
         }
 
         // Restore IPv6
@@ -860,7 +899,11 @@ impl ConfigureInterface for Uci {
         self.disable_ipv6()?;
 
         // Configure DNS and advertise the tunnel MTU to LAN clients over DHCP
-        self.configure_dnsmasq(dns)?;
+        if self.manage_dnsmasq {
+            self.configure_dnsmasq(dns)?;
+        } else {
+            debug!("Leaving dnsmasq untouched (manage_dnsmasq is false), ignoring dns {dns:?}");
+        }
 
         // Save and apply
         self.reload_firewall()?;
@@ -1081,6 +1124,17 @@ mod tests {
         let existing_prios = vec![1, 2, 3, 4];
         let result = get_available_priorities(2, 5, &existing_prios);
         assert!(matches!(result, Err(NordVpnLiteError::IpRule)));
+    }
+
+    #[test]
+    fn test_route_device() {
+        assert_eq!(
+            route_device("default via 192.168.0.1 dev eth1 proto static src 192.168.0.2"),
+            Some("eth1")
+        );
+        assert_eq!(route_device("default dev wg4 scope link"), Some("wg4"));
+        assert_eq!(route_device("default via 192.168.0.1"), None);
+        assert_eq!(route_device(""), None);
     }
 
     #[test]

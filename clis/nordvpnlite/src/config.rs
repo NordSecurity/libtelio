@@ -1,7 +1,7 @@
 use std::{
     fs,
     io::{BufReader, Write},
-    net::{IpAddr, Ipv4Addr},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
     os::unix::fs::{OpenOptionsExt as _, PermissionsExt},
     path::{Path, PathBuf},
     str::FromStr,
@@ -124,6 +124,10 @@ pub struct NordVpnLiteConfig {
 
     #[serde(default)]
     pub post_quantum: bool,
+
+    /// Active tunnel health check with automatic exit node switching
+    #[serde(default)]
+    pub health_check: HealthCheckConfig,
 }
 
 impl NordVpnLiteConfig {
@@ -344,6 +348,7 @@ impl Default for NordVpnLiteConfig {
                 name: "nlx".to_string(),
                 config_provider: Default::default(),
                 max_route_priority: None,
+                manage_dnsmasq: true,
             },
             vpn: Default::default(),
             dns: dns_default(),
@@ -351,6 +356,7 @@ impl Default for NordVpnLiteConfig {
             http_certificate_file_path: None,
             enable_firewall: false,
             post_quantum: false,
+            health_check: HealthCheckConfig::default(),
         }
     }
 }
@@ -431,6 +437,52 @@ pub enum VpnConfig {
     Recommended,
 }
 
+/// Active tunnel health check.
+///
+/// Periodically opens a TCP connection to one of `probe_targets` through the tunnel
+/// interface. When that fails, the same probe is sent through the uplink: only a working
+/// uplink marks the tunnel as broken, so an ISP outage never causes server churn. After
+/// `failure_threshold` consecutive broken-tunnel probes the daemon switches to the next
+/// server from the list it fetched at startup.
+#[derive(PartialEq, Eq, Serialize, Deserialize, Debug, Clone)]
+#[serde(default, deny_unknown_fields)]
+pub struct HealthCheckConfig {
+    /// Enable the health check
+    pub enabled: bool,
+    /// Seconds between probes
+    pub interval_seconds: u64,
+    /// Seconds a probe may take before it counts as failed
+    pub probe_timeout_seconds: u64,
+    /// Consecutive broken-tunnel probes before switching exit node
+    pub failure_threshold: u32,
+    /// Seconds to wait after connecting or switching before probing again
+    pub settle_seconds: u64,
+    /// TCP endpoints to probe; a probe succeeds if any of them accepts a connection
+    pub probe_targets: Vec<SocketAddr>,
+    /// Uplink interface for the comparison probe, detected from the default route if unset
+    pub wan_interface: Option<String>,
+}
+
+impl Default for HealthCheckConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            interval_seconds: 15,
+            probe_timeout_seconds: 5,
+            failure_threshold: 4,
+            settle_seconds: 30,
+            // Port 443 rather than 53: VPN servers may intercept or block DNS to
+            // third-party resolvers, which would make every probe fail.
+            probe_targets: vec![
+                SocketAddr::from(([1, 1, 1, 1], 443)),
+                SocketAddr::from(([8, 8, 8, 8], 443)),
+                SocketAddr::from(([9, 9, 9, 9], 443)),
+            ],
+            wan_interface: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::interface::InterfaceConfigurationProvider;
@@ -466,6 +518,7 @@ mod tests {
                 name: "utun10".to_owned(),
                 config_provider: InterfaceConfigurationProvider::Manual,
                 max_route_priority: None,
+                manage_dnsmasq: true,
             },
             vpn: Default::default(),
             dns: dns_default(),
@@ -475,6 +528,7 @@ mod tests {
             http_certificate_file_path: None,
             enable_firewall: false,
             post_quantum: false,
+            health_check: HealthCheckConfig::default(),
         };
         {
             let json = r#"{
@@ -973,6 +1027,73 @@ mod tests {
     }
 
     #[test]
+    fn test_config_health_check_and_dnsmasq_defaults() {
+        let json = r#"{
+            "log_level": "Info",
+            "log_file_path": "test.log",
+            "adapter_type": "linux-native",
+            "interface": {
+                "name": "wg4",
+                "config_provider": "uci"
+            }
+        }"#;
+
+        let config: NordVpnLiteConfig = serde_json::from_str(json).unwrap();
+
+        assert!(config.interface.manage_dnsmasq);
+        assert!(!config.health_check.enabled);
+        assert_eq!(config.health_check, HealthCheckConfig::default());
+    }
+
+    #[test]
+    fn test_config_health_check_partial_object_uses_defaults() {
+        let json = r#"{
+            "log_level": "Info",
+            "log_file_path": "test.log",
+            "adapter_type": "linux-native",
+            "interface": {
+                "name": "wg4",
+                "config_provider": "uci",
+                "manage_dnsmasq": false
+            },
+            "health_check": {
+                "enabled": true,
+                "failure_threshold": 2
+            }
+        }"#;
+
+        let config: NordVpnLiteConfig = serde_json::from_str(json).unwrap();
+
+        assert!(!config.interface.manage_dnsmasq);
+        assert_eq!(
+            config.health_check,
+            HealthCheckConfig {
+                enabled: true,
+                failure_threshold: 2,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn test_config_health_check_rejects_unknown_field() {
+        let json = r#"{
+            "log_level": "Info",
+            "log_file_path": "test.log",
+            "adapter_type": "linux-native",
+            "interface": {
+                "name": "wg4",
+                "config_provider": "uci"
+            },
+            "health_check": {
+                "enable": true
+            }
+        }"#;
+
+        assert!(serde_json::from_str::<NordVpnLiteConfig>(json).is_err());
+    }
+
+    #[test]
     fn test_config_serde_all_fields() {
         let json = r#"{
             "log_level": "Debug",
@@ -983,7 +1104,8 @@ mod tests {
             "interface": {
                 "name": "nlx",
                 "config_provider": "iproute",
-                "max_route_priority": 100
+                "max_route_priority": 100,
+                "manage_dnsmasq": false
             },
             "vpn": {
                 "server": {
@@ -995,7 +1117,16 @@ mod tests {
             "dns": ["1.1.1.1", "8.8.8.8"],
             "override_default_wg_port": 51820,
             "http_certificate_file_path": "/etc/nordvpnlite/cert.pem",
-            "enable_firewall": true
+            "enable_firewall": true,
+            "health_check": {
+                "enabled": true,
+                "interval_seconds": 20,
+                "probe_timeout_seconds": 3,
+                "failure_threshold": 5,
+                "settle_seconds": 45,
+                "probe_targets": ["1.0.0.1:443", "[2606:4700:4700::1111]:443"],
+                "wan_interface": "eth1"
+            }
             }"#;
 
         let config: NordVpnLiteConfig = serde_json::from_str(json).unwrap();
@@ -1015,6 +1146,22 @@ mod tests {
             Some(PathBuf::from("/etc/nordvpnlite/cert.pem"))
         );
         assert!(config.enable_firewall);
+        assert!(!config.interface.manage_dnsmasq);
+        assert_eq!(
+            config.health_check,
+            HealthCheckConfig {
+                enabled: true,
+                interval_seconds: 20,
+                probe_timeout_seconds: 3,
+                failure_threshold: 5,
+                settle_seconds: 45,
+                probe_targets: vec![
+                    "1.0.0.1:443".parse().unwrap(),
+                    "[2606:4700:4700::1111]:443".parse().unwrap(),
+                ],
+                wan_interface: Some("eth1".to_owned()),
+            }
+        );
         assert_matches::assert_matches!(
             config.vpn,
             VpnConfig::Server(Endpoint { hostname: Some(ref h), .. }) if h == "de123.nordvpn.com"
