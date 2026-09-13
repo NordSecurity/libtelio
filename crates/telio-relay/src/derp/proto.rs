@@ -196,6 +196,11 @@ pub async fn start_read<R: AsyncRead + Unpin>(
         match frame_type {
             // RemoteNode -> Derp -> LocalNode
             FrameType::RecvPacket => {
+                if data.len() < KEY_SIZE {
+                    return Err(
+                        IoError::new(ErrorKind::InvalidData, "RecvPacket frame too short").into(),
+                    );
+                }
                 let public_key =
                     <PublicKey as TryFrom<&[u8]>>::try_from(data.drain(0..KEY_SIZE).as_slice())?;
 
@@ -590,5 +595,21 @@ mod tests {
                 assert_eq!(KEY_MSG_SIZE, writer.len());
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_start_read_recv_packet_short_frame_returns_error() {
+        // frame_type = RecvPacket (0x05), frame_length = 5, 5 bytes of body (< KEY_SIZE = 32).
+        let frame: &[u8] = &[0x05, 0, 0, 0, 5, 0, 0, 0, 0, 0];
+
+        let (sender_relayed, _receiver_relayed) = tokio::sync::mpsc::channel(1);
+        let (sender_direct, _receiver_direct) = tokio::sync::mpsc::channel(1);
+        let addr = PairAddr {
+            local: "127.0.0.1:1".parse().unwrap(),
+            remote: "127.0.0.1:2".parse().unwrap(),
+        };
+
+        let result = start_read(frame, sender_relayed, sender_direct, addr).await;
+        assert!(result.is_err(), "expected an Err, not a panic");
     }
 }
