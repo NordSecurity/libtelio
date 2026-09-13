@@ -15,7 +15,7 @@ use futures::{future::select_all, Future};
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use telio_crypto::{PublicKey, SecretKey};
 use telio_model::config::{DerpAnalyticsEvent, RelayConnectionChangeReason};
 use telio_model::{
@@ -123,7 +123,14 @@ struct State {
     last_disconnection_reason: RelayConnectionChangeReason,
 
     connecting: Option<JoinHandle<(Server, DerpConnection)>>,
+
+    /// Timestamp of the last established connection, used to throttle reconnects that die
+    /// immediately after connecting (not covered by `start_connecting`'s own backoff).
+    last_connected_at: Option<Instant>,
 }
+
+/// Minimum time between a connection being established and the next connection attempt.
+const MIN_RECONNECT_COOLDOWN: Duration = Duration::from_secs(1);
 
 /// Keepalive values that help keeping Derp connection in conntrack alive,
 /// so server can send traffic after being silent for a while
@@ -315,6 +322,7 @@ impl DerpRelay {
                 derp_poll_session: 0,
                 remote_peers_states: HashMap::new(),
                 connecting: None,
+                last_connected_at: None,
                 last_disconnection_reason: RelayConnectionChangeReason::ConfigurationChange,
                 aggregator,
             }),
@@ -783,6 +791,11 @@ impl Runtime for State {
                 let connecting = if let Some(connecting) = &mut self.connecting {
                     connecting
                 } else {
+                    if let Some(elapsed) = self.last_connected_at.map(|t| t.elapsed()) {
+                        if elapsed < MIN_RECONNECT_COOLDOWN {
+                            sleep(MIN_RECONNECT_COOLDOWN - elapsed).await;
+                        }
+                    }
                     let connection = self.start_connecting(config.clone());
                     self.connecting.insert(connection)
                 };
@@ -795,6 +808,7 @@ impl Runtime for State {
                             Ok((server, conn)) => {
                                 self.server = Some(server.clone());
                                 self.conn = Some(conn);
+                                self.last_connected_at = Some(Instant::now());
                                 if let Err(err) = self.event.send(Box::new(server.clone())) {
                                     telio_log_warn!("({}) sending new server info failed {}", Self::NAME, err)
                                 }
