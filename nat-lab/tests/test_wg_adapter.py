@@ -23,6 +23,25 @@ from tests.utils.process import ProcessExecError
 from tests.utils.router import IPStack
 from typing import List
 
+WG_NT_DLL_NAME = "wireguard.dll"
+WG_NT_DLL_HIDDEN_NAME = f"{WG_NT_DLL_NAME}.hidden"
+WG_NT_DLL = f"{UNIFFI_PATH_WINDOWS_VM}{WG_NT_DLL_NAME}"
+WG_NT_DLL_HIDDEN = f"{UNIFFI_PATH_WINDOWS_VM}{WG_NT_DLL_HIDDEN_NAME}"
+
+ADAPTER_GUID_POOL_SIZE = 8
+PRIMARY_GUID_SLOT = 0
+ADAPTER_CREATION_RETRY_LOG = "Retrying in"
+STALE_ADAPTER_CONFIG_REMOVED_LOG = "Removed stale adapter config"
+ORPHANED_ADAPTER_REMOVED_LOG = "Removed orphaned WireGuard adapter"
+KILL_LIBTELIO_REMOTE_CMD = ["taskkill", "/T", "/F", "/IM", "python.exe"]
+FIRST_START_LOG_SUFFIX = "_first_start"
+
+NET_CLASS_KEY = r"HKLM\SYSTEM\CurrentControlSet\Control\Network\{4d36e972-e325-11ce-bfc1-08002be10318}"
+SWD_WIREGUARD_KEY = r"HKLM\SYSTEM\CurrentControlSet\Enum\SWD\WireGuard"
+
+PROXY_READY_POLL_INTERVAL_S = 0.5
+FIRST_ADAPTER_CREATION_ATTEMPT_TIMEOUT_S = 60
+
 
 @pytest.mark.windows
 @pytest.mark.parametrize("conn_tag", [ConnectionTag.VM_WINDOWS_1])
@@ -68,6 +87,7 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
             "WireGuard"
             not in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
         ):
+            log.warning("No orphaned wg-nt adapter left behind, cleanup not tested")
             return
 
     # Try to start libtelio and see if it properly cleans up orphaned wg-nt adapter and starts normaly
@@ -90,27 +110,7 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
         assert (
             "WireGuard" in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
         )
-        assert "Removed orphaned adapter" in client.get_stderr()
-
-
-WG_NT_DLL_NAME = "wireguard.dll"
-WG_NT_DLL_HIDDEN_NAME = f"{WG_NT_DLL_NAME}.hidden"
-WG_NT_DLL = f"{UNIFFI_PATH_WINDOWS_VM}{WG_NT_DLL_NAME}"
-WG_NT_DLL_HIDDEN = f"{UNIFFI_PATH_WINDOWS_VM}{WG_NT_DLL_HIDDEN_NAME}"
-
-ADAPTER_GUID_POOL_SIZE = 8
-PRIMARY_GUID_SLOT = 0
-ADAPTER_CREATION_RETRY_LOG = "Retrying in"
-STALE_ADAPTER_CONFIG_REMOVED_LOG = "Removed stale adapter config"
-ORPHANED_ADAPTER_REMOVED_LOG = "Removed orphaned WireGuard adapter"
-KILL_LIBTELIO_REMOTE_CMD = ["taskkill", "/T", "/F", "/IM", "python.exe"]
-FIRST_START_LOG_SUFFIX = "_first_start"
-
-NET_CLASS_KEY = r"HKLM\SYSTEM\CurrentControlSet\Control\Network\{4d36e972-e325-11ce-bfc1-08002be10318}"
-SWD_WIREGUARD_KEY = r"HKLM\SYSTEM\CurrentControlSet\Enum\SWD\WireGuard"
-
-PROXY_READY_POLL_INTERVAL_S = 0.5
-FIRST_ADAPTER_CREATION_ATTEMPT_TIMEOUT_S = 60
+        assert ORPHANED_ADAPTER_REMOVED_LOG in await client.get_log()
 
 
 def adapter_guid_for_slot(adapter_name: str, slot: int) -> str:
