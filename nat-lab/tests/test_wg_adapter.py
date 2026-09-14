@@ -1,12 +1,26 @@
+import asyncio
+import hashlib
 import pytest
+import uuid
 from contextlib import AsyncExitStack
 from Pyro5.errors import CommunicationError  # type:ignore
-from tests.helpers import SetupParameters, setup_environment
+from tests.config import UNIFFI_PATH_WINDOWS_VM
+from tests.helpers import (
+    SetupParameters,
+    setup_api,
+    setup_connections,
+    setup_environment,
+)
+from tests.mesh_api import Node
+from tests.telio import Client
+from tests.utils.asyncio_util import run_async_context
 from tests.utils.bindings import TelioAdapterType
-from tests.utils.connection import ConnectionTag
+from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.connection_util import new_connection_by_tag
 from tests.utils.logger import log
 from tests.utils.process import ProcessExecError
+from tests.utils.router import IPStack
+from typing import List
 
 
 @pytest.mark.windows
@@ -76,3 +90,137 @@ async def test_wg_adapter_cleanup(conn_tag: ConnectionTag):
             "WireGuard" in (await conn.create_process(QUERY_CMD).execute()).get_stdout()
         )
         assert "Removed orphaned adapter" in client.get_stderr()
+
+
+WG_NT_DLL_NAME = "wireguard.dll"
+WG_NT_DLL_HIDDEN_NAME = f"{WG_NT_DLL_NAME}.hidden"
+WG_NT_DLL = f"{UNIFFI_PATH_WINDOWS_VM}{WG_NT_DLL_NAME}"
+WG_NT_DLL_HIDDEN = f"{UNIFFI_PATH_WINDOWS_VM}{WG_NT_DLL_HIDDEN_NAME}"
+
+ADAPTER_GUID_POOL_SIZE = 8
+PRIMARY_GUID_SLOT = 0
+ADAPTER_CREATION_RETRY_LOG = "Retrying in"
+STALE_ADAPTER_CONFIG_REMOVED_LOG = "Removed stale adapter config"
+
+NET_CLASS_KEY = r"HKLM\SYSTEM\CurrentControlSet\Control\Network\{4d36e972-e325-11ce-bfc1-08002be10318}"
+SWD_WIREGUARD_KEY = r"HKLM\SYSTEM\CurrentControlSet\Enum\SWD\WireGuard"
+
+PROXY_READY_POLL_INTERVAL_S = 0.5
+FIRST_ADAPTER_CREATION_ATTEMPT_TIMEOUT_S = 60
+
+
+def adapter_guid_for_slot(adapter_name: str, slot: int) -> str:
+    hasher = hashlib.sha256(adapter_name.encode())
+    if slot > PRIMARY_GUID_SLOT:
+        hasher.update(b"\0")
+        hasher.update(slot.to_bytes(8, "little"))
+    guid = uuid.UUID(bytes_le=hasher.digest()[:16])
+    return f"{{{str(guid).upper()}}}"
+
+
+def adapter_device_key(adapter_name: str, slot: int) -> str:
+    return f"{SWD_WIREGUARD_KEY}\\{adapter_guid_for_slot(adapter_name, slot)}"
+
+
+def adapter_netcfg_key(adapter_name: str, slot: int) -> str:
+    return f"{NET_CLASS_KEY}\\{adapter_guid_for_slot(adapter_name, slot)}"
+
+
+async def reg_key_exists(conn: Connection, key: str) -> bool:
+    try:
+        await conn.create_process(["reg", "query", key], quiet=True).execute()
+    except ProcessExecError:
+        return False
+    return True
+
+
+async def used_guid_slots(conn: Connection, adapter_name: str) -> List[int]:
+    return [
+        slot
+        for slot in range(ADAPTER_GUID_POOL_SIZE)
+        if await reg_key_exists(conn, adapter_device_key(adapter_name, slot))
+    ]
+
+
+class HiddenWgNtDll:
+    def __init__(self, conn: Connection) -> None:
+        self._conn = conn
+        self._hidden = False
+
+    async def hide(self) -> None:
+        await self._conn.create_process(
+            ["ren", WG_NT_DLL, WG_NT_DLL_HIDDEN_NAME]
+        ).execute()
+        self._hidden = True
+
+    async def restore(self) -> None:
+        if not self._hidden:
+            return
+        await self._conn.create_process(
+            ["ren", WG_NT_DLL_HIDDEN, WG_NT_DLL_NAME]
+        ).execute()
+        self._hidden = False
+
+
+async def restore_dll_after_first_failed_attempt(
+    client: Client, dll: HiddenWgNtDll
+) -> None:
+    async with asyncio.timeout(FIRST_ADAPTER_CREATION_ATTEMPT_TIMEOUT_S):
+        while not client.is_proxy_ready():
+            await asyncio.sleep(PROXY_READY_POLL_INTERVAL_S)
+        await client.wait_for_log(ADAPTER_CREATION_RETRY_LOG)
+    await dll.restore()
+
+
+def new_wg_nt_client(conn: Connection, node: Node, adapter_name: str) -> Client:
+    client = Client(conn, node, TelioAdapterType.WINDOWS_NATIVE_TUN)
+    client.get_router().set_interface_name(adapter_name)
+    return client
+
+
+def test_wg_adapter_guid_derivation_matches_libtelio() -> None:
+    assert (
+        adapter_guid_for_slot("NordLynx", PRIMARY_GUID_SLOT)
+        == "{FC01FCD5-2B9D-2FD8-78D8-CB78B313E2B2}"
+    )
+
+
+@pytest.mark.windows
+@pytest.mark.parametrize("conn_tag", [ConnectionTag.VM_WINDOWS_1])
+async def test_wg_adapter_creation_retry(conn_tag: ConnectionTag) -> None:
+    adapter_name = f"wgnt_retry_{uuid.uuid4().hex[:8]}"
+
+    async with AsyncExitStack() as exit_stack:
+        _, (node,) = setup_api([(False, IPStack.IPv4)])
+        conn_manager, *_ = await setup_connections(exit_stack, [conn_tag])
+        conn = conn_manager.connection
+
+        dll = HiddenWgNtDll(conn)
+        await dll.hide()
+        exit_stack.push_async_callback(dll.restore)
+
+        client = new_wg_nt_client(conn, node, adapter_name)
+        restore_task = await exit_stack.enter_async_context(
+            run_async_context(restore_dll_after_first_failed_attempt(client, dll))
+        )
+        async with client.run():
+            await restore_task
+            used_slots = await used_guid_slots(conn, adapter_name)
+            assert len(used_slots) == 1, used_slots
+            assert PRIMARY_GUID_SLOT not in used_slots
+
+        (retry_slot,) = used_slots
+        retry_netcfg_key = adapter_netcfg_key(adapter_name, retry_slot)
+        leftover_present = await reg_key_exists(conn, retry_netcfg_key)
+        if not leftover_present:
+            log.warning(
+                "No network config left behind for GUID slot %d, cleanup has nothing to do",
+                retry_slot,
+            )
+
+        client = new_wg_nt_client(conn, node, adapter_name)
+        async with client.run():
+            assert not await reg_key_exists(conn, retry_netcfg_key)
+            assert PRIMARY_GUID_SLOT in await used_guid_slots(conn, adapter_name)
+            if leftover_present:
+                assert STALE_ADAPTER_CONFIG_REMOVED_LOG in await client.get_log()
