@@ -100,13 +100,7 @@ jobs:
       runs-on: ubuntu-22.04
       steps:
         - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-        - uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
-          with:
-            components: rustfmt
-        - uses: actions-rs/cargo@ae10961054e4aa8b4aa7dffede299aaf087aa33b # v1.0.3
-          with:
-            command: fmt
-            args: -- --check --color always
+        - run: cargo fmt -- --check --color always
   python-format-black:
       runs-on: ubuntu-24.04
       steps:
