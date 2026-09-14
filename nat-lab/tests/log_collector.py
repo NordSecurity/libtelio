@@ -152,12 +152,16 @@ async def get_system_log(connection: Connection) -> Optional[str]:
     return None
 
 
-async def save_logs(connection: Connection, log_content: Optional[str] = None) -> None:
+async def save_logs(
+    connection: Connection, log_content: Optional[str] = None, name_suffix: str = ""
+) -> None:
     """
     Save the logs from libtelio.
     In order to collect all of the logs this function must be called
     after process running libtelio has already exited. Or in worst case
     at least after logs has been flushed.
+    `name_suffix` is appended to the file name, so logs of an earlier libtelio
+    run within the same test can be kept separate from the final ones.
     """
 
     if os.environ.get("NATLAB_SAVE_LOGS") is None:
@@ -175,7 +179,7 @@ async def save_logs(connection: Connection, log_content: Optional[str] = None) -
 
     system_log_content = await get_system_log(connection)
 
-    filename = connection.tag.name.lower() + ".log"
+    filename = f"{connection.tag.name.lower()}{name_suffix}.log"
     if len(filename.encode("utf-8")) > 256:
         filename = f"{filename[:251]}.log"
 
@@ -455,7 +459,7 @@ class LogCollector:
             self._check_logs_for_errors(log_content)
 
             log.info("[%s] Saving logs", self.node_name)
-            await save_logs(connection, log_content)
+            await save_logs(connection, log_content=log_content)
 
     def _check_logs_for_errors(self, log_content: str) -> None:
         """
