@@ -101,6 +101,8 @@ ADAPTER_GUID_POOL_SIZE = 8
 PRIMARY_GUID_SLOT = 0
 ADAPTER_CREATION_RETRY_LOG = "Retrying in"
 STALE_ADAPTER_CONFIG_REMOVED_LOG = "Removed stale adapter config"
+ORPHANED_ADAPTER_REMOVED_LOG = "Removed orphaned adapter"
+KILL_LIBTELIO_REMOTE_CMD = ["taskkill", "/T", "/F", "/IM", "python.exe"]
 
 NET_CLASS_KEY = r"HKLM\SYSTEM\CurrentControlSet\Control\Network\{4d36e972-e325-11ce-bfc1-08002be10318}"
 SWD_WIREGUARD_KEY = r"HKLM\SYSTEM\CurrentControlSet\Enum\SWD\WireGuard"
@@ -214,25 +216,32 @@ async def test_wg_adapter_creation_retry(conn_tag: ConnectionTag) -> None:
             run_async_context(restore_dll_after_first_failed_attempt(client, dll))
         )
         log.info("Starting telio for the first time, with the dll hidden")
-        async with client.run():
-            await restore_task
-            log.info("Telio started, checking which GUID slot the adapter got")
-            used_slots = await used_guid_slots(conn, adapter_name)
-            log.info("GUID slots present in registry: %s", used_slots)
-            assert len(used_slots) == 1, used_slots
-            assert PRIMARY_GUID_SLOT not in used_slots
-            log.info("Stopping telio")
+        used_slots: List[int] = []
+        try:
+            async with client.run():
+                await restore_task
+                log.info("Telio started, checking which GUID slot the adapter got")
+                used_slots = await used_guid_slots(conn, adapter_name)
+                log.info("GUID slots present in registry: %s", used_slots)
+                log.info("Killing telio dirty, so the adapter is left behind")
+                await conn.create_process(KILL_LIBTELIO_REMOTE_CMD).execute()
+        except (CommunicationError, ConnectionRefusedError, ProcessExecError) as e:
+            log.warning("Cleanup after killing libtelio failed with %s", e)
 
+        assert len(used_slots) == 1, used_slots
+        assert PRIMARY_GUID_SLOT not in used_slots
         (retry_slot,) = used_slots
+        retry_device_key = adapter_device_key(adapter_name, retry_slot)
         retry_netcfg_key = adapter_netcfg_key(adapter_name, retry_slot)
+        orphan_present = await reg_key_exists(conn, retry_device_key)
         leftover_present = await reg_key_exists(conn, retry_netcfg_key)
-        if leftover_present:
-            log.info(
-                "Network config for GUID slot %d left behind: %s",
-                retry_slot,
-                retry_netcfg_key,
-            )
-        else:
+        log.info(
+            "After the kill, GUID slot %d device present: %s, network config present: %s",
+            retry_slot,
+            orphan_present,
+            leftover_present,
+        )
+        if not leftover_present:
             log.warning(
                 "No network config left behind for GUID slot %d, cleanup has nothing to do",
                 retry_slot,
@@ -242,13 +251,16 @@ async def test_wg_adapter_creation_retry(conn_tag: ConnectionTag) -> None:
         client = new_wg_nt_client(conn, node, adapter_name)
         async with client.run():
             log.info(
-                "Telio started, checking that GUID slot %d config was cleaned up",
-                retry_slot,
+                "Telio started, checking that GUID slot %d was cleaned up", retry_slot
             )
             assert not await reg_key_exists(conn, retry_netcfg_key)
             used_slots = await used_guid_slots(conn, adapter_name)
             log.info("GUID slots present in registry: %s", used_slots)
             assert PRIMARY_GUID_SLOT in used_slots
+            assert retry_slot not in used_slots
+            telio_log = await client.get_log()
+            if orphan_present:
+                assert ORPHANED_ADAPTER_REMOVED_LOG in telio_log
             if leftover_present:
-                assert STALE_ADAPTER_CONFIG_REMOVED_LOG in await client.get_log()
+                assert STALE_ADAPTER_CONFIG_REMOVED_LOG in telio_log
             log.info("Stopping telio")
