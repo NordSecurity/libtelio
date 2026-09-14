@@ -11,6 +11,7 @@ from tests.helpers import (
     setup_connections,
     setup_environment,
 )
+from tests.log_collector import save_logs
 from tests.mesh_api import Node
 from tests.telio import Client
 from tests.utils.asyncio_util import run_async_context
@@ -103,6 +104,7 @@ ADAPTER_CREATION_RETRY_LOG = "Retrying in"
 STALE_ADAPTER_CONFIG_REMOVED_LOG = "Removed stale adapter config"
 ORPHANED_ADAPTER_REMOVED_LOG = "Removed orphaned adapter"
 KILL_LIBTELIO_REMOTE_CMD = ["taskkill", "/T", "/F", "/IM", "python.exe"]
+FIRST_START_LOG_SUFFIX = "_first_start"
 
 NET_CLASS_KEY = r"HKLM\SYSTEM\CurrentControlSet\Control\Network\{4d36e972-e325-11ce-bfc1-08002be10318}"
 SWD_WIREGUARD_KEY = r"HKLM\SYSTEM\CurrentControlSet\Enum\SWD\WireGuard"
@@ -227,6 +229,9 @@ async def test_wg_adapter_creation_retry(conn_tag: ConnectionTag) -> None:
                 await conn.create_process(KILL_LIBTELIO_REMOTE_CMD).execute()
         except (CommunicationError, ConnectionRefusedError, ProcessExecError) as e:
             log.warning("Cleanup after killing libtelio failed with %s", e)
+
+        log.info("Saving telio log of the first start before it gets overwritten")
+        await save_logs(conn, FIRST_START_LOG_SUFFIX)
 
         assert len(used_slots) == 1, used_slots
         assert PRIMARY_GUID_SLOT not in used_slots
