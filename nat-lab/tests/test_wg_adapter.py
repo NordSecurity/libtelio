@@ -102,7 +102,7 @@ ADAPTER_GUID_POOL_SIZE = 8
 PRIMARY_GUID_SLOT = 0
 ADAPTER_CREATION_RETRY_LOG = "Retrying in"
 STALE_ADAPTER_CONFIG_REMOVED_LOG = "Removed stale adapter config"
-ORPHANED_ADAPTER_REMOVED_LOG = "Removed orphaned adapter"
+ORPHANED_ADAPTER_REMOVED_LOG = "Removed orphaned WireGuard adapter"
 KILL_LIBTELIO_REMOTE_CMD = ["taskkill", "/T", "/F", "/IM", "python.exe"]
 FIRST_START_LOG_SUFFIX = "_first_start"
 
