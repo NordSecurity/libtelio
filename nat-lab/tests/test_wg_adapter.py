@@ -148,6 +148,7 @@ class HiddenWgNtDll:
         self._hidden = False
 
     async def hide(self) -> None:
+        log.info("Hiding %s as %s", WG_NT_DLL, WG_NT_DLL_HIDDEN_NAME)
         await self._conn.create_process(
             ["ren", WG_NT_DLL, WG_NT_DLL_HIDDEN_NAME]
         ).execute()
@@ -156,6 +157,7 @@ class HiddenWgNtDll:
     async def restore(self) -> None:
         if not self._hidden:
             return
+        log.info("Restoring %s", WG_NT_DLL)
         await self._conn.create_process(
             ["ren", WG_NT_DLL_HIDDEN, WG_NT_DLL_NAME]
         ).execute()
@@ -168,7 +170,12 @@ async def restore_dll_after_first_failed_attempt(
     async with asyncio.timeout(FIRST_ADAPTER_CREATION_ATTEMPT_TIMEOUT_S):
         while not client.is_proxy_ready():
             await asyncio.sleep(PROXY_READY_POLL_INTERVAL_S)
+        log.info(
+            "Libtelio proxy is ready, waiting for '%s' in telio log",
+            ADAPTER_CREATION_RETRY_LOG,
+        )
         await client.wait_for_log(ADAPTER_CREATION_RETRY_LOG)
+    log.info("First adapter creation attempt failed as expected")
     await dll.restore()
 
 
@@ -189,6 +196,9 @@ def test_wg_adapter_guid_derivation_matches_libtelio() -> None:
 @pytest.mark.parametrize("conn_tag", [ConnectionTag.VM_WINDOWS_1])
 async def test_wg_adapter_creation_retry(conn_tag: ConnectionTag) -> None:
     adapter_name = f"wgnt_retry_{uuid.uuid4().hex[:8]}"
+    log.info("Using adapter name %s", adapter_name)
+    for slot in range(ADAPTER_GUID_POOL_SIZE):
+        log.info("GUID slot %d: %s", slot, adapter_guid_for_slot(adapter_name, slot))
 
     async with AsyncExitStack() as exit_stack:
         _, (node,) = setup_api([(False, IPStack.IPv4)])
@@ -203,24 +213,42 @@ async def test_wg_adapter_creation_retry(conn_tag: ConnectionTag) -> None:
         restore_task = await exit_stack.enter_async_context(
             run_async_context(restore_dll_after_first_failed_attempt(client, dll))
         )
+        log.info("Starting telio for the first time, with the dll hidden")
         async with client.run():
             await restore_task
+            log.info("Telio started, checking which GUID slot the adapter got")
             used_slots = await used_guid_slots(conn, adapter_name)
+            log.info("GUID slots present in registry: %s", used_slots)
             assert len(used_slots) == 1, used_slots
             assert PRIMARY_GUID_SLOT not in used_slots
+            log.info("Stopping telio")
 
         (retry_slot,) = used_slots
         retry_netcfg_key = adapter_netcfg_key(adapter_name, retry_slot)
         leftover_present = await reg_key_exists(conn, retry_netcfg_key)
-        if not leftover_present:
+        if leftover_present:
+            log.info(
+                "Network config for GUID slot %d left behind: %s",
+                retry_slot,
+                retry_netcfg_key,
+            )
+        else:
             log.warning(
                 "No network config left behind for GUID slot %d, cleanup has nothing to do",
                 retry_slot,
             )
 
+        log.info("Starting telio for the second time, with the dll restored")
         client = new_wg_nt_client(conn, node, adapter_name)
         async with client.run():
+            log.info(
+                "Telio started, checking that GUID slot %d config was cleaned up",
+                retry_slot,
+            )
             assert not await reg_key_exists(conn, retry_netcfg_key)
-            assert PRIMARY_GUID_SLOT in await used_guid_slots(conn, adapter_name)
+            used_slots = await used_guid_slots(conn, adapter_name)
+            log.info("GUID slots present in registry: %s", used_slots)
+            assert PRIMARY_GUID_SLOT in used_slots
             if leftover_present:
                 assert STALE_ADAPTER_CONFIG_REMOVED_LOG in await client.get_log()
+            log.info("Stopping telio")
