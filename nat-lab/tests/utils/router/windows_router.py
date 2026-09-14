@@ -413,7 +413,5 @@ class WindowsRouter(Router):
     async def reset_upnpd(self) -> AsyncIterator:
         yield
 
-    def set_interface_name(
-        self, new_interface_name: str  # pylint: disable=unused-argument
-    ) -> None:
-        pass
+    def set_interface_name(self, new_interface_name: str) -> None:
+        self._interface_name = new_interface_name
