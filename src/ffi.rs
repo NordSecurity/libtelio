@@ -145,6 +145,61 @@ pub extern "C" fn Java_com_nordsec_telio_TelioCert_initCertStore(
     })
 }
 
+/// Optional settings for starting the telio device.
+///
+/// Every field defaults to "not set", so supporting a new option requires a
+/// single additional field instead of an additional `start*` function.
+#[derive(Debug, Default)]
+pub struct StartConfig {
+    /// Name of the tunnel interface opened by the adapter. When not set, telio
+    /// picks a platform default.
+    pub name: Option<String>,
+    /// Interfaces to skip while looking for the default interface.
+    pub ext_if_filter: Option<Vec<String>>,
+    /// MTU to set on the adapter interface, at least 1280. When not set, the
+    /// adapter picks its own. Only supported by the Windows native adapter,
+    /// starting any other adapter with it set fails.
+    pub mtu: Option<u32>,
+    /// File descriptor of an already open tunnel, which telio takes ownership
+    /// of and closes on stop. When not set, the adapter opens its own tunnel.
+    /// Ignored on Windows.
+    pub tun: Option<i32>,
+}
+
+impl StartConfig {
+    fn to_device_config(
+        &self,
+        private_key: SecretKey,
+        adapter: TelioAdapterType,
+    ) -> FfiResult<DeviceConfig> {
+        #[cfg(not(target_os = "windows"))]
+        let tun = self.tun.map(|fd| {
+            use std::os::fd::{FromRawFd, OwnedFd};
+            // SAFETY: the caller hands over an open descriptor it no longer uses
+            unsafe { OwnedFd::from_raw_fd(fd) }
+        });
+        #[cfg(target_os = "windows")]
+        let tun = None;
+
+        if self.mtu.is_some() && !matches!(adapter, TelioAdapterType::WindowsNativeTun) {
+            return Err(TelioError::UnknownError {
+                inner: "MTU is only supported by the Windows native adapter".to_owned(),
+            });
+        }
+        Ok(DeviceConfig {
+            private_key,
+            adapter: adapter
+                .try_into()
+                .map_err(|e| TelioError::UnknownError { inner: e })?,
+            fwmark: None,
+            name: self.name.clone(),
+            tun,
+            ext_if_filter: self.ext_if_filter.clone(),
+            mtu: self.mtu,
+        })
+    }
+}
+
 pub struct Telio {
     inner: Mutex<Option<Device>>,
     id: usize,
@@ -357,6 +412,7 @@ impl Telio {
                     name: None,
                     tun: None,
                     ext_if_filter: None,
+                    mtu: None,
                 })
                 .log_result("Telio::start")
             })
@@ -367,27 +423,7 @@ impl Telio {
     ///
     /// Adapter will attempt to open its own tunnel.
     pub fn start(&self, private_key: SecretKey, adapter: TelioAdapterType) -> FfiResult<()> {
-        telio_log_info!(
-            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}",
-            self.id,
-            private_key.public(),
-            &adapter
-        );
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| {
-                dev.start(DeviceConfig {
-                    private_key: private_key.clone(),
-                    adapter: adapter
-                        .try_into()
-                        .map_err(|e| TelioError::UnknownError { inner: e })?,
-                    fwmark: None,
-                    name: None,
-                    tun: None,
-                    ext_if_filter: None,
-                })
-                .log_result("Telio::start")
-            })
-        })
+        self.start_with_config(private_key, adapter, StartConfig::default())
     }
 
     /// Start telio with specified adapter and name.
@@ -399,28 +435,14 @@ impl Telio {
         adapter: TelioAdapterType,
         name: String,
     ) -> FfiResult<()> {
-        telio_log_info!(
-            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Name: {}",
-            self.id,
-            private_key.public(),
-            &adapter,
-            &name,
-        );
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| {
-                dev.start(DeviceConfig {
-                    private_key: private_key.clone(),
-                    adapter: adapter
-                        .try_into()
-                        .map_err(|e| TelioError::UnknownError { inner: e })?,
-                    fwmark: None,
-                    name: Some(name.clone()),
-                    tun: None,
-                    ext_if_filter: None,
-                })
-                .log_result("Telio::start_named")
-            })
-        })
+        self.start_with_config(
+            private_key,
+            adapter,
+            StartConfig {
+                name: Some(name),
+                ..Default::default()
+            },
+        )
     }
 
     /// Start telio with specified adapter type, adapter name
@@ -434,26 +456,37 @@ impl Telio {
         name: String,
         ext_if_filter: Vec<String>,
     ) -> FfiResult<()> {
+        self.start_with_config(
+            private_key,
+            adapter,
+            StartConfig {
+                name: Some(name),
+                ext_if_filter: Some(ext_if_filter),
+                ..Default::default()
+            },
+        )
+    }
+
+    /// Start telio with the specified adapter and the options in `config`.
+    ///
+    /// Adapter will attempt to open its own tunnel unless `config.tun` is set.
+    pub fn start_with_config(
+        &self,
+        private_key: SecretKey,
+        adapter: TelioAdapterType,
+        config: StartConfig,
+    ) -> FfiResult<()> {
         telio_log_info!(
-            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Name: {}",
+            "Telio::start_with_config entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Config: {:?}",
             self.id,
             private_key.public(),
             &adapter,
-            &name,
+            &config,
         );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
-                dev.start(DeviceConfig {
-                    private_key: private_key.clone(),
-                    adapter: adapter
-                        .try_into()
-                        .map_err(|e| TelioError::UnknownError { inner: e })?,
-                    fwmark: None,
-                    name: Some(name.clone()),
-                    tun: None,
-                    ext_if_filter: Some(ext_if_filter.clone()),
-                })
-                .log_result("Telio::start_named_ext_if_filter")
+                dev.start(config.to_device_config(private_key.clone(), adapter)?)
+                    .log_result("Telio::start_with_config")
             })
         })
     }
@@ -477,6 +510,25 @@ impl Telio {
         })
     }
 
+    /// Set the MTU of the adapter interface, at least 1280. `None` restores the
+    /// adapter's own MTU handling.
+    ///
+    /// Only supported by the Windows native adapter, other adapters fail with
+    /// an unsupported-adapter error.
+    pub fn set_adapter_mtu(&self, mtu: Option<u32>) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::set_adapter_mtu entry with instance id: {}. MTU: {:?}",
+            self.id,
+            mtu,
+        );
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                dev.set_adapter_mtu(mtu)
+                    .log_result("Telio::set_adapter_mtu")
+            })
+        })
+    }
+
     /// Start telio device with specified adapter and already open tunnel.
     ///
     /// Telio will take ownership of tunnel , and close it on stop.
@@ -493,37 +545,16 @@ impl Telio {
         &self,
         private_key: SecretKey,
         adapter: TelioAdapterType,
-        _tun: i32,
+        tun: i32,
     ) -> FfiResult<()> {
-        telio_log_info!(
-            "Telio::start entry with instance id: {}. Public key: {:?}. Adapter: {:?}. Tun: {_tun}",
-            self.id,
-            private_key.public(),
-            &adapter
-        );
-
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| {
-                #[cfg(not(target_os = "windows"))]
-                let tun = {
-                    use std::os::fd::{FromRawFd, OwnedFd};
-                    Some(unsafe { OwnedFd::from_raw_fd(_tun) })
-                };
-                #[cfg(target_os = "windows")]
-                let tun = None;
-                dev.start(DeviceConfig {
-                    private_key: private_key.clone(),
-                    adapter: adapter
-                        .try_into()
-                        .map_err(|e| TelioError::UnknownError { inner: e })?,
-                    fwmark: None,
-                    name: None,
-                    tun,
-                    ext_if_filter: None,
-                })
-                .log_result("Telio::start_with_tun")
-            })
-        })
+        self.start_with_config(
+            private_key,
+            adapter,
+            StartConfig {
+                tun: Some(tun),
+                ..Default::default()
+            },
+        )
     }
 
     /// Stop telio device.
@@ -1174,5 +1205,22 @@ mod tests {
         let actual =
             deserialize_feature_config(CORRECT_FEATURES_JSON_WITHOUT_IS_TEST_ENV.to_owned());
         assert!(actual.is_ok());
+    }
+
+    #[test]
+    fn test_start_config_mtu_requires_windows_native_adapter() {
+        let config = StartConfig {
+            mtu: Some(1400),
+            ..Default::default()
+        };
+        let key = SecretKey::gen();
+
+        assert!(config
+            .to_device_config(key.clone(), TelioAdapterType::WindowsNativeTun)
+            .is_ok());
+        assert!(matches!(
+            config.to_device_config(key, TelioAdapterType::NepTUN),
+            Err(TelioError::UnknownError { .. })
+        ));
     }
 }

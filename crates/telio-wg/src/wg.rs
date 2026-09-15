@@ -77,6 +77,8 @@ pub trait WireGuard: Send + Sync + 'static {
     async fn reset_existing_connections(&self, exit_pubkey: PublicKey) -> Result<(), Error>;
     /// Set the ip stack for the adapter
     async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result<(), Error>;
+    /// Set the MTU of the adapter interface, `None` restores the adapter's own handling
+    async fn set_adapter_mtu(&self, mtu: Option<u32>) -> Result<(), Error>;
     /// Ensure that adapter is UP or DOWN
     async fn ensure_expected_adapter_state(
         &self,
@@ -85,6 +87,13 @@ pub trait WireGuard: Send + Sync + 'static {
     ) -> Result<(), Error> {
         Ok(())
     }
+}
+
+fn check_mtu(mtu: u32) -> Result<(), Error> {
+    if mtu < adapter::MIN_MTU {
+        return Err(Error::MtuTooLow(mtu));
+    }
+    Ok(())
 }
 
 /// WireGuard implementation allowing dynamic selection of implementation.
@@ -113,6 +122,9 @@ pub struct Config {
     /// When present, the callback is consulted by the Windows native adapter
     /// to determine whether meshnet is currently enabled.
     pub enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
+    /// MTU to set on the adapter interface, at least [adapter::MIN_MTU]. If None the
+    /// adapter picks its own
+    pub mtu: Option<u32>,
     /// Configurable socket buffer size, if None doesn't modify default OS set values
     pub skt_buffer_size: Option<u32>,
     /// Configurable socket buffer size, if None doesn't modify default OS set values
@@ -235,6 +247,7 @@ impl DynamicWg {
     ///                 Some(Arc::new(firewall_filter_outbound_packets)),
     ///             firewall_reset_connections: None,
     ///             enable_dynamic_wg_nt_control: None,
+    ///             mtu: None,
     ///             skt_buffer_size: None,
     ///             inter_thread_channel_size: None,
     ///             max_inter_thread_batched_pkts: None,
@@ -255,6 +268,9 @@ impl DynamicWg {
     where
         Self: Sized,
     {
+        if let Some(mtu) = cfg.mtu {
+            check_mtu(mtu)?;
+        }
         let adapter = Self::start_adapter(cfg.try_clone()?).await?;
         #[cfg(unix)]
         return Ok(Self::start_with(
@@ -474,6 +490,18 @@ impl WireGuard for DynamicWg {
         .await?)
     }
 
+    async fn set_adapter_mtu(&self, mtu: Option<u32>) -> Result<(), Error> {
+        if let Some(mtu) = mtu {
+            check_mtu(mtu)?;
+        }
+        task_exec!(&self.task, async move |s| Ok(s
+            .adapter
+            .set_adapter_mtu(mtu)
+            .await))
+        .await??;
+        Ok(())
+    }
+
     /// Ensure that adapter is UP or DOWN
     async fn ensure_expected_adapter_state(
         &self,
@@ -510,6 +538,7 @@ impl Config {
             firewall_process_outbound_callback: self.firewall_process_outbound_callback.clone(),
             firewall_reset_connections: self.firewall_reset_connections.clone(),
             enable_dynamic_wg_nt_control: self.enable_dynamic_wg_nt_control.clone(),
+            mtu: self.mtu,
             skt_buffer_size: self.skt_buffer_size,
             inter_thread_channel_size: self.inter_thread_channel_size,
             max_inter_thread_batched_pkts: self.max_inter_thread_batched_pkts,
@@ -1118,6 +1147,7 @@ pub mod tests {
                 firewall_process_outbound_callback: Default::default(),
                 firewall_reset_connections: None,
                 enable_dynamic_wg_nt_control: None,
+                mtu: None,
                 skt_buffer_size: None,
                 inter_thread_channel_size: None,
                 max_inter_thread_batched_pkts: None,
@@ -1143,6 +1173,10 @@ pub mod tests {
 
         async fn set_tun(&self, _tun: Tun) -> Result<(), Error> {
             Err(Error::UnsupportedAdapter)
+        }
+
+        async fn set_adapter_mtu(&self, mtu: Option<u32>) -> Result<(), AdapterError> {
+            self.lock().await.set_adapter_mtu(mtu).await
         }
 
         fn clone_box(&self) -> Option<Box<dyn Adapter>> {
@@ -1336,6 +1370,89 @@ pub mod tests {
         wg.set_fwmark(ifa.fwmark).await.unwrap();
         adapter.lock().await.checkpoint();
         assert_eq!(ifa.clone(), wg.get_interface().await.unwrap());
+
+        adapter.lock().await.expect_stop().return_once(|| ());
+        wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wg_sets_adapter_mtu() {
+        let Env { adapter, wg, .. } = setup().await;
+
+        adapter
+            .lock()
+            .await
+            .expect_set_adapter_mtu()
+            .with(predicate::eq(Some(1400)))
+            .times(1)
+            .returning(|_| Ok(()));
+        wg.set_adapter_mtu(Some(1400)).await.unwrap();
+        adapter.lock().await.checkpoint();
+
+        adapter
+            .lock()
+            .await
+            .expect_set_adapter_mtu()
+            .with(predicate::eq(None))
+            .times(1)
+            .returning(|_| Ok(()));
+        wg.set_adapter_mtu(None).await.unwrap();
+        adapter.lock().await.checkpoint();
+
+        adapter.lock().await.expect_stop().return_once(|| ());
+        wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wg_rejects_too_low_adapter_mtu_before_reaching_adapter() {
+        let Env { adapter, wg, .. } = setup().await;
+
+        assert!(matches!(
+            wg.set_adapter_mtu(Some(adapter::MIN_MTU - 1)).await,
+            Err(Error::MtuTooLow(_))
+        ));
+
+        adapter.lock().await.expect_stop().return_once(|| ());
+        wg.stop().await;
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn wg_rejects_too_low_mtu_on_start() {
+        let cfg = Config {
+            mtu: Some(adapter::MIN_MTU - 1),
+            ..Config::new().unwrap()
+        };
+        let io = Io {
+            events: Chan::default().tx,
+            analytics_tx: None,
+            libtelio_wide_event_publisher: None,
+        };
+        let result = DynamicWg::start(
+            io,
+            cfg,
+            None,
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_MS),
+            Duration::from_millis(DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS),
+        )
+        .await;
+        assert!(matches!(result, Err(Error::MtuTooLow(_))));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wg_set_adapter_mtu_propagates_adapter_error() {
+        let Env { adapter, wg, .. } = setup().await;
+
+        adapter
+            .lock()
+            .await
+            .expect_set_adapter_mtu()
+            .times(1)
+            .returning(|_| Err(AdapterError::UnsupportedAdapter));
+        assert!(matches!(
+            wg.set_adapter_mtu(Some(1400)).await,
+            Err(Error::UnsupportedAdapter)
+        ));
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;

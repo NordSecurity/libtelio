@@ -1027,7 +1027,6 @@ mod stun_msg {
 mod tests {
     use super::*;
     use maplit::hashmap;
-    use mockall::mock;
     use std::{
         cell::RefCell,
         net::{Ipv4Addr, Ipv6Addr, SocketAddr},
@@ -1042,16 +1041,15 @@ mod tests {
         PublicKey, SecretKey,
         encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
     };
-    use telio_model::mesh::{IpNet, LinkState};
+    use telio_model::mesh::IpNet;
     use telio_proto::{CodecError, PacketRelayed, PartialPongerMsg, PingerMsg};
     use telio_sockets::NativeProtector;
     use telio_sockets::SocketPool;
     use telio_task::io::Chan;
     use telio_test::await_timeout;
     use telio_utils::exponential_backoff::MockBackoff;
-    use telio_utils::ip_stack::IpStack;
     use telio_wg::{
-        Error,
+        MockWireGuard,
         uapi::{Interface, Peer},
     };
     use tokio::{
@@ -1758,7 +1756,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn exponential_backoff_is_applied_even_if_session_start_failed() {
-        let mut wg = MockWg::new();
+        let mut wg = MockWireGuard::new();
 
         // Expect a single call to get_interface when we enter the loop first and
         // and a second in the finished backoff
@@ -1800,7 +1798,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn wait_with_session_start_until_stun_server_wg_peer_is_available() {
-        let mut wg = MockWg::default();
+        let mut wg = MockWireGuard::default();
         let wg_port = 12345;
 
         let peer_sock_v4 = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
@@ -1938,26 +1936,6 @@ mod tests {
 
     // Test helpers
 
-    mock! {
-        Wg {}
-        #[async_trait]
-        impl WireGuard for Wg {
-            async fn get_interface(&self) -> Result<Interface, Error>;
-            async fn get_adapter_luid(&self) -> Result<u64, Error>;
-            async fn wait_for_listen_port(&self, d: Duration) -> Result<u16, Error>;
-            async fn get_link_state(&self, key: PublicKey) -> Result<Option<LinkState>, Error>;
-            async fn set_secret_key(&self, key: SecretKey) -> Result<(), Error>;
-            async fn set_fwmark(&self, fwmark: u32) -> Result<(), Error>;
-            async fn add_peer(&self, peer: Peer) -> Result<(), Error>;
-            async fn del_peer(&self, key: PublicKey) -> Result<(), Error>;
-            async fn drop_connected_sockets(&self) -> Result<(), Error>;
-            async fn time_since_last_rx(&self, public_key: PublicKey) -> Result<Option<Duration>, Error>;
-            async fn stop(self);
-            async fn reset_existing_connections(&self, exit_pubkey: PublicKey) -> Result<(), Error>;
-            async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result<(), Error>;
-        }
-    }
-
     struct StunPeerSockets {
         /// This socket represent a socket that is listening in remote peer.
         /// We will not fake entire tunnel, as it correct behavior would basically
@@ -1975,7 +1953,7 @@ mod tests {
         socket_pool: Arc<SocketPool>,
 
         // Tested system
-        stun_provider: StunEndpointProvider<MockWg, MockBackoff>,
+        stun_provider: StunEndpointProvider<MockWireGuard, MockBackoff>,
         ipv6: bool,
 
         // External behavior
@@ -1999,7 +1977,7 @@ mod tests {
         server_weights: Vec<u32>,
         ipv6: bool,
     ) -> Env {
-        let mut wg = MockWg::default();
+        let mut wg = MockWireGuard::default();
         let wg_port = 12345;
 
         let mut stun_servers = Vec::<Server>::new();
@@ -2101,7 +2079,7 @@ mod tests {
         backoff_array: Option<[u64; 6]>,
         stun_servers: Vec<Server>,
         stun_peers: Vec<StunPeerSockets>,
-        wg: MockWg,
+        wg: MockWireGuard,
         ipv6: bool,
     ) -> Env {
         let socket_pool = SocketPool::new(
