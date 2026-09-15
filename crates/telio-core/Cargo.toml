@@ -11,6 +11,8 @@ default = ["enable_ens", "enable_firewall"]
 pretend_to_be_macos = ["telio-model/pretend_to_be_macos"]
 enable_ens = ["telio-proto/enable_ens"]
 enable_firewall = ["telio-firewall"]
+enable_starcast = ["dep:telio-starcast"]
+enable_upnp = ["telio-traversal/enable_upnp"]
 
 [dependencies]
 cfg-if = "1.0.4"
@@ -46,7 +48,7 @@ telio-proxy.workspace = true
 telio-pq.workspace = true
 telio-relay.workspace = true
 telio-sockets.workspace = true
-telio-starcast.workspace = true
+telio-starcast = { workspace = true, optional = true }
 telio-task.workspace = true
 telio-traversal.workspace = true
 telio-utils.workspace = true
