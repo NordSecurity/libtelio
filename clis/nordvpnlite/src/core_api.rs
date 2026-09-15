@@ -146,6 +146,7 @@ impl TryFrom<&Server> for ExitNode {
                 .ok_or(NordVpnLiteError::EndpointNoPublicKey)?,
             allowed_ips: None,
             endpoint: Some(SocketAddr::new(server.address(), DEFAULT_WIREGUARD_PORT)),
+            supported_ciphers: None,
         })
     }
 }

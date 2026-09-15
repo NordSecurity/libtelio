@@ -1,7 +1,7 @@
 import asyncio
 from tests.utils import asyncio_util
 from tests.utils.bindings import LinkState, NodeState, PathType
-from typing import Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from tests.libtelio_client.client import Client
@@ -19,6 +19,7 @@ class ClientVpn:
         timeout: Optional[float] = None,
         pq: bool = False,
         link_state_enabled: bool = False,
+        supported_ciphers: Optional[List[str]] = None,
     ) -> None:
         await self._client.configure_interface()
         await self._client.get_router().create_vpn_route()
@@ -46,6 +47,7 @@ class ClientVpn:
                     public_key=public_key,
                     allowed_ips=None,
                     endpoint=f"{ip}:{port}",
+                    supported_ciphers=supported_ciphers,
                 )
             await event
 
@@ -90,6 +92,7 @@ class ClientVpn:
         self,
         public_key: str,
         timeout: Optional[float] = None,
+        supported_ciphers: Optional[List[str]] = None,
     ) -> None:
         await self._client.configure_interface()
         await self._client.get_router().create_vpn_route()
@@ -103,6 +106,7 @@ class ClientVpn:
             )
         ) as event:
             await self._client.get_proxy().connect_to_exit_node(
-                public_key=public_key, allowed_ips=None, endpoint=None
+                public_key=public_key, allowed_ips=None, endpoint=None,
+                supported_ciphers=supported_ciphers,
             )
             await event

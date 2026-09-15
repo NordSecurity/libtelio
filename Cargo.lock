@@ -2745,7 +2745,7 @@ dependencies = [
 [[package]]
 name = "neptun"
 version = "2.2.3"
-source = "git+https://github.com/NordSecurity/neptun.git?tag=v3.0.4#0aebe247729574acc449f9debd62fc8d419dbf07"
+source = "git+https://github.com/tomasz-kumor/NepTUN.git?branch=LLT-7574-aead-cipher-suites-support#048e64c7e36441f971b93ba64c081a58f05cc8ce"
 dependencies = [
  "aead",
  "base64",
@@ -6753,7 +6753,7 @@ dependencies = [
 [[package]]
 name = "wireguard-nt"
 version = "1.0.0"
-source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper?tag=v1.3.0#f554a48131a24743389713a7624a3b9ef17d619b"
+source = "git+https://github.com/tomasz-kumor/wireguard-nt-rust-wrapper?branch=LLT-7574-aead-cipher-suites-support#5759ecd3a98e5d682c69c75af3e7e3691b9e05d8"
 dependencies = [
  "bitflags",
  "getrandom 0.4.2",
@@ -6771,7 +6771,7 @@ dependencies = [
 [[package]]
 name = "wireguard-uapi"
 version = "4.0.0"
-source = "git+https://github.com/NordSecurity/wireguard-uapi-rs.git?rev=5f5d9952ced4faf10f56d98153e4a8e560102e5c#5f5d9952ced4faf10f56d98153e4a8e560102e5c"
+source = "git+https://github.com/tomasz-kumor/wireguard-uapi-rs.git?branch=LLT-7574-aead-cipher-suites-support#b9a96629ab92c95302085ea483cbae61f1f3f184"
 dependencies = [
  "derive_builder 0.10.2",
  "hex",

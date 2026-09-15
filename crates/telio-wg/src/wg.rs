@@ -997,6 +997,7 @@ impl State {
                 && lhs.tx_bytes == rhs.tx_bytes
                 && lhs.time_since_last_handshake == rhs.time_since_last_handshake
                 && lhs.preshared_key == rhs.preshared_key
+                && lhs.selected_cipher == rhs.selected_cipher
     }
 }
 
@@ -1080,6 +1081,8 @@ pub mod tests {
                 tx_bytes: Some(rng.random()),
                 time_since_last_handshake: Some(Duration::from_millis(rng.random())),
                 preshared_key: Some(PresharedKey(Hidden(rng.random()))),
+                supported_ciphers: None,
+                selected_cipher: None,
             };
             peers.insert(key, peer);
         }
