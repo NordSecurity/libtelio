@@ -368,7 +368,7 @@ impl WindowsNativeWg {
 
             let mut index: u32 = 0;
             const FRIENDLY_NAME_BUF_WCHARS: usize = 260;
-            let mut name_buf = [0u8; FRIENDLY_NAME_BUF_WCHARS * 2];
+            let mut name_buf = [0u16; FRIENDLY_NAME_BUF_WCHARS];
             let mut removed = false;
 
             loop {
@@ -399,20 +399,19 @@ impl WindowsNativeWg {
                     &dev_info_set.dev_info_data,
                     SPDRP_FRIENDLYNAME,
                     None,
-                    Some(&mut name_buf),
+                    Some(std::slice::from_raw_parts_mut(
+                        name_buf.as_mut_ptr() as *mut u8,
+                        std::mem::size_of_val(&name_buf),
+                    )),
                     None,
                 )
                 .is_ok()
                 {
-                    let w = std::slice::from_raw_parts(
-                        name_buf.as_ptr() as *const u16,
-                        FRIENDLY_NAME_BUF_WCHARS,
-                    );
-                    let end = w
+                    let end = name_buf
                         .iter()
                         .position(|&c| c == 0)
                         .unwrap_or(FRIENDLY_NAME_BUF_WCHARS);
-                    let s = w
+                    let s = name_buf
                         .get(..end)
                         .map(|s| String::from_utf16_lossy(s).trim().to_string())
                         .unwrap_or_default();
