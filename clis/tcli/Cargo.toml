@@ -7,7 +7,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 default-run = "tcli"
 
 [dependencies]
-dirs = "6.0.0"
+dirs = "7.0.0"
 reqwest = { version = "0.13.3", default-features = false, features = [
   "json",
   "blocking",
