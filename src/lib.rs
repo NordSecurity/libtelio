@@ -10,6 +10,9 @@ pub mod ffi;
 pub use crate::ffi::*;
 pub use telio_core::*;
 
+use telio_core::connection_config::{
+    ConnectionConfig, MeshnetConnectionConfigBuilder, VpnConnectionConfigBuilder,
+};
 use telio_core::defaults_builder::FeaturesDefaultsBuilder;
 pub use telio_core::types as ffi_types;
 

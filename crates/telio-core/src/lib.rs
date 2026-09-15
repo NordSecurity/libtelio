@@ -1,6 +1,7 @@
 //! Core telio implementation: device orchestration and supporting types.
 
 pub mod adapter;
+pub mod connection_config;
 pub mod defaults_builder;
 pub mod device;
 pub mod logging;

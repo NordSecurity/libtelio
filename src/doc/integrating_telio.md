@@ -573,6 +573,179 @@ Exclude server_endpoint from tunnel interface, bind it to default interface, or 
 
 DNS servers set to Nord DNS servers or CyberSec servers (if needed via Telio Magic DNS forwarding).
 
+### VPN Client — Builder API
+
+Use `VpnConnectionConfigBuilder` to build a `ConnectionConfig` and pass it to `connect_to_exit_node_with_config`. Chain optional methods: `with_identifier`, `with_allowed_ips`, `force_pq`.
+
+<multi-code-select></multi-code-select>
+
+<multi-code>
+
+```rust no_run
+use std::sync::Arc;
+use telio::{ffi::*, types::*};
+use telio_model::event::Event;
+
+#[derive(Debug)]
+struct EventHandler;
+impl TelioEventCb for EventHandler {
+    fn event(&self, payload: Event) -> FfiResult<()> { Ok(()) }
+}
+
+let sk = generate_secret_key();
+let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+telio.start(sk, get_default_adapter()).unwrap();
+
+let pubkey = "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=".to_owned();
+let endpoint = "1.2.3.4:51820".to_owned();
+
+// Standard VPN — all traffic, auto-generated identifier
+let config = Arc::new(VpnConnectionConfigBuilder::new(pubkey.clone(), endpoint.clone())).build();
+telio.connect_to_exit_node_with_config(config).unwrap();
+telio.disconnect_from_exit_nodes().unwrap();
+
+// Post-quantum VPN
+let config_pq = Arc::new(VpnConnectionConfigBuilder::new(pubkey.clone(), endpoint.clone()))
+    .force_pq()
+    .build();
+telio.connect_to_exit_node_with_config(config_pq).unwrap();
+telio.disconnect_from_exit_nodes().unwrap();
+
+// Custom allowed IPs and stable identifier
+let config_custom = Arc::new(VpnConnectionConfigBuilder::new(pubkey, endpoint))
+    .with_identifier("my-vpn-node".to_owned())
+    .with_allowed_ips(vec!["100.100.0.0/16".to_owned()])
+    .build();
+telio.connect_to_exit_node_with_config(config_custom).unwrap();
+telio.disconnect_from_exit_nodes().unwrap();
+
+telio.stop().unwrap();
+telio.shutdown().unwrap();
+```
+
+```go
+import github.com/nordsecurity/telio
+
+telio, err := Telio{...}
+_, err = telio.Start(GenerateSecretKey(), GetDefaultAdapter())
+
+pubkey := "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo="
+endpoint := "1.2.3.4:51820"
+
+// Standard VPN — all traffic, auto-generated identifier
+_, err = telio.ConnectToExitNodeWithConfig(NewVpnConnectionConfigBuilder(pubkey, endpoint).Build())
+_, err = telio.DisconnectFromExitNodes()
+
+// Post-quantum VPN
+_, err = telio.ConnectToExitNodeWithConfig(
+    NewVpnConnectionConfigBuilder(pubkey, endpoint).ForcePq().Build())
+_, err = telio.DisconnectFromExitNodes()
+
+// Custom allowed IPs and stable identifier
+config := NewVpnConnectionConfigBuilder(pubkey, endpoint).
+    WithIdentifier("my-vpn-node").
+    WithAllowedIps([]string{"100.100.0.0/16"}).
+    Build()
+_, err = telio.ConnectToExitNodeWithConfig(config)
+_, err = telio.DisconnectFromExitNodes()
+
+_, err = telio.Stop()
+_, err = telio.Shutdown()
+```
+
+```swift
+import libtelio
+
+let telio = Telio(...)
+telio.start(generateSecretKey(), getDefaultAdapter())
+
+let pubkey = "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo="
+let endpoint = "1.2.3.4:51820"
+
+// Standard VPN — all traffic, auto-generated identifier
+telio.connectToExitNodeWithConfig(
+    VpnConnectionConfigBuilder(publicKey: pubkey, endpoint: endpoint).build())
+telio.disconnectFromExitNodes()
+
+// Post-quantum VPN
+telio.connectToExitNodeWithConfig(
+    VpnConnectionConfigBuilder(publicKey: pubkey, endpoint: endpoint).forcePq().build())
+telio.disconnectFromExitNodes()
+
+// Custom allowed IPs and stable identifier
+telio.connectToExitNodeWithConfig(
+    VpnConnectionConfigBuilder(publicKey: pubkey, endpoint: endpoint)
+        .withIdentifier("my-vpn-node")
+        .withAllowedIps(["100.100.0.0/16"])
+        .build())
+telio.disconnectFromExitNodes()
+
+telio.stop()
+telio.shutdown()
+```
+
+```cs
+using uniffi.libtelio;
+
+Telio telio = new Telio(...);
+telio.Start(GenerateSecretKey(), GetDefaultAdapter());
+
+var pubkey = "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=";
+var endpoint = "1.2.3.4:51820";
+
+// Standard VPN — all traffic, auto-generated identifier
+telio.ConnectToExitNodeWithConfig(new VpnConnectionConfigBuilder(pubkey, endpoint).Build());
+telio.DisconnectFromExitNodes();
+
+// Post-quantum VPN
+telio.ConnectToExitNodeWithConfig(
+    new VpnConnectionConfigBuilder(pubkey, endpoint).ForcePq().Build());
+telio.DisconnectFromExitNodes();
+
+// Custom allowed IPs and stable identifier
+telio.ConnectToExitNodeWithConfig(new VpnConnectionConfigBuilder(pubkey, endpoint)
+    .WithIdentifier("my-vpn-node")
+    .WithAllowedIps(new List<string> { "100.100.0.0/16" })
+    .Build());
+telio.DisconnectFromExitNodes();
+
+telio.Stop();
+telio.Shutdown();
+```
+
+```kotlin
+import com.nordsec.libtelio.*
+
+val telio = Telio.new(...)!!
+telio.start(generateSecretKey(), getDefaultAdapter())!!
+
+val pubkey = "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo="
+val endpoint = "1.2.3.4:51820"
+
+// Standard VPN — all traffic, auto-generated identifier
+telio.connectToExitNodeWithConfig(
+    VpnConnectionConfigBuilder(pubkey, endpoint).build())!!
+telio.disconnectFromExitNodes()!!
+
+// Post-quantum VPN
+telio.connectToExitNodeWithConfig(
+    VpnConnectionConfigBuilder(pubkey, endpoint).forcePq().build())!!
+telio.disconnectFromExitNodes()!!
+
+// Custom allowed IPs and stable identifier
+telio.connectToExitNodeWithConfig(
+    VpnConnectionConfigBuilder(pubkey, endpoint)
+        .withIdentifier("my-vpn-node")
+        .withAllowedIps(listOf("100.100.0.0/16"))
+        .build())!!
+telio.disconnectFromExitNodes()!!
+
+telio.stop()!!
+telio.shutdown()!!
+```
+
+</multi-code>
+
 ### Meshnet Client
 
 App turns on and off meshnet by passing Meshnet Config.
@@ -969,6 +1142,140 @@ Route entire system traffic through tunnel interface.
 Exclude all derp_server.ipv4 from tunnel interface, bind it to default interface or use system protection methods.
 
 DNS servers set to default OS servers (if needed via Telio Magic DNS forwarding).
+
+### Meshnet + Exit Node — Builder API
+
+Use `MeshnetConnectionConfigBuilder` to build a `ConnectionConfig` and pass it to `connect_to_exit_node_with_config`. Only `public_key` is required; chain `with_allowed_ips` to restrict routed subnets.
+
+<multi-code-select></multi-code-select>
+
+<multi-code>
+
+```rust no_run
+use std::sync::Arc;
+use telio::{ffi::*, types::*};
+use telio_model::event::Event;
+
+#[derive(Debug)]
+struct EventHandler;
+impl TelioEventCb for EventHandler {
+    fn event(&self, payload: Event) -> FfiResult<()> { Ok(()) }
+}
+
+let sk = generate_secret_key();
+let telio = Telio::new(Default::default(), Box::new(EventHandler)).unwrap();
+telio.start(sk, get_default_adapter()).unwrap();
+
+let mesh_peer_pubkey = "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=".to_owned();
+
+// All traffic via meshnet peer (DERP)
+let config = Arc::new(MeshnetConnectionConfigBuilder::new(mesh_peer_pubkey.clone())).build();
+telio.connect_to_exit_node_with_config(config).unwrap();
+telio.disconnect_from_exit_nodes().unwrap();
+
+// Only meshnet subnets via peer
+let config_subnet = Arc::new(MeshnetConnectionConfigBuilder::new(mesh_peer_pubkey))
+    .with_allowed_ips(vec!["100.64.0.0/10".to_owned()])
+    .build();
+telio.connect_to_exit_node_with_config(config_subnet).unwrap();
+telio.disconnect_from_exit_nodes().unwrap();
+
+telio.stop().unwrap();
+telio.shutdown().unwrap();
+```
+
+```go
+import github.com/nordsecurity/telio
+
+telio, err := Telio{...}
+_, err = telio.Start(GenerateSecretKey(), GetDefaultAdapter())
+
+meshPeerPubkey := "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo="
+
+// All traffic via meshnet peer (DERP)
+_, err = telio.ConnectToExitNodeWithConfig(NewMeshnetConnectionConfigBuilder(meshPeerPubkey).Build())
+_, err = telio.DisconnectFromExitNodes()
+
+// Only meshnet subnets via peer
+config := NewMeshnetConnectionConfigBuilder(meshPeerPubkey).
+    WithAllowedIps([]string{"100.64.0.0/10"}).
+    Build()
+_, err = telio.ConnectToExitNodeWithConfig(config)
+_, err = telio.DisconnectFromExitNodes()
+
+_, err = telio.Stop()
+_, err = telio.Shutdown()
+```
+
+```swift
+import libtelio
+
+let telio = Telio(...)
+telio.start(generateSecretKey(), getDefaultAdapter())
+
+let meshPeerPubkey = "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo="
+
+// All traffic via meshnet peer (DERP)
+telio.connectToExitNodeWithConfig(MeshnetConnectionConfigBuilder(publicKey: meshPeerPubkey).build())
+telio.disconnectFromExitNodes()
+
+// Only meshnet subnets via peer
+telio.connectToExitNodeWithConfig(
+    MeshnetConnectionConfigBuilder(publicKey: meshPeerPubkey)
+        .withAllowedIps(["100.64.0.0/10"])
+        .build())
+telio.disconnectFromExitNodes()
+
+telio.stop()
+telio.shutdown()
+```
+
+```cs
+using uniffi.libtelio;
+
+Telio telio = new Telio(...);
+telio.Start(GenerateSecretKey(), GetDefaultAdapter());
+
+var meshPeerPubkey = "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=";
+
+// All traffic via meshnet peer (DERP)
+telio.ConnectToExitNodeWithConfig(new MeshnetConnectionConfigBuilder(meshPeerPubkey).Build());
+telio.DisconnectFromExitNodes();
+
+// Only meshnet subnets via peer
+telio.ConnectToExitNodeWithConfig(new MeshnetConnectionConfigBuilder(meshPeerPubkey)
+    .WithAllowedIps(new List<string> { "100.64.0.0/10" })
+    .Build());
+telio.DisconnectFromExitNodes();
+
+telio.Stop();
+telio.Shutdown();
+```
+
+```kotlin
+import com.nordsec.libtelio.*
+
+val telio = Telio.new(...)!!
+telio.start(generateSecretKey(), getDefaultAdapter())!!
+
+val meshPeerPubkey = "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo="
+
+// All traffic via meshnet peer (DERP)
+telio.connectToExitNodeWithConfig(MeshnetConnectionConfigBuilder(meshPeerPubkey).build())!!
+telio.disconnectFromExitNodes()!!
+
+// Only meshnet subnets via peer
+telio.connectToExitNodeWithConfig(
+    MeshnetConnectionConfigBuilder(meshPeerPubkey)
+        .withAllowedIps(listOf("100.64.0.0/10"))
+        .build())!!
+telio.disconnectFromExitNodes()!!
+
+telio.stop()!!
+telio.shutdown()!!
+```
+
+</multi-code>
 
 ### Error handling
 

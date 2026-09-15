@@ -460,6 +460,37 @@ interface Telio {
     [Throws=TelioError]
     void connect_to_exit_node_postquantum(string? identifier, PublicKey public_key, sequence<IpNet>? allowed_ips, SocketAddr endpoint);
 
+    /// Connects to an exit node using a [`ConnectionConfig`].
+    ///
+    /// This is the canonical connection method. Use [`VpnConnectionConfigBuilder`] for VPN
+    /// connections or [`MeshnetConnectionConfigBuilder`] for meshnet.
+    ///
+    /// Routing should be set by the user accordingly.
+    ///
+    /// # Examples
+    ///
+    /// ```c
+    /// // VPN connection (standard)
+    /// VpnConnectionConfigBuilder builder = new VpnConnectionConfigBuilder(
+    ///     "QKyApX/ewza7QEbC03Yt8t2ghu6nV5/rve/ZJvsecXo=",
+    ///     "1.2.3.4:5678"
+    /// );
+    /// telio.connect_to_exit_node_with_config(builder.build());
+    ///
+    /// // VPN connection (post-quantum)
+    /// telio.connect_to_exit_node_with_config(
+    ///     new VpnConnectionConfigBuilder(pubkey, endpoint).force_pq().build()
+    /// );
+    ///
+    /// // Meshnet exit-through-peer (DERP)
+    /// telio.connect_to_exit_node_with_config(
+    ///     new MeshnetConnectionConfigBuilder(pubkey).build()
+    /// );
+    /// ```
+    ///
+    [Throws=TelioError]
+    void connect_to_exit_node_with_config(ConnectionConfig config);
+
     /// Disconnects from specified exit node.
     ///
     /// # Parameters
@@ -646,6 +677,85 @@ interface FeaturesDefaultsBuilder {
 
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_error_notification_service();
+};
+
+
+/// Connection configuration for VPN or meshnet exit-node connections.
+/// Produced by [`VpnConnectionConfigBuilder`] or [`MeshnetConnectionConfigBuilder`].
+dictionary ConnectionConfig {
+    /// Optional stable identifier for the exit node.
+    /// If null, a random UUID is generated at connect time.
+    string? identifier;
+    /// WireGuard public key of the exit node.
+    PublicKey public_key;
+    /// Subnets routed through the exit node. Null is equivalent to "0.0.0.0/0".
+    sequence<IpNet>? allowed_ips;
+    /// Direct UDP endpoint (IP:port) of the exit node.
+    /// Always set for VPN connections; always null for meshnet peer exit.
+    SocketAddr? endpoint;
+    /// When true, a post-quantum tunnel is established (VPN connections only).
+    boolean post_quantum;
+};
+
+/// Builder for VPN exit-node connections where a direct UDP endpoint is known.
+///
+/// Both `public_key` and `endpoint` are mandatory and supplied to the constructor.
+/// Use `force_pq()` to enable post-quantum tunnelling.
+///
+/// # Example
+///
+/// ```c
+/// ConnectionConfig config = new VpnConnectionConfigBuilder(pubkey, "1.2.3.4:5678")
+///     .with_identifier("my-node")
+///     .force_pq()
+///     .build();
+/// telio.connect_to_exit_node_with_config(config);
+/// ```
+interface VpnConnectionConfigBuilder {
+    /// Create a builder. Both `public_key` and `endpoint` are required for any VPN connection.
+    constructor(PublicKey public_key, SocketAddr endpoint);
+
+    /// Set a stable string identifier for the exit node.
+    /// If not called, a random UUID is generated at connect time.
+    [Self=ByArc]
+    VpnConnectionConfigBuilder with_identifier(string identifier);
+
+    /// Set the subnets routed through the exit node.
+    /// If not called, defaults to "0.0.0.0/0" (all traffic).
+    [Self=ByArc]
+    VpnConnectionConfigBuilder with_allowed_ips(sequence<IpNet> allowed_ips);
+
+    /// Enable post-quantum key exchange for this VPN tunnel.
+    [Self=ByArc]
+    VpnConnectionConfigBuilder force_pq();
+
+    /// Build the final ConnectionConfig.
+    ConnectionConfig build();
+};
+
+/// Builder for meshnet exit-through-peer connections.
+///
+/// Only `public_key` is mandatory and supplied to the constructor.
+///
+/// # Example
+///
+/// ```c
+/// ConnectionConfig config = new MeshnetConnectionConfigBuilder(pubkey)
+///     .with_allowed_ips(["100.64.0.0/10"])
+///     .build();
+/// telio.connect_to_exit_node_with_config(config);
+/// ```
+interface MeshnetConnectionConfigBuilder {
+    /// Create a builder with the WireGuard public key of the meshnet exit peer.
+    constructor(PublicKey public_key);
+
+    /// Set the subnets routed through the exit peer.
+    /// If not called, defaults to "0.0.0.0/0" (all traffic).
+    [Self=ByArc]
+    MeshnetConnectionConfigBuilder with_allowed_ips(sequence<IpNet> allowed_ips);
+
+    /// Build the final ConnectionConfig.
+    ConnectionConfig build();
 };
 
 
