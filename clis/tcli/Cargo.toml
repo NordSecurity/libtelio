@@ -15,7 +15,7 @@ reqwest = { version = "0.13.3", default-features = false, features = [
   "form",
   "query",
 ] }
-rustyline = "17.0"
+rustyline = "18.0"
 shellwords = "1.1.0"
 
 anyhow.workspace = true
