@@ -21,9 +21,10 @@ fn event_log(
 ) -> std::result::Result<usize, moose::Error> {
     match get_logfile() {
         Ok(mut file) => {
-            let format_string =
-                time::format_description::parse("[year]-[month]-[day] [hour]:[minute]:[second] ")
-                    .map_err(|_| moose::Error::EventLogError)?;
+            let format_string = time::format_description::parse_borrowed::<3>(
+                "[year]-[month]-[day] [hour]:[minute]:[second] ",
+            )
+            .map_err(|_| moose::Error::EventLogError)?;
             let mut buffer = time::OffsetDateTime::now_utc()
                 .format(&format_string)
                 .map_err(|_| moose::Error::EventLogError)?;
