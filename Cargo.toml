@@ -123,7 +123,7 @@ tracing = { version = "0.1", features = [
   "release_max_level_debug",
 ] }
 maplit = "1"
-mockall = "0.14"
+mockall = "0.15"
 mockall_double = "0.3.1"
 modifier = "0.1.0"
 nat-detect = { git = "https://github.com/NordSecurity/nat-detect.git", tag = "v0.1.9" }
