@@ -3,7 +3,15 @@ lab: base
 tests: nat-lab/tests
 deps: nat-lab
 mount: /libtelio
-shards: 9
+# shard classes, mirroring the dedicated job's plan: each boots only the guests its
+# tests need, and pays its measured startup before any test is charged to it
+shard_plan:
+  - {name: openwrt, count: 1, startup_seconds: 150, skip: [windows, mac, nlx, fullcone, android]}
+  - {name: windows, count: 2, startup_seconds: 110, skip: [openwrt, mac, fullcone, android]}
+  - {name: mac, count: 1, startup_seconds: 90, skip: [openwrt, windows, fullcone, android]}
+  - {name: vm-misc, count: 1, startup_seconds: 100, skip: [openwrt, windows, mac]}
+  - {name: lite, count: 4, startup_seconds: 60, skip: [openwrt, windows, mac, nlx, fullcone, android]}
+durations: nat-lab/compiled_test_durations.json
 # a hanging test must fail rather than block the job; timeout_func_only keeps the
 # timeout compatible with reruns; long/perf tests only run in dedicated jobs
 pytest_args:
@@ -12,16 +20,6 @@ pytest_args:
   - "--timeout=180"
   - "-o"
   - "timeout_func_only=true"
-# least_duration keeps expensive VM tests spread thin across shards; a uniform split
-# packs them back-to-back and the guests degrade under the sustained load
-# this suite splits itself with pytest-split
-shard_args:
-  - "--splits"
-  - "{total}"
-  - "--group"
-  - "{index}"
-  - "--splitting-algorithm=least_duration"
-  - "--durations-path=compiled_test_durations.json"
 env:
   TELIO_BIN_PROFILE: release
 # the mocked API must serve the cert the prebuilt guest packages were built to
