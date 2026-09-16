@@ -29,6 +29,7 @@ pub(crate) mod grpc {
         ServerMaintenance = 2,
         Unauthenticated = 3,
         Superseded = 4,
+        UnsupportedCipher = 5,
     }
 }
 

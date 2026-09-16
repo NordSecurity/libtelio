@@ -75,6 +75,8 @@ pub enum VpnConnectionError {
     Unauthenticated,
     /// There is a newer connection to this VPN server
     Superseded,
+    /// The server rejected the VPN encryption cipher
+    UnsupportedCipher,
 }
 
 /// Description of the Exit Node

@@ -761,17 +761,28 @@ async def test_ens_not_started_for_meshnet_exit_peer(
         ),
     ],
 )
-async def test_ens_connection_error_unknown(
+@pytest.mark.parametrize(
+    "error_code, expected_logged_code",
+    [
+        pytest.param(VpnConnectionError.UNKNOWN, "Unknown", id="unknown"),
+        pytest.param(
+            VpnConnectionError.UNSUPPORTED_CIPHER,
+            "UnsupportedCipher",
+            id="unsupported_cipher",
+        ),
+    ],
+)
+async def test_ens_connection_error_from_stub(
     alpha_setup_params: SetupParameters,
     public_ip: str,
+    error_code: VpnConnectionError,
+    expected_logged_code: str,
 ) -> None:
     vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
     vpn_ip = str(vpn_conf.server_conf["ipv4"])
     vpn_port = cast(int, vpn_conf.server_conf["port"])
     vpn_public_key = str(vpn_conf.server_conf["public_key"])
     vpn_private_key = str(vpn_conf.server_conf["private_key"])
-
-    error_code = VpnConnectionError.UNKNOWN
 
     fingerprint = await get_grpc_tls_fingerprint(vpn_ip)
     root_certificate_b64 = await get_grpc_tls_root_certificate(vpn_ip)
@@ -831,7 +842,9 @@ async def test_ens_connection_error_unknown(
             True,
             vpn_connection_error=error_code,
         )
-        await client_alpha.log.wait_for(additional_info)
+        await client_alpha.log.wait_for(
+            f'(ConnectionError {{ code: {expected_logged_code}, additional_info: Some("{additional_info}") }})'
+        )
         await client_alpha.log.wait_for(fingerprint)
 
 
