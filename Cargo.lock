@@ -173,7 +173,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
- "synstructure",
+ "synstructure 0.13.2",
 ]
 
 [[package]]
@@ -3199,31 +3199,10 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "pnet_base"
-version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe4cf6fb3ab38b68d01ab2aea03ed3d1132b4868fa4e06285f29f16da01c5f4c"
-dependencies = [
- "no-std-net",
-]
-
-[[package]]
-name = "pnet_base"
 version = "0.35.0"
 source = "git+https://github.com/NordSecurity/libpnet.git?tag=v0.36.0#d4a4c80b22afd914da42a0ce4da08e654f04a785"
 dependencies = [
  "no-std-net",
-]
-
-[[package]]
-name = "pnet_macros"
-version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "688b17499eee04a0408aca0aa5cba5fc86401d7216de8a63fdf7a4c227871804"
-dependencies = [
- "proc-macro2",
- "quote",
- "regex",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -3239,31 +3218,10 @@ dependencies = [
 
 [[package]]
 name = "pnet_macros_support"
-version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eea925b72f4bd37f8eab0f221bbe4c78b63498350c983ffa9dd4bcde7e030f56"
-dependencies = [
- "pnet_base 0.34.0",
-]
-
-[[package]]
-name = "pnet_macros_support"
 version = "0.35.0"
 source = "git+https://github.com/NordSecurity/libpnet.git?tag=v0.36.0#d4a4c80b22afd914da42a0ce4da08e654f04a785"
 dependencies = [
- "pnet_base 0.35.0",
-]
-
-[[package]]
-name = "pnet_packet"
-version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9a005825396b7fe7a38a8e288dbc342d5034dac80c15212436424fef8ea90ba"
-dependencies = [
- "glob",
- "pnet_base 0.34.0",
- "pnet_macros 0.34.0",
- "pnet_macros_support 0.34.0",
+ "pnet_base",
 ]
 
 [[package]]
@@ -3272,9 +3230,9 @@ version = "0.35.0"
 source = "git+https://github.com/NordSecurity/libpnet.git?tag=v0.36.0#d4a4c80b22afd914da42a0ce4da08e654f04a785"
 dependencies = [
  "glob",
- "pnet_base 0.35.0",
- "pnet_macros 0.35.0",
- "pnet_macros_support 0.35.0",
+ "pnet_base",
+ "pnet_macros",
+ "pnet_macros_support",
 ]
 
 [[package]]
@@ -4625,16 +4583,16 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surge-ping"
-version = "0.8.4"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30498e9c9feba213c3df6ed675bdf75519ccbee493517e7225305898c86cac05"
+checksum = "7cdc709585dead30bc08dafb5b25fee3d1a9d5e81e4eff43e21f609476b64a50"
 dependencies = [
  "hex",
  "parking_lot",
- "pnet_packet 0.34.0",
- "rand 0.9.5",
+ "pnet_packet",
+ "rand 0.10.2",
  "socket2",
- "thiserror 1.0.69",
+ "thiserror 2.0.20",
  "tokio",
  "tracing",
 ]
@@ -4696,6 +4654,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "synstructure"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "901704edd0dfe137f1987838ee4f259e4e063c31371bdb423f7ae38ec6f77f02"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.5",
 ]
 
 [[package]]
@@ -4903,7 +4872,7 @@ dependencies = [
  "mockall",
  "neptun",
  "nix",
- "pnet_packet 0.35.0",
+ "pnet_packet",
  "rand 0.10.2",
  "rand_core_compat",
  "rstest",
@@ -4930,7 +4899,7 @@ dependencies = [
  "mockall_double",
  "num_enum",
  "parking_lot",
- "pnet_packet 0.35.0",
+ "pnet_packet",
  "rand 0.10.2",
  "rustc-hash",
  "serde_json",
@@ -5066,7 +5035,7 @@ dependencies = [
  "mockall",
  "neptun",
  "parking_lot",
- "pnet_packet 0.35.0",
+ "pnet_packet",
  "proptest",
  "rand 0.10.2",
  "rand_core_compat",
@@ -5222,7 +5191,7 @@ dependencies = [
  "futures",
  "ipnet",
  "neptun",
- "pnet_packet 0.35.0",
+ "pnet_packet",
  "rand 0.10.2",
  "rstest",
  "sn_fake_clock",
@@ -6755,14 +6724,14 @@ dependencies = [
 
 [[package]]
 name = "yoke-derive"
-version = "0.8.2"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de844c262c8848816172cef550288e7dc6c7b7814b4ee56b3e1553f275f1858e"
+checksum = "33811428bee40dbceb6d545e95754741d17a6aef9a4849f0fd62e2ba4f412a78"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
- "synstructure",
+ "syn 3.0.5",
+ "synstructure 0.14.0",
 ]
 
 [[package]]
@@ -6796,14 +6765,14 @@ dependencies = [
 
 [[package]]
 name = "zerofrom-derive"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11532158c46691caf0f2593ea8358fed6bbf68a0315e80aae9bd41fbade684a1"
+checksum = "f75b4683f6c7f45248d4d64056a24298c6281e0993356d7d1b4a1a962ef10d4a"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
- "synstructure",
+ "syn 3.0.5",
+ "synstructure 0.14.0",
 ]
 
 [[package]]

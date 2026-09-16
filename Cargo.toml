@@ -158,7 +158,7 @@ smart-default = "0.7.1"
 sn_fake_clock = "0.4"
 socket2 = "0.6"
 strum = { version = "0.28.0", features = ["derive"] }
-surge-ping = { version = "0.8" }
+surge-ping = { version = "0.9" }
 thiserror = "2"
 time = { version = "0.3", features = ["formatting"] }
 tokio = ">=1.22"
@@ -227,3 +227,8 @@ normal = ["telio-starcast"]
 
 [workspace.metadata.cargo-machete]
 ignored = ["tracing"]
+
+# surge-ping has dependency on pnet_packet, use our fork in both places (git tag "v0.36.0" is still pnet 0.35.0) 
+# surge-ping doesn't use removed gre or DNS parts which fork touches
+[patch.crates-io]
+pnet_packet = { git = "https://github.com/NordSecurity/libpnet.git", tag = "v0.36.0" }
