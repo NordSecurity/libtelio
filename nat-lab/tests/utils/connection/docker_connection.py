@@ -10,6 +10,7 @@ from tests.utils.logger import log
 from tests.utils.process import Process, DockerProcess, ProcessExecError
 from typing import List, Type, Dict, AsyncIterator
 from typing_extensions import Self
+from uuid import uuid4
 
 DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_CONE_CLIENT_1: "cone-client-01",
@@ -29,6 +30,9 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: "udp-block-client-01",
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: "udp-block-client-02",
     ConnectionTag.DOCKER_OPENWRT_CLIENT_1: "openwrt-client-01",
+    ConnectionTag.DOCKER_OPENWRT_CLIENT_3: "openwrt-client-03",
+    ConnectionTag.DOCKER_OPENWRT_DHCP_CLIENT_1: "openwrt-dhcp-client-01",
+    ConnectionTag.DOCKER_OPENWRT_DHCP_CLIENT_3: "openwrt-dhcp-client-03",
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_CLIENT: "internal-symmetric-client-01",
     ConnectionTag.DOCKER_CONE_GW_1: "cone-gw-01",
     ConnectionTag.DOCKER_CONE_GW_2: "cone-gw-02",
@@ -40,6 +44,7 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_UPNP_GW_1: "upnp-gw-01",
     ConnectionTag.DOCKER_UPNP_GW_2: "upnp-gw-02",
     ConnectionTag.DOCKER_OPENWRT_GW_1: "openwrt-gw-01",
+    ConnectionTag.DOCKER_OPENWRT_GW_3: "openwrt-gw-03",
     ConnectionTag.DOCKER_VPN_1: "vpn-01",
     ConnectionTag.DOCKER_VPN_2: "vpn-02",
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: "internal-symmetric-gw-01",
@@ -51,12 +56,16 @@ DOCKER_SERVICE_IDS: Dict[ConnectionTag, str] = {
     ConnectionTag.DOCKER_PHOTO_ALBUM: "photo-album",
     ConnectionTag.DOCKER_WINDOWS_GW_1: "windows-gw-01",
     ConnectionTag.DOCKER_WINDOWS_GW_2: "windows-gw-02",
-    ConnectionTag.DOCKER_WINDOWS_GW_3: "windows-gw-03",
-    ConnectionTag.DOCKER_WINDOWS_GW_4: "windows-gw-04",
     ConnectionTag.DOCKER_WINDOWS_VM_1: "windows-client-01",
-    ConnectionTag.DOCKER_WINDOWS_VM_2: "windows-client-02",
     ConnectionTag.DOCKER_MAC_GW_1: "mac-gw-01",
     ConnectionTag.DOCKER_MAC_GW_2: "mac-gw-02",
+    ConnectionTag.DOCKER_CORE_API_1: "core-api",
+    ConnectionTag.DOCKER_MQTT_BROKER_1: "mqtt-broker",
+    ConnectionTag.DOCKER_STUN_1: "stun-01",
+    ConnectionTag.DOCKER_UDP_SERVER: "udp-server",
+    ConnectionTag.DOCKER_OPENWRT_CDN: "openwrt-cdn",
+    ConnectionTag.DOCKER_TP_LITE_DNS_SERVER: "tp-lite-dns-server",
+    ConnectionTag.DOCKER_PLAYWRIGHT_RUNNER_1: "playwright-runner-01",
 }
 
 DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
@@ -72,7 +81,6 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_1: ConnectionTag.DOCKER_UDP_BLOCK_GW_1,
     ConnectionTag.DOCKER_UDP_BLOCK_CLIENT_2: ConnectionTag.DOCKER_UDP_BLOCK_GW_2,
     ConnectionTag.VM_WINDOWS_1: ConnectionTag.DOCKER_WINDOWS_GW_1,
-    ConnectionTag.VM_WINDOWS_2: ConnectionTag.DOCKER_WINDOWS_GW_3,
     ConnectionTag.VM_MAC: ConnectionTag.DOCKER_MAC_GW_1,
     ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1: (
         ConnectionTag.DOCKER_OPEN_INTERNET_CLIENT_1
@@ -90,32 +98,51 @@ DOCKER_GW_MAP: Dict[ConnectionTag, ConnectionTag] = {
 
 DOCKER_VM_MAP: Dict[ConnectionTag, ConnectionTag] = {
     ConnectionTag.VM_WINDOWS_1: ConnectionTag.DOCKER_WINDOWS_VM_1,
-    ConnectionTag.VM_WINDOWS_2: ConnectionTag.DOCKER_WINDOWS_VM_2,
 }
+
+DOCKER_SERVICE_SKIP_IPTABLES: list[ConnectionTag] = [
+    ConnectionTag.DOCKER_UDP_SERVER,
+    ConnectionTag.DOCKER_CORE_API_1,
+    ConnectionTag.DOCKER_MQTT_BROKER_1,
+    ConnectionTag.DOCKER_STUN_1,
+    ConnectionTag.DOCKER_OPENWRT_CDN,
+]
 
 
 class DockerConnection(Connection):
     _container: DockerContainer
+    _connection_id: str
 
     def __init__(self, container: DockerContainer, tag: ConnectionTag):
         super().__init__(TargetOS.Linux, tag)
         self._container = container
+        self._connection_id = str(uuid4())
 
     async def __aenter__(self):
-        try:
-            await self.restore_ip_tables()
-        except ProcessExecError as e:
-            if e.stderr == "Can't open iptables_backup: No such file or directory":
+        log.info(
+            "[%s] Docker connection opened (conn_id=%s)",
+            self.tag.name,
+            self._connection_id,
+        )
+        if self.tag not in DOCKER_SERVICE_SKIP_IPTABLES:
+            try:
+                await self.restore_ip_tables()
+            except ProcessExecError as e:
                 log.warning(e)
         await self.clean_interface()
         await setup_ephemeral_ports(self)
         return self
 
     async def __aexit__(self, *_):
-        try:
-            await self.restore_ip_tables()
-        except ProcessExecError as e:
-            if e.stderr == "Can't open iptables_backup: No such file or directory":
+        log.info(
+            "[%s] Docker connection closed (conn_id=%s)",
+            self.tag.name,
+            self._connection_id,
+        )
+        if self.tag not in DOCKER_SERVICE_SKIP_IPTABLES:
+            try:
+                await self.restore_ip_tables()
+            except ProcessExecError as e:
                 log.warning(e)
         await self.clean_interface()
 
@@ -153,7 +180,10 @@ class DockerConnection(Connection):
         self, command: List[str], kill_id=None, term_type=None, quiet=False
     ) -> "Process":
         process = DockerProcess(
-            self._container, container_id(self.tag), command, kill_id
+            self._container,
+            container_id(self.tag),
+            command,
+            kill_id,
         )
 
         if not quiet:
@@ -207,3 +237,54 @@ def container_id(tag: ConnectionTag) -> str:
     if tag in DOCKER_SERVICE_IDS:
         return f"nat-lab-{DOCKER_SERVICE_IDS[tag]}-1"
     assert False, f"tag {tag} not a docker container"
+
+
+# VM clients run their guest OS inside a dockur QEMU container. The SSH-based VM
+# tag does not appear in DOCKER_SERVICE_IDS, so map it to the docker service that
+# hosts the guest, allowing the backing container to be controlled (e.g. paused).
+DOCKER_VM_SERVICE_IDS: Dict[ConnectionTag, str] = {
+    ConnectionTag.VM_WINDOWS_1: "windows-client-01",
+    ConnectionTag.VM_MAC: "mac-client-01",
+    ConnectionTag.VM_ANDROID_1: "android-client-01",
+}
+
+
+def backing_container_id(tag: ConnectionTag) -> str:
+    """Name of the docker container hosting the client for `tag`.
+
+    For docker tags this is the client container itself; for VM tags it is the
+    dockur QEMU container running the guest OS.
+    """
+    if tag in DOCKER_SERVICE_IDS:
+        return container_id(tag)
+    if tag in DOCKER_VM_SERVICE_IDS:
+        return f"nat-lab-{DOCKER_VM_SERVICE_IDS[tag]}-1"
+    assert False, f"tag {tag} has no backing docker container"
+
+
+@asynccontextmanager
+async def paused_container(tag: ConnectionTag) -> AsyncIterator[None]:
+    """Freeze the docker container hosting `tag` (cgroup freezer) for the scope.
+
+    While frozen the container's processes are suspended and do no work, but the
+    host keeps advancing CLOCK_MONOTONIC. This works for both docker clients and
+    VM clients: freezing the dockur QEMU container stops the guest vCPUs while
+    the host TSC keeps running, so on unpause the guest's monotonic clock (TSC /
+    QPC / mach_absolute_time - the same clock tokio's timers use) jumps forward
+    by the freeze duration. That is exactly how a long device sleep looks to
+    tokio, which makes the missed-tick (burst vs delay) behaviour reproducible
+    without actually waiting for the sleep duration.
+
+    Note: do not issue commands/RPC to the container while paused - they will
+    block until it is unpaused.
+    """
+    name = backing_container_id(tag)
+    async with Docker() as docker:
+        container = await docker.containers.get(name)
+        log.info("[%s] Pausing container %s", tag.name, name)
+        await container.pause()
+        try:
+            yield
+        finally:
+            await container.unpause()
+            log.info("[%s] Unpaused container %s", tag.name, name)

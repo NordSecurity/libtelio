@@ -1,4 +1,92 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
+### v8.0.0-rc2
+### ****
+---
+* LLT-6821: nordvpnlite: Zeroize authentication token after its last use
+* LLT-7041: Update moose tracker to v24.0.1
+* LLT-7053: Add `use_raw_forwarder` feature flag to `FeatureDns` to opt-in to the new raw DNS forwarder (default: off, uses hickory-server)
+* LLT-7073: Bump NepTUN to v2.3.1 to fix speed degradation on Apple platforms
+* LLT-7230: TP-Lite DNS whitelisting
+* LLT-7361: Add option to force plaintext DNS for TP-Lite DNS servers when stats collection is enabled
+* LLT-7441: Fix crashes on dns packet parsing
+* LLT-7389: Close established incomming connections after meshnet remote access permission is stripped
+* LLT-6822: Add support for post-quantum to nordvpnlite
+* LLT-6852: Nordvpnlite: Advertise vpn mtu via dhcp option 26
+* LLT-7321: Reject outbound packets whose source IP does not match the tunnel interface's configured source IP(s)
+            Add new `set_tunnel_src_ip(src_ips)` API: apps pass the tunnel interface source IP(s) so the firewall can enforce 
+            the source-IP check. Pass an empty list to disable the check.
+            Apps should set it once and re-call only if the IP changes.
+* LLT-7381: Replace unmaintained pqcrypto-kyber/-traits/-internals with safe_pqc_kyber (wire-compatible Round-3 Kyber768).
+* LLT-7470: Increase nordvpnlite client command timeout to 60 seconds
+
+<br>
+
+### v8.0.0-rc1
+### ****
+---
+* LLT-6821: nordvpnlite: Zeroize authentication token after its last use
+* LLT-7041: Update moose tracker to v24.0.1
+* LLT-7053: Add `use_raw_forwarder` feature flag to `FeatureDns` to opt-in to the new raw DNS forwarder (default: off, uses hickory-server)
+* LLT-7073: Bump NepTUN to v2.3.1 to fix speed degradation on Apple platforms
+* LLT-7230: TP-Lite DNS whitelisting
+* LLT-7321: Block outgoing packets with wrong source IP
+* LLT-7361: Add option to force plaintext DNS for TP-Lite DNS servers when stats collection is enabled
+
+<br>
+
+### v8.0.0-rc0
+### ****
+---
+* LLT-6821: nordvpnlite: Zeroize authentication token after its last use
+* LLT-7041: Update moose tracker to v24.0.1
+* LLT-7053: Add `use_raw_forwarder` feature flag to `FeatureDns` to opt-in to the new raw DNS forwarder (default: off, uses hickory-server)
+* LLT-7073: Bump NepTUN to v2.3.1 to fix speed degradation on Apple platforms
+* LLT-7230: TP-Lite DNS whitelisting
+* LLT-7321: Block outgoing packets with wrong source IP
+* LLT-7361: Add option to force plaintext DNS for TP-Lite DNS servers when stats collection is enabled
+
+<br>
+
+### v7.0.0
+### ****
+---
+* LLT-6728: Detect additional types of changes to the network interfaces on Windows, macOS and Linux
+* LLT-7169: Fix: Incorrect certificate validation in ENS service
+* LLT-6308: Add libfirewall API to telio-firewall and use it
+* LLT-6230: Fix possible DoS triggered by failed SSDP Search request
+* LLT-6880: Introduce endpoint provider preference order. Prefer Local endpoints more than others.
+* LLT-5073: BREAKING CHANGE: Remove enhanced detection mode from link detection
+* LLT-5073:
+* LLT-5073: Since every WG implementation libtelio uses, issues a handshake after
+* LLT-5073: a missed keepalive, "enhanced detection" becomes trivial.
+* LLT-5073:
+* LLT-5073: However WireGuardNT tx counters are not increased when the internet connected
+* LLT-5073: interface is disabled, which leads to incorrect link state
+* LLT-5073: detection.
+* LLT-5073:
+* LLT-5073: This PR removes enhanced detection mode from link detection while keeping
+* LLT-5073: a Windows mod that on network change monitoring trigger, it will
+* LLT-5073: issue a ICMP to every peer in order to improve reliability of link detection
+* LLT-5073: on WireguardNT adapters. When that happens it'll also trigger the
+* LLT-5073: link detection countdown by artificially setting first_tx_after_rx variable.
+* LLT-6769: Add ability to collect TP-Lite stats
+* Updated Rust workspace dependencies via `cargo update`, bringing in the latest transitive updates and manual major bumps (including `rand` 0.10.0, `if-addrs` 0.15.0, `windows` 0.62.2, `strum` 0.28.0, `libloading` 0.9.0, `nix` 0.31.1, `proptest-derive` 0.8.0, `rustls-platform-verifier` 0.6.2, and `winreg` 0.55.0). `uniffi` was not updated.
+* LLT-6655: Suppress logging DNS details
+* LLT-6972: Fix `tcli` tool auth to follow basic authorization standard
+* NAPPCORE-2747: Broadcast only primary interface events.
+* LLT-6968: BREAKING CHANGE: Remove unused and untested FeatureBatching.
+* LLT-6523: Preventing unauthorized PQ upgrades by binding to static keypair to the handshake
+* LLT-7075: Use `@rpath/firewallFFI.framework/firewallFFI` default path for firewall module on apple platforms
+* LLT-6720: OpenWrt UI MVP
+* LLT-6450: Implement pytest-split to balance nat-lab test load
+* LLT-6859: Increase max UAPI fail count to reduce the chance of critical errors triggered by transient wireguard-nt errors
+* LLT-6935: Fix StatefulFirewall::set_ip_addresses method, so the internal IP address vector (and thus firewall chain) won't grow indefinitely
+* LLT-7035: Make libfirewall loading failure fatal and FeatureFirewall optional
+* LLT-7105: Fixed telio crash, when unloading libfirewall
+* LLT-6827: Expose new API for custom WG adapter implementation
+* LLT-6774: Update TP-Lite metrics to remove some unnecessary data
+
+<br>
 
 ### v6.2.0
 ### **Pink Soup**

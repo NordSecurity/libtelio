@@ -1,0 +1,1326 @@
+use std::{
+    net::{IpAddr, ToSocketAddrs},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
+
+use base64::prelude::{Engine, BASE64_STANDARD};
+use blake3::{derive_key, keyed_hash};
+use http::Uri;
+use hyper_util::rt::TokioIo;
+
+use rustls::{crypto::CryptoProvider, ClientConfig};
+use telio_crypto::{SecretKey, SharedSecret};
+use telio_model::PublicKey;
+use telio_sockets::SocketPool;
+use telio_task::io::{
+    chan::{Rx, Tx},
+    Chan,
+};
+use telio_utils::{
+    exponential_backoff::{self, Backoff},
+    telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, version_tag,
+};
+use tokio::{select, sync::watch, task::JoinHandle};
+use tokio_rustls::TlsConnector;
+use tonic::{
+    metadata::AsciiMetadataValue,
+    transport::{Channel, Endpoint},
+    Request, Status,
+};
+use tower::service_fn;
+use uuid::Uuid;
+
+use crate::ens::{
+    grpc::{ChallengeRequest, ConnectionErrorRequest},
+    KeepaliveConfig,
+};
+
+pub(crate) mod grpc {
+    pub use llt_proto::ens::{
+        ens_client, login_client, ChallengeRequest, ConnectionError, ConnectionErrorRequest, Error,
+    };
+}
+
+const CONTEXT: &str = "ens-auth";
+const ENS_PORT: u16 = 993;
+const AUTHENTICATION_KEY: &str = "authentication";
+const DEFAULT_ROOT_CERTIFICATE: &[u8] = include_bytes!("../../data/default_root_certificate.der");
+
+/// ENS errors
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// Malformed VPN uri
+    #[error("Failed to parse the vpn server uri: {0}")]
+    MalformedVpnUri(#[from] http::Error),
+    /// Inner grpc/tonic error
+    #[error("ENS transport error: {0}")]
+    TransportError(#[from] tonic::transport::Error),
+    /// GRPC status error
+    #[error("GRPC status error: {0}")]
+    StatusError(#[from] tonic::Status),
+    /// Exponential backoff creation error
+    #[error("Exponential backoff creation failed {0}")]
+    ExponentialBackoff(#[from] exponential_backoff::Error),
+}
+
+/// ErrorNotificationService manages tasks started and stopped to consume the ENS grpc error streams
+pub struct ErrorNotificationService {
+    quit: Option<(watch::Sender<bool>, JoinHandle<()>)>,
+    tx: Tx<(grpc::ConnectionError, PublicKey)>,
+    socket_pool: Arc<SocketPool>,
+    allow_only_mlkem: bool,
+    // DER encoded root certificate to be use for verification of TLS
+    root_certificate: Vec<u8>,
+    // Configuration of the keep alive messages sent over the ENS connection
+    keepalive: KeepaliveConfig,
+}
+
+impl Drop for ErrorNotificationService {
+    fn drop(&mut self) {
+        let _ = self.stop_old_monitor(); // Can't wait on the handle in the Drop
+    }
+}
+
+impl ErrorNotificationService {
+    /// Create new instance with buffer_size used for the error notifications channel
+    pub fn new(
+        buffer_size: usize,
+        socket_pool: Arc<SocketPool>,
+        allow_only_mlkem: bool,
+        root_certificate_override: Option<Vec<u8>>,
+        mut keepalive: KeepaliveConfig,
+    ) -> (Self, Rx<(grpc::ConnectionError, PublicKey)>) {
+        let Chan { rx, tx }: Chan<(grpc::ConnectionError, PublicKey)> = Chan::new(buffer_size);
+        if let Some(cert) = &root_certificate_override {
+            telio_log_info!(
+                "Will use root certificate override: {:?}",
+                BASE64_STANDARD.encode(cert)
+            );
+        }
+
+        if keepalive.interval == Some(Duration::ZERO) {
+            telio_log_warn!("Keepalive interval set to 0, resetting to default");
+            keepalive.interval = Some(Duration::from_secs(120));
+        }
+        if keepalive.timeout == Some(Duration::ZERO) {
+            telio_log_warn!("Keepalive timeout set to 0, resetting to default");
+            keepalive.timeout = Some(Duration::from_secs(20));
+        }
+
+        (
+            Self {
+                quit: None,
+                tx,
+                socket_pool,
+                allow_only_mlkem,
+                root_certificate: root_certificate_override
+                    .unwrap_or_else(|| DEFAULT_ROOT_CERTIFICATE.to_vec()),
+                keepalive,
+            },
+            rx,
+        )
+    }
+
+    /// Start new task that will monitor ENS instance running on the `vpn_ip`:993
+    pub async fn start_monitor(
+        &mut self,
+        vpn_ip: IpAddr,
+        vpn_public_key: PublicKey,
+        local_private_key: SecretKey,
+        backoff: impl Backoff,
+    ) -> Result<(), Error> {
+        self.start_monitor_on_port(vpn_ip, ENS_PORT, vpn_public_key, local_private_key, backoff)
+            .await
+    }
+
+    async fn start_monitor_on_port(
+        &mut self,
+        vpn_ip: IpAddr,
+        ens_port: u16,
+        vpn_public_key: PublicKey,
+        local_private_key: SecretKey,
+        backoff: impl Backoff,
+    ) -> Result<(), Error> {
+        telio_log_info!("Will start ENS monitoring on {vpn_ip}:{ens_port} ({vpn_public_key:?})");
+        self.stop().await;
+
+        let (quit_tx, quit_rx): (watch::Sender<bool>, watch::Receiver<bool>) =
+            watch::channel(false);
+
+        // Needs to be http and not https, otherwise grpc will add another layer of https
+        // on top of our own custom one
+        let vpn_uri = format!("http://{vpn_ip}:{ens_port}");
+
+        let pool = self.socket_pool.clone();
+        let tx = self.tx.clone();
+        let allow_only_mlkem = self.allow_only_mlkem;
+        let root_certificate = self.root_certificate.clone();
+
+        let keepalive = self.keepalive;
+
+        let join_handle = tokio::spawn(async move {
+            // This future is too big for keeping it on the stack
+            if let Err(e) = Box::pin(task(
+                &vpn_uri,
+                vpn_public_key,
+                local_private_key,
+                pool.clone(),
+                tx,
+                quit_rx,
+                allow_only_mlkem,
+                backoff,
+                root_certificate,
+                keepalive,
+            ))
+            .await
+            {
+                telio_log_warn!("ENS task for {vpn_uri} ({vpn_public_key:?}) failed: {e}");
+            }
+        });
+
+        self.quit = Some((quit_tx, join_handle));
+        Ok(())
+    }
+
+    /// Stop ENS
+    pub async fn stop(&mut self) {
+        if let Some(join_handle) = self.stop_old_monitor() {
+            telio_log_debug!("Will wait for the old ENS task to end");
+            join_handle.abort(); // Since the task might be in the grpc connection establishment, it might not be able
+                                 // to receive and react to te quit signal. Which is why we need to cancel it here, so
+                                 // that we are not stuck for a long time in the await.
+            if let Err(e) = join_handle.await {
+                if !e.is_cancelled() {
+                    telio_log_warn!("Previous ENS task failed to stop: {e}");
+                }
+            }
+        }
+    }
+
+    fn stop_old_monitor(&mut self) -> Option<JoinHandle<()>> {
+        if let Some((quit_channel, join_handle)) = self.quit.take() {
+            telio_log_debug!("Previous ENS task will be stopped");
+            if let Err(e) = quit_channel.send(true) {
+                telio_log_warn!("Failed to send stop request to previous ENS monitor: {e}");
+            } else {
+                return Some(join_handle);
+            }
+        }
+        None
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn task(
+    vpn_uri: &str,
+    vpn_public_key: PublicKey,
+    local_private_key: SecretKey,
+    pool: Arc<SocketPool>,
+    tx: Tx<(grpc::ConnectionError, PublicKey)>,
+    mut quit_rx: watch::Receiver<bool>,
+    allow_only_mlkem: bool,
+    mut backoff: impl Backoff,
+    root_certificate: Vec<u8>,
+    keepalive: KeepaliveConfig,
+) -> anyhow::Result<()> {
+    'outer: loop {
+        macro_rules! restart {
+            ($backoff: expr) => {
+                tokio::time::sleep(backoff.get_backoff()).await;
+                backoff.next_backoff();
+                continue 'outer;
+            };
+        }
+        /// If the Err is returned but ENS shouldn't quit yet, the outer loop will be restarted
+        /// and the task will reconnect. If we should quit, the task will terminate. In case of Ok
+        /// case, the macro will evaluete to the inner value of Ok.
+        macro_rules! handle_error {
+            ($value: expr, $backoff: expr) => {
+                match $value {
+                    Ok(v) => v,
+                    Err(e) => {
+                        telio_log_warn!("ENS task transient failure: {e}");
+                        if *quit_rx.borrow() == true {
+                            break 'outer;
+                        }
+                        restart!($backoff);
+                    }
+                }
+            };
+        }
+
+        let pool = pool.clone();
+        let external_channel = handle_error!(
+            Box::pin(create_external_channel(
+                vpn_uri,
+                pool,
+                allow_only_mlkem,
+                root_certificate.clone(),
+                keepalive
+            ))
+            .await,
+            backoff
+        );
+
+        let authenticated_challenge = handle_error!(
+            get_login_challenge(
+                external_channel.clone(),
+                vpn_public_key,
+                local_private_key.clone(),
+            )
+            .await,
+            backoff
+        );
+
+        let mut client = grpc::ens_client::EnsClient::with_interceptor(
+            external_channel,
+            authentication_interceptor(authenticated_challenge),
+        );
+
+        let connection = handle_error!(
+            client
+                .connection_errors(ConnectionErrorRequest::default())
+                .await,
+            backoff
+        );
+        let mut stream = connection.into_inner();
+        loop {
+            select! {
+                _ = quit_rx.wait_for(|b| *b) => {
+                    telio_log_info!("ENS monitor for '{vpn_uri}' ends");
+                    break 'outer;
+                }
+                error_notification = stream.message() => {
+                    telio_log_warn!("Received error notification for '{vpn_uri}': {error_notification:?}");
+                    match error_notification {
+                        Ok(Some(error_notification)) => {
+                            backoff.reset();
+                            if let Err(e) = tx.try_send((error_notification, vpn_public_key)) {
+                                telio_log_warn!("Failed to publish newly received error notification: {e}");
+                            }
+                        }
+                        Ok(None) => {
+                            telio_log_debug!("'{vpn_uri}' closed the grpc stream");
+                            break 'outer;
+                        }
+                        Err(e) => {
+                            // After the first error, the stream will never return any new value, which means
+                            // we need to reconnect. For details, see: https://github.com/hyperium/tonic/blob/c9cc210cb7c6f3f937786a3134c682761a26c65c/tonic/src/codec/decode.rs#L392-L394
+                            telio_log_error!("GRPC error: {e}");
+                            break;
+                        }
+                    }
+                }
+            };
+        }
+        restart!(&mut backoff);
+    }
+    telio_log_debug!("ENS monitor for '{vpn_uri}' terminates");
+    Ok(())
+}
+
+async fn get_login_challenge(
+    external_channel: Channel,
+    vpn_public_key: PublicKey,
+    local_private_key: SecretKey,
+) -> anyhow::Result<AsciiMetadataValue> {
+    let mut login_client = grpc::login_client::LoginClient::new(external_channel);
+
+    let challenge_response = login_client
+        .get_challenge(ChallengeRequest::default())
+        .await?;
+    let challenge = &challenge_response.get_ref().challenge;
+    let challenge = Uuid::from_str(challenge)?;
+    let shared_secret = local_private_key.ecdh(&vpn_public_key);
+
+    let mut authentication = vec![];
+    authentication.extend_from_slice(&local_private_key.public());
+    authentication.extend_from_slice(&challenge.into_bytes());
+    let authentication_tag = authentication_tag(shared_secret, &authentication);
+    authentication.extend_from_slice(&authentication_tag);
+    let authentication = BASE64_STANDARD.encode(&authentication);
+
+    Ok(AsciiMetadataValue::try_from(authentication)?)
+}
+
+fn authentication_interceptor(
+    authentication_value: AsciiMetadataValue,
+) -> impl FnMut(Request<()>) -> Result<Request<()>, Status> {
+    move |mut req: Request<()>| {
+        req.metadata_mut()
+            .insert(AUTHENTICATION_KEY, authentication_value.clone());
+        Ok(req)
+    }
+}
+
+async fn create_external_channel(
+    vpn_uri: &str,
+    pool: Arc<SocketPool>,
+    allow_only_mlkem: bool,
+    root_certificate: Vec<u8>,
+    keepalive: KeepaliveConfig,
+) -> anyhow::Result<Channel> {
+    let socket_factory = move |uri: Uri| {
+        let pool = pool.clone();
+        let root_certificate = root_certificate.clone();
+        async move {
+            let host = match uri.host() {
+                Some(host) => host,
+                None => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "missing host in vpn uri",
+                    ))
+                }
+            };
+            let port = match uri.port_u16() {
+                Some(port) => port,
+                None => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "missing port in vpn uri",
+                    ))
+                }
+            };
+
+            let socket = pool.new_external_tcp_v4(None)?;
+            let domain = tokio_rustls::rustls::pki_types::ServerName::try_from(host.to_owned())
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+
+            if let Some(resolved) = ((host, port).to_socket_addrs()?).next() {
+                let tcp_stream = socket.connect(resolved).await?;
+                let tls_connector = make_tls_connector(allow_only_mlkem, &root_certificate)?;
+                let tls_stream = tls_connector.connect(domain, tcp_stream).await?;
+                return Ok::<_, std::io::Error>(TokioIo::new(tls_stream));
+            }
+
+            Err(std::io::Error::other(format!(
+                "None of the IPs resolved from {host} accepted ENS over TLS"
+            )))
+        }
+    };
+
+    let endpoint = Endpoint::try_from(vpn_uri.to_owned())?.user_agent(make_user_agent())?;
+
+    let endpoint = if let Some(interval) = keepalive.interval {
+        endpoint.http2_keep_alive_interval(interval)
+    } else {
+        endpoint
+    };
+    let endpoint = if let Some(timeout) = keepalive.timeout {
+        endpoint.keep_alive_timeout(timeout)
+    } else {
+        endpoint
+    };
+
+    // Strictly this is not needed in our case since we have a long lived connection
+    // that we want to keep alive. This setting helps in the case where there is
+    // **no** active rpc connection and we want to make a new rpc call after a while.
+    let endpoint = if keepalive.interval.is_some() {
+        endpoint.keep_alive_while_idle(true)
+    } else {
+        endpoint
+    };
+
+    Ok(endpoint
+        .connect_with_connector(service_fn(socket_factory))
+        .await?)
+}
+
+pub(crate) fn make_crypto_provider(allow_only_mlkem: bool) -> Arc<CryptoProvider> {
+    let mut provider = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider();
+
+    if allow_only_mlkem {
+        provider.kx_groups =
+            vec![tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::X25519MLKEM768];
+    }
+
+    Arc::new(provider)
+}
+
+fn make_tls_connector(
+    allow_only_mlkem: bool,
+    root_certificate: &[u8],
+) -> std::io::Result<TlsConnector> {
+    let provider = make_crypto_provider(allow_only_mlkem);
+
+    let mut tls_config = ClientConfig::builder_with_provider(provider.clone())
+        .with_safe_default_protocol_versions()
+        .map_err(std::io::Error::other)?
+        .dangerous()
+        .with_custom_certificate_verifier(crate::tls::make_trusted_root_cert_verifier(
+            provider,
+            root_certificate,
+        )?)
+        .with_no_client_auth();
+
+    tls_config.alpn_protocols = vec![b"h2".to_vec()];
+
+    Ok(TlsConnector::from(Arc::new(tls_config)))
+}
+
+fn authentication_tag(secret: SharedSecret, message: &[u8]) -> [u8; 32] {
+    let key = derive_key(CONTEXT, &secret);
+    *keyed_hash(&key, message).as_bytes()
+}
+
+/// Install the default crypto provider for rustls
+///
+/// In case there are two providers present (ring and aws-lc-rs) rustls requires the user
+/// to explicitly configure the one which should be used by default.
+pub fn install_default_crypto_provider() {
+    if let Err(e) = rustls::crypto::aws_lc_rs::default_provider().install_default() {
+        telio_log_warn!("Failed to install default crypto provider for rustls: {e:?}");
+    }
+}
+
+fn make_user_agent() -> String {
+    format!("telio/{} {}", version_tag(), std::env::consts::OS,)
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use std::{
+        collections::HashSet,
+        net::Ipv4Addr,
+        sync::{
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+            LazyLock, Mutex,
+        },
+        time::{Duration, Instant},
+    };
+
+    use assert_matches::assert_matches;
+    use async_channel::{self, unbounded, Receiver, Sender};
+    use llt_proto::ens::{
+        ens_server::{self, EnsServer},
+        login_server::{self, LoginServer},
+        ChallengeResponse, ConnectionError,
+    };
+    use rcgen::{
+        generate_simple_self_signed, BasicConstraints, Certificate, CertificateParams,
+        CertifiedKey, DistinguishedName, DnType, IsCa, Issuer, KeyPair,
+    };
+    use rstest::rstest;
+    use telio_crypto::SecretKey;
+    use telio_sockets::NativeProtector;
+    use telio_utils::exponential_backoff::{
+        ExponentialBackoff, ExponentialBackoffBounds, MockBackoff,
+    };
+    use tokio::{
+        sync::oneshot,
+        time::{error::Elapsed, timeout},
+    };
+    use tokio_stream::wrappers::ReceiverStream;
+    use tonic::{service::Interceptor, transport::Server};
+
+    use super::*;
+
+    pub(crate) const SUBJECT_ALT_NAMES: LazyLock<Vec<String>> =
+        LazyLock::new(|| vec!["localhost".to_string(), "127.0.0.1".to_string()]);
+
+    #[derive(Debug)]
+    enum Command {
+        Send(ConnectionError),
+        Error(tonic::Status),
+        End,
+    }
+
+    struct State {
+        command_rx: Receiver<Command>,
+        challenges: Mutex<HashSet<Uuid>>,
+        vpn_server_private_key: SecretKey,
+    }
+
+    impl State {
+        fn new(command_rx: Receiver<Command>, vpn_server_private_key: SecretKey) -> Self {
+            Self {
+                challenges: Mutex::new(HashSet::default()),
+                vpn_server_private_key,
+                command_rx,
+            }
+        }
+    }
+
+    // Root CA and a leaf cert issued by it
+    #[derive(Debug)]
+    pub(crate) struct TlsConfig {
+        pub(crate) ca_cert: Certificate,
+        pub(crate) leaf_cert: Certificate,
+        leaf_key_pem: String,
+    }
+
+    impl TlsConfig {
+        pub(crate) fn new() -> Self {
+            let mut ca_params = CertificateParams::default();
+            ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+
+            let mut ca_dn = DistinguishedName::new();
+            ca_dn.push(DnType::CommonName, "Test CA");
+            ca_dn.push(DnType::OrganizationName, "Test Org");
+            ca_params.distinguished_name = ca_dn;
+
+            let ca_key_pair = KeyPair::generate().unwrap();
+            let ca_cert = ca_params.self_signed(&ca_key_pair).unwrap();
+            let issuer = Issuer::new(ca_params, ca_key_pair);
+
+            let mut leaf_params = CertificateParams::default();
+            let mut leaf_dn = DistinguishedName::new();
+            leaf_dn.push(DnType::CommonName, "localhost");
+            leaf_params.distinguished_name = leaf_dn;
+            leaf_params.subject_alt_names = vec![
+                rcgen::SanType::DnsName("localhost".parse().unwrap()),
+                rcgen::SanType::IpAddress(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            ];
+
+            let leaf_key_pair = KeyPair::generate().unwrap();
+            let leaf_cert = leaf_params.signed_by(&leaf_key_pair, &issuer).unwrap();
+
+            let leaf_key_pem = leaf_key_pair.serialize_pem();
+
+            TlsConfig {
+                ca_cert,
+                leaf_key_pem,
+                leaf_cert,
+            }
+        }
+    }
+
+    #[derive(Clone)]
+    struct GrpcStub(Arc<State>);
+
+    impl std::ops::Deref for GrpcStub {
+        type Target = State;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+
+    #[tonic::async_trait]
+    impl ens_server::Ens for GrpcStub {
+        type ConnectionErrorsStream = ReceiverStream<Result<ConnectionError, tonic::Status>>;
+        async fn connection_errors(
+            &self,
+            _request: tonic::Request<ConnectionErrorRequest>,
+        ) -> std::result::Result<tonic::Response<Self::ConnectionErrorsStream>, tonic::Status>
+        {
+            let (tx, rx) = tokio::sync::mpsc::channel(1);
+
+            let command_rx = self.command_rx.clone();
+            tokio::spawn(async move {
+                loop {
+                    println!("next loop iteration...");
+                    let sent = match command_rx.recv().await.unwrap() {
+                        Command::Send(e) => tx.send(Ok(e)).await,
+                        Command::Error(status) => tx.send(Err(status)).await,
+                        Command::End => break,
+                    };
+
+                    if sent.is_err() {
+                        break;
+                    }
+                }
+            });
+
+            Ok(tonic::Response::new(ReceiverStream::new(rx)))
+        }
+    }
+
+    #[tonic::async_trait]
+    impl login_server::Login for GrpcStub {
+        async fn get_challenge(
+            &self,
+            _request: tonic::Request<ChallengeRequest>,
+        ) -> std::result::Result<tonic::Response<ChallengeResponse>, tonic::Status> {
+            let challenge = Uuid::new_v4();
+            self.challenges.lock().unwrap().insert(challenge);
+            Ok(tonic::Response::new(ChallengeResponse {
+                challenge: challenge.to_string(),
+            }))
+        }
+    }
+
+    #[derive(Clone)]
+    struct CheckAuthenticationInterceptor(GrpcStub);
+
+    impl Interceptor for CheckAuthenticationInterceptor {
+        fn call(&mut self, req: Request<()>) -> Result<Request<()>, Status> {
+            match req.metadata().get("user-agent") {
+                Some(user_agent) => {
+                    if !user_agent.to_str().unwrap().starts_with("telio/") {
+                        return Err(Status::unauthenticated(format!(
+                            "incorrect user-agent: {user_agent:?}"
+                        )));
+                    }
+                }
+                None => return Err(Status::unauthenticated("missing user-agent")),
+            }
+
+            match req.metadata().get(AUTHENTICATION_KEY) {
+                Some(t) => {
+                    let decoded = BASE64_STANDARD.decode(&t).unwrap();
+                    let (client_public_key, challenge_uuid, received_authentication_code) = (
+                        PublicKey::new(decoded[..32].try_into().unwrap()),
+                        Uuid::from_slice(&decoded[32..48]).unwrap(),
+                        &decoded[48..],
+                    );
+
+                    if let Some(_) = self.0.challenges.lock().unwrap().take(&challenge_uuid) {
+                        let secret = self.0.vpn_server_private_key.ecdh(&client_public_key);
+                        if received_authentication_code
+                            == authentication_tag(secret, &decoded[..48])
+                        {
+                            Ok(req)
+                        } else {
+                            Err(Status::unauthenticated("Challenge not authenticated"))
+                        }
+                    } else {
+                        Err(Status::unauthenticated("Unknown auth token"))
+                    }
+                }
+                _ => Err(Status::unauthenticated("No valid auth token")),
+            }
+        }
+    }
+
+    struct ServerConfig {
+        port: u16,
+        public_key: PublicKey,
+        command_tx: Sender<Command>,
+        tls_config: TlsConfig,
+    }
+
+    async fn spawn_server() -> ServerConfig {
+        install_default_crypto_provider();
+        let server_private_key = SecretKey::gen();
+
+        let (command_tx, command_rx) = unbounded();
+        let grpc_stub = GrpcStub(Arc::new(State::new(command_rx, server_private_key.clone())));
+        let ens_srv = EnsServer::with_interceptor(
+            grpc_stub.clone(),
+            CheckAuthenticationInterceptor(grpc_stub.clone()),
+        );
+        let login_srv = LoginServer::new(grpc_stub.clone());
+        let (port_tx, port_rx) = oneshot::channel();
+        let tls_config = TlsConfig::new();
+
+        let cert_pem = tls_config.leaf_cert.pem().clone();
+        let key_pem = tls_config.leaf_key_pem.clone();
+        tokio::spawn({
+            let cert_pem = cert_pem.clone();
+            async move {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let actual_addr = listener.local_addr().unwrap();
+                port_tx.send(actual_addr.port()).unwrap();
+
+                use tonic::transport::ServerTlsConfig;
+
+                let tonic_tls_config = ServerTlsConfig::new()
+                    .identity(tonic::transport::Identity::from_pem(cert_pem, key_pem));
+
+                Server::builder()
+                    .tls_config(tonic_tls_config)
+                    .unwrap()
+                    .add_service(ens_srv)
+                    .add_service(login_srv)
+                    .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                    .await
+                    .unwrap();
+            }
+        });
+
+        ServerConfig {
+            port: port_rx.await.unwrap(),
+            public_key: server_private_key.public(),
+            command_tx,
+            tls_config,
+        }
+    }
+
+    struct TcpRelay {
+        port: u16,
+
+        // After setting to true, all **existing** connections become silent (socket stay open, but
+        // no traffic is forwarded).
+        silent: Arc<AtomicBool>,
+    }
+
+    impl TcpRelay {
+        async fn spawn(server_port: u16) -> Self {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let silent = Arc::new(AtomicBool::new(false));
+
+            tokio::spawn({
+                let silent = silent.clone();
+                async move {
+                    while let Ok((client, _)) = listener.accept().await {
+                        let connected_before_silent = !silent.load(Ordering::Relaxed);
+                        let server = tokio::net::TcpStream::connect(("127.0.0.1", server_port))
+                            .await
+                            .unwrap();
+                        let (mut client_rx, mut client_tx) = client.into_split();
+                        let (mut server_rx, mut server_tx) = server.into_split();
+
+                        // server -> client
+                        tokio::spawn({
+                            let silent = silent.clone();
+                            async move {
+                                let mut buf = [0u8; 4096];
+                                loop {
+                                    match server_rx.read(&mut buf).await {
+                                        Ok(0) | Err(_) => break,
+                                        Ok(n) => {
+                                            if connected_before_silent
+                                                && silent.load(Ordering::Relaxed)
+                                            {
+                                                continue;
+                                            }
+                                            if client_tx.write_all(&buf[..n]).await.is_err() {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        // client -> server
+                        tokio::spawn({
+                            let silent = silent.clone();
+                            async move {
+                                let mut buf = [0u8; 4096];
+                                loop {
+                                    match client_rx.read(&mut buf).await {
+                                        Ok(0) | Err(_) => break,
+                                        Ok(n) => {
+                                            // Keep draining the client, just never let anything
+                                            // through - a silent server still reads its socket.
+                                            if connected_before_silent
+                                                && silent.load(Ordering::Relaxed)
+                                            {
+                                                continue;
+                                            }
+                                            if server_tx.write_all(&buf[..n]).await.is_err() {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+
+            Self { port, silent }
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    #[test_log::test]
+    async fn keepalives_trigger_reconnect_for_connections_that_become_silent(
+        #[values(1, 5, 10)] interval: u64,
+        #[values(1, 5, 10)] timeout: u64,
+    ) {
+        let client_private_key = SecretKey::gen();
+        let server_config = spawn_server().await;
+        let relay = TcpRelay::spawn(server_config.port).await;
+        let interval = Duration::from_secs(interval);
+        let timeout = Duration::from_secs(timeout);
+
+        let allow_only_mlkem = true;
+        let (mut ens, mut rx) = ErrorNotificationService::new(
+            10,
+            make_socket_pool(),
+            allow_only_mlkem,
+            Some(server_config.tls_config.ca_cert.der().to_vec()),
+            KeepaliveConfig {
+                interval: Some(interval),
+                timeout: Some(timeout),
+            },
+        );
+
+        ens.start_monitor_on_port(
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            relay.port,
+            server_config.public_key,
+            client_private_key,
+            ExponentialBackoff::new(Default::default()).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        server_config
+            .command_tx
+            .send(Command::Send(ConnectionError {
+                code: grpc::Error::Unauthenticated as i32,
+                additional_info: Some("before the silence".to_owned()),
+            }))
+            .await
+            .unwrap();
+        let (before_the_silence, _) = rx.recv().await.unwrap();
+        let before_timestamp = Instant::now();
+        assert_eq!(
+            before_the_silence.additional_info.as_deref(),
+            Some("before the silence")
+        );
+
+        relay.silent.store(true, Ordering::Relaxed);
+        telio_log_info!(
+            "server has gone silent, the client should give up on the connection and reconnect"
+        );
+
+        // We have no way to know when exactly the tonic/hyper reconnects. Which means
+        // we need to keep resending the event until it is delivered to a new connection.
+        let safety_margin = Duration::from_secs(3);
+        let deadline = interval + timeout + safety_margin;
+        let ((after_the_silence, _), after_timestamp) = tokio::time::timeout(deadline, async {
+            loop {
+                server_config
+                    .command_tx
+                    .send(Command::Send(ConnectionError {
+                        code: grpc::Error::ServerMaintenance as i32,
+                        additional_info: Some("after the silence".to_owned()),
+                    }))
+                    .await
+                    .unwrap();
+                if let Ok(notification) =
+                    tokio::time::timeout(Duration::from_millis(500), rx.recv()).await
+                {
+                    break (notification.unwrap(), Instant::now());
+                }
+            }
+        })
+        .await
+        .expect("nothing was received after the server went silent - the client stayed parked on the dead connection");
+
+        assert_eq!(
+            after_the_silence.additional_info.as_deref(),
+            Some("after the silence")
+        );
+
+        let reconnect_time = after_timestamp - before_timestamp;
+        assert!(reconnect_time >= (interval + timeout));
+        assert!(reconnect_time < (interval + timeout + safety_margin));
+
+        ens.stop().await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    #[test_log::test]
+    async fn ens_will_not_detect_silent_connections_if_keepalive_interval_is_none(
+        #[values(None, Some(1), Some(5), Some(10), Some(20))] keepalive_timeout: Option<u64>,
+    ) {
+        let client_private_key = SecretKey::gen();
+        let server_config = spawn_server().await;
+        let relay = TcpRelay::spawn(server_config.port).await;
+
+        let allow_only_mlkem = true;
+        let (mut ens, mut rx) = ErrorNotificationService::new(
+            10,
+            make_socket_pool(),
+            allow_only_mlkem,
+            Some(server_config.tls_config.ca_cert.der().to_vec()),
+            KeepaliveConfig {
+                interval: None,
+                timeout: keepalive_timeout.map(Duration::from_secs),
+            },
+        );
+
+        ens.start_monitor_on_port(
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            relay.port,
+            server_config.public_key,
+            client_private_key,
+            ExponentialBackoff::new(Default::default()).unwrap(),
+        )
+        .await
+        .unwrap();
+
+        server_config
+            .command_tx
+            .send(Command::Send(ConnectionError {
+                code: grpc::Error::Unauthenticated as i32,
+                additional_info: Some("before the silence".to_owned()),
+            }))
+            .await
+            .unwrap();
+        let (before_the_silence, _) = rx.recv().await.unwrap();
+        assert_eq!(
+            before_the_silence.additional_info.as_deref(),
+            Some("before the silence")
+        );
+
+        relay.silent.store(true, Ordering::Relaxed);
+        telio_log_info!(
+            "server has gone silent, the client should give up on the connection and reconnect"
+        );
+
+        let next_notification = timeout(Duration::from_secs(30), async {
+            loop {
+                server_config
+                    .command_tx
+                    .send(Command::Send(ConnectionError {
+                        code: grpc::Error::ServerMaintenance as i32,
+                        additional_info: Some("after the silence".to_owned()),
+                    }))
+                    .await
+                    .unwrap();
+                if let Ok(notification) = timeout(Duration::from_millis(500), rx.recv()).await {
+                    break (notification.unwrap(), Instant::now());
+                }
+            }
+        })
+        .await;
+
+        assert_matches!(next_notification, Err(Elapsed { .. }));
+
+        ens.stop().await;
+    }
+
+    async fn send_errors(errors_to_emit: &[ConnectionError], errors_tx: Sender<Command>) {
+        let errors_to_emit = errors_to_emit.to_vec();
+        for e in errors_to_emit {
+            errors_tx.send(Command::Send(e)).await.unwrap();
+        }
+        errors_tx.send(Command::End).await.unwrap();
+    }
+
+    impl Default for KeepaliveConfig {
+        fn default() -> Self {
+            Self {
+                interval: Default::default(),
+                timeout: Default::default(),
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn test_ens() {
+        let bounds = ExponentialBackoffBounds::default();
+        let backoff = ExponentialBackoff::new(bounds).unwrap();
+        let client_private_key = SecretKey::gen();
+
+        let errors_to_emit = [
+            ConnectionError {
+                code: grpc::Error::Unknown.into(),
+                additional_info: None,
+            },
+            ConnectionError {
+                code: grpc::Error::ConnectionLimitReached.into(),
+                additional_info: Some("additional info".to_owned()),
+            },
+            ConnectionError {
+                code: grpc::Error::UnsupportedCipher.into(),
+                additional_info: Some("caesar cipher is unsupported".to_owned()),
+            },
+        ];
+
+        let server_config = spawn_server().await;
+
+        let allow_only_mlkem = true;
+        let (mut ens, mut rx) = ErrorNotificationService::new(
+            10,
+            make_socket_pool(),
+            allow_only_mlkem,
+            Some(server_config.tls_config.ca_cert.der().to_vec()),
+            KeepaliveConfig::default(),
+        );
+
+        ens.start_monitor_on_port(
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            server_config.port,
+            server_config.public_key,
+            client_private_key.clone(),
+            backoff.clone(),
+        )
+        .await
+        .unwrap();
+
+        send_errors(&errors_to_emit, server_config.command_tx.clone()).await;
+        let _collected_errors = collect_errors(errors_to_emit.len(), &mut rx).await;
+
+        ens.start_monitor_on_port(
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            server_config.port,
+            server_config.public_key,
+            client_private_key,
+            backoff,
+        )
+        .await
+        .unwrap();
+
+        send_errors(&errors_to_emit, server_config.command_tx.clone()).await;
+        let collected_errors = collect_errors(errors_to_emit.len(), &mut rx).await;
+
+        assert_eq!(
+            errors_to_emit
+                .into_iter()
+                .map(|e| (e, server_config.public_key.clone()))
+                .collect::<Vec<_>>(),
+            collected_errors
+        );
+
+        ens.stop().await;
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn test_ens_forwards_unknown_error_code() {
+        const UNKNOWN_ERROR_CODE: i32 = grpc::Error::UnsupportedCipher as i32 + 1;
+
+        let bounds = ExponentialBackoffBounds::default();
+        let backoff = ExponentialBackoff::new(bounds).unwrap();
+        let client_private_key = SecretKey::gen();
+
+        let errors_to_emit = [
+            ConnectionError {
+                code: UNKNOWN_ERROR_CODE,
+                additional_info: Some("unknown code".to_owned()),
+            },
+            ConnectionError {
+                code: grpc::Error::ServerMaintenance as i32,
+                additional_info: None,
+            },
+        ];
+
+        let server_config = spawn_server().await;
+
+        let allow_only_mlkem = true;
+        let (mut ens, mut rx) = ErrorNotificationService::new(
+            10,
+            make_socket_pool(),
+            allow_only_mlkem,
+            Some(server_config.tls_config.ca_cert.der().to_vec()),
+            KeepaliveConfig::default(),
+        );
+
+        ens.start_monitor_on_port(
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            server_config.port,
+            server_config.public_key,
+            client_private_key,
+            backoff,
+        )
+        .await
+        .unwrap();
+
+        send_errors(&errors_to_emit, server_config.command_tx.clone()).await;
+        let collected_errors = collect_errors(errors_to_emit.len(), &mut rx).await;
+
+        assert_eq!(
+            errors_to_emit
+                .into_iter()
+                .map(|e| (e, server_config.public_key.clone()))
+                .collect::<Vec<_>>(),
+            collected_errors
+        );
+
+        ens.stop().await;
+    }
+
+    async fn collect_errors(
+        n: usize,
+        rx: &mut Rx<(ConnectionError, PublicKey)>,
+    ) -> Vec<(ConnectionError, PublicKey)> {
+        let mut ret = vec![];
+        for _ in 0..n {
+            ret.push(rx.recv().await.unwrap());
+        }
+        ret
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn test_ens_backoff() {
+        let client_private_key = SecretKey::gen();
+
+        let errors_to_emit = [
+            ConnectionError {
+                code: grpc::Error::Unknown as i32,
+                additional_info: None,
+            },
+            ConnectionError {
+                code: grpc::Error::ConnectionLimitReached as i32,
+                additional_info: Some("additional info".to_owned()),
+            },
+        ];
+
+        let server_config = spawn_server().await;
+
+        let allow_only_mlkem = true;
+
+        let (mut ens, mut rx) = ErrorNotificationService::new(
+            10,
+            make_socket_pool(),
+            allow_only_mlkem,
+            Some(server_config.tls_config.ca_cert.der().to_vec()),
+            KeepaliveConfig::default(),
+        );
+
+        let mut backoff = MockBackoff::new();
+
+        backoff.expect_reset().times(4).return_const(());
+        backoff
+            .expect_get_backoff()
+            .times(1)
+            .return_const(Duration::from_secs(1));
+        backoff.expect_next_backoff().times(1).return_const(());
+
+        ens.start_monitor_on_port(
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            server_config.port,
+            server_config.public_key,
+            client_private_key.clone(),
+            backoff,
+        )
+        .await
+        .unwrap();
+
+        for e in errors_to_emit.clone() {
+            server_config
+                .command_tx
+                .send(Command::Send(e))
+                .await
+                .unwrap();
+        }
+        server_config
+            .command_tx
+            .send(Command::Error(tonic::Status::unknown("some message")))
+            .await
+            .unwrap();
+        server_config.command_tx.send(Command::End).await.unwrap();
+        for e in errors_to_emit {
+            server_config
+                .command_tx
+                .send(Command::Send(e))
+                .await
+                .unwrap();
+        }
+        let _collected_errors = collect_errors(3, &mut rx).await;
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn test_ens_fails_without_x25519mlkem768_support() {
+        let server_private_key = SecretKey::gen();
+        let server_public_key = server_private_key.public();
+        let client_private_key = SecretKey::gen();
+
+        let (port_tx, port_rx) = oneshot::channel();
+        let expected_errors = Arc::new(AtomicUsize::new(0));
+
+        let expected_errors_clone = expected_errors.clone();
+        tokio::spawn(async move {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let actual_addr = listener.local_addr().unwrap();
+            port_tx.send(actual_addr.port()).unwrap();
+
+            let CertifiedKey { cert, signing_key } =
+                generate_simple_self_signed(SUBJECT_ALT_NAMES.clone()).unwrap();
+
+            // Create a TLS server that explicitly does NOT support X25519MLKEM768
+            // by using a provider that only supports traditional key exchange algorithms
+            let mut provider = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider();
+            provider.kx_groups = vec![
+                tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::SECP256R1,
+                tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::SECP384R1,
+                tokio_rustls::rustls::crypto::aws_lc_rs::kx_group::X25519,
+            ];
+
+            let server_config =
+                tokio_rustls::rustls::ServerConfig::builder_with_provider(Arc::new(provider))
+                    .with_safe_default_protocol_versions()
+                    .unwrap()
+                    .with_no_client_auth()
+                    .with_single_cert(
+                        vec![tokio_rustls::rustls::pki_types::CertificateDer::from(
+                            cert.der().to_vec(),
+                        )],
+                        tokio_rustls::rustls::pki_types::PrivateKeyDer::try_from(
+                            signing_key.serialize_der(),
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap();
+
+            let tls_acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(server_config));
+
+            while let Ok((stream, _)) = listener.accept().await {
+                let acceptor = tls_acceptor.clone();
+                let expected_errors = expected_errors_clone.clone();
+                tokio::spawn(async move {
+                    let err = acceptor.accept(stream).await.unwrap_err();
+                    let rustls_err = err
+                        .get_ref()
+                        .unwrap()
+                        .downcast_ref::<rustls::Error>()
+                        .unwrap();
+                    assert_eq!(
+                        *rustls_err,
+                        rustls::Error::PeerIncompatible(
+                            rustls::PeerIncompatible::NoKxGroupsInCommon
+                        )
+                    );
+                    // Making sure that we reach this point, tokio::spawn can 'swallow' panics
+                    expected_errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                });
+            }
+        });
+
+        let allow_only_mlkem = true;
+        let (mut ens, mut rx) = ErrorNotificationService::new(
+            10,
+            make_socket_pool(),
+            allow_only_mlkem,
+            None,
+            KeepaliveConfig::default(),
+        );
+
+        let result = ens
+            .start_monitor_on_port(
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                port_rx.await.unwrap(),
+                server_public_key,
+                client_private_key,
+                ExponentialBackoff::new(Default::default()).unwrap(),
+            )
+            .await;
+
+        assert!(result.is_ok());
+
+        // Wait a bit for the background task to attempt TLS handshake and fail
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        // Try to receive from the error channel - this should timeout
+        // because the connection should fail during TLS handshake before any errors are sent
+        let timeout_result = tokio::time::timeout(Duration::from_millis(500), rx.recv()).await;
+
+        // We expect a timeout because the connection should fail during TLS handshake
+        // and never reach the point where it can send error notifications
+        assert!(timeout_result.is_err());
+
+        ens.stop().await;
+
+        assert_eq!(expected_errors.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    fn make_socket_pool() -> Arc<SocketPool> {
+        Arc::new(SocketPool::new(
+            NativeProtector::new(
+                #[cfg(target_os = "macos")]
+                false,
+            )
+            .unwrap(),
+        ))
+    }
+}

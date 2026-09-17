@@ -1,4 +1,5 @@
 from .network_switcher import *
+from .network_switcher_android import *
 from .network_switcher_docker import *
 from .network_switcher_linux import *
 from .network_switcher_mac import *

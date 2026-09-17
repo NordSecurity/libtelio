@@ -8,7 +8,7 @@ use std::{
 };
 use telio_model::{
     event::{Error as LibtelioError, ErrorCode, ErrorLevel, Event as LibtelioEvent, EventMsg, Set},
-    features::{FeatureBatching, FeatureLinkDetection},
+    features::FeatureLinkDetection,
     mesh::{ExitNode, NodeState},
 };
 use telio_sockets::{NativeProtector, SocketPool};
@@ -32,7 +32,7 @@ use telio_task::{
 };
 
 use crate::{
-    adapter::{self, Adapter, AdapterType, Error, FirewallResetConnsCb, Tun},
+    adapter::{self, Adapter, AdapterType, Error, FirewallResetConnsCb, IsMeshnetEnabledCb, Tun},
     link_detection::{self, LinkDetection, LinkDetectionUpdateResult},
     uapi::{self, AnalyticsEvent, Cmd, Event, Interface, Peer, PeerState, Response, UpdateReason},
     FirewallInboundCb, FirewallOutboundCb,
@@ -77,6 +77,14 @@ pub trait WireGuard: Send + Sync + 'static {
     async fn reset_existing_connections(&self, exit_pubkey: PublicKey) -> Result<(), Error>;
     /// Set the ip stack for the adapter
     async fn set_ip_stack(&self, ip_stack: Option<IpStack>) -> Result<(), Error>;
+    /// Ensure that adapter is UP or DOWN
+    async fn ensure_expected_adapter_state(
+        &self,
+        _peers_cnt: usize,
+        _is_meshnet_on: IsMeshnetEnabledCb,
+    ) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 /// WireGuard implementation allowing dynamic selection of implementation.
@@ -101,8 +109,10 @@ pub struct Config {
     /// Callback of firewall to create connection reset packets
     /// for all active connections
     pub firewall_reset_connections: FirewallResetConnsCb,
-    /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
-    pub enable_dynamic_wg_nt_control: bool,
+    /// Optional callback controlling dynamic WireGuard-NT behavior.
+    /// When present, the callback is consulted by the Windows native adapter
+    /// to determine whether meshnet is currently enabled.
+    pub enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
     /// Configurable socket buffer size, if None doesn't modify default OS set values
     pub skt_buffer_size: Option<u32>,
     /// Configurable socket buffer size, if None doesn't modify default OS set values
@@ -172,7 +182,7 @@ impl DynamicWg {
     /// ```
     /// use std::os::fd::FromRawFd;
     /// use std::{sync::Arc, io, time::Duration};
-    /// use telio_firewall::firewall::{StatefullFirewall, Firewall};
+    /// use telio_firewall::firewall::{MockFirewall, Firewall};
     /// use telio_model::features::FeatureFirewall;
     /// use telio_sockets::{native::NativeSocket, Protector, SocketPool, Protect};
     /// use telio_task::io::Chan;
@@ -194,14 +204,14 @@ impl DynamicWg {
     ///         fn set_ext_if_filter(&self, list: &[String]);
     ///         }
     ///     }
-    ///     let firewall = Arc::new(StatefullFirewall::new(true,  &FeatureFirewall::default(),));
+    ///     let firewall = Arc::new(MockFirewall::new());
     ///     let firewall_filter_inbound_packets = {
     ///         let fw = firewall.clone();
-    ///         move |peer: &[u8; 32], packet: &[u8]| fw.process_inbound_packet(peer, packet)
+    ///         move |peer: &[u8; 32], packet: &mut [u8]| fw.process_inbound_packet(peer, packet)
     ///     };
     ///     let firewall_filter_outbound_packets = {
     ///         let fw = firewall.clone();
-    ///         move |peer: &[u8; 32], packet: &[u8], sink: &mut dyn io::Write| {
+    ///         move |peer: &[u8; 32], packet: &mut [u8], sink: &mut dyn io::Write| {
     ///             fw.process_outbound_packet(peer, packet, sink)
     ///         }
     ///     };
@@ -224,7 +234,7 @@ impl DynamicWg {
     ///             firewall_process_outbound_callback:
     ///                 Some(Arc::new(firewall_filter_outbound_packets)),
     ///             firewall_reset_connections: None,
-    ///             enable_dynamic_wg_nt_control: false,
+    ///             enable_dynamic_wg_nt_control: None,
     ///             skt_buffer_size: None,
     ///             inter_thread_channel_size: None,
     ///             max_inter_thread_batched_pkts: None,
@@ -463,6 +473,22 @@ impl WireGuard for DynamicWg {
         })
         .await?)
     }
+
+    /// Ensure that adapter is UP or DOWN
+    async fn ensure_expected_adapter_state(
+        &self,
+        peers_cnt: usize,
+        is_meshnet_on: IsMeshnetEnabledCb,
+    ) -> Result<(), Error> {
+        Ok(task_exec!(&self.task, async move |s| {
+            let _ = s
+                .adapter
+                .ensure_expected_adapter_state(peers_cnt, is_meshnet_on)
+                .await;
+            Ok(())
+        })
+        .await?)
+    }
 }
 
 impl Config {
@@ -483,7 +509,7 @@ impl Config {
             firewall_process_inbound_callback: self.firewall_process_inbound_callback.clone(),
             firewall_process_outbound_callback: self.firewall_process_outbound_callback.clone(),
             firewall_reset_connections: self.firewall_reset_connections.clone(),
-            enable_dynamic_wg_nt_control: self.enable_dynamic_wg_nt_control,
+            enable_dynamic_wg_nt_control: self.enable_dynamic_wg_nt_control.clone(),
             skt_buffer_size: self.skt_buffer_size,
             inter_thread_channel_size: self.inter_thread_channel_size,
             max_inter_thread_batched_pkts: self.max_inter_thread_batched_pkts,
@@ -1009,7 +1035,7 @@ pub mod tests {
     use ipnet::Ipv4Net;
     use lazy_static::lazy_static;
     use mockall::predicate;
-    use rand::{Rng, RngCore, SeedableRng};
+    use rand::{Rng, RngExt, SeedableRng};
     use telio_crypto::PresharedKey;
     use telio_sockets::protector::MockProtector;
     use telio_utils::Hidden;
@@ -1029,36 +1055,38 @@ pub mod tests {
     const DEFAULT_POLLING_PERIOD_AFTER_UPDATE_MS: u64 = 50;
 
     fn random_interface() -> Interface {
-        let mut rng = rand::thread_rng();
-        let peers_len = rng.gen_range(1..=3);
+        let mut rng = rand::rng();
+        let peers_len = rng.random_range(1..=3);
         let mut peers = BTreeMap::default();
         for _ in 0..peers_len {
             let key = SecretKey::gen_with(&mut rng).public();
             let peer = Peer {
                 public_key: SecretKey::gen_with(&mut rng).public(),
                 endpoint: Some(SocketAddr::V4(SocketAddrV4::new(
-                    rng.gen::<u32>().into(),
-                    rng.gen(),
+                    rng.random::<u32>().into(),
+                    rng.random(),
                 ))),
                 endpoint_changed_at: Some((Instant::now(), UpdateReason::Push)),
                 ip_addresses: vec![
-                    IpAddr::V4(rng.gen::<u32>().into()),
-                    IpAddr::V4(rng.gen::<u32>().into()),
+                    IpAddr::V4(rng.random::<u32>().into()),
+                    IpAddr::V4(rng.random::<u32>().into()),
                 ],
-                persistent_keepalive_interval: Some(rng.gen()),
-                allowed_ips: vec![IpNet::V4(Ipv4Net::new(rng.gen::<u32>().into(), 0).unwrap())],
-                rx_bytes: Some(rng.gen()),
-                time_since_last_rx: Some(Duration::from_millis(rng.gen())),
-                tx_bytes: Some(rng.gen()),
-                time_since_last_handshake: Some(Duration::from_millis(rng.gen())),
-                preshared_key: Some(PresharedKey(Hidden(rng.gen()))),
+                persistent_keepalive_interval: Some(rng.random()),
+                allowed_ips: vec![IpNet::V4(
+                    Ipv4Net::new(rng.random::<u32>().into(), 0).unwrap(),
+                )],
+                rx_bytes: Some(rng.random()),
+                time_since_last_rx: Some(Duration::from_millis(rng.random())),
+                tx_bytes: Some(rng.random()),
+                time_since_last_handshake: Some(Duration::from_millis(rng.random())),
+                preshared_key: Some(PresharedKey(Hidden(rng.random()))),
             };
             peers.insert(key, peer);
         }
         Interface {
             private_key: Some(SecretKey::gen_with(&mut rng)),
-            listen_port: rng.gen(),
-            fwmark: rng.gen(),
+            listen_port: Some(rng.random::<u16>()),
+            fwmark: rng.random(),
             peers,
         }
     }
@@ -1089,7 +1117,7 @@ pub mod tests {
                 firewall_process_inbound_callback: Default::default(),
                 firewall_process_outbound_callback: Default::default(),
                 firewall_reset_connections: None,
-                enable_dynamic_wg_nt_control: false,
+                enable_dynamic_wg_nt_control: None,
                 skt_buffer_size: None,
                 inter_thread_channel_size: None,
                 max_inter_thread_batched_pkts: None,
@@ -1153,7 +1181,11 @@ pub mod tests {
         pub wg: Arc<DynamicWg>,
     }
 
-    pub async fn setup(#[cfg(all(not(test), feature = "test-adapter"))] cfg: Config) -> Env {
+    pub async fn setup(
+        #[cfg(all(not(test), feature = "test-adapter"))]
+        #[allow(unused_variables)]
+        cfg: Config,
+    ) -> Env {
         let events_ch = Chan::default();
         let analytics_ch = Some(McChan::default().tx);
         let adapter = Arc::new(Mutex::new(MockAdapter::new()));

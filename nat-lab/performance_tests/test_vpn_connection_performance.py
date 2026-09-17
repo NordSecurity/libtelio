@@ -6,9 +6,14 @@ from dataclasses import asdict
 from tests import config
 from tests.helpers import SetupParameters, setup_environment
 from tests.helpers_vpn import connect_vpn, VpnConfig
-from tests.utils.bindings import TelioAdapterType
+from tests.utils.bindings import (
+    default_features,
+    FeatureFirewall,
+    Features,
+    TelioAdapterType,
+)
 from tests.utils.connection import Connection, ConnectionTag
-from tests.utils.connection_util import new_connection_raw, new_connection_by_tag
+from tests.utils.connection_util import new_connection_raw
 from tests.utils.iperf3 import (
     IperfServer,
     IperfClient,
@@ -18,7 +23,21 @@ from tests.utils.iperf3 import (
     ThroughputUnit,
 )
 from tests.utils.logger import log
+from tests.utils.router import IPStack
 from tests.utils.testing import get_current_test_log_path
+from typing import Any
+
+
+def _features_with_firewall() -> Features:
+    """Build default features with the firewall enabled."""
+    features = default_features()
+    features.firewall = FeatureFirewall(
+        neptun_reset_conns=False,
+        boringtun_reset_conns=False,
+        exclude_private_ip_range=None,
+        outgoing_blacklist=[],
+    )
+    return features
 
 
 async def collect_upload_metrics(
@@ -176,7 +195,75 @@ async def collect_download_metrics(
 
 
 @pytest.mark.asyncio
-async def test_vpn_connection_performance() -> None:
+@pytest.mark.parametrize(
+    "setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                is_meshnet=False,
+                run_tcpdump=False,
+            ),
+            id="linux_neptun",
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_MAC,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                is_meshnet=False,
+                run_tcpdump=False,
+            ),
+            marks=pytest.mark.mac,
+            id="mac_neptun",
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_MAC,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                features=_features_with_firewall(),
+                is_meshnet=False,
+                run_tcpdump=False,
+            ),
+            marks=[pytest.mark.mac, pytest.mark.libfirewall],
+            id="mac_neptun_enabled_libfirewall",
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                is_meshnet=False,
+                run_tcpdump=False,
+            ),
+            marks=pytest.mark.windows,
+            id="windows_nt",
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                is_meshnet=False,
+                run_tcpdump=False,
+                ip_stack=IPStack.IPv4,
+            ),
+            marks=pytest.mark.android,
+            id="android_neptun",
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                features=_features_with_firewall(),
+                is_meshnet=False,
+                run_tcpdump=False,
+                ip_stack=IPStack.IPv4,
+            ),
+            marks=[pytest.mark.android, pytest.mark.libfirewall],
+            id="android_neptun_enabled_libfirewall",
+        ),
+    ],
+)
+async def test_vpn_connection_performance(setup_params: SetupParameters) -> None:
     """
     Collect performance metrics of vpn connection with iperf
 
@@ -189,12 +276,6 @@ async def test_vpn_connection_performance() -> None:
     """
     async with AsyncExitStack() as exit_stack:
         # Setup environment
-        setup_params = SetupParameters(
-            connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
-            adapter_type_override=TelioAdapterType.NEP_TUN,
-            is_meshnet=False,
-            run_tcpdump=False,
-        )
         vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
         env = await exit_stack.enter_async_context(
             setup_environment(exit_stack, [setup_params])
@@ -203,15 +284,13 @@ async def test_vpn_connection_performance() -> None:
         alpha, *_ = env.nodes
         client_conn, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
-        vpn_connection = await exit_stack.enter_async_context(
-            new_connection_by_tag(ConnectionTag.DOCKER_VPN_1)
-        )
+
         photo_album_connection = await exit_stack.enter_async_context(
             new_connection_raw(ConnectionTag.DOCKER_PHOTO_ALBUM)
         )
 
         # Collecting baseline results without vpn connection
-        performance_results = {}
+        performance_results: dict[str, Any] = {}
 
         upload_metrics = await collect_upload_metrics(
             photo_album_connection, client_conn, output_unit=ThroughputUnit.MEGABITS
@@ -226,7 +305,7 @@ async def test_vpn_connection_performance() -> None:
         performance_results["baseline_metrics"] = baseline_metrics
 
         # Connect to vpn server
-        await env.api.prepare_all_vpn_servers([vpn_connection])
+        await env.api.prepare_vpn_servers()
         await connect_vpn(
             client_conn,
             None,
@@ -247,6 +326,12 @@ async def test_vpn_connection_performance() -> None:
             **asdict(download_metrics_vpn),
         }
         performance_results["vpn_metrics"] = vpn_metrics
+        performance_results["platform"] = client_conn.target_os.name
+        assert setup_params.adapter_type_override is not None
+        adapter_type = setup_params.adapter_type_override.name
+        if setup_params.features.firewall is not None:
+            adapter_type += "_enabled_libfirewall"
+        performance_results["adapter_type"] = adapter_type
         log.info("Final results: %s", performance_results)
 
         # Saving performance results

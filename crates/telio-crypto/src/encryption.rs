@@ -2,7 +2,6 @@
 
 use std::{array::TryFromSliceError, convert::TryInto};
 
-use rand::{CryptoRng, RngCore};
 use telio_utils::telio_err_with_log;
 
 use crate::{chachabox::ChaChaBox, PublicKey, SecretKey, KEY_SIZE};
@@ -39,7 +38,7 @@ pub enum Error {
 /// public key for inner layer. If they recognize that key decoding of inner layer can proceed.
 pub fn encrypt_request(
     msg: &[u8],
-    mut rng: &mut (impl RngCore + CryptoRng),
+    mut rng: &mut impl rand::CryptoRng,
     local_sk: &SecretKey,
     remote_pk: &PublicKey,
 ) -> Result<Vec<u8>, Error> {
@@ -136,7 +135,7 @@ pub fn decrypt_request(
 /// Resulting payload contains in order: random nonce and encrypted message.
 pub fn encrypt_response(
     msg: &[u8],
-    rng: &mut (impl RngCore + CryptoRng),
+    rng: &mut impl rand::CryptoRng,
     local_sk: &SecretKey,
     remote_pk: &PublicKey,
 ) -> Result<Vec<u8>, Error> {
@@ -179,14 +178,13 @@ mod tests {
 
     use super::*;
     use bstr::ByteSlice;
-    use rand::rngs::mock::StepRng;
-    use telio_utils::test::CryptoStepRng;
+    use telio_utils::test::StepRng;
 
     const MSG: &[u8] = b"test message";
 
     #[test]
     fn encrypt_request_example() -> Result<(), Error> {
-        let mut rng = CryptoStepRng(StepRng::new(0, 1));
+        let mut rng = StepRng::new(0, 1);
         let local_sk = SecretKey::gen_with(&mut rng);
         let remote_sk = SecretKey::gen_with(&mut rng);
         let remote_pk = remote_sk.public();
@@ -212,7 +210,7 @@ mod tests {
 
     #[test]
     fn encrypt_response_example() -> Result<(), Error> {
-        let mut rng = CryptoStepRng(StepRng::new(0, 1));
+        let mut rng = StepRng::new(0, 1);
         let local_sk = SecretKey::gen_with(&mut rng);
         let remote_sk = SecretKey::gen_with(&mut rng);
         let remote_pk = remote_sk.public();
@@ -232,7 +230,7 @@ mod tests {
 
     #[test]
     fn correct_request_roundtrip() -> Result<(), Error> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let local_sk = SecretKey::gen();
         let remote_sk = SecretKey::gen();
         let remote_pk = remote_sk.public();
@@ -251,7 +249,7 @@ mod tests {
 
     #[test]
     fn request_roundtrip_with_unknown_key() -> Result<(), Error> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let local_sk = SecretKey::gen();
         let remote_sk = SecretKey::gen();
         let remote_pk = remote_sk.public();
@@ -264,7 +262,7 @@ mod tests {
 
     #[test]
     fn correct_response_roundtrip() -> Result<(), Error> {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let local_sk = SecretKey::gen();
         let local_pk = local_sk.public();
         let remote_sk = SecretKey::gen();

@@ -79,15 +79,58 @@ class TelioLoggerCbImpl(libtelio.TelioLoggerCb):
             )
 
 
+class TpLiteStatsCallbackImpl(libtelio.TpLiteStatsCallback):
+    def __init__(self):
+        self._num_calls = 0
+        self._domains: list[libtelio.BlockedDomain] = []
+        self._metrics: libtelio.DnsMetrics = libtelio.DnsMetrics(
+            num_requests=0,
+            num_responses=0,
+            num_cache_hits=0,
+        )
+        self._lock = Lock()
+
+    def collect(self, domains, metrics):
+        with self._lock:
+            self._num_calls += 1
+            self._domains.extend(domains)
+            self._metrics.num_requests += metrics.num_requests
+            self._metrics.num_responses += metrics.num_responses
+            self._metrics.num_cache_hits += metrics.num_cache_hits
+
+    def take_data(
+        self,
+    ) -> tuple[int, list[libtelio.BlockedDomain], libtelio.DnsMetrics]:
+        with self._lock:
+            data = (self._num_calls, self._domains, self._metrics)
+            self._clear()
+            return data
+
+    def clear(self):
+        with self._lock:
+            self._clear()
+
+    def _clear(self):
+        self._num_calls = 0
+        self._domains = []
+        self._metrics = libtelio.DnsMetrics(
+            num_requests=0,
+            num_responses=0,
+            num_cache_hits=0,
+        )
+
+
 @Pyro5.api.expose
 @Pyro5.server.behavior(instance_mode="single")
 class LibtelioWrapper:
     def __init__(self, daemon, logfile):
         self._daemon = daemon
+        self._logfile = logfile
 
         self._libtelio = None
         self._event_cb = TelioEventCbImpl()
         self._logger_cb = TelioLoggerCbImpl(logfile)
+        self._tp_lite_cb = TpLiteStatsCallbackImpl()
         libtelio.add_timestamps_to_logs()
         libtelio.set_global_logger(libtelio.TelioLogLevel.DEBUG, self._logger_cb)
 
@@ -95,6 +138,13 @@ class LibtelioWrapper:
         if self._libtelio is not None:
             self._libtelio.shutdown()
         self._daemon.shutdown()
+
+    @serialize_error
+    def redirect_stdout_to_logfile(self):
+        # Point stdout at tcli.log so telio-task stdout can't EPIPE-crash the remote when SSH
+        # dies mid-freeze — same as the Android startup guard in main() below, but on demand.
+        sys.stdout.flush()
+        os.dup2(self._logfile.fileno(), sys.stdout.fileno())
 
     @serialize_error
     def create(self, features: libtelio.Features):
@@ -147,6 +197,10 @@ class LibtelioWrapper:
     @serialize_error
     def notify_network_change(self):
         self._libtelio.notify_network_change("")
+
+    @serialize_error
+    def set_tunnel_src_ip(self, src_ips: List[str]):
+        self._libtelio.set_tunnel_src_ip(src_ips)
 
     @serialize_error
     def connect_to_exit_node(self, public_key, allowed_ips: str, endpoint: str):
@@ -204,6 +258,25 @@ class LibtelioWrapper:
     def flush_logs(self):
         self._logger_cb.logfile.flush()
 
+    @serialize_error
+    def enable_tp_lite_stats_collection(self, config: libtelio.TpLiteStatsOptions):
+        self._tp_lite_cb.clear()
+        self._libtelio.enable_tp_lite_stats_collection(config, self._tp_lite_cb)
+
+    @serialize_error
+    def disable_tp_lite_stats_collection(self):
+        self._libtelio.disable_tp_lite_stats_collection()
+
+    @serialize_error
+    def get_tp_lite_stats(self):
+        return self._tp_lite_cb.take_data()
+
+    @serialize_error
+    def set_tp_lite_domain_whitelist(
+        self, domains: List[str], redirects: List[libtelio.DnsRedirect]
+    ):
+        self._libtelio.set_tp_lite_domain_whitelist(domains, redirects)
+
 
 def main():
     object_name = sys.argv[1]
@@ -224,6 +297,15 @@ def main():
             _, port = daemon.sock.getsockname()
             print(f"libtelio-port:{port}")
             sys.stdout.flush()
+
+            # On Android the remote runs over an `adb shell` pipe; libtelio's
+            # telio-task crate writes "task started/stopped" to stdout, and when
+            # the pipe's reader goes away during teardown the rust println!
+            # panics with EPIPE, corrupting stop()/shutdown(). The port line
+            # above is the only stdout the host needs, so redirect fd 1 to the
+            # log file for the rest of the run.
+            if os.environ.get("PREFIX", "").startswith("/data/data/com.termux"):
+                os.dup2(logfile.fileno(), 1)
 
             wrapper = LibtelioWrapper(daemon, logfile)
             daemon.register(wrapper, objectId=object_name)

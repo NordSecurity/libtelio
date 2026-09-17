@@ -527,4 +527,170 @@ mod tests {
         assert_eq!(possible_down.current_link_state(), LinkState::Up);
         assert_eq!(up.current_link_state(), LinkState::Up);
     }
+
+    /// Characterize the link state detection window for a given `rtt`,
+    /// and returns the measured hold-down after which `LinkState::Down` is reported.
+    ///
+    /// Polls once per second, like the real WireGuard UAPI cadence, and asserts:
+    /// * **within the window**: the link is reported only `Up`
+    /// * **at the deadline**: a single `Down` notify
+    /// * **after the deadline**: `Down` holds and is not re-notified.
+    async fn measure_hold_down_secs(rtt_secs: u64) -> u64 {
+        let rtt = Duration::from_secs(rtt_secs);
+        let start = Instant::now();
+        let rx = 1;
+        let tx = 1;
+
+        let stats = Arc::new(Mutex::new(BytesAndTimestamps::new(
+            Some(rx),
+            Some(tx),
+            start,
+        )));
+        time::advance(ONE_SECOND).await;
+        // A tx delta of 1 (!= KEEPALIVE_PACKET_SIZE) counts as real data and arms first_tx_after_rx.
+        stats.lock().unwrap().update(rx, tx + 1, Instant::now());
+        let first_tx = Instant::now();
+
+        let mut state = State {
+            stats: stats.clone(),
+            variant: StateVariant::Up,
+        };
+
+        // Track number of down notifications and the time of the first down state
+        let mut first_down_at: Option<u64> = None;
+        let mut down_notifications_count = 0u32;
+
+        // 5 seconds to check Down state holds
+        let down_window = 5;
+        // Down event deadline: `13 + rtt`
+        let test_duration = (WG_KEEPALIVE.as_secs() + rtt_secs)
+            + State::POSSIBLE_DOWN_DELAY.as_secs()
+            + down_window;
+
+        for _ in 0..test_duration {
+            time::advance(ONE_SECOND).await;
+            let now = Instant::now();
+            let elapsed = now.duration_since(first_tx).as_secs();
+            let result = state.update(rtt);
+            let update = result.link_detection_update_result;
+            let is_down_notify =
+                update.should_notify && matches!(update.link_state, Some(LinkState::Down));
+
+            if is_down_notify {
+                down_notifications_count += 1;
+                first_down_at.get_or_insert(elapsed);
+            }
+
+            if first_down_at.is_none() {
+                // within the rtt window only Up may be reported
+                assert!(
+                    !update.should_notify,
+                    "rtt={}: unexpected notify at {}s, before the deadline",
+                    rtt_secs, elapsed
+                );
+                assert!(
+                    matches!(update.link_state, Some(LinkState::Up)),
+                    "rtt={}: reported link_state != Up at {}s (within window)",
+                    rtt_secs,
+                    elapsed
+                );
+                assert!(
+                    matches!(state.current_link_state(), LinkState::Up),
+                    "rtt={}: current_link_state != Up at {}s (within window)",
+                    rtt_secs,
+                    elapsed
+                );
+            } else {
+                // after the deadline Down must hold
+                assert!(
+                    matches!(state.current_link_state(), LinkState::Down),
+                    "rtt={}: link not Down without inbound at {}s",
+                    rtt_secs,
+                    elapsed
+                );
+            }
+        }
+
+        assert_eq!(
+            down_notifications_count, 1,
+            "rtt={rtt_secs}: expected exactly one Down notify, got {down_notifications_count}"
+        );
+        first_down_at.unwrap_or_else(|| {
+            panic!(
+                "link never reported Down within the measurement window for rtt={}",
+                rtt_secs
+            )
+        })
+    }
+
+    #[test_log::test(tokio::test(start_paused = true))]
+    async fn test_hold_down_time() {
+        for rtt in [0u64, 5, 15, 20, 25, 30] {
+            let expected = (WG_KEEPALIVE.as_secs() + rtt) + State::POSSIBLE_DOWN_DELAY.as_secs();
+            let measured = measure_hold_down_secs(rtt).await;
+            assert_eq!(
+                measured, expected,
+                "rtt={rtt}: expected {expected}s hold-down, measured {measured}s"
+            );
+        }
+    }
+
+    #[test_log::test(tokio::test(start_paused = true))]
+    async fn test_keepalive_within_hold_down_window() {
+        for rtt_secs in [0u64, 5, 15, 20, 25, 30] {
+            let rtt = Duration::from_secs(rtt_secs);
+            let grace = WG_KEEPALIVE.as_secs() + rtt_secs;
+            let hold_down = grace + State::POSSIBLE_DOWN_DELAY.as_secs();
+
+            for inbound_interval in [grace - 1, hold_down - 1] {
+                let start = Instant::now();
+                let mut rx: u64 = 1;
+                let mut tx: u64 = 1;
+                let stats = Arc::new(Mutex::new(BytesAndTimestamps::new(
+                    Some(rx),
+                    Some(tx),
+                    start,
+                )));
+                let mut state = State {
+                    stats: stats.clone(),
+                    variant: StateVariant::Up,
+                };
+
+                // Drive >3 inbound cycles.
+                for i in 1..=(inbound_interval * 3 + 2) {
+                    time::advance(ONE_SECOND).await;
+                    let now = Instant::now();
+
+                    // received keepalive lands every `inbound_interval` seconds
+                    if i % inbound_interval == 0 {
+                        rx += 1;
+                    }
+                    // transmitting non-keepalive data (delta != KEEPALIVE_PACKET_SIZE)
+                    // re-arming first_tx_after_rx
+                    tx += 1;
+                    stats.lock().unwrap().update(rx, tx, now);
+
+                    let result = state.update(rtt);
+                    let update = result.link_detection_update_result;
+
+                    assert!(
+                        matches!(state.current_link_state(), LinkState::Up),
+                        "rtt={} interval={}: link not Up at {}s (variant {:?})",
+                        rtt_secs,
+                        inbound_interval,
+                        i,
+                        state.variant
+                    );
+                    assert!(
+                        !(update.should_notify
+                            && matches!(update.link_state, Some(LinkState::Down))),
+                        "rtt={} interval={}: unexpected Down notify at {}s",
+                        rtt_secs,
+                        inbound_interval,
+                        i,
+                    );
+                }
+            }
+        }
+    }
 }

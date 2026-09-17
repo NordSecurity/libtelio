@@ -1,5 +1,5 @@
 use base64::DecodeError;
-use rand::prelude::*;
+use rand::seq::SliceRandom;
 use reqwest::{header, Certificate, Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -7,18 +7,20 @@ use std::fs::File;
 use std::io::Read;
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
-use telio::telio_model::mesh::ExitNode;
+use telio_core::telio_model::mesh::ExitNode;
 use thiserror::Error;
 use tokio::time::Duration;
 use tracing::{debug, error, info, trace, warn};
 
-use telio::crypto::SecretKey;
-use telio::telio_utils::exponential_backoff::{
+use telio_core::crypto::SecretKey;
+use telio_core::telio_utils::exponential_backoff::{
     Backoff, Error as BackoffError, ExponentialBackoff, ExponentialBackoffBounds,
 };
 
-use crate::config::{Endpoint, NordToken, NordVpnLiteConfig, NordlynxKeyResponse, VpnConfig};
+use crate::auth::{NordToken, NordlynxKeyResponse};
+use crate::config::{Endpoint, NordVpnLiteConfig, VpnConfig};
 use crate::NordVpnLiteError;
+use crate::{nordvpnlite_logstd_error, nordvpnlite_logstd_warn};
 
 const API_BASE: &str = "https://api.nordvpn.com/v1";
 const WIREGUARD_ID: u64 = 35;
@@ -320,15 +322,11 @@ pub async fn get_countries_with_exp_backoff(
     loop {
         match get_countries(cert_path).await {
             Ok(countries) => return Ok(countries),
-            Err(Error::Reqwest(ref e)) if e.is_timeout() => {
-                warn!(
-                    "Failed to fetch countries due to {e}, will wait for {:?} and retry",
-                    backoff.get_backoff()
-                );
-                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
-            }
             Err(e) => {
-                return Err(e);
+                warn!("Failed to fetch countries due to {e}",);
+                handle_api_error!(e)?;
+                warn!("Will wait for {:?} and retry", backoff.get_backoff());
+                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
             }
         }
     }
@@ -374,15 +372,11 @@ pub async fn get_recommended_servers_with_exp_backoff(
     loop {
         match get_recommended_servers(country_id_filter, limit_filter, cert_path).await {
             Ok(servers) => return Ok(servers),
-            Err(Error::Reqwest(ref e)) if e.is_timeout() => {
-                warn!(
-                    "Failed to fetch recommended servers due to {e}, will wait for {:?} and retry",
-                    backoff.get_backoff()
-                );
-                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
-            }
             Err(e) => {
-                return Err(e);
+                warn!("Failed to fetch recommended servers due to {e}",);
+                handle_api_error!(e)?;
+                warn!("Will wait for {:?} and retry", backoff.get_backoff());
+                wait_with_backoff_delay(&mut backoff, &mut retries).await?;
             }
         }
     }
@@ -440,44 +434,62 @@ async fn get_recommended_servers(
 }
 
 pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec<Endpoint>, Error> {
-    let country_id: Option<u64> = match &config.vpn {
+    enum CountryResolution {
+        Recommended,
+        Found(u64),
+        FallbackToRecommended,
+    }
+
+    let resolution = match &config.vpn {
         // Use the endpoint directly if provided in the config
         VpnConfig::Server(endpoint) => return Ok(vec![endpoint.clone()]),
         // Find VPN exit node based on country
         VpnConfig::Country(target_country) => {
             if !target_country.chars().all(|c| c.is_ascii_alphabetic()) {
-                warn!("Invalid country format: '{target_country}', non-ascii characters used");
-                None
+                nordvpnlite_logstd_warn!(
+                    "Invalid country format: '{target_country}', non-ascii characters used. To list supported countries/country codes, run: nordvpnlite countries"
+                );
+                CountryResolution::FallbackToRecommended
             } else {
                 match get_countries_with_exp_backoff(config.http_certificate_file_path.as_deref())
                     .await
                 {
-                    Ok(countries_list) => countries_list
-                        .iter()
-                        .find_map(|country| {
-                            // search for country full name or iso code
-                            if country.matches(target_country) {
-                                Some(country.id)
-                            } else {
-                                None
-                            }
-                        })
-                        .or_else(|| {
-                            warn!("Servers not found for '{target_country}' country code.");
+                    Ok(countries_list) => match countries_list.iter().find_map(|country| {
+                        // search for country full name or iso code
+                        if country.matches(target_country) {
+                            Some(country.id)
+                        } else {
                             None
-                        }),
+                        }
+                    }) {
+                        Some(id) => CountryResolution::Found(id),
+                        None => {
+                            nordvpnlite_logstd_warn!(
+                                "Servers not found for '{target_country}' country code. To list supported countries/country codes, run: nordvpnlite countries"
+                            );
+                            CountryResolution::FallbackToRecommended
+                        }
+                    },
                     Err(e) => {
-                        error!("Getting countries failed due to: {e}");
-                        None
+                        nordvpnlite_logstd_error!("Getting countries failed due to: {e}");
+                        CountryResolution::FallbackToRecommended
                     }
                 }
             }
         }
-        VpnConfig::Recommended => None,
+        VpnConfig::Recommended => CountryResolution::Recommended,
     };
 
-    if country_id.is_none() {
-        info!("Using a recommended server");
+    let country_id = match resolution {
+        CountryResolution::Found(id) => Some(id),
+        CountryResolution::Recommended => {
+            info!("Using a recommended server");
+            None
+        }
+        CountryResolution::FallbackToRecommended => {
+            nordvpnlite_logstd_warn!("Falling back to a recommended server");
+            None
+        }
     };
 
     // Fetch the list of recommended server from the API
@@ -491,7 +503,7 @@ pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec
     .map(Endpoint::try_from)
     .collect::<Result<Vec<_>, _>>()?;
 
-    servers.shuffle(&mut rand::thread_rng());
+    servers.shuffle(&mut rand::rng());
 
     trace!("Servers {:#?}", servers);
     Ok(servers)
@@ -499,7 +511,7 @@ pub async fn get_server_endpoints_list(config: &NordVpnLiteConfig) -> Result<Vec
 
 #[cfg(test)]
 mod tests {
-    use telio::telio_model::mesh::ExitNode;
+    use telio_core::telio_model::mesh::ExitNode;
 
     use super::*;
 

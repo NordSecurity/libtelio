@@ -69,17 +69,17 @@ async def test_mesh_off(direct) -> None:
 
         path_type = PathType.DIRECT if direct else PathType.RELAY
 
-        await client_alpha.wait_for_state_peer(
+        await client_alpha.events.wait_for_state_peer(
             beta.public_key, [NodeState.DISCONNECTED], [path_type]
         )
 
         await client_alpha.set_meshnet_config(env.api.get_meshnet_config(alpha.id))
 
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(
+            client_alpha.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [path_type]
             ),
-            client_beta.wait_for_state_peer(
+            client_beta.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [path_type]
             ),
         )
@@ -133,19 +133,19 @@ async def test_mesh_state_after_disconnecting_node() -> None:
 
         await client_beta.stop_device()
 
-        await client_alpha.wait_for_state_peer(
+        await client_alpha.events.wait_for_state_peer(
             beta.public_key, [NodeState.CONNECTING], list(PathType)
         )
 
         with pytest.raises(asyncio.TimeoutError):
-            await client_alpha.wait_for_state_peer(
+            await client_alpha.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], list(PathType), timeout=15
             )
 
         await client_beta.simple_start()
         await client_beta.set_meshnet_config(env.api.get_meshnet_config(beta.id))
 
-        await client_alpha.wait_for_state_peer(
+        await client_alpha.events.wait_for_state_peer(
             beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
         )
 

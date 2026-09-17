@@ -5,9 +5,9 @@ ETH_COUNT=$(ls /sys/class/net | grep -E '^eth[0-9]+$' | wc -l)
 ADD_ERR="Please add the following setting to your container:"
 
 tuntap="TUN device is missing. $ADD_ERR --device /dev/net/tun"
-WAN_IP="10.0.254.14/16"
-LAN_IP="192.168.115.254/24"
-DOCKER_BRIDGE_IP="192.168.115.253/24"
+WAN_IP="${OPENWRT_WAN_IP}"
+LAN_IP="${OPENWRT_VM_LAN_IP}/24"
+DOCKER_BRIDGE_IP="${OPENWRT_LAN_BRIDGE_IP}"
 
 if [ ! -c /dev/net/tun ]; then
   error "$tuntap" && return 1

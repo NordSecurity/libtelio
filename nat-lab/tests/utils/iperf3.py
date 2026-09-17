@@ -4,11 +4,12 @@ from asyncio import Event
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Enum, auto
-from tests.config import IPERF_BINARY_MAC, IPERF_BINARY_WINDOWS
+from tests.config import ANDROID_DEVICE_TMP, IPERF_BINARY_MAC, IPERF_BINARY_WINDOWS
 from tests.utils.connection import Connection, TargetOS
 from tests.utils.logger import log
 from tests.utils.output_notifier import OutputNotifier
 from tests.utils.process import Process
+from tests.utils.process.process import ProcessExecError
 from typing import AsyncIterator, Any, Dict
 
 
@@ -60,7 +61,9 @@ class ThroughputUnit(Enum):
 
 
 def get_iperf_binary(target_os: TargetOS) -> str:
-    if target_os == TargetOS.Linux:
+    # Android resolves the baked iperf3 by bare name like Linux (no system
+    # iperf3 shadows it on the guest PATH).
+    if target_os in (TargetOS.Linux, TargetOS.Android):
         return "iperf3"
 
     if target_os == TargetOS.Windows:
@@ -70,6 +73,14 @@ def get_iperf_binary(target_os: TargetOS) -> str:
         return IPERF_BINARY_MAC
 
     assert False, f"target_os not supported {target_os}"
+
+
+def _iperf_env_prefix(target_os: TargetOS) -> list[str]:
+    # The Android guest has no /tmp, so iperf3's temp files need TMPDIR pointed
+    # at a writable guest dir - otherwise stream creation fails with ENOENT.
+    if target_os == TargetOS.Android:
+        return ["env", f"TMPDIR={ANDROID_DEVICE_TMP}"]
+    return []
 
 
 class IperfServer:
@@ -95,6 +106,7 @@ class IperfServer:
         self._verbose = verbose
         self._unit = output_unit
         self._process = connection.create_process([
+            *_iperf_env_prefix(connection.target_os),
             get_iperf_binary(connection.target_os),
             "--forceflush" if force_flush else "",
             "-s",
@@ -125,8 +137,19 @@ class IperfServer:
 
     @asynccontextmanager
     async def run(self) -> AsyncIterator["IperfServer"]:
-        async with self._process.run(stdout_callback=self.on_stdout):
-            yield self
+        try:
+            async with self._process.run(stdout_callback=self.on_stdout):
+                yield self
+        except ProcessExecError as e:
+            # iperf3 server catches SIGTERM internally and exits with code 1
+            # ("iperf3: interrupt - the server has terminated"), which is normal
+            # shutdown behaviour — not a real error.
+            if e.returncode != 1:
+                raise
+            log.debug(
+                "[%s] iperf3 server exited with code 1 (interrupted by signal) — handled",
+                self._log_prefix,
+            )
 
 
 class IperfClient:
@@ -168,6 +191,7 @@ class IperfClient:
         self._transmit_time = transmit_time
         self._unit = output_unit
         self._process = connection.create_process([
+            *_iperf_env_prefix(connection.target_os),
             get_iperf_binary(connection.target_os),
             "-c",
             server_ip,

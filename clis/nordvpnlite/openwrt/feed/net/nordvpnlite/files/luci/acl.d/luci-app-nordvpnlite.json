@@ -1,0 +1,24 @@
+{
+	"luci-app-nordvpnlite": {
+		"description": "Grant access to NordVPN Lite configuration",
+		"read": {
+			"ubus": {
+				"nordvpnlite": [
+					"get_config",
+					"get_service_status",
+					"get_countries",
+					"get_runtime_status"
+				]
+			}
+		},
+		"write": {
+			"ubus": {
+				"nordvpnlite": [
+					"set_config",
+					"login",
+					"set_service_action"
+				]
+			}
+		}
+	}
+}

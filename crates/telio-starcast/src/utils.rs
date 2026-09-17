@@ -239,20 +239,20 @@ mod tests {
         ipv4::{self, MutableIpv4Packet},
         udp::{self, MutableUdpPacket},
     };
-    use rand::RngCore;
+    use rand::Rng;
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     #[test]
     fn ipv4_header_update() {
         for _ in 1..100000 {
             let mut data = [0u8; 20];
-            rand::thread_rng().fill_bytes(&mut data);
+            rand::rng().fill_bytes(&mut data);
             let mut packet = MutableIpv4Packet::new(&mut data).unwrap();
 
             let old_checksum = ipv4::checksum(&packet.to_immutable());
 
             let old_ip_addr = packet.get_destination();
-            let new_ip_addr = Ipv4Addr::from(rand::thread_rng().next_u32());
+            let new_ip_addr = Ipv4Addr::from(rand::rng().next_u32());
 
             let new_incremental_checksum =
                 checksum::ipv4_header_update(old_checksum, old_ip_addr, new_ip_addr);
@@ -268,17 +268,17 @@ mod tests {
     fn ipv4_udp_header_update() {
         for _ in 1..100000 {
             let mut data = [0u8; 80];
-            rand::thread_rng().fill_bytes(&mut data);
+            rand::rng().fill_bytes(&mut data);
             let mut packet = MutableUdpPacket::new(&mut data).unwrap();
-            let const_ip_addr = Ipv4Addr::from(rand::thread_rng().next_u32());
-            let old_ip_addr = Ipv4Addr::from(rand::thread_rng().next_u32());
-            let new_ip_addr = Ipv4Addr::from(rand::thread_rng().next_u32());
+            let const_ip_addr = Ipv4Addr::from(rand::rng().next_u32());
+            let old_ip_addr = Ipv4Addr::from(rand::rng().next_u32());
+            let new_ip_addr = Ipv4Addr::from(rand::rng().next_u32());
 
             let old_checksum =
                 udp::ipv4_checksum(&packet.to_immutable(), &const_ip_addr, &old_ip_addr);
 
             let old_port = packet.get_destination();
-            let new_port = rand::thread_rng().next_u32() as u16;
+            let new_port = rand::rng().next_u32() as u16;
 
             let new_incremental_checksum = checksum::ipv4_udp_header_update(
                 old_checksum,
@@ -300,22 +300,22 @@ mod tests {
     fn ipv6_udp_header_update() {
         for _ in 1..100000 {
             let mut data = [0u8; 80];
-            rand::thread_rng().fill_bytes(&mut data);
+            rand::rng().fill_bytes(&mut data);
             let mut packet = MutableUdpPacket::new(&mut data).unwrap();
 
             let mut data = [0u8; 16];
-            rand::thread_rng().fill_bytes(&mut data);
+            rand::rng().fill_bytes(&mut data);
             let const_ip_addr = Ipv6Addr::from(data);
-            rand::thread_rng().fill_bytes(&mut data);
+            rand::rng().fill_bytes(&mut data);
             let old_ip_addr = Ipv6Addr::from(data);
-            rand::thread_rng().fill_bytes(&mut data);
+            rand::rng().fill_bytes(&mut data);
             let new_ip_addr = Ipv6Addr::from(data);
 
             let old_checksum =
                 udp::ipv6_checksum(&packet.to_immutable(), &const_ip_addr, &old_ip_addr);
 
             let old_port = packet.get_destination();
-            let new_port = rand::thread_rng().next_u32() as u16;
+            let new_port = rand::rng().next_u32() as u16;
 
             let new_incremental_checksum = checksum::ipv6_udp_header_update(
                 old_checksum,

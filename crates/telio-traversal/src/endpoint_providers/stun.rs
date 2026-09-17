@@ -4,17 +4,18 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use std::ops::Deref;
 
 use async_trait::async_trait;
-use futures::{future::pending, Future};
+use futures::{Future, future::pending};
 use stun_codec::TransactionId;
 use telio_crypto::PublicKey;
 use telio_model::config::Server;
 use telio_proto::{Session, WGPort};
 use telio_sockets::SocketPool;
-use telio_sockets::{native::AsNativeSocket, External};
-use telio_task::{io::chan, task_exec, BoxAction, Runtime, Task};
+use telio_sockets::{External, native::AsNativeSocket};
+use telio_task::{BoxAction, Runtime, Task, io::chan, task_exec};
 use telio_utils::{
+    PinnedSleep,
     exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    telio_log_debug, telio_log_error, telio_log_info, telio_log_warn, PinnedSleep,
+    telio_log_debug, telio_log_error, telio_log_info, telio_log_warn,
 };
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::{net::UdpSocket, pin, sync::Mutex};
@@ -295,22 +296,20 @@ impl<Wg: WireGuard, E: Backoff + 'static> EndpointProvider for StunEndpointProvi
     async fn trigger_endpoint_candidates_discovery(&self, force: bool) -> Result<(), Error> {
         task_exec!(&self.task, async move |s| {
             // A guard, to prevent waking up from 'BackingOff', when stun peer is published
-            if force {
-                if let StunState::BackingOff = s.stun_state {
-                    s.transition_to_wait_for_wg();
-                }
+            if force && let StunState::BackingOff = s.stun_state {
+                s.transition_to_wait_for_wg();
             }
 
             if let StunState::WaitingForWg = s.stun_state {
                 s.try_transition_to_searching_for_server().await;
             }
 
-            if let StunState::HasEndpoints = s.stun_state {
-                if s.stun_session.is_none() {
-                    let err = s.start_stun_session().await;
-                    if err.is_err() {
-                        telio_log_warn!("Starting session failed: {:?}", err)
-                    }
+            if let StunState::HasEndpoints = s.stun_state
+                && s.stun_session.is_none()
+            {
+                let err = s.start_stun_session().await;
+                if err.is_err() {
+                    telio_log_warn!("Starting session failed: {:?}", err)
                 }
             }
 
@@ -976,20 +975,20 @@ mod stun_msg {
     use std::{io, net::SocketAddr};
 
     use bytecodec::{DecodeExt, EncodeExt};
-    use rand::Rng;
+    use rand::RngExt;
     use stun_codec::{
+        Message, MessageClass, MessageDecoder, MessageEncoder, TransactionId,
         rfc5389::{
+            Attribute,
             attributes::{Fingerprint, MappedAddress, Software, XorMappedAddress},
             methods::BINDING,
-            Attribute,
         },
-        Message, MessageClass, MessageDecoder, MessageEncoder, TransactionId,
     };
 
     use super::STUN_SOFTWARE;
 
     pub fn new_request() -> bytecodec::Result<(TransactionId, Vec<u8>)> {
-        let tid = TransactionId::new(rand::thread_rng().gen::<[u8; 12]>());
+        let tid = TransactionId::new(rand::rng().random::<[u8; 12]>());
         let mut msg = Message::<Attribute>::new(MessageClass::Request, BINDING, tid);
 
         msg.add_attribute(Attribute::Software(Software::new(
@@ -1040,8 +1039,8 @@ mod tests {
         attributes::{MappedAddress, XorMappedAddress},
     };
     use telio_crypto::{
-        encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
         PublicKey, SecretKey,
+        encryption::{decrypt_request, decrypt_response, encrypt_request, encrypt_response},
     };
     use telio_model::mesh::{IpNet, LinkState};
     use telio_proto::{CodecError, PacketRelayed, PartialPongerMsg, PingerMsg};
@@ -1052,8 +1051,8 @@ mod tests {
     use telio_utils::exponential_backoff::MockBackoff;
     use telio_utils::ip_stack::IpStack;
     use telio_wg::{
-        uapi::{Interface, Peer},
         Error,
+        uapi::{Interface, Peer},
     };
     use tokio::{
         task,
@@ -1428,7 +1427,7 @@ mod tests {
         let session_id = 456;
         let ping_addr = env.peers[0].ping_sock.local_addr().expect("local_addr");
 
-        let remote_sk = SecretKey::gen();
+        let remote_sk = SecretKey::r#gen();
         let remote_pk = remote_sk.public();
 
         env.ping_pong_handler
@@ -1458,7 +1457,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             let encrypt_transform = |b: &[u8]| {
                 Ok(encrypt_response(b, &mut rng, &remote_sk, &env.local_sk.public()).unwrap())
             };
@@ -1524,7 +1523,7 @@ mod tests {
                 )
                 .unwrap();
 
-            let mut rng = rand::thread_rng();
+            let mut rng = rand::rng();
             let encrypt_transform = |b: &[u8]| {
                 Ok(encrypt_response(b, &mut rng, &remote_sk, &env.local_sk.public()).unwrap())
             };
@@ -1562,13 +1561,10 @@ mod tests {
         let session_id = 456;
 
         let ping = PingerMsg::ping(wg_port, session_id, 6969);
-        let local_sk = SecretKey::gen();
+        let local_sk = SecretKey::r#gen();
         let remote_sk = env.local_sk.clone();
         let transform = |b: &[u8]| {
-            Ok(
-                encrypt_request(b, &mut rand::thread_rng(), &local_sk, &remote_sk.public())
-                    .unwrap(),
-            )
+            Ok(encrypt_request(b, &mut rand::rng(), &local_sk, &remote_sk.public()).unwrap())
         };
         let encrypted_buf = ping.clone().encode_and_encrypt(transform).unwrap();
 
@@ -1625,10 +1621,7 @@ mod tests {
 
         let ping = PingerMsg::ping(wg_port, session_id, 6969);
         let encrypt_transform = |b: &[u8]| {
-            Ok(
-                encrypt_request(b, &mut rand::thread_rng(), &local_sk, &remote_sk.public())
-                    .unwrap(),
-            )
+            Ok(encrypt_request(b, &mut rand::rng(), &local_sk, &remote_sk.public()).unwrap())
         };
         let encrypted_buf = ping.clone().encode_and_encrypt(encrypt_transform).unwrap();
 
@@ -1775,7 +1768,7 @@ mod tests {
 
         // We need to prepare some more complex mock to test if it is used properly
         let backoff_array = [100, 200, 300, 400, 500, 600];
-        let public_key = SecretKey::gen().public();
+        let public_key = SecretKey::r#gen().public();
         let env = prepare_test_env_with_server_weights_and_mockwg(
             Some(backoff_array),
             vec![Server {
@@ -1824,7 +1817,7 @@ mod tests {
             .await
             .expect("ping sock");
 
-        let public_key = SecretKey::gen().public();
+        let public_key = SecretKey::r#gen().public();
 
         // Stun peer can be locked
         let allowed_ip = IpNet::new(peer_sock_v4.local_addr().unwrap().ip(), 32).unwrap();
@@ -1911,14 +1904,18 @@ mod tests {
         task::yield_now().await;
         time::advance(Duration::from_millis(DEFAULT_POLL_INTERVAL_MILLIS)).await;
         task::yield_now().await;
-        expect_receive_failure("Session should not be started when there is no WG peer corresponding to the selected stun server");
+        expect_receive_failure(
+            "Session should not be started when there is no WG peer corresponding to the selected stun server",
+        );
 
         // There should be no session started after explicit trigger
         env.stun_provider
             .trigger_endpoint_candidates_discovery(false)
             .await
             .expect("tiggered");
-        expect_receive_failure("Session should not be started when there is no WG peer corresponding to the selected stun server");
+        expect_receive_failure(
+            "Session should not be started when there is no WG peer corresponding to the selected stun server",
+        );
 
         // After adding a peer to WG mock, the session should finally appear
         env.stun_provider
@@ -2034,7 +2031,7 @@ mod tests {
                 .await
                 .expect("ping sock");
 
-            let public_key = SecretKey::gen().public();
+            let public_key = SecretKey::r#gen().public();
 
             // Stun peer can be locked
             let allowed_ip_v4 = IpNet::new(peer_sock_v4.local_addr().unwrap().ip(), 32).unwrap();
@@ -2120,7 +2117,7 @@ mod tests {
             tx: stun_peer_publisher,
         } = Chan::default();
 
-        let secret_key = SecretKey::gen();
+        let secret_key = SecretKey::r#gen();
         let ping_pong_handler = Arc::new(Mutex::new(PingPongHandler::new(secret_key.clone())));
 
         let backoff_array = backoff_array.unwrap_or([10000, 10000, 10000, 10000, 10000, 10000]);
@@ -2181,8 +2178,8 @@ mod tests {
     async fn stun_reply<A: Into<rfc5389::Attribute>>(sock: &UdpSocket, attribute: A) {
         use bytecodec::{DecodeExt, EncodeExt};
         use stun_codec::{
-            rfc5389::{attributes::Software, methods::BINDING, Attribute},
             Message, MessageClass, MessageDecoder, MessageEncoder,
+            rfc5389::{Attribute, attributes::Software, methods::BINDING},
         };
 
         // Recv and decode

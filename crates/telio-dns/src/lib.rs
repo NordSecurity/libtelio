@@ -6,10 +6,16 @@
 
 mod dns;
 mod nameserver;
+mod packet_decoder;
+mod packet_encoder;
 mod resolver;
+mod udp_forwarder;
+mod upstream;
 mod zone;
 
 pub mod bind_tun;
+/// Error types used by the telio-dns crate.
+pub mod error;
 
 pub(crate) mod forward;
 
@@ -20,3 +26,11 @@ pub use zone::Records;
 
 #[cfg(feature = "mockall")]
 pub use crate::dns::MockDnsResolver;
+
+/// Public functions exposed for fuzzing framework
+#[cfg(feature = "fuzzing")]
+pub mod fuzz {
+    pub use super::nameserver::fuzz_decode_packet;
+    pub use super::packet_decoder::{find_nord_query, parse_dns_query_packet};
+    pub use super::packet_encoder::fuzz_build_response;
+}

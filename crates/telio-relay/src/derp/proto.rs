@@ -32,7 +32,7 @@ use tokio::{
 };
 
 #[cfg(test)]
-use telio_utils::test::CryptoStepRng;
+use telio_utils::test::StepRng;
 
 #[cfg(windows)]
 use static_assertions::const_assert;
@@ -153,6 +153,9 @@ pub enum Error {
     /// Unable to send relayed message
     #[error("Unable to send relayed message: {0}")]
     RelayedMsgSendError(#[from] SendError<(PublicKey, Vec<u8>)>),
+    /// TLS setup error
+    #[error("TLS error: {0}")]
+    TlsError(#[from] tokio_rustls::rustls::Error),
     /// Url parse error
     #[error("Url parse error: {0}")]
     UrlParseError(#[from] url::ParseError),
@@ -309,22 +312,27 @@ async fn write_client_key<W: AsyncWrite + Unpin>(
     writer: &mut W,
     secret_key: SecretKey,
     server_key: PublicKey,
-    #[cfg(test)] rng_mock: Option<CryptoStepRng>,
+    #[cfg(test)] rng_mock: Option<StepRng>,
 ) -> Result<(), Error> {
     let public_key = secret_key.public();
 
     telio_log_trace!("DERP starting with {}", public_key);
 
     #[cfg(not(test))]
-    let mut rng = rand_core::OsRng;
+    let mut rng = rand_core_compat::TryRng09(rand_core_compat::rand_core_0_9::OsRng);
     #[cfg(not(test))]
     let nonce = SalsaBox::generate_nonce(&mut rng);
 
     #[cfg(test)]
     let nonce = if let Some(mut rng) = rng_mock {
-        SalsaBox::generate_nonce(&mut rng)
+        // Manually generate nonce to avoid rand_core version mismatch between
+        // rand 0.10 (rand_core 0.10) and crypto_box (rand_core 0.6).
+        use crypto_box::aead::generic_array::GenericArray;
+        let mut nonce = GenericArray::default();
+        rand::Rng::fill_bytes(&mut rng, nonce.as_mut_slice());
+        nonce
     } else {
-        let mut rng = rand_core::OsRng;
+        let mut rng = rand_core_compat::TryRng09(rand_core_compat::rand_core_0_9::OsRng);
         SalsaBox::generate_nonce(&mut rng)
     };
 
@@ -411,9 +419,8 @@ async fn write_frame<W: AsyncWrite + Unpin>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::rngs::mock::StepRng;
     use rstest::*;
-    use telio_utils::test::CryptoStepRng;
+    use telio_utils::test::StepRng;
 
     const KEY_MSG_SIZE: usize = 106;
 
@@ -528,7 +535,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn write_client_key_example() {
-        let mut rng = CryptoStepRng(StepRng::new(0, 1));
+        let mut rng = StepRng::new(0, 1);
         let local_sk = SecretKey::gen_with(&mut rng);
         let remote_sk = SecretKey::gen_with(&mut rng);
         let remote_pk = remote_sk.public();

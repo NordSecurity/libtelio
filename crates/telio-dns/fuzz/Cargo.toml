@@ -1,0 +1,42 @@
+[package]
+name = "telio-dns-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+license = "GPL-3.0-only"
+repository = "https://github.com/NordSecurity/libtelio"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.telio-dns]
+path = ".."
+features = ["fuzzing"]
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "parse_dns_query"
+path = "fuzz_targets/parse_dns_query.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decode_packet"
+path = "fuzz_targets/decode_packet.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "build_response"
+path = "fuzz_targets/build_response.rs"
+test = false
+doc = false

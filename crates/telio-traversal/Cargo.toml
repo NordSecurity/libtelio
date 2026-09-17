@@ -1,21 +1,22 @@
 [package]
 name = "telio-traversal"
 version = "0.1.0"
-edition = "2018"
+edition = "2024"
 license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [dependencies]
 bytecodec = "0.5.0"
-enum-map = "2.7.3"
-igd = { git = "https://github.com/NordSecurity/rust-igd.git", tag = "v0.13.1", features = ["aio"], default-features = false }
+igd = { git = "https://github.com/NordSecurity/rust-igd.git", tag = "v0.13.3", features = ["aio"], default-features = false }
 stun_codec = "0.4"
 
 async-trait.workspace = true
+enum-map.workspace = true
 futures.workspace = true
 if-addrs.workspace = true
 ipnet.workspace = true
+itertools.workspace = true
 lazy_static.workspace = true
 tracing.workspace = true
 mockall = { workspace = true, optional = true }
@@ -40,7 +41,10 @@ env_logger.workspace = true
 maplit.workspace = true
 mockall.workspace = true
 ntest.workspace = true
+serial_test.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
+test-log = { version = "0.2.20", features = ["trace"] }
+
 
 telio-task = { workspace = true, features = ["test-util"] }
 telio-test.workspace = true

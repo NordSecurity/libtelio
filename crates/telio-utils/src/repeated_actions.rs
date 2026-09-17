@@ -5,13 +5,14 @@ use std::{
 };
 use thiserror::Error as ThisError;
 
-use crate::{interval, interval_after};
 use futures::{
     future::BoxFuture,
     stream::{FuturesUnordered, StreamExt},
     FutureExt,
 };
-use tokio::time::{Duration, Interval};
+use tokio::time::Duration;
+
+use crate::SuspendAwareTicker;
 
 /// Possible [RepeatedAction] errors.
 #[derive(ThisError, Debug)]
@@ -33,7 +34,7 @@ type Result<T> = std::result::Result<T, RepeatedActionError>;
 
 /// Main struct container, that hold all actions
 pub struct RepeatedActions<K, C, R> {
-    actions: HashMap<K, (Interval, RepeatedAction<C, R>)>,
+    actions: HashMap<K, (SuspendAwareTicker, RepeatedAction<C, R>)>,
 }
 
 impl<K, C, R> Default for RepeatedActions<K, C, R>
@@ -56,13 +57,6 @@ where
         }
     }
 
-    /// Set all actions to be executed when polled next time
-    pub fn set_all_immediate(&mut self) {
-        self.actions
-            .values_mut()
-            .for_each(|v| v.0.reset_immediately());
-    }
-
     /// Add single action (first tick is immediate)
     pub fn add_action(
         &mut self,
@@ -71,7 +65,7 @@ where
         action: RepeatedAction<C, R>,
     ) -> Result<()> {
         if let hash_map::Entry::Vacant(e) = self.actions.entry(key) {
-            e.insert((interval(dur), action));
+            e.insert((SuspendAwareTicker::new(dur), action));
             return Ok(());
         }
 
@@ -91,10 +85,21 @@ where
         self.actions.get_mut(key).map_or_else(
             || Err(RepeatedActionError::RepeatedActionNotFound),
             |a| {
-                a.0 = interval_after(dur, dur);
+                a.0 = SuspendAwareTicker::new_after(dur, dur);
                 Ok(())
             },
         )
+    }
+
+    /// Reset all action timers so they fire immediately on the next poll.
+    ///
+    /// This is useful after a network change: rather than waiting up to one full
+    /// period for the next scheduled keepalive, all peers receive a ping as soon
+    /// as `select_action` is polled again
+    pub fn reset_all_actions(&mut self) {
+        self.actions.values_mut().for_each(|(ticker, _)| {
+            ticker.reset_immediately();
+        });
     }
 
     /// Check if it contains action
@@ -112,24 +117,17 @@ where
         let a = self
             .actions
             .iter_mut()
-            .map(|(key, (interval, action))| (key, interval.tick(), action));
+            .map(|(key, (ticker, action))| (key, ticker.tick(), action));
 
         // Transform futures to `Output = (key, action)`
         let mut b: FuturesUnordered<_> = a
-            .map(|(key, interval, action)| interval.map(move |_| (key, action)).boxed())
+            .map(|(key, tick, action)| tick.map(move |_| (key, action)).boxed())
             .collect();
 
         b.next()
             .await
             .ok_or(RepeatedActionError::RepeatedActionNotFound)
             .map(|(s, f)| (s, f.clone()))
-    }
-
-    /// Returns the interval period in seconds
-    pub fn get_interval(&self, key: &K) -> Option<u32> {
-        self.actions
-            .get(key)
-            .and_then(|(i, _)| i.period().as_secs().try_into().ok())
     }
 }
 
@@ -165,90 +163,6 @@ mod tests {
         pub async fn change(&mut self, str: String) -> Result {
             self.test = str;
             Ok(())
-        }
-
-        pub fn get(&self) -> &str {
-            &self.test
-        }
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn test_set_all_immediate() {
-        let mut ctx = Context::new("test".to_owned());
-
-        let start = Instant::now();
-
-        ctx.actions
-            .add_action(
-                "action_0".to_owned(),
-                Duration::from_secs(10),
-                Arc::new({
-                    let start = start.clone();
-                    move |s: _| {
-                        Box::pin({
-                            let start = start.clone();
-                            async move {
-                                s.change(format!("ts_{}", start.elapsed().as_secs()).to_owned())
-                                    .await
-                            }
-                        })
-                    }
-                }),
-            )
-            .unwrap();
-
-        // immediate action
-        ctx.actions.select_action().await.unwrap().1(&mut ctx)
-            .await
-            .unwrap();
-
-        tokio::time::advance(Duration::from_secs(3)).await;
-
-        ctx.actions
-            .add_action(
-                "action_1".to_owned(),
-                Duration::from_secs(10),
-                Arc::new({
-                    let start = start.clone();
-                    move |s: _| {
-                        Box::pin({
-                            let start = start.clone();
-                            async move {
-                                s.change(format!("ts_{}", start.elapsed().as_secs()).to_owned())
-                                    .await
-                            }
-                        })
-                    }
-                }),
-            )
-            .unwrap();
-
-        {
-            let values_to_expect =
-                vec!["ts_3", "ts_10", "ts_13", "ts_20", "ts_23", "ts_30", "ts_33"];
-
-            for v in values_to_expect {
-                ctx.actions.select_action().await.unwrap().1(&mut ctx)
-                    .await
-                    .unwrap();
-
-                assert_eq!(ctx.get(), v);
-            }
-        }
-
-        // we have proven that two actions are misaligned
-        ctx.actions.set_all_immediate();
-
-        {
-            let aligned_values = vec!["ts_33", "ts_33", "ts_43", "ts_43"];
-
-            for v in aligned_values {
-                ctx.actions.select_action().await.unwrap().1(&mut ctx)
-                    .await
-                    .unwrap();
-
-                assert_eq!(ctx.get(), v);
-            }
         }
     }
 

@@ -1,12 +1,16 @@
 import asyncio
 from contextlib import asynccontextmanager
-from tests.config import LIBTELIO_BINARY_PATH_VM_MAC
+from tests.config import LIBTELIO_BINARY_PATH_VM_MAC, TERMUX_BIN_VM_ANDROID
 from tests.utils.connection import Connection, TargetOS
 from tests.utils.logger import log
 from tests.utils.output_notifier import OutputNotifier
 from tests.utils.process import Process
 from tests.utils.python import get_python_binary
 from typing import Optional, AsyncIterator
+
+
+class NetCatError(Exception):
+    """Raised when the netcat process exits before reaching an expected state."""
 
 
 def _get_netcat_base_command(connection: Connection) -> list[str]:
@@ -18,7 +22,10 @@ def _get_netcat_base_command(connection: Connection) -> list[str]:
             get_python_binary(connection),
             LIBTELIO_BINARY_PATH_VM_MAC + "netcat.py",
         ]
-    # use the built in netcat command on linux
+    if connection.target_os == TargetOS.Android:
+        # Absolute path to the baked OpenBSD nc: toybox's nc (which wins on PATH)
+        # lacks the -v/-z flags used below.
+        return [TERMUX_BIN_VM_ANDROID + "nc"]
     return ["nc"]
 
 
@@ -86,6 +93,7 @@ class NetCat:
         self._stdout_data: str = ""
         self._output_notifier: OutputNotifier = OutputNotifier()
         self._data_received: asyncio.Event = asyncio.Event()
+        self._last_stderr: str = ""
 
     async def receive_data(self) -> str:
         """Receive data from stdout"""
@@ -108,9 +116,29 @@ class NetCat:
 
     async def on_stderr(self, stderr: str) -> None:
         """Handle verbose status messages"""
-        log.error("netcat: %s", stderr.strip())
-        await self._output_notifier.handle_output(stderr.strip())
+        line = stderr.strip()
+        log.error("netcat: %s", line)
+        self._last_stderr = line
+        await self._output_notifier.handle_output(line)
         return None
+
+    async def _wait_event_or_exit(self, event: asyncio.Event, label: str) -> None:
+        """Wait for `event`, but fail fast if the netcat process exits first."""
+        event_task = asyncio.create_task(event.wait())
+        done_task = asyncio.create_task(self._process.is_done())
+        try:
+            done, _ = await asyncio.wait(
+                {event_task, done_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if event_task in done:
+                event.clear()
+                return
+            raise NetCatError(f"netcat exited before {label}: {self._last_stderr!r}")
+        finally:
+            for t in (event_task, done_task):
+                if not t.done():
+                    t.cancel()
 
     async def execute(self) -> None:
         await self._process.execute(
@@ -162,13 +190,11 @@ class NetCatServer(NetCat):
 
     async def listening_started(self) -> None:
         """Wait for listening started event"""
-        await self._listening_event.wait()
-        self._listening_event.clear()
+        await self._wait_event_or_exit(self._listening_event, "listening started")
 
     async def connection_received(self) -> None:
         """Wait for connection received event"""
-        await self._connection_event.wait()
-        self._connection_event.clear()
+        await self._wait_event_or_exit(self._connection_event, "connection received")
 
 
 class NetCatClient(NetCat):
@@ -213,5 +239,4 @@ class NetCatClient(NetCat):
 
     async def connection_succeeded(self) -> None:
         """Wait for connection succeeded event"""
-        await self._connection_event.wait()
-        self._connection_event.clear()
+        await self._wait_event_or_exit(self._connection_event, "connection succeeded")

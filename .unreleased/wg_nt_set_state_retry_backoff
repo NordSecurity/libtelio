@@ -1,0 +1,1 @@
+Fix Windows wg-nt adapter start failing with ERROR_NO_SUCH_DEVICE: retry adapter state changes with backoff instead of giving up within milliseconds

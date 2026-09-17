@@ -70,11 +70,8 @@ LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
         "primary": "192.168.150.54",
         "secondary": "192.168.151.54",
     },
-    ConnectionTag.VM_WINDOWS_2: {
-        "primary": "192.168.152.54",
-        "secondary": "192.168.153.54",
-    },
     ConnectionTag.VM_MAC: {"primary": "192.168.154.54", "secondary": "192.168.155.54"},
+    ConnectionTag.VM_ANDROID_1: {"primary": "192.168.118.54", "secondary": ""},
     ConnectionTag.DOCKER_CONE_GW_1: {"primary": "192.168.101.254", "secondary": ""},
     ConnectionTag.DOCKER_CONE_GW_2: {"primary": "192.168.102.254", "secondary": ""},
     ConnectionTag.DOCKER_CONE_GW_3: {"primary": "192.168.113.254", "secondary": ""},
@@ -105,19 +102,77 @@ LAN_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
     ConnectionTag.DOCKER_UPNP_GW_1: {"primary": "192.168.105.254", "secondary": ""},
     ConnectionTag.DOCKER_UPNP_GW_2: {"primary": "192.168.112.254", "secondary": ""},
     ConnectionTag.DOCKER_OPENWRT_GW_1: {"primary": "192.168.115.254", "secondary": ""},
+    ConnectionTag.DOCKER_OPENWRT_GW_3: {"primary": "192.168.117.254", "secondary": ""},
     ConnectionTag.DOCKER_INTERNAL_SYMMETRIC_GW: {
         "primary": "192.168.114.254",
         "secondary": "",
     },
     ConnectionTag.DOCKER_VPN_1: {"primary": "10.0.100.1", "secondary": ""},
+    ConnectionTag.DOCKER_VPN_2: {"primary": "10.0.100.2", "secondary": ""},
     ConnectionTag.VM_LINUX_NLX_1: {"primary": "10.0.100.51", "secondary": ""},
     ConnectionTag.DOCKER_PHOTO_ALBUM: {"primary": "10.0.80.80", "secondary": ""},
     ConnectionTag.VM_OPENWRT_GW_1: {
         "primary": "192.168.115.254",
         "secondary": "10.0.254.14",
     },
+    ConnectionTag.VM_OPENWRT_GW_3: {
+        "primary": "192.168.117.254",
+        "secondary": "10.0.254.23",
+    },
     ConnectionTag.DOCKER_OPENWRT_CLIENT_1: {
         "primary": "192.168.115.100",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_OPENWRT_CLIENT_3: {
+        "primary": "192.168.117.100",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_CORE_API_1: {
+        "primary": "10.0.80.86",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_MQTT_BROKER_1: {
+        "primary": "10.0.80.85",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_DERP_1: {
+        "primary": "10.0.10.1",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_DERP_2: {
+        "primary": "10.0.10.2",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_DERP_3: {
+        "primary": "10.0.10.3",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_DNS_SERVER_1: {
+        "primary": "10.0.80.82",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_DNS_SERVER_2: {
+        "primary": "10.0.80.83",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_STUN_1: {
+        "primary": "10.0.80.83",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_UDP_SERVER: {
+        "primary": "10.0.80.81",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_OPENWRT_CDN: {
+        "primary": "10.0.254.21",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_TP_LITE_DNS_SERVER: {
+        "primary": "10.0.80.90",
+        "secondary": "",
+    },
+    ConnectionTag.DOCKER_PLAYWRIGHT_RUNNER_1: {
+        "primary": "192.168.115.101",
         "secondary": "",
     },
 }
@@ -126,10 +181,6 @@ GW_ADDR_MAP: Dict[ConnectionTag, Dict[str, str]] = {
     ConnectionTag.VM_WINDOWS_1: {
         "primary": "192.168.150.254",
         "secondary": "192.168.151.254",
-    },
-    ConnectionTag.VM_WINDOWS_2: {
-        "primary": "192.168.152.254",
-        "secondary": "192.168.153.254",
     },
     ConnectionTag.VM_MAC: {
         "primary": "192.168.154.254",
@@ -170,7 +221,9 @@ STUN_BINARY_PATH_MAC = "/var/root/stunserver/stunclient"
 IPERF_BINARY_MAC = "/var/root/iperf3/iperf3"
 IPERF_BINARY_WINDOWS = "C:/workspace/iperf3/iperf3.exe".replace("/", "\\")
 
-WINDUMP_BINARY_WINDOWS = "C:/workspace/WinDump.exe".replace("/", "\\")
+# Network Adapter device setup class registry path
+# https://learn.microsoft.com/en-us/windows-hardware/drivers/install/system-defined-device-setup-classes-available-to-vendors
+WINDOWS_NETWORK_ADAPTER_REGISTRY_KEY = r"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}"
 
 # JIRA issue: LLT-1664
 # The directories between host and Docker container are shared via
@@ -207,6 +260,14 @@ LIBTELIO_BINARY_PATH_VM_MAC = "/var/root/workspace/binaries/"
 UNIFFI_PATH_WINDOWS_VM = "C:/workspace/uniffi/".replace("/", "\\")
 UNIFFI_PATH_VM_MAC = "/var/root/workspace/uniffi/"
 
+# Android emulator: the libtelio runtime (bionic libtelio.so + python bindings +
+# Pyro5 remote) runs inside Termux, whose home is app-private. Binaries are staged
+# via adb push to /data/local/tmp, then copied into the Termux work dir.
+ANDROID_DEVICE_TMP = "/data/local/tmp/"
+LIBTELIO_BINARY_PATH_VM_ANDROID = "/data/data/com.termux/files/home/work/"
+UNIFFI_PATH_VM_ANDROID = "/data/data/com.termux/files/home/work/"
+TERMUX_BIN_VM_ANDROID = "/data/data/com.termux/files/usr/bin/"
+
 LIBTELIO_LOCAL_IP = "10.5.0.2"
 
 LIBTELIO_IPV6_WG_SUBNET = "fd74:656c:696f"
@@ -220,6 +281,7 @@ LIBTELIO_EXIT_DNS_IPV4 = "100.64.0.3"
 LIBTELIO_EXIT_DNS_IPV6 = LIBTELIO_IPV6_WG_SUBNET + "::3"
 
 VPN_SERVER_SUBNET = "10.0.100.0/24"
+TP_LITE_DNS_SERVER_IP = "10.0.80.90"
 PHOTO_ALBUM_IP = "10.0.80.80"
 PHOTO_ALBUM_IPV6 = "2001:db8:85a4::adda:edde:5"
 UDP_SERVER_IP4 = "10.0.80.81"
@@ -249,12 +311,13 @@ WG_SERVER_2: Dict[str, Union[str, int]] = {
 }
 
 # nlx-01
-# Private and public keys are set during VPN preparation
+# Private key is set during VPN preparation
 NLX_SERVER: Dict[str, Union[str, int]] = {
     "ipv4": "10.0.100.51",
     "port": 1023,  # Select some port in non-ephemeral port range to avoid clashes
     "container": "nat-lab-nlx-01-1",
     "type": "nordlynx",
+    "public_key": "csmoelQgK1QvyE5+XmZnXaPNt/zCgk84BG6BwfcmOFE=",  # This is a test only public key, never used outside of tests
 }
 
 WG_SERVERS = [WG_SERVER, WG_SERVER_2, NLX_SERVER]

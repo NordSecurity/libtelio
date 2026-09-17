@@ -4,7 +4,7 @@ use crate::endpoint_providers;
 use telio_utils::exponential_backoff;
 use thiserror::Error as TError;
 
-use telio_model::{features::EndpointProvider, SocketAddr};
+use telio_model::{SocketAddr, features::EndpointProvider};
 use telio_utils::Instant;
 
 use telio_crypto::PublicKey;

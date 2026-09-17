@@ -2,17 +2,18 @@ use std::net::IpAddr;
 
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use telio::telio_task::io::chan;
+use telio_core::telio_task::io::chan;
 use tokio::sync::oneshot;
-use tracing::{error, trace};
+use tracing::{error, info, trace};
 
 use crate::{
     comms::{DaemonConnection, DaemonSocket},
-    config::Endpoint,
+    config::{Endpoint, RunningConfig},
     daemon::{NordVpnLiteError, TelioStatusReport},
 };
 
-pub(crate) const TIMEOUT_SEC: u64 = 10;
+pub(crate) const TIMEOUT_SEC: u64 = 60;
+const DEFAULT_CONFIG_PATH: &str = "/etc/nordvpnlite/config.json";
 
 #[derive(Parser, Debug, PartialEq)]
 #[clap()]
@@ -24,12 +25,15 @@ pub enum ClientCmd {
     IsAlive,
     #[clap(name = "stop", about = "Stop daemon execution")]
     QuitDaemon,
+    #[clap(name = "reload", about = "Reload config file and restart the daemon")]
+    Reload,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExitNodeConfig {
     pub endpoint: Endpoint,
     pub dns: Vec<IpAddr>,
+    pub post_quantum: bool,
 }
 
 #[derive(Debug)]
@@ -48,7 +52,7 @@ pub(crate) struct DaemonOpts {
     #[clap(
         long = "config-file",
         short = 'c',
-        default_value = "/etc/nordvpnlite/config.json"
+        default_value = DEFAULT_CONFIG_PATH
     )]
     pub config_path: String,
 
@@ -69,6 +73,53 @@ pub(crate) struct DaemonOpts {
     pub stdout_path: String,
 }
 
+#[derive(Parser, Debug)]
+pub(crate) struct LoginOpts {
+    /// Configuration file to read authentication credentials path
+    #[clap(
+        long = "config-file",
+        short = 'c',
+        default_value = DEFAULT_CONFIG_PATH
+    )]
+    pub config_path: String,
+
+    /// Authentication token (long syntax)
+    #[clap(
+        long = "token",
+        value_name = "TOKEN",
+        conflicts_with = "token_positional"
+    )]
+    pub token: Option<String>,
+
+    /// Authentication token (short syntax)
+    #[clap(
+        value_name = "TOKEN",
+        required_unless_present = "token",
+        conflicts_with = "token"
+    )]
+    pub token_positional: Option<String>,
+}
+
+impl LoginOpts {
+    pub fn token(&self) -> &str {
+        self.token
+            .as_deref()
+            .or(self.token_positional.as_deref())
+            .unwrap_or_default()
+    }
+}
+
+#[derive(Parser, Debug)]
+pub(crate) struct LogoutOpts {
+    /// Configuration file to read authentication credentials path
+    #[clap(
+        long = "config-file",
+        short = 'c',
+        default_value = DEFAULT_CONFIG_PATH
+    )]
+    pub config_path: String,
+}
+
 /// NordVPN Lite is a lightweight, standalone VPN client built around
 /// the libtelio library. It is designed for embedded and edge environments,
 /// that are too resource constrained for the full NordVPN application.
@@ -82,6 +133,10 @@ pub enum Cmd {
     Client(ClientCmd),
     #[clap(about = "Show countries with available VPN servers")]
     Countries,
+    #[clap(about = "Store NordVPN authentication credentials")]
+    Login(LoginOpts),
+    #[clap(about = "Clear NordVPN authentication credentials")]
+    Logout(LogoutOpts),
 }
 
 /// Command response type used to communicate between `telio runner -> daemon -> client`
@@ -125,14 +180,27 @@ pub struct CommandListener {
     socket: DaemonSocket,
     /// Channel to send commands to telio task
     telio_task_tx: chan::Tx<TelioTaskCmd>,
+    config: RunningConfig,
+    /// Holds the new running config from a client triggered reload
+    pending_config: Option<RunningConfig>,
 }
 
 impl CommandListener {
-    pub fn new(socket: DaemonSocket, telio_task_tx: chan::Tx<TelioTaskCmd>) -> CommandListener {
+    pub fn new(
+        socket: DaemonSocket,
+        telio_task_tx: chan::Tx<TelioTaskCmd>,
+        config: RunningConfig,
+    ) -> CommandListener {
         CommandListener {
             socket,
             telio_task_tx,
+            config,
+            pending_config: None,
         }
+    }
+
+    pub fn take_pending_config(&mut self) -> Option<RunningConfig> {
+        self.pending_config.take()
     }
 
     // Main command handling communicating with telio task
@@ -170,9 +238,36 @@ impl CommandListener {
                         NordVpnLiteError::CommandFailed(ClientCmd::QuitDaemon)
                     })?;
                 // Wait for a response from TelioTask
-                // this essentually blocks the client quit command until the daemon initiated
+                // this essentially blocks the client quit command until the daemon initiated
                 // cleanup
                 handle_response(response_rx, |_| Ok(CommandResponse::Ok)).await
+            }
+            ClientCmd::Reload => {
+                match RunningConfig::from_file(&self.config.path) {
+                    Err(e) => {
+                        error!("Config file changed but failed to parse: {e}");
+                        Ok(CommandResponse::Err(e.to_string()))
+                    }
+                    Ok(new_config) if new_config.hash == self.config.hash => {
+                        info!("Config file unchanged, ignoring reload request");
+                        Ok(CommandResponse::Ok)
+                    }
+                    Ok(new_config) => {
+                        trace!("Config file changed, proceeding with reload");
+                        self.pending_config = Some(new_config);
+                        let (response_tx, response_rx) = oneshot::channel();
+                        #[allow(mpsc_blocking_send)]
+                        self.telio_task_tx
+                            .send(TelioTaskCmd::Quit(response_tx))
+                            .await
+                            .map_err(|e| {
+                                error!("Error sending command: {}", e);
+                                NordVpnLiteError::CommandFailed(ClientCmd::Reload)
+                            })?;
+                        // Wait for teardown to complete before responding to the client
+                        handle_response(response_rx, |_| Ok(CommandResponse::Ok)).await
+                    }
+                }
             }
             ClientCmd::IsAlive => Ok(CommandResponse::Ok),
         }
@@ -210,7 +305,9 @@ impl CommandListener {
                     match &command {
                         ClientCmd::QuitDaemon => CommandResponse::Ok,
                         ClientCmd::IsAlive => CommandResponse::Ok,
-                        ClientCmd::GetStatus => CommandResponse::DaemonInitializing,
+                        ClientCmd::GetStatus | ClientCmd::Reload => {
+                            CommandResponse::DaemonInitializing
+                        }
                     }
                 };
                 connection.respond(response.serialize()).await?;
@@ -235,22 +332,39 @@ mod tests {
     use crate::{CommandResponse, DaemonSocket};
     use assert_matches::assert_matches;
     use std::path::Path;
-    use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::UnixStream,
-        sync::mpsc,
-        task,
-    };
+    use temp_file::TempFile;
+    use tokio::{io::AsyncWriteExt, net::UnixStream, sync::mpsc, task};
 
     const TEST_SOCKET_PATH: &str = "test_socket";
+
+    // A minimal valid NordVpnLiteConfig JSON used across reload tests.
+    const VALID_CONFIG_JSON: &str = r#"{
+        "log_level": "Info",
+        "log_file_path": "test.log",
+        "auth_file_path": "auth.json",
+        "adapter_type": "linux-native",
+        "interface": { "name": "utun10", "config_provider": "manual" }
+    }"#;
 
     // Create a random socket path for the test, since tests run in parallel they can deadlock
     fn make_socket_path() -> String {
         format!("{}_{}", TEST_SOCKET_PATH, rand::random::<u16>())
     }
 
-    // Helper to create a fake command listener
-    fn make_command_listener(path: &str) -> CommandListener {
+    // Write VALID_CONFIG_JSON to a temp file and load it as a RunningConfig.
+    // Returns both so the TempFile stays alive (and thus the file exists) for the duration of the test.
+    fn make_running_config() -> (RunningConfig, TempFile) {
+        let file = TempFile::new()
+            .unwrap()
+            .with_contents(VALID_CONFIG_JSON.as_bytes())
+            .unwrap();
+        let config = RunningConfig::from_file(file.path()).unwrap();
+        (config, file)
+    }
+
+    // Helper to create a fake command listener.
+    // Returns the listener and the TempFile backing its RunningConfig so the file stays alive.
+    fn make_command_listener(path: &str) -> (CommandListener, TempFile) {
         let (tx, mut task_rx) = mpsc::channel(1);
 
         // spawn a fake telio task
@@ -269,20 +383,40 @@ mod tests {
 
         let socket = DaemonSocket::new(Path::new(path)).unwrap();
 
-        CommandListener::new(socket, tx)
+        let (config, config_file) = make_running_config();
+        (CommandListener::new(socket, tx, config), config_file)
+    }
+
+    fn make_reload_listener(
+        path: &str,
+    ) -> (CommandListener, mpsc::Receiver<TelioTaskCmd>, TempFile) {
+        let (tx, task_rx) = mpsc::channel(1);
+        let socket = DaemonSocket::new(Path::new(path)).unwrap();
+        let (config, config_file) = make_running_config();
+        (
+            CommandListener::new(socket, tx, config),
+            task_rx,
+            config_file,
+        )
+    }
+
+    fn spawn_quit_responder(
+        mut task_rx: mpsc::Receiver<TelioTaskCmd>,
+    ) -> tokio::task::JoinHandle<bool> {
+        tokio::spawn(async move {
+            if let Some(TelioTaskCmd::Quit(tx)) = task_rx.recv().await {
+                tx.send(()).unwrap();
+                true
+            } else {
+                false
+            }
+        })
     }
 
     // Simulate client sending command and waiting for response
     async fn client_send_command(path: &str, cmd: &str) -> std::io::Result<CommandResponse> {
-        let mut client_stream = UnixStream::connect(&Path::new(path)).await?;
-        client_stream
-            .write_all(format!("{}\n", cmd).as_bytes())
-            .await?;
-
-        let mut data = vec![0; 1024];
-        let size = client_stream.read(&mut data).await?;
-        let response = String::from_utf8(data[..size].to_vec()).unwrap();
-        Ok(CommandResponse::deserialize(response.trim()).unwrap())
+        let response = DaemonSocket::send_command(Path::new(path), cmd).await?;
+        CommandResponse::deserialize(&response).map_err(|e| std::io::Error::other(e.to_string()))
     }
 
     // Broken client, closes connection without waiting for response
@@ -304,7 +438,7 @@ mod tests {
         Result<ClientCmd, NordVpnLiteError>,
     ) {
         let path = make_socket_path();
-        let mut listener = make_command_listener(&path);
+        let (mut listener, _config_file) = make_command_listener(&path);
 
         let command = serde_json::to_string(&command).unwrap();
         let daemon = tokio::spawn(async move {
@@ -363,7 +497,7 @@ mod tests {
     #[tokio::test]
     async fn test_command_invalid() {
         let path = make_socket_path();
-        let mut listener = make_command_listener(&path);
+        let (mut listener, _config_file) = make_command_listener(&path);
 
         let command = "garbage";
         let daemon = tokio::spawn(async move {
@@ -380,7 +514,7 @@ mod tests {
     #[tokio::test]
     async fn test_command_invalid_broken() {
         let path = make_socket_path();
-        let mut listener = make_command_listener(&path);
+        let (mut listener, _config_file) = make_command_listener(&path);
 
         let command = "garbage";
         let daemon = tokio::spawn(async move {
@@ -422,5 +556,176 @@ mod tests {
 
         assert_eq!(cmd.unwrap(), ClientCmd::GetStatus);
         assert_eq!(response.unwrap(), CommandResponse::DaemonInitializing);
+    }
+
+    #[tokio::test]
+    async fn test_command_reload() {
+        let (response, cmd) = test_command_helper(ClientCmd::Reload, true, false).await;
+
+        assert_eq!(response.unwrap(), CommandResponse::Ok);
+        assert_eq!(cmd.unwrap(), ClientCmd::Reload);
+    }
+
+    #[tokio::test]
+    async fn test_command_early_reload() {
+        let (response, cmd) = test_command_helper(ClientCmd::Reload, false, false).await;
+
+        assert_eq!(cmd.unwrap(), ClientCmd::Reload);
+        assert_eq!(response.unwrap(), CommandResponse::DaemonInitializing);
+    }
+
+    #[tokio::test]
+    async fn test_command_reload_unchanged() {
+        use tokio::time::{timeout, Duration};
+
+        let path = make_socket_path();
+        let (mut listener, task_rx, _config_file) = make_reload_listener(&path);
+
+        let command = serde_json::to_string(&ClientCmd::Reload).unwrap();
+        let daemon = tokio::spawn(async move {
+            let connection = listener.accept_client_connection().await.unwrap();
+            listener.handle_client_command(true, connection).await
+        });
+
+        let responder = spawn_quit_responder(task_rx);
+
+        let response = timeout(Duration::from_secs(3), client_send_command(&path, &command))
+            .await
+            .expect("test timed out waiting for client response");
+        let cmd = timeout(Duration::from_secs(3), daemon)
+            .await
+            .expect("test timed out — daemon task hung")
+            .unwrap();
+        let quit_was_incorrectly_sent = responder.await.unwrap();
+
+        assert_eq!(response.unwrap(), CommandResponse::Ok);
+        assert_eq!(cmd.unwrap(), ClientCmd::Reload);
+        assert!(
+            !quit_was_incorrectly_sent,
+            "TelioTaskCmd::Quit must not be sent when config is unchanged"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_command_reload_changed() {
+        use tokio::time::{timeout, Duration};
+
+        let socket_path = make_socket_path();
+        let (mut listener, task_rx, config_file) = make_reload_listener(&socket_path);
+
+        let alt_config = VALID_CONFIG_JSON.replace("utun10", "utun11");
+        std::fs::write(config_file.path(), alt_config.as_bytes()).unwrap();
+
+        let command = serde_json::to_string(&ClientCmd::Reload).unwrap();
+        let daemon = tokio::spawn(async move {
+            let connection = listener.accept_client_connection().await.unwrap();
+            let result = listener.handle_client_command(true, connection).await;
+            let has_pending = listener.take_pending_config().is_some();
+            (result, has_pending)
+        });
+
+        let responder = spawn_quit_responder(task_rx);
+
+        let response = client_send_command(&socket_path, &command).await;
+        let (cmd, had_pending) = timeout(Duration::from_secs(3), daemon)
+            .await
+            .expect("test timed out — daemon task hung")
+            .unwrap();
+        let quit_was_sent = timeout(Duration::from_secs(3), responder)
+            .await
+            .expect("test timed out — responder task hung")
+            .unwrap();
+
+        assert_eq!(response.unwrap(), CommandResponse::Ok);
+        assert_eq!(cmd.unwrap(), ClientCmd::Reload);
+        assert!(
+            quit_was_sent,
+            "TelioTaskCmd::Quit must be sent when config has changed"
+        );
+        assert!(
+            had_pending,
+            "pending_config must be set after a successful reload"
+        );
+    }
+
+    #[test]
+    fn test_login_cmd_accepts_long_token_syntax() {
+        let cmd = Cmd::try_parse_from(["nordvpnlite", "login", "--token", "abcd"]).unwrap();
+
+        let Cmd::Login(opts) = cmd else {
+            panic!("expected login command")
+        };
+
+        assert_eq!(opts.token(), "abcd");
+    }
+
+    #[test]
+    fn test_login_cmd_accepts_short_token_syntax() {
+        let cmd = Cmd::try_parse_from(["nordvpnlite", "login", "abcd"]).unwrap();
+
+        let Cmd::Login(opts) = cmd else {
+            panic!("expected login command")
+        };
+
+        assert_eq!(opts.token(), "abcd");
+    }
+
+    #[test]
+    fn test_login_cmd_rejects_both_token_forms() {
+        let result = Cmd::try_parse_from(["nordvpnlite", "login", "--token", "abcd", "efgh"]);
+
+        assert!(result.is_err());
+
+        let result = Cmd::try_parse_from(["nordvpnlite", "login", "abcd", "--token", "efgh"]);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_response_serialize_has_no_raw_newline() {
+        let responses = [
+            CommandResponse::Ok,
+            CommandResponse::DaemonInitializing,
+            CommandResponse::Err("multi\nline\nerror".to_string()),
+            CommandResponse::StatusReport(TelioStatusReport::default()),
+        ];
+        for response in responses {
+            assert!(
+                !response.serialize().contains('\n'),
+                "serialized response must not contain a raw newline: {response:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_client_errors_when_daemon_closes_without_response() {
+        let path = make_socket_path();
+        let socket = DaemonSocket::new(Path::new(&path)).unwrap();
+        let daemon = tokio::spawn(async move {
+            let mut connection = socket.accept().await.unwrap();
+            let _ = connection.read_command().await;
+        });
+
+        let result = DaemonSocket::send_command(Path::new(&path), "\"IsAlive\"").await;
+        daemon.await.unwrap();
+
+        assert_matches!(result, Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof);
+    }
+
+    #[tokio::test]
+    async fn test_daemon_errors_when_client_closes_without_command() {
+        let path = make_socket_path();
+        let socket = DaemonSocket::new(Path::new(&path)).unwrap();
+        let daemon = tokio::spawn(async move {
+            let mut connection = socket.accept().await.unwrap();
+            connection.read_command().await
+        });
+
+        let client_stream = UnixStream::connect(Path::new(&path)).await.unwrap();
+        drop(client_stream);
+
+        let result = daemon.await.unwrap();
+
+        assert_matches!(result, Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof);
     }
 }

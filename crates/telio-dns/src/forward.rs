@@ -31,7 +31,7 @@ use hickory_server::{
 use telio_utils::{telio_log_debug, telio_log_info, telio_log_trace, telio_log_warn};
 use tokio::net::UdpSocket;
 
-use crate::bind_tun;
+use crate::{bind_tun, error::Error};
 
 #[derive(Default, Clone)]
 pub struct TelioRuntimeProvider(TokioRuntimeProvider);
@@ -141,7 +141,7 @@ impl ForwardAuthority {
         origin: Name,
         _zone_type: ZoneType,
         config: ForwardConfig,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, Error> {
         telio_log_info!("loading forwarder config: {}", origin);
 
         let name_servers = config.name_servers;
@@ -177,6 +177,17 @@ impl ForwardAuthority {
             origin: origin.into(),
             resolver,
         })
+    }
+
+    /// Drop every entry from the resolver's cache.
+    ///
+    /// Removes both positive and negative (NXDOMAIN) entries. Needed when
+    /// something outside DNS changes what an answer ought to be - see LLT-7558,
+    /// where a TP-Lite whitelist change alters whether a query gets redirected,
+    /// but a cached answer would be returned without the query ever reaching
+    /// the firewall.
+    pub fn flush_cache(&self) {
+        self.resolver.clear_cache();
     }
 }
 
@@ -226,14 +237,17 @@ impl Authority for ForwardAuthority {
             // For example: no IPs associated with domain especially for AAAA queries
             //
             // Log such errors with lower logging level
-            Err(ref e)
-                if matches!(e.kind(), ResolveErrorKind::NoRecordsFound { .. })
-                    && (rtype == RecordType::AAAA || rtype == RecordType::SOA) =>
-            {
-                telio_log_debug!("DNS name resolution failed with {:?}", e);
+            Err(ref e) if matches!(e.kind(), ResolveErrorKind::NoRecordsFound { .. }) => {
+                telio_log_debug!("DNS name resolution failed (no records): {:?}", e);
             }
 
-            Err(ref e) => telio_log_warn!("DNS name resolution failed with {:?}", e),
+            Err(ref e) => {
+                #[cfg(debug_assertions)]
+                telio_log_debug!("DNS name resolution failed: {:?}", e);
+
+                #[cfg(not(debug_assertions))]
+                telio_log_warn!("DNS name resolution failed");
+            }
             Ok(_) => (),
         };
 

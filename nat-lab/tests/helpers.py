@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 from http import HTTPStatus
 from ipaddress import AddressValueError, IPv6Address
 from itertools import product, zip_longest
+from tests.libtelio_client import Client
 from tests.mesh_api import Node, API
-from tests.telio import Client
 from tests.utils.bindings import (
     default_features,
     Features,
@@ -72,6 +72,7 @@ class SetupParameters:
     derp_servers: Optional[List[Server]] = field(default=None)
     fingerprint: str = ""
     run_tcpdump: bool = field(default=True)
+    enable_perf: bool = field(default=False)
 
 
 @dataclass
@@ -140,14 +141,16 @@ def setup_api(node_params: List[Tuple[bool, IPStack]]) -> Tuple[API, List[Node]]
     return api, nodes
 
 
+SetupConnectionsParam = Union[
+    ConnectionTag,
+    Tuple[ConnectionTag, Optional[List[ConnTrackerEventsValidator]]],
+    Tuple[ConnectionTag, Optional[List[ConnTrackerEventsValidator]], bool],
+]
+
+
 async def setup_connections(
     exit_stack: AsyncExitStack,
-    connection_parameters: List[
-        Union[
-            ConnectionTag,
-            Tuple[ConnectionTag, Optional[List[ConnTrackerEventsValidator]]],
-        ]
-    ],
+    connection_parameters: List[SetupConnectionsParam],
 ) -> List[ConnectionManager]:
     """Creates connections to the containers corresponding to a given connection tags.
 
@@ -191,7 +194,7 @@ async def setup_clients(
             Features,
             str,
             Optional[Config],
-            Optional[bool],
+            bool,
         ]
     ],
 ) -> List[Client]:
@@ -218,9 +221,9 @@ async def setup_clients(
                 adapter_type_override,
                 features,
                 fingerprint=fingerprint,
-            ).run(meshnet_config, run_tcpdump=run_tcpdump)
+            ).run(meshnet_config, enable_perf=enable_perf)
         )
-        for connection, node, adapter_type_override, features, fingerprint, meshnet_config, run_tcpdump in client_parameters
+        for connection, node, adapter_type_override, features, fingerprint, meshnet_config, enable_perf in client_parameters
     ])
 
 
@@ -229,7 +232,7 @@ async def setup_environment(
     exit_stack: AsyncExitStack,
     instances: List[SetupParameters],
     provided_api: Optional[API] = None,
-    prepare_vpn: bool = False,
+    vpn: Optional[List[ConnectionTag]] = None,
 ) -> AsyncIterator[Environment]:
     """Sets up the basic environment based on the given parameters.
 
@@ -237,7 +240,7 @@ async def setup_environment(
     * `setup_api` (creates mocked core API (if not provided)),
     * `setup_connections` (sets up the connections to the docker containers) and
     * `setup_clients` (creates clients using the given configuration)
-    * `prepare_vpn` - Indicates whether VPN containers are needed for the test.
+    * `vpn` - List of VPN container tags to prepare for the test.
     which results in the fully prepared test configuration.
     It also checks whether the number of connections is correct with the conntrackers.
 
@@ -279,7 +282,8 @@ async def setup_environment(
     * `exit_stack` - contextlib.AsyncExitStack instance to manage the async context managers execution
     * `instances` - list of the parameters for each meshnet node to be created
     * `provided_api` - optional mocked Core API instance, if provided a new one won't be created
-    * `prepare_vpn` - Indicates whether VPN containers are needed for the test.
+    * `vpn` - Optional list of VPN container tags to prepare (e.g. [ConnectionTag.DOCKER_VPN_1, ConnectionTag.VM_LINUX_NLX_1]).
+                      If None, no VPN containers are prepared.
 
     # Returns
 
@@ -299,22 +303,19 @@ async def setup_environment(
             (
                 instance.connection_tag,
                 instance.connection_tracker_config,
+                instance.run_tcpdump,
             )
             for instance in instances
         ],
     )
 
-    if prepare_vpn:
+    if vpn:
         connections = [
             await exit_stack.enter_async_context(new_connection_raw(conn_tag))
-            for conn_tag in [
-                ConnectionTag.VM_LINUX_NLX_1,
-                ConnectionTag.DOCKER_VPN_1,
-                ConnectionTag.DOCKER_VPN_2,
-            ]
+            for conn_tag in vpn
         ]
         await exit_stack.enter_async_context(make_tcpdump(connections))
-        await api.prepare_all_vpn_servers(connections)
+        await api.prepare_vpn_servers()
 
     clients = await setup_clients(
         exit_stack,
@@ -333,7 +334,7 @@ async def setup_environment(
                     )
                     for idx, instance in enumerate(instances)
                 ],
-                [instance.run_tcpdump for instance in instances],
+                [instance.enable_perf for instance in instances],
             )
         ),
     )
@@ -355,7 +356,7 @@ async def setup_mesh_nodes(
     instances: List[SetupParameters],
     is_timeout_expected: bool = False,
     provided_api: Optional[API] = None,
-    prepare_vpn: bool = False,
+    vpn: Optional[List[ConnectionTag]] = None,
 ) -> Environment:
     """The default way of setting up the test environment.
 
@@ -372,7 +373,8 @@ async def setup_mesh_nodes(
     * `instances` - list of the parameters for each meshnet node to be created
     * `is_timeout_expected` - indicates whether the nodes connection should timeout
     * `provided_api` - optional mocked Core API instance, if provided a new one won't be created
-    * `prepare_vpn` - Indicates whether VPN containers needs to be configured
+    * `vpn` - Optional list of VPN container tags to prepare (e.g. [ConnectionTag.DOCKER_VPN_1, ConnectionTag.VM_LINUX_NLX_1]).
+                      If None, no VPN containers are prepared.
 
     # Returns
 
@@ -380,17 +382,17 @@ async def setup_mesh_nodes(
     """
 
     env = await exit_stack.enter_async_context(
-        setup_environment(exit_stack, instances, provided_api, prepare_vpn)
+        setup_environment(exit_stack, instances, provided_api, vpn)
     )
 
     await asyncio.gather(*[
-        client.wait_for_state_on_any_derp([RelayState.CONNECTED])
+        client.events.wait_for_state_on_any_derp([RelayState.CONNECTED])
         for client, instance in zip_longest(env.clients, instances)
         if instance.derp_servers != []
     ])
 
     connection_future = asyncio.gather(*[
-        client.wait_for_state_peer(
+        client.events.wait_for_state_peer(
             other_node.public_key,
             [NodeState.CONNECTED],
             (
@@ -411,7 +413,7 @@ async def setup_mesh_nodes(
     ])
 
     link_state_future = asyncio.gather(*[
-        client.wait_for_link_state(
+        client.events.wait_for_link_state(
             other_node.public_key,
             LinkState.UP,
             timeout=90 if is_timeout_expected else None,

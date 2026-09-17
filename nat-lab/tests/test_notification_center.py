@@ -141,6 +141,26 @@ async def test_nc_register():
             connection
         )
 
+        # Clean up any pre-existing machines before running the test
+        machines_endpoint = f"{CORE_API_URL}/v1/meshnet/machines"
+        existing_machines = await send_https_request(
+            connection,
+            machines_endpoint,
+            "GET",
+            CORE_API_CA_CERTIFICATE_PATH,
+            authorization_header=BEARER_AUTHORIZATION_HEADER,
+        )
+        if existing_machines:
+            for machine in existing_machines:
+                await send_https_request(
+                    connection,
+                    f"{machines_endpoint}/{machine['identifier']}",
+                    "DELETE",
+                    CORE_API_CA_CERTIFICATE_PATH,
+                    expect_response=False,
+                    authorization_header=BEARER_AUTHORIZATION_HEADER,
+                )
+
         output_notifier, events = create_output_notifier(
             ["Connected to MQTT Broker", "message"]
         )
@@ -232,6 +252,7 @@ async def test_nc_register():
             authorization_header=BEARER_AUTHORIZATION_HEADER,
         )
 
+        assert machines is not None
         assert len(machines) == 0
 
         await message_event.wait()

@@ -1,13 +1,16 @@
+import asyncio
 from aiodocker import Docker
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from tests import config
 from tests.config import LAN_ADDR_MAP, LAN_ADDR_MAP_V6
 from tests.utils.connection import Connection, TargetOS, ConnectionTag
+from tests.utils.connection.adb_connection import AdbConnection
 from tests.utils.connection.docker_connection import (
     DockerConnection,
     DOCKER_GW_MAP,
     DOCKER_SERVICE_IDS,
+    container_id,
 )
 from tests.utils.connection.ssh_connection import SshConnection
 from tests.utils.connection_tracker import (
@@ -16,9 +19,12 @@ from tests.utils.connection_tracker import (
     ConnectionCountLimit,
     FiveTuple,
 )
+from tests.utils.diagnostics import connection_diagnostics
+from tests.utils.logger import log
 from tests.utils.network_switcher import (
     Interface,
     NetworkSwitcher,
+    NetworkSwitcherAndroid,
     NetworkSwitcherDocker,
     NetworkSwitcherMac,
     NetworkSwitcherWindows,
@@ -26,6 +32,8 @@ from tests.utils.network_switcher import (
     NetworkSwitcherLinux,
 )
 from typing import AsyncIterator, Tuple, Optional, List, Union
+
+IS_VM_RUNNING_PING_TIMEOUT = 3.0
 
 
 @dataclass
@@ -38,6 +46,8 @@ class ConnectionManager:
 
 def get_libtelio_binary_path(path: str, connection: Connection) -> str:
     target_os = connection.target_os
+    if connection.tag == ConnectionTag.VM_ANDROID_1:
+        return config.LIBTELIO_BINARY_PATH_VM_ANDROID + path
     if target_os == TargetOS.Linux:
         return config.LIBTELIO_BINARY_PATH_DOCKER + path
 
@@ -52,6 +62,8 @@ def get_libtelio_binary_path(path: str, connection: Connection) -> str:
 
 def get_uniffi_path(connection: Connection) -> str:
     target_os = connection.target_os
+    if connection.tag == ConnectionTag.VM_ANDROID_1:
+        return config.UNIFFI_PATH_VM_ANDROID + "libtelio_remote.py"
     if target_os == TargetOS.Linux:
         return "/libtelio/nat-lab/tests/uniffi/libtelio_remote.py"
     if target_os == TargetOS.Windows:
@@ -70,6 +82,10 @@ async def new_connection_raw(
             async with Docker() as docker:
                 async with DockerConnection.new_connection(docker, tag) as connection:
                     yield connection
+        elif tag is ConnectionTag.VM_ANDROID_1:
+            async with Docker() as docker:
+                async with AdbConnection.new_connection(docker, tag) as connection:
+                    yield connection
         elif is_tag_valid_for_ssh_connection(tag):
             async with SshConnection.new_connection(
                 LAN_ADDR_MAP[tag]["primary"], tag
@@ -86,11 +102,16 @@ async def create_network_switcher(
 ) -> NetworkSwitcher:
     if tag in DOCKER_SERVICE_IDS:
         return NetworkSwitcherDocker(connection)
-    if tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
+    if tag is ConnectionTag.VM_WINDOWS_1:
         return await NetworkSwitcherWindows.create(connection)
     if tag == ConnectionTag.VM_MAC:
         return NetworkSwitcherMac(connection)
-    if tag == ConnectionTag.VM_OPENWRT_GW_1:
+    if tag == ConnectionTag.VM_ANDROID_1:
+        return NetworkSwitcherAndroid(connection)
+    if tag in [
+        ConnectionTag.VM_OPENWRT_GW_1,
+        ConnectionTag.VM_OPENWRT_GW_3,
+    ]:
         return NetworkSwitcherOpenwrt(connection)
     if tag in [
         ConnectionTag.VM_LINUX_NLX_1,
@@ -106,31 +127,36 @@ async def create_network_switcher(
 async def new_connection_manager_by_tag(
     tag: ConnectionTag,
     conn_tracker_config: Optional[List[ConnTrackerEventsValidator]] = None,
+    run_tcpdump: bool = True,
 ) -> AsyncIterator[ConnectionManager]:
     async with new_connection_raw(tag) as connection:
         network_switcher = await create_network_switcher(tag, connection)
         await network_switcher.switch_to_primary_network()
-        if tag in DOCKER_GW_MAP:
-            async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
+        async with connection_diagnostics(connection, run_tcpdump=run_tcpdump):
+            if tag in DOCKER_GW_MAP:
+                async with new_connection_raw(DOCKER_GW_MAP[tag]) as gw_connection:
+                    async with ConnectionTracker(
+                        gw_connection, conn_tracker_config
+                    ).run() as conn_tracker:
+                        try:
+                            yield ConnectionManager(
+                                connection,
+                                gw_connection,
+                                network_switcher,
+                                conn_tracker,
+                            )
+                        finally:
+                            pass
+            else:
                 async with ConnectionTracker(
-                    gw_connection, conn_tracker_config
+                    connection, conn_tracker_config
                 ).run() as conn_tracker:
                     try:
                         yield ConnectionManager(
-                            connection,
-                            gw_connection,
-                            network_switcher,
-                            conn_tracker,
+                            connection, None, network_switcher, conn_tracker
                         )
                     finally:
                         pass
-        else:
-            async with ConnectionTracker(
-                connection, conn_tracker_config
-            ).run() as conn_tracker:
-                yield ConnectionManager(
-                    connection, None, network_switcher, conn_tracker
-                )
 
 
 @asynccontextmanager
@@ -347,9 +373,9 @@ async def remove_traffic_control_rules(connection):
 def is_tag_valid_for_ssh_connection(tag: ConnectionTag) -> bool:
     return tag in [
         ConnectionTag.VM_WINDOWS_1,
-        ConnectionTag.VM_WINDOWS_2,
         ConnectionTag.VM_MAC,
         ConnectionTag.VM_OPENWRT_GW_1,
+        ConnectionTag.VM_OPENWRT_GW_3,
         ConnectionTag.VM_LINUX_NLX_1,
         ConnectionTag.VM_LINUX_FULLCONE_GW_1,
         ConnectionTag.VM_LINUX_FULLCONE_GW_2,
@@ -361,6 +387,8 @@ def is_tag_valid_for_ssh_connection(tag: ConnectionTag) -> bool:
 async def set_secondary_ifc_state(
     connection: Connection, enable: bool, secondary_ifc: Optional[Interface] = None
 ) -> Optional[Interface]:
+    if connection.tag == ConnectionTag.VM_ANDROID_1:
+        return None  # single bridged interface, no secondary
     if connection.target_os == TargetOS.Linux:
         await connection.create_process([
             "ip",
@@ -404,3 +432,74 @@ async def toggle_secondary_adapter(connection: Connection, enable: bool):
         yield
     finally:
         await set_secondary_ifc_state(connection, not enable, secondary_ifc)
+
+
+async def running_container_names(docker: Optional[Docker] = None) -> set[str]:
+    """Snapshot the names of all running docker containers in one API call.
+
+    `containers.list()` already returns only running containers and includes their
+    names, so callers that check many tags can fetch this once instead of opening a
+    Docker client and inspecting every container per tag.
+    """
+
+    async def _collect(client: Docker) -> set[str]:
+        names: set[str] = set()
+        for container in await client.containers.list():
+            names.update(container["Names"])
+        return names
+
+    if docker is not None:
+        return await _collect(docker)
+    async with Docker() as client:
+        return await _collect(client)
+
+
+async def is_running(
+    tag: ConnectionTag, running_names: Optional[set[str]] = None
+) -> bool:
+    if tag in DOCKER_SERVICE_IDS:
+        if running_names is None:
+            running_names = await running_container_names()
+        return f"/{container_id(tag)}" in running_names
+
+    primary_ip = LAN_ADDR_MAP[tag]["primary"]
+    assert primary_ip != ""
+    proc = await asyncio.wait_for(
+        asyncio.create_subprocess_exec(
+            "ping",
+            "-c",
+            "1",
+            "-W",
+            "1",
+            primary_ip,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        ),
+        timeout=IS_VM_RUNNING_PING_TIMEOUT,
+    )
+    returncode = await asyncio.wait_for(proc.wait(), timeout=2.0)
+    if returncode == 0:
+        return True
+    log.debug("%s haven't replied to ICMP request at %s", tag, primary_ip)
+
+    secondary_ip = LAN_ADDR_MAP[tag]["secondary"]
+    if secondary_ip != "":
+        proc = await asyncio.wait_for(
+            asyncio.create_subprocess_exec(
+                "ping",
+                "-c",
+                "1",
+                "-W",
+                "1",
+                secondary_ip,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            ),
+            timeout=IS_VM_RUNNING_PING_TIMEOUT,
+        )
+        returncode = await asyncio.wait_for(proc.wait(), timeout=2.0)
+        if returncode == 0:
+            return True
+        log.debug("%s haven't replied to ICMP request at %s", tag, secondary_ip)
+
+    return False

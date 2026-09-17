@@ -4,22 +4,26 @@
 use core::fmt;
 use enum_map::{Enum, EnumMap};
 use ipnet::{IpNet, Ipv4Net, Ipv6Net};
+#[cfg(not(target_vendor = "apple"))]
+use libloading::library_filename;
 use parking_lot::RwLock;
 use pnet_packet::{
     icmp::{IcmpType, IcmpTypes},
     icmpv6::{Icmpv6Type, Icmpv6Types},
-    tcp::TcpFlags,
 };
-use smallvec::ToSmallVec;
 use std::{
-    ffi::c_void,
+    ffi::{c_void, CString},
     fmt::Debug,
     io::{self},
-    net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr, SocketAddr},
+    net::{IpAddr as StdIpAddr, Ipv4Addr as StdIpv4Addr, Ipv6Addr as StdIpv6Addr},
 };
+use thiserror::Error;
 
-use telio_model::features::{FeatureFirewall, IpProtocol};
-use telio_network_monitors::monitor::{LocalInterfacesObserver, LOCAL_ADDRS_CACHE};
+use telio_model::{
+    features::{FeatureFirewall, IpProtocol},
+    tp_lite_stats::{DnsRedirect, TpLiteStatsCallback, TpLiteStatsOptions},
+};
+use telio_network_monitors::monitor::LocalInterfacesObserver;
 
 use telio_crypto::PublicKey;
 use telio_utils::{
@@ -28,17 +32,15 @@ use telio_utils::{
 
 use crate::{
     chain_helpers::{
-        ConnectionState, Direction, FfiChainGuard, Filter, FilterData, NetworkFilterData,
-        NextLevelProtocol, Rule,
+        Direction, FfiChainGuard, Filter, FilterData, NetworkFilterData, NextLevelProtocol, Rule,
+        RuleAction,
     },
-    ffi_chain::{LibfwChain, LibfwVerdict},
-    libfirewall_api::{
-        libfw_configure_chain, libfw_deinit, libfw_init, libfw_process_inbound_packet,
-        libfw_process_outbound_packet, libfw_set_log_callback,
-        libfw_trigger_stale_connection_close, LibfwFirewall,
-    },
-    log::LibfwLogLevel,
+    libfirewall::{LibfwChainV2, LibfwFirewall, LibfwLogLevel, LibfwResult, LibfwVerdict},
+    tp_lite_stats::{collect_stats, CallbackManager},
 };
+
+#[mockall_double::double]
+use crate::libfirewall::Libfirewall;
 
 /// HashSet type used internally by firewall and returned by get_peer_whitelist
 pub type HashSet<V> = rustc_hash::FxHashSet<V>;
@@ -62,6 +64,18 @@ const ICMPV6_BLOCKED_TYPES: [u8; 4] = [
 /// File sending port
 pub const FILE_SEND_PORT: u16 = 49111;
 
+/// Type for chain configuration function
+pub(crate) type ConfigureChainFn = Box<
+    dyn Fn(
+            &FirewallConfig,
+            &FirewallDynamicState,
+            &FirewallConfiguredState,
+            &[StdIpAddr],
+        ) -> FfiChainGuard
+        + Send
+        + Sync,
+>;
+
 #[allow(dead_code)]
 pub(crate) trait Icmp: Sized {
     const BLOCKED_TYPES: [u8; 4];
@@ -77,36 +91,12 @@ impl Icmp for Icmpv6Type {
 
 /// Firewall trait.
 #[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
-pub trait Firewall {
-    /// Clears the port whitelist
-    fn clear_port_whitelist(&self);
+pub trait Firewall: Sync + Send {
+    /// Applies a new firewall state and updates the chain if it differs from current state
+    fn apply_dynamic_state(&self, state: FirewallDynamicState);
 
-    /// Add port on peer to whitelist
-    fn add_to_port_whitelist(&self, peer: PublicKey, port: u16);
-
-    /// Remove peer from port whitelist
-    fn remove_from_port_whitelist(&self, peer: PublicKey);
-
-    /// Returns a whitelist of ports
-    fn get_port_whitelist(&self) -> HashMap<PublicKey, u16>;
-
-    /// Clears the peer whitelist
-    fn clear_peer_whitelists(&self);
-
-    /// Add peer to whitelist
-    fn add_to_peer_whitelist(&self, peer: PublicKey, permissions: Permissions);
-
-    /// Remove peer from whitelist
-    fn remove_from_peer_whitelist(&self, peer: PublicKey, permissions: Permissions);
-
-    /// Returns a whitelist of peers
-    fn get_peer_whitelist(&self, permissions: Permissions) -> HashSet<PublicKey>;
-
-    /// Adds vpn peer public key
-    fn add_vpn_peer(&self, vpn_peer: PublicKey);
-
-    /// Removes vpn peer
-    fn remove_vpn_peer(&self);
+    /// Returns a clone of the current firewall state
+    fn get_dynamic_state(&self) -> FirewallDynamicState;
 
     /// For new connections it opens a pinhole for incoming connection
     /// If connection is already cached, it resets its timer and extends its lifetime
@@ -114,7 +104,7 @@ pub trait Firewall {
     fn process_outbound_packet(
         &self,
         public_key: &[u8; 32],
-        buffer: &[u8],
+        buffer: &mut [u8],
         sink: &mut dyn io::Write,
     ) -> bool;
 
@@ -122,14 +112,11 @@ pub trait Firewall {
     /// Does not extend pinhole lifetime on success
     /// Adds new connection to cache only if ip is whitelisted
     /// Allows all icmp packets except for request types
-    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool;
+    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &mut [u8]) -> bool;
 
     /// Creates packets that are supposed to kill the existing connections.
-    /// The end goal here is to fore the client app sockets to reconnect.
+    /// The end goal here is to force the client app sockets to reconnect.
     fn reset_connections(&self, pubkey: &PublicKey, sink: &mut dyn io::Write);
-
-    /// Saves local node Ip address into firewall object
-    fn set_ip_addresses(&self, ip_addrs: Vec<StdIpAddr>);
 }
 
 /// Possible permissions of the peer
@@ -162,185 +149,439 @@ impl fmt::Display for Permissions {
     }
 }
 
-#[derive(Default)]
-struct Whitelist {
+/// Whitelist configuration for the firewall
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct Whitelist {
     /// List of whitelisted source peer and destination port pairs
-    port_whitelist: HashMap<PublicKey, u16>,
-
+    pub port_whitelist: HashMap<PublicKey, u16>,
     /// Whitelisted peers of different permissions
-    peer_whitelists: EnumMap<Permissions, HashSet<PublicKey>>,
-
+    pub peer_whitelists: EnumMap<Permissions, HashSet<PublicKey>>,
     /// Public key of vpn peer
-    vpn_peer: Option<PublicKey>,
+    pub vpn_peer: Option<PublicKey>,
 }
 
-/// Statefull packet-filter firewall.
-pub struct StatefullFirewall {
+/// Dynamic state for firewall rules that is updated dynamically by wg_controller's consolidation.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FirewallDynamicState {
+    /// Whitelist configuration
+    pub whitelist: Whitelist,
+    /// Local node ip addresses
+    pub ip_addresses: Vec<StdIpAddr>,
+    /// Source address(es) of the tunnel interface, when known. When non-empty,
+    /// the firewall rejects outbound packets whose source IP is not one of
+    /// these addresses, protecting the VPN tunnel from accidental leaks.
+    /// When empty, this protection is disabled.
+    pub tunnel_ips: Vec<StdIpAddr>,
+}
+
+/// Configured state that is configured via tp_lite API calls.
+#[derive(Clone, Debug, Default)]
+pub struct FirewallConfiguredState {
+    /// List of DNS server IPs for which only plaintext DNS should be allowed
+    pub force_plaintext_dns_for_servers: Option<Vec<StdIpAddr>>,
+    /// Domain patterns whitelisted from TP-Lite DNS
+    pub tp_lite_whitelisted_domains: Vec<String>,
+    /// TP-Lite DNS whitelisting redirects: pairs of (blocking, standard) DNS
+    /// server endpoints. Outbound DNS queries (UDP) to a `blocking` endpoint
+    /// whose QNAME matches a whitelisted domain are DNAT-rewritten to the
+    /// corresponding `standard` endpoint. Empty disables the redirect.
+    pub tp_lite_dns_redirects: Vec<DnsRedirect>,
+}
+
+/// Configuration for firewall initialization.
+/// These parameters are set once during firewall creation and cannot be changed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FirewallConfig {
+    /// Whether IPv6 traffic is allowed
+    pub allow_ipv6: bool,
+    /// Feature firewall configuration
+    pub feature: FeatureFirewall,
+}
+
+/// Stateful packet-filter firewall.
+pub struct StatefulFirewall {
+    /// Firewall loaded library
+    firewall_lib: Libfirewall,
     /// Libfirewall instance
     firewall: *mut LibfwFirewall,
-    /// Whitelist of networks/peers allowed to connect
-    whitelist: RwLock<Whitelist>,
-    /// Indicates whether the firewall should use IPv6
-    allow_ipv6: bool,
-    /// Local node ip addresses
-    ip_addresses: RwLock<Vec<StdIpAddr>>,
-    /// Custom IPv4 range to check against
-    exclude_ip_range: Option<Ipv4Net>,
-    /// Blacklist for outgoing TCP connections
-    outgoing_tcp_blacklist: RwLock<Vec<SocketAddr>>,
-    /// Blacklist for outgoing UDP connections
-    outgoing_udp_blacklist: RwLock<Vec<SocketAddr>>,
+    /// Firewall configuration set at initialization
+    config: FirewallConfig,
+    /// Dynamic state
+    dynamic_state: RwLock<FirewallDynamicState>,
+    /// IP addresses currently assigned to the host's local network interfaces,
+    /// as last reported by the network monitor.
+    interface_ips: RwLock<Vec<StdIpAddr>>,
+    /// Configured state
+    configured_state: RwLock<FirewallConfiguredState>,
+    /// Chain configuration function
+    configure_chain_fn: ConfigureChainFn,
+    /// Callback for TP-Lite stats
+    tp_lite_stats_cb: CallbackManager,
 }
 
 // Access to internal firewall structs is guarded by locks, so that should be fine
-unsafe impl Sync for StatefullFirewall {}
-unsafe impl Send for StatefullFirewall {}
+unsafe impl Sync for StatefulFirewall {}
+unsafe impl Send for StatefulFirewall {}
 
-impl LocalInterfacesObserver for StatefullFirewall {
-    fn notify(&self) {
-        self.recreate_chain();
+impl LocalInterfacesObserver for StatefulFirewall {
+    fn notify(&self, addrs: &[StdIpAddr]) {
+        telio_log_debug!("Firewall notified about network changes: {:?}", addrs);
+
+        *self.interface_ips.write() = addrs.to_vec();
+        self.refresh_chain();
     }
 }
 
-impl Drop for StatefullFirewall {
+impl Drop for StatefulFirewall {
     fn drop(&mut self) {
         unsafe {
-            libfw_deinit(self.firewall);
+            self.firewall_lib.libfw_deinit(self.firewall);
         }
     }
 }
 
-impl StatefullFirewall {
+/// Firewall errors
+#[derive(Debug, Error)]
+pub enum Error {
+    /// Failed to load libfirewall
+    #[error(transparent)]
+    LibfirewallLoadFailed(libloading::Error),
+    /// Failed to initialize firewall
+    #[error("Firewall initialization failed")]
+    FirewallInitFailed,
+    /// Invalid TP-Lite stats collection config
+    #[error("Invalid TP-Lite stats collection config")]
+    InvalidTpLiteConfig,
+    /// Failed to initialize TP-Lite stats collection
+    #[error("TP-Lite stats collection initialization failed with error code {0}")]
+    TpLiteInitFailed(LibfwResult::Type),
+}
+
+impl StatefulFirewall {
     /// Constructs firewall with libfw structure pointer
-    pub fn new(use_ipv6: bool, feature: &FeatureFirewall) -> Self {
+    pub fn new(use_ipv6: bool, feature: FeatureFirewall) -> Result<Self, Error> {
+        Self::new_with_fn(use_ipv6, feature, Box::new(configure_chain))
+    }
+
+    /// Constructs firewall with a custom chain configuration function
+    pub(crate) fn new_with_fn(
+        use_ipv6: bool,
+        feature: FeatureFirewall,
+        configure_chain_fn: ConfigureChainFn,
+    ) -> Result<Self, Error> {
+        let firewall_lib = Self::load_fw_module().map_err(Error::LibfirewallLoadFailed)?;
+
         // Let's initialize libfirewall logging first.
         // We use TRACE level, which will be telio's level in pracice,
         // as we use telio logging macros inside.
-        libfw_set_log_callback(LibfwLogLevel::LibfwLogLevelTrace, Some(log_callback));
+        unsafe {
+            firewall_lib
+                .libfw_set_log_callback(LibfwLogLevel::LibfwLogLevelTrace, Some(log_callback));
+        }
 
-        let result = Self {
-            firewall: libfw_init(),
-            whitelist: RwLock::new(Whitelist::default()),
+        // Create firewall instance
+        let firewall = unsafe { firewall_lib.libfw_init() };
+        if firewall.is_null() {
+            return Err(Error::FirewallInitFailed);
+        }
+
+        let config = FirewallConfig {
             allow_ipv6: use_ipv6,
-            ip_addresses: RwLock::new(Vec::<StdIpAddr>::new()),
-            exclude_ip_range: feature.exclude_private_ip_range.map(Into::into),
-            outgoing_tcp_blacklist: RwLock::new(
-                feature
-                    .outgoing_blacklist
-                    .iter()
-                    .filter_map(|i| {
-                        if i.protocol == IpProtocol::TCP {
-                            Some(SocketAddr::new(i.ip, i.port))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect(),
-            ),
-            outgoing_udp_blacklist: RwLock::new(
-                feature
-                    .outgoing_blacklist
-                    .iter()
-                    .filter_map(|i| {
-                        if i.protocol == IpProtocol::UDP {
-                            Some(SocketAddr::new(i.ip, i.port))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect(),
-            ),
+            feature,
         };
 
-        result.recreate_chain();
+        let result = Self {
+            firewall_lib,
+            firewall,
+            config,
+            dynamic_state: RwLock::new(FirewallDynamicState::default()),
+            interface_ips: RwLock::new(Vec::new()),
+            configured_state: RwLock::new(FirewallConfiguredState::default()),
+            configure_chain_fn,
+            tp_lite_stats_cb: CallbackManager::new(),
+        };
 
-        result
+        result.refresh_chain();
+
+        Ok(result)
     }
 
-    fn dst_net_all_ports_filter(net: IpNet, inverted: bool) -> Filter {
-        Filter {
-            filter_data: FilterData::DstNetwork(NetworkFilterData {
-                network: net,
-                port_range: (0, 65535),
-            }),
-            inverted,
-        }
+    #[cfg(not(target_vendor = "apple"))]
+    fn load_fw_module() -> Result<Libfirewall, libloading::Error> {
+        unsafe { Libfirewall::new(library_filename("firewall")) }
     }
 
-    fn get_local_area_networks_filters(&self) -> Vec<Vec<Filter>> {
-        // Create rules for peers with LocalAreaConnection permissions
-        let ipv4_local_area_networks = [
-            Ipv4Net::new_assert(StdIpv4Addr::new(10, 0, 0, 0), 8),
-            Ipv4Net::new_assert(StdIpv4Addr::new(172, 16, 0, 0), 12),
-            Ipv4Net::new_assert(StdIpv4Addr::new(192, 168, 0, 0), 16),
-        ];
+    #[cfg(target_vendor = "apple")]
+    fn load_fw_module() -> Result<Libfirewall, libloading::Error> {
+        const EXPECTED_PATH: &str = "@rpath/firewallFFI.framework/firewallFFI";
+        const FALLBACK_PATH: &str = "libfirewall.dylib";
 
-        // Include packets which are going to local IPv4 networks
-        let mut ipv4_local_area_network_filters = ipv4_local_area_networks
-            .map(|network| vec![Self::dst_net_all_ports_filter(IpNet::V4(network), false)]);
+        unsafe {
+            match Libfirewall::new(EXPECTED_PATH) {
+                Ok(lib) => Ok(lib),
+                Err(err) => {
+                    telio_log_warn!(
+                    "Failed to load firewall module from: {EXPECTED_PATH}, trying from: {FALLBACK_PATH}"
+                );
 
-        // Exclude packets from the exclude range
-        if let Some(exclude_range) = self.exclude_ip_range {
-            for local_net_filters in ipv4_local_area_network_filters.iter_mut() {
-                local_net_filters.push(Self::dst_net_all_ports_filter(
-                    IpNet::V4(exclude_range),
-                    true,
-                ));
-            }
-        }
+                    // try fallback path
+                    if let Ok(lib) = Libfirewall::new(FALLBACK_PATH) {
+                        telio_log_warn!(
+                            "Using firewall module from fallback path: {FALLBACK_PATH}"
+                        );
+                        return Ok(lib);
+                    }
 
-        let mut ipv6_local_area_network_filters = vec![
-            // Include packets which are going to local network
-            Self::dst_net_all_ports_filter(
-                IpNet::V6(Ipv6Net::new_assert(
-                    // TODO: Actually it Unique Local Address range should be (from what I found) fc00::/7,
-                    // but it seems that we assume (and our tests do) that it is fc00::/6
-                    StdIpv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0),
-                    6,
-                )),
-                false,
-            ),
-            // Exclude packets which are going to local interfaces
-            Self::dst_net_all_ports_filter(
-                IpNet::V6(Ipv6Net::new_assert(
-                    StdIpv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 0),
-                    64,
-                )),
-                true,
-            ),
-        ];
-
-        for ip in LOCAL_ADDRS_CACHE.lock().iter().map(|peer| peer.ip()) {
-            if ip.is_ipv4() {
-                for local_network_filters in ipv4_local_area_network_filters.iter_mut() {
-                    local_network_filters
-                        .push(Self::dst_net_all_ports_filter(IpNet::from(ip), true));
+                    Err(err)
                 }
-            } else {
-                ipv6_local_area_network_filters
-                    .push(Self::dst_net_all_ports_filter(IpNet::from(ip), true));
             }
         }
-
-        let mut result = Vec::from(ipv4_local_area_network_filters);
-        result.push(ipv6_local_area_network_filters);
-        result
     }
 
-    fn recreate_chain(&self) {
-        let mut rules = vec![];
+    fn refresh_chain(&self) {
+        let interface_ips = self.interface_ips.read().clone();
+        let dynamic_state = self.dynamic_state.read().clone();
+        let configured_state = self.configured_state.read().clone();
 
-        // Drop all IPv6 packets when we don't allow ipv6 traffic
-        const ALL_IP_V6_ADDRS: IpNet = IpNet::V6(Ipv6Net::new_assert(StdIpv6Addr::UNSPECIFIED, 0));
-        if !self.allow_ipv6 {
-            rules.push(Rule {
-                filters: vec![Self::dst_net_all_ports_filter(ALL_IP_V6_ADDRS, false)],
-                action: LibfwVerdict::LibfwVerdictDrop,
-            });
+        let ffi_chain = (self.configure_chain_fn)(
+            &self.config,
+            &dynamic_state,
+            &configured_state,
+            &interface_ips,
+        );
+
+        unsafe {
+            self.firewall_lib.libfw_configure_chain_v2(
+                self.firewall,
+                (&ffi_chain.ffi_chain) as *const LibfwChainV2,
+            );
+        }
+    }
+
+    /// Register callback to get metrics and domains blocked by TP-Lite
+    ///
+    /// Requires firewall to be enabled through setting firewall field of Features object
+    /// to a non-null value
+    ///
+    /// Passing empty list of IPs will disable the collection of TP-Lite stats
+    pub fn enable_tp_lite_stats_collection(
+        &self,
+        config: TpLiteStatsOptions,
+        collect_stats_cb: Box<dyn TpLiteStatsCallback>,
+    ) -> Result<(), Error> {
+        let force_plaintext_dns_for_servers = config
+            .force_plaintext_dns
+            .unwrap_or(false)
+            .then(|| config.dns_server_ips.clone());
+
+        let config = serde_json::to_string(&config).map_err(|err| {
+            telio_log_warn!("Failed to convert TP-Lite config to json. {err:?}");
+            Error::InvalidTpLiteConfig
+        })?;
+        let config = CString::new(config).map_err(|err| {
+            telio_log_warn!("Failed to convert TP-Lite config to FFI string. {err:?}");
+            Error::InvalidTpLiteConfig
+        })?;
+        // There can be a scenario where the old callback gets dropped, but libfw
+        // tries to invoke it before we set the new callback.
+        // To prevent that from happening we keep the old callback around until libfw has been updated.
+        let mut old_cb = Box::new(collect_stats_cb);
+        {
+            let mut cb = self.tp_lite_stats_cb.callback.write();
+            std::mem::swap(&mut old_cb, &mut cb);
         }
 
-        // Drop packets from UDP blacklist
-        for peer in self.outgoing_udp_blacklist.read().iter() {
+        self.configured_state
+            .write()
+            .force_plaintext_dns_for_servers = force_plaintext_dns_for_servers;
+        self.refresh_chain();
+
+        let res = unsafe {
+            self.firewall_lib.libfw_enable_tp_lite_stats_collection(
+                self.firewall,
+                config.as_ptr(),
+                self.tp_lite_stats_cb.as_raw_ptr(),
+                Some(collect_stats),
+            )
+        };
+        match res {
+            LibfwResult::LibfwSuccess => Ok(()),
+            _ => {
+                telio_log_warn!("Failed to init TP-Lite stats collection. Error code: {res:?}");
+                Err(Error::TpLiteInitFailed(res))
+            }
+        }
+    }
+
+    /// Disable collection of TP-Lite stats
+    pub fn disable_tp_lite_stats_collection(&self) {
+        self.configured_state
+            .write()
+            .force_plaintext_dns_for_servers = None;
+        self.refresh_chain();
+
+        unsafe {
+            self.firewall_lib
+                .libfw_disable_tp_lite_stats_collection(self.firewall)
+        };
+    }
+
+    /// Set the TP-Lite DNS whitelisting configuration: the whitelisted domains
+    /// and the (blocking, standard) DNS server redirect pairs. Both are applied
+    /// together, reconfiguring the firewall to DNAT-redirect matching queries.
+    pub fn set_tp_lite_domain_whitelist(&self, domains: Vec<String>, redirects: Vec<DnsRedirect>) {
+        self.configured_state.write().tp_lite_whitelisted_domains = domains;
+        self.configured_state.write().tp_lite_dns_redirects = redirects;
+        self.refresh_chain();
+    }
+}
+
+fn filter_dst_ip_all_ports(net: IpNet, inverted: bool) -> Filter {
+    Filter {
+        filter_data: FilterData::DstNetwork(NetworkFilterData {
+            network: net,
+            port_range: (0, 65535),
+        }),
+        inverted,
+    }
+}
+
+fn filter_dst_ip_single_port(net: IpNet, port: u16, inverted: bool) -> Filter {
+    Filter {
+        filter_data: FilterData::DstNetwork(NetworkFilterData {
+            network: net,
+            port_range: (port, port),
+        }),
+        inverted,
+    }
+}
+
+fn filter_src_ip_all_ports(net: IpNet, inverted: bool) -> Filter {
+    Filter {
+        filter_data: FilterData::SrcNetwork(NetworkFilterData {
+            network: net,
+            port_range: (0, 65535),
+        }),
+        inverted,
+    }
+}
+
+fn get_local_area_networks_filters(
+    exclude_ip_range: Option<Ipv4Net>,
+    local_ifs_addrs: &[StdIpAddr],
+) -> Vec<Vec<Filter>> {
+    // Create rules for peers with LocalAreaConnection permissions
+    let ipv4_local_area_networks = [
+        Ipv4Net::new_assert(StdIpv4Addr::new(10, 0, 0, 0), 8),
+        Ipv4Net::new_assert(StdIpv4Addr::new(172, 16, 0, 0), 12),
+        Ipv4Net::new_assert(StdIpv4Addr::new(192, 168, 0, 0), 16),
+    ];
+
+    // Include packets which are going to local IPv4 networks
+    let mut ipv4_local_area_network_filters = ipv4_local_area_networks
+        .map(|network| vec![filter_dst_ip_all_ports(IpNet::V4(network), false)]);
+
+    // Exclude packets from the exclude range
+    if let Some(exclude_range) = exclude_ip_range {
+        for local_net_filters in ipv4_local_area_network_filters.iter_mut() {
+            local_net_filters.push(filter_dst_ip_all_ports(IpNet::V4(exclude_range), true));
+        }
+    }
+
+    let mut ipv6_local_area_network_filters = vec![
+        // Include packets which are going to local network
+        filter_dst_ip_all_ports(
+            IpNet::V6(Ipv6Net::new_assert(
+                // TODO: Actually it Unique Local Address range should be (from what I found) fc00::/7,
+                // but it seems that we assume (and our tests do) that it is fc00::/6
+                StdIpv6Addr::new(0xfc00, 0, 0, 0, 0, 0, 0, 0),
+                6,
+            )),
+            false,
+        ),
+        // Exclude packets which are going to local interfaces
+        filter_dst_ip_all_ports(
+            IpNet::V6(Ipv6Net::new_assert(
+                StdIpv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 0),
+                64,
+            )),
+            true,
+        ),
+    ];
+
+    for ip in local_ifs_addrs.iter() {
+        if ip.is_ipv4() {
+            for local_network_filters in ipv4_local_area_network_filters.iter_mut() {
+                local_network_filters.push(filter_dst_ip_all_ports(IpNet::from(*ip), true));
+            }
+        } else {
+            ipv6_local_area_network_filters.push(filter_dst_ip_all_ports(IpNet::from(*ip), true));
+        }
+    }
+
+    let mut result = Vec::from(ipv4_local_area_network_filters);
+    result.push(ipv6_local_area_network_filters);
+    result
+}
+
+/// Builds the rule list for the firewall chain. Separated from configure_chain
+/// so tests can inspect the Rule vec directly.
+pub(crate) fn build_chain_rules(
+    config: &FirewallConfig,
+    dynamic_state: &FirewallDynamicState,
+    configured_state: &FirewallConfiguredState,
+    local_ifs_addrs: &[StdIpAddr],
+) -> Vec<Rule> {
+    let mut rules = vec![];
+
+    if let Some(dns_server_ips) = &configured_state.force_plaintext_dns_for_servers {
+        dns_server_ips.iter().for_each(|ip| {
+            rules.push(Rule {
+                filters: vec![
+                    filter_dst_ip_all_ports(IpNet::from(*ip), false),
+                    filter_dst_ip_single_port(IpNet::from(*ip), 53, true),
+                ],
+                action: RuleAction::Reject,
+            });
+        });
+    }
+
+    // Drop all IPv6 packets when we don't allow ipv6 traffic
+    const ALL_IP_V6_ADDRS: IpNet = IpNet::V6(Ipv6Net::new_assert(StdIpv6Addr::UNSPECIFIED, 0));
+    if !config.allow_ipv6 {
+        rules.push(Rule {
+            filters: vec![filter_dst_ip_all_ports(ALL_IP_V6_ADDRS, false)],
+            action: RuleAction::Drop,
+        });
+    }
+
+    // Reject packets from blacklist
+    for blacklist_entry in &config.feature.outgoing_blacklist {
+        let next_level_protocol = match blacklist_entry.protocol {
+            IpProtocol::UDP => NextLevelProtocol::Udp,
+            IpProtocol::TCP => NextLevelProtocol::Tcp,
+        };
+        rules.push(Rule {
+            filters: vec![
+                Filter {
+                    filter_data: FilterData::Direction(Direction::Outbound),
+                    inverted: false,
+                },
+                Filter {
+                    filter_data: FilterData::NextLevelProtocol(next_level_protocol),
+                    inverted: false,
+                },
+                filter_dst_ip_all_ports(IpNet::from(blacklist_entry.ip), false),
+            ],
+            action: RuleAction::Reject,
+        });
+    }
+
+    // DNS whitelisting: redirect outbound DNS queries for whitelisted domains
+    // away from the "blocking" DNS server to the "standard" one via DNAT.
+    if !configured_state.tp_lite_whitelisted_domains.is_empty() {
+        for redirect in &configured_state.tp_lite_dns_redirects {
+            let blocking_net = IpNet::from(StdIpAddr::V4(*redirect.blocking.ip()));
             rules.push(Rule {
                 filters: vec![
                     Filter {
@@ -351,177 +592,175 @@ impl StatefullFirewall {
                         filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Udp),
                         inverted: false,
                     },
-                    Self::dst_net_all_ports_filter(IpNet::from(peer.ip()), false),
-                ],
-                action: LibfwVerdict::LibfwVerdictReject,
-            });
-        }
-
-        // Drop packets from TCP blacklist
-        for peer in self.outgoing_tcp_blacklist.read().iter() {
-            rules.push(Rule {
-                filters: vec![
                     Filter {
-                        filter_data: FilterData::Direction(Direction::Outbound),
+                        filter_data: FilterData::DstNetwork(NetworkFilterData {
+                            network: blocking_net,
+                            port_range: (redirect.blocking.port(), redirect.blocking.port()),
+                        }),
                         inverted: false,
                     },
                     Filter {
-                        filter_data: FilterData::NextLevelProtocol(NextLevelProtocol::Tcp),
-                        inverted: false,
-                    },
-                    Self::dst_net_all_ports_filter(IpNet::from(peer.ip()), false),
-                ],
-                action: LibfwVerdict::LibfwVerdictReject,
-            });
-        }
-
-        rules.push(Rule {
-            filters: vec![Filter {
-                filter_data: FilterData::Direction(Direction::Outbound),
-                inverted: false,
-            }],
-            action: LibfwVerdict::LibfwVerdictAccept,
-        });
-
-        // Add VPN rule
-        if let Some(vpn_pk) = self.whitelist.read().vpn_peer {
-            rules.push(Rule {
-                filters: vec![Filter {
-                    filter_data: FilterData::AssociatedData(Some(vpn_pk.to_smallvec())),
-                    inverted: false,
-                }],
-                action: LibfwVerdict::LibfwVerdictAccept,
-            });
-        }
-
-        let local_network_filters = self.get_local_area_networks_filters();
-
-        #[allow(clippy::indexing_slicing)]
-        for peer in self.whitelist.read().peer_whitelists[Permissions::LocalAreaConnections].iter()
-        {
-            for local_net in local_network_filters.iter() {
-                let mut filters = vec![Filter {
-                    filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
-                    inverted: false,
-                }];
-                filters.extend_from_slice(local_net);
-                rules.push(Rule {
-                    filters,
-                    action: LibfwVerdict::LibfwVerdictAccept,
-                });
-            }
-        }
-
-        // For nodes not included in the whitelist this packet should be dropped
-        for filters in local_network_filters {
-            rules.push(Rule {
-                filters,
-                action: LibfwVerdict::LibfwVerdictDrop,
-            });
-        }
-
-        // Rules for incoming connections
-        let local_ip = self.ip_addresses.read();
-        for ip in local_ip.iter() {
-            // Accept packets for whitelisted peers
-            #[allow(clippy::indexing_slicing)]
-            for peer in
-                self.whitelist.read().peer_whitelists[Permissions::IncomingConnections].iter()
-            {
-                rules.push(Rule {
-                    filters: vec![
-                        Filter {
-                            filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
-                            inverted: false,
-                        },
-                        Self::dst_net_all_ports_filter(IpNet::from(*ip), false),
-                    ],
-                    action: LibfwVerdict::LibfwVerdictAccept,
-                });
-            }
-
-            // Accept packets for locally initiated connections
-            rules.push(Rule {
-                filters: vec![
-                    Filter {
-                        filter_data: FilterData::ConntrackState(ConnectionState::Established),
-                        inverted: false,
-                    },
-                    Self::dst_net_all_ports_filter(IpNet::from(*ip), false),
-                ],
-                action: LibfwVerdict::LibfwVerdictAccept,
-            });
-
-            // Accept certain TCP packets for finished connections
-            rules.push(Rule {
-                filters: vec![
-                    Filter {
-                        filter_data: FilterData::ConntrackState(ConnectionState::Closed),
-                        inverted: false,
-                    },
-                    Filter {
-                        filter_data: FilterData::TcpFlags(
-                            TcpFlags::ACK | TcpFlags::FIN | TcpFlags::RST,
+                        filter_data: FilterData::DnsQueryDomain(
+                            configured_state.tp_lite_whitelisted_domains.clone(),
                         ),
                         inverted: false,
                     },
-                    Self::dst_net_all_ports_filter(IpNet::from(*ip), false),
                 ],
-                action: LibfwVerdict::LibfwVerdictAccept,
-            });
-
-            // Accept packets for whitelisted ports
-            for proto in [NextLevelProtocol::Tcp, NextLevelProtocol::Udp] {
-                for (peer, &port) in self.whitelist.read().port_whitelist.iter() {
-                    rules.push(Rule {
-                        filters: vec![
-                            Filter {
-                                filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
-                                inverted: false,
-                            },
-                            Filter {
-                                filter_data: FilterData::NextLevelProtocol(proto),
-                                inverted: false,
-                            },
-                            Filter {
-                                filter_data: FilterData::DstNetwork(NetworkFilterData {
-                                    network: IpNet::from(*ip),
-                                    port_range: (port, port),
-                                }),
-                                inverted: false,
-                            },
-                        ],
-                        action: LibfwVerdict::LibfwVerdictAccept,
-                    });
-                }
-            }
-
-            // Drop rest of the packets going to local interfaces
-            rules.push(Rule {
-                filters: vec![Self::dst_net_all_ports_filter(IpNet::from(*ip), false)],
-                action: LibfwVerdict::LibfwVerdictDrop,
+                action: RuleAction::Dnat(redirect.standard),
             });
         }
-
-        #[allow(clippy::indexing_slicing)]
-        for peer in self.whitelist.read().peer_whitelists[Permissions::RoutingConnections].iter() {
-            rules.push(Rule {
-                filters: vec![Filter {
-                    filter_data: FilterData::AssociatedData(Some(peer.to_smallvec())),
-                    inverted: false,
-                }],
-                action: LibfwVerdict::LibfwVerdictAccept,
-            });
-        }
-
-        let ffi_chain_guard: FfiChainGuard = (rules.as_slice()).into();
-        unsafe {
-            libfw_configure_chain(
-                self.firewall,
-                (&ffi_chain_guard.ffi_chain) as *const LibfwChain,
-            )
-        };
     }
+
+    // Reject outbound packets with a wrong source IP (not a tunnel IP).
+    // Has to be placed before the blanket outbound-accept rule below
+    // so it takes effect.
+    if !dynamic_state.tunnel_ips.is_empty() {
+        let mut filters = vec![Filter {
+            filter_data: FilterData::Direction(Direction::Outbound),
+            inverted: false,
+        }];
+        for tunnel_ip in &dynamic_state.tunnel_ips {
+            filters.push(filter_src_ip_all_ports(IpNet::from(*tunnel_ip), true));
+        }
+        let reject_rule = Rule {
+            filters,
+            action: RuleAction::Reject,
+        };
+
+        rules.push(reject_rule);
+    }
+
+    rules.push(Rule {
+        filters: vec![Filter {
+            filter_data: FilterData::Direction(Direction::Outbound),
+            inverted: false,
+        }],
+        action: RuleAction::Accept,
+    });
+
+    // Add VPN rule
+    if let Some(vpn_pk) = dynamic_state.whitelist.vpn_peer {
+        rules.push(Rule {
+            filters: vec![Filter {
+                filter_data: FilterData::AssociatedData(Some(vpn_pk.to_vec())),
+                inverted: false,
+            }],
+            action: RuleAction::Accept,
+        });
+    }
+
+    let local_network_filters = get_local_area_networks_filters(
+        config.feature.exclude_private_ip_range.map(Into::into),
+        local_ifs_addrs,
+    );
+
+    #[allow(clippy::indexing_slicing)]
+    for peer in dynamic_state.whitelist.peer_whitelists[Permissions::LocalAreaConnections].iter() {
+        for local_net in local_network_filters.iter() {
+            let mut filters = vec![Filter {
+                filter_data: FilterData::AssociatedData(Some(peer.to_vec())),
+                inverted: false,
+            }];
+            filters.extend_from_slice(local_net);
+            rules.push(Rule {
+                filters,
+                action: RuleAction::Accept,
+            });
+        }
+    }
+
+    // For nodes not included in the whitelist this packet should be dropped
+    for filters in local_network_filters {
+        rules.push(Rule {
+            filters,
+            action: RuleAction::Drop,
+        });
+    }
+
+    // Rules for incoming connections
+    for ip in &dynamic_state.ip_addresses {
+        // Accept packets for whitelisted peers
+        #[allow(clippy::indexing_slicing)]
+        for peer in dynamic_state.whitelist.peer_whitelists[Permissions::IncomingConnections].iter()
+        {
+            rules.push(Rule {
+                filters: vec![
+                    Filter {
+                        filter_data: FilterData::AssociatedData(Some(peer.to_vec())),
+                        inverted: false,
+                    },
+                    filter_dst_ip_all_ports(IpNet::from(*ip), false),
+                ],
+                action: RuleAction::Accept,
+            });
+        }
+
+        // Accept incoming packets for connections initiated from this IP
+        rules.push(Rule {
+            filters: vec![Filter {
+                filter_data: FilterData::OrigSrcIp(*ip),
+                inverted: false,
+            }],
+            action: RuleAction::Accept,
+        });
+
+        // Accept packets for whitelisted ports
+        for proto in [NextLevelProtocol::Tcp, NextLevelProtocol::Udp] {
+            for (peer, &port) in &dynamic_state.whitelist.port_whitelist {
+                rules.push(Rule {
+                    filters: vec![
+                        Filter {
+                            filter_data: FilterData::AssociatedData(Some(peer.to_vec())),
+                            inverted: false,
+                        },
+                        Filter {
+                            filter_data: FilterData::NextLevelProtocol(proto),
+                            inverted: false,
+                        },
+                        Filter {
+                            filter_data: FilterData::DstNetwork(NetworkFilterData {
+                                network: IpNet::from(*ip),
+                                port_range: (port, port),
+                            }),
+                            inverted: false,
+                        },
+                    ],
+                    action: RuleAction::Accept,
+                });
+            }
+        }
+
+        // Drop rest of the packets going to local interfaces
+        rules.push(Rule {
+            filters: vec![filter_dst_ip_all_ports(IpNet::from(*ip), false)],
+            action: RuleAction::Drop,
+        });
+    }
+
+    #[allow(clippy::indexing_slicing)]
+    for peer in dynamic_state.whitelist.peer_whitelists[Permissions::RoutingConnections].iter() {
+        rules.push(Rule {
+            filters: vec![Filter {
+                filter_data: FilterData::AssociatedData(Some(peer.to_vec())),
+                inverted: false,
+            }],
+            action: RuleAction::Accept,
+        });
+    }
+
+    rules
+}
+
+/// Configures the firewall chain based on the provided configuration.
+pub(crate) fn configure_chain(
+    config: &FirewallConfig,
+    dynamic_state: &FirewallDynamicState,
+    configured_state: &FirewallConfiguredState,
+    local_ifs_addrs: &[StdIpAddr],
+) -> FfiChainGuard {
+    build_chain_rules(config, dynamic_state, configured_state, local_ifs_addrs)
+        .as_slice()
+        .into()
 }
 
 extern "C" fn write_to_sink(
@@ -556,78 +795,32 @@ extern "C" fn log_callback(level: LibfwLogLevel, log_line: *const std::ffi::c_ch
     }
 }
 
-impl Firewall for StatefullFirewall {
-    fn clear_port_whitelist(&self) {
-        telio_log_debug!("Clearing firewall port whitelist");
-        self.whitelist.write().port_whitelist.clear();
-        self.recreate_chain();
+impl Firewall for StatefulFirewall {
+    fn apply_dynamic_state(&self, new_state: FirewallDynamicState) {
+        if *self.dynamic_state.read() == new_state {
+            return;
+        }
+        *self.dynamic_state.write() = new_state;
+
+        self.refresh_chain();
     }
 
-    fn add_to_port_whitelist(&self, peer: PublicKey, port: u16) {
-        telio_log_debug!("Adding {peer:?}:{port} network to firewall port whitelist");
-        self.whitelist.write().port_whitelist.insert(peer, port);
-        self.recreate_chain();
-    }
-
-    fn remove_from_port_whitelist(&self, peer: PublicKey) {
-        telio_log_debug!("Removing {peer:?} network from firewall port whitelist");
-        self.whitelist.write().port_whitelist.remove(&peer);
-        self.recreate_chain();
-    }
-
-    fn get_port_whitelist(&self) -> HashMap<PublicKey, u16> {
-        self.whitelist.read().port_whitelist.clone()
-    }
-
-    fn clear_peer_whitelists(&self) {
-        telio_log_debug!("Clearing all firewall whitelist");
-        self.whitelist
-            .write()
-            .peer_whitelists
-            .iter_mut()
-            .for_each(|(_, whitelist)| whitelist.clear());
-        self.recreate_chain();
-    }
-
-    #[allow(clippy::indexing_slicing)]
-    fn add_to_peer_whitelist(&self, peer: PublicKey, permissions: Permissions) {
-        self.whitelist.write().peer_whitelists[permissions].insert(peer);
-        self.recreate_chain();
-    }
-
-    #[allow(clippy::indexing_slicing)]
-    fn remove_from_peer_whitelist(&self, peer: PublicKey, permissions: Permissions) {
-        self.whitelist.write().peer_whitelists[permissions].remove(&peer);
-        self.recreate_chain();
-    }
-
-    #[allow(clippy::indexing_slicing)]
-    fn get_peer_whitelist(&self, permissions: Permissions) -> HashSet<PublicKey> {
-        self.whitelist.read().peer_whitelists[permissions].clone()
-    }
-
-    fn add_vpn_peer(&self, vpn_peer: PublicKey) {
-        self.whitelist.write().vpn_peer = Some(vpn_peer);
-        self.recreate_chain();
-    }
-
-    fn remove_vpn_peer(&self) {
-        self.whitelist.write().vpn_peer = None;
-        self.recreate_chain();
+    fn get_dynamic_state(&self) -> FirewallDynamicState {
+        self.dynamic_state.read().clone()
     }
 
     fn process_outbound_packet(
         &self,
         public_key: &[u8; 32],
-        buffer: &[u8],
+        buffer: &mut [u8],
         sink: &mut dyn io::Write,
     ) -> bool {
         let sink_ptr = &sink as *const &mut dyn io::Write;
         LibfwVerdict::LibfwVerdictAccept
             == unsafe {
-                libfw_process_outbound_packet(
+                self.firewall_lib.libfw_process_outbound_packet(
                     self.firewall,
-                    buffer.as_ptr(),
+                    buffer.as_mut_ptr(),
                     buffer.len(),
                     public_key as *const u8,
                     public_key.len(),
@@ -641,12 +834,12 @@ impl Firewall for StatefullFirewall {
     /// Does not extend pinhole lifetime on success
     /// Adds new connection to cache only if ip is whitelisted
     /// Allows all icmp packets except for request types
-    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &[u8]) -> bool {
+    fn process_inbound_packet(&self, public_key: &[u8; 32], buffer: &mut [u8]) -> bool {
         LibfwVerdict::LibfwVerdictAccept
             == unsafe {
-                libfw_process_inbound_packet(
+                self.firewall_lib.libfw_process_inbound_packet(
                     self.firewall,
-                    buffer.as_ptr(),
+                    buffer.as_mut_ptr(),
                     buffer.len(),
                     public_key as *const u8,
                     public_key.len(),
@@ -660,7 +853,7 @@ impl Firewall for StatefullFirewall {
         telio_log_debug!("Constructing connetion reset packets");
         let sink_ptr = &sink as *const &mut dyn io::Write;
         unsafe {
-            libfw_trigger_stale_connection_close(
+            self.firewall_lib.libfw_trigger_stale_connection_close(
                 self.firewall,
                 pubkey.as_ptr(),
                 pubkey.len(),
@@ -670,56 +863,281 @@ impl Firewall for StatefullFirewall {
             );
         }
     }
-
-    fn set_ip_addresses(&self, ip_addrs: Vec<StdIpAddr>) {
-        if ip_addrs != *self.ip_addresses.read() {
-            *self.ip_addresses.write().as_mut() = ip_addrs;
-            self.recreate_chain();
-        }
-    }
-}
-
-/// The default initialization of Firewall object
-impl Default for StatefullFirewall {
-    fn default() -> Self {
-        Self::new(true, &FeatureFirewall::default())
-    }
 }
 
 #[cfg(test)]
-#[allow(missing_docs, unused)]
-pub mod tests {
-    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+mod tests {
+    use super::*;
+    use parking_lot::Mutex as ParkingLotMutex;
+    use std::net::Ipv4Addr;
+    use std::sync::Arc;
 
-    use telio_model::features::FeatureFirewall;
+    impl StatefulFirewall {
+        /// Creates a mock firewall for testing with provided mock library
+        fn new_mock(
+            use_ipv6: bool,
+            feature: FeatureFirewall,
+            configure_chain_fn: ConfigureChainFn,
+        ) -> Self {
+            let mut result = Self {
+                firewall: 0x1 as *mut crate::libfirewall::LibfwFirewall,
+                firewall_lib: crate::libfirewall::MockLibfirewall::default(),
+                dynamic_state: RwLock::new(FirewallDynamicState::default()),
+                interface_ips: RwLock::new(Vec::new()),
+                configured_state: RwLock::new(FirewallConfiguredState::default()),
+                config: FirewallConfig {
+                    allow_ipv6: use_ipv6,
+                    feature,
+                },
+                configure_chain_fn,
+                tp_lite_stats_cb: CallbackManager::new(),
+            };
 
-    use crate::firewall::{Firewall, StatefullFirewall};
+            result
+                .get_libfirewall_mock()
+                .expect_libfw_configure_chain_v2()
+                .once()
+                .returning(|_, _| crate::libfirewall::LibfwResult::LibfwSuccess);
+
+            result.refresh_chain();
+
+            result
+        }
+
+        /// Get mutable reference to mock library for setting expectations
+        fn get_libfirewall_mock(&mut self) -> &mut crate::libfirewall::MockLibfirewall {
+            &mut self.firewall_lib
+        }
+    }
 
     #[test]
-    fn ip_address_set_multiple_times() {
-        let ip_vec = vec![
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1)),
-        ];
-        let new_ip_vec = vec![
-            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)),
-            IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 1)),
-        ];
+    fn test_notify_triggers_refresh_with_callback_addrs() {
+        let captured_addrs = Arc::new(ParkingLotMutex::new(Vec::<Vec<StdIpAddr>>::new()));
+        let addrs_clone = captured_addrs.clone();
+        let spy_fn = move |_: &FirewallConfig,
+                           _: &FirewallDynamicState,
+                           _: &FirewallConfiguredState,
+                           addrs: &[StdIpAddr]| {
+            addrs_clone.lock().push(addrs.to_vec());
+            (Vec::<Rule>::new().as_slice()).into()
+        };
 
-        let fw = StatefullFirewall::new(false, &FeatureFirewall::default());
+        let mut firewall =
+            StatefulFirewall::new_mock(true, FeatureFirewall::default(), Box::new(spy_fn));
 
-        assert_eq!(fw.ip_addresses.read().len(), 0);
+        firewall
+            .get_libfirewall_mock()
+            .expect_libfw_configure_chain_v2()
+            .times(2)
+            .returning(|_, _| crate::libfirewall::LibfwResult::LibfwSuccess);
 
-        fw.set_ip_addresses(ip_vec.clone());
-        assert_eq!(fw.ip_addresses.read().len(), 2);
-        assert_eq!(*fw.ip_addresses.read(), ip_vec);
+        firewall
+            .get_libfirewall_mock()
+            .expect_libfw_deinit()
+            .once()
+            .returning(|_| {});
 
-        fw.set_ip_addresses(ip_vec.clone());
-        assert_eq!(fw.ip_addresses.read().len(), 2);
-        assert_eq!(*fw.ip_addresses.read(), ip_vec);
+        firewall.notify(&[StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 11))]);
+        firewall.notify(&[StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 12))]);
 
-        fw.set_ip_addresses(new_ip_vec.clone());
-        assert_eq!(fw.ip_addresses.read().len(), 2);
-        assert_eq!(*fw.ip_addresses.read(), new_ip_vec);
+        let calls = captured_addrs.lock();
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[0], Vec::<StdIpAddr>::new());
+        assert_eq!(
+            calls[1],
+            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 11))]
+        );
+        assert_eq!(
+            calls[2],
+            vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 0, 12))]
+        );
+    }
+
+    fn reject_rule_for_outbound_src(rules: &[Rule], ip: StdIpAddr) -> Option<&Rule> {
+        let outbound = Filter {
+            filter_data: FilterData::Direction(Direction::Outbound),
+            inverted: false,
+        };
+        let inverted_src = filter_src_ip_all_ports(IpNet::from(ip), true);
+        rules
+            .iter()
+            .filter(|r| r.action == RuleAction::Reject)
+            .find(|r| r.filters.contains(&outbound) && r.filters.contains(&inverted_src))
+    }
+
+    #[test]
+    fn test_reject_rule_not_emitted_without_tunnel_ip() {
+        let config = FirewallConfig {
+            allow_ipv6: false,
+            feature: FeatureFirewall::default(),
+        };
+        let rules = build_chain_rules(
+            &config,
+            &FirewallDynamicState::default(),
+            &FirewallConfiguredState::default(),
+            &[],
+        );
+        assert!(
+            rules.iter().all(|r| r.action != RuleAction::Reject),
+            "no Reject rule should be emitted when tunnel_ips is empty"
+        );
+    }
+
+    #[test]
+    fn test_reject_rule_emitted_with_tunnel_ip() {
+        let config = FirewallConfig {
+            allow_ipv6: false,
+            feature: FeatureFirewall::default(),
+        };
+        let tunnel_ip = StdIpAddr::V4(Ipv4Addr::new(10, 5, 0, 2));
+        let state = FirewallDynamicState {
+            tunnel_ips: vec![tunnel_ip],
+            ..Default::default()
+        };
+        let rules = build_chain_rules(&config, &state, &FirewallConfiguredState::default(), &[]);
+        let rule = reject_rule_for_outbound_src(&rules, tunnel_ip).expect(
+            "expected a Reject rule with Direction::Outbound and inverted SrcNetwork(tunnel_ip)",
+        );
+        let inverted_src_count = rule
+            .filters
+            .iter()
+            .filter(|f| matches!(&f.filter_data, FilterData::SrcNetwork(_)) && f.inverted)
+            .count();
+        assert_eq!(inverted_src_count, 1);
+    }
+
+    #[test]
+    fn test_reject_rule_dual_stack_one_rule_two_inverted_src_filters() {
+        let config = FirewallConfig {
+            allow_ipv6: true,
+            feature: FeatureFirewall::default(),
+        };
+        let v4 = StdIpAddr::V4(Ipv4Addr::new(10, 5, 0, 2));
+        let v6 = StdIpAddr::V6(std::net::Ipv6Addr::new(
+            0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 2,
+        ));
+        let state = FirewallDynamicState {
+            tunnel_ips: vec![v4, v6],
+            ..Default::default()
+        };
+        let rules = build_chain_rules(&config, &state, &FirewallConfiguredState::default(), &[]);
+        // A single Reject rule must carry one inverted SrcNetwork filter per IP.
+        let rule = rules
+            .iter()
+            .find(|r| {
+                r.action == RuleAction::Reject
+                    && r.filters.iter().any(|f| {
+                        f.filter_data == FilterData::Direction(Direction::Outbound) && !f.inverted
+                    })
+            })
+            .expect("expected a single Reject rule for the tunnel IPs");
+        let inverted_src_count = rule
+            .filters
+            .iter()
+            .filter(|f| matches!(&f.filter_data, FilterData::SrcNetwork(_)) && f.inverted)
+            .count();
+        assert_eq!(
+            inverted_src_count, 2,
+            "one inverted SrcNetwork per tunnel IP"
+        );
+        for ip in [v4, v6] {
+            assert!(
+                rule.filters.iter().any(|f| matches!(&f.filter_data,
+                    FilterData::SrcNetwork(n) if n.network == IpNet::from(ip))
+                    && f.inverted),
+                "inverted SrcNetwork filter for {ip} must be present",
+                ip = ip
+            );
+        }
+    }
+
+    #[test]
+    fn test_reject_rule_ordered_before_blanket_outbound_accept_and_vpn_accept() {
+        let vpn_pk = PublicKey::new([0xAB; 32]);
+        let config = FirewallConfig {
+            allow_ipv6: false,
+            feature: FeatureFirewall::default(),
+        };
+        let tunnel_ip = StdIpAddr::V4(Ipv4Addr::new(10, 5, 0, 2));
+        let state = FirewallDynamicState {
+            tunnel_ips: vec![tunnel_ip],
+            whitelist: Whitelist {
+                vpn_peer: Some(vpn_pk),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let rules = build_chain_rules(&config, &state, &FirewallConfiguredState::default(), &[]);
+
+        let reject_pos = rules.iter().position(|r| {
+            r.action == RuleAction::Reject
+                && r.filters.iter().any(|f| {
+                    f.filter_data == FilterData::Direction(Direction::Outbound) && !f.inverted
+                })
+                && r.filters
+                    .iter()
+                    .any(|f| matches!(&f.filter_data, FilterData::SrcNetwork(_)) && f.inverted)
+        });
+        let blanket_outbound_accept_pos = rules.iter().position(|r| {
+            r.action == RuleAction::Accept
+                && r.filters.len() == 1
+                && r.filters[0].filter_data == FilterData::Direction(Direction::Outbound)
+                && !r.filters[0].inverted
+        });
+        let vpn_accept_pos = rules.iter().position(|r| {
+            r.action == RuleAction::Accept
+                && r.filters.iter().any(|f| {
+                    matches!(&f.filter_data, FilterData::AssociatedData(Some(k))
+                        if k == &vpn_pk.to_vec())
+                })
+        });
+        let reject_pos = reject_pos.expect("reject rule must exist");
+        assert!(
+            reject_pos < blanket_outbound_accept_pos.expect("blanket outbound accept must exist"),
+            "reject rule must precede the blanket outbound-accept rule"
+        );
+        assert!(
+            reject_pos < vpn_accept_pos.expect("vpn accept rule must exist"),
+            "reject rule must precede the vpn accept rule"
+        );
+    }
+
+    #[test]
+    fn test_notify_addrs_are_used_by_subsequent_refreshes() {
+        let captured_addrs = Arc::new(ParkingLotMutex::new(Vec::<Vec<StdIpAddr>>::new()));
+        let addrs_clone = captured_addrs.clone();
+        let spy_fn = move |_: &FirewallConfig,
+                           _: &FirewallDynamicState,
+                           _: &FirewallConfiguredState,
+                           addrs: &[StdIpAddr]| {
+            addrs_clone.lock().push(addrs.to_vec());
+            (Vec::<Rule>::new().as_slice()).into()
+        };
+
+        let mut firewall =
+            StatefulFirewall::new_mock(true, FeatureFirewall::default(), Box::new(spy_fn));
+
+        firewall
+            .get_libfirewall_mock()
+            .expect_libfw_configure_chain_v2()
+            .times(2)
+            .returning(|_, _| crate::libfirewall::LibfwResult::LibfwSuccess);
+
+        firewall
+            .get_libfirewall_mock()
+            .expect_libfw_deinit()
+            .once()
+            .returning(|_| {});
+
+        let notify_addrs = vec![StdIpAddr::V4(Ipv4Addr::new(192, 168, 77, 7))];
+        firewall.notify(&notify_addrs);
+        firewall.apply_dynamic_state(FirewallDynamicState {
+            ip_addresses: vec![StdIpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))],
+            ..Default::default()
+        });
+
+        assert_eq!(captured_addrs.lock().len(), 3);
+        assert_eq!(captured_addrs.lock()[1], notify_addrs);
+        assert_eq!(captured_addrs.lock()[2], notify_addrs);
     }
 }

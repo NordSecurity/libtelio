@@ -4,13 +4,13 @@ use crate::endpoint_providers::{
 };
 use crate::ping_pong_handler::PingPongHandler;
 use async_trait::async_trait;
-use futures::prelude::*;
+use futures::{FutureExt, prelude::*};
 use igd::{
-    aio::{search_gateway, Gateway},
     PortMappingProtocol,
+    aio::{Gateway, search_gateway},
 };
 use ipnet::Ipv4Net;
-use rand::Rng;
+use rand::RngExt;
 use std::fmt::Debug;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::pin::Pin;
@@ -19,10 +19,11 @@ use std::time::Duration;
 use telio_crypto::PublicKey;
 use telio_proto::{Session, WGPort};
 use telio_sockets::External;
-use telio_task::{io::chan::Tx, task_exec, BoxAction, Runtime, Task};
+use telio_task::{BoxAction, Runtime, Task, io::chan::Tx, task_exec};
 use telio_utils::{
-    exponential_backoff::{Backoff, ExponentialBackoff, ExponentialBackoffBounds},
-    telio_log_debug, telio_log_info, telio_log_warn, Instant, PinnedSleep,
+    Instant, PinnedSleep,
+    exponential_backoff::{Backoff, CallWithBackoff, ExponentialBackoff, ExponentialBackoffBounds},
+    telio_log_debug, telio_log_info, telio_log_warn,
 };
 use telio_wg::{DynamicWg, WireGuard};
 use tokio::time::sleep;
@@ -40,7 +41,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[cfg_attr(test, automock)]
 #[async_trait]
-pub trait UpnpEpCommands: Send + Default + 'static {
+pub trait UpnpEpCommands: Send + Sync + 'static {
     async fn check_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<bool>;
     async fn add_endpoint_routes(
         &self,
@@ -88,6 +89,15 @@ impl Debug for IgdGateway {
 }
 
 impl IgdGateway {
+    fn new(lease_duration: Duration) -> Result<Self> {
+        Ok(IgdGateway {
+            search: Default::default(),
+            gw: Default::default(),
+            lease_duration,
+            needs_lease_renew_at: parking_lot::Mutex::new(None),
+        })
+    }
+
     fn maybe_gw(&self) -> Result<&Gateway> {
         match &self.gw {
             Some(gw) => Ok(gw),
@@ -181,10 +191,12 @@ impl UpnpEpCommands for IgdGateway {
     }
 
     async fn ensure_igd_gateway(&mut self) -> Result<()> {
+        telio_log_debug!("Ensuring IGD gateway");
         if self.gw.is_some() {
             return Ok(());
         }
 
+        telio_log_debug!("Searching for IGD gateway");
         if self.search.is_none() {
             self.search = Some(Box::pin(
                 search_gateway(Default::default()).map_err(|e| e.into()),
@@ -221,11 +233,82 @@ impl UpnpEpCommands for IgdGateway {
     }
 
     fn has_igd_gateway(&self) -> bool {
+        telio_log_debug!("Checking if IGD gateway exists: {:?}", self.gw.is_some());
         self.gw.is_some()
     }
 
     fn drop_igd_gateway(&mut self) {
+        telio_log_debug!("Dropping IGD gateway");
         self.gw = None;
+    }
+}
+
+/// A wrapper that ensures subsequent failing calls to ensure_igd_gateway use an
+/// exponential backoff for wait time in between them.
+///
+/// Each consequent failure doubles the wait time. Each success zeroes the backoff time.
+struct EnsureIgdGatewayWithBackoff<I: UpnpEpCommands + Send + 'static> {
+    igd_gw: I,
+    call_with_backoff: CallWithBackoff,
+}
+
+#[async_trait]
+impl<I: UpnpEpCommands + Send + 'static> UpnpEpCommands for EnsureIgdGatewayWithBackoff<I> {
+    async fn check_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<bool> {
+        self.igd_gw.check_endpoint_routes(proxy_port, wg_port).await
+    }
+    async fn add_endpoint_routes(
+        &self,
+        ip_addr: Ipv4Addr,
+        proxy_port_internal: u16,
+        proxy_port_external: u16,
+        wg_port_internal: u16,
+        wg_port_external: u16,
+    ) -> Result<()> {
+        self.igd_gw
+            .add_endpoint_routes(
+                ip_addr,
+                proxy_port_internal,
+                proxy_port_external,
+                wg_port_internal,
+                wg_port_external,
+            )
+            .await
+    }
+    async fn extend_endpoint_duration(
+        &self,
+        ip_addr: Ipv4Addr,
+        proxy_port: PortMapping,
+        wg_port: PortMapping,
+    ) -> Result<()> {
+        self.igd_gw
+            .extend_endpoint_duration(ip_addr, proxy_port, wg_port)
+            .await
+    }
+    async fn delete_endpoint_routes(&self, proxy_port: u16, wg_port: u16) -> Result<()> {
+        self.igd_gw
+            .delete_endpoint_routes(proxy_port, wg_port)
+            .await
+    }
+    async fn get_external_ip(&self) -> Result<Ipv4Addr> {
+        self.igd_gw.get_external_ip().await
+    }
+    async fn ensure_igd_gateway(&mut self) -> Result<()> {
+        self.call_with_backoff
+            .call(&mut self.igd_gw.ensure_igd_gateway().boxed())
+            .await
+    }
+    fn lease_needs_renew(&self) -> bool {
+        self.igd_gw.lease_needs_renew()
+    }
+    fn should_renew_lease_after(&self) -> Option<Duration> {
+        self.igd_gw.should_renew_lease_after()
+    }
+    fn has_igd_gateway(&self) -> bool {
+        self.igd_gw.has_igd_gateway()
+    }
+    fn drop_igd_gateway(&mut self) {
+        self.igd_gw.drop_igd_gateway();
     }
 }
 
@@ -279,19 +362,16 @@ impl<Wg: WireGuard> UpnpEndpointProvider<Wg> {
         lease_duration: Duration,
     ) -> Result<Self> {
         if lease_duration.saturating_sub(exponential_backoff_bounds.initial) == Duration::ZERO {
-            telio_log_warn!("Lease duration is smaller than endpoint validation period, this may result in undefined behaviour!");
+            telio_log_warn!(
+                "Lease duration is smaller than endpoint validation period, this may result in undefined behaviour!"
+            );
         }
         Ok(Self::start_with(
             udp_socket,
             wg,
             ExponentialBackoff::new(exponential_backoff_bounds)?,
             ping_pong_handler,
-            IgdGateway {
-                search: Default::default(),
-                gw: Default::default(),
-                lease_duration,
-                needs_lease_renew_at: parking_lot::Mutex::new(None),
-            },
+            IgdGateway::new(lease_duration)?,
             is_battery_optimization_on,
         ))
     }
@@ -309,6 +389,13 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
         let udp_socket = Arc::new(udp_socket);
         let rx_buff = vec![0u8; MAX_SUPPORTED_PACKET_SIZE];
         let initial_upnp_interval = exponential_backoff.get_backoff();
+        let igd_gw = EnsureIgdGatewayWithBackoff {
+            igd_gw,
+            call_with_backoff: CallWithBackoff::new(ExponentialBackoffBounds {
+                initial: Duration::from_secs(1),
+                maximal: None,
+            }),
+        };
         Self {
             task: Task::start(State {
                 udp_socket,
@@ -322,7 +409,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
                 exponential_backoff,
                 upnp_interval: PinnedSleep::new(initial_upnp_interval, ()),
                 is_battery_optimization_on,
-                is_endpoint_provider_paused: false,
+                is_endpoint_provider_paused: is_battery_optimization_on,
                 rx_buff,
                 igd_gw,
                 ping_pong_handler,
@@ -338,6 +425,18 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> UpnpEndpointProvider<Wg, I, E
         })
         .await
         .unwrap_or(None)
+    }
+
+    /// Test-only mirror of `EndpointProvider::unpause` (that trait is only
+    /// implemented for the concrete-typed provider, so it isn't callable on the
+    /// mock-typed provider used in tests).
+    #[cfg(test)]
+    async fn unpause_for_test(&self) {
+        let _ = task_exec!(&self.task, async move |s| {
+            s.is_endpoint_provider_paused = false;
+            Ok(())
+        })
+        .await;
     }
 
     pub async fn get_internal_socket(&self) -> Option<SocketAddr> {
@@ -478,7 +577,7 @@ struct State<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> {
     is_battery_optimization_on: bool,
     is_endpoint_provider_paused: bool,
     rx_buff: Vec<u8>,
-    igd_gw: I,
+    igd_gw: EnsureIgdGatewayWithBackoff<I>,
     ping_pong_handler: Arc<Mutex<PingPongHandler>>,
 }
 
@@ -489,6 +588,9 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
         session_id: Session,
         public_key: &PublicKey,
     ) -> Result<()> {
+        if self.is_endpoint_provider_paused {
+            return Err(Error::EndpointProviderPaused);
+        }
         let wg_port = if let Some(port) = self.get_wg_port() {
             port
         } else {
@@ -510,6 +612,7 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
     }
 
     async fn check_endpoint_candidate(&mut self) -> Result<()> {
+        telio_log_debug!("Checking endpoint candidate");
         if self.endpoint_candidate.is_none() {
             self.igd_gw.drop_igd_gateway();
 
@@ -564,9 +667,9 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
     }
 
     fn create_random_endpoint_ports(&mut self) {
-        self.wg_port_mapping.external = rand::thread_rng().gen_range(EPHEMERAL_PORT_RANGE);
+        self.wg_port_mapping.external = rand::rng().random_range(EPHEMERAL_PORT_RANGE);
         self.proxy_port_mapping.external = loop {
-            let rand = rand::thread_rng().gen_range(EPHEMERAL_PORT_RANGE);
+            let rand = rand::rng().random_range(EPHEMERAL_PORT_RANGE);
             if rand != self.wg_port_mapping.external {
                 break rand;
             }
@@ -605,20 +708,21 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> State<Wg, I, E> {
             udp: SocketAddr::new(IpAddr::V4(ext_ip), self.proxy_port_mapping.external),
         });
 
-        if let Some(epc) = self.endpoint_candidate.clone() {
-            if let Some(epc_tx) = &self.epc_event_tx {
-                telio_log_debug!("Got UpnpEndpointCanditate: {:?}", epc);
-                let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
-            }
+        if let Some(epc) = self.endpoint_candidate.clone()
+            && let Some(epc_tx) = &self.epc_event_tx
+        {
+            telio_log_debug!("Got UpnpEndpointCandidate: {:?}", epc);
+            let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
         }
+
         Ok(())
     }
 
     async fn send_endpoint_candidate(&self) {
-        if let Some(epc) = self.endpoint_candidate.clone() {
-            if let Some(epc_tx) = &self.epc_event_tx {
-                let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
-            }
+        if let Some(epc) = self.endpoint_candidate.clone()
+            && let Some(epc_tx) = &self.epc_event_tx
+        {
+            let _ = epc_tx.send((EndpointProviderType::Upnp, vec![epc])).await;
         }
     }
 
@@ -659,7 +763,9 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
 
         if !self.igd_gw.lease_needs_renew() && self.is_endpoint_provider_paused {
             let d = self.igd_gw.should_renew_lease_after();
-            telio_log_debug!("Skipping getting endpoint via UPNP endpoint provider(ModulePaused), lease renw after {d:?}");
+            telio_log_debug!(
+                "Skipping getting endpoint via UPNP endpoint provider(ModulePaused), lease renew after {d:?}"
+            );
             tokio::select! {
                 _ = sleep(d.unwrap_or(FAR_FUTURE)) => {},
                 update = &mut updated => {
@@ -669,12 +775,14 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
         }
 
         tokio::select! {
-            Ok((len, addr)) = self.udp_socket.recv_from(&mut self.rx_buff) => {
+            Ok((len, addr)) = self.udp_socket.recv_from(&mut self.rx_buff), if !self.is_endpoint_provider_paused => {
                 let buff = self.rx_buff.clone();
                 let _ = self.handle_ping_rx(&buff[..len], &addr).await;
             }
             result = self.igd_gw.ensure_igd_gateway(), if !self.igd_gw.has_igd_gateway() => {
-                if result.is_ok() {
+                telio_log_debug!("Ensuring IGD gateway: {:?}, current endpoint candidate: {:?}", result, self.endpoint_candidate);
+                if result.is_ok() && !self.is_endpoint_provider_paused {
+                    telio_log_debug!("Trying to create endpoint candidate");
                     if let Err(e) = self.create_endpoint_candidate().await {
                         telio_log_warn!("Error creating UPnP endpoint: {}", e);
                         self.igd_gw.drop_igd_gateway();
@@ -685,6 +793,8 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
             }
             _ = &mut self.upnp_interval => {
                 self.upnp_interval =  PinnedSleep::new(self.exponential_backoff.get_backoff(), ());
+
+                telio_log_debug!("Endpoint candidate: {:?}", self.endpoint_candidate);
 
                 match self.check_endpoint_candidate().await {
                     Ok (_) => self.exponential_backoff.reset(),
@@ -707,28 +817,36 @@ impl<Wg: WireGuard, I: UpnpEpCommands, E: Backoff> Runtime for State<Wg, I, E> {
 #[cfg(test)]
 mod tests {
     use super::{
-        async_trait, EndpointCandidate, MockUpnpEpCommands, UpnpEndpointProvider,
-        EPHEMERAL_PORT_RANGE,
+        EPHEMERAL_PORT_RANGE, EndpointCandidate, MockUpnpEpCommands, UpnpEndpointProvider,
+        async_trait,
     };
+
+    use std::{
+        cell::RefCell,
+        net::{IpAddr, Ipv4Addr, SocketAddr},
+        rc::Rc,
+        sync::{Arc, atomic::AtomicUsize},
+        time::Duration,
+    };
+
     use crate::endpoint_providers::Error;
     use crate::ping_pong_handler::PingPongHandler;
     use lazy_static::lazy_static;
     use mockall::mock;
     use parking_lot::Mutex;
-    use std::cell::RefCell;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-    use std::rc::Rc;
-    use std::sync::Arc;
-    use std::time::Duration;
+    use serial_test::serial;
     use telio_crypto::PublicKey;
     use telio_crypto::SecretKey;
     use telio_model::mesh::LinkState;
     use telio_sockets::{NativeProtector, SocketPool};
-    use telio_utils::exponential_backoff::MockBackoff;
+    use telio_utils::exponential_backoff::{
+        ExponentialBackoff, ExponentialBackoffBounds, MockBackoff,
+    };
     use telio_utils::ip_stack::IpStack;
-    use telio_wg::uapi::{Interface, Peer};
-    use telio_wg::Error as wgError;
-    use telio_wg::WireGuard;
+    use telio_wg::{
+        Error as wgError, WireGuard,
+        uapi::{Interface, Peer},
+    };
     use tokio::sync::Mutex as TMutex;
 
     type Result<T> = std::result::Result<T, Error>;
@@ -755,7 +873,6 @@ mod tests {
     }
 
     lazy_static! {
-        static ref SEQUENTIAL_LOCK: Arc<TMutex<bool>> = Arc::new(TMutex::new(true));
         static ref IGD_IS_AVAILABLE: Arc<Mutex<bool>> = Arc::new(Mutex::new(false));
         static ref ENDPOINT: Arc<Mutex<EndpointCandidate>> =
             Arc::new(Mutex::new(EndpointCandidate {
@@ -803,6 +920,7 @@ mod tests {
     }
 
     pub async fn prepare_test_setup(
+        is_battery_optimization_on: bool,
     ) -> UpnpEndpointProvider<MockWg, MockUpnpEpCommands, MockBackoff> {
         let spool = SocketPool::new(
             NativeProtector::new(
@@ -811,10 +929,23 @@ mod tests {
             )
             .unwrap(),
         );
-        let udp_socket = spool
-            .new_external_udp((Ipv4Addr::UNSPECIFIED, 55555), None)
-            .await
-            .unwrap();
+        let udp_socket = {
+            let mut attempts = 10;
+            loop {
+                match spool
+                    .new_external_udp((Ipv4Addr::UNSPECIFIED, 55555), None)
+                    .await
+                {
+                    Ok(s) => break s,
+                    Err(e) if attempts > 1 => {
+                        attempts -= 1;
+                        println!("Failed to bind socket to port 55555: {e}");
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                    }
+                    Err(e) => panic!("Failed to bind port 55555 after retries: {e}"),
+                }
+            }
+        };
 
         // Set to default ports
         let mut epc = ENDPOINT.lock();
@@ -852,6 +983,7 @@ mod tests {
         mock.expect_check_endpoint_routes()
             .returning(check_endpoint_route);
         mock.expect_lease_needs_renew().return_const(false);
+        mock.expect_should_renew_lease_after().returning(|| None);
 
         UpnpEndpointProvider::start_with(
             udp_socket,
@@ -872,16 +1004,16 @@ mod tests {
                 });
                 result
             },
-            Arc::new(TMutex::new(PingPongHandler::new(SecretKey::gen()))),
+            Arc::new(TMutex::new(PingPongHandler::new(SecretKey::r#gen()))),
             mock,
-            false,
+            is_battery_optimization_on,
         )
     }
 
     #[tokio::test]
+    #[serial]
     async fn create_upnp_endpoint() {
-        let _quard = SEQUENTIAL_LOCK.lock().await;
-        let upnp = prepare_test_setup().await;
+        let upnp = prepare_test_setup(false).await;
 
         tokio::time::sleep(Duration::from_millis(100 + 20)).await;
 
@@ -893,9 +1025,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn check_igd_function_execution() {
-        let _quard = SEQUENTIAL_LOCK.lock().await;
-        let upnp = prepare_test_setup().await;
+        let upnp = prepare_test_setup(false).await;
         tokio::time::sleep(Duration::from_millis(100 + 20)).await;
 
         let udp_int_port = ENDPOINT.lock().udp.port();
@@ -917,11 +1049,11 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_no_igd_on_router() {
-        let _quard = SEQUENTIAL_LOCK.lock().await;
         // Avoid initial search
         *IGD_IS_AVAILABLE.lock() = true;
-        let _upnp = prepare_test_setup().await;
+        let _upnp = prepare_test_setup(false).await;
         tokio::time::sleep(Duration::from_millis(20)).await;
 
         // When IGD is off the port should be unchanged
@@ -933,9 +1065,9 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_upnp_route_corruption_on_router() {
-        let _quard = SEQUENTIAL_LOCK.lock().await;
-        let _upnp = prepare_test_setup().await;
+        let _upnp = prepare_test_setup(false).await;
         tokio::time::sleep(Duration::from_millis(100 + 20)).await;
 
         // Upnp will change the static port to a random port
@@ -949,5 +1081,125 @@ mod tests {
         // Wait Upnp to invalidate corrupted port
         tokio::time::sleep(Duration::from_millis(200 + 20)).await;
         assert!(ENDPOINT.lock().wg.port() == old_port);
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    #[serial]
+    async fn test_ensure_igd_gateway_is_called_with_exponential_backoff() {
+        let spool = SocketPool::new(
+            NativeProtector::new(
+                #[cfg(target_os = "macos")]
+                false,
+            )
+            .unwrap(),
+        );
+        let udp_socket = spool
+            .new_external_udp((Ipv4Addr::UNSPECIFIED, 0), None)
+            .await
+            .unwrap();
+
+        {
+            // Set to default ports
+            let mut epc = ENDPOINT.lock();
+            epc.wg.set_port(1000);
+            epc.udp.set_port(2000);
+        }
+
+        // These are not properly used yet, just dummy variables
+        let mut wg = MockWg::default();
+        let wg_port = 55345;
+
+        wg.expect_get_interface().returning(move || {
+            Ok(Interface {
+                listen_port: Some(wg_port),
+                ..Default::default()
+            })
+        });
+        wg.expect_wait_for_listen_port()
+            .returning(move |_| Ok(wg_port));
+        wg.expect_get_link_state().returning(|_| Ok(None));
+
+        let mut mock = MockUpnpEpCommands::new();
+        mock.expect_add_endpoint_routes()
+            .returning(move |_, proxy_port_int, _, wg_port_int, _| {
+                add_endpoint(wg_port_int, proxy_port_int)
+            });
+        mock.expect_delete_endpoint_routes()
+            .returning(move |_, _| delete_endpoint_routes());
+        mock.expect_has_igd_gateway().returning(has_igd_gateway);
+        mock.expect_drop_igd_gateway().returning(drop_igd_gateway);
+
+        let igd_search_counter = Arc::new(AtomicUsize::new(0));
+        let igd_search_counter_clone = igd_search_counter.clone();
+        mock.expect_ensure_igd_gateway().returning(move || {
+            igd_search_counter_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+            Err(Error::IGDSearchError(igd::SearchError::SpoofedIp {
+                src_ip: "1.2.3.4".parse().unwrap(),
+                url_ip: "5.6.7.8".parse().unwrap(),
+            }))
+        });
+
+        mock.expect_get_external_ip().returning(get_external_ip);
+        mock.expect_check_endpoint_routes()
+            .returning(check_endpoint_route);
+        mock.expect_lease_needs_renew().return_const(false);
+
+        let backoff = ExponentialBackoff::new(ExponentialBackoffBounds {
+            initial: Duration::from_secs(1),
+            maximal: None,
+        })
+        .unwrap();
+
+        let _upnp_provider = UpnpEndpointProvider::start_with(
+            udp_socket,
+            Arc::new(wg),
+            backoff,
+            Arc::new(TMutex::new(PingPongHandler::new(SecretKey::r#gen()))),
+            mock,
+            false,
+        );
+
+        tokio::time::sleep(Duration::from_secs(10)).await;
+
+        let igd_search_count = igd_search_counter.load(std::sync::atomic::Ordering::Relaxed);
+        // Expected calls to igd_search after 10s at: 0s, 1s, 3s, 7s
+        // Due to the way `wait_with_update` is implemented, it's possible that
+        // the actuall call count will be smaller, due to other select! branches
+        // being executed in between.
+        assert!(
+            igd_search_count <= 4,
+            "igd search call count: {igd_search_count}",
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_upnp_no_mappings_until_unpaused_when_battery_optimization_is_on() {
+        *IGD_IS_AVAILABLE.lock() = false;
+
+        let upnp = prepare_test_setup(true).await;
+
+        // Give the provider ample time to discover, if it were going to.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Battery optimization on => provider starts paused => no discovery yet.
+        assert_eq!(
+            ENDPOINT.lock().wg.port(),
+            1000,
+            "provider created a mapping while it should have been paused"
+        );
+
+        // The device signals that a peer now needs a direct upgrade.
+        upnp.unpause_for_test().await;
+        tokio::time::sleep(Duration::from_millis(100 + 20)).await;
+
+        // Now discovery is expected.
+        assert_ne!(
+            ENDPOINT.lock().wg.port(),
+            1000,
+            "provider did not discover after being unpaused"
+        );
     }
 }

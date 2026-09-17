@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use enum_map::Enum;
 use ipnet::PrefixLenError;
 use std::time::Duration;
-use telio_crypto::{encryption, PublicKey};
+use telio_crypto::{PublicKey, encryption};
 use telio_utils::exponential_backoff;
 use thiserror::Error as TError;
 
@@ -60,6 +60,8 @@ pub enum Error {
     /// Component was not configured for operation
     #[error("Component was not configured for operation")]
     NotConfigured,
+    #[error("Endpoint provider is paused")]
+    EndpointProviderPaused,
     /// Stun peer does not exist in wireguard
     #[error("Stun peer does not exist in wireguard")]
     NoStunPeer,

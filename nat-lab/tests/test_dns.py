@@ -1,5 +1,3 @@
-# pylint: disable=too-many-lines
-
 import asyncio
 import itertools
 import pytest
@@ -28,6 +26,11 @@ from tests.utils.process import ProcessExecError
 from tests.utils.router import IPStack
 from typing import List, Optional
 
+DNS_FORWARDER_PARAMS = [
+    pytest.param(False, id="hickory"),
+    pytest.param(True, id="raw"),
+]
+
 
 def get_dns_server_address(ip_stack: IPStack) -> str:
     return (
@@ -37,8 +40,15 @@ def get_dns_server_address(ip_stack: IPStack) -> str:
     )
 
 
+def _dns_features(use_raw_forwarder: bool, **kwargs):
+    features = default_features(**kwargs)
+    features.dns.use_raw_forwarder = use_raw_forwarder
+    return features
+
+
 # TODO: Linux native has to be removed
 @pytest.mark.asyncio
+@pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
 @pytest.mark.parametrize(
     ["alpha_ip_stack", "alpha_setup_params"],
     [
@@ -101,12 +111,14 @@ async def test_dns(
     alpha_ip_stack: IPStack,
     alpha_setup_params: SetupParameters,
     beta_ip_stack: IPStack,
+    use_raw_forwarder: bool,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         dns_server_address_alpha = get_dns_server_address(alpha_ip_stack)
         dns_server_address_beta = (
             LIBTELIO_DNS_IPV4 if beta_ip_stack == IPStack.IPv4 else LIBTELIO_DNS_IPV6
         )
+        alpha_setup_params.features = _dns_features(use_raw_forwarder)
         env = await setup_mesh_nodes(
             exit_stack,
             [
@@ -117,6 +129,7 @@ async def test_dns(
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
                         derp_1_limits=(1, 1),
                     ),
+                    features=_dns_features(use_raw_forwarder),
                 ),
             ],
         )
@@ -187,6 +200,7 @@ async def test_dns(
 
 # TODO: Linux native has to be removed
 @pytest.mark.asyncio
+@pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
 @pytest.mark.parametrize(
     ["alpha_ip_stack", "alpha_setup_params"],
     [
@@ -231,9 +245,11 @@ async def test_dns(
 async def test_dns_port(
     alpha_ip_stack: IPStack,
     alpha_setup_params: SetupParameters,
+    use_raw_forwarder: bool,
 ) -> None:
     async with AsyncExitStack() as exit_stack:
         dns_server_address_alpha = get_dns_server_address(alpha_ip_stack)
+        alpha_setup_params.features = _dns_features(use_raw_forwarder)
         env = await setup_mesh_nodes(
             exit_stack,
             [
@@ -245,6 +261,7 @@ async def test_dns_port(
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
                         derp_1_limits=(1, 1),
                     ),
+                    features=_dns_features(use_raw_forwarder),
                 ),
             ],
         )
@@ -326,6 +343,7 @@ async def test_dns_port(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
 @pytest.mark.parametrize(
     "alpha_ip_stack",
     [
@@ -343,7 +361,7 @@ async def test_dns_port(
         ),
     ],
 )
-async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
+async def test_vpn_dns(alpha_ip_stack: IPStack, use_raw_forwarder: bool) -> None:
     async with AsyncExitStack() as exit_stack:
         dns_server_address = get_dns_server_address(alpha_ip_stack)
         env = await exit_stack.enter_async_context(
@@ -358,9 +376,10 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
                             vpn_1_limits=(1, 1),
                         ),
                         is_meshnet=False,
+                        features=_dns_features(use_raw_forwarder),
                     )
                 ],
-                prepare_vpn=True,
+                vpn=[ConnectionTag.DOCKER_VPN_1],
             )
         )
         api = env.api
@@ -370,7 +389,7 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
 
         wg_server = config.WG_SERVER
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect(
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
@@ -405,6 +424,7 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
 @pytest.mark.parametrize(
     "alpha_ip_stack",
     [
@@ -422,7 +442,9 @@ async def test_vpn_dns(alpha_ip_stack: IPStack) -> None:
         ),
     ],
 )
-async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
+async def test_dns_after_mesh_off(
+    alpha_ip_stack: IPStack, use_raw_forwarder: bool
+) -> None:
     async with AsyncExitStack() as exit_stack:
         dns_server_address = get_dns_server_address(alpha_ip_stack)
         api, (_, beta) = setup_api([(False, alpha_ip_stack), (False, IPStack.IPv4v6)])
@@ -436,7 +458,7 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
                             ConnectionTag.DOCKER_CONE_CLIENT_1
                         ),
                         derp_servers=[],
-                        features=default_features(enable_ipv6=True),
+                        features=_dns_features(use_raw_forwarder, enable_ipv6=True),
                     )
                 ],
                 provided_api=api,
@@ -482,6 +504,7 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
 @pytest.mark.asyncio
 @pytest.mark.long
 @pytest.mark.timeout(timeouts.TEST_DNS_STABILITY_TIMEOUT)
+@pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
 @pytest.mark.parametrize(
     "alpha_ip_stack",
     [
@@ -499,7 +522,7 @@ async def test_dns_after_mesh_off(alpha_ip_stack: IPStack) -> None:
         ),
     ],
 )
-async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
+async def test_dns_stability(alpha_ip_stack: IPStack, use_raw_forwarder: bool) -> None:
     async with AsyncExitStack() as exit_stack:
         dns_server_address = get_dns_server_address(alpha_ip_stack)
         env = await setup_mesh_nodes(
@@ -513,6 +536,7 @@ async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         derp_1_limits=(1, 1),
                     ),
+                    features=_dns_features(use_raw_forwarder),
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
@@ -521,6 +545,7 @@ async def test_dns_stability(alpha_ip_stack: IPStack) -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
                         derp_1_limits=(1, 1),
                     ),
+                    features=_dns_features(use_raw_forwarder),
                 ),
             ],
         )
@@ -602,6 +627,7 @@ async def test_set_meshnet_config_dns_update(
                             ConnectionTag.DOCKER_CONE_CLIENT_1
                         ),
                         derp_servers=[],
+                        features=_dns_features(use_raw_forwarder=False),
                     )
                 ],
             )
@@ -637,6 +663,7 @@ async def test_set_meshnet_config_dns_update(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
 @pytest.mark.parametrize(
     "alpha_ip_stack",
     [
@@ -654,7 +681,7 @@ async def test_set_meshnet_config_dns_update(
         ),
     ],
 )
-async def test_dns_update(alpha_ip_stack: IPStack) -> None:
+async def test_dns_update(alpha_ip_stack: IPStack, use_raw_forwarder: bool) -> None:
     async with AsyncExitStack() as exit_stack:
         dns_server_address = get_dns_server_address(alpha_ip_stack)
         env = await exit_stack.enter_async_context(
@@ -669,9 +696,10 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
                             vpn_1_limits=(1, 1),
                         ),
                         is_meshnet=False,
+                        features=_dns_features(use_raw_forwarder),
                     )
                 ],
-                prepare_vpn=True,
+                vpn=[ConnectionTag.DOCKER_VPN_1],
             )
         )
         connection, *_ = [conn.connection for conn in env.connections]
@@ -679,7 +707,7 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
 
         wg_server = config.WG_SERVER
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect(
             str(wg_server["ipv4"]), int(wg_server["port"]), str(wg_server["public_key"])
         )
 
@@ -703,7 +731,10 @@ async def test_dns_update(alpha_ip_stack: IPStack) -> None:
 
 
 @pytest.mark.asyncio
-async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
+@pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
+async def test_dns_duplicate_requests_on_multiple_forward_servers(
+    use_raw_forwarder: bool,
+) -> None:
     async with AsyncExitStack() as exit_stack:
         FIRST_DNS_SERVER = "10.0.80.83"
         SECOND_DNS_SERVER = "10.0.80.82"
@@ -765,6 +796,7 @@ async def test_dns_duplicate_requests_on_multiple_forward_servers() -> None:
                     ip_stack=IPStack.IPv4v6,
                     connection_tracker_config=[SingleConnectionToAnyNatlabDNS()],
                     derp_servers=[],
+                    features=_dns_features(use_raw_forwarder),
                 )
             ],
         )
@@ -782,7 +814,11 @@ async def test_dns_aaaa_records() -> None:
     async with AsyncExitStack() as exit_stack:
         api, (_, beta) = setup_api([(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)])
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [SetupParameters()], provided_api=api)
+            setup_environment(
+                exit_stack,
+                [SetupParameters(features=_dns_features(use_raw_forwarder=False))],
+                provided_api=api,
+            )
         )
         connection_alpha, *_ = [conn.connection for conn in env.connections]
         client_alpha, *_ = env.clients
@@ -812,7 +848,9 @@ async def test_dns_nickname() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         derp_1_limits=(1, 1),
                     ),
-                    features=default_features(enable_nicknames=True),
+                    features=_dns_features(
+                        use_raw_forwarder=False, enable_nicknames=True
+                    ),
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
@@ -820,7 +858,9 @@ async def test_dns_nickname() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
                         derp_1_limits=(1, 1),
                     ),
-                    features=default_features(enable_nicknames=True),
+                    features=_dns_features(
+                        use_raw_forwarder=False, enable_nicknames=True
+                    ),
                 ),
             ],
             provided_api=api,
@@ -869,7 +909,9 @@ async def test_dns_change_nickname() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         derp_1_limits=(1, 1),
                     ),
-                    features=default_features(enable_nicknames=True),
+                    features=_dns_features(
+                        use_raw_forwarder=False, enable_nicknames=True
+                    ),
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
@@ -877,7 +919,9 @@ async def test_dns_change_nickname() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
                         derp_1_limits=(1, 1),
                     ),
-                    features=default_features(enable_nicknames=True),
+                    features=_dns_features(
+                        use_raw_forwarder=False, enable_nicknames=True
+                    ),
                 ),
             ],
             provided_api=api,
@@ -967,7 +1011,9 @@ async def test_dns_wildcarded_records() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         derp_1_limits=(1, 1),
                     ),
-                    features=default_features(enable_nicknames=True),
+                    features=_dns_features(
+                        use_raw_forwarder=False, enable_nicknames=True
+                    ),
                 ),
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
@@ -975,7 +1021,9 @@ async def test_dns_wildcarded_records() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
                         derp_1_limits=(1, 1),
                     ),
-                    features=default_features(enable_nicknames=True),
+                    features=_dns_features(
+                        use_raw_forwarder=False, enable_nicknames=True
+                    ),
                 ),
             ],
             provided_api=api,
@@ -1031,7 +1079,9 @@ async def test_dns_ttl_value() -> None:
 
         features_without_exit_dns = default_features()
         features_without_exit_dns.dns = FeatureDns(
-            exit_dns=None, ttl_value=EXPECTED_TTL_VALUE
+            exit_dns=None,
+            ttl_value=EXPECTED_TTL_VALUE,
+            use_raw_forwarder=False,
         )
 
         api, (_, _) = setup_api([(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)])
@@ -1052,6 +1102,7 @@ async def test_dns_ttl_value() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_2,
                         derp_1_limits=(1, 1),
                     ),
+                    features=_dns_features(use_raw_forwarder=False),
                 ),
             ],
             provided_api=api,
@@ -1091,7 +1142,13 @@ async def test_dns_nickname_in_any_case() -> None:
         env = await exit_stack.enter_async_context(
             setup_environment(
                 exit_stack,
-                [SetupParameters(features=default_features(enable_nicknames=True))],
+                [
+                    SetupParameters(
+                        features=_dns_features(
+                            use_raw_forwarder=False, enable_nicknames=True
+                        )
+                    )
+                ],
                 provided_api=api,
             )
         )
@@ -1119,7 +1176,8 @@ def all_cases(name: str) -> List[str]:
 
 
 @pytest.mark.asyncio
-async def test_dns_no_error_return_code() -> None:
+@pytest.mark.parametrize("use_raw_forwarder", DNS_FORWARDER_PARAMS)
+async def test_dns_no_error_return_code(use_raw_forwarder: bool) -> None:
     async with AsyncExitStack() as exit_stack:
         FIRST_DNS_SERVER = "10.0.80.83"
         SECOND_DNS_SERVER = "10.0.80.82"
@@ -1134,6 +1192,7 @@ async def test_dns_no_error_return_code() -> None:
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         derp_1_limits=(1, 1),
                     ),
+                    features=_dns_features(use_raw_forwarder),
                 )
             ],
         )
@@ -1148,8 +1207,5 @@ async def test_dns_no_error_return_code() -> None:
             "53",
             "error-with-noerror-return-code.com",
             dns_server=LIBTELIO_DNS_IPV4,
-        )
-
-        await client_alpha.wait_for_log(
-            "Got an error response with NoError code for error-with-noerror-return-code.com., this should not happen so converting to ServFail"
+            expected_output=["status: NOERROR", "ANSWER: 0"],
         )

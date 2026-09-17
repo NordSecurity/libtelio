@@ -1,8 +1,12 @@
-use crate::{bind_tun, LocalNameServer, NameServer, Records};
+use crate::{
+    bind_tun,
+    error::{DnsIoError, Error, Result},
+    LocalNameServer, NameServer, Records,
+};
 use async_trait::async_trait;
 use ipnet::IpNet;
 use neptun::noise::Tunn;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 use std::{net::SocketAddr, sync::Arc};
 use telio_crypto::{PublicKey, SecretKey};
 use telio_wg::uapi::Peer;
@@ -11,7 +15,13 @@ use tokio::net::UdpSocket;
 use tokio::sync::{Mutex, RwLock};
 use x25519_dalek::{PublicKey as PublicKeyDalek, StaticSecret};
 
-use telio_model::features::{FeatureExitDns, TtlValue};
+use telio_model::{
+    constants::{
+        DNS_VIRTUAL_PEER_IPV4, DNS_VIRTUAL_PEER_IPV6, DNS_VIRTUAL_PEER_ON_EXIT_IPV4,
+        DNS_VIRTUAL_PEER_ON_EXIT_IPV6,
+    },
+    features::{FeatureDns, TtlValue},
+};
 
 //debug tools
 use telio_utils::{telio_log_debug, telio_log_error};
@@ -25,24 +35,21 @@ pub trait DnsResolver {
     /// Stop the server.
     async fn stop(&self);
     /// Insert or update zone records used by the server.
-    async fn upsert(
-        &self,
-        zone: &str,
-        records: &Records,
-        ttl_value: TtlValue,
-    ) -> Result<(), String>;
+    async fn upsert(&self, zone: &str, records: &Records, ttl_value: TtlValue) -> Result<()>;
     /// Configure list of forward DNS servers for zone '.'.
-    async fn forward(&self, to: &[IpAddr]) -> Result<(), String>;
+    async fn forward(&self, to: &[IpAddr]) -> Result<()>;
+    /// Drop every entry from the forwarding resolver's cache.
+    async fn flush_cache(&self);
     /// Get public key of this DNS server.
     fn public_key(&self) -> PublicKey;
     /// Get Peer of this DNS server with selected allowed IPs.
     fn get_peer(&self, allowed_ips: Vec<IpNet>) -> Peer;
     /// Get default allowed IPs of this DNS server.
     fn get_default_dns_allowed_ips(&self) -> Vec<IpNet>;
-    /// Get DNS virtual peer addresses.
+    /// Get allowed IPs when connected to exit node.
     fn get_exit_connected_dns_allowed_ips(&self) -> Vec<IpNet>;
-    /// Get default DNS server IP addresses.
-    fn get_default_dns_servers(&self) -> Vec<IpAddr>;
+    /// Get DNS server IP addresses when connected to exit node.
+    fn get_remote_exit_node_dns_servers(&self) -> Vec<IpAddr>;
     /// Change DNS peer's public key
     async fn set_peer_public_key(&self, key: PublicKey);
 }
@@ -65,27 +72,18 @@ impl LocalDnsResolver {
         public_key: &PublicKey,
         forward_ips: &[IpAddr],
         tun: Option<&Tun>,
-        exit_dns: Option<FeatureExitDns>,
-    ) -> Result<Self, String> {
+        dns_features: &FeatureDns,
+    ) -> Result<Self> {
         let socket = UdpSocket::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
             .await
-            .map_err(|e| {
-                telio_log_error!("Failed to bind dns socket: {:?}", e);
-                format!("Failed to bind dns socket: {e:?}")
-            })?;
+            .map_err(DnsIoError::BindDnsSocket)?;
 
         let socket_port = socket
             .local_addr()
-            .map_err(|e| {
-                telio_log_error!("Failed to get socket port: {:?}", e);
-                format!("Failed to get socket port: {e:?}",)
-            })?
+            .map_err(DnsIoError::GetSocketAddr)?
             .port();
 
-        bind_tun::set_tun(tun).map_err(|e| {
-            telio_log_debug!("Failing setting tun: {:?}", e);
-            format!("{e}")
-        })?;
+        bind_tun::set_tun(tun).map_err(DnsIoError::ConfigureTunnel)?;
 
         // DNS secret key
         let dns_secret_key = SecretKey::gen();
@@ -93,22 +91,29 @@ impl LocalDnsResolver {
         // Telio public key
         let telio_public_key: PublicKeyDalek = PublicKeyDalek::from(public_key.0);
 
-        let nameserver = LocalNameServer::new(forward_ips).await?;
+        let use_raw_forwarder = dns_features.use_raw_forwarder.unwrap_or(false);
 
-        let auto_switch_ips =
-            exit_dns.is_some_and(|feature| feature.auto_switch_dns_ips.unwrap_or(true));
+        let nameserver = LocalNameServer::new(forward_ips, use_raw_forwarder).await?;
+
+        let auto_switch_ips = dns_features
+            .exit_dns
+            .as_ref()
+            .is_some_and(|feature| feature.auto_switch_dns_ips.unwrap_or(true));
 
         Ok(LocalDnsResolver {
             socket: Arc::new(socket),
             secret_key: dns_secret_key.clone(),
-            peer: Arc::new(Mutex::new(Tunn::new(
-                StaticSecret::from(dns_secret_key.into_bytes()),
-                telio_public_key,
-                None,
-                None,
-                0,
-                None,
-            )?)),
+            peer: Arc::new(Mutex::new(
+                Tunn::new(
+                    StaticSecret::from(dns_secret_key.into_bytes()),
+                    telio_public_key,
+                    None,
+                    None,
+                    0,
+                    None,
+                )
+                .map_err(|e| Error::CreateTunnel(e.to_string()))?,
+            )),
             socket_port,
             nameserver,
             auto_switch_ips,
@@ -129,19 +134,19 @@ impl DnsResolver for LocalDnsResolver {
         self.nameserver.stop().await;
     }
 
-    async fn upsert(
-        &self,
-        zone: &str,
-        records: &Records,
-        ttl_value: TtlValue,
-    ) -> Result<(), String> {
+    async fn upsert(&self, zone: &str, records: &Records, ttl_value: TtlValue) -> Result<()> {
         telio_log_debug!("Dns - upsert {:?} {:?}", zone, records);
-        Ok(self.nameserver.upsert(zone, records, ttl_value).await?)
+        self.nameserver.upsert(zone, records, ttl_value).await
     }
 
-    async fn forward(&self, to: &[IpAddr]) -> Result<(), String> {
+    async fn forward(&self, to: &[IpAddr]) -> Result<()> {
         telio_log_debug!("Dns - forward {:?}", to);
-        Ok(self.nameserver.forward(to).await?)
+        self.nameserver.forward(to).await
+    }
+
+    async fn flush_cache(&self) {
+        telio_log_debug!("Dns - flush_cache");
+        self.nameserver.flush_forward_cache().await;
     }
 
     fn public_key(&self) -> PublicKey {
@@ -164,24 +169,24 @@ impl DnsResolver for LocalDnsResolver {
 
     fn get_default_dns_allowed_ips(&self) -> Vec<IpNet> {
         vec![
-            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into(),
-            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3)).into(),
-            IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 2)).into(),
-            IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 3)).into(),
+            IpAddr::V4(DNS_VIRTUAL_PEER_IPV4).into(),
+            IpAddr::V4(DNS_VIRTUAL_PEER_ON_EXIT_IPV4).into(),
+            IpAddr::V6(DNS_VIRTUAL_PEER_IPV6).into(),
+            IpAddr::V6(DNS_VIRTUAL_PEER_ON_EXIT_IPV6).into(),
         ]
     }
 
     fn get_exit_connected_dns_allowed_ips(&self) -> Vec<IpNet> {
         vec![
-            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 2)).into(),
-            IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 2)).into(),
+            IpAddr::V4(DNS_VIRTUAL_PEER_IPV4).into(),
+            IpAddr::V6(DNS_VIRTUAL_PEER_IPV6).into(),
         ]
     }
 
-    fn get_default_dns_servers(&self) -> Vec<IpAddr> {
+    fn get_remote_exit_node_dns_servers(&self) -> Vec<IpAddr> {
         vec![
-            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 3)),
-            IpAddr::V6(Ipv6Addr::new(0xfd74, 0x656c, 0x696f, 0, 0, 0, 0, 3)),
+            IpAddr::V4(DNS_VIRTUAL_PEER_ON_EXIT_IPV4),
+            IpAddr::V6(DNS_VIRTUAL_PEER_ON_EXIT_IPV6),
         ]
     }
 
@@ -212,9 +217,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_default_dns_allowed_ips() {
-        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), &[], None, None)
-            .await
-            .unwrap();
+        let resolver = LocalDnsResolver::new(
+            &SecretKey::gen().public(),
+            &[],
+            None,
+            &FeatureDns::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             vec![
                 "100.64.0.2/32".parse::<IpNet>().unwrap(),
@@ -228,9 +238,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_exit_connected_dns_allowed_ips() {
-        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), &[], None, None)
-            .await
-            .unwrap();
+        let resolver = LocalDnsResolver::new(
+            &SecretKey::gen().public(),
+            &[],
+            None,
+            &FeatureDns::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             vec![
                 "100.64.0.2/32".parse::<IpNet>().unwrap(),
@@ -241,16 +256,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_default_dns_servers() {
-        let resolver = LocalDnsResolver::new(&SecretKey::gen().public(), &[], None, None)
-            .await
-            .unwrap();
+    async fn test_get_remote_exit_node_dns_servers() {
+        let resolver = LocalDnsResolver::new(
+            &SecretKey::gen().public(),
+            &[],
+            None,
+            &FeatureDns::default(),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             vec![
                 "100.64.0.3".parse::<IpAddr>().unwrap(),
                 "fd74:656c:696f::3".parse::<IpAddr>().unwrap(),
             ],
-            resolver.get_default_dns_servers()
+            resolver.get_remote_exit_node_dns_servers()
         );
     }
 }

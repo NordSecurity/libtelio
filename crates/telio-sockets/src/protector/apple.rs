@@ -4,7 +4,7 @@ use parking_lot::{Mutex, RwLock};
 
 use std::{
     cell::RefCell,
-    ffi::{c_long, c_void, CStr},
+    ffi::{c_void, CStr},
     io,
     num::NonZeroU32,
     os::fd::BorrowedFd,
@@ -56,18 +56,13 @@ extern "C" {
     pub fn nw_path_enumerate_interfaces(path: nw_path_t, enumerate_block: *const c_void);
 }
 
-pub const DISPATCH_QUEUE_PRIORITY_HIGH: c_long = 2;
-pub const DISPATCH_QUEUE_PRIORITY_DEFAULT: c_long = 0;
-pub const DISPATCH_QUEUE_PRIORITY_LOW: c_long = -2;
-pub const DISPATCH_QUEUE_PRIORITY_BACKGROUND: c_long = -1 << 15;
-
 static INTERFACE_NAMES_IN_OS_PREFERENCE_ORDER: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static PROTECTOR_PATH_CHANGE_BROADCAST: Lazy<Sender<()>> = Lazy::new(|| Sender::new(1));
 
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
-use objc::{class, msg_send, runtime::Object, sel, sel_impl};
+use objc2::{class, msg_send, runtime::Object};
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
-use objc_foundation::{INSString, NSString};
+use objc2_foundation::NSString;
 #[cfg(any(target_os = "ios", target_os = "tvos"))]
 use version_compare::{compare_to, Cmp};
 
@@ -190,7 +185,7 @@ impl NativeProtector {
             &*(system_version as *const NSString)
         };
 
-        system_version_unsafe_str.as_str().to_owned()
+        system_version_unsafe_str.to_string()
     }
 }
 
@@ -415,7 +410,11 @@ fn get_service_order(store: &SCDynamicStore) -> Option<Vec<String>> {
 
 fn get_primary_interface_names() -> Vec<String> {
     let mut primary_ipv4_interface_names = Vec::new();
-    let store = dynamic_store::SCDynamicStoreBuilder::new("primary-service-store").build();
+    let Some(store) = dynamic_store::SCDynamicStoreBuilder::new("primary-service-store").build()
+    else {
+        telio_log_warn!("Failed to get SCDynamicStore instance");
+        return vec![];
+    };
 
     if let Some(service_order) = get_service_order(&store) {
         for service in service_order {
@@ -496,9 +495,16 @@ fn must_broadcast_path_change(
     changed_keys: CFArray<CFString>,
     primary_interfaces: Vec<String>,
 ) -> bool {
-    // Returns true if the given interface is primary.
-    let is_primary =
-        |interface: &str| -> bool { primary_interfaces.iter().any(|x| x == interface) };
+    // When the primary interface list is empty (e.g. during a VPN tunnel restart the
+    // SCDynamicStore may not yet reflect the new primary interface), we cannot reliably
+    // filter by primary interface.  In that case we treat every recognised key as
+    // relevant so that sockets are always rebound and the guest does not lose internet.
+    let primary_interfaces_known = !primary_interfaces.is_empty();
+
+    // Returns true if the given interface is primary (or if the primary list is unknown).
+    let is_primary = |interface: &str| -> bool {
+        !primary_interfaces_known || primary_interfaces.iter().any(|x| x == interface)
+    };
 
     let mut must_broadcast = false;
     for changed_key in &changed_keys {
@@ -510,7 +516,7 @@ fn must_broadcast_path_change(
             Some("IPConfigurationBusy") => {
                 // Is an <interface> the one we actually care about?
                 if let Some(interface) = key_path.next_back() {
-                    // If it is primary, then we do.
+                    // If it is primary (or primary list is unknown), then we do.
                     if is_primary(interface) {
                         must_broadcast = true;
                         break;
@@ -530,7 +536,7 @@ fn must_broadcast_path_change(
                         must_broadcast = true;
                         break;
                     }
-                    // If it is primary, then we do.
+                    // If it is primary (or primary list is unknown), then we do.
                     Some(interface) => {
                         if is_primary(interface) {
                             must_broadcast = true;
@@ -626,14 +632,15 @@ mod tests {
     }
 }
 
-fn get_dynamic_store(sockets: Weak<Mutex<Sockets>>) -> SCDynamicStore {
+fn get_dynamic_store(sockets: Weak<Mutex<Sockets>>) -> Option<SCDynamicStore> {
     let callback_context = dynamic_store::SCDynamicStoreCallBackContext {
         callout: dynamic_store_callback,
         info: Context { sockets },
     };
     let store = dynamic_store::SCDynamicStoreBuilder::new("primary-service-update-store")
         .callback_context(callback_context)
-        .build();
+        .build()?;
+
     let watch_keys: CFArray<CFString> =
         CFArray::from_CFTypes(&[CFString::from("State:/Network/Global/IPv4")]);
     let watch_patterns = CFArray::from_CFTypes(&[CFString::from(
@@ -643,13 +650,19 @@ fn get_dynamic_store(sockets: Weak<Mutex<Sockets>>) -> SCDynamicStore {
         debug_panic!("Unable to register notifications for primary service update dynamic store");
     }
 
-    store
+    Some(store)
 }
 
 fn spawn_dynamic_store_loop(sockets: Weak<Mutex<Sockets>>) {
     std::thread::spawn(|| {
-        let store = get_dynamic_store(sockets);
-        let run_loop_source = store.create_run_loop_source();
+        let Some(store) = get_dynamic_store(sockets) else {
+            telio_log_warn!("Failed to get SCDynamicStore instance");
+            return;
+        };
+        let Some(run_loop_source) = store.create_run_loop_source() else {
+            telio_log_warn!("Failed to get run loop source");
+            return;
+        };
         let run_loop = core_foundation::runloop::CFRunLoop::get_current();
         run_loop.add_source(&run_loop_source, unsafe {
             core_foundation::runloop::kCFRunLoopCommonModes
@@ -660,12 +673,14 @@ fn spawn_dynamic_store_loop(sockets: Weak<Mutex<Sockets>>) {
 }
 
 pub fn setup_network_path_monitor() {
-    let update_handler = block::ConcreteBlock::new(|path: nw_path_t| {
+    let update_handler = block2::RcBlock::new(|path: *mut c_void| {
+        let path: nw_path_t = path.cast();
         let names = Rc::new(RefCell::new(vec![]));
         let names_copy = names.clone();
 
         let enumerate_callback =
-            block::ConcreteBlock::new(move |interface: nw_interface_t| -> bool {
+            block2::RcBlock::new(move |interface: *mut c_void| -> objc2::runtime::Bool {
+                let interface: nw_interface_t = interface.cast();
                 let c_name = unsafe { nw_interface_get_name(interface) };
                 if !c_name.is_null() {
                     let name = unsafe { CStr::from_ptr(c_name) };
@@ -673,14 +688,15 @@ pub fn setup_network_path_monitor() {
                         names_copy.borrow_mut().push(name.to_owned());
                     }
                 }
-                true
-            })
-            .copy();
+                objc2::runtime::Bool::YES
+            });
 
         unsafe {
             nw_path_enumerate_interfaces(
                 path,
-                &*enumerate_callback as *const block::Block<_, _> as *const c_void,
+                &*enumerate_callback
+                    as *const block2::Block<dyn Fn(*mut c_void) -> objc2::runtime::Bool>
+                    as *const c_void,
             )
         };
 
@@ -703,8 +719,7 @@ pub fn setup_network_path_monitor() {
             "Path change notification sent, current network path in os preference order: {:?}",
             names.borrow()
         );
-    })
-    .copy();
+    });
 
     let monitor = unsafe { nw_path_monitor_create() };
     if monitor.is_null() {
@@ -712,24 +727,21 @@ pub fn setup_network_path_monitor() {
         return;
     }
 
-    let queue =
-        unsafe { dispatch::ffi::dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0) };
-    if queue.is_null() {
-        telio_log_warn!("Failed to get global background queue");
-        return;
-    }
+    let queue = dispatch2::DispatchQueue::global_queue(
+        dispatch2::GlobalQueueIdentifier::QualityOfService(dispatch2::DispatchQoS::Background),
+    );
+
     unsafe {
         nw_path_monitor_set_queue(
             monitor,
-            std::mem::transmute::<
-                *mut dispatch::ffi::dispatch_object_s,
-                *mut network_framework_sys::dispatch_queue,
-            >(queue),
+            std::ptr::from_ref::<dispatch2::DispatchQueue>(&queue)
+                .cast_mut()
+                .cast::<network_framework_sys::dispatch_queue>(),
         );
 
         nw_path_monitor_set_update_handler(
             monitor,
-            &*update_handler as *const block::Block<_, _> as *const c_void,
+            &*update_handler as *const block2::Block<dyn Fn(*mut c_void)> as *const c_void,
         );
         nw_path_monitor_start(monitor);
     }

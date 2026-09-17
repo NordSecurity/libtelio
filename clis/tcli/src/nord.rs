@@ -5,7 +5,7 @@ use reqwest::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use telio::crypto::{KeyDecodeError, PublicKey, SecretKey};
+use telio_core::crypto::{KeyDecodeError, PublicKey, SecretKey};
 use telio_model::mesh::ExitNode;
 use thiserror::Error;
 

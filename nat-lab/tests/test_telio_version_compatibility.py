@@ -4,8 +4,8 @@ import pytest
 import shlex
 from contextlib import AsyncExitStack
 from tests.config import DERP_SERVERS
+from tests.libtelio_client import Client
 from tests.mesh_api import API
-from tests.telio import Client
 from tests.utils import testing
 from tests.utils.bindings import (
     features_with_endpoint_providers,
@@ -193,8 +193,10 @@ async def test_connect_different_telio_version_through_relay(
             shlex.quote(backport_config(api.get_meshnet_config(beta.id))),
         ])
 
-        await alpha_client.wait_for_state_on_any_derp([RelayState.CONNECTED])
-        await alpha_client.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED])
+        await alpha_client.events.wait_for_state_on_any_derp([RelayState.CONNECTED])
+        await alpha_client.events.wait_for_state_peer(
+            beta.public_key, [NodeState.CONNECTED]
+        )
 
         await ping(
             alpha_conn,

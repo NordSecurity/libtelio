@@ -39,7 +39,7 @@ async def get(
 
         path = STUN_BINARY_PATH_MAC
 
-    elif connection.target_os == TargetOS.Linux:
+    elif connection.target_os in (TargetOS.Linux, TargetOS.Android):
         path = "stunclient"
     else:
         assert False, "unsupported os"

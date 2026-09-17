@@ -114,6 +114,31 @@ impl Entity {
         self.start_impl(addr, wg_secret, peer).await;
     }
 
+    /// Restart the key-rotation task without clearing the existing keys.
+    ///
+    /// This is the preferred action on a network change.
+    /// The old `ConnKeyRotation` task is dropped and a new one is started immediately
+    /// so it can open a fresh socket on the current network interface.  The existing
+    /// `keys` and `last_key_fetch_ts` are preserved, so WireGuard continues to use the
+    /// current preshared key while the new task performs its first rekey - avoiding a
+    /// visible VPN disconnection.
+    ///
+    /// Does nothing if no PQ peer is currently active
+    pub fn restart_rotation(&self) {
+        let mut peer = self.peer.lock();
+        if let Some(p) = peer.as_mut() {
+            telio_log_debug!("Restarting PQ rotation task after network change");
+            p._rotation_task = super::conn::ConnKeyRotation::run(
+                self.chan.clone(),
+                self.sockets.clone(),
+                p.addr,
+                p.wg_secret.clone(),
+                p.pubkey,
+                &self.features,
+            );
+        }
+    }
+
     // Postquantum has a quirk that can cause VPN connections to fail due to the client having a preshared key when the server doesn't.
     // This can happen if there was a handshake established with a preshared key, then the connection is broken for more than 180s
     // (the time after which wireguard will abandon an inactive connection), and then the client tries to do a new handshake with the same

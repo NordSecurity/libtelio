@@ -143,6 +143,9 @@ typedef string Ipv4Addr;
 typedef string SocketAddr;
 
 [Custom]
+typedef string SocketAddrV4;
+
+[Custom]
 typedef string HiddenString;
 
 [Custom]
@@ -191,7 +194,7 @@ namespace telio {
     /// Utility function to create a `Config` object from a json-string
     [Throws=TelioError]
     Config deserialize_meshnet_config(string cfg_str);
-    
+
     /// Utility function to create a json-string from a Features instance
     [Throws=TelioError]
     string serialize_feature_config([ByRef] Features features);
@@ -228,7 +231,7 @@ dictionary WgResponse {
 dictionary WgDevice {
     string? private_key;
     u16? listen_port;
-    u32? fwmark;  
+    u32? fwmark;
     boolean? replace_peers;
     sequence<WgPeer> peers;
 };
@@ -284,7 +287,7 @@ interface Telio {
     /// Adapter will attempt to open its own tunnel.
     [Throws=TelioError]
     void start_custom(SecretKey secret_key, TelioCustomAdapter adapter);
-    
+
     /// Start telio with specified adapter.
     ///
     /// Adapter will attempt to open its own tunnel.
@@ -358,6 +361,16 @@ interface Telio {
     ///                   Format to be decided, pass empty string for now.
     [Throws=TelioError]
     void notify_network_change(string network_info);
+
+    /// Set the source IP address(es) currently configured on the tunnel
+    /// interface. When set, the firewall rejects outbound packets whose source
+    /// IP is not one of these.
+    ///
+    /// # Parameters
+    /// - `src_ips`: tunnel interface source IPs, empty to disable.
+    ///
+    [Throws=TelioError]
+    void set_tunnel_src_ip(sequence<IpAddr> src_ips);
 
     /// Notify telio when system goes to sleep.
     [Throws=TelioError]
@@ -496,6 +509,31 @@ interface Telio {
     void set_meshnet_off();
 
 
+    /// Register callback to get metrics and domains blocked by TP-Lite
+    ///
+    /// Requires firewall to be enabled through setting firewall field of Features object
+    /// to a non-null value
+    ///
+    /// Passing empty list of IPs will disable the collection of TP-Lite stats
+    [Throws=TelioError]
+    void enable_tp_lite_stats_collection(TpLiteStatsOptions config, TpLiteStatsCallback collect_stats_cb);
+
+    // Disable collection of TP-Lite stats
+    [Throws=TelioError]
+    void disable_tp_lite_stats_collection();
+
+    /// Set the TP-Lite DNS whitelisting configuration at runtime: the whitelisted
+    /// domains and the (blocking, standard) DNS server redirect pairs. Outbound DNS
+    /// queries to a blocking endpoint whose QNAME matches a whitelisted domain are
+    /// DNAT-rewritten to the corresponding standard endpoint.
+    ///
+    /// Requires firewall to be enabled through setting firewall field of Features
+    /// object to a non-null value.
+    ///
+    /// Passing empty lists clears the whitelisting.
+    [Throws=TelioError]
+    void set_tp_lite_domain_whitelist(sequence<string> domains, sequence<DnsRedirect> redirects);
+
     sequence<TelioNode> get_status_map();
 
     /// Get last error's message length, including trailing null
@@ -535,7 +573,7 @@ callback interface TelioProtectCb {
 };
 
 /// A [Features] builder that allows a simpler initialization of
-/// features with defaults comming from libtelio lib.
+/// features with defaults coming from libtelio lib.
 ///
 /// !!! Should only be used then remote config is inaccessible !!!
 ///
@@ -566,7 +604,7 @@ interface FeaturesDefaultsBuilder {
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_battery_saving_defaults();
 
-    /// Enable key valiation in set_config call with defaults
+    /// Enable key validation in set_config call with defaults
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_validate_keys();
 
@@ -578,7 +616,7 @@ interface FeaturesDefaultsBuilder {
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_nicknames();
 
-    /// Enable blocking event flush with timout on stop with defaults
+    /// Enable blocking event flush with timeout on stop with defaults
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_flush_events_on_stop_timeout_seconds();
 
@@ -586,13 +624,9 @@ interface FeaturesDefaultsBuilder {
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_link_detection();
 
-    /// Eanable multicast with defaults
+    /// Enable multicast with defaults
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_multicast();
-
-    /// Enable keepalive batching feature
-    [Self=ByArc]
-    FeaturesDefaultsBuilder enable_batching();
 
     /// Enable dynamic WireGuard-NT control as per RFC LLT-0089
     [Self=ByArc]
@@ -641,8 +675,8 @@ dictionary Features {
     boolean ipv6;
     /// Nicknames support
     boolean nicknames;
-    /// Feature config for firewall
-    FeatureFirewall firewall;
+    /// Feature config for firewall. When null, the firewall is disabled.
+    FeatureFirewall? firewall;
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     u64? flush_events_on_stop_timeout_seconds;
     /// Link detection mechanism
@@ -653,21 +687,8 @@ dictionary Features {
     FeaturePostQuantumVPN post_quantum_vpn;
     /// Multicast support
     boolean multicast;
-    /// Batching
-    FeatureBatching? batching;
 
     FeatureErrorNotificationService? error_notification_service;
-};
-
-dictionary FeatureBatching {
-    /// direct connection threshold for batching
-    u32 direct_connection_threshold;
-
-    /// effective trigger period
-    u32 trigger_effective_duration;
-
-    //// cooldown after trigger was used
-    u32 trigger_cooldown_duration;
 };
 
 /// Configurable features for Wireguard peers
@@ -819,6 +840,15 @@ dictionary FirewallBlacklistTuple {
     u16 port;
 };
 
+/// Pair of DNS server endpoints describing how a single DNS-redirect rule
+/// should rewrite outbound DNS traffic.
+dictionary DnsRedirect {
+    /// DNS server that would otherwise drop non-whitelisted queries.
+    SocketAddrV4 blocking;
+    /// DNS server to which whitelisted queries are redirected.
+    SocketAddrV4 standard;
+};
+
 /// Feature config for firewall
 dictionary FeatureFirewall {
     /// Turns on connection resets upon VPN server change
@@ -845,6 +875,8 @@ dictionary FeatureDns {
     TtlValue ttl_value;
     /// Configure options for exit dns [default None]
     FeatureExitDns? exit_dns;
+    /// Use the raw DNS forwarder instead of the old hickory-server
+    boolean? use_raw_forwarder;
 };
 
 /// Turns on post quantum VPN tunnel
@@ -873,10 +905,26 @@ dictionary FeatureErrorNotificationService {
 
     /// Configuration of the backoff algorithm used by ENS
     Backoff backoff;
-    
+
     /// DER encoded root certificate to be used for verification of all TLS connections
     /// to gRPC ENS endpoint in place of the hardcoded one
     bytes? root_certificate_override;
+
+    /// Interval between the keep alive messages sent over the ENS connection, in seconds.
+    /// When the underlying tcp connection stops working, the dead connection will be
+    /// detected after at most keepalive_interval_s + keepalive_timeout_s seconds and
+    /// a new connection will be created after the ENS backoff elapses.
+    /// When set to null, the keep alives are disabled.
+    /// Setting it to 0 is an error.
+    /// [default 120s]
+    u32? keepalive_interval_s = 120;
+
+    /// How long to wait for a response to a keep alive message before considering the ENS
+    /// connection dead, in seconds. Only used when keepalive_interval_s is set.
+    /// When set to null, the underlying http client default is used
+    /// Setting it to 0 is an error.
+    /// [default 20s]
+    u32? keepalive_timeout_s = 20;
 };
 
 /// Exponential backoff bounds
@@ -1076,5 +1124,73 @@ enum VpnConnectionError {
     /// Authentication failed
     "Unauthenticated",
     /// There is a newer connection to this VPN server
-    "Superseded"
+    "Superseded",
+    /// The server rejected the VPN encryption cipher
+    "UnsupportedCipher"
+};
+
+/// Simple metrics about TP-Lite DNS activity
+dictionary DnsMetrics {
+    /// Number of DNS requests that have been made
+    u32 num_requests;
+    /// Number of received DNS responses
+    u32 num_responses;
+    /// Number of DNS requests that were caught by libfirewall's cache of blocked domains
+    u32 num_cache_hits;
+};
+
+/// Information about a domain blocked by TP-Lite
+dictionary BlockedDomain {
+    /// The domain name that was blocked
+    string domain_name;
+    /// When the request occurred
+    u64 timestamp;
+    /// The category, represented by the "authority" from the SOA record
+    string category;
+};
+
+/// A callback for getting TP-Lite stats from libfirewall
+callback interface TpLiteStatsCallback {
+    /// Get the blocked domains that have been buffered so far
+    /// Blocking this callback can result in losing blocked domains from subsequent calls
+    void collect(sequence<BlockedDomain> domains, DnsMetrics metrics);
+};
+
+/// Config options for the collection of TP-Lite stats
+dictionary TpLiteStatsOptions {
+    /// The IP addresses of the TP-Lite DNS servers
+    sequence<IpAddr> dns_server_ips;
+
+    /// How many blocked domains libfirewall can store between passing them through the callback
+    /// If the buffer fills up and new blocked domains arrive, data will be lost
+    ///
+    /// Default value: 100
+    u64? blocked_domains_buffer_size;
+
+    /// After how long stats will be passed to the callback, in seconds
+    ///
+    /// Default value: 5
+    u64? callback_interval_s;
+
+    /// libfirewall disables OS/client-level caching of blocked domains when stats collection is enabled
+    /// To not make extra DNS requests libfirewall has it's own DNS cache for blocked domains
+    ///
+    /// How many entries the libfirewall-specific DNS cache can hold
+    ///
+    /// Default value: 512
+    u64? cache_size;
+
+    /// When TP-Lite stats collection is enabled libfirewall keeps track of open DNS requests
+    ///
+    /// How many requests libfirewall can keep track of
+    ///
+    /// Default value: same as blocked_domains_buffer_size
+    u64? max_open_requests;
+
+    /// The stats collection can only operate on plaintext DNS packets
+    /// Setting this flag will block DoT and DoH packets, causing the client to fallback to plaintext
+    /// Note: Some clients can be configured with no plaintext fallback, which would then break if this flag is set
+    ///
+    /// Default value: false
+    boolean? force_plaintext_dns;
 };

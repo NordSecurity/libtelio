@@ -142,8 +142,15 @@ class ArtifactsDownloader:
         with open(str(full_path), "wb") as f:
             f.write(r.content)
 
-        with zipfile.ZipFile(full_path, "r") as zip_ref:
-            zip_ref.extractall(self.path_to_save)
+        try:
+            with zipfile.ZipFile(full_path, "r") as zip_ref:
+                zip_ref.extractall(self.path_to_save)
+        except zipfile.BadZipfile:
+            print("HTTP status:", r.status_code)
+            print("Response headers:", dict(r.headers))
+            print("Response size:", len(r.content), "bytes")
+            print("First 500 bytes:", repr(r.content[:500]))
+            raise
 
     def _get_pipeline_build_artifacts(self, tag_msg: str) -> None:
         tag_data = json.loads(tag_msg)

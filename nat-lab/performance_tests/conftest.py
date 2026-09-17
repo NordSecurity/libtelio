@@ -4,12 +4,15 @@ import os
 import pytest
 import shutil
 import subprocess
+from tests.conftest_helpers.pretest import copy_vm_binaries_if_needed
+from tests.conftest_helpers.setup_checks import get_session_vm_marks
 from tests.helpers import SetupParameters
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag, clear_ephemeral_setups_set
 from tests.utils.logger import log
 from tests.utils.router import IPStack
 from tests.utils.testing import get_current_test_log_path
+from tests.utils.vm import android_vm_util
 
 
 def _cancel_all_tasks(loop: asyncio.AbstractEventLoop):
@@ -49,6 +52,23 @@ def event_loop():
             loop.close()
 
 
+def _setup_parameters_id(val: SetupParameters) -> str:
+    short_conn_tag_name = val.connection_tag.name.removeprefix("DOCKER_")
+    param_id = f"{short_conn_tag_name}-{val.adapter_type_override.name.replace('_', '') if val.adapter_type_override is not None else ''}"
+    if val.features.direct is not None and val.features.direct.providers is not None:
+        for provider in val.features.direct.providers:
+            param_id += f"-{provider.name}"
+    return param_id
+
+
+def _ipstack_id(val: IPStack) -> str:
+    return {
+        IPStack.IPv4: "IPv4",
+        IPStack.IPv4v6: "IPv4v6",
+        IPStack.IPv6: "IPv6",
+    }.get(val, "")
+
+
 def pytest_make_parametrize_id(config, val):
     param_id = ""
     if isinstance(val, (list, tuple)):
@@ -58,30 +78,13 @@ def pytest_make_parametrize_id(config, val):
                 param_id += f"-{res}"
         param_id = f"{param_id[1:]}"
     elif isinstance(val, (SetupParameters,)):
-        short_conn_tag_name = val.connection_tag.name.removeprefix("DOCKER_")
-        param_id = f"{short_conn_tag_name}-{val.adapter_type_override.name.replace('_', '') if val.adapter_type_override is not None else ''}"
-        if (
-            val.features.direct is not None
-            and val.features.direct.providers is not None
-        ):
-            for provider in val.features.direct.providers:
-                param_id += f"-{provider.name}"
-
-        if val.features.batching is not None:
-            param_id += (
-                f"-batch-{str(val.features.batching.direct_connection_threshold)}"
-            )
+        param_id = _setup_parameters_id(val)
     elif isinstance(val, (ConnectionTag,)):
         param_id = val.name.removeprefix("DOCKER_")
     elif isinstance(val, (TelioAdapterType,)):
         param_id = val.name.replace("_", "")
     elif isinstance(val, IPStack):
-        if val == IPStack.IPv4:
-            param_id = "IPv4"
-        elif val == IPStack.IPv4v6:
-            param_id = "IPv4v6"
-        elif val == IPStack.IPv6:
-            param_id = "IPv6"
+        param_id = _ipstack_id(val)
     elif isinstance(val, str):
         if len(val) > 16:
             param_id = f"{val[:14]}.."
@@ -102,7 +105,7 @@ async def kill_natlab_processes():
     cleanup_script_path = os.path.join(
         os.path.dirname(__file__), "../bin/cleanup_natlab_processes"
     )
-    subprocess.run(["sudo", cleanup_script_path]).check_returncode()
+    subprocess.run(["sudo", cleanup_script_path], check=True)
 
 
 PRETEST_CLEANUPS = [
@@ -154,10 +157,33 @@ async def collect_kernel_logs(items, suffix):
     save_audit_log_from_host(suffix)
 
 
+def _skip_android_libfirewall_tests(items):
+    if os.path.exists(android_vm_util.LIBFIREWALL_SO):
+        return
+    for item in items:
+        if item.get_closest_marker("android") and item.get_closest_marker(
+            "libfirewall"
+        ):
+            item.add_marker(
+                pytest.mark.skip(
+                    reason=(
+                        "libfirewall not available at"
+                        f" {android_vm_util.LIBFIREWALL_SO}"
+                    )
+                )
+            )
+
+
+def pytest_collection_modifyitems(items):
+    _skip_android_libfirewall_tests(items)
+
+
 def pytest_runtestloop(session):
     if not session.config.option.collectonly:
         if os.environ.get("NATLAB_SAVE_LOGS") is not None:
             asyncio.run(collect_kernel_logs(session.items, "before_tests"))
+        session_vm_marks = get_session_vm_marks(session.items)
+        asyncio.run(copy_vm_binaries_if_needed(session_vm_marks))
 
 
 # pylint: disable=unused-argument

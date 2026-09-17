@@ -3,7 +3,7 @@ use std::{net::Ipv4Addr, sync::Arc, time::Duration};
 use clap::Parser;
 use parking_lot::Mutex;
 use serde::Deserialize;
-use telio::crypto::SecretKey;
+use telio_core::crypto::SecretKey;
 use telio_model::{config::Server, PublicKey};
 use telio_proto::{Codec, PacketRelayed};
 use telio_relay::{DerpRelay, SortedServers};

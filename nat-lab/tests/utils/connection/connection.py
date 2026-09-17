@@ -23,10 +23,13 @@ class ConnectionTag(Enum):
     DOCKER_UDP_BLOCK_CLIENT_1 = auto()
     DOCKER_UDP_BLOCK_CLIENT_2 = auto()
     DOCKER_OPENWRT_CLIENT_1 = auto()
+    DOCKER_OPENWRT_CLIENT_3 = auto()
+    DOCKER_OPENWRT_DHCP_CLIENT_1 = auto()
+    DOCKER_OPENWRT_DHCP_CLIENT_3 = auto()
     DOCKER_INTERNAL_SYMMETRIC_CLIENT = auto()
     VM_WINDOWS_1 = auto()
-    VM_WINDOWS_2 = auto()
     VM_MAC = auto()
+    VM_ANDROID_1 = auto()
     DOCKER_CONE_GW_1 = auto()
     DOCKER_CONE_GW_2 = auto()
     DOCKER_CONE_GW_3 = auto()
@@ -39,7 +42,9 @@ class ConnectionTag(Enum):
     DOCKER_UPNP_GW_1 = auto()
     DOCKER_UPNP_GW_2 = auto()
     DOCKER_OPENWRT_GW_1 = auto()
+    DOCKER_OPENWRT_GW_3 = auto()
     VM_OPENWRT_GW_1 = auto()
+    VM_OPENWRT_GW_3 = auto()
     DOCKER_VPN_1 = auto()
     DOCKER_VPN_2 = auto()
     VM_LINUX_NLX_1 = auto()
@@ -52,12 +57,16 @@ class ConnectionTag(Enum):
     DOCKER_PHOTO_ALBUM = auto()
     DOCKER_WINDOWS_GW_1 = auto()
     DOCKER_WINDOWS_GW_2 = auto()
-    DOCKER_WINDOWS_GW_3 = auto()
-    DOCKER_WINDOWS_GW_4 = auto()
     DOCKER_WINDOWS_VM_1 = auto()
-    DOCKER_WINDOWS_VM_2 = auto()
     DOCKER_MAC_GW_1 = auto()
     DOCKER_MAC_GW_2 = auto()
+    DOCKER_CORE_API_1 = auto()
+    DOCKER_MQTT_BROKER_1 = auto()
+    DOCKER_STUN_1 = auto()
+    DOCKER_UDP_SERVER = auto()
+    DOCKER_OPENWRT_CDN = auto()
+    DOCKER_TP_LITE_DNS_SERVER = auto()
+    DOCKER_PLAYWRIGHT_RUNNER_1 = auto()
 
     def __repr__(self):
         return f"{self.name}"
@@ -70,6 +79,7 @@ class TargetOS(Enum):
     Linux = auto()
     Windows = auto()
     Mac = auto()
+    Android = auto()
 
     @staticmethod
     def local():
@@ -123,6 +133,7 @@ class Connection(ABC):
     async def upload_file(self, local_file_path: str, remote_file_path: str) -> None:
         pass
 
+    @abstractmethod
     async def get_ip_address(self) -> tuple[str, str]:
         ip = "127.0.0.1"
         return (ip, ip)
@@ -151,7 +162,7 @@ async def setup_ephemeral_ports(connection: Connection):
     start_port = random.randint(15000, 55000)
     num_ports = random.randint(2000, 5000)
 
-    if connection.tag in [ConnectionTag.VM_WINDOWS_1, ConnectionTag.VM_WINDOWS_2]:
+    if connection.tag is ConnectionTag.VM_WINDOWS_1:
         cmd = [
             "netsh",
             "int",

@@ -8,10 +8,12 @@ default-run = "tcli"
 
 [dependencies]
 dirs = "6.0.0"
-reqwest = { version = "0.12.26", default-features = false, features = [
+reqwest = { version = "0.13.3", default-features = false, features = [
   "json",
   "blocking",
-  "rustls-tls",
+  "rustls",
+  "form",
+  "query",
 ] }
 rustyline = "17.0"
 shellwords = "1.1.0"
@@ -25,7 +27,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 tracing-appender.workspace = true
 parking_lot.workspace = true
-regex.workspace = true
+regex-lite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -33,7 +35,7 @@ thiserror.workspace = true
 time.workspace = true
 tokio = { workspace = true, features = ["full"] }
 
-telio = { path = "../.." }
+telio-core = { workspace = true, features = ["enable_ens"] }
 telio-crypto.workspace = true
 telio-model.workspace = true
 telio-proto.workspace = true

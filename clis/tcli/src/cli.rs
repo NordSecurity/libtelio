@@ -3,8 +3,8 @@ use clap::Parser;
 use ipnet::IpNet;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use telio::crypto::{PublicKey, SecretKey};
-use telio::device::{Device, DeviceConfig};
+use telio_core::crypto::{PublicKey, SecretKey};
+use telio_core::device::{Device, DeviceConfig};
 use telio_model::config::{RelayState, Server};
 use telio_model::features::Features;
 use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
@@ -51,7 +51,7 @@ pub enum Error {
     NeedsLogin,
 
     #[error(transparent)]
-    Telio(#[from] telio::device::Error),
+    Telio(#[from] telio_core::device::Error),
 
     #[error(transparent)]
     Io(#[from] std::io::Error),

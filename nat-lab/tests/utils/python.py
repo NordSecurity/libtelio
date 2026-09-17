@@ -1,4 +1,5 @@
-from tests.utils.connection import Connection, TargetOS
+from tests.config import ANDROID_DEVICE_TMP
+from tests.utils.connection import Connection, ConnectionTag, TargetOS
 
 
 def get_python_binary(connection: Connection) -> str:
@@ -6,6 +7,11 @@ def get_python_binary(connection: Connection) -> str:
     Returns the correct python binary name for each platform or the
     full path where needed.
     """
+    if connection.tag == ConnectionTag.VM_ANDROID_1:
+        # Launcher (pushed by copy_binaries) that re-execs into the Termux python
+        # via run-as, since the bionic interpreter + libtelio.so live in Termux's
+        # app-private home. See bin/android/natlab-python.
+        return f"{ANDROID_DEVICE_TMP}natlab-python"
     if connection.target_os == TargetOS.Windows:
         return "python"
     if connection.target_os == TargetOS.Mac:

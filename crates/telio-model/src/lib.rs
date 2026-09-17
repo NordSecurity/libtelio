@@ -6,6 +6,7 @@ pub mod constants;
 pub mod event;
 pub mod features;
 pub mod mesh;
+pub mod tp_lite_stats;
 pub mod validation;
 
 pub use std::collections::HashMap;

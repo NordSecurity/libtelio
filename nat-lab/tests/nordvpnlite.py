@@ -1,10 +1,11 @@
 import asyncio
+import copy
 import json
 import os
 import re
 import time
 from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field, asdict
 from enum import Enum
 from pathlib import Path
 from tests.config import (
@@ -26,20 +27,17 @@ from tests.utils.process import Process, ProcessExecError
 from tests.utils.router import IPStack
 from tests.utils.router.linux_router import LinuxRouter
 from tests.utils.testing import get_current_test_log_path
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Awaitable, Callable, Dict, List, Optional
 
 
 class IgnoreableError(Exception):
     pass
 
 
-class IfcConfigType(Enum):
+class ConfigPresetName(Enum):
     DEFAULT = "config.json"
     MANUAL = "config_with_manual_setup.json"
     IPROUTE = "config_with_iproute_setup.json"
-    VPN_COUNTRY_PL = "config_with_vpn_country_pl.json"
-    VPN_COUNTRY_DE = "config_with_vpn_country_de.json"
-    VPN_COUNTRY_EMPTY = "config_with_vpn_country_empty.json"
     VPN_OPENWRT_UCI_PL = "config_openwrt_uci_pl_setup.json"
     VPN_OPENWRT_UCI_DE = "config_openwrt_uci_de_setup.json"
 
@@ -48,10 +46,90 @@ class IfcConfigType(Enum):
         return cls.MANUAL
 
 
+@dataclass
+class VPNServer:
+    address: Optional[str] = None
+    public_key: Optional[str] = None
+
+
+@dataclass
+class VPNConfig:
+    country: Optional[str] = None
+    server: Optional[VPNServer] = None
+
+
+@dataclass
+class InterfaceConfig:
+    name: str = "nordvpnlite"
+    config_provider: str = field(default="iproute")
+
+
+@dataclass
+class NordVpnLiteConfig:
+    vpn: Optional[VPNConfig] = None
+    log_level: str = "debug"
+    log_file_path: str = "/var/log/nordvpnlite_natlab.log"
+    log_file_count: int = 0
+    adapter_type: str = "neptun"
+    auth_file_path: str = "/run/auth.json"
+    http_certificate_file_path: str = "/etc/ssl/server_certificate/test.pem"
+    interface: InterfaceConfig = field(default_factory=InterfaceConfig)
+    override_default_wg_port: int = 1023
+    dns: Optional[List[str]] = None
+    post_quantum: bool = False
+
+    def to_dict(self):
+        data = asdict(self)
+        vpn = data.get("vpn")
+        if isinstance(vpn, dict):
+            # remove either country or server when it is None
+            vpn_clean = {k: v for k, v in vpn.items() if v is not None}
+            data["vpn"] = vpn_clean or None
+
+        return {k: v for k, v in data.items() if v is not None}
+
+
+# Mapping of predefined configuration presets to their corresponding NordVpnLiteConfig
+CONFIG_PRESETS: Dict[ConfigPresetName, NordVpnLiteConfig] = {
+    ConfigPresetName.DEFAULT: NordVpnLiteConfig(
+        vpn=VPNConfig(
+            server=VPNServer(
+                address="10.0.100.1", public_key=str(WG_SERVER["public_key"])
+            )
+        )
+    ),
+    ConfigPresetName.MANUAL: NordVpnLiteConfig(
+        vpn=VPNConfig(
+            server=VPNServer(
+                address="10.0.100.1", public_key=str(WG_SERVER["public_key"])
+            )
+        ),
+        interface=InterfaceConfig(config_provider="manual"),
+    ),
+    ConfigPresetName.IPROUTE: NordVpnLiteConfig(
+        vpn=VPNConfig(
+            server=VPNServer(
+                address="10.0.100.1", public_key=str(WG_SERVER["public_key"])
+            )
+        )
+    ),
+    ConfigPresetName.VPN_OPENWRT_UCI_PL: NordVpnLiteConfig(
+        vpn=VPNConfig(country="pl"),
+        adapter_type="linux-native",
+        interface=InterfaceConfig(config_provider="uci"),
+        dns=["10.0.80.83"],
+    ),
+    ConfigPresetName.VPN_OPENWRT_UCI_DE: NordVpnLiteConfig(
+        vpn=VPNConfig(country="de"),
+        adapter_type="linux-native",
+        interface=InterfaceConfig(config_provider="uci"),
+    ),
+}
+
+
 @dataclass(frozen=True)
 class Paths:
     exec_path: Path = Path(f"{LIBTELIO_BINARY_PATH_DOCKER}/nordvpnlite")
-    config_dir: Path = Path("/etc/nordvpnlite")
     log_dir: Path = Path("/var/log")
     run_dir: Path = Path("/run")
 
@@ -74,55 +152,71 @@ class Paths:
     def lib_log(self) -> Path:
         return self.log_dir / "nordvpnlite_natlab.log"
 
-    def config_path(self, config_type: IfcConfigType) -> Path:
-        return self.config_dir / config_type.value
+    @property
+    def auth_file(self) -> Path:
+        return self.run_dir / "auth.json"
 
 
 class Config:
     def __init__(
         self,
-        config_type: IfcConfigType = IfcConfigType(None),
+        config_data: NordVpnLiteConfig,
+        config_path: Optional[Path] = None,
+        auth_path: Optional[Path] = None,
+        config_name: ConfigPresetName = ConfigPresetName.DEFAULT,
         no_detach: bool = False,
         paths=Paths(),
     ):
         self.paths: Paths = paths
-        self.config_type: IfcConfigType = config_type
+        self.config_path: Path = config_path or Path(f"/tmp/{config_name.value}")
+        self.auth_path: Path = auth_path or self.paths.auth_file
+        self.config_name: ConfigPresetName = config_name
+        self.config_data: NordVpnLiteConfig = copy.deepcopy(config_data)
+        self.config_data.auth_file_path = str(self.auth_path)
         self.no_detach: bool = no_detach
 
-    def path(self) -> Path:
-        return self.paths.config_path(self.config_type)
-
-    async def assert_match_daemon_start(self, stdout: str):
+    async def assert_match_daemon_start(
+        self,
+        stdout: str,
+    ) -> tuple[Path, Path, Path]:
         assert (
             "Starting daemon" in stdout
         ), f"Could not find 'Starting daemon' in: '{stdout}'"
 
-        config_match = re.search(r"Reading config from:\s*(.+.json)", stdout)
+        config_match = re.search(r"Reading config from:\s*(\S+\.json)", stdout)
         assert config_match, f"Could not find config path in: {stdout}"
         config_path = Path(config_match.group(1).strip())
         assert (
-            config_path == self.path()
-        ), f"Config path does not match: '{config_path}' != '{self.path()}'"
+            config_path == self.config_path
+        ), f"Config path does not match: '{config_path}' != '{self.config_path}'"
 
-        log_match = re.search(r"Saving logs to:\s*(.+\.log)", stdout)
+        auth_match = re.search(r"Reading auth from:\s*(\S+\.json)", stdout)
+        assert auth_match, f"Could not find auth path in: {stdout}"
+        auth_path = Path(auth_match.group(1).strip())
+        assert (
+            auth_path == self.auth_path
+        ), f"Auth path does not match: '{auth_path}' != '{self.auth_path}'"
+
+        log_match = re.search(r"Saving logs to:\s*(\S+\.log)", stdout)
         assert log_match, f"Could not find log path in: {stdout}"
         log_path = Path(log_match.group(1).strip())
         assert (
             log_path == self.paths.lib_log
         ), f"Log path does not match: '{log_path}' != '{self.paths.lib_log}'"
 
-        return config_path, log_path
+        return config_path, auth_path, log_path
 
 
 class NordVpnLite:
     SOCKET_CHECK_INTERVAL_S = 0.5
     NORDVPNLITE_CMD_CHECK_INTERVAL_S = 10  # TODO (LLT-6693): revert back to 1
+    DAEMON_STOP_TIMEOUT_S = 10
 
     def __init__(
         self,
         connection: Connection,
         exit_stack: AsyncExitStack,
-        config: Config = Config(),
+        config: Config = Config(CONFIG_PRESETS[ConfigPresetName.DEFAULT]),
         api: Optional[API] = None,
     ) -> None:
         self._api: API = api if api is not None else API()
@@ -135,31 +229,46 @@ class NordVpnLite:
     async def new(
         cls,
         exit_stack: AsyncExitStack,
-        config_type: IfcConfigType = IfcConfigType(None),
+        config_data: NordVpnLiteConfig,
+        config_name: ConfigPresetName = ConfigPresetName.DEFAULT,
+        config_path: Optional[Path] = None,
         no_detach: bool = False,
         connection_tag: ConnectionTag = ConnectionTag.DOCKER_CONE_CLIENT_1,
         connection: Optional[Connection] = None,
-        vpn_public_key: Optional[str] = str(WG_SERVER["public_key"]),
     ) -> "NordVpnLite":
         if not connection:
             connection = (await setup_connections(exit_stack, [connection_tag]))[
                 0
             ].connection
-        nordvpnlite = cls(connection, exit_stack, config=Config(config_type, no_detach))
-        if vpn_public_key:
-            await exit_stack.enter_async_context(
-                nordvpnlite.setup_vpn_public_key(vpn_public_key)
-            )
-
+        nordvpnlite = cls(
+            connection,
+            exit_stack,
+            config=Config(
+                config_data,
+                config_path=config_path,
+                config_name=config_name,
+                no_detach=no_detach,
+            ),
+        )
         return nordvpnlite
+
+    async def save_config(self) -> None:
+        content = json.dumps(self.config.config_data.to_dict(), indent=2)
+        remote_path = str(self.config.config_path)
+        safe_content = content.replace("EOF", "EO_F")
+        auth_dir = str(Path(self.config.config_data.auth_file_path).parent)
+        cmd = [
+            "sh",
+            "-c",
+            f"mkdir -p {auth_dir}\n"
+            f"cat <<'EOF' > {remote_path}\n{safe_content}\nEOF\n",
+        ]
+        await self.connection.create_process(cmd).execute()
 
     async def execute_command(
         self,
         cmd: list,
     ) -> tuple[str, str]:
-        # TODO(LLT-6785): remove the sleep
-        await asyncio.sleep(5)
-
         start_time = time.time()
         try:
             cmd = [str(self.config.paths.exec_path)] + cmd
@@ -177,7 +286,7 @@ class NordVpnLite:
         except ProcessExecError as exc:
             time_took = time.time() - start_time
             log.debug("Command: [%s] took %.3f seconds", cmd, time_took)
-            log.debug("Exception occured while executing nordvpnlite command: %s", exc)
+            log.debug("Exception occurred while executing nordvpnlite command: %s", exc)
             raise
 
     async def run_command(
@@ -195,32 +304,21 @@ class NordVpnLite:
         log.info("NordVPN Lite starting..")
         try:
             await self.remove_logs()
-
-            async def wait_for_nordvpnlite_start():
-                await self.wait_for_nordvpnlite_socket()
-                while True:
-                    try:
-                        if not await self.is_alive():
-                            raise RuntimeError(
-                                "socket exists but daemon's not running."
-                            )
-                        break
-                    except IgnoreableError:
-                        await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
-                        continue
+            await self.save_config()
+            await self.login()
 
             cmd = ["start"]
             if not self.config.no_detach:
                 cmd.append("--config-file")
-                cmd.append(str(self.config.path()))
+                cmd.append(str(self.config.config_path))
                 stdout, stderr = await self.execute_command(cmd)
-                await wait_for_nordvpnlite_start()
+                await self.wait_for_nordvpnlite_start()
             else:
                 cmd.append("--no-detach")
                 cmd.append("--config-file")
-                cmd.append(str(self.config.path()))
+                cmd.append(str(self.config.config_path))
                 proc = await self.run_command(cmd)
-                await wait_for_nordvpnlite_start()
+                await self.wait_for_nordvpnlite_start()
                 stdout, stderr = proc.get_stdout(), proc.get_stderr()
 
             assert len(stderr) == 0, f"Stderr is not empty: {stderr}"
@@ -246,6 +344,11 @@ class NordVpnLite:
                 log.debug("Dangling socket found, removing it..")
                 await self.remove_socket()
         finally:
+            if self.config.config_path:
+                log.info(
+                    "NordVPN Lite cleanup: removing config %s", self.config.config_path
+                )
+                await self.remove_config(self.config.config_path)
             log.info("NordVPN Lite cleanup: saving logs")
             await self._save_logs()
 
@@ -257,6 +360,34 @@ class NordVpnLite:
             if "Error: DaemonIsNotRunning" in exc.stderr:
                 return False
             raise exc
+
+    async def login(self) -> bool:
+        log.info("NordVPN Lite login: storing credentials")
+        try:
+            cmd = ["login"]
+            cmd.append("--token")
+            cmd.append(CORE_API_CREDENTIALS["password"])
+            cmd.append("--config-file")
+            cmd.append(str(self.config.config_path))
+            stdout, _ = await self.execute_command(cmd)
+            return "Authentication credentials stored successfully" in stdout
+        except ProcessExecError as exc:
+            raise exc
+
+    async def logout(self) -> bool:
+        log.info("NordVPN Lite logout: clearing credentials")
+        try:
+            cmd = ["logout"]
+            cmd.append("--config-file")
+            cmd.append(str(self.config.config_path))
+            stdout, _ = await self.execute_command(cmd)
+            if "Authentication credentials cleared successfully" in stdout:
+                return True
+            if "No authentication credentials to clear" in stdout:
+                return True
+            return False
+        except ProcessExecError as exc:
+            raise IgnoreableError() from exc
 
     async def get_status(self) -> str:
         try:
@@ -270,18 +401,33 @@ class NordVpnLite:
                 raise IgnoreableError() from exc
             raise exc
 
-    async def quit(self) -> None:
-        stdout, stderr = await self.execute_command(["stop"])
+    async def reload(self) -> None:
+        """Trigger a config reload on the running daemon and wait for it to reconnect."""
+        stdout, stderr = await self.execute_command(["reload"])
         assert (
             "Command executed successfully" in stdout
-            or "Daemon is already stopped" in stdout
+        ), f"Reload failed: stdout={stdout!r}, stderr={stderr!r}"
+        await self.wait_for_nordvpnlite_start()
+
+    async def quit(self) -> None:
+        stdout, stderr = await self.execute_command(["stop"])
+        daemon_already_stopped = "Daemon is already stopped" in stdout
+        assert (
+            "Command executed successfully" in stdout or daemon_already_stopped
         ), f"Failed to execute stop command: {stderr}"
 
-        assert (
-            not await self.is_alive()
+        if daemon_already_stopped:
+            if await self.socket_exists():
+                log.debug("Dangling socket found after stop no-op, removing it..")
+                await self.remove_socket()
+            return
+
+        # Daemon responds to stop before the process exits and the socket is removed
+        assert await self._wait_until_false(
+            self.is_alive, self.DAEMON_STOP_TIMEOUT_S
         ), "Quit command was sent successfully but daemon's still running"
-        assert (
-            not await self.socket_exists()
+        assert await self._wait_until_false(
+            self.socket_exists, self.DAEMON_STOP_TIMEOUT_S
         ), "Daemon's not running but socket still exists"
 
     async def kill(self) -> None:
@@ -295,12 +441,30 @@ class NordVpnLite:
                 await self.connection.create_process(
                     ["killall", "-w", "-s", "SIGTERM", "nordvpnlite"]
                 ).execute()
-            assert (
-                not await self.is_alive()
+            assert await self._wait_until_false(
+                self.is_alive, self.DAEMON_STOP_TIMEOUT_S
             ), "SIGTERM was sent but daemon's still running"
         except ProcessExecError as exc:
             if "nordvpnlite: no process found" not in exc.stderr:
                 raise
+
+    async def _wait_until_false(
+        self, check: Callable[[], Awaitable[bool]], timeout_s: float
+    ) -> bool:
+        """Poll `check` until it returns False, or until `timeout_s` elapses"""
+
+        async def poll() -> None:
+            while await check():
+                await asyncio.sleep(self.SOCKET_CHECK_INTERVAL_S)
+
+        task = asyncio.ensure_future(poll())
+        try:
+            await asyncio.wait_for(task, timeout_s)
+        except asyncio.TimeoutError:
+            if not task.cancelled():
+                raise
+            return False
+        return True
 
     async def remove_config(self, path: Path) -> None:
         await self.connection.create_process(["rm", "-f", str(path)]).execute()
@@ -339,6 +503,17 @@ class NordVpnLite:
         await self.connection.create_process(
             ["rm", "-f", str(self.config.paths.socket_file)]
         ).execute()
+
+    async def wait_for_nordvpnlite_start(self):
+        await self.wait_for_nordvpnlite_socket()
+        while True:
+            try:
+                if not await self.is_alive():
+                    raise RuntimeError("socket exists but daemon's not running.")
+                break
+            except IgnoreableError:
+                await asyncio.sleep(self.NORDVPNLITE_CMD_CHECK_INTERVAL_S)
+                continue
 
     async def wait_for_nordvpnlite_socket(self):
         while True:
@@ -427,45 +602,12 @@ class NordVpnLite:
         )
         self._node = node
 
-        await self._api.prepare_all_vpn_servers()
+        await self._api.prepare_vpn_servers()
         for country_id, server_config in enumerate(WG_SERVERS, start=1):
-            await register_vpn_server_key(
-                self.connection, str(server_config["public_key"]), country_id
-            )
-
-    @asynccontextmanager
-    async def setup_vpn_public_key(self, pubkey: str) -> AsyncIterator:
-        """
-        Because VPN server keys are generated only at runtime, this generator
-        function inserts them to the config file, reverting
-        back to 'public-key-placeholder' on _aexit_.
-        """
-        config_path = f"data/nordvpnlite/{self.config.config_type.value}"
-        with open(config_path, "r", encoding="UTF-8") as f:
-            original_cfg = f.read()
-
-        def update_public_key_in_json(content: str, new_key: str) -> str:
-            try:
-                config_data = json.loads(content)
-                config_data["vpn"]["server"]["public_key"] = new_key
-                return json.dumps(config_data, indent=2)
-            except json.JSONDecodeError as e:
-                raise RuntimeError(
-                    f"Failed to parse config file as JSON: {config_path}\nError: {e}"
-                ) from e
-
-        try:
-            updated_cfg = update_public_key_in_json(original_cfg, pubkey)
-            with open(config_path, "w", encoding="UTF-8") as f:
-                f.write(updated_cfg)
-
-            yield
-        finally:
-            clean_cfg = update_public_key_in_json(
-                original_cfg, "public-key-placeholder"
-            )
-            with open(config_path, "w", encoding="UTF-8") as f:
-                f.write(clean_cfg)
+            if (public_key := server_config.get("public_key", None)) is not None:
+                await register_vpn_server_key(
+                    self.connection, str(public_key), country_id
+                )
 
     async def _save_logs(self) -> None:
         if os.environ.get("NATLAB_SAVE_LOGS") is None:

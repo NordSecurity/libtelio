@@ -6,9 +6,12 @@ license = "GPL-3.0-only"
 repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
+[features]
+fuzzing = []
+
 [dependencies]
-rand = { workspace = true, default-features = false }
-hickory-server = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v3.0.1", features = ["hickory-resolver"], default-features = false }
+rand.workspace = true
+hickory-server = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v3.0.3", features = ["hickory-resolver"], default-features = false }
 async-trait.workspace = true
 neptun.workspace = true
 x25519-dalek.workspace = true
@@ -18,6 +21,7 @@ tracing.workspace = true
 mockall = { workspace = true, optional = true }
 nix.workspace = true
 pnet_packet.workspace = true
+thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "net", "sync", "macros"] }
 
 telio-crypto.workspace = true
@@ -27,5 +31,7 @@ telio-wg.workspace = true
 
 [dev-dependencies]
 dns-parser = "0.8.0"
+rand_core_compat.workspace = true
+rstest.workspace = true
 
 mockall.workspace = true

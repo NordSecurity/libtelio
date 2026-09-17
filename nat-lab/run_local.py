@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import argparse
+import json
 import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/../..")
@@ -12,21 +14,57 @@ PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/
 TEST_TIMEOUT = 180
 
 
+def load_json(file_path: Path) -> Dict:
+    """Safely load JSON file."""
+    if not file_path.exists():
+        return {}
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+def save_json(file_path: Path, data: Dict) -> None:
+    """Safely save JSON file."""
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def calculate_duration_delta(original: Dict, merged: Dict) -> Dict:
+    """
+    Calculate what's new/changed between original and merged durations.
+    Returns only tests that are new or have different durations.
+    """
+    new_data = {}
+    for test_name, duration in merged.items():
+        if test_name not in original or original[test_name] != duration:
+            new_data[test_name] = duration
+    return new_data
+
+
 # Runs the command with stdout and stderr piped back to executing shell (this results
 # in real time log messages that are properly color coded)
-def run_command(command: List[str], env: Optional[Dict[str, Any]] = None) -> None:
+def run_command(
+    command: List[str],
+    env: Optional[Dict[str, Any]] = None,
+    allow_failure: bool = False,
+) -> int:
     if env:
         env = {**os.environ.copy(), **env}
 
     print(f"|EXECUTE| {' '.join(command)}")
-    subprocess.check_call(command, env=env)
+    result = subprocess.run(command, env=env, check=False)
     print("")
+    if result.returncode != 0 and not allow_failure:
+        raise subprocess.CalledProcessError(result.returncode, command)
+    return result.returncode
 
 
-def main() -> int:
+def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-o", type=str, default="linux", help="Pass the host OS [default: linux])"
+        "-o", type=str, default="linux", help="Pass the host OS [default: linux]"
     )
     parser.add_argument(
         "--restart", action="store_true", help="Restart build container"
@@ -56,6 +94,11 @@ def main() -> int:
         help="MacOS build, run tests with 'mac' mark",
     )
     parser.add_argument(
+        "--android",
+        action="store_true",
+        help="Run tests with 'android' mark (requires android-client-01 emulator)",
+    )
+    parser.add_argument(
         "--linux-native", action="store_true", help="Run tests with 'linux_native' mark"
     )
     parser.add_argument(
@@ -69,6 +112,19 @@ def main() -> int:
     parser.add_argument("--reruns", type=int, default=0, help="Pass `reruns` to pytest")
     parser.add_argument("--count", type=int, default=1, help="Pass `count` to pytest")
     parser.add_argument("--moose", action="store_true", help="Build with moose")
+    parser.add_argument(
+        "--input-durations",
+        type=str,
+        help=(
+            "Path to the published durations file (read-only reference); the delta"
+            " against it is written to --output-durations"
+        ),
+    )
+    parser.add_argument(
+        "--output-durations",
+        type=str,
+        help="Path to output duration file (where new durations are stored)",
+    )
     parser.add_argument(
         "--no-verify-setup-correctness",
         action="store_true",
@@ -84,6 +140,11 @@ def main() -> int:
         action="store_true",
         help="Run performance tests instead of functional tests",
     )
+    return parser
+
+
+def main() -> int:
+    parser = _build_arg_parser()
     args = parser.parse_args()
 
     if not args.no_verify_setup_correctness:
@@ -134,30 +195,63 @@ def main() -> int:
         run_command(["uv", "run", "mypy", "."])
 
     if not args.notests:
-        pytest_cmd = [
-            "pytest",
-            "-vv",
-            "--durations=0",
-            f"--reruns={args.reruns}",
-            f"--count={args.count}",
-        ]
-
-        pytest_cmd += [
-            f"--timeout={TEST_TIMEOUT}",
-            # Make timeout compatible with reruns
-            # https://github.com/pytest-dev/pytest-rerunfailures/issues/99
-            "-o",
-            "timeout_func_only=true",
-        ]
-
-        pytest_cmd += get_pytest_arguments(args)
-
-        test_dir = "performance_tests" if args.perf_tests else "tests"
-        pytest_cmd.append(test_dir)
-
-        run_command(pytest_cmd)
+        _run_tests(args)
 
     return 0
+
+
+def _run_tests(args) -> None:
+    pytest_cmd = [
+        "pytest",
+        "-vv",
+        "--durations=0",
+        f"--reruns={args.reruns}",
+        f"--count={args.count}",
+    ]
+
+    pytest_cmd += [
+        f"--timeout={TEST_TIMEOUT}",
+        # Make timeout compatible with reruns
+        # https://github.com/pytest-dev/pytest-rerunfailures/issues/99
+        "-o",
+        "timeout_func_only=true",
+    ]
+
+    original_durations_data = {}
+    input_path = None
+
+    durations_path: Optional[Path] = None
+
+    if args.input_durations:
+        input_path = Path(args.input_durations)
+        original_durations_data = load_json(input_path)
+        durations_path = input_path
+    elif args.output_durations:
+        durations_path = Path(args.output_durations)
+
+    if durations_path is not None:
+        pytest_cmd.extend([
+            "--store-durations",
+            f"--durations-path={durations_path.absolute()}",
+        ])
+
+    pytest_cmd += get_pytest_arguments(args)
+
+    test_dir = "performance_tests" if args.perf_tests else "tests"
+    pytest_cmd.append(test_dir)
+
+    pytest_result = run_command(pytest_cmd, allow_failure=True)
+
+    if args.output_durations and args.input_durations:
+        output_path = Path(args.output_durations)
+        if input_path:
+            merged_data = load_json(input_path)
+            new_data = calculate_duration_delta(original_durations_data, merged_data)
+            save_json(output_path, new_data)
+            save_json(input_path, original_durations_data)
+
+    if pytest_result != 0:
+        raise subprocess.CalledProcessError(pytest_result, pytest_cmd)
 
 
 def run_build_command(operating_system, args):
@@ -207,12 +301,14 @@ def get_pytest_arguments(options) -> List[str]:
     else:
         marks = (
             "not nat and not windows and not mac and not linux_native and not long and"
-            " not moose"
+            " not moose and not android"
         )
         if options.windows:
             marks = marks.replace("not windows", "windows")
         if options.mac:
             marks = marks.replace("not mac", "mac")
+        if options.android:
+            marks = marks.replace("not android", "android")
         if options.linux_native:
             marks = marks.replace("not linux_native", "linux_native")
         if options.moose:
@@ -226,7 +322,10 @@ def get_pytest_arguments(options) -> List[str]:
 def verify_setup_correctness():
     def get_tag_or_hash_of_dir(path):
         result = subprocess.run(
-            ["git", "tag", "--points-at", "HEAD"], cwd=path, capture_output=True
+            ["git", "tag", "--points-at", "HEAD"],
+            cwd=path,
+            capture_output=True,
+            check=False,
         )
         if result.returncode != 0:
             return None
@@ -235,7 +334,7 @@ def verify_setup_correctness():
             return tag
 
         result = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=path, capture_output=True
+            ["git", "rev-parse", "HEAD"], cwd=path, capture_output=True, check=False
         )
         if result.returncode != 0:
             return None

@@ -392,7 +392,7 @@ async def main():
     tls_config = generate_certificate_chain(
         common_name="localhost",
         dns_names=["localhost"],
-        ip_addrs=["127.0.0.1"],
+        ip_addrs=["10.0.100.1", "127.0.0.1"], # vpn-01 and localhost IPs
     )
     fingerprint = tls_config.fingerprint
     leaf_cert_pem, leaf_key_pem = tls_config.leaf_cert_pem, tls_config.leaf_key_pem

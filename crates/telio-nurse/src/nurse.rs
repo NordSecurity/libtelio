@@ -274,37 +274,31 @@ impl State {
 
         let qos_data = QoSData::merge(internal_qos_data, external_qos_data);
 
+        let node_params = moose::NodeParams {
+            connection_duration: qos_data.connection_duration,
+            rtt: qos_data.rtt,
+            rtt_loss: qos_data.rtt_loss,
+            rtt6: qos_data.rtt6,
+            rtt6_loss: qos_data.rtt6_loss,
+            sent_data: qos_data.tx,
+            received_data: qos_data.rx,
+            heartbeat_interval: info.heartbeat_interval,
+            derp_connection_duration: 0, // TODO Derp Connection Duration
+            nat_monitoring: info.nat_traversal_conn_info.clone(),
+            derp_monitoring: info.derp_conn_info.clone(),
+        };
+
         let r = if disconnect {
             lana!(
                 send_serviceQuality_node_disconnect,
-                qos_data.connection_duration,
-                qos_data.rtt,
-                qos_data.rtt_loss,
-                qos_data.rtt6,
-                qos_data.rtt6_loss,
-                qos_data.tx,
-                qos_data.rx,
-                info.heartbeat_interval,
-                0, // TODO Derp Connection Duration
-                info.nat_traversal_conn_info.clone(),
-                info.derp_conn_info.clone(),
-                None
+                node_params,
+                None::<String>
             )
         } else {
             lana!(
                 send_serviceQuality_node_heartbeat,
-                qos_data.connection_duration,
-                qos_data.rtt,
-                qos_data.rtt_loss,
-                qos_data.rtt6,
-                qos_data.rtt6_loss,
-                qos_data.tx,
-                qos_data.rx,
-                info.heartbeat_interval,
-                0, // TODO Derp Connection Duration
-                info.nat_traversal_conn_info.clone(),
-                info.derp_conn_info.clone(),
-                None
+                node_params,
+                None::<String>
             )
         };
 

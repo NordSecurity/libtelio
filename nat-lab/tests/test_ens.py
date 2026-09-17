@@ -3,7 +3,12 @@ import base64
 import pytest
 from contextlib import AsyncExitStack
 from tests import config
-from tests.helpers import SetupParameters, setup_environment, setup_connections
+from tests.helpers import (
+    SetupParameters,
+    setup_api,
+    setup_environment,
+    setup_connections,
+)
 from tests.helpers_ens import (
     get_grpc_tls_fingerprint_from_server,
     get_grpc_tls_root_certificate_from_server,
@@ -21,6 +26,7 @@ from tests.utils.bindings import (
     default_features,
     PathType,
     NodeState,
+    RelayState,
     TelioAdapterType,
     VpnConnectionError,
     generate_secret_key,
@@ -30,11 +36,16 @@ from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_by_tag,
 )
+from tests.utils.ping import ping
+from tests.utils.router import IPProto, IPStack
 from typing import cast
 
 ENS_PORT = 993
+ENS_LOG_STR = "Will start ENS monitoring"
+OUT_OF_RANGE_ENS_ERROR_CODE = VpnConnectionError.UNSUPPORTED_CIPHER.value + 1
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -109,7 +120,11 @@ async def test_ens_server_maintenance(
         )
 
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.VM_LINUX_NLX_1, ConnectionTag.DOCKER_VPN_1],
+            )
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -124,14 +139,14 @@ async def test_ens_server_maintenance(
         nlx_server_port = cast(int, vpn_conf.server_conf["port"])
         nlx_server_public_key = cast(str, vpn_conf.server_conf["public_key"])
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect(
             nlx_server_ip,
             nlx_server_port,
             nlx_server_public_key,
         )
 
         async with ens_maintenance(nlx_conn, nlx_server_ip):
-            await client_alpha.wait_for_state_peer(
+            await client_alpha.events.wait_for_state_peer(
                 nlx_server_public_key,
                 [NodeState.CONNECTED],
                 [PathType.DIRECT],
@@ -140,12 +155,13 @@ async def test_ens_server_maintenance(
                 vpn_connection_error=VpnConnectionError.SERVER_MAINTENANCE,
             )
 
-            await client_alpha.wait_for_log(fingerprint)
-            await client_alpha.wait_for_log(
+            await client_alpha.log.wait_for(fingerprint)
+            await client_alpha.log.wait_for(
                 "(ConnectionError { code: ServerMaintenance, additional_info: None })"
             )
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -226,7 +242,14 @@ async def test_ens_unauthenticated(
             )
 
             env = await exit_stack.enter_async_context(
-                setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+                setup_environment(
+                    exit_stack,
+                    [alpha_setup_params],
+                    vpn=[
+                        ConnectionTag.VM_LINUX_NLX_1,
+                        ConnectionTag.DOCKER_VPN_1,
+                    ],
+                )
             )
 
             client_conn, *_ = [conn.connection for conn in env.connections]
@@ -242,14 +265,14 @@ async def test_ens_unauthenticated(
             nlx_server_public_key = cast(str, vpn_conf.server_conf["public_key"])
 
             with pytest.raises(asyncio.TimeoutError):
-                await client_alpha.connect_to_vpn(
+                await client_alpha.vpn.connect(
                     nlx_server_ip,
                     nlx_server_port,
                     nlx_server_public_key,
                     timeout=5,
                 )
 
-            await client_alpha.wait_for_state_peer(
+            await client_alpha.events.wait_for_state_peer(
                 nlx_server_public_key,
                 [NodeState.CONNECTING],
                 [PathType.DIRECT],
@@ -258,8 +281,8 @@ async def test_ens_unauthenticated(
                 vpn_connection_error=VpnConnectionError.UNAUTHENTICATED,
             )
 
-            await client_alpha.wait_for_log(fingerprint)
-            await client_alpha.wait_for_log(
+            await client_alpha.log.wait_for(fingerprint)
+            await client_alpha.log.wait_for(
                 "(ConnectionError { code: Unauthenticated, additional_info: None })"
             )
         finally:
@@ -267,6 +290,7 @@ async def test_ens_unauthenticated(
             await start_service(nlx_conn, "fakefm.service")
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -370,7 +394,10 @@ async def test_ens_connection_limit_reached(
                 setup_environment(
                     exit_stack,
                     [alpha_setup_params, beta_setup_params],
-                    prepare_vpn=True,
+                    vpn=[
+                        ConnectionTag.VM_LINUX_NLX_1,
+                        ConnectionTag.DOCKER_VPN_1,
+                    ],
                 )
             )
 
@@ -391,26 +418,26 @@ async def test_ens_connection_limit_reached(
             ens_username = "ens_test_user"
             await fakefm.add_allowed_user(ens_username, client_alpha.node.public_key)
 
-            await client_alpha.connect_to_vpn(
+            await client_alpha.vpn.connect(
                 nlx_server_ip,
                 nlx_server_port,
                 nlx_server_public_key,
             )
 
-            await client_alpha.wait_for_log(fingerprint)
+            await client_alpha.log.wait_for(fingerprint)
 
             await fakefm.add_allowed_user(ens_username, client_beta.node.public_key)
 
             with pytest.raises(asyncio.TimeoutError):
-                await client_beta.connect_to_vpn(
+                await client_beta.vpn.connect(
                     nlx_server_ip,
                     nlx_server_port,
                     nlx_server_public_key,
                     timeout=5,
                 )
 
-            await client_beta.wait_for_log(fingerprint)
-            await client_beta.wait_for_state_peer(
+            await client_beta.log.wait_for(fingerprint)
+            await client_beta.events.wait_for_state_peer(
                 nlx_server_public_key,
                 [NodeState.CONNECTING],
                 [PathType.DIRECT],
@@ -423,6 +450,7 @@ async def test_ens_connection_limit_reached(
             await start_service(nlx_conn, "fakefm.service")
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -515,7 +543,7 @@ async def test_ens_superseded(
             setup_environment(
                 exit_stack,
                 [alpha_setup_params, beta_setup_params],
-                prepare_vpn=True,
+                vpn=[ConnectionTag.VM_LINUX_NLX_1, ConnectionTag.DOCKER_VPN_1],
             )
         )
 
@@ -537,23 +565,23 @@ async def test_ens_superseded(
         nlx_server_port = cast(int, vpn_conf.server_conf["port"])
         nlx_server_public_key = cast(str, vpn_conf.server_conf["public_key"])
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect(
             nlx_server_ip,
             nlx_server_port,
             nlx_server_public_key,
         )
 
-        await client_alpha.wait_for_log(fingerprint)
+        await client_alpha.log.wait_for(fingerprint)
 
-        await client_beta.connect_to_vpn(
+        await client_beta.vpn.connect(
             nlx_server_ip,
             nlx_server_port,
             nlx_server_public_key,
         )
 
-        await client_beta.wait_for_log(fingerprint)
+        await client_beta.log.wait_for(fingerprint)
 
-        await client_alpha.wait_for_state_peer(
+        await client_alpha.events.wait_for_state_peer(
             nlx_server_public_key,
             [NodeState.CONNECTED],
             list(PathType),
@@ -561,6 +589,135 @@ async def test_ens_superseded(
             is_vpn=True,
             vpn_connection_error=VpnConnectionError.SUPERSEDED,
         )
+
+
+@pytest.mark.parametrize(
+    "alpha_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    nlx_1_limits=(0, 0),
+                    derp_1_limits=(1, 1),
+                ),
+                features=default_features(
+                    enable_error_notification_service=True,
+                    enable_direct=True,
+                ),
+            )
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_WINDOWS_1,
+                adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.VM_WINDOWS_1,
+                    nlx_1_limits=(0, 0),
+                    derp_1_limits=(1, 1),
+                ),
+                features=default_features(
+                    enable_error_notification_service=True,
+                    enable_direct=True,
+                ),
+            ),
+            marks=pytest.mark.windows,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_MAC,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.VM_MAC,
+                    nlx_1_limits=(0, 0),
+                    derp_1_limits=(1, 1),
+                ),
+                features=default_features(
+                    enable_error_notification_service=True,
+                    enable_direct=True,
+                ),
+            ),
+            marks=pytest.mark.mac,
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "beta_setup_params",
+    [
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_2,
+                connection_tracker_config=generate_connection_tracker_config(
+                    ConnectionTag.DOCKER_CONE_CLIENT_2,
+                    nlx_1_limits=(0, 0),
+                    derp_1_limits=(1, 1),
+                ),
+                features=default_features(
+                    enable_error_notification_service=True,
+                    enable_direct=True,
+                    enable_firewall_exclusion_range="10.0.0.0/8",
+                ),
+            )
+        )
+    ],
+)
+async def test_ens_not_started_for_meshnet_exit_peer(
+    alpha_setup_params: SetupParameters,
+    beta_setup_params: SetupParameters,
+) -> None:
+    async with AsyncExitStack() as exit_stack:
+        api, (alpha, beta) = setup_api([(False, IPStack.IPv4), (False, IPStack.IPv4)])
+        beta.set_peer_firewall_settings(
+            alpha.id,
+            allow_incoming_connections=True,
+            allow_peer_traffic_routing=True,
+        )
+
+        env = await exit_stack.enter_async_context(
+            setup_environment(exit_stack, [alpha_setup_params, beta_setup_params], api)
+        )
+
+        client_alpha, client_beta = env.clients
+        connection_alpha, _ = [conn.connection for conn in env.connections]
+
+        await asyncio.gather(
+            client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+        )
+
+        await client_alpha.set_meshnet_config(api.get_meshnet_config(alpha.id))
+        await client_beta.set_meshnet_config(api.get_meshnet_config(beta.id))
+
+        await asyncio.gather(
+            client_alpha.events.wait_for_state_peer(
+                beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
+            ),
+            client_beta.events.wait_for_state_peer(
+                alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
+            ),
+        )
+
+        await ping(connection_alpha, cast(str, beta.get_ip_address(IPProto.IPv4)))
+        await client_beta.get_router().create_exit_node_route()
+
+        logs_before = await client_alpha.log.get()
+        ens_starts_before = logs_before.count(ENS_LOG_STR)
+
+        await client_alpha.vpn.connect_to_exit_node(beta.public_key)
+        await client_alpha.events.wait_for_state_peer(
+            beta.public_key,
+            [NodeState.CONNECTED],
+            list(PathType),
+            is_exit=True,
+            is_vpn=False,
+        )
+
+        logs_after = await client_alpha.log.get()
+        assert (
+            logs_after.count(ENS_LOG_STR) == ens_starts_before == 0
+        ), "ENS started while routing through a meshnet peer"
 
 
 @pytest.mark.parametrize(
@@ -605,17 +762,41 @@ async def test_ens_superseded(
         ),
     ],
 )
-async def test_ens_connection_error_unknown(
+@pytest.mark.parametrize(
+    "error_code, expected_error, expected_logged_code",
+    [
+        pytest.param(
+            VpnConnectionError.UNKNOWN.value,
+            VpnConnectionError.UNKNOWN,
+            "Unknown",
+            id="unknown",
+        ),
+        pytest.param(
+            OUT_OF_RANGE_ENS_ERROR_CODE,
+            VpnConnectionError.UNKNOWN,
+            str(OUT_OF_RANGE_ENS_ERROR_CODE),
+            id="out_of_range",
+        ),
+        pytest.param(
+            VpnConnectionError.UNSUPPORTED_CIPHER.value,
+            VpnConnectionError.UNSUPPORTED_CIPHER,
+            "UnsupportedCipher",
+            id="unsupported_cipher",
+        ),
+    ],
+)
+async def test_ens_connection_error_from_stub(
     alpha_setup_params: SetupParameters,
     public_ip: str,
+    error_code: int,
+    expected_error: VpnConnectionError,
+    expected_logged_code: str,
 ) -> None:
     vpn_conf = VpnConfig(config.WG_SERVER, ConnectionTag.DOCKER_VPN_1, True)
     vpn_ip = str(vpn_conf.server_conf["ipv4"])
     vpn_port = cast(int, vpn_conf.server_conf["port"])
     vpn_public_key = str(vpn_conf.server_conf["public_key"])
     vpn_private_key = str(vpn_conf.server_conf["private_key"])
-
-    error_code = VpnConnectionError.UNKNOWN
 
     fingerprint = await get_grpc_tls_fingerprint(vpn_ip)
     root_certificate_b64 = await get_grpc_tls_root_certificate(vpn_ip)
@@ -644,7 +825,11 @@ async def test_ens_connection_error_unknown(
             root_certificate
         )
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.DOCKER_VPN_1],
+            )
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -655,26 +840,29 @@ async def test_ens_connection_error_unknown(
 
         await setup_connections(exit_stack, [vpn_conf.conn_tag])
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect(
             vpn_ip,
             vpn_port,
             vpn_public_key,
         )
 
         additional_info = "some additional info"
-        await trigger_connection_error(vpn_ip, error_code.value, additional_info)
-        await client_alpha.wait_for_state_peer(
+        await trigger_connection_error(vpn_ip, error_code, additional_info)
+        await client_alpha.events.wait_for_state_peer(
             vpn_conf.server_conf["public_key"],
             [NodeState.CONNECTED],
             [PathType.DIRECT],
             True,
             True,
-            vpn_connection_error=error_code,
+            vpn_connection_error=expected_error,
         )
-        await client_alpha.wait_for_log(additional_info)
-        await client_alpha.wait_for_log(fingerprint)
+        await client_alpha.log.wait_for(
+            f'(ConnectionError {{ code: {expected_logged_code}, additional_info: Some("{additional_info}") }})'
+        )
+        await client_alpha.log.wait_for(fingerprint)
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -749,7 +937,11 @@ async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
             root_certificate
         )
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.VM_LINUX_NLX_1, ConnectionTag.DOCKER_VPN_1],
+            )
         )
 
         client_conn, *_ = [conn.connection for conn in env.connections]
@@ -764,14 +956,14 @@ async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
         nlx_server_port = cast(int, vpn_conf.server_conf["port"])
         nlx_server_public_key = cast(str, vpn_conf.server_conf["public_key"])
 
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect(
             nlx_server_ip,
             nlx_server_port,
             nlx_server_public_key,
         )
 
         with pytest.raises(asyncio.TimeoutError):
-            await client_alpha.wait_for_state_peer(
+            await client_alpha.events.wait_for_state_peer(
                 nlx_server_public_key,
                 [NodeState.CONNECTED],
                 [PathType.DIRECT],
@@ -780,10 +972,11 @@ async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
                 timeout=15,
                 vpn_connection_error=VpnConnectionError.UNKNOWN,
             )
-        await client_alpha.wait_for_log(fingerprint)
-        await client_alpha.wait_for_log("InvalidCertificate(UnknownIssuer)")
+        await client_alpha.log.wait_for(fingerprint)
+        await client_alpha.log.wait_for("InvalidCertificate(UnknownIssuer)")
 
 
+@pytest.mark.nlx
 @pytest.mark.parametrize(
     "alpha_setup_params, public_ip",
     [
@@ -847,7 +1040,11 @@ async def test_ens_not_working(
         assert alpha_setup_params.features.error_notification_service
         alpha_setup_params.features.error_notification_service.allow_only_pq = False
         env = await exit_stack.enter_async_context(
-            setup_environment(exit_stack, [alpha_setup_params], prepare_vpn=True)
+            setup_environment(
+                exit_stack,
+                [alpha_setup_params],
+                vpn=[ConnectionTag.VM_LINUX_NLX_1, ConnectionTag.DOCKER_VPN_1],
+            )
         )
 
         alpha, *_ = env.nodes

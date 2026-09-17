@@ -18,7 +18,7 @@ time.workspace = true
 telio-utils.workspace = true
 
 [dev-dependencies]
-serial_test = "3.2.0"
+serial_test.workspace = true
 
 [build-dependencies]
 anyhow.workspace = true

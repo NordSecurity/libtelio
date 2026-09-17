@@ -1,5 +1,3 @@
-# pylint: disable=too-many-lines
-
 import asyncio
 import base64
 import os
@@ -15,8 +13,9 @@ from tests.config import (
     DERP_TERTIARY,
 )
 from tests.helpers import connectivity_stack
+from tests.libtelio_client import Client
+from tests.log_collector import copy_file, find_files, get_log_without_flush
 from tests.mesh_api import API, Node
-from tests.telio import Client, copy_file, get_log_without_flush, find_files
 from tests.utils import testing, stun
 from tests.utils.analytics import (
     fetch_moose_events,
@@ -190,11 +189,11 @@ async def get_moose_db_file(
             await connection.download(container_backup_path, local_path)
             return
         except Exception as e:  # pylint: disable=broad-exception-caught
-            print(f"get_moose_db_file error: {e}, retrying ...")
+            log.warning("get_moose_db_file error: %s, retrying ...", e)
             max_retries -= 1
             await asyncio.sleep(0.1)
     if not max_retries:
-        raise Exception("Retries exhausted, while trying to fetch moose db file")
+        raise RuntimeError("Retries exhausted, while trying to fetch moose db file")
 
 
 async def wait_for_event_dump(
@@ -218,7 +217,7 @@ async def wait_for_event_dump(
             )
             return events
         await asyncio.sleep(DEFAULT_CHECK_INTERVAL)
-    log.critical(
+    log.warning(
         "Failed looking db from %s, expected %s but %s were found.",
         connection.tag.name,
         nr_events,
@@ -399,7 +398,7 @@ async def run_default_scenario(
         )
     )
 
-    await api.prepare_all_vpn_servers()
+    await api.prepare_vpn_servers()
 
     await add_5ms_delay_to_connections(
         exit_stack, [connection_alpha, connection_beta, connection_gamma]
@@ -430,40 +429,44 @@ async def run_default_scenario(
     )
 
     await asyncio.gather(
-        client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-        client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-        client_gamma.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+        client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+        client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+        client_gamma.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
     )
     # Note: GAMMA is symmetric, so it will not connect to ALPHA or BETA in direct mode
     await asyncio.gather(
-        client_alpha.wait_for_state_peer(
+        client_alpha.events.wait_for_state_peer(
             beta.public_key,
             [NodeState.CONNECTED],
             [PathType.DIRECT],
         ),
-        client_alpha.wait_for_state_peer(gamma.public_key, [NodeState.CONNECTED]),
-        client_beta.wait_for_state_peer(
+        client_alpha.events.wait_for_state_peer(
+            gamma.public_key, [NodeState.CONNECTED]
+        ),
+        client_beta.events.wait_for_state_peer(
             alpha.public_key,
             [NodeState.CONNECTED],
             [PathType.DIRECT],
         ),
-        client_beta.wait_for_state_peer(gamma.public_key, [NodeState.CONNECTED]),
-        client_gamma.wait_for_state_peer(alpha.public_key, [NodeState.CONNECTED]),
-        client_gamma.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
+        client_beta.events.wait_for_state_peer(gamma.public_key, [NodeState.CONNECTED]),
+        client_gamma.events.wait_for_state_peer(
+            alpha.public_key, [NodeState.CONNECTED]
+        ),
+        client_gamma.events.wait_for_state_peer(beta.public_key, [NodeState.CONNECTED]),
     )
 
     if alpha_has_vpn_connection:
-        await client_alpha.connect_to_vpn(
+        await client_alpha.vpn.connect(
             str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
         )
 
     if beta_has_vpn_connection:
-        await client_beta.connect_to_vpn(
+        await client_beta.vpn.connect(
             str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
         )
 
     if gamma_has_vpn_connection:
-        await client_gamma.connect_to_vpn(
+        await client_gamma.vpn.connect(
             str(WG_SERVER["ipv4"]), int(WG_SERVER["port"]), str(WG_SERVER["public_key"])
         )
 
@@ -471,9 +474,9 @@ async def run_default_scenario(
     await ping_node(connection_beta, beta, gamma)
     await ping_node(connection_gamma, gamma, alpha)
 
-    await client_alpha.trigger_qos_collection()
-    await client_beta.trigger_qos_collection()
-    await client_gamma.trigger_qos_collection()
+    await client_alpha.analytics.trigger_qos_collection()
+    await client_beta.analytics.trigger_qos_collection()
+    await client_gamma.analytics.trigger_qos_collection()
 
     await asyncio.sleep(DEFAULT_WAITING_TIME)
     if True in [
@@ -485,9 +488,9 @@ async def run_default_scenario(
         # wait for one more icmp timeout if that's the case.
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
-    await client_alpha.trigger_event_collection()
-    await client_beta.trigger_event_collection()
-    await client_gamma.trigger_event_collection()
+    await client_alpha.analytics.trigger_event_collection()
+    await client_beta.analytics.trigger_event_collection()
+    await client_gamma.analytics.trigger_event_collection()
 
     alpha_events = await wait_for_event_dump(
         connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
@@ -1279,14 +1282,14 @@ async def test_lana_with_meshnet_exit_node(
         )
 
         await asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(
+            client_alpha.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
-            client_beta.wait_for_state_peer(
+            client_beta.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
@@ -1298,7 +1301,7 @@ async def test_lana_with_meshnet_exit_node(
             ),
         )
         await client_beta.get_router().create_exit_node_route()
-        await client_alpha.connect_to_exit_node(beta.public_key)
+        await client_alpha.vpn.connect_to_exit_node(beta.public_key)
         ip_alpha = await stun.get(
             connection_alpha, STUN_SERVER if not is_stun6_needed else STUNV6_SERVER
         )
@@ -1307,13 +1310,13 @@ async def test_lana_with_meshnet_exit_node(
         )
         assert ip_alpha == ip_beta
 
-        await client_alpha.trigger_qos_collection()
-        await client_beta.trigger_qos_collection()
+        await client_alpha.analytics.trigger_qos_collection()
+        await client_beta.analytics.trigger_qos_collection()
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
-        await client_alpha.trigger_event_collection()
-        await client_beta.trigger_event_collection()
+        await client_alpha.analytics.trigger_event_collection()
+        await client_beta.analytics.trigger_event_collection()
 
         alpha_events = await wait_for_event_dump(
             connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
@@ -1496,27 +1499,27 @@ async def test_lana_with_disconnected_node(
         )
 
         await asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(
+            client_alpha.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
-            client_beta.wait_for_state_peer(
+            client_beta.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
 
-        await client_alpha.trigger_qos_collection()
-        await client_beta.trigger_qos_collection()
+        await client_alpha.analytics.trigger_qos_collection()
+        await client_beta.analytics.trigger_qos_collection()
 
         await ping_node(connection_alpha, alpha, beta)
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
-        await client_alpha.trigger_event_collection()
-        await client_beta.trigger_event_collection()
+        await client_alpha.analytics.trigger_event_collection()
+        await client_beta.analytics.trigger_event_collection()
 
         alpha_events = await wait_for_event_dump(
             connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
@@ -1552,10 +1555,10 @@ async def test_lana_with_disconnected_node(
 
         # Trigger QoS on disconnected node. All ICMPs should timeout
         await asyncio.sleep(DEFAULT_WAITING_TIME)
-        await client_alpha.trigger_qos_collection()
+        await client_alpha.analytics.trigger_qos_collection()
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
-        await client_alpha.trigger_event_collection()
+        await client_alpha.analytics.trigger_event_collection()
         alpha_events = await wait_for_event_dump(
             connection_alpha, ALPHA_EVENTS_PATH, nr_events=2
         )
@@ -1865,7 +1868,7 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
             ).run(api.get_meshnet_config(beta.id))
         )
 
-        await client_beta.trigger_event_collection()
+        await client_beta.analytics.trigger_event_collection()
         beta_events = await wait_for_event_dump(
             connection_beta, BETA_EVENTS_PATH, nr_events=1
         )
@@ -1897,10 +1900,10 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         await client_beta.set_meshnet_config(api.get_meshnet_config(beta.id))
 
         await asyncio.gather(
-            client_alpha.wait_for_state_peer(
+            client_alpha.events.wait_for_state_peer(
                 beta.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
-            client_beta.wait_for_state_peer(
+            client_beta.events.wait_for_state_peer(
                 alpha.public_key, [NodeState.CONNECTED], [PathType.DIRECT]
             ),
         )
@@ -1908,8 +1911,8 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
         await ping_node(connection_alpha, alpha, beta)
         await ping_node(connection_beta, beta, alpha)
 
-        await client_alpha.trigger_event_collection()
-        await client_beta.trigger_event_collection()
+        await client_alpha.analytics.trigger_event_collection()
+        await client_beta.analytics.trigger_event_collection()
 
         alpha_events = await wait_for_event_dump(
             connection_alpha, ALPHA_EVENTS_PATH, nr_events=1
@@ -1960,7 +1963,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
             fingerprint=BETA_FINGERPRINT,
         ).run(api.get_meshnet_config(beta.id)) as client_beta:
 
-            await client_beta.trigger_event_collection()
+            await client_beta.analytics.trigger_event_collection()
             beta_events = await wait_for_event_dump(
                 connection_beta, BETA_EVENTS_PATH, nr_events=1
             )
@@ -1986,7 +1989,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
                 connection_beta, MOOSE_LOGS_DIR, "moose_trace.log*"
             )
             for trace_path in moose_traces:
-                copy_file(connection_beta, trace_path, log_dir)
+                await copy_file(connection_beta, trace_path, log_dir)
                 file_name = os.path.basename(trace_path)
                 new_file_name = f"beta_before_restart_{file_name}"
                 os.rename(
@@ -2008,7 +2011,7 @@ async def test_lana_same_meshnet_id_is_reported_after_a_restart(
             ).run(api.get_meshnet_config(beta.id))
         )
 
-        await client_beta.trigger_event_collection()
+        await client_beta.analytics.trigger_event_collection()
         beta_events = await wait_for_event_dump(
             connection_beta, BETA_EVENTS_PATH, nr_events=3
         )
@@ -2181,17 +2184,17 @@ async def test_lana_rtt_interval_controls_periodic_qos_collection():
         )
 
         await asyncio.gather(
-            client_alpha.wait_for_state_on_any_derp([RelayState.CONNECTED]),
-            client_beta.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_alpha.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
+            client_beta.events.wait_for_state_on_any_derp([RelayState.CONNECTED]),
         )
 
-        await client_alpha.wait_for_log("Starting periodic ping", count=2)
-        await client_beta.wait_for_log("Starting periodic ping", count=2)
+        await client_alpha.log.wait_for("Starting periodic ping", count=2)
+        await client_beta.log.wait_for("Starting periodic ping", count=2)
 
         await asyncio.sleep(DEFAULT_WAITING_TIME)
 
-        await client_alpha.trigger_event_collection()
-        await client_beta.trigger_event_collection()
+        await client_alpha.analytics.trigger_event_collection()
+        await client_beta.analytics.trigger_event_collection()
 
         alpha_events = await wait_for_event_dump(
             connection_alpha, ALPHA_EVENTS_PATH, nr_events=1

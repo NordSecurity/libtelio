@@ -63,18 +63,6 @@ Long interval will cause downgrades to be delayed, consider using `link_detectio
 }
 ```
 
-### Enable batching
-
-Force keepalives to be batched together
-
-```json
-"batching": {}
-```
-
-## What to look for
-
-The less network activity, the better.
-
 ### Android
 
 [Battery Historian](https://developer.android.com/topic/performance/power/setup-battery-historian)

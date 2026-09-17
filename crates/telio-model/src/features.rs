@@ -48,8 +48,8 @@ pub struct Features {
     pub ipv6: bool,
     /// Nicknames support
     pub nicknames: bool,
-    /// Flag to turn on connection reset upon VPN server change for NepTUN adapter
-    pub firewall: FeatureFirewall,
+    /// Firewall configuration. When None, the firewall is disabled.
+    pub firewall: Option<FeatureFirewall>,
     /// If and for how long to flush events when stopping telio. Setting to Some(0) means waiting until all events have been flushed, regardless of how long it takes
     pub flush_events_on_stop_timeout_seconds: Option<u64>,
     /// Post quantum VPN tunnel configuration
@@ -60,8 +60,6 @@ pub struct Features {
     pub dns: FeatureDns,
     /// Multicast support
     pub multicast: bool,
-    /// Batching feature configuration, disabled by default, used for batching keep-alives
-    pub batching: Option<FeatureBatching>,
     /// Configuration for the Error Notification Service
     pub error_notification_service: Option<FeatureErrorNotificationService>,
 }
@@ -71,25 +69,6 @@ impl Features {
     pub fn serialize(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
     }
-}
-
-/// Configure keepalive batching
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
-#[serde(default)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-pub struct FeatureBatching {
-    /// Direct connection threshold when batching (in seconds) [default 0s]
-    /// Reused for Proxy, STUN, VPN peers as well
-    #[default(0)]
-    pub direct_connection_threshold: u32,
-
-    /// Trigger effective duration [default 10s]
-    #[default(10)]
-    pub trigger_effective_duration: u32,
-
-    /// Trigger cooldown duration [default 60s]
-    #[default(60)]
-    pub trigger_cooldown_duration: u32,
 }
 
 /// Configurable features for Wireguard peers
@@ -220,7 +199,7 @@ pub enum RttType {
 pub struct FeatureLana {
     /// Path of the file where events will be stored. If such file does not exist, it will be created, otherwise reused
     pub event_path: String,
-    /// Whether the events should be sent to produciton or not
+    /// Whether the events should be sent to production or not
     pub prod: bool,
 }
 
@@ -275,7 +254,7 @@ pub enum PathType {
     Direct,
 }
 
-/// Enable meshent direct connection
+/// Enable meshnet direct connection
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, SmartDefault)]
 #[serde(default)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
@@ -474,7 +453,7 @@ pub struct FeatureFirewall {
     /// Customizable private IP range to treat certain private IP ranges
     /// as public IPs for testing purposes.
     pub exclude_private_ip_range: Option<Ipv4Net>,
-    /// Blackist for outgoing connections
+    /// Blacklist for outgoing connections
     #[serde(default)]
     pub outgoing_blacklist: Vec<FirewallBlacklistTuple>,
 }
@@ -531,6 +510,9 @@ pub struct FeatureDns {
     /// Configure options for exit dns
     #[serde(default)]
     pub exit_dns: Option<FeatureExitDns>,
+    /// Use the raw DNS forwarder instead of the old hickory-server
+    #[serde(default)]
+    pub use_raw_forwarder: Option<bool>,
 }
 
 /// Newtype for TTL value to ensure that the default function returns the actual default value and not 0.
@@ -584,6 +566,22 @@ pub struct FeatureErrorNotificationService {
     /// DER encoded root certificate to be used for verification of all TLS connections
     /// to gRPC ENS endpoint in place of the hardcoded one
     pub root_certificate_override: Option<Vec<u8>>,
+
+    /// Interval between the keep alive messages sent over the ENS connection, in seconds.
+    /// When the underlying tcp connection stops working, the dead connection will be
+    /// detected after at most keepalive_interval_s + keepalive_timeout_s seconds and
+    /// a new connection will be created after the ENS backoff elapses.
+    /// When set to null, the keep alives are disabled.
+    /// Setting it to 0 is an error.
+    #[default(Some(120))]
+    pub keepalive_interval_s: Option<u32>,
+
+    /// How long to wait for a response to a keep alive message before considering the ENS
+    /// connection dead, in seconds. Only used when keepalive_interval_s is set.
+    /// When set to null, the underlying http client default is used
+    /// Setting it to 0 is an error.
+    #[default(Some(20))]
+    pub keepalive_timeout_s: Option<u32>,
 }
 
 impl std::fmt::Debug for FeatureErrorNotificationService {
@@ -592,6 +590,8 @@ impl std::fmt::Debug for FeatureErrorNotificationService {
             .field("buffer_size", &self.buffer_size)
             .field("allow_only_pq", &self.allow_only_pq)
             .field("backoff", &self.backoff)
+            .field("keepalive_interval_s", &self.keepalive_interval_s)
+            .field("keepalive_timeout_s", &self.keepalive_timeout_s)
             .field(
                 "root_certificate_override",
                 &self
@@ -704,7 +704,6 @@ mod tests {
                 "max_inter_thread_batched_pkts": 123456
             },
             "nurse": {
-                "fingerprint": "test_fingerprint",
                 "heartbeat_interval": 5,
                 "initial_heartbeat_interval": 6,
                 "qos": {
@@ -776,14 +775,10 @@ mod tests {
                 "ttl_value": 19,
                 "exit_dns": {
                     "auto_switch_dns_ips": true
-                }
+                },
+                "use_raw_forwarder": true
             },
             "multicast": true,
-            "batching": {
-                "direct_connection_threshold": 60,
-                "trigger_effective_duration": 10,
-                "trigger_cooldown_duration": 60
-            },
             "error_notification_service": {
                 "buffer_size": 42
             }
@@ -856,7 +851,7 @@ mod tests {
                     validate_keys: FeatureValidateKeys(false),
                     ipv6: true,
                     nicknames: true,
-                    firewall: FeatureFirewall {
+                    firewall: Some(FeatureFirewall {
                         neptun_reset_conns: true,
                         boringtun_reset_conns: true,
                         exclude_private_ip_range: Some(Ipv4Net(
@@ -867,7 +862,7 @@ mod tests {
                             ip: IpAddr::from_str("8.8.4.4").unwrap(),
                             port: 30,
                         }],
-                    },
+                    }),
                     flush_events_on_stop_timeout_seconds: Some(15),
                     post_quantum_vpn: FeaturePostQuantumVPN {
                         handshake_retry_interval_s: 15,
@@ -883,18 +878,16 @@ mod tests {
                         exit_dns: Some(FeatureExitDns {
                             auto_switch_dns_ips: Some(true),
                         }),
+                        use_raw_forwarder: Some(true),
                     },
                     multicast: true,
-                    batching: Some(FeatureBatching {
-                        direct_connection_threshold: 60,
-                        trigger_effective_duration: 10,
-                        trigger_cooldown_duration: 60,
-                    }),
                     error_notification_service: Some(FeatureErrorNotificationService {
                         buffer_size: 42,
                         allow_only_pq: true,
                         backoff: Default::default(),
-                        root_certificate_override: None
+                        root_certificate_override: None,
+                        keepalive_interval_s: Some(120),
+                        keepalive_timeout_s: Some(20),
                     })
                 }
             );
@@ -920,17 +913,13 @@ mod tests {
 
         #[test]
         fn test_empty_nurse() {
-            assert_json!(
-                r#"{"nurse": {"fingerprint": ""}}"#,
-                FeatureNurse::default(),
-                nurse.unwrap()
-            );
+            assert_json!(r#"{"nurse": {}}"#, FeatureNurse::default(), nurse.unwrap());
         }
 
         #[test]
         fn test_empty_nurse_qos() {
             assert_json!(
-                r#"{"nurse": {"fingerprint": "", "qos": {}}}"#,
+                r#"{"nurse": {"qos": {}}}"#,
                 FeatureQoS::default(),
                 nurse.unwrap().qos.unwrap()
             );
@@ -988,7 +977,11 @@ mod tests {
 
         #[test]
         fn test_empty_firewall() {
-            assert_json!(r#"{"firewall": {}}"#, FeatureFirewall::default(), firewall);
+            assert_json!(
+                r#"{"firewall": {}}"#,
+                Some(FeatureFirewall::default()),
+                firewall
+            );
         }
 
         #[test]
@@ -1088,6 +1081,8 @@ mod tests {
                         maximal_s: Some(120),
                     },
                     root_certificate_override: None,
+                    keepalive_interval_s: Some(120),
+                    keepalive_timeout_s: Some(20),
                 }),
                 error_notification_service
             );
@@ -1103,6 +1098,8 @@ mod tests {
                     allow_only_pq: true,
                     backoff: Default::default(),
                     root_certificate_override: None,
+                    keepalive_interval_s: Some(120),
+                    keepalive_timeout_s: Some(20),
                 }),
                 error_notification_service
             );
@@ -1120,6 +1117,8 @@ mod tests {
                         maximal_s: Some(120),
                     },
                     root_certificate_override: None,
+                    keepalive_interval_s: Some(120),
+                    keepalive_timeout_s: Some(20),
                 }),
                 error_notification_service
             );
@@ -1138,6 +1137,8 @@ mod tests {
                         maximal_s: None
                     },
                     root_certificate_override: None,
+                    keepalive_interval_s: Some(120),
+                    keepalive_timeout_s: Some(20),
                 }),
                 error_notification_service
             );
@@ -1156,8 +1157,78 @@ mod tests {
                         maximal_s: Some(67890)
                     },
                     root_certificate_override: None,
+                    keepalive_interval_s: Some(120),
+                    keepalive_timeout_s: Some(20),
                 }),
                 error_notification_service
+            );
+        }
+
+        #[test]
+        fn test_ens_keepalive_interval() {
+            assert_json!(
+                r#"{"error_notification_service": {}}"#,
+                Some(120),
+                error_notification_service.unwrap().keepalive_interval_s
+            );
+            assert_json!(
+                r#"{"error_notification_service": {"keepalive_interval_s": 42}}"#,
+                Some(42),
+                error_notification_service.unwrap().keepalive_interval_s
+            );
+            assert_json!(
+                r#"{"error_notification_service": {"keepalive_interval_s": null}}"#,
+                None,
+                error_notification_service.unwrap().keepalive_interval_s
+            );
+        }
+
+        #[test]
+        fn test_ens_keepalive_interval_default() {
+            assert_eq!(
+                FeatureErrorNotificationService::default().keepalive_interval_s,
+                Some(120)
+            );
+        }
+
+        #[test]
+        fn test_ens_keepalive_timeout() {
+            assert_json!(
+                r#"{"error_notification_service": {}}"#,
+                Some(20),
+                error_notification_service.unwrap().keepalive_timeout_s
+            );
+            assert_json!(
+                r#"{"error_notification_service": {"keepalive_timeout_s": 42}}"#,
+                Some(42),
+                error_notification_service.unwrap().keepalive_timeout_s
+            );
+            assert_json!(
+                r#"{"error_notification_service": {"keepalive_timeout_s": null}}"#,
+                None,
+                error_notification_service.unwrap().keepalive_timeout_s
+            );
+        }
+
+        #[test]
+        fn test_ens_keepalive_timeout_default() {
+            assert_eq!(
+                FeatureErrorNotificationService::default().keepalive_timeout_s,
+                Some(20)
+            );
+        }
+
+        #[test]
+        fn test_ens_keepalive_interval_and_timeout_are_independent() {
+            assert_json!(
+                r#"{"error_notification_service": {"keepalive_interval_s": 1}}"#,
+                Some(20),
+                error_notification_service.unwrap().keepalive_timeout_s
+            );
+            assert_json!(
+                r#"{"error_notification_service": {"keepalive_timeout_s": 1}}"#,
+                Some(120),
+                error_notification_service.unwrap().keepalive_interval_s
             );
         }
     }

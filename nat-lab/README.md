@@ -113,7 +113,8 @@ uv run python3 natlab.py check-containers
 
 ### Start modifiers (skip heavy services)
 
-- Lightweight bring-up (skips Windows, macOS, fullcone, NLX):
+- Lightweight bring-up — starts the 38 docker-only services and no QEMU/KVM guest at
+  all (skips Windows, macOS, NLX, fullcone, Android, OpenWrt and Playwright):
 
 ```bash
 uv run python3 natlab.py start --lite-mode
@@ -122,15 +123,13 @@ uv run python3 natlab.py start --lite-mode
 - Skip specific groups:
 
 ```bash
-uv run python3 natlab.py start --skip-windows --skip-mac --skip-nlx --skip-fullcone
+uv run python3 natlab.py start --skip-windows --skip-mac --skip-nlx --skip-fullcone --skip-android --skip-openwrt
 ```
 
-- Skip an individual Windows VM:
-
-```bash
-uv run python3 natlab.py start --skip-windows-1
-uv run python3 natlab.py start --skip-windows-2
-```
+Skip keywords are matched as substrings against the compose service names, so
+`--skip-windows` also drops `windows-gw-*`. Note that `--skip-openwrt` implies
+skipping playwright: `playwright-runner-01` `depends_on` `openwrt-gw-01`, so
+leaving it in would make compose boot the OpenWrt VM regardless.
 
 If a service is missing, the script prints compose logs for that service and fails. See [python.check_containers()](natlab.py).
 
@@ -194,8 +193,14 @@ Markers are defined in [pyproject.toml](pyproject.toml). Useful ones:
 - long          long-running tests
 - moose         requires build with “moose”
 - ipv4 / ipv6 / ipv4v6
-- batching
 - utils
+- libfirewall   requires `libfirewall.so` (see below)
+
+### libfirewall tests
+
+Tests marked `libfirewall` depend on `tests/uniffi/libfirewall.so` being present. Without it, the firewall is a no-op and these tests are automatically skipped at collection time.
+
+In CI, `libfirewall.so` is downloaded and placed at `nat-lab/tests/uniffi/libfirewall.so` before tests run. For local runs, obtain the `.so` from the internal artifact registry and place it at that path manually.
 
 ### To include a marker
 
@@ -293,8 +298,6 @@ Libtelio emits boths logs and events during runtime that are potentially relevan
 
 ## Troubleshooting
 
-- Docker version < 28.0 and nat-unprotected
-  - Nat-Lab prefers the “nat-unprotected” bridge mode. On Docker Server < 28.0, Nat-Lab will warn and patch compose to use “nat” instead, creating a backup compose file. See [python.check_docker_version_compatibility()](natlab.py).
 - Containers failed to start
   - Use:
 
@@ -370,7 +373,7 @@ export NATLAB_SAVE_LOGS=1
 ### Tcpdump internals (useful when customizing)
 
 - Binary and host file paths are defined in [python.build_tcpdump_command()](tests/utils/tcpdump.py) and PCAP_FILE_PATH map at [python.PCAP_FILE_PATH](tests/utils/tcpdump.py)
-- Windows tcpdump in-tests is temporarily disabled (see TODO in [python.make_tcpdump()](tests/utils/tcpdump.py))
+- Windows captures use the in-box `pktmon` tool with `--comp all` (full packet size, all adapters including virtual ones; `--comp nics` misses them). pktmon only enumerates adapters at session start, so to catch libtelio's tunnel adapter (created later) we poll and roll the session — a single `pktmon stop && pktmon start` — when it appears, splitting capture into segments (see [python.PktmonCapture](tests/utils/tcpdump.py)). After download the segments are merged into one continuous `<guest>.pcap` and normalised by [python.merge_windows_pcaps()](tests/utils/tcpdump.py): the tunnel adapter's bare-IP packets are wrapped in Ethernet framing (else Wireshark shows them as malformed) and the SSH control channel is dropped. Best-effort throughout (raw segments are kept if the merge fails).
 
 ### Example: run a single test and keep all logs
 
@@ -385,7 +388,7 @@ uv run python3 run_local.py -k test_direct_connection -v
 
 - Credentials come from composition and SshConnection defaults:
   - Windows VMs: user bill / password gates (see [python.SshConnection.new_connection()](tests/utils/connection/ssh_connection.py))
-    - IPs: 192.168.150.54 (VM_WINDOWS_1), 192.168.152.54 (VM_WINDOWS_2) from [python.LAN_ADDR_MAP](tests/config.py)
+    - IP: 192.168.150.54 (VM_WINDOWS_1) from [python.LAN_ADDR_MAP](tests/config.py)
     - Example:
 
 ```bash
@@ -447,19 +450,27 @@ export NATLAB_SKIP_SETUP_CHECKS=1
 - TELIO_BIN_PROFILE
   - Controls which libtelio binaries paths are used by tests (release|debug). Automatically set by [python.get_pytest_arguments()](run_local.py:180) based on --telio-debug; may be overridden manually if needed.
 - GITLAB_CI
-  - CI toggle that modifies behavior in a few places (for example, disabling the [docker-compose.yml](docker-compose.yml) port mapping for cone-client-01 and using quiet pulls). See [python.start()](natlab.py:38) and [python.check_docker_version_compatibility()](natlab.py:170).
+  - CI toggle that modifies behavior in a few places (for example using quiet pulls, and disabling the client host-port binding in [docker-compose.yml](docker-compose.yml)). See [python.start()](natlab.py).
 
 ## Rebuild and apply changes efficiently
 
 ### Base image and scripts
 
-- natlab start always rebuilds the “base” image profile with BuildKit:
+- natlab start builds the “base” image profile with BuildKit using the layer cache, so repeated starts with no changes are fast:
 
 ```bash
 uv run python3 natlab.py start
 ```
 
-Implementation: [python.start()](natlab.py:38) issues docker compose build for the base profile.
+- Force a clean (no-cache) rebuild of the base image with `--rebuild` (or `NATLAB_BUILD_NO_CACHE=1`):
+
+```bash
+uv run python3 natlab.py start --rebuild
+```
+
+In CI (`GITLAB_CI`) the build always runs with `--no-cache` for fully reproducible images; the layer cache is a local-dev convenience only.
+
+Implementation: [python.start()](natlab.py) issues docker compose build for the base profile.
 
 ### Recreate vs restart
 
@@ -521,7 +532,7 @@ docker container prune          # will remove stopped containers
 - IPv6
   - The “internet” network has IPv6 enabled in [docker-compose.yml](docker-compose.yml:934). Ensure Docker daemon has IPv6 enabled if running IPv6 tests; otherwise disable IPv6-related markers.
 - Security and networking impact
-  - On newer Docker versions natlab prefers a special “nat-unprotected” bridge mode; on older Docker it falls back to “nat”. This adjusts NAT/masquerade behavior and may affect firewalling/routing on your workstation. See [python.check_docker_version_compatibility()](natlab.py:170) and comments in [docker-compose.yml](docker-compose.yml).
+  - natlab uses Docker bridge networks with custom NAT/masquerade behavior that may affect firewalling/routing on your workstation. See comments in [docker-compose.yml](docker-compose.yml).
 - Windows as host
   - Full env (with nested virtualization) is not supported on native Windows hosts. Use a Linux host for full coverage or run the lite-mode.
 

@@ -40,12 +40,16 @@ graph LR
     dns-server-2[["dns-server-2
         10.0.80.83
         2001:db8:85a4::adda:edde:8"]]
+    tp-lite-dns-server[["tp-lite-dns-server
+        10.0.80.90"]]
     mqtt-broker("mqtt-broker
         10.0.80.85
         2001:db8:85a4::adda:edde:a")
     core-api("core-api
         10.0.80.86
         2001:db8:85a4::adda:edde:b")
+    openwrt-cdn("openwrt-cdn
+        10.0.254.21")
   end
 
   %% Network cone-net-03
@@ -175,9 +179,23 @@ graph LR
   direction LR
     openwrt-client-01("openwrt-client-01
         192.168.115.100")
+    openwrt-dhcp-client-01("openwrt-dhcp-client-01")
     openwrt-gw-01(["openwrt-gw-01
         10.0.254.14
         192.168.115.254"])
+    playwright-runner-01("playwright-runner-01
+        192.168.115.101")
+  end
+
+  %% Network openwrt-net-03
+  subgraph openwrt-net-03[openwrt-net-03]
+  direction LR
+    openwrt-client-03("openwrt-client-03
+        192.168.117.100")
+    openwrt-dhcp-client-03("openwrt-dhcp-client-03")
+    openwrt-gw-03(["openwrt-gw-03
+        10.0.254.23
+        192.168.117.254"])
   end
 
   %% Network windows-net-01
@@ -202,28 +220,6 @@ graph LR
         192.168.151.254"])
   end
 
-  %% Network windows-net-03
-  subgraph windows-net-03[windows-net-03]
-  direction LR
-    windows-client-02("windows-client-02
-        192.168.152.54
-        192.168.153.54")
-    windows-gw-03(["windows-gw-03
-        10.0.254.17
-        192.168.152.254"])
-  end
-
-  %% Network windows-net-04
-  subgraph windows-net-04[windows-net-04]
-  direction LR
-    windows-client-02("windows-client-02
-        192.168.152.54
-        192.168.153.54")
-    windows-gw-04(["windows-gw-04
-        10.0.254.18
-        192.168.153.254"])
-  end
-
   %% Network mac-net-01
   subgraph mac-net-01[mac-net-01]
   direction LR
@@ -246,6 +242,16 @@ graph LR
         192.168.155.254"])
   end
 
+  %% Network android-net-01
+  subgraph android-net-01[android-net-01]
+  direction LR
+    android-gw-01(["android-gw-01
+        10.0.254.24
+        192.168.118.254"])
+    android-client-01("android-client-01
+        192.168.118.2")
+  end
+
   %% Node Connections
   cone-gw-01 -..- internet
   cone-gw-02 -..- internet
@@ -259,12 +265,12 @@ graph LR
   udp-block-gw-01 -..- internet
   udp-block-gw-02 -..- internet
   openwrt-gw-01 -..- internet
+  openwrt-gw-03 -..- internet
   windows-gw-01 -..- internet
   windows-gw-02 -..- internet
-  windows-gw-03 -..- internet
-  windows-gw-04 -..- internet
   mac-gw-01 -..- internet
   mac-gw-02 -..- internet
+  android-gw-01 -..- internet
   cone-client-01 -.- cone-gw-01
   shared-client-01 -.- cone-gw-01
   shared-client-01 -.- cone-gw-03
@@ -280,10 +286,10 @@ graph LR
   udp-block-client-01 -.- udp-block-gw-01
   udp-block-client-02 -.- udp-block-gw-02
   openwrt-client-01 -.- openwrt-gw-01
+  openwrt-client-03 -.- openwrt-gw-03
   windows-client-01 -.- windows-gw-01
   windows-client-01 -.- windows-gw-02
-  windows-client-02 -.- windows-gw-03
-  windows-client-02 -.- windows-gw-04
   mac-client-01 -.- mac-gw-01
   mac-client-01 -.- mac-gw-02
+  android-client-01 -.- android-gw-01
 ```

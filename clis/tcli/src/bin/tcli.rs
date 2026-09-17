@@ -6,7 +6,7 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 use dirs::home_dir;
 use parking_lot::Mutex;
-use regex::Regex;
+use regex_lite::Regex;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::EnvFilter;
 

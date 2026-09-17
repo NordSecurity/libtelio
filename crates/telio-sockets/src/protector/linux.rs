@@ -80,7 +80,10 @@ mod tests {
     #[case(IpAddr::V4(Ipv4Addr::UNSPECIFIED))]
     #[case(IpAddr::V6(Ipv6Addr::LOCALHOST))]
     #[case(IpAddr::V6(Ipv6Addr::UNSPECIFIED))]
-    fn test_make_external(#[case] ip_addr: IpAddr) {
+    #[ignore = "Requires running as root (setting SO_MARK requires CAP_NET_ADMIN)"]
+    fn test_make_external_requires_root(#[case] ip_addr: IpAddr) {
+        assert!(nix::unistd::geteuid().is_root());
+
         let protector = NativeProtector::new().unwrap();
         protector.set_fwmark(telio_utils::LIBTELIO_FWMARK);
         let addr = SocketAddr::new(ip_addr, 0);

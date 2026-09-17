@@ -56,6 +56,12 @@ impl<T: LocalZeroize> LocalZeroize for Option<T> {
     }
 }
 
+impl LocalZeroize for Vec<u8> {
+    fn zeroize(&mut self) {
+        Zeroize::zeroize(self);
+    }
+}
+
 /// Wraper type for values that contain sensitive information.
 ///
 /// When printed in release mode it will not reveal inner data instead
@@ -74,6 +80,8 @@ impl<T: LocalZeroize> ZeroizeOnDrop for Hidden<T> {}
 
 /// Type alias for UniFFI
 pub type HiddenString = Hidden<String>;
+/// Type alias for UniFFI
+pub type HiddenBytes = Hidden<Vec<u8>>;
 
 impl<T: LocalZeroize> fmt::Debug for Hidden<T>
 where

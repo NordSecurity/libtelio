@@ -9,7 +9,8 @@ up() {
     echo "OK: $service"
   else
     echo "FAIL: $service"
-    systemctl status "$s" --no-pager || true
+    systemctl status "$service" --no-pager || true
+    journalctl -xeu "$service" || true
     exit 1
   fi
 }
@@ -33,10 +34,13 @@ ip6tables-save -f ip6tables_backup
 
 echo "Setting up services..."
 systemctl daemon-reload
-up nlx-quick@nordlynx0
+up nlx-quick@nlx0
 up nlx-radius
 up fakefm.service
 up pq-upgrader
+
+timeout 30 bash -c 'until [ -S /tmp/ns.sock ]; do sleep 0.5; done'
+
 up nlx-ns
 
 touch /ready

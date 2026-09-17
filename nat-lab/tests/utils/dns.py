@@ -11,6 +11,7 @@ async def query_dns(
     expected_output: Optional[List[str]] = None,
     dns_server: Optional[str] = None,
     options: Optional[List[str]] = None,
+    quiet: bool = False,
 ) -> None:
     args = ["nslookup"]
     if options:
@@ -22,8 +23,9 @@ async def query_dns(
     args.append(dns_server if dns_server else LIBTELIO_DNS_IPV4)
     response = await connection.create_process(args).execute()
     dns_output = response.get_stdout()
-    log.info("nslookup stdout: %s", dns_output)
-    log.info("nslookup expected_output: %s", expected_output)
+    if not quiet:
+        log.info("nslookup stdout: %s", dns_output)
+        log.info("nslookup expected_output: %s", expected_output)
     if expected_output:
         for expected_str in expected_output:
             assert re.search(expected_str, dns_output, re.DOTALL) is not None

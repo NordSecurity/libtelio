@@ -235,5 +235,5 @@ async def test_process_run_general_exception(
                 assert " ".join(ping_command) in await _get_running_process_list(
                     connection
                 )
-                raise Exception
+                raise RuntimeError
         assert " ".join(ping_command) not in await _get_running_process_list(connection)

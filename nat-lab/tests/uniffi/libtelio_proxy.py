@@ -48,7 +48,7 @@ class LibtelioProxy:
                 return None
             (res, err) = fn_res
             if err is not None:
-                raise Exception(err)
+                raise RuntimeError(err)
             return res
 
     @move_to_async_thread
@@ -142,6 +142,10 @@ class LibtelioProxy:
         self._handle_remote_error(lambda r: r.notify_network_change())
 
     @move_to_async_thread
+    def set_tunnel_src_ip(self, src_ips):
+        self._handle_remote_error(lambda r: r.set_tunnel_src_ip(src_ips))
+
+    @move_to_async_thread
     def connect_to_exit_node(self, public_key, allowed_ips, endpoint):
         self._handle_remote_error(
             lambda r: r.connect_to_exit_node(public_key, allowed_ips, endpoint)
@@ -196,3 +200,27 @@ class LibtelioProxy:
     @move_to_async_thread
     def flush_logs(self) -> None:
         self._handle_remote_error(lambda r: r.flush_logs())
+
+    @move_to_async_thread
+    def redirect_stdout_to_logfile(self) -> None:
+        self._handle_remote_error(lambda r: r.redirect_stdout_to_logfile())
+
+    @move_to_async_thread
+    def enable_tp_lite_stats_collection(self, config: libtelio.TpLiteStatsOptions):
+        self._handle_remote_error(lambda r: r.enable_tp_lite_stats_collection(config))
+
+    @move_to_async_thread
+    def disable_tp_lite_stats_collection(self):
+        self._handle_remote_error(lambda r: r.disable_tp_lite_stats_collection())
+
+    @move_to_async_thread
+    def get_tp_lite_stats(self):
+        return self._handle_remote_error(lambda r: r.get_tp_lite_stats())
+
+    @move_to_async_thread
+    def set_tp_lite_domain_whitelist(
+        self, domains: List[str], redirects: List[libtelio.DnsRedirect]
+    ):
+        self._handle_remote_error(
+            lambda r: r.set_tp_lite_domain_whitelist(domains, redirects)
+        )

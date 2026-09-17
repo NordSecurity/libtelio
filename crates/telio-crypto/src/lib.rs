@@ -27,7 +27,6 @@ pub mod encryption;
 use std::{cmp::Ordering, convert::TryInto, fmt};
 
 use base64::prelude::*;
-use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::{DeserializeFromStr, SerializeDisplay};
 use telio_utils::Hidden;
@@ -168,11 +167,11 @@ impl SecretKey {
     /// assert_ne!(secret_key_a, secret_key_b);
     /// ```
     pub fn gen() -> Self {
-        Self::gen_with(&mut rand::rngs::OsRng)
+        Self::gen_with(&mut rand::rng())
     }
 
     /// Generates a new random SecretKey with provided RNG
-    pub fn gen_with(rng: &mut (impl RngCore + CryptoRng)) -> Self {
+    pub fn gen_with(rng: &mut impl rand::CryptoRng) -> Self {
         let mut key = SecretKey(Hidden([0u8; KEY_SIZE]));
         rng.fill_bytes(&mut key.0 .0);
         // Key clamping

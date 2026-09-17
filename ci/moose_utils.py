@@ -22,7 +22,7 @@ def _output_dir(target_os: str, arch: str) -> str:
 
 
 def _download_moose_file(target_os: str, arch: str, file_name: str):
-    MOOSE_PROJECT_ID = 5644
+    MOOSE_PROJECT_ID = 834
 
     output_path = os.path.join(_output_dir(target_os, arch), file_name)
     if os.path.isfile(output_path):

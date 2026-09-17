@@ -21,7 +21,7 @@ def ssdp_client(timeout: int | None):
     assert buf == SSDP_RESP
 
 
-def ssdp_server(timeout: int | None):
+def ssdp_server(timeout: int | None, ip: str):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(timeout)
     if sys.platform == "darwin":
@@ -34,7 +34,7 @@ def ssdp_server(timeout: int | None):
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("0.0.0.0", SSDP_PORT))
 
-    mreq = socket.inet_aton(SSDP_IP) + socket.inet_aton("0.0.0.0")
+    mreq = socket.inet_aton(SSDP_IP) + socket.inet_aton(ip)
     s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
     print("Listening", flush=True)
@@ -45,7 +45,7 @@ def ssdp_server(timeout: int | None):
             break
 
 
-def mdns_client(timeout: int | None):
+def mdns_client(timeout: int | None, ip: str):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(timeout)
     if sys.platform == "darwin":
@@ -54,7 +54,7 @@ def mdns_client(timeout: int | None):
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("0.0.0.0", MDNS_PORT))
 
-    mreq = socket.inet_aton(MDNS_IP) + socket.inet_aton("0.0.0.0")
+    mreq = socket.inet_aton(MDNS_IP) + socket.inet_aton(ip)
     s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
     s.sendto(MDNS_REQ, (MDNS_IP, MDNS_PORT))
@@ -64,7 +64,7 @@ def mdns_client(timeout: int | None):
             break
 
 
-def mdns_server(timeout: int | None):
+def mdns_server(timeout: int | None, ip: str):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(timeout)
     if sys.platform == "darwin":
@@ -73,7 +73,7 @@ def mdns_server(timeout: int | None):
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(("0.0.0.0", MDNS_PORT))
 
-    mreq = socket.inet_aton(MDNS_IP) + socket.inet_aton("0.0.0.0")
+    mreq = socket.inet_aton(MDNS_IP) + socket.inet_aton(ip)
     s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
 
     print("Listening", flush=True)
@@ -106,6 +106,9 @@ def main():
     parser.add_argument(
         "-t", "--timeout", type=int, help="timeout for socket operations"
     )
+    parser.add_argument(
+        "-i", "--ip", type=str, help="IP used for joining the multicast group"
+    )
 
     args = parser.parse_args()
 
@@ -113,12 +116,12 @@ def main():
         if args.ssdp:
             ssdp_client(args.timeout)
         else:
-            mdns_client(args.timeout)
+            mdns_client(args.timeout, args.ip)
     elif args.server:
         if args.ssdp:
-            ssdp_server(args.timeout)
+            ssdp_server(args.timeout, args.ip)
         else:
-            mdns_server(args.timeout)
+            mdns_server(args.timeout, args.ip)
 
 
 if __name__ == "__main__":
