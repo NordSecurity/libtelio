@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
+from natlab import ping
 from tests import config
 from tests.helpers import SetupParameters, setup_mesh_nodes, setup_environment
 from tests.utils import stun
@@ -22,7 +23,6 @@ from tests.utils.connection_util import (
     add_outgoing_packets_delay,
     toggle_secondary_adapter,
 )
-from tests.utils.ping import ping
 from typing import List, Tuple
 
 WG_POLLING_PERIOD_S = 1
