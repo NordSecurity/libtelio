@@ -1,22 +1,34 @@
 use crate::tcp_forwarder::proxy::ProxyEvent;
+use pnet_packet::ip::IpNextHeaderProtocols;
+use pnet_packet::ipv4::{checksum, Ipv4Packet, MutableIpv4Packet};
+use pnet_packet::tcp::{MutableTcpPacket, TcpFlags, TcpPacket};
+use pnet_packet::Packet as _;
 use smoltcp::iface::{SocketHandle, SocketSet};
 use smoltcp::socket::tcp;
 use std::convert::TryFrom;
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
+use telio_model::constants::DNS_PORT;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+pub(crate) const IPV4_HEADER: usize = 20;
+pub(crate) const TCP_HEADER: usize = 20;
+pub(crate) const CLIENT_IP: Ipv4Addr = Ipv4Addr::new(100, 64, 0, 4);
+pub(crate) const SERVER_IP: Ipv4Addr = Ipv4Addr::new(100, 64, 0, 2);
+pub(crate) const CLIENT_PORT: u16 = 40000;
 pub(crate) const DUPLEX_BUF: usize = 64;
 pub(crate) const TEST_WAIT: Duration = Duration::from_secs(5);
 // Long enough that a TEST_REPLY_WINDOW deadline must have fired
 pub(crate) const AFTER_DEADLINE: Duration = Duration::from_millis(500);
 pub(crate) const TEST_REPLY_WINDOW: Duration = Duration::from_millis(100);
 pub(crate) const TEST_UPSTREAM_TIMEOUT: Duration = Duration::from_millis(200);
+pub(crate) const TEST_CLIENT_REQUEST_TIMEOUT: Duration = Duration::from_millis(200);
 pub(crate) const NO_DEADLINE: Duration = Duration::from_secs(3600);
 pub(crate) const LAPSED_AGO: Duration = Duration::from_secs(5);
 pub(crate) const SETTLE: Duration = Duration::from_millis(50);
+pub(crate) const LATE_QUERY_DELAY: Duration = Duration::from_millis(150);
 
 /// Build one length-prefixed DNS-over-TCP frame around `body`.
 pub(crate) fn frame(body: &[u8]) -> Vec<u8> {
@@ -43,6 +55,168 @@ pub(crate) fn framed_query(labels: &[&[u8]]) -> Vec<u8> {
     msg.extend_from_slice(&[0x00, 0x01]); // qtype A
     msg.extend_from_slice(&[0x00, 0x01]); // qclass IN
     frame(&msg)
+}
+
+pub(crate) struct Segment {
+    pub(crate) flags: u8,
+    pub(crate) seq: u32,
+    pub(crate) ack: u32,
+    pub(crate) payload: Vec<u8>,
+}
+
+pub(crate) fn build_tcp_ipv4(
+    src_port: u16,
+    seq: u32,
+    ack: u32,
+    flags: u8,
+    payload: &[u8],
+) -> Vec<u8> {
+    let total = IPV4_HEADER + TCP_HEADER + payload.len();
+    let mut buf = vec![0u8; total];
+    {
+        let mut ip = MutableIpv4Packet::new(&mut buf).unwrap();
+        ip.set_version(4);
+        ip.set_header_length(5);
+        ip.set_total_length(total as u16);
+        ip.set_ttl(64);
+        ip.set_next_level_protocol(IpNextHeaderProtocols::Tcp);
+        ip.set_source(CLIENT_IP);
+        ip.set_destination(SERVER_IP);
+        ip.set_checksum(0);
+        ip.set_checksum(checksum(&ip.to_immutable()));
+    }
+    {
+        let mut tcp = MutableTcpPacket::new(&mut buf[IPV4_HEADER..]).unwrap();
+        tcp.set_source(src_port);
+        tcp.set_destination(DNS_PORT);
+        tcp.set_sequence(seq);
+        tcp.set_acknowledgement(ack);
+        tcp.set_data_offset(5);
+        tcp.set_flags(flags);
+        tcp.set_window(64240);
+        tcp.set_payload(payload);
+        tcp.set_checksum(0);
+        tcp.set_checksum(pnet_packet::tcp::ipv4_checksum(
+            &tcp.to_immutable(),
+            &CLIENT_IP,
+            &SERVER_IP,
+        ));
+    }
+    buf
+}
+
+pub(crate) fn parse_segment(pkt: &[u8]) -> Segment {
+    let ip = Ipv4Packet::new(pkt).unwrap();
+    assert_eq!(ip.get_next_level_protocol(), IpNextHeaderProtocols::Tcp);
+    let tcp = TcpPacket::new(ip.payload()).unwrap();
+    Segment {
+        flags: tcp.get_flags(),
+        seq: tcp.get_sequence(),
+        ack: tcp.get_acknowledgement(),
+        payload: tcp.payload().to_vec(),
+    }
+}
+
+pub(crate) struct TestClient {
+    pub(crate) src_port: u16,
+    pub(crate) seq: u32,
+    pub(crate) ack: u32,
+}
+
+impl TestClient {
+    pub(crate) fn new() -> Self {
+        Self::new_with_port(CLIENT_PORT)
+    }
+
+    /// A client on a distinct source port, so it occupies a different
+    /// pool socket than `CLIENT_PORT`'s connection.
+    pub(crate) fn new_with_port(src_port: u16) -> Self {
+        TestClient {
+            src_port,
+            seq: 1000,
+            ack: 0,
+        }
+    }
+
+    pub(crate) fn syn(&mut self) -> Vec<u8> {
+        let pkt = build_tcp_ipv4(self.src_port, self.seq, 0, TcpFlags::SYN, &[]);
+        self.seq = self.seq.wrapping_add(1);
+        pkt
+    }
+
+    pub(crate) fn absorb(&mut self, seg: &Segment) {
+        let mut advance = seg.payload.len() as u32;
+        if seg.flags & TcpFlags::SYN != 0 {
+            advance += 1;
+        }
+        if seg.flags & TcpFlags::FIN != 0 {
+            advance += 1;
+        }
+        if advance > 0 {
+            self.ack = seg.seq.wrapping_add(advance);
+        }
+    }
+
+    pub(crate) fn ack(&self) -> Vec<u8> {
+        build_tcp_ipv4(self.src_port, self.seq, self.ack, TcpFlags::ACK, &[])
+    }
+
+    pub(crate) fn data(&mut self, payload: &[u8]) -> Vec<u8> {
+        let pkt = build_tcp_ipv4(
+            self.src_port,
+            self.seq,
+            self.ack,
+            TcpFlags::ACK | TcpFlags::PSH,
+            payload,
+        );
+        self.seq = self.seq.wrapping_add(payload.len() as u32);
+        pkt
+    }
+
+    pub(crate) fn fin(&mut self) -> Vec<u8> {
+        let pkt = build_tcp_ipv4(
+            self.src_port,
+            self.seq,
+            self.ack,
+            TcpFlags::FIN | TcpFlags::ACK,
+            &[],
+        );
+        self.seq = self.seq.wrapping_add(1);
+        pkt
+    }
+}
+
+pub(crate) async fn recv_segment(egress: &mut mpsc::Receiver<Vec<u8>>) -> Segment {
+    let pkt = tokio::time::timeout(TEST_WAIT, egress.recv())
+        .await
+        .expect("timed out waiting for egress packet")
+        .expect("egress channel closed");
+    parse_segment(&pkt)
+}
+
+pub(crate) async fn recv_until(
+    egress: &mut mpsc::Receiver<Vec<u8>>,
+    want: fn(&Segment) -> bool,
+) -> Segment {
+    for _ in 0..10 {
+        let seg = recv_segment(egress).await;
+        if want(&seg) {
+            return seg;
+        }
+    }
+    panic!("no matching segment within 10 egress packets");
+}
+
+pub(crate) fn has_payload(seg: &Segment) -> bool {
+    !seg.payload.is_empty()
+}
+
+pub(crate) fn is_rst(seg: &Segment) -> bool {
+    seg.flags & TcpFlags::RST != 0
+}
+
+pub(crate) fn is_fin(seg: &Segment) -> bool {
+    seg.flags & TcpFlags::FIN != 0
 }
 
 /// Mint an opaque `SocketHandle`.
