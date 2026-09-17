@@ -1,8 +1,8 @@
 import pytest
 from contextlib import AsyncExitStack
+from natlab import CommandGrepper
 from tests.helpers import setup_mesh_nodes, SetupParameters
 from tests.utils.bindings import default_features, TelioAdapterType
-from tests.utils.command_grepper import CommandGrepper
 from tests.utils.connection import ConnectionTag, Connection, TargetOS
 from tests.utils.multicast import MulticastClient, MulticastServer
 from tests.utils.process import ProcessExecError

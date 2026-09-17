@@ -3,6 +3,7 @@ import json
 import pytest
 import shlex
 from contextlib import AsyncExitStack
+from natlab import OutputNotifier, ping
 from tests.config import DERP_SERVERS
 from tests.libtelio_client import Client
 from tests.mesh_api import API
@@ -23,8 +24,6 @@ from tests.utils.connection_util import (
     new_connection_with_conn_tracker,
 )
 from tests.utils.logger import log
-from tests.utils.output_notifier import OutputNotifier
-from tests.utils.ping import ping
 from tests.utils.router import IPProto, IPStack, new_router
 from typing import Any, List, Dict
 

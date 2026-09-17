@@ -5,10 +5,10 @@ import subprocess
 from asyncio import Event, wait_for
 from contextlib import asynccontextmanager, AsyncExitStack
 from datetime import datetime
+from natlab import OutputNotifier
 from tests.config import ANDROID_DEVICE_TMP
 from tests.utils.connection import Connection, ConnectionTag, TargetOS
 from tests.utils.logger import log
-from tests.utils.output_notifier import OutputNotifier
 from tests.utils.process import Process, ProcessExecError
 from tests.utils.testing import get_current_test_log_path
 from typing import AsyncIterator, Optional

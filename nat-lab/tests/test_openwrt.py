@@ -3,6 +3,7 @@ import asyncssh
 import pytest
 import re
 from contextlib import AsyncExitStack
+from natlab import ping
 from pathlib import Path
 from tests.config import (
     WG_SERVER,
@@ -34,7 +35,6 @@ from tests.utils.openwrt import (
     wait_for_router_dns,
     wait_until_unreachable_after_reboot,
 )
-from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
 from typing import Optional
 from urllib.parse import urlparse
