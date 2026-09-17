@@ -1,5 +1,14 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v7.0.9
+### ****
+---
+* LLT-7562: Fix nonet after Apple device wake-up
+* wireguard-nt adapter creation has retries, with exp. backoff and GUID mixing
+* LLT-7521: Fix NepTUN roaming on Apple platforms
+
+<br>
+
 ### v7.0.8
 ### ****
 ---
