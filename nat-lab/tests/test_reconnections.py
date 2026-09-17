@@ -1,11 +1,10 @@
 import asyncio
 import pytest
+from natlab import asyncio_util, ping
 from tests.helpers import SetupParameters, Environment
-from tests.utils import asyncio_util
 from tests.utils.bindings import NodeState, RelayState, TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
-from tests.utils.ping import ping
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
 import asyncio
 import pytest
+from natlab import ping
 from tests import config
 from tests.helpers import SetupParameters
 from tests.helpers_vpn import connect_vpn, VpnConfig
@@ -21,7 +22,6 @@ from tests.utils.connection_tracker import (
 )
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.netcat import NetCatClient
-from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
 from tests.utils.router import IPProto, IPStack
 from tests.utils.tcpdump import make_tcpdump
