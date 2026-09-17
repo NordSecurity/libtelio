@@ -92,6 +92,11 @@ pub trait Adapter: Send + Sync {
     /// Set the (u)tun file descriptor to be used by the adapter
     async fn set_tun(&self, tun: Tun) -> Result<(), Error>;
 
+    /// Set the MTU of the adapter interface, `None` restores the adapter's own handling
+    async fn set_adapter_mtu(&self, _mtu: Option<u32>) -> Result<(), Error> {
+        Err(Error::UnsupportedAdapter)
+    }
+
     /// Make a copy of this adapter.
     ///
     /// Only the custom adapters can be cloned this way.
@@ -106,6 +111,9 @@ pub trait Adapter: Send + Sync {
         Ok(())
     }
 }
+
+/// IPv6 minimum link MTU, the interface MTU applies to both address families
+pub const MIN_MTU: u32 = 1280;
 
 /// Enumeration of `Error` types for `Adapter` struct
 #[derive(Debug, TError)]
@@ -130,6 +138,10 @@ pub enum Error {
     /// Unsupported adapter
     #[error("Unsupported adapter")]
     UnsupportedAdapter,
+
+    /// MTU below the minimum any adapter accepts
+    #[error("MTU must be at least {min}, got {0}", min = MIN_MTU)]
+    MtuTooLow(u32),
 
     /// Unsupported on Windows adapter
     #[error("Mismatched windows adapter")]
@@ -299,8 +311,12 @@ pub(crate) async fn start(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
 
             #[cfg(windows)]
             Ok(Box::new(
-                windows_native_wg::WindowsNativeWg::start(&name, cfg.enable_dynamic_wg_nt_control)
-                    .await?,
+                windows_native_wg::WindowsNativeWg::start(
+                    &name,
+                    cfg.enable_dynamic_wg_nt_control,
+                    cfg.mtu,
+                )
+                .await?,
             ))
         }
         AdapterType::Custom(adapter) => adapter.clone_box().ok_or(Error::UnsupportedAdapter),
