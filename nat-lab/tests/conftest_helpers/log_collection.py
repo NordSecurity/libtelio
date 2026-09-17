@@ -6,6 +6,7 @@ from tests.config import (
     COVERAGE_PROFILE_DIR_VM_MAC,
     COVERAGE_PROFILE_DIR_WINDOWS_VM,
     LAN_ADDR_MAP,
+    compose_container,
 )
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection.ssh_connection import SshConnection
@@ -181,7 +182,7 @@ async def collect_nordderper_logs():
     num_containers = 3
 
     for i in range(1, num_containers + 1):
-        container_name = f"nat-lab-derp-{i:02d}-1"
+        container_name = compose_container(f"derp-{i:02d}")
         destination_path = f"{LOG_DIR}/derp_{i:02d}_relay.log"
 
         await copy_file_from_container(
@@ -193,7 +194,7 @@ async def collect_dns_server_logs():
     num_containers = 2
 
     for i in range(1, num_containers + 1):
-        container_name = f"nat-lab-dns-server-{i}-1"
+        container_name = compose_container(f"dns-server-{i}")
         destination_path = f"{LOG_DIR}/dns_server_{i}.log"
 
         await copy_file_from_container(
@@ -202,7 +203,7 @@ async def collect_dns_server_logs():
 
 
 async def collect_core_api_server_logs():
-    container_name = "nat-lab-core-api-1"
+    container_name = compose_container("core-api")
     os.makedirs(LOG_DIR, exist_ok=True)
     out_path = os.path.join(LOG_DIR, "core_api.log")
     proc = await asyncio.create_subprocess_exec(

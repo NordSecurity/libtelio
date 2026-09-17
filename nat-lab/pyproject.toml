@@ -117,6 +117,9 @@ extra_checks = true
 strict_equality = true
 
 exclude = [
+    # importable as `natlab`, so it shadows the installed package of that name
+    # for anything resolving imports by path; goes away with the in-repo lab
+    '^natlab\.py$',
     '^tests/protobuf',
     '^.*telio_bindings\.py',
     '.*ens_pb2_grpc.py',
@@ -135,6 +138,14 @@ module = "tests.uniffi.telio_bindings"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
+# natlab is installed only in the service job, and nat-lab/natlab.py shadows it
+# for anything that resolves imports by path rather than through the installed
+# distribution, so type-check against it is not possible here
+module = ["natlab", "natlab.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+[[tool.mypy.overrides]]
 module = "scapy.*"
 ignore_missing_imports = true
 # scapy populates scapy.all dynamically and ships imperfect type hints, so
@@ -150,8 +161,9 @@ ignore-paths = ".venv,tests/protobuf,bin/grpc_protobuf,tests/uniffi/telio_bindin
 
 [tool.pylint.typecheck]
 # scapy.all re-exports its protocol classes dynamically, so pylint can't see
-# names like TCP/UDP via static analysis.
-ignored-modules = ["scapy.all"]
+# names like TCP/UDP via static analysis. natlab is installed only in the service
+# job, and nat-lab/natlab.py shadows the package for import resolution by path.
+ignored-modules = ["scapy.all", "natlab", "natlab.logger", "natlab.asyncio_util"]
 
 [tool.pylint.design]
 # nat-lab test helpers/fixtures legitimately take many parameters (per-node

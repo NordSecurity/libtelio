@@ -9,6 +9,28 @@ Nat-Lab provides a reproducible, containerized environment for testing libtelio 
 
 Note: CI is the canonical execution environment. Local runs are supported where possible and are helpful for day-to-day development.
 
+## natlab
+
+The lab topology and the framework that drives it live in **natlab**, which runs the suite
+as a downstream pipeline: CI hands it this checkout, the build artifacts and
+[.natlab.yml](../.natlab.yml), and it brings the lab up and runs these tests against it.
+
+natlab is deliberately not a declared dependency here, so a checkout without it is
+unaffected. To run locally, point at a natlab checkout:
+
+```bash
+export NATLAB_DIR=/path/to/natlab
+uv run ./run_local.py            # injects natlab as an editable dependency
+
+# or drive the lab directly
+uv run --directory "$NATLAB_DIR" natlab service prepare \
+    --lab labs/base --consumer "$PWD/.." --artifacts <artifact-dir> \
+    --project mylab --state /tmp/natlab-state.json
+uv run --directory "$NATLAB_DIR" natlab --state /tmp/natlab-state.json start
+uv run --with-editable "$NATLAB_DIR" pytest tests \
+    --lab-state /tmp/natlab-state.json --lab-attach
+```
+
 ## Contents
 
 - Quickstart

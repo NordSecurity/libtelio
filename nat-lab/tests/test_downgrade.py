@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
+from natlab import ping
 from tests.helpers import setup_mesh_nodes, SetupParameters
 from tests.utils.bindings import (
     default_features,
@@ -12,7 +13,6 @@ from tests.utils.bindings import (
     NodeState,
 )
 from tests.utils.connection import ConnectionTag
-from tests.utils.ping import ping
 from typing import List, Tuple
 
 
