@@ -1,0 +1,54 @@
+version: 1
+lab: base
+tests: nat-lab/tests
+deps: nat-lab
+mount: /libtelio
+shards: 9
+# a hanging test must fail rather than block the job; timeout_func_only keeps the
+# timeout compatible with reruns; long/perf tests only run in dedicated jobs
+pytest_args:
+  - "-m"
+  - "not long and not perf_profiling"
+  - "--timeout=180"
+  - "-o"
+  - "timeout_func_only=true"
+# least_duration keeps expensive VM tests spread thin across shards; a uniform split
+# packs them back-to-back and the guests degrade under the sustained load
+# this suite splits itself with pytest-split
+shard_args:
+  - "--splits"
+  - "{total}"
+  - "--group"
+  - "{index}"
+  - "--splitting-algorithm=least_duration"
+  - "--durations-path=compiled_test_durations.json"
+env:
+  TELIO_BIN_PROFILE: release
+# the mocked API must serve the cert the prebuilt guest packages were built to
+# trust, which is this committed one
+lab_files:
+  - from: nat-lab/data/core_api/test.pem
+    to: data/core_api/test.pem
+    mode: "0600"
+binaries:
+  - from: compiled_test_durations.json
+    to: nat-lab/compiled_test_durations.json
+    mode: "0644"
+  - from: dist/bindings/python/telio.py
+    to: nat-lab/tests/uniffi/telio_bindings.py
+    mode: "0644"
+  - from: dist/linux/release/x86_64/libtelio.so
+    to: nat-lab/tests/uniffi/libtelio.so
+    mode: "0644"
+  - from: dist/linux/release/x86_64/libtelio.so.debug
+    to: nat-lab/tests/uniffi/libtelio.so.debug
+    mode: "0644"
+  - from: dist/linux/release/x86_64/libfirewall.so
+    to: nat-lab/tests/uniffi/libfirewall.so
+    mode: "0644"
+  - from: dist/darwin/macos/release/libfirewall.dylib
+    to: nat-lab/tests/uniffi/libfirewall.dylib
+    mode: "0644"
+trees:
+  - from: dist
+    to: dist
