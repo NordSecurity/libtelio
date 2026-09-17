@@ -31,7 +31,7 @@ prost = { version = "0.14.3", optional = true }
 protobuf = "3.7.2"
 rustls = { version = "0.23", default-features = false, features = ["std", "ring"] }
 rustls-webpki = { version = "0.103.13", optional = true }
-aws-lc-rs = { version = "=1.16.2", features = ["bindgen"], optional = true }
+aws-lc-rs = { version = "=1.18.1", features = ["bindgen"], optional = true }
 tokio-stream = { version = "0.1.18", optional = true }
 tokio-rustls = { version = "0.26.4", default-features = false, optional = true }
 tonic = { version = "0.14.6", optional = true }
