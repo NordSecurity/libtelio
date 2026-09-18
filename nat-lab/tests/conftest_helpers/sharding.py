@@ -10,7 +10,7 @@ Inputs, all identical across shards:
   * compiled_test_durations.json - published by a previous pipeline
 
 A test's requirements are its markers; a shard's capabilities are whatever it
-did not skip. The marker names are deliberately the same strings natlab.py
+did not skip. The marker names are deliberately the same strings lab.py
 skips by (see `_resolve_skip_keywords`), so eligibility is a set intersection
 and there is no mapping table to keep in sync.
 """

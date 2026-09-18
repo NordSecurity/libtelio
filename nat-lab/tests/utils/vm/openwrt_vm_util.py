@@ -15,12 +15,6 @@ CERT_FILE_NAME = "test.pem"
 
 
 def _cert_source_path() -> str:
-    # an attached lab serves the cert it generated, not the committed one
-    lab_dir = os.getenv("NATLAB_LAB_DIR")
-    if lab_dir:
-        candidate = os.path.join(lab_dir, "data", "core_api", CERT_FILE_NAME)
-        if os.path.isfile(candidate):
-            return candidate
     return get_root_path(f"{NATLAB_DATA_PATH}core_api/{CERT_FILE_NAME}")
 
 

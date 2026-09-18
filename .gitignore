@@ -51,7 +51,6 @@ report.json
 /nat-lab/bin/*.ipk
 
 # placed by natlab from the build artifacts
-/dist/
 /nat-lab/tests/uniffi/libtelio.so
 /nat-lab/tests/uniffi/libtelio.so.debug
-/nat-lab/tests/uniffi/telio_bindings.py
+/nat-lab/compiled_test_durations.json
