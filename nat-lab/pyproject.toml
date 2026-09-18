@@ -117,9 +117,6 @@ extra_checks = true
 strict_equality = true
 
 exclude = [
-    # importable as `natlab`, so it shadows the installed package of that name
-    # for anything resolving imports by path; goes away with the in-repo lab
-    '^natlab\.py$',
     '^tests/protobuf',
     '^.*telio_bindings\.py',
     '.*ens_pb2_grpc.py',
@@ -146,13 +143,12 @@ module = ["natlab", "natlab.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# `natlab` itself is shadowed by nat-lab/natlab.py, and natlab's tools are typed
-# against its own Connection ABC, which the connections here are duck-compatible
-# with but not subclasses of. Following either reports every call site instead of
-# the bug this guard is for: a second local class of the same shape as one of
-# natlab's vocabulary types, which the followed natlab.connection/natlab.process do
-# catch
-module = ["natlab", "natlab.tools.*", "natlab.lab", "natlab.testing", "natlab.service"]
+# natlab's tools are typed against its own Connection ABC, which the connections here
+# are duck-compatible with but not subclasses of. Following them reports every call
+# site instead of the bug this guard is for: a second local class of the same shape as
+# one of natlab's vocabulary types, which the followed natlab.connection and
+# natlab.process do catch
+module = ["natlab.tools.*", "natlab.lab", "natlab.testing", "natlab.service"]
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
@@ -171,9 +167,8 @@ ignore-paths = ".venv,tests/protobuf,bin/grpc_protobuf,tests/uniffi/telio_bindin
 
 [tool.pylint.typecheck]
 # scapy.all re-exports its protocol classes dynamically, so pylint can't see
-# names like TCP/UDP via static analysis. natlab is installed only in the service
-# job, and nat-lab/natlab.py shadows the package for import resolution by path.
-ignored-modules = ["scapy.all", "natlab", "natlab.logger", "natlab.asyncio_util"]
+# names like TCP/UDP via static analysis. natlab is installed only in the service job.
+ignored-modules = ["scapy.all", "natlab"]
 
 [tool.pylint.design]
 # nat-lab test helpers/fixtures legitimately take many parameters (per-node

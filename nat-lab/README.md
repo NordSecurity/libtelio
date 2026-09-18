@@ -2,7 +2,7 @@
 
 Nat-Lab provides a reproducible, containerized environment for testing libtelio end-to-end across different networking scenarios (NATs, DERP, UPNP, etc.), plus a runner to build libtelio and execute the pytest-based suite locally.
 
-- Orchestration scripts: [natlab.py](natlab.py) (environment lifecycle), [run_local.py](run_local.py) (build and test runner)
+- Orchestration scripts: [lab.py](lab.py) (environment lifecycle), [run_local.py](run_local.py) (build and test runner)
 - Tests: [tests/](tests)
 - Topology: [docker-compose.yml](docker-compose.yml), doc: [network.md](network.md)
 - Coding standards and tools: [pyproject.toml](pyproject.toml), authoring guidance: [guidelines.md](guidelines.md)
@@ -65,12 +65,12 @@ uv sync
 From [nat-lab dir](libtelio/nat-lab):
 
 ```bash
-python3 natlab.py start
+python3 lab.py start
 # or via uv to isolate env:
-uv run python3 natlab.py start
+uv run python3 lab.py start
 ```
 
-This builds and brings up the Docker-compose environment and generates gRPC stubs for ENS. See [python.start()](natlab.py) and [python.generate_grpc()](natlab.py).
+This builds and brings up the Docker-compose environment and generates gRPC stubs for ENS. See [python.start()](lab.py) and [python.generate_grpc()](lab.py).
 
 1. Build libtelio and run tests
 From [nat-lab dir](libtelio/nat-lab):
@@ -95,42 +95,42 @@ This will:
 
 ## Environment lifecycle
 
-The environment lifecycle is managed by [natlab.py](natlab.py).
+The environment lifecycle is managed by [lab.py](lab.py).
 
 - Start
 
 ```bash
-uv run python3 natlab.py start
+uv run python3 lab.py start
 ```
 
 - Stop
 
 ```bash
-uv run python3 natlab.py stop
+uv run python3 lab.py stop
 ```
 
 - Kill (SIGKILL containers) and Stop
 
 ```bash
-uv run python3 natlab.py kill
+uv run python3 lab.py kill
 ```
 
 - Restart (kill then start)
 
 ```bash
-uv run python3 natlab.py restart
+uv run python3 lab.py restart
 ```
 
 - Recreate running containers (recreate only currently running services)
 
 ```bash
-uv run python3 natlab.py recreate
+uv run python3 lab.py recreate
 ```
 
 - Check that all containers are running
 
 ```bash
-uv run python3 natlab.py check-containers
+uv run python3 lab.py check-containers
 ```
 
 ### Start modifiers (skip heavy services)
@@ -139,13 +139,13 @@ uv run python3 natlab.py check-containers
   all (skips Windows, macOS, NLX, fullcone, Android, OpenWrt and Playwright):
 
 ```bash
-uv run python3 natlab.py start --lite-mode
+uv run python3 lab.py start --lite-mode
 ```
 
 - Skip specific groups:
 
 ```bash
-uv run python3 natlab.py start --skip-windows --skip-mac --skip-nlx --skip-fullcone --skip-android --skip-openwrt
+uv run python3 lab.py start --skip-windows --skip-mac --skip-nlx --skip-fullcone --skip-android --skip-openwrt
 ```
 
 Skip keywords are matched as substrings against the compose service names, so
@@ -153,7 +153,7 @@ Skip keywords are matched as substrings against the compose service names, so
 skipping playwright: `playwright-runner-01` `depends_on` `openwrt-gw-01`, so
 leaving it in would make compose boot the OpenWrt VM regardless.
 
-If a service is missing, the script prints compose logs for that service and fails. See [python.check_containers()](natlab.py).
+If a service is missing, the script prints compose logs for that service and fails. See [python.check_containers()](lab.py).
 
 ## Running tests locally
 
@@ -324,12 +324,12 @@ Libtelio emits boths logs and events during runtime that are potentially relevan
   - Use:
 
 ```bash
-uv run python3 natlab.py check-containers
+uv run python3 lab.py check-containers
 docker compose ps
 docker compose logs <service>
 ```
 
-- The starter already prints logs of missing services; see [python.check_containers()](natlab.py).
+- The starter already prints logs of missing services; see [python.check_containers()](lab.py).
 - Build killed (SIGKILL) / out of memory
   - Need >= 16 GB RAM or set:
 
@@ -344,7 +344,7 @@ export NATLAB_REDUCE_PARALLEL_LINKERS=1
 ## Repository layout tips
 
 - Entrypoints
-  - [natlab.py](natlab.py): lifecycle for Docker environment (start/stop/restart/check), gRPC generation via [python.generate_grpc()](natlab.py)
+  - [lab.py](lab.py): lifecycle for Docker environment (start/stop/restart/check), gRPC generation via [python.generate_grpc()](lab.py)
   - [run_local.py](run_local.py): local build and test driver
 - Tests
   - [tests/](tests): pytest suite and utilities under [tests/utils/](tests/utils)
@@ -472,7 +472,7 @@ export NATLAB_SKIP_SETUP_CHECKS=1
 - TELIO_BIN_PROFILE
   - Controls which libtelio binaries paths are used by tests (release|debug). Automatically set by [python.get_pytest_arguments()](run_local.py:180) based on --telio-debug; may be overridden manually if needed.
 - GITLAB_CI
-  - CI toggle that modifies behavior in a few places (for example using quiet pulls, and disabling the client host-port binding in [docker-compose.yml](docker-compose.yml)). See [python.start()](natlab.py).
+  - CI toggle that modifies behavior in a few places (for example using quiet pulls, and disabling the client host-port binding in [docker-compose.yml](docker-compose.yml)). See [python.start()](lab.py).
 
 ## Rebuild and apply changes efficiently
 
@@ -481,44 +481,44 @@ export NATLAB_SKIP_SETUP_CHECKS=1
 - natlab start builds the “base” image profile with BuildKit using the layer cache, so repeated starts with no changes are fast:
 
 ```bash
-uv run python3 natlab.py start
+uv run python3 lab.py start
 ```
 
 - Force a clean (no-cache) rebuild of the base image with `--rebuild` (or `NATLAB_BUILD_NO_CACHE=1`):
 
 ```bash
-uv run python3 natlab.py start --rebuild
+uv run python3 lab.py start --rebuild
 ```
 
 In CI (`GITLAB_CI`) the build always runs with `--no-cache` for fully reproducible images; the layer cache is a local-dev convenience only.
 
-Implementation: [python.start()](natlab.py) issues docker compose build for the base profile.
+Implementation: [python.start()](lab.py) issues docker compose build for the base profile.
 
 ### Recreate vs restart
 
 - Recreate currently running services (retains stopped ones):
 
 ```bash
-uv run python3 natlab.py recreate
+uv run python3 lab.py recreate
 ```
 
-Implementation: [python.recreate()](natlab.py:222)
+Implementation: [python.recreate()](lab.py:222)
 
 - Recreate all services:
 
 ```bash
-uv run python3 natlab.py recreate-all
+uv run python3 lab.py recreate-all
 ```
 
-Implementation: [python.recreate_all()](natlab.py:234)
+Implementation: [python.recreate_all()](lab.py:234)
 
 - Simple restart of running containers (no rebuild):
 
 ```bash
-uv run python3 natlab.py restart
+uv run python3 lab.py restart
 ```
 
-Implementation: [python.restart()](natlab.py:217)
+Implementation: [python.restart()](lab.py:217)
 
 ### Regenerate gRPC stubs
 
@@ -528,14 +528,14 @@ Implementation: [python.restart()](natlab.py:217)
 uv run python3 -m grpc_tools.protoc -I../crates/telio-proto/protos --python_out=./bin/grpc_protobuf/ --grpc_python_out=./bin/grpc_protobuf ../crates/telio-proto/protos/ens.proto
 ```
 
-Helper: [python.generate_grpc()](natlab.py:203)
+Helper: [python.generate_grpc()](lab.py:203)
 
 ### Full cleanup tips (use carefully)
 
 - Bring down environment:
 
 ```bash
-uv run python3 natlab.py stop
+uv run python3 lab.py stop
 ```
 
 - Remove leftover networks/containers if you experimented outside natlab (advanced):
@@ -579,7 +579,7 @@ uv run mypy .
 uv run pylint .
 ```
 
-- Some generated or vendored modules (e.g., [bin/grpc_protobuf/](bin/grpc_protobuf), 3rd-party utilities) may confuse static analyzers until you run “uv sync” and “uv run python3 natlab.py start” at least once (to generate stubs).
+- Some generated or vendored modules (e.g., [bin/grpc_protobuf/](bin/grpc_protobuf), 3rd-party utilities) may confuse static analyzers until you run “uv sync” and “uv run python3 lab.py start” at least once (to generate stubs).
 
 ## Python version pin
 
