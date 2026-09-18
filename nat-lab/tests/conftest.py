@@ -9,6 +9,7 @@ import signal
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from tests.conftest_helpers.log_collection import collect_logs, collect_kernel_logs
+from tests.conftest_helpers.markers import check_marked_guests
 from tests.conftest_helpers.pretest import (
     perform_pretest_cleanups,
     copy_vm_binaries_if_needed,
@@ -161,6 +162,8 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.timeout(300))
         if libfirewall_missing and item.get_closest_marker("libfirewall"):
             item.add_marker(pytest.mark.skip(reason="libfirewall.so not available"))
+
+    check_marked_guests(items)
 
     # Keep only this shard's slice. trylast, so pytest's own -m deselection has
     # already run and every shard is dividing up an identical set of items.
