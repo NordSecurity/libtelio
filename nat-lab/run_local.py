@@ -192,6 +192,11 @@ def main() -> int:
             raise
 
     if not args.notypecheck:
+        natlab_dir = os.environ.get("NATLAB_DIR")
+        if natlab_dir:
+            # resolve the real natlab, not the stub Any: a second class of the same
+            # shape as one of its vocabulary types is exactly what this must catch
+            os.environ["MYPYPATH"] = os.path.join(natlab_dir, "src")
         run_command((_natlab_prefix() or ["uv", "run"]) + ["mypy", "."])
 
     if not args.notests:
