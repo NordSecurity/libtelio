@@ -58,7 +58,7 @@ libloading = "0.9.0"
 itertools.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"
+jni = "0.22"
 rustls-platform-verifier.workspace = true
 
 [target.'cfg(windows)'.dependencies]

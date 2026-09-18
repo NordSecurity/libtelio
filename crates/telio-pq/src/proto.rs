@@ -7,7 +7,7 @@ use std::{
 
 use blake2::Digest;
 use byteorder::{LittleEndian, ReadBytesExt};
-use hmac::{KeyInit, Mac};
+use hmac::Mac;
 use neptun::noise;
 use pnet_packet::{
     icmp::IcmpPacket,

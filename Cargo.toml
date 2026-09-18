@@ -64,7 +64,7 @@ libloading = "0.9.0"
 itertools.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"
+jni = "0.22"
 rustls-platform-verifier.workspace = true
 
 [target.'cfg(windows)'.dependencies]
@@ -101,7 +101,7 @@ members = ["crates/*", "clis/*"]
 [workspace.dependencies]
 anyhow = "1"
 async-trait = "0.1"
-base64 = "0.22"
+base64 = "0.23"
 blake3 = "1.8"
 bytes = "1"
 cc = "1"
@@ -123,7 +123,7 @@ tracing = { version = "0.1", features = [
   "release_max_level_debug",
 ] }
 maplit = "1"
-mockall = "0.14"
+mockall = "0.15"
 mockall_double = "0.3.1"
 modifier = "0.1.0"
 nat-detect = { git = "https://github.com/NordSecurity/nat-detect.git", tag = "v0.1.9" }
@@ -142,9 +142,9 @@ rand = "0.10.1"
 rand_core = "0.10.1"
 rand_core_compat = { version = "0.1.1", features = ["rand_core_0_6", "rand_core_0_9"] }
 regex-lite = "0.1.9"
-rstest = "0.26.1"
+rstest = "0.27.0"
 rustc-hash = "2"
-rustls-platform-verifier = "0.6.2"
+rustls-platform-verifier = "0.7.0"
 rustls = { version = "0.23", default-features = false, features = [
   "ring",
   "std",
@@ -152,13 +152,13 @@ rustls = { version = "0.23", default-features = false, features = [
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serial_test = "3.4"
-sha2 = "0.11.0"
+sha2 = "0.10.0"
 slog = "2.8"
 smart-default = "0.7.1"
 sn_fake_clock = "0.4"
 socket2 = "0.6"
 strum = { version = "0.28.0", features = ["derive"] }
-surge-ping = { version = "0.8" }
+surge-ping = { version = "0.9" }
 thiserror = "2"
 time = { version = "0.3", features = ["formatting"] }
 tokio = ">=1.22"
@@ -227,3 +227,8 @@ normal = ["telio-starcast"]
 
 [workspace.metadata.cargo-machete]
 ignored = ["tracing"]
+
+# surge-ping has dependency on pnet_packet, use our fork in both places (git tag "v0.36.0" is still pnet 0.35.0) 
+# surge-ping doesn't use removed gre or DNS parts which fork touches
+[patch.crates-io]
+pnet_packet = { git = "https://github.com/NordSecurity/libpnet.git", tag = "v0.36.0" }
