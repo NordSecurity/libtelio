@@ -1,0 +1,55 @@
+version: 1
+lab: base
+tests: nat-lab/tests
+deps: nat-lab
+mount: /libtelio
+# shard classes, mirroring the dedicated job's plan: each boots only the guests its
+# tests need, and pays its measured startup before any test is charged to it
+shard_plan:
+  - {name: openwrt, count: 1, startup_seconds: 150, skip: [windows, mac, nlx, fullcone, android]}
+  - {name: windows, count: 2, startup_seconds: 110, skip: [openwrt, mac, fullcone, android]}
+  - {name: mac, count: 1, startup_seconds: 90, skip: [openwrt, windows, fullcone, android]}
+  - {name: vm-misc, count: 1, startup_seconds: 100, skip: [openwrt, windows, mac]}
+  - {name: lite, count: 4, startup_seconds: 60, skip: [openwrt, windows, mac, nlx, fullcone, android]}
+durations: nat-lab/compiled_test_durations.json
+# a hanging test must fail rather than block the job; timeout_func_only keeps the
+# timeout compatible with reruns; long/perf tests only run in dedicated jobs
+pytest_args:
+  - "-m"
+  - "not long and not perf_profiling"
+  - "--timeout=180"
+  - "-o"
+  - "timeout_func_only=true"
+env:
+  TELIO_BIN_PROFILE: release
+# the mocked API must serve the cert the prebuilt guest packages were built to
+# trust, which is this committed one
+lab_files:
+  - from: nat-lab/data/core_api/test.pem
+    to: data/core_api/test.pem
+    mode: "0600"
+binaries:
+  # balancing only: without it natlab falls back to counting tests, so a pipeline
+  # whose artifacts lack the file must not die at prepare on all nine shards
+  - from: compiled_test_durations.json
+    to: nat-lab/compiled_test_durations.json
+    mode: "0644"
+    optional: true
+  - from: dist/bindings/python/telio.py
+    to: nat-lab/tests/uniffi/telio_bindings.py
+    mode: "0644"
+  - from: dist/linux/release/x86_64/libtelio.so
+    to: nat-lab/tests/uniffi/libtelio.so
+    mode: "0644"
+  - from: dist/linux/release/x86_64/libtelio.so.debug
+    to: nat-lab/tests/uniffi/libtelio.so.debug
+    mode: "0644"
+  - from: dist/linux/release/x86_64/libfirewall.so
+    to: nat-lab/tests/uniffi/libfirewall.so
+    mode: "0644"
+  - from: dist/darwin/macos/release/libfirewall.dylib
+    to: nat-lab/tests/uniffi/libfirewall.dylib
+    mode: "0644"
+trees:
+  - from: dist
+    to: dist

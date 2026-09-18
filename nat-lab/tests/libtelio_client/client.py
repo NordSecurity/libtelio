@@ -6,6 +6,7 @@ import uuid
 from collections import Counter
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
+from natlab import asyncio_util
 from tests.libtelio_client.analytics import ClientAnalytics
 from tests.libtelio_client.events import ClientEvents
 from tests.libtelio_client.log import ClientLog
@@ -15,7 +16,6 @@ from tests.libtelio_client.vpn import ClientVpn
 from tests.log_collector import LOG_COLLECTORS, LogCollector
 from tests.mesh_api import Node
 from tests.uniffi.libtelio_proxy import LibtelioProxy, ProxyConnectionError
-from tests.utils import asyncio_util
 from tests.utils.bindings import (
     Config,
     Features,

@@ -2,8 +2,9 @@ import asyncio
 import pytest
 import re
 from contextlib import AsyncExitStack
+from natlab import ping
+from natlab.asyncio_util import run_async_context, run_async_contexts
 from tests.helpers import SetupParameters, setup_mesh_nodes, setup_environment
-from tests.utils.asyncio_util import run_async_context, run_async_contexts
 from tests.utils.bindings import (
     features_with_endpoint_providers,
     EndpointProvider,
@@ -14,7 +15,6 @@ from tests.utils.bindings import (
 )
 from tests.utils.connection import ConnectionTag
 from tests.utils.logger import log
-from tests.utils.ping import ping
 from tests.utils.process import ProcessExecError
 from tests.utils.router import new_router, IPStack
 
