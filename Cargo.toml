@@ -64,7 +64,7 @@ libloading = "0.9.0"
 itertools.workspace = true
 
 [target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"
+jni = "0.22"
 rustls-platform-verifier.workspace = true
 
 [target.'cfg(windows)'.dependencies]
@@ -144,7 +144,7 @@ rand_core_compat = { version = "0.1.1", features = ["rand_core_0_6", "rand_core_
 regex-lite = "0.1.9"
 rstest = "0.27.0"
 rustc-hash = "2"
-rustls-platform-verifier = "0.6.2"
+rustls-platform-verifier = "0.7.0"
 rustls = { version = "0.23", default-features = false, features = [
   "ring",
   "std",
