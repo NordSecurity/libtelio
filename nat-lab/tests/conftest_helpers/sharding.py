@@ -149,6 +149,10 @@ def plan_from_env() -> Optional[Tuple[List[Shard], int]]:
     Absent or incomplete configuration means "run everything", which is what a
     developer running the suite locally wants.
     """
+    # natlab exports CI_NODE_INDEX from its own NATLAB_SHARD_INDEX, so with the plan
+    # in scope both splitters would fire and each keep a ninth of the other's ninth
+    if os.environ.get("NATLAB_SHARD_INDEX", "").strip():
+        return None
     raw = os.environ.get("NATLAB_SHARD_PLAN", "").strip()
     index = os.environ.get("CI_NODE_INDEX", "").strip()
     if not raw or not index:
