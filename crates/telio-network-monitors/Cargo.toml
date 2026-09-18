@@ -17,8 +17,8 @@ once_cell.workspace = true
 mockall.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-system-configuration = "0.7.0"
-core-foundation = "0.9"
+system-configuration = "0.8.0"
+core-foundation = "0.10"
 
 [target.'cfg(any(target_os = "macos", target_os = "ios", target_os = "tvos"))'.dependencies]
 dispatch2 = "0.3"
