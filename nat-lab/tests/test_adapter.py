@@ -76,10 +76,44 @@ async def test_adapter_gone_event(alpha_setup_params: SetupParameters) -> None:
         conn, *_ = [conn.connection for conn in env.connections]
         client, *_ = env.clients
 
-        expected_event = ErrorEvent(
-            level=ErrorLevel.CRITICAL,
-            code=ErrorCode.UNKNOWN,
-            msg="Interface gone",
+    expected_event = ErrorEvent(
+        level=ErrorLevel.CRITICAL,
+        code=ErrorCode.UNKNOWN,
+        msg="Interface gone",
+    )
+
+    async def delete_adapter() -> None:
+        iface = client.get_router().get_interface_name()
+
+        if conn.target_os == TargetOS.Linux:
+            await conn.create_process(["ip", "link", "delete", iface]).execute()
+
+        elif conn.target_os == TargetOS.Windows:
+            try:
+                result = await conn.create_process([
+                    "reg",
+                    "query",
+                    r"HKLM\SYSTEM\CurrentControlSet\Enum\SWD\WireGuard",
+                ]).execute()
+                for line in result.get_stdout().splitlines():
+                    line = line.strip()
+                    if line.startswith("HKEY_LOCAL_MACHINE"):
+                        instance_id = "\\".join(line.split("\\")[-3:])
+                        await conn.create_process(
+                            ["pnputil", "/remove-device", instance_id]
+                        ).execute()
+            except ProcessExecError as e:
+                if e.returncode != 1:
+                    raise
+        else:
+            raise RuntimeError("unsupported os")
+
+    async with asyncio_util.run_async_context(
+        client.events.wait_for_event_error(expected_event)
+    ) as event:
+        await asyncio.gather(
+            delete_adapter(),
+            event,
         )
 
         async def delete_adapter() -> None:
