@@ -20,7 +20,7 @@ services:
       - base
 
   # Reusable image for clients that obtain their address via DHCP (see dhcp-client.Dockerfile).
-  # Built FROM the local nat-lab:base image, so natlab.py builds `base` first.
+  # Built FROM the local nat-lab:base image, so lab.py builds `base` first.
   dhcp-client-image:
     image: nat-lab:dhcp-client
     build:
@@ -103,7 +103,7 @@ services:
     networks:
       cone-net-01:
         ipv4_address: 192.168.101.104
-    # Note: in certain scenarios this port mapping can be changed as part of `./natlab.py --start`.
+    # Note: in certain scenarios this port mapping can be changed as part of `./lab.py --start`.
     # When this comment was added, the only scenario where the port mapping is changed is CI running tests
     ports: ["58001"]
     ulimits:
