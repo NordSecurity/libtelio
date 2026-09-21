@@ -100,6 +100,7 @@ def telio_node(
     allow_multicast: bool = True,
     peer_allows_multicast: bool = True,
     vpn_connection_error=None,
+    selected_cipher: Optional[Cipher] = None,
 ) -> TelioNode:
     return TelioNode(
         identifier=identifier,
@@ -121,4 +122,5 @@ def telio_node(
         allow_multicast=allow_multicast,
         peer_allows_multicast=peer_allows_multicast,
         vpn_connection_error=vpn_connection_error,
+        selected_cipher=selected_cipher,
     )

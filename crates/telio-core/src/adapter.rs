@@ -123,6 +123,8 @@ impl TryFrom<WgPeer> for telio_wg::uapi::Peer {
             }),
             // Not supported by custom WG adapter
             supported_ciphers: None,
+            // Not supported by custom WG adapter
+            selected_cipher: None,
         })
     }
 }

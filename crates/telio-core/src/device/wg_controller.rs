@@ -1175,6 +1175,7 @@ async fn select_endpoint_for_peer(
 // peers only in a sense what a controller would consider peers to be equal, therefore various
 // status fields, like handshake timestamps, tx'ed or rx'ed data or similar is *not* compared. What
 // is more, "None" peer will always compare _false_ to anything
+// selected_cipher is not compared as it is read only parameter reported by NepTUN, never write back via UAPI SET
 fn compare_peers(a: &telio_wg::uapi::Peer, b: &telio_wg::uapi::Peer) -> bool {
     a.public_key == b.public_key
         && a.endpoint == b.endpoint
@@ -2166,6 +2167,7 @@ mod tests {
                         time_since_last_rx: None,
                         preshared_key: None,
                         supported_ciphers: None,
+                        selected_cipher: None,
                     }))
                     .return_once(|_| Ok(()));
             }
@@ -2202,6 +2204,7 @@ mod tests {
                         time_since_last_rx: None,
                         preshared_key: None,
                         supported_ciphers: None,
+                        selected_cipher: None,
                     }));
             }
         }

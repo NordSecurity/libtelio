@@ -3,12 +3,14 @@
 //! [`Cipher`] mirrors [`wireguard_uapi::xplatform::Cipher`] but is defined here so
 //! that the public API surface does not expose wireguard-uapi as a direct dependency.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
 use telio_utils::telio_log_warn;
 
 /// AEAD cipher suites.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Cipher {
     /// ChaCha20-Poly1305, the WireGuard default.
     Chacha20Poly1305,
