@@ -5,6 +5,7 @@ import time
 from tests.libtelio_client import Runtime, Events, WontHappenError
 from tests.utils.asyncio_util import run_async_contexts, run_async_context
 from tests.utils.bindings import (
+    Cipher,
     NodeState,
     RelayState,
     PathType,
@@ -456,6 +457,54 @@ class TestEvents:
 
             for future in futures:
                 await future
+
+    @pytest.mark.asyncio
+    async def test_peer_selected_cipher(self) -> None:
+        runtime = Runtime()
+        events = Events(runtime)
+        runtime.allowed_pub_keys = set(["AAA"])
+
+        runtime.set_peer(
+            telio_node(
+                public_key="AAA",
+                state=NodeState.CONNECTED,
+                is_exit=True,
+                is_vpn=True,
+                selected_cipher=Cipher.AEGIS256,
+            ),
+            42.0,
+        )
+
+        # should match when filtering for the exact cipher
+        await events.wait_for_state_peer(
+            "AAA",
+            [NodeState.CONNECTED],
+            [PathType.RELAY],
+            is_exit=True,
+            is_vpn=True,
+            selected_cipher=Cipher.AEGIS256,
+        )
+
+        # should pass when cipher filter is None
+        await events.wait_for_state_peer(
+            "AAA",
+            [NodeState.CONNECTED],
+            [PathType.RELAY],
+            is_exit=True,
+            is_vpn=True,
+        )
+
+        # should fail when filtering for a different cipher
+        with pytest.raises(asyncio.TimeoutError):
+            await events.wait_for_state_peer(
+                "AAA",
+                [NodeState.CONNECTED],
+                [PathType.RELAY],
+                is_exit=True,
+                is_vpn=True,
+                selected_cipher=Cipher.CHACHA20_POLY1305,
+                timeout=0.1,
+            )
 
     @pytest.mark.asyncio
     async def test_derp_state(self) -> None:

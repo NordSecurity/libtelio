@@ -1086,6 +1086,7 @@ pub mod tests {
                 time_since_last_handshake: Some(Duration::from_millis(rng.random())),
                 preshared_key: Some(PresharedKey(Hidden(rng.random()))),
                 supported_ciphers: None,
+                selected_cipher: None,
             };
             peers.insert(key, peer);
         }
