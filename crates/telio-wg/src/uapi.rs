@@ -69,6 +69,9 @@ pub struct Peer {
     /// Cipher suites advertised by the VPN server (NepTUN only).
     /// Other WireGuard implementations ignore this field.
     pub supported_ciphers: Option<Vec<Cipher>>,
+    /// Cipher selected by NepTUN after negotiating with the VPN server (read from UAPI get).
+    /// Always `None` for meshnet peers or when not using NepTUN.
+    pub selected_cipher: Option<Cipher>,
 }
 
 /// Convert a [`telio_model::cipher::Cipher`] to  a [`wireguard_uapi::xplatform::Cipher`].
@@ -119,6 +122,7 @@ impl From<get::Peer> for Peer {
                 Some(PresharedKey((*item.preshared_key).into()))
             },
             supported_ciphers: None,
+            selected_cipher: None,
         }
     }
 }
@@ -160,6 +164,7 @@ impl From<&Peer> for Node {
             public_key: other.public_key,
             allowed_ips: other.allowed_ips.clone(),
             endpoint: other.endpoint,
+            selected_cipher: other.selected_cipher.map(|c| c.to_string()),
             ..Default::default()
         }
     }
@@ -172,6 +177,7 @@ impl From<&Event> for Node {
             state: other.state,
             allowed_ips: other.peer.allowed_ips.clone(),
             endpoint: other.peer.endpoint,
+            selected_cipher: other.peer.selected_cipher.map(|c| c.to_string()),
             ..Default::default()
         }
     }
@@ -428,10 +434,19 @@ impl Peer {
         }
     }
 
-    /// Detects changes in endpoints and allowed ips
+    /// Detects changes in endpoints, allowed ips, and selected cipher
     pub fn is_same_event(&self, other: &Self) -> bool {
-        (&self.public_key, &self.endpoint, &self.allowed_ips)
-            == (&other.public_key, &other.endpoint, &other.allowed_ips)
+        (
+            &self.public_key,
+            &self.endpoint,
+            &self.allowed_ips,
+            &self.selected_cipher,
+        ) == (
+            &other.public_key,
+            &other.endpoint,
+            &other.allowed_ips,
+            &other.selected_cipher,
+        )
     }
 
     #[cfg(not(test))]
@@ -709,6 +724,15 @@ fn parse_peer<R: Read>(
                         peer.preshared_key = Some(preshared);
                     }
                 }
+                "selected_cipher" => {
+                    peer.selected_cipher = val
+                        .parse::<wireguard_uapi::xplatform::Cipher>()
+                        .map_err(|e| {
+                            telio_utils::telio_log_warn!("Unsupported selected_cipher ignored: {e}")
+                        })
+                        .ok()
+                        .map(cipher_from_uapi);
+                }
                 "supported_ciphers" => {
                     peer.supported_ciphers = Some(
                         val.split(',')
@@ -973,6 +997,70 @@ errno=0
                 assert!(!event.is_from_virtual_peer(), "event: {:?}", event);
             }
         }
+    }
+
+    #[test]
+    fn parse_selected_cipher_from_uapi_response() -> Result<(), Error> {
+        let sk = SecretKey::gen();
+        let pk = hex::encode(sk.public());
+        let sk_hex = hex::encode(sk.as_bytes());
+
+        let resp_str = format!(
+            "\
+private_key={sk_hex}
+listen_port=51820
+public_key={pk}
+endpoint=1.2.3.4:51820
+allowed_ip=0.0.0.0/0
+rx_bytes=0
+tx_bytes=0
+last_handshake_time_sec=0
+last_handshake_time_nsec=0
+selected_cipher=aegis256
+errno=0
+"
+        );
+
+        let resp = response_from_str(&resp_str)?;
+        let iface = resp.interface.expect("interface should be present");
+        let peer = iface.peers.values().next().expect("peer should be present");
+        assert_eq!(
+            peer.selected_cipher,
+            Some(Cipher::Aegis256),
+            "selected_cipher should be parsed from UAPI response"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parse_no_selected_cipher_from_uapi_response() -> Result<(), Error> {
+        let sk = SecretKey::gen();
+        let pk = hex::encode(sk.public());
+        let sk_hex = hex::encode(sk.as_bytes());
+
+        let resp_str = format!(
+            "\
+private_key={sk_hex}
+listen_port=51820
+public_key={pk}
+endpoint=1.2.3.4:51820
+allowed_ip=0.0.0.0/0
+rx_bytes=0
+tx_bytes=0
+last_handshake_time_sec=0
+last_handshake_time_nsec=0
+errno=0
+"
+        );
+
+        let resp = response_from_str(&resp_str)?;
+        let iface = resp.interface.expect("interface should be present");
+        let peer = iface.peers.values().next().expect("peer should be present");
+        assert_eq!(
+            peer.selected_cipher, None,
+            "selected_cipher should be None when not present in UAPI response"
+        );
+        Ok(())
     }
 
     #[test]

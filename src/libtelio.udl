@@ -1209,6 +1209,10 @@ dictionary TelioNode {
     boolean peer_allows_multicast;
     /// Configuration for the Error Notification Service
     VpnConnectionError? vpn_connection_error;
+    /// Cipher selected by NepTUN for this VPN connection.
+    /// Only set for VPN (exit-node) connections when NepTUN is the WireGuard adapter.
+    /// `null` for meshnet peers or non-NepTUN adapters.
+    string? selected_cipher;
 };
 
 /// Main object of `Event`. See `Event::new()` for init options.
