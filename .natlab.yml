@@ -22,6 +22,11 @@ pytest_args:
   - "timeout_func_only=true"
 env:
   TELIO_BIN_PROFILE: release
+  # log_collector gates every collection path on this being set
+  NATLAB_SAVE_LOGS: "1"
+# the suite writes logs and coredumps into the checkout, which is not an artifact path;
+# namespaced per shard so overlapping names across shards are not reported as conflicts
+after: ci/natlab_after.sh
 # the mocked API must serve the cert the prebuilt guest packages were built to
 # trust, which is this committed one
 lab_files:
