@@ -121,6 +121,7 @@ use crate::{
     hide_thread_id_in_logs,
     logging::{logs_dropped_since_last_checked, logs_dropped_until_now, LOG_CENSOR},
 };
+use telio_model::cipher::Cipher;
 
 #[derive(Debug, TError)]
 pub enum Error {
@@ -287,6 +288,9 @@ pub struct RequestedState {
     // When non-empty, the firewall rejects outbound packets whose source IP is
     // not one of these.
     pub tunnel_ips: Vec<IpAddr>,
+
+    // Cipher suites advertised by the VPN server.
+    pub supported_ciphers: Option<Vec<Cipher>>,
 }
 
 pub struct MeshnetEntities {
@@ -2376,6 +2380,7 @@ impl Runtime {
         }
 
         let old_exit_node = self.requested_state.exit_node.replace(exit_node);
+        self.requested_state.supported_ciphers = config.supported_ciphers;
         wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
             .boxed()
             .await?;
@@ -2405,6 +2410,7 @@ impl Runtime {
     async fn disconnect_exit_nodes(&mut self) -> Result {
         if let Some(exit_node) = self.requested_state.exit_node.take() {
             self.requested_state.last_exit_node = Some(exit_node);
+            self.requested_state.supported_ciphers = None;
 
             // for macos dns
             bind_tun::set_should_bind(false);

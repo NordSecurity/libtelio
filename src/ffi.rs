@@ -2,6 +2,7 @@ use connection_config::{
     ApplySome, ConnectionConfig, MeshnetConnectionConfigBuilder, VpnConnectionConfigBuilder,
 };
 pub use telio_core::{adapter, connection_config, defaults_builder, logging, types};
+pub use telio_model::cipher;
 
 use anyhow::anyhow;
 use ffi_helpers::{error_handling, panic as panic_handling};
@@ -85,6 +86,16 @@ pub fn generate_secret_key() -> SecretKey {
 /// Get the public key that corresponds to a given private key.
 pub fn generate_public_key(secret_key: SecretKey) -> PublicKey {
     secret_key.public()
+}
+
+/// Parse a comma-separated list of cipher names into a [`Vec`] of known [`Cipher`] values.
+///
+/// Tokens that do not match a known cipher name are ignored,
+///
+/// Example: `parse_ciphers("chacha20poly1305, aegis256, unknown")` →
+/// `[Cipher::Chacha20Poly1305, Cipher::Aegis256]`
+pub fn parse_ciphers(ciphers: String) -> Vec<cipher::Cipher> {
+    cipher::parse_ciphers(ciphers)
 }
 
 /// Utility function to get the default feature config
@@ -710,13 +721,14 @@ impl Telio {
     ///   or [`connection_config::MeshnetConnectionConfigBuilder`].
     pub fn connect_to_exit_node_with_config(&self, config: ConnectionConfig) -> FfiResult<()> {
         telio_log_info!(
-            "Telio::connect_to_exit_node_with_config entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IPs: {:?}. Endpoint: {:?}. PostQuantum: {:?}.",
+            "Telio::connect_to_exit_node_with_config entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IPs: {:?}. Endpoint: {:?}. PostQuantum: {:?}. Ciphers: {:?}.",
             self.id,
             config.identifier,
             config.public_key,
             config.allowed_ips,
             config.endpoint,
             config.post_quantum,
+            config.supported_ciphers,
         );
         let post_quantum = config.post_quantum;
         catch_ffi_panic(|| {

@@ -15,9 +15,9 @@ pub enum Cipher {
     Chacha20Poly1305,
     /// AEGIS-256 with a 256-bit tag.
     Aegis256,
-    /// AEGIS-256 × 2 (double-width variant).
+    /// AEGIS-256 with two parallel instances.
     Aegis256x2,
-    /// AEGIS-256 × 4 (quadruple-width variant).
+    /// AEGIS-256 with four parallel instances.
     Aegis256x4,
 }
 
