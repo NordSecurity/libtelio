@@ -1,4 +1,5 @@
 use crate::error::Result as DnsResult;
+use crate::tcp_forwarder::{TcpForwarder, Timeouts, CLIENT_REQUEST_TIMEOUT};
 use crate::{
     packet_decoder::{find_nord_query, normalize_qname, parse_dns_query_packet, DnsParseError},
     packet_encoder::{DnsBuildError, DnsResponseBuilder},
@@ -30,6 +31,7 @@ use std::{
 };
 use telio_model::constants::DNS_PORT;
 use telio_model::features::TtlValue;
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
@@ -155,6 +157,18 @@ async fn update_wg_timers(
     }
 }
 
+/// True when `packet` is an IPv4 TCP segment destined to the DNS port.
+fn is_ipv4_dns_tcp(packet: &[u8]) -> bool {
+    if packet.first().map(|b| b >> 4) != Some(4) {
+        return false;
+    }
+    let Some(ip) = Ipv4Packet::new(packet) else {
+        return false;
+    };
+    ip.get_next_level_protocol() == IpNextHeaderProtocols::Tcp
+        && TcpPacket::new(ip.payload()).is_some_and(|tcp| tcp.get_destination() == DNS_PORT)
+}
+
 /// Local name server.
 #[derive(Default)]
 pub struct LocalNameServer {
@@ -162,7 +176,10 @@ pub struct LocalNameServer {
     nord_zone: NordZone,
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
-    forwarder: Option<UdpForwarder>,
+    udp_forwarder: Option<UdpForwarder>,
+    tcp_forwarder: Option<TcpForwarder>,
+    tcp_receiver: Option<Receiver<Vec<u8>>>,
+    tcp_task_handle: Option<JoinHandle<()>>,
     upstreams: Arc<Mutex<UpstreamList>>,
     /// Typed handle to the same forward zone that is stored, type-erased, in
     /// `zones`. Both hold the same `Arc`, so this stays in sync across the
@@ -179,16 +196,27 @@ impl LocalNameServer {
         use_raw_forwarder: bool,
     ) -> DnsResult<Arc<RwLock<Self>>> {
         let upstreams = Arc::new(Mutex::new(UpstreamList::default()));
-        let raw_forwarder: Option<UdpForwarder> = if use_raw_forwarder {
-            Some(UdpForwarder::new(upstreams.clone(), QUERY_TIMEOUT).await?)
+        let (udp_forwarder, tcp_forwarder, tcp_receiver) = if use_raw_forwarder {
+            let (tcp_forwarder, tcp_receiver) = TcpForwarder::new(
+                upstreams.clone(),
+                Timeouts::new(QUERY_TIMEOUT, CLIENT_REQUEST_TIMEOUT),
+            );
+            (
+                Some(UdpForwarder::new(upstreams.clone(), QUERY_TIMEOUT).await?),
+                Some(tcp_forwarder),
+                Some(tcp_receiver),
+            )
         } else {
-            None
+            (None, None, None)
         };
         let ns = Arc::new(RwLock::new(LocalNameServer {
             nord_zone: NordZone::new(),
             zones: Arc::new(ClonableZones::new()),
             task_handle: None,
-            forwarder: raw_forwarder,
+            udp_forwarder,
+            tcp_forwarder,
+            tcp_receiver,
+            tcp_task_handle: None,
             upstreams,
             forward_zone: None,
         }));
@@ -200,12 +228,11 @@ impl LocalNameServer {
         peer: Arc<Mutex<Tunn>>,
         nameserver: Arc<RwLock<LocalNameServer>>,
         socket: Arc<UdpSocket>,
+        last_sender: Arc<Mutex<Option<SocketAddr>>>,
     ) {
         let mut receiving_buffer = vec![0u8; MAX_PACKET];
         let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_QUERIES));
 
-        // Remember where to send timer packets when idle.
-        let mut last_sender: Option<SocketAddr> = None;
         let mut idle_timer = telio_utils::interval(IDLE_TIME);
 
         loop {
@@ -228,7 +255,7 @@ impl LocalNameServer {
                         continue;
                     }
 
-                    last_sender = Some(sender_addr);
+                    *last_sender.lock().await = Some(sender_addr);
                     idle_timer.reset();
                     update_wg_timers(&peer, &socket, sender_addr).await;
 
@@ -236,6 +263,7 @@ impl LocalNameServer {
                     let socket = socket.clone();
                     let nameserver = nameserver.clone();
                     let semaphore = semaphore.clone();
+                    let tcp_forwarder = nameserver.read().await.tcp_forwarder.clone();
                     let in_bytes = Vec::from(receiving_buffer.get(..bytes_read).unwrap_or_default());
 
                     tokio::spawn(async move {
@@ -276,6 +304,23 @@ impl LocalNameServer {
                                         return;
                                     }
                                 };
+
+                                // Unlike UDP where a query packet produces exactly one response packet,
+                                // TCP packets contain SYN-ACKs, fragments, retransmissions, etc, so we can not
+                                // feed it through [`process_packet`] and get a response as regular.
+                                if is_ipv4_dns_tcp(packet) {
+                                    if let Some(forwarder) = &tcp_forwarder {
+                                        if let Err(e) =
+                                            forwarder.send_packet(packet.to_vec()).await
+                                        {
+                                            telio_log_debug!(
+                                                "[DNS] Failed to hand TCP packet to forwarder: {:?}",
+                                                e
+                                            );
+                                        }
+                                        return;
+                                    }
+                                }
 
                                 let length = match LocalNameServer::process_packet(
                                     nameserver,
@@ -323,7 +368,7 @@ impl LocalNameServer {
                 },
                 // LLT-5597: periodic tick to drive timers when there is no traffic
                 _ = idle_timer.tick() => {
-                    if let Some(last_sender) = last_sender {
+                    if let Some(last_sender) = *last_sender.lock().await {
                         telio_log_trace!("[DNS] Peer was idle, updating WG timers");
                         update_wg_timers(&peer, &socket, last_sender).await;
                     }
@@ -379,7 +424,7 @@ impl LocalNameServer {
             PayloadDestination::Forward(raw_query) => {
                 let raw_forwarder = {
                     let ns = nameserver.read().await;
-                    ns.forwarder.clone()
+                    ns.udp_forwarder.clone()
                 };
                 if let Some(forwarder) = raw_forwarder {
                     telio_log_debug!(
@@ -543,6 +588,34 @@ impl LocalNameServer {
             destination_port: udp_request.get_destination(),
             dns_request,
         })
+    }
+
+    /// Encapsulate raw IP packets from the TCP forwarder and send them to the peer.
+    async fn tcp_egress_task(
+        peer: Arc<Mutex<Tunn>>,
+        socket: Arc<UdpSocket>,
+        sender: Arc<Mutex<Option<SocketAddr>>>,
+        mut egress: Receiver<Vec<u8>>,
+    ) {
+        let mut sending_buffer = vec![0u8; MAX_PACKET];
+        while let Some(packet) = egress.recv().await {
+            let Some(sender_addr) = *sender.lock().await else {
+                telio_log_debug!("No known peer address for TCP egress, dropping");
+                continue;
+            };
+            let tunn_res = peer.lock().await.encapsulate(&packet, &mut sending_buffer);
+            match tunn_res {
+                TunnResult::WriteToNetwork(data) => {
+                    if let Err(e) = socket.send_to(data, sender_addr).await {
+                        telio_log_warn!("Failed to send TCP packet: {:?}", e);
+                    }
+                }
+                TunnResult::Err(e) => {
+                    telio_log_warn!("Failed to encapsulate TCP packet: {:?}", e)
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -952,16 +1025,34 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
 
     // TODO: maybe report or recover in case of thread panic
     async fn stop(&self) {
-        if let Some(handle) = &self.read().await.task_handle {
+        let ns = self.write().await;
+        if let Some(handle) = &ns.task_handle {
+            handle.abort();
+        }
+        if let Some(handle) = &ns.tcp_task_handle {
             handle.abort();
         }
     }
 
-    #[allow(clippy::unwrap_used)]
     async fn start(&self, peer: Arc<Mutex<Tunn>>, socket: Arc<UdpSocket>) {
         let nameserver = self.clone();
-        self.write().await.task_handle = Some(tokio::spawn(LocalNameServer::dns_service(
-            peer, nameserver, socket,
+        // Remember where to send timer packets when idle and TCP response.
+        let last_sender: Arc<Mutex<Option<SocketAddr>>> = Arc::new(Mutex::new(None));
+
+        let mut ns = self.write().await;
+        if let Some(receiver) = ns.tcp_receiver.take() {
+            ns.tcp_task_handle = Some(tokio::spawn(LocalNameServer::tcp_egress_task(
+                peer.clone(),
+                socket.clone(),
+                last_sender.clone(),
+                receiver,
+            )));
+        }
+        ns.task_handle = Some(tokio::spawn(LocalNameServer::dns_service(
+            peer,
+            nameserver,
+            socket,
+            last_sender,
         )));
         telio_log_trace!("start_sucessfull");
     }
@@ -1101,7 +1192,7 @@ mod tests {
                 .unwrap();
 
         let ns = nameserver.read().await;
-        assert!(ns.forwarder.is_some());
+        assert!(ns.udp_forwarder.is_some());
     }
 
     #[tokio::test]
@@ -1144,7 +1235,7 @@ mod tests {
             .unwrap();
 
         let ns = nameserver.read().await;
-        assert!(ns.forwarder.is_none());
+        assert!(ns.udp_forwarder.is_none());
     }
 
     // PacketError internal unit tests
@@ -1184,6 +1275,25 @@ mod tests {
             udp.set_payload(data);
             udp.set_checksum(0);
             udp.set_checksum(ipv4_checksum(&udp.to_immutable(), &SRC_IPV4, &DST_IPV4));
+        }
+        buf
+    }
+
+    /// Helper: build a TCP segment with correct IPv4 checksum for SRC_IPV4 / DST_IPV4.
+    fn build_tcp_segment(src_port: u16, dst_port: u16) -> Vec<u8> {
+        let mut buf = vec![0u8; TCP_MIN_HEADER];
+        {
+            let mut tcp = MutableTcpPacket::new(&mut buf).unwrap();
+            tcp.set_source(src_port);
+            tcp.set_destination(dst_port);
+            tcp.set_data_offset((TCP_MIN_HEADER / 4) as u8);
+            tcp.set_flags(TcpFlags::SYN);
+            tcp.set_checksum(0);
+            tcp.set_checksum(pnet_packet::tcp::ipv4_checksum(
+                &tcp.to_immutable(),
+                &SRC_IPV4,
+                &DST_IPV4,
+            ));
         }
         buf
     }
@@ -1384,5 +1494,65 @@ mod tests {
         let mut buf = vec![0u8; IPV4_HEADER + 4];
         let result = info.build_payload(IPV4_HEADER, &dns_response, &mut buf);
         assert!(matches!(result, Err(PacketError::ResponseBufferOverflow)));
+    }
+
+    #[test]
+    fn ipv4_tcp_port_53_is_routed_to_forwarder() {
+        let packet = build_ipv4_packet(
+            IpNextHeaderProtocols::Tcp,
+            &build_tcp_segment(40000, DNS_PORT),
+        );
+        assert!(is_ipv4_dns_tcp(&packet));
+    }
+
+    #[test]
+    fn ipv4_tcp_other_port_is_not_routed_to_forwarder() {
+        let packet = build_ipv4_packet(IpNextHeaderProtocols::Tcp, &build_tcp_segment(40000, 80));
+        assert!(!is_ipv4_dns_tcp(&packet));
+    }
+
+    #[test]
+    fn ipv4_udp_is_not_routed_to_forwarder() {
+        let packet = build_ipv4_packet(
+            IpNextHeaderProtocols::Udp,
+            &build_udp_segment(40000, DNS_PORT, &[0; 4]),
+        );
+        assert!(!is_ipv4_dns_tcp(&packet));
+    }
+
+    #[test]
+    fn non_ipv4_is_not_routed_to_forwarder() {
+        let mut packet = build_ipv4_packet(
+            IpNextHeaderProtocols::Tcp,
+            &build_tcp_segment(40000, DNS_PORT),
+        );
+        // Any packet whose version nibble is not 4 must be rejected outright.
+        packet[0] = 0x60;
+        assert!(!is_ipv4_dns_tcp(&packet));
+    }
+
+    #[test]
+    fn truncated_and_empty_packets_are_not_routed_to_forwarder() {
+        assert!(!is_ipv4_dns_tcp(&[0x45]));
+        assert!(!is_ipv4_dns_tcp(&[]));
+    }
+
+    #[tokio::test]
+    async fn nameserver_creates_tcp_forwarder_when_raw_flag_set() {
+        let nameserver =
+            LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], USE_RAW_FORWARDER)
+                .await
+                .unwrap();
+        let ns = nameserver.read().await;
+        assert!(ns.tcp_forwarder.is_some());
+        assert!(ns.tcp_receiver.is_some());
+
+        let nameserver =
+            LocalNameServer::new(&[IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))], !USE_RAW_FORWARDER)
+                .await
+                .unwrap();
+        let ns = nameserver.read().await;
+        assert!(ns.tcp_forwarder.is_none());
+        assert!(ns.tcp_receiver.is_none());
     }
 }

@@ -19,7 +19,10 @@ use std::{
     sync::Arc,
 };
 use telio_dns::{LocalNameServer, NameServer, Records};
-use telio_model::{constants::DNS_PORT, features::TtlValue};
+use telio_model::{
+    constants::{DNS_PORT, DNS_VIRTUAL_PEER_IPV4},
+    features::TtlValue,
+};
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio::{
@@ -240,7 +243,14 @@ impl WGClient {
                     if test_type.is_tcp() {
                         let tcp_response = TcpPacket::new(ip_response.payload())
                             .expect("Failed to parse tcp response");
-                        assert_eq!(tcp_response.get_flags(), TcpFlags::RST);
+                        if matches!(test_type, DnsTestType::TcpIpv4Forwarded) {
+                            // TCP forwarder accepts the connection, a SYN is
+                            // answered with a SYN-ACK.
+                            assert_eq!(tcp_response.get_flags(), TcpFlags::SYN | TcpFlags::ACK);
+                        } else {
+                            // Legacy legacy hand-built reset
+                            assert_eq!(tcp_response.get_flags(), TcpFlags::RST);
+                        }
                         // Server should reply from 53
                         assert_eq!(tcp_response.get_source(), DNS_PORT);
                         None
@@ -303,10 +313,23 @@ impl WGClient {
         } else {
             UDP_HEADER
         };
-        let length = IPV4_HEADER + header_length + dns_query.len();
+        // The TCP forwarder is a real endpoint, so it must be opened with a bare SYN.
+        let payload_len = if matches!(test_type, DnsTestType::TcpIpv4Forwarded) {
+            0
+        } else {
+            dns_query.len()
+        };
+        let length = IPV4_HEADER + header_length + payload_len;
         let mut buffer = vec![0u8; MAX_PACKET];
 
         let local_address = Ipv4Addr::new(127, 0, 0, 1);
+        // The TCP engine interface owns only the virtual peer addresses
+        // and drops anything addressed elsewhere.
+        let destination_address = if matches!(test_type, DnsTestType::TcpIpv4Forwarded) {
+            DNS_VIRTUAL_PEER_IPV4
+        } else {
+            local_address
+        };
 
         {
             let mut ip_packet =
@@ -327,7 +350,7 @@ impl WGClient {
             }
             ip_packet.set_ttl(128);
             ip_packet.set_source(local_address);
-            ip_packet.set_destination(local_address);
+            ip_packet.set_destination(destination_address);
             ip_packet.set_checksum(0);
             if !matches!(test_type, DnsTestType::BadIpChecksumIpv4) {
                 ip_packet.set_checksum(checksum(&ip_packet.to_immutable()));
@@ -347,6 +370,22 @@ impl WGClient {
                     &tcp_packet.to_immutable(),
                     &local_address,
                     &local_address,
+                ));
+            }
+            DnsTestType::TcpIpv4Forwarded => {
+                let mut tcp_packet = MutableTcpPacket::new(&mut buffer[IPV4_HEADER..length])
+                    .expect("Failed to create MutableTcpPacket");
+                tcp_packet.set_source(100);
+                tcp_packet.set_destination(DNS_PORT);
+                tcp_packet.set_sequence(42);
+                tcp_packet.set_data_offset((TCP_MIN_HEADER / 4) as u8);
+                tcp_packet.set_flags(TcpFlags::SYN);
+                tcp_packet.set_window(64240);
+                tcp_packet.set_checksum(0);
+                tcp_packet.set_checksum(pnet_packet::tcp::ipv4_checksum(
+                    &tcp_packet.to_immutable(),
+                    &local_address,
+                    &destination_address,
                 ));
             }
             DnsTestType::UnsupportedProtocolIpv4 => {
@@ -483,6 +522,7 @@ enum DnsTestType {
     BadUdpPortIpv6,
     NonRespondingForwardServer,
     TcpIpv4,
+    TcpIpv4Forwarded,
     TcpIpv6,
     UnsupportedProtocolIpv4,
     UnsupportedProtocolIpv6,
@@ -499,6 +539,7 @@ impl DnsTestType {
                 | DnsTestType::BadUdpChecksumIpv4
                 | DnsTestType::BadUdpPortIpv4
                 | DnsTestType::TcpIpv4
+                | DnsTestType::TcpIpv4Forwarded
                 | DnsTestType::UnsupportedProtocolIpv4
                 | DnsTestType::SoaQuerry
                 | DnsTestType::TxtQuerry
@@ -522,6 +563,7 @@ impl DnsTestType {
             DnsTestType::CorrectIpv4
                 | DnsTestType::CorrectIpv6
                 | DnsTestType::TcpIpv4
+                | DnsTestType::TcpIpv4Forwarded
                 | DnsTestType::TcpIpv6
                 | DnsTestType::SoaQuerry
                 | DnsTestType::TxtQuerry
@@ -529,7 +571,10 @@ impl DnsTestType {
     }
 
     fn is_tcp(&self) -> bool {
-        matches!(self, DnsTestType::TcpIpv4 | DnsTestType::TcpIpv6)
+        matches!(
+            self,
+            DnsTestType::TcpIpv4 | DnsTestType::TcpIpv4Forwarded | DnsTestType::TcpIpv6
+        )
     }
 
     fn is_unsupported_protocol(&self) -> bool {
@@ -1234,7 +1279,11 @@ async fn dns_request_tcp_ipv4(#[case] use_raw_forwarder: bool) {
         TEST_TIMEOUT,
         dns_test(
             "google.com",
-            DnsTestType::TcpIpv4,
+            if use_raw_forwarder {
+                DnsTestType::TcpIpv4Forwarded
+            } else {
+                DnsTestType::TcpIpv4
+            },
             None,
             TtlValue(60),
             use_raw_forwarder,
