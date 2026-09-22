@@ -20,6 +20,9 @@ pytest_args:
   - "--timeout=180"
   - "-o"
   - "timeout_func_only=true"
+  # pytest-split records only; natlab owns the split, so --splits is never passed
+  - "--store-durations"
+  - "--durations-path=shard_durations.json"
 env:
   TELIO_BIN_PROFILE: release
   # log_collector gates every collection path on this being set
