@@ -117,6 +117,7 @@ pub use wg::{
 use wg::tests::AdapterExpectation;
 
 use crate::{
+    connection_config::ConnectionConfig,
     hide_thread_id_in_logs,
     logging::{logs_dropped_since_last_checked, logs_dropped_until_now, LOG_CENSOR},
 };
@@ -844,11 +845,10 @@ impl Device {
     /// Exit node in this case may be the VPN server or another meshnet node. In the former case,
     /// new node is created and WireGuard tunnel is established to that node. In the latter case
     /// the specified (matched by public key) meshnet node is "promoted" to be the exit node
-    pub fn connect_exit_node(&self, node: &ExitNode) -> Result {
+    pub fn connect_exit_node(&self, config: ConnectionConfig) -> Result {
         self.async_runtime()?.block_on(async {
-            let node = node.clone();
             let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
-                rt.connect_exit_node(&node).boxed().await?;
+                rt.connect_exit_node(config).boxed().await?;
                 Ok(rt.entities.wireguard_interface.clone())
             })
             .await?;
@@ -863,11 +863,10 @@ impl Device {
     /// A new node is created and WireGuard post-quantum tunnel is established to that node.
     /// Meshnet is disallowed when forming a post-quantum tunnel and if it's enabled
     /// this call will error out.
-    pub fn connect_vpn_post_quantum(&self, node: &ExitNode) -> Result {
+    pub fn connect_vpn_post_quantum(&self, config: ConnectionConfig) -> Result {
         self.async_runtime()?.block_on(async {
-            let node = node.clone();
             let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
-                rt.connect_exit_node_pq(&node).boxed().await?;
+                rt.connect_exit_node_pq(config).boxed().await?;
                 Ok(rt.entities.wireguard_interface.clone())
             })
             .await?;
@@ -2283,18 +2282,15 @@ impl Runtime {
         Err(Error::FirewallUnsupported)
     }
 
-    /// Connect ot exit node with post-quantum tunnel
-    async fn connect_exit_node_pq(&mut self, exit_node: &ExitNode) -> Result {
+    /// Connect to exit node with post-quantum tunnel
+    async fn connect_exit_node_pq(&mut self, config: ConnectionConfig) -> Result {
         if self.requested_state.meshnet_config.is_some() {
             // Meshnet is enabled and we're trying to set up the QP VPN connection
             return Err(Error::MeshnetUnavailableWithPQ);
         }
 
         // This is required to silence the dylint error "error: large future with a size of 2048 bytes"
-        let res = self
-            .connect_exit_node_internal(exit_node, true)
-            .boxed()
-            .await;
+        let res = self.connect_exit_node_internal(config).boxed().await;
 
         if res.is_err() {
             // Stop PQ task
@@ -2304,22 +2300,25 @@ impl Runtime {
         res
     }
 
-    async fn connect_exit_node(&mut self, exit_node: &ExitNode) -> Result {
+    async fn connect_exit_node(&mut self, config: ConnectionConfig) -> Result {
         // Silence the nagger warning
-        Box::pin(self.connect_exit_node_internal(exit_node, false)).await
+        Box::pin(self.connect_exit_node_internal(config)).await
     }
 
-    async fn connect_exit_node_internal(
-        &mut self,
-        exit_node: &ExitNode,
-        postquantum: bool,
-    ) -> Result {
-        let exit_node = exit_node.clone();
+    async fn connect_exit_node_internal(&mut self, config: ConnectionConfig) -> Result {
+        let exit_node = ExitNode {
+            identifier: config
+                .identifier
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            public_key: config.public_key,
+            allowed_ips: config.allowed_ips,
+            endpoint: config.endpoint,
+        };
 
         // Stop post quantum key rotation task if it's running
         self.entities.postquantum_wg.stop().await;
 
-        if postquantum {
+        if config.post_quantum {
             self.entities
                 .postquantum_wg
                 .start(
@@ -3332,9 +3331,8 @@ mod tests {
         .unwrap();
 
         let pubkey = private_key.public();
-        let exit_node = ExitNode {
-            public_key: pubkey,
-            ..Default::default()
+        let meshnet_connection_config = {
+            Arc::new(crate::connection_config::MeshnetConnectionConfigBuilder::new(pubkey)).build()
         };
         let peer_base = PeerBase {
             identifier: "identifier".to_owned(),
@@ -3376,7 +3374,10 @@ mod tests {
             .adapter
             .expect_send_uapi_cmd_generic_call(1)
             .await;
-        assert!(rt.connect_exit_node(&exit_node).await.is_ok());
+        assert!(rt
+            .connect_exit_node(meshnet_connection_config)
+            .await
+            .is_ok());
         assert!(rt.requested_state.exit_node.is_some());
         rt.test_env.adapter.lock().await.checkpoint();
 
@@ -3441,10 +3442,14 @@ mod tests {
             dns: None,
         };
 
-        let vpn_node = ExitNode {
-            public_key: SecretKey::gen().public(),
-            allowed_ips: Some(vec![first_ip_network]),
-            ..Default::default()
+        let vpn_connection_config = {
+            Arc::new(
+                crate::connection_config::MeshnetConnectionConfigBuilder::new(
+                    SecretKey::gen().public(),
+                ),
+            )
+            .with_allowed_ips(vec![first_ip_network])
+            .build()
         };
 
         rt.test_env
@@ -3471,7 +3476,7 @@ mod tests {
             .await;
         let _expected_error: super::Error = wg_controller::Error::BadAllowedIps.into();
         assert!(matches!(
-            rt.connect_exit_node(&vpn_node).await,
+            rt.connect_exit_node(vpn_connection_config).await,
             Err(_expected_error)
         ));
         rt.test_env.adapter.lock().await.checkpoint();
@@ -3497,9 +3502,8 @@ mod tests {
         .unwrap();
 
         let pubkey = private_key.public();
-        let node = ExitNode {
-            public_key: pubkey,
-            ..Default::default()
+        let meshnet_connection_config = {
+            Arc::new(crate::connection_config::MeshnetConnectionConfigBuilder::new(pubkey)).build()
         };
         let peer_base = PeerBase {
             identifier: "identifier".to_owned(),
@@ -3541,7 +3545,10 @@ mod tests {
             .adapter
             .expect_send_uapi_cmd_generic_call(1)
             .await;
-        assert!(rt.connect_exit_node(&node).await.is_ok());
+        assert!(rt
+            .connect_exit_node(meshnet_connection_config)
+            .await
+            .is_ok());
         assert_eq!(
             rt.requested_state.exit_node.as_ref().unwrap().public_key,
             pubkey

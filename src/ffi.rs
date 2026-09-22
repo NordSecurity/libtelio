@@ -11,7 +11,6 @@ use telio_wg::AdapterType;
 use tracing::{error, trace};
 
 use telio_sockets::protector::make_external_protector;
-use uuid::Uuid;
 
 use std::{
     convert::TryInto,
@@ -30,7 +29,7 @@ use telio_model::{
     config::{Config, ConfigParseError},
     event::*,
     features::Features,
-    mesh::{ExitNode, Node},
+    mesh::Node,
     tp_lite_stats::{DnsRedirect, NoopCallback, TpLiteStatsCallback, TpLiteStatsOptions},
 };
 
@@ -711,7 +710,7 @@ impl Telio {
     ///   or [`connection_config::MeshnetConnectionConfigBuilder`].
     pub fn connect_to_exit_node_with_config(&self, config: ConnectionConfig) -> FfiResult<()> {
         telio_log_info!(
-            "Telio::connect_to_exit_node_with_config entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IPs: {:?}. Endpoint: {:?}. PostQuantum: {:?}",
+            "Telio::connect_to_exit_node_with_config entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IPs: {:?}. Endpoint: {:?}. PostQuantum: {:?}.",
             self.id,
             config.identifier,
             config.public_key,
@@ -720,22 +719,14 @@ impl Telio {
             config.post_quantum,
         );
         let post_quantum = config.post_quantum;
-        let identifier = config
-            .identifier
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
-        let node = ExitNode {
-            identifier,
-            public_key: config.public_key,
-            allowed_ips: config.allowed_ips,
-            endpoint: config.endpoint,
-        };
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
+                let cfg = config.clone();
                 if post_quantum {
-                    dev.connect_vpn_post_quantum(&node)
+                    dev.connect_vpn_post_quantum(cfg)
                         .log_result("Telio::connect_to_exit_node_with_config (post-quantum)")
                 } else {
-                    dev.connect_exit_node(&node)
+                    dev.connect_exit_node(cfg)
                         .log_result("Telio::connect_to_exit_node_with_config")
                 }
             })
