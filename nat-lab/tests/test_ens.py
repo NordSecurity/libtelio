@@ -84,6 +84,19 @@ OUT_OF_RANGE_ENS_ERROR_CODE = VpnConnectionError.UNSUPPORTED_CIPHER.value + 1
             "10.0.254.19",
             marks=pytest.mark.mac,
         ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.24",
+            marks=pytest.mark.android,
+        ),
     ],
 )
 async def test_ens_server_maintenance(
@@ -199,6 +212,19 @@ async def test_ens_server_maintenance(
             ),
             "10.0.254.19",
             marks=pytest.mark.mac,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.24",
+            marks=pytest.mark.android,
         ),
     ],
 )
@@ -328,6 +354,19 @@ async def test_ens_unauthenticated(
             ),
             "10.0.254.19",
             marks=pytest.mark.mac,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.24",
+            marks=pytest.mark.android,
         ),
     ],
 )
@@ -489,6 +528,19 @@ async def test_ens_connection_limit_reached(
             "10.0.254.19",
             marks=pytest.mark.mac,
         ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.24",
+            marks=pytest.mark.android,
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -641,6 +693,18 @@ async def test_ens_superseded(
             ),
             marks=pytest.mark.mac,
         ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+                features=default_features(
+                    enable_error_notification_service=True,
+                    enable_direct=True,
+                ),
+            ),
+            marks=pytest.mark.android,
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -759,6 +823,19 @@ async def test_ens_not_started_for_meshnet_exit_peer(
             ),
             "10.0.254.19",
             marks=pytest.mark.mac,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.24",
+            marks=pytest.mark.android,
         ),
     ],
 )
@@ -903,6 +980,19 @@ async def test_ens_connection_error_from_stub(
             "10.0.254.19",
             marks=pytest.mark.mac,
         ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.24",
+            marks=pytest.mark.android,
+        ),
     ],
 )
 async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
@@ -1016,6 +1106,19 @@ async def test_ens_will_not_emit_errors_from_incorrect_tls_session(
             ),
             "10.0.254.19",
             marks=pytest.mark.mac,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+                is_meshnet=False,
+                features=default_features(
+                    enable_error_notification_service=True,
+                ),
+            ),
+            "10.0.254.24",
+            marks=pytest.mark.android,
         ),
     ],
 )

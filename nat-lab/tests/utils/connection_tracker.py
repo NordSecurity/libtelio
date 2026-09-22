@@ -402,6 +402,10 @@ class ConnectionTracker:
             return None
         if not self._validators:
             return None
+        # The tracker never ran on Android (see run()), so there is nothing to
+        # validate and no events will ever arrive.
+        if self._connection.target_os == TargetOS.Android:
+            return None
 
         await self._synchronize()
 
@@ -430,6 +434,11 @@ class ConnectionTracker:
 
     async def _synchronize(self) -> None:
         if not self._validators:
+            return None
+
+        # No conntrack process runs on Android (see run()), so _sync_event would
+        # never be set and the ping loop below would never end.
+        if self._connection.target_os == TargetOS.Android:
             return None
 
         log.debug("ConnectionTracker[%s] waiting for _sync_event (ping)", self.id)

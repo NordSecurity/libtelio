@@ -13,6 +13,7 @@ from tests.utils.connection_util import (
 )
 from tests.utils.dns import query_dns
 from tests.utils.ping import ping
+from tests.utils.router import IPStack
 
 EMPTY_PRESHARED_KEY_SLOT = "(none)"
 
@@ -128,6 +129,16 @@ class TestPqVpnConnection:
                 "10.0.254.19",
                 marks=pytest.mark.mac,
             ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_ANDROID_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv4,
+                    is_meshnet=False,
+                ),
+                "10.0.254.24",
+                marks=pytest.mark.android,
+            ),
         ],
     )
     @pytest.mark.parametrize(
@@ -222,6 +233,16 @@ class TestPqVpnRekey:
                 "10.0.254.19",
                 marks=pytest.mark.mac,
             ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_ANDROID_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv4,
+                    is_meshnet=False,
+                ),
+                "10.0.254.24",
+                marks=pytest.mark.android,
+            ),
         ],
     )
     @pytest.mark.parametrize(
@@ -314,6 +335,15 @@ class TestPqVpnRekey:
                     is_meshnet=False,
                 ),
                 marks=pytest.mark.mac,
+            ),
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.VM_ANDROID_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    ip_stack=IPStack.IPv4,
+                    is_meshnet=False,
+                ),
+                marks=pytest.mark.android,
             ),
         ],
     )

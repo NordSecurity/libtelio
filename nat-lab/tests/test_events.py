@@ -29,8 +29,8 @@ from tests.utils.connection_util import (
     new_connection_with_conn_tracker,
 )
 from tests.utils.ping import ping
-from tests.utils.router import IPStack
-from typing import Optional
+from tests.utils.router import get_ip_address_type, IPProto, IPStack
+from typing import List, Optional
 
 
 def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:
@@ -51,6 +51,26 @@ def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:
         return None
 
     return diff.pretty()
+
+
+def _full_tunnel_allowed_ips(ip_stack: IPStack) -> List[str]:
+    return ["0.0.0.0/0"] if ip_stack is IPStack.IPv4 else ["0.0.0.0/0", "::/0"]
+
+
+def _peer_allowed_ips(
+    observer: SetupParameters, peer_addresses: List[str]
+) -> List[str]:
+    """The allowed_ips an observer reports for a peer holding `peer_addresses`.
+
+    libtelio only reports a peer's IPv6 allowed_ip when the observing node has
+    the IPv6 feature, which follows its own stack (see Client.__init__). The
+    peer's ip_addresses are still reported in full.
+    """
+    if observer.ip_stack is IPStack.IPv4:
+        peer_addresses = [
+            addr for addr in peer_addresses if get_ip_address_type(addr) is IPProto.IPv4
+        ]
+    return API.get_allowed_ip_list(peer_addresses)
 
 
 @pytest.mark.asyncio
@@ -104,6 +124,15 @@ def node_diff(left: TelioNode, right: TelioNode) -> Optional[str]:
             marks=pytest.mark.mac,
             id="a_mac",
         ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+            ),
+            marks=pytest.mark.android,
+            id="a_android",
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -150,7 +179,9 @@ async def test_event_content_meshnet(
                     public_key=beta.public_key,
                     state=NodeState.CONNECTED,
                     ip_addresses=beta.ip_addresses,
-                    allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
+                    allowed_ips=_peer_allowed_ips(
+                        alpha_setup_params, beta.ip_addresses
+                    ),
                     nickname="BETA",
                     hostname=beta.name + ".nord",
                     allow_incoming_connections=True,
@@ -201,7 +232,9 @@ async def test_event_content_meshnet(
                     public_key=beta.public_key,
                     state=NodeState.DISCONNECTED,
                     ip_addresses=beta.ip_addresses,
-                    allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
+                    allowed_ips=_peer_allowed_ips(
+                        alpha_setup_params, beta.ip_addresses
+                    ),
                     nickname="BETA",
                     hostname=beta.name + ".nord",
                     allow_incoming_connections=True,
@@ -278,6 +311,17 @@ async def test_event_content_meshnet(
             marks=pytest.mark.mac,
             id="a_mac",
         ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+                is_meshnet=False,
+            ),
+            "10.0.254.24",
+            marks=pytest.mark.android,
+            id="a_android",
+        ),
     ],
 )
 async def test_event_content_vpn_connection(
@@ -320,7 +364,7 @@ async def test_event_content_vpn_connection(
                         "10.5.0.1",
                         "100.64.0.1",
                     ],
-                    allowed_ips=["0.0.0.0/0", "::/0"],
+                    allowed_ips=_full_tunnel_allowed_ips(alpha_setup_params.ip_stack),
                     endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
                     path=PathType.DIRECT,
                     allow_multicast=False,
@@ -352,7 +396,7 @@ async def test_event_content_vpn_connection(
                         "10.5.0.1",
                         "100.64.0.1",
                     ],
-                    allowed_ips=["0.0.0.0/0", "::/0"],
+                    allowed_ips=_full_tunnel_allowed_ips(alpha_setup_params.ip_stack),
                     endpoint=f'{wg_server["ipv4"]}:{wg_server["port"]}',
                     path=PathType.DIRECT,
                     allow_multicast=False,
@@ -414,6 +458,15 @@ async def test_event_content_vpn_connection(
             marks=pytest.mark.mac,
             id="a_mac",
         ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+            ),
+            marks=pytest.mark.android,
+            id="a_android",
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -437,9 +490,10 @@ async def test_event_content_exit_through_peer(
     alpha_setup_params: SetupParameters, beta_setup_params: SetupParameters
 ) -> None:
     async with AsyncExitStack() as exit_stack:
-        api, (alpha, beta) = setup_api(
-            [(False, IPStack.IPv4v6), (False, IPStack.IPv4v6)]
-        )
+        api, (alpha, beta) = setup_api([
+            (False, alpha_setup_params.ip_stack),
+            (False, beta_setup_params.ip_stack),
+        ])
         alpha.nickname = "alpha"
         beta.nickname = "BETA"
         alpha.set_peer_firewall_settings(beta.id)
@@ -466,7 +520,9 @@ async def test_event_content_exit_through_peer(
                     public_key=beta.public_key,
                     state=NodeState.CONNECTED,
                     ip_addresses=beta.ip_addresses,
-                    allowed_ips=env.api.get_allowed_ip_list(beta.ip_addresses),
+                    allowed_ips=_peer_allowed_ips(
+                        alpha_setup_params, beta.ip_addresses
+                    ),
                     nickname="BETA",
                     hostname=beta.name + ".nord",
                 ),
@@ -494,7 +550,7 @@ async def test_event_content_exit_through_peer(
                     state=NodeState.CONNECTED,
                     is_exit=True,
                     ip_addresses=beta.ip_addresses,
-                    allowed_ips=["0.0.0.0/0", "::/0"],
+                    allowed_ips=_full_tunnel_allowed_ips(alpha_setup_params.ip_stack),
                     nickname="BETA",
                     hostname=beta.name + ".nord",
                 ),
