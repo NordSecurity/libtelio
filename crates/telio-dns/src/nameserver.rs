@@ -1,4 +1,5 @@
 use crate::error::Result as DnsResult;
+use crate::tcp_forwarder::{TcpForwarder, Timeouts, CLIENT_REQUEST_TIMEOUT};
 use crate::{
     packet_decoder::{find_nord_query, normalize_qname, parse_dns_query_packet, DnsParseError},
     packet_encoder::{DnsBuildError, DnsResponseBuilder},
@@ -30,6 +31,7 @@ use std::{
 };
 use telio_model::constants::DNS_PORT;
 use telio_model::features::TtlValue;
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::{RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
@@ -162,7 +164,9 @@ pub struct LocalNameServer {
     nord_zone: NordZone,
     zones: Arc<ClonableZones>,
     task_handle: Option<JoinHandle<()>>,
-    forwarder: Option<UdpForwarder>,
+    udp_forwarder: Option<UdpForwarder>,
+    tcp_forwarder: Option<TcpForwarder>,
+    tcp_receiver: Option<Receiver<Vec<u8>>>,
     upstreams: Arc<Mutex<UpstreamList>>,
     /// Typed handle to the same forward zone that is stored, type-erased, in
     /// `zones`. Both hold the same `Arc`, so this stays in sync across the
@@ -179,16 +183,26 @@ impl LocalNameServer {
         use_raw_forwarder: bool,
     ) -> DnsResult<Arc<RwLock<Self>>> {
         let upstreams = Arc::new(Mutex::new(UpstreamList::default()));
-        let raw_forwarder: Option<UdpForwarder> = if use_raw_forwarder {
-            Some(UdpForwarder::new(upstreams.clone(), QUERY_TIMEOUT).await?)
+        let (udp_forwarder, tcp_forwarder, tcp_receiver) = if use_raw_forwarder {
+            let (tcp_forwarder, tcp_receiver) = TcpForwarder::new(
+                upstreams.clone(),
+                Timeouts::new(QUERY_TIMEOUT, CLIENT_REQUEST_TIMEOUT),
+            );
+            (
+                Some(UdpForwarder::new(upstreams.clone(), QUERY_TIMEOUT).await?),
+                Some(tcp_forwarder),
+                Some(tcp_receiver),
+            )
         } else {
-            None
+            (None, None, None)
         };
         let ns = Arc::new(RwLock::new(LocalNameServer {
             nord_zone: NordZone::new(),
             zones: Arc::new(ClonableZones::new()),
             task_handle: None,
-            forwarder: raw_forwarder,
+            udp_forwarder,
+            tcp_forwarder,
+            tcp_receiver,
             upstreams,
             forward_zone: None,
         }));
@@ -236,6 +250,7 @@ impl LocalNameServer {
                     let socket = socket.clone();
                     let nameserver = nameserver.clone();
                     let semaphore = semaphore.clone();
+                    let tcp_forwarder = nameserver.read().await.tcp_forwarder.clone();
                     let in_bytes = Vec::from(receiving_buffer.get(..bytes_read).unwrap_or_default());
 
                     tokio::spawn(async move {
@@ -269,6 +284,20 @@ impl LocalNameServer {
                             }
                             // DNS packets
                             TunnResult::WriteToTunnel(packet, _) => {
+                                if is_ipv4_dns_tcp(packet) {
+                                    if let Some(forwarder) = &tcp_forwarder {
+                                        if let Err(e) =
+                                            forwarder.send_packet(packet.to_vec()).await
+                                        {
+                                            telio_log_debug!(
+                                                "[DNS] Failed to hand TCP packet to forwarder: {:?}",
+                                                e
+                                            );
+                                        }
+                                        return;
+                                    }
+                                }
+
                                 let _lease = match semaphore.acquire().await {
                                     Ok(lease) => lease,
                                     Err(_) => {
@@ -379,7 +408,7 @@ impl LocalNameServer {
             PayloadDestination::Forward(raw_query) => {
                 let raw_forwarder = {
                     let ns = nameserver.read().await;
-                    ns.forwarder.clone()
+                    ns.udp_forwarder.clone()
                 };
                 if let Some(forwarder) = raw_forwarder {
                     telio_log_debug!(
@@ -967,6 +996,18 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
     }
 }
 
+/// True when `packet` is an IPv4 TCP segment destined to the DNS port.
+fn is_ipv4_dns_tcp(packet: &[u8]) -> bool {
+    if packet.first().map(|b| b >> 4) != Some(4) {
+        return false;
+    }
+    let Some(ip) = Ipv4Packet::new(packet) else {
+        return false;
+    };
+    ip.get_next_level_protocol() == IpNextHeaderProtocols::Tcp
+        && TcpPacket::new(ip.payload()).is_some_and(|tcp| tcp.get_destination() == DNS_PORT)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1101,7 +1142,7 @@ mod tests {
                 .unwrap();
 
         let ns = nameserver.read().await;
-        assert!(ns.forwarder.is_some());
+        assert!(ns.udp_forwarder.is_some());
     }
 
     #[tokio::test]
@@ -1144,7 +1185,7 @@ mod tests {
             .unwrap();
 
         let ns = nameserver.read().await;
-        assert!(ns.forwarder.is_none());
+        assert!(ns.udp_forwarder.is_none());
     }
 
     // PacketError internal unit tests
