@@ -11,6 +11,9 @@ mod packet_encoder;
 mod resolver;
 mod udp_forwarder;
 mod upstream;
+// TODO: LLT-7656 remove after integrating forwarder
+#[allow(dead_code)]
+mod tcp_forwarder;
 mod zone;
 
 pub mod bind_tun;
