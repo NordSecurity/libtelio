@@ -30,6 +30,11 @@ impl MessageReader {
     pub(crate) fn partial_len(&self) -> usize {
         self.buf.len()
     }
+
+    /// Clear the buffered bytes.
+    pub(crate) fn clear(&mut self) {
+        self.buf.clear();
+    }
 }
 
 /// Check if request frame contains a `.nord` name.
