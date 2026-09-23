@@ -3,7 +3,7 @@ import asyncssh
 from contextlib import AsyncExitStack
 from tests.utils.connection import Connection
 from tests.utils.logger import log
-from tests.utils.process import Process
+from tests.utils.process import Process, ProcessExecError
 
 
 async def start_logread_process(
@@ -47,3 +47,38 @@ async def wait_until_unreachable_after_reboot(connection: Connection, delay: int
             log.debug("VM became unreachable — reboot likely in progress.")
             return
         await asyncio.sleep(delay)
+
+
+async def daemon_pid(connection: Connection) -> str:
+    """PID of the procd-managed daemon, empty string when it is not running."""
+    try:
+        proc = await connection.create_process(
+            ["pgrep", "-f", "nordvpnlite start --no-detach"]
+        ).execute()
+    except ProcessExecError:
+        return ""
+
+    pid = proc.get_stdout().strip()
+    assert (
+        len(pid.split()) <= 1
+    ), f"expected a single daemon process, pgrep returned '{pid}'"
+    return pid
+
+
+async def wait_for_new_daemon_pid(connection: Connection, old_pid: str) -> str:
+    """Wait until a new nordvpnlite daemon process replaces old_pid, returning new pid."""
+    while True:
+        pid = await daemon_pid(connection)
+        if pid and pid != old_pid:
+            return pid
+        await asyncio.sleep(1)
+
+
+async def is_autostart_enabled(connection: Connection) -> bool:
+    try:
+        await connection.create_process(
+            ["/etc/init.d/nordvpnlite", "enabled"]
+        ).execute()
+        return True
+    except ProcessExecError:
+        return False
