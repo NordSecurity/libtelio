@@ -1,4 +1,7 @@
-pub use telio_core::{adapter, defaults_builder, logging, types};
+use connection_config::{
+    ApplySome, ConnectionConfig, MeshnetConnectionConfigBuilder, VpnConnectionConfigBuilder,
+};
+pub use telio_core::{adapter, connection_config, defaults_builder, logging, types};
 
 use anyhow::anyhow;
 use ffi_helpers::{error_handling, panic as panic_handling};
@@ -696,20 +699,56 @@ impl Telio {
         })
     }
 
-    /// Wrapper for `Telio::connect_to_exit_node_with_id` that doesn't take an identifier
+    /// Connects to an exit node using a [`connection_config::ConnectionConfig`].
+    ///
+    /// This is the canonical implementation. All other `connect_to_exit_node*` variants
+    /// are thin wrappers that build a `ConnectionConfig` and delegate here.
+    ///
+    /// Routing should be set by the user accordingly.
+    ///
+    /// # Parameters
+    /// - `config`: Connection configuration produced by [`connection_config::VpnConnectionConfigBuilder`]
+    ///   or [`connection_config::MeshnetConnectionConfigBuilder`].
+    pub fn connect_to_exit_node_with_config(&self, config: ConnectionConfig) -> FfiResult<()> {
+        telio_log_info!(
+            "Telio::connect_to_exit_node_with_config entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IPs: {:?}. Endpoint: {:?}. PostQuantum: {:?}",
+            self.id,
+            config.identifier,
+            config.public_key,
+            config.allowed_ips,
+            config.endpoint,
+            config.post_quantum,
+        );
+        let post_quantum = config.post_quantum;
+        let identifier = config
+            .identifier
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        let node = ExitNode {
+            identifier,
+            public_key: config.public_key,
+            allowed_ips: config.allowed_ips,
+            endpoint: config.endpoint,
+        };
+        catch_ffi_panic(|| {
+            self.device_op(true, |dev| {
+                if post_quantum {
+                    dev.connect_vpn_post_quantum(&node)
+                        .log_result("Telio::connect_to_exit_node_with_config (post-quantum)")
+                } else {
+                    dev.connect_exit_node(&node)
+                        .log_result("Telio::connect_to_exit_node_with_config")
+                }
+            })
+        })
+    }
+
+    /// Wrapper for `Telio::connect_to_exit_node_with_id` that doesn't take an identifier.
     pub fn connect_to_exit_node(
         &self,
         public_key: PublicKey,
         allowed_ips: Option<Vec<IpNet>>,
         endpoint: Option<SocketAddr>,
     ) -> FfiResult<()> {
-        telio_log_info!(
-            "Telio::connect_to_exit_node entry with instance id :{}. Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
-            self.id,
-            public_key,
-            allowed_ips,
-            endpoint,
-        );
         self.connect_to_exit_node_with_id(None, public_key, allowed_ips, endpoint)
     }
 
@@ -730,30 +769,20 @@ impl Telio {
         allowed_ips: Option<Vec<IpNet>>,
         endpoint: Option<SocketAddr>,
     ) -> FfiResult<()> {
-        telio_log_info!(
-            "Telio::connect_to_exit_node_with_id entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
-            self.id,
-            identifier,
-            public_key,
-            allowed_ips,
-            endpoint,
-        );
-        let identifier = identifier.unwrap_or_else(|| Uuid::new_v4().to_string());
-        let node = ExitNode {
-            identifier,
-            public_key,
-            allowed_ips,
-            endpoint,
+        let config = if let Some(ep) = endpoint {
+            Arc::new(VpnConnectionConfigBuilder::new(public_key, ep))
+                .apply_some(allowed_ips, |b, ips| b.with_allowed_ips(ips))
+                .apply_some(identifier, |b, id| b.with_identifier(id))
+                .build()
+        } else {
+            Arc::new(MeshnetConnectionConfigBuilder::new(public_key))
+                .apply_some(allowed_ips, |b, ips| b.with_allowed_ips(ips))
+                .build()
         };
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| {
-                dev.connect_exit_node(&node)
-                    .log_result("Telio::connect_to_exit_node")
-            })
-        })
+        self.connect_to_exit_node_with_config(config)
     }
 
-    /// Connects to the VPN exit node with post quantum tunnel
+    /// Connects to the VPN exit node with post quantum tunnel.
     ///
     /// Routing should be set by the user accordingly.
     ///
@@ -770,27 +799,12 @@ impl Telio {
         allowed_ips: Option<Vec<IpNet>>,
         endpoint: SocketAddr,
     ) -> FfiResult<()> {
-        telio_log_info!(
-            "Telio::connect_to_exit_node_postquantum entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IP: {:?}. Endpoint: {:?}",
-            self.id,
-            identifier,
-            public_key,
-            allowed_ips,
-            endpoint,
-        );
-        let identifier = identifier.unwrap_or_else(|| Uuid::new_v4().to_string());
-        let node = ExitNode {
-            identifier,
-            public_key,
-            allowed_ips,
-            endpoint: Some(endpoint),
-        };
-        catch_ffi_panic(|| {
-            self.device_op(true, |dev| {
-                dev.connect_vpn_post_quantum(&node)
-                    .log_result("Telio::connect_vpn_post_quantum")
-            })
-        })
+        let config = Arc::new(VpnConnectionConfigBuilder::new(public_key, endpoint))
+            .apply_some(allowed_ips, |b, ips| b.with_allowed_ips(ips))
+            .apply_some(identifier, |b, id| b.with_identifier(id))
+            .force_pq()
+            .build();
+        self.connect_to_exit_node_with_config(config)
     }
 
     /// Enables magic DNS if it was not enabled yet,
