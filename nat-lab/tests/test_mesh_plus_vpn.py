@@ -488,14 +488,6 @@ async def test_vpn_plus_mesh_over_direct(
             public_ip == wg_server["ipv4"]
         ), f"wrong public IP when connected to VPN {public_ip}"
 
-    # LLT-5532: To be cleaned up...
-    alpha_client.allow_errors(
-        ["telio_proxy::proxy.*Unable to send. WG Address not available"]
-    )
-    beta_client.allow_errors(
-        ["telio_proxy::proxy.*Unable to send. WG Address not available"]
-    )
-
 
 class TestThreeNode:
     @pytest.mark.asyncio
@@ -650,11 +642,3 @@ class TestThreeNode:
             assert (
                 public_ip == wg_server["ipv4"]
             ), f"wrong public IP when connected to VPN {public_ip}"
-
-        # LLT-5532: To be cleaned up...
-        client_alpha.allow_errors(
-            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
-        )
-        client_beta.allow_errors(
-            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
-        )
