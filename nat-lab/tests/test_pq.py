@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 from datetime import datetime, timedelta
+from natlab import ping
 from tests import config
 from tests.helpers import SetupParameters, Environment
 from tests.libtelio_client import Client
@@ -12,7 +13,6 @@ from tests.utils.connection_util import (
     new_connection_by_tag,
 )
 from tests.utils.dns import query_dns
-from tests.utils.ping import ping
 
 EMPTY_PRESHARED_KEY_SLOT = "(none)"
 
