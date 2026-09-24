@@ -16,7 +16,7 @@ from tests.log_collector import save_logs
 from tests.mesh_api import Node
 from tests.timeouts import TEST_WG_ADAPTER_CLEANUP_TIMEOUT
 from tests.utils.asyncio_util import run_async_context
-from tests.utils.bindings import TelioAdapterType
+from tests.utils.bindings import default_features, Features, TelioAdapterType
 from tests.utils.connection import Connection, ConnectionTag
 from tests.utils.connection_util import new_connection_by_tag
 from tests.utils.logger import log
@@ -231,8 +231,23 @@ async def restore_dll_after_first_failed_attempt(
     await dll.restore()
 
 
-def new_wg_nt_client(conn: Connection, node: Node, adapter_name: str) -> Client:
-    client = Client(conn, node, TelioAdapterType.WINDOWS_NATIVE_TUN)
+def new_wg_nt_client(
+    conn: Connection,
+    node: Node,
+    adapter_name: str,
+    enable_guid_rotation: bool,
+) -> Client:
+    def wg_nt_features(enable_guid_rotation: bool) -> Features:
+        features = default_features()
+        features.wireguard.enable_wg_nt_guid_rotation = enable_guid_rotation
+        return features
+
+    client = Client(
+        conn,
+        node,
+        TelioAdapterType.WINDOWS_NATIVE_TUN,
+        telio_features=wg_nt_features(enable_guid_rotation),
+    )
     client.get_router().set_interface_name(adapter_name)
     return client
 
@@ -261,7 +276,7 @@ async def test_wg_adapter_creation_retry(conn_tag: ConnectionTag) -> None:
         await dll.hide()
         exit_stack.push_async_callback(dll.restore)
 
-        client = new_wg_nt_client(conn, node, adapter_name)
+        client = new_wg_nt_client(conn, node, adapter_name, enable_guid_rotation=True)
         restore_task = await exit_stack.enter_async_context(
             run_async_context(restore_dll_after_first_failed_attempt(client, dll))
         )
@@ -301,7 +316,7 @@ async def test_wg_adapter_creation_retry(conn_tag: ConnectionTag) -> None:
             )
 
         log.info("Starting telio for the second time, with the dll restored")
-        client = new_wg_nt_client(conn, node, adapter_name)
+        client = new_wg_nt_client(conn, node, adapter_name, enable_guid_rotation=True)
         async with client.run():
             log.info(
                 "Telio started, checking that GUID slot %d was cleaned up", retry_slot
@@ -316,4 +331,40 @@ async def test_wg_adapter_creation_retry(conn_tag: ConnectionTag) -> None:
                 assert ORPHANED_ADAPTER_REMOVED_LOG in telio_log
             if leftover_present:
                 assert STALE_ADAPTER_CONFIG_REMOVED_LOG in telio_log
+            log.info("Stopping telio")
+
+
+@pytest.mark.windows
+@pytest.mark.parametrize("conn_tag", [ConnectionTag.VM_WINDOWS_1])
+async def test_wg_adapter_creation_retry_without_guid_rotation(
+    conn_tag: ConnectionTag,
+) -> None:
+    """With rotation disabled every attempt must reuse the primary GUID.
+
+    Retries and their backoff are independent of the feature flag, so the
+    retry log line is still expected - only the GUID must not move.
+    """
+    adapter_name = f"wgnt_norotate_{uuid.uuid4().hex[:8]}"
+    log.info("Using adapter name %s", adapter_name)
+
+    async with AsyncExitStack() as exit_stack:
+        _, (node,) = setup_api([(False, IPStack.IPv4)])
+        conn_manager, *_ = await setup_connections(exit_stack, [conn_tag])
+        conn = conn_manager.connection
+
+        dll = HiddenWgNtDll(conn)
+        await dll.hide()
+        exit_stack.push_async_callback(dll.restore)
+
+        client = new_wg_nt_client(conn, node, adapter_name, enable_guid_rotation=False)
+        restore_task = await exit_stack.enter_async_context(
+            run_async_context(restore_dll_after_first_failed_attempt(client, dll))
+        )
+        log.info("Starting telio with the dll hidden and GUID rotation disabled")
+        async with client.run():
+            await restore_task
+            used_slots = await used_guid_slots(conn, adapter_name)
+            log.info("GUID slots present in registry: %s", used_slots)
+            assert used_slots == [PRIMARY_GUID_SLOT], used_slots
+            assert ADAPTER_CREATION_RETRY_LOG in await client.log.get()
             log.info("Stopping telio")
