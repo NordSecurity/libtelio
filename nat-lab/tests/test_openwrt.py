@@ -994,3 +994,7 @@ async def test_openwrt_dhcp_client_mtu_derived_from_wan(
                 f"Advertised MTU must be derived from the {wan_mtu} WAN interface as"
                 f" {expected_client_mtu} (wan - 80), got {connected_mtu}"
             )
+            logread_proc = await start_logread_process(
+                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+        await wait_for_log_line(logread_proc)
