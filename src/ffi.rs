@@ -126,21 +126,34 @@ pub fn serialize_feature_config(features: &Features) -> FfiResult<String> {
 /// # Params
 /// - `env`:    see https://developer.android.com/training/articles/perf-jni#javavm-and-jnienv
 /// - `ctx`:    see https://developer.android.com/reference/android/content/Context
-pub extern "C" fn Java_com_nordsec_telio_TelioCert_initCertStore(
-    mut env: jni::JNIEnv,
-    _class: jni::objects::JClass,
-    ctx: jni::objects::JObject,
+pub extern "C" fn Java_com_nordsec_telio_TelioCert_initCertStore<'caller>(
+    mut env: jni::EnvUnowned<'caller>,
+    _class: jni::objects::JClass<'caller>,
+    ctx: jni::objects::JObject<'caller>,
 ) -> u8 {
+    use jni::Outcome;
     use once_cell::sync::OnceCell;
 
     static RESULT: OnceCell<u8> = OnceCell::new();
     *RESULT.get_or_init(|| {
-        if let Err(err) = rustls_platform_verifier::android::init_hosted(&mut env, ctx) {
-            telio_log_error!("Failed to initialize certificate store {err:?}");
-            1
-        } else {
-            telio_log_debug!("Successfully initialized certificate store");
-            0
+        let outcome = env
+            .with_env(|env| rustls_platform_verifier::android::init_with_env(env, ctx))
+            .into_outcome();
+        match outcome {
+            Outcome::Ok(()) => {
+                telio_log_debug!("Successfully initialized certificate store");
+                0
+            }
+            Outcome::Err(err) => {
+                telio_log_error!("Failed to initialize certificate store {err:?}");
+                1
+            }
+            Outcome::Panic(payload) => {
+                let message = panic_handling::recover_panic_message(payload)
+                    .unwrap_or_else(|| DEFAULT_PANIC_MSG.to_string());
+                telio_log_error!("Panicked while initializing certificate store: {message}");
+                1
+            }
         }
     })
 }
