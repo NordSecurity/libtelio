@@ -394,14 +394,6 @@ async def test_direct_working_paths_are_reestablished_and_correctly_reported_in_
         alpha_client.allow_errors(["neptun::device.*Decapsulate error"])
         beta_client.allow_errors(["neptun::device.*Decapsulate error"])
 
-        # LLT-5532: To be cleaned up...
-        alpha_client.allow_errors(
-            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
-        )
-        beta_client.allow_errors(
-            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
-        )
-
 
 @pytest.mark.asyncio
 @pytest.mark.fullcone
@@ -428,14 +420,6 @@ async def test_direct_working_paths_stun_ipv6() -> None:
             )
 
         await ping(alpha_connection, beta.ip_addresses[0])
-
-        # LLT-5532: To be cleaned up...
-        alpha_client.allow_errors(
-            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
-        )
-        beta_client.allow_errors(
-            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
-        )
 
 
 @pytest.mark.asyncio

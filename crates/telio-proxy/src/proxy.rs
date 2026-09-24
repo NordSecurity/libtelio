@@ -348,14 +348,17 @@ impl StateEgress {
                     }
                 }
             }
-            (sock, wg_addr) => {
+            (Some((_, Some(_))), _) => {
+                telio_log_debug!("Dropping packet for muted peer {pk:?}");
+            }
+            (Some(_), None) => {
+                telio_log_warn!("Dropping packet for peer {pk:?}, WG listen port not known");
+            }
+            (None, wg_addr) => {
                 self.handle_error(
                     std::io::Error::new(
                         ErrorKind::AddrNotAvailable,
-                        format!(
-                            "WG Address not available - socket: {}, wg_addr: {wg_addr:?}",
-                            sock.is_some()
-                        ),
+                        format!("No socket for peer {pk:?}, wg_addr: {wg_addr:?}"),
                     ),
                     Some(pk),
                 )
