@@ -632,6 +632,10 @@ interface FeaturesDefaultsBuilder {
     [Self=ByArc]
     FeaturesDefaultsBuilder enable_dynamic_wg_nt_control();
 
+    /// Enable WireGuard-NT adapter GUID rotation on failed adapter creation
+    [Self=ByArc]
+    FeaturesDefaultsBuilder enable_wg_nt_guid_rotation();
+
     /// Enable custom socket buffer sizes for NepTUN
     [Self=ByArc]
     FeaturesDefaultsBuilder set_skt_buffer_size(u32 skt_buffer_size);
@@ -699,6 +703,8 @@ dictionary FeatureWireguard {
     FeaturePolling polling;
     /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
     boolean enable_dynamic_wg_nt_control;
+    /// Retry failed adapter creation with a different GUID from a small fixed pool. Windows only.
+    boolean enable_wg_nt_guid_rotation;
     /// Configurable socket buffer size for NepTUN
     u32? skt_buffer_size;
     /// Configurable socket buffer size for NepTUN

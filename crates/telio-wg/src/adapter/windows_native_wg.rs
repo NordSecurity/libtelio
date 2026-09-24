@@ -53,6 +53,7 @@ use wireguard_uapi::xplatform;
 
 const REMOVAL_SLEEP_SECS: u64 = 2;
 const ADAPTER_GUID_POOL_SIZE: usize = 8;
+const PRIMARY_GUID_SLOT: usize = 0;
 const CREATE_ADAPTER_MAX_ATTEMPTS: usize = ADAPTER_GUID_POOL_SIZE;
 const CREATE_ADAPTER_INITIAL_BACKOFF_SECS: u64 = 2;
 const CREATE_ADAPTER_MAX_BACKOFF_SECS: u64 = 14;
@@ -486,6 +487,9 @@ impl WindowsNativeWg {
     /// ourselves, only slots `1..` (slot 0 is the primary adapter, whose settings we want to
     /// keep), and only when the `Connection\PnpInstanceID` confirms the entry really was ours.
     ///
+    /// Runs regardless of the GUID rotation feature flag, so turning rotation off still
+    /// clears whatever earlier runs left in the pool.
+    ///
     /// `Control\NetworkSetup2\Interfaces\{GUID}` is intentionally *not* touched - it is
     /// SYSTEM-owned on Windows 10 and later, and a stale entry there is inert.
     fn cleanup_pool_guid_netcfg(name: &str) -> bool {
@@ -545,6 +549,7 @@ impl WindowsNativeWg {
     pub async fn start(
         name: &str,
         enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
+        enable_guid_rotation: bool,
     ) -> std::result::Result<Self, AdapterError> {
         const SWD_WIREGUARD: &str = r"SYSTEM\CurrentControlSet\Enum\SWD\WireGuard";
         telio_log_debug!("Print registry before adapter creation!");
@@ -561,7 +566,14 @@ impl WindowsNativeWg {
         let mut wg_dev = loop {
             // The adapter name stays fixed across attempts - only the GUID rotates, so the
             // interface keeps the name the rest of the system (netsh, nat-lab) expects.
-            let adapter_guid = Self::get_adapter_guid_from_name_hash(name, attempt);
+            // With rotation disabled every attempt reuses the primary GUID, which is the
+            // behaviour from before the pool was introduced.
+            let guid_slot = if enable_guid_rotation {
+                attempt
+            } else {
+                PRIMARY_GUID_SLOT
+            };
+            let adapter_guid = Self::get_adapter_guid_from_name_hash(name, guid_slot);
             let tmp_wg_dev = Self::create(
                 name,
                 adapter_guid,

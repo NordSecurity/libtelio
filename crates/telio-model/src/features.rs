@@ -84,6 +84,10 @@ pub struct FeatureWireguard {
     /// Configurable up/down behavior of WireGuard-NT adapter. See RFC LLT-0089 for details
     #[serde(default)]
     pub enable_dynamic_wg_nt_control: bool,
+    /// When adapter creation fails, retry with a different GUID taken from a small fixed
+    /// pool instead of reusing the same one. Disabled by default.
+    #[serde(default)]
+    pub enable_wg_nt_guid_rotation: bool,
     /// Configurable socket buffer size for NepTUN
     #[serde(default)]
     pub skt_buffer_size: Option<u32>,
@@ -699,6 +703,7 @@ mod tests {
                     "wireguard_polling_period_after_state_change": 50
                 },
                 "enable_dynamic_wg_nt_control": true,
+                "enable_wg_nt_guid_rotation": true,
                 "skt_buffer_size": 123456,
                 "inter_thread_channel_size": 123456,
                 "max_inter_thread_batched_pkts": 123456
@@ -797,6 +802,7 @@ mod tests {
                             wireguard_polling_period_after_state_change: 50
                         },
                         enable_dynamic_wg_nt_control: true,
+                        enable_wg_nt_guid_rotation: true,
                         skt_buffer_size: Some(123456),
                         inter_thread_channel_size: Some(123456),
                         max_inter_thread_batched_pkts: Some(123456),
@@ -899,6 +905,16 @@ mod tests {
                 r#"{"wireguard": {}}"#,
                 FeatureWireguard::default(),
                 wireguard
+            );
+        }
+
+        #[test]
+        fn test_wg_nt_guid_rotation_is_turned_off_by_default() {
+            assert_json!(r#"{}"#, false, wireguard.enable_wg_nt_guid_rotation);
+            assert_json!(
+                r#"{"wireguard": {}}"#,
+                false,
+                wireguard.enable_wg_nt_guid_rotation
             );
         }
 

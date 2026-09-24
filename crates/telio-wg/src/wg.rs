@@ -113,6 +113,9 @@ pub struct Config {
     /// When present, the callback is consulted by the Windows native adapter
     /// to determine whether meshnet is currently enabled.
     pub enable_dynamic_wg_nt_control: IsMeshnetEnabledCb,
+    /// When adapter creation fails, retry with a different GUID from a small fixed pool
+    /// instead of reusing the same one. Windows only.
+    pub enable_wg_nt_guid_rotation: bool,
     /// Configurable socket buffer size, if None doesn't modify default OS set values
     pub skt_buffer_size: Option<u32>,
     /// Configurable socket buffer size, if None doesn't modify default OS set values
@@ -235,6 +238,7 @@ impl DynamicWg {
     ///                 Some(Arc::new(firewall_filter_outbound_packets)),
     ///             firewall_reset_connections: None,
     ///             enable_dynamic_wg_nt_control: None,
+    ///             enable_wg_nt_guid_rotation: false,
     ///             skt_buffer_size: None,
     ///             inter_thread_channel_size: None,
     ///             max_inter_thread_batched_pkts: None,
@@ -510,6 +514,7 @@ impl Config {
             firewall_process_outbound_callback: self.firewall_process_outbound_callback.clone(),
             firewall_reset_connections: self.firewall_reset_connections.clone(),
             enable_dynamic_wg_nt_control: self.enable_dynamic_wg_nt_control.clone(),
+            enable_wg_nt_guid_rotation: self.enable_wg_nt_guid_rotation,
             skt_buffer_size: self.skt_buffer_size,
             inter_thread_channel_size: self.inter_thread_channel_size,
             max_inter_thread_batched_pkts: self.max_inter_thread_batched_pkts,
@@ -1118,6 +1123,7 @@ pub mod tests {
                 firewall_process_outbound_callback: Default::default(),
                 firewall_reset_connections: None,
                 enable_dynamic_wg_nt_control: None,
+                enable_wg_nt_guid_rotation: true,
                 skt_buffer_size: None,
                 inter_thread_channel_size: None,
                 max_inter_thread_batched_pkts: None,
