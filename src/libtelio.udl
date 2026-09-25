@@ -201,6 +201,14 @@ namespace telio {
 
     /// For testing only - embeds timestamps into generated logs
     void add_timestamps_to_logs();
+
+    /// Parse a comma-separated list of cipher names into a sequence of known [`Cipher`] values.
+    ///
+    /// Tokens that do not match a known cipher name are ignored. Parser is case-sensitive.
+    ///
+    /// Example input:  "chacha20poly1305, aegis256, unknown"
+    /// Example output: [Cipher.Chacha20Poly1305, Cipher.Aegis256]
+    sequence<Cipher> parse_ciphers(string ciphers);
 };
 
 dictionary WgPeer {
@@ -684,6 +692,18 @@ interface FeaturesDefaultsBuilder {
 };
 
 
+/// AEAD supported cipher suites.
+enum Cipher {
+    /// ChaCha20-Poly1305 – the WireGuard default, always supported.
+    "Chacha20Poly1305",
+    /// AEGIS-256 with a 256-bit tag.
+    "Aegis256",
+    /// AEGIS-256 with two parallel instances.
+    "Aegis256x2",
+    /// AEGIS-256 with four parallel instances.
+    "Aegis256x4",
+};
+
 /// Connection configuration for VPN or meshnet exit-node connections.
 /// Produced by [`VpnConnectionConfigBuilder`] or [`MeshnetConnectionConfigBuilder`].
 dictionary ConnectionConfig {
@@ -699,6 +719,8 @@ dictionary ConnectionConfig {
     SocketAddr? endpoint;
     /// When true, a post-quantum tunnel is established (VPN connections only).
     boolean post_quantum;
+    /// Ciphers supported by the VPN server (NepTUN only). Null for meshnet.
+    sequence<Cipher>? supported_ciphers;
 };
 
 /// Builder for VPN exit-node connections where a direct UDP endpoint is known.
@@ -732,6 +754,11 @@ interface VpnConnectionConfigBuilder {
     /// Enable post-quantum key exchange for this VPN tunnel.
     [Self=ByArc]
     VpnConnectionConfigBuilder force_pq();
+
+    /// Set the supported ciphers for VPN connection (NepTUN only).
+    /// The order of ciphers does not matter for preference negotiation.
+    [Self=ByArc]
+    VpnConnectionConfigBuilder with_ciphers(sequence<Cipher> ciphers);
 
     /// Build the final ConnectionConfig.
     ConnectionConfig build();

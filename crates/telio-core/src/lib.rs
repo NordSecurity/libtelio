@@ -49,6 +49,9 @@ pub use telio_wg;
 pub use telio_model;
 
 /// cbindgen:ignore
+pub use telio_model::cipher;
+
+/// cbindgen:ignore
 pub use telio_utils;
 
 /// cbindgen:ignore

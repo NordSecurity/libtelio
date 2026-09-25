@@ -121,6 +121,8 @@ impl TryFrom<WgPeer> for telio_wg::uapi::Peer {
 
                 Some(PresharedKey::new(array))
             }),
+            // Not supported by custom WG adapter
+            supported_ciphers: None,
         })
     }
 }
