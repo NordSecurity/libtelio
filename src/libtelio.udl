@@ -757,6 +757,8 @@ interface VpnConnectionConfigBuilder {
 
     /// Set the supported ciphers for VPN connection (NepTUN only).
     /// The order of ciphers does not matter for preference negotiation.
+    /// `Cipher::Chacha20Poly1305` is a WireGuard default fallback and should always be included.
+    /// Automatically added by the builder if not present among ciphers.
     [Self=ByArc]
     VpnConnectionConfigBuilder with_ciphers(sequence<Cipher> ciphers);
 
