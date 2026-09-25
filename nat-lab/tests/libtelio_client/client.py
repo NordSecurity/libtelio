@@ -320,11 +320,7 @@ class Client:
             )
 
     async def simple_start(self):
-        await self.get_proxy().start_named(
-            private_key=self._node.private_key,
-            adapter=self._adapter_type,
-            name=self.get_router().get_interface_name(),
-        )
+        await self._start_adapter()
         if isinstance(self.get_router(), LinuxRouter):
             await self.get_proxy().set_fwmark(int(LINUX_FWMARK_VALUE))
 

@@ -87,6 +87,14 @@ from tests.utils.router import IPProto, IPStack
             ),
             marks=pytest.mark.mac,
         ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                ip_stack=IPStack.IPv4,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+            ),
+            marks=pytest.mark.android,
+        ),
     ],
 )
 @pytest.mark.parametrize(
