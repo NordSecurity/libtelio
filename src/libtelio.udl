@@ -757,6 +757,8 @@ interface VpnConnectionConfigBuilder {
 
     /// Set the ciphers to advertise as supported for this VPN connection.
     /// The order of ciphers does not matter for preference negotiation.
+    /// `Cipher::Chacha20Poly1305` shall always be included. If the provided ciphers suite
+    ///  does not contain it, it is appended automatically at the end.
     [Self=ByArc]
     VpnConnectionConfigBuilder with_ciphers(sequence<Cipher> ciphers);
 

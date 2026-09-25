@@ -69,7 +69,7 @@ impl VpnConnectionConfigBuilder {
                 allowed_ips: None,
                 endpoint: Some(endpoint),
                 post_quantum: false,
-                supported_ciphers: None,
+                supported_ciphers: Some(vec![Cipher::Chacha20Poly1305]),
             }),
         }
     }
@@ -96,7 +96,12 @@ impl VpnConnectionConfigBuilder {
 
     /// Set the list of ciphers to advertise as supported for this VPN connection.
     /// The order of ciphers does not matter for preference negotiation.
-    pub fn with_ciphers(self: Arc<Self>, ciphers: Vec<Cipher>) -> Arc<Self> {
+    /// `Cipher::Chacha20Poly1305` shall always be included. If the provided ciphers suite
+    ///  does not contain it, it is appended automatically at the end.
+    pub fn with_ciphers(self: Arc<Self>, mut ciphers: Vec<Cipher>) -> Arc<Self> {
+        if !ciphers.contains(&Cipher::Chacha20Poly1305) {
+            ciphers.push(Cipher::Chacha20Poly1305);
+        }
         self.config.lock().supported_ciphers = Some(ciphers);
         self
     }
@@ -193,7 +198,11 @@ mod tests {
         assert!(config.identifier.is_none());
         assert!(config.allowed_ips.is_none());
         assert!(!config.post_quantum);
-        assert!(config.supported_ciphers.is_none());
+        assert_eq!(
+            config.supported_ciphers,
+            Some(vec![Cipher::Chacha20Poly1305]),
+            "supported_ciphers must always contain Chacha20Poly1305"
+        );
     }
 
     #[test]
@@ -252,9 +261,26 @@ mod tests {
 
         assert_eq!(
             config.supported_ciphers,
-            Some(vec![]),
-            "explicit empty cipher list must be preserved as Some([])"
+            Some(vec![Cipher::Chacha20Poly1305]),
+            "supported_ciphers must always contain Chacha20Poly1305"
         );
+    }
+
+    #[test]
+    fn vpn_builder_with_ciphers_chacha_added_when_missing() {
+        let pk = test_public_key();
+        let ep = test_endpoint();
+        let config = Arc::new(VpnConnectionConfigBuilder::new(pk, ep))
+            .with_ciphers(vec![Cipher::Aegis256, Cipher::Aegis256x2])
+            .build();
+
+        let ciphers = config.supported_ciphers.unwrap();
+        assert!(
+            ciphers.contains(&Cipher::Chacha20Poly1305),
+            "Chacha20Poly1305 must always be present"
+        );
+        assert!(ciphers.contains(&Cipher::Aegis256));
+        assert!(ciphers.contains(&Cipher::Aegis256x2));
     }
 
     // MeshnetConnectionConfigBuilder
