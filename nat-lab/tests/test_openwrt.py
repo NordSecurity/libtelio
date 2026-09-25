@@ -30,6 +30,7 @@ from tests.utils.connection_util import new_connection_raw, new_connection_by_ta
 from tests.utils.logger import log
 from tests.utils.openwrt import (
     start_logread_process,
+    wait_for_router_dns,
     wait_until_unreachable_after_reboot,
 )
 from tests.utils.ping import ping
@@ -159,31 +160,6 @@ async def check_gateway_and_client_ip(
     assert (
         luci_ui_response_status == "200"
     ), f"LuCi UI isn't available. Response status: {luci_ui_response_status}"
-
-
-async def wait_for_router_dns(
-    connection: Connection, host: str, attempts: int = 20, interval: float = 2.0
-) -> None:
-    """Wait until the OpenWrt router's dnsmasq can resolve `host`.
-
-    After a WAN-down or reboot the router's resolver needs a moment to recover,
-    so probe it with a light nslookup before issuing requests that depend on it.
-    """
-    for attempt in range(1, attempts + 1):
-        try:
-            await connection.create_process(["nslookup", host], quiet=True).execute()
-            return
-        except ProcessExecError:
-            if attempt == attempts:
-                raise
-            log.warning(
-                "[%s] router cannot resolve %s yet (attempt %d/%d), waiting...",
-                connection.tag.name,
-                host,
-                attempt,
-                attempts,
-            )
-            await asyncio.sleep(interval)
 
 
 async def setup_openwrt_test_environment(
@@ -994,3 +970,7 @@ async def test_openwrt_dhcp_client_mtu_derived_from_wan(
                 f"Advertised MTU must be derived from the {wan_mtu} WAN interface as"
                 f" {expected_client_mtu} (wan - 80), got {connected_mtu}"
             )
+            logread_proc = await start_logread_process(
+                gateway_connection, exit_stack, NETWORK_RESTART_LOG_LINE
+            )
+        await wait_for_log_line(logread_proc)

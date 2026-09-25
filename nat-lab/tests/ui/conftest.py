@@ -2,7 +2,7 @@ import pytest
 import pytest_asyncio
 from contextlib import AsyncExitStack
 from pathlib import Path
-from tests.config import CORE_API_CA_CERTIFICATE_PATH
+from tests.config import CORE_API_CA_CERTIFICATE_PATH, CORE_API_URL
 from tests.nordvpnlite import (
     CONFIG_PRESETS,
     Config,
@@ -14,8 +14,10 @@ from tests.utils.connection import Connection
 from tests.utils.connection_util import new_connection_by_tag
 from tests.utils.luci.base_page import luci_base_url
 from tests.utils.luci.nordvpnlite_page import NordVpnLiteSettingsPage
+from tests.utils.openwrt import wait_for_router_dns
 from tests.utils.playwright_browser import remote_page, save_failure_screenshot
 from tests.utils.process import ProcessExecError
+from urllib.parse import urlparse
 
 CA_BUNDLE_PATH = "/etc/ssl/certs/ca-certificates.crt"
 NORDVPNLITE_SERVICE_CONFIG_PATH = Path("/etc/nordvpnlite/config.json")
@@ -118,6 +120,8 @@ async def prepare_nordvpnlite_env(
     nordvpnlite, clean_service_state
 ):  # pylint: disable=redefined-outer-name,unused-argument
     """Register the peer with core-api and store its token on the gateway."""
+    core_api_host = urlparse(CORE_API_URL).hostname or CORE_API_URL
+    await wait_for_router_dns(nordvpnlite.connection, core_api_host)
     await nordvpnlite.request_credentials_from_core()
     await nordvpnlite.login()
     yield nordvpnlite.connection

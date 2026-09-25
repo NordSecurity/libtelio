@@ -49,6 +49,31 @@ async def wait_until_unreachable_after_reboot(connection: Connection, delay: int
         await asyncio.sleep(delay)
 
 
+async def wait_for_router_dns(
+    connection: Connection, host: str, attempts: int = 20, interval: float = 2.0
+) -> None:
+    """Wait until the OpenWrt router's dnsmasq can resolve `host`.
+
+    After a WAN-down or reboot the router's resolver needs a moment to recover,
+    so probe it with a light nslookup before issuing requests that depend on it.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            await connection.create_process(["nslookup", host], quiet=True).execute()
+            return
+        except ProcessExecError:
+            if attempt == attempts:
+                raise
+            log.warning(
+                "[%s] router cannot resolve %s yet (attempt %d/%d), waiting...",
+                connection.tag.name,
+                host,
+                attempt,
+                attempts,
+            )
+            await asyncio.sleep(interval)
+
+
 async def daemon_pid(connection: Connection) -> str:
     """PID of the procd-managed daemon, empty string when it is not running."""
     try:
