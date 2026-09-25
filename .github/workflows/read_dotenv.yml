@@ -26,7 +26,7 @@ jobs:
       - name: Checkout (use sha if provided)
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
-          ref: ${{ inputs.sha || github.sha }}
+          ref: ${{ inputs.sha || github.event.pull_request.head.sha || github.sha }}
 
       - name: Read "${{ inputs.key }}" from .env file
         id: read-dotenv-key
@@ -39,5 +39,8 @@ jobs:
           echo "value=$VALUE" >> "$GITHUB_OUTPUT"
 
       - name: Verify "${{ inputs.key }}" loaded correctly
+        env:
+          KEY: ${{ inputs.key }}
+          VALUE: ${{ steps.read-dotenv-key.outputs.value }}
         run: |
-          echo "${{ inputs.key }} is ${{ steps.read-dotenv-key.outputs.value }}"
+          echo "$KEY is $VALUE"
