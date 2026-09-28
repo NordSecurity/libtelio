@@ -23,6 +23,7 @@ from tests.utils.connection_util import (
     toggle_secondary_adapter,
 )
 from tests.utils.ping import ping
+from tests.utils.router import IPStack
 from typing import List, Tuple
 
 WG_POLLING_PERIOD_S = 1
@@ -56,6 +57,14 @@ def long_persistent_keepalive_periods() -> FeatureWireguard:
     )
 
 
+def _platform_mark(tag: ConnectionTag):
+    if tag is ConnectionTag.VM_WINDOWS_1:
+        return pytest.mark.windows
+    if tag is ConnectionTag.VM_ANDROID_1:
+        return pytest.mark.android
+    return ()
+
+
 def _generate_setup_parameter_pair(
     cfg: List[Tuple[ConnectionTag, TelioAdapterType]],
     direct: bool = False,
@@ -82,11 +91,18 @@ def _generate_setup_parameter_pair(
     else:
         features.wireguard = long_persistent_keepalive_periods()
 
+    ip_stack = (
+        IPStack.IPv4
+        if any(tag is ConnectionTag.VM_ANDROID_1 for tag, _ in cfg)
+        else IPStack.IPv4v6
+    )
+
     return [
         SetupParameters(
             connection_tag=tag,
             adapter_type_override=adapter,
             features=features,
+            ip_stack=ip_stack,
             # TODO: Remove this if you're adding a "vpn with mesh" test
             is_meshnet=not vpn,
         )
@@ -109,7 +125,7 @@ FEATURE_ENABLED_PARAMS = [
                     ],
                     direct=False,
                 ),
-                marks=pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else (),
+                marks=_platform_mark(tag),
             ),
             pytest.param(
                 _generate_setup_parameter_pair(
@@ -122,13 +138,14 @@ FEATURE_ENABLED_PARAMS = [
                     ],
                     direct=True,
                 ),
-                marks=pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else (),
+                marks=_platform_mark(tag),
             ),
         )
         for tag, adapter in [
             (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.LINUX_NATIVE_TUN),
             (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
             (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+            (ConnectionTag.VM_ANDROID_1, TelioAdapterType.NEP_TUN),
         ]
     ]
     for param in param_pair
@@ -164,14 +181,13 @@ FEATURE_ENABLED_PARAMS_RELAY_PLUS_LINUX_NATIVE_TUN_AS_BETA = FEATURE_ENABLED_PAR
                         ),
                     ],
                 ),
-                marks=(
-                    pytest.mark.windows if tag is ConnectionTag.VM_WINDOWS_1 else ()
-                ),
+                marks=_platform_mark(tag),
             ),
         )
         for tag, adapter in [
             (ConnectionTag.DOCKER_CONE_CLIENT_1, TelioAdapterType.NEP_TUN),
             (ConnectionTag.VM_WINDOWS_1, TelioAdapterType.WINDOWS_NATIVE_TUN),
+            (ConnectionTag.VM_ANDROID_1, TelioAdapterType.NEP_TUN),
         ]
     ]
     for param in param_pair

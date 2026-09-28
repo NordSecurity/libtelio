@@ -14,6 +14,7 @@ from tests.utils.bindings import (
 )
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
+from tests.utils.router import IPStack
 
 
 @pytest.mark.asyncio
@@ -64,6 +65,14 @@ from tests.utils.connection_util import generate_connection_tracker_config
                 ),
             ),
             marks=pytest.mark.mac,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+            ),
+            marks=pytest.mark.android,
         ),
     ],
 )
