@@ -1,6 +1,7 @@
 import asyncio
 import time
 from itertools import groupby
+from natlab import OutputNotifier
 from tests.uniffi import VpnConnectionError
 from tests.utils.bindings import (
     ErrorEvent,
@@ -12,7 +13,6 @@ from tests.utils.bindings import (
     Server,
     TelioNode,
 )
-from tests.utils.output_notifier import OutputNotifier
 from typing import List, Optional, Set, Tuple
 
 

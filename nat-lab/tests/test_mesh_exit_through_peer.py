@@ -1,6 +1,7 @@
 import asyncio
 import pytest
 from contextlib import AsyncExitStack
+from natlab import ping
 from tests import config
 from tests.helpers import setup_api, setup_mesh_nodes, SetupParameters
 from tests.libtelio_client import Client
@@ -18,7 +19,6 @@ from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
 )
-from tests.utils.ping import ping
 from tests.utils.router import IPProto, IPStack
 
 

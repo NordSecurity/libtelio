@@ -2,6 +2,7 @@ import asyncio
 import pytest
 from contextlib import AsyncExitStack
 from deepdiff import DeepDiff
+from natlab import ping
 from tests import config, timeouts
 from tests.helpers import (
     SetupParameters,
@@ -28,7 +29,6 @@ from tests.utils.connection_util import (
     generate_connection_tracker_config,
     new_connection_with_conn_tracker,
 )
-from tests.utils.ping import ping
 from tests.utils.router import IPStack
 from typing import Optional
 

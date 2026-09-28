@@ -1,5 +1,5 @@
 import asyncio
-from tests.utils import asyncio_util
+from natlab import asyncio_util
 from tests.utils.bindings import LinkState, NodeState, PathType
 from typing import Optional, TYPE_CHECKING
 

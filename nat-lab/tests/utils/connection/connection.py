@@ -1,4 +1,3 @@
-import platform
 import random
 from abc import ABC, abstractmethod
 from enum import Enum, auto
@@ -75,22 +74,10 @@ class ConnectionTag(Enum):
 EPHEMERAL_SETUP_SET: Set[ConnectionTag] = set()
 
 
-class TargetOS(Enum):
-    Linux = auto()
-    Windows = auto()
-    Mac = auto()
-    Android = auto()
-
-    @staticmethod
-    def local():
-        system = platform.system()
-        if system == "Windows":
-            return TargetOS.Windows
-        if system == "Linux":
-            return TargetOS.Linux
-        if system == "Darwin":
-            return TargetOS.Mac
-        raise ValueError(f"{system} is not supported")
+# the single vocabulary type, shared with natlab: framework code compares
+# `connection.target_os == TargetOS.Mac`, and a second enum class of the same
+# shape silently fails every such comparison
+from natlab.connection import TargetOS  # noqa: E402  # isort: skip
 
 
 class Connection(ABC):
@@ -115,6 +102,11 @@ class Connection(ABC):
     def target_os(self, target_os: TargetOS) -> None:
         assert self.target_os
         self._target_os = target_os
+
+    @property
+    def name(self) -> str:
+        # natlab identifies a node by name; here that is the tag it was built from
+        return self._tag.name
 
     @property
     def tag(self) -> ConnectionTag:

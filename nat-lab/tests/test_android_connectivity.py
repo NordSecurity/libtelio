@@ -1,8 +1,8 @@
 import pytest
+from natlab import ping
 from tests import config
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import new_connection_raw
-from tests.utils.ping import ping
 
 
 @pytest.mark.asyncio
