@@ -997,7 +997,7 @@ impl RequestedState {
             .clone()
             .map_or(Vec::new(), |cfg| {
                 [
-                    cfg.peers.map_or(Vec::new(), |peers| peers),
+                    cfg.peers.unwrap_or(Vec::new()),
                     vec![Peer {
                         base: cfg.this,
                         ..Default::default()

@@ -91,8 +91,8 @@ impl fmt::Debug for PublicKey {
         f.write_str(&format!(
             "\"{:.*}...{}\"",
             4,
-            &buf,
-            &buf.get((buf.len()) - 4..).ok_or(fmt::Error)?
+            buf,
+            buf.get((buf.len()) - 4..).ok_or(fmt::Error)?
         ))
     }
 }
