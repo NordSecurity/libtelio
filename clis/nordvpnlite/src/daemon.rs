@@ -29,6 +29,7 @@ use telio_core::{
     defaults_builder::FeaturesDefaultsBuilder,
     device::{Device, DeviceConfig, Error as DeviceError},
     telio_model::{
+        cipher::Cipher,
         constants::LOCAL_TUNNEL_IPV4,
         event::{ErrorLevel, Event},
         mesh::NodeState,
@@ -278,7 +279,12 @@ impl TelioTaskCmd {
                 let builder = std::sync::Arc::new(VpnConnectionConfigBuilder::new(
                     exit_node.endpoint.public_key,
                     endpoint,
-                ));
+                ))
+                .with_ciphers(vec![
+                    Cipher::Chacha20Poly1305,
+                    Cipher::Aegis256,
+                    Cipher::Aegis256x2,
+                ]);
 
                 let (config, kind) = if exit_node.post_quantum {
                     (builder.force_pq().build(), "post quantum ")
@@ -618,6 +624,9 @@ fn handle_telio_event(event: Box<Event>) {
             }
             if let Some(link_state) = &body.link_state {
                 info!("Link state: {:?}", link_state);
+            }
+            if let Some(selected_cipher) = &body.selected_cipher {
+                info!("Selected cipher: {:?}", selected_cipher);
             }
         }
         Event::Error { body } => match body.level {
