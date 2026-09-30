@@ -6627,7 +6627,7 @@ dependencies = [
 [[package]]
 name = "wireguard-nt"
 version = "1.0.0"
-source = "git+https://github.com/NordSecurity/wireguard-nt-rust-wrapper.git?branch=kumor%2FLLT-7574-aead-cipher-suites-support#946f89ed96aa856fb86a8d95a427c65cfd85af0c"
+source = "git+https://github.com/tomasz-kumor/wireguard-nt-rust-wrapper.git?branch=LLT-7574-wiregard-nt-wrapper#ffcc0141a79eb062e7178533b672bc47085e7389"
 dependencies = [
  "bitflags 2.13.2",
  "getrandom 0.4.3",
@@ -6645,7 +6645,7 @@ dependencies = [
 [[package]]
 name = "wireguard-uapi"
 version = "4.0.0"
-source = "git+https://github.com/NordSecurity/wireguard-uapi-rs.git?branch=kumor%2FLLT-7574-aegis-aead-cipher-suites-support#c5d80647cdfe6d199f778722f0dab3f68ac247c2"
+source = "git+https://github.com/tomasz-kumor/wireguard-uapi-rs.git?branch=LLT-7574-wiregard-uapi#7c7a43cf09a10483c133ade63463d26ad2fd3df8"
 dependencies = [
  "derive_builder 0.10.2",
  "hex",
