@@ -121,6 +121,17 @@ class ConntrackerEvent:
     tcp_state: Optional[TcpState] = None
 
 
+def _is_tcp_picked_up_mid_stream(event: ConntrackerEvent) -> bool:
+    """
+    Only flows starting with SYN_SENT are new. All other (picked mid-flight) are discarded.
+    """
+    return (
+        event.event_type == EventType.NEW
+        and event.five_tuple.protocol == "tcp"
+        and event.tcp_state != TcpState.SYN_SENT
+    )
+
+
 class ConnTrackerEventsValidator:
     """
     Generic class for representing conntracker events validator
@@ -176,6 +187,7 @@ class ConnectionCountLimit(ConnTrackerEventsValidator):
             for event in events
             if event.event_type == EventType.NEW
             and self.target.partial_eq(event.five_tuple)
+            and not _is_tcp_picked_up_mid_stream(event)
         ])
 
         if self.max_limit is not None and count > self.max_limit:
@@ -242,13 +254,22 @@ class TCPStateSequence(ConnTrackerEventsValidator):
         # connection cache is introduced which maps FiveTuple to index in two dimensional
         # array, and gets cleared every time NEW type event appears in the list of events
         connections: Dict[FiveTuple, List[List[ConntrackerEvent]]] = {}
+        # Flows picked up mid-stream are skipped until their FiveTuple is reused
+        # by a new connection
+        picked_up_mid_stream: set[FiveTuple] = set()
         for event in filter(lambda e: self.five_tuple.partial_eq(e.five_tuple), events):
             # Every new connection (identified by EventType NEW) gets its own slot
             ft = event.five_tuple
+            if _is_tcp_picked_up_mid_stream(event):
+                picked_up_mid_stream.add(ft)
+                continue
             if event.event_type == EventType.NEW:
+                picked_up_mid_stream.discard(ft)
                 connections[ft] = (
                     [[]] if ft not in connections else (connections[ft] + [[]])
                 )
+            elif ft in picked_up_mid_stream:
+                continue
 
             # append event
             connections[ft][-1].append(event)
