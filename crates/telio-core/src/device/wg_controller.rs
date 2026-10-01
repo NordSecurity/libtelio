@@ -756,6 +756,7 @@ async fn build_requested_peers_list<
                                     .vpn,
                                 allowed_ips,
                                 preshared_key,
+                                supported_ciphers: requested_state.supported_ciphers.clone(),
                                 ..Default::default()
                             },
                             endpoint: None,
@@ -1180,6 +1181,8 @@ fn compare_peers(a: &telio_wg::uapi::Peer, b: &telio_wg::uapi::Peer) -> bool {
         && a.persistent_keepalive_interval == b.persistent_keepalive_interval
         && a.allowed_ips == b.allowed_ips
         && a.preshared_key == b.preshared_key
+        && a.supported_ciphers == b.supported_ciphers
+    // selected_cipher is not on this list as it is read only parameter reported by NepTUN, never write back via UAPI SET
 }
 
 fn is_peer_proxying(peer: &telio_wg::uapi::Peer, proxy_endpoints: &EndpointMap) -> bool {
@@ -2163,6 +2166,8 @@ mod tests {
                         time_since_last_handshake: None,
                         time_since_last_rx: None,
                         preshared_key: None,
+                        supported_ciphers: None,
+                        selected_cipher: None,
                     }))
                     .return_once(|_| Ok(()));
             }
@@ -2198,6 +2203,8 @@ mod tests {
                         time_since_last_handshake: None,
                         time_since_last_rx: None,
                         preshared_key: None,
+                        supported_ciphers: None,
+                        selected_cipher: None,
                     }));
             }
         }

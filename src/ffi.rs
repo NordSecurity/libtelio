@@ -2,6 +2,7 @@ use connection_config::{
     ApplySome, ConnectionConfig, MeshnetConnectionConfigBuilder, VpnConnectionConfigBuilder,
 };
 pub use telio_core::{adapter, connection_config, defaults_builder, logging, types};
+pub use telio_model::cipher;
 
 use anyhow::anyhow;
 use ffi_helpers::{error_handling, panic as panic_handling};
@@ -11,7 +12,6 @@ use telio_wg::AdapterType;
 use tracing::{error, trace};
 
 use telio_sockets::protector::make_external_protector;
-use uuid::Uuid;
 
 use std::{
     convert::TryInto,
@@ -30,7 +30,7 @@ use telio_model::{
     config::{Config, ConfigParseError},
     event::*,
     features::Features,
-    mesh::{ExitNode, Node},
+    mesh::Node,
     tp_lite_stats::{DnsRedirect, NoopCallback, TpLiteStatsCallback, TpLiteStatsOptions},
 };
 
@@ -86,6 +86,16 @@ pub fn generate_secret_key() -> SecretKey {
 /// Get the public key that corresponds to a given private key.
 pub fn generate_public_key(secret_key: SecretKey) -> PublicKey {
     secret_key.public()
+}
+
+/// Parse a comma-separated list of cipher names into a [`Vec`] of known [`Cipher`] values.
+///
+/// Tokens that do not match a known cipher name are ignored,
+///
+/// Example: `parse_ciphers("chacha20poly1305, aegis256, unknown")` →
+/// `[Cipher::Chacha20Poly1305, Cipher::Aegis256]`
+pub fn parse_ciphers(ciphers: String) -> Vec<cipher::Cipher> {
+    cipher::parse_ciphers(ciphers)
 }
 
 /// Utility function to get the default feature config
@@ -711,31 +721,24 @@ impl Telio {
     ///   or [`connection_config::MeshnetConnectionConfigBuilder`].
     pub fn connect_to_exit_node_with_config(&self, config: ConnectionConfig) -> FfiResult<()> {
         telio_log_info!(
-            "Telio::connect_to_exit_node_with_config entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IPs: {:?}. Endpoint: {:?}. PostQuantum: {:?}",
+            "Telio::connect_to_exit_node_with_config entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IPs: {:?}. Endpoint: {:?}. PostQuantum: {:?}. Ciphers: {:?}.",
             self.id,
             config.identifier,
             config.public_key,
             config.allowed_ips,
             config.endpoint,
             config.post_quantum,
+            config.supported_ciphers,
         );
         let post_quantum = config.post_quantum;
-        let identifier = config
-            .identifier
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
-        let node = ExitNode {
-            identifier,
-            public_key: config.public_key,
-            allowed_ips: config.allowed_ips,
-            endpoint: config.endpoint,
-        };
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
+                let cfg = config.clone();
                 if post_quantum {
-                    dev.connect_vpn_post_quantum(&node)
+                    dev.connect_vpn_post_quantum(cfg)
                         .log_result("Telio::connect_to_exit_node_with_config (post-quantum)")
                 } else {
-                    dev.connect_exit_node(&node)
+                    dev.connect_exit_node(cfg)
                         .log_result("Telio::connect_to_exit_node_with_config")
                 }
             })
