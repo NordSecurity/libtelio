@@ -356,6 +356,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tcp_forwarder::engine::{EVENTS_CAP, TO_UPSTREAM_CAP};
     use crate::tcp_forwarder::test_utils::{
         frame, recv_event, response_bytes, spawn_stub, test_handle, upstream_saw, StubBehavior,
     };
@@ -365,9 +366,6 @@ mod tests {
     };
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
     use tokio::task::JoinHandle;
-
-    pub(crate) const EVENTS_CAP: usize = 16;
-    pub(crate) const TO_UPSTREAM_CAP: usize = 2;
 
     /// One `run_proxy_pipe` task, with the upstream
     /// end of the stream and both channel ends handed back.
