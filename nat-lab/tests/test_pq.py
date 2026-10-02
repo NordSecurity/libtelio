@@ -396,7 +396,7 @@ class TestPqVpnHandshake:
     def _mutate_pq_handshake(
         self, alpha_setup_params: SetupParameters, pq_version: int
     ):
-        alpha_setup_params.features.post_quantum_vpn.handshake_retry_interval_s = 1
+        alpha_setup_params.features.post_quantum_vpn.handshake_retry_interval_s = 5
         alpha_setup_params.features.post_quantum_vpn.version = pq_version
 
     @pytest.mark.nlx
