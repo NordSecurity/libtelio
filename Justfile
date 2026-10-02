@@ -16,8 +16,8 @@ alias d := deny
 [private]
 alias p := prepush
 
-nightly := "nightly-2025-08-07" # Matching stable version below, see: https://releases.rs/docs/1.89.0/
-rust_stable := "1.89.0"
+nightly := "nightly-2026-07-16" # Matching stable version below, see: https://releases.rs/docs/1.98.1/ (1.98.0 was branched on 2026-07-03 - this is closest main with miscompilation fix from .1)
+rust_stable := "1.98.1"
 
 # Run all rust tests
 test:
@@ -106,7 +106,7 @@ _udeps-install: _nightly-install
     cargo +{{ nightly }} install cargo-udeps@0.1.55 --locked
 
 _unused-install: _rust_stable-install _rust-from-toolchain-file-install
-    cargo +1.92.0 install --locked --git https://github.com/MTaliancich/cargo-unused-features.git --rev bc66e21323cbfd4cd21bb09a03298b592632e8e7
+    cargo +{{ rust_stable }} install --locked --git https://github.com/MTaliancich/cargo-unused-features.git --rev bc66e21323cbfd4cd21bb09a03298b592632e8e7
 
 _deny-install:
     cargo install --locked cargo-deny@0.18.9
