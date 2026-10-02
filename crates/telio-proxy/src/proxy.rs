@@ -348,14 +348,17 @@ impl StateEgress {
                     }
                 }
             }
-            (sock, wg_addr) => {
+            (Some((_, Some(_))), _) => {
+                telio_log_debug!("Dropping packet for muted peer {pk:?}");
+            }
+            (Some(_), None) => {
+                telio_log_warn!("Dropping packet for peer {pk:?}, WG listen port not known");
+            }
+            (None, wg_addr) => {
                 self.handle_error(
                     std::io::Error::new(
                         ErrorKind::AddrNotAvailable,
-                        format!(
-                            "WG Address not available - socket: {}, wg_addr: {wg_addr:?}",
-                            sock.is_some()
-                        ),
+                        format!("No socket for peer {pk:?}, wg_addr: {wg_addr:?}"),
                     ),
                     Some(pk),
                 )
@@ -820,6 +823,11 @@ mod tests {
                             tokio::task::yield_now().await;
                             let mut buf = [0u8; 1024];
                             assert!(self.wg.sock.try_recv_from(&mut buf).is_err());
+                            let _ = task_exec!(&self.proxy.task_egress, async move |state| {
+                                assert_eq!(state.conn_state, Ok(()));
+                                Ok(())
+                            })
+                            .await;
                         } else {
                             self.wg.expect_recv(&[(pk, msg)]).await;
                         }
@@ -874,7 +882,7 @@ mod tests {
                 })
                 .await?;
 
-                self.send_to_wg_via_relay(peers, &relay_to_wg, Err(ErrorKind::AddrNotAvailable))
+                self.send_to_wg_via_relay(peers, &relay_to_wg, Err(ErrorKind::NotConnected))
                     .await;
 
                 let _ = task_exec!(&self.proxy.task_egress, async move |state| {

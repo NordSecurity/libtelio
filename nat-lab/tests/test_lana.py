@@ -1433,14 +1433,6 @@ async def test_lana_with_meshnet_exit_node(
         assert await alpha_conn_tracker.find_conntracker_violations() is None
         assert await beta_conn_tracker.find_conntracker_violations() is None
 
-        # LLT-5532: To be cleaned up...
-        client_alpha.allow_errors(
-            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
-        )
-        client_beta.allow_errors(
-            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
-        )
-
 
 @pytest.mark.moose
 @pytest.mark.asyncio
@@ -1932,14 +1924,6 @@ async def test_lana_with_second_node_joining_later_meshnet_id_can_change(
 
         assert await alpha_conn_tracker.find_conntracker_violations() is None
         assert await beta_conn_tracker.find_conntracker_violations() is None
-
-        # LLT-5532: To be cleaned up...
-        client_alpha.allow_errors(
-            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
-        )
-        client_beta.allow_errors(
-            ["telio_proxy::proxy.*Unable to send. WG Address not available"]
-        )
 
 
 @pytest.mark.moose
