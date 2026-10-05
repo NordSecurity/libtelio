@@ -1,7 +1,6 @@
 import asyncio
 import platform
 import re
-from collections import defaultdict
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from enum import Enum
@@ -380,7 +379,7 @@ class ConnectionTracker:
         self._connection: Connection = connection
         self._validators: Optional[List[ConnTrackerEventsValidator]] = validators
         self._events: List[ConntrackerEvent] = []
-        self._tcp_state_events: Dict[TcpState, List[asyncio.Event]] = defaultdict(list)
+        self._events_changed: asyncio.Condition = asyncio.Condition()
         self._sync_event: asyncio.Event = asyncio.Event()
         self._sync_connection: FiveTuple = FiveTuple(
             protocol="icmp", dst_ip="127.0.0.2"
@@ -405,6 +404,8 @@ class ConnectionTracker:
 
             self._events.append(event)
             self._new_report_event.set()
+            async with self._events_changed:
+                self._events_changed.notify_all()
 
     async def execute(self) -> None:
         if platform.system() == "Darwin":
@@ -414,9 +415,21 @@ class ConnectionTracker:
 
         await self._process.execute(stdout_callback=self.on_stdout)
 
-    def notify_on_tcp_state(self, state: TcpState, event: asyncio.Event) -> None:
-        """Register an Event to be notified when a specific TCP state is reported"""
-        self._tcp_state_events[state].append(event)
+    async def wait_for_tcp_state(self, five_tuple: FiveTuple, state: TcpState) -> None:
+        """Waits until conntrack reports `state` for a connection matching `five_tuple`"""
+        if platform.system() == "Darwin":
+            return None
+        if not self._validators:
+            return None
+
+        def state_reported() -> bool:
+            return any(
+                event.tcp_state == state and five_tuple.partial_eq(event.five_tuple)
+                for event in self._events
+            )
+
+        async with self._events_changed:
+            await self._events_changed.wait_for(state_reported)
 
     async def find_conntracker_violations(self) -> Optional[ConnTrackerViolation]:
         if platform.system() == "Darwin":
