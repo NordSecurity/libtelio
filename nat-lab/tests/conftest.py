@@ -22,7 +22,7 @@ from tests.conftest_helpers.setup_checks import (
 )
 from tests.conftest_helpers.sharding import select_for_this_shard
 from tests.helpers import SetupParameters
-from tests.log_collector import LOG_COLLECTORS
+from tests.log_collector import LOG_COLLECTORS, save_windows_registry_snapshot
 from tests.utils.bindings import TelioAdapterType
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import new_connection_raw
@@ -58,6 +58,7 @@ _LIBFIREWALL_SO = os.path.join(os.path.dirname(__file__), "uniffi", "libfirewall
 
 TEARDOWN_PHASE_TIMEOUT_S = 300
 COLLECT_ALL_LOGS_TIMEOUT_S = TEARDOWN_PHASE_TIMEOUT_S - 60
+WINDOWS_REGISTRY_SNAPSHOT_TIMEOUT_S = 180
 
 
 @dataclass
@@ -178,6 +179,31 @@ def pytest_runtest_makereport(item, call):  # pylint: disable=unused-argument
     outcome = yield
     rep = outcome.get_result()
     setattr(item, f"rep_{rep.when}", rep)
+
+    if (
+        rep.failed
+        and item.get_closest_marker("windows")
+        and os.environ.get("NATLAB_SAVE_LOGS")
+        and not getattr(item, "windows_registry_snapshot_collected", False)
+    ):
+        item.windows_registry_snapshot_collected = True
+        try:
+            assert _SESSION.runner
+
+            async def collect_registry_snapshot():
+                async with new_connection_raw(
+                    ConnectionTag.VM_WINDOWS_1, prepare=False
+                ) as connection:
+                    await save_windows_registry_snapshot(connection)
+
+            _SESSION.runner.run(
+                asyncio.wait_for(
+                    collect_registry_snapshot(),
+                    timeout=WINDOWS_REGISTRY_SNAPSHOT_TIMEOUT_S,
+                )
+            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            log.warning("Failed to collect Windows registry snapshot: %s", e)
 
 
 def pytest_runtestloop(session):
