@@ -18,6 +18,9 @@ from env import LIBTELIO_ENV_NAT_LAB_DEPS_TAG  # type: ignore # pylint: disable=
 
 NATLAB_CONTAINER_RESTART_ATTEMPTS = 5
 
+BUILD_PROFILE = "base"
+BASE_IMAGE_SERVICE = "base"
+
 
 def run_command(command, env=None):
     if env:
@@ -116,6 +119,31 @@ def dump_journal_logs(service_name):
         )
 
 
+def services_to_build() -> List[str]:
+    """Return the services that have a build section, with the base image
+    first since the other images are built FROM it."""
+    config = json.loads(
+        run_command_with_output(
+            [
+                "docker",
+                "compose",
+                "--profile",
+                BUILD_PROFILE,
+                "config",
+                "--format",
+                "json",
+            ],
+            hide_output=True,
+        )
+    )
+    services = sorted(
+        name
+        for name, service in config["services"].items()
+        if "build" in service and name != BASE_IMAGE_SERVICE
+    )
+    return [BASE_IMAGE_SERVICE] + services
+
+
 def start(skip_keywords=None, force_recreate=False, services_to_start=None):
     if skip_keywords is None:
         skip_keywords = []
@@ -135,14 +163,17 @@ def start(skip_keywords=None, force_recreate=False, services_to_start=None):
         with open("docker-compose.yml", "w", encoding="utf-8") as file:
             file.write(filedata)
 
-    run_command(
-        ["docker", "compose", "--profile", "base", "build", "--no-cache"],
-        env={
-            "COMPOSE_DOCKER_CLI_BUILD": "1",
-            "DOCKER_BUILDKIT": "1",
-            "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
-        },
-    )
+    # One build at a time: parallel builds can crash dockerd (moby/moby#48564)
+    for service in services_to_build():
+        run_command(
+            ["docker", "compose", "--profile", BUILD_PROFILE, "build", "--no-cache"]
+            + [service],
+            env={
+                "COMPOSE_DOCKER_CLI_BUILD": "1",
+                "DOCKER_BUILDKIT": "1",
+                "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
+            },
+        )
 
     exclude_services = set()
     all_services = run_command_with_output(
