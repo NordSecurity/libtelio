@@ -76,6 +76,8 @@ def get_uniffi_path(connection: Connection) -> str:
 @asynccontextmanager
 async def new_connection_raw(
     tag: ConnectionTag,
+    *,
+    prepare: bool = True,
 ) -> AsyncIterator[Connection]:
     try:
         if tag in DOCKER_SERVICE_IDS:
@@ -88,7 +90,7 @@ async def new_connection_raw(
                     yield connection
         elif is_tag_valid_for_ssh_connection(tag):
             async with SshConnection.new_connection(
-                LAN_ADDR_MAP[tag]["primary"], tag
+                LAN_ADDR_MAP[tag]["primary"], tag, prepare=prepare
             ) as connection:
                 yield connection
         else:

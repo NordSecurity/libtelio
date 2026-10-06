@@ -25,6 +25,7 @@ class SshConnection(Connection):
         connection: asyncssh.SSHClientConnection,
         tag: ConnectionTag,
         ip: str = "",
+        prepare: bool = True,
     ):
         if tag is ConnectionTag.VM_WINDOWS_1:
             target_os = TargetOS.Windows
@@ -48,6 +49,7 @@ class SshConnection(Connection):
         self._connection_id = str(uuid4())
         self._ip = ip or connection._host  # pylint: disable=protected-access
         self._reconnected = False
+        self._prepare = prepare
 
     async def __aenter__(self):
         log.info(
@@ -55,7 +57,8 @@ class SshConnection(Connection):
             self.tag.name,
             self._connection_id,
         )
-        await setup_ephemeral_ports(self)
+        if self._prepare:
+            await setup_ephemeral_ports(self)
         return self
 
     async def __aexit__(self, *_):
@@ -123,14 +126,15 @@ class SshConnection(Connection):
         ip: str,
         tag: ConnectionTag,
         copy_binaries: bool = False,
+        prepare: bool = True,
     ) -> AsyncIterator["SshConnection"]:
         try:
             async with await cls._connect(ip, tag) as ssh_connection:
-                async with cls(ssh_connection, tag, ip) as connection:
+                async with cls(ssh_connection, tag, ip, prepare) as connection:
                     if copy_binaries:
                         await connection.copy_binaries()
 
-                    if connection.target_os is TargetOS.Windows:
+                    if prepare and connection.target_os is TargetOS.Windows:
                         keys = await utils_win.get_network_interface_tunnel_keys(
                             connection
                         )
