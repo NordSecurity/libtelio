@@ -22,7 +22,8 @@ Pushing the tag triggers the release pipeline, which runs `ci/release.py` to:
 2. **Publish the GitLab release** with that changelog block as the release notes.
 3. **Open a PR** against the branch the release was cut from (`main` or a `release/vX.Y`
    branch) that removes the consumed `.unreleased/` files and, on a **final** (non-`-rc`) tag,
-   bumps `Cargo.toml` to the next version.
+   bumps `Cargo.toml` to the next version. `cargo check` is run after the bump so the
+   refreshed `Cargo.lock` goes into the PR and it does not fail CI's `--locked` checks.
 
 `ci/release.py` is run by the pipeline (not locally) and uses `GITHUB_WRITE_TOKEN` to publish
 the changelog and open the PR.
