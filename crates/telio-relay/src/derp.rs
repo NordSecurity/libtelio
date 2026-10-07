@@ -33,7 +33,7 @@ use telio_task::io::{wait_for_tx, Chan};
 use telio_task::{io::mc_chan::Tx, task_exec, BoxAction, Runtime, Task};
 use telio_utils::{
     telio_err_with_log, telio_log_debug, telio_log_error, telio_log_info, telio_log_trace,
-    telio_log_warn,
+    telio_log_warn, Instant,
 };
 use tokio::sync::mpsc::OwnedPermit;
 use tokio::{task::JoinHandle, time::sleep};
@@ -123,7 +123,14 @@ struct State {
     last_disconnection_reason: RelayConnectionChangeReason,
 
     connecting: Option<JoinHandle<(Server, DerpConnection)>>,
+
+    /// Timestamp of the last established connection, used to throttle reconnects that die
+    /// immediately after connecting (not covered by `start_connecting`'s own backoff).
+    last_connected_at: Option<Instant>,
 }
+
+/// Minimum time between a connection being established and the next connection attempt.
+const MIN_RECONNECT_COOLDOWN: Duration = Duration::from_secs(1);
 
 /// Keepalive values that help keeping Derp connection in conntrack alive,
 /// so server can send traffic after being silent for a while
@@ -208,7 +215,19 @@ impl State {
         self.server = None;
     }
 
-    fn start_connecting(&self, mut config: Config) -> JoinHandle<(Server, DerpConnection)> {
+    /// Disconnect due to an explicit, user- or config-driven request (roaming,
+    /// config change, manual reconnect). Unlike a relay-initiated drop, there's
+    /// no need to throttle these, so the reconnect cooldown is skipped.
+    async fn disconnect_deliberately(&mut self) {
+        self.disconnect().await;
+        self.last_connected_at = None;
+    }
+
+    fn start_connecting(
+        &self,
+        mut config: Config,
+        cooldown_remaining: Option<Duration>,
+    ) -> JoinHandle<(Server, DerpConnection)> {
         let event = self.event.clone();
         let socket_pool = self.socket_pool.clone();
 
@@ -216,6 +235,9 @@ impl State {
         let mut last_disconnection_reason = self.last_disconnection_reason;
 
         let connection = async move {
+            if let Some(remaining) = cooldown_remaining {
+                sleep(remaining).await;
+            }
             let mut sleep_time = 1f64;
             loop {
                 let mut server = match config.servers.get_next() {
@@ -315,6 +337,7 @@ impl DerpRelay {
                 derp_poll_session: 0,
                 remote_peers_states: HashMap::new(),
                 connecting: None,
+                last_connected_at: None,
                 last_disconnection_reason: RelayConnectionChangeReason::ConfigurationChange,
                 aggregator,
             }),
@@ -340,13 +363,13 @@ impl DerpRelay {
                         // Current server not found in new config or server no config
                         if !config.servers.contains(server) {
                             telio_log_info!("Currently active server is no longer available in config - reconnecting.");
-                            s.disconnect().await;
+                            s.disconnect_deliberately().await;
                         }
                     }
                     None => {
                         // Disconnect and start from the top of the list
                         telio_log_info!("No active relay server. Reconnecting.");
-                        s.disconnect().await;
+                        s.disconnect_deliberately().await;
                     }
                 }
             }
@@ -393,7 +416,7 @@ impl DerpRelay {
     pub async fn reconnect(&self) {
         let _ = task_exec!(&self.task, async move |s| {
             telio_log_info!("Explicit relay reconnect requested");
-            s.disconnect().await;
+            s.disconnect_deliberately().await;
             Ok(())
         })
         .await;
@@ -684,7 +707,7 @@ impl Runtime for State {
             Some(c) => c,
             None => {
                 telio_log_info!("Disconnecting from DERP server due to empty config");
-                self.disconnect().await;
+                self.disconnect_deliberately().await;
                 return (update.await)(self).await;
             }
         };
@@ -783,7 +806,19 @@ impl Runtime for State {
                 let connecting = if let Some(connecting) = &mut self.connecting {
                     connecting
                 } else {
-                    let connection = self.start_connecting(config.clone());
+                    let cooldown_remaining = self
+                        .last_connected_at
+                        .map(|t| t.elapsed())
+                        .and_then(|elapsed| MIN_RECONNECT_COOLDOWN.checked_sub(elapsed))
+                        .filter(|remaining| !remaining.is_zero());
+                    if let Some(remaining) = cooldown_remaining {
+                        telio_log_debug!(
+                            "({}) Reconnect cooldown active, waiting {:?} before retrying",
+                            Self::NAME,
+                            remaining
+                        );
+                    }
+                    let connection = self.start_connecting(config.clone(), cooldown_remaining);
                     self.connecting.insert(connection)
                 };
 
@@ -795,6 +830,7 @@ impl Runtime for State {
                             Ok((server, conn)) => {
                                 self.server = Some(server.clone());
                                 self.conn = Some(conn);
+                                self.last_connected_at = Some(Instant::now());
                                 if let Err(err) = self.event.send(Box::new(server.clone())) {
                                     telio_log_warn!("({}) sending new server info failed {}", Self::NAME, err)
                                 }
