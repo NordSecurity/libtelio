@@ -1,5 +1,6 @@
 use crate::tcp_forwarder::frame::MessageReader;
 use crate::upstream::{UpstreamCursor, UpstreamList};
+use bytes::Bytes;
 use smoltcp::iface::SocketHandle;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -15,7 +16,7 @@ pub(crate) const PROXY_CHUNK: usize = 4096;
 #[derive(Debug)]
 pub(crate) enum ClientMsg {
     /// One complete message frame from the client.
-    Query(Vec<u8>),
+    Query(Bytes),
     /// The client closed its write half.
     Eof,
 }
@@ -24,9 +25,9 @@ pub(crate) enum ClientMsg {
 #[derive(Default)]
 pub(crate) struct ProxyState {
     /// Framed query awaiting a complete response, resent on failover.
-    pending: Option<Vec<u8>>,
+    pending: Option<Bytes>,
     /// Framed query accepted from the client but not yet sent.
-    queued: Option<Vec<u8>>,
+    queued: Option<Bytes>,
     /// The client closed its write half.
     client_eof: bool,
     /// A complete response was relayed during the current upstream attempt.
@@ -37,7 +38,7 @@ pub(crate) struct ProxyState {
 #[derive(Debug)]
 pub(crate) enum ProxyEvent {
     /// One complete framed message from the upstream.
-    Response(Vec<u8>),
+    Response(Bytes),
     /// The upstream closed its write half.
     Eof,
     /// Connect failure.
@@ -309,11 +310,11 @@ where
                     let Some(chunk) = read_buf.get(..n) else {
                         return PipeOutcome::NoReply;
                     };
-                    from_upstream.push(chunk);
+                    let taken = from_upstream.push(chunk);
                     let Some(response) = from_upstream.next_frame() else {
                         continue;
                     };
-                    if from_upstream.partial_len() > 0 {
+                    if taken < chunk.len() {
                         telio_log_warn!("Upstream answered query more than once, dropping it");
                         return PipeOutcome::NoReply;
                     }
@@ -367,7 +368,7 @@ mod tests {
     use tokio::task::JoinHandle;
 
     pub(crate) const EVENTS_CAP: usize = 16;
-    pub(crate) const TO_UPSTREAM_CAP: usize = 2;
+    pub(crate) const TO_UPSTREAM_CAP: usize = 1;
 
     /// One `run_proxy_pipe` task, with the upstream
     /// end of the stream and both channel ends handed back.
@@ -421,7 +422,7 @@ mod tests {
 
     async fn expect_query(pipe: &mut Pipe, query: &[u8]) {
         pipe.client
-            .send(ClientMsg::Query(query.to_vec()))
+            .send(ClientMsg::Query(query.to_vec().into()))
             .await
             .unwrap();
         let mut seen = vec![0u8; query.len()];
@@ -521,7 +522,7 @@ mod tests {
         ] {
             let pipe = spawn_pipe_until(1, deadline);
             pipe.client
-                .send(ClientMsg::Query(query.clone()))
+                .send(ClientMsg::Query(query.clone().into()))
                 .await
                 .unwrap();
 
@@ -551,7 +552,7 @@ mod tests {
         // Payload far larger than the duplex, so write_all cannot complete.
         let pipe = spawn_pipe_until(1, Instant::now() + TEST_REPLY_WINDOW);
         pipe.client
-            .send(ClientMsg::Query(frame(&vec![0u8; PROXY_CHUNK])))
+            .send(ClientMsg::Query(frame(&vec![0u8; PROXY_CHUNK]).into()))
             .await
             .unwrap();
 
@@ -589,11 +590,11 @@ mod tests {
         let second = frame(b"two");
 
         pipe.client
-            .send(ClientMsg::Query(first.clone()))
+            .send(ClientMsg::Query(first.clone().into()))
             .await
             .unwrap();
         pipe.client
-            .send(ClientMsg::Query(second.clone()))
+            .send(ClientMsg::Query(second.clone().into()))
             .await
             .unwrap();
 
@@ -627,7 +628,7 @@ mod tests {
         drop(pipe.upstream);
         tokio::time::sleep(SETTLE).await;
         pipe.client
-            .send(ClientMsg::Query(query.clone()))
+            .send(ClientMsg::Query(query.clone().into()))
             .await
             .unwrap();
 
@@ -705,7 +706,7 @@ mod tests {
         let (to_proxy, _events) = spawn_proxy(vec![hangup, live]);
 
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .unwrap();
 
@@ -729,14 +730,14 @@ mod tests {
         let (to_proxy, mut events) = spawn_proxy(vec![addr]);
 
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .unwrap();
         let (_, _, first) = recv_event(&mut events).await;
         assert_eq!(response_bytes(first), REPLY);
 
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .unwrap();
         let (_, _, second) = recv_event(&mut events).await;
@@ -758,14 +759,14 @@ mod tests {
         let (to_proxy, mut events) = spawn_proxy(vec![addr]);
 
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .unwrap();
         let (_, _, first) = recv_event(&mut events).await;
         assert_eq!(response_bytes(first), REPLY);
 
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .unwrap();
         let (_, _, second) = recv_event(&mut events).await;
@@ -787,14 +788,14 @@ mod tests {
         let (to_proxy, mut events) = spawn_proxy(vec![silent_addr, good]);
 
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .unwrap();
         let (_, _, first) = recv_event(&mut events).await;
         assert_eq!(response_bytes(first), REPLY);
 
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .unwrap();
         let (_, _, second) = recv_event(&mut events).await;
@@ -834,7 +835,7 @@ mod tests {
         let (to_proxy, mut events) = spawn_proxy_on(upstreams.clone());
 
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .unwrap();
         let (_, _, first) = recv_event(&mut events).await;
@@ -843,7 +844,7 @@ mod tests {
         upstreams.lock().await.set(vec![added]);
 
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .unwrap();
         let (_, _, second) = recv_event(&mut events).await;
@@ -867,7 +868,7 @@ mod tests {
         let (to_proxy, _events) = spawn_proxy(vec![silent, live]);
 
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .unwrap();
         to_proxy.send(ClientMsg::Eof).await.unwrap();
@@ -893,7 +894,7 @@ mod tests {
         let (to_proxy, mut events) = spawn_proxy(vec![rude, live]);
 
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .unwrap();
 
@@ -927,7 +928,7 @@ mod tests {
         let (to_proxy, mut events) = spawn_proxy(vec![rude, live]);
 
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .unwrap();
         let (_, _, first) = recv_event(&mut events).await;
@@ -935,7 +936,7 @@ mod tests {
 
         tokio::time::sleep(SETTLE * 3).await;
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .expect("the client connection must have outlived the rude upstream");
 
@@ -961,7 +962,7 @@ mod tests {
 
         tokio::time::sleep(TEST_UPSTREAM_TIMEOUT + SETTLE).await;
         to_proxy
-            .send(ClientMsg::Query(QUERY.to_vec()))
+            .send(ClientMsg::Query(QUERY.to_vec().into()))
             .await
             .unwrap();
 

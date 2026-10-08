@@ -220,7 +220,7 @@ pub(crate) async fn recv_event(
 
 pub(crate) fn response_bytes(event: ProxyEvent) -> Vec<u8> {
     match event {
-        ProxyEvent::Response(bytes) => bytes,
+        ProxyEvent::Response(bytes) => bytes.to_vec(),
         other => panic!("expected Response, got {:?}", other),
     }
 }
