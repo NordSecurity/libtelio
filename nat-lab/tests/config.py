@@ -260,6 +260,10 @@ LIBTELIO_BINARY_PATH_VM_MAC = "/var/root/workspace/binaries/"
 UNIFFI_PATH_WINDOWS_VM = "C:/workspace/uniffi/".replace("/", "\\")
 UNIFFI_PATH_VM_MAC = "/var/root/workspace/uniffi/"
 
+# Coverage profile written by libtelio_remote in nat-lab client containers
+# %4m: LLVM merges all processes' counters into at most 4 files
+COVERAGE_PROFILE_FILE = "/libtelio/nat-lab/coverage/libtelio-%4m.profraw"
+
 # Android emulator: the libtelio runtime (bionic libtelio.so + python bindings +
 # Pyro5 remote) runs inside Termux, whose home is app-private. Binaries are staged
 # via adb push to /data/local/tmp, then copied into the Termux work dir.
