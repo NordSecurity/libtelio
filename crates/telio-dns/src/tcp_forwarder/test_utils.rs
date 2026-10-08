@@ -14,6 +14,7 @@ pub(crate) const TEST_WAIT: Duration = Duration::from_secs(5);
 pub(crate) const AFTER_DEADLINE: Duration = Duration::from_millis(500);
 pub(crate) const TEST_REPLY_WINDOW: Duration = Duration::from_millis(100);
 pub(crate) const TEST_UPSTREAM_TIMEOUT: Duration = Duration::from_millis(200);
+pub(crate) const TEST_CLIENT_IDLE_TIMEOUT: Duration = Duration::from_millis(300);
 pub(crate) const NO_DEADLINE: Duration = Duration::from_secs(3600);
 pub(crate) const LAPSED_AGO: Duration = Duration::from_secs(5);
 pub(crate) const SETTLE: Duration = Duration::from_millis(50);
