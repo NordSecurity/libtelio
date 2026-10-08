@@ -98,6 +98,9 @@ pub enum Error {
 
     #[error("setting ip address for the adapter failed.")]
     SettingIpFailed,
+
+    #[error("Cannot setup meshnet with the post-quantum")]
+    MeshnetWithPostQuantum,
 }
 
 pub struct Cli {
@@ -208,7 +211,7 @@ enum DevCmd {
         /// IP:PORT of Endpoint. Must be specified for a regular VPN server. Not needed for a peer.
         endpoint: Option<SocketAddr>,
         allowed_ips: Vec<IpNet>,
-        /// Turns on the post-quantum tunnel
+        /// Turns on the post-quantum tunnel. Not supported for meshnet peer.
         #[clap(long = "pq")]
         postquantum: bool,
     },
@@ -474,9 +477,14 @@ impl Cli {
                 allowed_ips,
                 postquantum,
             } => {
+                if postquantum && endpoint.is_none() {
+                    cli_res!(res; (e Error::MeshnetWithPostQuantum));
+                }
+
                 if !self.telio.is_running() {
                     cli_res!(res; (e Error::NotStarted));
                 }
+
                 let allowed_ips_opt = if allowed_ips.is_empty() {
                     None
                 } else {
@@ -844,5 +852,43 @@ impl Cli {
             cli_res!(res; (i "stopped."));
         }
         res
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+
+    fn make_cli() -> Cli {
+        let derp_server = Arc::new(Mutex::new(None));
+        Cli::new(Features::default(), None, derp_server)
+            .expect("Cli::new should succeed with default features")
+    }
+
+    #[test]
+    fn reject_misconfiguration_meshnet_with_postquantum() {
+        let mut cli = make_cli();
+
+        // All-zero WireGuard public key (32 bytes → base64).
+        let pubkey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        let responses = cli.exec(&format!("dev con {} --pq", pubkey));
+
+        assert!(
+            !responses.is_empty(),
+            "expected at least one response from exec"
+        );
+
+        match &responses[0] {
+            Resp::Error(e) => match e.as_ref() {
+                Error::MeshnetWithPostQuantum => {}
+                other => panic!("expected Error::MeshnetWithPostQuantum, got {:?}", other),
+            },
+            other => panic!(
+                "expected Resp::Error(MeshnetWithPostQuantum), got {:?}",
+                other
+            ),
+        }
     }
 }
