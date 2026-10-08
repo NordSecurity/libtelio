@@ -1,11 +1,12 @@
 use crate::packet_decoder::{find_nord_query, parse_dns_query_packet};
+use bytes::BytesMut;
 
 pub(crate) const DNS_TCP_LEN_PREFIX: usize = 2;
 
 /// Incremental frame reassembler.
 #[derive(Default)]
 pub(crate) struct MessageReader {
-    buf: Vec<u8>,
+    buf: BytesMut,
 }
 
 impl MessageReader {
@@ -23,12 +24,17 @@ impl MessageReader {
         if self.buf.len() < frame_len {
             return None;
         }
-        Some(self.buf.drain(..frame_len).collect())
+        Some(self.buf.split_to(frame_len).to_vec())
     }
 
     /// Len of bytes currently buffered.
     pub(crate) fn partial_len(&self) -> usize {
         self.buf.len()
+    }
+
+    /// Clear the buffered bytes.
+    pub(crate) fn clear(&mut self) {
+        self.buf.clear();
     }
 }
 
