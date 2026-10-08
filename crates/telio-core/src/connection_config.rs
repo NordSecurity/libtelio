@@ -29,6 +29,7 @@ impl<S> ApplySome for S {}
 ///
 /// Produced by [`VpnConnectionConfigBuilder`] or [`MeshnetConnectionConfigBuilder`].
 /// Pass to `Telio::connect_to_exit_node_with_config`.
+#[derive(Clone)]
 pub struct ConnectionConfig {
     /// Optional stable identifier for the exit node.
     /// If `None`, a random UUID is generated at connect time.
