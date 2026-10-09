@@ -7,7 +7,6 @@ import uuid
 from collections import Counter
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
-from tests import config
 from tests.libtelio_client.analytics import ClientAnalytics
 from tests.libtelio_client.events import ClientEvents
 from tests.libtelio_client.log import ClientLog
@@ -27,7 +26,7 @@ from tests.utils.bindings import (
     default_features,
 )
 from tests.utils.connection import Connection, TargetOS
-from tests.utils.connection_util import get_uniffi_path
+from tests.utils.connection_util import get_coverage_profile_path, get_uniffi_path
 from tests.utils.logger import log
 from tests.utils.moose import MOOSE_DB_TIMEOUT_MS
 from tests.utils.perf_profiling import PERF_CMD, PerfProfiler
@@ -175,14 +174,13 @@ class Client:
             container_ip,
             container_port,
         ]
-        if (
-            os.environ.get("NATLAB_COVERAGE")
-            and self._connection.target_os == TargetOS.Linux
-        ):
-            base_cmd = [
-                "env",
-                f"LLVM_PROFILE_FILE={config.COVERAGE_PROFILE_FILE}",
-            ] + base_cmd
+        profile_path = (
+            get_coverage_profile_path(self._connection)
+            if os.environ.get("NATLAB_COVERAGE")
+            else None
+        )
+        if profile_path:
+            base_cmd += ["--coverage-profile", profile_path]
         if enable_perf:
             cmd = PERF_CMD + base_cmd
         else:

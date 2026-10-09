@@ -73,6 +73,19 @@ def get_uniffi_path(connection: Connection) -> str:
     assert False, f"target_os not supported '{target_os}'"
 
 
+def get_coverage_profile_path(connection: Connection) -> Optional[str]:
+    """LLVM profile path for libtelio_remote on this node, None where coverage isn't collected."""
+    if connection.tag == ConnectionTag.VM_ANDROID_1:
+        return None
+    if connection.target_os == TargetOS.Linux:
+        return config.COVERAGE_PROFILE_FILE_LINUX
+    if connection.target_os == TargetOS.Mac:
+        return f"{config.COVERAGE_PROFILE_DIR_VM_MAC}/libtelio-%4m.profraw"
+    if connection.target_os == TargetOS.Windows:
+        return f"{config.COVERAGE_PROFILE_DIR_WINDOWS_VM}\\libtelio-%4m.profraw"
+    return None
+
+
 @asynccontextmanager
 async def new_connection_raw(
     tag: ConnectionTag,

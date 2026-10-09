@@ -260,9 +260,11 @@ LIBTELIO_BINARY_PATH_VM_MAC = "/var/root/workspace/binaries/"
 UNIFFI_PATH_WINDOWS_VM = "C:/workspace/uniffi/".replace("/", "\\")
 UNIFFI_PATH_VM_MAC = "/var/root/workspace/uniffi/"
 
-# Coverage profile written by libtelio_remote in nat-lab client containers
-# %4m: LLVM merges all processes' counters into at most 4 files
-COVERAGE_PROFILE_FILE = "/libtelio/nat-lab/coverage/libtelio-%4m.profraw"
+# Coverage profiles (NATLAB_COVERAGE). %4m: LLVM merges all processes' counters into at most 4 files.
+# Linux clients write through the /libtelio bind mount into nat-lab/coverage/linux/ on the host.
+COVERAGE_PROFILE_FILE_LINUX = "/libtelio/nat-lab/coverage/linux/libtelio-%4m.profraw"
+COVERAGE_PROFILE_DIR_VM_MAC = "/var/root/workspace/coverage"
+COVERAGE_PROFILE_DIR_WINDOWS_VM = "C:\\workspace\\coverage"
 
 # Android emulator: the libtelio runtime (bionic libtelio.so + python bindings +
 # Pyro5 remote) runs inside Termux, whose home is app-private. Binaries are staged

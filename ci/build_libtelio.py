@@ -548,13 +548,16 @@ def exec_bindings(args):
 
 def enable_coverage(target_os: str, arch: str) -> None:
     """Instrument the build for LLVM source-based coverage (nat-lab e2e coverage)."""
-    if target_os != "linux":
-        raise ValueError(f"--coverage is supported only for linux, got {target_os}")
-    flags, mode = LIBTELIO_CONFIG["linux"]["archs"][arch]["env"]["RUSTFLAGS"]
-    LIBTELIO_CONFIG["linux"]["archs"][arch]["env"]["RUSTFLAGS"] = (
-        flags + " -C instrument-coverage",
-        mode,
+    if target_os not in ("linux", "windows", "macos"):
+        raise ValueError(f"--coverage is not supported for {target_os}")
+    env = (
+        LIBTELIO_CONFIG[target_os]
+        .setdefault("archs", {})
+        .setdefault(arch, {})
+        .setdefault("env", {})
     )
+    flags, mode = env.get("RUSTFLAGS", ("", "set"))
+    env["RUSTFLAGS"] = (flags + " -C instrument-coverage", mode)
 
 
 def exec_build(args):
