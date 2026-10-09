@@ -440,15 +440,9 @@ impl ConnectivityDataAggregator {
         }
 
         data_guard.relay_segments.extend(new_relay_segments);
-        data_guard
-            .relay_segments
-            .sort_by(|a, b| a.start.cmp(&b.start));
-        data_guard
-            .peer_segments
-            .extend(new_peer_segments.into_iter());
-        data_guard
-            .peer_segments
-            .sort_by(|a, b| a.start.cmp(&b.start));
+        data_guard.relay_segments.sort_by_key(|a| a.start);
+        data_guard.peer_segments.extend(new_peer_segments);
+        data_guard.peer_segments.sort_by_key(|a| a.start);
     }
 
     /// Collects unacknowledged segments

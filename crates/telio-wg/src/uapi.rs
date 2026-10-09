@@ -206,7 +206,7 @@ impl From<set::Device> for Interface {
         Self {
             private_key: item.private_key.map(|pk| SecretKey::new(*pk)),
             listen_port: item.listen_port,
-            fwmark: item.fwmark.map_or(0, |x| x),
+            fwmark: item.fwmark.unwrap_or(0),
             peers: item
                 .peers
                 .into_iter()
@@ -416,13 +416,7 @@ impl Peer {
     /// Convert uapi last_handshake_time into Duration since handshake
     pub fn calculate_time_since_last_handshake(lht: Option<Duration>) -> Option<Duration> {
         // 0 means no handshake
-        let lht = lht.and_then(|handshake_time| {
-            if handshake_time == Duration::from_secs(0) {
-                None
-            } else {
-                Some(handshake_time)
-            }
-        });
+        let lht = lht.filter(|&handshake_time| handshake_time != Duration::from_secs(0));
 
         lht.and_then(|handshake_time| match Self::get_unix_time() {
             Ok(now) => now.checked_sub(handshake_time),

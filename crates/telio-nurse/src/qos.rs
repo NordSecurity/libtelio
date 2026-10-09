@@ -433,7 +433,7 @@ impl Analytics {
         self.ping_channel_rx = ping_channel_rx;
         self.ping_channel_tx = ping_channel_tx.downgrade();
 
-        for (_, node) in self.nodes.iter() {
+        for node in self.nodes.values() {
             if node.peer_state != PeerState::Connected {
                 telio_log_debug!(
                     "{:?} is in {:?} state, skipping analytics ping.",

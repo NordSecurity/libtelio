@@ -176,7 +176,7 @@ pub(crate) mod checksum {
 
     struct AssertEven<const N: usize>;
     impl<const N: usize> AssertEven<N> {
-        const OK: () = assert!(N % 2 == 0, "N must be even");
+        const OK: () = assert!(N.is_multiple_of(2), "N must be even");
     }
 
     #[allow(clippy::indexing_slicing, clippy::unwrap_used)]
