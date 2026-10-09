@@ -20,13 +20,12 @@ services:
       - base
 
   # Reusable image for clients that obtain their address via DHCP (see dhcp-client.Dockerfile).
+  # Built FROM the local nat-lab:base image, so natlab.py builds `base` first.
   dhcp-client-image:
     image: nat-lab:dhcp-client
     build:
       context: .
       dockerfile: dhcp-client.Dockerfile
-      additional_contexts:
-        - "nat-lab:base=service:base"
     profiles:
       - base
 
