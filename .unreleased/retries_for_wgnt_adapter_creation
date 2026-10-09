@@ -1,1 +1,0 @@
-wireguard-nt adapter creation has retries, with exp. backoff and GUID mixing
