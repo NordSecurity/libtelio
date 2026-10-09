@@ -367,7 +367,7 @@ mod tests {
     use tokio::task::JoinHandle;
 
     pub(crate) const EVENTS_CAP: usize = 16;
-    pub(crate) const TO_UPSTREAM_CAP: usize = 2;
+    pub(crate) const TO_UPSTREAM_CAP: usize = 1;
 
     /// One `run_proxy_pipe` task, with the upstream
     /// end of the stream and both channel ends handed back.
