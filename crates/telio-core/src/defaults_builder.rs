@@ -114,6 +114,11 @@ impl FeaturesDefaultsBuilder {
         self
     }
 
+    pub fn enable_wg_nt_guid_rotation(self: Arc<Self>) -> Arc<Self> {
+        self.config.lock().wireguard.enable_wg_nt_guid_rotation = true;
+        self
+    }
+
     pub fn set_skt_buffer_size(self: Arc<Self>, skt_buffer_size: u32) -> Arc<Self> {
         self.config.lock().wireguard.skt_buffer_size = Some(skt_buffer_size);
         self

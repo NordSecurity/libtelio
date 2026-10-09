@@ -49,6 +49,7 @@ def long_persistent_keepalive_periods() -> FeatureWireguard:
             wireguard_polling_period_after_state_change=50,
         ),
         enable_dynamic_wg_nt_control=False,
+        enable_wg_nt_guid_rotation=False,
         skt_buffer_size=None,
         inter_thread_channel_size=None,
         max_inter_thread_batched_pkts=None,

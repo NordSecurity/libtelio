@@ -429,6 +429,9 @@ class Client:
         assert self._libtelio_proxy
         return self._libtelio_proxy
 
+    def is_proxy_ready(self) -> bool:
+        return self._libtelio_proxy is not None
+
     def get_events(self) -> Events:
         assert self._events
         return self._events

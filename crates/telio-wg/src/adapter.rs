@@ -299,8 +299,12 @@ pub(crate) async fn start(cfg: Config) -> Result<Box<dyn Adapter>, Error> {
 
             #[cfg(windows)]
             Ok(Box::new(
-                windows_native_wg::WindowsNativeWg::start(&name, cfg.enable_dynamic_wg_nt_control)
-                    .await?,
+                windows_native_wg::WindowsNativeWg::start(
+                    &name,
+                    cfg.enable_dynamic_wg_nt_control,
+                    cfg.enable_wg_nt_guid_rotation,
+                )
+                .await?,
             ))
         }
         AdapterType::Custom(adapter) => adapter.clone_box().ok_or(Error::UnsupportedAdapter),
