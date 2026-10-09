@@ -2333,6 +2333,7 @@ impl Runtime {
                 config.endpoint.ok_or(Error::EndpointNotProvided)?,
                 self.requested_state.device_config.private_key.clone(),
                 config.public_key,
+                config.pq_upgrader_ip,
             )
             .await;
 

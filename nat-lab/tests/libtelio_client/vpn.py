@@ -1,4 +1,5 @@
 import asyncio
+from tests.uniffi.telio_bindings import ConnectionConfig, VpnConnectionConfigBuilder
 from tests.utils import asyncio_util
 from tests.utils.bindings import LinkState, NodeState, PathType
 from typing import Optional, TYPE_CHECKING
@@ -20,6 +21,26 @@ class ClientVpn:
         pq: bool = False,
         link_state_enabled: bool = False,
     ) -> None:
+        builder = VpnConnectionConfigBuilder(public_key, f"{ip}:{port}")
+
+        if pq:
+            builder = builder.with_identifier("natlabpq").force_pq()
+        else:
+            builder = builder.with_identifier("natlab")
+
+        await self.connect_with_config(
+            builder.build(),
+            timeout=timeout,
+            link_state_enabled=link_state_enabled,
+        )
+
+    async def connect_with_config(
+        self,
+        config: ConnectionConfig,
+        timeout: Optional[float] = None,
+        link_state_enabled: bool = False,
+    ) -> None:
+        public_key = str(config.public_key)
         await self._client.configure_interface()
         await self._client.get_router().create_vpn_route()
         async with asyncio_util.run_async_context(
@@ -34,19 +55,7 @@ class ClientVpn:
             )
         ) as event:
             self._client.get_runtime().allowed_pub_keys.add(public_key)
-
-            if pq:
-                await self._client.get_proxy().connect_to_exit_node_pq(
-                    public_key=public_key,
-                    allowed_ips=None,
-                    endpoint=f"{ip}:{port}",
-                )
-            else:
-                await self._client.get_proxy().connect_to_exit_node(
-                    public_key=public_key,
-                    allowed_ips=None,
-                    endpoint=f"{ip}:{port}",
-                )
+            await self._client.get_proxy().connect_to_exit_node_with_config(config)
             await event
 
     async def disconnect(

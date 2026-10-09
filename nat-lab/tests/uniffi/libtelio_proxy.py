@@ -168,6 +168,10 @@ class LibtelioProxy:
         )
 
     @move_to_async_thread
+    def connect_to_exit_node_with_config(self, config: libtelio.ConnectionConfig):
+        self._handle_remote_error(lambda r: r.connect_to_exit_node_with_config(config))
+
+    @move_to_async_thread
     def disconnect_from_exit_nodes(self):
         self._handle_remote_error(lambda r: r.disconnect_from_exit_nodes())
 

@@ -237,6 +237,10 @@ class LibtelioWrapper:
         )
 
     @serialize_error
+    def connect_to_exit_node_with_config(self, config: libtelio.ConnectionConfig):
+        self._libtelio.connect_to_exit_node_with_config(config)
+
+    @serialize_error
     def disconnect_from_exit_nodes(self):
         self._libtelio.disconnect_from_exit_nodes()
 
