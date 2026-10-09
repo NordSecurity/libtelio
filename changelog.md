@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v8.0.1
+### ****
+---
+* wireguard-nt adapter creation has retries, with exp. backoff and GUID mixing
+
+<br>
+
 ### v8.0.0
 ### ****
 ---
