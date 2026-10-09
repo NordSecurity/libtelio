@@ -3,6 +3,7 @@
 use crate::tcp_forwarder::frame::{is_nord_frame, MessageReader, DNS_TCP_LEN_PREFIX};
 use crate::tcp_forwarder::proxy::{run_proxy, ClientMsg, ProxyEvent};
 use crate::tcp_forwarder::syn_backlog::{admit_syns, SynBacklog};
+use crate::tcp_forwarder::Timeouts;
 use crate::upstream::UpstreamList;
 use bytes::{Buf, BytesMut};
 use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
@@ -198,6 +199,14 @@ struct ConnState {
     client_eof_sent: bool,
     /// Generation this connection was created.
     generation: u64,
+    /// Last client message started, completed or upstream response read.
+    last_activity: Instant,
+    /// Bytes in socket send_queue or `pending_to_client`.
+    unsent: usize,
+    /// Closing an idle connection.
+    idle_closing: bool,
+    /// Deadline for the socket to reach `Closed`.
+    close_deadline: Option<Instant>,
 }
 
 impl ConnState {
@@ -211,7 +220,24 @@ impl ConnState {
             responses_done: false,
             client_eof_sent: false,
             generation,
+            last_activity: Instant::now(),
+            unsent: 0,
+            idle_closing: false,
+            close_deadline: None,
         }
+    }
+
+    /// Waiting on the client, either to finish its message or to send a new one.
+    fn awaits_client(&self) -> bool {
+        self.unsent > 0 || (self.held.is_none() && !self.idle_closing && !self.client_eof_sent)
+    }
+
+    /// Earliest instant at which `service_sockets` must look at this connection.
+    fn deadline(&self, client_idle: Duration) -> Option<Instant> {
+        let progress = self
+            .awaits_client()
+            .then(|| self.last_activity + client_idle);
+        earliest(progress, self.close_deadline)
     }
 
     fn abort(&mut self) {
@@ -293,6 +319,7 @@ fn handle_proxy_event(
                 sockets.get_mut::<tcp::Socket>(handle).abort();
             } else {
                 connection.pending_to_client.extend_from_slice(&bytes);
+                connection.last_activity = Instant::now();
             }
         }
         ProxyEvent::Eof => connection.responses_done = true,
@@ -323,14 +350,21 @@ async fn process_client_to_upstream(
             if !socket.can_recv() {
                 return true;
             }
+            let at_boundary = connection.from_client.partial_len() == 0;
             match socket.recv(|buf| {
                 connection.from_client.push(buf);
                 (buf.len(), buf.len())
             }) {
-                Ok(n) if n > 0 => continue,
+                Ok(n) if n > 0 => {
+                    if at_boundary {
+                        connection.last_activity = Instant::now();
+                    }
+                    continue;
+                }
                 _ => return true,
             }
         };
+        connection.last_activity = Instant::now();
 
         if is_nord_frame(&frame) {
             telio_log_debug!("TCP DNS query for .nord, aborting");
@@ -425,7 +459,7 @@ async fn service_sockets(
     events_tx: &mpsc::Sender<(SocketHandle, u64, ProxyEvent)>,
     reserve_waiters: &mut ReserveWaiters,
     upstreams: &Arc<Mutex<UpstreamList>>,
-    upstream_reply_timeout: Duration,
+    timeouts: Timeouts,
     next_generation: &mut u64,
 ) -> bool {
     let mut aborted_this_pass = false;
@@ -454,16 +488,17 @@ async fn service_sockets(
         }
 
         if let Some(connection) = connections.get_mut(&handle) {
-            if !process_client_to_upstream(
-                handle,
-                socket,
-                connection,
-                events_tx,
-                reserve_waiters,
-                upstreams,
-                upstream_reply_timeout,
-            )
-            .await
+            if !connection.idle_closing
+                && !process_client_to_upstream(
+                    handle,
+                    socket,
+                    connection,
+                    events_tx,
+                    reserve_waiters,
+                    upstreams,
+                    timeouts.upstream_reply,
+                )
+                .await
             {
                 // Skip the State::Closed -> listen() below
                 // re-listening now would reset the socket and discard the queued RST
@@ -481,14 +516,54 @@ async fn service_sockets(
                 }
             }
 
+            // Any segment from the client resets smoltcp's own timeout
+            // a client that keeps ACKing without acknowledging its responses must be caught here.
+            let now = Instant::now();
+            let unsent = connection.pending_to_client.len() + socket.send_queue();
+            if unsent < connection.unsent {
+                connection.last_activity = now;
+            }
+            connection.unsent = unsent;
+
+            // Likewise a client that started a message and stopped, or only keeps the
+            // connection alive.
+            if connection.awaits_client() && now >= connection.last_activity + timeouts.client_idle
+            {
+                if unsent == 0 && connection.from_client.partial_len() == 0 {
+                    telio_log_debug!("TCP DNS connection idle ({:?}), closing", handle);
+                    connection.idle_closing = true;
+                } else {
+                    telio_log_debug!("Client stalled ({:?}), aborting", handle);
+                    socket.abort();
+                    connection.abort();
+                    aborted_this_pass = true;
+                    continue;
+                }
+            }
+
             // Client FIN, fully drained.
-            if !socket.may_recv() && !socket.can_recv() {
+            if connection.idle_closing || (!socket.may_recv() && !socket.can_recv()) {
                 forward_client_eof(handle, connection, reserve_waiters);
             }
 
             // Upstream finished.
             if connection.responses_done && connection.pending_to_client.is_empty() {
                 socket.close();
+                connection
+                    .close_deadline
+                    .get_or_insert(now + timeouts.client_idle);
+            }
+
+            if connection
+                .close_deadline
+                .is_some_and(|deadline| now >= deadline)
+                && socket.state() != tcp::State::Closed
+            {
+                telio_log_debug!("Client did not complete close ({:?}), aborting", handle);
+                socket.abort();
+                connection.abort();
+                aborted_this_pass = true;
+                continue;
             }
         }
 
@@ -506,7 +581,7 @@ pub(crate) async fn engine_loop(
     egress: mpsc::Sender<Vec<u8>>,
     upstreams: Arc<Mutex<UpstreamList>>,
     tcp_pool_size: usize,
-    upstream_reply_timeout: Duration,
+    timeouts: Timeouts,
 ) {
     let clock = SmolClock::new();
     let mut device = VirtualDevice::new();
@@ -527,9 +602,14 @@ pub(crate) async fn engine_loop(
     );
 
     loop {
-        let deadline = iface
+        let poll_deadline = iface
             .poll_delay(clock.now(), &sockets)
             .map(|d| Instant::now() + Duration::from_micros(d.total_micros()));
+        let conn_deadline = conns
+            .values()
+            .filter_map(|c| c.deadline(timeouts.client_idle))
+            .min();
+        let deadline = earliest(poll_deadline, conn_deadline);
 
         tokio::select! {
             pkt = ingress.recv() => match pkt {
@@ -577,7 +657,7 @@ pub(crate) async fn engine_loop(
             &events_tx,
             &mut reserve_waiters,
             &upstreams,
-            upstream_reply_timeout,
+            timeouts,
             &mut next_generation,
         )
         .await;
@@ -594,7 +674,7 @@ pub(crate) async fn engine_loop(
                 &events_tx,
                 &mut reserve_waiters,
                 &upstreams,
-                upstream_reply_timeout,
+                timeouts,
                 &mut next_generation,
             )
             .await;
@@ -612,6 +692,14 @@ pub(crate) async fn engine_loop(
                 return;
             }
         }
+    }
+}
+
+/// Earliest of two instants
+pub(crate) fn earliest(a: Option<Instant>, b: Option<Instant>) -> Option<Instant> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
     }
 }
 
@@ -710,6 +798,94 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_frame_stuck_in_held_is_not_a_stalled_client() {
+        let (mut sockets, handle, mut conns) = conn_at_generation(0);
+        let conn = conns.get_mut(&handle).unwrap();
+
+        let (to_upstream_tx, _to_upstream_rx) = mpsc::channel(TO_UPSTREAM_CAP);
+        for _ in 0..TO_UPSTREAM_CAP {
+            to_upstream_tx
+                .try_send(ClientMsg::Eof)
+                .expect("channel must accept up to its own capacity");
+        }
+        conn.to_upstream = Some(to_upstream_tx);
+        conn.held = Some(frame(b"stuck"));
+        // A frame in progress, independent of `held`
+        conn.from_client.push(&frame(b"next")[..3]);
+        conn.last_activity = Instant::now() - LAPSED_AGO;
+
+        let (events_tx, _events_rx) = mpsc::channel(EVENTS_CAP);
+        let upstreams = Arc::new(Mutex::new(UpstreamList::default()));
+        let mut reserve_waiters = ReserveWaiters::new();
+        let mut next_generation: u64 = 1;
+
+        service_sockets(
+            &[handle],
+            &mut sockets,
+            &mut conns,
+            &events_tx,
+            &mut reserve_waiters,
+            &upstreams,
+            Timeouts::new(TEST_UPSTREAM_TIMEOUT, TEST_CLIENT_IDLE_TIMEOUT),
+            &mut next_generation,
+        )
+        .await;
+
+        let conn = conns
+            .get(&handle)
+            .expect("a frame stuck in `held` must not get the connection aborted");
+        assert_eq!(
+            conn.held.as_deref(),
+            Some(frame(b"stuck").as_slice()),
+            "the frame must still be waiting for a channel permit"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_completed_frame_restarts_the_progress_timer() {
+        let (mut sockets, handle, mut conns) = conn_at_generation(0);
+        let conn = conns.get_mut(&handle).unwrap();
+
+        let (to_upstream_tx, mut to_upstream_rx) = mpsc::channel(TO_UPSTREAM_CAP);
+        conn.to_upstream = Some(to_upstream_tx);
+        // A pipelining client whose segments do not align with frame boundaries: one whole
+        // message followed by the beginning of the next.
+        conn.from_client.push(&frame(b"done"));
+        conn.from_client.push(&frame(b"next")[..3]);
+        // Last progress long enough ago that the timer has lapsed.
+        conn.last_activity = Instant::now() - LAPSED_AGO;
+
+        let (events_tx, _events_rx) = mpsc::channel(EVENTS_CAP);
+        let upstreams = Arc::new(Mutex::new(UpstreamList::default()));
+        let mut reserve_waiters = ReserveWaiters::new();
+        let mut next_generation: u64 = 1;
+
+        service_sockets(
+            &[handle],
+            &mut sockets,
+            &mut conns,
+            &events_tx,
+            &mut reserve_waiters,
+            &upstreams,
+            Timeouts::new(TEST_UPSTREAM_TIMEOUT, TEST_CLIENT_IDLE_TIMEOUT),
+            &mut next_generation,
+        )
+        .await;
+
+        assert!(
+            matches!(to_upstream_rx.try_recv(), Ok(ClientMsg::Query(q)) if q == frame(b"done")),
+            "the completed frame must be forwarded upstream"
+        );
+        let conn = conns
+            .get(&handle)
+            .expect("a client making progress must not be aborted");
+        assert!(
+            conn.last_activity.elapsed() < TEST_CLIENT_IDLE_TIMEOUT,
+            "the timer must be restarted by the completed frame, not inherited from before it"
+        );
+    }
+
+    #[tokio::test]
     async fn client_eof_does_not_overtake_a_frame_stuck_in_held() {
         let handle = test_handle();
         let mut reserve_waiters = ReserveWaiters::new();
@@ -763,7 +939,7 @@ mod tests {
             &events_tx,
             &mut reserve_waiters,
             &upstreams,
-            TEST_UPSTREAM_TIMEOUT,
+            Timeouts::new(TEST_UPSTREAM_TIMEOUT, TEST_CLIENT_IDLE_TIMEOUT),
             &mut next_generation,
         )
         .await;
