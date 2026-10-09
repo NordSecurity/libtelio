@@ -745,13 +745,14 @@ impl Telio {
     ///   or [`connection_config::MeshnetConnectionConfigBuilder`].
     pub fn connect_to_exit_node_with_config(&self, config: ConnectionConfig) -> FfiResult<()> {
         telio_log_info!(
-            "Telio::connect_to_exit_node_with_config entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IPs: {:?}. Endpoint: {:?}. PostQuantum: {:?}.",
+            "Telio::connect_to_exit_node_with_config entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IPs: {:?}. Endpoint: {:?}. PostQuantum: {:?}. Custom PQ upgrader IP: {:?}.",
             self.id,
             config.identifier,
             config.public_key,
             config.allowed_ips,
             config.endpoint,
             config.post_quantum,
+            config.pq_upgrader_ip,
         );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
