@@ -21,9 +21,6 @@ pub const LIBFW_ICMP_TYPE_TIME_EXCEEDED: u8 = 11;
 pub const LIBFW_ICMP_TYPE_PARAMETER_PROBLEM: u8 = 12;
 pub const LIBFW_ICMP_TYPE_TIMESTAMP: u8 = 13;
 pub const LIBFW_ICMP_TYPE_TIMESTAMP_REPLY: u8 = 14;
-pub const LIBFW_VERDICT_ACCEPT: u8 = 0;
-pub const LIBFW_VERDICT_DROP: u8 = 1;
-pub const LIBFW_VERDICT_REJECT: u8 = 2;
 pub const LIBFW_ACTION_ACCEPT: u8 = 0;
 pub const LIBFW_ACTION_DROP: u8 = 1;
 pub const LIBFW_ACTION_REJECT: u8 = 2;
@@ -80,6 +77,7 @@ pub enum LibfwVerdict {
     LibfwVerdictDrop = 1,
     LibfwVerdictReject = 2,
 }
+#[doc = " Type for firewall instance\n"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct LibfwFirewall {
@@ -192,32 +190,12 @@ pub union LibfwFilterData {
 pub struct LibfwFilter {
     #[doc = " Filter may be inverted, meaning, that it is considered\n a match only if filter does *not* match"]
     pub inverted: bool,
-    #[doc = " Defines a type of filter to match the packets against.\n There are a few possible filter types:\n * LIBFW_FILTER_ASSOCIATED_DATA - matches packets based on their associated data.\n   This Normally means public key for NordLynx\n * LIBFW_FILTER_CONNTRACK_STATE - matches connection tracking table state.\n   This can be either \"new connection\" or \"established connection\"\n * LIBFW_FILTER_[SRC|DST]_NETWORK - matches against either source or destination IP network\n * LIBFW_FILTER_DIRECTION - matches either inbound or outbound packet direction.\n * LIBFW_FILTER_NEXT_LVL_PROTO - matches next level protocol, which can be:\n    - TCP - when `filter` is equal to LIBFW_NEXT_PROTO_TCP\n    - UDP - when `filter` is equal to LIBFW_NEXT_PROTO_UDP\n    - ICMP - when `filter` is equal to LIBFW_NEXT_PROTO_ICMP\n    - ICMPv6 - when filter is equal to LIBFW_NEXT_PROTO_ICMPV6\n * LIBFW_FILTER_TCP_FLAGS - TCP packets with certain flags - data should be a logic sum of\n   the considered TCP flags, the packet matches it when any of its flags and any flag in\n   the provided filter set are the same\n * LIBFW_FILTER_ICMP_TYPE - ICMP packets with certain type:\n    - EchoReply when `filter` is equal to LIBFW_ICMP_TYPE_ECHO_REPLY\n    - DestinationUnreachable when `filter` is equal to LIBFW_ICMP_TYPE_DESTINATION_UNREACHABLE\n    - RedirectMessage when `filter` is equal to LIBFW_ICMP_TYPE_REDIRECT_MESSAGE\n    - EchoRequest when `filter` is equal to LIBFW_ICMP_TYPE_ECHO_REQUEST\n    - ReouterAdvertisement when `filter` is equal to LIBFW_ICMP_TYPE_ROUTER_ADVERTISEMENT\n    - RouterSolicitation when `filter` is equal to LIBFW_ICMP_TYPE_ROUTER_SOLICITATION\n    - TimeExceeded when `filter` is equal to LIBFW_ICMP_TYPE_TIME_EXCEEDED\n    - ParameterProblem when `filter` is equal to LIBFW_ICMP_TYPE_PARAMETER_PROBLEM\n    - Timestamp when `filter` is equal to LIBFW_ICMP_TYPE_TIMESTAMP\n    - TimestampReply when `filter` is equal to LIBFW_ICMP_TYPE_TIMESTAMP_REPLY"]
+    #[doc = " Defines a type of filter to match the packets against.\n There are a few possible filter types:\n * LIBFW_FILTER_ASSOCIATED_DATA - matches packets based on their associated data.\n   This Normally means public key for NordLynx\n * LIBFW_FILTER_CONNTRACK_STATE - matches connection tracking table state.\n   This can be either \"new connection\" or \"established connection\"\n * LIBFW_FILTER_[SRC|DST]_NETWORK - matches against either source or destination IP network\n * LIBFW_FILTER_DIRECTION - matches either inbound or outbound packet direction.\n * LIBFW_FILTER_NEXT_LVL_PROTO - matches next level protocol, which can be:\n    - TCP - when `filter` is equal to LIBFW_NEXT_PROTO_TCP\n    - UDP - when `filter` is equal to LIBFW_NEXT_PROTO_UDP\n    - ICMP - when `filter` is equal to LIBFW_NEXT_PROTO_ICMP\n    - ICMPv6 - when filter is equal to LIBFW_NEXT_PROTO_ICMPV6\n * LIBFW_FILTER_TCP_FLAGS - TCP packets with certain flags - data should be a logic sum of\n   the considered TCP flags, the packet matches it when any of its flags and any flag in\n   the provided filter set are the same\n * LIBFW_FILTER_ICMP_TYPE - ICMP packets with certain type:\n    - EchoReply when `filter` is equal to LIBFW_ICMP_TYPE_ECHO_REPLY\n    - DestinationUnreachable when `filter` is equal to LIBFW_ICMP_TYPE_DESTINATION_UNREACHABLE\n    - RedirectMessage when `filter` is equal to LIBFW_ICMP_TYPE_REDIRECT_MESSAGE\n    - EchoRequest when `filter` is equal to LIBFW_ICMP_TYPE_ECHO_REQUEST\n    - ReouterAdvertisement when `filter` is equal to LIBFW_ICMP_TYPE_ROUTER_ADVERTISEMENT\n    - RouterSolicitation when `filter` is equal to LIBFW_ICMP_TYPE_ROUTER_SOLICITATION\n    - TimeExceeded when `filter` is equal to LIBFW_ICMP_TYPE_TIME_EXCEEDED\n    - ParameterProblem when `filter` is equal to LIBFW_ICMP_TYPE_PARAMETER_PROBLEM\n    - Timestamp when `filter` is equal to LIBFW_ICMP_TYPE_TIMESTAMP\n    - TimestampReply when `filter` is equal to LIBFW_ICMP_TYPE_TIMESTAMP_REPLY\n * LIBFW_FILTER_DNS_QUERY_DOMAIN - matches DNS query packets whose QNAME belongs to the\n   given domain set"]
     pub filter_type: u8,
     #[doc = " Contains corresponding filter data"]
     pub filter: LibfwFilterData,
 }
-#[doc = " A definition of firewall rule it consists of filters which determine whether rule\n applies to packet being processed and action, which determins what to do with the packet"]
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct LibfwRule {
-    #[doc = " List of filters all of which match in order to consider rule's action"]
-    pub filters: *const LibfwFilter,
-    #[doc = " Length of the filter list"]
-    pub filter_count: usize,
-    #[doc = " Defines an action to be taken when filter matches packet. Generally either accept\n and stop processing rule chain or drop and stop processing rule chain.\n\n Should have one of the LIBFW_VERDICT_* values:\n  - LIBFW_VERDICT_ACCEPT - packet matching the rule will be accepted\n  - LIBFW_VERDICT_DROP - packet matching the rule will be dropped\n  - LIBFW_VERDICT_REJECT - packet matching the rule should be dropped and reject\n    packet will be sent to the packet source"]
-    pub action: u8,
-}
-#[doc = " A chain of rules.\n\n Rules are processed in order specified in the chain.\n If _some_ rule in the chain matches and a verdict is\n determined - the chain processing terminated."]
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct LibfwChain {
-    #[doc = " Chain size"]
-    pub rule_count: usize,
-    #[doc = " List of the rules"]
-    pub rules: *const LibfwRule,
-}
-#[doc = " V2 rule shape with action data: extends `LibfwRule` to carry an\n optional pointer to action-specific data.\n"]
+#[doc = " A definition of firewall rule it consists of filters which determine whether rule\n applies to packet being processed and action, which determines what to do with the\n packet, together with optional action-specific data.\n"]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct LibfwRuleV2 {
@@ -230,7 +208,7 @@ pub struct LibfwRuleV2 {
     #[doc = " Action-specific data. NULL for ACCEPT/DROP/REJECT. Points to\n `LibfwDnatTarget` for LIBFW_ACTION_DNAT."]
     pub action_data: *const ::std::os::raw::c_void,
 }
-#[doc = " V2 chain shape carrying `LibfwRuleV2` rules.\n"]
+#[doc = " A chain of rules.\n\n Rules are processed in order specified in the chain.\n If _some_ rule in the chain matches and a verdict is\n determined - the chain processing terminated."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct LibfwChainV2 {
@@ -239,7 +217,7 @@ pub struct LibfwChainV2 {
     #[doc = " List of the rules"]
     pub rules: *const LibfwRuleV2,
 }
-#[doc = " A callback type to enable libfirewall to\n inject packets into VPN tunnel interface\n\n Normally only called when stale connection\n closing is triggered.\n\n @param data - The same pointer as passed in @ref libfw_init. It is meant to\n              provide facilities for callback implementors to add context\n              information to the callback itself. If integrators of libfirewall\n              does not need context information - `null` may be passed in\n              @ref libfw_init\n @param packet - byte array of IP packet\n @param packet_len - length in bytes of IP packet in @param packet\n @param associated_data - if associated data was passed in inbound\n                          and outbound packet processing function\n                          this field will provide the same associated\n                          data. Inteded to be used as peer identifier\n                          in case of nordlynx\n @param associated_data_len - the length in bytes of associated data\n"]
+#[doc = " A callback type to enable libfirewall to\n inject packets into VPN tunnel interface\n\n Normally only called when stale connection\n closing is triggered.\n\n @param data - The same pointer as passed in @ref libfw_init. It is meant to\n              provide facilities for callback implementors to add context\n              information to the callback itself. If integrators of libfirewall\n              does not need context information - `null` may be passed in\n              @ref libfw_init\n @param packet - byte array of IP packet\n @param packet_len - length in bytes of IP packet in @param packet\n @param associated_data - if associated data was passed in inbound\n                          and outbound packet processing function\n                          this field will provide the same associated\n                          data. Intended to be used as peer identifier\n                          in case of nordlynx\n @param associated_data_len - the length in bytes of associated data\n"]
 pub type LibfwInjectPacketCallback = ::std::option::Option<
     unsafe extern "C" fn(
         data: *mut ::std::os::raw::c_void,
@@ -270,10 +248,6 @@ pub struct Libfirewall {
         collect_stats_cb: LibfwCollectTpLiteStatsCallback,
     ) -> LibfwResult::Type,
     pub libfw_disable_tp_lite_stats_collection: unsafe extern "C" fn(firewall: *mut LibfwFirewall),
-    pub libfw_configure_chain: unsafe extern "C" fn(
-        fw: *mut LibfwFirewall,
-        ffi_chain: *const LibfwChain,
-    ) -> LibfwResult::Type,
     pub libfw_configure_chain_v2: unsafe extern "C" fn(
         fw: *mut LibfwFirewall,
         ffi_chain: *const LibfwChainV2,
@@ -336,7 +310,6 @@ impl Libfirewall {
         let libfw_disable_tp_lite_stats_collection = __library
             .get(b"libfw_disable_tp_lite_stats_collection\0")
             .map(|sym| *sym)?;
-        let libfw_configure_chain = __library.get(b"libfw_configure_chain\0").map(|sym| *sym)?;
         let libfw_configure_chain_v2 = __library
             .get(b"libfw_configure_chain_v2\0")
             .map(|sym| *sym)?;
@@ -356,7 +329,6 @@ impl Libfirewall {
             libfw_init,
             libfw_enable_tp_lite_stats_collection,
             libfw_disable_tp_lite_stats_collection,
-            libfw_configure_chain,
             libfw_configure_chain_v2,
             libfw_trigger_stale_connection_close,
             libfw_process_inbound_packet,
@@ -395,15 +367,7 @@ impl Libfirewall {
     pub unsafe fn libfw_disable_tp_lite_stats_collection(&self, firewall: *mut LibfwFirewall) {
         (self.libfw_disable_tp_lite_stats_collection)(firewall)
     }
-    #[doc = " Configures chain of rules for the firewall to follow\n\n @param fw - pointer returned by @ref libfw_init\n @param chain - chain of the firewall rules\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init` and also dereferences `ffi_chain` pointer\n which should point to a valid LibfwChain struct.\n"]
-    pub unsafe fn libfw_configure_chain(
-        &self,
-        fw: *mut LibfwFirewall,
-        ffi_chain: *const LibfwChain,
-    ) -> LibfwResult::Type {
-        (self.libfw_configure_chain)(fw, ffi_chain)
-    }
-    #[doc = " Same as `libfw_configure_chain` but accepts the V2 chain shape. V2 rules\n carry an `action_data` pointer alongside the action byte, allowing DNAT\n rules to specify a target via `LibfwDnatTarget`.\n\n # Safety\n\n Same as `libfw_configure_chain`."]
+    #[doc = " Configures chain of rules for the firewall to follow\n\n @param fw - pointer returned by @ref libfw_init\n @param chain - chain of the firewall rules\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init` and also dereferences `ffi_chain` pointer\n which should point to a valid LibfwChainV2 struct.\n"]
     pub unsafe fn libfw_configure_chain_v2(
         &self,
         fw: *mut LibfwFirewall,
@@ -411,7 +375,7 @@ impl Libfirewall {
     ) -> LibfwResult::Type {
         (self.libfw_configure_chain_v2)(fw, ffi_chain)
     }
-    #[doc = " A function which triggers stale connection closing\n\n @param fw - pointer returned by @ref libfw_init\n @param associated_data - identifier of peer. Should contain peer's public key\n                          for NordLynx and be Null for other protcols\n @param associated_data_len - size of @param associated_data in bytes\n @param inject_packet_cb_data - a pointer which will be passed in the\n                                inject_packet callback unmodified\n @param inject_inbound_packet_cb - callback which will be used by libfw to inject\n                           packets into virtual tunnel interface\n @param inject_outbound_packet_cb - callback which will be used by libfw to inject\n                          packets back towards VPN server. May be NULL if integrators\n                          accepts that libfirewall will only reject connections from\n                          inbound direction.\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init`."]
+    #[doc = " A function which triggers stale connection closing\n\n @param fw - pointer returned by @ref libfw_init\n @param associated_data - identifier of peer. Should contain peer's public key\n                          for NordLynx and be Null for other protocols\n @param associated_data_len - size of @param associated_data in bytes\n @param inject_packet_cb_data - a pointer which will be passed in the\n                                inject_packet callback unmodified\n @param inject_inbound_packet_cb - callback which will be used by libfw to inject\n                           packets into virtual tunnel interface\n @param inject_outbound_packet_cb - callback which will be used by libfw to inject\n                          packets back towards VPN server. May be NULL if integrators\n                          accepts that libfirewall will only reject connections from\n                          inbound direction.\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init`."]
     pub unsafe fn libfw_trigger_stale_connection_close(
         &self,
         firewall: *mut LibfwFirewall,
@@ -430,7 +394,7 @@ impl Libfirewall {
             _inject_outbound_packet_cb,
         )
     }
-    #[doc = " A function which processes inbound packets (coming from VPN server to device)\n\n @param fw - pointer returned by @ref libfw_init\n @param packet - pointer to byte array comprising of IP packet\n @param packet_len - size of packet in bytes\n @param associated_data - identifier of peer. Should contain peer's public key\n                          for NordLynx and be Null for other protcols\n @param associated_data_len - size of @param associated_data in bytes\n @param inject_packet_cb_data - a pointer which will be passed in the\n                                inject_packet callback unmodified\n @param inject_outbound_packet_cb - callback which will be used by libfw to inject\n                          packets back towards VPN server. May be NULL if integrators\n                          accepts that libfirewall will only reject connections from\n                          inbound direction.\n\n @return - returns LIBFW_VERDICT, integrators should allow packet to go through if\n           and only if function returns LIBFW_VERDICT_ACCEPT\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init` - and also `packet` and `associated_data`\n which must be allocated with valid lengts (`packet_len` and `associated_data_len`,\n respectively)."]
+    #[doc = " A function which processes inbound packets (coming from VPN server to device)\n\n @param fw - pointer returned by @ref libfw_init\n @param packet - pointer to byte array comprising of IP packet\n @param packet_len - size of packet in bytes\n @param associated_data - identifier of peer. Should contain peer's public key\n                          for NordLynx and be Null for other protocols\n @param associated_data_len - size of @param associated_data in bytes\n @param inject_packet_cb_data - a pointer which will be passed in the\n                                inject_packet callback unmodified\n @param inject_outbound_packet_cb - callback which will be used by libfw to inject\n                          packets back towards VPN server. May be NULL if integrators\n                          accepts that libfirewall will only reject connections from\n                          inbound direction.\n\n @return - returns LibfwVerdict, integrators should allow packet to go through if\n           and only if function returns LibfwVerdict::LibfwVerdictAccept\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init` - and also `packet` and `associated_data`\n which must be allocated with valid lengths (`packet_len` and `associated_data_len`,\n respectively)."]
     pub unsafe fn libfw_process_inbound_packet(
         &self,
         firewall: *mut LibfwFirewall,
@@ -451,7 +415,7 @@ impl Libfirewall {
             _inject_outbound_packet_cb,
         )
     }
-    #[doc = " A function which processes outbound packets (coming from device to VPN server)\n\n @param fw - pointer returned by @ref libfw_init\n @param packet - pointer to byte array comprising of IP packet\n @param packet_len - size of packet in bytes\n @param associated_data - identifier of peer. Should contain peer's public key\n                          for NordLynx and be Null for other protcols\n @param associated_data_len - size of @param associated_data in bytes\n @param inject_packet_cb_data - a pointer which will be passed in the\n                                inject_packet callback unmodified\n @param inject_inbound_packet_cb - callback which will be used by libfw to inject\n                           packets into virtual tunnel interface\n\n @return - returns LIBFW_VERDICT, integrators should allow packet to go through if\n           and only if function retruns LIBFW_VERDICT_ACCEPT\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init` - and also `packet` and `associated_data`\n which must be allocated with valid lengts (`packet_len` and `associated_data_len`,\n respectively)."]
+    #[doc = " A function which processes outbound packets (coming from device to VPN server)\n\n @param fw - pointer returned by @ref libfw_init\n @param packet - pointer to byte array comprising of IP packet\n @param packet_len - size of packet in bytes\n @param associated_data - identifier of peer. Should contain peer's public key\n                          for NordLynx and be Null for other protocols\n @param associated_data_len - size of @param associated_data in bytes\n @param inject_packet_cb_data - a pointer which will be passed in the\n                                inject_packet callback unmodified\n @param inject_inbound_packet_cb - callback which will be used by libfw to inject\n                           packets into virtual tunnel interface\n\n @return - returns LibfwVerdict, integrators should allow packet to go through if\n           and only if function returns LibfwVerdict::LibfwVerdictAccept\n\n # Safety\n\n This function dereferences pointer to firewall - user must ensure that this is\n the pointer returned by `libfw_init` - and also `packet` and `associated_data`\n which must be allocated with valid lengths (`packet_len` and `associated_data_len`,\n respectively)."]
     pub unsafe fn libfw_process_outbound_packet(
         &self,
         firewall: *mut LibfwFirewall,
