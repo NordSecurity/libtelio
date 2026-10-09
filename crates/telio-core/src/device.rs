@@ -121,6 +121,7 @@ use crate::{
     hide_thread_id_in_logs,
     logging::{logs_dropped_since_last_checked, logs_dropped_until_now, LOG_CENSOR},
 };
+use telio_model::cipher::Cipher;
 
 #[derive(Debug, TError)]
 pub enum Error {
@@ -287,6 +288,9 @@ pub struct RequestedState {
     // When non-empty, the firewall rejects outbound packets whose source IP is
     // not one of these.
     pub tunnel_ips: Vec<IpAddr>,
+
+    // Cipher suites advertised by the VPN server.
+    pub supported_ciphers: Option<Vec<Cipher>>,
 }
 
 pub struct MeshnetEntities {
@@ -2343,11 +2347,15 @@ impl Runtime {
             .unwrap_or_default();
 
         if is_meshnet_exit_node {
+            // AEAD ciphers negotiation not supported by meshnet peer
+            self.requested_state.supported_ciphers = None;
             if let Some(dns) = &self.entities.dns.lock().await.resolver {
                 self.reconfigure_dns_peer(dns, &dns.get_remote_exit_node_dns_servers())
                     .await?;
             }
         } else {
+            self.requested_state.supported_ciphers = config.supported_ciphers;
+
             // ENS provides no real value, when routing through meshnet's peer
             let vpn_ip = match exit_node.endpoint {
                 Some(ep) => ep.ip(),
@@ -2406,6 +2414,7 @@ impl Runtime {
     async fn disconnect_exit_nodes(&mut self) -> Result {
         if let Some(exit_node) = self.requested_state.exit_node.take() {
             self.requested_state.last_exit_node = Some(exit_node);
+            self.requested_state.supported_ciphers = None;
 
             // for macos dns
             bind_tun::set_should_bind(false);
@@ -2528,6 +2537,8 @@ impl Runtime {
                     allow_multicast: meshnet_peer.allow_multicast,
                     peer_allows_multicast: meshnet_peer.peer_allows_multicast,
                     vpn_connection_error: None,
+                    // Not supported by meshnet peer
+                    selected_cipher: None,
                 })
             }
             (None, Some(exit_node)) => {
@@ -2537,6 +2548,7 @@ impl Runtime {
                     link_state,
                     allowed_ips: peer.allowed_ips.clone(),
                     path: path_type,
+                    selected_cipher: peer.selected_cipher,
                     ..node_from_exit_node(exit_node)
                 })
             }

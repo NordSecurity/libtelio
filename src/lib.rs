@@ -15,6 +15,7 @@ use telio_core::connection_config::{
 };
 use telio_core::defaults_builder::FeaturesDefaultsBuilder;
 pub use telio_core::types as ffi_types;
+use telio_model::cipher::Cipher;
 
 pub use uniffi_libtelio::*;
 #[allow(

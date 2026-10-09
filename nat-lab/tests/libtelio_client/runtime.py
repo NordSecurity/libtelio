@@ -3,6 +3,7 @@ import time
 from itertools import groupby
 from tests.uniffi import VpnConnectionError
 from tests.utils.bindings import (
+    Cipher,
     ErrorEvent,
     Event,
     LinkState,
@@ -91,6 +92,7 @@ class Runtime:
         is_vpn: bool,
         link_state: Optional[LinkState],
         vpn_connection_error: Optional[VpnConnectionError],
+        selected_cipher: Optional[Cipher] = None,
     ) -> bool:
         if peer is None:
             return False
@@ -99,6 +101,7 @@ class Runtime:
             vpn_connection_error is None
             or peer.vpn_connection_error == vpn_connection_error
         )
+        cipher_ok = selected_cipher is None or peer.selected_cipher == selected_cipher
         return (
             peer.path in paths
             and peer.state in states
@@ -106,6 +109,7 @@ class Runtime:
             and is_vpn == peer.is_vpn
             and link_state_ok
             and vpn_error_ok
+            and cipher_ok
         )
 
     async def notify_peer_state(
@@ -117,11 +121,19 @@ class Runtime:
         is_vpn: bool = False,
         link_state: Optional[LinkState] = None,
         vpn_connection_error: Optional[VpnConnectionError] = None,
+        selected_cipher: Optional[Cipher] = None,
     ) -> None:
         while True:
             peer = self.get_peer_info(public_key)
             if self._peer_state_matches(
-                peer, states, paths, is_exit, is_vpn, link_state, vpn_connection_error
+                peer,
+                states,
+                paths,
+                is_exit,
+                is_vpn,
+                link_state,
+                vpn_connection_error,
+                selected_cipher,
             ):
                 return
             await asyncio.sleep(0.1)
@@ -311,6 +323,7 @@ class Events:
         timeout: Optional[float] = None,
         link_state: Optional[LinkState] = None,
         vpn_connection_error: Optional[VpnConnectionError] = None,
+        selected_cipher: Optional[Cipher] = None,
     ) -> None:
         await asyncio.wait_for(
             self._runtime.notify_peer_state(
@@ -321,6 +334,7 @@ class Events:
                 is_vpn,
                 link_state,
                 vpn_connection_error,
+                selected_cipher,
             ),
             timeout,
         )
