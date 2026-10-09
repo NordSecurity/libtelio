@@ -1,5 +1,8 @@
 use pnet_packet::{
-    ip::IpNextHeaderProtocol, ipv4::MutableIpv4Packet, ipv6::MutableIpv6Packet, MutablePacket,
+    ip::IpNextHeaderProtocol,
+    ipv4::{self, MutableIpv4Packet},
+    ipv6::MutableIpv6Packet,
+    MutablePacket,
 };
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
@@ -20,6 +23,7 @@ pub trait MutableIpPacket<'a>: Sized + MutablePacket {
 
     fn set_source(&mut self, addr: Self::IpAddrType);
     fn set_destination(&mut self, addr: Self::IpAddrType);
+    fn repair_ip_header_checksum(&mut self);
     fn fix_ip_header_checksum(&mut self, old_ip: Self::IpAddrType, new_ip: Self::IpAddrType);
 
     fn get_addr(ip_addr: &DualIpAddr) -> Self::IpAddrType;
@@ -60,9 +64,19 @@ impl<'a> MutableIpPacket<'a> for MutableIpv4Packet<'a> {
         self.set_destination(addr);
     }
 
+    fn repair_ip_header_checksum(&mut self) {
+        if self.get_checksum() == 0 {
+            self.set_checksum(ipv4::checksum(&self.to_immutable()));
+        }
+    }
+
     fn fix_ip_header_checksum(&mut self, old_ip: Self::IpAddrType, new_ip: Self::IpAddrType) {
         let old_checksum = self.get_checksum();
-        if old_checksum != 0 {
+        if old_checksum == 0 {
+            // Unlike UDP, IPv4 has no zero-checksum sentinel. Locally-originated macOS utun
+            // packets can arrive with zero, which an incremental update cannot repair.
+            self.repair_ip_header_checksum();
+        } else {
             self.set_checksum(checksum::ipv4_header_update(old_checksum, old_ip, new_ip));
         }
     }
@@ -115,6 +129,8 @@ impl<'a> MutableIpPacket<'a> for MutableIpv6Packet<'a> {
     fn set_source(&mut self, addr: Self::IpAddrType) {
         self.set_source(addr);
     }
+
+    fn repair_ip_header_checksum(&mut self) {}
 
     fn fix_ip_header_checksum(&mut self, _: Self::IpAddrType, _: Self::IpAddrType) {}
 
@@ -261,6 +277,13 @@ mod tests {
             let new_full_checksum = ipv4::checksum(&packet.to_immutable());
 
             assert_eq!(new_incremental_checksum, new_full_checksum);
+
+            packet.set_destination(old_ip_addr);
+            packet.set_checksum(0);
+            packet.set_destination(new_ip_addr);
+            packet.fix_ip_header_checksum(old_ip_addr, new_ip_addr);
+
+            assert_eq!(packet.get_checksum(), new_full_checksum);
         }
     }
 

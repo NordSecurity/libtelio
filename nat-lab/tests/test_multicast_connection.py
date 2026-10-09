@@ -186,7 +186,7 @@ async def test_multicast(setup_params: List[SetupParameters], protocol: str) -> 
             beta_connection, protocol, None, beta_ip
         ).run() as server:
             await server.wait_till_ready()
-            await MulticastClient(alpha_connection, protocol, None, alpha_ip).execute()
+            await MulticastClient(alpha_connection, protocol, 10, alpha_ip).execute()
 
 
 MUILTICAST_DISALLOWED_TEST_PARAMS = [
