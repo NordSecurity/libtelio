@@ -1,10 +1,12 @@
 import asyncio
 import pytest
+from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 from datetime import datetime, timedelta
 from tests import config
 from tests.helpers import SetupParameters, Environment, setup_environment
 from tests.libtelio_client import Client
+from tests.uniffi.telio_bindings import VpnConnectionConfigBuilder
 from tests.utils import stun
 from tests.utils.bindings import TelioAdapterType, NodeState, PathType
 from tests.utils.connection import Connection, ConnectionTag
@@ -763,3 +765,183 @@ class TestNlxVpn:
         assert (
             occurrences == 0
         ), "Found PQ restart log even though PQ should not have been restarted"
+
+
+class TestCustomPqUpgraderIp:
+    """Verify that we can still establsh a working PQ VPN connection with custom PQ
+    upgrader IP.
+
+    We add a secondary IP alias on the NLX container's WireGuard interface and install a
+    DNAT rule that redirects PQ-upgrader traffic arriving at the alias back to the
+    real upgrader IP. The client then uses the alias as the custom PQ Upgrader IP."""
+
+    PQ_UPGRADER_REAL_IP = "10.5.0.1"
+    PQ_UPGRADER_ALIAS_IP = "10.5.1.1"  # alias used only by this test
+    PQ_UPGRADER_PORT = 6480
+
+    async def _add_pq_upgrader_alias(self, nlx_conn: Connection) -> None:
+        # 'replace' avoids "File exists" from a prior leaked alias.
+        await nlx_conn.create_process([
+            "ip",
+            "addr",
+            "replace",
+            f"{self.PQ_UPGRADER_ALIAS_IP}/32",
+            "dev",
+            "nlx0",
+        ]).execute()
+        await nlx_conn.create_process([
+            "iptables",
+            "-t",
+            "nat",
+            "-A",
+            "PREROUTING",
+            "-d",
+            self.PQ_UPGRADER_ALIAS_IP,
+            "-p",
+            "udp",
+            "--dport",
+            str(self.PQ_UPGRADER_PORT),
+            "-j",
+            "DNAT",
+            "--to-destination",
+            f"{self.PQ_UPGRADER_REAL_IP}:{self.PQ_UPGRADER_PORT}",
+        ]).execute()
+
+    async def _remove_pq_upgrader_alias(self, nlx_conn: Connection) -> None:
+        iptables_del = (
+            f"iptables -t nat -D PREROUTING"
+            f" -d {self.PQ_UPGRADER_ALIAS_IP}"
+            f" -p udp --dport {self.PQ_UPGRADER_PORT}"
+            f" -j DNAT --to-destination {self.PQ_UPGRADER_REAL_IP}:{self.PQ_UPGRADER_PORT}"
+            f" || true"
+        )
+        ip_del = f"ip addr del {self.PQ_UPGRADER_ALIAS_IP}/32 dev nlx0 || true"
+        await nlx_conn.create_process(["bash", "-c", iptables_del]).execute()
+        await nlx_conn.create_process(["bash", "-c", ip_del]).execute()
+
+    @pytest.fixture(autouse=True)
+    def _mutate_pq_version(self, alpha_setup_params: SetupParameters, pq_version: int):
+        alpha_setup_params.features.post_quantum_vpn.version = pq_version
+
+    @pytest.fixture
+    def _mutate_pq_rekey_interval(self, alpha_setup_params: SetupParameters):
+        alpha_setup_params.features.post_quantum_vpn.rekey_interval_s = 2
+
+    @pytest.fixture
+    async def pq_upgrader_alias(self) -> AsyncIterator[Connection]:
+        async with new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1) as nlx_conn:
+            try:
+                await self._add_pq_upgrader_alias(nlx_conn)
+                yield nlx_conn
+            finally:
+                await self._remove_pq_upgrader_alias(nlx_conn)
+
+    @pytest.mark.nlx
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        nlx_1_limits=(2, 2),
+                    ),
+                    is_meshnet=False,
+                ),
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "pq_version",
+        [pytest.param(1), pytest.param(2)],
+    )
+    async def test_pq_vpn_with_overridden_pq_upgrader_ip(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        pq_version: int,  # pylint: disable=unused-argument
+        env: Environment,
+        pq_upgrader_alias: Connection,  # pylint: disable=unused-argument
+    ) -> None:
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+
+        wg_server = config.NLX_SERVER
+        public_key = str(wg_server["public_key"])
+        endpoint = f"{wg_server['ipv4']}:{wg_server['port']}"
+
+        connection_config = (
+            VpnConnectionConfigBuilder(public_key, endpoint)
+            .force_pq()
+            .with_custom_pq_upgrader_ip(self.PQ_UPGRADER_ALIAS_IP)
+            .build()
+        )
+
+        await client_alpha.vpn.connect_with_config(connection_config, timeout=10)
+
+        await ping(client_conn, config.PHOTO_ALBUM_IP)
+
+        ip = await stun.get(client_conn, config.STUN_SERVER)
+        assert (
+            ip == wg_server["ipv4"]
+        ), f"wrong public IP when connected to VPN with custom PQ Upgrader IP: {ip}"
+
+    @pytest.mark.nlx
+    @pytest.mark.parametrize(
+        "alpha_setup_params",
+        [
+            pytest.param(
+                SetupParameters(
+                    connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+                    adapter_type_override=TelioAdapterType.NEP_TUN,
+                    connection_tracker_config=generate_connection_tracker_config(
+                        ConnectionTag.DOCKER_CONE_CLIENT_1,
+                        nlx_1_limits=(2, 2),
+                    ),
+                    is_meshnet=False,
+                ),
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "pq_version",
+        [pytest.param(1), pytest.param(2)],
+    )
+    async def test_pq_vpn_rekey_with_overridden_pq_upgrader_ip(
+        self,
+        alpha_setup_params: SetupParameters,  # pylint: disable=unused-argument
+        pq_version: int,  # pylint: disable=unused-argument
+        _mutate_pq_rekey_interval: None,  # pylint: disable=unused-argument
+        env: Environment,
+        pq_upgrader_alias: Connection,  # pylint: disable=unused-argument
+    ) -> None:
+        client_conn, *_ = [conn.connection for conn in env.connections]
+        client_alpha, *_ = env.clients
+
+        wg_server = config.NLX_SERVER
+        public_key = str(wg_server["public_key"])
+        endpoint = f"{wg_server['ipv4']}:{wg_server['port']}"
+
+        connection_config = (
+            VpnConnectionConfigBuilder(public_key, endpoint)
+            .force_pq()
+            .with_custom_pq_upgrader_ip(self.PQ_UPGRADER_ALIAS_IP)
+            .build()
+        )
+
+        await client_alpha.vpn.connect_with_config(connection_config, timeout=10)
+
+        async with new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1) as nlx_conn:
+            preshared_before = await inspect_preshared_key(nlx_conn)
+            await client_alpha.log.wait_for("Successful PQ REKEY", incremental=True)
+            preshared_after = await inspect_preshared_key(nlx_conn)
+            assert (
+                preshared_after != preshared_before
+            ), "Preshared key not changed on the nlx server after rekey with custom IP"
+
+        await ping(client_conn, config.PHOTO_ALBUM_IP)
+        ip = await stun.get(client_conn, config.STUN_SERVER)
+        assert (
+            ip == wg_server["ipv4"]
+        ), f"wrong public IP after rekey with custom PQ Upgrader IP: {ip}"

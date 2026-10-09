@@ -1,4 +1,8 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 
 use tokio::task::JoinHandle;
 
@@ -20,6 +24,7 @@ impl ConnKeyRotation {
         wg_secret: telio_crypto::SecretKey,
         peer: telio_crypto::PublicKey,
         features: &FeaturePostQuantumVPN,
+        pq_upgrader_ip: Option<Ipv4Addr>,
     ) -> Self {
         telio_log_debug!("Starting PQ task");
 
@@ -32,6 +37,7 @@ impl ConnKeyRotation {
         let pq_version = features.version;
 
         let task = async move {
+            let pq_upgrader_ip = pq_upgrader_ip.unwrap_or(crate::PQ_UPGRADER_IPV4);
             let mut retry_interval = telio_utils::interval(request_retry);
 
             let proto::KeySet {
@@ -48,6 +54,7 @@ impl ConnKeyRotation {
                     &wg_secret,
                     &peer,
                     pq_version,
+                    pq_upgrader_ip,
                 ));
 
                 match tokio::time::timeout(request_retry, fetch_keys).await {
@@ -89,6 +96,7 @@ impl ConnKeyRotation {
                             wg_client_public: wg_keys.wg_secret.public(),
                             wg_server_public: peer,
                         }),
+                        pq_upgrader_ip,
                     ))
                 } else {
                     Box::pin(super::proto::rekey(
@@ -96,6 +104,7 @@ impl ConnKeyRotation {
                         &pq_secret,
                         pq_version,
                         None,
+                        pq_upgrader_ip,
                     ))
                 };
 

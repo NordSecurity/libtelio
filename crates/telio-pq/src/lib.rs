@@ -4,7 +4,10 @@ mod entity;
 mod proto;
 
 use std::io;
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
+
+/// Default IP address of the PQ upgrader service
+pub const PQ_UPGRADER_IPV4: Ipv4Addr = telio_model::constants::VPN_EXTERNAL_IPV4;
 
 pub use entity::Entity;
 use proto::{PqProtoV1Status, PqProtoV2Status};
@@ -67,4 +70,5 @@ impl From<&str> for Error {
 #[cfg(feature = "fuzzing")]
 pub mod fuzz {
     pub use super::proto::{parse_get_response, parse_response_payload};
+    pub use super::PQ_UPGRADER_IPV4;
 }
