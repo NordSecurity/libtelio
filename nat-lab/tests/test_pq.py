@@ -74,7 +74,9 @@ async def _connect_vpn_pq(
 
 
 async def read_preshared_key_slot(nlx_conn: Connection) -> str:
-    output = await nlx_conn.create_process(["nlx", "show", "nlx0", "dump"]).execute()
+    output = await nlx_conn.create_process(
+        ["nlx", "show", NLX_INTERFACE, "dump"]
+    ).execute()
     last = output.get_stdout().splitlines()[-1]
     return last.split()[1]
 
@@ -168,7 +170,7 @@ class TestPqVpnConnection:
     )
     @pytest.mark.parametrize(
         "pq_version",
-        [pytest.param(1), pytest.param(2)],
+        PQ_VERSIONS,
     )
     async def test_pq_vpn_connection(
         self,
@@ -194,7 +196,9 @@ class TestPqVpnRekey:
 
     @pytest.fixture(autouse=True)
     def _mutate_pq_rekey(self, alpha_setup_params: SetupParameters, pq_version: int):
-        alpha_setup_params.features.post_quantum_vpn.rekey_interval_s = 2
+        alpha_setup_params.features.post_quantum_vpn.rekey_interval_s = (
+            SHORT_PQ_REKEY_INTERVAL_S
+        )
         alpha_setup_params.features.post_quantum_vpn.version = pq_version
 
     @pytest.mark.nlx
@@ -272,7 +276,7 @@ class TestPqVpnRekey:
     )
     @pytest.mark.parametrize(
         "pq_version",
-        [pytest.param(1), pytest.param(2)],
+        PQ_VERSIONS,
     )
     async def test_pq_vpn_rekey(
         self,
@@ -294,7 +298,7 @@ class TestPqVpnRekey:
 
         async with new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1) as nlx_conn:
             preshared_before = await inspect_preshared_key(nlx_conn)
-            await client_alpha.log.wait_for("Successful PQ REKEY", incremental=True)
+            await client_alpha.log.wait_for(PQ_REKEY_SUCCESS_LOG, incremental=True)
 
             preshared_after = await inspect_preshared_key(nlx_conn)
             assert (
@@ -374,7 +378,7 @@ class TestPqVpnRekey:
     )
     @pytest.mark.parametrize(
         "pq_version",
-        [pytest.param(1), pytest.param(2)],
+        PQ_VERSIONS,
     )
     async def test_dns_with_pq(
         self,
@@ -421,7 +425,9 @@ class TestPqVpnHandshake:
     def _mutate_pq_handshake(
         self, alpha_setup_params: SetupParameters, pq_version: int
     ):
-        alpha_setup_params.features.post_quantum_vpn.handshake_retry_interval_s = 5
+        alpha_setup_params.features.post_quantum_vpn.handshake_retry_interval_s = (
+            PQ_HANDSHAKE_RETRY_INTERVAL_S
+        )
         alpha_setup_params.features.post_quantum_vpn.version = pq_version
 
     @pytest.mark.nlx
@@ -444,7 +450,7 @@ class TestPqVpnHandshake:
     )
     @pytest.mark.parametrize(
         "pq_version",
-        [pytest.param(1), pytest.param(2)],
+        PQ_VERSIONS,
     )
     async def test_pq_vpn_silent_pq_upgrader(
         self,
@@ -519,7 +525,7 @@ class TestPqVpnHandshake:
     )
     @pytest.mark.parametrize(
         "pq_version",
-        [pytest.param(1), pytest.param(2)],
+        PQ_VERSIONS,
     )
     async def test_pq_vpn_upgrade_from_non_pq(
         self,
@@ -692,14 +698,14 @@ class TestNlxVpn:
             await asyncio.sleep(sleep_secs)
 
             client_log = (await client_alpha.log.get()).lower()
-            log_line = "Restarting postquantum entity".lower()
+            log_line = PQ_RESTART_LOG.lower()
             occurrences = client_log.count(log_line)
 
             assert (
                 occurrences == 0
             ), "Found PQ restart log even though PQ should not have been restarted yet"
 
-            await client_alpha.log.wait_for("Restarting postquantum entity")
+            await client_alpha.log.wait_for(PQ_RESTART_LOG)
 
         await client_alpha.events.wait_for_state_peer(
             config.NLX_SERVER["public_key"],
@@ -751,7 +757,7 @@ class TestNlxVpn:
         await asyncio.sleep(200)
 
         log = (await client_alpha.log.get()).lower()
-        log_line = "Restarting postquantum entity".lower()
+        log_line = PQ_RESTART_LOG.lower()
         occurrences = log.count(log_line)
 
         assert (
