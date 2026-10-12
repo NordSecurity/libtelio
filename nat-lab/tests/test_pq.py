@@ -1,8 +1,9 @@
 import asyncio
 import pytest
+from contextlib import AsyncExitStack
 from datetime import datetime, timedelta
 from tests import config
-from tests.helpers import SetupParameters, Environment
+from tests.helpers import SetupParameters, Environment, setup_environment
 from tests.libtelio_client import Client
 from tests.utils import stun
 from tests.utils.bindings import TelioAdapterType, NodeState, PathType
@@ -13,9 +14,33 @@ from tests.utils.connection_util import (
 )
 from tests.utils.dns import query_dns
 from tests.utils.ping import ping
+from tests.utils.python import get_python_binary
 from tests.utils.router import IPStack
 
 EMPTY_PRESHARED_KEY_SLOT = "(none)"
+NLX_INTERFACE = "nlx0"
+PQ_VERSION_V1 = 1
+PQ_VERSION_V2 = 2
+PQ_VERSIONS = [PQ_VERSION_V1, PQ_VERSION_V2]
+PQ_REKEY_METHOD = 1
+PQ_UPGRADER_IP = "10.5.0.1"
+PQ_UPGRADER_PORT = 6480
+PQ_UPGRADER_REPLY_TIMEOUT_S = 3
+SHORT_PQ_REKEY_INTERVAL_S = 2
+LONG_PQ_REKEY_INTERVAL_S = 3600
+PQ_HANDSHAKE_RETRY_INTERVAL_S = 5
+PQ_REKEY_SUCCESS_LOG = "Successful PQ REKEY"
+PQ_RESTART_LOG = "Restarting postquantum entity"
+PQ_V1_REKEY_SCRIPT = f"""
+import socket, struct
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.settimeout({PQ_UPGRADER_REPLY_TIMEOUT_S})
+s.sendto(struct.pack("<II", {PQ_VERSION_V1}, {PQ_REKEY_METHOD}), ("{PQ_UPGRADER_IP}", {PQ_UPGRADER_PORT}))
+try:
+    print(s.recv(4096).hex())
+except socket.timeout:
+    print("timeout")
+"""
 
 
 # Module-level override — all standalone PQ tests use NLX VPN
@@ -527,6 +552,62 @@ class TestPqVpnHandshake:
 
             preshared = await read_preshared_key_slot(nlx_conn)
             assert preshared != EMPTY_PRESHARED_KEY_SLOT
+
+
+class PqV1RekeyAcceptedError(Exception):
+    """Raised when nlx applies a v1 rekey to a v2 PQ session."""
+
+
+# A v1 rekey has no auth tag and goes inside the VPN tunnel, so anything
+# that can send traffic through the client's tunnel can send one. Remove
+# xfail once nlx rejects rekeys whose version differs from the one used in
+# the session's GET (LLTSS-1649).
+@pytest.mark.xfail(
+    strict=True,
+    raises=PqV1RekeyAcceptedError,
+    reason="nlx accepts unauthenticated v1 rekey for a v2 PQ session",
+)
+@pytest.mark.nlx
+async def test_pq_v2_session_rejects_v1_rekey(exit_stack: AsyncExitStack) -> None:
+    alpha_setup_params = SetupParameters(
+        connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
+        adapter_type_override=TelioAdapterType.NEP_TUN,
+        connection_tracker_config=generate_connection_tracker_config(
+            ConnectionTag.DOCKER_CONE_CLIENT_1,
+            nlx_1_limits=(2, 2),
+        ),
+        is_meshnet=False,
+    )
+    alpha_setup_params.features.post_quantum_vpn.version = PQ_VERSION_V2
+    alpha_setup_params.features.post_quantum_vpn.rekey_interval_s = (
+        LONG_PQ_REKEY_INTERVAL_S
+    )
+
+    env = await exit_stack.enter_async_context(
+        setup_environment(
+            exit_stack, [alpha_setup_params], vpn=[ConnectionTag.VM_LINUX_NLX_1]
+        )
+    )
+    client_conn, *_ = [conn.connection for conn in env.connections]
+    client, *_ = env.clients
+
+    await _connect_vpn_pq(client_conn, client)
+
+    async with new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1) as nlx_conn:
+        preshared_before = await inspect_preshared_key(nlx_conn)
+
+        output = await client_conn.create_process(
+            [get_python_binary(client_conn), "-c", PQ_V1_REKEY_SCRIPT]
+        ).execute()
+
+        preshared_after = await inspect_preshared_key(nlx_conn)
+        if preshared_after != preshared_before:
+            raise PqV1RekeyAcceptedError(
+                "v1 rekey changed the PSK of a v2 PQ session, pq-upgrader reply:"
+                f" {output.get_stdout()}"
+            )
+
+    await ping(client_conn, config.PHOTO_ALBUM_IP)
 
 
 class TestNlxVpn:
