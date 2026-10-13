@@ -64,6 +64,10 @@ class TestVpnConnection:
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     adapter_type_override=TelioAdapterType.NEP_TUN,
+                    features=default_features(
+                        enable_firewall_connection_reset=True,
+                        enable_firewall_exclusion_range="10.0.0.0/8",
+                    ),
                     is_meshnet=False,
                 ),
                 "10.0.254.1",
@@ -72,6 +76,10 @@ class TestVpnConnection:
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                    features=default_features(
+                        enable_firewall_connection_reset=True,
+                        enable_firewall_exclusion_range="10.0.0.0/8",
+                    ),
                     is_meshnet=False,
                 ),
                 "10.0.254.1",
@@ -81,6 +89,10 @@ class TestVpnConnection:
                 SetupParameters(
                     connection_tag=ConnectionTag.VM_WINDOWS_1,
                     adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                    features=default_features(
+                        enable_firewall_connection_reset=True,
+                        enable_firewall_exclusion_range="10.0.0.0/8",
+                    ),
                     is_meshnet=False,
                 ),
                 "10.0.254.15",
@@ -92,6 +104,10 @@ class TestVpnConnection:
                 SetupParameters(
                     connection_tag=ConnectionTag.VM_MAC,
                     adapter_type_override=TelioAdapterType.NEP_TUN,
+                    features=default_features(
+                        enable_firewall_connection_reset=True,
+                        enable_firewall_exclusion_range="10.0.0.0/8",
+                    ),
                     is_meshnet=False,
                 ),
                 "10.0.254.19",
@@ -101,6 +117,10 @@ class TestVpnConnection:
                 SetupParameters(
                     connection_tag=ConnectionTag.VM_ANDROID_1,
                     adapter_type_override=TelioAdapterType.NEP_TUN,
+                    features=default_features(
+                        enable_firewall_connection_reset=True,
+                        enable_firewall_exclusion_range="10.0.0.0/8",
+                    ),
                     is_meshnet=False,
                     ip_stack=IPStack.IPv4,  # android kernel has no ip6tables nat
                 ),
@@ -679,6 +699,10 @@ class TestSingleVpn1Node:
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     adapter_type_override=TelioAdapterType.NEP_TUN,
+                    features=default_features(
+                        enable_firewall_connection_reset=True,
+                        enable_firewall_exclusion_range="10.0.0.0/8",
+                    ),
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         stun_limits=(1, 1),
@@ -692,6 +716,10 @@ class TestSingleVpn1Node:
                 SetupParameters(
                     connection_tag=ConnectionTag.DOCKER_CONE_CLIENT_1,
                     adapter_type_override=TelioAdapterType.LINUX_NATIVE_TUN,
+                    features=default_features(
+                        enable_firewall_connection_reset=True,
+                        enable_firewall_exclusion_range="10.0.0.0/8",
+                    ),
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.DOCKER_CONE_CLIENT_1,
                         stun_limits=(1, 1),
@@ -706,6 +734,10 @@ class TestSingleVpn1Node:
                 SetupParameters(
                     connection_tag=ConnectionTag.VM_WINDOWS_1,
                     adapter_type_override=TelioAdapterType.WINDOWS_NATIVE_TUN,
+                    features=default_features(
+                        enable_firewall_connection_reset=True,
+                        enable_firewall_exclusion_range="10.0.0.0/8",
+                    ),
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.VM_WINDOWS_1,
                         stun_limits=(1, 1),
@@ -722,6 +754,10 @@ class TestSingleVpn1Node:
                 SetupParameters(
                     connection_tag=ConnectionTag.VM_MAC,
                     adapter_type_override=TelioAdapterType.NEP_TUN,
+                    features=default_features(
+                        enable_firewall_connection_reset=True,
+                        enable_firewall_exclusion_range="10.0.0.0/8",
+                    ),
                     connection_tracker_config=generate_connection_tracker_config(
                         ConnectionTag.VM_MAC,
                         stun_limits=(1, 1),
