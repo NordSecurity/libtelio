@@ -378,6 +378,11 @@ def main() -> None:
     )
     build_parser.add_argument("--moose", action="store_true", help="Use libmoose")
     build_parser.add_argument(
+        "--coverage",
+        action="store_true",
+        help="Build with -C instrument-coverage (linux, windows and macos only)",
+    )
+    build_parser.add_argument(
         "--msvc", action="store_true", help="Use MSVC toolchain for Windows build"
     )
     bindings_parser.add_argument(
@@ -541,6 +546,20 @@ def exec_bindings(args):
         )
 
 
+def enable_coverage(target_os: str, arch: str) -> None:
+    """Instrument the build for LLVM source-based coverage (nat-lab e2e coverage)."""
+    if target_os not in ("linux", "windows", "macos"):
+        raise ValueError(f"--coverage is not supported for {target_os}")
+    env = (
+        LIBTELIO_CONFIG[target_os]
+        .setdefault("archs", {})
+        .setdefault(arch, {})
+        .setdefault("env", {})
+    )
+    flags, mode = env.get("RUSTFLAGS", ("", "set"))
+    env["RUSTFLAGS"] = (flags + " -C instrument-coverage", mode)
+
+
 def exec_build(args):
     if args.try_fetch_from_pipeline:
         print(
@@ -555,6 +574,9 @@ def exec_build(args):
             args.moose,
         )
         return
+
+    if args.coverage:
+        enable_coverage(args.os, args.arch)
 
     if args.moose:
         if args.os in ["linux", "windows", "android"]:

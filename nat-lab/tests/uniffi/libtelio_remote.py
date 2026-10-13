@@ -1,12 +1,21 @@
 # mypy: ignore-errors
-import datetime
+# isort: off
+# Import order matters: LLVM_PROFILE_FILE must be set before telio_bindings loads libtelio.
 import os
+import sys
+
+# libtelio_client.Client passes this in NATLAB_COVERAGE runs.
+if "--coverage-profile" in sys.argv:
+    os.environ["LLVM_PROFILE_FILE"] = sys.argv[sys.argv.index("--coverage-profile") + 1]
+
+# isort: on
+# pylint: disable=wrong-import-position
+import datetime
 import Pyro5.api  # type: ignore
 import Pyro5.server  # type: ignore
 import shutil
 import socket
 import struct
-import sys
 import telio_bindings as libtelio  # type: ignore # pylint: disable=import-error
 import time
 from serialization import (  # type: ignore # pylint: disable=import-error
