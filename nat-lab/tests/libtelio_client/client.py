@@ -1,4 +1,5 @@
 import asyncio
+import os
 import platform
 import Pyro5.errors  # type: ignore
 import re
@@ -26,7 +27,7 @@ from tests.utils.bindings import (
     default_features,
 )
 from tests.utils.connection import Connection, TargetOS
-from tests.utils.connection_util import get_uniffi_path
+from tests.utils.connection_util import get_coverage_profile_path, get_uniffi_path
 from tests.utils.logger import log
 from tests.utils.moose import MOOSE_DB_TIMEOUT_MS
 from tests.utils.perf_profiling import PERF_CMD, PerfProfiler
@@ -41,6 +42,7 @@ from tests.utils.router.windows_router import WindowsRouter
 from typing import AsyncIterator, List, Optional
 
 DEVICE_STOP_TIMEOUT = 30
+COVERAGE_EXIT_TIMEOUT = 10
 
 
 class Client:
@@ -173,6 +175,13 @@ class Client:
             container_ip,
             container_port,
         ]
+        profile_path = (
+            get_coverage_profile_path(self._connection)
+            if os.environ.get("NATLAB_COVERAGE")
+            else None
+        )
+        if profile_path:
+            base_cmd += ["--coverage-profile", profile_path]
         if enable_perf:
             cmd = PERF_CMD + base_cmd
         else:
@@ -287,6 +296,8 @@ class Client:
                 )
 
             await self.get_proxy().shutdown(self._connection.tag.name)
+            if os.environ.get("NATLAB_COVERAGE"):
+                await self._wait_for_remote_exit()
         else:
             log.info(
                 "[%s] We don't have LibtelioProxy instance, Shutdown() not called.",
@@ -454,6 +465,18 @@ class Client:
 
     def allow_errors(self, allowed_errors: List[str]) -> None:
         self._allowed_errors.extend(re.compile(e) for e in allowed_errors)
+
+    async def _wait_for_remote_exit(self) -> None:
+        """Let libtelio_remote exit on its own so LLVM writes the coverage profile before cleanup kills it."""
+        assert self._process
+        try:
+            await asyncio.wait_for(self._process.is_done(), COVERAGE_EXIT_TIMEOUT)
+        except asyncio.TimeoutError:
+            log.warning(
+                "[%s] libtelio_remote did not exit within %ss, coverage profile may be lost",
+                self._node.name,
+                COVERAGE_EXIT_TIMEOUT,
+            )
 
     async def stop_device(self) -> None:
         await self.get_proxy().stop()
