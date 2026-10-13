@@ -3,6 +3,7 @@
 import getpass
 import os
 import sys
+from contextlib import contextmanager
 import moose_utils
 from fetch_artifacts import ArtifactsDownloader
 import shutil
@@ -11,6 +12,10 @@ from pathlib import Path
 NAME = "telio"
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/..")
 WORKING_DIR = f"{PROJECT_ROOT}"
+NO_LTO_CARGO_PROFILE_ENV = {
+    "CARGO_PROFILE_RELEASE_LTO": "off",
+    "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "16",
+}
 
 # `sys.path` is the equivalent of `PYTHONPATH`, aka module search paths
 sys.path += [f"{PROJECT_ROOT}/3rd-party/rust_build_utils"]
@@ -246,6 +251,7 @@ LIBTELIO_CONFIG = {
             "interderpcli": {"interderpcli": "interderpcli.exe"},
             NAME: {NAME: f"{NAME}.dll"},
         },
+        "no_lto_packages": ["tcli", "derpcli", "interderpcli"],
         "post_build": [
             post_copy_windows_debug_symbols_to_distribution_dir,
             post_check_for_windows_static_runtime,
@@ -344,6 +350,7 @@ LIBTELIO_CONFIG = {
             "nordvpnlite": {"nordvpnlite": "nordvpnlite"},
             NAME: {f"lib{NAME}": f"lib{NAME}.so"},
         },
+        "no_lto_packages": ["tcli", "derpcli", "interderpcli"],
     },
     "macos": {
         "packages": {
@@ -351,6 +358,7 @@ LIBTELIO_CONFIG = {
             "nordvpnlite": {"nordvpnlite": "nordvpnlite"},
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
+        "no_lto_packages": ["tcli", "nordvpnlite"],
         "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
     },
     "ios": {
@@ -600,41 +608,60 @@ def exec_build(args):
     call_build(config, args)
 
 
+@contextmanager
+def env_overrides(overrides):
+    previous = {key: os.environ.get(key) for key in overrides}
+    os.environ.update(overrides)
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+                continue
+            os.environ[key] = value
+
+
 def call_build(config, args):
     rutils.config_local_env_vars(config, LIBTELIO_CONFIG)
 
-    packages = LIBTELIO_CONFIG[config.target_os].get("packages")
-    if os.environ.get("NATLAB_REDUCE_PARALLEL_LINKERS", None) == "1":
-        nordvpnlite_package = {}
+    os_config = LIBTELIO_CONFIG[config.target_os]
+    packages = os_config.get("packages")
+    build_args = os_config.get("build_args", None)
 
-        if "nordvpnlite" in packages:
-            nordvpnlite_package["nordvpnlite"] = packages["nordvpnlite"]
+    no_lto_names = [] if config.debug else os_config.get("no_lto_packages", [])
+    lto_packages = {k: v for k, v in packages.items() if k not in no_lto_names}
+    no_lto_packages = {k: v for k, v in packages.items() if k in no_lto_names}
 
-        rest_packages = {k: v for k, v in packages.items() if k != "nordvpnlite"}
-
-        rutils.cargo_build(
-            PROJECT_CONFIG,
-            config,
-            rest_packages,
-            LIBTELIO_CONFIG[config.target_os].get("build_args", None),
-        )
+    if (
+        os.environ.get("NATLAB_REDUCE_PARALLEL_LINKERS", None) == "1"
+        and "nordvpnlite" in lto_packages
+        and len(lto_packages) > 1
+    ):
+        nordvpnlite_package = {"nordvpnlite": lto_packages.pop("nordvpnlite")}
+        rutils.cargo_build(PROJECT_CONFIG, config, lto_packages, build_args)
         rutils.cargo_build(
             PROJECT_CONFIG,
             config,
             nordvpnlite_package,
-            LIBTELIO_CONFIG[config.target_os].get("build_args", None),
+            build_args,
+            rutils.DistDir.KEEP,
         )
     else:
-        rutils.cargo_build(
-            PROJECT_CONFIG,
-            config,
-            packages,
-            LIBTELIO_CONFIG[config.target_os].get("build_args", None),
-        )
+        rutils.cargo_build(PROJECT_CONFIG, config, lto_packages, build_args)
 
-    if "post_build" in LIBTELIO_CONFIG[config.target_os]:
-        for post in LIBTELIO_CONFIG[config.target_os]["post_build"]:
-            post(config, args)
+    if no_lto_packages:
+        with env_overrides(NO_LTO_CARGO_PROFILE_ENV):
+            rutils.cargo_build(
+                PROJECT_CONFIG,
+                config,
+                no_lto_packages,
+                build_args,
+                rutils.DistDir.KEEP,
+            )
+
+    for post in os_config.get("post_build", []):
+        post(config, args)
 
 
 def darwin_build_all(args) -> None:
