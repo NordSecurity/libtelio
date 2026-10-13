@@ -121,8 +121,6 @@ pub struct Io {
 /// `UdpProxy` configuration.
 #[derive(Clone, Debug, Default)]
 pub struct Config {
-    /// WG port address
-    pub wg_port: Option<u16>,
     /// tracked WG peers
     pub peers: HashSet<PublicKey>,
 }
@@ -173,8 +171,6 @@ impl UdpProxy {
 
     /// Update configuration for the background task
     pub async fn configure(&self, config: Config) -> Result<(), Error> {
-        let port = config.wg_port;
-
         let sockets = task_exec!(&self.task_ingress, async move |state| {
             Ok(state.configure(config).await)
         })
@@ -182,7 +178,7 @@ impl UdpProxy {
 
         task_exec!(&self.task_egress, async move |state| {
             state.reset_socket_limit().await;
-            Ok(state.configure(sockets, port).await)
+            Ok(state.configure(sockets).await)
         })
         .await?
     }
@@ -277,10 +273,8 @@ impl StateIngress {
 }
 
 impl StateEgress {
-    async fn configure(&mut self, sockets: SocketMap, wg_port: Option<u16>) -> Result<(), Error> {
-        telio_log_debug!("Configuring egress proxy with wg port {:?}", wg_port);
-
-        self.wg_addr = wg_port.map(|p| (Ipv4Addr::LOCALHOST, p).into());
+    async fn configure(&mut self, sockets: SocketMap) -> Result<(), Error> {
+        telio_log_debug!("Configuring egress proxy");
 
         self.sockets.retain(|&pk, _| sockets.contains_key(&pk));
         for (pk, new_socket) in sockets {
@@ -592,7 +586,7 @@ mod tests {
         use telio_crypto::SecretKey;
 
         for i in 0..1 {
-            let TestSystem { wg, proxy, relay } = TestSystem::start().await;
+            let TestSystem { proxy, relay, .. } = TestSystem::start().await;
 
             drop(relay);
 
@@ -604,7 +598,6 @@ mod tests {
 
             proxy
                 .configure(Config {
-                    wg_port: Some(wg.addr().port()),
                     peers: pks.iter().copied().collect(),
                 })
                 .await
@@ -663,6 +656,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_configure_keeps_wg_addr() {
+        let mut ts = TestSystem::start().await;
+        let wg_addr = ts.wg.addr();
+
+        let pks = ts.create_peers(1).await;
+        ts.proxy
+            .configure(Config {
+                peers: pks.iter().copied().collect(),
+            })
+            .await
+            .expect("UdpProxy::configure() failed");
+
+        let egress_wg_addr = task_exec!(&ts.proxy.task_egress, async move |state| {
+            Ok(state.wg_addr)
+        })
+        .await
+        .expect("task_exec failed");
+        assert_eq!(egress_wg_addr, Some(wg_addr));
+
+        ts.relay.send(pks[0], DataMsg::new(b"data")).await;
+        ts.wg.expect_recv(&[(pks[0], b"data")]).await;
+
+        ts.stop().await;
+    }
+
+    #[tokio::test]
     async fn test_packet_for_removed_peer_sets_addr_not_available() {
         let mut ts = TestSystem::start().await;
 
@@ -672,7 +691,6 @@ mod tests {
 
         ts.proxy
             .configure(Config {
-                wg_port: Some(ts.wg.addr().port()),
                 peers: HashSet::from([pks[1]]),
             })
             .await
@@ -1007,11 +1025,14 @@ mod tests {
 
                 self.proxy
                     .configure(Config {
-                        wg_port: Some(self.wg.addr().port()),
                         peers: pks.iter().copied().collect(),
                     })
                     .await
                     .expect("UdpProxy::configure() failed");
+                self.proxy
+                    .set_wg_address(Some(self.wg.addr()))
+                    .await
+                    .expect("set_wg_address() failed");
 
                 self.wg.peers = self
                     .proxy
