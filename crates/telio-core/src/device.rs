@@ -2045,10 +2045,13 @@ impl Runtime {
             };
 
             let proxy_config = ProxyConfig {
-                wg_port: None,
                 peers: peers.clone(),
             };
 
+            meshnet_entities
+                .proxy
+                .set_wg_address(wg_itf.listen_port.map(|p| (Ipv4Addr::LOCALHOST, p).into()))
+                .await?;
             meshnet_entities.proxy.configure(proxy_config).await?;
 
             if let Some(ref starcast) = meshnet_entities.starcast {
