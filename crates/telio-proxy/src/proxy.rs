@@ -346,7 +346,7 @@ impl StateEgress {
                 telio_log_debug!("Dropping packet for muted peer {pk:?}");
             }
             (Some(_), None) => {
-                telio_log_warn!("Dropping packet for peer {pk:?}, WG listen port not known");
+                telio_log_error!("Dropping packet for peer {pk:?}, WG listen port not known");
             }
             (None, wg_addr) => {
                 self.handle_error(
