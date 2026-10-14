@@ -224,6 +224,11 @@ lto = true
 codegen-units = 1
 debug = "full"
 
+[profile.release-no-lto]
+inherits = "release"
+lto = "off"
+codegen-units = 16
+
 [profile.dev]
 debug = 0
 strip = "debuginfo"
