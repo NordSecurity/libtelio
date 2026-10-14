@@ -5,7 +5,7 @@ from tests.config import LAN_ADDR_MAP
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection.ssh_connection import SshConnection
 from tests.utils.connection_util import new_connection_raw
-from tests.utils.logger import log, setup_log
+from tests.utils.logger import setup_log
 from tests.utils.process import ProcessExecError
 
 LOG_DIR = "logs"
@@ -71,6 +71,8 @@ async def save_nordlynx_logs(session_vm_marks: set[str]):
     if "nlx" not in session_vm_marks:
         return
 
+    os.makedirs(LOG_DIR, exist_ok=True)
+
     source_log_dir_path = "/var/log"
     nlx_log_files = [
         "nlx-radius.log",
@@ -86,7 +88,8 @@ async def save_nordlynx_logs(session_vm_marks: set[str]):
             local_path = os.path.join(LOG_DIR, log_file)
             try:
                 await conn.download(remote_path, local_path)
-                log.info("Downloaded '%s' to '%s'", remote_path, local_path)
+                if not os.path.exists(local_path):
+                    setup_log.warning("'%s' is missing on the nlx VM", remote_path)
             except Exception as e:  # pylint: disable=broad-exception-caught
                 setup_log.warning(
                     "An error occurred when processing %s log: %s", remote_path, e
@@ -129,12 +132,17 @@ async def collect_kernel_logs(
 async def collect_logs(
     session_vm_marks: set[str],
 ):
-    await collect_nordderper_logs()
-    await collect_dns_server_logs()
-    await collect_core_api_server_logs()
-    await collect_kernel_logs("after_tests", session_vm_marks)
-    await collect_mac_diagnostic_reports(session_vm_marks)
-    await save_nordlynx_logs(session_vm_marks)
+    os.makedirs(LOG_DIR, exist_ok=True)
+
+    await asyncio.gather(
+        collect_nordderper_logs(),
+        collect_dns_server_logs(),
+        collect_core_api_server_logs(),
+        collect_kernel_logs("after_tests", session_vm_marks),
+        collect_mac_diagnostic_reports(session_vm_marks),
+        save_nordlynx_logs(session_vm_marks),
+        return_exceptions=True,
+    )
 
 
 async def collect_nordderper_logs():
@@ -212,11 +220,8 @@ async def copy_file_from_container(container_name, src_path, dst_path):
 async def collect_mac_diagnostic_reports(
     session_vm_marks: set[str],
 ):
-    is_ci = "GITLAB_CI" in os.environ
     if not (
-        is_ci
-        or "NATLAB_COLLECT_MAC_DIAGNOSTIC_LOGS" in os.environ
-        or "mac" in session_vm_marks
+        "mac" in session_vm_marks or "NATLAB_COLLECT_MAC_DIAGNOSTIC_LOGS" in os.environ
     ):
         return
     setup_log.info("Collect mac diagnostic reports")

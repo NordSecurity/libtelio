@@ -14,6 +14,7 @@ from tests.utils.bindings import (
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection_util import generate_connection_tracker_config
 from tests.utils.ping import ping
+from tests.utils.router import IPStack
 
 
 # Module-level override — all tests in this file get VPN_1
@@ -73,6 +74,14 @@ def _vpn_tags() -> list:
                 ),
             ),
             marks=pytest.mark.mac,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+            ),
+            marks=pytest.mark.android,
         ),
     ],
 )
@@ -168,6 +177,14 @@ async def test_mesh_plus_vpn_one_peer(
                 ),
             ),
             marks=pytest.mark.mac,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+            ),
+            marks=pytest.mark.android,
         ),
     ],
 )
@@ -290,6 +307,16 @@ async def test_mesh_plus_vpn_both_peers(
             ),
             "10.0.254.19",
             marks=pytest.mark.mac,
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+                is_meshnet=False,
+            ),
+            "10.0.254.24",
+            marks=pytest.mark.android,
         ),
     ],
 )
@@ -425,6 +452,17 @@ async def test_vpn_plus_mesh(
                 ),
             ),
             marks=[pytest.mark.mac],
+        ),
+        pytest.param(
+            SetupParameters(
+                connection_tag=ConnectionTag.VM_ANDROID_1,
+                adapter_type_override=TelioAdapterType.NEP_TUN,
+                ip_stack=IPStack.IPv4,
+                features=features_with_endpoint_providers(
+                    [EndpointProvider.LOCAL, EndpointProvider.STUN]
+                ),
+            ),
+            marks=pytest.mark.android,
         ),
     ],
 )

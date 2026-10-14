@@ -327,10 +327,11 @@ async def test_wg_adapter_creation_retry(conn_tag: ConnectionTag) -> None:
             assert PRIMARY_GUID_SLOT in used_slots
             assert retry_slot not in used_slots
             telio_log = await client.log.get()
-            if orphan_present:
-                assert ORPHANED_ADAPTER_REMOVED_LOG in telio_log
-            if leftover_present:
-                assert STALE_ADAPTER_CONFIG_REMOVED_LOG in telio_log
+            if orphan_present or leftover_present:
+                assert (
+                    ORPHANED_ADAPTER_REMOVED_LOG in telio_log
+                    or STALE_ADAPTER_CONFIG_REMOVED_LOG in telio_log
+                )
             log.info("Stopping telio")
 
 

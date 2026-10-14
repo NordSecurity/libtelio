@@ -1,5 +1,6 @@
 import asyncio
 import pytest
+from contextlib import AsyncExitStack
 from tests import config
 from tests.helpers import SetupParameters, setup_api, Environment
 from tests.mesh_api import Node
@@ -18,6 +19,8 @@ from tests.utils.netcat import NetCatServer, NetCatClient
 from tests.utils.ping import ping
 from tests.utils.router import IPProto, IPStack
 from typing import Tuple, Optional, Callable, Awaitable
+
+SERVER_FIN_TIMEOUT_S = 10
 
 
 def get_ips_and_stack(alpha: Node, beta: Node) -> Tuple[IPProto, str, str]:
@@ -535,35 +538,45 @@ async def test_mesh_firewall_tcp_stuck_in_last_ack_state_conn_kill_from_server_s
     )
     connection_alpha, connection_beta = [conn.connection for conn in env.connections]
 
+    nc_connection = FiveTuple(protocol="tcp", dst_ip=CLIENT_ALPHA_IP, dst_port=PORT)
+
     async with ConnectionTracker(
         connection_beta,
         [
             TCPStateSequence(
                 "telio-firewall-server-side-kill",
-                FiveTuple(protocol="tcp", dst_ip=CLIENT_ALPHA_IP, dst_port=PORT),
+                nc_connection,
                 [TcpState.LAST_ACK, TcpState.TIME_WAIT],
                 trailing_state=TcpState.CLOSE,
             )
         ],
     ).run() as conntrack:
-        async with NetCatServer(
-            connection_alpha,
-            PORT,
-            ipv6=CLIENT_PROTO == IPProto.IPv6,
-            bind_ip=CLIENT_ALPHA_IP,
-        ).run() as listener:
-            await listener.listening_started()
-
-            async with NetCatClient(
-                connection_beta,
-                CLIENT_ALPHA_IP,
+        async with AsyncExitStack() as client_stack:
+            async with NetCatServer(
+                connection_alpha,
                 PORT,
                 ipv6=CLIENT_PROTO == IPProto.IPv6,
-                source_ip=CLIENT_BETA_IP,
-            ).run() as client:
+                bind_ip=CLIENT_ALPHA_IP,
+            ).run() as listener:
+                await listener.listening_started()
+
+                client = await client_stack.enter_async_context(
+                    NetCatClient(
+                        connection_beta,
+                        CLIENT_ALPHA_IP,
+                        PORT,
+                        ipv6=CLIENT_PROTO == IPProto.IPv6,
+                        source_ip=CLIENT_BETA_IP,
+                    ).run()
+                )
                 await asyncio.gather(
                     listener.connection_received(), client.connection_succeeded()
                 )
+
+            await asyncio.wait_for(
+                conntrack.wait_for_tcp_state(nc_connection, TcpState.FIN_WAIT),
+                SERVER_FIN_TIMEOUT_S,
+            )
 
         # kill server and check what is happening in conntrack events
         # if everything is correct -> conntrack should show LAST_ACK -> TIME_WAIT

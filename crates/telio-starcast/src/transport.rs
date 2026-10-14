@@ -312,6 +312,18 @@ impl State {
             .any(|network| network.contains(&dst)))
     }
 
+    fn recompute_ip_header_checksum(packet: &mut [u8]) -> Result<(), Error> {
+        match packet.first().ok_or(Error::InvalidIpPacket)? >> 4 {
+            4 => {
+                let mut packet = MutableIpv4Packet::new(packet).ok_or(Error::InvalidIpPacket)?;
+                packet.repair_ip_header_checksum();
+                Ok(())
+            }
+            6 => Ok(()), // No header checksum in IPv6
+            _ => Err(Error::InvalidIpPacket),
+        }
+    }
+
     fn get_packet_dst<'a, P: MutableIpPacket<'a>>(packet: &'a mut [u8]) -> Result<IpAddr, Error> {
         let packet = P::new(packet).ok_or(Error::InvalidIpPacket)?;
         Ok(packet.get_destination().into())
@@ -351,7 +363,9 @@ impl Runtime for State {
         };
         let res = tokio::select! {
             Some(mut packet) = self.packet_chan.rx.recv() => {
-                match self.has_multicast_dst(&mut packet) {
+                match Self::recompute_ip_header_checksum(&mut packet)
+                    .and_then(|_| self.has_multicast_dst(&mut packet))
+                {
                     Ok(val) if val => self.handle_local_multicast_packet(packet).await,
                     Ok(_) => self.handle_mapped_unicast_packet(packet).await,
                     Err(e) => Err(e),
@@ -379,7 +393,10 @@ mod tests {
     use std::{net::Ipv4Addr, time::Duration};
     use tokio::time::timeout;
 
-    use pnet_packet::{ipv4::Ipv4Packet, udp::UdpPacket};
+    use pnet_packet::{
+        ipv4::{self, Ipv4Packet, MutableIpv4Packet},
+        udp::UdpPacket,
+    };
     use telio_crypto::SecretKey;
 
     use super::*;
@@ -525,6 +542,25 @@ mod tests {
                 assert!(result.is_err());
             }
         }
+
+        scaffold.stop().await;
+    }
+
+    #[tokio::test]
+    async fn test_handle_local_multicast_packet_repairs_ipv4_checksum() {
+        let scaffold = Scaffold::start().await;
+
+        let mut packet = make_udp_v4("127.0.0.1:12345", "224.0.0.251:5353");
+        MutableIpv4Packet::new(&mut packet).unwrap().set_checksum(0);
+
+        scaffold.channel.tx.send(packet).await.unwrap();
+
+        let mut buffer = vec![0; TEST_MAX_PACKET_SIZE];
+        let bytes_read = scaffold.peers[0].1.recv(&mut buffer).await.unwrap();
+        buffer.truncate(bytes_read);
+
+        let ip_packet = Ipv4Packet::new(&buffer).unwrap();
+        assert_eq!(ip_packet.get_checksum(), ipv4::checksum(&ip_packet));
 
         scaffold.stop().await;
     }

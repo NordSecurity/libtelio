@@ -1,4 +1,11 @@
-from tests.utils.connection_tracker import parse_input, FiveTuple, EventType, TcpState
+from tests.utils.connection_tracker import (
+    parse_input,
+    ConnectionCountLimit,
+    FiveTuple,
+    EventType,
+    TcpState,
+    TCPStateSequence,
+)
 
 
 def test_connection_tracker_parse_input():
@@ -143,3 +150,53 @@ def test_connection_tracker_parse_input():
     )
     assert updated_tcp.event_type == EventType.UPDATE
     assert updated_tcp.tcp_state == TcpState.SYN_RECV
+
+
+def test_connection_count_limit_ignores_tcp_picked_up_mid_stream():
+    events = [
+        parse_input(line, 0)
+        for line in [
+            "[NEW] tcp      6 120 SYN_SENT src=192.168.102.54 dst=10.0.10.1 sport=24976 dport=8765 [UNREPLIED] src=10.0.10.1 dst=10.0.254.2 sport=8765 dport=24976",
+            "[UPDATE] tcp      6 432000 ESTABLISHED src=192.168.102.54 dst=10.0.10.1 sport=24976 dport=8765 src=10.0.10.1 dst=10.0.254.2 sport=8765 dport=24976 [ASSURED]",
+            # Delayed FIN of a connection opened before the tracker started
+            "[NEW] tcp      6 300 ESTABLISHED src=192.168.102.54 dst=10.0.10.1 sport=44085 dport=8765 [UNREPLIED] src=10.0.10.1 dst=10.0.254.2 sport=8765 dport=44085",
+            "[UPDATE] tcp      6 120 FIN_WAIT src=192.168.102.54 dst=10.0.10.1 sport=44085 dport=8765 src=10.0.10.1 dst=10.0.254.2 sport=8765 dport=44085 [ASSURED]",
+        ]
+    ]
+    target = FiveTuple(
+        protocol="tcp", src_ip="192.168.102.54", dst_ip="10.0.10.1", dst_port=8765
+    )
+
+    assert (
+        ConnectionCountLimit("derp_1", target, 1, 1).find_conntracker_violations(events)
+        is None
+    )
+    assert (
+        ConnectionCountLimit("derp_1", target, 2, 2).find_conntracker_violations(events)
+        is not None
+    )
+
+
+def test_tcp_state_sequence_ignores_tcp_picked_up_mid_stream():
+    events = [
+        parse_input(line, 0)
+        for line in [
+            "[NEW] tcp      6 120 SYN_SENT src=192.168.102.54 dst=10.0.10.1 sport=24976 dport=8765 [UNREPLIED] src=10.0.10.1 dst=10.0.254.2 sport=8765 dport=24976",
+            "[UPDATE] tcp      6 60 SYN_RECV src=192.168.102.54 dst=10.0.10.1 sport=24976 dport=8765 src=10.0.10.1 dst=10.0.254.2 sport=8765 dport=24976",
+            "[UPDATE] tcp      6 432000 ESTABLISHED src=192.168.102.54 dst=10.0.10.1 sport=24976 dport=8765 src=10.0.10.1 dst=10.0.254.2 sport=8765 dport=24976 [ASSURED]",
+            # Delayed FIN of a connection opened before the tracker started
+            "[NEW] tcp      6 300 ESTABLISHED src=192.168.102.54 dst=10.0.10.1 sport=44085 dport=8765 [UNREPLIED] src=10.0.10.1 dst=10.0.254.2 sport=8765 dport=44085",
+            "[UPDATE] tcp      6 120 FIN_WAIT src=192.168.102.54 dst=10.0.10.1 sport=44085 dport=8765 src=10.0.10.1 dst=10.0.254.2 sport=8765 dport=44085 [ASSURED]",
+            "[UPDATE] tcp      6 120 TIME_WAIT src=192.168.102.54 dst=10.0.10.1 sport=44085 dport=8765 src=10.0.10.1 dst=10.0.254.2 sport=8765 dport=44085 [ASSURED]",
+        ]
+    ]
+    five_tuple = FiveTuple(protocol="tcp", dst_ip="10.0.10.1", dst_port=8765)
+
+    assert (
+        TCPStateSequence(
+            "derp_1",
+            five_tuple,
+            [TcpState.SYN_SENT, TcpState.SYN_RECV, TcpState.ESTABLISHED],
+        ).find_conntracker_violations(events)
+        is None
+    )

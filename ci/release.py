@@ -7,7 +7,7 @@ It:
      in order, to changelog.md on the gh-pages branch, then triggers a Pages redeploy
   3. writes the raw block to --block-out (used for the GitLab release notes),
   4. opens a PR on the source branch to remove the used .unreleased/ files and, on a
-     stable (non-rc) tag, bump Cargo.toml.
+     stable (non-rc) tag, bump Cargo.toml (and Cargo.lock along with it).
 
 Needs GITHUB_WRITE_TOKEN. Imports generate_changelog and github_helpers (same dir).
 """
@@ -158,6 +158,8 @@ def open_cleanup_pr(args, token, source_branch, tmp) -> None:
             )
         set_cargo_version(cargo_path, new_version)
         run("git", "add", "Cargo.toml", cwd=src)
+        run("cargo", "check", cwd=src, check=False)
+        run("git", "add", "Cargo.lock", cwd=src)
         actions.append(f"bump to {new_version}")
     actions.append("clean up .unreleased")
     summary = f"{' and '.join(actions)} for {args.tag}"
@@ -202,7 +204,7 @@ def open_cleanup_pr(args, token, source_branch, tmp) -> None:
                 f"(source branch `{source_branch}`).\n\n"
                 "- Removes the `.unreleased/` files consumed by this release."
                 + (
-                    "\n- Bumps `Cargo.toml` to the next version."
+                    "\n- Bumps `Cargo.toml` (and `Cargo.lock`) to the next version."
                     if is_stable_tag(args.tag)
                     else ""
                 )

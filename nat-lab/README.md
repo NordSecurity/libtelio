@@ -353,6 +353,8 @@ export NATLAB_SAVE_LOGS=1
 - Per-connection pcaps are downloaded at the end of tcpdump contexts (per test) by [python.make_tcpdump()](tests/utils/tcpdump.py)
   - Files: logs/&lt;test_name&gt;[_&lt;params&gt;]/&lt;ConnectionTag&gt;.pcap
   - Name uniqueness handled by [python.find_unique_path_for_tcpdump()](tests/utils/tcpdump.py)
+- Failed tests marked `windows` export all five standard Windows registry hives before fixture teardown and compress them into:
+  - File: logs/&lt;test_name&gt;[_&lt;params&gt;]/windows_registry.zip
 - Session local capture (host):
   - File: logs/local.pcap (created by [python.make_local_tcpdump()](tests/utils/tcpdump.py))
 

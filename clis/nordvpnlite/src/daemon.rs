@@ -7,8 +7,9 @@ use serde_json::error::Error as SerdeJsonError;
 use signal_hook_tokio::Signals;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use telio_core::connection_config::VpnConnectionConfigBuilder;
 use telio_core::crypto::PublicKey;
-use telio_core::telio_model::mesh::{ExitNode, Node};
+use telio_core::telio_model::mesh::Node;
 use thiserror::Error as ThisError;
 use tokio::task::JoinError;
 use tokio::{
@@ -268,23 +269,30 @@ impl TelioTaskCmd {
                     .inspect_err(|e| {
                         error!("Failed to set routes for exit routing with error '{e:?}'")
                     })?;
-                let node = ExitNode {
-                    identifier: uuid::Uuid::new_v4().to_string(),
-                    public_key: exit_node.endpoint.public_key,
-                    allowed_ips: None,
-                    endpoint: Some(SocketAddr::new(
-                        exit_node.endpoint.address,
-                        ctx.config
-                            .override_default_wg_port
-                            .unwrap_or(DEFAULT_WIREGUARD_PORT),
-                    )),
-                };
-                let (connect, kind): (fn(_, _) -> _, _) = if exit_node.post_quantum {
-                    (Device::connect_vpn_post_quantum, "post quantum ")
+                let endpoint = SocketAddr::new(
+                    exit_node.endpoint.address,
+                    ctx.config
+                        .override_default_wg_port
+                        .unwrap_or(DEFAULT_WIREGUARD_PORT),
+                );
+                let builder = Arc::new(VpnConnectionConfigBuilder::new(
+                    exit_node.endpoint.public_key,
+                    endpoint,
+                ));
+
+                let (config, kind) = if exit_node.post_quantum {
+                    (builder.force_pq().build(), "post quantum ")
                 } else {
-                    (Device::connect_exit_node, "")
+                    (builder.build(), "")
                 };
-                match connect(&ctx.telio, &node) {
+
+                let connect_result = if config.post_quantum {
+                    ctx.telio.connect_vpn_post_quantum(config)
+                } else {
+                    ctx.telio.connect_exit_node(config)
+                };
+
+                match connect_result {
                     Ok(_) => {
                         info!(
                             "Connected to {kind}exit node: {} ({}) [{}]",

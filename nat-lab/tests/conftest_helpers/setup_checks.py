@@ -496,7 +496,7 @@ async def check_all_containers_running() -> dict[ConnectionTag, bool]:
 def get_session_vm_marks(items) -> set[str]:
     session_vm_marks: set[str] = set()
     for item in items:
-        for mark in item.own_markers:
+        for mark in item.iter_markers():
             session_vm_marks.add(mark.name)
     return session_vm_marks
 

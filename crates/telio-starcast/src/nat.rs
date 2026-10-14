@@ -329,6 +329,18 @@ mod tests {
     }
 
     #[test]
+    fn incoming_ipv4_nat_repairs_zero_ip_checksum() {
+        let mut nat = StarcastNat::new(IPV4_NAT_ADDR, IPV6_NAT_ADDR);
+        let mut incoming = make_udp_v4("1.2.3.4:1234", "5.6.7.8:5678");
+        MutableIpv4Packet::new(&mut incoming)
+            .unwrap()
+            .set_checksum(0);
+
+        assert!(nat.translate_incoming(&mut incoming).is_ok());
+        assert_checksum_v4!(incoming);
+    }
+
+    #[test]
     fn basic_ipv6_nat_works() {
         let mut nat = StarcastNat::new(IPV4_NAT_ADDR, IPV6_NAT_ADDR);
 

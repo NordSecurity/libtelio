@@ -3,11 +3,14 @@ use clap::Parser;
 use ipnet::IpNet;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use telio_core::connection_config::{
+    ApplySome, MeshnetConnectionConfigBuilder, VpnConnectionConfigBuilder,
+};
 use telio_core::crypto::{PublicKey, SecretKey};
 use telio_core::device::{Device, DeviceConfig};
 use telio_model::config::{RelayState, Server};
 use telio_model::features::Features;
-use telio_model::{config::Config as MeshMap, event::Event as DevEvent, mesh::ExitNode};
+use telio_model::{config::Config as MeshMap, event::Event as DevEvent};
 use telio_proto::CodecError;
 #[cfg(target_os = "linux")]
 use telio_utils::LIBTELIO_FWMARK;
@@ -95,6 +98,9 @@ pub enum Error {
 
     #[error("setting ip address for the adapter failed.")]
     SettingIpFailed,
+
+    #[error("Cannot setup meshnet with the post-quantum")]
+    MeshnetWithPostQuantum,
 }
 
 pub struct Cli {
@@ -205,7 +211,7 @@ enum DevCmd {
         /// IP:PORT of Endpoint. Must be specified for a regular VPN server. Not needed for a peer.
         endpoint: Option<SocketAddr>,
         allowed_ips: Vec<IpNet>,
-        /// Turns on the post-quantum tunnel
+        /// Turns on the post-quantum tunnel. Not supported for meshnet peer.
         #[clap(long = "pq")]
         postquantum: bool,
     },
@@ -471,26 +477,37 @@ impl Cli {
                 allowed_ips,
                 postquantum,
             } => {
+                if postquantum && endpoint.is_none() {
+                    cli_res!(res; (e Error::MeshnetWithPostQuantum));
+                }
+
                 if !self.telio.is_running() {
                     cli_res!(res; (e Error::NotStarted));
                 }
-                let node = ExitNode {
-                    identifier: "tcli".to_owned(),
-                    public_key,
-                    endpoint,
-                    allowed_ips: if allowed_ips.is_empty() {
-                        None
-                    } else {
-                        Some(allowed_ips)
-                    },
+
+                let allowed_ips_opt = if allowed_ips.is_empty() {
+                    None
+                } else {
+                    Some(allowed_ips)
+                };
+                let config = if let Some(ep) = endpoint {
+                    Arc::new(VpnConnectionConfigBuilder::new(public_key, ep))
+                        .with_identifier("tcli".to_owned())
+                        .apply_some(allowed_ips_opt, |b, ips| b.with_allowed_ips(ips))
+                        .apply_some(postquantum.then_some(()), |b, _| b.force_pq())
+                        .build()
+                } else {
+                    Arc::new(MeshnetConnectionConfigBuilder::new(public_key))
+                        .apply_some(allowed_ips_opt, |b, ips| b.with_allowed_ips(ips))
+                        .build()
                 };
 
-                if postquantum {
-                    cli_res!(res; (i "connecting to PQ node:\n{:#?}", node));
-                    cli_try!(res; self.telio.connect_vpn_post_quantum(&node));
+                if config.post_quantum {
+                    cli_res!(res; (i "connecting to PQ node: public_key={}, endpoint={:?}", config.public_key, config.endpoint));
+                    cli_try!(res; self.telio.connect_vpn_post_quantum(config));
                 } else {
-                    cli_res!(res; (i "connecting to node:\n{:#?}", node));
-                    cli_try!(res; self.telio.connect_exit_node(&node));
+                    cli_res!(res; (i "connecting to node: public_key={}, endpoint={:?}", config.public_key, config.endpoint));
+                    cli_try!(res; self.telio.connect_exit_node(config));
                 }
             }
             Dis { public_key } => {
@@ -553,10 +570,14 @@ impl Cli {
                     })));
                 }
 
-                if postquantum {
-                    cli_try!(self.telio.connect_vpn_post_quantum(&server));
+                let ep = cli_try!(res; server.endpoint.ok_or(telio_core::device::Error::EndpointNotProvided));
+                let config = Arc::new(VpnConnectionConfigBuilder::new(server.public_key, ep))
+                    .apply_some(postquantum.then_some(()), |b, _| b.force_pq())
+                    .build();
+                if config.post_quantum {
+                    cli_try!(self.telio.connect_vpn_post_quantum(config));
                 } else {
-                    cli_try!(self.telio.connect_exit_node(&server));
+                    cli_try!(self.telio.connect_exit_node(config));
                 }
             }
             SetIp { name } => {
@@ -831,5 +852,43 @@ impl Cli {
             cli_res!(res; (i "stopped."));
         }
         res
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+
+    fn make_cli() -> Cli {
+        let derp_server = Arc::new(Mutex::new(None));
+        Cli::new(Features::default(), None, derp_server)
+            .expect("Cli::new should succeed with default features")
+    }
+
+    #[test]
+    fn reject_misconfiguration_meshnet_with_postquantum() {
+        let mut cli = make_cli();
+
+        // All-zero WireGuard public key (32 bytes → base64).
+        let pubkey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        let responses = cli.exec(&format!("dev con {} --pq", pubkey));
+
+        assert!(
+            !responses.is_empty(),
+            "expected at least one response from exec"
+        );
+
+        match &responses[0] {
+            Resp::Error(e) => match e.as_ref() {
+                Error::MeshnetWithPostQuantum => {}
+                other => panic!("expected Error::MeshnetWithPostQuantum, got {:?}", other),
+            },
+            other => panic!(
+                "expected Resp::Error(MeshnetWithPostQuantum), got {:?}",
+                other
+            ),
+        }
     }
 }

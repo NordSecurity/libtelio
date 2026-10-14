@@ -1,7 +1,6 @@
 import asyncio
 import platform
 import re
-from collections import defaultdict
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from enum import Enum
@@ -121,6 +120,17 @@ class ConntrackerEvent:
     tcp_state: Optional[TcpState] = None
 
 
+def _is_tcp_picked_up_mid_stream(event: ConntrackerEvent) -> bool:
+    """
+    Only flows starting with SYN_SENT are new. All other (picked mid-flight) are discarded.
+    """
+    return (
+        event.event_type == EventType.NEW
+        and event.five_tuple.protocol == "tcp"
+        and event.tcp_state != TcpState.SYN_SENT
+    )
+
+
 class ConnTrackerEventsValidator:
     """
     Generic class for representing conntracker events validator
@@ -176,6 +186,7 @@ class ConnectionCountLimit(ConnTrackerEventsValidator):
             for event in events
             if event.event_type == EventType.NEW
             and self.target.partial_eq(event.five_tuple)
+            and not _is_tcp_picked_up_mid_stream(event)
         ])
 
         if self.max_limit is not None and count > self.max_limit:
@@ -242,13 +253,22 @@ class TCPStateSequence(ConnTrackerEventsValidator):
         # connection cache is introduced which maps FiveTuple to index in two dimensional
         # array, and gets cleared every time NEW type event appears in the list of events
         connections: Dict[FiveTuple, List[List[ConntrackerEvent]]] = {}
+        # Flows picked up mid-stream are skipped until their FiveTuple is reused
+        # by a new connection
+        picked_up_mid_stream: set[FiveTuple] = set()
         for event in filter(lambda e: self.five_tuple.partial_eq(e.five_tuple), events):
             # Every new connection (identified by EventType NEW) gets its own slot
             ft = event.five_tuple
+            if _is_tcp_picked_up_mid_stream(event):
+                picked_up_mid_stream.add(ft)
+                continue
             if event.event_type == EventType.NEW:
+                picked_up_mid_stream.discard(ft)
                 connections[ft] = (
                     [[]] if ft not in connections else (connections[ft] + [[]])
                 )
+            elif ft in picked_up_mid_stream:
+                continue
 
             # append event
             connections[ft][-1].append(event)
@@ -359,7 +379,7 @@ class ConnectionTracker:
         self._connection: Connection = connection
         self._validators: Optional[List[ConnTrackerEventsValidator]] = validators
         self._events: List[ConntrackerEvent] = []
-        self._tcp_state_events: Dict[TcpState, List[asyncio.Event]] = defaultdict(list)
+        self._events_changed: asyncio.Condition = asyncio.Condition()
         self._sync_event: asyncio.Event = asyncio.Event()
         self._sync_connection: FiveTuple = FiveTuple(
             protocol="icmp", dst_ip="127.0.0.2"
@@ -384,6 +404,8 @@ class ConnectionTracker:
 
             self._events.append(event)
             self._new_report_event.set()
+            async with self._events_changed:
+                self._events_changed.notify_all()
 
     async def execute(self) -> None:
         if platform.system() == "Darwin":
@@ -393,14 +415,30 @@ class ConnectionTracker:
 
         await self._process.execute(stdout_callback=self.on_stdout)
 
-    def notify_on_tcp_state(self, state: TcpState, event: asyncio.Event) -> None:
-        """Register an Event to be notified when a specific TCP state is reported"""
-        self._tcp_state_events[state].append(event)
+    async def wait_for_tcp_state(self, five_tuple: FiveTuple, state: TcpState) -> None:
+        """Waits until conntrack reports `state` for a connection matching `five_tuple`"""
+        if platform.system() == "Darwin":
+            return None
+        if not self._validators:
+            return None
+
+        def state_reported() -> bool:
+            return any(
+                event.tcp_state == state and five_tuple.partial_eq(event.five_tuple)
+                for event in self._events
+            )
+
+        async with self._events_changed:
+            await self._events_changed.wait_for(state_reported)
 
     async def find_conntracker_violations(self) -> Optional[ConnTrackerViolation]:
         if platform.system() == "Darwin":
             return None
         if not self._validators:
+            return None
+        # The tracker never ran on Android (see run()), so there is nothing to
+        # validate and no events will ever arrive.
+        if self._connection.target_os == TargetOS.Android:
             return None
 
         await self._synchronize()
@@ -430,6 +468,11 @@ class ConnectionTracker:
 
     async def _synchronize(self) -> None:
         if not self._validators:
+            return None
+
+        # No conntrack process runs on Android (see run()), so _sync_event would
+        # never be set and the ping loop below would never end.
+        if self._connection.target_os == TargetOS.Android:
             return None
 
         log.debug("ConnectionTracker[%s] waiting for _sync_event (ping)", self.id)

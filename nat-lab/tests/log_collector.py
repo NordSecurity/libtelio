@@ -242,6 +242,72 @@ COREDUMP_DEST_DIR = "coredumps"
 #   - dockur_windows/scripts/enable_crash_dumps.ps1
 #   - libtelio/nat-lab/bin/windows-client (runtime fallback config)
 WINDOWS_DUMP_FOLDER = "C:\\CrashDumps"
+WINDOWS_REGISTRY_SNAPSHOT_DIR = "C:\\Windows\\Temp\\natlab-registry-snapshot"
+WINDOWS_REGISTRY_SNAPSHOT_ARCHIVE = "C:\\Windows\\Temp\\natlab-registry-snapshot.zip"
+WINDOWS_REGISTRY_HIVES = (
+    "HKEY_CLASSES_ROOT",
+    "HKEY_CURRENT_USER",
+    "HKEY_LOCAL_MACHINE",
+    "HKEY_USERS",
+    "HKEY_CURRENT_CONFIG",
+)
+
+
+async def save_windows_registry_snapshot(connection: Connection) -> None:
+    """Export the Windows registry and download it as one test artifact.
+
+    The five standard registry hives are recursively exported to temporary
+    ``.reg`` files inside the VM, compressed into a ZIP archive, and downloaded
+    to the current test's log directory. Temporary VM files are always removed.
+    """
+    if connection.target_os != TargetOS.Windows:
+        return
+
+    log_dir = get_current_test_log_path()
+    os.makedirs(log_dir, exist_ok=True)
+    local_archive = os.path.join(log_dir, "windows_registry.zip")
+    if os.path.exists(local_archive):
+        os.remove(local_archive)
+    hives = ", ".join(f"'{hive}'" for hive in WINDOWS_REGISTRY_HIVES)
+    export_command = (
+        "$ErrorActionPreference = 'Stop'; "
+        f"$snapshotDir = '{WINDOWS_REGISTRY_SNAPSHOT_DIR}'; "
+        f"$archive = '{WINDOWS_REGISTRY_SNAPSHOT_ARCHIVE}'; "
+        "Remove-Item -Path $snapshotDir -Recurse -Force -ErrorAction SilentlyContinue; "
+        "Remove-Item -Path $archive -Force -ErrorAction SilentlyContinue; "
+        "New-Item -Path $snapshotDir -ItemType Directory -Force | Out-Null; "
+        f"$hives = @({hives}); "
+        "foreach ($hive in $hives) { "
+        "$destination = Join-Path $snapshotDir ($hive + '.reg'); "
+        "& reg.exe export $hive $destination /y | Out-Null; "
+        'if ($LASTEXITCODE -ne 0) { throw "reg.exe export failed for $hive" }; '
+        "}; "
+        "Compress-Archive -Path (Join-Path $snapshotDir '*.reg') "
+        "-DestinationPath $archive -CompressionLevel Optimal -Force"
+    )
+    cleanup_command = (
+        f"Remove-Item -Path '{WINDOWS_REGISTRY_SNAPSHOT_DIR}' -Recurse -Force "
+        "-ErrorAction SilentlyContinue; "
+        f"Remove-Item -Path '{WINDOWS_REGISTRY_SNAPSHOT_ARCHIVE}' -Force "
+        "-ErrorAction SilentlyContinue"
+    )
+
+    try:
+        await connection.create_process(
+            ["powershell", "-NoProfile", "-Command", export_command], quiet=True
+        ).execute()
+        await connection.download(WINDOWS_REGISTRY_SNAPSHOT_ARCHIVE, local_archive)
+        if os.path.exists(local_archive):
+            log.info("Saved Windows registry snapshot to %s", local_archive)
+        else:
+            log.warning("Windows registry snapshot was not downloaded")
+    finally:
+        try:
+            await connection.create_process(
+                ["powershell", "-NoProfile", "-Command", cleanup_command], quiet=True
+            ).execute()
+        except ProcessExecError as e:
+            log.warning("Failed to clean up Windows registry snapshot files: %s", e)
 
 
 # This is where natlab expects coredumps to be placed
