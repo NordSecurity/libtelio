@@ -113,5 +113,6 @@ After installing the `.ipk` package:
 * To stop the `nordvpnlite` service run `/etc/init.d/nordvpnlite stop`. Important: Simply running `nordvpnlite stop` will cause procd to respawn it
 * To toggle running `nordvpnlite` automatically at boot (respawning), enable or disable the service `/etc/init.d/nordvpnlite enable` or `/etc/init.d/nordvpnlite disable`
 * To read the service logs run `logread | grep -i nordvpnlite` and `cat /var/log/nordvpnlite.log`
+* Some runtime state, like dhcp or dns settings, is written to a temporary file instead of being committed/persisted to storage. Therefore, `uci show dhcp`, `uci get`, etc. may not show the actual config being used. Use `uci -P /var/state <command>` to read that runtime state
 
 *NordVPN Lite is not affiliated with OpenWrt. OpenWrt is a registered trademark owned by Software Freedom Conservancy (SFC).*
