@@ -12,10 +12,6 @@ from pathlib import Path
 NAME = "telio"
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/..")
 WORKING_DIR = f"{PROJECT_ROOT}"
-NO_LTO_CARGO_PROFILE_ENV = {
-    "CARGO_PROFILE_RELEASE_LTO": "off",
-    "CARGO_PROFILE_RELEASE_CODEGEN_UNITS": "16",
-}
 
 # `sys.path` is the equivalent of `PYTHONPATH`, aka module search paths
 sys.path += [f"{PROJECT_ROOT}/3rd-party/rust_build_utils"]
@@ -62,8 +58,7 @@ PROJECT_CONFIG = rutils.Project(
     working_dir=WORKING_DIR,
 )
 NO_LTO_PROJECT_CONFIG = dataclasses.replace(
-    PROJECT_CONFIG,
-    cargo_target_dir=os.path.join(PROJECT_CONFIG.get_cargo_target_dir(), "no-lto"),
+    PROJECT_CONFIG, release_profile="release-no-lto"
 )
 
 
@@ -632,7 +627,6 @@ def cargo_builds(config, packages):
         rutils.CargoBuild(
             NO_LTO_PROJECT_CONFIG,
             {k: v for k, v in packages.items() if k in no_lto_names},
-            NO_LTO_CARGO_PROFILE_ENV,
         ),
     ]
     return [build for build in builds if build.packages]
