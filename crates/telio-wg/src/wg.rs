@@ -144,6 +144,8 @@ pub struct Io {
     pub analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
     /// Channel to transmit event to registered event callback
     pub libtelio_wide_event_publisher: Option<mc_chan::Tx<Box<LibtelioEvent>>>,
+    /// Channel to report WireGuard listen port changes
+    pub listen_port_events: Tx<Option<u16>>,
 }
 
 /// Keepalive packets size
@@ -160,6 +162,7 @@ struct State {
     interval: Interval,
     interface: Interface,
     event: Tx<Box<Event>>,
+    listen_port_event: Tx<Option<u16>>,
     analytics_tx: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
     // Detecting unexpected driver failures, such as a malicious removal
     // We won't be notified of any errors, but a periodic call to get_config_uapi() will return a Win32 error code != 0.
@@ -238,6 +241,7 @@ impl DynamicWg {
     ///             events: chan.tx,
     ///             analytics_tx: None,
     ///             libtelio_wide_event_publisher: None,
+    ///             listen_port_events: Chan::default().tx,
     ///         },
     ///         Config {
     ///             adapter: AdapterType::default(),
@@ -312,6 +316,7 @@ impl DynamicWg {
                 interval,
                 interface: Default::default(),
                 event: io.events,
+                listen_port_event: io.listen_port_events,
                 analytics_tx: io.analytics_tx,
                 link_detection,
                 uapi_fail_counter: 0,
@@ -974,6 +979,12 @@ impl State {
             }
         }
 
+        if self.interface.listen_port != to.listen_port
+            && self.listen_port_event.try_send(to.listen_port).is_err()
+        {
+            telio_log_warn!("Failed to report listen port change");
+        }
+
         self.interface = to;
 
         Ok(success)
@@ -1209,6 +1220,7 @@ pub mod tests {
 
     pub struct Env {
         pub event: Rx<Box<Event>>,
+        pub listen_port_event: Rx<Option<u16>>,
         pub analytics: Option<mc_chan::Tx<Box<AnalyticsEvent>>>,
         pub adapter: Arc<Mutex<MockAdapter>>,
         #[cfg(test)]
@@ -1223,6 +1235,7 @@ pub mod tests {
         cfg: Config,
     ) -> Env {
         let events_ch = Chan::default();
+        let listen_port_ch = Chan::default();
         let analytics_ch = Some(McChan::default().tx);
         let adapter = Arc::new(Mutex::new(MockAdapter::new()));
 
@@ -1244,6 +1257,7 @@ pub mod tests {
                 events: events_ch.tx.clone(),
                 analytics_tx: analytics_ch.clone(),
                 libtelio_wide_event_publisher: None,
+                listen_port_events: listen_port_ch.tx,
             },
             Box::new(adapter.clone()),
             None,
@@ -1259,6 +1273,7 @@ pub mod tests {
 
         Env {
             event: events_ch.rx,
+            listen_port_event: listen_port_ch.rx,
             analytics: analytics_ch,
             adapter,
             #[cfg(not(test))]
@@ -1337,6 +1352,46 @@ pub mod tests {
     async fn wg_gets_interface() {
         let Env { adapter, wg, .. } = setup().await;
         assert_eq!(Interface::default(), wg.get_interface().await.unwrap());
+
+        adapter.lock().await.expect_stop().return_once(|| ());
+        wg.stop().await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wg_reports_listen_port_change_once() {
+        let Env {
+            adapter,
+            wg,
+            mut listen_port_event,
+            ..
+        } = setup().await;
+
+        let ifa = Interface {
+            listen_port: Some(51820),
+            ..Default::default()
+        };
+        adapter
+            .lock()
+            .await
+            .expect_send_uapi_cmd()
+            .with(predicate::eq(Cmd::Get))
+            .times(2..)
+            .returning(move |_| {
+                Ok(Response {
+                    errno: 0,
+                    interface: Some(ifa.clone()),
+                })
+            });
+
+        tokio::time::advance(Duration::from_millis(DEFAULT_POLLING_PERIOD_MS)).await;
+        assert_eq!(Some(Some(51820)), listen_port_event.recv().await);
+
+        for _ in 0..3 {
+            tokio::time::advance(Duration::from_millis(DEFAULT_POLLING_PERIOD_MS)).await;
+            tokio::task::yield_now().await;
+        }
+        adapter.lock().await.checkpoint();
+        assert!(listen_port_event.try_recv().is_err());
 
         adapter.lock().await.expect_stop().return_once(|| ());
         wg.stop().await;
@@ -1429,6 +1484,7 @@ pub mod tests {
             events: Chan::default().tx,
             analytics_tx: None,
             libtelio_wide_event_publisher: None,
+            listen_port_events: Chan::default().tx,
         };
         let result = DynamicWg::start(
             io,
