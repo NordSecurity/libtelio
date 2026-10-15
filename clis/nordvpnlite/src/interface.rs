@@ -759,7 +759,7 @@ impl ConfigureInterface for Uci {
         // set options
         execute(Command::new("uci").args([
             "set",
-            &format!("network.tun.device={}", &self.interface_name),
+            &format!("network.tun.device={}", self.interface_name),
         ]))?;
         execute(Command::new("uci").args(["set", "network.tun.proto=static"]))?;
         execute(Command::new("uci").args(["set", &format!("network.tun.ipaddr={ip_address}")]))?;

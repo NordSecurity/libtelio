@@ -212,8 +212,8 @@ pub mod moose {
     pub fn init(
         event_path: String,
         prod: bool,
-        init_cb: Box<(dyn InitCallback + 'static)>,
-        error_cb: Box<(dyn ErrorCallback + Sync + std::marker::Send + 'static)>,
+        init_cb: Box<dyn InitCallback + 'static>,
+        error_cb: Box<dyn ErrorCallback + Sync + std::marker::Send + 'static>,
     ) -> std::result::Result<Result, Error> {
         let success = super::event_log(
             "init",

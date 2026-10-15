@@ -61,7 +61,7 @@ pub struct SortedServers {
 impl SortedServers {
     /// Create SortedServers with default server sorting - by their weight
     pub fn new(mut servers: Vec<Server>) -> Self {
-        servers.sort_by(|a, b| a.weight.cmp(&b.weight));
+        servers.sort_by_key(|a| a.weight);
         Self {
             servers,
             current_server_num: 0,

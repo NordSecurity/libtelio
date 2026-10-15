@@ -376,7 +376,7 @@ async fn consolidate_wg_peers<
     let actual_peers = wireguard_interface.get_interface().await?.peers;
     let mut is_any_peer_eligible_for_upgrade = false;
 
-    for (_, peer) in actual_peers.iter() {
+    for peer in actual_peers.values() {
         if is_peer_proxying(peer, &proxy_endpoints) && peer.state() == NodeState::Connected {
             is_any_peer_eligible_for_upgrade = true;
         }

@@ -93,7 +93,7 @@ impl<T: Protector + ?Sized> Protector for Arc<T> {
 /// Construct a [`Protector`] instance that applies a closure.
 ///
 /// The closure is called only during [`Protector::make_external`], all other methods are no-op.
-pub fn make_external_protector(protect: Protect) -> Arc<(dyn Protector + 'static)> {
+pub fn make_external_protector(protect: Protect) -> Arc<dyn Protector + 'static> {
     struct ProtectorMakeExternalCb(Protect);
     impl Protector for ProtectorMakeExternalCb {
         fn make_external(&self, socket: NativeSocket) -> std::io::Result<()> {

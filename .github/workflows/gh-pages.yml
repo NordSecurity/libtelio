@@ -42,13 +42,13 @@ jobs:
     - name: Build Rust Docs
       uses: actions-rs/toolchain@b2417cde72dcf67f306c0ae8e0828a81bf0b189f # v1.0.6
       with:
-        toolchain: nightly-2025-08-07
+        toolchain: nightly-2026-07-16
         components: rust-docs
     # Nightly is required, because index page generation is a nightly feature. Without it the index.html file will not be at the root of
     # The doc folder and gh-pages won't be able to find it.
     # --no-deps is required to prevent rustdoc from adding third party dependencies to our documentation, but that also brakes links to
     # local pages so that's fixed by adding --workspace.
-    - run: cargo +nightly-2025-08-07 doc --no-deps --workspace --document-private-items
+    - run: cargo +nightly-2026-07-16 doc --no-deps --workspace --document-private-items
 
     - name: Set up Python
       uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0

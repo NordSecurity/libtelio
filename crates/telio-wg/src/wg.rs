@@ -617,13 +617,7 @@ impl State {
         peer: Peer,
         old_peer: Option<Peer>,
     ) -> Result<(), Error> {
-        let link_state = link_state.and_then(|s| {
-            if self.link_detection.is_none() {
-                None
-            } else {
-                Some(s)
-            }
-        });
+        let link_state = link_state.filter(|&_s| !self.link_detection.is_none());
 
         let event = Event {
             state,

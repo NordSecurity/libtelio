@@ -983,7 +983,7 @@ impl Analytics {
             .insert(self.public_key, self.config.fingerprint.clone());
 
         // Insert all the nodes from the config
-        for (node, _) in self.config_nodes.iter() {
+        for node in self.config_nodes.keys() {
             self.collection
                 .fingerprints
                 .entry(*node)

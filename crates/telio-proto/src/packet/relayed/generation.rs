@@ -30,7 +30,7 @@ impl PartialOrd for Generation {
 
 impl Display for Generation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Gen({})", &self.0)
+        write!(f, "Gen({})", self.0)
     }
 }
 

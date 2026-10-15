@@ -537,14 +537,12 @@ fn must_broadcast_path_change(
                         break;
                     }
                     // If it is primary (or primary list is unknown), then we do.
-                    Some(interface) => {
-                        if is_primary(interface) {
-                            must_broadcast = true;
-                            break;
-                        }
+                    Some(interface) if is_primary(interface) => {
+                        must_broadcast = true;
+                        break;
                     }
                     // Otherwise we must not broadcast the event.
-                    None => {}
+                    _ => {}
                 }
             }
             // Unknown key, don't broadcast the event.
