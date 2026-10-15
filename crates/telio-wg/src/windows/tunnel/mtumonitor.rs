@@ -61,10 +61,12 @@ impl MtuMonitor {
     pub fn start_monitoring(&mut self) -> Result<(), NETIO_STATUS> {
         self.do_it()?;
 
+        // Both families are watched, as the MTU can come from the other
+        // family's default route when the own family has none
         let mut cb_handle: HANDLE = NULL;
         let result = unsafe {
             winapi::shared::netioapi::NotifyRouteChange2(
-                self.family,
+                AF_UNSPEC as ADDRESS_FAMILY,
                 Some(Self::route_change_callback),
                 self as *mut Self as _,
                 false as _,
@@ -79,7 +81,7 @@ impl MtuMonitor {
         let mut cb_handle: HANDLE = NULL;
         let result = unsafe {
             winapi::shared::netioapi::NotifyIpInterfaceChange(
-                self.family,
+                AF_UNSPEC as ADDRESS_FAMILY,
                 Some(Self::interface_change_callback),
                 self as *mut Self as _,
                 false as _,
@@ -191,7 +193,12 @@ impl MtuMonitor {
         };
 
         telio_log_trace!("+++ MtuMonitor::do_it: find_default_luid");
-        let default_luid = self.find_default_luid()?;
+        let mut default_luid = self.find_default_luid(self.family)?;
+        if default_luid == 0 {
+            // Packets of both families travel over whichever uplink exists, so
+            // size the interface from the other family's default route
+            default_luid = self.find_default_luid(Self::other_family(self.family))?;
+        }
         telio_log_trace!("--- MtuMonitor::do_it: find_default_luid");
 
         let mut mtu: u32 = 0;
@@ -206,19 +213,11 @@ impl MtuMonitor {
         }
 
         if mtu > 0 && *last_mtu != mtu {
-            let own_luid = InterfaceLuid::new(self.own_luid);
-            telio_log_trace!("+++ MtuMonitor::do_it: get_ip_interface");
-            let mut own_iface = own_luid.get_ip_interface(self.family)?;
-            own_iface.NlMtu = mtu.saturating_sub(80);
-            if own_iface.NlMtu < self.min_mtu {
-                own_iface.NlMtu = self.min_mtu;
-            }
-
-            telio_log_trace!("+++ MtuMonitor::do_it: SetIpInterfaceEntry");
-            let result = unsafe { SetIpInterfaceEntry(&mut own_iface) };
-            if NO_ERROR != result {
-                return Err(result);
-            }
+            set_interface_mtu(
+                self.own_luid,
+                self.family,
+                mtu.saturating_sub(80).max(self.min_mtu),
+            )?;
             *last_mtu = mtu;
         }
 
@@ -227,9 +226,18 @@ impl MtuMonitor {
         Ok(())
     }
 
-    fn find_default_luid(&self) -> Result<u64, NETIO_STATUS> {
+    fn other_family(family: ADDRESS_FAMILY) -> ADDRESS_FAMILY {
+        if family == AF_INET as ADDRESS_FAMILY {
+            AF_INET6 as ADDRESS_FAMILY
+        } else {
+            AF_INET as ADDRESS_FAMILY
+        }
+    }
+
+    /// LUID of the interface holding the lowest metric default route of `family`, 0 if none
+    fn find_default_luid(&self, family: ADDRESS_FAMILY) -> Result<u64, NETIO_STATUS> {
         let mut p_table: PMIB_IPFORWARD_TABLE2 = ptr::null_mut();
-        let result = unsafe { GetIpForwardTable2(self.family, &mut p_table) };
+        let result = unsafe { GetIpForwardTable2(family, &mut p_table) };
         if NO_ERROR != result {
             telio_log_trace!(
                 "find_default_luid failed GetIpForwardTable2 with {}",
@@ -265,7 +273,7 @@ impl MtuMonitor {
                     continue;
                 }
             }
-            match current_interface.get_ip_interface(self.family) {
+            match current_interface.get_ip_interface(family) {
                 Ok(iface) => {
                     let current_metric = unsafe { (*current_entry).Metric + iface.Metric };
                     if current_metric < lowest_metric {
@@ -283,6 +291,14 @@ impl MtuMonitor {
 
         Ok(luid)
     }
+}
+
+/// Set the MTU of the `family` IP interface of the adapter identified by `luid`
+pub fn set_interface_mtu(luid: u64, family: ADDRESS_FAMILY, mtu: u32) -> Result<(), NETIO_STATUS> {
+    let luid = InterfaceLuid::new(luid);
+    let mut iface = luid.get_ip_interface(family)?;
+    iface.NlMtu = mtu;
+    luid.set_ip_interface(&mut iface)
 }
 
 #[cfg(windows)]
