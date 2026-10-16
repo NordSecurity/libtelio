@@ -10,7 +10,7 @@ from typing import List, Any, Dict
 
 CERT_PATH = "/etc/ca-certificates/server-cert.pem.test"
 ENS_INFO_PORT = "6969"
-ENS_INFO_TOKEN = "elephant"
+ENS_INFO_TOKEN = "nat-lab-ens-info-api-secret-0123"
 
 JsonDict = Dict[str, Any]
 
