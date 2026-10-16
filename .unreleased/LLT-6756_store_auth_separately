@@ -1,2 +1,0 @@
-Updated `nordvpnlite` to store authentication token in a separate file.
-Added `login` and `logout` cli commands to store and clear the credentials.
