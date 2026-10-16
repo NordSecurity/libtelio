@@ -252,6 +252,7 @@ mod tests {
             allow_multicast: false,
             peer_allows_multicast: false,
             vpn_connection_error: None,
+            selected_cipher: None,
         };
 
         let server = Server {
@@ -304,7 +305,8 @@ mod tests {
             r#""path":"relay","#,
             r#""allow_multicast":false,"#,
             r#""peer_allows_multicast":false,"#,
-            r#""vpn_connection_error":null"#,
+            r#""vpn_connection_error":null,"#,
+            r#""selected_cipher":null"#,
             r#"}}"#
         ));
 

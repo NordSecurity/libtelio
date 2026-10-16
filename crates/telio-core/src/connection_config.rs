@@ -4,6 +4,7 @@ use ipnet::IpNet;
 use parking_lot::Mutex;
 use std::net::SocketAddr;
 use telio_crypto::PublicKey;
+use telio_model::cipher::Cipher;
 
 /// Helper trait that conditionally applies a transformation when an [`Option`] is [`Some`].
 /// Allows fluent builder chains.
@@ -45,6 +46,9 @@ pub struct ConnectionConfig {
     /// When `true`, a post-quantum tunnel is established.
     /// Only meaningful for VPN connections.
     pub post_quantum: bool,
+    /// Ciphers supported by the VPN server.
+    /// Only meaningful for VPN connections; always `None` for meshnet connections.
+    pub supported_ciphers: Option<Vec<Cipher>>,
 }
 
 pub struct VpnConnectionConfigBuilder {
@@ -65,6 +69,7 @@ impl VpnConnectionConfigBuilder {
                 allowed_ips: None,
                 endpoint: Some(endpoint),
                 post_quantum: false,
+                supported_ciphers: None,
             }),
         }
     }
@@ -89,6 +94,13 @@ impl VpnConnectionConfigBuilder {
         self
     }
 
+    /// Set the list of ciphers to advertise as supported for this VPN connection.
+    /// The order of ciphers does not matter for preference negotiation.
+    pub fn with_ciphers(self: Arc<Self>, ciphers: Vec<Cipher>) -> Arc<Self> {
+        self.config.lock().supported_ciphers = Some(ciphers);
+        self
+    }
+
     /// Build the final [`ConnectionConfig`].
     pub fn build(self: Arc<Self>) -> ConnectionConfig {
         let guard = self.config.lock();
@@ -98,6 +110,7 @@ impl VpnConnectionConfigBuilder {
             allowed_ips: guard.allowed_ips.clone(),
             endpoint: guard.endpoint,
             post_quantum: guard.post_quantum,
+            supported_ciphers: guard.supported_ciphers.clone(),
         }
     }
 }
@@ -119,6 +132,7 @@ impl MeshnetConnectionConfigBuilder {
                 allowed_ips: None,
                 endpoint: None,
                 post_quantum: false,
+                supported_ciphers: None,
             }),
         }
     }
@@ -139,6 +153,7 @@ impl MeshnetConnectionConfigBuilder {
             allowed_ips: guard.allowed_ips.clone(),
             endpoint: None,
             post_quantum: false,
+            supported_ciphers: None,
         }
     }
 }
@@ -178,6 +193,7 @@ mod tests {
         assert!(config.identifier.is_none());
         assert!(config.allowed_ips.is_none());
         assert!(!config.post_quantum);
+        assert!(config.supported_ciphers.is_none());
     }
 
     #[test]
@@ -214,6 +230,33 @@ mod tests {
         assert!(config.post_quantum);
     }
 
+    #[test]
+    fn vpn_builder_with_ciphers() {
+        let pk = test_public_key();
+        let ep = test_endpoint();
+        let ciphers = vec![Cipher::Chacha20Poly1305, Cipher::Aegis256];
+        let config = Arc::new(VpnConnectionConfigBuilder::new(pk, ep))
+            .with_ciphers(ciphers.clone())
+            .build();
+
+        assert_eq!(config.supported_ciphers, Some(ciphers));
+    }
+
+    #[test]
+    fn vpn_builder_with_empty_cipher_list() {
+        let pk = test_public_key();
+        let ep = test_endpoint();
+        let config = Arc::new(VpnConnectionConfigBuilder::new(pk, ep))
+            .with_ciphers(vec![])
+            .build();
+
+        assert_eq!(
+            config.supported_ciphers,
+            Some(vec![]),
+            "explicit empty cipher list must be preserved as Some([])"
+        );
+    }
+
     // MeshnetConnectionConfigBuilder
 
     #[test]
@@ -229,6 +272,7 @@ mod tests {
         assert!(config.identifier.is_none());
         assert!(config.allowed_ips.is_none());
         assert!(!config.post_quantum, "meshnet must never use post-quantum");
+        assert!(config.supported_ciphers.is_none());
     }
 
     #[test]

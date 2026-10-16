@@ -2,7 +2,14 @@ import asyncio
 from tests.config import DERP_SERVERS
 from tests.uniffi import VpnConnectionError
 from tests.utils import asyncio_util
-from tests.utils.bindings import ErrorEvent, LinkState, NodeState, PathType, RelayState
+from tests.utils.bindings import (
+    Cipher,
+    ErrorEvent,
+    LinkState,
+    NodeState,
+    PathType,
+    RelayState,
+)
 from tests.utils.command_grepper import CommandGrepper
 from tests.utils.connection import TargetOS
 from tests.utils.logger import log
@@ -26,8 +33,9 @@ class ClientEvents:
         timeout: Optional[float] = None,
         link_state: Optional[LinkState] = None,
         vpn_connection_error: Optional[VpnConnectionError] = None,
+        selected_cipher: Optional[Cipher] = None,
     ) -> None:
-        info = f"peer({public_key}) with states({states}), paths({paths}), is_exit({is_exit}), is_vpn({is_vpn}), link_state({link_state}), vpn_connection_error({vpn_connection_error})"
+        info = f"peer({public_key}) with states({states}), paths({paths}), is_exit({is_exit}), is_vpn({is_vpn}), link_state({link_state}), vpn_connection_error({vpn_connection_error}), selected_cipher({selected_cipher})"
 
         log.debug("[%s]: wait for peer state %s", self._client.node.name, info)
         await self._client.get_events().wait_for_state_peer(
@@ -39,6 +47,7 @@ class ClientEvents:
             timeout,
             link_state,
             vpn_connection_error,
+            selected_cipher,
         )
 
     async def wait_for_link_state(
