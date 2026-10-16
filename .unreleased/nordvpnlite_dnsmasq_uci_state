@@ -1,0 +1,1 @@
+nordvpnlite no longer saves its dnsmasq changes to the OpenWRT config, so a reboot, a power cut or a killed daemon while connected no longer leaves the router pointing at the VPN DNS servers
