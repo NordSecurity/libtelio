@@ -10,6 +10,7 @@ publish = false
 fuzzing = []
 
 [dependencies]
+bytes.workspace = true
 rand.workspace = true
 smoltcp.workspace = true
 hickory-server = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v3.0.3", features = ["hickory-resolver"], default-features = false }
