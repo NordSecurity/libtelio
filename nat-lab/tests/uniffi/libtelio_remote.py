@@ -1,5 +1,6 @@
 # mypy: ignore-errors
 import datetime
+import faulthandler
 import os
 import Pyro5.api  # type: ignore
 import Pyro5.server  # type: ignore
@@ -9,6 +10,7 @@ import struct
 import sys
 import telio_bindings as libtelio  # type: ignore # pylint: disable=import-error
 import time
+from contextlib import contextmanager
 from serialization import (  # type: ignore # pylint: disable=import-error
     init_serialization,
 )
@@ -289,6 +291,16 @@ class LibtelioWrapper:
         self._libtelio.set_tp_lite_domain_whitelist(domains, redirects)
 
 
+@contextmanager
+def open_tcli_log():
+    with open(TCLI_LOG, "a", encoding="utf-8", buffering=LINE_BUFFERED) as logfile:
+        faulthandler.enable(file=logfile, all_threads=True)
+        try:
+            yield logfile
+        finally:
+            faulthandler.disable()
+
+
 def main():
     object_name = sys.argv[1]
     container_ip = sys.argv[2]
@@ -303,7 +315,7 @@ def main():
         pass
 
     try:
-        with open(TCLI_LOG, "a", encoding="utf-8", buffering=LINE_BUFFERED) as logfile:
+        with open_tcli_log() as logfile:
             daemon = Pyro5.server.Daemon(host=container_ip, port=port)
             _, port = daemon.sock.getsockname()
             print(f"libtelio-port:{port}")
