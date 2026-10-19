@@ -18,6 +18,7 @@ from typing import List, Tuple, Optional
 REMOTE_LOG = "remote.log"
 TCLI_LOG = "tcli.log"
 MOOSE_LOGS_DIR = "/moose_logs"
+LINE_BUFFERED = 1
 
 # This call will allow the remote-side of the Pyro5 connection to handle types defined in libtelio.udl
 init_serialization(libtelio)
@@ -302,7 +303,7 @@ def main():
         pass
 
     try:
-        with open(TCLI_LOG, "a", encoding="utf-8") as logfile:
+        with open(TCLI_LOG, "a", encoding="utf-8", buffering=LINE_BUFFERED) as logfile:
             daemon = Pyro5.server.Daemon(host=container_ip, port=port)
             _, port = daemon.sock.getsockname()
             print(f"libtelio-port:{port}")
