@@ -34,7 +34,6 @@ ip6tables-save -f ip6tables_backup
 
 echo "Setting up services..."
 systemctl daemon-reload
-up nlx-quick@nlx0
 up nlx-radius
 up fakefm.service
 up pq-upgrader
