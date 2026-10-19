@@ -2,6 +2,7 @@
 
 use super::EndpointMap as RelayEndpointMap;
 
+use crate::cipher::Cipher;
 use crate::features::PathType;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, net::IpAddr};
@@ -54,6 +55,10 @@ pub struct Node {
     pub peer_allows_multicast: bool,
     /// Latest NordLynx VPN error received from the VPN's Error Notification Service
     pub vpn_connection_error: Option<VpnConnectionError>,
+    /// Cipher selected by NepTUN for this VPN connection.
+    /// Only meaningful for VPN (exit-node) connections when NepTUN is the WireGuard adapter.
+    /// Always `None` for meshnet peers.
+    pub selected_cipher: Option<Cipher>,
 }
 
 /// Possible VPN errors received from the Error Notification Service
