@@ -28,6 +28,7 @@ from tests.utils.router import IPStack
 from tests.utils.router.linux_router import LinuxRouter
 from tests.utils.testing import get_current_test_log_path
 from typing import AsyncIterator, Awaitable, Callable, Dict, List, Optional
+from uuid import uuid4
 
 
 class IgnoreableError(Exception):
@@ -255,13 +256,14 @@ class NordVpnLite:
     async def save_config(self) -> None:
         content = json.dumps(self.config.config_data.to_dict(), indent=2)
         remote_path = str(self.config.config_path)
-        safe_content = content.replace("EOF", "EO_F")
+        delimiter = f"NORDVPNLITE_CONFIG_EOF_{uuid4().hex}"
+        assert delimiter not in content
         auth_dir = str(Path(self.config.config_data.auth_file_path).parent)
         cmd = [
             "sh",
             "-c",
             f"mkdir -p {auth_dir}\n"
-            f"cat <<'EOF' > {remote_path}\n{safe_content}\nEOF\n",
+            f"cat <<'{delimiter}' > {remote_path}\n{content}\n{delimiter}\n",
         ]
         await self.connection.create_process(cmd).execute()
 
