@@ -126,7 +126,7 @@ maplit = "1"
 mockall = "0.15"
 mockall_double = "0.3.1"
 modifier = "0.1.0"
-nat-detect = { git = "https://github.com/NordSecurity/nat-detect.git", tag = "v0.1.9" }
+nat-detect = { git = "https://github.com/NordSecurity/nat-detect.git", tag = "v0.1.10", default-features = false }
 nix = { version = "0.31.3", features = ["fs", "socket", "uio", "net"] }
 ntest = "0.9"
 num_cpus = "1"
