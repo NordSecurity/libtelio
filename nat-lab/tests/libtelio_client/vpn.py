@@ -29,6 +29,7 @@ class ClientVpn:
             builder = builder.with_identifier("natlab")
 
         await self.connect_with_config(
+            public_key,
             builder.build(),
             timeout=timeout,
             link_state_enabled=link_state_enabled,
@@ -36,11 +37,11 @@ class ClientVpn:
 
     async def connect_with_config(
         self,
+        public_key: str,
         config: ConnectionConfig,
         timeout: Optional[float] = None,
         link_state_enabled: bool = False,
     ) -> None:
-        public_key = str(config.public_key)
         await self._client.configure_interface()
         await self._client.get_router().create_vpn_route()
         async with asyncio_util.run_async_context(

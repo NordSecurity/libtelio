@@ -754,7 +754,7 @@ impl Telio {
     /// # Parameters
     /// - `config`: Connection configuration produced by [`connection_config::VpnConnectionConfigBuilder`]
     ///   or [`connection_config::MeshnetConnectionConfigBuilder`].
-    pub fn connect_to_exit_node_with_config(&self, config: ConnectionConfig) -> FfiResult<()> {
+    pub fn connect_to_exit_node_with_config(&self, config: Arc<ConnectionConfig>) -> FfiResult<()> {
         telio_log_info!(
             "Telio::connect_to_exit_node_with_config entry with instance id :{}. Identifier: {:?}, Public Key: {:?}. Allowed IPs: {:?}. Endpoint: {:?}. PostQuantum: {:?}. Ciphers: {:?}. Custom PQ upgrader IP: {:?}.",
             self.id,
@@ -768,7 +768,7 @@ impl Telio {
         );
         catch_ffi_panic(|| {
             self.device_op(true, |dev| {
-                let cfg = config.clone();
+                let cfg = Arc::clone(&config);
                 if cfg.post_quantum {
                     dev.connect_vpn_post_quantum(cfg)
                         .log_result("Telio::connect_to_exit_node_with_config (post-quantum)")
