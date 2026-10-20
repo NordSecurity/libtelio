@@ -1935,7 +1935,6 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
- "webpki-roots",
 ]
 
 [[package]]
@@ -2098,7 +2097,7 @@ dependencies = [
 [[package]]
 name = "igd"
 version = "0.12.1"
-source = "git+https://github.com/NordSecurity/rust-igd.git?tag=v0.13.3#eff9b849125a2e1c529f906b5b68e3c37d17d3f9"
+source = "git+https://github.com/NordSecurity/rust-igd.git?rev=db8e17babbda3552598abc08e66db6bca930c21f#db8e17babbda3552598abc08e66db6bca930c21f"
 dependencies = [
  "bytes",
  "http",
@@ -2407,7 +2406,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 [[package]]
 name = "llt-proto"
 version = "2.0.0"
-source = "git+https://github.com/NordSecurity/llt-proto.git?tag=v2.0.0#2163ba60b8831441119a1526949db75b4bc2b8e3"
+source = "git+https://github.com/NordSecurity/llt-proto.git?rev=6905ce06bad02d1dfe6a8f20989d1fb917c804b1#6905ce06bad02d1dfe6a8f20989d1fb917c804b1"
 dependencies = [
  "anyhow",
  "prost",
@@ -3681,28 +3680,21 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "futures-channel",
  "futures-core",
- "futures-util",
  "http",
  "http-body",
  "http-body-util",
  "hyper",
- "hyper-rustls",
  "hyper-util",
  "js-sys",
  "log",
  "percent-encoding",
  "pin-project-lite",
- "quinn",
- "rustls",
- "rustls-pki-types",
  "serde",
  "serde_json",
  "serde_urlencoded",
  "sync_wrapper",
  "tokio",
- "tokio-rustls",
  "tower",
  "tower-http",
  "tower-service",
@@ -3710,7 +3702,6 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "webpki-roots",
 ]
 
 [[package]]
