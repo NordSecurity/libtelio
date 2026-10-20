@@ -860,7 +860,7 @@ impl Device {
     /// Exit node in this case may be the VPN server or another meshnet node. In the former case,
     /// new node is created and WireGuard tunnel is established to that node. In the latter case
     /// the specified (matched by public key) meshnet node is "promoted" to be the exit node
-    pub fn connect_exit_node(&self, config: ConnectionConfig) -> Result {
+    pub fn connect_exit_node(&self, config: Arc<ConnectionConfig>) -> Result {
         self.async_runtime()?.block_on(async {
             let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
                 rt.connect_exit_node(config).boxed().await?;
@@ -878,7 +878,7 @@ impl Device {
     /// A new node is created and WireGuard post-quantum tunnel is established to that node.
     /// Meshnet is disallowed when forming a post-quantum tunnel and if it's enabled
     /// this call will error out.
-    pub fn connect_vpn_post_quantum(&self, config: ConnectionConfig) -> Result {
+    pub fn connect_vpn_post_quantum(&self, config: Arc<ConnectionConfig>) -> Result {
         self.async_runtime()?.block_on(async {
             let _wireguard_interface: Arc<DynamicWg> = task_exec!(self.rt()?, async move |rt| {
                 rt.connect_exit_node_pq(config).boxed().await?;
@@ -2308,7 +2308,7 @@ impl Runtime {
     }
 
     /// Connect to exit node with post-quantum tunnel
-    async fn connect_exit_node_pq(&mut self, config: ConnectionConfig) -> Result {
+    async fn connect_exit_node_pq(&mut self, config: Arc<ConnectionConfig>) -> Result {
         if self.requested_state.meshnet_config.is_some() {
             // Meshnet is enabled and we're trying to set up the QP VPN connection
             return Err(Error::MeshnetUnavailableWithPQ);
@@ -2337,7 +2337,7 @@ impl Runtime {
         res
     }
 
-    async fn connect_exit_node(&mut self, config: ConnectionConfig) -> Result {
+    async fn connect_exit_node(&mut self, config: Arc<ConnectionConfig>) -> Result {
         // Stop post quantum key rotation task if it's running
         self.entities.postquantum_wg.stop().await;
 
@@ -2345,13 +2345,14 @@ impl Runtime {
         Box::pin(self.connect_exit_node_internal(config)).await
     }
 
-    async fn connect_exit_node_internal(&mut self, config: ConnectionConfig) -> Result {
+    async fn connect_exit_node_internal(&mut self, config: Arc<ConnectionConfig>) -> Result {
         let exit_node = ExitNode {
             identifier: config
                 .identifier
+                .clone()
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             public_key: config.public_key,
-            allowed_ips: config.allowed_ips,
+            allowed_ips: config.allowed_ips.clone(),
             endpoint: config.endpoint,
         };
 
@@ -2375,7 +2376,7 @@ impl Runtime {
                     .await?;
             }
         } else {
-            self.requested_state.supported_ciphers = config.supported_ciphers;
+            self.requested_state.supported_ciphers = config.supported_ciphers.clone();
 
             // ENS provides no real value, when routing through meshnet's peer
             let vpn_ip = match exit_node.endpoint {

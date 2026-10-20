@@ -102,16 +102,16 @@ impl VpnConnectionConfigBuilder {
     }
 
     /// Build the final [`ConnectionConfig`].
-    pub fn build(self: Arc<Self>) -> ConnectionConfig {
+    pub fn build(self: Arc<Self>) -> Arc<ConnectionConfig> {
         let guard = self.config.lock();
-        ConnectionConfig {
+        Arc::new(ConnectionConfig {
             identifier: guard.identifier.clone(),
             public_key: guard.public_key,
             allowed_ips: guard.allowed_ips.clone(),
             endpoint: guard.endpoint,
             post_quantum: guard.post_quantum,
             supported_ciphers: guard.supported_ciphers.clone(),
-        }
+        })
     }
 }
 
@@ -145,16 +145,16 @@ impl MeshnetConnectionConfigBuilder {
     }
 
     /// Build the final [`ConnectionConfig`].
-    pub fn build(self: Arc<Self>) -> ConnectionConfig {
+    pub fn build(self: Arc<Self>) -> Arc<ConnectionConfig> {
         let guard = self.config.lock();
-        ConnectionConfig {
+        Arc::new(ConnectionConfig {
             identifier: guard.identifier.clone(),
             public_key: guard.public_key,
             allowed_ips: guard.allowed_ips.clone(),
             endpoint: None,
             post_quantum: false,
             supported_ciphers: None,
-        }
+        })
     }
 }
 
