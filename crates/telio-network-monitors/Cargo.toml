@@ -12,9 +12,9 @@ ipnet.workspace = true
 telio-utils.workspace = true
 tracing.workspace = true
 parking_lot.workspace = true
-tokio = { workspace = true, features = ["sync", "test-util", "time", "rt", "macros"] }
+tokio = { workspace = true, features = ["sync", "time", "rt", "macros"] }
 once_cell.workspace = true
-mockall.workspace = true
+mockall = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 system-configuration = "0.8.0"
@@ -36,4 +36,5 @@ windows.workspace = true
 [dev-dependencies]
 assert_matches = "1.5.0"
 lazy_static.workspace = true
+mockall.workspace = true
 serial_test.workspace = true

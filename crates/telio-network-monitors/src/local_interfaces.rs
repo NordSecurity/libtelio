@@ -1,9 +1,8 @@
 use ipnet::Ipv4Net;
-use mockall::automock;
 use std::net::{IpAddr, Ipv4Addr};
 
 /// A trait that provides an interface for retrieving network interface addresses.
-#[automock]
+#[cfg_attr(any(test, feature = "mockall"), mockall::automock)]
 pub trait GetIfAddrs: Send + Sync + Default + 'static {
     /// Fetches the list of network interfaces available on the system.
     /// Returns a `Result` which is contains a `Vec` of `if_addrs::Interface`

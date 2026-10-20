@@ -7,7 +7,7 @@ repository = "https://github.com/NordSecurity/libtelio"
 publish = false
 
 [features]
-test-adapter = []
+test-adapter = ["mockall", "telio-sockets/mockall"]
 
 [dependencies]
 slog-stdlog = "4.1.1"
@@ -33,7 +33,7 @@ tokio = { workspace = true, features = ["full"] }
 telio-crypto.workspace = true
 telio-model.workspace = true
 telio-network-monitors.workspace = true
-telio-sockets = { workspace = true, features = ["mockall", "neptun"] }
+telio-sockets = { workspace = true, features = ["neptun"] }
 telio-task.workspace = true
 telio-utils.workspace = true
 itertools.workspace = true
@@ -46,6 +46,7 @@ pretty_assertions.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 
 telio-firewall = { workspace = true, features = ["mockall"] }
+telio-sockets = { workspace = true, features = ["mockall"] }
 telio-task = { workspace = true, features = ["test-util"] }
 telio-test.workspace = true
 proptest.workspace = true
