@@ -2096,8 +2096,8 @@ dependencies = [
 
 [[package]]
 name = "igd"
-version = "0.12.1"
-source = "git+https://github.com/NordSecurity/rust-igd.git?rev=db8e17babbda3552598abc08e66db6bca930c21f#db8e17babbda3552598abc08e66db6bca930c21f"
+version = "0.13.4"
+source = "git+https://github.com/NordSecurity/rust-igd.git?tag=v0.13.4#e5eef506d7c05ce76eaf7b5950b12f8600972210"
 dependencies = [
  "bytes",
  "http",
@@ -2405,8 +2405,8 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "llt-proto"
-version = "2.0.0"
-source = "git+https://github.com/NordSecurity/llt-proto.git?rev=6905ce06bad02d1dfe6a8f20989d1fb917c804b1#6905ce06bad02d1dfe6a8f20989d1fb917c804b1"
+version = "2.0.1"
+source = "git+https://github.com/NordSecurity/llt-proto.git?tag=v2.0.1#b7c40080f269ba667f740434d383923c2dd7825a"
 dependencies = [
  "anyhow",
  "prost",
@@ -2602,8 +2602,8 @@ checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
 
 [[package]]
 name = "nat-detect"
-version = "0.1.9"
-source = "git+https://github.com/NordSecurity/nat-detect.git?rev=ce471c1cbb25b8e27bb2bda077aa1bc22e3dc1e5#ce471c1cbb25b8e27bb2bda077aa1bc22e3dc1e5"
+version = "0.1.10"
+source = "git+https://github.com/NordSecurity/nat-detect.git?tag=v0.1.10#5f51f377799e921eecf0d81e55226d0db207c25c"
 dependencies = [
  "bytecodec 0.4.15",
  "log",
