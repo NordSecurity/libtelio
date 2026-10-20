@@ -878,7 +878,9 @@ class TestCustomPqUpgraderIp:
             .build()
         )
 
-        await client_alpha.vpn.connect_with_config(connection_config, timeout=10)
+        await client_alpha.vpn.connect_with_config(
+            public_key, connection_config, timeout=10
+        )
 
         await ping(client_conn, config.PHOTO_ALBUM_IP)
 
@@ -930,7 +932,9 @@ class TestCustomPqUpgraderIp:
             .build()
         )
 
-        await client_alpha.vpn.connect_with_config(connection_config, timeout=10)
+        await client_alpha.vpn.connect_with_config(
+            public_key, connection_config, timeout=10
+        )
 
         async with new_connection_by_tag(ConnectionTag.VM_LINUX_NLX_1) as nlx_conn:
             preshared_before = await inspect_preshared_key(nlx_conn)
