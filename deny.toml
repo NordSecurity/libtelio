@@ -25,8 +25,7 @@ allow = [
     "MIT",
     "ISC",
     "BSD-3-Clause",
-    "Zlib",
-    "0BSD"
+    "Zlib"
 ]
 confidence-threshold = 0.8
 exceptions = [
