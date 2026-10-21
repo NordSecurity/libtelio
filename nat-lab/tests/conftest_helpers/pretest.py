@@ -203,6 +203,9 @@ async def start_tcpdump_processes(
     for conn_tag in [
         ConnectionTag.DOCKER_DNS_SERVER_1,
         ConnectionTag.DOCKER_DNS_SERVER_2,
+        ConnectionTag.DOCKER_DERP_1,
+        ConnectionTag.DOCKER_DERP_2,
+        ConnectionTag.DOCKER_DERP_3,
     ]:
         if await is_running(conn_tag, names):
             connection = await exit_stack.enter_async_context(
