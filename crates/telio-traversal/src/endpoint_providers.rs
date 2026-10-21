@@ -1,5 +1,6 @@
 pub mod local;
 pub mod stun;
+#[cfg(feature = "enable_upnp")]
 pub mod upnp;
 
 use async_trait::async_trait;
@@ -36,18 +37,25 @@ pub enum Error {
     NoWGListenPort,
     #[error(transparent)]
     PacketParserError(#[from] telio_proto::CodecError),
+    #[cfg(feature = "enable_upnp")]
     #[error("Missing IGD gateway")]
     NoIGDGateway,
+    #[cfg(feature = "enable_upnp")]
     #[error("The existing Upnp endpoint is invalid")]
     IGDError(#[from] igd::GetGenericPortMappingEntryError),
+    #[cfg(feature = "enable_upnp")]
     #[error(transparent)]
     IGDRemovePortError(#[from] igd::RemovePortError),
+    #[cfg(feature = "enable_upnp")]
     #[error(transparent)]
     IGDGetExternalIpError(#[from] igd::GetExternalIpError),
+    #[cfg(feature = "enable_upnp")]
     #[error(transparent)]
     IGDSearchError(#[from] igd::SearchError),
+    #[cfg(feature = "enable_upnp")]
     #[error(transparent)]
     IGDAddAnyPortError(#[from] igd::AddAnyPortError),
+    #[cfg(feature = "enable_upnp")]
     #[error(transparent)]
     IGDAddPortError(#[from] igd::AddPortError),
     #[error("Failed to build pong packet")]
@@ -75,6 +83,7 @@ pub enum Error {
     #[error("Cannot find endpoint in local cache")]
     LocalCacheError,
     /// Failed to get upnp service
+    #[cfg(feature = "enable_upnp")]
     #[error("Failed to get upnp service")]
     FailedToGetUpnpService,
     /// Did not find matching endpoint with the IGD subnet

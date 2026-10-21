@@ -17,15 +17,22 @@ use telio_relay::{
     SortedServers,
 };
 use telio_sockets::{NativeProtector, Protector, SocketPool};
+#[cfg(feature = "enable_starcast")]
+pub(crate) use telio_starcast::starcast_peer::StarcastPeer;
+#[cfg(feature = "enable_starcast")]
 use telio_starcast::{
-    starcast_peer::{Config as StarcastPeerConfig, StarcastPeer},
+    starcast_peer::Config as StarcastPeerConfig,
     transport::{Config as StarcastTransportConfig, Transport},
 };
+#[cfg(not(feature = "enable_starcast"))]
+pub struct StarcastPeer;
 use telio_task::{
     io::{chan, mc_chan, mc_chan::Tx, Chan, McChan},
     task_exec, BoxAction, Runtime as TaskRuntime, Task,
 };
 
+#[cfg(feature = "enable_upnp")]
+use telio_traversal::endpoint_providers::upnp::UpnpEndpointProvider;
 use telio_traversal::UpgradeSyncTrait;
 use telio_traversal::{
     connectivity_check,
@@ -34,7 +41,6 @@ use telio_traversal::{
         self,
         local::LocalInterfacesEndpointProvider,
         stun::{StunEndpointProvider, StunServer},
-        upnp::UpnpEndpointProvider,
         EndpointProvider,
     },
     last_rx_time_provider::{TimeSinceLastRxProvider, WireGuardTimeSinceLastRxProvider},
@@ -194,8 +200,10 @@ pub enum Error {
     PingerReceiveTimeout,
     #[error("Pinger received unexpected packet")]
     PingerReceiveUnexpected,
+    #[cfg(feature = "enable_starcast")]
     #[error(transparent)]
     StarcastError(#[from] telio_starcast::starcast_peer::Error),
+    #[cfg(feature = "enable_starcast")]
     #[error(transparent)]
     TransportError(#[from] telio_starcast::transport::Error),
     #[error("Events processing thread failed to start: {0}")]
@@ -308,6 +316,7 @@ pub struct MeshnetEntities {
     direct: Option<DirectEntities>,
 
     // Starcast components for multicast support.
+    #[cfg(feature = "enable_starcast")]
     starcast: Option<StarcastEntities>,
 
     // Keepalive sender
@@ -408,12 +417,22 @@ impl Entities {
     }
 
     pub fn starcast_vpeer(&self) -> Option<&Arc<StarcastPeer>> {
-        self.meshnet
-            .left()
-            .and_then(|m| m.starcast.as_ref().map(|s| &s.virtual_peer))
+        #[cfg(feature = "enable_starcast")]
+        {
+            return self
+                .meshnet
+                .left()
+                .and_then(|m| m.starcast.as_ref().map(|s| &s.virtual_peer));
+        }
+
+        #[cfg(not(feature = "enable_starcast"))]
+        {
+            None
+        }
     }
 }
 
+#[cfg(feature = "enable_starcast")]
 pub struct StarcastEntities {
     virtual_peer: Arc<StarcastPeer>,
     transport: Arc<Transport>,
@@ -423,6 +442,7 @@ pub struct DirectEntities {
     // Endpoint providers
     local_interfaces_endpoint_provider: Option<Arc<LocalInterfacesEndpointProvider>>,
     stun_endpoint_provider: Option<Arc<StunEndpointProvider>>,
+    #[cfg(feature = "enable_upnp")]
     upnp_endpoint_provider: Option<Arc<UpnpEndpointProvider>>,
 
     // dyn EndpointProvider vector for ease of use
@@ -1101,8 +1121,11 @@ impl MeshnetEntities {
             if let Some(stun) = direct.stun_endpoint_provider {
                 stop_arc_entity!(stun, "StunEndpointProvider");
             }
-            if let Some(upnp) = direct.upnp_endpoint_provider {
-                stop_arc_entity!(upnp, "UpnpEndpointProvider");
+            #[cfg(feature = "enable_upnp")]
+            {
+                if let Some(upnp) = direct.upnp_endpoint_provider {
+                    stop_arc_entity!(upnp, "UpnpEndpointProvider");
+                }
             }
         }
 
@@ -1115,9 +1138,12 @@ impl MeshnetEntities {
 
         let endpoint_map = self.proxy.get_endpoint_map().await.unwrap_or_default();
         stop_arc_entity!(self.proxy, "UdpProxy");
-        if let Some(starcast) = self.starcast {
-            stop_arc_entity!(starcast.virtual_peer, "StarcastPeer");
-            stop_arc_entity!(starcast.transport, "StarcastTransport");
+        #[cfg(feature = "enable_starcast")]
+        {
+            if let Some(starcast) = self.starcast {
+                stop_arc_entity!(starcast.virtual_peer, "StarcastPeer");
+                stop_arc_entity!(starcast.transport, "StarcastTransport");
+            }
         }
 
         MeshnetEntitiesLastState { endpoint_map }
@@ -1205,6 +1231,7 @@ impl Runtime {
         }
 
         #[allow(clippy::manual_map)]
+        #[allow(unused_variables)]
         let link_detection = if let Some(ld_config) = features.link_detection {
             #[cfg(target_os = "windows")]
             let ld_observer = {
@@ -1586,6 +1613,7 @@ impl Runtime {
             };
 
             // Create Upnp Endpoint Provider
+            #[cfg(feature = "enable_upnp")]
             let upnp_endpoint_provider = if has_provider(Upnp) {
                 let ep = Arc::new(UpnpEndpointProvider::start(
                     self.entities
@@ -1616,6 +1644,11 @@ impl Runtime {
             } else {
                 None
             };
+
+            #[cfg(not(feature = "enable_upnp"))]
+            if has_provider(Upnp) {
+                telio_log_warn!("UPnP endpoint provider was requested but libtelio was built without enable_upnp");
+            }
 
             // Subscribe to endpoint providers' events
             for endpoint_provider in &endpoint_providers {
@@ -1673,6 +1706,7 @@ impl Runtime {
             Some(DirectEntities {
                 local_interfaces_endpoint_provider,
                 stun_endpoint_provider,
+                #[cfg(feature = "enable_upnp")]
                 upnp_endpoint_provider,
                 endpoint_providers,
                 cross_ping_check,
@@ -1682,16 +1716,25 @@ impl Runtime {
             None
         };
 
+        #[cfg(feature = "enable_starcast")]
         let starcast = self.build_starcast().await.unwrap_or_else(|e| {
             telio_log_error!("Couldn't start starcast: {e:?}");
             None
         });
+
+        #[cfg(not(feature = "enable_starcast"))]
+        if self.features.multicast {
+            telio_log_warn!(
+                "Multicast was requested but libtelio was built without enable_starcast"
+            );
+        }
 
         Ok(MeshnetEntities {
             multiplexer,
             derp,
             proxy,
             direct,
+            #[cfg(feature = "enable_starcast")]
             starcast,
             session_keeper,
         })
@@ -1708,6 +1751,7 @@ impl Runtime {
         Ok(nodes)
     }
 
+    #[cfg(feature = "enable_starcast")]
     async fn build_starcast(&self) -> Result<Option<StarcastEntities>> {
         if !self.features.multicast {
             return Ok(None);
@@ -1876,8 +1920,11 @@ impl Runtime {
                     stun.reconnect().await;
                 }
 
-                if let Some(upnp) = &direct.upnp_endpoint_provider {
-                    upnp.unpause().await;
+                #[cfg(feature = "enable_upnp")]
+                {
+                    if let Some(upnp) = &direct.upnp_endpoint_provider {
+                        upnp.unpause().await;
+                    }
                 }
             }
 
@@ -2051,48 +2098,52 @@ impl Runtime {
 
             meshnet_entities.proxy.configure(proxy_config).await?;
 
-            if let Some(ref starcast) = meshnet_entities.starcast {
-                let starcast_vpeer_config = StarcastPeerConfig {
-                    public_key: secret_key.public(),
-                    wg_port: None,
-                };
-                let multicast_peers = config
-                    .clone()
-                    .peers
-                    .unwrap_or_default()
-                    .iter()
-                    .filter(|p| {
-                        // If neither our node nor peer node allow multicast, there's no point in keeping
-                        // that peer in the config.
-                        p.allow_multicast || p.peer_allows_multicast
-                    })
-                    .filter_map(|p| {
-                        p.ip_addresses
-                            .to_owned()
-                            .unwrap_or_default()
-                            .iter()
-                            // While IPV6 support is not added yet for multicast, only using IPV4 IPs
-                            .find(|ip| ip.is_ipv4())
-                            .map(|ip| {
-                                (
-                                    p.base.public_key,
-                                    ip.to_owned(),
-                                    p.allow_multicast,
-                                    p.peer_allows_multicast,
-                                )
-                            })
-                    })
-                    .collect();
-                let starcast_transport_config = StarcastTransportConfig::Simple(multicast_peers);
-                starcast
-                    .transport
-                    .configure(starcast_transport_config)
-                    .await?;
+            #[cfg(feature = "enable_starcast")]
+            {
+                if let Some(ref starcast) = meshnet_entities.starcast {
+                    let starcast_vpeer_config = StarcastPeerConfig {
+                        public_key: secret_key.public(),
+                        wg_port: None,
+                    };
+                    let multicast_peers = config
+                        .clone()
+                        .peers
+                        .unwrap_or_default()
+                        .iter()
+                        .filter(|p| {
+                            // If neither our node nor peer node allow multicast, there's no point in keeping
+                            // that peer in the config.
+                            p.allow_multicast || p.peer_allows_multicast
+                        })
+                        .filter_map(|p| {
+                            p.ip_addresses
+                                .to_owned()
+                                .unwrap_or_default()
+                                .iter()
+                                // While IPV6 support is not added yet for multicast, only using IPV4 IPs
+                                .find(|ip| ip.is_ipv4())
+                                .map(|ip| {
+                                    (
+                                        p.base.public_key,
+                                        ip.to_owned(),
+                                        p.allow_multicast,
+                                        p.peer_allows_multicast,
+                                    )
+                                })
+                        })
+                        .collect();
+                    let starcast_transport_config =
+                        StarcastTransportConfig::Simple(multicast_peers);
+                    starcast
+                        .transport
+                        .configure(starcast_transport_config)
+                        .await?;
 
-                starcast
-                    .virtual_peer
-                    .configure(starcast_vpeer_config)
-                    .await?;
+                    starcast
+                        .virtual_peer
+                        .configure(starcast_vpeer_config)
+                        .await?;
+                }
             }
 
             let derp_config = DerpConfig {
@@ -3678,6 +3729,7 @@ mod tests {
             .as_ref()
             .expect("Direct entities should be available when \"direct\" feature is on");
 
+        #[cfg(feature = "enable_upnp")]
         assert!(entities.upnp_endpoint_provider.is_none());
         assert!(entities.local_interfaces_endpoint_provider.is_some());
         assert!(entities.stun_endpoint_provider.is_some());
@@ -3758,6 +3810,7 @@ mod tests {
             .as_ref()
             .expect("Direct entities should be available when \"direct\" feature is on");
 
+        #[cfg(feature = "enable_upnp")]
         assert!(entities.upnp_endpoint_provider.is_none());
         assert!(entities.local_interfaces_endpoint_provider.is_none());
         assert!(entities.stun_endpoint_provider.is_none());
@@ -3850,7 +3903,13 @@ mod tests {
             .as_ref()
             .expect("Direct entities should be available when \"direct\" feature is on");
 
+        #[cfg(feature = "enable_upnp")]
         assert!(entities.upnp_endpoint_provider.is_some());
+        #[cfg(not(feature = "enable_upnp"))]
+        assert!(entities
+            .endpoint_providers
+            .iter()
+            .all(|provider| provider.name() != "UPnP"));
         assert!(entities.local_interfaces_endpoint_provider.is_some());
         assert!(entities.stun_endpoint_provider.is_some());
     }

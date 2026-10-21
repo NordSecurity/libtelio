@@ -4669,7 +4669,6 @@ dependencies = [
  "telio-proxy",
  "telio-relay",
  "telio-sockets",
- "telio-starcast",
  "telio-task",
  "telio-traversal",
  "telio-utils",
