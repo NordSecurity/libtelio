@@ -2,6 +2,7 @@
 
 import argparse
 import errno
+import hashlib
 import json
 import os
 import shutil
@@ -10,7 +11,8 @@ import sys
 import time
 import warnings
 from packaging import version
-from typing import List
+from enum import Enum
+from typing import List, Optional
 
 # isort: off
 PROJECT_ROOT = os.path.normpath(os.path.dirname(os.path.realpath(__file__)) + "/..")
@@ -21,6 +23,137 @@ NATLAB_CONTAINER_RESTART_ATTEMPTS = 5
 
 BUILD_PROFILE = "base"
 BASE_IMAGE_SERVICE = "base"
+BASE_IMAGE_NAME = "nat-lab:base"
+BASE_IMAGE_DOCKERFILE = "Dockerfile"
+BASE_IMAGE_DOCKERIGNORE = f"{BASE_IMAGE_DOCKERFILE}.dockerignore"
+BASE_IMAGE_REPOSITORY = (
+    "nord-projects/nordvpn/infra/llt/automation/docker/libtelio/natlab_base"
+)
+BASE_IMAGE_CACHE_VERSION = 1
+
+DOCKERIGNORE_EXCLUDE_ALL = "*"
+DOCKERIGNORE_INCLUDE_PREFIX = "!"
+PYCACHE_DIR = "__pycache__"
+DOCKERIGNORE_EXCLUDE_PYCACHE = f"**/{PYCACHE_DIR}"
+
+CONTAINER_REGISTRY_ENV = "LIBTELIO_ENV_SEC_CONTAINER_REGISTRY"
+ENS_PROTO_PATH = "../dist/linux/ens.proto"
+
+BUILD_ENV = {
+    "COMPOSE_DOCKER_CLI_BUILD": "1",
+    "DOCKER_BUILDKIT": "1",
+    "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
+}
+
+
+class BaseImageSource(Enum):
+    REGISTRY = "registry"
+    LOCAL_BUILD = "local build"
+
+
+def base_image_context_paths() -> List[str]:
+    with open(BASE_IMAGE_DOCKERIGNORE, "r", encoding="utf-8") as file:
+        lines = [line.strip() for line in file if line.strip()]
+    if not lines or lines[0] != DOCKERIGNORE_EXCLUDE_ALL:
+        raise RuntimeError(
+            f"{BASE_IMAGE_DOCKERIGNORE} must start with '{DOCKERIGNORE_EXCLUDE_ALL}'"
+        )
+
+    paths = []
+    for line in lines[1:]:
+        if line == DOCKERIGNORE_EXCLUDE_PYCACHE:
+            continue
+        if not line.startswith(DOCKERIGNORE_INCLUDE_PREFIX):
+            raise RuntimeError(
+                f"Unsupported line in {BASE_IMAGE_DOCKERIGNORE}: {line!r}"
+            )
+        paths.append(line.removeprefix(DOCKERIGNORE_INCLUDE_PREFIX).rstrip("/"))
+    return paths
+
+
+def context_files(path: str) -> List[str]:
+    if os.path.isfile(path):
+        return [path]
+    if not os.path.isdir(path):
+        raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), path)
+
+    files = []
+    for root, dirs, names in os.walk(path):
+        dirs[:] = [name for name in dirs if name != PYCACHE_DIR]
+        files += [os.path.join(root, name) for name in names]
+    return files
+
+
+def base_image_hash() -> str:
+    inputs = [BASE_IMAGE_DOCKERFILE, BASE_IMAGE_DOCKERIGNORE] + sorted(
+        file for path in base_image_context_paths() for file in context_files(path)
+    )
+    digest = hashlib.sha256(
+        f"{BASE_IMAGE_CACHE_VERSION}\0{LIBTELIO_ENV_NAT_LAB_DEPS_TAG}\0".encode()
+    )
+    for path in inputs:
+        with open(path, "rb") as file:
+            content = file.read()
+        digest.update(f"{path}\0{len(content)}\0".encode())
+        digest.update(content)
+    return digest.hexdigest()
+
+
+def base_image_ref(registry: str) -> str:
+    return f"{registry}/{BASE_IMAGE_REPOSITORY}:{base_image_hash()}"
+
+
+def command_succeeds(command: List[str]) -> bool:
+    print(f"|EXECUTE| {' '.join(command)}")
+    result = subprocess.run(command, check=False, stdout=subprocess.DEVNULL)
+    return result.returncode == 0
+
+
+def pull_base_image() -> BaseImageSource:
+    registry = os.environ.get(CONTAINER_REGISTRY_ENV)
+    if not registry:
+        print(f"{CONTAINER_REGISTRY_ENV} is not set, building {BASE_IMAGE_NAME}")
+        return BaseImageSource.LOCAL_BUILD
+
+    ref = base_image_ref(registry)
+    if not command_succeeds(["docker", "pull", "--quiet", ref]):
+        print(f"Cannot pull {ref}, building {BASE_IMAGE_NAME}")
+        return BaseImageSource.LOCAL_BUILD
+
+    run_command(["docker", "tag", ref, BASE_IMAGE_NAME])
+    run_command(["docker", "rmi", ref])
+    return BaseImageSource.REGISTRY
+
+
+def publish_base_image(push_docker_config: Optional[str]) -> None:
+    registry = os.environ.get(CONTAINER_REGISTRY_ENV)
+    if not registry:
+        raise RuntimeError(f"{CONTAINER_REGISTRY_ENV} must be set to publish")
+
+    generate_grpc(ENS_PROTO_PATH)
+    ref = base_image_ref(registry)
+    if command_succeeds(["docker", "manifest", "inspect", ref]):
+        print(f"{ref} is already published")
+        return
+
+    run_command(
+        [
+            "docker",
+            "compose",
+            "--profile",
+            BUILD_PROFILE,
+            "build",
+            "--no-cache",
+            BASE_IMAGE_SERVICE,
+        ],
+        env=BUILD_ENV,
+    )
+    run_command(["docker", "tag", BASE_IMAGE_NAME, ref])
+    push_command = ["docker"]
+    if push_docker_config:
+        push_command += ["--config", push_docker_config]
+    run_command(push_command + ["push", ref])
+    run_command(["docker", "rmi", ref])
 
 
 def run_command(command, env=None):
@@ -74,7 +207,7 @@ def start(skip_keywords=None, force_recreate=False):
 
     check_docker_version_compatibility()
 
-    generate_grpc("../dist/linux/ens.proto")
+    generate_grpc(ENS_PROTO_PATH)
 
     if "GITLAB_CI" in os.environ:
         # This is possibly a temporary solution. We observe that starting docker compose
@@ -96,17 +229,22 @@ def start(skip_keywords=None, force_recreate=False):
         with open("docker-compose.yml", "w", encoding="utf-8") as file:
             file.write(filedata)
 
+    build_command = [
+        "docker",
+        "compose",
+        "--profile",
+        BUILD_PROFILE,
+        "build",
+        "--no-cache",
+    ]
+
+    services = services_to_build()
+    if pull_base_image() == BaseImageSource.REGISTRY:
+        services.remove(BASE_IMAGE_SERVICE)
+
     # One build at a time: parallel builds can crash dockerd (moby/moby#48564)
-    for service in services_to_build():
-        run_command(
-            ["docker", "compose", "--profile", BUILD_PROFILE, "build", "--no-cache"]
-            + [service],
-            env={
-                "COMPOSE_DOCKER_CLI_BUILD": "1",
-                "DOCKER_BUILDKIT": "1",
-                "LIBTELIO_ENV_NAT_LAB_DEPS_TAG": LIBTELIO_ENV_NAT_LAB_DEPS_TAG,
-            },
-        )
+    for service in services:
+        run_command(build_command + [service], env=BUILD_ENV)
 
     exclude_services = set()
     try:
@@ -397,6 +535,16 @@ def main():
         help="Skip all heavy containers (windows, mac, fullcone and nlx)",
     )
 
+    publish_parser = subparsers.add_parser(
+        "publish-base",
+        help="Build the base image and push it to the registry unless it is already there",
+    )
+    publish_parser.add_argument(
+        "--push-docker-config",
+        metavar="DIR",
+        help="Docker config directory holding the registry login used for the push",
+    )
+
     subparsers.add_parser("restart", help="Restart (already existing) containers")
     subparsers.add_parser("recreate", help="Recreate (already existing) containers")
     subparsers.add_parser("recreate-all", help="Recreate all containers")
@@ -433,6 +581,8 @@ def main():
             if args.skip_nlx:
                 skip_keywords.add("nlx")
         start(skip_keywords)
+    elif args.command == "publish-base":
+        publish_base_image(args.push_docker_config)
     elif args.command == "restart":
         restart()
     elif args.command == "recreate":
