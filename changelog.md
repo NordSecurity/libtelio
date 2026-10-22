@@ -1,5 +1,33 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v8.1.0
+### ****
+---
+* Dynamic WG-NT does not teardown adapter, when setting meshnet off and still connected to VPN
+* LLT-4837: Fix a data race between the route change and interface change callbacks in the WG-NT MTU monitor, which could concurrently mutate the cached MTU state.
+* LLT-6287: Fix WG-NT re-binding the previously used listen port after a dynamic down transition, which could clash with a port taken by another process in the meantime.
+* LLT-6304: Check, whether the meshnet is enabled, before making control decision in wg-nt dynamic mode.
+* LLT-6756: Updated `nordvpnlite` to store authentication token in a separate file.
+* LLT-6756: Added `login` and `logout` cli commands to store and clear the credentials.
+* LLT-7057: nordvpnlite: OpenWRT UI improvements: Added service control
+* LLT-7068: Added the `mtu` start option and `set_adapter_mtu`, for setting the adapter interface MTU. Supported on Windows only.
+* LLT-7521: Fix NepTUN roaming on Apple platforms
+* LLT-7539: LLT-7539: Censor logged domains
+* LLT-7558: Flush DNS resolver cache when whitelist is modified.
+* LLT-7562: Fix nonet after Apple device wake-up
+* LLT-7581: Add client side keepalives to the ENS connections
+* LLT-7636: Use ubuntu 22.04 image to build for linux (glibc 2.35)
+* LLT-7636: Bump rust toolchain version to 1.98.1
+* LLT-7684: Add support for new UnsupportedCipher ENS error kind
+* LLT-7746: NepTUN retries to bind to listening socket, in case it gets "AddressInUse" error
+* Make session keeper and PQ restarts suspend-aware, and restart more things on network change
+* Reduce the size of release library
+* wireguard-nt adapter creation has retries, with exp. backoff and GUID mixing
+* Fix Windows wg-nt adapter start failing with ERROR_NO_SUCH_DEVICE: retry adapter state changes with backoff instead of giving up within milliseconds
+* Fix Windows WG-NT adapter randomly coming up unable to receive tunnel traffic when its route setup raced concurrent route-table changes.
+
+<br>
+
 ### v8.0.1
 ### ****
 ---
