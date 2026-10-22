@@ -3235,4 +3235,64 @@ mod tests {
         assert_eq!(deduplicated_ips[&peer3_key], peer3_expected_ips);
         assert!(deduplicated_ips[&peer4_key].is_empty());
     }
+
+    #[tokio::test]
+    async fn test_consolidate_wg_listen_port_with_port() {
+        use telio_proxy::MockProxy;
+
+        let mut mock_proxy = MockProxy::new();
+        let wg_port: u16 = 51820;
+        let expected_addr = (Ipv4Addr::LOCALHOST, wg_port).into();
+
+        mock_proxy
+            .expect_set_wg_address()
+            .once()
+            .with(mockall::predicate::eq(Some(expected_addr)))
+            .return_once(|_| Ok(()));
+
+        let mut mock_wg = MockWireGuard::new();
+        mock_wg.expect_get_interface().returning(move || {
+            Ok(Interface {
+                listen_port: Some(wg_port),
+                ..Default::default()
+            })
+        });
+
+        let result = consolidate_wg_listen_port(&mock_wg, Some(&mock_proxy), None).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_consolidate_wg_listen_port_without_port() {
+        use telio_proxy::MockProxy;
+
+        let mut mock_proxy = MockProxy::new();
+
+        mock_proxy
+            .expect_set_wg_address()
+            .once()
+            .with(mockall::predicate::eq(None))
+            .return_once(|_| Ok(()));
+
+        let mut mock_wg = MockWireGuard::new();
+        mock_wg.expect_get_interface().returning(|| {
+            Ok(Interface {
+                listen_port: None,
+                ..Default::default()
+            })
+        });
+
+        let result = consolidate_wg_listen_port(&mock_wg, Some(&mock_proxy), None).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_consolidate_wg_listen_port_no_proxy() {
+        use telio_proxy::MockProxy;
+
+        let mock_wg = MockWireGuard::new();
+
+        let result = consolidate_wg_listen_port(&mock_wg, None::<&MockProxy>, None).await;
+        assert!(result.is_ok());
+    }
 }

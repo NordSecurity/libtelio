@@ -438,6 +438,7 @@ pub struct DirectEntities {
 pub struct EventListeners {
     wg_endpoint_publish_event_subscriber: chan::Rx<WireGuardEndpointCandidateChangeEvent>,
     wg_event_subscriber: chan::Rx<Box<WGEvent>>,
+    wg_listen_port_subscriber: chan::Rx<Option<u16>>,
     derp_event_subscriber: mc_chan::Rx<Box<DerpServer>>,
     endpoint_upgrade_event_subscriber: chan::Rx<UpgradeRequestChangeEvent>,
     stun_server_subscriber: chan::Rx<Option<StunServer>>,
@@ -1266,9 +1267,11 @@ impl Runtime {
                     false => None
                 };
                 let wg_events = Chan::<Box<telio_wg::uapi::Event>>::default();
+                let wg_listen_port_events = Chan::<Option<u16>>::default();
                 let wireguard_interface = Arc::new(DynamicWg::start(
                     wg::Io {
                         events: wg_events.tx.clone(),
+                        listen_port_events: wg_listen_port_events.tx,
                         analytics_tx: analytics_ch.clone(),
                         libtelio_wide_event_publisher: Some(libtelio_wide_event_publisher.clone()),
                     },
@@ -1292,9 +1295,11 @@ impl Runtime {
                     Duration::from_millis(features.wireguard.polling.wireguard_polling_period_after_state_change.into()),
                 ).await?);
                 let wg_events = wg_events.rx;
+                let wg_listen_port_events = wg_listen_port_events.rx;
             } else {
                 let wg::tests::Env {
                         event: wg_events,
+                        listen_port_event: wg_listen_port_events,
                         analytics: analytics_ch,
                         wg: wireguard_interface,
                         adapter,
@@ -1452,6 +1457,7 @@ impl Runtime {
             event_listeners: EventListeners {
                 wg_endpoint_publish_event_subscriber: wg_endpoint_publish_events.rx,
                 wg_event_subscriber: wg_events,
+                wg_listen_port_subscriber: wg_listen_port_events,
                 derp_event_subscriber: derp_events.rx,
                 endpoint_upgrade_event_subscriber: wg_upgrade_sync.rx,
                 stun_server_subscriber: stun_server_events.rx,
@@ -1474,6 +1480,7 @@ impl Runtime {
             test_env: wg::tests::Env {
                 analytics: analytics_ch,
                 event: Chan::default().rx,
+                listen_port_event: Chan::default().rx,
                 wg: wireguard_interface,
                 adapter,
             },
@@ -2045,10 +2052,13 @@ impl Runtime {
             };
 
             let proxy_config = ProxyConfig {
-                wg_port: None,
                 peers: peers.clone(),
             };
 
+            meshnet_entities
+                .proxy
+                .set_wg_address(wg_itf.listen_port.map(|p| (Ipv4Addr::LOCALHOST, p).into()))
+                .await?;
             meshnet_entities.proxy.configure(proxy_config).await?;
 
             if let Some(ref starcast) = meshnet_entities.starcast {
@@ -2685,6 +2695,18 @@ impl TaskRuntime for Runtime {
         tokio::select! {
             Some(_) = self.event_listeners.wg_endpoint_publish_event_subscriber.recv() => {
                 telio_log_debug!("WG consolidation triggered by endpoint publish event");
+                wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
+                    .boxed()
+                    .await
+                    .unwrap_or_else(
+                        |e| {
+                            telio_log_warn!("WireGuard controller failure: {:?}. Ignoring", e);
+                        });
+                Ok(())
+            },
+
+            Some(port) = self.event_listeners.wg_listen_port_subscriber.recv() => {
+                telio_log_debug!("WG consolidation triggered by listen port change: {port:?}");
                 wg_controller::consolidate_wg_state(&self.requested_state, &self.entities, &self.features)
                     .boxed()
                     .await

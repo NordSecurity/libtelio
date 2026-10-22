@@ -121,8 +121,6 @@ pub struct Io {
 /// `UdpProxy` configuration.
 #[derive(Clone, Debug, Default)]
 pub struct Config {
-    /// WG port address
-    pub wg_port: Option<u16>,
     /// tracked WG peers
     pub peers: HashSet<PublicKey>,
 }
@@ -173,8 +171,6 @@ impl UdpProxy {
 
     /// Update configuration for the background task
     pub async fn configure(&self, config: Config) -> Result<(), Error> {
-        let port = config.wg_port;
-
         let sockets = task_exec!(&self.task_ingress, async move |state| {
             Ok(state.configure(config).await)
         })
@@ -182,7 +178,7 @@ impl UdpProxy {
 
         task_exec!(&self.task_egress, async move |state| {
             state.reset_socket_limit().await;
-            Ok(state.configure(sockets, port).await)
+            Ok(state.configure(sockets).await)
         })
         .await?
     }
@@ -277,10 +273,8 @@ impl StateIngress {
 }
 
 impl StateEgress {
-    async fn configure(&mut self, sockets: SocketMap, wg_port: Option<u16>) -> Result<(), Error> {
-        telio_log_debug!("Configuring egress proxy with wg port {:?}", wg_port);
-
-        self.wg_addr = wg_port.map(|p| (Ipv4Addr::LOCALHOST, p).into());
+    async fn configure(&mut self, sockets: SocketMap) -> Result<(), Error> {
+        telio_log_debug!("Configuring egress proxy");
 
         self.sockets.retain(|&pk, _| sockets.contains_key(&pk));
         for (pk, new_socket) in sockets {
@@ -348,14 +342,21 @@ impl StateEgress {
                     }
                 }
             }
-            (sock, wg_addr) => {
+            (Some((_, Some(_))), _) => {
+                telio_log_debug!("Dropping packet for muted peer {pk:?}");
+            }
+            (Some(_), None) => {
+                self.handle_error(
+                    std::io::Error::new(ErrorKind::AddrNotAvailable, "WG listen port not known"),
+                    Some(pk),
+                )
+                .await;
+            }
+            (None, wg_addr) => {
                 self.handle_error(
                     std::io::Error::new(
                         ErrorKind::AddrNotAvailable,
-                        format!(
-                            "WG Address not available - socket: {}, wg_addr: {wg_addr:?}",
-                            sock.is_some()
-                        ),
+                        format!("No socket for peer {pk:?}, wg_addr: {wg_addr:?}"),
                     ),
                     Some(pk),
                 )
@@ -589,7 +590,7 @@ mod tests {
         use telio_crypto::SecretKey;
 
         for i in 0..1 {
-            let TestSystem { wg, proxy, relay } = TestSystem::start().await;
+            let TestSystem { proxy, relay, .. } = TestSystem::start().await;
 
             drop(relay);
 
@@ -601,7 +602,6 @@ mod tests {
 
             proxy
                 .configure(Config {
-                    wg_port: Some(wg.addr().port()),
                     peers: pks.iter().copied().collect(),
                 })
                 .await
@@ -658,17 +658,145 @@ mod tests {
 
         ts.stop().await;
     }
+
+    #[tokio::test]
+    async fn test_configure_keeps_wg_addr() {
+        let mut ts = TestSystem::start().await;
+        let wg_addr = ts.wg.addr();
+
+        let pks = ts.create_peers(1).await;
+        ts.proxy
+            .configure(Config {
+                peers: pks.iter().copied().collect(),
+            })
+            .await
+            .expect("UdpProxy::configure() failed");
+
+        let egress_wg_addr = task_exec!(&ts.proxy.task_egress, async move |state| {
+            Ok(state.wg_addr)
+        })
+        .await
+        .expect("task_exec failed");
+        assert_eq!(egress_wg_addr, Some(wg_addr));
+
+        ts.relay.send(pks[0], DataMsg::new(b"data")).await;
+        ts.wg.expect_recv(&[(pks[0], b"data")]).await;
+
+        ts.stop().await;
+    }
+
+    #[tokio::test]
+    async fn test_packet_for_removed_peer_sets_addr_not_available() {
+        let mut ts = TestSystem::start().await;
+
+        let pks = ts.create_peers(2).await;
+        ts.relay.send(pks[0], DataMsg::new(b"ok")).await;
+        ts.wg.expect_recv(&[(pks[0], b"ok")]).await;
+
+        ts.proxy
+            .configure(Config {
+                peers: HashSet::from([pks[1]]),
+            })
+            .await
+            .expect("UdpProxy::configure() failed");
+
+        ts.relay.send(pks[0], DataMsg::new(b"data")).await;
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let conn_state = task_exec!(&ts.proxy.task_egress, async move |state| {
+                    Ok(state.conn_state)
+                })
+                .await
+                .expect("task_exec failed");
+                if conn_state == Err(ErrorKind::AddrNotAvailable) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("conn_state did not become AddrNotAvailable");
+
+        ts.stop().await;
+    }
+
+    #[tokio::test]
+    async fn test_unknown_wg_port_drops_until_set() {
+        let mut ts = TestSystem::start().await;
+        let wg_addr = ts.wg.addr();
+
+        let pks = ts.create_peers(1).await;
+        ts.relay.send(pks[0], DataMsg::new(b"first")).await;
+        ts.wg.expect_recv(&[(pks[0], b"first")]).await;
+
+        ts.proxy
+            .set_wg_address(None)
+            .await
+            .expect("set_wg_address() failed");
+        ts.relay.send(pks[0], DataMsg::new(b"dropped")).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let conn_state = task_exec!(&ts.proxy.task_egress, async move |state| {
+            Ok(state.conn_state)
+        })
+        .await
+        .expect("task_exec failed");
+        assert_eq!(conn_state, Err(ErrorKind::AddrNotAvailable));
+
+        ts.proxy
+            .set_wg_address(Some(wg_addr))
+            .await
+            .expect("set_wg_address() failed");
+        ts.relay.send(pks[0], DataMsg::new(b"third")).await;
+        ts.wg.expect_recv(&[(pks[0], b"third")]).await;
+
+        let conn_state = task_exec!(&ts.proxy.task_egress, async move |state| {
+            Ok(state.conn_state)
+        })
+        .await
+        .expect("task_exec failed");
+        assert_eq!(conn_state, Ok(()));
+
+        ts.stop().await;
+    }
+
+    #[tokio::test]
+    async fn test_muted_peer_drop_keeps_conn_ok() {
+        let mut ts = TestSystem::start().await;
+
+        let pks = ts.create_peers(1).await;
+        ts.relay.send(pks[0], DataMsg::new(b"first")).await;
+        ts.wg.expect_recv(&[(pks[0], b"first")]).await;
+
+        ts.proxy
+            .mute_peer(pks[0], Some(Duration::from_secs(10)))
+            .await
+            .expect("mute_peer() failed");
+        ts.relay.send(pks[0], DataMsg::new(b"muted")).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let conn_state = task_exec!(&ts.proxy.task_egress, async move |state| {
+            Ok(state.conn_state)
+        })
+        .await
+        .expect("task_exec failed");
+        assert_eq!(conn_state, Ok(()));
+
+        ts.stop().await;
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
     #[allow(clippy::unwrap_used)]
     async fn test_error_handling() {
         let mut ts = TestSystem::start().await;
 
-        let _ = ts
-            .test_egress_recoverable_error_handling(&[
-                &[(DataMsg::new(b"my data"), b"my data")],
-                &[(DataMsg::new(b"my data"), b"my data")],
-            ])
-            .await;
+        ts.test_egress_recoverable_error_handling(&[
+            &[(DataMsg::new(b"my data"), b"my data")],
+            &[(DataMsg::new(b"my data"), b"my data")],
+        ])
+        .await
+        .expect("recoverable error handling failed");
 
         ts.stop().await;
     }
@@ -867,21 +995,9 @@ mod tests {
 
                 let (relay_to_wg, _expect_relay_to_wg) = flatten_tests(&pks, relay_to_wg);
 
-                let skt = task_exec!(&self.proxy.task_egress, async move |state| {
-                    let p = state.wg_addr;
-                    state.wg_addr = None;
-                    Ok(p)
-                })
-                .await?;
-
-                self.send_to_wg_via_relay(peers, &relay_to_wg, Err(ErrorKind::AddrNotAvailable))
+                let unknown_peer = vec![(SecretKey::gen().public(), DataMsg::new(b"unknown"))];
+                self.send_to_wg_via_relay(1, &unknown_peer, Err(ErrorKind::AddrNotAvailable))
                     .await;
-
-                let _ = task_exec!(&self.proxy.task_egress, async move |state| {
-                    state.wg_addr = skt;
-                    Ok(())
-                })
-                .await;
 
                 self.send_to_wg_via_relay(peers, &relay_to_wg, Ok(())).await;
 
@@ -901,11 +1017,12 @@ mod tests {
                         self.relay.send(*pk, msg.clone()).await;
                         let duration = Duration::from_secs(1);
                         thread::sleep(duration);
-                        let _ = task_exec!(&self.proxy.task_egress, async move |state| {
-                            assert_eq!(state.conn_state, res);
-                            Ok(())
+                        let conn_state = task_exec!(&self.proxy.task_egress, async move |state| {
+                            Ok(state.conn_state)
                         })
-                        .await;
+                        .await
+                        .expect("task_exec failed");
+                        assert_eq!(conn_state, res);
                     }
                 }
             }
@@ -919,11 +1036,14 @@ mod tests {
 
                 self.proxy
                     .configure(Config {
-                        wg_port: Some(self.wg.addr().port()),
                         peers: pks.iter().copied().collect(),
                     })
                     .await
                     .expect("UdpProxy::configure() failed");
+                self.proxy
+                    .set_wg_address(Some(self.wg.addr()))
+                    .await
+                    .expect("set_wg_address() failed");
 
                 self.wg.peers = self
                     .proxy
