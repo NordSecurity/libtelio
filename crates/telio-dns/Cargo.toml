@@ -12,7 +12,7 @@ fuzzing = []
 [dependencies]
 rand.workspace = true
 smoltcp.workspace = true
-hickory-server = { git = "https://github.com/NordSecurity/trust-dns.git", tag = "v3.0.3", features = ["hickory-resolver"], default-features = false }
+hickory-server = { version = "0.26.3", features = ["resolver"], default-features = false }
 async-trait.workspace = true
 neptun.workspace = true
 x25519-dalek.workspace = true
@@ -34,5 +34,6 @@ telio-wg.workspace = true
 dns-parser = "0.8.0"
 rand_core_compat.workspace = true
 rstest.workspace = true
+tracing-subscriber.workspace = true
 
 mockall.workspace = true

@@ -1,9 +1,9 @@
 use hickory_server::{
-    authority::MessageResponse,
+    net::NetError,
     proto::{rr::Record, serialize::binary::BinEncoder},
     server::{ResponseHandler, ResponseInfo},
+    zone_handler::MessageResponse,
 };
-use std::io::{Error as IOError, Result as IOResult};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -30,7 +30,7 @@ impl ResponseHandler for Resolver {
             impl Iterator<Item = &'a Record> + Send + 'a,
             impl Iterator<Item = &'a Record> + Send + 'a,
         >,
-    ) -> IOResult<ResponseInfo> {
+    ) -> Result<ResponseInfo, NetError> {
         let mut buf = self.0.lock().await;
         buf.clear();
         // TODO: fix a bug in https://docs.rs/trust-dns-proto/0.20.3/src/trust_dns_proto/serialize/binary/encoder.rs.html#61
@@ -38,7 +38,7 @@ impl ResponseHandler for Resolver {
         let mut encoder = BinEncoder::new(&mut buf);
         response
             .destructive_emit(&mut encoder)
-            .map_err(Into::<IOError>::into)
+            .map_err(NetError::from)
     }
 }
 

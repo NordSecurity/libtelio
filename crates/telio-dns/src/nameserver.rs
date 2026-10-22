@@ -5,14 +5,10 @@ use crate::{
     resolver::Resolver,
     udp_forwarder::UdpForwarder,
     upstream::UpstreamList,
-    zone::{AuthoritativeZone, ClonableZones, ForwardZone, NordZone, Records, NORD_ZONE},
+    zone::{fqdn, AuthoritativeZone, ClonableZones, ForwardZone, NordZone, Records, NORD_ZONE},
 };
 use async_trait::async_trait;
-use hickory_server::{
-    authority::MessageRequest,
-    proto::{rr::LowerName, serialize::binary::BinDecodable},
-    server::{Protocol, Request},
-};
+use hickory_server::{net::xfer::Protocol, proto::rr::LowerName, server::Request};
 use neptun::noise::{Tunn, TunnResult};
 use pnet_packet::{
     dns::{DnsPacket, DnsQuery},
@@ -424,10 +420,12 @@ impl LocalNameServer {
                     let resolver = Resolver::new();
                     let zones = nameserver.zones().await;
 
-                    let forward = MessageRequest::from_bytes(&raw_query)
-                        .map_err(|_| PacketError::DecodeMessageRequestFailed)?;
-                    let dns_request =
-                        Request::new(forward, request_info.dns_source(), Protocol::Udp);
+                    let dns_request = Request::from_bytes(
+                        raw_query.to_vec(),
+                        request_info.dns_source(),
+                        Protocol::Udp,
+                    )
+                    .map_err(|_| PacketError::DecodeMessageRequestFailed)?;
                     telio_log_debug!("DNS request: {:?}", &dns_request);
 
                     zones
@@ -904,7 +902,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
         let azone = Arc::new(AuthoritativeZone::new(zone, records, ttl_value).await?);
         self.zones_mut()
             .await
-            .upsert(LowerName::from_str(zone)?, Box::new(azone));
+            .upsert(LowerName::from(fqdn(zone)?), azone);
 
         Ok(())
     }
@@ -917,9 +915,7 @@ impl NameServer for Arc<RwLock<LocalNameServer>> {
         // whole LocalNameServer, so it must be released before taking `write()`
         // below, otherwise this would deadlock on itself.
         {
-            self.zones_mut()
-                .await
-                .upsert(root, Box::new(forward_zone.clone()));
+            self.zones_mut().await.upsert(root, forward_zone.clone());
         }
         {
             // Both copies share one Arc, so flushing through this handle affects
@@ -973,8 +969,7 @@ mod tests {
     use crate::zone::{Records, NORD_ZONE};
     use hickory_server::proto::{
         op::{Message, Query},
-        rr::Name,
-        serialize::binary::{BinDecoder, BinEncodable},
+        rr::{Name, RecordType},
     };
     use std::net::{Ipv4Addr, Ipv6Addr};
     use std::str::FromStr;
@@ -982,17 +977,14 @@ mod tests {
     const USE_RAW_FORWARDER: bool = true;
 
     fn dns_request(host: String) -> Request {
-        let mut question = Message::new();
-        let mut query = Query::new();
-        query.set_name(Name::from_str(&host).unwrap());
-        question.add_query(query);
-        let message_request = MessageRequest::from_bytes(&question.to_bytes().unwrap()).unwrap();
-
-        Request::new(
-            message_request,
+        let mut question = Message::query();
+        question.add_query(Query::query(Name::from_str(&host).unwrap(), RecordType::A));
+        Request::from_bytes(
+            question.to_vec().unwrap(),
             SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
             Protocol::Udp,
         )
+        .unwrap()
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -1020,13 +1012,12 @@ mod tests {
             .await
             .unwrap();
         let buf = resolver.0.lock().await;
-        let mut decoder = BinDecoder::new(&buf);
-        let answers = Message::read(&mut decoder).unwrap().take_answers();
+        let answers = Message::from_vec(&buf).unwrap().answers;
         assert_eq!(answers.len(), 1);
         assert_ne!(
             answers
                 .iter()
-                .find(|&answer| answer.name().to_string() == entry_name),
+                .find(|&answer| answer.name.to_string() == entry_name),
             None
         );
     }
@@ -1067,8 +1058,8 @@ mod tests {
         assert_ne!(Arc::as_ptr(&read_ptr3), raw_read_ptr4);
 
         let zones = nameserver.zones().await;
-        assert!(zones.contains(&LowerName::from_str("nord").unwrap()));
-        assert!(zones.contains(&LowerName::from_str("nord2").unwrap()));
+        assert!(zones.contains(&LowerName::from_str("nord.").unwrap()));
+        assert!(zones.contains(&LowerName::from_str("nord2.").unwrap()));
     }
 
     #[tokio::test]
@@ -1090,7 +1081,7 @@ mod tests {
 
         let zones = nameserver.zones().await;
         assert!(zones.contains(&LowerName::from_str(".").unwrap()));
-        assert!(zones.contains(&LowerName::from_str("nord").unwrap()));
+        assert!(zones.contains(&LowerName::from_str("nord.").unwrap()));
     }
 
     #[tokio::test]
