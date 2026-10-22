@@ -58,6 +58,14 @@ impl Default for LogCensor {
                     \b
                 )
                 |
+                V4\(Ipv4Addr\(\[
+                    (?<IP4_RUSTLS_DEBUG>[0-9]{1,3}(?:,\s*[0-9]{1,3}){3})
+                \]\)\)
+                |
+                V6\(Ipv6Addr\(\[
+                    (?<IP6_RUSTLS_DEBUG>[0-9]{1,3}(?:,\s*[0-9]{1,3}){15})
+                \]\)\)
+                |
                 (?<IP6>
                     ([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}
                     |   :(:[0-9a-fA-F]{1,4}){1,7}
@@ -118,6 +126,15 @@ impl LogCensor {
         let after = input[m.end()..].chars().next();
         before.is_some_and(|c| is_word_char(c) || (reject_leading_slash && c == '/'))
             || after.is_some_and(is_word_char)
+    }
+
+    fn parse_debug_octets<const N: usize>(octets: &str) -> Option<[u8; N]> {
+        octets
+            .split(',')
+            .map(|octet| octet.trim().parse().ok())
+            .collect::<Option<Vec<u8>>>()?
+            .try_into()
+            .ok()
     }
 
     fn has_allowed_extension(candidate: &str) -> bool {
@@ -232,6 +249,14 @@ impl LogCensor {
                 return self.censor_input(name, ip.octets().as_slice());
             }
 
+            if let Some(ip) = captures
+                .name("IP4_RUSTLS_DEBUG")
+                .and_then(|m| Self::parse_debug_octets(m.as_str()))
+                .map(Ipv4Addr::from)
+            {
+                return self.censor_input(name, ip.octets().as_slice());
+            }
+
             let name = "IP6";
 
             if let Some((m, ip)) = captures
@@ -241,6 +266,14 @@ impl LogCensor {
                 if Self::incorrect_chars_on_bounds(&log, &m, false) {
                     return m.as_str().to_owned();
                 }
+                return self.censor_input(name, ip.octets().as_slice());
+            }
+
+            if let Some(ip) = captures
+                .name("IP6_RUSTLS_DEBUG")
+                .and_then(|m| Self::parse_debug_octets(m.as_str()))
+                .map(Ipv6Addr::from)
+            {
                 return self.censor_input(name, ip.octets().as_slice());
             }
 
@@ -501,6 +534,22 @@ mod test {
                 "peer Example.COM seen".to_owned(),
                 "peer Example.COM seen".to_owned(),
             ),
+            (
+                "Remote gRPC server (IpAddress(V4(Ipv4Addr([127, 0, 0, 1])))) sha256 fingerprint: e1af930e91b91cbf750b801e6bf750893e9f02522198d07993e8ce298516eda6".to_owned(),
+                format!("Remote gRPC server (IpAddress({})) sha256 fingerprint: e1af930e91b91cbf750b801e6bf750893e9f02522198d07993e8ce298516eda6", ip4("127.0.0.1"))
+            ),
+            (
+                "Remote gRPC server (IpAddress(V6(Ipv6Addr([0, 17, 0, 34, 0, 51, 0, 68, 0, 17, 0, 34, 0, 51, 0, 68])))) sha256 fingerprint: 74583ef6c4788644a1f86d4976fa900f18fc1981d49405b78ee2ddeb5ce7eeaf".to_owned(),
+                format!("Remote gRPC server (IpAddress({})) sha256 fingerprint: 74583ef6c4788644a1f86d4976fa900f18fc1981d49405b78ee2ddeb5ce7eeaf", ip6("11:22:33:44:11:22:33:44")),
+            ),
+            (
+                "Remote gRPC server (IpAddress(V6(Ipv6Addr([0, 17, 0, 34, 0, 0, 0, 0, 0, 0, 0, 34, 0, 51, 0, 68])))) sha256 fingerprint: 24ec6b6b71496b7aefad73a9cf14080fba50b2638dbedc3eab1e30d066a15b2f".to_owned(),
+                format!("Remote gRPC server (IpAddress({})) sha256 fingerprint: 24ec6b6b71496b7aefad73a9cf14080fba50b2638dbedc3eab1e30d066a15b2f", ip6("11:22::22:33:44"))
+            ),
+            (
+                "Remote gRPC server (IpAddress(V6(Ipv6Addr([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])))) sha256 fingerprint: 24ec6b6b71496b7aefad73a9cf14080fba50b2638dbedc3eab1e30d066a15b2f".to_owned(),
+                format!("Remote gRPC server (IpAddress({})) sha256 fingerprint: 24ec6b6b71496b7aefad73a9cf14080fba50b2638dbedc3eab1e30d066a15b2f", ip6("::"))
+            )
         ]
     }
 
