@@ -1,5 +1,12 @@
 <!-- Note: this file is auto-generated. See CONTRIBUTING.md for details. -->
 
+### v6.2.5
+### ****
+---
+* address_rustsec: Address RUSTSEC-2026-0381 RUSTSEC-2026-0383 RUSTSEC-2026-0382 vulnerabilities
+
+<br>
+
 ### v6.2.4
 ### ****
 ---
