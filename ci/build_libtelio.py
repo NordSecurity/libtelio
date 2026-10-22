@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import dataclasses
 import getpass
 import os
 import sys
@@ -56,6 +57,21 @@ PROJECT_CONFIG = rutils.Project(
     root_dir=PROJECT_ROOT,
     working_dir=WORKING_DIR,
 )
+NO_LTO_PROJECT_CONFIG = dataclasses.replace(
+    PROJECT_CONFIG, release_profile="release-no-lto"
+)
+
+
+def no_lto_package_names(config):
+    if config.debug:
+        return []
+    return LIBTELIO_CONFIG[config.target_os].get("no_lto_packages", [])
+
+
+def cargo_project_for(config, package):
+    if package in no_lto_package_names(config):
+        return NO_LTO_PROJECT_CONFIG
+    return PROJECT_CONFIG
 
 
 def post_copy_libsqlite3_binary_to_dist(config, args):
@@ -75,17 +91,15 @@ def post_copy_windows_debug_symbols_to_distribution_dir(config, args):
 
     packages = LIBTELIO_CONFIG[config.target_os].get("packages", None)
     if packages and config.target_os == "windows":
-        for _, bins in packages.items():
+        for package, bins in packages.items():
             for _, bin in bins.items():
                 debug_bin = os.path.splitext(bin)[0] + ".pdb"
-                debug_bin_path = PROJECT_CONFIG.get_cargo_path(
+                debug_bin_path = cargo_project_for(config, package).get_cargo_path(
                     config.rust_target, debug_bin, config.debug
                 )
                 if os.path.isfile(debug_bin_path):
                     shutil.copy2(
-                        PROJECT_CONFIG.get_cargo_path(
-                            config.rust_target, debug_bin, config.debug
-                        ),
+                        debug_bin_path,
                         PROJECT_CONFIG.get_distribution_path(
                             config.target_os, config.arch, "", config.debug
                         ),
@@ -95,10 +109,10 @@ def post_copy_windows_debug_symbols_to_distribution_dir(config, args):
 def post_check_for_windows_static_runtime(config, args):
     packages = LIBTELIO_CONFIG[config.target_os].get("packages", None)
     if packages and config.target_os == "windows" and args.msvc:
-        for _, bins in packages.items():
+        for package, bins in packages.items():
             for _, bin in bins.items():
                 dll_bin = os.path.splitext(bin)[0] + ".dll"
-                dll_bin_path = PROJECT_CONFIG.get_cargo_path(
+                dll_bin_path = cargo_project_for(config, package).get_cargo_path(
                     config.rust_target, dll_bin, config.debug
                 )
                 if os.path.isfile(dll_bin_path):
@@ -128,10 +142,10 @@ def post_copy_darwin_debug_symbols_to_distribution_dir(config, args):
 
     packages = LIBTELIO_CONFIG[config.target_os].get("packages", None)
     if packages and config.target_os in ["macos", "tvos", "ios"]:
-        for _, bins in packages.items():
+        for package, bins in packages.items():
             for _, bin in bins.items():
                 debug_bin = bin + ".dSYM"
-                src_path = PROJECT_CONFIG.get_cargo_path(
+                src_path = cargo_project_for(config, package).get_cargo_path(
                     config.rust_target, debug_bin, config.debug
                 )
                 dst_path = os.path.join(
@@ -246,6 +260,7 @@ LIBTELIO_CONFIG = {
             "interderpcli": {"interderpcli": "interderpcli.exe"},
             NAME: {NAME: f"{NAME}.dll"},
         },
+        "no_lto_packages": ["tcli", "derpcli", "interderpcli"],
         "post_build": [
             post_copy_windows_debug_symbols_to_distribution_dir,
             post_check_for_windows_static_runtime,
@@ -344,6 +359,7 @@ LIBTELIO_CONFIG = {
             "nordvpnlite": {"nordvpnlite": "nordvpnlite"},
             NAME: {f"lib{NAME}": f"lib{NAME}.so"},
         },
+        "no_lto_packages": ["tcli", "derpcli", "interderpcli"],
     },
     "macos": {
         "packages": {
@@ -351,6 +367,7 @@ LIBTELIO_CONFIG = {
             "nordvpnlite": {"nordvpnlite": "nordvpnlite"},
             NAME: {f"lib{NAME}": f"lib{NAME}.dylib"},
         },
+        "no_lto_packages": ["tcli", "nordvpnlite"],
         "post_build": [post_copy_darwin_debug_symbols_to_distribution_dir],
     },
     "ios": {
@@ -600,41 +617,48 @@ def exec_build(args):
     call_build(config, args)
 
 
+def cargo_builds(config, packages):
+    no_lto_names = no_lto_package_names(config)
+    builds = [
+        rutils.CargoBuild(
+            PROJECT_CONFIG,
+            {k: v for k, v in packages.items() if k not in no_lto_names},
+        ),
+        rutils.CargoBuild(
+            NO_LTO_PROJECT_CONFIG,
+            {k: v for k, v in packages.items() if k in no_lto_names},
+        ),
+    ]
+    return [build for build in builds if build.packages]
+
+
+def split_out_nordvpnlite(builds):
+    result = []
+    for build in builds:
+        if "nordvpnlite" not in build.packages or len(build.packages) == 1:
+            result.append(build)
+            continue
+        rest = {k: v for k, v in build.packages.items() if k != "nordvpnlite"}
+        nordvpnlite = {"nordvpnlite": build.packages["nordvpnlite"]}
+        result.append(dataclasses.replace(build, packages=rest))
+        result.append(dataclasses.replace(build, packages=nordvpnlite))
+    return result
+
+
 def call_build(config, args):
     rutils.config_local_env_vars(config, LIBTELIO_CONFIG)
 
-    packages = LIBTELIO_CONFIG[config.target_os].get("packages")
+    os_config = LIBTELIO_CONFIG[config.target_os]
+    builds = cargo_builds(config, os_config["packages"])
+    order = rutils.BuildOrder.PARALLEL
     if os.environ.get("NATLAB_REDUCE_PARALLEL_LINKERS", None) == "1":
-        nordvpnlite_package = {}
+        builds = split_out_nordvpnlite(builds)
+        order = rutils.BuildOrder.ONE_AT_A_TIME
 
-        if "nordvpnlite" in packages:
-            nordvpnlite_package["nordvpnlite"] = packages["nordvpnlite"]
+    rutils.cargo_build_many(config, builds, os_config.get("build_args", None), order)
 
-        rest_packages = {k: v for k, v in packages.items() if k != "nordvpnlite"}
-
-        rutils.cargo_build(
-            PROJECT_CONFIG,
-            config,
-            rest_packages,
-            LIBTELIO_CONFIG[config.target_os].get("build_args", None),
-        )
-        rutils.cargo_build(
-            PROJECT_CONFIG,
-            config,
-            nordvpnlite_package,
-            LIBTELIO_CONFIG[config.target_os].get("build_args", None),
-        )
-    else:
-        rutils.cargo_build(
-            PROJECT_CONFIG,
-            config,
-            packages,
-            LIBTELIO_CONFIG[config.target_os].get("build_args", None),
-        )
-
-    if "post_build" in LIBTELIO_CONFIG[config.target_os]:
-        for post in LIBTELIO_CONFIG[config.target_os]["post_build"]:
-            post(config, args)
+    for post in os_config.get("post_build", []):
+        post(config, args)
 
 
 def darwin_build_all(args) -> None:
