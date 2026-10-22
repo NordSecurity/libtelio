@@ -17,6 +17,7 @@ ignore = [
     "RUSTSEC-2026-0162", # pqcrypto-traits is unmaintained
     "RUSTSEC-2026-0163", # pqcrypto-internals is unmaintained
     "RUSTSEC-2026-0173", # proc-macro-error2 is unmaintained
+    "RUSTSEC-2026-0374", # basic-toml is unmaintained
 ]
 
 
