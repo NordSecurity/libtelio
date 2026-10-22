@@ -1,7 +1,12 @@
 import asyncio
+import asyncssh
 import os
 import shutil
-from tests.config import LAN_ADDR_MAP
+from tests.config import (
+    COVERAGE_PROFILE_DIR_VM_MAC,
+    COVERAGE_PROFILE_DIR_WINDOWS_VM,
+    LAN_ADDR_MAP,
+)
 from tests.utils.connection import ConnectionTag
 from tests.utils.connection.ssh_connection import SshConnection
 from tests.utils.connection_util import new_connection_raw
@@ -135,6 +140,7 @@ async def collect_logs(
     os.makedirs(LOG_DIR, exist_ok=True)
 
     await asyncio.gather(
+        collect_coverage_profiles(session_vm_marks),
         collect_nordderper_logs(),
         collect_dns_server_logs(),
         collect_core_api_server_logs(),
@@ -143,6 +149,32 @@ async def collect_logs(
         save_nordlynx_logs(session_vm_marks),
         return_exceptions=True,
     )
+
+
+async def collect_coverage_profiles(session_vm_marks: set[str]):
+    """Fetch LLVM coverage profiles written on the macOS/Windows VMs (NATLAB_COVERAGE runs)."""
+    if not os.environ.get("NATLAB_COVERAGE"):
+        return
+    os.makedirs("coverage", exist_ok=True)
+    for mark, tag, remote_dir, platform in (
+        ("mac", ConnectionTag.VM_MAC, COVERAGE_PROFILE_DIR_VM_MAC, "macos"),
+        (
+            "windows",
+            ConnectionTag.VM_WINDOWS_1,
+            COVERAGE_PROFILE_DIR_WINDOWS_VM,
+            "windows",
+        ),
+    ):
+        if mark not in session_vm_marks:
+            continue
+        setup_log.info("Collect %s coverage profiles", platform)
+        try:
+            async with SshConnection.new_connection(
+                LAN_ADDR_MAP[tag]["primary"], tag, prepare=False
+            ) as connection:
+                await connection.download(remote_dir, f"coverage/{platform}")
+        except (OSError, asyncio.TimeoutError, asyncssh.Error) as e:
+            setup_log.warning("Failed to collect %s coverage profiles: %s", platform, e)
 
 
 async def collect_nordderper_logs():
