@@ -12,11 +12,13 @@ use std::{
 
 use once_cell::sync::Lazy;
 use telio_utils::{log_censor::LogCensor, Instant};
-use tracing::{level_filters::LevelFilter, Subscriber};
+use tracing::{level_filters::LevelFilter, Level, Metadata, Subscriber};
 use tracing_subscriber::{
+    filter::filter_fn,
     fmt::{self, FormatEvent, FormatFields, MakeWriter},
     layer::SubscriberExt,
     registry::LookupSpan,
+    Layer,
 };
 
 use crate::types::{TelioLogLevel, TelioLoggerCb};
@@ -92,14 +94,33 @@ pub fn build_subscriber(
 ) -> impl Subscriber {
     let log_sender = start_async_logger(logger, LOG_BUFFER);
     LOGGER_STOPPER.set_sender(log_sender.clone());
-    tracing_subscriber::registry()
-        .with(LevelFilter::from_level(log_level.into()))
-        .with(
-            fmt::layer()
-                .event_format(TelioEventFmt)
-                .with_ansi(false)
-                .with_writer(FfiCallback::new(log_sender)),
-        )
+    let level_filter = LevelFilter::from_level(log_level.into());
+    // hickory events are delivered as debug (see `ffi_level`), so drop them when debug is off
+    let hickory_enabled = level_filter >= LevelFilter::DEBUG;
+    tracing_subscriber::registry().with(level_filter).with(
+        fmt::layer()
+            .event_format(TelioEventFmt)
+            .with_ansi(false)
+            .with_writer(FfiCallback::new(log_sender))
+            .with_filter(filter_fn(move |meta| hickory_enabled || !is_hickory(meta))),
+    )
+}
+
+fn is_hickory(meta: &Metadata<'_>) -> bool {
+    meta.target().starts_with("hickory_")
+}
+
+/// Level handed to the app for an event.
+///
+/// hickory logs routine DNS conditions at warn or error, e.g. a dropped response with a wrong
+/// message id. The NordSecurity hickory fork lowered those to debug; with upstream hickory,
+/// libtelio does it here so they do not show up as warnings in app logs.
+fn ffi_level(meta: &Metadata<'_>) -> TelioLogLevel {
+    if is_hickory(meta) && *meta.level() < Level::DEBUG {
+        TelioLogLevel::Debug
+    } else {
+        (*meta.level()).into()
+    }
 }
 
 struct TelioEventFmt;
@@ -172,7 +193,7 @@ impl MakeWriter<'_> for FfiCallback {
     fn make_writer_for(&self, meta: &tracing::Metadata<'_>) -> Self::Writer {
         FfiCallbackWriter {
             log_sender: self.log_sender.clone(),
-            level: (*meta.level()).into(),
+            level: ffi_level(meta),
         }
     }
 }
@@ -451,6 +472,58 @@ mod test {
         });
 
         assert_eq!(LOGS_TO_DROP + 1, logs_dropped_until_now());
+    }
+
+    fn collect_levels(
+        log_level: TelioLogLevel,
+        expected_count: usize,
+        act: impl FnOnce(),
+    ) -> Vec<(TelioLogLevel, String)> {
+        let log = Log::default();
+        let logs = log.0.clone();
+        let subscriber = build_subscriber(log_level, Box::new(log));
+        tracing::subscriber::with_default(subscriber, act);
+        while logs.lock().unwrap().len() < expected_count {
+            sleep(Duration::from_millis(1));
+        }
+        let actual = logs.lock().unwrap().clone();
+        actual
+    }
+
+    #[test]
+    fn test_hickory_warnings_are_delivered_as_debug() {
+        let logs = collect_levels(TelioLogLevel::Debug, 5, || {
+            warn!(target: "hickory_net::udp::udp_client_stream", "ignoring short message");
+            tracing::error!(target: "hickory_server::zone_handler::catalog", "request failed");
+            warn!("telio warning");
+        });
+
+        let levels: Vec<_> = logs.iter().map(|(level, _)| *level).collect();
+        assert_eq!(
+            levels,
+            [
+                TelioLogLevel::Debug,
+                TelioLogLevel::Debug,
+                TelioLogLevel::Debug,
+                TelioLogLevel::Warning,
+                TelioLogLevel::Debug,
+            ],
+            "{logs:?}"
+        );
+        assert!(logs[1].1.ends_with("ignoring short message"));
+        assert!(logs[2].1.ends_with("request failed"));
+    }
+
+    #[test]
+    fn test_hickory_logs_are_dropped_above_debug_level() {
+        let logs = collect_levels(TelioLogLevel::Info, 3, || {
+            warn!(target: "hickory_net::udp::udp_client_stream", "ignoring short message");
+            warn!("telio warning");
+        });
+
+        assert_eq!(logs.len(), 3, "{logs:?}");
+        assert_eq!(logs[1].0, TelioLogLevel::Warning);
+        assert!(logs[1].1.ends_with("telio warning"));
     }
 
     #[derive(Default, Clone, Debug)]

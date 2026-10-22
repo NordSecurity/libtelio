@@ -3,21 +3,26 @@ use crate::{
 };
 use async_trait::async_trait;
 use hickory_server::{
-    authority::{
-        Authority, AuthorityObject, Catalog, LookupError, LookupOptions, MessageRequest,
-        UpdateResult, ZoneType,
+    proto::{
+        op::ResponseCode,
+        rr::{rdata, rdata::SOA, LowerName, Name, RData, Record, RecordType, TSigResponseContext},
     },
-    proto::rr::{rdata, rdata::SOA, DNSClass, LowerName, Name, RData, Record, RecordType},
-    resolver::config::{NameServerConfigGroup, ResolverOpts},
-    server::RequestInfo,
-    store::{forwarder::ForwardConfig, in_memory::InMemoryAuthority},
+    resolver::config::{NameServerConfig, ResolveHosts, ResolverOpts},
+    server::{Request, RequestInfo, ResponseHandler, ResponseInfo},
+    store::in_memory::InMemoryZoneHandler,
+    zone_handler::{
+        AuthLookup, AxfrPolicy, Catalog, LookupControlFlow, LookupError, LookupOptions,
+        ZoneHandler, ZoneType,
+    },
 };
 use pnet_packet::dns::{DnsQuery, DnsTypes};
 use std::{
     collections::{HashMap, HashSet},
     convert::TryInto,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     str::FromStr,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
 };
 use telio_model::{constants::DNS_PORT, features::TtlValue};
 use telio_utils::{telio_log_debug, telio_log_warn};
@@ -43,6 +48,16 @@ pub enum NordZoneError {
     /// Record contains a non nord entry
     #[error("record contains non-nord entry {0}")]
     NonNordRecord(String),
+}
+
+/// Parse `name` as a fully qualified name.
+///
+/// hickory 0.26 no longer treats `nord` and `nord.` as equal, while the zone and records
+/// libtelio gets (e.g. `dns.upsert("nord", ...)`) may lack the trailing dot.
+pub(crate) fn fqdn(name: &str) -> Result<Name, hickory_server::proto::ProtoError> {
+    let mut name = Name::from_str(name)?;
+    name.set_fqdn(true);
+    Ok(name)
 }
 
 /// Helper to split a slice of IpAddr into a tuple of Ipv4Addr and Ipv6Addr iterators
@@ -189,7 +204,7 @@ impl NordZone {
 /// AuthoritativeZone is a zone for which the local server references its
 /// own data when responding to queries.
 pub(crate) struct AuthoritativeZone {
-    pub(crate) zone: InMemoryAuthority,
+    pub(crate) zone: InMemoryZoneHandler,
 }
 
 impl AuthoritativeZone {
@@ -200,8 +215,9 @@ impl AuthoritativeZone {
                 return Err(Error::RecordOutsideZone(domain.into(), name.into()));
             }
         }
-        let zone_name = Name::from_str(name)?;
-        let zone = InMemoryAuthority::empty(zone_name.clone(), ZoneType::Primary, false);
+        let zone_name = fqdn(name)?;
+        let zone =
+            InMemoryZoneHandler::empty(zone_name.clone(), ZoneType::Primary, AxfrPolicy::Deny);
         let ttl_value_signed: i32 = match ttl_value.0.try_into() {
             Ok(ttl_value) => ttl_value,
             Err(_) => {
@@ -211,12 +227,10 @@ impl AuthoritativeZone {
             }
         };
         zone.upsert(
-            Record::new()
-                .set_name(zone_name)
-                .set_ttl(ttl_value.0)
-                .set_rr_type(RecordType::SOA)
-                .set_dns_class(DNSClass::IN)
-                .set_data(Some(RData::SOA(SOA::new(
+            Record::from_rdata(
+                zone_name,
+                ttl_value.0,
+                RData::SOA(SOA::new(
                     Name::parse("mesh.nordsec.com.", None)?,
                     Name::parse("support.nordsec.com.", None)?,
                     2015082403,
@@ -224,42 +238,28 @@ impl AuthoritativeZone {
                     ttl_value_signed,
                     1209600,
                     ttl_value.0,
-                ))))
-                .clone(),
+                )),
+            ),
             0,
         )
         .await;
 
-        let build_record = |name: Name, ty: RecordType, data: RData| -> Record {
-            Record::new()
-                .set_name(name)
-                .set_ttl(ttl_value.0)
-                .set_rr_type(ty)
-                .set_dns_class(DNSClass::IN)
-                .set_data(Some(data))
-                .clone()
-        };
+        let build_record =
+            |name: Name, data: RData| -> Record { Record::from_rdata(name, ttl_value.0, data) };
 
         for (name, record) in records.iter() {
-            let name = Name::parse(name, None)?;
+            let name = fqdn(name)?;
             for ip in record.iter() {
                 match *ip {
                     IpAddr::V4(ipv4) => {
                         let _ = zone
-                            .upsert(
-                                build_record(name.clone(), RecordType::A, RData::A(rdata::A(ipv4))),
-                                0,
-                            )
+                            .upsert(build_record(name.clone(), RData::A(rdata::A(ipv4))), 0)
                             .await;
                     }
                     IpAddr::V6(ipv6) => {
                         let _ = zone
                             .upsert(
-                                build_record(
-                                    name.clone(),
-                                    RecordType::AAAA,
-                                    RData::AAAA(rdata::AAAA(ipv6)),
-                                ),
+                                build_record(name.clone(), RData::AAAA(rdata::AAAA(ipv6))),
                                 0,
                             )
                             .await;
@@ -273,19 +273,21 @@ impl AuthoritativeZone {
 }
 
 #[async_trait]
-impl Authority for AuthoritativeZone {
-    type Lookup = <InMemoryAuthority as Authority>::Lookup;
-
+impl ZoneHandler for AuthoritativeZone {
     fn zone_type(&self) -> ZoneType {
         self.zone.zone_type()
     }
 
-    fn is_axfr_allowed(&self) -> bool {
-        self.zone.is_axfr_allowed()
+    fn axfr_policy(&self) -> AxfrPolicy {
+        self.zone.axfr_policy()
     }
 
-    async fn update(&self, update: &MessageRequest) -> UpdateResult<bool> {
-        self.zone.update(update).await
+    async fn update(
+        &self,
+        update: &Request,
+        now: u64,
+    ) -> (Result<bool, ResponseCode>, Option<TSigResponseContext>) {
+        self.zone.update(update, now).await
     }
 
     fn origin(&self) -> &LowerName {
@@ -296,25 +298,28 @@ impl Authority for AuthoritativeZone {
         &self,
         name: &LowerName,
         rtype: RecordType,
+        request_info: Option<&RequestInfo<'_>>,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
-        self.zone.lookup(name, rtype, lookup_options).await
+    ) -> LookupControlFlow<AuthLookup> {
+        self.zone
+            .lookup(name, rtype, request_info, lookup_options)
+            .await
     }
 
     async fn search(
         &self,
-        request_info: RequestInfo<'_>,
+        request: &Request,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
-        self.zone.search(request_info, lookup_options).await
+    ) -> (LookupControlFlow<AuthLookup>, Option<TSigResponseContext>) {
+        self.zone.search(request, lookup_options).await
     }
 
-    async fn get_nsec_records(
+    async fn nsec_records(
         &self,
         name: &LowerName,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
-        self.zone.get_nsec_records(name, lookup_options).await
+    ) -> LookupControlFlow<AuthLookup> {
+        self.zone.nsec_records(name, lookup_options).await
     }
 }
 
@@ -327,26 +332,49 @@ pub(crate) struct ForwardZone {
 
 impl ForwardZone {
     pub(crate) async fn new(name: &str, ips: &[IpAddr]) -> DnsResult<Self> {
+        let upstreams: Vec<_> = ips
+            .iter()
+            .map(|ip| SocketAddr::new(*ip, DNS_PORT))
+            .collect();
+        Self::with_upstreams(name, &upstreams, Self::options())
+    }
+
+    fn options() -> ResolverOpts {
         let mut options = ResolverOpts::default();
         // Some tools and browsers do not accept responses without intermediates preserved
         options.preserve_intermediates = true;
         // We provide our own forward servers, so we don't need to look at the hosts file
-        options.use_hosts_file = false;
+        options.use_hosts_file = ResolveHosts::Never;
 
         options.num_concurrent_reqs = 1;
 
         // We set the number of retries to 0. The retry should be handled by the OS retry mechanism
         options.attempts = 0;
 
-        let zone = ForwardAuthority::try_from_config(
-            Name::from_str(name)?,
-            ZoneType::Forward,
-            ForwardConfig {
-                options: Some(options),
-                name_servers: NameServerConfigGroup::from_ips_clear(ips, DNS_PORT, true),
-            },
-        )
-        .await?;
+        // Defaults of hickory 0.24 (the NordSecurity fork), changed upstream in 0.26
+        options.edns0 = false;
+        options.cache_size = 32;
+
+        options
+    }
+
+    fn with_upstreams(
+        name: &str,
+        upstreams: &[SocketAddr],
+        options: ResolverOpts,
+    ) -> DnsResult<Self> {
+        let name_servers = upstreams
+            .iter()
+            .map(|upstream| {
+                let mut config = NameServerConfig::udp_and_tcp(upstream.ip());
+                for connection in &mut config.connections {
+                    connection.port = upstream.port();
+                }
+                config
+            })
+            .collect();
+
+        let zone = ForwardAuthority::new(Name::from_str(name)?, name_servers, options)?;
         Ok(ForwardZone { zone })
     }
 
@@ -357,19 +385,13 @@ impl ForwardZone {
 }
 
 #[async_trait]
-impl Authority for ForwardZone {
-    type Lookup = <ForwardAuthority as Authority>::Lookup;
-
+impl ZoneHandler for ForwardZone {
     fn zone_type(&self) -> ZoneType {
         self.zone.zone_type()
     }
 
-    fn is_axfr_allowed(&self) -> bool {
-        self.zone.is_axfr_allowed()
-    }
-
-    async fn update(&self, update: &MessageRequest) -> UpdateResult<bool> {
-        self.zone.update(update).await
+    fn axfr_policy(&self) -> AxfrPolicy {
+        self.zone.axfr_policy()
     }
 
     fn origin(&self) -> &LowerName {
@@ -380,25 +402,28 @@ impl Authority for ForwardZone {
         &self,
         name: &LowerName,
         rtype: RecordType,
+        request_info: Option<&RequestInfo<'_>>,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
-        self.zone.lookup(name, rtype, lookup_options).await
+    ) -> LookupControlFlow<AuthLookup> {
+        self.zone
+            .lookup(name, rtype, request_info, lookup_options)
+            .await
     }
 
     async fn search(
         &self,
-        request_info: RequestInfo<'_>,
+        request: &Request,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
-        self.zone.search(request_info, lookup_options).await
+    ) -> (LookupControlFlow<AuthLookup>, Option<TSigResponseContext>) {
+        self.zone.search(request, lookup_options).await
     }
 
-    async fn get_nsec_records(
+    async fn nsec_records(
         &self,
         name: &LowerName,
         lookup_options: LookupOptions,
-    ) -> Result<Self::Lookup, LookupError> {
-        self.zone.get_nsec_records(name, lookup_options).await
+    ) -> LookupControlFlow<AuthLookup> {
+        self.zone.nsec_records(name, lookup_options).await
     }
 }
 
@@ -413,17 +438,33 @@ impl ClonableZones {
         Self::default()
     }
 
-    pub fn upsert(&mut self, name: LowerName, authority: Box<dyn AuthorityObject>) {
-        self.zones.upsert(name.clone(), authority);
+    pub fn upsert(&mut self, name: LowerName, handler: Arc<dyn ZoneHandler>) {
+        self.zones.upsert(name.clone(), vec![handler]);
         self.names.insert(name);
     }
 
-    pub async fn lookup<R: hickory_server::server::ResponseHandler>(
+    /// Look the request up, returning an error where the NordSecurity hickory fork did.
+    ///
+    /// Upstream hickory always writes a response into `response_handle`. The fork instead
+    /// returned an error, so libtelio sent nothing and the client's own retry took over, when:
+    /// - no upstream answered (SERVFAIL, see [crate::forward])
+    /// - the query has recursion disabled, or no zone matches it (REFUSED)
+    pub async fn lookup<R: ResponseHandler>(
         &self,
-        request: &hickory_server::server::Request,
+        request: &Request,
         response_handle: R,
-    ) -> Result<hickory_server::server::ResponseInfo, LookupError> {
-        self.zones.lookup(request, None, response_handle).await
+    ) -> Result<ResponseInfo, LookupError> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or_default();
+        let info = self.zones.lookup(request, None, now, response_handle).await;
+        match info.response_code {
+            code @ (ResponseCode::ServFail | ResponseCode::Refused) => {
+                Err(LookupError::ResponseCode(code))
+            }
+            _ => Ok(info),
+        }
     }
 
     #[cfg(test)]
@@ -438,9 +479,9 @@ impl Clone for ClonableZones {
             zones: self
                 .names
                 .iter()
-                .flat_map(|name| self.zones.find(name).map(|auth| (name, auth)))
-                .fold(Zones::new(), |mut zone, (name, auth)| {
-                    zone.upsert(name.clone(), auth.box_clone());
+                .flat_map(|name| self.zones.find(name).map(|handlers| (name, handlers)))
+                .fold(Zones::new(), |mut zone, (name, handlers)| {
+                    zone.upsert(name.clone(), handlers.clone());
                     zone
                 }),
             names: self.names.clone(),
@@ -496,41 +537,44 @@ mod tests {
     ) {
         let lookup = zone
             .lookup(
-                &Name::from_str(name).unwrap().into(),
+                &fqdn(name).unwrap().into(),
                 RecordType::A,
+                None,
                 Default::default(),
             )
-            .await;
+            .await
+            .map_result()
+            .unwrap();
 
         if let Some(expected_ipv4) = expected_ipv4 {
             let lookup = lookup.unwrap();
             let records: Vec<&Record> = lookup.iter().collect();
             assert_eq!(records.len(), 1);
             let record = records[0];
-            assert_eq!(record.name(), &Name::from_str(name).unwrap());
-            assert_eq!(record.data(), Some(&RData::A(rdata::A(expected_ipv4))));
+            assert_eq!(record.name, fqdn(name).unwrap());
+            assert_eq!(record.data, RData::A(rdata::A(expected_ipv4)));
         } else {
             assert!(matches!(lookup, Err(LookupError::NameExists)));
         }
 
         let lookup = zone
             .lookup(
-                &Name::from_str(name).unwrap().into(),
+                &fqdn(name).unwrap().into(),
                 RecordType::AAAA,
+                None,
                 Default::default(),
             )
-            .await;
+            .await
+            .map_result()
+            .unwrap();
 
         if let Some(expected_ipv6) = expected_ipv6 {
             let lookup = lookup.unwrap();
             let records: Vec<&Record> = lookup.iter().collect();
             assert_eq!(records.len(), 1);
             let record = records[0];
-            assert_eq!(record.name(), &Name::from_str(name).unwrap());
-            assert_eq!(
-                record.data(),
-                Some(&RData::AAAA(rdata::AAAA(expected_ipv6)))
-            );
+            assert_eq!(record.name, fqdn(name).unwrap());
+            assert_eq!(record.data, RData::AAAA(rdata::AAAA(expected_ipv6)));
         } else {
             assert!(matches!(lookup, Err(LookupError::NameExists)));
         }
@@ -873,5 +917,240 @@ mod error_tests {
             Err(Error::RecordOutsideZone(ref domain, ref zone))
                 if domain == "domain.bad." && zone == "nord"
         ));
+    }
+}
+
+/// Behaviour of the NordSecurity hickory fork that libtelio now provides itself
+#[cfg(test)]
+mod forward_tests {
+    use super::*;
+    use crate::resolver::Resolver as ResponseBuffer;
+    use hickory_server::{
+        net::xfer::Protocol,
+        proto::op::{Message, MessageType, OpCode, Query},
+    };
+    use std::{
+        sync::atomic::{AtomicUsize, Ordering},
+        time::Duration,
+    };
+    use tokio::net::UdpSocket;
+
+    const QUERY_NAME: &str = "example.com.";
+    const ANSWER: Ipv4Addr = Ipv4Addr::new(192, 0, 2, 1);
+    const TIMEOUT: Duration = Duration::from_millis(300);
+
+    #[derive(Clone, Copy)]
+    enum Upstream {
+        Answer,
+        Silent,
+        Rcode(ResponseCode),
+        NoDataWithSoa,
+        NxDomainWithSoa,
+        WrongIdFirst,
+        TooShortFirst,
+    }
+
+    fn soa() -> Record {
+        Record::from_rdata(
+            Name::from_str("example.com.").unwrap(),
+            60,
+            RData::SOA(SOA::new(
+                Name::from_str("ns.example.com.").unwrap(),
+                Name::from_str("admin.example.com.").unwrap(),
+                1,
+                60,
+                60,
+                60,
+                60,
+            )),
+        )
+    }
+
+    /// Upstream DNS server stub, returns its address and how many queries it received
+    async fn spawn_upstream(behavior: Upstream) -> (SocketAddr, Arc<AtomicUsize>) {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap();
+        let received = Arc::new(AtomicUsize::new(0));
+        let counter = received.clone();
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 4096];
+            loop {
+                let (n, src) = socket.recv_from(&mut buf).await.unwrap();
+                counter.fetch_add(1, Ordering::SeqCst);
+                let query = Message::from_vec(&buf[..n]).unwrap();
+                let mut response =
+                    Message::new(query.metadata.id, MessageType::Response, OpCode::Query);
+                response.metadata.recursion_desired = query.metadata.recursion_desired;
+                response.metadata.recursion_available = true;
+                response.add_queries(query.queries.clone());
+                match behavior {
+                    Upstream::Silent => continue,
+                    Upstream::Answer | Upstream::WrongIdFirst | Upstream::TooShortFirst => {
+                        response.add_answer(Record::from_rdata(
+                            Name::from_str(QUERY_NAME).unwrap(),
+                            60,
+                            RData::A(rdata::A(ANSWER)),
+                        ));
+                    }
+                    Upstream::Rcode(code) => response.metadata.response_code = code,
+                    Upstream::NoDataWithSoa => {
+                        response.add_authority(soa());
+                    }
+                    Upstream::NxDomainWithSoa => {
+                        response.metadata.response_code = ResponseCode::NXDomain;
+                        response.add_authority(soa());
+                    }
+                }
+                let reply = response.to_vec().unwrap();
+                match behavior {
+                    Upstream::WrongIdFirst => {
+                        let mut wrong_id = reply.clone();
+                        wrong_id[1] = wrong_id[1].wrapping_add(1);
+                        socket.send_to(&wrong_id, src).await.unwrap();
+                    }
+                    Upstream::TooShortFirst => {
+                        socket.send_to(&[0], src).await.unwrap();
+                    }
+                    _ => {}
+                }
+                socket.send_to(&reply, src).await.unwrap();
+            }
+        });
+        (addr, received)
+    }
+
+    async fn zones_forwarding_to(upstream: SocketAddr) -> ClonableZones {
+        zones_forwarding_to_with_timeout(upstream, TIMEOUT).await
+    }
+
+    async fn zones_forwarding_to_with_timeout(
+        upstream: SocketAddr,
+        timeout: Duration,
+    ) -> ClonableZones {
+        let mut options = ForwardZone::options();
+        options.timeout = timeout;
+        let forward = ForwardZone::with_upstreams(".", &[upstream], options).unwrap();
+        let mut zones = ClonableZones::new();
+        zones.upsert(LowerName::from_str(".").unwrap(), Arc::new(forward));
+        zones
+    }
+
+    async fn forward_query(
+        zones: &ClonableZones,
+        recursion_desired: bool,
+    ) -> Result<Message, LookupError> {
+        let mut query = Message::query();
+        query.metadata.recursion_desired = recursion_desired;
+        query.add_query(Query::query(
+            Name::from_str(QUERY_NAME).unwrap(),
+            RecordType::A,
+        ));
+        let request = Request::from_bytes(
+            query.to_vec().unwrap(),
+            SocketAddr::from(([127, 0, 0, 1], 5353)),
+            Protocol::Udp,
+        )
+        .unwrap();
+        let buffer = ResponseBuffer::new();
+        zones.lookup(&request, buffer.clone()).await?;
+        let bytes = buffer.0.lock().await.clone();
+        Ok(Message::from_vec(&bytes).unwrap())
+    }
+
+    #[tokio::test]
+    async fn answer_is_forwarded() {
+        let (upstream, _) = spawn_upstream(Upstream::Answer).await;
+        let zones = zones_forwarding_to(upstream).await;
+
+        let response = forward_query(&zones, true).await.unwrap();
+
+        assert_eq!(response.metadata.response_code, ResponseCode::NoError);
+        assert_eq!(response.answers.len(), 1);
+        assert_eq!(response.answers[0].data, RData::A(rdata::A(ANSWER)));
+    }
+
+    #[tokio::test]
+    async fn silent_upstream_gets_no_reply_and_a_single_query() {
+        let (upstream, received) = spawn_upstream(Upstream::Silent).await;
+        // Long enough for hickory's re-send interval (at least 333 ms) to fire
+        let zones = zones_forwarding_to_with_timeout(upstream, Duration::from_millis(1500)).await;
+
+        let result = forward_query(&zones, true).await;
+
+        assert!(
+            matches!(
+                result,
+                Err(LookupError::ResponseCode(ResponseCode::ServFail))
+            ),
+            "expected no reply, got {:?}",
+            result
+        );
+        // Upstream hickory 0.26 would re-send to the same server up to 3 times
+        assert_eq!(received.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn non_recursive_query_gets_no_reply() {
+        let (upstream, received) = spawn_upstream(Upstream::Answer).await;
+        let zones = zones_forwarding_to(upstream).await;
+
+        let result = forward_query(&zones, false).await;
+
+        assert!(
+            matches!(
+                result,
+                Err(LookupError::ResponseCode(ResponseCode::Refused))
+            ),
+            "expected no reply, got {:?}",
+            result
+        );
+        assert_eq!(received.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn nxdomain_is_relayed_without_soa() {
+        let (upstream, _) = spawn_upstream(Upstream::NxDomainWithSoa).await;
+        let zones = zones_forwarding_to(upstream).await;
+
+        let response = forward_query(&zones, true).await.unwrap();
+
+        assert_eq!(response.metadata.response_code, ResponseCode::NXDomain);
+        assert!(response.answers.is_empty());
+        assert!(response.authorities.is_empty());
+    }
+
+    #[tokio::test]
+    async fn no_data_is_relayed_as_empty_noerror_without_soa() {
+        let (upstream, _) = spawn_upstream(Upstream::NoDataWithSoa).await;
+        let zones = zones_forwarding_to(upstream).await;
+
+        let response = forward_query(&zones, true).await.unwrap();
+
+        assert_eq!(response.metadata.response_code, ResponseCode::NoError);
+        assert!(response.answers.is_empty());
+        assert!(response.authorities.is_empty());
+    }
+
+    #[tokio::test]
+    async fn upstream_servfail_is_relayed_as_empty_noerror() {
+        let (upstream, _) = spawn_upstream(Upstream::Rcode(ResponseCode::ServFail)).await;
+        let zones = zones_forwarding_to(upstream).await;
+
+        let response = forward_query(&zones, true).await.unwrap();
+
+        assert_eq!(response.metadata.response_code, ResponseCode::NoError);
+        assert!(response.answers.is_empty());
+    }
+
+    #[tokio::test]
+    async fn bogus_datagrams_before_the_reply_are_ignored() {
+        for behavior in [Upstream::WrongIdFirst, Upstream::TooShortFirst] {
+            let (upstream, _) = spawn_upstream(behavior).await;
+            let zones = zones_forwarding_to(upstream).await;
+
+            let response = forward_query(&zones, true).await.unwrap();
+
+            assert_eq!(response.answers.len(), 1);
+        }
     }
 }
